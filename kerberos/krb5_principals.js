@@ -985,16 +985,30 @@ function realmForService(nameComponents) {
 //     configured account exists because the settings build it, and nothing in
 //     this service deletes one.
 //
-// **WHAT IS RUNTIME STATE ON A CONFIGURED PRINCIPAL IS EXACTLY ONE FIELD**, and
-// that is a finding rather than a guess: every write to a configured principal
-// after buildDatabase() is signOut() and clearSignOut() (called from
-// `logout/logout.ts`, `admin-core/admin_actions.ts` and `krb5_kdc.js`'s AS
-// handler), and both write `signedOutAt`. `revoked` looks like runtime state
-// and is not — it is set only by the `locked` fixture's definition and nothing
-// mutates it. directoryUser() moves `kvno`, `salt` and `etypes`, but only on a
+// **WHAT IS RUNTIME STATE ON A CONFIGURED PRINCIPAL IS THE SIGN-OUT, IN THREE
+// FIELDS**, and that is a finding rather than a guess: every write to a
+// configured principal after buildDatabase() is signOut() (from
+// `logout/logout.ts`) or clearSignOut() (the console's development-only
+// restore-kerberos, `admin-core/admin_actions.ts`). signOut() writes
+// `signedOutAt` and `signOutHorizon`; clearSignOut() writes `signOutClearedAt`
+// (#111 — the KDC's AS handler cleared the stamp until then, and no longer
+// writes anything here). `revoked` looks like runtime state and is not — it is
+// set only by the `locked` fixture's definition and nothing mutates it.
+// directoryUser() moves `kvno`, `salt` and `etypes`, but only on a
 // `directoryKeys` record, which is restored whole. A field that becomes runtime
 // state later is a row added to RUNTIME_FIELDS, in the same commit as its first
 // writer — or a restart silently undoes that writer's work.
+//
+// **ALL THREE ARE INSTANTS, AND ALL THREE MERGE BY THE LATER ONE (#111).** An
+// incoming row does not REPLACE them: reconcileRestored() keeps whichever of
+// the held and the incoming value is later, for a configured principal and for
+// a runtime-made one restored whole alike. A sign-out can therefore never be
+// lost to another node's write of the same row that carried an older copy —
+// the last-writer-wins race `kerberos/CLAUDE.md` recorded on 2026-09-14, when
+// an AS exchange on one node could land its clear after a sign-out committed
+// on another. Nothing moves a stamp backwards any more: the undo is a THIRD
+// instant (`signOutClearedAt`) that beats a stamp older than itself, rather
+// than a null that a max could not tell from "never".
 //
 // **NOTHING IS WRITTEN BACK.** A stale stored row is corrected the next time
 // anything writes that key (a sign-out writes the WHOLE record this process
@@ -1002,7 +1016,8 @@ function realmForService(nameComponents) {
 // applier would be two processes with different settings exchanging one row
 // for ever — the one unbounded failure `persistence/CLAUDE.md` warns about.
 // ---------------------------------------------------------------------------
-const RUNTIME_FIELDS = ['signedOutAt'];
+const RUNTIME_FIELDS = ['signedOutAt', 'signOutHorizon',
+                        'signOutClearedAt'];
 
 // The keys buildDatabase() registered from settings and code are
 // `ctx.configuredKeys`, one set per realm's context. The default realm's is
@@ -1090,13 +1105,14 @@ function reconcileRestored(key, incoming, held, realmId, partition) {
                'process\'s settings build, in ' + differing.join(', ') + '. ' +
                'The settings were kept; ' +
                'only ' + RUNTIME_FIELDS.join(', ') + ' ' +
-               'was taken from the row. The stored row is corrected the next ' +
+               'were merged from the row, each as the later of the two. The ' +
+               'stored row is corrected the next ' +
                'time this principal is written.');
     }
-    RUNTIME_FIELDS.forEach(function (field) {
-      here[field] = incoming[field] === undefined ? null : incoming[field];
-    });
-    log.debug('Leaving reconcileRestored(). Configured; runtime state taken.');
+    // THE LATER OF THE TWO, NEVER THE ROW'S ALONE (#111) — see the paragraph
+    // above RUNTIME_FIELDS.
+    mergeSignOut(here, incoming);
+    log.debug('Leaving reconcileRestored(). Configured; runtime state merged.');
     return here;
   }
   if (incoming.autoCreated || incoming.directoryKeys) {
@@ -1111,8 +1127,16 @@ function reconcileRestored(key, incoming, held, realmId, partition) {
                'keeps its SID — but a service authorizing on the PAC cannot ' +
                'tell the two apart.');
     }
+    // Restored whole — except the sign-out, which is the later of what this
+    // process holds and what the row says (#111): another node writing this
+    // person's row from a copy taken before a sign-out here must not unstamp
+    // them.
+    const whole = withKeyCache(incoming);
+    if (here && here !== incoming) {
+      mergeSignOut(whole, here);
+    }
     log.debug('Leaving reconcileRestored(). Runtime-made; restored whole.');
-    return withKeyCache(incoming);
+    return whole;
   }
   log.warn(errorCodes.tag('STS-KRB-0112') + 'krb5: the stored principal ' +
            key +
@@ -1410,11 +1434,19 @@ function register(def) {
     // never log back in. It does NOT reach a SERVICE TICKET already in a cache,
     // because the service that accepts one never contacts the KDC; that is a
     // fact about Kerberos rather than a gap here, and /logout says so on the
-    // row rather than implying a completeness it has not got. And it is CLEARED
-    // by the next successful AS exchange, in handleAsReq(), because the ticket
-    // that exchange mints is newer than the instant and leaving a stale one
-    // behind would refuse the TGS-REQ that immediately follows it.
-    signedOutAt: null
+    // row rather than implying a completeness it has not got. And it is NOT
+    // cleared by the next successful AS exchange (#111): it was until
+    // 2026-09-23, which put every ticket from before the sign-out back into
+    // service the moment the person authenticated again. The two reasons that
+    // clear gave — whole seconds, and two clocks — are answered in the
+    // comparison instead; see signOut() below.
+    signedOutAt: null,
+    // Until when the stamp above matters: the latest a ticket authenticated
+    // before it could still be presented or renewed. See signOut().
+    signOutHorizon: null,
+    // The development-only undo, as an instant that beats every stamp not
+    // later than itself. See clearSignOut().
+    signOutClearedAt: null
   };
   // THE DERIVED-KEY CACHE IS ATTACHED SEPARATELY AND IS NOT ENUMERABLE — see
   // withKeyCache() below for why.
@@ -1966,11 +1998,42 @@ buildContext(realms.DEFAULT_REALM);
 // SIGNING OUT, WHICH IS A STATEMENT ABOUT TICKETS AND NOT ABOUT THE ACCOUNT.
 //
 // `signOut()` stamps the instant described on `signedOutAt` above;
-// `clearSignOut()` removes it, which is what a fresh AS exchange does and what
-// the console's undo does. `signedOut()` is the reader the KDC's TGS handler
-// calls, and it answers with the DATE rather than a boolean so that the refusal
-// can say when — "the ticket was issued at X and this principal signed out at
-// Y" is a sentence somebody can act on, and "revoked" on its own is not.
+// `clearSignOut()` is the console's DEVELOPMENT-ONLY undo (restore-kerberos,
+// refused in product through `mode.opensTestControls()`). `signedOutAt()` is
+// the reader the KDC's handlers call, and it answers with the DATE rather than
+// a boolean so that the refusal can say when — "the ticket was issued at X and
+// this principal signed out at Y" is a sentence somebody can act on, and
+// "revoked" on its own is not.
+//
+// **NOTHING CLEARS THE STAMP ON A FRESH AUTHENTICATION ANY MORE (#111,
+// 2026-09-23).** The KDC's AS handler did, and that re-accepted every
+// ticket-granting ticket from before the sign-out — a renewal of one included,
+// because a renewal keeps `authtime` — the moment the person ran `kinit`
+// again, for up to the renew-till of the oldest. The two reasons it gave are
+// answered where they arose instead:
+//
+//   * **WHOLE SECONDS.** `authtime` is a KerberosTime and carries none; the
+//     stamp has milliseconds. The KDC compares `authtime` with the stamp
+//     rounded UP to the next whole second (`signOutBoundary()`), and an AS
+//     exchange for a principal whose boundary is still ahead waits for it
+//     before it takes `authtime` — at most one second. Every ticket
+//     authenticated before the sign-out is refused and every one authenticated
+//     after it is accepted, with no hole either way.
+//   * **ONE CLOCK.** The stamp is taken on the KDC's clock (`kdcNowMs()`, which
+//     applies `krb5.clockOffset` exactly as the KDC's `now()` does), so the two
+//     instants compared are on the same clock. CHANGING `krb5.clockOffset`
+//     between a sign-out and a TGS-REQ moves one side of the comparison and not
+//     the other; that is what the offset is for, and it is stated rather than
+//     corrected.
+//
+// **AND THE STAMP IS BOUNDED.** No ticket authenticated before the sign-out can
+// outlive `signedOutAt + max(krb5.ticketLifetimeSeconds,
+// krb5.renewLifetimeSeconds) + krb5.clockSkew`: it was issued before the stamp,
+// its renew-till cannot pass that, and every renewal after the sign-out is
+// refused. That instant is stored beside the stamp as `signOutHorizon` — the
+// later of the one already stored and the one today's settings give — and past
+// it the stamp answers as none. Nothing is swept: an expired stamp is inert on
+// the row until the next sign-out overwrites it, so no scheduler job is owed.
 //
 // It creates nothing. A name nobody has ever authenticated as has no principal
 // here, and stamping one into existence would put an account in the database
@@ -1979,6 +2042,39 @@ buildContext(realms.DEFAULT_REALM);
 // one. So a sign-out for an unknown principal is reported as having reached
 // nothing, and /logout prints that rather than a success it did not have.
 // ---------------------------------------------------------------------------
+
+// The KDC's clock, in milliseconds: `krb5_kdc.js`'s `now()` without the Date.
+// Read per call, for that function's reason — the offset is settable at
+// runtime. No Entering/Leaving pair: it is on the hot path, under every
+// reader of a stamp, beside asDate().
+function kdcNowMs() {
+  return Date.now() + (Number(config.value('krb5.clockOffset')) || 0) * 1000;
+}
+
+// The first whole second at or after a stamp — the smallest `authtime` a
+// ticket can carry and still be newer than the sign-out. KerberosTime is
+// truncated to the second on the wire (krb5_asn1.js), so an authtime earlier
+// than the stamp is always earlier than this and one taken at or after this is
+// never refused. Hot path, for kdcNowMs()'s reason.
+function signOutBoundary(stamp) {
+  const at = asDate(stamp);
+  if (!at) {
+    return null;
+  }
+  return new Date(Math.ceil(at.getTime() / 1000) * 1000);
+}
+
+// The latest a ticket authenticated before `atMs` can still be presented or
+// renewed, on today's settings.
+function horizonAfter(atMs) {
+  log.debug("Entering horizonAfter().");
+  const longest = Math.max(Number(config.value('krb5.ticketLifetimeSeconds')),
+                           Number(config.value('krb5.renewLifetimeSeconds')));
+  const skew = Number(config.value('krb5.clockSkew'));
+  log.debug("Leaving horizonAfter().");
+  return new Date(atMs + (longest + skew) * 1000);
+}
+
 function signOut(nameComponents, realm, at) {
   log.debug("Entering signOut(). principal=" +
             (nameComponents || []).join('/'));
@@ -1987,7 +2083,13 @@ function signOut(nameComponents, realm, at) {
     log.debug("Leaving signOut(). No such principal.");
     return null;
   }
-  principal.signedOutAt = asDate(at) || new Date();
+  // On the KDC's clock (#111), the one `authtime` is taken on.
+  principal.signedOutAt = asDate(at) || new Date(kdcNowMs());
+  // The later of the stored horizon and today's: a stamp moved forward by a
+  // second sign-out must not shorten the life of the first one's refusal
+  // because the lifetimes were lowered in between.
+  principal.signOutHorizon = laterOf(principal.signOutHorizon,
+    horizonAfter(principal.signedOutAt.getTime()));
   // WRITTEN BACK THROUGH THE STORE, and not merely mutated (2026-09-08). The
   // principal is an object HELD in `principals`, so stamping a field on it
   // changes this process's memory and nothing else: `realms.map()`
@@ -2002,25 +2104,35 @@ function signOut(nameComponents, realm, at) {
   log.info('krb5: ' + principal.name.join('/') + '@' + principal.realm + ' ' +
       'signed out at ' +
            principal.signedOutAt.toISOString() + '. A TGS-REQ presenting a ' +
-           'ticket issued before that is now refused KDC_ERR_TGT_REVOKED ' +
-           '(20). A service ticket already in a cache still works against ' +
-           'the service that accepts it — nothing contacts this KDC on that ' +
-           'exchange.');
+           'ticket authenticated before that is now refused ' +
+           'KDC_ERR_TGT_REVOKED (20), whatever AS exchanges follow, until ' +
+           asDate(principal.signOutHorizon).toISOString() + ', when no such ' +
+           'ticket can still be valid. A service ticket already in a cache ' +
+           'still works against the service that accepts it — nothing ' +
+           'contacts this KDC on that exchange.');
   log.debug("Leaving signOut(). Stamped " +
             principal.signedOutAt.toISOString() + ".");
   return principal;
 }
 
+// DEVELOPMENT ONLY, and it is the caller's to refuse in product
+// (`admin-core/admin_actions.ts`, `mode.opensTestControls()`). It does not
+// null the stamp: a null cannot win a merge by the later instant, so another
+// node's copy would put the stamp straight back. It writes `signOutClearedAt`
+// instead — an instant that beats every stamp not later than itself, and loses
+// to the next sign-out.
 function clearSignOut(nameComponents, realm) {
   log.debug("Entering clearSignOut(). principal=" +
             (nameComponents || []).join('/'));
   const principal = find(nameComponents, realm);
-  if (!principal || !principal.signedOutAt) {
+  const was = principal ? effectiveSignOut(principal) : null;
+  if (!was) {
     log.debug("Leaving clearSignOut(). Nothing was stamped.");
     return null;
   }
-  const was = asDate(principal.signedOutAt) || new Date(0);
-  principal.signedOutAt = null;
+  // Never earlier than the stamp it clears, whatever the clock offset did in
+  // between — a clear that lost to its own stamp would be no clear at all.
+  principal.signOutClearedAt = new Date(Math.max(kdcNowMs(), was.getTime()));
   // Through the store, for signOut()'s reason above — and this direction
   // matters just as much: a CLEARED stamp that never replicated would leave
   // another process refusing every TGS-REQ from somebody who has signed back
@@ -2070,11 +2182,67 @@ function asDate(value) {
   return isNaN(at.getTime()) ? null : at;
 }
 
+// The later of two instants, as whichever VALUE was later (a Date or the ISO
+// string a stored row carries), or null when neither is one. The merge every
+// sign-out field obeys (#111). Hot path, for asDate()'s reason: the applier
+// calls it for every replicated principal.
+function laterOf(a, b) {
+  const x = asDate(a);
+  const y = asDate(b);
+  if (!x) {
+    return y ? b : null;
+  }
+  if (!y) {
+    return a;
+  }
+  return y.getTime() > x.getTime() ? b : a;
+}
+
+// `target`'s three sign-out fields become the later of its own and `other`'s.
+function mergeSignOut(target, other) {
+  log.debug("Entering mergeSignOut().");
+  RUNTIME_FIELDS.forEach(function (field) {
+    target[field] = laterOf(target[field], other && other[field]);
+  });
+  log.debug("Leaving mergeSignOut().");
+  return target;
+}
+
+// The stamp IN FORCE on a record, as a Date, or null: none was made, the
+// development-only undo is later than it, or its horizon has passed on the
+// KDC's clock. A record with a stamp and no horizon is one a test wrote by
+// hand; it is held to be in force, the stricter reading. Hot path, for
+// asDate()'s reason — every TGS-REQ and every AS-REQ asks.
+function effectiveSignOut(principal) {
+  const at = asDate(principal && principal.signedOutAt);
+  if (!at) {
+    return null;
+  }
+  const cleared = asDate(principal.signOutClearedAt);
+  if (cleared && cleared.getTime() >= at.getTime()) {
+    return null;
+  }
+  const horizon = asDate(principal.signOutHorizon);
+  if (horizon && kdcNowMs() >= horizon.getTime()) {
+    return null;
+  }
+  return at;
+}
+
 function signedOutAt(nameComponents, realm) {
   log.debug("Entering signedOutAt().");
   const principal = find(nameComponents, realm);
   log.debug("Leaving signedOutAt().");
-  return asDate(principal && principal.signedOutAt);
+  return effectiveSignOut(principal);
+}
+
+// Until when the stamp in force matters, or null when none is in force.
+function signOutHorizon(nameComponents, realm) {
+  log.debug("Entering signOutHorizon().");
+  const principal = find(nameComponents, realm);
+  const inForce = effectiveSignOut(principal);
+  log.debug("Leaving signOutHorizon().");
+  return inForce ? asDate(principal.signOutHorizon) : null;
 }
 
 // Every principal currently carrying one, for the console and for /logout's
@@ -2086,10 +2254,12 @@ function signedOutPrincipals() {
   current();
   const out = [];
   principals.forEach(function (principal) {
-    if (asDate(principal.signedOutAt)) {
+    const inForce = effectiveSignOut(principal);
+    if (inForce) {
       out.push({ name: principal.name.slice(0), realm: principal.realm,
                  principal: principal.name.join('/') + '@' + principal.realm,
-                 signedOutAt: asDate(principal.signedOutAt) });
+                 signedOutAt: inForce,
+                 horizon: asDate(principal.signOutHorizon) });
     }
   });
   log.debug("Leaving signedOutPrincipals(). " + out.length + " principal(s).");
@@ -2472,8 +2642,10 @@ function directoryUser(name) {
         extraSids: ['S-1-18-1', 'S-1-5-11']
       }
     });
-    if (kept && kept.signedOutAt) {
-      record.signedOutAt = kept.signedOutAt;
+    // The sign-out, all three of its fields (#111): a person re-keyed after
+    // signing out is still signed out.
+    if (kept) {
+      mergeSignOut(record, kept);
     }
     record.kvno = answer.kvno;
     principals.set(key, record);
@@ -2638,7 +2810,9 @@ function storedService(nameComponents, realm) {
            groups: [RID.DOMAIN_COMPUTERS],
            userAccountControl: UAC.WORKSTATION_TRUST_ACCOUNT, extraSids: [],
            fullName: null, passwordMustChange: null },
-    signedOutAt: null
+    signedOutAt: null,
+    signOutHorizon: null,
+    signOutClearedAt: null
   }, base || {});
   principal.password = null;
   principal.directoryKeys = true;
@@ -3356,6 +3530,9 @@ module.exports = {
   signOut: signOut,
   clearSignOut: clearSignOut,
   signedOutAt: signedOutAt,
+  signOutHorizon: signOutHorizon,
+  signOutBoundary: signOutBoundary,
+  mergeSignOut: mergeSignOut,
   signedOutPrincipals: signedOutPrincipals
 };
 

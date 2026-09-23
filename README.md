@@ -1256,6 +1256,8 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oid4vp.signInFormats` | `OID4VP_SIGN_IN_FORMATS` | `dc+sd-jwt,jwt_vc_json,ldp_vc` | yes | The credential formats a wallet sign-in asks for, in order of preference: one DCQL credential query each, and a credential set saying any one will do. |
 | `oid4vp.signInDcApiResponseMode` | `OID4VP_SIGN_IN_DC_API_RESPONSE_MODE` | `dc_api.jwt` | yes | How a wallet answers through the Digital Credentials API: encrypted to a key only that sign-in holds, or `dc_api` in the clear for a wallet that cannot encrypt. |
 | `oid4vp.statusListMaxCacheS` | `OID4VP_STATUS_LIST_MAX_CACHE_S` | `3600` | yes | The most the Verifier keeps a status list a trusted foreign issuer published, whatever its `ttl` says. Never past the list's own `exp`; 0 fetches for every presentation. |
+| `oid4vp.requireStatusReference` | `OID4VP_REQUIRE_STATUS_REFERENCE` | `all` | yes | Whether a credential presented to the Verifier must name a status that resolves VALID (#165). `all` (the default, both modes) refuses any credential with none (`STS-VC-0088`) and an `ldp_vc` that withheld its `credentialStatus` (`STS-VC-0089`). `own-only` accepts a foreign credential with none — **warning:** it can never be shown revoked. `off` also accepts this realm's own, and is development only (refused on write in product, `STS-CORE-0103`, and read as `all`). |
+| `oid4vp.statusOptionalIssuers` | `OID4VP_STATUS_OPTIONAL_ISSUERS` | *(empty)* | yes | SHA-256 thumbprints (hex, colon-hex or base64url) of certificates in `oid4vp.trustedIssuerCertificates` whose credentials may name no status under `all`. **Warning:** such a credential can never be shown revoked; one that names a status is still checked. |
 
 #### Kerberos
 
@@ -1546,7 +1548,7 @@ Three things about these do not fit in a cell.
 |---|---|---|---|---|
 | `delegation.maxRecords` | `DELEGATION_MAX_RECORDS` | `2000` | yes | How many delegation acts /admin/delegation keeps before the oldest are dropped. An act is one exchange in which somebody acted on somebody else's behalf — a Kerberos S4U request or forwarded ticket, a WS-Trust OnBehalfOf or ActAs, an RFC 8693 token exchange — and REFUSED attempts are recorded too. What was dropped is COUNTED and shown. |
 | `logout.anyUser` | `LOGOUT_ANY_USER` | `true` | yes | Whether `/logout` honours a `username` naming somebody other than whoever the session cookie names. **In development mode** it grants nothing that was not already true — no password is checked at any sign-in screen there, so becoming that person takes one request — and what it buys is a headless test. **In product mode it is ignored**: a sign-out may name only the signed-in caller, because otherwise an anonymous request could end anybody's sessions and revoke their tokens. Off, `/logout` acts only on the caller's own session and 403s a request that names another name; `/admin/logout` and `/admin-api/logout` are unaffected. |
-| `logout.kerberosSignOut` | `LOGOUT_KERBEROS_SIGN_OUT` | `true` | yes | Whether a logout stamps a sign-out instant on the Kerberos principal, after which a `TGS-REQ` carrying a ticket whose `authtime` is earlier is refused KDC_ERR_TGT_REVOKED (20). It does NOT stop a service ticket already in a cache — accepting one never contacts the KDC — and an `AS-REQ` still succeeds and clears the instant. Off, the KDC behaves exactly as it did before this feature existed. |
+| `logout.kerberosSignOut` | `LOGOUT_KERBEROS_SIGN_OUT` | `true` | yes | Whether a logout stamps a sign-out instant on the Kerberos principal, after which a `TGS-REQ` carrying a ticket whose `authtime` is earlier is refused KDC_ERR_TGT_REVOKED (20). It does NOT stop a service ticket already in a cache — accepting one never contacts the KDC. An `AS-REQ` still succeeds and does not lift the instant: the older tickets, renewals included, stay refused until the latest could still be valid. Off, the KDC behaves exactly as it did before this feature existed. |
 | `logout.ldapDisconnect` | `LOGOUT_LDAP_DISCONNECT` | `true` | yes | Whether a logout closes every connection to the embedded directory, 389 and 636 alike, whose bind DN names that person. RFC 4511 section 4.2 makes the bind the authorization state of a CONNECTION, so the connection is the session. Off, they are left alone and listed on `/logout` as untouched rather than hidden. |
 | `logout.maxRows` | `LOGOUT_MAX_ROWS` | `500` | yes | How many live items `/logout` lists for one person. The cap is on what is DRAWN and offered as a checkbox, never on what a termination reaches — a global logout still ends all of them. |
 
@@ -1704,6 +1706,9 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `risk.standingCacheSize` | `STS_RISK_STANDING_CACHE_SIZE` | `20000` | yes | How many people's standing each process holds; full, the oldest is dropped, which decides that person's next sessionless issuance on roles alone. |
 | `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `100` | yes | The score, in hundredths, from which a sign-in is MEDIUM (100 is a score of 1). |
 | `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | yes | The score, in hundredths, from which a sign-in is HIGH. |
+| `risk.signalFactors` | `STS_RISK_SIGNAL_FACTORS` | *(empty)* | yes | Factors over the built-in ones, as `signal=factor`, comma-separated (`tor-exit=8,new-device=1.5`): what Monitoring → Risk Scoring's calibration suggests, applied without a release. A bad entry is ignored and logged (`STS-RISK-0026`). |
+| `risk.calibrationMediumPercent` | `STS_RISK_CALIBRATION_MEDIUM_PERCENT` | `5` | yes | The share of sign-ins the calibration report aims to have at MEDIUM or worse; it suggests the score that share reaches. Advice only. |
+| `risk.calibrationHighPercent` | `STS_RISK_CALIBRATION_HIGH_PERCENT` | `1` | yes | The same, for HIGH. |
 | `risk.assessmentRetentionDays` | `STS_RISK_ASSESSMENT_RETENTION_DAYS` | `90` | yes | How long an assessment is kept. |
 | `risk.historyRetentionDays` | `STS_RISK_HISTORY_RETENTION_DAYS` | `180` | yes | How long the model remembers a value nobody has signed in with since — an address, a network, a device. |
 | `risk.fingerprinting` | `STS_RISK_FINGERPRINTING` | `false` | yes | OFF BY DEFAULT (#62 P6). The sign-in screen runs FingerprintJS (MIT; it sends nothing) and the service keeps a keyed digest of the browser's identifier, scoring a browser the person never used as `new-device`. Personal data: complete the privacy impact assessment in `docs/risk-scoring.md` first. |
@@ -4320,8 +4325,12 @@ is earlier is refused. It is checked on `authtime` and not on the issue time bec
 renewed ticket deliberately preserves `authtime`, and checking anything else
 would let a renewal launder a signed-out ticket back into a live one. **It does
 not reach a service ticket already in a cache** — accepting one never contacts
-the KDC — and a fresh `AS-REQ` succeeds and clears the instant, because signing
-out is not being locked out. `logout.kerberosSignOut` turns it off.
+the KDC. A fresh `AS-REQ` succeeds, because signing out is not being locked
+out, and **does not lift the instant** (#111): its ticket is accepted, while
+every ticket from before the sign-out, renewed or not, stays refused until the
+latest one could still be valid — the sign-out plus the longer of the ticket and
+renew lifetimes, plus the clock skew — on every node. `logout.kerberosSignOut`
+turns it off.
 
 **LDAP.** The connection is the session, so the sign-out is the socket closing.
 What the client sees is its connection ending mid-conversation, which is what a
@@ -4342,7 +4351,8 @@ story.
 **Two more doors onto the same two functions.** `/admin/logout` is the operator's
 view — the same lists for a person *named*, filtered and paged, behind the
 console's two roles, and with the two NON-SPEC undos this page has not (restoring
-a revoked token, clearing a Kerberos sign-out instant). `GET|POST
+a revoked token, and — in development mode only — clearing a Kerberos sign-out
+instant). `GET|POST
 /admin-api/logout` is the same again for a test, with four operations. All three
 call one pair of functions in `logout/logout.ts`, which is what stops them coming
 to disagree about what a live session is.

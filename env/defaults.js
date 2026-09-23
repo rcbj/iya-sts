@@ -654,7 +654,9 @@ var config = {
     signInCrossDevice: false,                          // Wallet sign-in QR code (cross-device, relayable)
     signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",     // Wallet sign-in credential formats
     signInDcApiResponseMode: "dc_api.jwt",             // Digital Credentials API response mode
-    statusListMaxCacheS: 3600                          // Longest a fetched status list is kept (s)
+    statusListMaxCacheS: 3600,                         // Longest a fetched status list is kept (s)
+    requireStatusReference: "all",                     // Require a status reference on every presented credential
+    statusOptionalIssuers: ""                          // Trusted issuers exempt from the status reference
   },
 
   // --- Kerberos --------------------------------------------------------
@@ -824,6 +826,9 @@ var config = {
     standingCacheSize: 20000,                              // People whose standing each process holds
     mediumScorePercent: 100,                               // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,                                // HIGH from (percent of a score of 1)
+    signalFactors: "",                                     // Signal factors
+    calibrationMediumPercent: 5,                           // Calibration: MEDIUM or worse (percent of sign-ins)
+    calibrationHighPercent: 1,                             // Calibration: HIGH (percent of sign-ins)
     assessmentRetentionDays: 90,                           // Keep assessments (days)
     historyRetentionDays: 180                              // Keep the model's history (days)
   },

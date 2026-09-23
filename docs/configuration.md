@@ -946,7 +946,9 @@ switched is logged once (`STS-CORE-0106`) — and refuses turning it on
 (`STS-CORE-0103`). The same marker (`onlyWhile` on the row in
 `common/config.js`) makes `ssf.breakSetSignature`, `ssf.legacySubClaim`,
 `spiffe.acceptAssertedSelectors` and `spiffe.attestWorkloads` off development
-only, and the four `…SkipTlsVerification` settings before them (#171).
+only, and the four `…SkipTlsVerification` settings before them (#171). On
+`oid4vp.requireStatusReference` it governs one value only: `off` is
+development only, while `own-only` may be set in product (#165).
 
 ### The four token lifetimes
 

@@ -654,12 +654,23 @@ const JOBS = [
   // SIGNED IN WITH by MIT `kinit -k -t` and by `krb5_wire.js` using the
   // keytab's key — against the KDC at the published address, in both modes.
   { file: 'sts_kerberos_keytab.js',      browser: false, local: true },
+  // A KERBEROS SIGN-OUT OUTLIVES THE NEXT AS EXCHANGE (#111, 2026-09-23):
+  // over TCP 88, a TGT from before a global sign-out refused
+  // KDC_ERR_TGT_REVOKED, a new AS exchange straight after it accepted, the
+  // old TGT and a renewal of it still refused, and restore-kerberos refused
+  // in product — in both modes.
+  { file: 'sts_kerberos_signout.js',     browser: false, local: true },
   // Both gRPC surfaces over the network. Since #166 (2026-09-23) also the
   // Workload API's TCP port in product: refused where the network is not
   // declared to authenticate source addresses, and entries selecting this
   // job's own peer: address where it is.
   { file: 'sts_spiffe_grpc.js',          browser: false, local: true },
   { file: 'sts_oid4vp_wallet.js',        browser: false, local: true },
+  // A STATUS REFERENCE ON EVERY PRESENTED CREDENTIAL (#165, 2026-09-23): a
+  // foreign credential naming none refused unless its issuer is exempted by
+  // certificate thumbprint or the rule is own-only, the ldp_vc query asking
+  // for credentialStatus, and `off` refused and ignored in product.
+  { file: 'sts_oid4vp_status_reference.js', browser: false, local: true },
   { file: 'sts_federation_realms.js',    browser: false, local: true },
   // WHICH PEOPLE A PARTNER MAY ASSERT (#109, 2026-09-22): the subject
   // policies, the linking sign-in, the administrator refusal, the links set

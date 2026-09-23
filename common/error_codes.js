@@ -7425,8 +7425,9 @@ const CODES = [
     summary: 'A TGS-REQ presented a ticket that is not yet valid.',
     spec: 'KRB_AP_ERR_TKT_NYV (33)' },
   { code: 'STS-KRB-0034',
-    summary: 'A TGS-REQ was refused because the ticket was authenticated ' +
-      'before its client signed out (logout.kerberosSignOut).',
+    summary: 'A TGS-REQ (a renewal included) was refused because the ticket ' +
+      'was authenticated before its client signed out ' +
+      '(logout.kerberosSignOut); a later AS exchange does not lift it.',
     spec: 'KDC_ERR_TGT_REVOKED (20)' },
   { code: 'STS-KRB-0035',
     summary: 'A TGS-REQ\'s Authenticator clock was outside the KDC\'s ' +
@@ -7952,6 +7953,10 @@ const CODES = [
   { code: 'STS-KRB-0154',
     summary: 'Asking whether a person holds a second factor failed, so the ' +
       'KDC treated a password alone as not enough.' },
+  { code: 'STS-KRB-0155',
+    summary: 'An AS exchange waited (at most a second) for its client\'s ' +
+      'sign-out second to pass before taking authtime, so the new ticket is ' +
+      'newer than the sign-out. Logged at debug; not a failure.' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
@@ -9627,6 +9632,20 @@ const CODES = [
       'generation of this realm\'s BBS key (current, next, or retired within ' +
       'its grace).',
     spec: 'HTTP 404 not_found' },
+  { code: 'STS-VC-0088',
+    summary: 'A credential presented to the OpenID4VP Verifier names no ' +
+      'status (no Token Status List claim, no BitstringStatusListEntry) ' +
+      'and oid4vp.requireStatusReference requires one: a foreign ' +
+      'credential under all whose issuer certificate is not in ' +
+      'oid4vp.statusOptionalIssuers, or one this realm signed under all or ' +
+      'own-only.',
+    spec: 'invalid_request (HTTP 400); HTTP 403 page at a sign-in' },
+  { code: 'STS-VC-0089',
+    summary: 'An ldp_vc presented at the OpenID4VP Verifier (not a sign-in, ' +
+      'whose register holds the status) disclosed no credentialStatus ' +
+      'entry, though the request asked for it and ' +
+      'oid4vp.requireStatusReference requires one.',
+    spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -10211,6 +10230,16 @@ const CODES = [
       'is not greater than one already processed — a rollback. Nothing was ' +
       'loaded.',
     spec: 'FIDO Metadata Service v3.0, section 3.1.8' },
+  { code: 'STS-RISK-0025',
+    summary: 'Monitoring → Risk Scoring, or GET /admin-api/risk/metrics, ' +
+      'could not be answered: the risk store failed to count the window\'s ' +
+      'assessments.',
+    spec: '' },
+  { code: 'STS-RISK-0026',
+    summary: 'An entry of risk.signalFactors was ignored: it names no known ' +
+      'signal, or its factor is not a positive number. The signal keeps its ' +
+      'built-in factor; logged once for each value the setting is given.',
+    spec: '' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -12685,6 +12714,10 @@ const CODES = [
     summary: 'A password reset for a Kerberos keytab SET the password and ' +
       'then no keytab could be made, or a Kerberos principals action threw ' +
       'inside the console.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0804',
+    summary: 'restore-kerberos (clearing a Kerberos sign-out instant) was ' +
+      'refused because it is a development-only test control.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +

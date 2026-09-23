@@ -6759,7 +6759,10 @@ SSF and XACML not requiring the federation module for their transport).
 while that predicate answers true (`modeWriteProblem()`, `STS-CORE-0103`; it
 read "set TRUE" until #104 marked `spiffe.attestWorkloads`, whose default is
 on and whose refused value is off — `mode.allowsValue()` is the one test, and
-`mode.writeRefusalReason()` the sentence per predicate), asked by
+`mode.writeRefusalReason()` the sentence per predicate; since #165 a row may
+also carry `onlyWhileValues: [...]`, and then only the values it lists need the
+predicate — `oid4vp.requireStatusReference`'s `off` is development only, its
+`own-only` is not), asked by
 `setOverride()`, by `checkWrite()` — which `admin-core/admin_actions.ts`'s
 all-or-nothing sections ask before writing anything — and by `realms.js` for a
 realm set, create or update with THAT realm ambient. **It is deliberately not

@@ -200,8 +200,10 @@ Consequences worth stating:
   — a registered code whose text says what is meant and for which the
   specification defines no mechanism, so this is an invention using it. It
   reaches **no service ticket already in a cache**;
-- a fresh AS-REQ succeeds and clears the instant, because signing out is not
-  being locked out;
+- a fresh AS-REQ succeeds, because signing out is not being locked out, and
+  does not lift the instant: its ticket is accepted while every ticket from
+  before the sign-out, renewed or not, stays refused until the latest one could
+  still be valid;
 - a Kerberos client never touches the browser session at all — **unless** the
   ticket is spent at `/authn/spnego`, which is a different act: that door mints
   a browser session *from* a ticket, and from then on there are two sessions.

@@ -388,7 +388,12 @@ async function asExchange(transport, realm, username, opts) {
     nonceEchoed: part.nonce === nonce,
     kvno: rep.encPart.kvno,
     replyEtype: rep.encPart.etype,
-    endtime: part.endtime
+    endtime: part.endtime,
+    // The two times a sign-out job asserts on (#111): `authtime` is what the
+    // KDC compares with the sign-out instant, and `renewTill` bounds a
+    // renewal.
+    authtime: part.authtime,
+    renewTill: part.renewTill
   };
   log.debug("Leaving asExchange(). A TGT, flags " +
             out.tgt.flagNames.join(","));
@@ -406,15 +411,26 @@ async function asExchange(transport, realm, username, opts) {
 // enc-part is key usage 8 (no subkey is sent here, so never 9).
 //
 // Answers { ok: true, ticket, sessionKey, etype, client, realm, sname, srealm,
-// flagNames, nonceEchoed } or { ok: false, error }.
+// flagNames, nonceEchoed, endtime, authtime, renewTill } or
+// { ok: false, error }.
+//
+// `opts.renew` sets the RENEW option (RFC 4120 section 3.3.3.1): "the same
+// ticket again, later", for the ticket being presented — so `sname` must be
+// that ticket's own service, and the answer keeps its authtime (#111's
+// renewal case).
 // ---------------------------------------------------------------------------
-async function tgsExchange(transport, tgt, sname, realm) {
+async function tgsExchange(transport, tgt, sname, realm, opts) {
   log.debug("Entering tgsExchange(). " + (sname.name || []).join("/") +
             " over " + transport.label);
+  const options = opts || {};
   const profile = kcrypto.etypeById(tgt.etype);
   const nonce = randomNonce();
+  const kdcOptions = [msgs.KDC_OPTION.FORWARDABLE, msgs.KDC_OPTION.RENEWABLE];
+  if (options.renew) {
+    kdcOptions.push(msgs.KDC_OPTION.RENEW);
+  }
   const body = msgs.encKdcReqBody({
-    kdcOptions: [msgs.KDC_OPTION.FORWARDABLE, msgs.KDC_OPTION.RENEWABLE],
+    kdcOptions: kdcOptions,
     realm: realm || tgt.realm,
     sname: sname,
     till: new Date(Date.now() + 8 * 3600 * 1000),
@@ -472,7 +488,9 @@ async function tgsExchange(transport, tgt, sname, realm) {
     srealm: part.srealm,
     flagNames: msgs.ticketFlagNames(part.flags),
     nonceEchoed: part.nonce === nonce,
-    endtime: part.endtime
+    endtime: part.endtime,
+    authtime: part.authtime,
+    renewTill: part.renewTill
   };
 }
 

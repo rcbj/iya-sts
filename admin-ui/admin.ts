@@ -2427,6 +2427,15 @@ const SECTIONS = [
                'about an address, import a list, activate, roll back. ' +
                'Below, every refused password in the realm, attributed to a ' +
                'person and a network and never to a typed name.' },
+      // The scoring itself measured (#62): drawn by the same file.
+      { path: '/admin/risk-scoring', label: 'Risk scoring',
+        blurb: 'The risk scoring system measured over a window: ' +
+               'assessments over time by level, how scores and levels ' +
+               'fell, every signal beside its factor and how often it ' +
+               'fired, decisions, doors and countries, what people said ' +
+               'about their own sign-ins, and &mdash; for this process ' +
+               '&mdash; how long an assessment takes and the reactions ' +
+               'taken.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +
@@ -7832,15 +7841,25 @@ class AdminConsole {
           'restore button is: having to restart this service to get back to ' +
           'a working credential turns a two-second test into a two-minute ' +
           'one.') +
-          '<form method="post" action="/admin/logout">' +
-          '<input type="hidden" name="action" value="restore-kerberos">' +
-          '<input type="hidden" name="user" value="' + this.esc(wantedUser) +
-          '">' +
-          this.logoutBackField(back) +
-          '<p><button type="submit">Clear the Kerberos sign-out ' +
-          'instant</button> <span class="sub">Tickets issued before it are ' +
-          'accepted again. A fresh AS-REQ does this too, and is the ' +
-          'supported way back.</span></p></form><form method="post" ' +
+          // DEVELOPMENT ONLY (#111): refused in product by the action, and
+          // so not offered there — a note says why in its place.
+          (mode.opensTestControls()
+            ? '<form method="post" action="/admin/logout">' +
+              '<input type="hidden" name="action" ' +
+              'value="restore-kerberos">' +
+              '<input type="hidden" name="user" value="' +
+              this.esc(wantedUser) + '">' +
+              this.logoutBackField(back) +
+              '<p><button type="submit">Clear the Kerberos sign-out ' +
+              'instant</button> <span class="sub">Tickets issued before it ' +
+              'are accepted again. Development mode only. A fresh AS-REQ ' +
+              'does NOT do this: it gets a newer ticket and the older ones ' +
+              'stay refused.</span></p></form>'
+            : this.note('Clearing a Kerberos sign-out instant is a ' +
+              'development-only test control and is not offered in product ' +
+              'mode: the instant stands until the latest a ticket from ' +
+              'before it could still be valid.')) +
+          '<form method="post" ' +
           'action="/admin/logout"><input type="hidden" name="action" ' +
           'value="restore-token"><input type="hidden" name="user" ' +
           'value="' + this.esc(wantedUser) + '">' +
@@ -12489,12 +12508,61 @@ class AdminConsole {
     return heading + state + signalsNote + account + reset + passkeys + mfa;
   }
 
-  userDetailPage(req, key) {
+  // -------------------------------------------------------------------------
+  // THE PERSON'S CURRENT RISK, LARGE AND IN COLOUR (#62; rcbj asked for it
+  // exactly so): the first thing on their page, the level in the colour an
+  // administrator reads at a glance — green, amber, red, grey for nobody
+  // assessed yet — with the score, the level it came from, when it moved,
+  // what moved it, and a link to the assessments behind it. No script: a
+  // styled block, as every tile on this page is.
+  // -------------------------------------------------------------------------
+  private riskBadge(standing: any): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.riskBadge().");
+    const level = standing ? String(standing.level || 'UNSCORED')
+                           : 'UNKNOWN';
+    const palette: Record<string, string[]> = {
+      LOW: ['#188038', '#ffffff'], MEDIUM: ['#f9ab00', '#202124'],
+      HIGH: ['#d93025', '#ffffff'], UNSCORED: ['#5f6368', '#ffffff'],
+      UNKNOWN: ['#dadce0', '#202124'] };
+    const colours = palette[level] || palette.UNKNOWN;
+    const when = function (ms: number): string {
+      return ms ? new Date(ms).toISOString().replace('T', ' ').slice(0, 16) +
+                  ' UTC' : '';
+    };
+    const facts = standing
+      ? 'score ' + this.esc(Number(standing.score).toPrecision(3)) +
+        (standing.previousLevel ? ' &middot; was ' +
+          this.esc(standing.previousLevel) : '') +
+        (standing.crossedAt ? ' &middot; since ' +
+          this.esc(when(standing.crossedAt)) : '') +
+        (standing.reason ? '<br>because: ' + this.esc(standing.reason) : '')
+      : 'This person has not been assessed: nobody has signed in as them ' +
+        'since risk scoring began, or it is off.';
+    log.debug("Leaving AdminConsole.riskBadge(). " + level + ".");
+    return '<div class="risk-badge" style="display:flex;align-items:center;' +
+      'gap:28px;margin:14px 0 18px;padding:20px 28px;border-radius:14px;' +
+      'background:' + colours[0] + ';color:' + colours[1] + '">' +
+      '<div style="font-size:3em;font-weight:800;letter-spacing:.05em;' +
+      'line-height:1">' + this.esc(level) + '</div>' +
+      '<div style="font-size:1.05em;line-height:1.5"><div style="font-size:' +
+      '1.3em;font-weight:700">Current risk</div>' + facts +
+      '<div style="margin-top:6px"><a style="color:inherit;font-weight:600" ' +
+      'href="' + this.esc(standing && standing.subject
+        ? '/admin/risk?subject=' + encodeURIComponent(standing.subject) +
+          '#risk-assessments'
+        : '/admin/risk') + '">Assessments &rarr;</a></div>' +
+      '</div></div>';
+  }
+
+  // `risk` as `userDetailJson()` takes it; undefined draws no badge, because
+  // nobody read the standing.
+  userDetailPage(req, key, risk?: any) {
     const { log, adminViews, gateStateFor, queryWith, DEFAULT_BLOCKS_PER_PAGE,
             DEFAULT_PER_PAGE } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.userDetailPage(). key=" + key);
-    const view = adminViews.userDetailJson(req, key);
+    const view = adminViews.userDetailJson(req, key, risk);
     if (!view) {
       log.debug("Leaving AdminConsole.userDetailPage(). Nothing known.");
       return null;
@@ -12548,6 +12616,7 @@ class AdminConsole {
                                          artifactPage.paging);
 
     const inner = this.messagesOf(req) +
+      (risk === undefined ? '' : this.riskBadge(risk)) +
       '<div class="tiles">' +
         this.tile(row.authentications, 'authentications') +
         this.tile(row.protocols.length, 'protocols') +
@@ -13227,12 +13296,12 @@ class AdminConsole {
     };
   }
 
-  usersView(req) {
+  usersView(req, risk?: any) {
     const { log, stats, queryWith } = this.deps;
     log.debug("Entering AdminConsole.usersView().");
     const wantedUser = String(req.query.user || '').trim();
     if (wantedUser) {
-      const detail = this.userDetailPage(req, wantedUser);
+      const detail = this.userDetailPage(req, wantedUser, risk);
       if (!detail) {
         // Not a 404: this service has simply never seen the name, or has
         // forgotten it to the cap since the link was drawn. Both are answers
@@ -31658,10 +31727,13 @@ class AdminConsole {
 
     app.get('/admin/users', function (req, res) {
       log.debug("Entering the admin users page.");
-      const view = self.usersView(req);
-      self.respond(req, res, view.json, view.title, '/admin/users', view.inner,
-                   view.up);
-      log.debug("Leaving the admin users page. " + view.title + ".");
+      // A person's current risk is read before the page is drawn (#62).
+      adminViews.riskFor(req.query).then(function (risk) {
+        const view = self.usersView(req, risk);
+        self.respond(req, res, view.json, view.title, '/admin/users',
+                     view.inner, view.up);
+        log.debug("Leaving the admin users page. " + view.title + ".");
+      });
     });
 
     app.post('/admin/users', function (req, res, next) {
@@ -40672,7 +40744,14 @@ const PROTOCOL_SETTINGS_PAGES = [
            'Credential status</a>; one a trusted foreign issuer signed has ' +
            'its status list fetched, kept for its ttl and at most <code>' +
            'oid4vp.statusListMaxCacheS</code>, and a credential whose status ' +
-           'cannot be read is refused.'],
+           'cannot be read is refused. <strong>So is one that names no ' +
+           'status</strong> (<code>oid4vp.requireStatusReference</code>, ' +
+           '<code>all</code> by default in both modes), and an ldp_vc whose ' +
+           'presentation withheld its <code>credentialStatus</code>, which ' +
+           'the request asks for; a trusted issuer that publishes no status ' +
+           'is exempted by its certificate\'s thumbprint in <code>' +
+           'oid4vp.statusOptionalIssuers</code>. The result page names the ' +
+           'rule that refused.'],
     links: [['/oid4vp/verifier', 'the verifier, for a person'],
             ['/admin/vc-verifier-config', 'what it asks for']] },
 

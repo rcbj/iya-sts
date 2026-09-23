@@ -197,8 +197,11 @@ they live rather than here:
   not on the issue time because a RENEWED ticket preserves authtime, and
   checking anything else would let a renewal launder a signed-out ticket. **It
   does not reach a service ticket already in a cache** — accepting one never
-  contacts the KDC — and an AS-REQ still succeeds and CLEARS the instant,
-  because signing out is not being locked out. See `kerberos/CLAUDE.md`.
+  contacts the KDC — and an AS-REQ still succeeds, because signing out is not
+  being locked out. **It does not clear the instant** (#111, 2026-09-23; it
+  did, and re-admitted every older ticket): the new ticket is accepted and
+  every ticket from before the sign-out stays refused until the stamp's
+  horizon. `restore-kerberos` is development-only. See `kerberos/CLAUDE.md`.
 * **LDAP** — `ldap_server.js`'s connection list. RFC 4511 section 4.2 makes the
   bind the authorization state of a CONNECTION, so the connection is the session
   and closing it is the only sign-out the protocol has. `destroy()` and not

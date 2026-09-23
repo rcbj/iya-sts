@@ -7693,6 +7693,56 @@ const SETTINGS = [
                  'is never kept past its own exp. 0 fetches for every ' +
                  'presentation.' },
 
+  // A STATUS REFERENCE ON EVERY PRESENTED CREDENTIAL (#165, 2026-09-23).
+  // Neither draft-ietf-oauth-status-list section 8.3 nor the W3C Bitstring
+  // Status List forbids a relying party requiring one — both leave a missing
+  // reference to the relying party's policy — so the most secure reading is
+  // the default in both modes, and the two relaxations are settings with a
+  // warning. `off` is DEVELOPMENT ONLY through `onlyWhileValues` (the one
+  // value the marker names); `own-only` is allowed in product.
+  { key: 'oid4vp.requireStatusReference', group: 'OID4VP',
+    label: 'Require a status reference on every presented credential',
+    env: 'OID4VP_REQUIRE_STATUS_REFERENCE', type: 'enum',
+    enumValues: ['all', 'own-only', 'off'], dflt: 'all', runtime: true,
+    onlyWhile: 'acceptsCredentialsWithoutStatus', onlyWhileValues: ['off'],
+    description: 'all — the default, in both modes — refuses any credential ' +
+                 'presented to the Verifier that names no status (a Token ' +
+                 'Status List `status` claim or a BitstringStatusListEntry) ' +
+                 'resolving VALID, whoever issued it (STS-VC-0088), and an ' +
+                 'ldp_vc whose presentation did not disclose its ' +
+                 'credentialStatus (STS-VC-0089; the request asks for it). ' +
+                 'A trusted issuer that publishes no status is exempted by ' +
+                 'oid4vp.statusOptionalIssuers, not by weakening this. ' +
+                 'own-only accepts a FOREIGN credential with no reference — ' +
+                 'WARNING: such a credential can never be shown to have ' +
+                 'been revoked or suspended, so a credential its issuer took ' +
+                 'back goes on being accepted here. off also accepts one of ' +
+                 'this realm\'s own with no reference and an ldp_vc that ' +
+                 'withheld its status — a revoked credential passes by ' +
+                 'hiding its status entry — and is DEVELOPMENT MODE ONLY: in ' +
+                 'product it is ignored where it is read (logged once, ' +
+                 'STS-CORE-0106) and refused on write (STS-CORE-0103). A ' +
+                 'wallet sign-in reads its own credential\'s status from the ' +
+                 'issued register whatever this says.' },
+
+  { key: 'oid4vp.statusOptionalIssuers', group: 'OID4VP',
+    label: 'Trusted issuers exempt from the status reference',
+    env: 'OID4VP_STATUS_OPTIONAL_ISSUERS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'SHA-256 thumbprints of certificates in ' +
+                 'oid4vp.trustedIssuerCertificates whose credentials may be ' +
+                 'presented with NO status reference while ' +
+                 'oid4vp.requireStatusReference is all — hex, colon-hex as ' +
+                 '`openssl x509 -fingerprint -sha256` prints it, or ' +
+                 'base64url (`x5t#S256`). Keyed by the certificate rather ' +
+                 'than by `iss`, because the certificate is what verified ' +
+                 'the credential. WARNING: a credential from an exempted ' +
+                 'issuer that names no status can never be shown to have ' +
+                 'been revoked. A credential that DOES name a status is ' +
+                 'still checked against it, and a credential this realm ' +
+                 'issued is never exempt. Empty — the default — exempts ' +
+                 'nobody.' },
+
   // --- status lists (#38's follow-ups) ------------------------------------
   { key: 'oid4vci.statusListTtlS', group: 'OID4VCI',
     label: 'Status list time to live (s)',
@@ -9724,6 +9774,35 @@ const SETTINGS = [
     description: 'The score, in hundredths, at which a sign-in is HIGH ' +
                  'risk: 1000 is a score of 10.' },
 
+  // CALIBRATION (#62): the factors an operator sets, and the shares of
+  // sign-ins the calibration report suggests thresholds for.
+  { key: 'risk.signalFactors', group: 'Risk',
+    label: 'Signal factors',
+    env: 'STS_RISK_SIGNAL_FACTORS', type: 'csv', dflt: '', runtime: true,
+    description: 'Factors over the built-in ones, as signal=factor, ' +
+                 'comma-separated (tor-exit=8,new-device=1.5) — what ' +
+                 'Monitoring → Risk Scoring\'s calibration suggests, applied ' +
+                 'without a release. Empty uses every built-in factor. An ' +
+                 'entry naming no signal, or with a factor that is not a ' +
+                 'positive number, is ignored and logged (STS-RISK-0026).' },
+
+  { key: 'risk.calibrationMediumPercent', group: 'Risk',
+    label: 'Calibration: MEDIUM or worse (percent of sign-ins)',
+    env: 'STS_RISK_CALIBRATION_MEDIUM_PERCENT', type: 'int', dflt: 5, min: 1,
+    max: 50, runtime: true,
+    description: 'The share of sign-ins the calibration report aims to have ' +
+                 'at MEDIUM or worse: it suggests the score this share of ' +
+                 'the window\'s assessments reaches. Advice only; the ' +
+                 'threshold is risk.mediumScorePercent.' },
+
+  { key: 'risk.calibrationHighPercent', group: 'Risk',
+    label: 'Calibration: HIGH (percent of sign-ins)',
+    env: 'STS_RISK_CALIBRATION_HIGH_PERCENT', type: 'int', dflt: 1, min: 1,
+    max: 50, runtime: true,
+    description: 'The share of sign-ins the calibration report aims to have ' +
+                 'at HIGH, as risk.calibrationMediumPercent. Advice only; ' +
+                 'the threshold is risk.highScorePercent.' },
+
   { key: 'risk.assessmentRetentionDays', group: 'Risk',
     label: 'Keep assessments (days)',
     env: 'STS_RISK_ASSESSMENT_RETENTION_DAYS', type: 'int', dflt: 90,
@@ -10397,8 +10476,11 @@ const SETTINGS = [
                  'nothing contacts the KDC on that exchange — which is a ' +
                  'fact about Kerberos rather than a gap here, and /logout ' +
                  'says so on the row. An AS-REQ still succeeds: signing out ' +
-                 'is not disabling an account, and the next authentication ' +
-                 'clears the instant. Turning it OFF leaves the KDC behaving ' +
+                 'is not disabling an account. It does NOT lift the instant ' +
+                 '(#111): its new ticket is accepted, while every ticket ' +
+                 'from before the sign-out, a renewal included, stays ' +
+                 'refused until the latest one could still be valid. ' +
+                 'Turning it OFF leaves the KDC behaving ' +
                  'exactly as it did before this feature existed.' },
 
   { key: 'logout.ldapDisconnect', group: 'Logout',
@@ -12252,8 +12334,12 @@ function replacedBy(key) {
 // `ssf.breakSetSignature`, `ssf.legacySubClaim` — carry `spoilsOnPurpose`,
 // `spiffe.acceptAssertedSelectors` carries `believesAssertedSelectors`, and
 // `spiffe.attestWorkloads` (whose default is ON, so what is refused is OFF)
-// carries `servesUnattestedEntries` (#104). In a product realm a write of a
-// value other than the default is refused (STS-CORE-0103), through /admin and
+// carries `servesUnattestedEntries` (#104), and
+// `oid4vp.requireStatusReference` carries `acceptsCredentialsWithoutStatus`
+// with `onlyWhileValues: ['off']` (#165) — the marker governing only the
+// values it lists, because that enum's `own-only` is allowed in product. In
+// a product realm a write of a marked value other than the default is refused
+// (STS-CORE-0103), through /admin and
 // /admin-api alike — the `set`, `set-many` and realm `set` doors. Writing the
 // default is always allowed, which is how a stored value is taken back.
 // `mode.writeRefusalReason()` supplies the sentence that says why, per
