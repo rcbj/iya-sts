@@ -62,10 +62,14 @@ function run(t) {
   log.debug("Entering run().");
   t.log.info('=== the union of three object classes, in inheritance order ===');
   const classes = schema.classes();
-  t.equal(classes.map(function (k) { return k.name; }).join(' > '),
+  t.equal(classes.slice(0, 3).map(function (k) { return k.name; })
+            .join(' > '),
           'person > organizationalPerson > inetOrgPerson',
           'the three classes are in inheritance order, which is also the ' +
           'order the page draws them in');
+  t.equal(classes.length === 4 && classes[3].id, 'identityClaims',
+          'and the Identity Assurance claims (#128) follow them, as a group ' +
+          'that says it is not an object class');
   t.equal(classes[0].oid, '2.5.6.6', 'person is X.500\'s 2.5.6.6');
   t.equal(classes[1].oid, '2.5.6.7', 'organizationalPerson is 2.5.6.7');
   t.equal(classes[2].oid, '2.16.840.1.113730.3.2.2',
