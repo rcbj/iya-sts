@@ -13675,6 +13675,18 @@ const CODES = [
     summary: 'initiate_login_uri is not an https URL (OpenID Connect ' +
       'Registration section 2) (#120).',
     spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0189',
+    summary: 'A backchannel_logout_uri with the http scheme for a public ' +
+      'client: Back-Channel Logout 1.0 section 2.2 allows http only to a ' +
+      'confidential one (#123). At registration, a create and an ' +
+      'attribute write.',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0190',
+    summary: 'A backchannel_logout_uri the outbound policy would not dial ' +
+      '(http with federation.outboundAllowHttp off, or in product mode): ' +
+      'every delivery would be dead-lettered, so it is refused where it is ' +
+      'written (#123).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +
