@@ -28,6 +28,11 @@
 //      union, and a kind registered later appears in the view, the actions
 //      and the refusal sentence, and is dispatched to, with no other edit.
 //   G. THE RISK ENGINE: an emailed factor meets no step-up (D1).
+//   H. THE ISSUANCE POLICY: the built-in `role-issuance` carries no email
+//      rule by default; with `refuseEmailFactor` it denies a session whose
+//      credential kinds include an emailed one — carrying the obligation the
+//      PEP refuses on even where the role question is waived — and permits
+//      the same session on an authenticator app.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -382,6 +387,43 @@ function risk(t) {
   log.debug('Leaving risk().');
 }
 
+function issuancePolicy(t) {
+  log.debug('Entering issuancePolicy().');
+  const templates = require('../xacml/xacml_templates');
+  const pdp = require('../xacml/xacml_pdp');
+  const rolePep = require('../xacml/xacml_role_pep');
+  const AUTHN = templates.AUTHN_ATTRIBUTE;
+  const plain = templates.build('role-issuance', {},
+                                { name: 'role-issuance' });
+  t.check(plain.ok && !plain.policy.rules.some(function (r) {
+    return /:rule:email-factor$/.test(r.id);
+  }), 'H1. the built-in issuance policy carries no email rule by default');
+  const strict = templates.build('role-issuance',
+    { refuseEmailFactor: 'yes' }, { name: 'role-issuance' });
+  t.check(strict.ok && strict.policy.rules.some(function (r) {
+    return /:rule:email-factor$/.test(r.id);
+  }), 'H2. refuseEmailFactor: yes adds one', JSON.stringify(strict.why));
+  const request = function (kinds) {
+    log.debug('Entering request().');
+    log.debug('Leaving request().');
+    return rolePep.buildRequest({
+      application: 'app', kind: 'start-session',
+      subject: { kind: 'user', name: 'someone', authenticated: true },
+      authentication: { amr: ['pwd', 'otp'], acr: 'mfa', kinds: kinds } },
+      ['EVERYBODY'], [], ['EVERYBODY']);
+  };
+  const byEmail = pdp.evaluate(strict.policy, request(['email-code']), {});
+  const byApp = pdp.evaluate(strict.policy, request(['totp']), {});
+  t.check(byEmail.decision === 'Deny' &&
+          (byEmail.obligations || []).some(function (o) {
+            return o.id === AUTHN.OBLIGATION;
+          }) && byApp.decision === 'Permit',
+          'H3. it DENIES a session on an emailed code, with the ' +
+          'authentication obligation, and permits one on an app',
+          byEmail.decision + ' / ' + byApp.decision);
+  log.debug('Leaving issuancePolicy().');
+}
+
 module.exports = {
   name: 'authn policy',
   describe: 'The authentication policy (#64): the built-in profile, whole ' +
@@ -397,6 +439,7 @@ module.exports = {
     retired(t);
     kinds(t);
     risk(t);
+    issuancePolicy(t);
     log.debug('Leaving run().');
   }
 };
