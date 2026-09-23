@@ -2693,14 +2693,11 @@ class OAuth2Server {
       // is, as the section says, not an error.
       claims_locales_supported: ['en-US'],
       claims_parameter_supported: true,
-      // OpenID Connect RP-Initiated Logout 1.0. /oauth2/logout drops the
-      // session cookie and returns to post_logout_redirect_uri — but it neither
-      // requires nor checks id_token_hint, and outside RFC 9700 and OAuth 2.1
-      // mode it does not validate the redirect target against anything
-      // (`bcp.checkPostLogoutRedirectUri()`), so by default this is the shape
-      // of RP-initiated logout rather than its security. It is advertised
-      // because the alternative is a client with no way to end a session that
-      // this server really does end.
+      // OpenID Connect RP-Initiated Logout 1.0 (#124, #115): GET and POST, an
+      // id_token_hint verified, the return held to the client's registered
+      // post_logout_redirect_uris in every mode (development still follows
+      // one no client registered), the person asked to confirm unless the
+      // hint is this session's, and `state` handed back. `logoutEndpoint()`.
       end_session_endpoint: at + '/oauth2/logout',
       // OpenID Connect Session Management 1.0 section 3.3 (#121): the OP
       // iframe, only while `oauth2.sessionManagement` is on in this realm —
@@ -7991,66 +7988,303 @@ class OAuth2Server {
   }
 
   // WHETHER A post_logout_redirect_uri IS ONE THIS ENDPOINT WILL CONSIDER
-  // FOLLOWING AT ALL (2026-09-13). http and https in every mode, as before. A
-  // native application's PRIVATE-USE address only in RFC 9700 or OAuth 2.1
-  // mode, where `bcp.checkPostLogoutRedirectUri()` then believes one only when
-  // the client the request names registered it: with the mode off this endpoint
-  // forwards a browser with no client involved at all, and extending that to
-  // every protocol handler an operating system registers is a redirector nobody
-  // is accountable for. Anything else was refused by the schema already.
+  // FOLLOWING AT ALL: http(s), or a native application's private-use address
+  // — which `bcp.checkPostLogoutRedirectUri()` then believes only when the
+  // client registered it (#124: in every mode). Anything else was refused by
+  // the schema already.
   private logoutTargetConsidered(target: Json): Json {
-    const { log, bcp, validation } = this.deps;
+    const { log, validation } = this.deps;
     log.debug("Entering OAuth2Server.logoutTargetConsidered().");
     const text = String(target || '');
-    if (!text) {
-      log.debug("Leaving OAuth2Server.logoutTargetConsidered(). None.");
-      return false;
-    }
-    if (/^https?:\/\//i.test(text)) {
-      log.debug("Leaving OAuth2Server.logoutTargetConsidered(). http(s).");
-      return true;
-    }
     log.debug("Leaving OAuth2Server.logoutTargetConsidered().");
-    return bcp.enabled() && validation.isPrivateUseRedirect(text);
+    return !!text && (/^https?:\/\//i.test(text) ||
+                      validation.isPrivateUseRedirect(text));
   }
 
-  // Ends the session, so the next authorization request prompts again.
+  // The return address with RP-Initiated Logout section 3's `state` on it —
+  // the value the relying party sent, handed back unchanged (#124).
+  private withLogoutState(target: string, state: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.withLogoutState().");
+    if (state === undefined || state === null || state === '') {
+      log.debug("Leaving OAuth2Server.withLogoutState(). No state.");
+      return target;
+    }
+    const at = target.indexOf('#');
+    const base = at >= 0 ? target.slice(0, at) : target;
+    const sep = base.indexOf('?') >= 0 ? '&' : '?';
+    log.debug("Leaving OAuth2Server.withLogoutState().");
+    return base + sep + 'state=' + encodeURIComponent(String(state)) +
+           (at >= 0 ? target.slice(at) : '');
+  }
+
+  // A sign-out answer that is a PAGE for the person (#124, gap 8): a refusal
+  // was a JSON `oauthError` shown to a browser. `status` 400 for a refusal.
+  private logoutAnswer(res: Res, status: number, title: string,
+                       body: string): Json {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering OAuth2Server.logoutAnswer(). " + status);
+    res.status(status).type('text/html').set('Cache-Control', 'no-store')
+       .send(this.logoutPage('<h1>' + xmlEscape(title) + '</h1>' + body)
+         .replace('<title>Signed out</title>',
+                  '<title>' + xmlEscape(title) + '</title>'));
+    log.debug("Leaving OAuth2Server.logoutAnswer().");
+    return undefined;
+  }
+
+  // The value the confirmation form carries (#124): a digest of the session's
+  // CURRENT handle hash, which only a request carrying that session's cookie
+  // can have been shown. A page confirmed for one session cannot end another,
+  // and a re-authentication in between (a new handle) voids it.
+  private logoutConfirmFor(session: Json): string {
+    const { log, stsCrypto } = this.deps;
+    log.debug("Entering OAuth2Server.logoutConfirmFor().");
+    log.debug("Leaving OAuth2Server.logoutConfirmFor().");
+    return session && session.handleHash
+      ? stsCrypto.truncatedSha256Hex(String(session.handleHash) +
+                                     ':rp-initiated-logout', 32)
+      : '';
+  }
+
+  // Does a `logout_hint` name the person signed in (#124)? Section 2 leaves
+  // its form to the OP; this one answers to the username, the entry's mail
+  // and the session's public subject, case-insensitively. No hint matches.
+  private logoutHintMatches(session: Json, hint: Json): boolean {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.logoutHintMatches().");
+    const asked = String(hint || '').trim().toLowerCase();
+    if (!asked) {
+      log.debug("Leaving OAuth2Server.logoutHintMatches(). No hint.");
+      return true;
+    }
+    const user = (session && session.user) || {};
+    const names = [user.username, user.email, user.mail, user.sub,
+                   session && session.subject]
+      .filter(Boolean).map(function (one: Json): string {
+        return String(one).toLowerCase();
+      });
+    log.debug("Leaving OAuth2Server.logoutHintMatches().");
+    return names.indexOf(asked) >= 0;
+  }
+
+  // The client an id_token_hint was issued to, read UNVERIFIED and only to
+  // choose what it is verified against: `azp` where there is one, else the
+  // one audience. `verifyIdTokenHint()` then requires it among the verified
+  // `aud`.
+  private hintClientOf(hint: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.hintClientOf().");
+    let claims: Json = {};
+    try {
+      claims = JSON.parse(Buffer.from(String(hint).split('.')[1] || '',
+                                      'base64url').toString('utf8')) || {};
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.hintClientOf(): " +
+                ((e && e.message) || e));
+      // Unreadable: verifyIdTokenHint() says why.
+      claims = {};
+    }
+    const audiences = [].concat(claims.aud || []).map(String);
+    log.debug("Leaving OAuth2Server.hintClientOf().");
+    return String(claims.azp || (audiences.length === 1 ? audiences[0] : ''));
+  }
+
+  // ---------------------------------------------------------------------------
+  // OPENID CONNECT RP-INITIATED LOGOUT 1.0 (#124, which folded #115 in,
+  // 2026-09-23). GET and POST (section 2's MUST). THE ORDER IS THE FIX:
+  //
+  //   1. the request is read — a form POST's body, or the query — and a
+  //      malformed one is a PAGE (400, STS-OAUTH-0171) with the session
+  //      untouched: it used to be ended first and validated after;
+  //   2. an `id_token_hint` is VERIFIED (#115): this realm's issuer, a
+  //      signature it made, an expired one still a hint; its audience is the
+  //      client, and a `client_id` it was not issued to is refused
+  //      (STS-OAUTH-0602, in every mode — section 2's MUST);
+  //   3. `post_logout_redirect_uri` is decided — `bcp.checkPostLogoutRedirectUri()`,
+  //      in every mode: the client's own list, exactly; development still
+  //      follows one no client registered, product does not. A refused one is
+  //      not followed and the person is told on the page;
+  //   4. the person CONFIRMS, in every mode (rcbj), unless the request carries
+  //      a verified hint for THIS session (its `sid`) and any `logout_hint`
+  //      names them — so a link on another site cannot sign somebody out.
+  //      A POST that arrived without the session cookie (cross-site, which
+  //      `SameSite=Lax` does not send) is asked too, rather than answered with
+  //      a cookie clear. The page has a real button and no script;
+  //   5. only then the session ends, and the return carries `state`.
+  //
+  // `ui_locales` is accepted and English is the only language this service
+  // has, so every page is `lang="en"`, which section 2 permits.
+  // ---------------------------------------------------------------------------
   private logoutEndpoint(req: Req, res: Res): Json {
-    const { log, STS, xmlEscape, mode, bcp, frontchannel, backchannel,
-            applications, validation, errorCodes, endSession,
-            config } = this.deps;
+    const { log, validation, errorCodes, xmlEscape } = this.deps;
     const self = this;
     log.debug("Entering the logout endpoint.");
+    if (req.method === 'POST') {
+      const type = String((req.headers || {})['content-type'] || '')
+        .split(';')[0].trim().toLowerCase();
+      if (type !== 'application/x-www-form-urlencoded') {
+        errorCodes.mark(res, 'STS-OAUTH-0604');
+        log.debug("Leaving the logout endpoint. A POST that is not a form.");
+        return self.logoutAnswer(res, 400, 'This sign-out request could not ' +
+          'be read', '<p>A sign-out sent with POST is a form ' +
+          '(application/x-www-form-urlencoded, RP-Initiated Logout 1.0 ' +
+          'section 2). This one was <code>' + xmlEscape(type || '(none)') +
+          '</code>. You are still signed in.</p>');
+      }
+      const raw = typeof req.body === 'string' ? req.body
+        : (Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '');
+      const fromBody: Json = {};
+      new URLSearchParams(raw).forEach(function (value, name) {
+        fromBody[name] = fromBody[name] === undefined ? value
+          : [].concat(fromBody[name], value);
+      });
+      Object.defineProperty(req, 'query', { value: fromBody, writable: true,
+                                            configurable: true,
+                                            enumerable: true });
+    }
+    const asked = validation.check(req, 'query', LOGOUT_QUERY);
+    if (!asked.ok) {
+      log.debug("Leaving the logout endpoint. The request is malformed: " +
+                asked.code + " on \"" + asked.field + "\".");
+      errorCodes.mark(res, 'STS-OAUTH-0171');
+      return self.logoutAnswer(res, 400, 'This sign-out request could not ' +
+        'be read', '<p>' + xmlEscape(asked.detail) + '</p><p>Nothing has ' +
+        'been done: you are still signed in.</p>');
+    }
+    self.logoutRequest(req, res, asked.value).catch(function (e: Json) {
+      log.error(errorCodes.tag('STS-OAUTH-0605') + 'the logout endpoint ' +
+                'failed: ' + ((e && e.stack) || e));
+      if (!res.headersSent) {
+        errorCodes.mark(res, 'STS-OAUTH-0605');
+        self.logoutAnswer(res, 500, 'The sign-out failed', '<p>' +
+          xmlEscape(String((e && e.message) || e)) + '</p>');
+      }
+    });
+    log.debug("Leaving the logout endpoint. Handed on.");
+    return undefined;
+  }
+
+  private async logoutRequest(req: Req, res: Res, q: Json): Promise<Json> {
+    const { log, xmlEscape, bcp, backchannel, applications, errorCodes,
+            endSession, sessionOf } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.logoutRequest().");
+    // --- 2. the id_token_hint ---------------------------------------------
+    let clientId = String(q.client_id || '');
+    let hinted: Json = null;
+    if (q.id_token_hint) {
+      const hintClient = clientId || self.hintClientOf(q.id_token_hint);
+      const verdict = await self.verifyIdTokenHint(req, q.id_token_hint,
+                                                   hintClient);
+      if (!verdict.ok) {
+        errorCodes.mark(res, 'STS-OAUTH-0602');
+        log.debug("Leaving OAuth2Server.logoutRequest(). The hint.");
+        return self.logoutAnswer(res, 400, 'This sign-out request was ' +
+          'refused', '<p>RP-Initiated Logout 1.0 section 2: ' +
+          xmlEscape(verdict.why) + '</p><p>Nothing has been done: you are ' +
+          'still signed in.</p>');
+      }
+      hinted = verdict.claims;
+      clientId = hintClient;
+    }
+    const client = applications.clientConfigOf(clientId);
+    // --- 3. the return -----------------------------------------------------
+    let returnTo = '';
+    let refusedNote = '';
+    const target = q.post_logout_redirect_uri;
+    if (target && self.logoutTargetConsidered(target)) {
+      const check = bcp.checkPostLogoutRedirectUri({ target: String(target),
+                                                     client: client });
+      if (check.ok) {
+        returnTo = self.withLogoutState(String(target), q.state);
+      } else {
+        errorCodes.mark(res, check.errorCode || 'STS-OAUTH-0123');
+        log.info('oauth2: a post_logout_redirect_uri was not followed (' +
+                 (check.errorCode || '') + '): ' + check.description);
+        refusedNote = '<p class="sub">You were not returned to <code>' +
+          xmlEscape(String(target)) + '</code>: ' +
+          xmlEscape(check.description) + '</p>';
+      }
+    }
+    // --- 4. confirmation ---------------------------------------------------
+    const session = sessionOf(req);
+    // The sign-on cookie, by name — `sts_session`, which `SameSite=Lax` keeps
+    // off a cross-site POST.
+    const cookiePresented = /(?:^|;\s*)sts_session=/.test(
+      String((req.headers || {}).cookie || ''));
+    const confirmed = req.method === 'POST' && q.confirm === 'yes' &&
+      String(q.confirm_for || '') === self.logoutConfirmFor(session);
+    if (req.method === 'POST' && q.confirm === 'no') {
+      log.debug("Leaving OAuth2Server.logoutRequest(). Declined.");
+      return self.logoutAnswer(res, 200, 'You are still signed in',
+        '<p>Nothing was ended.</p>' + (returnTo
+          ? '<p><a href="' + xmlEscape(returnTo) + '">Return to the ' +
+            'application</a></p>' : ''));
+    }
+    const hintIsThisSession = !!(hinted && session && hinted.sid &&
+                                 String(hinted.sid) === String(session.id));
+    const mustAsk = !confirmed && (
+      (session && !(hintIsThisSession &&
+                    self.logoutHintMatches(session, q.logout_hint))) ||
+      (!session && req.method === 'POST' && !cookiePresented));
+    if (mustAsk) {
+      log.debug("Leaving OAuth2Server.logoutRequest(). Asking.");
+      return self.logoutConfirmPage(res, q, session, client);
+    }
+    // --- 5. the sign-out ---------------------------------------------------
     // The same session WS-Federation's wsignout1.0 ends, through the same
-    // function — one browser session shared by both protocols means signing out
-    // of either signs out of both, which is what a person testing them together
-    // expects.
+    // function — one browser session shared by both protocols means signing
+    // out of either signs out of both.
     const backchannelMark = backchannel.mark();
-    const session = endSession(req, res);
-    // ---------------------------------------------------------------------
-    // FRONT-CHANNEL LOGOUT, AND WHY IT CAN TURN A REDIRECT INTO A PAGE.
-    //
-    // Front-Channel Logout 1.0 works by loading each relying party's
-    // `frontchannel_logout_uri` in an iframe IN THIS BROWSER. A 302 to
-    // post_logout_redirect_uri abandons the document before any of them load,
-    // so where there is a fan-out to perform this endpoint renders it and
-    // offers the return as a LINK — the same trade wsfed.ts's sign-out makes
-    // about its cleanup pings, and for the same reason: a redirect that defeats
-    // the notifications is a sign-out that only looks federated.
-    //
-    // WHERE THERE IS NOTHING TO NOTIFY, NOTHING CHANGES. No client on the
-    // session registered a frontchannel_logout_uri — which is every deployment
-    // that has not asked for this — and the redirect below happens exactly as
-    // it always did. That is deliberate: the behaviour of an existing caller
-    // must not turn on a feature it never opted into.
-    //
-    // BACK-CHANNEL LOGOUT CHANGES NONE OF THAT (2026-09-17, #36). Its Logout
-    // Tokens were queued by `endSession()` above — `dropSession()` is where a
-    // session's end sends them, whichever door ended it — and go out after
-    // this answer whether it is a redirect or a page. They need no browser, so
-    // they are no reason to hold one here; where the page IS drawn, it lists
-    // them.
-    // ---------------------------------------------------------------------
+    const ended = endSession(req, res);
+    return self.logoutFinish(req, res, ended, backchannelMark, returnTo,
+                             refusedNote);
+  }
+
+  // The page that asks (#124, #115). A real form that POSTs back here with
+  // the request's own parameters and the value only this session's page can
+  // carry; no script (the root CLAUDE.md: a form needs none).
+  private logoutConfirmPage(res: Res, q: Json, session: Json,
+                            client: Json): Json {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering OAuth2Server.logoutConfirmPage().");
+    const carried = ['post_logout_redirect_uri', 'client_id',
+                     'id_token_hint', 'state', 'logout_hint', 'ui_locales']
+      .filter(function (name: string): boolean {
+        return q[name] !== undefined && q[name] !== '';
+      }).map(function (name: string): string {
+        return '<input type="hidden" name="' + name + '" value="' +
+               xmlEscape(String(q[name])) + '">';
+      }).join('');
+    const who = session && session.user ? session.user.username : '';
+    const app = client && client.known
+      ? (client.client_name || client.client_id) : (q.client_id || '');
+    log.debug("Leaving OAuth2Server.logoutConfirmPage().");
+    return this.logoutAnswer(res, 200, 'Sign out?',
+      '<p>' + (app
+        ? 'The application <code>' + xmlEscape(String(app)) + '</code> '
+        : 'An application ') + 'asked to sign you out' +
+      (who ? ' of <strong>' + xmlEscape(who) + '</strong>' : '') +
+      '. This ends your session here, and every application signed in ' +
+      'through it is told.</p>' +
+      '<form method="post" action="logout">' + carried +
+      '<input type="hidden" name="confirm_for" value="' +
+      xmlEscape(this.logoutConfirmFor(session)) + '">' +
+      '<button type="submit" name="confirm" value="yes">Sign out</button> ' +
+      '<button type="submit" name="confirm" value="no">Stay signed in' +
+      '</button></form><p class="sub">Asked because the request did not ' +
+      'prove it came from an application you are signed in to with this ' +
+      'session (RP-Initiated Logout 1.0 section 2).</p>');
+  }
+
+  // After the session has ended: the front-channel page, the return, or a
+  // page saying it is done.
+  private logoutFinish(req: Req, res: Res, session: Json,
+                       backchannelMark: Json, returnTo: string,
+                       refusedNote: string): Json {
+    const { log, xmlEscape, frontchannel, backchannel, config } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.logoutFinish().");
     const backchannelRows = session
       ? backchannel.deliveriesFor([session.id], backchannelMark) : [];
     const notifications = frontchannel.enabled()
@@ -8060,31 +8294,13 @@ class OAuth2Server {
     const notifiable = notifications.filter(function (row) {
       return !!row.url;
     });
-    const askedLogout = validation.check(req, 'query', LOGOUT_QUERY);
-    if (!askedLogout.ok) {
-      log.debug("Leaving the logout endpoint. The request is malformed: " +
-                askedLogout.code + " on \"" + askedLogout.field + "\".");
-      errorCodes.mark(res, 'STS-OAUTH-0171');
-      log.debug("Leaving OAuth2Server.logoutEndpoint().");
-      return self.oauthError(res, 400, 'invalid_request', askedLogout.detail);
-    }
-    const target = askedLogout.value.post_logout_redirect_uri;
     if (notifiable.length) {
       const waitS = Number(config.value('oauth2.frontchannelLogoutWaitS'));
-      let checked = self.logoutTargetConsidered(target) ? String(target) : '';
-      if (checked) {
-        // The same check the redirect below makes, made before the URL is drawn
-        // as a link rather than followed. A link is not a redirect and RFC 9700
-        // section 2.1 is about the redirect — but an authorization server that
-        // refused to FORWARD a browser to an unregistered URI and then printed
-        // it as a link on its own sign-out page would be splitting a hair at
-        // the reader's expense.
-        const linkCheck = bcp.checkPostLogoutRedirectUri({
-          target: checked,
-          client: applications.clientConfigOf(askedLogout.value.client_id)
-        });
-        if (!linkCheck.ok) checked = '';
-      }
+      // The return, already checked by the same rule a redirect is (#124):
+      // an authorization server that refused to FORWARD a browser to an
+      // unregistered URI and then printed it as a link on its own sign-out
+      // page would be splitting a hair at the reader's expense.
+      const checked = returnTo;
       const inner = '<h1>Signed out</h1><p class="sub">OpenID Connect ' +
         'RP-Initiated Logout 1.0, with Front-Channel Logout 1.0</p><div ' +
         'class="ok">' + (session
@@ -8093,7 +8309,7 @@ class OAuth2Server {
             'those are signed out too.'
           : 'There was no session to end. The cookie has been cleared ' +
             'anyway.') +
-        '</div>' +
+        '</div>' + refusedNote +
         frontchannel.render(notifications) +
         backchannel.render(backchannelRows) +
         (checked
@@ -8125,38 +8341,24 @@ class OAuth2Server {
          .type('text/html')
          .set('Cache-Control', 'no-store')
          .send(self.logoutPage(inner, refresh));
-      log.debug("Leaving the logout endpoint. " + notifiable.length + " " +
+      log.debug("Leaving OAuth2Server.logoutFinish(). " + notifiable.length + " " +
                 "relying part" +
                 (notifiable.length === 1 ? 'y was' : 'ies were') +
                 " notified.");
       return;
     }
-    if (self.logoutTargetConsidered(target)) {
-      // Without RFC 9700 mode this is the plainest open redirector in the
-      // service: any absolute http(s) URL in a query parameter, forwarded, with
-      // no client and no session involved. In the mode it is matched the same
-      // way an authorization request's redirect_uri is — against the client's
-      // own post_logout_redirect_uris when the request names a registered
-      // client_id, and against oauth2.redirectUris otherwise — and a miss is
-      // answered here rather than followed, because forwarding the browser is
-      // the whole of what section 2.1 forbids.
-      const check = bcp.checkPostLogoutRedirectUri({
-        target: String(target),
-        client: applications.clientConfigOf(askedLogout.value.client_id)
-      });
-      if (!check.ok) {
-        log.debug("Leaving the logout endpoint. RFC 9700 mode refused the " +
-                  "post_logout_redirect_uri.");
-        errorCodes.mark(res, check.errorCode || 'STS-OAUTH-0158');
-        log.debug("Leaving OAuth2Server.logoutEndpoint().");
-        return self.oauthError(res, 400, check.error, check.description);
-      }
-      log.debug("Leaving the logout endpoint. Redirecting to " + target + ".");
-      return res.redirect(302, String(target));
+    if (returnTo) {
+      log.debug("Leaving OAuth2Server.logoutFinish(). Returning.");
+      return res.redirect(302, returnTo);
     }
-    res.status(200).type('text/plain').send('Signed out of the mock ' +
-                                            'authorization server.\n');
-    log.debug("Leaving the logout endpoint.");
+    log.debug("Leaving OAuth2Server.logoutFinish().");
+    return self.logoutAnswer(res, 200, 'Signed out',
+      '<div class="ok">' + (session
+        ? 'The session for ' + xmlEscape(session.user.username) + ' has ' +
+          'ended, and every application signed in through it is told.'
+        : 'There was no session to end.') + '</div>' + refusedNote +
+      backchannel.render(backchannel.deliveriesFor(
+        session ? [session.id] : [], backchannelMark)));
   }
 
   // ---------------------------------------------------------------------------
@@ -14272,6 +14474,8 @@ class OAuth2Server {
     });
 
     app.get('/oauth2/logout', self.logoutEndpoint.bind(self));
+    // RP-Initiated Logout 1.0 section 2: GET and POST (#124).
+    app.post('/oauth2/logout', self.logoutEndpoint.bind(self));
 
     app.get('/oauth2/userinfo', self.userinfoResponse.bind(self));
 
@@ -14441,6 +14645,7 @@ class OAuth2Server {
       ['post', '/:as/oauth2/token', self.tokenEndpoint.bind(self)],
       ['post', '/:as/oauth2/par', self.parEndpoint.bind(self)],
       ['get', '/:as/oauth2/logout', self.logoutEndpoint.bind(self)],
+      ['post', '/:as/oauth2/logout', self.logoutEndpoint.bind(self)],
       ['get', '/:as/oauth2/userinfo', self.userinfoResponse.bind(self)],
       ['post', '/:as/oauth2/userinfo', self.userinfoResponse.bind(self)],
       ['post', '/:as/oauth2/introspect', self.introspectEndpoint.bind(self)],

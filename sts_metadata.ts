@@ -2136,11 +2136,21 @@ const SPECS: Spec[] = [
   { id: 'oidc-logout', name: 'OpenID Connect RP-Initiated Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-rpinitiated-1_0.html',
-    coverage: 'mock: end_session_endpoint really does end the session, but ' +
-              'id_token_hint is neither required nor checked and ' +
-              'post_logout_redirect_uri is not validated against any ' +
-              'registration. Front-channel and back-channel logout are ' +
-              'implemented beside it and are rows of their own.' },
+    coverage: 'full (#124, which folded #115 in, 2026-09-23): ' +
+              'end_session_endpoint answers GET and POST; the request is ' +
+              'validated before the session ends; id_token_hint is verified ' +
+              'as an ID Token this authorization server issued (expired ' +
+              'ones accepted, as section 2 allows) and its audience is the ' +
+              'client, a client_id it was not issued to being refused; the ' +
+              'End-User is asked to confirm — a page with a real button and ' +
+              'no script — unless the hint names this session and any ' +
+              'logout_hint names them; post_logout_redirect_uri is followed ' +
+              'only on an exact match with the client\'s registered list, ' +
+              'in every mode (development still follows one for a client ' +
+              'that registered none; product and OAuth 2.1 mode do not), and ' +
+              'state is returned. ui_locales is accepted and every page is ' +
+              'English, the only language this service has. Front-channel ' +
+              'and back-channel logout are rows of their own.' },
   { id: 'oid4vci', name: 'OpenID for Verifiable Credential Issuance 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html',
@@ -8620,24 +8630,19 @@ const ENDPOINTS: EndpointEntry[] = [
           'to the asking origin only.' },
   { path: '/oauth2/logout', group: 'OAuth 2.0 / OIDC', name: 'Session end ' +
       '(end_session_endpoint)',
-    specs: ['oidc', 'oidc-logout', 'rfc9700'],
-    effect: 'drops the mock session cookie, and in RFC 9700 mode revokes the ' +
-            'refresh tokens issued on that session',
+    specs: ['oidc', 'oidc-logout', 'oidc-bclogout'],
+    effect: 'ends the browser session (after confirmation unless a verified ' +
+            'id_token_hint names it), and revokes the refresh tokens issued ' +
+            'on it without offline_access',
     what: 'What end_session_endpoint in the OIDC discovery document points ' +
-          'at. Drops the session cookie and returns to ' +
-          'post_logout_redirect_uri. id_token_hint is neither required nor ' +
-          'checked. The redirect target is not validated either — this is an ' +
-          'OPEN REDIRECTOR, and the plainest one in this service — UNLESS ' +
-          'RFC 9700 mode is on, which matches it against the client\'s ' +
-          'registered post_logout_redirect_uris (or the oauth2.redirectUris ' +
-          'setting) exactly as an authorization request\'s redirect_uri, and ' +
-          'answers a miss with a 400 rather than following it. That mode ' +
-          'also makes signing out mean something to the BACK channel: every ' +
-          'refresh token issued on the session is revoked (RFC 9700 section ' +
-          '2.2.2\'s security-event MAY), since otherwise a sign-out drops a ' +
-          'cookie and leaves a thirty-day credential in the client\'s hands. ' +
-          'Access tokens are left alone — they expire in an hour, and ' +
-          'revoking them would remove the evidence of what the session did.' },
+          'at, on GET and POST (#124). The request is validated BEFORE ' +
+          'anything ends; an id_token_hint is verified as an ID Token this ' +
+          'server issued (an expired one still counts) and names the ' +
+          'client; the person is asked to confirm unless that hint is for ' +
+          'this very session; post_logout_redirect_uri is followed only when ' +
+          'the client registered it exactly — development still follows one ' +
+          'for a client that registered none, product does not — and ' +
+          'state goes back with it. Refusals are pages, not JSON.' },
   { path: '/oauth2/token', group: 'OAuth 2.0 / OIDC', name: 'Token endpoint',
     specs: ['rfc6749', 'oidc', 'rfc8693', 'rfc9396', 'oid4vci', 'rfc9449',
             'rfc7800', 'rfc9700',
@@ -8812,6 +8817,7 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/:as/oauth2/logout', group: 'OAuth 2.0 / OIDC',
     name: 'Session end (a named authorization server)',
     specs: ['oidc', 'oidc-logout'],
+    // GET and POST, as at /oauth2/logout (#124).
     what: 'The session is ONE session across every authorization server in ' +
           'this process, because it is one browser and one cookie.' },
   { path: '/:as/oauth2/jwks', group: 'OAuth 2.0 / OIDC',

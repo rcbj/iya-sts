@@ -706,9 +706,32 @@ async function testLoginScreen(meta, verify) {
            "password are all handled.");
 
   // 7. Signing out means the next request prompts again.
-  const loggedOut = await get(meta.issuer + "/oauth2/logout",
+  let loggedOut = await get(meta.issuer + "/oauth2/logout",
       { headers: { cookie: authz.cookie } });
   assert.strictEqual(loggedOut.status, 200, "logout should answer.");
+  // iya-sts #124 asks the person to confirm a sign-out that carries no
+  // id_token_hint for this session: press the page's own button. An older
+  // sts signs out at once, and its answer has no such form.
+  const confirmPage = await loggedOut.text();
+  if (/name="confirm_for"/.test(confirmPage)) {
+    const fields = {};
+    (confirmPage.match(/<input type="hidden"[^>]*>/g) || []).forEach(
+      function (tag) {
+        const name = /name="([^"]+)"/.exec(tag);
+        const value = /value="([^"]*)"/.exec(tag);
+        if (name) {
+          fields[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
+        }
+      });
+    fields.confirm = "yes";
+    loggedOut = await fetch(meta.issuer + "/oauth2/logout", {
+      method: "POST", redirect: "manual",
+      headers: { cookie: authz.cookie,
+                 "Content-Type": "application/x-www-form-urlencoded" },
+      body: form(fields) });
+    assert.strictEqual(loggedOut.status, 200, "the confirmed sign-out " +
+                       "should answer.");
+  }
   const afterLogout = await get(meta.authorization_endpoint + "?" +
       form(fresh()),
     { headers: { cookie: authz.cookie } });

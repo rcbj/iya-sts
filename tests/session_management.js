@@ -236,6 +236,24 @@ function childMain() {
     });
   }
 
+  // RP-Initiated Logout asks the person to confirm a sign-out that carries
+  // no hint for this session (#124): the page's own form, submitted.
+  const confirmSignOut = async function (first, submit) {
+    const text = String((first && first.text) || '');
+    if (!/name="confirm_for"/.test(text)) {
+      return first;
+    }
+    const form = {};
+    (text.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
+      const name = /name="([^"]+)"/.exec(tag);
+      const value = /value="([^"]*)"/.exec(tag);
+      if (name) {
+        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
+      }
+    });
+    form.confirm = 'yes';
+    return submit(form);
+  };
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
@@ -368,7 +386,10 @@ function childMain() {
          String(r.headers.location || ''));
     const heldState = p.get('session_state');
 
-    const afterLogout = await request(port, 'GET', '/oauth2/logout');
+    const afterLogout = await confirmSignOut(
+      await request(port, 'GET', '/oauth2/logout'), function (form) {
+        return request(port, 'POST', '/oauth2/logout', { form: form });
+      });
     note(jar[sm.COOKIE] === '' || jar[sm.COOKIE] === undefined,
          '3f. a sign-out clears the browser state',
          afterLogout.status + ' bs=' + jar[sm.COOKIE] + ' ' +
