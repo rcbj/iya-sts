@@ -318,7 +318,7 @@ is assumed.
 | `pre-registered` (default) | `oid4vp.clientId` | out of band |
 | `decentralized_identifier` | `decentralized_identifier:` + the realm's `did:web` | the `kid` is a DID URL into the realm's DID document |
 | `verifier_attestation` | `verifier_attestation:` + the attestation's `sub` | the Verifier Attestation JWT in the request's `jwt` header, whose `cnf` is the signing key. `oid4vp.verifierAttestation` holds one an attestation issuer signed; empty, this realm attests itself, which only a wallet that already trusts this realm accepts |
-| `openid_federation` | `openid_federation:` + the realm's base URL | the realm's Entity Configuration at `/.well-known/openid-federation`, with the `authority_hints` in `oid4vp.federationAuthorityHints` |
+| `openid_federation` | `openid_federation:` + the realm's Entity Identifier (its issuer) | the realm's Entity Configuration at `/.well-known/openid-federation`, which carries the `openid_credential_verifier` metadata and the realm's place in the federation — see [OpenID Federation](oidfed.md) |
 
 ### Not implemented
 
@@ -368,7 +368,6 @@ check are the same in both modes. See
 | `oid4vp.siopIdTokenMaxAgeS` | `OID4VP_SIOP_ID_TOKEN_MAX_AGE_S` | `300` | yes | How old a self-issued ID Token's `iat` may be. |
 | `oid4vp.clientIdPrefix` | `OID4VP_CLIENT_ID_PREFIX` | `pre-registered` | yes | How a signed request names this Verifier: `pre-registered`, `decentralized_identifier`, `verifier_attestation` or `openid_federation`. |
 | `oid4vp.verifierAttestation` | `OID4VP_VERIFIER_ATTESTATION` | *(empty)* | yes | A Verifier Attestation JWT for the `verifier_attestation` prefix. **Warning:** empty, this realm attests itself. |
-| `oid4vp.federationAuthorityHints` | `OID4VP_FEDERATION_AUTHORITY_HINTS` | *(empty)* | yes | The `authority_hints` of the realm's Entity Configuration. |
 | `oid4vp.signInRegisterMaxEntries` | `OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES` | `100000` | yes | Rows the sign-in register keeps per realm; past it the oldest is dropped, which fails closed. |
 
 The DID documents' lifetimes and signing algorithm are `oid4vci.*` settings;

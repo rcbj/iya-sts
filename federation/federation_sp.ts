@@ -237,6 +237,9 @@ interface FederationSpDeps {
   rbac: typeof rbac;
   roles: typeof roles;
   fedEncryption: typeof fedEncryption;
+  // An OP discovered through an OpenID Federation (#134), LAZILY: `oidfed/`
+  // is loaded after this module (14b) and reads it back for its RP metadata.
+  oidfedRp: () => any;
 }
 
 // The express app's registration methods, as `registerRoutes()` uses them.
@@ -407,7 +410,10 @@ class FederationSp {
       links: links,
       rbac: rbac,
       roles: roles,
-      fedEncryption: fedEncryption
+      fedEncryption: fedEncryption,
+      oidfedRp: function (): any {
+        return require('../oidfed/oidfed_rp');
+      }
     };
   }
 
@@ -2290,6 +2296,18 @@ class FederationSp {
   private authorizationRequestUrl(base, record, context) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.authorizationRequestUrl().");
+    const params = this.authorizationParams(base, record, context);
+    const joiner = String(record.fedSsoUrl).indexOf('?') === -1 ? '?' : '&';
+    const url = String(record.fedSsoUrl) + joiner + params.toString();
+    log.debug("Leaving FederationSp.authorizationRequestUrl().");
+    return url;
+  }
+
+  // The authorization request's parameters, for the query or — for an OP
+  // discovered through a federation (#134) — for a signed request object.
+  private authorizationParams(base, record, context) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.authorizationParams().");
     const responseType = String(record.fedResponseType || 'code');
     const params = new URLSearchParams();
     params.set('response_type', responseType);
@@ -2312,11 +2330,9 @@ class FederationSp {
       params.set('code_challenge', context.pkceChallenge);
       params.set('code_challenge_method', 'S256');
     }
-    const joiner = String(record.fedSsoUrl).indexOf('?') === -1 ? '?' : '&';
-    const url = String(record.fedSsoUrl) + joiner + params.toString();
-    log.debug("Leaving FederationSp.authorizationRequestUrl(). " +
+    log.debug("Leaving FederationSp.authorizationParams(). " +
               'response_type=' + responseType);
-    return url;
+    return params;
   }
 
   private pkcePair() {
@@ -2522,6 +2538,40 @@ class FederationSp {
       res.redirect(302, record.fedSsoUrl + joiner + params.toString());
       log.debug("Leaving the federation login endpoint. WS-Federation " +
                 'wsignin1.0.');
+      return;
+    }
+
+    // An OP DISCOVERED THROUGH AN OPENID FEDERATION (#134): resolved to the
+    // relationship's Trust Anchor, and asked with a signed request object
+    // under this realm's own Entity Identifier — automatic registration.
+    const rp = this.deps.oidfedRp();
+    if (rp.isFederated(record)) {
+      rp.effectiveRecord(req, record).then((got) => {
+        if (!got.ok) {
+          // error-code: none — the resolution's own code, in got.code
+          errorCodes.mark(res, String(got.code || 'STS-FED-0148'));
+          log.debug("Leaving the federation login endpoint. Not resolved.");
+          return this.refuse(res, record, 502, 'The OpenID Provider could ' +
+                             'not be trusted', xmlEscape(String(got.why)));
+        }
+        const handle = this.putContext(contextRecord);
+        const params = this.authorizationParams(base, got.record,
+                                                contexts.get(handle));
+        return rp.authorizationRequestUrl(got.record, params)
+          .then(function (url) {
+            res.redirect(302, url);
+            log.debug("Leaving the federation login endpoint. A signed " +
+                      "request to an OP in the federation.");
+          });
+      }).catch((e) => {
+        log.error(errorCodes.tag('STS-FED-0042') + 'federation: ' + id +
+                  ' threw while starting a federated sign-in: ' +
+                  (e && e.stack ? e.stack : e));
+        errorCodes.mark(res, 'STS-FED-0042');
+        this.refuse(res, record, 500, 'This service failed while starting ' +
+                    'the sign-in', xmlEscape(String((e && e.message) || e)));
+      });
+      log.debug("Leaving the federation login endpoint. Resolving the OP.");
       return;
     }
 
@@ -3503,7 +3553,19 @@ class FederationSp {
       code_verifier: context.pkceVerifier
     };
     const options: any = { method: 'POST', form: form };
-    if (record.fedClientSecret) {
+    let authenticated: Promise<any> = Promise.resolve(null);
+    if (record.fedTokenAuth === 'private_key_jwt') {
+      // An OP discovered through a federation (#134): this realm registered
+      // automatically, with nothing provisioned, and authenticates with the
+      // key its Entity Configuration publishes (RFC 7523, Connect 1.1 12.1).
+      form.client_id = String(record.fedClientId || '');
+      form.client_assertion_type =
+        'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
+      authenticated = this.deps.oidfedRp().clientAssertion(record)
+        .then(function (assertion) {
+          form.client_assertion = assertion;
+        });
+    } else if (record.fedClientSecret) {
       options.basic = { user: record.fedClientId,
                         pass: record.fedClientSecret };
     } else {
@@ -3513,8 +3575,9 @@ class FederationSp {
     }
     log.debug('consumeOauthResponse(): redeeming the code at the partner.');
     log.debug("Leaving FederationSp.consumeOauthResponse().");
-    return fedHttp.fetchJson(record, 'fedTokenUrl', options)
-                  .then((answer) => {
+    return authenticated.then(function () {
+      return fedHttp.fetchJson(record, 'fedTokenUrl', options);
+    }).then((answer) => {
       if (!answer.ok || !answer.json) {
         log.debug("Leaving FederationSp.consumeOauthResponse(). The token " +
                   'request failed.');
@@ -3992,6 +4055,30 @@ class FederationSp {
       if (record.fedProtocol === 'wsfed') {
         log.debug("Leaving FederationSp.consume().");
         return this.consumeWsFedResponse(req, res, record, params);
+      }
+      // An OP discovered through a federation (#134) is resolved again —
+      // from the resolution cache, as a rule — so the code is redeemed at,
+      // and the ID Token verified against, what its chain vouches for NOW.
+      const rp = this.deps.oidfedRp();
+      if (rp.isFederated(record)) {
+        log.debug("Leaving FederationSp.consume(). Resolving the OP.");
+        return rp.effectiveRecord(req, record).then((got) => {
+          if (!got.ok) {
+            // error-code: none — the resolution's own code, in got.code
+            errorCodes.mark(res, String(got.code || 'STS-FED-0148'));
+            return this.refuse(res, record, 502, 'The OpenID Provider could ' +
+                               'not be trusted', xmlEscape(String(got.why)));
+          }
+          return this.consumeOauthResponse(req, res, got.record, params);
+        }).catch((e) => {
+          log.error(errorCodes.tag('STS-FED-0042') + 'federation: ' + id +
+                    ' threw while resolving its OP: ' +
+                    (e && e.stack ? e.stack : e));
+          errorCodes.mark(res, 'STS-FED-0042');
+          return this.refuse(res, record, 500, 'This service failed while ' +
+                             'reading the response', xmlEscape(String(
+                               (e && e.message) || e)));
+        });
       }
       log.debug("Leaving FederationSp.consume().");
       return this.consumeOauthResponse(req, res, record, params);

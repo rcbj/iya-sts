@@ -2542,17 +2542,51 @@ const SPECS: Spec[] = [
               'here; a Verifier chooses its response mode), dynamic ' +
               'discovery of a Self-Issued OP\'s metadata (the static ' +
               'configuration is assumed), and the Self-Issued OP role.' },
-  { id: 'openid-federation', name: 'OpenID Federation 1.0',
+  { id: 'openid-federation', name: 'OpenID Federation 1.1',
     where: 'OpenID Foundation',
-    url: 'https://openid.net/specs/openid-federation-1_0.html',
-    coverage: 'partial (#129, 2026-09-23): the realm\'s own Entity ' +
-              'Configuration at /.well-known/openid-federation, self-signed, ' +
-              'with the openid_credential_verifier entity type and the ' +
-              'operator\'s authority_hints — enough for a wallet to ' +
-              'resolve an openid_federation: Client Identifier. MISSING: ' +
-              'subordinate statements, trust chain resolution, trust marks, ' +
-              'the fetch, list and resolve endpoints, and every other ' +
-              'entity type (#132-#137).' },
+    url: 'https://openid.net/specs/openid-federation-1_1.html',
+    coverage: 'full for the protocol-independent core (#132, #133, ' +
+              '2026-09-23), every role per realm: each realm\'s Entity ' +
+              'Configuration signed with a Federation Entity Key of its own ' +
+              '(rotated with overlap, retired keys kept for the Historical ' +
+              'Keys endpoint with their revocation reasons); Subordinate ' +
+              'Statements at the fetch endpoint with metadata, ' +
+              'metadata_policy and constraints; the Subordinate Listing ' +
+              'with all four filters; Trust Chain validation (10.2) and ' +
+              'resolution by walking authority_hints to a configured Trust ' +
+              'Anchor, bounded (18.1) and in process for this service\'s own ' +
+              'realms; metadata policy with the seven operators, merging, ' +
+              'critical operators and scope; the three constraints; Trust ' +
+              'Marks issued, delegated, validated (7.3, 7.2.2), revoked, ' +
+              'listed, handed out and their status answered; the resolve ' +
+              'endpoint; the section 8.9 errors. By default the default ' +
+              'realm is a Trust Anchor and every other realm its ' +
+              'Subordinate. MISSING: client authentication at the federation ' +
+              'endpoints (8.8 — "none", the default, is the only method); ' +
+              'an unauthenticated resolve request answers only from what is ' +
+              'already resolved (18.1\'s advice), so it never starts a walk; ' +
+              'signed_jwks_uri is not published.' },
+  { id: 'openid-federation-connect', name: 'OpenID Federation for OpenID ' +
+                                           'Connect 1.1',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-federation-connect-1_1.html',
+    coverage: 'partial (#132, #134, 2026-09-23): the openid_provider and ' +
+              'oauth_authorization_server entity types in every realm\'s ' +
+              'Entity Configuration, whose issuer is the realm\'s Entity ' +
+              'Identifier, with client_registration_types_supported, ' +
+              'federation_registration_endpoint and ' +
+              'request_authentication_methods_supported; AUTOMATIC ' +
+              'registration (12.1) at the authorization and PAR endpoints ' +
+              '(request object or private_key_jwt, the trust_chain header ' +
+              'honoured), EXPLICIT registration (12.2) with a signed ' +
+              'explicit-registration-response+jwt, registrations ending ' +
+              'with their chain (12.3); and this service as a federated RP — ' +
+              'an oidc federation relationship with fedTrustAnchor ' +
+              'discovers its OP through its chain and registers ' +
+              'automatically, publishing openid_relying_party metadata. ' +
+              'MISSING: the RP side registers only automatically (never ' +
+              'explicitly) and sends no trust_chain header; OID4VP\'s ' +
+              'trust of a credential issuer through the federation.' },
   { id: 'sd-jwt', name: 'RFC 9901 — Selective Disclosure for JWTs (SD-JWT)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9901',
     coverage: 'full for issuance and verification: _sd digests with a decoy, ' +
@@ -10050,15 +10084,6 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Verification verdict (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for the wallet\'s step 3 and for tests: the per-check ' +
           'verdict for a presentation.' },
-  { path: '/.well-known/openid-federation',
-    group: 'VC Presentation (OID4VP)',
-    name: 'OpenID Federation Entity Configuration',
-    specs: ['openid-federation', 'oid4vp', 'siopv2'],
-    what: 'This realm as a federation entity (#129): a self-signed ' +
-          'entity-statement+jwt naming its key and its ' +
-          'openid_credential_verifier metadata, which a wallet resolves ' +
-          'when a signed request\'s Client Identifier is ' +
-          'openid_federation:<this realm\'s base URL>. no-store.' },
   { path: '/oid4vp/done', group: 'VC Presentation (OID4VP)',
     name: 'Presentation ' +
       'complete page',
@@ -10280,6 +10305,84 @@ const ENDPOINTS: EndpointEntry[] = [
           'issue-server-key (the private key returned once), ' +
           'revoke-certificate, add-host-name and remove-host-name.' },
   // ===== SCEP endpoints (scep/) =====
+  // ===== OPENID FEDERATION 1.1 (#132, #133, 2026-09-23) =====
+  { path: '/.well-known/openid-federation', group: 'OpenID Federation',
+    name: 'The Entity Configuration',
+    specs: ['openid-federation', 'openid-federation-connect', 'oid4vp',
+            'siopv2'],
+    what: 'This realm\'s Entity Configuration (section 9): an ' +
+          'entity-statement+jwt signed with its Federation Entity Key, ' +
+          'naming its keys, its federation_entity, openid_provider, ' +
+          'oauth_authorization_server and openid_credential_verifier ' +
+          'metadata, its authority_hints (none for a Trust Anchor), the ' +
+          'Trust Marks it carries, and — as a Trust Anchor — ' +
+          'trust_mark_issuers and trust_mark_owners. no-store.' },
+  { path: '/oidfed/fetch', group: 'OpenID Federation',
+    name: 'Fetch a Subordinate Statement', specs: ['openid-federation'],
+    what: 'GET ?sub= (8.1): the statement this realm makes about one of ' +
+          'its subordinates — its keys, metadata, metadata_policy and ' +
+          'constraints. not_found for an entity it does not vouch for.' },
+  { path: '/oidfed/list', group: 'OpenID Federation',
+    name: 'Subordinate Listing', specs: ['openid-federation'],
+    what: 'GET (8.2): the Immediate Subordinates, filtered by entity_type, ' +
+          'trust_marked, trust_mark_type and intermediate.' },
+  { path: '/oidfed/resolve', group: 'OpenID Federation',
+    name: 'Resolve an entity', specs: ['openid-federation'],
+    what: 'GET ?sub=&trust_anchor= (8.3): a resolve-response+jwt carrying ' +
+          'the subject\'s resolved metadata, its Trust Chain and its ' +
+          'verified Trust Marks — for this service\'s own realms and for ' +
+          'what an administrator has resolved, never by a walk an ' +
+          'unauthenticated caller starts (18.1).' },
+  { path: '/oidfed/trust-mark', group: 'OpenID Federation',
+    name: 'The Trust Mark endpoint', specs: ['openid-federation'],
+    what: 'GET ?trust_mark_type=&sub= (8.6): a still-valid Trust Mark this ' +
+          'realm issued to the entity, as application/trust-mark+jwt.' },
+  { path: '/oidfed/trust-mark-status', group: 'OpenID Federation',
+    name: 'Trust Mark Status', specs: ['openid-federation'],
+    what: 'POST trust_mark= (8.4): a signed ' +
+          'trust-mark-status-response+jwt saying active, expired or revoked; ' +
+          '404 for a mark this realm did not issue.' },
+  { path: '/oidfed/trust-mark-list', group: 'OpenID Federation',
+    name: 'Trust Marked Entities Listing', specs: ['openid-federation'],
+    what: 'GET ?trust_mark_type=[&sub=] (8.5): the entities holding a ' +
+          'still-valid mark of the type from this realm.' },
+  { path: '/oidfed/historical-keys', group: 'OpenID Federation',
+    name: 'Federation Historical Keys', specs: ['openid-federation'],
+    what: 'GET (8.7): a signed jwk-set+jwt of every Federation Entity Key ' +
+          'this realm has retired or revoked, with iat, exp and revoked.' },
+  { path: '/oidfed/register', group: 'OpenID Federation',
+    name: 'Explicit Registration', specs: ['openid-federation-connect'],
+    what: 'POST (Connect 1.1, 12.2, #134): a relying party\'s Entity ' +
+          'Configuration naming this OP as aud ' +
+          '(application/entity-statement+jwt), or a Trust Chain beginning ' +
+          'with it (application/trust-chain+json). The chain is validated ' +
+          'to one of the realm\'s Trust Anchors, the resolved ' +
+          'openid_relying_party metadata held to every RFC 7591 check, and ' +
+          'the client registered until the chain expires; the answer is a ' +
+          'signed explicit-registration-response+jwt. 404 where ' +
+          'oidfed.clientRegistrationTypes leaves it out.' },
+  { path: '/admin/oidfed', group: 'OpenID Federation',
+    name: 'The OpenID Federation console page',
+    specs: ['openid-federation'],
+    what: 'Protocols > OpenID Federation: the realm\'s role, Entity ' +
+          'Configuration and endpoints; its Federation Entity Keys ' +
+          '(Rotate, Emergency rotation, Revoke); the subordinates it ' +
+          'vouches for and the Trust Anchors it trusts (Register, Remove); ' +
+          'the Trust Mark types it issues, the marks issued and carried, ' +
+          'and its mark policies; Resolve; and the oidfed.* settings.' },
+  { path: '/admin-api/oidfed', group: 'OpenID Federation',
+    name: 'The OpenID Federation console page over JSON',
+    specs: ['openid-federation'],
+    what: 'What GET /admin/oidfed draws, out of the same view function.' },
+  { path: '/admin-api/oidfed/:action', group: 'OpenID Federation',
+    name: 'Subordinates, anchors, Trust Marks, resolution and keys',
+    specs: ['openid-federation'],
+    what: 'The controls on /admin/oidfed as one action resource: ' +
+          'add-subordinate, remove-subordinate, add-trust-anchor, ' +
+          'remove-trust-anchor, add-mark-type, remove-mark-type, ' +
+          'set-mark-policy, remove-mark-policy, issue-trust-mark, ' +
+          'revoke-trust-mark, add-held-mark, remove-held-mark, resolve, ' +
+          'rotate-key and revoke-key.' },
   { path: '/enroll/scep', group: 'SCEP', name: 'The SCEP server',
     specs: ['rfc8894'],
     effect: 'PKIOperation issues a certificate and writes it onto the entry ' +
@@ -10479,6 +10582,17 @@ const PROTOCOLS: Protocol[] = [
           'published in its metadata or at /federation/jwks/{id}, rotated ' +
           'with a grace period; product mode requires the partner to use ' +
           'it.' },
+  { name: 'OpenID Federation', groups: ['OpenID Federation'],
+    specs: ['openid-federation', 'openid-federation-connect'],
+    what: 'Trust between entities that were never configured with each ' +
+          'other, through a chain of signed statements ending at a Trust ' +
+          'Anchor: every realm is a federation entity — a Trust Anchor, an ' +
+          'Intermediate or a Leaf — with an Entity Configuration, keys of ' +
+          'its own, subordinates it vouches for and Trust Anchors it ' +
+          'trusts, metadata policy and constraints, Trust Marks it issues ' +
+          'and carries, and the federation endpoints. By default the ' +
+          'default realm vouches for every other, so one service is a whole ' +
+          'federation.' },
   { name: 'Shared Signals', groups: ['Shared Signals'],
     specs: ['ssf', 'rfc8417', 'rfc9493', 'rfc8935', 'rfc8936'],
     what: 'A Shared Signals TRANSMITTER (OpenID SSF 1.0, final September ' +
@@ -10731,7 +10845,7 @@ const PROTOCOLS: Protocol[] = [
              'Decentralized Identifiers'],
     specs: ['oid4vci', 'oid4vp', 'sd-jwt-vc', 'vcdm', 'did-core',
             'token-status-list', 'bitstring-status-list', 'dc-api',
-            'di-jcs', 'siopv2', 'openid-federation'],
+            'di-jcs', 'siopv2'],
     what: 'Both sides of it: an issuer (three credential formats, Credential ' +
           'Offers, pre-authorized codes, deferred and batch issuance, ' +
           'notifications, status lists, key attestations) and a verifier ' +

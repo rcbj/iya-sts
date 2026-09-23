@@ -700,6 +700,21 @@ function devicesDn() {
   return 'ou=devices,' + baseDn();
 }
 
+// ou=oidfed IS THE OPENID FEDERATION REGISTER (#132, 2026-09-23): this
+// realm's Federation Entity Keys, the Subordinates it vouches for, the Trust
+// Anchors it trusts, the Trust Mark types it issues, the marks it has issued
+// and the marks issued TO it. Each is one entry of this service's own class,
+// `stsOidfedEntry`, whose kind and whole record are two attributes —
+// `oidfed/oidfed_store.ts` owns what an entry means, and the key table
+// `oidfed/federation_keys.ts`. Its own container rather than attributes on
+// `ou=applications`, because a Subordinate or a Trust Anchor is an ENTITY IN A
+// FEDERATION, which is not an application of this realm.
+function oidfedDn() {
+  log.debug("Entering oidfedDn().");
+  log.debug("Leaving oidfedDn().");
+  return 'ou=oidfed,' + baseDn();
+}
+
 // ou=policies IS the XACML policy repository — not a copy of one kept
 // elsewhere. `xacml/xacml_store.ts` argues why the store is the directory
 // rather than a table of its own, and owns the schema for what an entry here
@@ -2082,7 +2097,17 @@ const OWN_NAMES = [
   // /portal/ciba that a backchannel authentication request must carry when
   // its client registered backchannel_user_code_parameter. Hashed like a
   // password, and withheld like one (SECRET_ATTRIBUTES).
-  'stsCibaUserCode'
+  'stsCibaUserCode',
+
+  // AND THE OPENID FEDERATION REGISTER'S (#132, 2026-09-23): the class of an
+  // `ou=oidfed` entry, its kind (`keys`, `subordinate`, `anchor`,
+  // `mark-type`, `issued-mark`, `held-mark`), the Entity Identifier it is
+  // about, its record as one JSON value, and — on the realm's one `keys`
+  // entry — the Federation Entity Key table, whose rows carry the private
+  // keys, sealed where keys persist (withheld, SECRET_ATTRIBUTES).
+  // `oidfed/oidfed_store.ts` and `oidfed/federation_keys.ts` keep them.
+  'stsOidfedEntry', 'stsOidfedKind', 'stsOidfedEntityId', 'stsOidfedData',
+  'stsOidfedKeys'
 ];
 
 // The table itself, built from the two lists. `learnName()` is the ONE way in,
@@ -2975,6 +3000,15 @@ function seed() {
       'stsDeviceApplication values are the applications that have used it. ' +
       'OpenID Connect Native SSO keeps its device_secret here, hashed ' +
       '(common/devices.ts).'
+  }, { origin: 'seed' });
+  putEntry(oidfedDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'oidfed',
+    description: 'OpenID Federation 1.1: this realm\'s Federation Entity ' +
+      'Keys, the Subordinates it vouches for, the Trust Anchors it trusts ' +
+      'and the Trust Marks it issues and holds (oidfed/oidfed_store.ts). A ' +
+      'Subordinate here is published at the fetch endpoint as signed; an ' +
+      'ldapmodify of one changes what this realm vouches for.'
   }, { origin: 'seed' });
   putEntry(policiesDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -5261,6 +5295,14 @@ function autoCreateUser(detail) {
     if (existing &&
         applyFederatedAttributes(existing, info, { created: false })) {
       existing.attributes.modifytimestamp = [generalizedTime()];
+      // TOLD, because the write above edited the stored entry in place and
+      // nothing else here would have said so (#168). Without it the partner's
+      // attributes reached the store only when an unrelated write happened to
+      // touch this entry — 110ms after the sign-in had answered in a product
+      // node, so `sts_federation_encryption` read the old mail — and a row
+      // replicated from another process in between was merged over a base
+      // that never knew about them.
+      touchDirectory(existing.dn);
       log.debug('Leaving autoCreateUser(). Creation is off; the provisioned ' +
                 'entry records the federated sign-in.');
       return existing;
@@ -5369,6 +5411,8 @@ function autoCreateUser(detail) {
     }
     if (changed) {
       existing.attributes.modifytimestamp = [generalizedTime()];
+      // TOLD, for the reason the creation-off branch above gives (#168).
+      touchDirectory(existing.dn);
       log.debug('Leaving autoCreateUser(). The entry existed and now records ' +
                 'something it did not before.');
       return existing;
@@ -7933,7 +7977,10 @@ const SECRET_ATTRIBUTES = [
   'gnapsymmetrickey', 'gnapmacaroonkey',
   // A federation relationship's key table (#168): every row carries the
   // private key the partner's assertions are decrypted with.
-  'fedencryptionkey'
+  'fedencryptionkey',
+  // The realm's Federation Entity Key table (#132): every row carries the
+  // private key the realm's federation statements are signed with.
+  'stsoidfedkeys'
 ];
 
 const CLIENT_WRITTEN_OPERATIONAL = ['createtimestamp', 'modifytimestamp',
@@ -8775,6 +8822,65 @@ function deleteDeviceEntry(id) {
   return true;
 }
 
+// THE OPENID FEDERATION REGISTER (#132): every entry under ou=oidfed,
+// whole; one written (created or replaced) by its `cn`; one deleted.
+// `oidfed/oidfed_store.ts` decides what they say and names them.
+function oidfedEntryDn(cn) {
+  log.debug('Entering oidfedEntryDn().');
+  log.debug('Leaving oidfedEntryDn().');
+  return 'cn=' + escapeDnValue(String(cn)) + ',' + oidfedDn();
+}
+
+function listOidfedEntries() {
+  log.debug('Entering listOidfedEntries().');
+  const out = entriesUnder(oidfedDn()).filter(function (stored) {
+    return normalizeDn(stored.dn) !== normalizeDn(oidfedDn());
+  }).map(function (stored) {
+    const attributes = {};
+    Object.keys(stored.attributes).forEach(function (name) {
+      attributes[name] = stored.attributes[name].slice(0);
+    });
+    return { dn: stored.dn, attributes: attributes };
+  });
+  log.debug('Leaving listOidfedEntries(). ' + out.length + '.');
+  return out;
+}
+
+function writeOidfedEntry(cn, attributes) {
+  log.debug('Entering writeOidfedEntry(). cn=' + cn);
+  const dn = oidfedEntryDn(cn);
+  const existing = getEntry(dn);
+  if (!existing && totalEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writeOidfedEntry(). The directory is full.');
+    return false;
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, attributes,
+                          { origin: existing ? existing.origin : 'oidfed' });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  log.debug('Leaving writeOidfedEntry(). ' + (existing ? 'Replaced.' :
+                                                         'Created.'));
+  return true;
+}
+
+function deleteOidfedEntry(cn) {
+  log.debug('Entering deleteOidfedEntry(). cn=' + cn);
+  const stored = getEntry(oidfedEntryDn(cn));
+  if (!stored) {
+    log.debug('Leaving deleteOidfedEntry(). Not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory();
+  log.debug('Leaving deleteOidfedEntry().');
+  return true;
+}
+
 // A person's DN, and an application's, for a device entry to link to; ''
 // where the directory holds no such entry.
 function personDnOf(username) {
@@ -8919,6 +9025,10 @@ if (typeof credentials.setDirectory === 'function') {
     listDeviceEntries: listDeviceEntries,
     writeDeviceEntry: writeDeviceEntry,
     deleteDeviceEntry: deleteDeviceEntry,
+    // The OpenID Federation register (#132), checked where it is used.
+    listOidfedEntries: listOidfedEntries,
+    writeOidfedEntry: writeOidfedEntry,
+    deleteOidfedEntry: deleteOidfedEntry,
     personDnOf: personDnOf,
     applicationDnOf: applicationDnOf,
     writeSelfIssuedSubjects: writeSelfIssuedSubjects,
@@ -13450,12 +13560,14 @@ app.get('/admin/ldap/service', function (req, res) {
 // `q` matches the DN, any attribute name and any attribute value, and the
 // page says so under the box rather than leaving it to be discovered.
 // ---------------------------------------------------------------------------
-// A FEDERATION RELATIONSHIP'S KEY TABLE (#168) on this page: every row with
-// its private key taken out and the fact said, so the certificate, the kid
-// and the state stay visible and the key — ciphertext included — does not.
+// A FEDERATION RELATIONSHIP'S KEY TABLE (#168), and a realm's Federation
+// Entity Key table (#132), on this page and on the wire: every row with its
+// private key taken out and the fact said, so the certificate, the kid and
+// the state stay visible and the key — ciphertext included — does not.
 function withheldKeyTableValues(name, values) {
   log.debug('Entering withheldKeyTableValues().');
-  if (String(name).toLowerCase() !== 'fedencryptionkey') {
+  const lower = String(name).toLowerCase();
+  if (lower !== 'fedencryptionkey' && lower !== 'stsoidfedkeys') {
     log.debug('Leaving withheldKeyTableValues(). Not the key table.');
     return values;
   }
@@ -13484,10 +13596,13 @@ function ldapDirectoryView(req) {
       // A KERBEROS KEY IS WITHHELD, ciphertext included (2026-09-12) — see
       // `kerberos/krb5_person_keys.ts`. This page's job is to show an entry
       // faithfully and the sentence says exactly what was kept back.
-      attributes[canonicalName(name)] =
+      // AND A KEY TABLE'S PRIVATE KEYS (#168, #132): this page is what
+      // withheldKeyTableValues()'s header names, and #168 applied it to the
+      // wire only.
+      attributes[canonicalName(name)] = withheldKeyTableValues(name,
         certEnrollment.withheldValues(name,
           krb5PersonKeys.withheldValues(name,
-                                        stored.attributes[name].slice(0)));
+                                        stored.attributes[name].slice(0))));
     });
     listed.push({
       dn: stored.dn,

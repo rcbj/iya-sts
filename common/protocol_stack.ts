@@ -592,6 +592,28 @@ class ProtocolStack {
     require('../oid4vc/vc_signin');
     this.build('oid4vc/vc_signin', require('../oid4vc/vc_signin'), 'VcSignin');
     this.register(app, require('../oid4vc/vc_signin'), 'oid4vc/vc_signin');
+    // -------------------------------------------------------------------------
+    // 14b. OPENID FEDERATION 1.1 (#132, #133, 2026-09-23): this realm as a
+    // federation entity — its Entity Configuration at
+    // /.well-known/openid-federation (which the verifier served for #129) and
+    // the /oidfed/* endpoints. After `oauth2` and `vc_verifier`, whose
+    // metadata its Entity Configuration carries (read lazily, so the order
+    // is for a reader). The key table is a library whose wire step
+    // registers the `oidfed.key-rotate` and `oidfed.key-rotate-now` jobs.
+    // Client registration through the federation (#134) is a library that
+    // registers no route — `oidfed` serves /oidfed/register and `oauth2`'s
+    // authorization and PAR endpoints call it, both lazily — and whose wire
+    // step registers the `oidfed.registrations-expire` job; this realm as a
+    // federated relying party (`oidfed_rp`) is a library `federation_sp`
+    // and the Entity Configuration reach lazily.
+    // -------------------------------------------------------------------------
+    this.build('oidfed/federation_keys', require('../oidfed/federation_keys'),
+               'FederationKeys');
+    this.build('oidfed/oidfed', require('../oidfed/oidfed'), 'Oidfed');
+    this.build('oidfed/oidfed_registration',
+               require('../oidfed/oidfed_registration'), 'OidfedRegistration');
+    this.build('oidfed/oidfed_rp', require('../oidfed/oidfed_rp'), 'OidfedRp');
+    this.register(app, require('../oidfed/oidfed'), 'oidfed/oidfed');
     // The Kerberos KDC. Requiring it registers /KdcProxy and /krb5/principals
     // — it is one of the parent project's locked JavaScript files, which still
     // register at require (rule 1) — but NOT the raw TCP/UDP listeners on port
@@ -971,6 +993,8 @@ class ProtocolStack {
     this.build('acme/acme_api', require('../acme/acme_api'), 'AcmeApi');
     this.build('est/est_api', require('../est/est_api'), 'EstApi');
     this.build('scep/scep_api', require('../scep/scep_api'), 'ScepApi');
+    this.build('oidfed/oidfed_api', require('../oidfed/oidfed_api'),
+               'OidfedApi');
     this.build('oauth-oidc/oauth2_monitor_api',
                require('../oauth-oidc/oauth2_monitor_api'),
                'OAuth2MonitorApi');
@@ -1357,6 +1381,12 @@ class ProtocolStack {
     this.build('scep/scep', require('../scep/scep'), 'Scep');
     this.register(app, require('../scep/scep'), 'scep/scep');
     this.register(app, require('../scep/scep_admin'), 'scep/scep_admin');
+    // 23g-ii. OPENID FEDERATION'S CONSOLE PAGE (#132): after the console at
+    // 18, whose shell it draws with — the family itself is at 14b.
+    this.build('oidfed/oidfed_admin', require('../oidfed/oidfed_admin'),
+               'OidfedAdmin');
+    this.register(app, require('../oidfed/oidfed_admin'),
+                  'oidfed/oidfed_admin');
 
     // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13) — 23h. A socket owner:
     // requiring it builds the debugger listener's OWN express app and registers

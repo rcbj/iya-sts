@@ -831,6 +831,22 @@ const SCHEMA = {
       what: 'The partner\'s public keys as a JWKS document, verbatim. Read ' +
             'BEFORE fedJwksUri and never refreshed, so a relationship ' +
             'carrying this makes no outbound request for keys at all.' },
+    // OPENID FEDERATION (#134, 2026-09-23): an `oidc` relationship whose OP
+    // is DISCOVERED through its Trust Chain rather than configured by hand.
+    // See oidfed/oidfed_rp.ts, and federation/CLAUDE.md for why this is
+    // still a relationship whose trust is a configured key.
+    { name: 'fedTrustAnchor', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'OPENID CONNECT ONLY. The Entity Identifier of one of this ' +
+            'realm\'s Trust Anchors (/admin/oidfed). Set, the OP named by ' +
+            'fedPeer is resolved through its Trust Chain to that anchor, ' +
+            'its endpoints and keys are the openid_provider metadata the ' +
+            'chain vouches for, and this service registers with it ' +
+            'AUTOMATICALLY under its own Entity Identifier, signing its ' +
+            'requests and token-endpoint authentication with its ES256 ' +
+            'key — so fedSsoUrl, fedTokenUrl, fedJwks, fedJwksUri, ' +
+            'fedClientId and fedClientSecret are not read. Empty, the ' +
+            'relationship is configured by hand as always.' },
     { name: 'fedSigningCertificate', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'THE PARTNER\'S SIGNING CERTIFICATE, base64 DER — the same ' +
@@ -1230,6 +1246,7 @@ const EDITABLE = {
   fedUserinfoUrl: 'set',
   fedJwksUri: 'set',
   fedJwks: 'set',
+  fedTrustAnchor: 'set',
   fedSigningCertificate: 'set',
   fedClientId: 'set',
   fedClientSecret: 'set',
@@ -1640,7 +1657,22 @@ function readinessOf(record) {
     log.debug('Leaving readinessOf(). There is no relationship.');
     return { ready: false, missing: ['the relationship does not exist'] };
   }
-  if (record.fedRole === 'service-provider') {
+  if (record.fedRole === 'service-provider' &&
+      record.fedProtocol === 'oidc' &&
+      String(record.fedTrustAnchor || '').trim()) {
+    // DISCOVERED THROUGH THE FEDERATION (#134): the OP and the anchor are
+    // the whole configuration; what the chain does not vouch for is refused
+    // at the sign-in, by name (oidfed/oidfed_rp.ts). The authorization code
+    // flow only — automatic registration signs the request, and an ID Token
+    // on the front channel would carry no client authentication at all.
+    if (!String(record.fedPeer || '').trim()) {
+      missing.push('fedPeer');
+    }
+    if (String(record.fedResponseType || 'code') !== 'code') {
+      missing.push('fedResponseType=code (an OP discovered through a Trust ' +
+                   'Chain is used with the authorization code flow)');
+    }
+  } else if (record.fedRole === 'service-provider') {
     const row = protocolRow(record.fedProtocol);
     const needs = row ? row.needs : [];
     needs.forEach(function (name) {

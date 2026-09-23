@@ -346,6 +346,13 @@ class ProtocolEndpoints {
         '/.well-known/est/:label/serverkeygen',
         '/.well-known/est/:label/csrattrs', '/.well-known/est/:label/fullcmc'
       ].map(route),
+      // ===== OpenID Federation endpoints row (#132) =====
+      '/admin/oidfed': [
+        '/.well-known/openid-federation', '/oidfed/fetch', '/oidfed/list',
+        '/oidfed/resolve', '/oidfed/trust-mark', '/oidfed/trust-mark-status',
+        '/oidfed/trust-mark-list', '/oidfed/historical-keys',
+        '/oidfed/register'
+      ].map(route),
       // ===== SCEP endpoints row =====
       '/admin/scep': [
         '/enroll/scep', '/enroll/scep/pkiclient.exe', '/enroll/scep/:profile',

@@ -218,11 +218,29 @@ async function test() {
     assert.strictEqual(r.status, 400, r.text.slice(0, 300));
     assert.ok(/capture/.test(r.text), r.text.slice(0, 300));
   });
+  // WHETHER THE STACK PINS THE BASE (2026-09-23). The single-node and cluster
+  // stacks set global.publicBaseUrl (both nodes sit behind one balancer), and
+  // a pinned base is exactly what product mails links under; only an
+  // UNPINNED product realm has no link base at all.
+  const settings = await call("GET", realmBase() + "/admin-api/config");
+  const pinnedRow = ((settings.json && settings.json.groups) || [])
+    .reduce(function (all, g) {
+      return all.concat(g.settings || []);
+    }, ((settings.json && settings.json.settings) || []))
+    .filter(function (row) {
+      return row.key === "global.publicBaseUrl";
+    })[0];
+  const pinned = String((pinnedRow && pinnedRow.value) || "").trim()
+    .replace(/\/+$/, "");
   r = await call("GET", realmBase() + "/admin-api/mail");
-  check("product: with nothing configured the transport is off", function () {
+  check("product: with nothing configured the transport is off, and a " +
+        "link is mailed only under a pinned base", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
     assert.strictEqual(r.json.transport, "off");
-    assert.strictEqual(r.json.linkBase, "", "no unpinned link in product");
+    assert.strictEqual(r.json.linkBase, pinned
+      ? pinned + "/realm/" + REALM : "",
+      pinned ? "the pinned base and the realm's prefix"
+             : "no unpinned link in product");
   });
   if (!MAILPIT) {
     skip("sections 1-6", "MAILPIT_API_URL is not set, so there is no mail " +

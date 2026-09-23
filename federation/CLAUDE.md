@@ -66,6 +66,18 @@ partner could sign in `admin` and overwrite admin's `mail` on the way. See
 *WHICH PEOPLE A PARTNER MAY ASSERT* below: a partner signs in only the person
 its subject is linked to, and nothing is written until that is decided.
 
+**AND SINCE #134 (2026-09-23) THE KEY MAY BE A TRUST ANCHOR'S.** An `oidc`
+relationship with `fedTrustAnchor` names only its OP's Entity Identifier and
+one of the realm's Trust Anchors (`oidfed/oidfed_rp.ts`). The OP's endpoints
+and keys are the `openid_provider` metadata that a chain of signatures,
+ending at that anchor's CONFIGURED key, vouches for. So the rule still holds:
+nothing is trusted that does not verify against a key an administrator put
+here. What has moved is WHICH key — the anchor's, on `/admin/oidfed` — and
+everything below it is believed because it is signed. `fedPeer` is still
+required, and it is still the issuer an ID Token must name. `fedTokenUrl` and
+`fedJwksUri` are still the only attributes dialled. They now carry values the
+verified chain supplied, never values a request supplied.
+
 ---
 
 ## 3o. `federation.js` IS A LIBRARY (rule 3) AND ITS DIRECTORY HALF IS INVERTED (rule 6)

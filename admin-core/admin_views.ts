@@ -6049,6 +6049,9 @@ class AdminViews {
               'fedAllowUnsolicited', 'fedAcceptSignout',
               'fedRequireSignedLogout', 'fedAllowUnencrypted']
         .indexOf(field.name) === -1 &&
+        // A Trust Anchor to discover the OP through (#134) is OpenID
+        // Connect's alone.
+        (field.name !== 'fedTrustAnchor' || row.protocol === 'oidc') &&
         // The four encryption fields mean nothing to SAML 1.1 and OAuth 2.0.
         (federation.encrypts(record) ||
          ['fedEncryptionKeyType', 'fedKeyManagementAlgorithm',

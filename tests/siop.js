@@ -79,7 +79,6 @@ async function run(t) {
   } finally {
     config.clearOverride('oid4vp.clientIdPrefix');
     config.clearOverride('oid4vp.verifierAttestation');
-    config.clearOverride('oid4vp.federationAuthorityHints');
   }
   log.debug("Leaving run().");
 }
@@ -312,21 +311,18 @@ async function body(t) {
           'builds no request');
   config.clearOverride('oid4vp.verifierAttestation');
   config.setOverride('oid4vp.clientIdPrefix', 'openid_federation');
-  config.setOverride('oid4vp.federationAuthorityHints',
-                     'https://anchor.test');
   const federated = verifier.buildVpRequest(fakeReq(),
     { byReference: true, responseType: 'id_token' });
-  const entity = verifier.entityConfiguration(fakeReq());
-  const ec = claimsOf(entity);
+  // The Entity Configuration itself moved to oidfed/ (#132) and is held by
+  // tests/oidfed_entity.js; what is the verifier's is its entity type.
+  const vm = verifier.federationVerifierMetadata(fakeReq());
   t.check(federated.clientId === 'openid_federation:https://sts.test' &&
-          headerOf(entity).typ === 'entity-statement+jwt' &&
-          ec.iss === 'https://sts.test' && ec.sub === ec.iss &&
-          ec.authority_hints[0] === 'https://anchor.test' &&
-          ec.metadata.openid_credential_verifier.jwks.keys[0].kid ===
-            headerOf(entity).kid,
-          '7f. openid_federation: the base URL, and a self-signed Entity ' +
-          'Configuration whose key is the one it names in its header',
-          JSON.stringify(ec).slice(0, 300));
+          vm.jwks.keys.length === 1 && typeof vm.jwks.keys[0].kid ===
+            'string' &&
+          vm.response_uris[0] === 'https://sts.test/oid4vp/response',
+          '7f. openid_federation: the realm\'s Entity Identifier, and the ' +
+          'openid_credential_verifier metadata naming the request-signing ' +
+          'key', JSON.stringify(vm).slice(0, 300));
   log.debug("Leaving body().");
 }
 

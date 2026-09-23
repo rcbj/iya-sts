@@ -735,6 +735,11 @@ const JOBS = [
   // with an approval on /portal/ciba, deny, the user code, and ping and
   // push in development. `local: true`: this repository's own endpoint.
   { file: 'sts_ciba.js',                 browser: false, local: true },
+  // OPENID FEDERATION 1.1 (#132, 2026-09-23): the default realm a Trust
+  // Anchor and a throwaway realm its subordinate — Entity Configurations,
+  // fetch, list, resolve, Trust Marks, a registered subordinate and the
+  // keys. `local: true`: this repository's own endpoints.
+  { file: 'sts_oidfed.js',               browser: false, local: true },
   // A STATUS REFERENCE ON EVERY PRESENTED CREDENTIAL (#165, 2026-09-23): a
   // foreign credential naming none refused unless its issuer is exempted by
   // certificate thumbprint or the rule is own-only, the ldp_vc query asking

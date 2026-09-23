@@ -241,8 +241,10 @@ const DID_TYPE = /^application\/did\+json\b/;
 const SAML_TYPE = /^application\/samlmetadata\+xml\b/;
 const XML_TYPE = /^application\/xml\b/;
 const TEXT_TYPE = /^text\/plain\b/;
-// OpenID Federation 1.0 section 9: an Entity Configuration's media type.
+// OpenID Federation 1.1 section 9: an Entity Configuration's media type, and
+// 8.7.2's for the Historical Keys.
 const ENTITY_STATEMENT_TYPE = /^application\/entity-statement\+jwt\b/;
+const JWK_SET_JWT_TYPE = /^application\/jwk-set\+jwt\b/;
 
 // ---------------------------------------------------------------------------
 // A JWK THAT IS A PUBLIC KEY, and the members that would say otherwise.
@@ -429,8 +431,10 @@ const DOCUMENTS = [
       log.debug("Leaving must().");
       return bad;
     } },
-  { family: "Verifiable Credentials (OID4VCI / OID4VP)",
-    spec: "OpenID Federation 1.0 (#129)",
+  // OPENID FEDERATION'S (#132, 2026-09-23): the realm's Entity Configuration,
+  // which #129 served for the verifier alone and every realm serves now.
+  { family: "OpenID Federation",
+    spec: "OpenID Federation 1.1 section 9",
     path: "/.well-known/openid-federation",
     type: ENTITY_STATEMENT_TYPE, json: false, badCredential: "ignored",
     must: function (text) {
@@ -470,6 +474,48 @@ const DOCUMENTS = [
       if (!claims.metadata || !claims.metadata.openid_credential_verifier) {
         bad.push("no openid_credential_verifier metadata");
       }
+      log.debug("Leaving must().");
+      return bad;
+    } },
+  { family: "OpenID Federation",
+    spec: "OpenID Federation 1.1 section 8.7",
+    path: "/oidfed/historical-keys",
+    type: JWK_SET_JWT_TYPE, json: false, badCredential: "ignored",
+    // THE KEYS A REALM HAS RETIRED OR REVOKED, signed: public halves only,
+    // each with the exp it stopped being valid at. An empty list is a
+    // realm that has never rotated, which is the ordinary case here.
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      const parts = String(text || "").trim().split(".");
+      let header = null;
+      let claims = null;
+      try {
+        header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
+        claims = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+      } catch (e) {
+        log.debug("Caught in must(): " + e.message);
+      }
+      if (!header || !claims || parts.length !== 3) {
+        bad.push("not a compact JWT");
+        log.debug("Leaving must().");
+        return bad;
+      }
+      if (header.typ !== "jwk-set+jwt") {
+        bad.push("typ is " + header.typ);
+      }
+      if (!Array.isArray(claims.keys)) {
+        bad.push("no keys array");
+      }
+      (claims.keys || []).forEach(function (k, i) {
+        const secret = privateMembersIn(k || {});
+        if (secret.length) {
+          bad.push("keys[" + i + "] carries " + secret.join(", "));
+        }
+        if (!Number.isFinite(k.exp)) {
+          bad.push("keys[" + i + "] has no exp (8.7.2)");
+        }
+      });
       log.debug("Leaving must().");
       return bad;
     } },

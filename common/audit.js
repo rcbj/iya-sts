@@ -441,6 +441,44 @@ const ACTIONS = [
   { action: 'keys.retire', category: 'service',
     label: 'Retired signing keys past their grace were dropped' },
 
+  // OPENID FEDERATION (#132, 2026-09-23): a realm's Federation Entity Keys
+  // (`oidfed/federation_keys.ts`) and its register (`oidfed/oidfed.ts`).
+  { action: 'oidfed.key-minted', category: 'service',
+    label: 'A realm\'s first Federation Entity Key was made' },
+  { action: 'oidfed.key-rotated', category: 'service',
+    label: 'A realm\'s Federation Entity Key was rotated' },
+  { action: 'oidfed.key-revoked', category: 'service',
+    label: 'A Federation Entity Key was revoked' },
+  { action: 'oidfed.subordinate-set', category: 'admin',
+    label: 'An entity was registered as a federation subordinate' },
+  { action: 'oidfed.subordinate-removed', category: 'admin',
+    label: 'A federation subordinate was removed' },
+  { action: 'oidfed.anchor-set', category: 'admin',
+    label: 'A federation Trust Anchor was configured' },
+  { action: 'oidfed.anchor-removed', category: 'admin',
+    label: 'A federation Trust Anchor was removed' },
+  { action: 'oidfed.mark-type-set', category: 'admin',
+    label: 'A Trust Mark type was registered for issuing' },
+  { action: 'oidfed.remove-mark-type', category: 'admin',
+    label: 'A Trust Mark type stopped being issued' },
+  { action: 'oidfed.mark-policy-set', category: 'admin',
+    label: 'A Trust Anchor\'s policy for a Trust Mark type was set' },
+  { action: 'oidfed.remove-mark-policy', category: 'admin',
+    label: 'A Trust Anchor\'s policy for a Trust Mark type was removed' },
+  { action: 'oidfed.mark-issued', category: 'admin',
+    label: 'A Trust Mark was issued' },
+  { action: 'oidfed.mark-revoked', category: 'admin',
+    label: 'A Trust Mark was revoked' },
+  { action: 'oidfed.held-mark-added', category: 'admin',
+    label: 'A Trust Mark issued to the realm was added to its Entity ' +
+           'Configuration' },
+  { action: 'oidfed.held-mark-removed', category: 'admin',
+    label: 'A carried Trust Mark was removed' },
+  { action: 'oidfed.act-refused', category: 'admin',
+    label: 'An OpenID Federation act was refused for its input' },
+  { action: 'oidfed.resolved', category: 'admin',
+    label: 'An administrator resolved an entity\'s Trust Chain' },
+
   // The four the request that started this feature named, plus the two that
   // fall out of the same operations on something that is not a person. The
   // directory is SCHEMALESS, so what an entry IS cannot be read off an
@@ -509,6 +547,12 @@ const ACTIONS = [
 
   { action: 'application.delete', category: 'application',
     label: 'An application was deleted from the registry' },
+  // OpenID Federation client registration (#134): an application that came
+  // to exist because a Trust Anchor vouched for it, and one that tried.
+  { action: 'oidfed.registered', category: 'application',
+    label: 'A relying party was registered through an OpenID Federation' },
+  { action: 'oidfed.registration-refused', category: 'application',
+    label: 'A registration through an OpenID Federation was refused' },
 
   { action: 'admin.view', category: 'admin',
     label: 'A console page was viewed' },

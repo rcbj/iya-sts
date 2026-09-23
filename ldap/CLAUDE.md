@@ -727,6 +727,25 @@ container is seeded like the others; `listDeviceEntries()`,
 `credentials.deviceStore()`, and `common/devices.ts` decides what an entry
 means. #164 adds the rest of what a device is to these same entries.
 
+## `ou=oidfed`: THE OPENID FEDERATION REGISTER (2026-09-23, #132)
+
+Each realm's tree holds `ou=oidfed`, and under it one entry per thing the
+realm knows as a federation entity: class `stsOidfedEntry`, `stsOidfedKind`
+(`keys`, `subordinate`, `anchor`, `mark-type`, `issued-mark`, `held-mark`,
+`mark-policy`), `stsOidfedEntityId` and the record as one JSON value in
+`stsOidfedData`, named `cn=<kind prefix><SHA-256 digest>`. The realm's one
+`keys` entry holds the Federation Entity Key table in `stsOidfedKeys`, one
+row per value with the private key SEALED where keys persist — in
+SECRET_ATTRIBUTES, and redacted row by row on the wire and on
+`/admin/ldap/directory` by `withheldKeyTableValues()`, which #168 wrote for
+`fedEncryptionKey` and which that day's change also wired into the directory
+page its header named (#168 had applied it to searches only). All four are
+merged whole (`directory_merge.js`'s SINGLE). `listOidfedEntries()`,
+`writeOidfedEntry()` and `deleteOidfedEntry()` are the hooks, reached
+through `credentials.oidfedStore()`; `oidfed/oidfed_store.ts` decides what
+an entry means. Written over the socket only by an Admin Write holder in
+product mode, like every other container here.
+
 ## `stsCibaUserCode`: THE PERSON'S CIBA USER CODE (2026-09-23, #131)
 
 The secret a CIBA client that registered `backchannel_user_code_parameter`

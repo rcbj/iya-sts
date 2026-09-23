@@ -4342,6 +4342,23 @@ class Credentials {
     return answer;
   }
 
+  // THE OPENID FEDERATION REGISTER (#132), for `oidfed/oidfed_store.ts`: the
+  // directory's three hooks over ou=oidfed, each answering nothing (an empty
+  // list, false) where no directory is loaded in this process.
+  oidfedStore(operation: string, args: any[]): any {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.oidfedStore(). ' + operation);
+    const empty = operation === 'listOidfedEntries' ? [] : false;
+    if (!directory || typeof directory[operation] !== 'function') {
+      log.debug('Leaving Credentials.oidfedStore(). No store.');
+      return empty;
+    }
+    const answer = directory[operation].apply(null, args);
+    log.debug('Leaving Credentials.oidfedStore().');
+    return answer;
+  }
+
   // A PERSON'S CIBA USER CODE (#131), for `oauth-oidc/ciba.ts`: the stored
   // hash ('' for none or no store), and the hash written ('' removes it).
   readCibaUserCode(username) {
@@ -6306,6 +6323,7 @@ export = {
   writeSelfIssuedSubjects: slot.forward('writeSelfIssuedSubjects'),
   selfIssuedSubjectOwner: slot.forward('selfIssuedSubjectOwner'),
   deviceStore: slot.forward('deviceStore'),
+  oidfedStore: slot.forward('oidfedStore'),
   readCibaUserCode: slot.forward('readCibaUserCode'),
   writeCibaUserCode: slot.forward('writeCibaUserCode'),
   installInstance: (instance: Credentials): void => slot.install(instance),

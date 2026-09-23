@@ -1241,6 +1241,55 @@ class CryptoMetadata {
           ];
         } },
 
+      { name: 'OpenID Federation',
+        signs: 'Every federation statement a realm makes — its Entity ' +
+               'Configuration, its Subordinate Statements, the Trust Marks ' +
+               'it issues, and its resolve, Trust Mark Status and ' +
+               'Historical Keys responses — as typed JWTs (RFC 8725 3.11) ' +
+               'with the realm\'s Federation Entity Key, a key kept apart ' +
+               'from every protocol key (OpenID Federation 1.1 3.1.1).',
+        verifies: 'Every statement of a Trust Chain against the keys the ' +
+                  'statement above it names, and the last against the keys ' +
+                  'CONFIGURED for the Trust Anchor (10.2); an Entity ' +
+                  'Configuration against its own keys; a Trust Mark ' +
+                  'against its issuer\'s keys as established through the ' +
+                  'issuer\'s own chain (7.3), and its delegation against ' +
+                  'the owner the anchor names (7.2.2). The kid must name ' +
+                  'exactly one key; HMAC and none are refused.',
+        encrypts: 'Nothing.',
+        decrypts: 'Nothing.',
+        keys: 'One Federation Entity Key table per realm (oidfed.signingAlg, ' +
+              'ES256 by default, ML-DSA offered), on the realm\'s ou=oidfed ' +
+              'entry with the private halves sealed under the ' +
+              'key-encryption key wherever keys persist; a next key ' +
+              'published ahead, retired keys published through ' +
+              'oidfed.keyOverlapDays and kept for the Historical Keys ' +
+              'endpoint for good, their private halves dropped at ' +
+              'retirement. The pinned keys of each Trust Anchor and ' +
+              'subordinate are public keys in the register.',
+        hashes: 'SHA-256 for the RFC 7638 thumbprint each key\'s kid is, and ' +
+                'to name a register entry after the entity or mark it is ' +
+                'about.',
+        whatItDoesNot: 'It does not authenticate a client at a federation ' +
+                       'endpoint (8.8 — "none" is the default and the only ' +
+                       'method here), and it signs no federation statement ' +
+                       'with a protocol key or the other way round.',
+        envelopes: ['jws', 'jwt', 'jwk', 'thumbprint'],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          const statement = require('../oidfed/entity_statement');
+          const held = require('../common/helpers');
+          log.debug("Leaving algorithms().");
+          return [
+            ['Federation Entity Key algorithms offered',
+             held.FEDERATION_KEY_ALGS.slice(0)],
+            ['This realm\'s new keys, through oidfed.signingAlg',
+             [String(config.value('oidfed.signingAlg') || 'ES256')]],
+            ['Signatures verified in federation statements',
+             statement.acceptedAlgorithms()]
+          ];
+        } },
+
       { name: 'XACML',
         signs: 'Nothing. A decision is not a token and carries no signature.',
         verifies: 'Nothing in the decision path. The remote PEP\'s client ' +

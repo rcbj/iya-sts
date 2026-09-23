@@ -68,7 +68,11 @@ const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
                 'stsactivationexpires', 'appregistrationjson',
                 'stsapppassword', 'stsidaverification',
                 'stsselfissuedsubject', 'stsdevicesecrethash',
-                'stsdevicesession', 'stscibausercode'];
+                'stsdevicesession', 'stscibausercode',
+                // The OpenID Federation register (#132): a record and a key
+                // table are each one JSON value, written whole.
+                'stsoidfedkind', 'stsoidfedentityid', 'stsoidfeddata',
+                'stsoidfedkeys'];
 
 // Always merged by value: lists this service appends to itself.
 const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',

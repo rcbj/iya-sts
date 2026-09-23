@@ -465,6 +465,9 @@ interface OAuth2ServerDeps {
   identityAssurance: typeof identityAssurance;
   devices: typeof devices;
   ciba: typeof ciba;
+  // OpenID Federation client registration (#134), LAZILY: `oidfed/` is
+  // loaded after this module (14b) and reaches it back for its metadata.
+  federatedRegistration: () => Json;
   usedAssertions: typeof usedAssertions;
   gate: typeof gate;
   debuggerAccess: typeof debuggerAccess;
@@ -1587,6 +1590,9 @@ class OAuth2Server {
       identityAssurance: identityAssurance,
       devices: devices,
       ciba: ciba,
+      federatedRegistration: function (): Json {
+        return require('../oidfed/oidfed_registration');
+      },
       usedAssertions: usedAssertions,
       gate: gate,
       debuggerAccess: debuggerAccess,
@@ -2928,6 +2934,23 @@ class OAuth2Server {
               Object.keys(metadata).length + " " +
         "member(s).");
     return metadata;
+  }
+
+  // THIS REALM'S PROTOCOL METADATA AS AN OPENID FEDERATION ENTITY (#132):
+  // the two documents its Entity Configuration carries under the
+  // `openid_provider` and `oauth_authorization_server` entity types (OpenID
+  // Federation for OpenID Connect 1.1, 5.1.2 and 5.1.3). Unsigned — the
+  // Entity Configuration is their signature — and the default authorization
+  // server's, whose `issuer` is the realm's Entity Identifier.
+  federationMetadata(req: Req): Json {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.federationMetadata().");
+    const op = this.oidcMetadata(req);
+    const as = this.asMetadata(req);
+    delete op.signed_metadata;
+    delete as.signed_metadata;
+    log.debug("Leaving OAuth2Server.federationMetadata().");
+    return { openid_provider: op, oauth_authorization_server: as };
   }
 
   // signed_metadata is an RFC 8414 member and OpenID Connect Discovery does not
@@ -7095,6 +7118,60 @@ class OAuth2Server {
                                             enumerable: true });
     }
     const outer = Object.assign({}, req.query || {});
+    // -----------------------------------------------------------------------
+    // AUTOMATIC REGISTRATION (OpenID Federation for OpenID Connect 1.1,
+    // 12.1, #134). A client_id that is an Entity Identifier this realm has
+    // no registration for, arriving with a signed request object, is
+    // resolved to one of this realm's Trust Anchors and REGISTERED before
+    // anything below reads the client — so every later check (the request
+    // object's signature, the redirect_uri, the response types) is the
+    // ordinary one, against a registration the federation vouched for. A
+    // refusal is answered HERE and never redirected (12.1.3: the
+    // redirection URI of an entity trust was not established with is not
+    // one to send anything to). `oidfed/oidfed_registration.ts` argues it.
+    // -----------------------------------------------------------------------
+    const federated = self.deps.federatedRegistration();
+    if (federated.wants(req, outer.client_id)) {
+      federated.automatic(req, String(outer.client_id), {
+        request: typeof outer.request === 'string' ? outer.request : ''
+      }).then(function (got: Json): Json {
+        if (!got.ok) {
+          log.info('oauth2: automatic registration of "' + outer.client_id +
+                   '" was refused (' + got.error + '): ' + got.description);
+          res.set('Cache-Control', 'no-store');
+          // error-code: none — the registration's own code, in got.code
+          errorCodes.mark(res, String(got.code || 'STS-OIDFED-0052'));
+          log.debug("Leaving OAuth2Server.authorizeEndpoint(). Automatic " +
+                    "registration refused.");
+          return self.oauthError(res, got.status || 400, got.error,
+                                 got.description);
+        }
+        log.debug("Leaving OAuth2Server.authorizeEndpoint(). Registered " +
+                  "through the federation.");
+        return self.authorizeWithClient(req, res, outer);
+      }).catch(function (e: Json): void {
+        log.error(errorCodes.tag('STS-OIDFED-0050') + 'the authorization ' +
+                  'endpoint failed while registering a federation client: ' +
+                  (e && e.stack ? e.stack : e));
+        if (!res.headersSent) {
+          errorCodes.mark(res, 'STS-OIDFED-0050');
+          self.oauthError(res, 500, 'server_error',
+                          String((e && e.message) || e));
+        }
+      });
+      return undefined;
+    }
+    log.debug("Leaving OAuth2Server.authorizeEndpoint().");
+    return self.authorizeWithClient(req, res, outer);
+  }
+
+  // The authorization endpoint once the client is whatever it is going to be
+  // — registered by hand, through RFC 7591, or through the federation above.
+  private authorizeWithClient(req: Req, res: Res, outer: Json): Json {
+    const { log, STS, config, applications, errorCodes, requestObject
+} = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.authorizeWithClient().");
     const client = applications.clientConfigOf(outer.client_id);
     const jwtSecured = (outer.request !== undefined && outer.request !== '') ||
                        (outer.request_uri !== undefined &&
@@ -7103,7 +7180,7 @@ class OAuth2Server {
         !client.require_signed_request_object &&
         !self.deps.fapi.requiresSignedRequestObject() &&
         self.capabilitiesFor(req).require_signed_request_object !== true) {
-      log.debug("Leaving OAuth2Server.authorizeEndpoint(). Not a " +
+      log.debug("Leaving OAuth2Server.authorizeWithClient(). Not a " +
                 "JWT-secured request.");
       return self.withIdTokenHint(req, res);
     }
@@ -7118,7 +7195,7 @@ class OAuth2Server {
         log.info('oauth2: an authorization request from "' +
                  (outer.client_id || '(no client_id)') + '" was refused (' +
                  result.error + '): ' + result.description);
-        log.debug("Leaving OAuth2Server.authorizeEndpoint(). The request " +
+        log.debug("Leaving OAuth2Server.authorizeWithClient(). The request " +
                   "object is refused.");
         errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-OAUTH-0340');
         return self.oauthError(res, 400, result.error, result.description);
@@ -7133,7 +7210,7 @@ class OAuth2Server {
                                               configurable: true,
                                               enumerable: true });
       }
-      log.debug("Leaving OAuth2Server.authorizeEndpoint(). Resolved.");
+      log.debug("Leaving OAuth2Server.authorizeWithClient(). Resolved.");
       return self.withIdTokenHint(req, res);
     }).catch(function (e) {
       log.error(errorCodes.tag('STS-OAUTH-0373') + 'the authorization ' +
@@ -7145,7 +7222,7 @@ class OAuth2Server {
                         String((e && e.message) || e));
       }
     });
-    log.debug("Leaving OAuth2Server.authorizeEndpoint(). Resolving a " +
+    log.debug("Leaving OAuth2Server.authorizeWithClient(). Resolving a " +
               "request object.");
   }
 
@@ -13549,6 +13626,29 @@ class OAuth2Server {
         'parameter, no Authorization: Basic header and no client assertion.',
         'STS-OAUTH-0405');
     }
+    // AUTOMATIC REGISTRATION AT THE PAR ENDPOINT (OpenID Federation for
+    // OpenID Connect 1.1, 12.1.1.2, #134): an Entity Identifier this realm has
+    // no registration for is registered through its Trust Chain first,
+    // proving itself with a signed request object or a private_key_jwt
+    // assertion audienced to this OP alone — and a refusal is this
+    // endpoint's JSON error, where 12.1.3 says the trust errors belong.
+    const federated = self.deps.federatedRegistration();
+    if (federated.wants(req, clientId)) {
+      const got = await federated.automatic(req, clientId, {
+        request: typeof body.request === 'string' ? body.request : '',
+        clientAssertion: typeof body.client_assertion === 'string' &&
+          body.client_assertion_type ===
+            'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
+          ? body.client_assertion : ''
+      });
+      if (!got.ok) {
+        log.debug("Leaving OAuth2Server.parRequest(). Automatic " +
+                  "registration refused.");
+        // error-code: none — the registration's own code, in got.code
+        return refuse(got.status || 400, got.error, got.description,
+                      String(got.code || 'STS-OIDFED-0052'));
+      }
+    }
     const registered = applications.clientConfigOf(clientId);
 
     // FAPI (#138): one client, however many ways the request names it.
@@ -15456,6 +15556,111 @@ class OAuth2Server {
     return self.oauthError(res, 400, refusal.error, refusal.description);
   }
 
+  // -------------------------------------------------------------------------
+  // A CLIENT REGISTERED THROUGH AN OPENID FEDERATION (OpenID Federation for
+  // OpenID Connect 1.1, section 12; #134). The RP's metadata is its RESOLVED
+  // metadata — its Entity Configuration read through every superior's
+  // policy, from a Trust Chain `oidfed/oidfed_registration.ts` verified to
+  // one of this realm's Trust Anchors — and it is held to EXACTLY the checks
+  // `registerClient()` holds an RFC 7591 registration to: the addresses, the
+  // algorithms, the keys an encrypted response needs, RFC 9700 mode's rules
+  // and the scopes. A second, looser set would be a second opinion about
+  // what a client may be.
+  //
+  //   federation   `{ type: 'automatic' | 'explicit', expiresAt (seconds),
+  //                trustAnchor }` — recorded on the entry, which is unknown
+  //                to every endpoint past `expiresAt` (12.3)
+  //   options.secret   issue a client secret (Explicit Registration, for an
+  //                RP that asked for a secret-based method), expiring with
+  //                the registration (12.2.2)
+  //
+  // No registration_access_token and no registration_client_uri: 12.2.2 —
+  // an RP updates its registration by registering again. Answers `{ ok,
+  // record }` or `{ ok: false, error, description, code }` in RFC 7591's
+  // vocabulary.
+  // -------------------------------------------------------------------------
+  async registerFederatedClient(req: Req, clientId: string, metadata: Json,
+                                federation: Json,
+                                options?: Json): Promise<Json> {
+    const { log, randomId, config, bcp, applications, idTokenEncryption,
+            pairwiseSubjects } = this.deps;
+    const self = this;
+    const o = options || {};
+    log.debug("Entering OAuth2Server.registerFederatedClient(). " + clientId);
+    if (!Array.isArray(metadata.redirect_uris) ||
+        !metadata.redirect_uris.length) {
+      log.debug("Leaving OAuth2Server.registerFederatedClient(). No " +
+                "redirect_uris.");
+      return { ok: false, error: 'invalid_redirect_uri', code:
+               'STS-OIDFED-0052', description: 'the relying party\'s ' +
+               'resolved metadata registers no redirect_uris.' };
+    }
+    await self.prefetchRegisteredKeys(metadata);
+    const problem =
+      applications.registrationUriProblem(metadata) ||
+      applications.introspectionResponseProblem(metadata) ||
+      applications.idTokenEncryptionMetadataProblem(metadata) ||
+      idTokenEncryption.registrationKeyProblem(metadata) ||
+      applications.jarmMetadataProblem(metadata) ||
+      self.deps.jarm.registrationKeyProblem(metadata) ||
+      applications.requestObjectMetadataProblem(metadata) ||
+      applications.pushedAuthorizationMetadataProblem(metadata) ||
+      applications.oidcSubjectMetadataProblem(metadata) ||
+      applications.cibaMetadataProblem(metadata) ||
+      applications.oidcRegistrationProblem(metadata) ||
+      applications.mtlsMetadataProblem(metadata) ||
+      self.mtlsRegistrationProblem(metadata) ||
+      applications.authorizationDetailsMetadataProblem(metadata) ||
+      self.registeredScopeProblem(metadata);
+    if (problem) {
+      log.debug("Leaving OAuth2Server.registerFederatedClient(). " +
+                problem.description);
+      return { ok: false, error: problem.error, description:
+               problem.description, code: problem.errorCode ||
+               'STS-REG-0070' };
+    }
+    const sector = await pairwiseSubjects.sectorIdentifierProblem(metadata);
+    if (sector) {
+      log.debug("Leaving OAuth2Server.registerFederatedClient(). The " +
+                "sector_identifier_uri.");
+      return { ok: false, error: sector.error, description:
+               sector.description, code: sector.errorCode ||
+               'STS-REG-0169' };
+    }
+    const bcpCheck = bcp.checkClientRegistration(metadata);
+    if (!bcpCheck.ok) {
+      log.debug("Leaving OAuth2Server.registerFederatedClient(). RFC 9700 " +
+                "mode refused it.");
+      return { ok: false, error: bcpCheck.error, description:
+               bcpCheck.description, code: bcpCheck.errorCode ||
+               'STS-OAUTH-0158' };
+    }
+    const secretBytes = Number(config.value('oauth2.registeredSecretBytes')) ||
+                        24;
+    const record = self.clientRecord(self.asBaseOf(req), metadata, clientId,
+                                     o.secret ? randomId(secretBytes)
+                                              : undefined, undefined);
+    delete record.registration_access_token;
+    delete record.registration_client_uri;
+    if (o.secret) {
+      record.client_secret_expires_at = Number(federation.expiresAt);
+    } else {
+      delete record.client_secret;
+      delete record.client_secret_expires_at;
+    }
+    const stored = applications.register(clientId, record,
+                                         { federation: federation });
+    if (!stored) {
+      log.debug("Leaving OAuth2Server.registerFederatedClient(). The " +
+                "register refused it.");
+      return { ok: false, error: 'invalid_client_metadata', code:
+               'STS-OIDFED-0052', description: 'the registration could ' +
+               'not be stored.' };
+    }
+    log.debug("Leaving OAuth2Server.registerFederatedClient(). Registered.");
+    return { ok: true, record: record };
+  }
+
   private async registerClient(req: Req, res: Res): Promise<Json> {
     const { log, baseUrlOf, randomId, parseBody,
             softwareStatement, config, bcp, applications,
@@ -16445,6 +16650,8 @@ export = {
   installInstance: (instance: OAuth2Server): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   asMetadata: slot.forward('asMetadata'),
+  registerFederatedClient: slot.forward('registerFederatedClient'),
+  federationMetadata: slot.forward('federationMetadata'),
   // THE TWO ADVERTISED SIGNING LISTS, for `admin-ui/crypto_metadata.ts`.
   // They are already in the discovery document, so exporting them
   // publishes nothing new; what it buys is that the crypto page reports the
