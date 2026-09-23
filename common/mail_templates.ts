@@ -52,18 +52,25 @@ type Json = any;
 const CATEGORIES = [
   { id: 'security', optional: false,
     label: 'Security notices',
+    // #64: the layout's `{{reason}}`, finishing "because it is ...".
+    reason: 'a security notice about your account, which cannot be turned ' +
+            'off',
     what: 'Something happened to your account: it was disabled, your ' +
           'sessions were ended, your password changed, a credential was ' +
           'marked compromised, recovery was started, your address changed.' },
   { id: 'account', optional: false,
     label: 'Links you or an administrator asked for',
+    reason: 'something you or an administrator asked for',
     what: 'A password reset link, an activation link, an address ' +
           'verification link, a test message.' },
   { id: 'notification', optional: true,
     label: 'Notifications',
+    reason: 'a notification, which you can turn off on your portal',
     what: 'Everything else this service may tell you about. Nothing sends ' +
-          'in this category yet; it is where #62\'s and #64\'s messages ' +
-          'will go, and declining it now is honoured then.' }
+          'in this category yet; it is where #62\'s messages will go, and ' +
+          'declining it now is honoured then. (#64\'s sign-in codes and ' +
+          'links are SECURITY messages: declining them would be declining ' +
+          'to sign in.)' }
 ];
 
 interface TemplateSpec {
@@ -211,6 +218,82 @@ const BUILT_IN: TemplateSpec[] = [
           '<strong>{{username}}</strong> at {{when}}: {{act}}.</p>' +
           '<p>{{why}}</p><p>You receive this because you hold Admin Write ' +
           'in this realm.</p>' },
+  // -------------------------------------------------------------------------
+  // #64: THE THREE MESSAGES OF THE EMAIL MECHANISMS AND THE RECOVERY-CODE
+  // RESET. `security`, so nobody can decline them: a sign-in code is asked
+  // for by the person, and a refused reset is exactly what they must hear.
+  // A sign-in code or link is never logged: `common/mail.ts` drops a sent
+  // message's body, and the step keeps only a hash.
+  // -------------------------------------------------------------------------
+  { id: 'sign-in-code', category: 'security',
+    title: 'A sign-in code',
+    values: ['username', 'code', 'minutes'],
+    links: [],
+    subject: 'Your {{service}} sign-in code: {{code}}',
+    text: 'Your code to sign in to {{service}} as {{username}} is:\n\n' +
+          '    {{code}}\n\nIt works once, for {{minutes}} minutes. Nobody ' +
+          'from {{service}} will ever ask you for it.\n\nIf you are not ' +
+          'signing in, somebody who knows your account name is trying to: ' +
+          'ignore this code, and consider changing your password.\n',
+    html: '<p>Your code to sign in to {{service}} as ' +
+          '<strong>{{username}}</strong> is:</p><p><strong>' +
+          '{{code}}</strong></p><p>It works once, for {{minutes}} minutes. ' +
+          'Nobody from {{service}} will ever ask you for it.</p><p>If you ' +
+          'are not signing in, somebody who knows your account name is ' +
+          'trying to: ignore this code, and consider changing your ' +
+          'password.</p>' },
+  { id: 'sign-in-link', category: 'security',
+    title: 'A sign-in link',
+    values: ['username', 'minutes'],
+    links: ['signin'],
+    subject: 'Your {{service}} sign-in link',
+    text: 'To finish signing in to {{service}} as {{username}}, open this ' +
+          'link IN THE BROWSER WHERE YOU STARTED SIGNING IN, within ' +
+          '{{minutes}} minutes:\n\n{{signin}}\n\nIt works once, and ' +
+          'only in that browser.\n\nIf you are not signing in, ignore ' +
+          'this message: the link cannot sign anybody else in.\n',
+    html: '<p>To finish signing in to {{service}} as ' +
+          '<strong>{{username}}</strong>, <a href="{{signin}}">open this ' +
+          'link</a> in the browser where you started signing in, within ' +
+          '{{minutes}} minutes.</p><p>It works once, and only in that ' +
+          'browser.</p><p>If you are not signing in, ignore this message: ' +
+          'the link cannot sign anybody else in.</p>' },
+  { id: 'reset-refused-attempt', category: 'security',
+    title: 'A password reset was refused',
+    values: ['username', 'when'],
+    links: [],
+    subject: 'Somebody tried to reset your {{service}} password',
+    text: 'At {{when}} somebody asked to reset the password of the ' +
+          'account {{username}}, named this address, and gave a recovery ' +
+          'code that is not one of yours. Nothing was changed and no reset ' +
+          'link was sent.\n\nIf this was you, try again with an unused ' +
+          'recovery code. If it was not, somebody knows your account name ' +
+          'and address; contact whoever manages your account.\n',
+    html: '<p>At {{when}} somebody asked to reset the password of the ' +
+          'account <strong>{{username}}</strong>, named this address, and ' +
+          'gave a recovery code that is not one of yours. Nothing was ' +
+          'changed and no reset link was sent.</p><p>If this was you, try ' +
+          'again with an unused recovery code. If it was not, somebody ' +
+          'knows your account name and address; contact whoever manages ' +
+          'your account.</p>' },
+  // -------------------------------------------------------------------------
+  // #64: THE STANDARD LAYOUT, wrapped round EVERY message's body. Not a
+  // message itself — `send()` refuses it by name — and reworded per realm
+  // like any other, which is the "standard email template ... per-realm
+  // customization" the ticket asked for. `{{content}}` is the message's own
+  // rendered body (HTML already escaped, text already plain) and must appear
+  // exactly once in each part; `{{subject}}` is the message's own subject;
+  // `{{reason}}` is why the person received it (its category).
+  // -------------------------------------------------------------------------
+  { id: 'layout', category: 'account',
+    title: 'The layout every message is wrapped in',
+    values: ['subject', 'content', 'reason'],
+    links: [],
+    subject: '{{subject}}',
+    text: '{{content}}\n-- \n{{service}} ({{realm}})\nYou received this ' +
+          'because it is {{reason}}.\n',
+    html: '<div>{{content}}</div><hr><p><small>{{service}} ({{realm}}). ' +
+          'You received this because it is {{reason}}.</small></p>' },
   { id: 'test-message', category: 'account',
     title: 'A test message',
     values: ['username', 'when', 'transport'],
@@ -234,7 +317,11 @@ const FORBIDDEN_HTML: Array<[RegExp, string]> = [
   [/(javascript|data|vbscript)\s*:/i, 'a javascript:, data: or vbscript: URI']
 ];
 
+// #64: the id of the layout every message is wrapped in.
+const LAYOUT_ID = 'layout';
+
 class MailTemplates {
+  static readonly LAYOUT_ID = LAYOUT_ID;
   static readonly CATEGORIES = CATEGORIES;
   static readonly BUILT_IN = BUILT_IN;
   static readonly COMMON = COMMON;
@@ -324,6 +411,27 @@ class MailTemplates {
         }).join(', ');
       }
     }
+    if (spec.id === LAYOUT_ID) {
+      // THE LAYOUT CARRIES THE MESSAGE EXACTLY ONCE in each part: a layout
+      // without it would send every message empty, and one with it twice
+      // would send every code twice.
+      const once = function (part: string): boolean {
+        helpers.log.debug("Entering once().");
+        helpers.log.debug("Leaving once().");
+        return (part.match(/\{\{\s*content\s*\}\}/g) || []).length === 1;
+      };
+      if (!once(text) || !once(html)) {
+        helpers.log.debug("Leaving MailTemplates.problem(). No content.");
+        return 'the layout must carry {{content}} exactly once in the text ' +
+               'part and once in the HTML part — it is where every ' +
+               'message\'s own body goes';
+      }
+      if (!/\{\{\s*subject\s*\}\}/.test(subject)) {
+        helpers.log.debug("Leaving MailTemplates.problem(). No subject.");
+        return 'the layout\'s subject must carry {{subject}}, the ' +
+               'message\'s own subject';
+      }
+    }
     if (spec.links.length && spec.links.some(function (name) {
       return text.indexOf('{{' + name + '}}') < 0;
     })) {
@@ -395,6 +503,48 @@ class MailTemplates {
       })
     };
     helpers.log.debug("Leaving MailTemplates.render().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE LAYOUT, WRAPPED ROUND A RENDERED MESSAGE (#64). `rendered` is
+  // `render()`'s answer for the message; its body goes in as `{{content}}`
+  // UNESCAPED — it was escaped when it was rendered, and escaping it again
+  // would print its markup — and its subject as `{{subject}}`. Every other
+  // placeholder is filled as `render()` fills one. The layout was checked by
+  // `problem()` when it was saved, so it cannot add a link or load anything.
+  // -------------------------------------------------------------------------
+  static wrap(layoutParts: Json, rendered: Json, values: Json): Json {
+    helpers.log.debug("Entering MailTemplates.wrap().");
+    const v = Object.assign({}, values || {});
+    delete v.content;
+    delete v.subject;
+    const fill = function (text: string, escape: (x: unknown) => string,
+                           content: string): string {
+      helpers.log.debug("Entering fill().");
+      helpers.log.debug("Leaving fill().");
+      return String(text || '').replace(
+        /\{\{\s*([A-Za-z][A-Za-z0-9]*)\s*\}\}/g,
+        function (whole: string, name: string): string {
+          if (name === 'content') {
+            return content;
+          }
+          if (name === 'subject') {
+            return escape(rendered.subject);
+          }
+          return Object.prototype.hasOwnProperty.call(v, name)
+            ? escape(v[name]) : '';
+        });
+    };
+    const out = {
+      subject: fill(layoutParts.subject, MailTemplates.plain, '').trim() ||
+               rendered.subject,
+      text: fill(layoutParts.text, MailTemplates.plain, rendered.text),
+      html: fill(layoutParts.html, function (x: unknown): string {
+        return Html.esc(x);
+      }, rendered.html)
+    };
+    helpers.log.debug("Leaving MailTemplates.wrap().");
     return out;
   }
 

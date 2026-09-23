@@ -1799,6 +1799,11 @@ class FederationSp {
         updateAttributes: federation.boolOf(record.fedUpdateUserAttributes,
                                             true),
         attributes: mapped.attributes,
+        // WHETHER THE ADDRESS THE PARTNER SENT COUNTS AS VERIFIED (#64): it
+        // does — a federation partner is a trusted source, rcbj's ticket says
+        // so — unless the partner itself says it is not, which an OpenID
+        // provider does with `email_verified: false`. That one is honoured.
+        mailVerified: !this.partnerDisownsMail(result.bag),
         mapped: mapped.mapped.length,
         unmapped: mapped.unmapped.map((one) => { return one.incoming; })
       },
@@ -2005,6 +2010,18 @@ class FederationSp {
   //                                     fedEndSessionUrl is set
   //   at                                when the partner signed them in here
   // ---------------------------------------------------------------------------
+  // `email_verified: false` from the partner (#64), in the claim bag of an
+  // OpenID Connect partner — a boolean there, a string where a SAML or
+  // WS-Federation partner happens to send the same name.
+  partnerDisownsMail(bag) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.partnerDisownsMail().");
+    const raw = bag ? bag.email_verified : undefined;
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    log.debug("Leaving FederationSp.partnerDisownsMail().");
+    return value === false || String(value).toLowerCase() === 'false';
+  }
+
   partnerSessionOf(record, result) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.partnerSessionOf().");

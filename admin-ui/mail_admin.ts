@@ -295,16 +295,30 @@ class MailAdmin {
       (json.selfServiceReset ? 'offered where a transport is available' :
         'off') + '</td></tr><tr><th>Security notices</th><td>' +
       (json.securityNotices ? 'on' : 'off') + '</td></tr></tbody></table>';
-    const test = canWrite && json.available
-      ? '<h2>Send a test message</h2>' +
+    // WITH NO WORKING TRANSPORT THE TWO FORMS ARE DRAWN DISABLED, WITH THE
+    // REASON (#64: "these features should be greyed out in the admin
+    // console"), rather than left out as they were until then — a control
+    // that vanished reads as one this service does not have. `configRow()`'s
+    // pattern on /admin/config.
+    const off = json.available ? '' : ' disabled';
+    const why = json.available ? ''
+      : admin.warn('<strong>This realm cannot send mail</strong>' +
+          (json.buildProblem ? ' — ' + esc(json.buildProblem.why ||
+                                           json.buildProblem) : '') +
+          '. Configure a transport below; until then these forms, the ' +
+          'emailed sign-in mechanisms on <a href="/admin/policies#authn">' +
+          'Policies</a> and self-service reset are off.');
+    const test = canWrite
+      ? '<h2>Send a test message</h2>' + why +
         admin.note('To your own entry\'s address, or to another person in ' +
                    'this realm by username. Never to an address.') +
         '<form method="post" action="' + PAGE + '">' +
         '<input type="hidden" name="action" value="test">' +
         '<div class="formrow"><label for="mail-test-user">Person</label>' +
         '<input type="text" id="mail-test-user" name="user" size="24" ' +
-        'maxlength="256" placeholder="yourself"><button type="submit">' +
-        'Send a test message</button></div></form>' +
+        'maxlength="256" placeholder="yourself"' + off + '><button ' +
+        'type="submit"' + off + '>Send a test message</button></div>' +
+        '</form>' +
         '<h2>Verify a person\'s address</h2>' +
         admin.note('Sends a single-use verification link to the address on ' +
                    'their entry; they follow it. You never see it. A person ' +
@@ -313,8 +327,8 @@ class MailAdmin {
         '<input type="hidden" name="action" value="verify">' +
         '<div class="formrow"><label for="mail-verify-user">Person</label>' +
         '<input type="text" id="mail-verify-user" name="user" size="24" ' +
-        'maxlength="256" required><button type="submit">Send a verification ' +
-        'link</button></div></form>'
+        'maxlength="256" required' + off + '><button type="submit"' + off +
+        '>Send a verification link</button></div></form>'
       : '';
     const templates = '<h2>Messages</h2>' +
       admin.note('Every message this service sends, in English, and the ' +

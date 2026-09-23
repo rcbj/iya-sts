@@ -145,6 +145,10 @@ import roles = require('../common/roles');
 // THE PASSWORD POLICY REGISTER (2026-09-12), for /admin/policies. A leaf that
 // registers no route, so this require is a cache hit wherever it is reached.
 import passwordPolicy = require('../common/password_policy');
+// THE KINDS OF POLICY ON THAT PAGE (#64): the password policy, the
+// authentication policy, and whatever is defined next. A library.
+import policyKinds = require('./policy_kinds');
+import authnPolicy = require('../common/authn_policy');
 // Four more with the second batch: the audit log the audit view pages, the
 // delegation register the delegation view reads, the Kerberos principal
 // database beside it, and the token registry /admin/tokens lists.
@@ -431,6 +435,7 @@ interface AdminViewsDeps {
   consent: typeof consent;
   roles: typeof roles;
   passwordPolicy: typeof passwordPolicy;
+  policyKinds: typeof policyKinds;
   auditLog: typeof auditLog;
   errorCodes: typeof errorCodes;
   usedAssertions: typeof usedAssertions;
@@ -512,6 +517,7 @@ class AdminViews {
       consent: consent,
       roles: roles,
       passwordPolicy: passwordPolicy,
+      policyKinds: policyKinds,
       auditLog: auditLog,
       errorCodes: errorCodes,
       usedAssertions: usedAssertions,
@@ -1253,7 +1259,9 @@ class AdminViews {
   // which is why the answer is shaped as KINDS of policy each holding PROFILES
   // rather than as a password policy with a page wrapped round it: the next
   // kind is a row in `kinds` and a member beside `password`, not a new
-  // resource.
+  // resource. **#64 MADE THAT TRUE**: the kinds are `admin-core/
+  // policy_kinds.ts`'s list — the password policy, then the authentication
+  // policy — and `policiesView()` draws every one from its module.
   //
   // **IT IS NOT THE XACML POLICY REPOSITORY.** `/admin/xacml/policies` and
   // `/admin/ldap/policies` draw `ou=policies`, which holds documents a PDP
@@ -1294,79 +1302,155 @@ class AdminViews {
     };
   }
 
-  passwordPoliciesView(query) {
-    const { log, mode, passwordPolicy } = this.deps;
-    log.debug("Entering AdminViews.passwordPoliciesView().");
-    const q = query || {};
-    const profiles = passwordPolicy.list();
-    const listed = this.pagedRows(q, profiles);
-    const profile = passwordPolicy.read(passwordPolicy.DEFAULT_PROFILE);
-    const enforced = mode.verifiesCredentials();
+  // THE MEMBERS EVERY KIND HAS (#64): the profile in force, the rules as
+  // sentences, the field table and the schema — built from the kind's module,
+  // so a kind registered in `policy_kinds.ts` appears here with no edit.
+  private policyKindMember(kind) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.policyKindMember(). " + kind.id);
+    const module = kind.module;
+    const profile = module.read(module.DEFAULT_PROFILE);
     const out = {
-      mode: mode.current(),
-      enforced: enforced,
-      enforcement: enforced
-        ? 'ENFORCED. This realm is in product mode, so every password set ' +
-          'here — at every door below — must meet the profile, and a new ' +
-          'password may not repeat a remembered one.'
-        :
-        'NOT ENFORCED. This realm is in development mode, where no password ' +
-          'is checked at any door, so a rule about one would be a rule about ' +
-          'a ' +
-          'credential nothing reads. The history is still RECORDED, so a ' +
-          'realm switched to product mode starts with one. A GENERATED ' +
-          'password meets the profile in both modes.',
-      kinds: [
-        { id: 'password', label: 'Password policy',
-          container: 'ou=passwordPolicies', profiles: profiles.length,
-          governs: 'userPassword' }
-      ],
-      password: {
-        profile: profile,
-        rules: passwordPolicy.describe(profile),
-        defaults: Object.assign({}, passwordPolicy.DEFAULTS),
-        fields: passwordPolicy.FIELDS.map(function (field) {
-          return { key: field.key, attribute: field.attribute,
-                   label: field.label,
-                   type: field.type, min: field.min, max: field.max,
-                   unit: field.unit || '', default: field.dflt,
-                   value: profile[field.key],
-                   source: profile.sources[field.key],
-                   what: field.what };
-        }),
-        schema: passwordPolicy.SCHEMA,
-        generator: this.passwordGeneratorFacts(),
-        // THE DOORS, named so that "enforced" is a claim a reader can check
-        // rather than one they have to take. Every one ends in
-        // `credentials.preparePassword()`.
-        doors: [
-          { door: '/admin/users/new and /admin/users (Set password)',
-            via: 'credentials.setPassword()' },
-          { door:
-              'POST /admin-api/users/create and /admin-api/users/set-password',
-            via: 'credentials.setPassword()' },
-          { door: '/portal/password', via: 'credentials.setPassword()' },
-          { door: '/portal/activate (the first password a person sets)',
-            via: 'credentials.setPassword()' },
-          { door: 'an LDAP add or modify of userPassword on 389 or 636',
-            via: 'credentials.preparePassword()' }
-        ],
-        notDoors: 'SCIM carries no password (this service advertises ' +
-                  'changePassword: false), and a password is never set by ' +
-                  'signing in. Passwords stored BEFORE a rule changed are ' +
-                  'not re-checked: nothing here holds a password in a form ' +
-                  'that could be, and the rule applies from the next change.'
-      },
-      profiles: listed.shown.map(function (one) {
-        return { kind: 'password', name: one.name, stored: one.stored,
-                 dn: one.dn,
-                 problems: one.problems };
+      profile: profile,
+      rules: module.describe(profile),
+      defaults: Object.assign({}, module.DEFAULTS),
+      fields: module.FIELDS.map(function (field) {
+        return { key: field.key, attribute: field.attribute,
+                 label: field.label,
+                 type: field.type, min: field.min, max: field.max,
+                 values: field.values, unit: field.unit || '',
+                 default: field.dflt,
+                 value: profile[field.key],
+                 source: profile.sources[field.key],
+                 mechanism: field.mechanism, role: field.role,
+                 email: !!field.email,
+                 what: field.what };
       }),
-      paging: this.pagingJson(listed.paging),
-      actions: ['save-password-policy', 'reset-password-policy']
+      schema: module.SCHEMA
     };
-    log.debug("Leaving AdminViews.passwordPoliciesView(). The profile is " +
-              (profile.stored ? 'stored.' : 'the built-in default.'));
+    log.debug("Leaving AdminViews.policyKindMember().");
+    return out;
+  }
+
+  // What only the password policy has to say: the generator and the doors.
+  private passwordPolicyExtras() {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.passwordPolicyExtras().");
+    log.debug("Leaving AdminViews.passwordPolicyExtras().");
+    return {
+      generator: this.passwordGeneratorFacts(),
+      // THE DOORS, named so that "enforced" is a claim a reader can check
+      // rather than one they have to take. Every one ends in
+      // `credentials.preparePassword()`.
+      doors: [
+        { door: '/admin/users/new and /admin/users (Set password)',
+          via: 'credentials.setPassword()' },
+        { door:
+            'POST /admin-api/users/create and /admin-api/users/set-password',
+          via: 'credentials.setPassword()' },
+        { door: '/portal/password', via: 'credentials.setPassword()' },
+        { door: '/portal/activate (the first password a person sets)',
+          via: 'credentials.setPassword()' },
+        { door: 'an LDAP add or modify of userPassword on 389 or 636',
+          via: 'credentials.preparePassword()' }
+      ],
+      notDoors: 'SCIM carries no password (this service advertises ' +
+                'changePassword: false), and a password is never set by ' +
+                'signing in. Passwords stored BEFORE a rule changed are ' +
+                'not re-checked: nothing here holds a password in a form ' +
+                'that could be, and the rule applies from the next change.'
+    };
+  }
+
+  // What only the authentication policy has to say: its mechanisms, and
+  // whether the two email ones CAN be on in this realm (#64, D1).
+  private authnPolicyExtras(member) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.authnPolicyExtras().");
+    const authn = authnPolicy;
+    const mailUsable = authn.mailUsable();
+    const mailWhy = mailUsable ? ''
+      : 'This realm cannot send mail, so the two email mechanisms cannot be ' +
+        'turned on and are never offered. Configure a transport on Server ' +
+        'configuration > Mail.';
+    member.fields.forEach(function (field) {
+      field.disabled = !!(field.email && !mailUsable);
+      field.disabledWhy = field.disabled ? mailWhy : '';
+    });
+    const profile = member.profile;
+    const out = {
+      from: profile.from,
+      inherited: profile.inherited,
+      mail: { usable: mailUsable, why: mailWhy },
+      nistWarning: authn.NIST_EMAIL_WARNING,
+      mechanisms: authn.MECHANISMS.map(function (m) {
+        const primary = m.primary === null ? null
+          : !!authn.allows(m.id, 'primary', profile);
+        const second = m.secondFactor === null ? null
+          : !!authn.allows(m.id, 'second-factor', profile);
+        return { id: m.id, label: m.label, email: !!m.email,
+                 primary: primary, secondFactor: second,
+                 active: (primary || second) ? (!m.email || mailUsable)
+                   : false,
+                 what: m.what };
+      })
+    };
+    log.debug("Leaving AdminViews.authnPolicyExtras().");
+    return out;
+  }
+
+  policiesView(query) {
+    const { log, mode, policyKinds } = this.deps;
+    log.debug("Entering AdminViews.policiesView().");
+    const q = query || {};
+    const kinds = policyKinds.list();
+    const rows = [];
+    const out: Record<string, any> = {
+      mode: mode.current(),
+      kinds: [],
+      profiles: [],
+      paging: null,
+      actions: policyKinds.actions()
+    };
+    kinds.forEach((kind) => {
+      const member: Record<string, any> = this.policyKindMember(kind);
+      if (kind.id === 'password') {
+        Object.assign(member, this.passwordPolicyExtras());
+      } else if (kind.id === 'authn') {
+        Object.assign(member, this.authnPolicyExtras(member));
+      }
+      out[kind.id] = member;
+      const profiles = kind.module.list();
+      out.kinds.push({ id: kind.id, label: kind.label,
+                       container: kind.container, governs: kind.governs,
+                       profiles: profiles.length,
+                       actions: [policyKinds.saveAction(kind),
+                                 policyKinds.resetAction(kind)] });
+      profiles.forEach(function (one) {
+        rows.push({ kind: kind.id, name: one.name, stored: one.stored,
+                    inherited: !!one.inherited, dn: one.dn,
+                    problems: one.problems });
+      });
+    });
+    // THE PASSWORD POLICY'S ENFORCEMENT stays at the top level, where it has
+    // been since 2026-09-12: it is a sentence about the MODE, which only
+    // that kind depends on.
+    const enforced = mode.verifiesCredentials();
+    out.enforced = enforced;
+    out.enforcement = enforced
+      ? 'ENFORCED. This realm is in product mode, so every password set ' +
+        'here — at every door below — must meet the profile, and a new ' +
+        'password may not repeat a remembered one.'
+      : 'NOT ENFORCED. This realm is in development mode, where no password ' +
+        'is checked at any door, so a rule about one would be a rule about ' +
+        'a credential nothing reads. The history is still RECORDED, so a ' +
+        'realm switched to product mode starts with one. A GENERATED ' +
+        'password meets the profile in both modes.';
+    const listed = this.pagedRows(q, rows);
+    out.profiles = listed.shown;
+    out.paging = this.pagingJson(listed.paging);
+    log.debug("Leaving AdminViews.policiesView(). " + kinds.length +
+              " kind(s), " + rows.length + " profile(s).");
     return out;
   }
 
@@ -7441,7 +7525,7 @@ export = {
   consentPageView: slot.forward('consentPageView'),
   rolesRegister: slot.forward('rolesRegister'),
   rolesView: slot.forward('rolesView'),
-  passwordPoliciesView: slot.forward('passwordPoliciesView'),
+  policiesView: slot.forward('policiesView'),
   DEFAULT_CREDENTIAL: DEFAULT_CREDENTIAL,
   rolesPreview: slot.forward('rolesPreview'),
   claimsPreviewUser: slot.forward('claimsPreviewUser'),

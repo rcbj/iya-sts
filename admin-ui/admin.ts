@@ -1787,7 +1787,12 @@ const SECTIONS = [
                'every door that sets a password: the console, ' +
                '<code>/admin-api</code>, the user portal, an activation link ' +
                'and an LDAP modify. A generated password is drawn to satisfy ' +
-               'it in both modes. It is not the XACML policy repository, ' +
+               'it in both modes. Beside it, the <strong>authentication ' +
+               'policy</strong> (#64): which ways of signing in this realm ' +
+               'accepts as a first and as a second factor, and when a second ' +
+               'is required — <code>cn=default,ou=authnPolicies</code>, ' +
+               'inherited from the default realm by a realm with none. It ' +
+               'is not the XACML policy repository, ' +
                'which is <a href="/admin/xacml/policies">Protocols → XACML → ' +
                'Policies</a>.' },
       // -------------------------------------------------------------------
@@ -11666,6 +11671,67 @@ class AdminConsole {
   // refuses to remove the last way in. An operator must not be able to do what
   // the person themselves is stopped from doing.
   // ===========================================================================
+  // THE EMAILED SECOND FACTOR (#64) on a person's page: whether they opted
+  // in, whether it is being used and why not, and the one control an operator
+  // has over it — clearing it. There is no Turn On: the opt-in is the
+  // person's (D8), and an operator who wanted them asked for a second factor
+  // requires one, which the sign-in screen then asks them to set up.
+  //
+  // Beside it, the ADDRESS (#64 P2): what `mail` holds, whether it is
+  // verified and by whom, and — for Admin Write — a form to set it, which
+  // marks it verified because an administrator is a trusted source.
+  emailFactorBlock(key, mech, state, carryBack) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.emailFactorBlock().");
+    const mf = mech.mailFactor || { held: '', optedIn: '', why: '' };
+    const mailFactor = require('../common/mail_factor');
+    const status = mailFactor.status(key);
+    const mailUsable = require('../common/authn_policy').mailUsable();
+    const out = '<h3>Email address, and email as a second factor</h3>' +
+      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      '<tr><th>Address</th><td>' + (status.address
+        ? '<code>' + this.esc(status.address) + '</code> — ' +
+          (status.verified ? '<span class="state-valid">verified</span>'
+                           : '<span class="state-none">not verified</span>')
+        : '<span class="state-none">none</span>') + '</td></tr>' +
+      '<tr><th>Emailed second factor</th><td>' + (mf.optedIn
+        ? (mf.held ? '<span class="state-valid">on</span> — an emailed ' +
+                     this.esc(mf.held) + ' after their first factor'
+                   : 'chosen (an emailed ' + this.esc(mf.optedIn) + ') and ' +
+                     '<strong>not used</strong>: ' + this.esc(mf.why))
+        : '<span class="state-none">off</span> — they turn it on at ' +
+          '<code>/portal/mfa</code>, where the <a ' +
+          'href="/admin/policies#authn">authentication policy</a> allows ' +
+          'it.') + '</td></tr>' +
+      (status.failures
+        ? '<tr><th>Consecutive failures</th><td>' +
+          this.esc(String(status.failures)) + '</td></tr>' : '') +
+      '</table>' +
+      (state.write && mf.optedIn
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="clear-email-factor">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          carryBack + '<div class="formrow"><button class="danger">Turn off ' +
+          'their emailed second factor</button></div></form>'
+        : '') +
+      (state.write
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="set-mail">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          carryBack + '<div class="formrow"><label>Address <input ' +
+          'type="email" name="mail" size="40" maxlength="254" required ' +
+          'value="' + this.esc(status.address) + '"></label> ' +
+          '<button type="submit">Set the address</button></div></form>' +
+          this.note('An address set here is <strong>verified</strong> — an ' +
+          'administrator is a trusted source (#64) — and the old one, if ' +
+          'there was one' + (mailUsable ? ', is told it changed.'
+            : '. <strong>This realm cannot send mail</strong>, so nobody is ' +
+              'told.'))
+        : this.note('Setting the address needs <strong>Admin Write</strong>.'));
+    log.debug("Leaving AdminConsole.emailFactorBlock().");
+    return out;
+  }
+
   mfaSection(row, key, state, back) {
     const { log, credentials, totp, webauthnPolicy, backupCodes,
             adminViews, mode } = this.deps;
@@ -11729,7 +11795,11 @@ class AdminConsole {
                 ? ', with the authenticator app offered as the alternative ' +
                   'for somebody at a machine the key is not plugged into'
                 : '')
-            : 'a CODE from their authenticator app') +
+            : (mech.secondFactor === 'totp'
+                ? 'a CODE from their authenticator app'
+                : 'an EMAILED ' + (mech.secondFactor === 'email-link'
+                    ? 'SIGN-IN LINK' : 'CODE') + ', the one second factor ' +
+                  'they hold')) +
           '. A password alone will not sign them in.'
         : '<span class="state-none">no</span> — nothing here is configured ' +
           'as a second factor, so a password alone signs them in.') +
@@ -11750,7 +11820,9 @@ class AdminConsole {
               'second factor for any account — which is not a second factor ' +
               'at all.'
             : 'Authenticator apps are switched off in this realm ' +
-              '(<code>totp.enabled</code> on <a href="/admin/totp">TOTP ' +
+              '(the authentication policy on <a href="/admin/policies#authn">' +
+              'Policies</a>; the TOTP settings are on <a ' +
+              'href="/admin/totp">TOTP ' +
               'MFA</a>), so nobody new can enrol one.'))
         : (!mech.totpUsable
             ? this.warn('<strong>An enrolment exists and this process cannot ' +
@@ -11928,7 +12000,8 @@ class AdminConsole {
               'has a set, which is the ordinary reason this says none — ' +
               'clearing and re-enrolling is what issues one.'
             : 'Recovery codes are switched off in this realm ' +
-              '(<code>backupCodes.enabled</code> on <a ' +
+              '(the authentication policy on <a href="/admin/policies#authn">' +
+              'Policies</a>; its settings on <a ' +
               'href="/admin/backup-codes">Recovery codes</a>), so no new set ' +
               'will be issued. A set already issued goes on working.'))
         : (!b.usable
@@ -12323,7 +12396,9 @@ class AdminConsole {
       'href="/admin/totp">TOTP MFA</a> and <a ' +
       'href="/admin/webauthn">WebAuthn</a> under Protocols; this is who ' +
       'holds what.') +
-      wayIn + totpBlock + keysBlock + recoveryBlock + appPasswordsBlock +
+      wayIn + totpBlock + this.emailFactorBlock(key, mech, state,
+                                                carryBack) +
+      keysBlock + recoveryBlock + appPasswordsBlock +
       devicesBlock + selfIssuedBlock + verificationsBlock;
 
     log.debug("Leaving AdminConsole.mfaSection(). totp=" + mech.totp + ", " +
@@ -12803,7 +12878,8 @@ class AdminConsole {
       '<tr><th>Second factor required</th><td>' + (requirement.required
         ? '<strong>yes</strong> — ' + [requirement.byUser ? 'on this account'
             : '', requirement.byRealm ? 'by the realm ' +
-            '(<code>authn.mfaRequired</code>)' : ''].filter(Boolean)
+            '(the <a href="/admin/policies#authn">authentication policy</a>)'
+            : ''].filter(Boolean)
               .join(' and ') +
           (factors.mfaRequired ? '; they hold one'
             : '; <strong>they hold none, so their next sign-in asks them to ' +
@@ -12905,7 +12981,8 @@ class AdminConsole {
                     'before it signs them in. A passwordless sign-in is ' +
                     'refused while it is required.' +
                     (requirement.byRealm ? ' The realm already requires it ' +
-                      'of everybody (<code>authn.mfaRequired</code>).' : '')) +
+                      'of everybody (the <a href="/admin/policies#authn">' +
+                      'authentication policy</a>).' : '')) +
           form('require-mfa', 'Require MFA for this person',
                'They must use a second factor, and enrol one at their next ' +
                'sign-in if they hold none.', false));
@@ -20224,9 +20301,9 @@ class AdminConsole {
   // /admin/policies (2026-09-12) — DIRECTORY → POLICIES, and the PASSWORD
   // POLICY is the first kind of policy on it.
   //
-  // ONE COMPUTATION, TWO RENDERINGS: `adminViews.passwordPoliciesView()` is the
+  // ONE COMPUTATION, TWO RENDERINGS: `adminViews.policiesView()` is the
   // model, this route draws it, and `GET /admin-api/policies` hands the same
-  // model back. The two writes are `adminActions.passwordPoliciesAction()`,
+  // model back. The writes are `adminActions.policiesAction()`,
   // which `POST /admin-api/policies/{action}` calls too — rule 7 by
   // construction.
   //
@@ -20240,25 +20317,44 @@ class AdminConsole {
   // `form.elements.action` a RadioNodeList whose value is empty, and the
   // console suite finds every form it presses by the action it posts.
   // ---------------------------------------------------------------------------
-  passwordPolicyFieldRow(field) {
+  //
+  // **ONE ROW RENDERER FOR EVERY KIND (#64)**, told the id prefix of its form
+  // (`pp-` for the password policy, as the console suite finds it). A field
+  // the view marks `disabled` — an email mechanism in a realm that cannot send
+  // mail — is drawn DISABLED WITH THE REASON BESIDE IT, `configRow()`'s
+  // pattern, rather than left out: a control that vanished would read as a
+  // mechanism this service does not have.
+  policyFieldRow(field, prefix) {
     const { log } = this.deps;
-    log.debug("Entering AdminConsole.passwordPolicyFieldRow().");
-    const id = 'pp-' + field.key;
+    log.debug("Entering AdminConsole.policyFieldRow().");
+    const id = String(prefix || 'pp-') + field.key;
     const hint = this.tip(field.what, Infinity);
+    const off = field.disabled ? ' disabled' : '';
     let control;
     if (field.type === 'bool') {
       control = '<input type="checkbox" id="' + this.esc(id) + '" name="' +
         this.esc(field.key) + '" value="TRUE"' +
-        (field.value ? ' checked' : '') +
-        hint + '>';
+        (field.value ? ' checked' : '') + off +
+        hint + '>' +
+        (field.disabled
+          ? ' <span class="off">' + this.esc(field.disabledWhy) + '</span>'
+          : '');
+    } else if (field.type === 'enum') {
+      control = '<select id="' + this.esc(id) + '" name="' +
+        this.esc(field.key) + '"' + off + hint + '>' +
+        (field.values || []).map((value) => {
+          return '<option value="' + this.esc(value) + '"' +
+            (String(field.value) === String(value) ? ' selected' : '') +
+            '>' + this.esc(value) + '</option>';
+        }).join('') + '</select>';
     } else {
       control = '<input type="number" id="' + this.esc(id) + '" name="' +
         this.esc(field.key) + '" min="' + this.esc(field.min) + '" max="' +
         this.esc(field.max) +
-        '" step="1" required value="' + this.esc(field.value) + '"' + hint +
-        '> <span class="sub">' + this.esc(field.unit) + '</span>';
+        '" step="1" required value="' + this.esc(field.value) + '"' + off +
+        hint + '> <span class="sub">' + this.esc(field.unit) + '</span>';
     }
-    log.debug("Leaving AdminConsole.passwordPolicyFieldRow().");
+    log.debug("Leaving AdminConsole.policyFieldRow().");
     return '<tr><td><label for="' + this.esc(id) + '"' + hint + '>' +
       this.esc(field.label) +
       '</label></td><td>' + control + '</td>' +
@@ -20268,9 +20364,307 @@ class AdminConsole {
                                                 '</td>' +
       '<td class="' + (field.source === 'directory' ? '' : 'state-none') +
       '">' +
-      this.esc(field.source === 'directory' ? 'this profile' :
-               'built-in default') +
+      this.esc(field.source === 'directory' ? 'this profile'
+        : field.source === 'default realm' ? 'the default realm\'s profile'
+          : 'built-in default') +
       '</td></tr>';
+  }
+
+  // A DISABLED FIELD POSTS NOTHING, so a console save made while this realm
+  // cannot send mail reads every email row as "no" — including one left ON
+  // from before mail stopped working. That is the only save that could
+  // succeed (`authn_policy.save()` refuses an email row on without mail), and
+  // the warning above the form says the rows are off until mail works.
+
+  // ---------------------------------------------------------------------------
+  // ONE SECTION PER KIND OF POLICY (#64). The password policy and the
+  // authentication policy each have things to say that no field table
+  // carries; any other kind is drawn by `genericPolicySection()` from its
+  // module alone, which is what makes a future policy cost no page.
+  // ---------------------------------------------------------------------------
+
+  // The save form and the reset form every kind has. The reset is its own
+  // form, for the reason in the header above.
+  private policyForms(kind, member, prefix, intro) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.policyForms(). " + kind.id);
+    const profile = member.profile;
+    const saveAction = kind.actions[0];
+    const resetAction = kind.actions[1];
+    const out = '<form method="post" action="/admin/policies">' +
+      '<input type="hidden" name="action" value="' + this.esc(saveAction) +
+      '">' +
+      '<input type="hidden" name="profile" value="' + this.esc(profile.name) +
+      '">' +
+      this.wideTable('The default ' + kind.label.toLowerCase() + ' profile',
+        '<table><tr><th>Rule</th><th>Value</th><th>Attribute</th>' +
+        '<th>Built-in default</th><th>Source</th></tr>' +
+        member.fields.map((field) => {
+          return this.policyFieldRow(field, prefix);
+        }).join('') +
+        '<tr><td><label for="' + this.esc(prefix) + 'description">' +
+        'Description</label></td>' +
+        '<td colspan="4"><input type="text" id="' + this.esc(prefix) +
+        'description" name="description" size="60" maxlength="1024" ' +
+        'value="' + this.esc(profile.description) + '" placeholder="what ' +
+        'this profile is for"></td></tr></table>') +
+      '<p><button>Save the profile</button></p>' + (intro || '') +
+      '</form>' +
+      (profile.stored
+        ? '<form method="post" action="/admin/policies" class="inline">' +
+          '<input type="hidden" name="action" value="' +
+          this.esc(resetAction) + '"><input type="hidden" ' +
+          'name="profile" value="' + this.esc(profile.name) + '"><button ' +
+          'class="secondary">Remove this realm\'s profile</button></form>'
+        : '');
+    log.debug("Leaving AdminConsole.policyForms().");
+    return out;
+  }
+
+  private policySchemaTables(schema) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.policySchemaTables().");
+    const out = '<table><tr><th>Object class</th><th>What it is</th></tr>' +
+      schema.objectClasses.map((row) => {
+        return '<tr><td><code>' + this.esc(row.name) + '</code></td><td>' +
+          this.esc(row.what) + '</td></tr>';
+      }).join('') + '</table>' +
+      '<table><tr><th>Attribute</th><th>On</th><th>What it holds</th></tr>' +
+      schema.attributes.map((row) => {
+        return '<tr><td><code>' + this.esc(row.name) +
+               '</code></td><td>the profile</td><td>' + this.esc(row.what) +
+               '</td></tr>';
+      }).join('') +
+      (schema.personAttributes || []).map((row) => {
+        return '<tr><td><code>' + this.esc(row.name) + '</code></td><td>a ' +
+          'person</td><td>' + this.esc(row.what) + '</td></tr>';
+      }).join('') + '</table>';
+    log.debug("Leaving AdminConsole.policySchemaTables().");
+    return out;
+  }
+
+  private policyProblems(profile) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.policyProblems().");
+    log.debug("Leaving AdminConsole.policyProblems().");
+    return profile.problems.length
+      ? this.warn('<strong>The stored profile has ' +
+                  profile.problems.length +
+        ' problem(s), and the built-in default is in force for each ' +
+        'field named:</strong> ' +
+        profile.problems.map(this.esc.bind(this)).join(' '))
+      : '';
+  }
+
+  passwordPolicySection(view) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.passwordPolicySection().");
+    const self = this;
+    const kind = view.kinds.filter(function (k) {
+      return k.id === 'password';
+    })[0];
+    const pw = view.password;
+    const profile = pw.profile;
+    const out =
+      '<h2 id="password">Password policy — the default profile</h2>' +
+      self.note('What a password set in this realm must look like. It is ' +
+      'stored as <code>' +
+      self.esc(profile.dn || ('cn=default,ou=passwordPolicies,…')) +
+      '</code>, in the shape of draft-behera-ldap-password-policy (the ' +
+      'schema OpenLDAP\'s ppolicy overlay reads), so an ' +
+      '<code>ldapsearch</code> finds it and an <code>ldapmodify</code> ' +
+      'changes it.') +
+
+      (view.enforced
+        ? '<div class="ok">' + self.esc(view.enforcement) + '</div>'
+        : self.warn(self.esc(view.enforcement) + ' Switch the realm with ' +
+          '<code>global.mode</code> on <a ' +
+          'href="/admin/config">Configuration</a>.')) +
+
+      self.policyProblems(profile) +
+
+      self.note(profile.stored
+        ? 'This profile is <strong>stored</strong> at <code>' +
+          self.esc(profile.dn) +
+          '</code>. Saving replaces it; removing it deletes it, after which ' +
+          'the built-in defaults below are in force.'
+        : '<strong>Nothing is stored yet, so the built-in defaults are in ' +
+          'force.</strong> Saving this form writes <code>cn=default</code> ' +
+          'under <code>ou=passwordPolicies</code> in this realm\'s ' +
+          'directory. A realm created later starts with the same built-in ' +
+          'defaults rather than a copy of this one — the profile is not ' +
+          'seeded, so it cannot be missing from a realm nobody seeded.') +
+
+      self.policyForms(kind, pw, 'pp-', self.note('Every field is checked ' +
+      'before anything is written, and two rules relate fields to each ' +
+      'other: a generated password must be at least the minimum length, and ' +
+      'at least twice the symbol count plus two — a generator asked for ' +
+      'more symbols than that would be drawing for a very long time. ' +
+      '<strong>A change applies to the NEXT password set in this ' +
+      'realm</strong>; nothing already stored is re-checked, because a ' +
+      'stored password is a hash and there is nothing left to check it ' +
+      'against.')) +
+
+      '<h3 id="rules">What a password must be, right now</h3>' +
+      self.note('The rules as the <a href="/portal/password">user ' +
+      'portal</a> and the activation page print them to the person ' +
+      'choosing a password, so the page they read and the rule this ' +
+      'service applies are one sentence.') +
+      '<ul>' + pw.rules.map(function (rule) {
+        return '<li>' + self.esc(rule) + '</li>';
+      }).join('') + '</ul>' +
+
+      '<h3 id="doors">Where it is enforced</h3>' +
+      self.note('Every door that sets a password ends in one function in ' +
+      '<code>common/credentials.ts</code>, which is what makes the list ' +
+      'below complete rather than a list somebody remembered. ' +
+      self.esc(pw.notDoors)) +
+      '<table><tr><th>Door</th><th>Reaches</th></tr>' +
+      pw.doors.map(function (row) {
+        return '<tr><td>' + self.esc(row.door) + '</td><td><code>' +
+               self.esc(row.via) +
+          '</code></td></tr>';
+      }).join('') + '</table>' +
+
+      '<h3 id="history">The history, and what it costs</h3>' +
+      self.note('<strong>A remembered password is the scrypt hash it was ' +
+      'already stored as</strong>, moved into <code>pwdHistory</code> on ' +
+      'the person\'s own entry when the next one replaces it — no new hash ' +
+      'is made, and the password itself is never kept. Checking a new ' +
+      'password costs one scrypt comparison per remembered one, about 70ms ' +
+      'each on this thread, so a history of ' + self.esc(profile.history) +
+      ' is up to ' +
+      self.esc((profile.history + 1) * 70) + 'ms at a password change. A ' +
+      'generated password skips the comparison, because nothing drawn at ' +
+      'random is a previous password. <code>pwdHistory</code> and ' +
+      '<code>pwdChangedTime</code> are maintained by this service and an ' +
+      'LDAP modify naming either is refused in product mode.') +
+
+      '<h3 id="generator">The generator</h3>' +
+      self.note('<strong>New users created from the console or ' +
+      '<code>/admin-api</code> get a generated password by ' +
+      'default</strong>, shown or returned ONCE. It is drawn by ' +
+      '<code>' + self.esc(pw.generator.module) + '</code>' +
+      (pw.generator.version ? ' ' + self.esc(pw.generator.version) : '') +
+      ' from ' +
+      self.esc(pw.generator.source) + ', using ' +
+      self.esc(pw.generator.pools.join(', ')) +
+      ' (leaving out ' + pw.generator.excluded.map(function (one) {
+        return '<code>' + self.esc(one) + '</code>';
+      }).join(' and ') + ', which silently end or change a string pasted ' +
+      'into a shell or a JSON body), and it draws until ' +
+      self.esc(pw.generator.drawsUntil) +
+      '.') +
+
+      '<h3 id="schema">Schema</h3>' +
+      self.note('This directory is schemaless, so a container of entries ' +
+      'carrying invented attributes says what they mean here. The ' +
+      '<code>pwd*</code> names are draft-behera-ldap-password-policy\'s; ' +
+      'the <code>stsPwd*</code> ones are this service\'s own, because the ' +
+      'draft delegates composition rules to the server and defines none.') +
+      self.policySchemaTables(pw.schema);
+    log.debug("Leaving AdminConsole.passwordPolicySection().");
+    return out;
+  }
+
+  authnPolicySection(view) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.authnPolicySection().");
+    const self = this;
+    const kind = view.kinds.filter(function (k) {
+      return k.id === 'authn';
+    })[0];
+    const ap = view.authn;
+    const profile = ap.profile;
+    const yesNo = function (value, active) {
+      log.debug("Entering yesNo().");
+      log.debug("Leaving yesNo().");
+      return value === null ? '<span class="off">—</span>'
+        : value ? (active ? 'yes' : 'yes — <strong>inactive</strong>')
+          : 'no';
+    };
+    const out =
+      '<h2 id="authn">Authentication policy — the default profile</h2>' +
+      self.note('Which ways of signing in this realm accepts as a FIRST ' +
+      'factor and as a SECOND, and when a second factor is required. ' +
+      'Asked at every sign-in door, in both modes: this policy decides what ' +
+      'the sign-in screen offers, not whether a credential is checked.') +
+
+      (ap.mail.usable ? ''
+        : self.warn('<strong>This realm cannot send mail</strong>, so the ' +
+          'two email mechanisms are drawn disabled below and are never ' +
+          'offered. Configure a transport on <a href="/admin/mail">Server ' +
+          'configuration → Mail</a>.')) +
+
+      self.warn('<strong>Email as an authenticator.</strong> ' +
+        self.esc(ap.nistWarning)) +
+
+      self.policyProblems(profile) +
+
+      self.note(profile.from === 'realm'
+        ? 'This realm\'s own profile is <strong>stored</strong> at <code>' +
+          self.esc(profile.dn) + '</code>. Removing it puts this realm back ' +
+          'to the default realm\'s profile, or to the built-in defaults ' +
+          'where the default realm has none.'
+        : profile.from === 'default-realm'
+          ? '<strong>This realm has no profile of its own, and follows the ' +
+            'default realm\'s</strong> (<code>' + self.esc(profile.dn) +
+            '</code>). Saving this form writes this realm\'s own, which ' +
+            'overrides it here and nowhere else.'
+          : '<strong>Nothing is stored, so the built-in defaults are in ' +
+            'force.</strong> Saving this form writes <code>cn=default</code> ' +
+            'under <code>ou=authnPolicies</code>. Saved in the DEFAULT ' +
+            'realm, it is the policy of every realm that has none of its ' +
+            'own.') +
+
+      self.policyForms(kind, ap, 'ap-', self.note('Every field is checked ' +
+      'before anything is written. At least one mechanism must be accepted ' +
+      'as a first factor, and if a second factor is required of everybody ' +
+      'at least one must be accepted as a second. <strong>A person who ' +
+      'HOLDS a second factor is asked for it whatever this says</strong>: ' +
+      'there is no setting that skips a held factor.')) +
+
+      '<h3 id="authn-now">What this realm accepts, right now</h3>' +
+      '<ul>' + ap.rules.map(function (rule) {
+        return '<li>' + self.esc(rule) + '</li>';
+      }).join('') + '</ul>' +
+      '<table><tr><th>Mechanism</th><th>First factor</th>' +
+      '<th>Second factor</th></tr>' +
+      ap.mechanisms.map(function (m) {
+        return '<tr><td>' + self.esc(m.label) + '</td><td>' +
+          yesNo(m.primary, m.active) + '</td><td>' +
+          yesNo(m.secondFactor, m.active) + '</td></tr>';
+      }).join('') + '</table>' +
+      self.note('A dash is a role the mechanism cannot have: an ' +
+      'authenticator app or a recovery code is never a first factor, and ' +
+      'a certificate, a Kerberos ticket, a wallet or a federation partner ' +
+      'is never asked for second.') +
+
+      '<h3 id="authn-schema">Schema</h3>' +
+      self.policySchemaTables(ap.schema);
+    log.debug("Leaving AdminConsole.authnPolicySection().");
+    return out;
+  }
+
+  // A kind this console has nothing particular to say about: its fields,
+  // its rules and its schema, from its module.
+  genericPolicySection(view, kind) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.genericPolicySection(). " + kind.id);
+    const self = this;
+    const member = view[kind.id];
+    const out = '<h2 id="' + self.esc(kind.id) + '">' +
+      self.esc(kind.label) + ' — the default profile</h2>' +
+      self.note('Governs ' + self.esc(kind.governs) + '. Stored under ' +
+      '<code>' + self.esc(kind.container) + '</code>.') +
+      self.policyProblems(member.profile) +
+      self.policyForms(kind, member, kind.id + '-', '') +
+      '<ul>' + member.rules.map(function (rule) {
+        return '<li>' + self.esc(rule) + '</li>';
+      }).join('') + '</ul>' +
+      self.policySchemaTables(member.schema);
+    log.debug("Leaving AdminConsole.genericPolicySection().");
+    return out;
   }
 
   // The page's own URL with the preview user on it. Every form on this page
@@ -24611,7 +25005,9 @@ class AdminConsole {
     const html = '<h2>The mechanism</h2>' +
       (info.offered
         ? ''
-        : this.warn('<strong><code>totp.enabled</code> is off</strong>, so ' +
+        : this.warn('<strong>The authentication policy turns authenticator ' +
+          'apps off</strong> (<a href="/admin/policies#authn">Policies</a>), ' +
+          'so ' +
           'nobody new can enrol an authenticator app. <strong>It does not ' +
           'disable a secret somebody already holds</strong> — that account ' +
           'is still configured for two factors and the sign-in screen still ' +
@@ -24791,7 +25187,7 @@ class AdminConsole {
         : this.warn('<strong><code>webauthn.enabled</code> is off</strong>, ' +
           'so no new security key can be enrolled here. <strong>It does not ' +
           'disable a key somebody already holds</strong>, for ' +
-          '<code>totp.enabled</code>\'s reason — and there is a sharper ' +
+          'the TOTP row\'s reason — and there is a sharper ' +
           'edge: somebody whose only credential is a <code>primary</code> ' +
           'key would be locked out of their own account by this switch. ' +
           'Removing a key is on that person\'s row under <a ' +
@@ -25041,7 +25437,7 @@ class AdminConsole {
           'time somebody enrols a second factor.'
         : '<span class="state-none">no</span> — no NEW set will be issued. ' +
           '<strong>A set already issued goes on working</strong>, which is ' +
-          'the contract <code>totp.enabled</code> and ' +
+          'the contract the authentication policy\'s TOTP row and ' +
           '<code>webauthn.enabled</code> both keep: a switch that took away ' +
           'the only way back into an account whose phone is lost would be ' +
           'the worst one on this console.') +
@@ -33882,194 +34278,76 @@ class AdminConsole {
 
     app.get('/admin/policies', function (req, res) {
       log.debug("Entering the admin policies page.");
-      const view = adminViews.passwordPoliciesView(req.query);
-      const pw = view.password;
-      const profile = pw.profile;
+      const view = adminViews.policiesView(req.query);
       const listedNav = self.pageNavPair('/admin/policies',
                                          pageParamsOf(req.query),
                                          pagingOf(req.query,
                                                   view.paging.total));
+      const kindLabel = {};
+      view.kinds.forEach(function (kind) {
+        kindLabel[kind.id] = kind.label;
+      });
 
       const inner = self.messagesOf(req) +
         '<div class="tiles">' +
           self.tile(view.kinds.length, 'kind of policy') +
-          self.tile(view.paging.total, 'password profile') +
-          self.tile(view.enforced ? 'yes' : 'no', 'enforced in this realm') +
-          self.tile(profile.stored ? 'stored' : 'built-in',
-                    'the default profile is') +
+          self.tile(view.paging.total, 'profile') +
+          self.tile(view.enforced ? 'yes' : 'no',
+                    'password policy enforced in this realm') +
         '</div>' +
 
         self.note('<strong>A policy here is a rule this realm holds a ' +
-        'credential to.</strong> The first kind is the password policy, and ' +
-        'there is one profile of it — <code>default</code> — which applies ' +
-        'to every person in this realm. It is stored in the directory as ' +
-        '<code>' +
-        self.esc(profile.dn || ('cn=default,ou=passwordPolicies,…')) +
-        '</code>, in the shape of draft-behera-ldap-password-policy (the ' +
-        'schema OpenLDAP\'s ppolicy overlay reads), so an ' +
-        '<code>ldapsearch</code> finds it and an <code>ldapmodify</code> ' +
-        'changes it. <strong>This is not the XACML policy ' +
+        'credential to.</strong> Each kind below is a SEPARATE policy with ' +
+        'its own entry in its own container, and each has one profile — ' +
+        '<code>default</code> — which applies to every person in this ' +
+        'realm. ' +
+        view.kinds.map(function (kind) {
+          return '<a href="#' + self.esc(kind.id) + '">' +
+            self.esc(kind.label) + '</a> (<code>' +
+            self.esc(kind.container) + '</code>)';
+        }).join(', ') + '. <strong>This is not the XACML policy ' +
         'repository</strong>: <a href="/admin/xacml/policies">that one</a> ' +
-        'holds documents a PDP evaluates, in <code>ou=policies</code>; this ' +
-        'holds numbers every door that sets a password checks.') +
+        'holds documents a PDP evaluates, in <code>ou=policies</code>.') +
 
-        (view.enforced
-          ? '<div class="ok">' + self.esc(view.enforcement) + '</div>'
-          : self.warn(self.esc(view.enforcement) + ' Switch the realm with ' +
-            '<code>global.mode</code> on <a ' +
-            'href="/admin/config">Configuration</a>.')) +
-
-        (profile.problems.length
-          ? self.warn('<strong>The stored profile has ' +
-                      profile.problems.length +
-            ' problem(s), and the built-in default is in force for each ' +
-            'field named:</strong> ' +
-            profile.problems.map(self.esc.bind(self)).join(' '))
-          : '') +
-
-        '<h2 id="password">Password policy — the default profile</h2>' +
-        self.note(profile.stored
-          ? 'This profile is <strong>stored</strong> at <code>' +
-            self.esc(profile.dn) +
-            '</code>. Saving replaces it; putting the defaults back deletes ' +
-            'it, after which the built-in defaults below are in force.'
-          : '<strong>Nothing is stored yet, so the built-in defaults are in ' +
-            'force.</strong> Saving this form writes <code>cn=default</code> ' +
-            'under <code>ou=passwordPolicies</code> in this realm\'s ' +
-            'directory. A realm created later starts with the same built-in ' +
-            'defaults rather than a copy of this one — the profile is not ' +
-            'seeded, so it cannot be missing from a realm nobody seeded.') +
-
-        '<form method="post" action="/admin/policies">' +
-        '<input type="hidden" name="action" value="save-password-policy">' +
-        '<input type="hidden" name="profile" value="' + self.esc(profile.name) +
-        '">' +
-        self.wideTable('The default password profile',
-          '<table><tr><th>Rule</th><th>Value</th><th>Attribute</th>' +
-          '<th>Built-in default</th><th>Source</th></tr>' +
-          pw.fields.map(self.passwordPolicyFieldRow.bind(self)).join('') +
-          '<tr><td><label for="pp-description">Description</label></td>' +
-          '<td colspan="4"><input type="text" id="pp-description" ' +
-          'name="description" size="60" maxlength="1024" value="' +
-          self.esc(profile.description) + '" placeholder="what this profile ' +
-          'is for"></td></tr></table>') +
-        '<p><button>Save the profile</button></p>' +
-        self.note('Every field is checked before anything is written, and ' +
-        'two rules relate fields to each other: a generated password must be ' +
-        'at least the minimum length, and at least twice the symbol count ' +
-        'plus two — a generator asked for more symbols than that would be ' +
-        'drawing for a very long time. <strong>A change applies to the NEXT ' +
-        'password set in this realm</strong>; nothing already stored is ' +
-        're-checked, because a stored password is a hash and there is ' +
-        'nothing left to check it against.') +
-        '</form>' +
-
-        (profile.stored
-          ? '<form method="post" action="/admin/policies" class="inline">' +
-            '<input type="hidden" name="action" ' +
-            'value="reset-password-policy"><input type="hidden" ' +
-            'name="profile" value="' + self.esc(profile.name) +
-            '"><button ' +
-            'class="secondary">Put the built-in defaults back</button></form>'
-          : '') +
-
-        '<h2 id="rules">What a password must be, right now</h2>' +
-        self.note('The rules as the <a href="/portal/password">user ' +
-        'portal</a> and the activation page print them to the person ' +
-        'choosing a password, so the page they read and the rule this ' +
-        'service applies are one sentence.') +
-        '<ul>' + pw.rules.map(function (rule) {
-          return '<li>' + self.esc(rule) + '</li>';
-        }).join('') + '</ul>' +
-
-        '<h2 id="doors">Where it is enforced</h2>' +
-        self.note('Every door that sets a password ends in one function in ' +
-        '<code>common/credentials.ts</code>, which is what makes the list ' +
-        'below complete rather than a list somebody remembered. ' +
-        self.esc(pw.notDoors)) +
-        '<table><tr><th>Door</th><th>Reaches</th></tr>' +
-        pw.doors.map(function (row) {
-          return '<tr><td>' + self.esc(row.door) + '</td><td><code>' +
-                 self.esc(row.via) +
-            '</code></td></tr>';
-        }).join('') + '</table>' +
-
-        '<h2 id="history">The history, and what it costs</h2>' +
-        self.note('<strong>A remembered password is the scrypt hash it was ' +
-        'already stored as</strong>, moved into <code>pwdHistory</code> on ' +
-        'the person\'s own entry when the next one replaces it — no new hash ' +
-        'is made, and the password itself is never kept. Checking a new ' +
-        'password costs one scrypt comparison per remembered one, about 70ms ' +
-        'each on this thread, so a history of ' + self.esc(profile.history) +
-        ' is up to ' +
-        self.esc((profile.history + 1) * 70) + 'ms at a password change. A ' +
-        'generated password skips the comparison, because nothing drawn at ' +
-        'random is a previous password. <code>pwdHistory</code> and ' +
-        '<code>pwdChangedTime</code> are maintained by this service and an ' +
-        'LDAP modify naming either is refused in product mode.') +
-
-        '<h2 id="generator">The generator</h2>' +
-        self.note('<strong>New users created from the console or ' +
-        '<code>/admin-api</code> get a generated password by ' +
-        'default</strong>, shown or returned ONCE. It is drawn by ' +
-        '<code>' + self.esc(pw.generator.module) + '</code>' +
-        (pw.generator.version ? ' ' + self.esc(pw.generator.version) : '') +
-        ' from ' +
-        self.esc(pw.generator.source) + ', using ' +
-        self.esc(pw.generator.pools.join(', ')) +
-        ' (leaving out ' + pw.generator.excluded.map(function (one) {
-          return '<code>' + self.esc(one) + '</code>';
-        }).join(' and ') + ', which silently end or change a string pasted ' +
-        'into a shell or a JSON body), and it draws until ' +
-        self.esc(pw.generator.drawsUntil) +
-        '.') +
+        view.kinds.map(function (kind) {
+          if (kind.id === 'password') {
+            return self.passwordPolicySection(view);
+          }
+          if (kind.id === 'authn') {
+            return self.authnPolicySection(view);
+          }
+          return self.genericPolicySection(view, kind);
+        }).join('') +
 
         '<h2 id="profiles">Profiles</h2>' +
-        self.note('One profile today, and the list is paged like every list ' +
-        'in this console. A second profile cannot be created yet: nothing ' +
-        'assigns a profile to a person, so a second one would decide nothing ' +
-        'while looking exactly like one that does.') +
+        self.note('One profile of each kind today, and the list is paged ' +
+        'like every list in this console. A second profile of a kind cannot ' +
+        'be created yet: nothing assigns a profile to a person, so a second ' +
+        'one would decide nothing while looking exactly like one that does.') +
         listedNav.head +
         '<table><tr><th>Kind</th><th>Profile</th><th>Stored at</th>' +
         '<th>Problems</th></tr>' +
         view.profiles.map(function (row) {
-          return '<tr><td>' + self.esc(row.kind) + '</td><td><a ' +
-            'href="#password">' +
+          return '<tr><td>' + self.esc(kindLabel[row.kind] || row.kind) +
+            '</td><td><a href="#' + self.esc(row.kind) + '">' +
             self.esc(row.name) + '</a></td><td>' +
             (row.stored ? '<code>' + self.esc(row.dn) + '</code>'
-                        : '<span class="state-none">not stored — built-in ' +
-                          'defaults</span>') +
+              : row.inherited
+                ? 'inherited from the default realm: <code>' +
+                  self.esc(row.dn) + '</code>'
+                : '<span class="state-none">not stored — built-in ' +
+                  'defaults</span>') +
             '</td><td>' + self.esc(String(row.problems.length)) + '</td></tr>';
         }).join('') + '</table>' +
         listedNav.foot +
 
-        '<h2 id="schema">Schema</h2>' +
-        self.note('This directory is schemaless, so a container of entries ' +
-        'carrying invented attributes says what they mean here. The ' +
-        '<code>pwd*</code> names are draft-behera-ldap-password-policy\'s; ' +
-        'the <code>stsPwd*</code> ones are this service\'s own, because the ' +
-        'draft delegates composition rules to the server and defines none.') +
-        '<table><tr><th>Object class</th><th>What it is</th></tr>' +
-        pw.schema.objectClasses.map(function (row) {
-          return '<tr><td><code>' + self.esc(row.name) + '</code></td><td>' +
-            self.esc(row.what) + '</td></tr>';
-        }).join('') + '</table>' +
-        '<table><tr><th>Attribute</th><th>On</th><th>What it holds</th></tr>' +
-        pw.schema.attributes.map(function (row) {
-          return '<tr><td><code>' + self.esc(row.name) +
-                 '</code></td><td>the ' +
-            'profile</td><td>' + self.esc(row.what) + '</td></tr>';
-        }).join('') +
-        pw.schema.personAttributes.map(function (row) {
-          return '<tr><td><code>' + self.esc(row.name) + '</code></td><td>a ' +
-            'person</td><td>' + self.esc(row.what) + '</td></tr>';
-        }).join('') + '</table>' +
-
         self.note('The same over JSON is ' +
         '<code>/admin/policies?format=json</code> and <code>GET ' +
-        '/admin-api/policies</code>; the two actions on this page are ' +
-        '<code>POST /admin-api/policies/save-password-policy</code> and ' +
-        '<code>/reset-password-policy</code>.');
+        '/admin-api/policies</code>; the actions on this page are ' +
+        view.actions.map(function (action) {
+          return '<code>POST /admin-api/policies/' + self.esc(action) +
+                 '</code>';
+        }).join(', ') + '.');
 
       self.respond(req, res, view, 'Policies', '/admin/policies', inner);
       log.debug("Leaving the admin policies page.");
@@ -34083,11 +34361,12 @@ class AdminConsole {
       // an actor of its own, and a function that reached for a cookie would
       // work from one of them.
       const state = gateStateFor(req);
-      const result = adminActions.passwordPoliciesAction(body, {
+      const result = adminActions.policiesAction(body, {
         actor: (state && state.username) || '', via: 'console' });
       self.respondToAction(req, res, '/admin/policies' +
         queryWith(self.listViewFromBack('/admin/policies', body.back), {}) +
-        (result.ok ? '#password' : ''), result);
+        (result.ok && /^[a-z]+$/.test(String(result.kind || ''))
+          ? '#' + result.kind : ''), result);
       log.debug("Leaving the admin policies action endpoint.");
     });
 

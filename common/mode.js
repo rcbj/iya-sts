@@ -1576,7 +1576,8 @@ const REQUIREMENTS = [
              'rate limit as one (STS-AUTHN-0213 on the audit row and in the ' +
              'log only) — whenever they hold an authenticator app or a ' +
              'security key in the mfa role, or a second factor is required ' +
-             'of them (stsMfaRequired, authn.mfaRequired). An APP PASSWORD ' +
+             'of them (stsMfaRequired, the authentication policy). An APP ' +
+             'PASSWORD ' +
              'they made on /portal/app-passwords, scoped to the door, is ' +
              'accepted instead. authn.passwordAloneDoors names doors that ' +
              'accept the password anyway, which lowers every such person to ' +

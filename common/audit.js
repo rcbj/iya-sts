@@ -607,6 +607,10 @@ const ACTIONS = [
   // somebody who has lost their authenticator, so it is expected traffic rather
   // than an anomaly — the row says who cleared whose, and it is the pairing of
   // those two names over time that is worth reading.
+  // AN ADMINISTRATOR SET A PERSON'S ADDRESS (#64): verified, because an
+  // administrator is a trusted source.
+  { action: 'admin.mail.set', category: 'admin',
+    label: 'A person\'s address was set by an administrator' },
   { action: 'admin.mfa.totp.cleared', category: 'admin',
     label: 'An operator cleared somebody\'s authenticator app' },
   { action: 'admin.mfa.key.cleared', category: 'admin',
@@ -644,6 +648,25 @@ const ACTIONS = [
   // eight, and who dropped it" is the question this row exists to answer.
   { action: 'admin.password-policy.change', category: 'admin',
     label: 'A password policy profile was changed' },
+
+  // AN AUTHENTICATION POLICY PROFILE WAS SAVED OR PUT BACK (#64), for the row
+  // above's reason: which ways in a realm accepts, before and after.
+  { action: 'admin.authn-policy.change', category: 'admin',
+    label: 'An authentication policy profile was changed' },
+
+  // A PERSON'S EMAILED SECOND FACTOR WAS TURNED ON OR OFF (#64): by them on
+  // /portal/mfa, by an administrator, or by this service at the failure
+  // limit. The kind, never a code.
+  { action: 'authn.mail-factor.change', category: 'authentication',
+    label: 'An emailed second factor was turned on or off' },
+  // AN EMAILED CODE OR LINK WAS SENT, AND ONE WAS REFUSED OR ACCEPTED (#64).
+  // The step and the outcome, never the secret.
+  { action: 'authn.mail-factor.sent', category: 'authentication',
+    label: 'An emailed sign-in code or link was sent' },
+  { action: 'authn.mail-factor.accepted', category: 'authentication',
+    label: 'An emailed sign-in code or link was accepted' },
+  { action: 'authn.mail-factor.refused', category: 'authentication',
+    label: 'An emailed sign-in code or link was refused' },
 
   // A CLIENT-CERTIFICATE TRUST ANCHOR WAS ADDED OR REMOVED (2026-09-12),
   // through /admin/tls/trust or /admin-api/tls/trust. The SUBSTANCE, for

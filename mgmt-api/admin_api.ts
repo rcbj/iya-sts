@@ -145,6 +145,9 @@ import scopePolicy = require('../common/scope_policy');
 // reason: a hand-written list of what an operation accepts is a second
 // definition of the table and goes stale in the document a caller trusts most.
 import passwordPolicy = require('../common/password_policy');
+// THE KINDS OF POLICY (#64): the policies resource documents two actions per
+// kind, and each save's body from that kind's FIELDS.
+import policyKinds = require('../admin-core/policy_kinds');
 import admin = require('../admin-ui/admin');
 // WHAT A REALM ADMINISTRATOR MAY NOT REACH (2026-09-14, #32) — the console's
 // table, asked of a realm's own token and a realm's own session here. A
@@ -773,6 +776,125 @@ class AdminApi {
                        .concat(admin.listField(req, body, many));
     log.debug("Leaving AdminApi.namesOf(). " + names.length + " name(s).");
     return names;
+  }
+
+  // --- the policies resource's actions (#64)
+  // --------------------------------------
+  //
+  // Two per kind in `admin-core/policy_kinds.ts`, the save's body built from
+  // the kind's own FIELDS. The prose of the two kinds this service defines is
+  // written out; a kind registered later gets the generic sentences, which
+  // are true of every kind because every kind implements the same interface.
+  policyKindActions() {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.policyKindActions().");
+    const PROSE = {
+      password: {
+        save: 'Writes `cn=default,ou=passwordPolicies` in this realm\'s ' +
+              'directory, REPLACING what is there. Two rules relate fields: ' +
+              '`generatedLength` must be at least `minLength`, and at least ' +
+              'twice `minSymbols` plus two. **A change applies to the NEXT ' +
+              'password set in this realm and to nothing already stored**, ' +
+              'which is a hash and cannot be re-checked.',
+        example: { minLength: 14 }
+      },
+      authn: {
+        save: 'Writes `cn=default,ou=authnPolicies` in this realm\'s ' +
+              'directory, REPLACING what is there — in the DEFAULT realm, ' +
+              'the profile every realm without its own follows. At least ' +
+              'one mechanism must be a first factor, and with ' +
+              '`requireSecondFactor: always` at least one a second. ' +
+              '**An email mechanism cannot be turned on while this realm ' +
+              'cannot send mail** (`STS-AUTHN-0244`), and NIST SP 800-63B-4 ' +
+              'section 3.1.3.1 advises against email as an authenticator ' +
+              'at all, which is why both are off by default. There is no ' +
+              '`never`: a person who holds a second factor is always asked ' +
+              'for it.',
+        example: { emailCodeTtlS: 240 }
+      }
+    };
+    const cap = function (text) {
+      log.debug("Entering cap().");
+      log.debug("Leaving cap().");
+      return text.charAt(0).toUpperCase() + text.slice(1);
+    };
+    const out = [];
+    policyKinds.list().forEach(function (kind) {
+      const module = kind.module;
+      const prose = PROSE[kind.id] || {
+        save: 'Writes this kind\'s `cn=default` under `' + kind.container +
+              '`, REPLACING what is there.',
+        example: {}
+      };
+      const properties = {
+        profile: { type: 'string', enum: [module.DEFAULT_PROFILE],
+                   description: 'Which profile. Only `default` exists.' },
+        description: { type: 'string',
+                       description: 'What the profile is for, for the next ' +
+                                    'person. Optional.' }
+      };
+      module.FIELDS.forEach(function (field) {
+        properties[field.key] = field.type === 'bool'
+          ? { oneOf: [{ type: 'boolean' }, { type: 'string' }],
+              description: field.what + ' (`true`/`false`, or `TRUE`/' +
+                           '`FALSE` from a form.) Default ' + field.dflt +
+                           '.' }
+          : field.type === 'enum'
+            ? { type: 'string', enum: field.values,
+                description: field.what + ' Default `' + field.dflt + '`.' }
+            : { oneOf: [{ type: 'integer', minimum: field.min,
+                          maximum: field.max },
+                        { type: 'string' }],
+                description: field.what + ' Between ' + field.min + ' and ' +
+                             field.max + '. Default ' + field.dflt + '.' };
+      });
+      out.push({
+        action: policyKinds.saveAction(kind),
+        operationId: 'save' + cap(kind.id) + 'Policy',
+        summary: 'Set the ' + kind.label.toLowerCase() + ' profile',
+        description: prose.save + '\n\n**Every field is required** and one ' +
+                     'left out is refused by name rather than reset to a ' +
+                     'default, because a save that quietly loosened a rule ' +
+                     'nobody mentioned is the mistake nobody sees. The only ' +
+                     'profile is `default`: nothing assigns a profile to a ' +
+                     'person, so another name is refused rather than stored.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: properties,
+          required: module.FIELDS.map(function (field) {
+            return field.key;
+          }),
+          examples: [Object.assign({ profile: module.DEFAULT_PROFILE },
+                                   module.DEFAULTS, prose.example)],
+          additionalProperties: false
+        },
+        responseDescription: 'The profile now in force and the rules as ' +
+                             'sentences.' });
+      out.push({
+        action: policyKinds.resetAction(kind),
+        operationId: 'reset' + cap(kind.id) + 'Policy',
+        summary: 'Remove this realm\'s ' + kind.label.toLowerCase() +
+                 ' profile',
+        description: 'Deletes this realm\'s stored profile, after which ' +
+                     kind.fallsBackTo + ' ' +
+                     (kind.id === 'authn' ? 'governs this realm'
+                       : 'are in force') +
+                     '. `removed: false` means nothing was stored here.',
+        requestBody: {
+          type: 'object',
+          properties: {
+            profile: { type: 'string', enum: [module.DEFAULT_PROFILE],
+                       description: 'Which profile. Only `default` exists.' }
+          },
+          examples: [{ profile: module.DEFAULT_PROFILE }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whether anything was removed, and the profile ' +
+                             'now in force.' });
+    });
+    log.debug("Leaving AdminApi.policyKindActions(). " + out.length + ".");
+    return out;
   }
 
   // --- the shared parameter descriptions
@@ -3913,6 +4035,58 @@ class AdminApi {
             },
             responseDescription: 'Whose set was cleared.' },
 
+          // THE EMAILED SECOND FACTOR AND THE ADDRESS (#64).
+          { action: 'clear-email-factor', operationId: 'clearUserEmailFactor',
+            summary: 'Turn off somebody\'s emailed second factor',
+            description: 'Clears `stsMailFactor` — the emailed code or link ' +
+                         'the person opted into on `/portal/mfa`. It cannot ' +
+                         'lock anybody out: it is a second factor. There is ' +
+                         'no operation that turns it ON: the opt-in is the ' +
+                         'person\'s. `removed: false` means they had none.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether a factor was turned off.' },
+
+          { action: 'set-mail', operationId: 'setUserMail',
+            summary: 'Set somebody\'s email address',
+            description: 'Writes `mail` on the person\'s entry and marks it ' +
+                         'VERIFIED (`stsMailVerified`): an administrator is ' +
+                         'one of the trusted sources #64 names, with SCIM, ' +
+                         'an ' +
+                         'administrator\'s LDAP write and a federation ' +
+                         'partner. The FORMER address, if there was one, is ' +
+                         'told it changed. Refused unless it is an address ' +
+                         'this service could send to.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                mail: { type: 'string', maxLength: 254,
+                        description: 'The address.' }
+              },
+              required: ['user', 'mail'],
+              examples: [{ user: 'alice', mail: 'alice@example.com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The address now on the entry, verified.' },
+
           // -----------------------------------------------------------------
           // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS (2026-09-13),
           // mirroring the Password and second-factor controls on a person's
@@ -4071,7 +4245,7 @@ class AdminApi {
                          'those is a way in. If a second factor is still ' +
                          'REQUIRED ' +
                          'of the person — `require-mfa`, or ' +
-                         '`authn.mfaRequired` for the realm — their next ' +
+                         'the realm\'s authentication policy — their next ' +
                          'sign-in asks them to enrol a new one, which is how ' +
                          'to reset somebody\'s MFA.\n\nRefused for somebody ' +
                          'who holds no second factor.\n\n**Shared Signals**: ' +
@@ -4115,7 +4289,9 @@ class AdminApi {
                          'reach** is a sign-in that is neither that screen ' +
                          'nor one of those doors: federation, SPNEGO or a ' +
                          'Kerberos AS-REQ, a TLS client certificate. ' +
-                         '`authn.mfaRequired` is the same requirement for ' +
+                         'The authentication policy\'s `requireSecondFactor: ' +
+                         'always` ' +
+                         'is the same requirement for ' +
                          'every person in the realm.',
             requestBodyRequired: true,
             requestBody: {
@@ -4138,7 +4314,8 @@ class AdminApi {
             operationId: 'stopRequiringUserSecondFactor',
             summary: 'Take the per-account second-factor requirement off',
             description: 'Clears `stsMfaRequired`. A realm requirement ' +
-                         '(`authn.mfaRequired`) is unaffected and the reply ' +
+                         '(the authentication policy) is unaffected and the ' +
+                         'reply ' +
                          'says whether one is in force. ' +
                          'A second factor the person ' +
                          'holds goes on being asked for, as it always is.',
@@ -6063,7 +6240,28 @@ class AdminApi {
               examples: [{ username: 'alice', credentialId: 'q1w2e3r4' }],
               additionalProperties: false
             },
-            responseDescription: 'How many keys are left.' }
+            responseDescription: 'How many keys are left.' },
+
+          { action: 'clear-email-factor', operationId: 'clearEmailFactor',
+            summary: 'Turn off somebody\'s emailed second factor',
+            description: 'The same switch as `POST /admin-api/users/' +
+                         'clear-email-factor` (#64): clears the emailed code ' +
+                         'or link the person opted into. It cannot lock ' +
+                         'anybody out.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                username: { type: 'string',
+                            description: 'The name they sign in as.' },
+                user: { type: 'string',
+                        description: 'Accepted for `username`.' }
+              },
+              required: ['username'],
+              examples: [{ username: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether a factor was turned off.' }
         ] },
 
       { method: 'GET', path: BASE + '/tokens', tag: 'Tokens',
@@ -16200,53 +16398,53 @@ class AdminApi {
         ] },
 
       // -----------------------------------------------------------------------
-      // POLICIES (2026-09-12). Two operations over
-      // `adminViews.passwordPoliciesView()` and
-      // `adminActions.passwordPoliciesAction()` — the same two functions
-      // /admin/policies calls, so the page and this resource cannot disagree.
+      // POLICIES (2026-09-12; every kind since #64). Two operations over
+      // `adminViews.policiesView()` and `adminActions.policiesAction()` — the
+      // same two functions /admin/policies calls, so the page and this
+      // resource cannot disagree.
       //
-      // **THE SAVE'S REQUEST SCHEMA IS BUILT FROM `password_policy.FIELDS`**,
-      // so a rule added there is a property here the same day. Each field takes
-      // its JSON type OR a string, because a form-encoded body copied from the
-      // console carries `"12"` and `"TRUE"`, and `coerceTypes` is off in this
-      // file's ajv for a reason stated beside it; the module parses both
-      // spellings and refuses anything else by name.
+      // **THE ACTIONS ARE BUILT FROM `admin-core/policy_kinds.ts`**, two per
+      // kind, and **EACH SAVE'S REQUEST SCHEMA FROM ITS KIND'S `FIELDS`**, so
+      // a policy registered there is two operations here the same day. Each
+      // field takes its JSON type OR a string, because a form-encoded body
+      // copied from the console carries `"12"` and `"TRUE"`, and
+      // `coerceTypes` is off in this file's ajv for a reason stated beside
+      // it; the module parses both spellings and refuses anything else by
+      // name.
       // -----------------------------------------------------------------------
       { method: 'GET', path: BASE + '/policies', tag: 'Policies',
         operationId: 'getPolicies',
         summary: 'The policies this realm holds a credential to',
-        description: 'Every kind of policy and its profiles — today the ' +
-                     'PASSWORD POLICY and its one profile, ' +
-                     '`default`.\n\n**`password.profile` is the profile IN ' +
-                     'FORCE**, which is the stored ' +
-                     '`cn=default,ou=passwordPolicies` entry where there is ' +
-                     'one (`stored: true`) and the built-in defaults where ' +
-                     'there is not. `sources` says which of the two each ' +
+        description: 'Every kind of policy and its profiles — the PASSWORD ' +
+                     'POLICY and the AUTHENTICATION POLICY (#64), one ' +
+                     'profile each, `default`. Each kind is a member named ' +
+                     'by its id (`password`, `authn`) and a row of ' +
+                     '`kinds`.\n\n**`<kind>.profile` is the profile IN ' +
+                     'FORCE**: the stored entry where there is one ' +
+                     '(`stored: true`) and the built-in defaults where there ' +
+                     'is not — and, for the authentication policy only, the ' +
+                     'DEFAULT REALM\'s entry in a realm with none of its own ' +
+                     '(`from: "default-realm"`). `sources` says where each ' +
                      'value came from, and `problems` names any stored value ' +
-                     'that could not be read — the built-in default is in ' +
-                     'force for that field.\n\n**`enforced` is whether this ' +
-                     'realm checks it**, which is product mode: development ' +
-                     'checks no password at any door, so the rules are ' +
-                     'recorded and not applied there. A GENERATED password ' +
-                     'meets the profile in both modes.\n\n`password.rules` ' +
-                     'is the profile as a person reads it — the same ' +
-                     'sentences the user portal prints — and ' +
-                     '`password.doors` names every door that sets a password ' +
-                     'and the one function each ends ' +
-                     'in.\n\nIt is NOT the XACML ' +
-                     'policy repository, which is `GET ' +
-                     '/admin-api/xacml/policies`.',
+                     'that could not be read.\n\n**`enforced` is whether ' +
+                     'this realm checks the password policy**, which is ' +
+                     'product mode. The authentication policy decides what ' +
+                     'the sign-in screen offers in both modes; ' +
+                     '`authn.mail.usable` says whether its two email ' +
+                     'mechanisms can be on here, and a field with ' +
+                     '`disabled: true` cannot be turned on until it ' +
+                     'can.\n\nIt is NOT the XACML policy repository, which ' +
+                     'is `GET /admin-api/xacml/policies`.',
         mirrors: 'GET /admin/policies',
         parameters: this.pagingParameters(),
-        responseDescription: 'The kinds of policy, the password profile in ' +
-                             'force with its field table ' +
-                             'and schema, where it is ' +
-                             'enforced, the generator, and the paged profiles.',
+        responseDescription: 'The kinds of policy, each kind\'s profile in ' +
+                             'force with its field table and schema, and ' +
+                             'the paged profiles.',
         responseSchema: { type: 'object',
                           description: 'The policies register.' },
         handler: function (req, res) {
           log.debug("Entering the management API policies endpoint.");
-          self.sendJson(res, 200, adminViews.passwordPoliciesView(req.query));
+          self.sendJson(res, 200, adminViews.policiesView(req.query));
           log.debug("Leaving the management API policies endpoint.");
         } },
 
@@ -16256,95 +16454,15 @@ class AdminApi {
           log.debug("Entering the management API policies action endpoint.");
           const body = parseBody(req);
           const result =
-            adminActions.passwordPoliciesAction(self.withAction(req, body),
-                                                             { via: 'api' });
+            adminActions.policiesAction(self.withAction(req, body),
+                                        { via: 'api' });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0060');
           }
           self.sendJson(res, result.ok ? 200 : 400, result);
           log.debug("Leaving the management API policies action endpoint.");
         },
-        actions: [
-          { action: 'save-password-policy', operationId: 'savePasswordPolicy',
-            summary: 'Set the password policy profile',
-            description: 'Writes `cn=default,ou=passwordPolicies` in this ' +
-                         'realm\'s directory, REPLACING what is there. ' +
-                         '**Every field is required** and one left out is ' +
-                         'refused by name rather than reset to a default, ' +
-                         'because a save that quietly loosened a rule nobody ' +
-                         'mentioned is the mistake nobody sees.\n\nTwo rules ' +
-                         'relate fields: `generatedLength` must be at least ' +
-                         '`minLength`, and at least twice `minSymbols` plus ' +
-                         'two. **A change applies to the NEXT password set ' +
-                         'in this realm and to nothing already stored**, ' +
-                         'which is a hash and cannot be re-checked.\n\nThe ' +
-                         'only profile is `default`: nothing assigns a ' +
-                         'profile to a person yet, so another name is ' +
-                         'refused rather than stored.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: (function () {
-                const out = {
-                  profile: { type: 'string',
-                             enum: [passwordPolicy.DEFAULT_PROFILE],
-                             description:
-                               'Which profile. Only `default` exists.' },
-                  description: { type: 'string',
-                                 description: 'What the profile is for, for ' +
-                                              'the next person. Optional.' }
-                };
-                passwordPolicy.FIELDS.forEach(function (field) {
-                  out[field.key] = field.type === 'bool'
-                    ? { oneOf: [{ type: 'boolean' }, { type: 'string' }],
-                        description: field.what +
-                                     ' (`true`/`false`, or `TRUE`/' +
-                                     '`FALSE` from a form.) Default ' +
-                                     field.dflt + '.' }
-                    : { oneOf: [{ type: 'integer', minimum: field.min,
-                                  maximum: field.max },
-                                { type: 'string' }],
-                        description: field.what + ' Between ' + field.min +
-                                     ' and ' +
-                                     field.max + '. Default ' + field.dflt +
-                                     '.' };
-                });
-                return out;
-              })(),
-              required: passwordPolicy.FIELDS.map(function (field) {
-                return field.key;
-              }),
-              examples:
-                [Object.assign({ profile: passwordPolicy.DEFAULT_PROFILE },
-                                       passwordPolicy.DEFAULTS,
-                                       { minLength: 14 })],
-              additionalProperties: false
-            },
-            responseDescription: 'The profile now in force, the rules as a ' +
-                                 'person reads them, and whether this realm ' +
-                                 'enforces them.' },
-
-          { action: 'reset-password-policy', operationId: 'resetPasswordPolicy',
-            summary: 'Put the built-in password policy back',
-            description: 'Deletes the stored profile, after which the ' +
-                         'built-in defaults are in force. `removed: false` ' +
-                         'means nothing was stored, so the ' +
-                         'defaults already were. Nothing ' +
-                         'already stored is touched, as with a save.',
-            requestBody: {
-              type: 'object',
-              properties: {
-                profile: { type: 'string',
-                           enum: [passwordPolicy.DEFAULT_PROFILE],
-                           description:
-                             'Which profile. Only `default` exists.' }
-              },
-              examples: [{ profile: passwordPolicy.DEFAULT_PROFILE }],
-              additionalProperties: false
-            },
-            responseDescription: 'Whether anything was removed, and the ' +
-                                 'profile now in force.' }
-        ] },
+        actions: this.policyKindActions() },
 
       { method: 'GET', path: BASE + '/consent', tag: 'Delegation',
         operationId: 'getConsent',

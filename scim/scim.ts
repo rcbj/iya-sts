@@ -1520,7 +1520,10 @@ class Scim {
             converted.attributes.federationLink = linkValues;
           }
         }
-        const written = directory.writePerson(dn, converted.attributes);
+        // `scim` (#64): an address a provisioning client sends is verified —
+        // SCIM is one of the trusted sources rcbj named.
+        const written = directory.writePerson(dn, converted.attributes,
+                                              { mailSource: 'scim' });
         if (!written.ok) {
           // 500 and not 507 for a full directory: RFC 7644 section 3.12 lists
           // no 507, and scimmy refuses to build an error it does not list.

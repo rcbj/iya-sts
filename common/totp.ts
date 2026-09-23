@@ -120,6 +120,9 @@ import realms = require('./realms');
 // nothing that serialises the answer can send it anywhere.
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+// #64: the authentication policy, whose row replaced this module's `enabled`
+// setting. A LEAF (helpers, mode, realms, error codes), so no cycle.
+import authnPolicy = require('./authn_policy');
 
 // What an enrolment copied onto the record, and what `verify()` reads back.
 interface TotpRecord {
@@ -176,6 +179,7 @@ interface TotpDeps {
     constantTimeEquals(a: unknown, b: unknown): boolean;
   };
   realms: { current?: () => { id?: unknown } | null | undefined };
+  authnPolicy: { allows(mechanism: string, role: string): boolean };
   errorCodes: {
     mark<T>(result: T, code: string): T;
     tag(code: string): string;
@@ -227,6 +231,7 @@ class Totp {
       config: config,
       crypto: crypto as unknown as TotpDeps['crypto'],
       realms: realms,
+      authnPolicy: authnPolicy,
       errorCodes: errorCodes as unknown as TotpDeps['errorCodes'],
       randomBytes: function (size: number): Buffer {
         return nodeCrypto.randomBytes(size);
@@ -338,7 +343,9 @@ class Totp {
                              'SHA1').toUpperCase();
     log.debug("Leaving Totp.settings().");
     return {
-      enabled: config.value('totp.enabled') !== false,
+      // #64: the authentication policy's row, which replaced `totp.enabled`
+      // with the same contract — it stops ENROLMENT, never a held secret.
+      enabled: this.deps.authnPolicy.allows('totp', 'second-factor'),
       issuer: String(config.value('totp.issuer') || '').trim(),
       algorithm: crypto.HOTP_ALGS[algorithm] ? algorithm : 'SHA1',
       digits: Math.max(6,

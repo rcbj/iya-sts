@@ -245,10 +245,65 @@ or after a password, and refuses the code and recovery-code steps
 (`STS-AUTHN-0204`). See [OAuth security profiles](oauth-security.md) for
 RFC 9470 step-up.
 
-### `authn.mfaRequired`
+### The authentication policy
 
-With `authn.mfaRequired` on, everyone who signs in at this realm's screen must
-present a second factor. **Require MFA** on a person's `/admin/users` page
+**Which ways of signing in a realm accepts** — as a first factor and as a
+second — and whether a second factor is required of everybody, are the
+authentication policy's, on Directory → Policies beside the password policy
+(#64). It is `cn=default,ou=authnPolicies` in the realm's directory. **A realm
+with no profile of its own follows the default realm's**, and the built-in
+defaults apply where neither has one; removing a realm's own profile puts it
+back to following. Every door asks it: a mechanism it does not accept in the
+role it answered in gets no session (`STS-AUTHN-0268`, `STS-AUTHN-0269`), and
+the sign-in screen draws only what it accepts.
+
+It replaced three settings: `authn.mfaRequired` is `requireSecondFactor`
+(`if-held` or `always` — there is no "never", because a second factor a person
+holds is always asked for), and `totp.enabled` and `backupCodes.enabled` are the
+TOTP and recovery-code rows. Those two keep their settings' contract: off stops
+NEW enrolments and never a factor already held.
+
+API: `GET /admin-api/policies` (the `authn` member) and `POST
+/admin-api/policies/save-authn-policy` / `reset-authn-policy`.
+
+### Emailed codes and links
+
+A six-digit code, or a single-use sign-in link, mailed to the person's
+**verified** address — as a first factor ("Email me a sign-in code" and "Email
+me a sign-in link" on the sign-in screen, with the username alone) or as a
+second (the person opts in on `/portal/mfa`).
+
+> **Warning.** NIST SP 800-63B-4 section 3.1.3.1: "Email SHALL NOT be used
+> for out-of-band authentication", because a mailbox may be reached with a
+> password alone, and mail may be read in transit or rerouted. **Both are OFF
+> in the built-in policy.** Turn them on only where that is an accepted risk.
+
+- They are offered only where the realm can send mail; Directory → Policies
+  draws them disabled otherwise, and a save turning one on is refused
+  (`STS-AUTHN-0244`).
+- A code or link is kept only as a scrypt hash, is valid for at most ten
+  minutes (`emailCodeTtlS`), works once, and a new one replaces the last. A
+  step ends after `emailCodeAttempts` wrong codes, and the sign-in rate limits
+  apply as well. A person's emailed factor is turned off after
+  `emailFailureLimit` consecutive failures (at most 100, section 3.2.2).
+- **A link finishes the sign-in only in the browser that asked for it.**
+  Opening it anywhere else signs nobody in. Opening it at all spends nothing
+  until Continue is pressed, so a mail scanner that fetches it does nothing.
+- As a first factor, **the page is the same whether or not the account exists
+  or has a verified address**, and nothing is mailed for one that does not.
+- The session records `amr ["otp"]` — RFC 8176 has no value for email — with
+  `acr "1"` alone and `acr "mfa"` after another factor. **An emailed factor
+  never satisfies a step-up on risk**, and the issuance policy's
+  `refuseEmailFactor` option refuses any session standing on one.
+- An emailed factor is never the second factor after an emailed first factor.
+  A person who holds an authenticator app or a security key is asked for that
+  first, and offered the email as a way round it.
+
+### Requiring a second factor of everybody
+
+With the authentication policy's `requireSecondFactor` set to `always`
+(Directory → Policies; it was the `authn.mfaRequired` setting until #64),
+everyone who signs in at this realm's screen must present a second factor. **Require MFA** on a person's `/admin/users` page
 (`stsMfaRequired`) does the same for one person. A person who holds none is
 sent to `/authn/mfa-setup` after the password to enrol an authenticator app or
 a security key, and no session is started until they do. A passwordless sign-in
@@ -333,7 +388,6 @@ See [What is not checked](what-is-not-checked.md).
 | `authn.sessionSweepS` | `STS_AUTHN_SESSION_SWEEP_S` | `30` | yes | Interval of the scheduler job that ends expired sessions and reports them; `0` switches it off. |
 | `authn.pendingTtlS` | `STS_AUTHN_PENDING_TTL_S` | `600` | yes | How long an interrupted request waits at the sign-in screen. |
 | `authn.mfaStepTtlS` | `STS_AUTHN_MFA_STEP_TTL_S` | `300` | yes | How long a person who passed the password step has to present a second factor. |
-| `authn.mfaRequired` | `STS_AUTHN_MFA_REQUIRED` | `false` | yes | Require a second factor of everybody signing in at this realm's screen. |
 | `authn.unauthenticatedSessions` | `STS_AUTHN_UNAUTHENTICATED_SESSIONS` | `false` | yes | Show *Continue without signing in*, which starts an unauthenticated session. |
 | `security.rateLimitWindowS` | `STS_SECURITY_RATE_WINDOW_S` | `60` | yes | The length of a fixed rate-limit window. |
 | `security.rateLimitPerIdentity` | `STS_SECURITY_RATE_PER_IDENTITY` | `5` | yes | Credential attempts one identity may make in a window, from any address. |
@@ -368,7 +422,6 @@ See [What is not checked](what-is-not-checked.md).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `totp.enabled` | `STS_TOTP_ENABLED` | `true` | yes | Allow new authenticator-app enrolments; off does not disable existing ones. |
 | `totp.issuer` | `STS_TOTP_ISSUER` | *(empty: the realm's host)* | yes | The issuer name an app shows beside the account. |
 | `totp.algorithm` | `STS_TOTP_ALGORITHM` | `SHA1` | yes | The HMAC digest, for new enrolments. |
 | `totp.digits` | `STS_TOTP_DIGITS` | `6` | yes | Digits per code, for new enrolments. |
@@ -381,7 +434,6 @@ See [What is not checked](what-is-not-checked.md).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `backupCodes.enabled` | `STS_BACKUP_CODES_ENABLED` | `true` | yes | Allow a person to generate a set; off does not invalidate a set already held. |
 | `backupCodes.count` | `STS_BACKUP_CODES_COUNT` | `10` | yes | Codes in a set. |
 | `backupCodes.length` | `STS_BACKUP_CODES_LENGTH` | `10` | yes | Characters per code, from a 32-character alphabet. |
 | `backupCodes.groupSize` | `STS_BACKUP_CODES_GROUP_SIZE` | `5` | yes | How a code is broken up for reading; `0` prints it unbroken. |
@@ -445,9 +497,9 @@ be changed with `POST /admin-api/config/set`.
 ## In the running service
 
 * **Protocols → WebAuthn** (`/admin/webauthn`): the thirteen ceremony, CTAP2
-  and policy settings, and `authn.mfaRequired`. API: `GET /admin-api/webauthn`.
+  and policy settings, and the authentication policy (Directory → Policies). API: `GET /admin-api/webauthn`.
 * **Protocols → TOTP MFA** (`/admin/totp`): the eight RFC 6238 parameters, and
-  `authn.mfaRequired`. API: `GET /admin-api/totp`.
+  the authentication policy (Directory → Policies). API: `GET /admin-api/totp`.
 * **Protocols → Recovery codes** (`/admin/backup-codes`): the four settings and
   what a code is made of. API: `GET /admin-api/backup-codes`.
 * **Users** (`/admin/users`): per person, who holds which factor and how many

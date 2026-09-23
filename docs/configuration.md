@@ -776,7 +776,8 @@ this service refuses, with nothing anywhere saying why. SHA-1 is not a weakness
 here: what RFC 4226 uses it for is a keyed MAC over a counter, not a
 collision-resistant digest.
 
-**`totp.enabled=false` does not disable an existing enrolment.** It stops new
+**The authentication policy's TOTP row off (it was `totp.enabled=false` until
+#64) does not disable an existing enrolment.** It stops new
 ones. A person who enrolled while it was on still holds the second factor their
 account is configured for, and the sign-in screen still asks for the code — a
 switch that silently downgraded every one of those accounts to a password alone
@@ -821,7 +822,8 @@ had to give up hashing for.
 their values were told to an app this service cannot reach. A stored code is
 compared against its hash, so shortening `backupCodes.length` changes what the
 next set looks like and leaves an existing one matching exactly as it did.
-`backupCodes.enabled=false` likewise stops a new set being generated and takes
+The recovery-code row off (it was `backupCodes.enabled=false`) likewise stops
+a new set being generated and takes
 nothing away: a switch that removed the only way back into an account whose
 phone is lost would be the worst one here.
 
@@ -900,15 +902,17 @@ failures — so a wrong value here would look like a broken authenticator.
 
 **The four policy rows refuse an ENROLMENT and never an authentication.** A key
 already on somebody's entry goes on working when the role that produced it is
-switched off — the same contract `totp.enabled` keeps, and with a sharper edge
+switched off — the same contract the authentication policy's TOTP row keeps, and with a sharper edge
 for `primaryAllowed`, where the person's ONLY credential would be the one being
 switched off. Removing a key is on that person's own row under `/admin/users`,
 or `POST /admin-api/users/clear-key`.
 
-### `authn.mfaRequired` and `security.passwordResetTtlMinutes`
+### A second factor required of everybody, and `security.passwordResetTtlMinutes`
 
-**`authn.mfaRequired`** (off by default, runtime, per realm) requires a second
-factor of everybody who signs in at the realm's sign-in screen. Somebody who
+**The authentication policy's `requireSecondFactor: always`** (Directory →
+Policies, `if-held` by default, per realm, inherited from the default realm;
+it was the `authn.mfaRequired` setting until #64) requires a second factor of
+everybody who signs in at the realm's sign-in screen. Somebody who
 holds none is sent to `/authn/mfa-setup` after their password is accepted and
 chooses an authenticator app (the page shows the QR code and asks for a code)
 or a security key; no session exists until one is enrolled. A passwordless
@@ -923,7 +927,8 @@ password instead, answered as a wrong password, and accept an app password
 scoped to the door. A federated assertion, a SPNEGO ticket or a Kerberos
 AS-REQ, and a TLS client certificate authenticate somebody without that screen,
 and a session that already exists is not ended. If both mechanisms are switched
-off (`totp.enabled`, and `webauthn.enabled` or `webauthn.mfaAllowed`), the
+off (the authentication policy's TOTP row, and `webauthn.enabled` or
+`webauthn.mfaAllowed`), the
 screen refuses the sign-in and names those settings rather than silently not
 asking.
 

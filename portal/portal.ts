@@ -799,7 +799,11 @@ const MFA_FORM = vz.object({
                           // is gone with the read-back it named: a set is
                           // hashed now and there is nothing to show.
                           'generate-codes', 'confirm-codes',
-                          'discard-codes'])),
+                          'discard-codes',
+                          // #64: the emailed second factor, on and off.
+                          'email-factor-on', 'email-factor-off'])),
+  // #64: which emailed factor, for `email-factor-on`.
+  kind: vt.opt(vt.oneOf(['code', 'link'])),
   // A STRING AND NOT AN INTEGER. `007123` is a code and 7123 is not: parsing a
   // one-time password as a number loses the leading zeros that one code in ten
   // has. The digit count is checked in `common/totp.ts`, where the person's own
@@ -1410,7 +1414,7 @@ class Portal {
       // answers — it is a SECOND factor beside whichever of them was
       // chosen, so it is an independent box.
       //
-      // It appears whether or not `totp.enabled` is on and the DOOR
+      // It appears whether or not the TOTP row is on and the DOOR
       // decides, exactly as the sign-in screen's anonymous button does...
       // no: it is DRAWN only when the mechanism is offered, because this
       // is a form somebody is filling in once and a tickbox that silently
@@ -2640,6 +2644,77 @@ class Portal {
   // `backupCodesCard()`). It is passed IN rather than read here, for the reason
   // `enrolment` is: the list is a live credential and a page builder that
   // fetched it would draw it on every GET.
+  // ---------------------------------------------------------------------------
+  // THE EMAILED SECOND FACTOR (#64), ON THIS PAGE BECAUSE IT IS A SECOND
+  // FACTOR. rcbj's D8: a person OPTS IN, rather than holding it because an
+  // address happens to be verified. Drawn in every realm, with the reason it
+  // cannot be turned on where it cannot — the realm's policy, mail, or an
+  // unverified address — DISABLED rather than left out, so a person reading
+  // it learns what is missing.
+  // ---------------------------------------------------------------------------
+  private emailFactorCard(session) {
+    const self = this;
+    const { log, websecurity } = this.deps;
+    log.debug('Entering Portal.emailFactorCard().');
+    const mailFactor = require('../common/mail_factor');
+    const policy = require('../common/authn_policy');
+    const username = session.user.username;
+    const status = mailFactor.status(username);
+    const csrf = websecurity.field(session.id);
+    const allowed = {
+      code: policy.allows('emailCode', 'second-factor'),
+      link: policy.allows('emailLink', 'second-factor')
+    };
+    if (!allowed.code && !allowed.link && !status.optedIn) {
+      log.debug('Leaving Portal.emailFactorCard(). Not offered here.');
+      return '';
+    }
+    const blocked = !status.offered.code && !status.offered.link
+      ? 'This service cannot send mail just now.'
+      : (!status.verified
+        ? 'Your address is not verified. Verify it on the Email page first.'
+        : '');
+    const option = function (kind, label) {
+      log.debug('Entering option().');
+      const off = !allowed[kind] || !status.offered[kind] || !!blocked;
+      log.debug('Leaving option().');
+      return '<form method="post" action="' + BASE + '/mfa" class="inline">' +
+        csrf + '<input type="hidden" name="action" value="email-factor-on">' +
+        '<input type="hidden" name="kind" value="' + kind + '">' +
+        '<button id="email-factor-' + kind + '"' +
+        (status.optedIn === kind ? ' class="secondary"' : '') +
+        (off || status.optedIn === kind ? ' disabled' : '') + '>' +
+        self.esc(label) + '</button></form> ';
+    };
+    const out = '<div class="card" id="email-factor">' +
+      '<h2>Email as a second factor</h2>' +
+      '<p class="sub">' + self.esc(status.optedIn
+        ? (status.usable
+            ? 'On: after your password, a ' + (status.kind === 'code'
+                ? 'six-digit code' : 'sign-in link') + ' is sent to ' +
+              mailFactor.masked(status.address) + '.'
+            : 'You chose an emailed ' + status.optedIn + ', but it is not ' +
+              'being used: ' + status.why + '.')
+        : 'Off.') + '</p>' +
+      (blocked ? '<p class="note">' + self.esc(blocked) + '</p>' : '') +
+      (allowed.code ? option('code', 'Email me a code') : '') +
+      (allowed.link ? option('link', 'Email me a sign-in link') : '') +
+      (status.optedIn
+        ? '<form method="post" action="' + BASE + '/mfa" class="inline">' +
+          csrf + '<input type="hidden" name="action" ' +
+          'value="email-factor-off"><button class="danger" ' +
+          'id="email-factor-off">Turn it off</button></form>'
+        : '') +
+      '<p class="note"><strong>Email is the weakest second factor this ' +
+      'service offers.</strong> Anybody who can read your mailbox — with ' +
+      'your email password alone, often — can finish signing in as you, ' +
+      'which is why NIST SP 800-63B-4 does not count email as an ' +
+      'authenticator. An authenticator app or a security key is better where ' +
+      'you have one; you are asked for those first.</p></div>';
+    log.debug('Leaving Portal.emailFactorCard().');
+    return out;
+  }
+
   private mfaPage(session, message, error, enrolment, fresh?, revealed?) {
     const self = this;
     const { credentials, log, totp, websecurity } = this.deps;
@@ -2774,7 +2849,7 @@ class Portal {
       : '<div class="card"><h2>Not available</h2>' +
         '<p class="sub">' +
         self.esc('Authenticator apps are turned off on this service. An ' +
-            'operator turns them on with the totp.enabled setting.') +
+            'operator turns them on in the authentication policy.') +
         '</p></div>';
 
     const aboutCard =
@@ -2806,7 +2881,8 @@ class Portal {
                                               mechanisms);
 
     const html = self.shell(BASE + '/mfa', session, message, error,
-      enrolledCard + setupCard + startCard + recoveryCard + aboutCard);
+      enrolledCard + setupCard + startCard + self.emailFactorCard(session) +
+      recoveryCard + aboutCard);
     log.debug('Leaving Portal.mfaPage().');
     return html;
   }
@@ -2994,7 +3070,7 @@ class Portal {
            '"><h2>Recovery codes</h2>' + body +
       (!live.enabled
         ? '<p class="note">' + self.esc('Recovery codes are turned off on ' +
-            'this service (backupCodes.enabled), so no new set can be ' +
+            'this realm\'s authentication policy, so no new set can be ' +
             'generated. A set already saved goes on working — a setting that ' +
             'took away the only way back into an account whose phone is lost ' +
             'would be the worst switch here.') + '</p>'
@@ -5069,11 +5145,34 @@ class Portal {
         return undefined;
       }
 
+      // THE EMAILED SECOND FACTOR (#64). `common/mail_factor.ts` decides, and
+      // refuses anything it could not honour at the next sign-in.
+      if (action === 'email-factor-on' || action === 'email-factor-off') {
+        const mailFactor = require('../common/mail_factor');
+        const done = action === 'email-factor-on'
+          ? mailFactor.optIn(username, body.kind, username, 'portal')
+          : mailFactor.clear(username, username, 'portal');
+        if (!done.ok) {
+          log.debug('Leaving POST ' + BASE + '/mfa. Email factor refused.');
+          errorCodes.mark(res, self.innerCode(done) || 'STS-PORTAL-0092');
+          return self.send(res, 400, self.mfaPage(session, null,
+            (done.errors || ['That could not be done.'])[0],
+            await self.pendingEnrolmentFor(username, base)));
+        }
+        log.debug('Leaving POST ' + BASE + '/mfa. Email factor changed.');
+        res.status(303).set('Location', BASE + '/mfa?done=' +
+          encodeURIComponent(action === 'email-factor-on'
+            ? 'Email is now your second factor, after your password.'
+            : 'Email is no longer a second factor for you.') +
+          '#email-factor').end();
+        return undefined;
+      }
+
       if (action === 'start') {
         // **THE SETTING IS CHECKED AT THE DOOR AND NOT ONLY ON THE PAGE**,
         // which is `authn.js`'s rule about the anonymous button read again: the
         // page is markup and this is the door, so a form posted by hand while
-        // `totp.enabled` is off must not mint a secret.
+        // the TOTP row is off must not mint a secret.
         const begun = credentials.beginTotpEnrolment(username, { base: base });
         if (!begun.ok) {
           log.debug('Leaving POST ' + BASE + '/mfa. Refused to start.');
@@ -5825,7 +5924,7 @@ class Portal {
       if (action === 'begin') {
         // THE POLICY IS CHECKED AT THE DOOR AND NOT ONLY ON THE PAGE, which is
         // `authn.js`'s rule about the anonymous button and `/portal/mfa`'s
-        // about `totp.enabled`: the page is markup and this is the door, so a
+        // about the TOTP row: the page is markup and this is the door, so a
         // form posted by hand while `webauthn.primaryAllowed` is off must not
         // arm a ceremony that `addKey()` would then refuse after somebody had
         // touched their key. `beginKeyEnrolment()` makes every one of those

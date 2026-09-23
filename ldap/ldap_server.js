@@ -339,6 +339,10 @@ const credentials = require('../common/credentials');
 // require moves no route and closes no cycle; what crosses the other way is the
 // three store functions its slot below installs.
 const passwordPolicy = require('../common/password_policy');
+// THE AUTHENTICATION POLICY REGISTER (#64, 2026-09-23), `ou=authnPolicies`, for
+// the password policy's reason exactly: a LEAF whose store this directory is,
+// so the require moves no route and closes no cycle.
+const authnPolicy = require('../common/authn_policy');
 const mode = require('../common/mode');
 // THE RATE LIMITER THE SIGN-IN SCREEN AND THE PORTAL ALREADY USE, for failed
 // binds (2026-09-12). A LIBRARY that requires only helpers, config, crypto,
@@ -790,6 +794,17 @@ function passwordPoliciesDn() {
   log.debug("Entering passwordPoliciesDn().");
   log.debug("Leaving passwordPoliciesDn().");
   return 'ou=passwordPolicies,' + baseDn();
+}
+
+// ou=authnPolicies is the AUTHENTICATION POLICY register (#64). A container of
+// its own rather than a second kind of entry under ou=passwordPolicies,
+// because rcbj asked for the two policies to stay separate — and a profile of
+// which ways in a realm accepts is not a rule about a password.
+// `common/authn_policy.ts` owns the schema.
+function authnPoliciesDn() {
+  log.debug("Entering authnPoliciesDn().");
+  log.debug("Leaving authnPoliciesDn().");
+  return 'ou=authnPolicies,' + baseDn();
 }
 
 // The fourth and fifth, and they are `spiffe_registry.js`'s store the way
@@ -2232,6 +2247,10 @@ passwordPolicy.SCHEMA.attributes.concat(passwordPolicy.SCHEMA.personAttributes)
   .forEach(function (row) {
     learnName(row.name, 'the password policy schema');
   });
+authnPolicy.SCHEMA.attributes.concat(authnPolicy.SCHEMA.personAttributes)
+  .forEach(function (row) {
+    learnName(row.name, 'the authentication policy schema');
+  });
 xacmlStore.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML policy schema');
 });
@@ -3033,6 +3052,19 @@ function seed() {
       'cn=default; while it is absent the built-in defaults are in force. ' +
       'ENFORCED IN PRODUCT MODE. common/password_policy.ts holds the schema; ' +
       'GET /admin/policies publishes it.'
+  }, { origin: 'seed' });
+  // The same argument for the authentication policy (#64): the container is
+  // structural, the profile is written the first time an operator saves it.
+  putEntry(authnPoliciesDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'authnPolicies',
+    description: 'AUTHENTICATION POLICY profiles: which mechanisms this ' +
+      'realm accepts as a first factor and as a second, and when a second ' +
+      'factor is required. The profile is cn=default; while it is absent a ' +
+      'realm other than the default one follows the DEFAULT REALM\'s ' +
+      'cn=default, and the built-in defaults apply where neither exists. ' +
+      'common/authn_policy.ts holds the schema; GET /admin/policies ' +
+      'publishes it.'
   }, { origin: 'seed' });
   putEntry(pepsDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -4670,6 +4702,8 @@ function applyFederatedAttributes(stored, info, how) {
     return false;
   }
   let changed = false;
+  // What `mail` was, for verifyWrittenMail() (#64).
+  const beforeFederated = { mail: (stored.attributes.mail || []).slice(0) };
   // The facts about WHERE they came from. Multi-valued and accumulated,
   // because one person can federate through two partners and the second must
   // not erase the first — the same reason `description` accumulates one line
@@ -4728,6 +4762,11 @@ function applyFederatedAttributes(stored, info, how) {
   written.forEach(function (name) {
     if (addValues(stored, 'federationAttribute', [name])) changed = true;
   });
+  // A PARTNER'S ADDRESS IS VERIFIED (#64), unless the partner said it is not.
+  if (written.indexOf('mail') >= 0 && federated.mailVerified !== false &&
+      verifyWrittenMail(stored, beforeFederated, 'federation')) {
+    changed = true;
+  }
   // ASSIGNED, unlike the three above it: it is a fact about the LAST federated
   // sign-in, and a history of timestamps would say nothing the audit log does
   // not already say better.
@@ -5750,6 +5789,14 @@ function createUser(name, options) {
   // deliberately left blank, which is the same lie by a slower route.
   if (invent) {
     applyVcAttributes(created, wanted);
+  }
+  // AN ADDRESS THE CALLER SUPPLIED (#64) — typed on the console, sent to
+  // /admin-api or over SCIM — is verified; one `namePlan()` invented is not.
+  // `mailSource` where the caller says, otherwise the origin says.
+  if (supplied.attributes && supplied.attributes.mail) {
+    verifyWrittenMail(created, {}, opts.mailSource ||
+      ({ console: 'admin', api: 'admin', scim: 'scim' })[
+        String(opts.origin || '')] || '');
   }
   // AND THE ACCOUNT OBSERVER IS TOLD, as an LDAP add always told it (#146).
   // The three doors that create through this function — the console,
@@ -7140,6 +7187,19 @@ if (typeof passwordPolicy.setDirectory === 'function') {
   log.warn('ldap: common/password_policy.ts offers no setDirectory(), so ' +
            'ou=passwordPolicies is unreachable and the built-in default ' +
            'password policy cannot be edited.');
+}
+
+// THE AUTHENTICATION POLICY REGISTER'S CONTAINER (#64), guarded the same way.
+if (typeof authnPolicy.setDirectory === 'function') {
+  authnPolicy.setDirectory({
+    allAuthnPolicies: allAuthnPolicies,
+    writeAuthnPolicy: writeAuthnPolicy,
+    deleteAuthnPolicy: deleteAuthnPolicy
+  });
+} else {
+  log.warn('ldap: common/authn_policy.ts offers no setDirectory(), so ' +
+           'ou=authnPolicies is unreachable and the built-in authentication ' +
+           'policy cannot be edited.');
 }
 
 if (typeof xacmlStore.setDirectory === 'function') {
@@ -9225,7 +9285,10 @@ if (typeof portal.setDirectory === 'function') {
 // whether or not it found anybody.
 // ---------------------------------------------------------------------------
 const MAIL_FLAGS = ['stsMailVerified', 'stsMailVerifyToken',
-                    'stsMailVerifyExpires', 'stsMailVerifyAddress'];
+                    'stsMailVerifyExpires', 'stsMailVerifyAddress',
+                    // #64: the emailed second factor a person opted in to,
+                    // and its consecutive failures (common/mail_factor.ts).
+                    'stsMailFactor', 'stsMailFactorFailures'];
 const mailChannel = require('../common/mail');
 if (typeof mailChannel.setDirectory === 'function') {
   mailChannel.setDirectory({
@@ -9257,6 +9320,38 @@ if (typeof mailChannel.setDirectory === 'function') {
       }
       log.debug('Leaving personByMail(). ' + (found ? 'Found.' : 'None.'));
       return found;
+    },
+    // THE ADDRESS ITSELF (#64): written by an administrator's set-mail, or
+    // by a person completing the verification of a NEW address (D5 — the
+    // address is not `mail` until its link is clicked). `source` is
+    // verifyWrittenMail()'s, plus `link`: the person proved it. The account
+    // observer is told, so the FORMER address hears it changed.
+    writeAddress: function (username, address, source) {
+      log.debug('Entering writeAddress(). source=' + source);
+      const located = locateEntry(String(username || ''));
+      const stored = located.stored;
+      if (!stored || !usernameOfEntry(stored)) {
+        log.debug('Leaving writeAddress(). No person.');
+        return false;
+      }
+      const before = attributeSnapshot(stored);
+      const value = String(address || '').trim();
+      if (value) {
+        stored.attributes.mail = [value];
+      } else {
+        delete stored.attributes.mail;
+      }
+      stored.attributes.modifytimestamp = [generalizedTime()];
+      touchDirectory(stored.dn);
+      if (source === 'link' && value) {
+        stored.attributes.stsmailverified = [value];
+      } else {
+        verifyWrittenMail(stored, before, source);
+      }
+      noteAccountChange('updated', stored.dn, before,
+                        attributeSnapshot(stored));
+      log.debug('Leaving writeAddress().');
+      return true;
     },
     writeMailFlag: function (username, name, value) {
       log.debug('Entering writeMailFlag(). ' + name);
@@ -9785,6 +9880,11 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 //   stsMailVerifyToken         a pending verification link's scrypt hash (a
 //   stsMailVerifyExpires       SECRET_ATTRIBUTE), when it stops working, and
 //   stsMailVerifyAddress       the address it was sent to.
+//   stsMailFactor              `code` or `link`: the emailed second factor a
+//                              person opted into on /portal/mfa (#64). Named
+//                              and spelt by `common/authn_policy.ts`'s schema.
+//   stsMailFactorFailures      consecutive failed emailed codes or links; the
+//                              factor is cleared at the policy's limit.
 //
 // One reader and one writer for them, narrowed to exactly these names, so that
 // neither slot below becomes a general attribute writer.
@@ -9839,7 +9939,9 @@ const PERSON_FLAGS = ['pwdReset', 'stsBootstrapAdministrator',
                       'stsNotDelegated', 'stsMayAct',
                       // #63: the mail channel's address verification.
                       'stsMailVerified', 'stsMailVerifyToken',
-                      'stsMailVerifyExpires', 'stsMailVerifyAddress'];
+                      'stsMailVerifyExpires', 'stsMailVerifyAddress',
+                      // #64: see MAIL_FLAGS.
+                      'stsMailFactor', 'stsMailFactorFailures'];
 
 // The value an administrator's lock is written with: the draft's "locked
 // permanently, until a password administrator unlocks it".
@@ -12109,6 +12211,9 @@ function ldapAddNow(req, res, next) {
     notePasswordWritten(req, addedEntry.dn, addedPassword.name, 'create');
   }
   if (isPersonEntry(addedEntry)) {
+    // Who wrote the address (#64): see ldapMailSource().
+    const addSource = ldapMailSource(req, addedEntry.dn);
+    verifyWrittenMail(addedEntry, {}, addSource);
     noteAccountChange('created', addedEntry.dn, {},
                       attributeSnapshot(addedEntry));
   }
@@ -12427,6 +12532,13 @@ function ldapModifyNow(req, res, next) {
     notePasswordWritten(req, stored.dn, modifiedPassword.name, 'update');
   }
   if (isPersonEntry(stored)) {
+    // Who wrote the address (#64): an administrator's is verified, a
+    // person's own is sent a verification link. See ldapMailSource().
+    const modifySource = ldapMailSource(req, stored.dn);
+    if (!verifyWrittenMail(stored, beforeModify, modifySource) &&
+        modifySource === 'ldap-self') {
+      startSelfVerification(stored, beforeModify);
+    }
     noteAccountChange('updated', stored.dn, beforeModify,
                       attributeSnapshot(stored));
   } else if (groupRuleFor(stored)) {
@@ -14375,6 +14487,75 @@ function deletePasswordPolicy(name) {
 }
 
 // ---------------------------------------------------------------------------
+// ou=authnPolicies AS A STORE (#64). ou=passwordPolicies' three functions
+// again, for the same reasons: named by the profile, replaced rather than
+// merged, and the container put back if a restored directory has none.
+// ---------------------------------------------------------------------------
+function authnPolicyDn(name) {
+  log.debug("Entering authnPolicyDn().");
+  log.debug("Leaving authnPolicyDn().");
+  return 'cn=' + escapeDnValue(String(name)) + ',' + authnPoliciesDn();
+}
+
+function allAuthnPolicies() {
+  log.debug('Entering allAuthnPolicies().');
+  const rows = entriesUnder(authnPoliciesDn()).map(function (stored) {
+    const object = entryObject(stored);
+    object.name = (stored.attributes.cn || [])[0] ||
+                  stored.dn.split(',')[0].replace(/^cn=/i, '');
+    return object;
+  });
+  log.debug('Leaving allAuthnPolicies(). ' + rows.length + ' profile(s).');
+  return rows;
+}
+
+function writeAuthnPolicy(name, attributes) {
+  log.debug('Entering writeAuthnPolicy(). name=' + name);
+  const dn = authnPolicyDn(name);
+  const existing = getEntry(dn);
+  if (!existing && totalEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writeAuthnPolicy(). The directory is full.');
+    return false;
+  }
+  if (!getEntry(authnPoliciesDn())) {
+    putEntry(authnPoliciesDn(), {
+      objectClass: ['top', 'organizationalUnit'],
+      ou: 'authnPolicies'
+    }, { origin: 'authentication policy' });
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
+                          { origin: existing ? existing.origin
+                              : 'authentication policy' });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  auditPolicyDirectory(existing ? 'entry.update' : 'entry.create', dn,
+                       stored.attributes, !existing);
+  log.debug('Leaving writeAuthnPolicy(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return true;
+}
+
+function deleteAuthnPolicy(name) {
+  log.debug('Entering deleteAuthnPolicy(). name=' + name);
+  const stored = getEntry(authnPolicyDn(name));
+  if (!stored) {
+    log.debug('Leaving deleteAuthnPolicy(). It was not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory();
+  auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
+  log.debug('Leaving deleteAuthnPolicy(). ' + entries.size +
+            ' entry/entries left.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // ou=peps AS A STORE.
 //
 // The same three functions again, and one difference from ou=policies worth
@@ -15184,6 +15365,103 @@ function attributeSnapshot(stored) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// AN ADDRESS WRITTEN BY A TRUSTED SOURCE IS VERIFIED (#64, 2026-09-23).
+//
+// rcbj's ticket: "Email addresses provided through federation relationships
+// do not need to be validated. Email addresses provided through SCIM, LDAP,
+// Mgmt API, or Admin Console do not need to be validated." — while any
+// address a PERSON provides must be proved by a link. So each door that
+// writes `mail` says who it is, and this is where that becomes
+// `stsMailVerified`:
+//
+//   * `admin` (the console and /admin-api), `scim`, `federation` (unless the
+//     partner said `email_verified: false`), `ldap-admin` (an LDAP write bound
+//     as somebody holding Admin Write): verified.
+//   * `ldap-self` (a person modifying their own entry over LDAP) and anything
+//     unnamed: NOT verified — and the self-modify is sent a verification link.
+//   * An address INVENTED by `namePlan()` is never verified: nobody provided
+//     it at all.
+//
+// **ONLY AN ADDRESS THAT CHANGED, or a new entry's.** A write that carries the
+// address it already had — a HOBA key registration re-writing the entry, a
+// SCIM replace sending the same `emails` — proves nothing new about it, and an
+// address a person typed and never proved must not become verified because
+// something else rewrote the entry around it.
+// ---------------------------------------------------------------------------
+const TRUSTED_MAIL_SOURCES = ['admin', 'scim', 'federation', 'ldap-admin'];
+
+// WHO AN LDAP WRITE OF `mail` IS FROM (#64): somebody holding Admin Write (in
+// the realm, or the service), or the person the entry is. Anybody else — in
+// development, where any bind writes anything — names no trusted source, so
+// the address is not verified.
+function ldapMailSource(req, dn) {
+  log.debug('Entering ldapMailSource().');
+  const boundDn = boundDnOf(req);
+  if (boundDn && (boundDnHoldsRole(boundDn, 'write') ||
+                  boundDnHoldsRealmRole(boundDn, 'write'))) {
+    log.debug('Leaving ldapMailSource(). An administrator.');
+    return 'ldap-admin';
+  }
+  const self = boundDn && normalizeDn(boundDn) === normalizeDn(dn);
+  log.debug('Leaving ldapMailSource(). ' + (self ? 'Themselves.' : 'Other.'));
+  return self ? 'ldap-self' : '';
+}
+
+function verifyWrittenMail(stored, before, source) {
+  log.debug('Entering verifyWrittenMail(). source=' + source);
+  const mail = String(((stored && stored.attributes.mail) || [])[0] || '')
+    .trim();
+  const was = String(((before && before.mail) || [])[0] || '').trim();
+  if (!mail || was.toLowerCase() === mail.toLowerCase()) {
+    log.debug('Leaving verifyWrittenMail(). The address did not change.');
+    return false;
+  }
+  if (TRUSTED_MAIL_SOURCES.indexOf(String(source || '')) < 0) {
+    log.debug('Leaving verifyWrittenMail(). Not a trusted source.');
+    return false;
+  }
+  stored.attributes.stsmailverified = [mail];
+  touchDirectory(stored.dn);
+  audit.audit({ action: 'mail.verified', actor: '', target: stored.dn,
+    protocol: 'LDAP', channel: 'internal',
+    summary: 'the address of ' + stored.dn + ' is verified: it was written ' +
+             'by a trusted source (' + source + ')',
+    detail: { source: source } });
+  log.debug('Leaving verifyWrittenMail(). Verified.');
+  return true;
+}
+
+// A person who changed their OWN address over LDAP is sent the verification
+// link, as the portal's form would send one. Lazily, after the write, and
+// never into it: an LDAP modify is not answered by a mail transport.
+function startSelfVerification(stored, before) {
+  log.debug('Entering startSelfVerification().');
+  const mail = String(((stored && stored.attributes.mail) || [])[0] || '');
+  const was = String(((before && before.mail) || [])[0] || '');
+  if (!mail || was.toLowerCase() === mail.toLowerCase()) {
+    log.debug('Leaving startSelfVerification(). Nothing new.');
+    return;
+  }
+  const username = canonicalUsernameOfDn(stored.dn);
+  setImmediate(function () {
+    try {
+      realms.run(realmFor(stored.dn), function () {
+        const uses = require('../common/mail_uses');
+        if (require('../common/mail').available()) {
+          uses.startVerification(username, 'ldap', username);
+        }
+      });
+    } catch (e) {
+      log.debug('Caught in startSelfVerification(): ' +
+                ((e && e.message) || e));
+      // The address stands, unverified; the person verifies it from the
+      // portal instead.
+    }
+  });
+  log.debug('Leaving startSelfVerification().');
+}
+
 function noteAccountChange(kind, dn, before, after, options) {
   log.debug('Entering noteAccountChange(). ' + kind + ' ' + dn);
   // A LOCK THAT MOVED IS AN ACCOUNT DISABLED OR ENABLED (2026-09-17), and
@@ -15389,7 +15667,7 @@ function canonicalUsernameOfDn(dn) {
 // rather than a warning — unlike writeApplication(), where the application's
 // own request had already succeeded and only the record was at stake, here the
 // request IS the write.
-function writePerson(dn, attributes) {
+function writePerson(dn, attributes, options) {
   log.debug('Entering writePerson(). dn=' + dn);
   const existing = getEntry(dn);
   // Taken BEFORE putEntry() replaces the attributes, because this function is
@@ -15423,6 +15701,8 @@ function writePerson(dn, attributes) {
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
+  // Who wrote the address (#64): SCIM says `scim`; see verifyWrittenMail().
+  verifyWrittenMail(stored, before, (options && options.mailSource) || '');
   noteAccountChange(existing ? 'updated' : 'created', stored.dn, before,
                     attributeSnapshot(stored));
   log.debug('Leaving writePerson(). The entry was ' +

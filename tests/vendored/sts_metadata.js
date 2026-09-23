@@ -318,6 +318,9 @@ function theProtocolListIsHonest(doc, page) {
                     // assertion below about every card naming a spec is what
                     // makes that marker load-bearing rather than decorative.
                     "Recovery codes",
+                    // THE EMAILED CODE AND LINK (#64): a third credential
+                    // mechanism that is not a protocol, beside the other two.
+                    "Email codes and links",
                     "Verifiable Credentials (OID4VCI / OID4VP)"];
   assert.ok(Array.isArray(doc.protocols),
     "the document should carry the protocol list; it has none.");

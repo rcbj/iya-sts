@@ -222,7 +222,7 @@ it on is refused until it has a `krb5.realm` no other realm answers to
 
 **In product, a person who holds or must hold a second factor gets no ticket
 on a password alone** — an authenticator app, a security key in the `mfa`
-role, `stsMfaRequired` on their entry, or `authn.mfaRequired` for the realm,
+role, `stsMfaRequired` on their entry, or the realm's authentication policy (`requireSecondFactor`),
 the same rule the [password-only doors](what-is-not-checked.md#app-passwords-at-the-password-only-doors)
 follow. An AS-REQ that proves only the password is refused `KDC_ERR_POLICY`
 (12), **after** the password verified: a wrong password is still

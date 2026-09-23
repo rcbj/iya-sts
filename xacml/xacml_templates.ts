@@ -189,6 +189,30 @@ const ISSUANCE_ATTRIBUTE = {
 // inapplicable, so unknown never denies. That is the datasets' rule
 // (`risk/CLAUDE.md`) carried into the decision.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE AUTHENTICATION A SESSION STANDS ON (#64, 2026-09-23), as environment
+// attributes of the session's own issuance decision — facts, never a verdict,
+// so a policy decides what they mean (rcbj's rule: authorization is policy).
+// Sent at the session's start; an issuance later in the session's life sends
+// none, because the session was decided on them already.
+// ---------------------------------------------------------------------------
+const AUTHN_ATTRIBUTE = {
+  // A BAG: RFC 8176 `amr` values of every factor the session was started
+  // with — `pwd`, `otp`, `hwk`, `pop`...
+  AMR: 'urn:sts:xacml:amr',
+  // `0`, `1` or `mfa`.
+  ACR: 'urn:sts:xacml:acr',
+  // A BAG: which credential answered — `password`, `webauthn`, `totp`,
+  // `backup-code`, `email-code`, `email-link`, `wallet`, `certificate`,
+  // `kerberos`, `federation`. `amr` says `otp` for three different things;
+  // this says which.
+  CREDENTIAL_KIND: 'urn:sts:xacml:credential-kind',
+  // The obligation a Deny about the AUTHENTICATION carries, so the PEP can
+  // tell it from a Deny about roles — which is set aside when the role
+  // question is waived — and refuse on it anyway.
+  OBLIGATION: 'urn:sts:xacml:obligation:authentication'
+};
+
 const RISK_ATTRIBUTE = {
   // LOW, MEDIUM, HIGH or UNSCORED — CAEP's own words, plus the one for a
   // first sign-in with nothing to compare it to.
@@ -449,6 +473,16 @@ const TEMPLATES: TemplateRow[] = [
               'authentication carries the step-up the obligation names. ' +
               'Saying no builds the roles-only policy this was before risk ' +
               'scoring decided anything — assessments are still recorded.' },
+      { name: 'refuseEmailFactor',
+        label: 'Refuse a session that stands on an emailed code or link (#64)',
+        dflt: 'no', type: 'string',
+        help: 'yes or no. When yes, a session whose authentication used an ' +
+              'emailed code or sign-in link — as its first factor or its ' +
+              'second — is refused, whatever the authentication policy on ' +
+              'Directory > Policies allows. NIST SP 800-63B-4 section ' +
+              '3.1.3.1 does not count email as an authenticator; this is ' +
+              'the policy an operator writes when an application must not ' +
+              'rest on one.' },
       { name: 'keySignals',
         label: 'Signals that demand a SECURITY KEY at MEDIUM',
         dflt: 'automated-client, new-tls-stack', type: 'string',
@@ -465,6 +499,7 @@ const TEMPLATES: TemplateRow[] = [
       const useTokenRoles = B.yes(given.allowTokenRoles, true);
       const permitEmpty = B.yes(given.permitWhenNothingRequired, true);
       const decideRisk = B.yes(given.decideRisk, true);
+      const refuseEmail = B.yes(given.refuseEmailFactor, false);
       const keySignals = B.listOf(given.keySignals);
 
       // THE INTERSECTION TEST, and it is a HIGHER-ORDER function because that
@@ -590,6 +625,28 @@ const TEMPLATES: TemplateRow[] = [
         });
       }
 
+      // A SESSION ON AN EMAILED FACTOR (#64), refused when asked to be. No
+      // risk obligation: it is a refusal about the authentication, not a
+      // step-up, and the PEP reads a Deny without one as a refusal.
+      if (refuseEmail) {
+        riskRules.push({
+          id: options.idBase + ':rule:email-factor',
+          effect: model.EFFECT.DENY,
+          description: 'Refuse a session whose authentication used an ' +
+                       'emailed code or sign-in link.',
+          target: null,
+          condition: B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(env, AUTHN_ATTRIBUTE.CREDENTIAL_KIND, TYPE.STRING),
+            B.apply(F1 + 'string-bag', [
+              B.value(TYPE.STRING, 'email-code'),
+              B.value(TYPE.STRING, 'email-link')])]),
+          obligations: [{ id: AUTHN_ATTRIBUTE.OBLIGATION,
+                          on: model.EFFECT.DENY, assignments: [] }],
+          advice: []
+        });
+      }
+
       log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s), ' +
                 riskRules.length + ' risk rule(s).');
       return {
@@ -623,8 +680,9 @@ const TEMPLATES: TemplateRow[] = [
                           'and override the role rule; an authentication ' +
                           'with no assessment is decided on roles alone.'
                         : '') ,
-        combiningAlgId: decideRisk ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
-                                   : model.RULE_ALG.DENY_UNLESS_PERMIT,
+        combiningAlgId: decideRisk || refuseEmail
+          ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
+          : model.RULE_ALG.DENY_UNLESS_PERMIT,
         // NO TARGET, and that is deliberate rather than an omission: this
         // document is evaluated by ONE caller that only ever asks about an
         // issuance, so a target restating that could only ever refuse a
@@ -1499,6 +1557,7 @@ const TEMPLATES: TemplateRow[] = [
 class XacmlTemplates {
   static readonly ISSUANCE_ATTRIBUTE = ISSUANCE_ATTRIBUTE;
   static readonly RISK_ATTRIBUTE = RISK_ATTRIBUTE;
+  static readonly AUTHN_ATTRIBUTE = AUTHN_ATTRIBUTE;
   static readonly RISK_RESPONSE = RISK_RESPONSE;
   static readonly SIGNAL_ATTRIBUTE = SIGNAL_ATTRIBUTE;
   static readonly SIGNAL_RESPONSE = SIGNAL_RESPONSE;
@@ -1614,6 +1673,7 @@ export = {
   PolicyBuilders: PolicyBuilders,
   ISSUANCE_ATTRIBUTE: XacmlTemplates.ISSUANCE_ATTRIBUTE,
   RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
+  AUTHN_ATTRIBUTE: XacmlTemplates.AUTHN_ATTRIBUTE,
   RISK_RESPONSE: XacmlTemplates.RISK_RESPONSE,
   SIGNAL_ATTRIBUTE: XacmlTemplates.SIGNAL_ATTRIBUTE,
   SIGNAL_RESPONSE: XacmlTemplates.SIGNAL_RESPONSE,

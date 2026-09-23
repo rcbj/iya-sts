@@ -2190,6 +2190,41 @@ class CryptoMetadata {
           ];
         } },
 
+      // THE EMAILED CODE AND LINK (#64): random secrets, hashed, and a
+      // cookie's digest for the browser binding.
+      { name: 'Email codes and links',
+        signs: 'Nothing. A code or a link is a random secret checked against ' +
+               'a stored hash of one; the message it rides in is signed by ' +
+               'DKIM only where the SMTP transport is configured for it (see ' +
+               'Mail).',
+        verifies: 'A presented code or link token, against the scrypt hash ' +
+                  'on the sign-in step, with crypto.verifySecret() on the ' +
+                  'worker pool; and a link\'s browser binding, as the ' +
+                  'SHA-256 of the cookie set when it was sent.',
+        encrypts: '',
+        decrypts: '',
+        hashes: 'Each secret ONCE, with crypto.hashSecret() (scrypt), when ' +
+                'it ' +
+                'is minted — the code or token itself is never stored, and ' +
+                'the mail channel drops a sent message\'s body. The binding ' +
+                'cookie as SHA-256.',
+        whatItDoesNot: 'It never counts as a phishing-resistant factor or as ' +
+                       'a risk step-up, never mails an address that is not ' +
+                       'verified, and never keeps a secret past ten minutes ' +
+                       'or a second use.',
+        envelopes: [],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          log.debug("Leaving algorithms().");
+          return [
+            ['Code', ['six decimal digits from crypto.randomInt(), leading ' +
+                      'zeros kept']],
+            ['Link token', ['256 bits from crypto.randomBytes(), base64url']],
+            ['At rest', ['scrypt, via crypto.hashSecret(), on the sign-in ' +
+                         'step']]
+          ];
+        } },
+
       { name: 'Verifiable Credentials (OID4VCI / OID4VP)',
         signs: 'An SD-JWT VC as an RS256 JWS with `_sd_alg: sha-256`, and a ' +
                'W3C `ldp_vc` with a `bbs-2023` Data Integrity proof — ' +

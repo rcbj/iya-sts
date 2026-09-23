@@ -139,9 +139,28 @@ class MailUses {
   // outcome }` always — `outcome` is for the audit row and the tests, and
   // NO CALLER may show it (header). Resolves once the attempt is decided.
   // -------------------------------------------------------------------------
-  async requestReset(identifier: string, via: string): Promise<Json> {
+  //
+  // **WITH A RECOVERY CODE (#64, rcbj's D4)** while `mail.resetRequiresBackup
+  // Code` is on — the default: `identifier` is then the USERNAME only, and
+  // `extra` carries the ADDRESS the person says is on the account and one of
+  // their RECOVERY CODES. All three must be right before anything is mailed,
+  // and the code is SPENT when they are — so one code cannot be replayed to
+  // send a stream of reset mail. A wrong code, with the right name and
+  // address, tells the address owner somebody tried; nothing else does. The
+  // answer to the browser is the same sentence whatever happened.
+  resetNeedsRecoveryCode(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering MailUses.resetNeedsRecoveryCode().");
+    log.debug("Leaving MailUses.resetNeedsRecoveryCode().");
+    return config.value('mail.resetRequiresBackupCode') !== false;
+  }
+
+  async requestReset(identifier: string, via: string,
+                     extra?: { address?: string; code?: string }):
+      Promise<Json> {
     const { log, config, mail, audit, credentials, accountSignals } =
       this.deps;
+    const needsCode = this.resetNeedsRecoveryCode();
     log.debug("Entering MailUses.requestReset().");
     const asked = String(identifier || '').trim().slice(0, 256);
     const answer = function (outcome: string, code?: string): Json {
@@ -163,7 +182,10 @@ class MailUses {
     const dir = mail.directory();
     let username = '';
     if (dir && asked) {
-      if (asked.indexOf('@') > 0 && typeof dir.personByMail === 'function') {
+      // With the recovery code, the account is named by its USERNAME: the
+      // address is the second field and is checked against it.
+      if (!needsCode && asked.indexOf('@') > 0 &&
+          typeof dir.personByMail === 'function') {
         username = String(dir.personByMail(asked) || '');
       }
       if (!username && dir.personEntry(asked)) {
@@ -184,10 +206,46 @@ class MailUses {
       log.debug("Leaving MailUses.requestReset(). No address.");
       return answer('the account has no address', 'STS-MAIL-0011');
     }
-    if (config.value('mail.resetRequiresVerifiedAddress') && !who.verified) {
+    if ((needsCode || config.value('mail.resetRequiresVerifiedAddress')) &&
+        !who.verified) {
       log.debug("Leaving MailUses.requestReset(). Unverified.");
-      return answer('the address is not verified ' +
-                    '(mail.resetRequiresVerifiedAddress)', 'STS-MAIL-0011');
+      return answer('the address is not verified', 'STS-MAIL-0011');
+    }
+    if (needsCode) {
+      const given = String((extra && extra.address) || '').trim();
+      if (!given || given.toLowerCase() !== who.address.toLowerCase()) {
+        log.debug("Leaving MailUses.requestReset(). Not its address.");
+        return answer('the address given is not the account\'s',
+                      'STS-MAIL-0036');
+      }
+      const status = typeof creds.backupCodeStatus === 'function'
+        ? creds.backupCodeStatus(username) : { remaining: 0 };
+      if (!status || !status.remaining) {
+        log.debug("Leaving MailUses.requestReset(). No recovery codes.");
+        return answer('the account holds no unused recovery code',
+                      'STS-MAIL-0037');
+      }
+      let verdict: Json = null;
+      try {
+        verdict = await creds.verifyBackupCodeAsync(username,
+          String((extra && extra.code) || ''));
+      } catch (e) {
+        log.debug("Caught in MailUses.requestReset(): " +
+                  ((e && e.message) || e));
+        verdict = { ok: false, reason: 'error' };
+      }
+      if (!verdict || !verdict.ok) {
+        // THE ADDRESS OWNER IS TOLD, once an hour at most: the name and the
+        // address were right, so this is somebody who knows both.
+        mail.send({ username: username, template: 'reset-refused-attempt',
+          values: { username: username, when: this.when() },
+          dedupKey: 'reset-refused:' + this.when().slice(0, 13),
+          via: via || 'the forgot-password form', actor: '' });
+        log.debug("Leaving MailUses.requestReset(). Wrong recovery code.");
+        return answer('the recovery code is not right (' +
+                      String((verdict && verdict.reason) || '') + ')',
+                      'STS-MAIL-0035');
+      }
     }
     const issued = creds.issuePasswordReset(username);
     if (!issued || !issued.ok) {
@@ -198,8 +256,11 @@ class MailUses {
     }
     const sent = mail.send({
       username: username, template: 'password-reset',
-      values: { username: username, requestedBy: 'you, or somebody who ' +
-                'knew your account name, on the sign-in screen',
+      values: { username: username, requestedBy: needsCode
+                  ? 'you, or somebody who knew your account name, your ' +
+                    'address and one of your recovery codes'
+                  : 'you, or somebody who knew your account name, on the ' +
+                    'sign-in screen',
                 expiresMinutes: String(config.value(
                   'security.passwordResetTtlMinutes')) },
       links: { link: RESET_PATH + '?user=' + encodeURIComponent(username) +
@@ -249,7 +310,10 @@ class MailUses {
     }
     const token = nodeCrypto.randomBytes(32).toString('base64url');
     const ttl = Number(config.value('mail.verificationTtlMinutes'));
-    dir.writeMailFlag(username, 'stsMailVerifyToken', crypto.hashSecret(token));
+    // BOUND TO THE ADDRESS THE ACCOUNT HAS NOW (#64): the hash is of the
+    // token AND `mail`, so a link outlives no change of address by anybody.
+    dir.writeMailFlag(username, 'stsMailVerifyToken',
+                      crypto.hashSecret(this.boundToken(token, who.address)));
     dir.writeMailFlag(username, 'stsMailVerifyExpires',
                       String(now() + ttl * 60000));
     dir.writeMailFlag(username, 'stsMailVerifyAddress', who.address);
@@ -297,14 +361,21 @@ class MailUses {
     const expires = Number(first('stsMailVerifyExpires') || 0);
     const address = first('stsMailVerifyAddress');
     const current = first('mail');
+    // THE HASH IS OF THE TOKEN AND THE ADDRESS THE ACCOUNT HAD WHEN IT WAS
+    // SENT (#64), so a link for an address somebody has since replaced — or
+    // a change asked for from an address since replaced — verifies nothing.
+    // `address` is what the link proves: the account's own (a verification)
+    // or the NEW one it was sent to (a change, rcbj's D5).
     if (!stored || !expires || expires < now() || !address ||
-        address.toLowerCase() !== current.toLowerCase() ||
-        !crypto.verifySecret(String(token), stored)) {
+        !crypto.verifySecret(this.boundToken(String(token), current),
+                             stored)) {
       log.debug("Leaving MailUses.checkVerification(). Refused.");
       return refused;
     }
     log.debug("Leaving MailUses.checkVerification(). Good.");
-    return { ok: true, address: address };
+    return { ok: true, address: address,
+             change: address.toLowerCase() !== current.toLowerCase(),
+             former: current };
   }
 
   // Follow the link: the address is recorded as verified and the link spent.
@@ -320,14 +391,93 @@ class MailUses {
     dir.writeMailFlag(username, 'stsMailVerifyToken', '');
     dir.writeMailFlag(username, 'stsMailVerifyExpires', '');
     dir.writeMailFlag(username, 'stsMailVerifyAddress', '');
-    dir.writeMailFlag(username, 'stsMailVerified', checked.address);
+    if (checked.change) {
+      // A NEW ADDRESS BECOMES `mail` NOW, AND NOT BEFORE (D5), verified —
+      // the person proved it — and the directory tells the former one.
+      if (typeof dir.writeAddress !== 'function' ||
+          !dir.writeAddress(username, checked.address, 'link')) {
+        log.debug("Leaving MailUses.completeVerification(). Not written.");
+        return this.deps.errorCodes.mark({ ok: false, errors: ['The new ' +
+          'address could not be stored. Try again.'] }, 'STS-MAIL-0038');
+      }
+    } else {
+      dir.writeMailFlag(username, 'stsMailVerified', checked.address);
+    }
     audit.audit({ action: 'mail.verified', actor: username, target: username,
       protocol: 'Mail', channel: 'http',
       summary: username + ' verified the address ' + checked.address,
       detail: { address: checked.address } });
     log.debug("Leaving MailUses.completeVerification(). Verified.");
-    return { ok: true, address: checked.address,
-             message: checked.address + ' is verified.' };
+    return { ok: true, address: checked.address, changed: !!checked.change,
+             message: checked.change
+               ? checked.address + ' is now your verified address.'
+               : checked.address + ' is verified.' };
+  }
+
+  // The token as it is hashed: with the address the account has, lower-cased.
+  private boundToken(token: string, address: string): string {
+    const { log } = this.deps;
+    log.debug("Entering MailUses.boundToken().");
+    log.debug("Leaving MailUses.boundToken().");
+    return String(token) + '\n' + String(address || '').trim().toLowerCase();
+  }
+
+  // -------------------------------------------------------------------------
+  // 2b. A PERSON CHANGES THEIR OWN ADDRESS (#64, rcbj's D5): the new address
+  // is held as `stsMailVerifyAddress` and mailed a verification link; it
+  // becomes `mail` only when that link is followed. Until then the account
+  // keeps the address it had — resets and codes go on going there — so an
+  // address nobody proved is never where a credential is sent.
+  // -------------------------------------------------------------------------
+  startAddressChange(username: string, address: string, via: string,
+                     actor?: string): Json {
+    const { log, config, mail, crypto, errorCodes, now } = this.deps;
+    log.debug("Entering MailUses.startAddressChange(). " + username);
+    const dir = mail.directory();
+    const who = mail.recipient(username);
+    if (!dir || !who) {
+      log.debug("Leaving MailUses.startAddressChange(). Nobody.");
+      return errorCodes.mark({ ok: false, errors: ['There is nobody called "' +
+        String(username || '') + '" in this realm.'] }, 'STS-MAIL-0012');
+    }
+    const wanted = String(address || '').trim();
+    const bad = require('./mail_transports').addressProblem(wanted);
+    if (!wanted || bad) {
+      log.debug("Leaving MailUses.startAddressChange(). Not an address.");
+      return errorCodes.mark({ ok: false, errors: ['"' + wanted.slice(0, 80) +
+        '" is not an address this service can send to' +
+        (bad ? ': it ' + bad : '') + '.'] }, 'STS-MAIL-0039');
+    }
+    if (who.address && wanted.toLowerCase() === who.address.toLowerCase()) {
+      log.debug("Leaving MailUses.startAddressChange(). The same address.");
+      return this.startVerification(username, via, actor);
+    }
+    const token = nodeCrypto.randomBytes(32).toString('base64url');
+    const ttl = Number(config.value('mail.verificationTtlMinutes'));
+    dir.writeMailFlag(username, 'stsMailVerifyToken',
+                      crypto.hashSecret(this.boundToken(token, who.address)));
+    dir.writeMailFlag(username, 'stsMailVerifyExpires',
+                      String(now() + ttl * 60000));
+    dir.writeMailFlag(username, 'stsMailVerifyAddress', wanted);
+    const sent = mail.sendToPendingAddress({
+      username: username, template: 'address-verification',
+      values: { username: username, address: wanted,
+                expiresMinutes: String(ttl) },
+      links: { link: VERIFY_PATH + '?user=' + encodeURIComponent(username) +
+                     '&token=' + encodeURIComponent(token) },
+      via: via, actor: actor || username
+    });
+    if (!sent.ok) {
+      log.debug("Leaving MailUses.startAddressChange(). Not queued.");
+      return errorCodes.mark({ ok: false, errors: ['No verification link ' +
+        'was sent: ' + String(sent.error || 'it was refused') + '.'] },
+        (sent.refused[0] && sent.refused[0].code) || 'STS-MAIL-0001');
+    }
+    log.debug("Leaving MailUses.startAddressChange(). Sent.");
+    return { ok: true, message: 'A link was sent to ' + wanted + '. Your ' +
+             'address changes to it when you follow the link, within ' + ttl +
+             ' minutes; until then it stays ' + (who.address || 'unset') +
+             '.' };
   }
 
   // -------------------------------------------------------------------------
@@ -505,7 +655,9 @@ export = {
   VERIFY_PATH: MailUses.VERIFY_PATH,
   resetOffered: slot.forward('resetOffered'),
   requestReset: slot.forward('requestReset'),
+  resetNeedsRecoveryCode: slot.forward('resetNeedsRecoveryCode'),
   startVerification: slot.forward('startVerification'),
+  startAddressChange: slot.forward('startAddressChange'),
   checkVerification: slot.forward('checkVerification'),
   completeVerification: slot.forward('completeVerification'),
   mailAdministratorLink: slot.forward('mailAdministratorLink'),

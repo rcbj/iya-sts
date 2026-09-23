@@ -1473,6 +1473,23 @@ const SPECS: Spec[] = [
     coverage: 'partial: compact serialization, RSA-OAEP, ECDH-ES and the ' +
               'key-wrapping and direct algorithms common/crypto.js ' +
               'implements; no JSON serialization, no compression.' },
+  // #64: the guideline the email mechanisms and the authentication policy
+  // are held to — and which says email is not an authenticator at all.
+  { id: 'nist-800-63b', name: 'NIST SP 800-63B-4 — Digital Identity ' +
+      'Guidelines: Authentication and Authenticator Management',
+    where: 'NIST',
+    url: 'https://pages.nist.gov/800-63-4/sp800-63b.html',
+    coverage: 'partial — cited for the emailed code and sign-in link (#64) ' +
+              'and nothing else claimed: section 3.1.3.1 ("Email SHALL NOT ' +
+              'be used for out-of-band authentication") is why both are OFF ' +
+              'in the built-in authentication policy and never meet a risk ' +
+              'step-up, and the warning is on /admin/policies; section ' +
+              '3.1.3.2\'s ten minutes and single use bound every emailed ' +
+              'secret; section 3.2.2\'s at-most-100 consecutive failures ' +
+              'turns a person\'s emailed factor off. Email for address ' +
+              'confirmation and account recovery, which the same section ' +
+              'allows, is what /portal/verify-email and the three-field ' +
+              'reset are. No claim is made about assurance levels.' },
   { id: 'rfc8176', name: 'RFC 8176 — Authentication Method Reference ' +
                           'Values',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8176',
@@ -7880,8 +7897,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'edited. Nothing already ISSUED is touched by any of the five.' },
   { path: '/admin-api/policies', group: 'Management API', name: 'Policies',
     specs: ['openapi', 'rfc4519'],
-    what: 'NON-SPEC. The policies register — today the password policy and ' +
-          'its one profile, `default`. `password.profile` is the profile IN ' +
+    what: 'NON-SPEC. The policies register — every kind of policy, each a ' +
+          'member named by its id: the password policy (`password`) and, ' +
+          'since #64, the authentication policy (`authn`), which says which ' +
+          'mechanisms are first and second factors and is inherited from ' +
+          'the default realm by a realm with none. `password.profile` is the ' +
+          'profile IN ' +
           'FORCE: the stored cn=default,ou=passwordPolicies entry where ' +
           'there is one and the built-in defaults where there is not, with ' +
           '`sources` saying which each value came from. `enforced` is ' +
@@ -7890,10 +7911,12 @@ const ENDPOINTS: EndpointEntry[] = [
           '`password.doors` names every door that sets a password. Paged ' +
           'like every list here, though one profile is all there is.' },
   { path: '/admin-api/policies/:action', group: 'Management API',
-    name: 'Change the password policy',
+    name: 'Change a policy',
     specs: ['openapi', 'rfc4519'],
-    what: 'save-password-policy and reset-password-policy — the same two the ' +
-          'console posts to /admin/policies, through the same function. A ' +
+    what: 'save-<kind>-policy and reset-<kind>-policy for every kind — ' +
+          'save-password-policy, reset-password-policy, save-authn-policy ' +
+          'and reset-authn-policy today — the same the console posts to ' +
+          '/admin/policies, through the same function. A ' +
           'save REPLACES the profile and every field is required, so a field ' +
           'left out is refused by name rather than quietly reset. A reset ' +
           'deletes the stored entry and puts the built-in defaults back. ' +
@@ -9347,6 +9370,43 @@ const ENDPOINTS: EndpointEntry[] = [
           'enrolling a second factor, once, in common/credentials.ts. This ' +
           'page has NO SCRIPT: a person reads a string off paper and types ' +
           'it.' },
+  // #64: the emailed code and the emailed sign-in link.
+  { path: '/authn/email-code', group: 'Authentication',
+    name: 'Emailed code step',
+    specs: ['rfc8176', 'nist-800-63b'],
+    effect: 'establishes the sign-on session once an emailed code verifies',
+    what: 'NON-SPEC (#64). A six-digit code mailed to the person\'s VERIFIED ' +
+          'address, as a first factor (the sign-in screen\'s "Email me a ' +
+          'sign-in code") or a second (opted into on /portal/mfa), where the ' +
+          'authentication policy allows it — OFF by default, because NIST SP ' +
+          '800-63B-4 section 3.1.3.1 does not count email as an ' +
+          'authenticator. The GET draws the page for a step that exists and ' +
+          'sends nothing; the POST sends (action=send) or checks one. Kept ' +
+          'only as a scrypt hash on the step, valid for at most ten minutes, ' +
+          'once for the cluster, a bounded number of wrong codes per step, ' +
+          'rate limited as the one-time code step is. As a first factor the ' +
+          'page is the same whether or not the account exists or has a ' +
+          'verified address. amr ["otp"] and acr "1" alone, the first ' +
+          'factor\'s amr plus "otp" and acr "mfa" as a second; it never ' +
+          'meets a risk step-up. No script.' },
+  { path: '/authn/email-link', group: 'Authentication',
+    name: 'Emailed sign-in link: the waiting page',
+    specs: ['rfc8176', 'nist-800-63b'],
+    what: 'NON-SPEC (#64). The page a person waits on after an emailed ' +
+          'sign-in link is sent (POST, action=send), refreshed by a <meta> ' +
+          'tag. The link completes the sign-in ONLY in the browser that ' +
+          'started it — the step keeps the hash of a cookie set when it was ' +
+          'sent — so the sign-in continues in the tab the link opens, and ' +
+          'this page then says so. No script.' },
+  { path: '/authn/email-link/open', group: 'Authentication',
+    name: 'Emailed sign-in link: where it lands',
+    specs: ['rfc8176', 'nist-800-63b'],
+    effect: 'establishes the sign-on session once the link verifies',
+    what: 'NON-SPEC (#64). The GET spends nothing — a mail scanner fetches ' +
+          'every link in a message — and draws a Continue button; the POST ' +
+          'checks the browser binding, the token\'s scrypt hash, the expiry ' +
+          'and the single-use claim, and signs in. Opened in another browser ' +
+          'it spends nothing and says where to open it.' },
   { path: '/authn/password-change', group: 'Authentication',
     name: 'Forced password change step',
     specs: ['oidc'],
@@ -9374,7 +9434,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'A password step that succeeded for a person of whom a second ' +
           'factor is required — stsMfaRequired on their entry, set from ' +
           'their ' +
-          '/admin/users page, or authn.mfaRequired for the realm — and who ' +
+          '/admin/users page, or the realm\'s authentication policy — and ' +
+          'who ' +
           'holds neither an authenticator app nor an mfa-role security key ' +
           'lands here instead of being signed in. They choose one: an ' +
           'authenticator app is enrolled on this page (a QR code this server ' +
@@ -10760,6 +10821,25 @@ const PROTOCOLS: Protocol[] = [
           'works for ever. /admin/backup-codes configures it and ' +
           '/admin/users is where an operator clears a set — the only route ' +
           'to a second one.' },
+  { name: 'Email codes and links', groups: ['Authentication'],
+    specs: ['rfc8176', 'nist-800-63b'],
+    // THE THIRD CARD THAT IS NOT A PROTOCOL (#64): a credential mechanism,
+    // like Recovery codes beside it, with an endpoint, a verifier and a
+    // store — and a guideline that says it is not an authenticator at all.
+    notAProtocol: true,
+    what: 'NOT A PROTOCOL. A six-digit code or a single-use link mailed to a ' +
+          'person\'s VERIFIED address, as a first or a second factor where ' +
+          'the authentication policy on /admin/policies allows it — OFF by ' +
+          'default, because NIST SP 800-63B-4 section 3.1.3.1 says email ' +
+          'SHALL NOT be used for out-of-band authentication. Each secret is ' +
+          'a ' +
+          'scrypt hash on the sign-in step, valid for at most ten minutes, ' +
+          'spent once for the cluster; a link finishes only in the browser ' +
+          'that started the sign-in; a person opts in to the second factor ' +
+          'on /portal/mfa and loses it after 100 consecutive failures ' +
+          '(section 3.2.2). amr "otp" (RFC 8176 has no value for email); it ' +
+          'never meets a risk step-up, and the issuance policy may refuse a ' +
+          'session standing on one (refuseEmailFactor).' },
   { name: 'Verifiable Credentials (OID4VCI / OID4VP)',
     groups: ['VC Issuance (OID4VCI)', 'VC Presentation (OID4VP)',
              'Decentralized Identifiers'],

@@ -121,6 +121,9 @@ import appPasswords = require('./app_passwords');
 // its directory arrives through a slot `ldap_server.js` fills, like this
 // file's.
 import passwordPolicy = require('./password_policy');
+// THE AUTHENTICATION POLICY (#64): which mechanisms are first and second
+// factors, and when a second is required. A LEAF, like the password policy.
+import authnPolicy = require('./authn_policy');
 // THE SECURITY KEY'S POLICY, AND IT IS THE ONE REQUIRE IN THIS FILE THAT
 // POINTS OUT OF `common/` (2026-09-10).
 //
@@ -187,6 +190,7 @@ interface CredentialsDeps {
   backupCodes: typeof backupCodes;
   appPasswords: typeof appPasswords;
   passwordPolicy: typeof passwordPolicy;
+  authnPolicy: typeof authnPolicy;
   webauthnPolicy: typeof webauthnPolicy;
   webauthnVerifier: typeof webauthnVerifier;
   webauthnAttestation: typeof webauthnAttestation;
@@ -306,6 +310,7 @@ class Credentials {
       backupCodes: backupCodes,
       appPasswords: appPasswords,
       passwordPolicy: passwordPolicy,
+      authnPolicy: authnPolicy,
       webauthnPolicy: webauthnPolicy,
       webauthnVerifier: webauthnVerifier,
       webauthnAttestation: webauthnAttestation,
@@ -932,7 +937,8 @@ class Credentials {
   // the ACCOUNT's: in product mode a person who HOLDS a second factor (an
   // authenticator app, or a security key in the `mfa` role — what
   // `mechanismsFor().mfaRequired` means) or of whom one is REQUIRED
-  // (`mfaRequirementFor()`: stsMfaRequired, or `authn.mfaRequired` for the
+  // (`mfaRequirementFor()`: stsMfaRequired, or the authentication policy for
+  // the
   // realm) is refused their own right password there. NIST SP 800-63B section
   // 4.2: an account bound to two factors is at AAL2, and a verifier that
   // accepts one of them alone brings it down to AAL1.
@@ -997,7 +1003,7 @@ class Credentials {
       : (requirement.byUser ? 'a second factor is required of them on their ' +
                               'entry (stsMfaRequired)'
                             : 'the realm requires a second factor of ' +
-                              'everybody (authn.mfaRequired)');
+                              'everybody (the authentication policy)');
     log.info('credentials: ' + name + ' presented the right password at ' +
              via + ', which cannot ask for a second factor, and ' + why +
              '. Refused as a wrong password is; an app password scoped to ' +
@@ -2500,7 +2506,7 @@ class Credentials {
       log.debug("Leaving Credentials.beginTotpEnrolment().");
       return coded('STS-AUTHN-0074', { ok: false, errors: ['Authenticator ' +
                                    'apps are turned off on this service ' +
-                                   '(totp.enabled).'] });
+                                   '(the authentication policy).'] });
     }
     if (!name) {
       log.debug("Leaving Credentials.beginTotpEnrolment().");
@@ -3423,7 +3429,7 @@ class Credentials {
       log.debug('Leaving Credentials.beginBackupCodes(). Turned off.');
       return coded('STS-AUTHN-0082', { ok: false, reason: 'disabled',
                errors: ['Recovery codes are turned off on this service ' +
-                        '(backupCodes.enabled).'] });
+                        '(the authentication policy).'] });
     }
     if (!name) {
       log.debug('Leaving Credentials.beginBackupCodes(). No name.');
@@ -4760,6 +4766,27 @@ class Credentials {
   // authenticator is what makes a password alone stop being enough — the whole
   // meaning of *a user configured to use it*.
   // ---------------------------------------------------------------------------
+  // THE EMAILED FACTOR'S STATUS (#64), or an empty one where the module is
+  // not loaded — a test of this module alone, which holds no mail channel.
+  private mailFactorOf(name) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.mailFactorOf().");
+    let out = { held: '', optedIn: '', why: 'unavailable', verified: false };
+    try {
+      const status = require('./mail_factor').status(name);
+      out = { held: status.usable ? status.kind : '',
+              optedIn: status.optedIn, why: status.why,
+              verified: status.verified };
+    } catch (e) {
+      log.debug("Caught in Credentials.mailFactorOf(): " +
+                ((e && e.message) || e));
+      // Not held, which is the direction that asks for nothing that cannot
+      // arrive.
+    }
+    log.debug("Leaving Credentials.mailFactorOf().");
+    return out;
+  }
+
   mechanismsFor(username) {
     const { log, totp, backupCodes } = this.deps;
     log.debug("Entering Credentials.mechanismsFor().");
@@ -4774,6 +4801,11 @@ class Credentials {
     // it still means this person configured two factors, and reporting it as
     // absent would sign them in with one. `verifyTotp()` refuses it by name.
     const totpEnrolled = !!authenticator;
+    // THE EMAILED SECOND FACTOR (#64), HELD only while it is usable: opted
+    // in, allowed by the realm's authentication policy, mail working and the
+    // address verified (`common/mail_factor.ts` argues why). Asked lazily —
+    // that module reaches the mail channel, which requires the directory.
+    const mailFactor = this.mailFactorOf(name);
     log.debug("Leaving Credentials.mechanismsFor().");
     return {
       username: name,
@@ -4823,14 +4855,21 @@ class Credentials {
       // so the sign-in screen demands it as well — which is what makes the flag
       // mean anything. **The recovery codes are deliberately not on this line**
       // — see the field above.
-      mfaRequired: mfaKeys.length > 0 || totpEnrolled,
+      mfaRequired: mfaKeys.length > 0 || totpEnrolled || !!mailFactor.held,
+      // The emailed factor (#64): `held` is `code`, `link` or '', and the
+      // rest says why it is not held where it is opted into.
+      mailFactor: mailFactor,
       // WHICH ONE, since there are two and the screen has to ask for the right
       // thing. A person holding both is asked for the SECURITY KEY, because it
       // is the stronger of the two and the ceremony is the one that is bound to
       // this origin; the code is what they fall back to when they are at a
       // machine with no authenticator attached, and `authn.js` draws that link.
+      // The emailed factor comes LAST (#64): it is the weakest of the three
+      // (NIST SP 800-63B-4 section 3.1.3.1), so a person holding another is
+      // asked for that, and offered the email as a way round it.
       secondFactor: mfaKeys.length > 0 ? 'webauthn' :
-                    (totpEnrolled ? 'totp' : ''),
+                    (totpEnrolled ? 'totp' :
+                     (mailFactor.held ? 'email-' + mailFactor.held : '')),
       // Has this person finished setting themselves up? What product mode asks
       // before it will let an activation link be spent, and what the sign-in
       // screen asks before it refuses somebody with nothing. **An authenticator
@@ -5563,7 +5602,7 @@ class Credentials {
   //     lock anybody out, because none of those is a way in.
   //   * **`mfaRequirementFor()`** is whether a second factor is REQUIRED of
   //     somebody who may hold none: `stsMfaRequired` on their entry, or
-  //     `authn.mfaRequired` for the realm. `mfaRequired` beside it in
+  //     the authentication policy (#64). `mfaRequired` beside it in
   //     `mechanismsFor()` is still what they HOLD; the sign-in screen reads
   //     both.
   // ===========================================================================
@@ -5808,7 +5847,9 @@ class Credentials {
         byUser = false;
       }
     }
-    const byRealm = !!config.value('authn.mfaRequired');
+    // #64: the authentication policy's `requireSecondFactor`, which replaced
+    // `authn.mfaRequired`. `always` is the old `true`.
+    const byRealm = this.deps.authnPolicy.requireSecondFactor() === 'always';
     log.debug("Leaving Credentials.mfaRequirementFor(). user=" + byUser +
               ", realm=" + byRealm);
     return { required: byUser || byRealm, byUser: byUser, byRealm: byRealm };

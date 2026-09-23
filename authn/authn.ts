@@ -292,6 +292,26 @@ const WALLET_SCRIPT_PATH = '/authn/wallet.js';
 // ---------------------------------------------------------------------------
 const PASSWORD_FACTOR_PATH = '/authn/password-factor';
 
+// ---------------------------------------------------------------------------
+// THE EMAILED CODE AND THE EMAILED LINK (#64), declared here for SPNEGO's and
+// the wallet's reason: this module owns `/authn/*` and draws the buttons and
+// links that lead to them, and `authn/email_factor.ts` — required just after
+// this module, and reading its pending steps through the functions exported
+// below — registers the endpoints. No slot: nothing has to point anywhere.
+//
+//   EMAIL_CODE_PATH       the code screen: GET draws it for a step, POST
+//                         sends a code (`action=send`) or checks one.
+//   EMAIL_LINK_PATH       the waiting screen of a link: GET draws it, POST
+//                         sends a link. It refreshes itself with a <meta>.
+//   EMAIL_LINK_OPEN_PATH  where the mailed link lands: GET draws a Continue
+//                         button and spends NOTHING (mail scanners fetch
+//                         links), POST spends it — in the browser that
+//                         started the sign-in only (D3).
+// ---------------------------------------------------------------------------
+const EMAIL_CODE_PATH = '/authn/email-code';
+const EMAIL_LINK_PATH = '/authn/email-link';
+const EMAIL_LINK_OPEN_PATH = '/authn/email-link/open';
+
 const SESSION_COOKIE = 'sts_session';
 
 // ---------------------------------------------------------------------------
@@ -414,6 +434,9 @@ import webauthnVerifier = require('./webauthn');
 // cross-implementation test, and a `require('../common/config')` in there would
 // end that silently. See `authn/webauthn_policy.ts`'s header.
 import webauthnPolicy = require('./webauthn_policy');
+// THE AUTHENTICATION POLICY (#64): which mechanisms are first and second
+// factors. A LEAF (common/authn_policy.ts), so no cycle and no route.
+import authnPolicy = require('../common/authn_policy');
 // THE ATTESTATION STATEMENT, VERIFIED (#105). Rule 3 as well: a library that
 // requires the policy above, `crypto`, `pki` and `error_codes`, and reaches
 // the FIDO metadata and revocation lazily — nothing that reaches back here.
@@ -773,7 +796,10 @@ const LOGIN_FORM = vz.object({
   // It stays a closed set rather than becoming a free string, because this is
   // this service's own form answering to no specification, and `action` decides
   // whether a credential is issued, refused or issued to nobody in particular.
-  action: vt.opt(vt.oneOf(['login', 'cancel', 'anonymous'])),
+  // `email-code` and `email-link` (#64): a first factor mailed to the
+  // person, asked for with the username alone.
+  action: vt.opt(vt.oneOf(['login', 'cancel', 'anonymous', 'email-code',
+                           'email-link'])),
   username: vt.opt(vt.name),
   password: vz.string().max(1024).optional(),
   // THE BROWSER FINGERPRINT (#62 P6), where `risk.fingerprinting` put the
@@ -1051,6 +1077,7 @@ interface AuthnDeps {
   accountState: typeof accountState;
   webauthnVerifier: typeof webauthnVerifier;
   webauthnPolicy: typeof webauthnPolicy;
+  authnPolicy: typeof authnPolicy;
   webauthnAttestation: typeof webauthnAttestation;
   totp: typeof totp;
 }
@@ -1099,6 +1126,7 @@ class Authn {
       accountState: accountState,
       webauthnVerifier: webauthnVerifier,
       webauthnPolicy: webauthnPolicy,
+      authnPolicy: authnPolicy,
       webauthnAttestation: webauthnAttestation,
       totp: totp
     };
@@ -2428,11 +2456,11 @@ class Authn {
     }
     if (code) {
       log.debug("Leaving Authn.methodPhraseFor().");
-      // Unreachable today and deliberately written anyway: a one-time code can
-      // never be a first factor here (see common/totp.ts), so this branch says
-      // what would be true if that ever changed rather than reporting it as a
-      // password sign-in.
-      return 'sign-in screen (a one-time code alone)';
+      // REACHABLE SINCE #64: an emailed code or link as the first factor is
+      // `amr ["otp"]` alone. An authenticator app still never is (see
+      // common/totp.ts). The credential kind on the event says which.
+      return 'sign-in screen (a one-time code alone — an emailed code or ' +
+             'link)';
     }
     log.debug("Leaving Authn.methodPhraseFor().");
     return 'sign-in screen (password)';
@@ -3521,6 +3549,42 @@ class Authn {
   // `refusedSession()` is the screen's reader. The risk decision (#62) will
   // refuse here too and say why the same way.
   // ---------------------------------------------------------------------------
+  // Which mechanism, in which role, the authentication policy refuses for
+  // this session — its code — or ''. See the paragraph in startSession().
+  private authnPolicyRefusal(amr: any, credential: any): string {
+    const { log, authnPolicy } = this.deps;
+    log.debug("Entering Authn.authnPolicyRefusal().");
+    const kind = String((credential && credential.kind) || '');
+    const factors = Array.isArray(amr) ? amr.map(String) : [];
+    const ONLY_FIRST: Record<string, string> = {
+      certificate: 'certificate', kerberos: 'kerberos',
+      federation: 'federation'
+    };
+    let mechanism = '';
+    let role: 'primary' | 'second-factor' = factors.length <= 1
+      ? 'primary' : 'second-factor';
+    if (ONLY_FIRST[kind]) {
+      mechanism = ONLY_FIRST[kind];
+      role = 'primary';
+    } else if (kind === 'password') {
+      mechanism = 'password';
+    } else if (kind === 'wallet') {
+      mechanism = 'wallet';
+    } else if (kind === 'email-code') {
+      mechanism = 'emailCode';
+    } else if (kind === 'email-link') {
+      mechanism = 'emailLink';
+    } else if (kind === 'webauthn' && role === 'primary') {
+      mechanism = 'passkey';
+    }
+    // A held second factor is never refused here (see the caller).
+    const refused = mechanism && !authnPolicy.allows(mechanism, role);
+    const code = !refused ? ''
+      : (role === 'primary' ? 'STS-AUTHN-0268' : 'STS-AUTHN-0269');
+    log.debug("Leaving Authn.authnPolicyRefusal(). " + (code || 'allowed'));
+    return code;
+  }
+
   startSession(res, username, amr, acr, via, detail) {
     const { log, randomId, userFor, helpers, stats, gate, audit,
       errorCodes } = this.deps;
@@ -3555,6 +3619,41 @@ class Authn {
       });
       extra.refusedWith = 'STS-AUTHN-0201';
       log.debug("Leaving Authn.startSession(). The account is disabled.");
+      return null;
+    }
+    // -------------------------------------------------------------------------
+    // THE AUTHENTICATION POLICY (#64), ASKED AT THE ONE LINE EVERY DOOR
+    // REACHES. Which mechanism answered — the credential kind the door names —
+    // and in which role: a first factor where this is the only `amr` value, or
+    // where the mechanism can only ever be one (a certificate, a Kerberos
+    // ticket, a federation partner); otherwise the second. A door that names
+    // no credential is not asked. HELD second factors — an authenticator app,
+    // a security key in the mfa role, a recovery code — are NOT refused
+    // here: their rows stop new ones, never one already held (the contract
+    // `totp.enabled` kept). A refusal is `null`, which every door already
+    // draws as the policy's refusal.
+    // -------------------------------------------------------------------------
+    const policyCode = extra.authenticated === false ? ''
+      : this.authnPolicyRefusal(amr, extra.credential);
+    if (policyCode) {
+      log.info('authn: a session for "' + username + '" was REFUSED at the ' +
+               (via || 'sign-in') + ' door: this realm\'s authentication ' +
+               'policy does not accept ' +
+               String(extra.credential && extra.credential.kind) +
+               ' there (' + policyCode + ').');
+      audit.audit({
+        action: 'session.refuse', actor: String(username || ''),
+        errorCode: policyCode,
+        protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+        summary: 'a session for ' + username + ' was refused at the ' +
+                 (via || 'sign-in') + ' door: the authentication policy ' +
+                 'does not accept that mechanism in that role',
+        detail: { credential: String(extra.credential &&
+                                     extra.credential.kind),
+                  application: String(extra.application || '') }
+      });
+      extra.refusedWith = policyCode;
+      log.debug("Leaving Authn.startSession(). The policy refused.");
       return null;
     }
     // -------------------------------------------------------------------------
@@ -3690,9 +3789,19 @@ class Authn {
         kind: gate.ISSUANCE.SESSION,
         subject: { kind: 'user', name: username,
                    authenticated: extra.authenticated !== false },
-        claims: null
+        claims: null,
+        // WHAT THE SESSION STANDS ON (#64), as facts for the policy: an
+        // operator's rule may refuse a session on an emailed factor.
+        authentication: extra.authenticated === false ? null
+          : { amr: (amr || []).map(String), acr: String(acr || ''),
+              kinds: extra.credential && extra.credential.kind
+                ? [String(extra.credential.kind)] : [] }
       }, extra.risk !== undefined && riskEngine
-        ? { risk: riskEngine.factsOf(risk, amr, acr) } : {}));
+        ? { risk: riskEngine.factsOf(risk, amr, acr,
+                                     extra.credential &&
+                                     extra.credential.kind
+                                       ? [String(extra.credential.kind)]
+                                       : []) } : {}));
       if (sessionAnswer.risk) {
         riskDecision = (sessionAnswer.risk.observed ? 'observe:' : '') +
                        sessionAnswer.risk.action;
@@ -5564,7 +5673,7 @@ class Authn {
   // starting a session, and it answers whether it took over the response:
   //
   //   * NO SECOND FACTOR IS NEEDED — the request did not demand two
-  //     (`record.forceMfa`), no requirement applies (`authn.mfaRequired`,
+  //     (`record.forceMfa`), no requirement applies (the authentication policy,
   //     the account's own), the person holds no second factor they are
   //     configured to be asked for (`mfaRequired`), or the presentation
   //     already claimed two (`acr` `mfa`, from a key attestation) — and it
@@ -5578,10 +5687,18 @@ class Authn {
   //     A requirement with nothing enrolled draws the enrolment step exactly
   //     as the password screen does.
   // ---------------------------------------------------------------------------
+  //
+  // **AND AFTER AN EMAILED FIRST FACTOR (#64)**, with `opts.first` `email`:
+  // the same decision, except that the emailed factor is never the second
+  // factor after itself — one mailbox proved twice is one factor — and the
+  // password fallback is offered only where the authentication policy
+  // accepts a password as a second factor.
   beginSecondFactorAfterWallet(req: any, res: any, record: any,
                                username: string, outcome: any,
-                               assessment?: any): any {
+                               assessment?: any,
+                               opts?: { first?: string }): any {
     const { log, randomId, gate, credentials, crypto, config } = this.deps;
+    const firstIsEmail = !!(opts && opts.first === 'email');
     log.debug("Entering Authn.beginSecondFactorAfterWallet(). username=" +
               username);
     const enrolled = credentials.mechanismsFor(username);
@@ -5645,8 +5762,18 @@ class Authn {
     const base = this.deps.baseUrlOf(req);
     const firstAmr = [].concat(outcome.amr || ['pop']).map(String);
     pending.delete(record.id);
-    const configured = riskFactor === 'security-key' ? 'webauthn'
+    let configured = riskFactor === 'security-key' ? 'webauthn'
       : (enrolled.secondFactor || '');
+    if (firstIsEmail && String(configured).indexOf('email-') === 0) {
+      configured = '';
+    }
+    // AN EMAIL DOES NOT ANSWER A STEP-UP ON RISK (D1), so a person whose one
+    // second factor is the email is not handed it when risk asked.
+    if (riskFactor && String(configured).indexOf('email-') === 0) {
+      configured = '';
+    }
+    const passwordSecond = this.deps.authnPolicy.allows('password',
+                                                        'second-factor');
     if (requirement.required && !configured && !riskFactor) {
       const offered = this.enrolmentOffered();
       if (offered.totp || offered.webauthn) {
@@ -5665,7 +5792,17 @@ class Authn {
         return { handled: true };
       }
     }
-    const factor = configured || 'password';
+    const factor = configured || (passwordSecond ? 'password' : '');
+    if (!factor) {
+      log.info('authn: "' + username + '" needs a second factor and holds ' +
+               'none this sign-in can ask for, and the authentication ' +
+               'policy does not accept a password as one; refused.');
+      log.debug("Leaving Authn.beginSecondFactorAfterWallet(). Nothing to " +
+                "ask for.");
+      return { handled: false, refused: 'A second factor is needed and none ' +
+               'that this realm accepts is available for this account.',
+               errorCode: 'STS-AUTHN-0256' };
+    }
     const mfaId = randomId(24);
     pendingMfa.set(mfaId, {
       authn: record, username: username,
@@ -5681,8 +5818,13 @@ class Authn {
       // A password is always offered after a wallet, beside whatever else the
       // person holds: it is the factor everybody here has — except under a
       // security key demanded on risk (#62 P3).
-      passwordAlternate: factor !== 'password' &&
+      passwordAlternate: factor !== 'password' && passwordSecond &&
                          riskFactor !== 'security-key',
+      // The emailed factor as a way round (#64), never after itself and
+      // never on risk.
+      email: firstIsEmail || riskFactor ||
+             String(factor).indexOf('email-') === 0
+        ? '' : (enrolled.mailFactor ? enrolled.mailFactor.held : ''),
       // The sign-in's assessment (#62 P3), for the finisher's session.
       risk: assessment || undefined,
       expires: Date.now() + this.mfaStepTtlMs()
@@ -5694,6 +5836,8 @@ class Authn {
              'they hold one') + '); asking for ' + factor + '.');
     if (factor === 'totp') {
       this.sendTotpPage(res, this.totpPage(base, mfaId, username, '', ''));
+    } else if (factor === 'email-code' || factor === 'email-link') {
+      this.emailDoor().beginSecondFactor(req, res, base, mfaId);
     } else if (factor === 'webauthn') {
       this.sendWebauthnPage(res, this.webauthnPage(base, mfaId, username, ''));
     } else {
@@ -5766,6 +5910,17 @@ class Authn {
         PASSWORD_FACTOR_PATH + '?mfa=' + encodeURIComponent(mfaId) +
         '">Use your password instead</a></div>';
     }
+    // THE EMAILED FACTOR (#64). A LINK TO A PAGE, not a send: the page it
+    // leads to asks before anything is mailed, because a GET is markup and
+    // must not be what sends somebody mail.
+    if (step.email === 'code' || step.email === 'link') {
+      out += '<div><a id="email-second-factor" href="' +
+        (step.email === 'code' ? EMAIL_CODE_PATH : EMAIL_LINK_PATH) +
+        '?mfa=' + encodeURIComponent(mfaId) + '">' +
+        (step.email === 'code' ? 'Email me a code instead'
+                               : 'Email me a sign-in link instead') +
+        '</a></div>';
+    }
     log.debug("Leaving Authn.walletFactorLinksHtml().");
     return out;
   }
@@ -5777,6 +5932,140 @@ class Authn {
     this.returnToCaller(res, record, null, null);
     log.debug("Leaving Authn.completeAuthentication(). Sent them back to " +
               record.returnTo + ".");
+  }
+
+  // ===========================================================================
+  // THE EMAILED CODE AND LINK'S HOLD ON A SIGN-IN (#64).
+  //
+  // `authn/email_factor.ts` draws the screens and checks the secrets; what it
+  // needs from here is the one register of sign-ins waiting for a factor
+  // (`pendingMfa`) and the ways out of one — the same needs the wallet door
+  // has, answered the same way: a few functions, and never the store itself.
+  // ===========================================================================
+
+  // The door, loaded when first used: it is required after this module.
+  emailDoor(): any {
+    const { log } = this.deps;
+    log.debug("Entering Authn.emailDoor().");
+    log.debug("Leaving Authn.emailDoor().");
+    return require('./email_factor');
+  }
+
+  // A new step, stored; answers its id.
+  mintMfaStep(step: any): string {
+    const { log, randomId } = this.deps;
+    log.debug("Entering Authn.mintMfaStep().");
+    const id = randomId(24);
+    pendingMfa.set(id, step);
+    log.debug("Leaving Authn.mintMfaStep().");
+    return id;
+  }
+
+  // A step written back after it changed (a code sent, an attempt counted).
+  saveMfaStep(id: string, step: any): void {
+    const { log } = this.deps;
+    log.debug("Entering Authn.saveMfaStep().");
+    pendingMfa.set(String(id), step);
+    log.debug("Leaving Authn.saveMfaStep().");
+  }
+
+  dropMfaStep(id: string): void {
+    const { log } = this.deps;
+    log.debug("Entering Authn.dropMfaStep().");
+    pendingMfa.delete(String(id));
+    log.debug("Leaving Authn.dropMfaStep().");
+  }
+
+  // The pending sign-in record a first factor is minted from, spent: the
+  // step carries it from here on, as a password step's does.
+  takePending(record: any): void {
+    const { log } = this.deps;
+    log.debug("Entering Authn.takePending().");
+    pending.delete(record.id);
+    log.debug("Leaving Authn.takePending().");
+  }
+
+  firstAmrFor(step: any): string[] {
+    const { log } = this.deps;
+    log.debug("Entering Authn.firstAmrFor().");
+    log.debug("Leaving Authn.firstAmrFor().");
+    return this.firstAmrOf(step);
+  }
+
+  // The sign-in screen again, with a sentence on it, for the email door's
+  // refusals of a first factor — the same page every refusal there draws.
+  sendLoginPageFor(res: any, base: string, record: any, error: string): any {
+    const { log } = this.deps;
+    log.debug("Entering Authn.sendLoginPageFor().");
+    log.debug("Leaving Authn.sendLoginPageFor().");
+    return this.sendLoginPage(res, this.loginPage(base, record, error));
+  }
+
+  // AN EMAILED SECOND FACTOR, VERIFIED: the step's first factor and `otp`
+  // (D2 — RFC 8176 registers nothing for email, and a single-use secret sent
+  // to the person is what `otp` names), `acr` `mfa` (D1), and the credential
+  // kind saying which it was. Answers whether a session was started.
+  finishEmailSecondFactor(req: any, res: any, mfaId: string, step: any,
+                          kind: string): boolean {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering Authn.finishEmailSecondFactor(). " + kind);
+    pendingMfa.delete(String(mfaId));
+    const amr = this.firstAmrOf(step).concat(
+      this.firstAmrOf(step).indexOf('otp') >= 0 ? [] : ['otp']);
+    const said = { request: req, risk: step.risk,
+                   credential: { kind: 'email-' + kind } };
+    const started = this.startSession(res, step.username, amr, 'mfa',
+                                      step.authn.protocol, said);
+    if (this.refusedSession(res, baseUrlOf(req), step.authn, step.username,
+                            started, said)) {
+      log.debug("Leaving Authn.finishEmailSecondFactor(). Refused.");
+      return false;
+    }
+    this.returnToCaller(res, step.authn, null, null);
+    log.debug("Leaving Authn.finishEmailSecondFactor(). Signed in.");
+    return true;
+  }
+
+  // AN EMAILED FIRST FACTOR, VERIFIED: the wallet's shape exactly — the risk
+  // assessed, a second factor asked for where one is needed (never the email
+  // again), and otherwise a session of one factor, `amr ["otp"]`, `acr "1"`.
+  // Answers `{ handled: true }` when it wrote the response, or `{ refused,
+  // why, errorCode }` for the door to draw.
+  async finishEmailFirstFactor(req: any, res: any, step: any,
+                               kind: string): Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering Authn.finishEmailFirstFactor(). " + kind);
+    const record = step.authn;
+    const username = step.username;
+    const credential = { kind: 'email-' + kind };
+    const assessed = await this.assessSignIn(req, username, record.protocol,
+      { application: String(record.application || ''),
+        credential: credential });
+    const second = this.beginSecondFactorAfterWallet(req, res, record,
+      username, { amr: ['otp'], acr: '1' }, assessed, { first: 'email' });
+    if (second.refused) {
+      log.debug("Leaving Authn.finishEmailFirstFactor(). Refused.");
+      return { refused: true, why: second.onRisk ? 'Authentication failed.'
+                                                 : second.refused,
+               errorCode: second.errorCode || 'STS-AUTHN-0009' };
+    }
+    if (second.handled) {
+      log.debug("Leaving Authn.finishEmailFirstFactor(). Second factor.");
+      return { handled: true };
+    }
+    const said = { request: req, credential: credential,
+                   risk: assessed || undefined,
+                   application: String(record.application || '') };
+    const started = this.startSession(res, username, ['otp'], '1',
+                                      record.protocol, said);
+    if (this.refusedSession(res, this.deps.baseUrlOf(req), record, username,
+                            started, said)) {
+      log.debug("Leaving Authn.finishEmailFirstFactor(). Refused.");
+      return { handled: true };
+    }
+    this.returnToCaller(res, record, null, null);
+    log.debug("Leaving Authn.finishEmailFirstFactor(). Signed in.");
+    return { handled: true };
   }
 
   // The record a request names, or null — expired ones are dropped on the way
@@ -6082,6 +6371,17 @@ class Authn {
     // A sign-in as one named person (#109): the name drawn fixed, and nothing
     // offered that is not a password — see beginAuthentication().
     const locked = String(record.lockedUsername || '');
+    // THE AUTHENTICATION POLICY'S FIRST FACTORS (#64): a password field only
+    // where a password is one, and the two emailed ones only where they are
+    // ACTIVE — allowed, and this realm able to send mail. Not on a linking
+    // sign-in (a password, by #109), nor where a key or a passwordless key is
+    // demanded: an email answers neither.
+    const policy = this.deps.authnPolicy;
+    const passwordFirst = policy.allows('password', 'primary');
+    const emailFirst = locked || record.forceKey || record.forcePasswordless
+      ? { code: false, link: false }
+      : { code: policy.active('emailCode', 'primary'),
+          link: policy.active('emailLink', 'primary') };
     const page = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
       'charset="utf-8"><title>Sign in — mock authentication ' +
       'service</title><style>' + CARD_CSS +
@@ -6104,9 +6404,11 @@ class Authn {
       'for="username">Username</label><input type="text" id="username" ' +
       'name="username" autocomplete="username" ' +
       (locked ? 'readonly ' : 'autofocus ') +
-      'value="' + xmlEscape(record.hint) + '"><label ' +
-      'for="password">Password</label><input type="password" id="password" ' +
-      'name="password" autocomplete="current-password">' +
+      'value="' + xmlEscape(record.hint) + '">' +
+      (passwordFirst
+        ? '<label for="password">Password</label><input type="password" ' +
+          'id="password" name="password" autocomplete="current-password">'
+        : '') +
       // Two checkboxes rather than one, because a security key is two different
       // things here and the difference is what the tokens end up claiming:
       // ticked with a password it is a SECOND factor (amr ["pwd","hwk"], acr
@@ -6223,7 +6525,23 @@ class Authn {
            '">Continue without signing in</button>'
          : '') +
       '<button type="submit" id="kc-cancel" name="action" value="cancel" ' +
-      'class="secondary">Cancel</button></div></form>' +
+      'class="secondary">Cancel</button></div>' +
+      // THE EMAILED FIRST FACTORS (#64): submit buttons of THIS form, so the
+      // username above goes with them and no script is needed. The handler
+      // decides again whether they are allowed; the page only shows.
+      (emailFirst.code || emailFirst.link
+        ? '<div class="row">' +
+          (emailFirst.code
+            ? '<button type="submit" id="kc-email-code" name="action" ' +
+              'value="email-code" class="secondary">Email me a sign-in ' +
+              'code</button>' : '') +
+          (emailFirst.link
+            ? '<button type="submit" id="kc-email-link" name="action" ' +
+              'value="email-link" class="secondary">Email me a sign-in ' +
+              'link</button>' : '') +
+          '</div>'
+        : '') +
+      '</form>' +
       // FORGOT YOUR PASSWORD? (#63, 2026-09-22): the portal's self-service
       // reset, offered only where `common/mail_uses.ts` says it is — the
       // setting on, a mail transport, and a mode that checks passwords — and
@@ -6679,7 +6997,7 @@ class Authn {
     // ---------------------------------------------------------------------
     // A SECOND FACTOR REQUIRED OF THIS PERSON (2026-09-13) — by their own entry
     // (`stsMfaRequired`, set from /admin/users) or by the realm
-    // (`authn.mfaRequired`).
+    // (the authentication policy's `requireSecondFactor`).
     //
     // **A PASSWORDLESS SIGN-IN IS REFUSED UNDER IT**, before any ceremony: a
     // security key on its own is ONE factor — `amr ["hwk"]` — and a requirement
@@ -6711,7 +7029,8 @@ class Authn {
                  'authn: a second factor is ' +
                  'required of "' + username + '", who holds none, and ' +
                  'neither mechanism can be enrolled in this realm ' +
-                 '(totp.enabled, webauthn.enabled, webauthn.mfaAllowed). The ' +
+                 '(the authentication policy on Directory > Policies, ' +
+                 'webauthn.enabled, webauthn.mfaAllowed). The ' +
                  'sign-in is REFUSED rather than let through on one factor.');
         errorCodes.mark(res, 'STS-AUTHN-0172');
         log.debug("Leaving Authn.finishPasswordSignIn(). Nothing can be " +
@@ -6770,6 +7089,13 @@ class Authn {
         alternate: record.forceKey || riskFactor === 'security-key' ? ''
           : (factor === 'webauthn' && enrolled.totp) ? 'totp'
           : ((factor === 'totp' && enrolled.mfaKeys > 0) ? 'webauthn' : ''),
+        // THE EMAILED FACTOR AS A WAY ROUND THE ONE ASKED FOR (#64): `code`
+        // or `link` where the person holds it and it is not already the
+        // factor asked for. Never under a demand for a key, and never on
+        // risk — an email answers neither (D1).
+        email: record.forceKey || riskFactor ||
+               String(factor).indexOf('email-') === 0
+          ? '' : (enrolled.mailFactor ? enrolled.mailFactor.held : ''),
         // THE WAY OUT WHEN NEITHER MECHANISM IS TO HAND (2026-09-10). Resolved
         // HERE, when the step is minted, for `alternate`'s reason and with a
         // sharper edge: this link must not be drawn for somebody who holds no
@@ -6810,6 +7136,11 @@ class Authn {
         log.debug("Leaving Authn.finishPasswordSignIn().");
         return this.sendTotpPage(res, this.totpPage(base, mfaId, username, '',
                                                     ''));
+      }
+      if (factor === 'email-code' || factor === 'email-link') {
+        log.debug("Leaving Authn.finishPasswordSignIn(). Mailing the " +
+                  factor + ".");
+        return this.emailDoor().beginSecondFactor(req, res, base, mfaId);
       }
       log.debug("Leaving the authentication endpoint. " + username +
                 (passwordless ? " asked for a passwordless sign-in; asking " +
@@ -7965,7 +8296,10 @@ class Authn {
     // WHICH MECHANISM THEY ARE STANDING IN FOR, so the page can say what this
     // is instead of. It is the step's, because that is what was asked for.
     const insteadOf = step && step.factor === 'webauthn'
-      ? 'your security key' : 'your authenticator app';
+      ? 'your security key'
+      : (step && String(step.factor).indexOf('email-') === 0
+        ? 'the emailed ' + (step.factor === 'email-code' ? 'code' : 'link')
+        : 'your authenticator app');
     const low = status.remaining > 0 && status.remaining <= 3;
     const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
       'charset="utf-8"><title>Recovery code — mock authentication ' +
@@ -8035,7 +8369,10 @@ class Authn {
       // arriving here by mistake — the phone was in the next room after all —
       // must not cost a code.
       '<div><a href="' +
-      (step && step.factor === 'webauthn' ? WEBAUTHN_PATH : TOTP_PATH) +
+      (step && step.factor === 'webauthn' ? WEBAUTHN_PATH
+        : step && step.factor === 'email-code' ? EMAIL_CODE_PATH
+          : step && step.factor === 'email-link' ? EMAIL_LINK_PATH
+            : TOTP_PATH) +
       '?mfa=' + encodeURIComponent(mfaId) + '">Go back and use ' +
       xmlEscape(insteadOf) + ' after all</a></div>' +
       '</div></div></body></html>\n';
@@ -8472,6 +8809,19 @@ class Authn {
           'Enter a username. It does not have to exist — it is the identity ' +
           'the issued tokens will describe.'));
       }
+      // ---------------------------------------------------------------------
+      // AN EMAILED FIRST FACTOR (#64): the username alone, and the code or the
+      // link goes to the address on that account — `authn/email_factor.ts`
+      // decides everything from here, including the answer a name with no
+      // verified address gets, which is the SAME page as one with one.
+      const act = String(body.action || '');
+      if (act === 'email-code' || act === 'email-link') {
+        log.debug("Leaving the authentication endpoint. An emailed first " +
+                  "factor was asked for.");
+        return this.emailDoor().beginFirstFactor(req, res, base, record,
+          username, act === 'email-code' ? 'code' : 'link');
+      }
+
       // Which role the security key is in, if it is in one at all. The two
       // boxes cannot be made exclusive on a screen that runs no script, so a
       // POST can carry both — and `webauthn_only` wins, because the two mean
@@ -8618,6 +8968,20 @@ class Authn {
       // no credential at all; the SCREEN says only that authentication failed,
       // because telling a browser which of the two happened is the account
       // enumeration answer.
+      // A PASSWORD AS THE FIRST FACTOR IS THE AUTHENTICATION POLICY'S TO ALLOW
+      // (#64). Refused before it is checked, with the same page either way,
+      // so it says nothing about the account.
+      if (!passwordless &&
+          !this.deps.authnPolicy.allows('password', 'primary')) {
+        log.info('authn: a password sign-in for "' + username + '" was ' +
+                 'refused: this realm\'s authentication policy does not ' +
+                 'accept a password as a first factor.');
+        errorCodes.mark(res, 'STS-AUTHN-0255');
+        return this.sendLoginPage(res, this.loginPage(base, record,
+          'This realm does not accept a password as a first factor. Use one ' +
+          'of the other ways of signing in below.'));
+      }
+
       // Set when the password just verified is known from a breach (#62 P6).
       let breachedAtSignIn = false;
       if (!passwordless) {
@@ -10165,5 +10529,19 @@ export = {
   adoptSessionRisk: slot.forward('adoptSessionRisk'),
   sessionsForRisk: slot.forward('sessionsForRisk'),
   pendingFor: slot.forward('pendingFor'),
-  completeAuthentication: slot.forward('completeAuthentication')
+  completeAuthentication: slot.forward('completeAuthentication'),
+  // The emailed code and link (#64), for `authn/email_factor.ts`: its three
+  // paths, and the pending-step functions the header above them argues.
+  EMAIL_CODE_PATH: EMAIL_CODE_PATH,
+  EMAIL_LINK_PATH: EMAIL_LINK_PATH,
+  EMAIL_LINK_OPEN_PATH: EMAIL_LINK_OPEN_PATH,
+  BACKUP_CODE_PATH: BACKUP_CODE_PATH,
+  mintMfaStep: slot.forward('mintMfaStep'),
+  saveMfaStep: slot.forward('saveMfaStep'),
+  dropMfaStep: slot.forward('dropMfaStep'),
+  takePending: slot.forward('takePending'),
+  firstAmrFor: slot.forward('firstAmrFor'),
+  sendLoginPageFor: slot.forward('sendLoginPageFor'),
+  finishEmailSecondFactor: slot.forward('finishEmailSecondFactor'),
+  finishEmailFirstFactor: slot.forward('finishEmailFirstFactor')
 };
