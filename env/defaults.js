@@ -688,26 +688,28 @@ var config = {
 
   // --- OpenID Federation -----------------------------------------------
   oidfed: {
-    signingAlg: "ES256",          // Federation Entity Key algorithm
-    keyRotationDays: 180,         // Federation Entity Key lifetime (days)
-    keyOverlapDays: 14,           // Federation Entity Key overlap (days)
-    statementLifetimeS: 86400,    // Entity Statement lifetime (s)
-    realmsAreSubordinates: true,  // Every realm is a subordinate of the default realm
-    authorityHints: "",           // Authority hints
-    organizationName: "",         // Organization name
-    contacts: "",                 // Contacts
-    logoUri: "",                  // Logo URI
-    policyUri: "",                // Policy URI
-    organizationUri: "",          // Organization URI
-    trustMarkLifetimeS: 31536000, // Trust Mark lifetime (s)
-    maxAuthorityHints: 5,         // Authority hints followed per entity
-    maxChainDepth: 6,             // Longest Trust Chain
-    maxFetchesPerResolution: 24,  // Fetches per resolution
-    fetchTimeoutMs: 5000,         // Fetch timeout (ms)
-    fetchMaxBytes: 262144,        // Largest fetched statement (bytes)
-    resolveCacheS: 3600,          // Resolution cache lifetime (s)
-    resolveCacheMax: 1000,        // Resolutions kept
-    clockSkewS: 60                // Clock skew allowed (s)
+    signingAlg: "ES256",                           // Federation Entity Key algorithm
+    keyRotationDays: 180,                          // Federation Entity Key lifetime (days)
+    keyOverlapDays: 14,                            // Federation Entity Key overlap (days)
+    statementLifetimeS: 86400,                     // Entity Statement lifetime (s)
+    realmsAreSubordinates: true,                   // Every realm is a subordinate of the default realm
+    authorityHints: "",                            // Authority hints
+    organizationName: "",                          // Organization name
+    contacts: "",                                  // Contacts
+    logoUri: "",                                   // Logo URI
+    policyUri: "",                                 // Policy URI
+    organizationUri: "",                           // Organization URI
+    trustMarkLifetimeS: 31536000,                  // Trust Mark lifetime (s)
+    clientRegistrationTypes: "automatic,explicit", // Client registration through the federation
+    registrationLifetimeS: 86400,                  // Federated registration lifetime (s)
+    maxAuthorityHints: 5,                          // Authority hints followed per entity
+    maxChainDepth: 6,                              // Longest Trust Chain
+    maxFetchesPerResolution: 24,                   // Fetches per resolution
+    fetchTimeoutMs: 5000,                          // Fetch timeout (ms)
+    fetchMaxBytes: 262144,                         // Largest fetched statement (bytes)
+    resolveCacheS: 3600,                           // Resolution cache lifetime (s)
+    resolveCacheMax: 1000,                         // Resolutions kept
+    clockSkewS: 60                                 // Clock skew allowed (s)
   },
 
   // --- Kerberos --------------------------------------------------------

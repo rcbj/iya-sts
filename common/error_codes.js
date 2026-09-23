@@ -8100,6 +8100,36 @@ const CODES = [
   { code: 'STS-OIDFED-0050',
     summary: 'A federation endpoint failed unexpectedly (#132).',
     spec: 'server_error (HTTP 500)' },
+  { code: 'STS-OIDFED-0051',
+    summary: 'An Entity Statement carried an aud where none was expected, ' +
+      'an aud naming somebody else, or a trust_anchor claim outside an ' +
+      'Explicit Registration response (#134).',
+    spec: 'invalid_request / invalid_trust_chain' },
+  { code: 'STS-OIDFED-0052',
+    summary: 'A relying party registering through the federation resolved ' +
+      'with no openid_relying_party metadata, or with no usable keys for ' +
+      'its relying party role (#134).',
+    spec: 'invalid_metadata' },
+  { code: 'STS-OIDFED-0053',
+    summary: 'A Trust Chain presented for a registration was about another ' +
+      'entity, or its peer_trust_chain did not begin at this OP and end at ' +
+      'the same Trust Anchor (#134).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0054',
+    summary: 'An automatic registration carried no proof, or its request ' +
+      'object or client assertion did not verify with the relying ' +
+      'party\'s keys or failed its aud, iss, sub, jti or exp checks (#134).',
+    spec: 'invalid_request (HTTP 400, never redirected)' },
+  { code: 'STS-OIDFED-0055',
+    summary: 'An automatic registration asked for a secret-based token ' +
+      'endpoint authentication method, which nothing provisioned (#134).',
+    spec: 'invalid_client_metadata' },
+  { code: 'STS-OIDFED-0056',
+    summary: 'An Explicit Registration request was refused: the realm does ' +
+      'not offer it, the media type was wrong, or the body was not the ' +
+      'relying party\'s Entity Configuration with authority_hints and ' +
+      'openid_relying_party metadata (#134).',
+    spec: 'invalid_request' },
 
   // ===== KRB ===============================================================
   { code: 'STS-KRB-0001',

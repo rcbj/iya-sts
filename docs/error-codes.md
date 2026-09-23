@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3359** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3365** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 131
-* [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 50
+* [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 56
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 74
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
@@ -2010,6 +2010,12 @@ Raised from: oidfed/.
 | `STS-OIDFED-0048` | A Trust Mark offered for this realm to carry is not a trust-mark+jwt issued to it (#132). | — |
 | `STS-OIDFED-0049` | The keys of an entity being registered could not be read — neither given as a valid JWK Set nor obtained from its Entity Configuration (#132). | — |
 | `STS-OIDFED-0050` | A federation endpoint failed unexpectedly (#132). | server_error (HTTP 500) |
+| `STS-OIDFED-0051` | An Entity Statement carried an aud where none was expected, an aud naming somebody else, or a trust_anchor claim outside an Explicit Registration response (#134). | invalid_request / invalid_trust_chain |
+| `STS-OIDFED-0052` | A relying party registering through the federation resolved with no openid_relying_party metadata, or with no usable keys for its relying party role (#134). | invalid_metadata |
+| `STS-OIDFED-0053` | A Trust Chain presented for a registration was about another entity, or its peer_trust_chain did not begin at this OP and end at the same Trust Anchor (#134). | invalid_trust_chain |
+| `STS-OIDFED-0054` | An automatic registration carried no proof, or its request object or client assertion did not verify with the relying party's keys or failed its aud, iss, sub, jti or exp checks (#134). | invalid_request (HTTP 400, never redirected) |
+| `STS-OIDFED-0055` | An automatic registration asked for a secret-based token endpoint authentication method, which nothing provisioned (#134). | invalid_client_metadata |
+| `STS-OIDFED-0056` | An Explicit Registration request was refused: the realm does not offer it, the media type was wrong, or the body was not the relying party's Entity Configuration with authority_hints and openid_relying_party metadata (#134). | invalid_request |
 
 ## STS-KRB
 

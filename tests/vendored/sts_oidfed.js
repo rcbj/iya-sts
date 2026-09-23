@@ -27,6 +27,15 @@
 //   6. THE KEYS: a rotation by hand, then the retired key in the Historical
 //      Keys jwk-set+jwt; a revocation with its reason there; an emergency
 //      rotation without its confirmation refused.
+//   7. CLIENT REGISTRATION THROUGH THE FEDERATION (#134): the realm, an OP
+//      beneath the anchor, advertises both registration types; a relying
+//      party the anchor vouches for registers AUTOMATICALLY with a signed
+//      request object carrying its Trust Chain (the authorization endpoint
+//      carries on to sign-in), and another with a request object and a
+//      private_key_jwt at the PAR endpoint; an unregistered Entity
+//      Identifier with no proof is refused with a 400 and not redirected;
+//      a third registers EXPLICITLY at /oidfed/register and is answered
+//      with a signed explicit-registration-response+jwt.
 //
 // OWNED HERE (local: true): this repository's federation endpoints and its
 // management API.
@@ -125,6 +134,9 @@ async function hop(method, url, opts) {
   } else if (o.json !== undefined) {
     body = JSON.stringify(o.json);
     headers["content-type"] = "application/json";
+  } else if (o.raw !== undefined) {
+    body = o.raw;
+    headers["content-type"] = o.type;
   }
   const r = await fetch(url, { method: method, headers: headers, body: body,
                                redirect: "manual" });
@@ -138,6 +150,7 @@ async function hop(method, url, opts) {
   }
   log.debug("Leaving hop(). " + r.status);
   return { status: r.status, text: text, json: json,
+           location: r.headers.get("location") || "",
            type: r.headers.get("content-type") || "",
            cache: r.headers.get("cache-control") || "" };
 }
@@ -166,6 +179,81 @@ function waitMs(ms) {
   return new Promise(function (resolve) {
     setTimeout(resolve, ms);
   });
+}
+
+// A compact ES256 JWS with whatever header members a case needs.
+function jws(header, payload, privateKey) {
+  log.debug("Entering jws().");
+  const b64 = function (o) {
+    return Buffer.from(JSON.stringify(o)).toString("base64url");
+  };
+  const input = b64(Object.assign({ alg: "ES256" }, header)) + "." +
+                b64(payload);
+  const sig = crypto.sign("sha256", Buffer.from(input),
+    { key: privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url");
+  log.debug("Leaving jws().");
+  return input + "." + sig;
+}
+
+function ecKey(kid) {
+  log.debug("Entering ecKey().");
+  const pair = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const jwk = pair.publicKey.export({ format: "jwk" });
+  jwk.kid = kid;
+  jwk.alg = "ES256";
+  jwk.use = "sig";
+  log.debug("Leaving ecKey().");
+  return { privateKey: pair.privateKey, jwk: jwk };
+}
+
+// A relying party the default realm vouches for: a Federation Entity Key,
+// a protocol key, the anchor's statement about it, and makers of its Entity
+// Configuration, its Trust Chain and its request objects.
+async function federatedRp(tag, anchor, fetchAt) {
+  log.debug("Entering federatedRp(). " + tag);
+  const id = "https://" + tag + "-" + STAMP.toLowerCase()
+    .replace(/[^a-z0-9]/g, "") + ".example.test";
+  const fed = ecKey("fed-" + tag);
+  const proto = ecKey("rp-" + tag);
+  await ok(root + "/admin-api/oidfed/add-subordinate",
+           { entityId: id, jwks: { keys: [fed.jwk] },
+             entityTypes: "openid_relying_party" },
+           "registered " + id + " under the anchor");
+  const ss = await hop("GET", fetchAt + "?sub=" + encodeURIComponent(id));
+  assert.strictEqual(ss.status, 200, ss.text.slice(0, 300));
+  const now = Math.floor(Date.now() / 1000);
+  const rp = { id: id, fed: fed, proto: proto };
+  rp.configuration = function (extra, claims) {
+    return jws({ typ: "entity-statement+jwt", kid: fed.jwk.kid },
+      Object.assign({ iss: id, sub: id, iat: now, exp: now + 3600,
+        jwks: { keys: [fed.jwk] }, authority_hints: [anchor.parts.claims.iss],
+        metadata: { openid_relying_party: Object.assign({
+          redirect_uris: [id + "/cb"], response_types: ["code"],
+          grant_types: ["authorization_code"], client_name: "RP " + tag,
+          jwks: { keys: [proto.jwk] } }, extra || {}) } }, claims || {}),
+      fed.privateKey);
+  };
+  rp.chain = function (ec) {
+    return [ec || rp.configuration(), ss.text, anchor.jwt];
+  };
+  rp.request = function (opId, claims) {
+    return jws({ typ: "oauth-authz-req+jwt", kid: proto.jwk.kid,
+                 trust_chain: rp.chain() },
+      Object.assign({ iss: id, client_id: id, aud: opId,
+        jti: crypto.randomUUID(), iat: now, exp: now + 300,
+        response_type: "code", redirect_uri: id + "/cb", scope: "openid",
+        state: "s-" + tag, nonce: "n-" + tag,
+        code_challenge: crypto.createHash("sha256").update("v".repeat(43))
+          .digest("base64url"),
+        code_challenge_method: "S256" }, claims || {}), proto.privateKey);
+  };
+  rp.assertion = function (opId) {
+    return jws({ typ: "JWT", kid: proto.jwk.kid },
+      { iss: id, sub: id, aud: opId, jti: crypto.randomUUID(), iat: now,
+        exp: now + 300 }, proto.privateKey);
+  };
+  log.debug("Leaving federatedRp().");
+  return rp;
 }
 
 async function test() {
@@ -396,15 +484,82 @@ async function test() {
     assert.strictEqual(emergency.status, 400);
   });
 
-  assert.ok(checks >= 15, "only " + checks + " checks ran");
+  log.info("=== 7. client registration through the federation (#134) ===");
+  const op = await configurationOf(base);
+  const opId = op.parts.claims.iss;
+  const opMd = op.parts.claims.metadata.openid_provider;
+  check("the OP advertises automatic and explicit registration and its " +
+        "registration endpoint", function () {
+    assert.deepStrictEqual(opMd.client_registration_types_supported,
+                           ["automatic", "explicit"]);
+    assert.strictEqual(opMd.federation_registration_endpoint,
+                       base + "/oidfed/register");
+  });
+  const autoRp = await federatedRp("auto", anchor, fetchAt);
+  // POSTed (OIDC Core 3.1.2.1): a request object carrying a three-statement
+  // Trust Chain in its header is longer than node takes in a request line.
+  r = await hop("POST", base + "/oauth2/authorize", { form: {
+    client_id: autoRp.id, response_type: "code", scope: "openid",
+    request: autoRp.request(opId) } });
+  const unproven = await hop("GET", base + "/oauth2/authorize?" +
+    new URLSearchParams({ client_id: autoRp.id.replace("auto-", "none-"),
+      response_type: "code", scope: "openid",
+      redirect_uri: "https://none.example.test/cb" }).toString());
+  check("automatic: a signed request object with its Trust Chain registers " +
+        "the RP and the request goes on to sign-in; no proof is a 400, " +
+        "never a redirect (12.1.3)", function () {
+    assert.strictEqual(r.status, 302, r.status + " " + r.text.slice(0, 400));
+    assert.ok(!/\/cb/.test(r.location), r.location);
+    assert.strictEqual(unproven.status, 400, unproven.text.slice(0, 300));
+    assert.ok(!unproven.location);
+  });
+  const parRp = await federatedRp("par", anchor, fetchAt);
+  r = await hop("POST", base + "/oauth2/par", { form: {
+    client_id: parRp.id, request: parRp.request(opId),
+    client_assertion_type:
+      "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+    client_assertion: parRp.assertion(opId) } });
+  check("automatic at the PAR endpoint: registered, and a request_uri " +
+        "issued", function () {
+    assert.strictEqual(r.status, 201, r.status + " " + r.text.slice(0, 400));
+    assert.ok(/^urn:ietf:params:oauth:request_uri:/.test(r.json.request_uri));
+  });
+  const explicitRp = await federatedRp("explicit", anchor, fetchAt);
+  r = await hop("POST", base + "/oidfed/register", {
+    type: "application/trust-chain+json",
+    raw: JSON.stringify(explicitRp.chain(explicitRp.configuration(
+      { token_endpoint_auth_method: "private_key_jwt" }, { aud: opId }))) });
+  const wrongType = await hop("POST", base + "/oidfed/register", {
+    json: explicitRp.chain() });
+  check("explicit: a signed explicit-registration-response+jwt naming the " +
+        "anchor and the registered metadata; a wrong media type refused",
+        function () {
+    assert.strictEqual(r.status, 200, r.status + " " + r.text.slice(0, 400));
+    assert.strictEqual(r.type, "application/explicit-registration-" +
+                               "response+jwt");
+    const answer = partsOf(r.text);
+    assert.strictEqual(answer.header.typ,
+                       "explicit-registration-response+jwt");
+    assert.ok(verified(r.text, op.parts.claims.jwks));
+    assert.strictEqual(answer.claims.iss, opId);
+    assert.strictEqual(answer.claims.aud, explicitRp.id);
+    assert.strictEqual(answer.claims.trust_anchor, anchorId);
+    assert.strictEqual(answer.claims.metadata.openid_relying_party.client_id,
+                       explicitRp.id);
+    assert.strictEqual(wrongType.status, 400);
+    assert.strictEqual(wrongType.json.error, "invalid_request");
+  });
+
+  assert.ok(checks >= 19, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
 }
 
 new Command()
-  .description("OpenID Federation 1.1 (#132): Entity Configurations, fetch, " +
-    "list, resolve, Trust Marks, a registered subordinate and the keys.")
+  .description("OpenID Federation 1.1 (#132, #134): Entity Configurations, " +
+    "fetch, list, resolve, Trust Marks, a registered subordinate, the keys " +
+    "and client registration through the federation.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

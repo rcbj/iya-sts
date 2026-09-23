@@ -10279,6 +10279,17 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Federation Historical Keys', specs: ['openid-federation'],
     what: 'GET (8.7): a signed jwk-set+jwt of every Federation Entity Key ' +
           'this realm has retired or revoked, with iat, exp and revoked.' },
+  { path: '/oidfed/register', group: 'OpenID Federation',
+    name: 'Explicit Registration', specs: ['openid-federation-connect'],
+    what: 'POST (Connect 1.1, 12.2, #134): a relying party\'s Entity ' +
+          'Configuration naming this OP as aud ' +
+          '(application/entity-statement+jwt), or a Trust Chain beginning ' +
+          'with it (application/trust-chain+json). The chain is validated ' +
+          'to one of the realm\'s Trust Anchors, the resolved ' +
+          'openid_relying_party metadata held to every RFC 7591 check, and ' +
+          'the client registered until the chain expires; the answer is a ' +
+          'signed explicit-registration-response+jwt. 404 where ' +
+          'oidfed.clientRegistrationTypes leaves it out.' },
   { path: '/admin/oidfed', group: 'OpenID Federation',
     name: 'The OpenID Federation console page',
     specs: ['openid-federation'],

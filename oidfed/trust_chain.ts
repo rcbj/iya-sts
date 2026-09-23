@@ -171,8 +171,12 @@ class TrustChain {
   // chain's claims, its Trust Anchor, its expiry (10.4: the least `exp`)
   // and the resolved metadata.
   // -------------------------------------------------------------------------
-  validate(jwts: Json, anchors: TrustAnchor[]): Validated {
+  //   options.audience   an Explicit Registration request's first statement
+  //                      carries `aud` (Connect 1.1, 3.1.1); this is the OP
+  //                      it must name.
+  validate(jwts: Json, anchors: TrustAnchor[], options?: Json): Validated {
     const { log, nowSec, skewSec } = this.deps;
+    const opts = options || {};
     log.debug("Entering TrustChain.validate().");
     if (!Array.isArray(jwts) || !jwts.length ||
         !jwts.every(function (one: Json): boolean {
@@ -207,7 +211,8 @@ class TrustChain {
                            'may not (4.3, 4.4).');
       }
       const valid = EntityStatement.validateClaims(read.claims,
-        { nowSec: now, skewSec: skew, understood: [] });
+        { nowSec: now, skewSec: skew, understood: [],
+          audience: j === 0 ? opts.audience : undefined });
       if (!valid.ok) {
         log.debug("Leaving TrustChain.validate(). Statement " + j +
                   " claims.");
@@ -541,8 +546,17 @@ class TrustChain {
   // `anchors` may be narrowed by the caller (a resolve request's
   // `trust_anchor`). Answers the chosen chain, validated, or why none was.
   // -------------------------------------------------------------------------
-  async resolve(entityId: string, anchors: TrustAnchor[]): Promise<Validated> {
-    const { log } = this.deps;
+  //   options.configuration  the subject's Entity Configuration, HANDED to
+  //                          the resolver rather than fetched — an Explicit
+  //                          Registration request's body (Connect 1.1,
+  //                          12.2.2). It is verified by its own keys like a
+  //                          fetched one, and the walk starts from its
+  //                          authority_hints.
+  //   options.audience       the `aud` that configuration carries.
+  async resolve(entityId: string, anchors: TrustAnchor[],
+                options?: Json): Promise<Validated> {
+    const { log, nowSec, skewSec } = this.deps;
+    const opts = options || {};
     log.debug("Entering TrustChain.resolve(). " + entityId);
     if (!anchors || !anchors.length) {
       log.debug("Leaving TrustChain.resolve(). No anchors.");
@@ -550,13 +564,31 @@ class TrustChain {
                          'Trust Anchor, so it can trust nobody through a ' +
                          'federation.', 'invalid_trust_anchor');
     }
-    const walk = { seen: {}, fetches: 0, exhausted: false,
+    const walk = { seen: {} as Json, fetches: 0, exhausted: false,
                    problems: [] as string[] };
+    if (opts.configuration) {
+      const given = EntityStatement.verify(opts.configuration,
+        (EntityStatement.decode(opts.configuration).claims || {}).jwks,
+        EntityStatement.TYP.ENTITY_STATEMENT);
+      const valid = given.ok ? EntityStatement.validateClaims(given.claims,
+        { nowSec: nowSec(), skewSec: skewSec(), understood: [],
+          audience: opts.audience }) : given;
+      if (!valid.ok || given.claims.iss !== entityId ||
+          given.claims.sub !== entityId) {
+        log.debug("Leaving TrustChain.resolve(). The given configuration.");
+        return this.refuse(valid.code || 'STS-OIDFED-0024', 'the Entity ' +
+                           'Configuration given for ' + entityId + ': ' +
+                           (valid.why || 'it is about somebody else.'));
+      }
+      walk.seen['ec ' + entityId] = { ok: true, jwt: opts.configuration,
+                                      claims: given.claims };
+    }
     const found = await this.walkUp(entityId, anchors, [], walk);
     const valid: Validated[] = [];
     const self = this;
     found.forEach(function (jwts: string[]): void {
-      const checked = self.validate(jwts, anchors);
+      const checked = self.validate(jwts, anchors,
+                                    { audience: opts.audience });
       if (checked.ok) {
         valid.push(checked);
       } else {

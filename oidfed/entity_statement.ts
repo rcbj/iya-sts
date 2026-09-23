@@ -55,7 +55,8 @@ const TYP = Object.freeze({
   TRUST_MARK_DELEGATION: 'trust-mark-delegation+jwt',
   RESOLVE_RESPONSE: 'resolve-response+jwt',
   TRUST_MARK_STATUS: 'trust-mark-status-response+jwt',
-  JWK_SET: 'jwk-set+jwt'
+  JWK_SET: 'jwk-set+jwt',
+  EXPLICIT_REGISTRATION_RESPONSE: 'explicit-registration-response+jwt'
 });
 
 // The claims 3.1 defines for Entity Statements. `crit` may not name any of
@@ -418,6 +419,13 @@ class EntityStatement {
   //   nowSec, skewSec    the clock and its leeway
   //   understood         claim names this reader processes beyond 3.1's,
   //                      so a `crit` naming one of them is accepted
+  //   audience           set only for an EXPLICIT REGISTRATION REQUEST
+  //                      (OpenID Federation for OpenID Connect 1.1, 3.1.1,
+  //                      12.2.1): the OP's Entity Identifier, which `aud`
+  //                      must be and nothing else. Anywhere else an `aud`
+  //                      is refused, and a `trust_anchor` always is (3.2 of
+  //                      that specification: they belong to the registration
+  //                      request and response and to no other statement)
   // The KIND follows from the claims: `iss == sub` is an Entity
   // Configuration, anything else a Subordinate Statement. Answers
   // `{ ok, claims }` or the first problem found.
@@ -440,6 +448,22 @@ class EntityStatement {
       return fail('STS-OIDFED-0015', 'sub is not an Entity Identifier.');
     }
     const configuration = claims.iss === claims.sub;
+    if (claims.aud !== undefined || o.audience !== undefined) {
+      const aud = Array.isArray(claims.aud) && claims.aud.length === 1
+        ? claims.aud[0] : claims.aud;
+      if (o.audience === undefined) {
+        return fail('STS-OIDFED-0051', 'aud appears only in an Explicit ' +
+                    'Registration request or response (Connect 1.1, 3.2).');
+      }
+      if (aud !== o.audience) {
+        return fail('STS-OIDFED-0051', 'aud must be ' + o.audience +
+                    ' and nothing else (Connect 1.1, 3.1.1).');
+      }
+    }
+    if (claims.trust_anchor !== undefined) {
+      return fail('STS-OIDFED-0051', 'trust_anchor appears only in an ' +
+                  'Explicit Registration response (Connect 1.1, 3.2).');
+    }
     const time = EntityStatement.timeProblem(claims, Number(o.nowSec),
                                              Number(o.skewSec) || 0);
     if (time) {
