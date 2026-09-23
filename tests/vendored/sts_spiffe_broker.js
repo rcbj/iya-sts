@@ -623,8 +623,12 @@ async function test() {
   }
   // A section skipped for an endpoint this runner cannot reach, or a
   // product kubelet with no shared directory, runs fewer; nothing skipped,
-  // every check must have run.
-  assert.ok(checks >= (skipped ? 12 : 30), "only " + checks + " checks ran " +
+  // every check must have run. BOTH endpoints unreachable is the `cluster`
+  // mode, where each realm's Broker socket is a per-node listener the balancer
+  // does not forward (tests/cluster/haproxy.cfg): each realm still runs its
+  // five setup checks, so ten remain, where a single skip leaves twelve.
+  const floor = skipped >= 2 ? 10 : (skipped ? 12 : 30);
+  assert.ok(checks >= floor, "only " + checks + " checks ran " +
             "with " + skipped + " section(s) skipped; a section has stopped " +
             "being called.");
   log.info(checks + " check(s) passed, " + skipped + " section(s) skipped.");
