@@ -1255,6 +1255,8 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oid4vp.signInFormats` | `OID4VP_SIGN_IN_FORMATS` | `dc+sd-jwt,jwt_vc_json,ldp_vc` | yes | The credential formats a wallet sign-in asks for, in order of preference: one DCQL credential query each, and a credential set saying any one will do. |
 | `oid4vp.signInDcApiResponseMode` | `OID4VP_SIGN_IN_DC_API_RESPONSE_MODE` | `dc_api.jwt` | yes | How a wallet answers through the Digital Credentials API: encrypted to a key only that sign-in holds, or `dc_api` in the clear for a wallet that cannot encrypt. |
 | `oid4vp.statusListMaxCacheS` | `OID4VP_STATUS_LIST_MAX_CACHE_S` | `3600` | yes | The most the Verifier keeps a status list a trusted foreign issuer published, whatever its `ttl` says. Never past the list's own `exp`; 0 fetches for every presentation. |
+| `oid4vp.requireStatusReference` | `OID4VP_REQUIRE_STATUS_REFERENCE` | `all` | yes | Whether a credential presented to the Verifier must name a status that resolves VALID (#165). `all` (the default, both modes) refuses any credential with none (`STS-VC-0088`) and an `ldp_vc` that withheld its `credentialStatus` (`STS-VC-0089`). `own-only` accepts a foreign credential with none — **warning:** it can never be shown revoked. `off` also accepts this realm's own, and is development only (refused on write in product, `STS-CORE-0103`, and read as `all`). |
+| `oid4vp.statusOptionalIssuers` | `OID4VP_STATUS_OPTIONAL_ISSUERS` | *(empty)* | yes | SHA-256 thumbprints (hex, colon-hex or base64url) of certificates in `oid4vp.trustedIssuerCertificates` whose credentials may name no status under `all`. **Warning:** such a credential can never be shown revoked; one that names a status is still checked. |
 
 #### Kerberos
 

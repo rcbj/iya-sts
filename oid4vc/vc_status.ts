@@ -708,13 +708,31 @@ class VcStatus {
   //            disclosed statements, or none
   //   key      the key that verified a FOREIGN credential; its lists must be
   //            signed by the same one
+  //   policy   `oid4vp.requireStatusReference` as the mode lets it be
+  //            (`all`, `own-only` or `off`; absent is `all`)
+  //   exempt   the foreign issuer's certificate is in
+  //            `oid4vp.statusOptionalIssuers`
   //
-  // Answers `{ checked, ok, status, detail }`. `checked` false means there
-  // was nothing to consult and nothing required one. It never rejects.
+  // Answers `{ checked, ok, status, detail, errorCode }`. `checked` false
+  // means there was nothing to consult and nothing required one; `errorCode`
+  // is set only where the refusal has a code of its own (STS-VC-0088: no
+  // reference where one is required). It never rejects.
+  //
+  // A MISSING REFERENCE IS DECIDED BY POLICY (#165). Section 8.3 of the Token
+  // Status List draft starts validation from "the existence of a status
+  // claim" and leaves its absence to the relying party; the Bitstring Status
+  // List does the same for `credentialStatus`. The relying party here
+  // requires one by default — a credential with no reference can never be
+  // shown to have been revoked — so a FOREIGN credential without one is
+  // refused unless the operator relaxed that (`own-only`) or exempted its
+  // issuer by certificate; one THIS REALM signed is refused unless the realm
+  // is in development with the rule `off`, because every credential this
+  // issuer mints carries a reference and its absence means it was removed.
   // ---------------------------------------------------------------------------
   async checkPresented(opts: { own: boolean; format: string; claims?: any;
                                credentialStatus?: any[]; key?: any;
-                               algs?: string[] }): Promise<any> {
+                               algs?: string[]; policy?: string;
+                               exempt?: boolean }): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering VcStatus.checkPresented(). own=" + opts.own +
               ", format=" + opts.format);
@@ -735,13 +753,10 @@ class VcStatus {
         return !!one && one.type === 'BitstringStatusListEntry';
       });
     if (!tsl && !bitstrings.length) {
-      log.debug("Leaving VcStatus.checkPresented(). No reference.");
-      return opts.own
-        ? { checked: true, ok: false, status: '',
-            detail: 'it carries no status reference, and every credential ' +
-                    'this realm issues carries one' }
-        : { checked: false, ok: true, status: '',
-            detail: 'the issuer publishes no status for it' };
+      const answer = this.noReference(opts);
+      log.debug("Leaving VcStatus.checkPresented(). No reference: " +
+                (answer.ok ? "accepted." : "refused."));
+      return answer;
     }
     const answers: any[] = [];
     if (tsl) {
@@ -763,6 +778,51 @@ class VcStatus {
              detail: answers.map(function (a) {
                return a.detail;
              }).join('; ') };
+  }
+
+  // A presented credential that names no status at all: what the policy
+  // says about it (see checkPresented()).
+  private noReference(opts: { own: boolean; policy?: string;
+                              exempt?: boolean }): any {
+    const { log } = this.deps;
+    log.debug("Entering VcStatus.noReference(). own=" + opts.own +
+              ", policy=" + opts.policy);
+    const policy = String(opts.policy || 'all');
+    if (opts.own) {
+      if (policy === 'off') {
+        log.debug("Leaving VcStatus.noReference(). Own, and the rule is off.");
+        return { checked: false, ok: true, status: '', errorCode: '',
+                 detail: 'it carries no status reference, and ' +
+                         'oid4vp.requireStatusReference is off (development ' +
+                         'only), so none is required' };
+      }
+      log.debug("Leaving VcStatus.noReference(). Own: refused.");
+      return { checked: true, ok: false, status: '',
+               errorCode: 'STS-VC-0088',
+               detail: 'it carries no status reference, and every ' +
+                       'credential this realm issues carries one' };
+    }
+    if (opts.exempt) {
+      log.debug("Leaving VcStatus.noReference(). An exempt issuer.");
+      return { checked: false, ok: true, status: '', errorCode: '',
+               detail: 'it carries no status reference, and its issuer ' +
+                       'certificate is in oid4vp.statusOptionalIssuers' };
+    }
+    if (policy !== 'all') {
+      log.debug("Leaving VcStatus.noReference(). Foreign, and the rule is " +
+                policy + ".");
+      return { checked: false, ok: true, status: '', errorCode: '',
+               detail: 'the issuer publishes no status for it, and ' +
+                       'oid4vp.requireStatusReference is ' + policy +
+                       ', so none is required of a foreign credential' };
+    }
+    log.debug("Leaving VcStatus.noReference(). Foreign: refused.");
+    return { checked: true, ok: false, status: '', errorCode: 'STS-VC-0088',
+             detail: 'it carries no status reference, and ' +
+                     'oid4vp.requireStatusReference is all: a credential ' +
+                     'that names no status can never be shown to have been ' +
+                     'revoked. Exempt its issuer by certificate thumbprint ' +
+                     'in oid4vp.statusOptionalIssuers if it publishes none' };
   }
 
   // A reference to this realm's own list: the path must be this realm's, and

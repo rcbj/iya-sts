@@ -653,7 +653,9 @@ var config = {
     signInCrossDevice: false,                          // Wallet sign-in QR code (cross-device, relayable)
     signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",     // Wallet sign-in credential formats
     signInDcApiResponseMode: "dc_api.jwt",             // Digital Credentials API response mode
-    statusListMaxCacheS: 3600                          // Longest a fetched status list is kept (s)
+    statusListMaxCacheS: 3600,                         // Longest a fetched status list is kept (s)
+    requireStatusReference: "all",                     // Require a status reference on every presented credential
+    statusOptionalIssuers: ""                          // Trusted issuers exempt from the status reference
   },
 
   // --- Kerberos --------------------------------------------------------
