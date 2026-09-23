@@ -463,6 +463,14 @@ const JOBS = [
   // unreachable, a metadata member that promises what the endpoint refuses, or
   // a console control that issues for the wrong profile.
   { file: 'sts_saml2_bearer_grant.js',   browser: false, local: true },
+  // WHAT A SAML PROVIDER NOBODY REGISTERED CAN CAUSE (#112, 2026-09-23): the
+  // per-provider paths of both profiles are 404 in a product realm and minted
+  // in a development one, and a Metadata Query lookup an anonymous
+  // AuthnRequest starts — against this job's own responder — registers the
+  // entity in development and asks nothing in product with no trust anchor.
+  // `local: true`: this repository's own identity provider and /admin-api,
+  // in two throwaway realms.
+  { file: 'sts_saml_unregistered.js',    browser: false, local: true },
   // THE CRL AND OCSP ENDPOINTS, AND THE REVOCATION PANE (2026-09-11).
   // `local: true` on the FIRST of `tests/CLAUDE.md`'s two questions: most of
   // what it drives is `/admin-api/pki` and a pane on `/admin/pki`, and the
@@ -665,6 +673,14 @@ const JOBS = [
   // old TGT and a renewal of it still refused, and restore-kerberos refused
   // in product — in both modes.
   { file: 'sts_kerberos_signout.js',     browser: false, local: true },
+  // RC4-HMAC AND DIGEST MD5 ARE DEVELOPMENT'S (#182, 2026-09-23): over TCP
+  // 88, an AS-REQ or TGS-REQ offering only rc4-hmac, an RC4 TGS subkey, an
+  // RC4 initiator subkey at the acceptor and RC4 FAST armor refused in
+  // product and working in development; no RC4 key in a product keytab; MIT
+  // kinit restricted to rc4-hmac; krb5.enctypes naming 23 and
+  // scim.digestMd5 refused in a product realm; SCIM Digest MD5 off by
+  // default, and accepted in development only when turned on.
+  { file: 'sts_kerberos_rc4.js',         browser: false, local: true },
   // Both gRPC surfaces over the network. Since #166 (2026-09-23) also the
   // Workload API's TCP port in product: refused where the network is not
   // declared to authenticate source addresses, and entries selecting this

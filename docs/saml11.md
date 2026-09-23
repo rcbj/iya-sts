@@ -145,7 +145,10 @@ today. It holds **two descriptors**: an `IDPSSODescriptor` for the browser
 profiles and an `AttributeAuthorityDescriptor` for the responder, where a
 Shibboleth service provider looks for its attribute authority.
 
-As with SAML 2.0 it is **per relying party and minted for anything asked for**:
+As with SAML 2.0 it is **per relying party and, in development, minted for
+anything asked for** — in product mode `/saml11/metadata/{rp}`,
+`/saml11/sso/{rp}` and `/saml11/responder/{rp}` answer 404 for a name that is
+not a registered SAML 1.1 relying party:
 the providerID becomes `{providerID}:{slug}` and the endpoints sit under the
 same segment (`saml11.perApplicationProviderId`). The slug is the same one the
 SAML 2.0 profile uses for the same application. In development, a relying

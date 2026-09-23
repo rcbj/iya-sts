@@ -548,7 +548,8 @@ var config = {
     spMetadataRefresh: true,                                               // Refresh stale SP metadata in the background
     spMetadataRefreshIntervalS: 300,                                       // Metadata refresher interval (seconds)
     metadataTrustAnchors: "",                                              // Metadata signing trust anchors
-    mdqBaseUrl: ""                                                         // Metadata Query (MDQ) responder
+    mdqBaseUrl: "",                                                        // Metadata Query (MDQ) responder
+    mdqImportWithoutAnchors: false                                         // Allow an MDQ import with no trust anchor (product mode)
   },
 
   // --- SAML 1.1 --------------------------------------------------------
@@ -725,7 +726,7 @@ var config = {
     authDigest: true,            // Offer HTTP Digest
     digestPassword: "password!", // The shared Digest password
     digestNonceSeconds: 300,     // Digest nonce lifetime
-    digestMd5: true,             // Offer MD5 for Digest
+    digestMd5: false,            // Offer MD5 for Digest
     maxDigestNonces: 2000,       // Digest nonces held
     authHoba: true,              // Offer HOBA
     hobaMaxAgeSeconds: 600,      // HOBA challenge lifetime

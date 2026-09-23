@@ -3583,7 +3583,10 @@ class AdminActions {
     }
     if (action === 'mdq-import') {
       log.debug("Leaving AdminActions.saml2Action(). mdq-import.");
-      return spMetadata.mdqImport(identifier, { actor: body.actor || '' })
+      // `origin: 'operator'` (#112): an administrator named this entityID,
+      // which is what a lookup a request starts cannot claim.
+      return spMetadata.mdqImport(identifier, { actor: body.actor || '',
+                                               origin: 'operator' })
         .then(function (result) {
           return self.refusedBy('STS-ADMIN-0532', result);
         });

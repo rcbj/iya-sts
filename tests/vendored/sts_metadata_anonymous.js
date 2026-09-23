@@ -1246,10 +1246,11 @@ async function theIssuerPathFormsAnswerToo() {
 // 5. THE PER-APPLICATION DOCUMENTS.
 //
 // Three of these families mint a document PER PARTNER, and two of them do it
-// for a partner that has never been registered — which is this service being a
-// mock, and is what lets a service provider be pointed at
-// /saml2/metadata/<anything> and get a working entityID. The third refuses to
-// invent anything, and the shape of its refusal is the assertion: a 404 says
+// — in development mode — for a partner that has never been registered, which
+// is this service being a mock, and is what lets a service provider be
+// pointed at /saml2/metadata/<anything> and get a working entityID. In
+// product mode (#112) those two answer 404 for such a name. The third
+// refuses to invent anything, and the shape of its refusal is the assertion: a 404 says
 // the reader was let in and there was nothing there, where a 401 or a redirect
 // would say the surface had been closed. federation/CLAUDE.md's gate is on the
 // SIGNER of an incoming assertion, and it must never become a gate on the
@@ -1265,6 +1266,21 @@ async function thePerPartnerDocuments() {
   ];
   for (const one of minted) {
     const r = await fetchDocument(one.path);
+    // IN PRODUCT MODE (#112) a name nobody registered is a 404 at these
+    // paths, and that 404 is the same kind of answer the federation one
+    // below is: the reader was let in and there is nothing there. This job
+    // sends no credential, so it tells the modes apart by the answer — a
+    // handler-sent text/plain 404 saying why — rather than by asking.
+    if (r.status === 404) {
+      check(one.path + " is, in product mode, an honest 404 for a name " +
+            "nobody registered", function () {
+        assert.ok(/text\/plain/.test(r.type), r.type);
+        assert.ok(/no-store/.test(r.cache), r.cache);
+        assert.ok(/registered/.test(r.text) && /product mode/.test(r.text),
+                  r.text.slice(0, 200));
+      });
+      continue;
+    }
     check(one.path + " answers a stranger", function () {
       assert.strictEqual(r.status, 200,
         one.family + "'s per-partner metadata answered " + r.status +

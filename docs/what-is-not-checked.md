@@ -90,7 +90,7 @@ any of them would be a broken implementation rather than a lenient one:
 | ~~Deactivate anybody on SCIM `active: false`~~ — reversed 2026-09-17 | `active: false` writes `pwdAccountLockedTime`, the same state **Disable** on `/admin/users` writes. Every door then refuses the person — a password anywhere (an LDAP bind included), any sign-in, a session they already hold, a Kerberos AS-REQ or S4U2Self, every token grant and refresh, the issuance of any SAML, WS-Federation, WS-Trust or GNAP artifact, and the management API — and everything they hold is ended and their wallet credentials disowned. `active: true` enables them again | The same |
 | ~~Restrict which people a federation partner may assert~~ — reversed 2026-09-22 ([#109](https://github.com/rcbj/iya-sts/issues/109)) | A partner signs in only the person its subject is **linked** to — a `federationLink` of the relationship, the partner's issuer and its `sub` or persistent NameID. An unlinked subject naming an existing person must first sign in here as that person, password and second factor, before the link is made (`fedSubjectPolicy` `link-at-first-sign-in`, the default); `pre-linked` refuses it (`STS-FED-0091`); `jit-namespaced` never reaches an existing person; **`any-existing`, the old name match, is refused** (`STS-FED-0094`, `STS-FED-0095`). Nothing is written onto an entry before that. Group, domain and DN-pattern rules narrow it further (`STS-FED-0092`), and a console administrator is refused even with a link unless `fedMayAssertAdministrators` is on (`STS-FED-0093`). Nothing is created for a subject naming nobody (`STS-FED-0090`) | The same, except that `any-existing` may be set and matches the name, and a subject naming nobody gets an entry named `<relationship>~<name>`, linked at creation, unless `fedAutocreateUsers` is off. No password is checked at the linking sign-in (the reserved `invalid` is refused) |
 | ~~Verify a SAML `AuthnRequest`'s signature, or consume a service provider's metadata~~ — reversed 2026-09-17 | A signed `AuthnRequest`, `LogoutRequest`, `LogoutResponse` or `ArtifactResolve` is verified against the service provider's **registered** certificates — never the one the request carries — and refused if it does not verify. An **unsigned** request is refused (`saml2.requireSignedAuthnRequests`, `auto`). Every assertion is signed, so `WantAssertionsSigned` is always met. SHA-1 is refused, whatever `saml.allowSha1Signatures` says (#181); MD5, a MAC and a stateful hash-based signature are refused as not checkable. Consumed metadata registers the provider's endpoints, certificates and `NameIDFormat`s; its `validUntil` is enforced, it is refreshed after `cacheDuration`, and it must verify against `saml2.metadataTrustAnchors` when any is set. A metadata or MDQ fetch to an internal address is refused. An artifact is resolved only for the provider it was issued to | A present signature is verified in both modes. An unsigned request is accepted unless the provider's metadata says `AuthnRequestsSigned="true"`. `WantAssertionsSigned` is warned about rather than honoured when `saml2.signAssertion` is off. SHA-1 verifies with `saml.allowSha1Signatures` on. Internal addresses may be fetched |
-| Check which entityID a SAML service provider claims | An unknown entityID is not registered by its request: the request is refused, having no registered return address and no signature. **An MDQ responder can register it** — with `saml2.mdqBaseUrl` set, a request from an unknown provider queues a lookup, and a document the responder publishes creates the application, so a later request succeeds. `GET /saml2/metadata/{sp}` still answers for any `{sp}` | Any entityID is accepted, and the first `AuthnRequest` from one creates its application entry |
+| Check which entityID a SAML service provider claims | An unknown entityID is not registered by its request: the request is refused, having no registered return address and no signature. **An MDQ lookup the request starts registers it only when a trust anchor vouches for it** ([#112](https://github.com/rcbj/iya-sts/issues/112)): with no `saml2.metadataTrustAnchors` no lookup is made (`STS-SAML-0080`), and with them the answer creates the entry only if it verifies against one (`STS-SAML-0081`); the refused entityIDs are listed on `/admin/saml2` and `GET /admin-api/saml2`. An administrator's Import from MDQ with no anchor is refused (`STS-SAML-0084`) unless `saml2.mdqImportWithoutAnchors` is on — and then the document is consumed **unverified**, which its description warns about. `/saml2/metadata|sso|slo|ars/{sp}` and `/saml11/metadata|sso|responder/{rp}` answer **404** for a name that is not a registered provider of that profile (`STS-SAML-0082`, `STS-SAML-0083`) | Any entityID is accepted, and the first `AuthnRequest` from one creates its application entry; an MDQ answer registers an unknown service provider whether or not it is signed, unless trust anchors are set; the per-provider metadata is minted for any name |
 | Check where a SAML response or WS-Federation token is delivered | The `AssertionConsumerServiceURL`, SAML 1.1 `shire` or `wreply` must be **registered** on the application (`samlAssertionConsumerService`, `wsfedReplyUrl`) and match exactly, with no mock fallback. An address development recorded is marked *observed* (`appReturnAddressObserved`) and refused until an administrator confirms it — **Confirm** and **Discard** under Applications, or `POST /admin-api/applications/confirm-address` and `/discard-address`. A provider whose metadata was consumed is answered only at an endpoint that metadata registered | The address a request names is used as it stands; with none, the registered one or a built-in mock. A consumed-metadata provider is held to its endpoints here too |
 | Authenticate a caller at the SAML 1.1 attribute authority | Both query types are refused | Anybody may send an `AttributeQuery` about anybody. In both modes an `AuthenticationQuery` is answered only from a live session, and an attribute answer carries no invented `AuthenticationStatement` |
 | Require a credential at the WS-Trust STS | A request with no credential is refused; a UsernameToken's password is verified; an assertion is accepted only when this STS signed it and it is inside its `Conditions`; `OnBehalfOf` and `ActAs` need the requester's own credential and an assertion this STS signed (`STS-WSTRUST-0009`); a token asked for encrypted is not sent in the clear (`STS-WSTRUST-0012`, `0013`). Nothing decides **who** may act for whom | A request with no credential gets a token for `anonymous`, an unsigned assertion is believed, and `OnBehalfOf` needs no requester. A requested lifetime is clamped to `wstrust.maxTokenLifetimeMin` in both modes |
@@ -231,7 +231,7 @@ both encrypted under it, so even a permissive KDC has to pick a key the client
 cannot guess.
 
 **In product mode** none of the fixture accounts exist, nobody is created on
-first sight, and no password is published. Each trust realm with
+first sight, no password is published, and no rc4-hmac key exists (#182). Each trust realm with
 `krb5.enabled` has a KDC, a Kerberos realm and keys of its own, on the shared
 port 88, told apart by the realm name in the request. Its `krbtgt` and the
 account `krb5.servicePrincipal` names are created only when their password
@@ -426,6 +426,17 @@ something to run against:
   ignored too. Each is refused on write (`STS-CORE-0103`, `STS-REG-0193` on an
   application) and logged once when a stored one is ignored (`STS-CORE-0106`);
   the stronger values of every setting stay available.
+- **rc4-hmac in Kerberos and MD5 in SCIM Digest are development's** (#182).
+  `krb5.enctypes` keeps 23 in its default so a development KDC exercises an
+  RC4 client; a product realm reads the list without it, so no RC4 key is
+  derived, stored or put in a keytab for the `krbtgt`, a service or a person,
+  an AS-REQ or TGS-REQ offering only RC4 is `KDC_ERR_ETYPE_NOSUPP`, and an RC4
+  session key or subkey in a TGS-REQ, an AP-REQ or FAST armor is refused —
+  also in a realm switched to product with RC4 keys already derived.
+  `scim.digestMd5` is off by default in both modes and cannot be turned on in
+  product, which offers no Digest at all. RFC 8429 and RFC 7616 section 3.3.
+  [MS-SFU]'s PA-FOR-USER checksum is HMAC-MD5 whatever the session key, fixed
+  by that specification, and is unaffected.
 - **WS-Federation's `wauth`** is never faked. A relying party demanding
   multi-factor or a hardware token against a session that does not have it
   sends the person back through the sign-in with that factor required — a
@@ -634,7 +645,8 @@ required in both modes, and after authentication the XACML access gate decides
 (it permits by default).
 
 **In product** Basic verifies the password against the entry, Digest is not
-offered and is refused (`STS-SCIM-0056`), and a HOBA key can be registered only
+offered and is refused (`STS-SCIM-0056`) — and MD5 in it cannot be turned on
+(`scim.digestMd5`, #182) — and a HOBA key can be registered only
 by the account's own signed-in owner (`STS-SCIM-0069`) — registration never
 creates an account.
 
@@ -957,6 +969,3 @@ These are true in a product deployment today, and are tracked as issues:
   ([#106](https://github.com/rcbj/iya-sts/issues/106)).
 * **A GNAP client's self-signed certificate** is matched by thumbprint with no
   chain or revocation check ([#107](https://github.com/rcbj/iya-sts/issues/107)).
-* **`GET /saml2/metadata/{sp}`** answers for any `{sp}`, and an MDQ lookup
-  started by an anonymous request can register an unknown service provider
-  ([#112](https://github.com/rcbj/iya-sts/issues/112)).

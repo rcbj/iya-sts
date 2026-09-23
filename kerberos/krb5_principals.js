@@ -169,6 +169,9 @@ function publishedDefault(key) {
 // because the workflow has to be able to exercise it — Microsoft is retiring it
 // and a debugger whose only story is "that is deprecated" cannot help anybody
 // still running it — and taking 23 out is what a hardened deployment does.
+// IN DEVELOPMENT MODE ONLY since #182 (2026-09-23): a product realm reads the
+// list without it (RFC 8429) — see `configuredEtypes()` and
+// `etypePermitted()` below.
 //
 // A number the vendored codec does not implement is REFUSED rather than
 // dropped: a list that silently lost an entry would be a KDC offering less than
@@ -211,9 +214,15 @@ function parseEtypes(list) {
 // typo must not stop the service every other realm is on — so the realm's
 // context is left inactive, with the sentence as its reason, and its name is
 // not routed.
+//
+// READ THROUGH `mode.valueInForce()` SINCE #182 (2026-09-23): a product realm
+// reads the list without `23` (rc4-hmac, which RFC 8429 deprecates) and says
+// so once (STS-CORE-0106), so its principals are built with no RC4 etype at
+// all. The build is not the only guard — the mode can change under a built
+// database — which is what `etypePermitted()` below is for.
 function configuredEtypes(realmId) {
   log.debug("Entering configuredEtypes().");
-  const parsed = parseEtypes(config.value('krb5.enctypes'));
+  const parsed = parseEtypes(mode.valueInForce('krb5.enctypes'));
   if (parsed.problems.length) {
     const sentence = 'krb5.enctypes (KRB5_ENCTYPES) names ' +
       parsed.problems.join(', ') + ', which the Kerberos codec here ' +
@@ -2703,7 +2712,7 @@ function attachRetained(principal, answer) {
 function retainedKeyFor(principal, etype, kvno) {
   log.debug("Entering retainedKeyFor().");
   if (!principal || !principal.directoryKeys || kvno === null ||
-      kvno === undefined) {
+      kvno === undefined || !etypePermitted(etype)) {
     log.debug("Leaving retainedKeyFor().");
     return null;
   }
@@ -3090,6 +3099,16 @@ function findOrCreateService(nameComponents, realm) {
 // file could reach for is the shared development one — see register().
 async function longTermKey(principal, etype) {
   log.debug("Entering longTermKey().");
+  // BEFORE THE CACHE (#182): a key derived while the realm was in development
+  // may still be cached, and product uses no RC4 key — derived, stored or
+  // cached. A caller that meets this throw refuses the way it refuses any
+  // key it cannot have: pre-authentication, a ticket that will not open.
+  if (!etypePermitted(etype)) {
+    log.debug("Leaving longTermKey(). Withheld by the mode.");
+    throw new Error('krb5: ' + kcrypto.etypeName(etype) + ' is not used ' +
+                    'in product mode (RFC 8429 deprecates it), so no key of ' +
+                    'that type is derived or used for ' + keyOf(principal));
+  }
   withKeyCache(principal);
   if (principal.keys.has(etype)) {
     derivedKeyCount.hit();
@@ -3123,14 +3142,58 @@ async function longTermKey(principal, etype) {
   return key;
 }
 
+// ---------------------------------------------------------------------------
+// MAY THIS ENCTYPE BE USED AT ALL, in the ambient realm's mode (#182,
+// 2026-09-23)? `krb5.enctypes` marks `23` (rc4-hmac) — and the DES, 3DES and
+// rc4-hmac-exp numbers the codec does not implement — as development's
+// (`common/mode.js`, `usesBrokenAlgorithms()`), and this asks the SAME marker
+// about one number, so there is one list of what product withholds and it is
+// the settings row's. It is asked at every place a key is chosen, derived or
+// used, not only where the database is built: a realm switched to product
+// under a database built in development still holds RC4 in its etype lists
+// and in its key caches, and the READ is the guard (#104's rule).
+//
+// Hot: asked for every etype a request names and every key used. It is one
+// table lookup and a predicate, so it logs no Entering/Leaving pair — one per
+// enctype per request would drown the log.
+// ---------------------------------------------------------------------------
+function etypePermitted(etype) {
+  return mode.allowsValue('krb5.enctypes', [String(etype)]);
+}
+
+// The etypes this realm's KDC offers NOW: the configured list, less what the
+// mode withholds. `KDC_ETYPES` below answers this, so the person-key register,
+// a new service key and the pages all see the same list the KDC negotiates
+// with.
+function offeredEtypes(ctx) {
+  log.debug("Entering offeredEtypes().");
+  log.debug("Leaving offeredEtypes().");
+  return (ctx.KDC_ETYPES || []).filter(etypePermitted);
+}
+
 // What this principal can offer, in the KDC's preference order rather than the
-// order the definition happened to list.
+// order the definition happened to list — and never an etype the mode
+// withholds (#182), whatever the principal was built with.
 function supportedEtypes(principal) {
   log.debug("Entering supportedEtypes().");
   log.debug("Leaving supportedEtypes().");
-  return current().KDC_ETYPES.filter(function (id) {
+  return offeredEtypes(current()).filter(function (id) {
     return principal.etypes.indexOf(id) !== -1;
   });
+}
+
+// The etypes a request named that this realm's mode withholds, when those are
+// ALL it named — the one case the KDC refuses with its own code
+// (STS-KRB-0156) rather than as an ordinary mismatch, because the fix is on
+// the client and the sentence has to say so. Empty otherwise.
+function onlyWithheldEtypes(requested) {
+  log.debug("Entering onlyWithheldEtypes().");
+  const list = Array.isArray(requested) ? requested : [];
+  const withheld = list.filter(function (id) {
+    return !etypePermitted(id);
+  });
+  log.debug("Leaving onlyWithheldEtypes().");
+  return list.length && withheld.length === list.length ? withheld : [];
 }
 
 // Negotiate: the FIRST etype the client asked for that this principal supports.
@@ -3512,6 +3575,8 @@ module.exports = {
   RUNTIME_FIELDS: RUNTIME_FIELDS.slice(),
   longTermKey: longTermKey,
   supportedEtypes: supportedEtypes,
+  etypePermitted: etypePermitted,
+  onlyWithheldEtypes: onlyWithheldEtypes,
   chooseEtype: chooseEtype,
   etypeInfo2For: etypeInfo2For,
   s2kparamsMode: s2kparamsMode,
@@ -3559,7 +3624,12 @@ module.exports = {
 ].forEach(function (pair) {
   Object.defineProperty(module.exports, pair[0], {
     enumerable: true,
-    get: function () { return current()[pair[1]]; }
+    // `KDC_ETYPES` is the list OFFERED now (#182), so what a caller derives
+    // or mints from it — a person's keys, a new service key — never carries
+    // an etype the mode withholds.
+    get: pair[0] === 'KDC_ETYPES'
+      ? function () { return offeredEtypes(current()); }
+      : function () { return current()[pair[1]]; }
   });
 });
 

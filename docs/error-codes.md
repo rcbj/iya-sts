@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3142** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3151** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -64,11 +64,11 @@ is an ordinary outcome.
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 206
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 502
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 120
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 155
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 159
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 123
@@ -1692,6 +1692,11 @@ Raised from: saml/.
 | `STS-SAML-0077` | A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request came from a caller that is not authenticated — no signature verifying against the party's registered certificates and no TLS client certificate that is one of them — where authenticated callers are required (saml2.requireSignedAuthnRequests, on in product by default). The artifact is not spent. | a SOAP response with StatusCode Requester (HTTP 200) |
 | `STS-SAML-0078` | An artifact was asked for by a party other than the one it was issued to (an ArtifactResolve whose Issuer, or a SAML 1.1 responder path, names another). Refused in every mode; the artifact is not spent. | a SOAP response with StatusCode Requester (HTTP 200) |
 | `STS-SAML-0079` | A service provider metadata fetch (a refresh, the background refresher or an MDQ lookup) was refused because the host resolves to a loopback, private, link-local or reserved address, or did not resolve, in product mode (federation_http.ts vetHost()). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-SAML-0080` | A Metadata Query (MDQ) lookup started by a request from an entityID nobody registered was not made: the realm is in product mode (mode.registersFromMetadataQuery()) and has no saml2.metadataTrustAnchors, so no answer could be verified. Nothing is fetched or created; the entityID is listed as refused on the SAML 2.0 page. | — |
+| `STS-SAML-0081` | A Metadata Query (MDQ) answer for an entityID nobody registered, fetched for a lookup a request started, did not verify against any of the realm's saml2.metadataTrustAnchors (product mode). Nothing is created; the entityID is listed as refused on the SAML 2.0 page. | — |
+| `STS-SAML-0082` | A SAML 2.0 per-service-provider path (/saml2/metadata/{sp}, /saml2/sso/{sp}, /saml2/slo/{sp} or /saml2/ars/{sp}) named something that is not a registered SAML 2.0 service provider, in product mode (mode.publishesMetadataForUnregisteredProviders()). | an HTTP 404, text/plain |
+| `STS-SAML-0083` | A SAML 1.1 per-relying-party path (/saml11/metadata/{rp}, /saml11/sso/{rp} or /saml11/responder/{rp}) named something that is not a registered SAML 1.1 relying party, in product mode (mode.publishesMetadataForUnregisteredProviders()). | an HTTP 404, text/plain |
+| `STS-SAML-0084` | An administrator's Import from MDQ was refused: the realm is in product mode and has no saml2.metadataTrustAnchors, so the answer could not be verified, and saml2.mdqImportWithoutAnchors is off. | the caller's refusal (errors on a console or /admin-api reply) |
 
 ## STS-WSTRUST
 
@@ -2039,6 +2044,10 @@ Raised from: kerberos/.
 | `STS-KRB-0153` | A ticket's AD-CAMMAC did not verify under the key the ticket is sealed with, so its authentication indicators were ignored. | RFC 7751 section 7, RFC 8129 section 5 |
 | `STS-KRB-0154` | Asking whether a person holds a second factor failed, so the KDC treated a password alone as not enough. | — |
 | `STS-KRB-0155` | An AS exchange waited (at most a second) for its client's sign-out second to pass before taking authtime, so the new ticket is newer than the sign-out. Logged at debug; not a failure. | — |
+| `STS-KRB-0156` | An AS-REQ or TGS-REQ offered only encryption types this realm's mode withholds — rc4-hmac, in product mode (#182). | RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0157` | A TGS-REQ's ticket session key or Authenticator subkey is of an encryption type product mode withholds (rc4-hmac, #182). | RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0158` | The acceptor refused an AP-REQ whose ticket session key or Authenticator subkey is of an encryption type product mode withholds (rc4-hmac, #182). | RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0159` | A FAST armor AP-REQ's subkey or ticket session key is of an encryption type product mode withholds (rc4-hmac, #182), so no armor key was made. | RFC 6113 section 5.4.1.1, RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
 
 ## STS-LDAP
 

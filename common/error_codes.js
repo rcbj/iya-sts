@@ -6794,6 +6794,38 @@ const CODES = [
       'a loopback, private, link-local or reserved address, or did not ' +
       'resolve, in product mode (federation_http.ts vetHost()).',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0080',
+    summary: 'A Metadata Query (MDQ) lookup started by a request from an ' +
+      'entityID nobody registered was not made: the realm is in product ' +
+      'mode (mode.registersFromMetadataQuery()) and has no ' +
+      'saml2.metadataTrustAnchors, so no answer could be verified. Nothing ' +
+      'is fetched or created; the entityID is listed as refused on the SAML ' +
+      '2.0 page.',
+    spec: '' },
+  { code: 'STS-SAML-0081',
+    summary: 'A Metadata Query (MDQ) answer for an entityID nobody ' +
+      'registered, fetched for a lookup a request started, did not verify ' +
+      'against any of the realm\'s saml2.metadataTrustAnchors (product ' +
+      'mode). Nothing is created; the entityID is listed as refused on the ' +
+      'SAML 2.0 page.',
+    spec: '' },
+  { code: 'STS-SAML-0082',
+    summary: 'A SAML 2.0 per-service-provider path (/saml2/metadata/{sp}, ' +
+      '/saml2/sso/{sp}, /saml2/slo/{sp} or /saml2/ars/{sp}) named something ' +
+      'that is not a registered SAML 2.0 service provider, in product mode ' +
+      '(mode.publishesMetadataForUnregisteredProviders()).',
+    spec: 'an HTTP 404, text/plain' },
+  { code: 'STS-SAML-0083',
+    summary: 'A SAML 1.1 per-relying-party path (/saml11/metadata/{rp}, ' +
+      '/saml11/sso/{rp} or /saml11/responder/{rp}) named something that is ' +
+      'not a registered SAML 1.1 relying party, in product mode ' +
+      '(mode.publishesMetadataForUnregisteredProviders()).',
+    spec: 'an HTTP 404, text/plain' },
+  { code: 'STS-SAML-0084',
+    summary: 'An administrator\'s Import from MDQ was refused: the realm is ' +
+      'in product mode and has no saml2.metadataTrustAnchors, so the answer ' +
+      'could not be verified, and saml2.mdqImportWithoutAnchors is off.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -8176,6 +8208,24 @@ const CODES = [
     summary: 'An AS exchange waited (at most a second) for its client\'s ' +
       'sign-out second to pass before taking authtime, so the new ticket is ' +
       'newer than the sign-out. Logged at debug; not a failure.' },
+  { code: 'STS-KRB-0156',
+    summary: 'An AS-REQ or TGS-REQ offered only encryption types this ' +
+      'realm\'s mode withholds — rc4-hmac, in product mode (#182).',
+    spec: 'RFC 8429; KDC_ERR_ETYPE_NOSUPP (14)' },
+  { code: 'STS-KRB-0157',
+    summary: 'A TGS-REQ\'s ticket session key or Authenticator subkey is of ' +
+      'an encryption type product mode withholds (rc4-hmac, #182).',
+    spec: 'RFC 8429; KDC_ERR_ETYPE_NOSUPP (14)' },
+  { code: 'STS-KRB-0158',
+    summary: 'The acceptor refused an AP-REQ whose ticket session key or ' +
+      'Authenticator subkey is of an encryption type product mode ' +
+      'withholds (rc4-hmac, #182).',
+    spec: 'RFC 8429; KDC_ERR_ETYPE_NOSUPP (14)' },
+  { code: 'STS-KRB-0159',
+    summary: 'A FAST armor AP-REQ\'s subkey or ticket session key is of an ' +
+      'encryption type product mode withholds (rc4-hmac, #182), so no ' +
+      'armor key was made.',
+    spec: 'RFC 6113 section 5.4.1.1, RFC 8429; KDC_ERR_ETYPE_NOSUPP (14)' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
