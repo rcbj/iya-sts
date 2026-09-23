@@ -1876,7 +1876,8 @@ const SPECS: Spec[] = [
               'token keeping its scope are true in every mode. NOT covered: ' +
               'the OpenID4VCI pre-authorized code grant and the assertion ' +
               'grants are exempt from the registered-client rule, and ' +
-              'introspection and revocation still authenticate no client. ' +
+              'introspection (JSON) and revocation authenticate their ' +
+              'caller by global.mode, not by this mode (#102). ' +
               'GET /oauth2/oauth21 lists every requirement.' },
   { id: 'fapi1-baseline', name: 'FAPI 1.0 Part 1: Baseline Security ' +
                                'Profile (final)',
