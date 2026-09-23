@@ -739,9 +739,13 @@ const CODES = [
       'the store still refuses an expired entry where it reads it.',
     spec: 'none — logged by the caches.eject-expired job' },
   { code: 'STS-CORE-0103',
-    summary: 'A write turning on a development-only setting — a ' +
-      '…SkipTlsVerification, or spiffe.k8sSkipKubeletVerification — was ' +
-      'refused because the realm it lands in is in product mode (#171).',
+    summary: 'A write giving a development-only setting a value other than ' +
+      'its default — a …SkipTlsVerification or ' +
+      'spiffe.k8sSkipKubeletVerification (#171); oauth2.breakIdTokenNonce, ' +
+      'ssf.breakSetSignature, ssf.legacySubClaim or ' +
+      'spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off ' +
+      '(#104) — was refused because the realm it lands in is in product ' +
+      'mode.',
     spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
       '{ ok: false, errors }' },
   { code: 'STS-CORE-0104',
@@ -756,6 +760,13 @@ const CODES = [
       'gnap.pushAllowInsecure, ssf.pushAllowInsecure, ' +
       'federation.outboundAllowInsecure or xacml.pepNotifyAllowInsecure.',
     spec: 'none — the process exits' },
+  { code: 'STS-CORE-0106',
+    summary: 'A development-only setting — oauth2.breakIdTokenNonce, ' +
+      'ssf.breakSetSignature, ssf.legacySubClaim or ' +
+      'spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off — ' +
+      'is stored in a realm that is in product mode, and is ignored: its ' +
+      'default is in force. Logged once per process and setting (#104).',
+    spec: 'none — a warning in the log' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',
@@ -8968,6 +8979,27 @@ const CODES = [
       'k8s workload attestor verifies the kubelet\'s certificate against ' +
       'its CA whatever it says. Logged once per process (#171).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-SPIFFE-0117',
+    summary: 'A caller on the SPIRE Server API\'s Unix socket was not ' +
+      'trusted as the local entity, in a product realm, because the socket ' +
+      'was not verified private: it was not made 0600 (STS-SPIFFE-0010), ' +
+      'the connection came before it was, or the socket or its directory ' +
+      'has a group or other bit (#104).',
+    spec: 'gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, ' +
+      'which it may call only as another entity' },
+  { code: 'STS-SPIFFE-0118',
+    summary: 'A caller on the SPIRE Server API\'s Unix socket was not ' +
+      'trusted as the local entity, in a product realm, because the kernel ' +
+      'says it runs as a uid that is not this service\'s own (#104).',
+    spec: 'gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, ' +
+      'which it may call only as another entity' },
+  { code: 'STS-SPIFFE-0119',
+    summary: 'A caller on the SPIRE Server API\'s Unix socket was not ' +
+      'trusted as the local entity, in a product realm, because its kernel ' +
+      'credentials could not be read — the native module is not built, or ' +
+      'SO_PEERCRED failed (#104).',
+    spec: 'gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, ' +
+      'which it may call only as another entity' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +

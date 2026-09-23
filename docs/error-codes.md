@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3064** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3068** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 59
+* [Service core (`STS-CORE`)](#sts-core) — 60
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 41
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 154
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 116
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 119
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 101
@@ -195,9 +195,10 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0100` | A trust realm was given a domain another realm — the default realm's global.domain included — already has. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0101` | An update tried to change a trust realm's domain, which is fixed when the realm is created. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0102` | A cache or replay store could not eject its expired entries; the store still refuses an expired entry where it reads it. | none — logged by the caches.eject-expired job |
-| `STS-CORE-0103` | A write turning on a development-only setting — a …SkipTlsVerification, or spiffe.k8sSkipKubeletVerification — was refused because the realm it lands in is in product mode (#171). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-CORE-0103` | A write giving a development-only setting a value other than its default — a …SkipTlsVerification or spiffe.k8sSkipKubeletVerification (#171); oauth2.breakIdTokenNonce, ssf.breakSetSignature, ssf.legacySubClaim or spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off (#104) — was refused because the realm it lands in is in product mode. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-CORE-0104` | An outbound request (a GNAP push, an SSF push, a federation back channel or an XACML nudge) was not made because the CA file its …CaFile setting names could not be read or holds no certificate. | none — the family's own failure record (a grant history, a dead letter, a relationship's last error, a PEP row) |
 | `STS-CORE-0105` | The service did not start: the appconfig file or the environment still names a setting removed on 2026-09-23 (#171) — gnap.pushAllowInsecure, ssf.pushAllowInsecure, federation.outboundAllowInsecure or xacml.pepNotifyAllowInsecure. | none — the process exits |
+| `STS-CORE-0106` | A development-only setting — oauth2.breakIdTokenNonce, ssf.breakSetSignature, ssf.legacySubClaim or spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off — is stored in a realm that is in product mode, and is ignored: its default is in force. Logged once per process and setting (#104). | none — a warning in the log |
 
 ## STS-WORKER
 
@@ -2274,6 +2275,9 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0114` | A realm's SPIRE Server API could not take a new certificate after the service Root was replaced, so it still presents a chain under the old Root and a client holding the new bundle cannot verify it until a restart. | — |
 | `STS-SPIFFE-0115` | After the service Root was replaced, a realm's certificate authority branch did not arrive under the new Root within 30 seconds, so its SPIRE Server API was re-keyed anyway and the branch was repaired in this process — which may leave the realm with two Intermediate CAs if the process that replaced the Root rebuilds it too. | — |
 | `STS-SPIFFE-0116` | Product mode ignored spiffe.k8sSkipKubeletVerification: the k8s workload attestor verifies the kubelet's certificate against its CA whatever it says. Logged once per process (#171). | none — a warning in the log |
+| `STS-SPIFFE-0117` | A caller on the SPIRE Server API's Unix socket was not trusted as the local entity, in a product realm, because the socket was not verified private: it was not made 0600 (STS-SPIFFE-0010), the connection came before it was, or the socket or its directory has a group or other bit (#104). | gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, which it may call only as another entity |
+| `STS-SPIFFE-0118` | A caller on the SPIRE Server API's Unix socket was not trusted as the local entity, in a product realm, because the kernel says it runs as a uid that is not this service's own (#104). | gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, which it may call only as another entity |
+| `STS-SPIFFE-0119` | A caller on the SPIRE Server API's Unix socket was not trusted as the local entity, in a product realm, because its kernel credentials could not be read — the native module is not built, or SO_PEERCRED failed (#104). | gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, which it may call only as another entity |
 
 ## STS-TLS
 

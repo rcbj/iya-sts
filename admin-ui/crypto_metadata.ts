@@ -1775,7 +1775,8 @@ class CryptoMetadata {
                        'truncated signature fails the base64url decode and ' +
                        'is reported as a MALFORMED token, which is a ' +
                        'different bug from a bad one for whoever is being ' +
-                       'tested.',
+                       'tested. Development mode only: a product realm ' +
+                       'ignores it and refuses setting it (#104).',
         envelopes: ['jws', 'jwt', 'jwk', 'dpop', 'tls'],
         algorithms: function () {
           log.debug("Entering algorithms().");

@@ -1008,7 +1008,8 @@ const SECTIONS = [
                    'assertion\'s clock skew — and the deliberate defect ' +
                    '<code>oauth2.breakIdTokenNonce</code>, which makes this ' +
                    'service return an ID Token whose <code>nonce</code> is ' +
-                   'wrong so that a client can find out whether it checks. ' +
+                   'wrong so that a client can find out whether it checks ' +
+                   '(development mode only). ' +
                    'The five a CLIENT may answer for itself — the three ' +
                    'lifetimes, the refresh idle timeout and whether a ' +
                    'sign-out revokes refresh tokens — moved to ' +
@@ -24790,7 +24791,12 @@ class AdminConsole {
       this.esc(json.authentication.assertedSelectorHeader) + '</code>) are ' +
       (json.authentication.acceptAssertedSelectors
         ? '<strong>believed</strong>, and nothing verifies them.'
-        : 'ignored (<code>spiffe.acceptAssertedSelectors</code> is off).')) +
+        : 'ignored (<code>spiffe.acceptAssertedSelectors</code> is off, ' +
+          'or this realm is in product mode, where it is never in force).') +
+      ' Both switches are what is IN FORCE: in product mode ' +
+      '<code>spiffe.attestWorkloads</code> is always on and asserted ' +
+      'selectors are never believed, whatever is stored, and neither can ' +
+      'be changed to the looser value there.') +
       '<h3>The per-method table</h3>' +
       this.note('Copied from SPIRE\'s own <code>policy_data.json</code> ' +
       'rather than reasoned out: a table derived from what each method ' +
@@ -40514,7 +40520,10 @@ const PROTOCOL_SETTINGS_PAGES = [
            'It is the same device as the reserved password ' +
            '<code>invalid</code> and the Kerberos names that stay unknown: a ' +
            'permissive server is hard to write error handling against, so ' +
-           'the errors have to be reachable deliberately.'],
+           'the errors have to be reachable deliberately. <strong>In ' +
+           'development mode only</strong>: a realm in product mode ' +
+           'ignores it where the ID Token is built, logs that once ' +
+           '(STS-CORE-0106), and refuses turning it on (STS-CORE-0103).'],
     links: [['/.well-known/openid-configuration', 'the discovery document'],
             ['/oauth2/rfc9700', 'what RFC 9700 mode enforces'],
             ['/oauth2/oauth21', 'what OAuth 2.1 mode enforces'],

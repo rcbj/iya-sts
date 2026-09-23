@@ -6660,6 +6660,22 @@ Token's `amr`, the sign-on session's `signInAuthority` on the console session.
 VERIFY** (`skipsOutboundTlsVerification()`, and `dialsPlainHttpOutbound()` for
 plain http; the `outbound-tls` row). See *`outbound_tls.ts`* below.
 
+**NOR, SINCE THE SAME DAY (#104), IS IT WRONG OR LOOSE ON PURPOSE.** The three
+deliberate defects — `oauth2.breakIdTokenNonce`, `ssf.breakSetSignature`,
+`ssf.legacySubClaim` (`spoilsOnPurpose()`, the `deliberate-defects` row) — and
+`spiffe.attestWorkloads` off (`servesUnattestedEntries()`) and
+`spiffe.acceptAssertedSelectors` (`believesAssertedSelectors()`, #40) are
+development mode's. Each row carries the `onlyWhile` marker below, so the
+write is refused, and each reader asks **`mode.valueInForce(key)`** rather
+than `config.value(key)`: the row's DEFAULT wherever the marker's predicate
+says no, logged once per process and setting (`STS-CORE-0106`, a set bounded
+by the table). The read is the guard, because `global.mode` is runtime and a
+realm can be switched with a value still stored. `trustsUnverifiedLocalSocket()`
+is the SPIRE Server API's `local` socket (the `spire-local-socket` row,
+`spiffe/CLAUDE.md`). **`mode.report()` has no page**: the prose says
+`/admin/mode` and `GET /admin-api/mode` draw it, and neither route is
+registered today; only tests read it.
+
 ## `outbound_tls.ts`: THE TRANSPORT OF AN OUTBOUND REQUEST (#171, 2026-09-23)
 
 Four families dial an address somebody else answers — GNAP's push finish, SSF
@@ -6685,8 +6701,11 @@ SSF and XACML not requiring the federation module for their transport).
   `/admin-api` views, where a skip stored in a product realm reads false.
 
 **THE WRITE IS REFUSED IN `config.js`, NOT HERE.** A row carrying
-`onlyWhile: '<mode predicate>'` may be set TRUE only while that predicate
-answers true (`modeWriteProblem()`, `STS-CORE-0103`), asked by
+`onlyWhile: '<mode predicate>'` may be set to anything but its DEFAULT only
+while that predicate answers true (`modeWriteProblem()`, `STS-CORE-0103`; it
+read "set TRUE" until #104 marked `spiffe.attestWorkloads`, whose default is
+on and whose refused value is off — `mode.allowsValue()` is the one test, and
+`mode.writeRefusalReason()` the sentence per predicate), asked by
 `setOverride()`, by `checkWrite()` — which `admin-core/admin_actions.ts`'s
 all-or-nothing sections ask before writing anything — and by `realms.js` for a
 realm set, create or update with THAT realm ambient. **It is deliberately not

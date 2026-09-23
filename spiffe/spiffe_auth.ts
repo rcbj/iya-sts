@@ -149,6 +149,11 @@ import tls = require('../tls/tls_server');
 // LIBRARY that registers no route; it requires `common/pki.js`, which
 // `spiffe_ca.ts` above already requires, so nothing new is loaded here.
 import revocationStatus = require('../common/revocation_status');
+// WHO IS ON THE OTHER END OF A UNIX SOCKET (#40), asked here since #104 for
+// the SPIRE Server API's socket: in product mode the `local` entity needs the
+// peer's kernel uid. It requires only `helpers` and `config`, so it cannot
+// join a cycle.
+import peer = require('./spiffe_peer');
 
 // ---------------------------------------------------------------------------
 // THE ENTITIES. A CALLER MAY BE SEVERAL AT ONCE.
@@ -168,9 +173,13 @@ const ENTITIES = [
     what: 'The call arrived on the Unix domain socket. A real SPIRE server ' +
           'trusts its private socket outright — that is how the spire-server ' +
           'CLI works — and the access control is the socket\'s filesystem ' +
-          'permissions. `spiffe.trustLocalSocket` turns that off, which ' +
-          'makes the socket demand an SVID like the TCP port and is the only ' +
-          'way to exercise a client\'s "I was refused on the socket" path.' },
+          'permissions. Development mode assumes that boundary; PRODUCT ' +
+          'mode verifies it per connection: the socket made 0600 in a ' +
+          'directory other users cannot reach, and the caller\'s kernel uid ' +
+          'this service\'s own. `spiffe.trustLocalSocket` turns it off, ' +
+          'which makes the socket demand an SVID like the TCP port and is ' +
+          'the only way to exercise a client\'s "I was refused on the ' +
+          'socket" path.' },
   { id: 'agent', label: 'Agent',
     what: 'The caller presented an X509-SVID whose SPIFFE ID is an agent id ' +
           '(/spire/agent/...) and which names an agent this server has ' +
@@ -283,6 +292,10 @@ interface SpiffeAuthDeps {
   registry: typeof registry;
   tls: typeof tls;
   revocationStatus: typeof revocationStatus;
+  peer: typeof peer;
+  // This process's effective uid, or -1 where the platform has none. A
+  // function rather than a number so a test can be another process.
+  processUid(): number;
 }
 
 class SpiffeAuth {
@@ -307,7 +320,11 @@ class SpiffeAuth {
       ca: ca,
       registry: registry,
       tls: tls,
-      revocationStatus: revocationStatus
+      revocationStatus: revocationStatus,
+      peer: peer,
+      processUid: function () {
+        return typeof process.geteuid === 'function' ? process.geteuid() : -1;
+      }
     };
   }
 
@@ -337,22 +354,108 @@ class SpiffeAuth {
     return !!config.value('spiffe.trustLocalSocket');
   }
 
+  // AS IT IS IN FORCE (#104): OFF is honoured in development only
+  // (`mode.servesUnattestedEntries()`); a product realm reads the default,
+  // ON, whatever is stored, and says so once.
   attestWorkloads() {
-    const { log, config } = this.deps;
+    const { log, mode } = this.deps;
     log.debug("Entering SpiffeAuth.attestWorkloads().");
     log.debug("Leaving SpiffeAuth.attestWorkloads().");
-    return !!config.value('spiffe.attestWorkloads');
+    return !!mode.valueInForce('spiffe.attestWorkloads');
   }
 
   // ON, AND BELIEVED ONLY OUTSIDE PRODUCT MODE (#40, 2026-09-21): a
   // selector the caller wrote is a claim nothing checked, and a registration
-  // entry for `unix:uid:0` must not be had by typing it into a header.
+  // entry for `unix:uid:0` must not be had by typing it into a header. The
+  // row's `onlyWhile` marker names `mode.believesAssertedSelectors()`, so
+  // `valueInForce()` asks it, says once that a stored value is ignored, and
+  // the write is refused in product too (#104).
   acceptAssertedSelectors() {
-    const { log, config, mode } = this.deps;
+    const { log, mode } = this.deps;
     log.debug("Entering SpiffeAuth.acceptAssertedSelectors().");
     log.debug("Leaving SpiffeAuth.acceptAssertedSelectors().");
-    return !!config.value('spiffe.acceptAssertedSelectors') &&
-           mode.believesAssertedSelectors();
+    return !!mode.valueInForce('spiffe.acceptAssertedSelectors');
+  }
+
+  // ---------------------------------------------------------------------------
+  // IS THIS UNIX-SOCKET CALLER THE `local` ENTITY? (#104, 2026-09-23.)
+  //
+  // SPIRE trusts its private socket outright and relies on the socket's
+  // filesystem permissions. Development does exactly that. Product VERIFIES
+  // the two things that make the trust sound, from facts recorded when the
+  // connection was accepted (`spiffe_server.ts` binds the SPIRE Server API
+  // socket through `bindAttestedSocket()` wherever the native module is
+  // built, and records `facts.localSocket` at accept):
+  //
+  //   * the socket is PRIVATE — `restrictSocket()` made it 0600, and neither
+  //     it nor its directory has a group or other bit (STS-SPIFFE-0117). A
+  //     chmod that failed (STS-SPIFFE-0010) is exactly the case this refuses;
+  //   * the peer's kernel uid (SO_PEERCRED) is this process's own
+  //     (STS-SPIFFE-0118). Where the kernel could not be asked — no native
+  //     module, or SO_PEERCRED failed — nothing is known and the answer is no
+  //     (STS-SPIFFE-0119).
+  //
+  // Asked per call, in the realm the socket belongs to, because the mode is a
+  // runtime setting: a realm switched to product stops trusting an unverified
+  // connection on its very next call. A refused caller is not `local`; it is
+  // whatever else it is — on the socket, which carries no TLS, that is
+  // anonymous, and the remedy is an administrator's X509-SVID on the TCP port.
+  // ---------------------------------------------------------------------------
+  localTrust(call): { local: boolean; why: string; errorCode: string } {
+    const { log, mode, peer } = this.deps;
+    log.debug('Entering SpiffeAuth.localTrust().');
+    if (!this.trustLocalSocket()) {
+      log.debug('Leaving SpiffeAuth.localTrust(). The setting is off.');
+      return { local: false, errorCode: '',
+               why: 'arrived on the Unix domain socket, which is NOT trusted ' +
+                    'as local here (spiffe.trustLocalSocket is off)' };
+    }
+    if (mode.trustsUnverifiedLocalSocket()) {
+      log.debug('Leaving SpiffeAuth.localTrust(). Development: trusted.');
+      return { local: true, errorCode: '',
+               why: 'arrived on the Unix domain socket, which this server ' +
+                    'trusts as local (spiffe.trustLocalSocket)' };
+    }
+    const facts: Record<string, any> | null =
+      peer.factsFor(this.peerOf(call));
+    if (!facts || facts.error || facts.uid < 0) {
+      const problem = facts
+        ? (facts.error || 'the kernel named no uid')
+        : (peer.availability().problem ||
+           'the connection was not accepted by a listener that reads the ' +
+           'peer\'s credentials');
+      log.debug('Leaving SpiffeAuth.localTrust(). No peer credentials.');
+      return { local: false, errorCode: 'STS-SPIFFE-0119',
+               why: 'arrived on the Unix domain socket and is NOT trusted as ' +
+                    'local: this realm is in product mode, where the ' +
+                    'caller\'s kernel uid must be read and this one could ' +
+                    'not be (' + problem + ')' };
+    }
+    const boundary = facts.localSocket || { private: false,
+      why: 'the socket\'s permissions were not checked when this ' +
+           'connection was accepted' };
+    if (!boundary.private) {
+      log.debug('Leaving SpiffeAuth.localTrust(). The socket is not private.');
+      return { local: false, errorCode: 'STS-SPIFFE-0117',
+               why: 'arrived on the Unix domain socket and is NOT trusted as ' +
+                    'local: this realm is in product mode, where the socket ' +
+                    'must be verified private, and ' + boundary.why };
+    }
+    const own = this.deps.processUid();
+    if (facts.uid !== own) {
+      log.debug('Leaving SpiffeAuth.localTrust(). A foreign uid.');
+      return { local: false, errorCode: 'STS-SPIFFE-0118',
+               why: 'arrived on the Unix domain socket and is NOT trusted as ' +
+                    'local: this realm is in product mode, and the caller ' +
+                    'runs as uid ' + facts.uid + ', not this service\'s uid ' +
+                    own };
+    }
+    log.debug('Leaving SpiffeAuth.localTrust(). Verified.');
+    return { local: true, errorCode: '',
+             why: 'arrived on the Unix domain socket, which this server ' +
+                  'trusts as local (spiffe.trustLocalSocket): the socket is ' +
+                  'private and the caller runs as this service\'s uid ' +
+                  own + ', verified by the kernel' };
   }
 
   // The admin ids, as a list. A string in configuration because it is a list of
@@ -816,14 +919,23 @@ class SpiffeAuth {
     // credential, which is why it is set before anything is read off a
     // certificate: a caller on the socket is local whether or not it also
     // presented an SVID, exactly as `spire-server` is.
-    if (transport === 'uds' && this.trustLocalSocket()) {
-      caller.entities.local = true;
-      caller.notes.push('arrived on the Unix domain socket, which this ' +
-                        'server trusts as local (spiffe.trustLocalSocket)');
+    // ON THE SPIRE SERVER API ONLY is the boundary verified (#104): the
+    // Workload API authorizes nobody, so `local` decides nothing there and is
+    // left as the setting says.
+    if (transport === 'uds' && surface !== 'server') {
+      caller.entities.local = this.trustLocalSocket();
+      caller.notes.push('arrived on the Workload API\'s Unix domain socket');
     } else if (transport === 'uds') {
-      caller.notes.push('arrived on the Unix domain socket, which is NOT ' +
-                        'trusted as local here (spiffe.trustLocalSocket is ' +
-                        'off)');
+      const trust = this.localTrust(call);
+      caller.entities.local = trust.local;
+      caller.notes.push(trust.why);
+      if (trust.errorCode) {
+        // The condition, for the refusal this caller may meet in
+        // `authorize()`: it is what has to be fixed, not "nothing was
+        // presented".
+        caller.localRefusal = trust.why;
+        caller.localRefusalCode = trust.errorCode;
+      }
     }
     const certificate = this.peerCertificateOf(call);
     if (!certificate) {
@@ -968,13 +1080,14 @@ class SpiffeAuth {
       '. This call came from ' + this.describeCaller(caller) + '.' +
       (caller.refusal ? ' The certificate presented was not accepted: ' +
                         caller.refusal : '') +
+      (caller.localRefusal ? ' The caller ' + caller.localRefusal + '.' : '') +
       ' The rule is SPIRE\'s own — see GET /spiffe for the whole table.';
     log.debug('Leaving SpiffeAuth.authorize(). Refused.');
     return { status: nothingPresented ? 'UNAUTHENTICATED' : 'PERMISSION_DENIED',
              // WHICH CONDITION: the certificate's own refusal where one was
              // presented and not accepted, since that is what actually has to
              // be fixed; otherwise nothing presented, or not enough.
-             errorCode: caller.refusalCode ||
+             errorCode: caller.refusalCode || caller.localRefusalCode ||
                (nothingPresented ? 'STS-SPIFFE-0014' : 'STS-SPIFFE-0015'),
              message: reason };
   }
