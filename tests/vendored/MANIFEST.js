@@ -649,6 +649,11 @@ const JOBS = [
   // nothing about them. Each drives its protocol against the address the
   // service is reached at, in both modes.
   { file: 'sts_ldaps.js',                browser: false, local: true },
+  // WHO MAY READ WHAT OVER LDAPS, PER IDENTITY (#106, 2026-09-23): a product
+  // realm and a development realm, each with people, groups, an application
+  // and an administrator of its own, asked over 636 as a directory client
+  // asks — so both modes are asserted whichever mode the stack runs in.
+  { file: 'sts_ldap_read_authorization.js', browser: false, local: true },
   { file: 'sts_kerberos_spnego.js',      browser: false, local: true },
   // A PASSWORD ALONE IS NO TICKET FOR A TWO-FACTOR ACCOUNT (#173,
   // 2026-09-22): over TCP 88, the product refusal after the password

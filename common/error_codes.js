@@ -8470,6 +8470,17 @@ const CODES = [
       'by the library and never reaches the bind handler; product mode ' +
       'cannot refuse it (reads on that connection are still refused).',
     spec: 'none — logged at startup' },
+  { code: 'STS-LDAP-0099',
+    summary: 'In product mode, a compare named an attribute the bound ' +
+      'identity may not read on that entry (ldap/directory_read_policy.ts); ' +
+      'answered whether or not the entry holds it, so the refusal says ' +
+      'nothing about the value.',
+    spec: 'LDAP result code 50, insufficientAccessRights' },
+  { code: 'STS-LDAP-0100',
+    summary: 'In product mode, a bind named a DN that is not a person\'s — ' +
+      'an application, a federation, a container — and was refused before ' +
+      'its password was read; only people bind to the directory.',
+    spec: 'LDAP result code 49, invalidCredentials (RFC 4513 section 5.1.3)' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
