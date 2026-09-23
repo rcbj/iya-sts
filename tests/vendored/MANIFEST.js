@@ -724,6 +724,12 @@ const JOBS = [
   // Back-Channel, Front-Channel and RP-Initiated Logout, a WS-Federation
   // cleanup confirmed in the browser — over HTTP, in either mode.
   { file: 'sts_federation_signout.js',   browser: false, local: true },
+  // A PARTNER'S ENCRYPTED ASSERTION OR ID TOKEN (#168, 2026-09-23): the
+  // published keys, SAML 2.0 EncryptedAssertion/EncryptedID/
+  // EncryptedAttribute from the IdP realm and from an encryptor written here
+  // (RSA-OAEP and ECDH-ES), WS-Federation, a JWE ID Token, every refused
+  // algorithm, plaintext in product, rotation and its grace period.
+  { file: 'sts_federation_encryption.js', browser: false, local: true },
   // #171 (2026-09-23): the outbound transport policy over HTTP — the write
   // doors in a product realm, SSF push to this job's own listeners in both
   // modes (a skip ignored in product, a CA file honoured), the RFC 9728

@@ -6418,6 +6418,21 @@ const SETTINGS = [
                  'configured from that document sends a subject in. The ' +
                  'default is the literal this service has always published.' },
 
+  // --- Federation: the partner's encrypted assertion (#168) ---------------
+  { key: 'federation.encryptionKeyGraceS', group: 'Federation',
+    label: 'Previous encryption key kept for (seconds)',
+    env: 'STS_FEDERATION_ENCRYPTION_KEY_GRACE_S', type: 'int', dflt: 86400,
+    min: 0, max: 2592000, runtime: true,
+    description: 'When a relationship\'s encryption key is rotated, how long ' +
+                 'the key it replaces still DECRYPTS — so a partner that ' +
+                 'has not yet fetched the new metadata or JWKS, or a ' +
+                 'response already in a browser, is not refused. Past it the ' +
+                 'old key decrypts nothing, and the scheduler job ' +
+                 'federation.encryption-key-retire removes it from the ' +
+                 'entry. 0 ends the old key at the rotation. Only the key ' +
+                 'just replaced is kept: a second rotation inside the ' +
+                 'window drops the older one.' },
+
   // --- SAML ----------------------------------------------------------------
   { key: 'saml.issuer', group: 'SAML', label: 'Assertion issuer',
     env: 'STS_SAML_ISSUER', legacyEnv: 'STS_ISSUER', type: 'string',
@@ -6723,13 +6738,19 @@ const SETTINGS = [
   { key: 'saml2.keyTransportAlgorithm', group: 'SAML 2.0 assertions',
     label: 'Key transport algorithm',
     env: 'STS_SAML2_KEY_TRANSPORT_ALGORITHM', type: 'enum',
-    enumValues: ['rsa-oaep-mgf1p', 'rsa-1_5'],
+    enumValues: ['rsa-oaep-mgf1p', 'rsa-oaep', 'rsa-1_5'],
     dflt: 'rsa-oaep-mgf1p', runtime: true,
     // `rsa-1_5` is DEVELOPMENT ONLY since #181 (2026-09-23), here and on an
     // application's `saml2KeyTransportAlgorithm`.
     onlyWhile: 'usesBrokenAlgorithms', onlyWhileValues: ['rsa-1_5'],
     description: 'How the one-time content key is wrapped to the ' +
-                 'recipient\'s RSA public key. `rsa-1_5` is RSAES-PKCS1-v1_5 ' +
+                 'recipient\'s RSA public key. `rsa-oaep` is XML Encryption ' +
+                 '1.1\'s RSA-OAEP with SHA-256 and MGF1-SHA-256, which this ' +
+                 'service\'s own federation relationships publish and ' +
+                 'require (#168); `rsa-oaep-mgf1p` is OAEP over SHA-1, what ' +
+                 'most service providers read. A recipient whose ' +
+                 'certificate is EC is encrypted to by ECDH-ES key agreement ' +
+                 'whatever this says. `rsa-1_5` is RSAES-PKCS1-v1_5 ' +
                  'and is BROKEN — Bleichenbacher\'s adaptive ' +
                  'chosen-ciphertext attack is against exactly this — and it ' +
                  'is offered because a great many deployed service providers ' +

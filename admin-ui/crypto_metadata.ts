@@ -2780,8 +2780,9 @@ class CryptoMetadata {
                'and are what a great many deployed relying parties still ' +
                'send. `rsa-oaep-mgf1p` IS SHA-1 by definition — the URI ' +
                'means it — and the newer `rsa-oaep` carries its digest in a ' +
-               'child element and is deliberately not offered, because a ' +
-               'service provider that can do that can do GCM too. ' +
+               'child element and is offered since #168 with SHA-256 and ' +
+               'MGF1-SHA-256, which is what a federation relationship ' +
+               'publishes and requires. ' +
                'HMAC-SHA1-96 in RFC 3962 is a MAC rather than a ' +
                'collision-resistance claim and is what Active Directory uses ' +
                'to this day.' },
@@ -3669,9 +3670,10 @@ class CryptoMetadata {
         'tested against. Nothing this service encrypts is a real secret. ' +
         '<code>rsa-oaep-mgf1p</code> is SHA-1 by definition — the URI means ' +
         'it — and the newer <code>rsa-oaep</code> carries its digest in a ' +
-        'child element and is deliberately not offered, because a service ' +
-        'provider that can read that one can do GCM too and this list exists ' +
-        'for the ones that cannot.');
+        'child element and is offered since #168 with SHA-256 and ' +
+        'MGF1-SHA-256, which is what a federation relationship publishes and ' +
+        'requires. A recipient whose certificate is EC is encrypted to by ' +
+        'ECDH-ES key agreement (ConcatKDF, kw-aes256).');
 
     html += '<h3>Kerberos encryption types</h3>' +
       '<table><thead><tr><th class="n">etype</th><th>Name</th>' +

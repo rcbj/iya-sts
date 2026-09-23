@@ -1731,6 +1731,24 @@ const CODES = [
       '6.1.2 (#181).',
     spec: 'the caller\'s refusal: a LogoutRequest\'s EncryptedID that ' +
       'cannot be read is answered as the SAML binding says' },
+  { code: 'STS-KEYS-0071',
+    summary: 'An XML element\'s block cipher, key management or OAEP ' +
+      'digest is one the caller\'s allow-list excludes; refused before any ' +
+      'key operation (#168).',
+    spec: 'the caller\'s refusal — federation answers STS-FED-0139' },
+  { code: 'STS-KEYS-0072',
+    summary: 'An rsa-oaep EncryptedKey named a digest and mask generation ' +
+      'function this service cannot unwrap with: an unknown one, or two ' +
+      'that differ (node derives MGF1 from the OAEP digest).',
+    spec: 'the caller\'s refusal' },
+  { code: 'STS-KEYS-0073',
+    summary: 'An XML element\'s key is agreed by an AgreementMethod other ' +
+      'than ECDH-ES.',
+    spec: 'the caller\'s refusal' },
+  { code: 'STS-KEYS-0074',
+    summary: 'An XML element encrypted by ECDH-ES key agreement was handed ' +
+      'to a recipient whose private key is not an EC key.',
+    spec: 'the caller\'s refusal' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -2614,6 +2632,10 @@ const CODES = [
       'realm that is in product mode, where SHA-1 is never used (#181).',
     spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
       '{ ok: false, errors }' },
+  { code: 'STS-PKI-0192',
+    summary: 'An encryption key pair was asked for in a key type this ' +
+      'service does not issue one of (rsa-3072 and ec-p256, #168).',
+    spec: 'the caller\'s refusal' },
   // ===== ENROLL ============================================================
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
@@ -7110,8 +7132,9 @@ const CODES = [
     spec: 'HTTP 400 page' },
   { code: 'STS-FED-0011',
     summary: 'A partner\'s SAML Response or WS-Federation token carried no ' +
-      '<Assertion> (an encrypted assertion looks like this; it is not ' +
-      'decrypted).',
+      '<Assertion> and no <EncryptedAssertion>, an encrypted one reached a ' +
+      'SAML 1.1 relationship (which has no encryption construct), or what ' +
+      'one decrypted to is not an assertion.',
     spec: 'HTTP 400 page' },
   { code: 'STS-FED-0012',
     summary: 'A partner\'s SAML assertion or response carries no XML ' +
@@ -7614,6 +7637,69 @@ const CODES = [
       'failed.',
     spec: 'HTTP 500 page, or HTTP 500 on the back channel (the partner ' +
       'retries)' },
+  // #168: a partner's encrypted assertion or ID Token.
+  { code: 'STS-FED-0137',
+    summary: 'A partner\'s encrypted assertion, identifier, attribute, ID ' +
+      'Token or Logout Token arrived and the relationship holds no usable ' +
+      'encryption key for it — none issued, one of the other key type, a ' +
+      'previous key past its grace period, a kid naming no key held, or a ' +
+      'sealed key that will not open.',
+    spec: 'HTTP 500 page (400 JSON on the back channel)' },
+  { code: 'STS-FED-0138',
+    summary: 'A partner\'s encrypted element or JWE did not decrypt under ' +
+      'the relationship\'s key. ONE code for every cause — a wrong key, an ' +
+      'altered ciphertext, a tag, an unwrap — so the answer is no oracle; ' +
+      'which step failed is in the log line.',
+    spec: 'HTTP 401 page (400 JSON on the back channel)' },
+  { code: 'STS-FED-0139',
+    summary: 'A partner encrypted with an algorithm the relationship does ' +
+      'not accept — not the key management or content encryption it ' +
+      'publishes, or AES-CBC, rsa-1_5 or RSA1_5, which are refused in every ' +
+      'mode — or a write tried to configure one of those three.',
+    spec: 'HTTP 401 page; /admin-api: HTTP 400 { ok: false, errors }' },
+  { code: 'STS-FED-0140',
+    summary: 'A partner sent a plaintext SAML 2.0 or WS-Federation ' +
+      'assertion, or a signed-only id_token by form_post, to a relationship ' +
+      'that requires encryption (product mode, fedAllowUnencrypted off).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0141',
+    summary: 'A JWE arrived where a JWS was expected: an encrypted ID Token ' +
+      'or Logout Token whose plaintext is not a signed JWT (OpenID Connect ' +
+      'Core section 10.2 is sign-then-encrypt), or an encrypted access token ' +
+      'at a plain OAuth 2.0 relationship, which holds no decryption key.',
+    spec: 'HTTP 401 page (400 JSON on the back channel)' },
+  { code: 'STS-FED-0142',
+    summary: 'A federation relationship\'s encryption key could not be ' +
+      'issued, sealed or written — at create, at a rotation, or when its ' +
+      'key type changed.',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }' },
+  { code: 'STS-FED-0143',
+    summary: 'A write to a relationship\'s encryption fields named a value ' +
+      'outside the vocabulary for its protocol, a key management its key ' +
+      'type cannot do, or an encryption field on a SAML 1.1 or OAuth 2.0 ' +
+      'relationship.',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }' },
+  { code: 'STS-FED-0144',
+    summary: 'An encryption key rotation named no relationship, or one that ' +
+      'holds no key — identity-provider-side, SAML 1.1 or OAuth 2.0.',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }' },
+  { code: 'STS-FED-0145',
+    summary: 'The scheduler job federation.encryption-key-retire could not ' +
+      'remove a retired key from a relationship; the key already decrypts ' +
+      'nothing, and the next run tries again.',
+    spec: 'none — logged' },
+  { code: 'STS-FED-0146',
+    summary: '/federation/jwks/{id} named no OpenID Connect ' +
+      'service-provider-side relationship.',
+    spec: 'HTTP 404 page' },
+  { code: 'STS-FED-0147',
+    summary: 'A partner\'s SAML Response or wresult carried an encrypted ' +
+      'assertion beside another assertion; which one a signature covered ' +
+      'and which one was read must not be a choice.',
+    spec: 'HTTP 400 page' },
   // ===== KRB ===============================================================
   { code: 'STS-KRB-0001',
     summary: 'A cross-realm referral could not be issued because the trust ' +

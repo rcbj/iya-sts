@@ -2805,10 +2805,10 @@ function toSearchEntry(stored, requested, messageId, rule) {
       // Kerberos key that needs no page, and in development every bind
       // succeeds. The KDC reads the store and never a search result, so nothing
       // that needs the key is behind this.
-      attributes[canonicalName(name)] =
+      attributes[canonicalName(name)] = withheldKeyTableValues(name,
         certEnrollment.withheldValues(name,
           krb5PersonKeys.withheldValues(name,
-                                        stored.attributes[name].slice(0)));
+                                        stored.attributes[name].slice(0))));
     }
   });
   if (wanted.indexOf('entrydn') !== -1) attributes.entryDN = [stored.dn];
@@ -7801,7 +7801,10 @@ const SECRET_ATTRIBUTES = [
   'stsacmeeabkey', 'appacmeeabkey', 'stsscepchallenge', 'appscepchallenge',
   // GNAP (2026-09-12): a client's shared secret for a key reference, and a
   // resource server's macaroon root key. Either one mints a working credential.
-  'gnapsymmetrickey', 'gnapmacaroonkey'
+  'gnapsymmetrickey', 'gnapmacaroonkey',
+  // A federation relationship's key table (#168): every row carries the
+  // private key the partner's assertions are decrypted with.
+  'fedencryptionkey'
 ];
 
 const CLIENT_WRITTEN_OPERATIONAL = ['createtimestamp', 'modifytimestamp',
@@ -12963,6 +12966,31 @@ app.get('/admin/ldap/service', function (req, res) {
 // `q` matches the DN, any attribute name and any attribute value, and the
 // page says so under the box rather than leaving it to be discovered.
 // ---------------------------------------------------------------------------
+// A FEDERATION RELATIONSHIP'S KEY TABLE (#168) on this page: every row with
+// its private key taken out and the fact said, so the certificate, the kid
+// and the state stay visible and the key — ciphertext included — does not.
+function withheldKeyTableValues(name, values) {
+  log.debug('Entering withheldKeyTableValues().');
+  if (String(name).toLowerCase() !== 'fedencryptionkey') {
+    log.debug('Leaving withheldKeyTableValues(). Not the key table.');
+    return values;
+  }
+  log.debug('Leaving withheldKeyTableValues().');
+  return values.map(function (value) {
+    try {
+      const row = JSON.parse(String(value));
+      if (row && row.privateKey) {
+        row.privateKey = '(withheld: the private key, never shown)';
+      }
+      return JSON.stringify(row);
+    } catch (e) {
+      log.debug('Caught in withheldKeyTableValues(): ' +
+                ((e && e.message) || e));
+      return '(withheld: a key-table row that is not JSON)';
+    }
+  });
+}
+
 function ldapDirectoryView(req) {
   log.debug('Entering ldapDirectoryView().');
   const listed = [];

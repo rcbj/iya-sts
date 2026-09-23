@@ -475,6 +475,12 @@ async function createRelationship(id, protocol, peer, settings) {
   must(made.status === 200 && made.body && made.body.ok,
        "creating " + id + " answered " + made.status + " " +
        made.text.slice(0, 300));
+  // THE PARTNERS HERE SIGN AND DO NOT ENCRYPT (#168): product mode refuses
+  // a plaintext assertion unless the relationship allows it, and encryption
+  // is sts_federation_encryption.js's to cover.
+  if (["saml2", "wsfed", "oidc"].indexOf(protocol) >= 0) {
+    settings = Object.assign({ fedAllowUnencrypted: "TRUE" }, settings);
+  }
   for (const field of Object.keys(settings)) {
     const set = await setRel(id, field, settings[field]);
     must(set.status === 200 && set.body && set.body.ok,
@@ -595,7 +601,8 @@ async function setUp() {
                                 ["fedBinding", "HTTP-POST"],
                                 ["fedSignRequest", "TRUE"],
                                 ["fedSloUrl", idpSlo],
-                                ["fedSubjectPolicy", "pre-linked"]]) {
+                                ["fedSubjectPolicy", "pre-linked"],
+                                ["fedAllowUnencrypted", "TRUE"]]) {
     const set = await setRel(REL.saml, field, value);
     must(set.status === 200 && set.body && set.body.ok,
          "setting " + field + " answered " + set.status + " " +

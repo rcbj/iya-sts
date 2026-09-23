@@ -192,6 +192,8 @@ import authorizationServers = require('../oauth-oidc/authorization_servers');
 import federation = require('../federation/federation');
 // A federationLink's format (#109): a static utility class.
 import fedLinks = require('../federation/federation_links');
+// What a partner encrypts to (#168), for the relationship's page and API.
+import fedEncryption = require('../federation/federation_encryption');
 // The receiver half of Shared Signals, which the three reports below draw
 // this service's own registered streams from.
 import signals = require('../ssf/ssf_receivers');
@@ -443,6 +445,7 @@ interface AdminViewsDeps {
   saml11: typeof saml11;
   authorizationServers: typeof authorizationServers;
   federation: typeof federation;
+  fedEncryption: typeof fedEncryption;
   fedLinks: typeof fedLinks;
   signals: typeof signals;
   spiffeRegistry: typeof spiffeRegistry;
@@ -518,6 +521,7 @@ class AdminViews {
       saml11: saml11,
       authorizationServers: authorizationServers,
       federation: federation,
+      fedEncryption: fedEncryption,
       fedLinks: fedLinks,
       signals: signals,
       spiffeRegistry: spiffeRegistry,
@@ -5800,7 +5804,8 @@ class AdminViews {
   // AND the ones the resource publishes — computed once so a partner reading
   // the document and an operator reading the page are told the same endpoint.
   federationDetailJson(req, id) {
-    const { log, baseUrlOf, realms, federation, fedLinks } = this.deps;
+    const { log, baseUrlOf, realms, federation, fedLinks, fedEncryption } =
+      this.deps;
     const self = this;
     log.debug("Entering AdminViews.federationDetailJson(). id=" + id);
     const record = federation.get(id);
@@ -5864,6 +5869,12 @@ class AdminViews {
               postLogoutRedirect: slo }
           : {};
 
+    // WHAT A PARTNER ENCRYPTS TO (#168): the policy, the public key table,
+    // and the two places it is published.
+    const encryption = fedEncryption.viewOf(record);
+    const jwks = row.protocol === 'oidc' && row.role === 'service-provider'
+      ? base + federation.PATHS.jwks + '/' + encodeURIComponent(row.id)
+      : null;
     const setFields = federation.fieldsForRole(row.role, 'set')
                                 .filter(function (field) {
       // The four booleans get their own two-button control below, because a
@@ -5873,7 +5884,12 @@ class AdminViews {
       return ['fedEnabled', 'fedAutocreateUsers', 'fedUpdateUserAttributes',
               'fedMayAssertAdministrators', 'fedSignRequest',
               'fedAllowUnsolicited', 'fedAcceptSignout',
-              'fedRequireSignedLogout'].indexOf(field.name) === -1;
+              'fedRequireSignedLogout', 'fedAllowUnencrypted']
+        .indexOf(field.name) === -1 &&
+        // The four encryption fields mean nothing to SAML 1.1 and OAuth 2.0.
+        (federation.encrypts(record) ||
+         ['fedEncryptionKeyType', 'fedKeyManagementAlgorithm',
+          'fedContentEncryptionAlgorithm'].indexOf(field.name) === -1);
     });
     const multiFields = federation.fieldsForRole(row.role, 'multi');
     // THE PEOPLE THIS PARTNER'S SUBJECTS ARE LINKED TO (#109), paged — a
@@ -5893,7 +5909,8 @@ class AdminViews {
     log.debug("Leaving AdminViews.federationDetailJson().");
     return {
       record: record, row: row, base: base, acs: acs, login: login,
-      metadata: metadata, loginPath: loginPath,
+      metadata: metadata, loginPath: loginPath, jwks: jwks,
+      encryption: encryption,
       signOut: row.role === 'service-provider' ? signOut : {},
       setFields: setFields, multiFields: multiFields, linkPage: linkPage,
       json: (function () {
@@ -5901,8 +5918,10 @@ class AdminViews {
           endpoints: Object.assign({
                        assertionConsumerService: acs, login: loginPath,
                        metadata: (row.protocol === 'saml2' ||
-                                  row.protocol === 'saml11')
-                         ? metadata : null },
+                                  row.protocol === 'saml11' ||
+                                  row.protocol === 'wsfed')
+                         ? metadata : null,
+                       jwks: jwks },
                        row.role === 'service-provider' ? signOut : {}),
           // The whole record, MINUS the one sensitive field. `fedClientSecret`
           // is replaced by a boolean saying whether one is set — which is the
@@ -5922,6 +5941,7 @@ class AdminViews {
             return out;
           })(),
           editable: federation.fieldsForRole(row.role),
+          encryption: encryption,
           // Who this partner's subjects are linked to (#109): the page, and
           // the paging a caller walks it with.
           links: linkPage.shown,

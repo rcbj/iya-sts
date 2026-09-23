@@ -1809,6 +1809,17 @@ const SCHEMAS = {
         items: openObject(
           'One relationship, its state and what has crossed it.', {})
       },
+      encryption: openObject(
+        'With ?relationship=, for a SAML 2.0, WS-Federation or OpenID ' +
+        'Connect service-provider-side relationship (#168): what a partner ' +
+        'encrypts to. `policy` (the key type, key management and content ' +
+        'encryption accepted), `required` (whether plaintext is refused — ' +
+        'product mode, unless `allowUnencrypted`), `current` (the kid ' +
+        'published), `certificatePem` (what the partner configures), `jwk` ' +
+        '(OpenID Connect: the key `/federation/jwks/{id}` serves) and `keys` ' +
+        '— the key table with `state`, `retiresAt` and `decrypts`, and NEVER ' +
+        'a private key. `fedEncryptionKey` in `fields` is reported as `(set ' +
+        '— not returned)`.', {}),
       roles: {
         type: 'array',
         description: 'The two directions, each with what it means. Named for ' +

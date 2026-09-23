@@ -824,6 +824,10 @@ async function setUp() {
 
   // --- the three OIDC relationships and their clients at the partner -------
   const oidcCommon = {
+    // THE PARTNER HERE SIGNS AND DOES NOT ENCRYPT (#168): product mode
+    // refuses a plaintext assertion unless the relationship allows it, and
+    // encryption is sts_federation_encryption.js's to cover.
+    fedAllowUnencrypted: "TRUE",
     fedSsoUrl: partner.discovery.authorization_endpoint,
     fedScope: "openid profile email",
     fedUsernameSource: "preferred_username"
@@ -902,7 +906,8 @@ async function setUp() {
     // provider refuses an unsigned AuthnRequest
     // (saml2.requireSignedAuthnRequests), and this service signs only on the
     // POST binding.
-    fedBinding: "HTTP-POST", fedSignRequest: "TRUE" };
+    fedBinding: "HTTP-POST", fedSignRequest: "TRUE",
+    fedAllowUnencrypted: "TRUE" };
   for (const field of Object.keys(samlSettings)) {
     const set = await api(SP, "POST", "/federation/set",
       { id: REL.saml, field: field, value: samlSettings[field] });
@@ -917,11 +922,13 @@ async function setUp() {
   // The same partner, the same key and issuer: only the service provider
   // differs. And the same again, never enabled.
   await createRelationship(REL.samlOther, "saml2", idpSaml.entityId,
-    { fedSsoUrl: idpSaml.sso, fedSigningCertificate: idpSaml.certificate },
+    { fedSsoUrl: idpSaml.sso, fedSigningCertificate: idpSaml.certificate,
+      fedAllowUnencrypted: "TRUE" },
     true);
   const off = await createRelationship(REL.samlOff, "saml2",
     idpSaml.entityId,
-    { fedSsoUrl: idpSaml.sso, fedSigningCertificate: idpSaml.certificate },
+    { fedSsoUrl: idpSaml.sso, fedSigningCertificate: idpSaml.certificate,
+      fedAllowUnencrypted: "TRUE" },
     false);
 
   // THE PRE-PROVISIONED PERSON IS LINKED TO THE PARTNER (#109). A partner
