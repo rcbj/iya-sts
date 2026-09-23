@@ -557,7 +557,12 @@ const NAV = [
       // each of which signs them in by SIOPv2. Drawn by
       // `portal_self_issued.ts`.
       { path: BASE + '/self-issued', label: 'Self-issued IDs',
-        heading: 'Your self-issued IDs' }
+        heading: 'Your self-issued IDs' },
+      // DEVICES (#130, 2026-09-23), in this section for the signing keys'
+      // reason: each device holds a credential — a Native SSO secret — that
+      // signs this person's apps in. Drawn by `portal_devices.ts`.
+      { path: BASE + '/devices', label: 'Devices',
+        heading: 'Your devices' }
     ] }
 ];
 
@@ -6184,6 +6189,8 @@ const portalDelegate = require('./portal_delegate');
 const portalMail = require('./portal_mail');
 // /portal/self-issued (#129), the same arrangement, registered after that.
 const portalSelfIssued = require('./portal_self_issued');
+// /portal/devices (#130), the same arrangement, registered after that.
+const portalDevices = require('./portal_devices');
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
@@ -6284,6 +6291,19 @@ export = {
       audit: audit, errorCodes: errorCodes, config: config
     });
     portalSelfIssued.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalDevices.register({
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),

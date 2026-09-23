@@ -715,10 +715,22 @@ class SoftwareStatement {
     log.debug("Leaving SoftwareStatement.resolve(). " +
               "trusted=" + verified.trusted);
     return { ok: true, metadata: merged,
-             statement: { trusted: verified.trusted, issuer: verified.issuer,
+             statement: Object.assign({ trusted: verified.trusted,
+                          issuer: verified.issuer,
                           issuerKind: verified.issuerKind,
                           publisher: verified.publisher,
-                          softwareId: verified.softwareId || '' } };
+                          softwareId: verified.softwareId || '' },
+                          // NATIVE SSO (#130): what the statement ITSELF says
+                          // — never the registration beside it — and only a
+                          // trusted one; `applications.js` writes it.
+                          verified.trusted && verified.metadata &&
+                          Object.prototype.hasOwnProperty.call(
+                            verified.metadata, 'native_sso')
+                            ? { nativeSso: verified.metadata.native_sso ===
+                                           true,
+                                nativeSsoGroup: String(
+                                  verified.metadata.native_sso_group || '') }
+                            : {}) };
   }
 
   // ---------------------------------------------------------------------------

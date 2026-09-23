@@ -336,6 +336,7 @@ var config = {
     maxSignedMetadataEntries: 64,                // signed_metadata cache entries
     basicAuthRealm: "sts",                       // Token endpoint Basic realm
     maxAuthorizationServerProfiles: 200,         // Named authorization servers (per realm)
+    maxDevicesPerPerson: 20,                     // Devices one person may hold
     maxRequestedClaims: 64,                      // Claims one claims request may name
     idaTrustFrameworks: "urn:sts:local",         // Identity Assurance trust frameworks
     idaAutomaticVerifications: true,             // Sign-ins record an identity verification

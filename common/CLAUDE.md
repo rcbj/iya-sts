@@ -7885,6 +7885,22 @@ answered in `requestedClaimsOf()` beside the ordinary claims — so the
 federation release policy applies to it as to any requested claim.
 `tests/identity_assurance.js` holds it.
 
+## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23 — the foundation of #164)
+
+A device is an entry under `ou=devices` (`ldap/CLAUDE.md`), owned by a person
+and linked to the applications that used it. Today OpenID Connect Native SSO
+makes them (`oauth-oidc/CLAUDE.md`, 3bb). Four rules, each argued in the
+file's header:
+
+* **The device outlives its secret.** The secret is accepted only while its
+  session lives; a later sign-in presenting it re-binds the SAME device, and
+  the secret is never rotated.
+* **A secret presented for somebody else is ignored** — a new device is made.
+* **A person holds at most `oauth2.maxDevicesPerPerson`**; at the bound the
+  least recently used device whose session has ended makes room.
+* **The view never carries the hash**, on the console, the API or the
+  portal.
+
 ## Several nodes: second factors, links, enrollment credentials and the bootstrap (2026-09-14, #46)
 
 Issue #46 sections 2 and 8. Every value here was spent by reading an entry (or

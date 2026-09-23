@@ -107,6 +107,7 @@ import backupCodes = require('../common/backup_codes');
 import appPasswords = require('../common/app_passwords');
 import identityAssurance = require('../common/identity_assurance');
 import siop = require('../oid4vc/siop');
+import devices = require('../common/devices');
 // THE SIGN-ON SESSION MAP, which `signOnSessionRows()` walks. It is the same
 // destructured-require trap one module along: admin.js pulls fourteen names
 // out of two modules through multi-line destructures, and a name taken from
@@ -407,6 +408,7 @@ interface AdminViewsDeps {
   appPasswords: typeof appPasswords;
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
+  devices: typeof devices;
   sessions: typeof authn.sessions;
   sessionStartedAt: typeof authn.sessionStartedAt;
   config: typeof config;
@@ -487,6 +489,7 @@ class AdminViews {
       appPasswords: appPasswords,
       identityAssurance: identityAssurance,
       siop: siop,
+      devices: devices,
       sessions: authn.sessions,
       sessionStartedAt: authn.sessionStartedAt,
       config: config,
@@ -6945,6 +6948,30 @@ class AdminViews {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // ONE PERSON'S DEVICES (#130) — `GET /admin-api/users/devices`, the list
+  // the Devices block on their /admin/users page draws: each device entry in
+  // ou=devices they own, the applications that used it, and whether its
+  // Native SSO secret is live. Never the secret or its hash. Bounded by
+  // `oauth2.maxDevicesPerPerson`, so not paged.
+  // ---------------------------------------------------------------------------
+  devicesJson(query) {
+    const { log, devices, oauth2, config } = this.deps;
+    log.debug("Entering AdminViews.devicesJson().");
+    const who = String((query && (query.user || query.username)) || '').trim();
+    const held = who ? devices.listFor(who) : [];
+    log.debug("Leaving AdminViews.devicesJson(). " + held.length + ".");
+    return {
+      user: who,
+      maxPerPerson: Number(config.value('oauth2.maxDevicesPerPerson')),
+      devices: held.map(function (one) {
+        return devices.view(one, function (sid) {
+          return oauth2.sessionIsLive(sid, who);
+        });
+      })
+    };
+  }
+
   // THIS PERSON'S DIRECTORY ENTRY, which is the whole json half of the panel
   // `ldapObjectSection()` draws: `directoryReader(key)`, or null where no
   // directory is loaded in this process. The section keeps the markup and takes
@@ -7286,6 +7313,7 @@ export = {
   appPasswordsJson: slot.forward('appPasswordsJson'),
   verificationsJson: slot.forward('verificationsJson'),
   selfIssuedSubjectsJson: slot.forward('selfIssuedSubjectsJson'),
+  devicesJson: slot.forward('devicesJson'),
   passwordOnlyDoorsFor: slot.forward('passwordOnlyDoorsFor'),
   userDetailJson: slot.forward('userDetailJson'),
   riskFor: slot.forward('riskFor'),

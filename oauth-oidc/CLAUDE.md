@@ -3678,6 +3678,47 @@ these off the client's entry itself (the registry required lazily), so no
 caller threads them through. `tests/client_secret_rotation.js`.
 
 
+## 3bb. OPENID CONNECT NATIVE SSO, AND RFC 8693's TOKEN TYPES READ (2026-09-23, #130)
+
+rcbj's answers: the device_secret lives as long as the SIGN-ON SESSION and is
+never rotated; a client takes part only with `oauthNativeSso` AND an
+`oauthNativeSsoGroup` it shares with the other app; RFC 8693's token types
+are read for EVERY exchange; and — mid-ticket — devices are first-class
+directory entries (`common/devices.ts`, `ldap/CLAUDE.md`).
+
+* **The scope.** `device_sso` is judged by `scope_policy.ts` in every mode
+  (STS-OAUTH-0624): granted only to an enabled client. A registration sets
+  the flag and group only through a TRUSTED software statement
+  (`software_statement.ts` hands `applications.js` what the statement itself
+  said) — the group is the boundary, and a client may not choose its own.
+* **The first app.** `tokenSet()` mints the device secret on an
+  authorization-code grant for `openid device_sso` with a session: a device
+  entry owned by the person and linked to the app. A `device_secret` the app
+  PRESENTS with its code, for the same person, re-binds that device to the
+  new session and is handed back unchanged. The ID Token carries `ds_hash`
+  (`halfHash()`, as `at_hash`) and `sid` whatever the logout settings say.
+* **The exchange** (`nativeSsoExchange()`, reached from the token-exchange
+  branch by the device-secret actor type): the asking client enabled; the
+  `audience` the issuer; the ID Token this realm's by signature — an expired
+  one accepted, since the first app may have held it for hours and the
+  session is what decides — and not revoked; the secret naming a device and
+  matching the `ds_hash`; the ID Token's client in the SAME group; the
+  device's session the ID Token's `sid`, live and still the owner's. Tokens
+  are issued INTO that session, so a sign-out ends them with the rest.
+* **Nothing sweeps a secret.** Validity is asked at use
+  (`sessionIsLive()`), so a sign-out, an expiry, a disabled account and SSF
+  session-revoked all end it for free. `/oauth2/revoke` clears one from its
+  device (STS-OAUTH-0634 for a client outside Native SSO); the device stays.
+* **RFC 8693 section 2.1, for every exchange** (`exchangeTypeProblem()`,
+  `ownTokenKind()`, `kindProblem()`): `subject_token_type` required,
+  `actor_token_type` exactly with an `actor_token`, each one of access_token,
+  refresh_token, id_token or jwt (0626, 0627); a token this realm VERIFIED
+  must be its declared type (0628). A foreign token development exchanges
+  unverified is held only to the list. All `invalid_request`, section 2.2.2's
+  error — `unsupported_token_type` is RFC 7009's, not this RFC's.
+
+`tests/native_sso.js` and `tests/vendored/sts_native_sso.js` (local) hold it.
+
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 
 The review on #45 found Core bugs that no test had asked about. What changed, and

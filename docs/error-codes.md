@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3263** of them, in **37** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3276** of them, in **37** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 220
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 503
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 514
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -80,9 +80,9 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 189
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 190
 * [Management API (`STS-API`)](#sts-api) — 73
-* [User portal (`STS-PORTAL`)](#sts-portal) — 65
+* [User portal (`STS-PORTAL`)](#sts-portal) — 66
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 129
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -1625,6 +1625,17 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0621` | A token exchange asked for a scope wider than the verified subject_token's own scope claim, and product mode refuses an exchange that widens what the subject granted (#108). | invalid_scope (HTTP 400), RFC 6749 section 5.2 |
 | `STS-OAUTH-0622` | A token exchange the delegation attributes allowed was refused because the issuance policy answered Deny for action-id `delegate` — the deny-only XACML layer (#108). Product mode only. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0623` | A person's recorded identity verifications (OpenID Connect for Identity Assurance, #127) could not be read — the value on the entry is not a JSON list — or recording one after a wallet or certificate sign-in threw. Read as none; the sign-in stands. | none — verified_claims is omitted |
+| `STS-OAUTH-0624` | device_sso (OpenID Connect Native SSO, #130) was asked for by a client not enabled for it — oauthNativeSso TRUE and an oauthNativeSsoGroup on its entry. In every mode. | invalid_scope (HTTP 400, or at the redirect URI) |
+| `STS-OAUTH-0625` | A Native SSO grant could not store its device in ou=devices — no entry for the person, or the directory full — so no device_secret was issued; the rest of the token response stood (#130). | none — the response carries no device_secret |
+| `STS-OAUTH-0626` | A token exchange named no subject_token_type, an actor_token without its actor_token_type, or an actor_token_type without its token (RFC 8693 section 2.1, #130). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0627` | A token exchange named a token type this service does not exchange (a SAML assertion, an unknown URI), or a device secret anywhere but as the actor beside an ID Token (#130). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0628` | A token exchange presented a token this realm verified that is not the type it was declared as — an ID Token declared an access token, a refresh token declared a JWT (#130). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0629` | A Native SSO exchange came from a client not enabled for Native SSO, or the ID Token it presented was issued to a client outside its Native SSO group (#130). | unauthorized_client (HTTP 400) |
+| `STS-OAUTH-0630` | A Native SSO exchange's audience was not this authorization server's issuer (Native SSO section 4.1, #130). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0631` | A Native SSO exchange's subject_token is not an ID Token this realm issued — it does not verify, names another issuer, is another kind of token, or was revoked (#130). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0632` | A Native SSO exchange's actor_token names no device, or is not the device secret the ID Token's ds_hash was made from (#130). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0633` | A Native SSO exchange's device secret is bound to a sign-on session that has ended, that is not the ID Token's sid, or that is no longer the device owner's (#130). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0634` | A client not enabled for Native SSO asked the revocation endpoint to revoke a device secret (#130). Nothing was revoked. | invalid_grant (HTTP 400) |
 
 ## STS-SAML
 
@@ -3352,6 +3363,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0808` | remove-verification named a verification not recorded for the person, or the directory did not store the change (#127). | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0809` | enrol-self-issued-subject was refused: not a DID, thumbprint or public JWK, already enrolled for somebody, the person's limit reached, or no entry (#129). | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0810` | remove-self-issued-subject named a subject not enrolled for the person, or the directory did not store the change (#129). | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0811` | remove-device named a device that is not the person's, or the directory did not remove it (#130). | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 
@@ -3508,6 +3520,7 @@ Raised from: portal/.
 | `STS-PORTAL-0085` | A POST to /portal/consents named no consent of the signed-in person's own to withdraw — none held for that application and scope, or no scope named (#172). | HTTP 400 page |
 | `STS-PORTAL-0086` | A POST to /portal/delegate could not set or clear the signed-in person's delegate (stsMayAct) (#108). | HTTP 400 page |
 | `STS-PORTAL-0087` | A POST to /portal/self-issued named a self-issued subject the signed-in person has not enrolled, or the directory did not store the removal (#129). | HTTP 400 page |
+| `STS-PORTAL-0088` | A POST to /portal/devices named a device the signed-in person does not own, or the directory did not remove it (#130). | HTTP 400 page |
 
 ## STS-LOGOUT
 

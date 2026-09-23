@@ -118,7 +118,7 @@ these protocol families:
 - **SAML 1.1**: assertions, Browser/POST and Browser/Artifact, and an attribute-authority responder.
 - **WS-Federation 1.2**: the passive requestor profile.
 - **Federation**: either end of a relationship with a foreign identity service, in five protocols.
-- **OAuth 2.0 / OpenID Connect**: a full authorization server, with DPoP.
+- **OAuth 2.0 / OpenID Connect**: a full authorization server, with DPoP — and Native SSO, whose devices are entries in the directory.
 - **RFC 7521/7523 and RFC 7521/7522**: JWT and SAML assertions as client credentials and as grants.
 - **WebAuthn Level 3, RFC 6238 TOTP and recovery codes**: the second factors on the sign-in screen.
 - **OpenID4VCI 1.0, OpenID4VP 1.0**, and W3C DID Core with DIF domain linkage — and a wallet sign-in, `/authn/wallet`, which also takes a SIOPv2 self-issued ID Token from an enrolled key.
@@ -539,6 +539,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3as | `vc_status.ts` and `vc_status_codec.ts`, the Token Status List and the two Bitstring Status Lists a realm publishes: one index per credential, a bit that is COMPUTED rather than stored twice, and the Verifier's check against this realm's own entries and a trusted foreign issuer's fetched list | `oid4vc/CLAUDE.md` |
 | 3at | `vc_data_integrity.ts`, the holder's Data Integrity proof on a presentation (the three JCS cryptosuites, `did:jwk` and `did:key`), which is what gives `ldp_vc` a holder binding it had none of | `oid4vc/CLAUDE.md` |
 | 3ax | `app_passwords.ts` and `credentials.ts`'s `secondFactorRefusal()`, #101: a second-factor person's own password refused at the five password-only doors in product as a wrong password is, and the app passwords — generated, hashed, scoped to doors, found by a public id, never at a browser sign-in — accepted there instead | `common/CLAUDE.md`, `authn/CLAUDE.md` |
+| 3bb | Native SSO (#130) in `oauth2.ts` and `devices.ts`: the device_sso scope held to a flag and a shared group, the device secret on a session-bound `ou=devices` entry and never rotated, the section 4 exchange, RFC 8693's token types read for every exchange | `oauth-oidc/CLAUDE.md`, `common/CLAUDE.md`, `ldap/CLAUDE.md` |
 | 3ba | `siop.ts`, SIOPv2 as the relying party (#129): a self-issued subject enrolled on the entry (by proof on the portal, by value by an administrator), refused unenrolled in both modes, section 11.1, a did:web fetched only when enrolled, the four Client Identifier prefixes | `oid4vc/CLAUDE.md` |
 | 3ay | `identity_assurance.ts`, OpenID Connect for Identity Assurance 1.0 (#127): verifications recorded on the entry by an administrator or a wallet or certificate sign-in, only directory values verified and released while unchanged, `value`/`values` enforced on the verification only, development's `urn:sts:demo` | `common/CLAUDE.md` |
 | 3ba | `mail.ts`, `mail_transports.ts`, `mail_templates.ts`, `mail_uses.ts`, #63: one outbound mail channel — a per-realm persisted outbox delivered once for the cluster by a claimed lease and the `mail.deliver` job, five transports behind one method, recipients from the directory only, links on the pinned origin, ceilings and duplicates, templates that load nothing, and the four uses | `common/CLAUDE.md` |

@@ -47,7 +47,7 @@ dc=example,dc=com                       domain, dcObject
 ├── ou=spiffe
 │   ├── ou=entries                      applicationProcess + spiffeRegistrationEntry
 │   └── ou=agents                       applicationProcess + spiffeAgent
-├── ou=devices                          device + stsDevice          (#130, in progress)
+├── ou=devices                          device + stsDevice          (#130)
 ├── ou=trustAnchors                     stsTrustAnchor              (default realm only)
 └── ou=crl                              cRLDistributionPoint        (created on first CRL)
 ```
@@ -285,12 +285,13 @@ The registry is kept in the directory (`spiffe/spiffe_registry.ts`).
 Deleting an entry, or banning or deleting an agent, sets
 `spiffeCredentialStatus` on the affected people in `ou=users`.
 
-## Devices: `ou=devices` (#130, in progress)
+## Devices: `ou=devices` (#130)
 
-> This container is being added on `feature/130` (OpenID Connect Native SSO
-> for Mobile Apps 1.0) and is **not on develop yet**. It is the foundation of
-> #164, which will add a device's keys and compliance state to the same
-> entries.
+Made by OpenID Connect Native SSO for Mobile Apps 1.0 ([OAuth 2.0 and OpenID
+Connect](oauth-oidc.md)). It is the foundation of #164, which will add a
+device's keys and compliance state to the same entries. People see theirs on
+`/portal/devices`; administrators on the person's page and at
+`GET /admin-api/users/devices`.
 
 A device (the phone or laptop a person's apps run on) is an entry of its own
 rather than a field on the person. The DN is `cn=<uuid>,ou=devices,<base>`, and
@@ -310,7 +311,8 @@ rather than a field on the person. The DN is `cn=<uuid>,ou=devices,<base>`, and
 The secret is never rotated, because every app on the device shares it. A new
 sign-in that presents the secret re-binds the same device to the new session.
 One person holds at most `oauth2.maxDevicesPerPerson` devices; at that limit
-the least recently used device whose session has ended is replaced.
+the least recently used device whose session has ended is replaced (or, if
+none has ended, the least recently used one).
 
 ## Trust anchors and CRLs
 
@@ -335,6 +337,7 @@ included (`SECRET_ATTRIBUTES` in `ldap/ldap_server.js`):
   `stsActivationToken`, `stsPasswordResetToken`, `stsMailVerifyToken`
 * second factors and subjects: `stsTotpCredential`, `stsBackupCodes`,
   `stsSelfIssuedSubject`, `stsIdaVerification`
+* devices: `stsDeviceSecretHash`
 * client secrets: `oauthClientSecret`, `appRegistrationAccessToken`,
   `fedClientSecret`
 * private keys: `oauthAssertionPrivateKey`, `oauthSamlAssertionPrivateKey`,

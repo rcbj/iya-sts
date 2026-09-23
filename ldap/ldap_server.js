@@ -684,6 +684,18 @@ function federationsDn() {
   return 'ou=federations,' + baseDn();
 }
 
+// ou=devices IS THE DEVICE REGISTER (#130, 2026-09-23; the foundation of
+// #164). A device is an identity of its own — the phone or laptop a person's
+// apps run on — so it is an entry, not a field on the person: RFC 4519's
+// `device` class, `owner` naming the person, and this service's own
+// `stsDevice*` attributes naming the applications that used it and the
+// Native SSO secret it holds. `common/devices.ts` owns what an entry means.
+function devicesDn() {
+  log.debug("Entering devicesDn().");
+  log.debug("Leaving devicesDn().");
+  return 'ou=devices,' + baseDn();
+}
+
 // ou=policies IS the XACML policy repository — not a copy of one kept
 // elsewhere. `xacml/xacml_store.ts` argues why the store is the directory
 // rather than a table of its own, and owns the schema for what an entry here
@@ -2039,7 +2051,17 @@ const OWN_NAMES = [
   // JSON value per subject with its label and who enrolled it. Whoever holds
   // the key signs in as this person, so it is a credential's identifier and
   // withheld from every read (SECRET_ATTRIBUTES). `oid4vc/siop.ts` keeps them.
-  'stsSelfIssuedSubject'
+  'stsSelfIssuedSubject',
+
+  // AND THE DEVICE REGISTER'S (#130, 2026-09-23): RFC 4519's `device` class
+  // has `cn`, `owner` and `description` and nothing about what a device is
+  // used for or what it holds, so these are this service's own — the class
+  // that carries them, the applications that used the device (DNs), the
+  // SHA-256 of its Native SSO device_secret (withheld, SECRET_ATTRIBUTES),
+  // the sign-on session the secret is good for, and when it was last used.
+  // `common/devices.ts` keeps them.
+  'stsDevice', 'stsDeviceApplication', 'stsDeviceSecretHash',
+  'stsDeviceSession', 'stsDeviceLastUsed'
 ];
 
 // The table itself, built from the two lists. `learnName()` is the ONE way in,
@@ -2919,6 +2941,15 @@ function seed() {
       'else here is permissive by design, and a federation endpoint cannot ' +
       'be. federation/federation.js holds the schema; GET ' +
       '/admin/ldap/federations publishes it.'
+  }, { origin: 'seed' });
+  putEntry(devicesDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'devices',
+    description: 'Devices: the phones and computers a person\'s applications ' +
+      'run on, each an RFC 4519 device whose owner is the person and whose ' +
+      'stsDeviceApplication values are the applications that have used it. ' +
+      'OpenID Connect Native SSO keeps its device_secret here, hashed ' +
+      '(common/devices.ts).'
   }, { origin: 'seed' });
   putEntry(policiesDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -7817,6 +7848,8 @@ const SECRET_ATTRIBUTES = [
   // A person's enrolled self-issued subjects (#129): whoever holds one of
   // these keys signs in as them.
   'stsselfissuedsubject',
+  // A device's Native SSO secret, hashed (#130): a credential's verifier.
+  'stsdevicesecrethash',
   // A password reset link's hash (2026-09-13), for the activation token's
   // reason beside it.
   'stspasswordresettoken',
@@ -8615,6 +8648,92 @@ function selfIssuedSubjectOwner(matches) {
   return owner;
 }
 
+// THE DEVICE REGISTER (#130): every device entry in the realm, whole; one
+// written (created or replaced) by its id; one deleted. `common/devices.ts`
+// decides what they say. A device is named by its id (`cn`), a UUID.
+function deviceDn(id) {
+  log.debug('Entering deviceDn().');
+  log.debug('Leaving deviceDn().');
+  return 'cn=' + escapeDnValue(String(id)) + ',' + devicesDn();
+}
+
+function listDeviceEntries() {
+  log.debug('Entering listDeviceEntries().');
+  const out = entriesUnder(devicesDn()).filter(function (stored) {
+    return normalizeDn(stored.dn) !== normalizeDn(devicesDn());
+  }).map(function (stored) {
+    const attributes = {};
+    Object.keys(stored.attributes).forEach(function (name) {
+      attributes[name] = stored.attributes[name].slice(0);
+    });
+    return { dn: stored.dn, attributes: attributes };
+  });
+  log.debug('Leaving listDeviceEntries(). ' + out.length + '.');
+  return out;
+}
+
+function writeDeviceEntry(id, attributes) {
+  log.debug('Entering writeDeviceEntry(). id=' + id);
+  const dn = deviceDn(id);
+  const existing = getEntry(dn);
+  if (!existing && totalEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writeDeviceEntry(). The directory is full.');
+    return false;
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, attributes,
+                          { origin: existing ? existing.origin : 'device' });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  log.debug('Leaving writeDeviceEntry(). ' + (existing ? 'Replaced.' :
+                                                         'Created.'));
+  return true;
+}
+
+function deleteDeviceEntry(id) {
+  log.debug('Entering deleteDeviceEntry(). id=' + id);
+  const stored = getEntry(deviceDn(id));
+  if (!stored) {
+    log.debug('Leaving deleteDeviceEntry(). Not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory();
+  log.debug('Leaving deleteDeviceEntry().');
+  return true;
+}
+
+// A person's DN, and an application's, for a device entry to link to; ''
+// where the directory holds no such entry.
+function personDnOf(username) {
+  log.debug('Entering personDnOf().');
+  const stored = existingUserEntry(String(username || ''));
+  log.debug('Leaving personDnOf().');
+  return stored ? stored.dn : '';
+}
+
+function applicationDnOf(clientId) {
+  log.debug('Entering applicationDnOf().');
+  const wanted = String(clientId || '');
+  let found = '';
+  entriesUnder(applicationsDn()).forEach(function (stored) {
+    if (!found && (stored.attributes.oauthclientid || []).indexOf(wanted) >=
+        0) {
+      found = stored.dn;
+    }
+  });
+  if (!found) {
+    const byIdentifier = applicationEntry(wanted);
+    found = byIdentifier ? byIdentifier.dn : '';
+  }
+  log.debug('Leaving applicationDnOf(). ' + (found ? 'Found.' : 'None.'));
+  return found;
+}
+
 // THE ACTIVATION TOKEN, hashed. It is the one credential in this service that
 // completes an account setup on its own, so a leaked one is an account
 // takeover — which is why it is stored the way a password is and never in the
@@ -8696,6 +8815,12 @@ if (typeof credentials.setDirectory === 'function') {
     // reason the pair above is.
     readIdaVerifications: readIdaVerifications,
     readSelfIssuedSubjects: readSelfIssuedSubjects,
+    // The device register (#130), checked where it is used.
+    listDeviceEntries: listDeviceEntries,
+    writeDeviceEntry: writeDeviceEntry,
+    deleteDeviceEntry: deleteDeviceEntry,
+    personDnOf: personDnOf,
+    applicationDnOf: applicationDnOf,
     writeSelfIssuedSubjects: writeSelfIssuedSubjects,
     selfIssuedSubjectOwner: selfIssuedSubjectOwner,
     writeIdaVerifications: writeIdaVerifications,

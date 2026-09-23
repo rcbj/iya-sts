@@ -1285,6 +1285,30 @@ const SCHEMA = {
             'client_secret_basic the default when a registration omits it, ' +
             'which is why an omission means CONFIDENTIAL rather than ' +
             'unknown.' },
+    // OPENID CONNECT NATIVE SSO FOR MOBILE APPS 1.0 (#130, 2026-09-23).
+    { name: 'oauthNativeSso', kind: 'single',
+      from: 'the console, the management API, or a TRUSTED software ' +
+            'statement at POST /oauth2/register',
+      families: ['oidc'],
+      familyWhy: 'Native SSO is an OpenID Connect profile: the device_sso ' +
+        'scope, the ds_hash in an ID Token, and the exchange of one.',
+      what: 'TRUE lets this client ask for the device_sso scope — and so be ' +
+            'handed a device_secret — and take part in a Native SSO token ' +
+            'exchange, as the first app or the second. Anything else, the ' +
+            'default, refuses both. Both apps of an exchange must hold it ' +
+            'AND share oauthNativeSsoGroup. A registration may set it only ' +
+            'through a trusted software statement, because the group is the ' +
+            'boundary and a client may not choose its own.' },
+    { name: 'oauthNativeSsoGroup', kind: 'single',
+      from: 'the console, the management API, or a TRUSTED software ' +
+            'statement at POST /oauth2/register',
+      families: ['oidc'],
+      familyWhy: 'The same profile as oauthNativeSso.',
+      what: 'The Native SSO group: the apps that may share one device ' +
+            'session — in practice one vendor\'s. A token exchange is ' +
+            'refused unless the app that received the ID Token and the app ' +
+            'asking share it. 1 to 64 of letters, digits and . _ : -; an ' +
+            'empty or malformed value takes the client out of Native SSO.' },
     // OPENID CONNECT CORE SECTION 8 AND SECTION 9 (#118, 2026-09-22).
     { name: 'oauthSubjectType', kind: 'single',
       from: 'POST /oauth2/register, the console, the management API, or by ' +
@@ -3202,6 +3226,9 @@ const EDITABLE = {
   oauthClientSecretPreviousUntil: 'set',
   oauthClientSecretExpiresAt: 'set',
   oauthTokenEndpointAuthMethod: 'set',
+  // Native SSO (#130). One answer each.
+  oauthNativeSso: 'set',
+  oauthNativeSsoGroup: 'set',
   // OIDC Core sections 8 and 9 (#118). One answer each.
   oauthSubjectType: 'set',
   oauthSectorIdentifierUri: 'set',
@@ -7488,6 +7515,20 @@ function applyRegistrationFields(record, registration, statement) {
       delete record.fields[OIDC_SUBJECT_ATTRIBUTES[member]];
     }
   });
+  // NATIVE SSO (#130): ONLY FROM A TRUSTED SOFTWARE STATEMENT. The group is
+  // the boundary between apps that may share a device session, so a client
+  // that could name its own would join any vendor's apps. A registration
+  // without such a statement leaves what an administrator set alone; one
+  // with it writes what the statement's issuer said.
+  if (statement && statement.trusted &&
+      Object.prototype.hasOwnProperty.call(statement, 'nativeSso')) {
+    setField(record, 'oauthNativeSso', statement.nativeSso ? 'TRUE' : 'FALSE');
+    if (statement.nativeSsoGroup) {
+      setField(record, 'oauthNativeSsoGroup', statement.nativeSsoGroup);
+    } else {
+      delete record.fields.oauthNativeSsoGroup;
+    }
+  }
   // RFC 9396 section 10, the same way: an update that omits it clears it.
   delete record.fields.oauthAuthorizationDetailsTypes;
   if (Array.isArray(meta.authorization_details_types) &&
@@ -10814,6 +10855,28 @@ function forAudience(audience) {
 // permission (an unmatched name returns null and nothing is refused), it is not
 // case-folded, and it walks the container rather than keeping an index.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// MAY THIS CLIENT TAKE PART IN NATIVE SSO, AND IN WHICH GROUP? (#130)
+// `{ enabled, group }`: enabled only when the flag is TRUE and the group is a
+// well-formed name — a flag with no group would be a client in a group of
+// one, which the exchange could never use, and saying so here keeps the
+// scope from being granted to it at all.
+// ---------------------------------------------------------------------------
+const NATIVE_SSO_GROUP = /^[A-Za-z0-9._:-]{1,64}$/;
+
+function nativeSsoOf(clientId) {
+  log.debug("Entering nativeSsoOf().");
+  const who = String(clientId == null ? '' : clientId).trim();
+  const found = who ? (forClientId(who) || get(who)) : null;
+  const fields = (found && found.fields) || {};
+  const flag = String(valuesOf(fields.oauthNativeSso)[0] || '')
+    .toUpperCase() === 'TRUE';
+  const group = String(valuesOf(fields.oauthNativeSsoGroup)[0] || '').trim();
+  const enabled = flag && NATIVE_SSO_GROUP.test(group);
+  log.debug("Leaving nativeSsoOf(). " + enabled);
+  return { enabled: enabled, group: enabled ? group : '' };
+}
+
 function forClientId(clientId) {
   log.debug("Entering forClientId(). clientId=" + clientId);
   const wanted = String(clientId == null ? '' : clientId).trim();
@@ -11615,6 +11678,7 @@ module.exports = {
   // The two conversions, exported because ldap_server.js seeds and reads
   // entries with them and this module owns the schema they encode.
   attributesFor: attributesFor,
+  nativeSsoOf: nativeSsoOf,
   recordFromAttributes: recordFromAttributes,
   labelFor: labelFor,
   editableAttributes: editableAttributes,

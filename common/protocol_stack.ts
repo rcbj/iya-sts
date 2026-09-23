@@ -238,6 +238,9 @@ class ProtocolStack {
     this.build('common/credentials', require('./credentials'), 'Credentials');
     this.build('common/account_state', require('./account_state'),
                'AccountState');
+    // #130: the device register (ou=devices), a library over the directory
+    // hooks `credentials.ts` carries; Native SSO mints its devices.
+    this.build('common/devices', require('./devices'), 'Devices');
     // #127: a person's identity verifications and the `verified_claims`
     // answer. A library, asked by the authorization server's claims request,
     // the console and API, and the wallet and certificate sign-ins.
@@ -336,6 +339,9 @@ class ProtocolStack {
     this.build('portal/portal_self_issued',
                require('../portal/portal_self_issued'),
                'PortalSelfIssued');
+    // #130: /portal/devices, the person's own ou=devices entries.
+    this.build('portal/portal_devices', require('../portal/portal_devices'),
+               'PortalDevices');
     // THE MAIL CHANNEL (#63, 2026-09-22): two LIBRARIES (rule 3) that
     // register no route — the channel and its uses — built here, before the
     // portal whose `/portal/email`, `/portal/verify-email` and
