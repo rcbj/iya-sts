@@ -10272,6 +10272,20 @@ const SETTINGS = [
     description: 'The score, in hundredths, at which a sign-in is HIGH ' +
                  'risk: 1000 is a score of 10.' },
 
+  { key: 'risk.minimumHistory', group: 'Risk',
+    label: 'Earlier sign-ins before a person is scored',
+    env: 'STS_RISK_MINIMUM_HISTORY', type: 'int', dflt: 5, min: 1,
+    max: 1000, runtime: true,
+    description: 'How many earlier sign-ins a person needs before the model ' +
+                 'scores them. Fewer are UNSCORED, as a first sign-in is, ' +
+                 'and the new-device and new-tls-stack signals wait for the ' +
+                 'same history: with one or two sign-ins the model is ' +
+                 'mostly the population\'s prior, and a new person\'s ' +
+                 'second sign-in would read as MEDIUM. The evidence signals ' +
+                 '(lists, automated clients, refused passwords, a ' +
+                 'compromised security key) apply however new the person ' +
+                 'is. 1 scores from the second sign-in on.' },
+
   { key: 'risk.accountFailureThreshold', group: 'Risk',
     label: 'Refused passwords for one person that are a signal',
     env: 'STS_RISK_ACCOUNT_FAILURE_THRESHOLD', type: 'int', dflt: 5, min: 1,

@@ -846,6 +846,7 @@ var config = {
     standingCacheSize: 20000,                              // People whose standing each process holds
     mediumScorePercent: 100,                               // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,                                // HIGH from (percent of a score of 1)
+    minimumHistory: 5,                                     // Earlier sign-ins before a person is scored
     accountFailureThreshold: 5,                            // Refused passwords for one person that are a signal
     networkFailureThreshold: 20,                           // Refused passwords from one network that are a signal
     signalFactors: "",                                     // Signal factors

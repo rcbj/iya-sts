@@ -87,6 +87,10 @@ function childMain() {
 
     config.setOverride('risk.enforceInDevelopment', true);
     config.setOverride('risk.datasetShrinkLimitPercent', 100);
+    // Scored from the second sign-in: G2 re-assesses a live session
+    // against a history of one sign-in, which risk.minimumHistory (5 by
+    // default) would leave UNSCORED.
+    config.setOverride('risk.minimumHistory', 1);
 
     // A response the sign-in service can set a cookie on, keeping it.
     const response = function () {

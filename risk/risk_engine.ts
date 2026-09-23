@@ -114,6 +114,20 @@ const accountFailureThreshold = function (): number {
 const networkFailureThreshold = function (): number {
   return Number(config.value('risk.networkFailureThreshold'));
 };
+// HOW MANY EARLIER SIGN-INS A PERSON NEEDS BEFORE THE MODEL SCORES THEM
+// (`risk.minimumHistory`, 5; 2026-09-23). The Freeman et al. model compares a
+// sign-in with this person's history, and with one or two earlier sign-ins
+// that history is mostly the population's prior: a new person's second
+// sign-in came out MEDIUM because everybody else shares their network and
+// browser, and the issuance policy asked for a security key. Fewer sign-ins
+// than this are UNSCORED, as a first sign-in always was, and the two NOVELTY
+// signals (`new-device`, `new-tls-stack`) wait for the same history, because
+// "not seen before" says nothing about somebody seen once. The EVIDENCE
+// signals — a list, an automated client, refused passwords, a compromised
+// security key — still apply however new the person is.
+const minimumHistory = function (): number {
+  return Math.max(1, Number(config.value('risk.minimumHistory')) || 1);
+};
 const HOUR_MS = 3600 * 1000;
 
 // The population's subject in `sts_risk_feature_counts`.
@@ -728,7 +742,14 @@ class RiskEngine {
                                       sealing);
     const population = await this.historyOf(realm, POPULATION, attempt,
                                             true, sealing);
-    const modelled = riskModel.score(attempt, user, population);
+    const enough = user.n >= minimumHistory();
+    const modelled = enough ? riskModel.score(attempt, user, population)
+      : { score: null,
+          why: user.n
+            ? 'only ' + user.n + ' earlier sign-in(s): fewer than ' +
+              'risk.minimumHistory (' + minimumHistory() + ') is too ' +
+              'little history to score'
+            : 'the first sign-in: there is no history to compare it with' };
 
     // THE EVALUATORS (SIGNALS), each at the realm's factor.
     const factorOf = this.factors().factors;
@@ -755,7 +776,7 @@ class RiskEngine {
           String(authenticator.model.description || credential.aaguid) +
           ' (' + String(authenticator.model.latestStatus || '') + ')');
     }
-    if (context.device && user.n > 0) {
+    if (context.device && enough) {
       const seenDevice = await store.featureCounts(realm, subject,
         [{ feature: 'device', value: String(context.device) }], sealing);
       if (!seenDevice.length) {
@@ -765,7 +786,7 @@ class RiskEngine {
     // THE TLS STACK, not the raw JA4: a resumed session adds two extensions,
     // so one client has two JA4s (`tls/client_hello.ts`'s `stack()`).
     const tlsStack = String(context.tlsStack || context.ja4 || '');
-    if (tlsStack && user.n > 0) {
+    if (tlsStack && enough) {
       const seen = await store.featureCounts(realm, subject,
         [{ feature: 'ja4', value: tlsStack }], sealing);
       if (!seen.length) {

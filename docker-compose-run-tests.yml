@@ -438,9 +438,11 @@ services:
       # minutes of a product-mode run (2026-09-23). The service's default
       # is unchanged; only this stack raises it.
       - STS_RISK_NETWORK_FAILURE_THRESHOLD=${STS_RISK_NETWORK_FAILURE_THRESHOLD:-1000000}
-      # AND MEDIUM FROM THE MODEL ALONE IS OUT OF REACH HERE (2026-09-23),
-      # a STOPGAP awaiting rcbj's decision on #62's thin-history calibration.
-      # Every sign-in in this stack shares one address and one User-Agent, so
+      # AND MEDIUM FROM THE MODEL ALONE IS OUT OF REACH HERE (2026-09-23).
+      # The THIN-HISTORY half is the service's own fix now: fewer than
+      # risk.minimumHistory (5) earlier sign-ins are UNSCORED. What is left is
+      # this stack's own shape, which no deployment has: every sign-in in it
+      # shares one address and one User-Agent, so
       # the model's features cancel and its prior alone decides: about the
       # realm's sign-ins per person over this person's, which puts a new
       # person's second sign-in over 1 once other jobs have signed in the
