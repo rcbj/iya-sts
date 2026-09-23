@@ -1907,6 +1907,20 @@ class OidcRelyingParty {
       detail: { identifier: surface.clientId, kid: issued.issued.kid,
                 purpose: 'jwt', seeded: true }
     });
+    // COMMITTED BEFORE IT IS USED (2026-09-23). The caller signs an assertion
+    // with this key and asks for a token over the back channel inside the same
+    // request, and the process answering that request reads the entry from the
+    // store: a key still in this process's write queue is a client with
+    // nothing on file there. The token endpoint catches up with the change log
+    // for that case; this is what gives it something committed to catch up to.
+    try {
+      await require('../persistence/persistence').flush();
+    } catch (e) {
+      // Nothing to flush to, or a store that could not be written — reported
+      // by persistence.js itself; the token endpoint's answer says the rest.
+      log.debug("Caught in OidcRelyingParty.issueSurfaceKey(): " +
+                ((e && e.message) || e));
+    }
     log.debug("Leaving OidcRelyingParty.issueSurfaceKey(). kid=" +
               issued.issued.kid);
     return { ok: true, privateKeyPem: issued.issued.privateKeyPem,

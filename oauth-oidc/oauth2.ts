@@ -9275,7 +9275,30 @@ class OAuth2Server {
     const grant = String(body.grant_type || '');
     res.set('Cache-Control', 'no-store');
     const presented = self.presentedClientAuthentication(req, body);
-    const registeredClient = applications.clientConfigOf(client.client_id);
+    let registeredClient = applications.clientConfigOf(client.client_id);
+    // A KEY WRITTEN BY ANOTHER PROCESS A MOMENT AGO (2026-09-23). The console
+    // and the portal issue their private_key_jwt key on first use (#138) and
+    // then ask for a token over the back channel inside the same request, so
+    // the key is on the entry in the process that wrote it and — until the
+    // change log reaches this one — not here: in a fresh realm in the
+    // single-node suite the sign-in was refused as a client with nothing on
+    // file (`sts_hosted_surface_renewal`). A confidential client that presents
+    // an assertion and has nothing to check it against is exactly that case,
+    // so this process catches up once, proving everything committed before now
+    // is applied, and reads the entry again. Nothing else pays for it.
+    if (registeredClient && registeredClient.known && body.client_assertion &&
+        bcp.isConfidential(registeredClient) &&
+        !bcp.credentialOnFile(registeredClient)) {
+      try {
+        await require('../persistence/persistence').syncNow();
+      } catch (e) {
+        // A store that cannot be read leaves the entry as this process holds
+        // it, and the refusal below says what that is.
+        log.debug("Caught in OAuth2Server.tokenGrant(): " +
+                  ((e && e.message) || e));
+      }
+      registeredClient = applications.clientConfigOf(client.client_id);
+    }
 
     // FAPI (#138): one client, however many ways the request names it.
     const identified = fapi.clientIdentifierRefusal(
