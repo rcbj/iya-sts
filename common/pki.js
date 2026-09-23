@@ -105,6 +105,10 @@ const errorCodes = require('./error_codes');
 // THE MODE, for SHA-1 certificate signatures, which are development's (#181).
 // A LEAF (`config` and `error_codes` only), so no cycle.
 const mode = require('./mode');
+// THE ISSUED REGISTER'S DISPLACED RECORD (#185), shared with the cluster
+// merge. A LEAF (`config` and bunyan), already in the parent project's
+// Kerberos COPY closure through `keystore.js`, which requires it at load.
+const pkiMerge = require('./pki_merge');
 // The debugger's own PKI code, byte-identical. DO NOT EDIT THEM HERE — see
 // `common/vendored/CLAUDE.md`.
 const x509 = require('./vendored/x509');
@@ -4225,8 +4229,35 @@ async function certify(scopeId, useCaseId, spec) {
   if (spec.kid) {
     record.kid = String(spec.kid);
   }
-  fresh.certs[slotKey(uc.id, record.slot,
-                      spec.generationSlot ? spec.kid : '')] = record;
+  const slotName = slotKey(uc.id, record.slot,
+                           spec.generationSlot ? spec.kid : '');
+  // THE CERTIFICATE THIS REPLACES STAYS KNOWN (2026-09-23, #185). A slot is
+  // certified again whenever the key set changes — every rotation, promotion
+  // and retirement re-certifies the set — and this issues a new certificate
+  // for the SAME key each time. The record it replaced was dropped, so its
+  // serial left the issued register: a relying party holding the certificate
+  // the realm had published seconds before got `unknown` from its OCSP
+  // responder, which a hard-fail client refuses (`sts_pki_distribution_points`,
+  // with the hourly signing.retire in the middle). Its serial is kept in
+  // `issuedKeyPairs`, as a cluster merge keeps one it displaced
+  // (`pki_merge.js`), so the responder answers `good` until it expires — it
+  // is a valid certificate for a key this service still holds — or `revoked`
+  // once a retirement or an operator revokes it.
+  const displaced = fresh.certs[slotName];
+  if (displaced && displaced.serialHex &&
+      pkiMerge.normalSerial(displaced.serialHex) !==
+        pkiMerge.normalSerial(record.serialHex)) {
+    const register = (fresh.issuedKeyPairs || []).slice();
+    const wanted = pkiMerge.normalSerial(displaced.serialHex);
+    if (!register.some(function (one) {
+      return one && pkiMerge.normalSerial(one.serialHex) === wanted;
+    })) {
+      register.push(pkiMerge.displacedRecord(uc.id + ':' + record.slot,
+                                             displaced));
+      fresh.issuedKeyPairs = register;
+    }
+  }
+  fresh.certs[slotName] = record;
   saveRow(id, fresh);
   log.debug('Leaving certify(). ' + record.subject);
   return { ok: true, certificate: describeCertificate(record), record: record };
