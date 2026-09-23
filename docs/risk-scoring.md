@@ -96,9 +96,35 @@ on a new device scores well above 1.
 | `network-failures` | ×3 | twenty or more refused passwords from this network in the last hour |
 | `authenticator-compromised` | ×50 | the security key's model is reported revoked or compromised in the FIDO metadata |
 
-These factors are a first calibration. Every assessment on Monitoring → Risk
-lists the signals it carried, so the factors can be tuned against real
-sign-ins.
+These factors are a first calibration. You can change any of them for a
+realm with `risk.signalFactors`, without a new release. It takes a list of
+`signal=factor` pairs, such as `tor-exit=8,new-device=1.5`. The service
+ignores an entry that names no signal, or whose factor is not a positive
+number, and logs it once (`STS-RISK-0026`).
+
+### Calibration
+
+Monitoring → Risk Scoring has a **Calibration** section, and
+`GET /admin-api/risk/metrics` has a `calibration` member. They suggest
+changes from the window's own assessments; nothing is applied until you
+apply it.
+
+- **Thresholds**: for MEDIUM-or-worse and for HIGH, the report shows the
+  share of sign-ins at that level now, and the score that the target share
+  of sign-ins reaches. The targets are `risk.calibrationMediumPercent` (5)
+  and `risk.calibrationHighPercent` (1). A threshold is suggested only once
+  the window has 100 assessments.
+- **Factors**: for each signal, the report compares how often a sign-in
+  carrying it was answered "this wasn't me" on `/portal/sign-ins` with how
+  often any answered sign-in was. It suggests the current factor scaled by
+  that ratio, bounded to ×0.1–×100, and says whether to raise it, lower it
+  or keep it. A signal needs 20 answered sign-ins before a factor is
+  suggested.
+
+The page gives the `risk.signalFactors` value that would apply every
+suggestion. The answers are a biased sample: people are more likely to be
+asked about a sign-in that was flagged. Read a suggestion as a direction to
+check, not a measurement.
 
 ### Levels
 
@@ -365,8 +391,18 @@ names:
 As FIDO's terms require, **only the latest BLOB is kept**: when a new one
 becomes active, the older one's rows are deleted at once. It stops answering
 `risk.mdsStaleGraceDays` after the date the BLOB says the next one is due; run
-the loader again before then. An authenticator the metadata does not list,
-including one that attests nothing (the all-zero AAGUID), is simply unknown.
+the loader again before then, or set `risk.mdsUrl` and let the
+`risk.mds-refresh` scheduler job download it daily (MDS3 section 3.2 — hourly
+once the active BLOB is overdue), under the same acceptance and the same
+checks. An authenticator the metadata does not list, including one that
+attests nothing (the all-zero AAGUID), is simply unknown.
+
+**The same BLOB serves WebAuthn attestation (#105).** A security key's
+registration is checked against it: the model's attestation root
+certificates anchor its attestation chain, and a model a status report calls
+REVOKED, USER_VERIFICATION_BYPASS or a KEY_COMPROMISE is refused outright
+(`STS-AUTHN-0237`) rather than scored. See
+[Authentication](authentication.md).
 
 ### Each version is checked before it becomes active
 
@@ -480,12 +516,18 @@ kept in step with `common/config.js`.
 | `risk.breachTimeoutMs` | `STS_RISK_BREACH_TIMEOUT_MS` | `3000` | How long a password being set waits for the API. |
 | `risk.mdsTrustAnchors` | `STS_RISK_MDS_TRUST_ANCHORS` | *(empty)* | The certificates a FIDO MDS3 BLOB's chain must end at; empty uses GlobalSign Root CA - R3 from the Node.js root store. |
 | `risk.mdsStaleGraceDays` | `STS_RISK_MDS_STALE_GRACE_DAYS` | `7` | How long past its `nextUpdate` the active BLOB still answers. |
+| `risk.mdsUrl` | `STS_RISK_MDS_URL` | *(empty)* | Where `risk.mds-refresh` downloads the BLOB from; empty dials nobody. |
+| `risk.mdsRefreshS` | `STS_RISK_MDS_REFRESH_S` | `86400` | How often it does, hourly once the BLOB is overdue. |
+| `risk.mdsMaxBytes` | `STS_RISK_MDS_MAX_BYTES` | `33554432` | The most it reads of a BLOB. |
 | `risk.rescoreEveryS` | `STS_RISK_RESCORE_EVERY_S` | `300` | How often the `risk.rescore` job re-checks every live session. |
 | `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | The policy asked what happens when a person's risk changes. |
 | `risk.standingValidMinutes` | `STS_RISK_STANDING_VALID_MINUTES` | `720` | How long a person's last assessed risk stands in for an issuance with no session. |
 | `risk.standingCacheSize` | `STS_RISK_STANDING_CACHE_SIZE` | `20000` | How many people's standing each process holds. |
 | `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `100` | The score, in hundredths, from which a sign-in is MEDIUM. |
 | `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | The score, in hundredths, from which a sign-in is HIGH. |
+| `risk.signalFactors` | `STS_RISK_SIGNAL_FACTORS` | *(empty)* | Factors over the built-in ones, as `signal=factor`, comma-separated. |
+| `risk.calibrationMediumPercent` | `STS_RISK_CALIBRATION_MEDIUM_PERCENT` | `5` | The share of sign-ins calibration aims to have at MEDIUM or worse. |
+| `risk.calibrationHighPercent` | `STS_RISK_CALIBRATION_HIGH_PERCENT` | `1` | The share of sign-ins calibration aims to have at HIGH. |
 | `risk.recordFailures` | `STS_RISK_RECORD_FAILURES` | `true` | Record every refused password. |
 | `risk.failureRetentionDays` | `STS_RISK_FAILURE_RETENTION_DAYS` | `30` | How long a refused password is kept. |
 | `risk.assessmentRetentionDays` | `STS_RISK_ASSESSMENT_RETENTION_DAYS` | `90` | How long an assessment is kept. |
@@ -515,17 +557,12 @@ kept in step with `common/config.js`.
   the one policy every issuance passes through, so it can be changed without
   a release and read in one place.
 
-## What is coming
+## Receivers act on it
 
-The remaining work on [issue #62](https://github.com/rcbj/iya-sts/issues/62):
-
-- **Calibration**: a report of the levels and signals real sign-ins have
-  been given, with the thresholds and factors it suggests.
-- **A realm's own administrators** see their realm's risk page.
-- **Each person's current risk on their user page** in the console.
-- **Monitoring → Risk Scoring**: metrics about the scoring itself.
-- **The console and portal acting on the risk signals they receive**, with
-  issues #153 and #117.
+This service's own console and portal receive the CAEP `risk-level-change`
+events it sends. At `HIGH`, each one ends its own sessions for that person
+(product mode), as the `signal-response` policy permits. See
+[Signals received](signals-received.md#what-the-console-and-the-portal-do-with-a-signal).
 
 ## In the running service
 
@@ -533,12 +570,51 @@ The remaining work on [issue #62](https://github.com/rcbj/iya-sts/issues/62):
   assessments, people by current standing, a lookup of any address, every
   dataset and its versions, the providers, their terms and who accepted
   them, and the refused passwords. It also shows the data credits and these
-  settings.
+  settings. `?subject=` narrows the assessments to one person.
+- **A realm's own administrators** see both pages for their realm, at
+  `/realm/<id>/admin/risk` and `/realm/<id>/admin/risk-scoring`. They see:
+  - the realm's assessments;
+  - its people's standings;
+  - its refused passwords;
+  - its operator allow and deny lists, which they can also manage.
+
+  The following belong to the whole service, so they are left off the page
+  for them and refused if they try:
+  - the shared datasets;
+  - the providers' terms and who accepted them;
+  - the `risk.` settings;
+  - the per-process counts.
+- **Monitoring → Risk Scoring** (`/admin/risk-scoring`) measures the
+  scoring itself over the last hour, day, week or 30 days:
+  - assessments over time, stacked by level;
+  - the counts by level, by score band, by decision, by door, by phase and
+    by country;
+  - how many people stand at each level now;
+  - every signal beside its factor and how often it fired, which is where
+    calibration starts;
+  - what people said about their own sign-ins.
+
+  The counts above come from the store. On postgres they cover every node.
+  The page also shows figures for the process that drew it, since that
+  process started:
+  - assessments made and failed, and the time to assess (mean, p50, p95,
+    p99 and max);
+  - the reactions taken, observed only, or failed;
+  - the `risk.rescore` runs;
+  - the breached-password screening counts.
+
+  `GET /admin-api/risk/metrics?window=24h` returns the same data as JSON.
+- **Each person's page under Directory → Users** opens with their current
+  risk, drawn large in the level's colour: LOW green, MEDIUM amber, HIGH
+  red, grey for someone never assessed. It shows the score, the level it
+  came from, when it changed, the signals that moved it, and a link to that
+  person's assessments. `GET /admin-api/users?user=` carries the same
+  standing as `risk` (`null` when never assessed).
 - **`GET /admin-api/risk`** returns the same view as JSON. Its actions are
   `POST /admin-api/risk/import`, `activate`, `rollback`, `delete` and
   `accept-terms`, described in the
   [OpenAPI document](management-api.md).
-- **Error codes** `STS-RISK-0001` to `STS-RISK-0024` are listed on
+- **Error codes** `STS-RISK-0001` to `STS-RISK-0026` are listed on
   [Error codes](error-codes.md).
 
 ## Related

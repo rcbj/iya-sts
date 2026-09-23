@@ -398,7 +398,11 @@ async function setUp() {
     fedScope: "openid profile email",
     fedUsernameSource: "preferred_username",
     fedClientId: CLIENT, fedResponseType: "id_token",
-    fedJwks: JSON.stringify(jwks) };
+    fedJwks: JSON.stringify(jwks),
+    // THE PARTNER HERE SIGNS AND DOES NOT ENCRYPT (#168): product mode
+    // refuses a plaintext ID Token by form_post unless the relationship
+    // allows it; encryption is sts_federation_encryption.js's to cover.
+    fedAllowUnencrypted: "TRUE" };
   for (const field of Object.keys(settings)) {
     const set = await setRel(field, settings[field]);
     must(set.status === 200 && set.body && set.body.ok,

@@ -23,6 +23,7 @@ somebody came for is below the fold of a page about something else.
 | `/portal/mfa` | authenticated | **Authenticator app** — the QR code, the typed secret, and the code that confirms it |
 | `/portal/signals` | authenticated | **Security activity** — what this identity provider has said about the person over CAEP and RISC (2026-09-10) |
 | `/portal/sign-ins` | authenticated | **Recent sign-ins** — the person's own risk assessments of thirty days, each with "this was me" / "this wasn't me" (#62 P6, `portal_sign_ins.ts`; `risk/CLAUDE.md` argues what each answer moves) |
+| `/portal/consents` | authenticated | **Consents** — what the person agreed each application may ask for, and a Withdraw per scope and per application that revokes what was issued under it (#172, `portal_consents.ts`) |
 | `/portal/signing-key` | authenticated | **Signing keys** — RFC 7523 and RFC 7522 key pairs and TLS client certificates (2026-09-12) |
 | `/portal/certificates` | authenticated | **Certificates** — ACME / SCEP enrollment credentials and the certificates issued (2026-09-13) |
 | `/portal/callback` | — | the OIDC redirect URI |
@@ -337,6 +338,19 @@ touching the key already plugged in. That produces a second row for one device �
 a backup that is lost with the original, which is the exact failure the feature
 is against. **This service checks again at the write**, because the list is a
 request to the browser like every other ceremony option.
+
+### The attestation is verified, and each key says what it proved (#105)
+
+`confirmKeyEnrolment()` hands the verified ceremony to
+`authn/webauthn_attestation.ts` before the credential id is claimed, so a
+statement the realm's `webauthn.attestationPolicy` refuses is a refused
+enrolment (400, the sentence on the page, the pending enrolment kept for another
+try) and nothing is written. What an accepted statement proved is on the key
+row — `attestation` — and this page draws it in the person's words
+(`attestationText()`): the model the FIDO metadata names and "verified and
+trusted", "verified" with no trusted root, "no attestation sent", or "not
+verified" where the policy verified nothing. `authn/CLAUDE.md`, *The
+attestation statement*, has the rest.
 
 ### It is the SEVENTH scripted page in this service and the first in this portal
 
@@ -1196,6 +1210,50 @@ this page's:
 In development the keytab holds the development KDC's key
 (`krb5.userPassword`), the password is not checked (nothing is), and the page
 says both.
+
+## `/portal/consents`: WITHDRAWING WHAT YOU AGREED TO (2026-09-23, #172)
+
+`portal_consents.ts`, registered after `/portal/sign-ins` through the same
+`register(context)` and for its reason. Until #172 a person could not read back
+what they had agreed on the consent screen, and only an administrator could
+withdraw it. `common/CLAUDE.md` (3t, *Withdrawn means withdrawn*) argues what a
+withdrawal does; four things are this page's:
+
+* **The same functions as `/admin/consent`**: `consent.revoke()` for one scope,
+  `consent.revokeApplication()` for everything one application holds — so the
+  tokens are revoked, the instant recorded and a later refresh refused exactly
+  as when an administrator does it. The page says so above the buttons.
+* **The identity is the session's.** The form names an application and a
+  scope, which name one of the signed-in person's OWN consents; one that is not
+  on their entry is refused 400 (`STS-PORTAL-0085`), the `/portal/keys`
+  credential id's arrangement. `manage-own`, CSRF on the POST, and the
+  withdrawal audited as `consent.revoke` with the person as actor.
+* **A scope under GLOBAL consent is not listed**: nothing about the person was
+  written, and the override is the operator's configuration of the application.
+  The page says so in a sentence rather than drawing rows with no button.
+* **No script, real forms**, paged by application (twenty per page). The
+  console's and the API's counterpart of *Withdraw everything for this
+  application* is `revoke-application-consent` (rule 7).
+
+## `/portal/delegate`: WHO MAY ACT FOR YOU (2026-09-23, #108)
+
+RFC 8693 section 4.4's `may_act` "makes a statement that one party is
+authorized to become the actor and act on behalf of another party", and the
+owner's decision on #108 is that the statement is the PERSON's: `stsMayAct` on
+their own entry, the DN of one person or application in the realm. Every access
+token issued about them then carries `may_act` naming that party
+(`../common/delegation_policy.ts`, `mayActClaimFor()`), and a token exchange of
+one by anybody else is refused in every mode. `portal_delegate.ts` draws it the
+way `portal_app_passwords.ts` draws its page — a file beside `portal.ts`,
+`register(context)`, a real submit button and no script — in *Your account*.
+
+**The form names the DELEGATE, never whose delegate it is**: the identity is the
+session's, this directory's rule. `credentials.setMayAct()` refuses a DN naming
+nobody and the person themselves (`STS-AUTHN-0227`); the page answers 400 with
+`STS-PORTAL-0086` and the store's sentence. An administrator's
+`stsNotDelegated` on the account is SAID on the page, because it makes whatever
+the person names moot. An administrator sets the same attribute from the
+person's `/admin/users` page and `POST /admin-api/users/set-may-act`.
 
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 

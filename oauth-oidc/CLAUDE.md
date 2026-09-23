@@ -25,7 +25,7 @@ libraries that decide things on its behalf.
 | `oauth2_monitor_api.ts` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.ts` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
 | `protected_resource_metadata.ts` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.ts`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`) — the check and the resolution moved INTO `federation_http.ts` on 2026-09-17, when the back-channel delivery needed them too, and this module keeps its own refusal codes; section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
 | `jwt_access_token.ts` | **RFC 9068, both halves (2026-09-13).** The `at+jwt` header, the issuer and default audience the minter uses and every resource server here checks, and the audience-and-scope plan behind section 3's refusals. In every mode — see 3ah. |
-| `backchannel_logout.ts` | **OpenID Connect Back-Channel Logout 1.0 (#36, 2026-09-17).** Plans, signs, encrypts and delivers a Logout Token to every relying party on an ending (or EXPIRING) session that registered a `backchannel_logout_uri`. Each delivery is a row of a persisted, replicated store: retried with backoff by any node across restarts, sent once through a claimed lease, dead-lettered on a final failure. See 3aq. |
+| `backchannel_logout.ts` | **OpenID Connect Back-Channel Logout 1.0 (#36, 2026-09-17).** Plans, signs, encrypts and delivers a Logout Token to every relying party on an ending (or EXPIRING) session that registered a `backchannel_logout_uri`. Each delivery is a row of a persisted, replicated store: retried with backoff by any node across restarts, sent once through a claimed lease, dead-lettered on a final failure. See 3aq. **The RELYING PARTY's half — receiving a federation partner's Logout Token, and Front-Channel and RP-Initiated Logout towards a partner — is `../federation/federation_slo.ts` (#167)**, because there this service is a client of somebody else's OpenID Provider. |
 | `id_token_encryption.ts` | **The encrypted ID Token (OIDC Core 10.2, 2026-09-17)** — signed then encrypted to the key in the client's inline `jwks`, and the same protection on a back-channel Logout Token. See 3as. |
 | `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.ts`, `oauth2_bcp.js`, `dpop.ts`, `mgmt-api/admin_api.ts` and `debugger/debugger_server.ts` require and that may require none of them back. See 3ao. |
 | `fapi.js` | **The FAPI profiles over RFC 9700 mode: FAPI 1.0 Part 1 Baseline (#138) and Part 2 Advanced (#139), 2026-09-22.** `oauth2.fapi` per realm, or a named authorization server's own `fapi` member, made AMBIENT per request; the checks each profile asks beyond RFC 9700 mode, as tables of requirements with a check citing each. A leaf. See 3av. |
@@ -2430,6 +2430,13 @@ directory or from the invented persona, and a UserInfo response that agreed with
 whatever a client asked it to assert would be the one surface here that cannot
 be used to test anything. The mismatch is reported instead.
 
+**`verified_claims` (#127) is not a claim name** and is not answered from the
+catalogue: `parseClaimsRequest()` hands it to `common/identity_assurance.ts`
+(section 6's refusals), and `requestedClaimsOf()` asks that library for the
+answer beside the ordinary claims. Unlike them, its `value`/`values` on the
+VERIFICATION are enforced — they choose the record, and an element nothing
+satisfies is omitted. `common/CLAUDE.md` 3ay argues it.
+
 **NON-SPEC: the endpoint also takes a claims request on the request itself.**
 Section 5.3.1 defines no request parameters at all. `?claims={json}` and a
 repeated `?claim=name` are accepted anyway, on GET and on a form-encoded POST,
@@ -2565,9 +2572,42 @@ about the request and must not be lost to a resolution. **Nothing is refused:**
 an audience nobody has registered resolves to null and is recorded verbatim,
 exactly as it was before this existed.
 
-**Nothing authorizes either of them here**, and the row says so where a Kerberos
-row names an attribute. `may_act` is the claim a real deployment would use for
-it; this service neither issues nor reads one.
+**WHO MAY ACT FOR WHOM IS DECIDED SINCE #108 (2026-09-23)** — it read *nothing
+authorizes either of them here* until then. `../common/delegation_policy.ts`
+(rule 3az, `../common/CLAUDE.md`) is asked after the actor is verified and the
+audiences are known, and before `issue()`: the client is the intermediary, its
+`appAllowedToDelegateTo` or the target's `appAllowedToActOnBehalfOf` must
+allow every audience, an exchange with no `actor_token` needs
+`appTrustedToImpersonate`, the subject must pass `appDelegationSubjectGroup`
+and not be protected, and then the issuance policy may Deny action-id
+`delegate`. A client exchanging ITS OWN token acts for nobody and needs
+nothing (the self case — a client_credentials token's `sub` is the client_id,
+or `urn:sts:client:<id>` in RFC 9700 mode). **Product refuses** —
+`invalid_request` (`STS-OAUTH-0618`, `0622` for the XACML Deny) or, for a
+target, `invalid_target` (`0619`), RFC 8693 section 2.2.2 — and the refusal is a
+refused act; **development issues** and the act's `authorizedBy` says what would
+have refused it (`mode.authorizesDelegation()`). The act row names what allowed
+it, the way a Kerberos row names an attribute.
+
+**`may_act` IS READ IN EVERY MODE** (section 4.4), off a VERIFIED subject_token
+only: when it names a party other than the actor — the `actor_token`'s `sub`
+(and `iss` if the claim has one), or the client when there is no actor — the
+exchange is `invalid_request` (`STS-OAUTH-0620`), because the token itself says
+no. A match stands in for `appTrustedToImpersonate` and the subject groups,
+never for the target. **It is ISSUED by `accessToken()`**, the one place an
+access token's claims are assembled, from the person's own `stsMayAct` and
+nothing else (`delegationPolicy.mayActClaimFor()`, looked up by the
+`urn:uuid:` subject where the token has one).
+
+**`act` NESTS** (section 4.1): the subject_token's own `act` goes beneath the new
+actor, and an impersonation of a token that already carried `act` keeps it —
+dropping it would launder a delegated token into an ordinary one. **AND THE
+SCOPE MAY NOT WIDEN**: `body.scope || subject.scope` was never compared with
+what the subject granted, and #110's `scopeRefusal()` and `tokenSet()`'s
+narrowing hold a scope to the CLIENT's declaration, not to the subject's grant.
+In product a requested scope outside a verified subject_token's `scope` claim is
+`invalid_scope` (`STS-OAUTH-0621`); a subject_token with no `scope` claim (an ID
+Token, a WS-Trust JWT) has no grant to compare against.
 
 **IN PRODUCT MODE BOTH TOKENS MUST VERIFY (2026-09-21), AND UNTIL THEN NEITHER
 HAD TO.** The branch tried `verifyJws()` on the `subject_token` and, on failure,
@@ -3190,11 +3230,21 @@ server draws on a first sign-in, and a client that has never met one has never
 run the code that survives it. It still checks nothing — the person has already
 been let in under any name they typed.
 
-**THE TOKEN ENDPOINT ASKS NOBODY ANYTHING.** A grant already issued is never
-re-judged, the same rule delegated permissions follow and federation follows
-about not re-checking a person once the session exists — so a refresh of a code
-obtained before the setting was turned on still works, and revoking a consent
-does not touch a token already minted.
+**THE REFRESH GRANT RE-CHECKS CONSENT SINCE #172 (2026-09-23)**, and it said
+the opposite until then: *the token endpoint asks nobody anything, a grant
+already issued is never re-judged.* That left a withdrawn `offline_access`
+refreshing for the token's whole life. Now `consent.refreshRefusal()` is asked
+right after the revocation check, in every mode, from the refresh token's own
+`grant_at` and `grant_type` (inside the JWE, carried unchanged through every
+refresh, the code's minting instant for an authorization code): a consent
+withdrawn at or after the grant refuses it (`STS-OAUTH-0615`), and a grant from
+the authorization endpoint that no recorded consent covered refuses it while
+consent is required and `oauth2.refreshRequiresConsent` is on
+(`STS-OAUTH-0616`). A refusal takes the grant with it — `grantMembersOf()` and
+`revokeFamily()`, #102's way. Withdrawing also REVOKES what was issued under the
+consent at once; `common/CLAUDE.md` (3t, *Withdrawn means withdrawn*) argues
+the three parts. Delegated permissions and federation still do not re-judge an
+issued grant.
 
 ## The UserInfo endpoint's two halves have no test in either repository
 

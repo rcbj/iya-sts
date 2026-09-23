@@ -173,6 +173,11 @@ const clusterConnections = require('./ldap_cluster_connections');
 // LIBRARY that registers nothing and requires nothing of this file; the names
 // it claims are computed here by `createClaimSpec()`.
 const createClaims = require('./directory_create_claims');
+// WHO MAY READ WHAT OVER THE SOCKET (#106, 2026-09-23): the rule table, a
+// static utility class that reads nothing and requires nothing, so it can be
+// asked once per entry. This file classifies the reader and the entry and
+// asks it — see *WHO MAY READ THIS DIRECTORY*, below the write half.
+const readPolicy = require('./directory_read_policy');
 // The revocation register, for the CRL container below. A LEAF (rule 3): it
 // registers no route, so requiring it here moves nothing.
 const pkiRevocation = require('../common/pki_revocation');
@@ -1887,6 +1892,11 @@ const OWN_NAMES = [
   // which is on an APPLICATION's entry and is in the applications schema rather
   // than in this list.
   'oauthConsent',
+  // WHEN THIS PERSON WITHDREW ONE (#172), `<when> <scope> <client_id>` with
+  // the instant to the millisecond, one value per (application, scope). It
+  // is what stops a RE-CONSENT reviving a refresh token issued before the
+  // withdrawal; `common/consent.ts` argues it.
+  'oauthConsentWithdrawn',
 
   // ---------------------------------------------------------------------
   // THE CREDENTIALS ON A PERSON'S OWN ENTRY THAT ARE NOT `userPassword`.
@@ -1928,6 +1938,11 @@ const OWN_NAMES = [
   // (2026-09-13) — see readPersonFlags(): a second factor required of them, and
   // the hash of a password reset link.
   'stsMfaRequired', 'stsPasswordResetToken', 'stsPasswordResetExpires',
+  // WHO MAY ACT FOR A PERSON (#108, 2026-09-23): "sensitive and cannot be
+  // delegated" (Kerberos's NOT_DELEGATED, on the person), and the one party
+  // they have named as their delegate, whose `sub` becomes the `may_act` claim
+  // of their access tokens. See `common/delegation_policy.ts`.
+  'stsNotDelegated', 'stsMayAct',
   // THE MAIL CHANNEL'S ADDRESS VERIFICATION (#63, 2026-09-22) — see
   // readPersonFlags(): the address a person proved they receive mail at, and
   // the pending link's hash, expiry and the address it was sent to.
@@ -2009,7 +2024,15 @@ const OWN_NAMES = [
   // value holding each one's name, scope, scrypt hash and last use. A
   // verifier like `userPassword`, and withheld from every read like it
   // (SECRET_ATTRIBUTES). `common/credentials.ts` keeps them.
-  'stsAppPassword'
+  'stsAppPassword',
+
+  // AND A TENTH (#127, 2026-09-23): the person's IDENTITY VERIFICATIONS for
+  // OpenID Connect for Identity Assurance — one JSON value holding each
+  // verification's trust framework, time and evidence. Evidence carries
+  // document numbers and a voucher's name, so it is withheld from every read
+  // like the credentials beside it (SECRET_ATTRIBUTES).
+  // `common/identity_assurance.js` keeps them.
+  'stsIdaVerification'
 ];
 
 // The table itself, built from the two lists. `learnName()` is the ONE way in,
@@ -2761,7 +2784,11 @@ const OPERATIONAL = ['createtimestamp', 'modifytimestamp', 'entrydn',
 // not being filtered twice.
 // ---------------------------------------------------------------------------
 
-function toSearchEntry(stored, requested, messageId) {
+// `rule` (#106) is `readPolicy.attributeRule()`'s answer for this reader and
+// this entry, and an attribute it does not allow is not sent, asked for by
+// name or not. Omitted — the root DSE, an administrator, development — every
+// attribute but a credential may go.
+function toSearchEntry(stored, requested, messageId, rule) {
   log.debug('Entering toSearchEntry(). dn=' + stored.dn);
   const wanted = (requested || []).map(function (a) {
     return String(a).toLowerCase();
@@ -2781,15 +2808,20 @@ function toSearchEntry(stored, requested, messageId) {
     if (withheldFromReaders(name)) {
       return;
     }
+    // AND NOTHING THIS READER MAY NOT READ (#106) — see *WHO MAY READ THIS
+    // DIRECTORY OVER THE SOCKET*.
+    if (rule && !readPolicy.readable(rule, name)) {
+      return;
+    }
     if (askedFor || (all && !isOperational)) {
       // WITHHELD ON THE WIRE TOO (2026-09-12): a search is the one door onto a
       // Kerberos key that needs no page, and in development every bind
       // succeeds. The KDC reads the store and never a search result, so nothing
       // that needs the key is behind this.
-      attributes[canonicalName(name)] =
+      attributes[canonicalName(name)] = withheldKeyTableValues(name,
         certEnrollment.withheldValues(name,
           krb5PersonKeys.withheldValues(name,
-                                        stored.attributes[name].slice(0)));
+                                        stored.attributes[name].slice(0))));
     }
   });
   if (wanted.indexOf('entrydn') !== -1) attributes.entryDN = [stored.dn];
@@ -7211,11 +7243,29 @@ function reloadTrustAnchorsQuietly() {
 // opinion about who somebody is.
 // ---------------------------------------------------------------------------
 
+// THE TWO ATTRIBUTES THESE FUNCTIONS WRITE, and no third: `oauthConsent`, and
+// since #172 `oauthConsentWithdrawn` — the instant a person withdrew one,
+// which `common/consent.ts` reads so that a re-consent revives no token
+// issued before it. One set of functions for both, told which by name, and a
+// name that is neither is the consent attribute: a caller cannot use this
+// slot to write anything else onto somebody's entry.
+const CONSENT_ATTRIBUTES = { oauthconsent: 'oauthConsent',
+                             oauthconsentwithdrawn: 'oauthConsentWithdrawn' };
+
+function consentAttributeOf(attribute) {
+  log.debug('Entering consentAttributeOf().');
+  const lower = String(attribute || 'oauthConsent').toLowerCase();
+  log.debug('Leaving consentAttributeOf().');
+  return Object.prototype.hasOwnProperty.call(CONSENT_ATTRIBUTES, lower)
+    ? lower : 'oauthconsent';
+}
+
 // Everything one person's entry holds. `found: false` for an identity with no
 // entry, which is not an error — it is what a person who has never
 // authenticated in this realm looks like.
-function consentValuesOf(key) {
+function consentValuesOf(key, attribute) {
   log.debug('Entering consentValuesOf(). key=' + key);
+  const lower = consentAttributeOf(attribute);
   const located = locateEntry(String(key || ''));
   const stored = located.stored;
   if (!stored) {
@@ -7223,7 +7273,7 @@ function consentValuesOf(key) {
               '.');
     return { dn: located.dn, found: false, values: [] };
   }
-  const values = (stored.attributes.oauthconsent || []).slice(0);
+  const values = (stored.attributes[lower] || []).slice(0);
   log.debug('Leaving consentValuesOf(). ' + values.length + ' value(s) on ' +
             stored.dn + '.');
   return { dn: stored.dn, found: true, values: values };
@@ -7232,8 +7282,9 @@ function consentValuesOf(key) {
 // ADD values, through addValues() so that a value already there is not written
 // twice — two identical consents would be two rows on /admin/consent for one
 // answer, and revoking would remove one of them.
-function addConsentValues(key, values) {
+function addConsentValues(key, values, attribute) {
   log.debug('Entering addConsentValues(). key=' + key);
+  const lower = consentAttributeOf(attribute);
   const located = locateEntry(String(key || ''));
   const stored = located.stored;
   if (!stored) {
@@ -7245,7 +7296,7 @@ function addConsentValues(key, values) {
     log.debug('Leaving addConsentValues(). Nothing to write to.');
     return { ok: false, dn: located.dn, reason: 'noEntry' };
   }
-  const changed = addValues(stored, 'oauthConsent', values);
+  const changed = addValues(stored, CONSENT_ATTRIBUTES[lower], values);
   if (changed) {
     stored.attributes.modifytimestamp = [generalizedTime()];
     touchDirectory();
@@ -7261,8 +7312,9 @@ function addConsentValues(key, values) {
 // scope agreed at different times are two values and removing one leaves the
 // other — which is the honest reading of an attribute somebody may have edited
 // by hand.
-function removeConsentValues(key, values) {
+function removeConsentValues(key, values, attribute) {
   log.debug('Entering removeConsentValues(). key=' + key);
+  const lower = consentAttributeOf(attribute);
   const located = locateEntry(String(key || ''));
   const stored = located.stored;
   if (!stored) {
@@ -7270,7 +7322,7 @@ function removeConsentValues(key, values) {
     return { ok: false, dn: located.dn, reason: 'noEntry' };
   }
   const wanted = valuesOf(values);
-  const have = stored.attributes.oauthconsent || [];
+  const have = stored.attributes[lower] || [];
   const left = have.filter(function (one) {
     return wanted.indexOf(one) < 0;
   });
@@ -7279,14 +7331,14 @@ function removeConsentValues(key, values) {
     return { ok: false, dn: stored.dn, reason: 'notHeld' };
   }
   if (left.length) {
-    stored.attributes.oauthconsent = left;
+    stored.attributes[lower] = left;
   } else {
     // THE ATTRIBUTE GOES RATHER THAN BECOMING EMPTY. LDAP has no empty
     // attribute — RFC 4511's modify with no values is a delete — so leaving
     // `oauthconsent: []` behind would put a value on the wire that no client
     // can read as anything and would show on /admin/ldap/directory as an
     // attribute with nothing in it.
-    delete stored.attributes.oauthconsent;
+    delete stored.attributes[lower];
   }
   stored.attributes.modifytimestamp = [generalizedTime()];
   touchDirectory();
@@ -7513,7 +7565,7 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written) {
 //   * an ADMINISTRATOR writes anything — somebody whose bound DN names an entry
 //     in the DEFAULT realm's directory whose identity holds Admin Write — and,
 //     since #32, a realm's own administrator writes that realm's directory
-//     (see `boundDnIsRealmAdministrator()` below);
+//     (see `boundDnHoldsRealmRole()` below);
 //   * anybody else may MODIFY THEIR OWN ENTRY, and only the attributes
 //     `ldap.selfWritableAttributes` names. No add, no delete, no rename.
 //
@@ -7568,14 +7620,29 @@ function selfWritableAttributes() {
     .filter(function (name) { return name.length > 0; });
 }
 
-// Whether the entry this bound DN names holds Admin Write, asked in the DEFAULT
-// realm whichever realm the operation is in. A DN under another realm's base is
-// never an administrator, and a role held only because the roster is empty is
-// not one either (see above).
-function boundDnIsDirectoryAdministrator(boundDn) {
-  log.debug('Entering boundDnIsDirectoryAdministrator(). dn=' + boundDn);
+// Whether a console role's answer grants `role` here: Admin Write for a write,
+// Admin Read or Admin Write for a read (#106 — Admin Write implies Admin Read
+// in `admin_rbac.ts` already; this says so where it is relied on), and never a
+// role held only because the window is open (see above).
+function rolesGrant(roles, role) {
+  log.debug("Entering rolesGrant(). " + role);
+  const held = role === 'read'
+    ? (roles.read === true || roles.write === true)
+    : roles.write === true;
+  log.debug("Leaving rolesGrant().");
+  return held && roles.open !== true;
+}
+
+// Whether the entry this bound DN names holds `role` ('read' or 'write'),
+// asked in the DEFAULT realm whichever realm the operation is in. A DN under
+// another realm's base is never an administrator, and a role held only because
+// the roster is empty is not one either (see above). It was
+// `boundDnIsDirectoryAdministrator()`, about Admin Write only, until the read
+// half needed Admin Read (#106).
+function boundDnHoldsRole(boundDn, role) {
+  log.debug('Entering boundDnHoldsRole(). dn=' + boundDn + ' role=' + role);
   if (!boundDn) {
-    log.debug('Leaving boundDnIsDirectoryAdministrator(). Nobody is bound.');
+    log.debug('Leaving boundDnHoldsRole(). Nobody is bound.');
     return false;
   }
   // NO SEPARATE "IS THIS DN IN THE DEFAULT REALM" TEST, and that is not an
@@ -7589,34 +7656,35 @@ function boundDnIsDirectoryAdministrator(boundDn) {
     if (!stored) {
       return false;
     }
-    const roles = adminRbac.rolesOf(consoleKeyFor(stored.dn, stored),
-                                    realms.DEFAULT_ID);
-    return roles.write === true && roles.open !== true;
+    return rolesGrant(adminRbac.rolesOf(consoleKeyFor(stored.dn, stored),
+                                        realms.DEFAULT_ID), role);
   })();
-  log.debug('Leaving boundDnIsDirectoryAdministrator(). ' + answer);
+  log.debug('Leaving boundDnHoldsRole(). ' + answer);
   return answer;
 }
 
 // A REALM'S OWN ADMINISTRATOR (2026-09-14, #32): a bound DN in the realm the
-// operation is in, holding Admin Write in THAT realm's roster, may write that
-// realm's directory and no other. The operation's store is the ambient realm's,
-// so a DN bound under another realm is simply not an entry here, which is the
-// same argument the default-realm check above makes one realm along.
-function boundDnIsRealmAdministrator(boundDn) {
-  log.debug('Entering boundDnIsRealmAdministrator(). dn=' + boundDn);
+// operation is in, holding `role` in THAT realm's roster, may write (or, since
+// #106, read) that realm's directory and no other. The operation's store is
+// the ambient realm's, so a DN bound under another realm is simply not an
+// entry here, which is the same argument the default-realm check above makes
+// one realm along. It was `boundDnIsRealmAdministrator()` until #106.
+function boundDnHoldsRealmRole(boundDn, role) {
+  log.debug('Entering boundDnHoldsRealmRole(). dn=' + boundDn + ' role=' +
+            role);
   const here = realms.currentId();
   if (!boundDn || here === realms.DEFAULT_ID) {
-    log.debug('Leaving boundDnIsRealmAdministrator(). Not a realm operation.');
+    log.debug('Leaving boundDnHoldsRealmRole(). Not a realm operation.');
     return false;
   }
   const stored = getEntry(boundDn);
   if (!stored) {
-    log.debug('Leaving boundDnIsRealmAdministrator(). Not in this realm.');
+    log.debug('Leaving boundDnHoldsRealmRole(). Not in this realm.');
     return false;
   }
-  const roles = adminRbac.rolesOf(consoleKeyFor(stored.dn, stored), here);
-  const answer = roles.write === true && roles.open !== true;
-  log.debug('Leaving boundDnIsRealmAdministrator(). ' + answer);
+  const answer = rolesGrant(adminRbac.rolesOf(consoleKeyFor(stored.dn, stored),
+                                              here), role);
+  log.debug('Leaving boundDnHoldsRealmRole(). ' + answer);
   return answer;
 }
 
@@ -7637,8 +7705,8 @@ function directoryWriteRefusal(req, operation, dn, changedTypes) {
         'an anonymous connection may not write this directory; bind first'),
       dn);
   }
-  if (boundDnIsDirectoryAdministrator(boundDn) ||
-      boundDnIsRealmAdministrator(boundDn)) {
+  if (boundDnHoldsRole(boundDn, 'write') ||
+      boundDnHoldsRealmRole(boundDn, 'write')) {
     log.debug('Leaving directoryWriteRefusal(). An administrator.');
     return null;
   }
@@ -7685,9 +7753,10 @@ function directoryWriteRefusal(req, operation, dn, changedTypes) {
 // until then) and leaves every question after that to these handlers — no
 // access control, no attribute visibility, no rule about which listener a
 // password may cross, no limit on guesses. `directoryWriteRefusal()` above is
-// the write half. This is the rest, and all of it is PRODUCT MODE ONLY, for
-// that function's reason: development binds any DN with any password, so a
-// bound DN proves nothing there.
+// the write half. This is the rest — what a BOUND identity may then see is
+// *WHO MAY READ THIS DIRECTORY OVER THE SOCKET* (#106), below it — and all of
+// it is PRODUCT MODE ONLY, for that function's reason: development binds any
+// DN with any password, so a bound DN proves nothing there.
 //
 // **A READ REQUIRES A BIND** (`mode.requiresDirectoryBind()`). A search or
 // compare on a connection that never bound as somebody is refused with
@@ -7735,6 +7804,9 @@ const SECRET_ATTRIBUTES = [
   // A person's app passwords (#101): scrypt hashes, a verifier like
   // userPassword and withheld like it.
   'stsapppassword',
+  // A person's identity verifications (#127): evidence with document
+  // numbers, personal data no directory read should hand out.
+  'stsidaverification',
   // A password reset link's hash (2026-09-13), for the activation token's
   // reason beside it.
   'stspasswordresettoken',
@@ -7747,7 +7819,10 @@ const SECRET_ATTRIBUTES = [
   'stsacmeeabkey', 'appacmeeabkey', 'stsscepchallenge', 'appscepchallenge',
   // GNAP (2026-09-12): a client's shared secret for a key reference, and a
   // resource server's macaroon root key. Either one mints a working credential.
-  'gnapsymmetrickey', 'gnapmacaroonkey'
+  'gnapsymmetrickey', 'gnapmacaroonkey',
+  // A federation relationship's key table (#168): every row carries the
+  // private key the partner's assertions are decrypted with.
+  'fedencryptionkey'
 ];
 
 const CLIENT_WRITTEN_OPERATIONAL = ['createtimestamp', 'modifytimestamp',
@@ -7775,16 +7850,23 @@ function withheldFromReaders(name) {
 
 // `matchable()` as a READER of the socket may see it. A separate function
 // rather than a flag on that one, because `matchable()` has callers that are
-// not a reader on the wire.
-function matchableForReader(stored) {
+// not a reader on the wire. `rule` is `readPolicy.attributeRule()`'s answer
+// for this reader and this entry (#106): an attribute the reader may not read
+// is ABSENT to the filter, which makes a term naming it Undefined — so
+// `(telephoneNumber=555*)` cannot read another person's number a digit at a
+// time off whether the entry came back. Omitted, nothing but the credentials
+// is taken away, which is every reader in development.
+function matchableForReader(stored, rule) {
   log.debug("Entering matchableForReader().");
   const out = matchable(stored);
-  if (!mode.withholdsDirectorySecrets()) {
+  const secrets = mode.withholdsDirectorySecrets();
+  if (!secrets && (!rule || rule.all)) {
     log.debug("Leaving matchableForReader().");
     return out;
   }
   Object.keys(out).forEach(function (name) {
-    if (isSecretAttribute(name)) {
+    if ((secrets && isSecretAttribute(name)) ||
+        (rule && !readPolicy.readable(rule, name))) {
       delete out[name];
     }
   });
@@ -7857,6 +7939,200 @@ function secretCompareRefusal(req, dn, type) {
     type + ', a credential attribute no reader of this socket may test',
     new ldap.InsufficientAccessRightsError(
       type + ' cannot be compared over LDAP'), dn);
+}
+
+// ---------------------------------------------------------------------------
+// WHO MAY READ THIS DIRECTORY OVER THE SOCKET (#106, 2026-09-23).
+//
+// The block above makes a read need a bind and keeps credentials off the
+// wire. Until this date that was all: a connection bound as ANYBODY read every
+// other attribute of every entry in the realm its base named — every person's
+// mail, telephone number and memberships, every application's redirect URIs,
+// every federation's signing certificate. `mode.authorizesDirectoryReads()`
+// now decides whether the bound identity is asked about, and
+// `ldap/directory_read_policy.ts` is the rule table; this file does the two
+// things only it can — say WHO the reader is (`readerOf()`, once per
+// operation, so a subtree search asks the console roster once and not once per
+// entry) and WHAT an entry is (`readKindOf()`, by placement and class, the way
+// every other question about an entry here is answered).
+//
+// **THREE DOORS, ONE ANSWER**, as for the credentials:
+//
+//   * a SEARCH skips an entry the reader may not see BEFORE its filter is
+//     evaluated — so it neither matches nor counts against the size limit —
+//     and hands the filter and the result only what the reader may read
+//     (`matchableForReader()`, `toSearchEntry()`);
+//   * a search whose BASE the reader may not see is answered noSuchObject
+//     with STS-LDAP-0013, the code and the error a missing base gets, so the
+//     two cannot be told apart;
+//   * a COMPARE on an entry the reader may not see is that same
+//     noSuchObject, and on an attribute they may not read is 50
+//     (STS-LDAP-0099) whether or not the entry holds it — a 16 for an absent
+//     one would say which.
+//
+// **ONLY PEOPLE BIND** (the owner's decision 1 on #106): a DN that does not
+// name a person — an application, a federation, a container — is refused
+// with 49 before its password is read (`STS-LDAP-0100`), decided by the DN's
+// PLACEMENT and never by whether an entry is there, so the refusal is no
+// oracle. An application that needs directory data uses SCIM, which is scoped
+// and token-bound. What an application might one day read over the socket is
+// therefore not a row in the table.
+//
+// **THE DISPATCHED PATH DECIDES IDENTICALLY.** `performOperation()` builds its
+// request with the bound DN the front process read off the socket, and the
+// roster and the settings are read in the worker's realm exactly as here, so
+// nothing new crosses in `operationRequest()`.
+//
+// **THE CONSOLE, `/admin-api`, SCIM AND EVERY PROTOCOL ARE UNTOUCHED**: they
+// read this directory through this module's functions (`getEntry()`,
+// `objectFor()`, `allPersons()` …), never through a search on the socket, and
+// each has a gate of its own.
+// ---------------------------------------------------------------------------
+function directoryReadableAttributes() {
+  log.debug("Entering directoryReadableAttributes().");
+  const listed = config.value('ldap.directoryReadableAttributes');
+  log.debug("Leaving directoryReadableAttributes().");
+  return (Array.isArray(listed) ? listed : String(listed || '').split(','))
+    .map(function (name) { return String(name).trim().toLowerCase(); })
+    .filter(function (name) { return name.length > 0; });
+}
+
+// Who is asking, for `readPolicy`. Once per operation.
+/**
+ * @returns {{ kind: ('unrestricted'|'anonymous'|'administrator'|'person'|
+ *                    'outsider'), dn: string, readableOfOthers?: string[],
+ *            groupMembersReadable?: boolean }}
+ */
+function readerOf(req) {
+  log.debug("Entering readerOf().");
+  if (!mode.authorizesDirectoryReads()) {
+    log.debug("Leaving readerOf(). This mode does not authorize reads.");
+    return { kind: 'unrestricted', dn: '' };
+  }
+  const boundDn = boundDnOf(req);
+  if (!boundDn) {
+    log.debug("Leaving readerOf(). Anonymous.");
+    return { kind: 'anonymous', dn: '' };
+  }
+  const dn = normalizeDn(boundDn);
+  if (boundDnHoldsRole(boundDn, 'read') ||
+      boundDnHoldsRealmRole(boundDn, 'read')) {
+    log.debug("Leaving readerOf(). An administrator.");
+    return { kind: 'administrator', dn: dn };
+  }
+  // An entry of the realm being read, or somebody from elsewhere. A realm's
+  // own administrator is the second kind in every other realm — which is what
+  // confines them to theirs.
+  const kind = getEntry(boundDn) ? 'person' : 'outsider';
+  log.debug("Leaving readerOf(). " + kind + ".");
+  return { kind: kind, dn: dn,
+           readableOfOthers: directoryReadableAttributes(),
+           groupMembersReadable: !!config.value('ldap.groupMembersReadable') };
+}
+
+// What an entry is, for `readPolicy`: a person (placement under ou=users), a
+// group (`groupRuleFor()`, placement or class), a CRL distribution point
+// (public — the base read `isCrlDistributionEntry()` exempts from the bind),
+// a container (the realm's base, or an `ou=`, `dc=` or `o=` entry that is none
+// of those), or anything else — which is what every registry this directory
+// holds is, and is what a reader who is not an administrator never sees.
+/** @returns {'container'|'person'|'group'|'public'|'other'} */
+function readKindOf(stored) {
+  log.debug("Entering readKindOf().");
+  if (isPersonEntry(stored)) {
+    log.debug("Leaving readKindOf(). A person.");
+    return 'person';
+  }
+  if (groupRuleFor(stored)) {
+    log.debug("Leaving readKindOf(). A group.");
+    return 'group';
+  }
+  const normal = normalizeDn(stored.dn);
+  const classes = valuesOf(stored.attributes.objectclass).map(function (one) {
+    return one.toLowerCase();
+  });
+  if (/,ou=crl,/i.test(normal) &&
+      classes.indexOf('crldistributionpoint') !== -1) {
+    log.debug("Leaving readKindOf(). A CRL distribution point.");
+    return 'public';
+  }
+  const leaf = rdnPairs(splitRdns(stored.dn)[0] || '');
+  const named = leaf.length > 0 && leaf.every(function (pair) {
+    return ['ou', 'dc', 'o'].indexOf(pair.attribute) !== -1;
+  });
+  log.debug("Leaving readKindOf().");
+  return (named || normal === normalizeDn(baseDn())) ? 'container' : 'other';
+}
+
+// The members a group LISTS, as normalised DNs, read straight off its values
+// rather than resolved: the policy asks one question of them — is the reader
+// in it — and resolving every member of a large group per search would be a
+// lookup each for an answer a comparison gives.
+function listedMemberDns(stored) {
+  log.debug("Entering listedMemberDns().");
+  const out = [];
+  MEMBER_ATTRIBUTES.forEach(function (attribute) {
+    valuesOf(stored.attributes[attribute.name]).forEach(function (value) {
+      out.push(normalizeDn(attribute.holds === 'uid'
+        ? 'uid=' + escapeDnValue(value) + ',' + usersDn() : value));
+    });
+  });
+  log.debug("Leaving listedMemberDns(). " + out.length + ".");
+  return out;
+}
+
+// One entry, as one reader sees it: `{ visible, rule }`, `rule` being what
+// `toSearchEntry()` and `matchableForReader()` take. An unrestricted or
+// administrator reader skips the classification entirely.
+function readViewOf(reader, stored) {
+  log.debug("Entering readViewOf().");
+  if (reader.kind === 'unrestricted' || reader.kind === 'administrator') {
+    log.debug("Leaving readViewOf(). Everything.");
+    return { visible: true, rule: null };
+  }
+  const kind = readKindOf(stored);
+  const facts = { kind: kind, dn: normalizeDn(stored.dn),
+                  members: kind === 'group' && reader.kind === 'person'
+                    ? listedMemberDns(stored) : [] };
+  if (!readPolicy.visible(reader, facts)) {
+    log.debug("Leaving readViewOf(). Invisible to this reader.");
+    return { visible: false, rule: null };
+  }
+  log.debug("Leaving readViewOf(). Visible.");
+  return { visible: true, rule: readPolicy.attributeRule(reader, facts) };
+}
+
+// A compare naming an attribute this reader may not read on a visible entry.
+function unreadableCompareRefusal(req, dn, type, rule) {
+  log.debug("Entering unreadableCompareRefusal().");
+  if (!rule || readPolicy.readable(rule, type)) {
+    log.debug("Leaving unreadableCompareRefusal(). Readable.");
+    return null;
+  }
+  log.info('ldap: refusing a compare of ' + type + ' on ' + dn + ' by ' +
+           (boundDnOf(req) || '(anonymous)') + ', who may not read it.');
+  log.debug("Leaving unreadableCompareRefusal(). Not readable.");
+  return ldapRefusal(req, 'STS-LDAP-0099', boundDnOf(req) + ' asked to ' +
+    'compare ' + type + ' on ' + dn + ', which they may not read',
+    new ldap.InsufficientAccessRightsError(
+      'you may not read ' + type + ' on this entry'), dn);
+}
+
+// A bind naming a DN that is not a person's (#106, decision 1). By PLACEMENT,
+// so the refusal is the same whether or not anything is there.
+function nonPersonBindRefusal(req, dn) {
+  log.debug("Entering nonPersonBindRefusal().");
+  if (!mode.authorizesDirectoryReads() || !dn ||
+      isPersonEntry({ dn: dn, attributes: {} })) {
+    log.debug("Leaving nonPersonBindRefusal(). Allowed.");
+    return null;
+  }
+  log.info('ldap: refusing a bind as ' + dn + '; only a person binds to ' +
+           'this directory.');
+  log.debug("Leaving nonPersonBindRefusal(). Not a person.");
+  return ldapRefusal(req, 'STS-LDAP-0100', 'a bind as ' + dn + ', which ' +
+    'does not name a person, was refused before its password was read',
+    new ldap.InvalidCredentialsError(), dn);
 }
 
 // An add or modify naming an attribute this directory maintains itself.
@@ -8230,6 +8506,44 @@ function writeAppPasswords(key, value) {
   return true;
 }
 
+// A PERSON'S IDENTITY VERIFICATIONS (#127), one JSON value on their entry;
+// `common/identity_assurance.js` owns the shape. Not created here, for
+// `writeTotp()`'s reason.
+function readIdaVerifications(key) {
+  log.debug('Entering readIdaVerifications(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readIdaVerifications(). No entry.');
+    return '';
+  }
+  const value = (stored.attributes.stsidaverification || [])[0];
+  log.debug('Leaving readIdaVerifications(). ' + (value ? 'Held.' : 'None.'));
+  return value ? String(value) : '';
+}
+
+function writeIdaVerifications(key, value) {
+  log.debug('Entering writeIdaVerifications(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no identity ' +
+             'verification was recorded.');
+    log.debug('Leaving writeIdaVerifications(). No entry.');
+    return false;
+  }
+  if (value === null || value === undefined || value === '') {
+    delete stored.attributes.stsidaverification;
+  } else {
+    stored.attributes.stsidaverification = [String(value)];
+  }
+  touchDirectory();
+  log.debug('Leaving writeIdaVerifications(). ' +
+            (value ? 'Written to ' : 'Removed from ') + stored.dn + '.');
+  return true;
+}
+
 // THE ACTIVATION TOKEN, hashed. It is the one credential in this service that
 // completes an account setup on its own, so a leaked one is an account
 // takeover — which is why it is stored the way a password is and never in the
@@ -8307,6 +8621,10 @@ if (typeof credentials.setDirectory === 'function') {
     // pair above is.
     readAppPasswords: readAppPasswords,
     writeAppPasswords: writeAppPasswords,
+    // Identity verifications (#127), checked where they are used for the
+    // reason the pair above is.
+    readIdaVerifications: readIdaVerifications,
+    writeIdaVerifications: writeIdaVerifications,
     // IS THIS ENTRY A PERSON (#101)? By placement, `isPersonEntry()`'s rule —
     // never by name. The second-factor refusal at the password-only doors is
     // about a person's account, and an application's secret is not one.
@@ -8379,6 +8697,50 @@ if (typeof credentials.setDirectory === 'function') {
       log.debug("Entering writeMfaRequired().");
       log.debug("Leaving writeMfaRequired().");
       return writePersonFlag(key, 'stsMfaRequired', value ? true : '');
+    },
+    // WHO MAY ACT FOR THIS PERSON (#108, 2026-09-23), for
+    // `common/delegation_policy.ts` through `credentials.ts`. Checked where
+    // they are used, like the pairs above. ONE READ answers everything the
+    // policy asks about a subject: whether they are a person here, the two
+    // flags, their groups (DN and cn, both directions of membership) and the
+    // delegate named by `stsMayAct` resolved to its kind, name and `sub`.
+    readDelegationFacts: function (key) {
+      log.debug("Entering readDelegationFacts().");
+      log.debug("Leaving readDelegationFacts().");
+      return readDelegationFacts(key);
+    },
+    writeNotDelegated: function (key, value) {
+      log.debug("Entering writeNotDelegated().");
+      log.debug("Leaving writeNotDelegated().");
+      return writePersonFlag(key, 'stsNotDelegated', value ? true : '');
+    },
+    writeMayAct: function (key, value) {
+      log.debug("Entering writeMayAct().");
+      log.debug("Leaving writeMayAct().");
+      return writePersonFlag(key, 'stsMayAct', value ? String(value) : '');
+    },
+    // Every person in the realm carrying either flag, for the policy table on
+    // /admin/delegation. One walk of the people, reading two attributes.
+    delegationFlaggedPersons: function () {
+      log.debug("Entering delegationFlaggedPersons().");
+      const out = [];
+      // The STORED entries (lower-cased attribute keys), not allPersons()'s
+      // display objects.
+      eachEntryInRealm(function (entry) {
+        if (!isPersonEntry(entry)) {
+          return;
+        }
+        const a = entry.attributes;
+        const notDelegated =
+          String((a.stsnotdelegated || [])[0] || '').toUpperCase() === 'TRUE';
+        const mayAct = String((a.stsmayact || [])[0] || '');
+        if (notDelegated || mayAct) {
+          out.push({ username: usernameOfEntry(entry), dn: entry.dn,
+                     notDelegated: notDelegated, mayAct: mayAct });
+        }
+      });
+      log.debug("Leaving delegationFlaggedPersons(). " + out.length);
+      return out;
     },
     // A DISABLED ACCOUNT (2026-09-17): the draft's administrative lock, in the
     // ambient realm like the rest of the person's credentials.
@@ -8785,10 +9147,38 @@ if (typeof certEnrollment.setDirectory === 'function') {
 // because nothing it recorded could be read back.
 if (typeof consent.setDirectory === 'function') {
   consent.setDirectory({
-    consentsOf: consentValuesOf,
-    addConsent: addConsentValues,
-    removeConsent: removeConsentValues,
-    listConsents: listConsentValues
+    consentsOf: function consentsOf(key) {
+      log.debug('Entering consentsOf().');
+      log.debug('Leaving consentsOf().');
+      return consentValuesOf(key, 'oauthConsent');
+    },
+    addConsent: function addConsent(key, values) {
+      log.debug('Entering addConsent().');
+      log.debug('Leaving addConsent().');
+      return addConsentValues(key, values, 'oauthConsent');
+    },
+    removeConsent: function removeConsent(key, values) {
+      log.debug('Entering removeConsent().');
+      log.debug('Leaving removeConsent().');
+      return removeConsentValues(key, values, 'oauthConsent');
+    },
+    listConsents: listConsentValues,
+    // THE WITHDRAWALS (#172), on the same entry through the same functions.
+    withdrawalsOf: function withdrawalsOf(key) {
+      log.debug('Entering withdrawalsOf().');
+      log.debug('Leaving withdrawalsOf().');
+      return consentValuesOf(key, 'oauthConsentWithdrawn');
+    },
+    addWithdrawal: function addWithdrawal(key, values) {
+      log.debug('Entering addWithdrawal().');
+      log.debug('Leaving addWithdrawal().');
+      return addConsentValues(key, values, 'oauthConsentWithdrawn');
+    },
+    removeWithdrawal: function removeWithdrawal(key, values) {
+      log.debug('Entering removeWithdrawal().');
+      log.debug('Leaving removeWithdrawal().');
+      return removeConsentValues(key, values, 'oauthConsentWithdrawn');
+    }
   });
 } else {
   log.warn('ldap: common/consent.ts offers no setDirectory(), so nothing a ' +
@@ -9050,12 +9440,57 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 // One reader and one writer for them, narrowed to exactly these names, so that
 // neither slot below becomes a general attribute writer.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// WHAT THE DELEGATION POLICY ASKS ABOUT A SUBJECT (#108, 2026-09-23), in one
+// read. `key` is any of `locateEntry()`'s shapes — a username, a
+// `urn:uuid:` subject, a DN. `delegate` is `stsMayAct` resolved: a person
+// (their name and `urn:uuid:` subject) or an entry under ou=applications (its
+// DN; the policy turns that into an identifier through `applications.js`), or
+// `null` when the attribute names nothing in this realm.
+// ---------------------------------------------------------------------------
+function readDelegationFacts(key) {
+  log.debug('Entering readDelegationFacts(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readDelegationFacts(). No entry.');
+    return { found: false, person: false, dn: '', username: '',
+             notDelegated: false, mayAct: '', delegate: null, groups: [] };
+  }
+  const flags = readPersonFlags(stored.dn);
+  const mayAct = flags ? flags.mayAct : '';
+  let delegate = null;
+  if (mayAct) {
+    const named = locateEntry(mayAct).stored;
+    if (named && isPersonEntry(named)) {
+      delegate = { kind: 'person', dn: named.dn,
+                   name: usernameOfEntry(named),
+                   sub: 'urn:uuid:' + entryUuidOf(named) };
+    } else if (named && normalizeDn(named.dn).endsWith(
+      ',' + normalizeDn(applicationsDn()))) {
+      delegate = { kind: 'application', dn: named.dn, name: '', sub: '' };
+    }
+  }
+  const membership = groupsOfUser(stored.dn);
+  log.debug('Leaving readDelegationFacts().');
+  return { found: true, person: isPersonEntry(stored), dn: stored.dn,
+           username: isPersonEntry(stored) ? usernameOfEntry(stored) : '',
+           notDelegated: !!(flags && flags.notDelegated), mayAct: mayAct,
+           delegate: delegate,
+           groups: (membership.groups || []).map(function (one) {
+             return { dn: one.dn, cn: one.cn };
+           }) };
+}
+
 const PERSON_FLAGS = ['pwdReset', 'stsBootstrapAdministrator',
                       'stsConsoleClaimedAt', 'stsMfaRequired',
                       'stsPasswordResetToken', 'stsPasswordResetExpires',
-                      'pwdAccountLockedTime', 'stsMailVerified',
-                      'stsMailVerifyToken', 'stsMailVerifyExpires',
-                      'stsMailVerifyAddress'];
+                      'pwdAccountLockedTime',
+                      // #108: see readDelegationFacts().
+                      'stsNotDelegated', 'stsMayAct',
+                      // #63: the mail channel's address verification.
+                      'stsMailVerified', 'stsMailVerifyToken',
+                      'stsMailVerifyExpires', 'stsMailVerifyAddress'];
 
 // The value an administrator's lock is written with: the draft's "locked
 // permanently, until a password administrator unlocks it".
@@ -9084,7 +9519,9 @@ function readPersonFlags(key) {
            mfaRequired: one('stsMfaRequired').toUpperCase() === 'TRUE',
            passwordResetToken: one('stsPasswordResetToken'),
            passwordResetExpires: Number(one('stsPasswordResetExpires') || 0),
-           accountLockedTime: one('pwdAccountLockedTime') };
+           accountLockedTime: one('pwdAccountLockedTime'),
+           notDelegated: one('stsNotDelegated').toUpperCase() === 'TRUE',
+           mayAct: one('stsMayAct') };
 }
 
 function writePersonFlag(key, name, value, options) {
@@ -10753,8 +11190,9 @@ server.bind('', function (req, res, next) {
            (dn ? 'named' : 'anonymous') + '), ' + credentials_value.length +
            ' character password.');
   // ---------------------------------------------------------------------
-  // THE FOUR PRODUCT-MODE REFUSALS THAT COME BEFORE A PASSWORD IS READ
-  // (2026-09-12). See *THE DIRECTORY'S READ AND BIND SECURITY*. Their order is
+  // THE FIVE PRODUCT-MODE REFUSALS THAT COME BEFORE A PASSWORD IS READ
+  // (2026-09-12; the fourth, a DN that is not a person's, since #106). See
+  // *THE DIRECTORY'S READ AND BIND SECURITY*. Their order is
   // the design: none of them looks at the password, and the rate limit is last
   // so that a caller refused for a reason that has nothing to do with guessing
   // is never counted as a guesser.
@@ -10797,6 +11235,16 @@ server.bind('', function (req, res, next) {
       '(a DN with an empty password) as ' + dn + ' was refused',
       new ldap.UnwillingToPerformError(
         'unauthenticated binds are not accepted; supply the password'), dn));
+  }
+  // **ONLY A PERSON BINDS** (#106): a DN that does not name one — an
+  // application, a federation, a container — is refused with 49 by its
+  // PLACEMENT, before the password is read and without counting against the
+  // limit below, since nothing was guessed. See *WHO MAY READ THIS DIRECTORY
+  // OVER THE SOCKET*.
+  const notAPerson = nonPersonBindRefusal(req, dn);
+  if (notAPerson) {
+    log.debug('Leaving the LDAP bind handler. Not a person.');
+    return next(notAPerson);
   }
   // **FAILED BINDS ARE RATE LIMITED**, and this reads the buckets without
   // counting. A caller over either limit is refused whether or not this
@@ -11853,10 +12301,25 @@ server.compare('', function (req, res, next) {
     return next(compareSecretRefusal);
   }
   const stored = getEntry(dn);
-  if (!stored) {
-    log.debug('Leaving the LDAP compare handler. There is no such entry.');
+  // AN ENTRY THIS READER MAY NOT SEE IS NOT THERE (#106): the same code, the
+  // same error and the same wording as an entry that is not, so a compare
+  // cannot be used to learn which DNs exist.
+  const compareView = stored ? readViewOf(readerOf(req), stored) : null;
+  if (!stored || !compareView.visible) {
+    log.debug('Leaving the LDAP compare handler. There is no such entry ' +
+              '(or none this reader may see).');
     return next(ldapRefusal(req, 'STS-LDAP-0013', 'a compare named ' + dn +
-      ', which does not exist', new ldap.NoSuchObjectError(dn), dn));
+      ', which does not exist' + (stored ? ' for this reader' : ''),
+      new ldap.NoSuchObjectError(dn), dn));
+  }
+  // AN ATTRIBUTE THIS READER MAY NOT READ is refused BEFORE whether the entry
+  // holds it is asked, or 16 against 50 would say which.
+  const unreadableRefusal = unreadableCompareRefusal(req, dn, type,
+                                                     compareView.rule);
+  if (unreadableRefusal) {
+    log.debug('Leaving the LDAP compare handler. Not readable by this ' +
+              'reader.');
+    return next(unreadableRefusal);
   }
   if (!stored.attributes[type]) {
     log.debug('Leaving the LDAP compare handler. The attribute is not there.');
@@ -11972,10 +12435,16 @@ server.search('', function (req, res, next) {
       ' named a DN outside this directory\'s naming context',
       new ldap.NoSuchObjectError(base), base));
   }
-  if (!getEntry(base)) {
-    log.debug('Leaving the LDAP search handler. The base does not exist.');
+  // WHO IS READING, once for the whole search (#106) — and a base this reader
+  // may not see is answered exactly as a base that does not exist.
+  const reader = readerOf(req);
+  const baseEntry = getEntry(base);
+  if (!baseEntry || !readViewOf(reader, baseEntry).visible) {
+    log.debug('Leaving the LDAP search handler. The base does not exist ' +
+              '(or not for this reader).');
     return next(ldapRefusal(req, 'STS-LDAP-0013', 'a search named the base ' +
-      base + ', which does not exist', new ldap.NoSuchObjectError(base), base));
+      base + ', which does not exist' + (baseEntry ? ' for this reader' : ''),
+      new ldap.NoSuchObjectError(base), base));
   }
   // ---------------------------------------------------------------------
   // WHICH REALM THIS SEARCH IS IN was decided before this handler ran: every
@@ -12012,12 +12481,21 @@ server.search('', function (req, res, next) {
   // a search based at ou=users as "a user query" would put the two commonest
   // spellings of one act in two different buckets.
   let usersSent = 0;
+  // In scope and INVISIBLE to this reader (#106): skipped before the filter,
+  // so it neither matches nor counts against the size limit, and counted here
+  // for the audit row only.
+  let withheldEntries = 0;
   for (const stored of entries.values()) {
     if (!isUnder(stored.dn, base)) continue;
     const depth = depthUnder(stored.dn, base);
     if (scope === 'base' && depth !== 0) continue;
     if (scope === 'one' && depth !== 1) continue;
     considered++;
+    const view = readViewOf(reader, stored);
+    if (!view.visible) {
+      withheldEntries++;
+      continue;
+    }
     let matches = false;
     try {
       // The SECOND argument is `strictAttrCase`, and it must be false. LDAP
@@ -12032,7 +12510,8 @@ server.search('', function (req, res, next) {
       // rather than as a filter that could not see it. `matchableForReader()`:
       // a credential is invisible to a filter, or the filter is an oracle for
       // it. See *THE DIRECTORY'S READ AND BIND SECURITY*.
-      matches = req.filter.matches(matchableForReader(stored), false);
+      matches = req.filter.matches(matchableForReader(stored, view.rule),
+                                   false);
     } catch (e) {
       // A filter this store cannot evaluate is not a match, and it is worth a
       // line: an extensible-match filter or an unknown matching rule lands
@@ -12057,7 +12536,8 @@ server.search('', function (req, res, next) {
         summary: 'a search of ' + base + ' hit the size limit of ' + limit +
                  ' after ' + sent + ' entry/entries',
         detail: { scope: scope, filter: filter, returned: sent,
-                  users: usersSent, sizeLimit: limit,
+                  users: usersSent, withheldEntries: withheldEntries,
+                  sizeLimit: limit,
                   clientSizeLimit: clientLimit || 'none',
                   resultCode: 4,
                   note: 'LDAP_SIZE_LIMIT_EXCEEDED; the answer is incomplete' }
@@ -12100,7 +12580,8 @@ server.search('', function (req, res, next) {
         'the answer is INCOMPLETE; ask for less with a filter, or raise ' +
         'ldap.sizeLimit')));
     }
-    res.send(toSearchEntry(stored, req.attributes, res.messageId));
+    res.send(toSearchEntry(stored, req.attributes, res.messageId,
+                           view.rule));
     sent++;
     if (isUnder(stored.dn, usersDn()) &&
         normalizeDn(stored.dn) !== normalizeDn(usersDn())) {
@@ -12138,7 +12619,8 @@ server.search('', function (req, res, next) {
              ' of ' + considered + ' entry/entries in scope' +
              (usersSent ? ', ' + usersSent + ' of them under ou=users' : ''),
     detail: { scope: scope, filter: filter, considered: considered,
-              returned: sent, users: usersSent, sizeLimit: limit,
+              returned: sent, users: usersSent,
+              withheldEntries: withheldEntries, sizeLimit: limit,
               attributes: (req.attributes || []).join(', ') || '(all)' }
   });
   res.end();
@@ -12617,6 +13099,31 @@ app.get('/admin/ldap/service', function (req, res) {
 // `q` matches the DN, any attribute name and any attribute value, and the
 // page says so under the box rather than leaving it to be discovered.
 // ---------------------------------------------------------------------------
+// A FEDERATION RELATIONSHIP'S KEY TABLE (#168) on this page: every row with
+// its private key taken out and the fact said, so the certificate, the kid
+// and the state stay visible and the key — ciphertext included — does not.
+function withheldKeyTableValues(name, values) {
+  log.debug('Entering withheldKeyTableValues().');
+  if (String(name).toLowerCase() !== 'fedencryptionkey') {
+    log.debug('Leaving withheldKeyTableValues(). Not the key table.');
+    return values;
+  }
+  log.debug('Leaving withheldKeyTableValues().');
+  return values.map(function (value) {
+    try {
+      const row = JSON.parse(String(value));
+      if (row && row.privateKey) {
+        row.privateKey = '(withheld: the private key, never shown)';
+      }
+      return JSON.stringify(row);
+    } catch (e) {
+      log.debug('Caught in withheldKeyTableValues(): ' +
+                ((e && e.message) || e));
+      return '(withheld: a key-table row that is not JSON)';
+    }
+  });
+}
+
 function ldapDirectoryView(req) {
   log.debug('Entering ldapDirectoryView().');
   const listed = [];

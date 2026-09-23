@@ -582,6 +582,15 @@ const ACTIONS = [
     label: 'An operator required a second factor of somebody' },
   { action: 'admin.mfa.unrequired', category: 'admin',
     label: 'An operator stopped requiring a second factor of somebody' },
+  // WHO MAY ACT FOR A PERSON (#108): the two person-side delegation flags,
+  // from /admin/users (the operator) and /portal/delegate (the person).
+  { action: 'admin.delegation.not-delegated', category: 'admin',
+    label: 'An operator marked somebody as one who cannot be delegated, or ' +
+           'cleared it' },
+  { action: 'admin.delegation.may-act', category: 'admin',
+    label: 'An operator named or cleared the party who may act for somebody' },
+  { action: 'portal.delegation.may-act', category: 'authentication',
+    label: 'A person named or cleared the party who may act for them' },
 
   // A PASSWORD POLICY PROFILE WAS SAVED OR PUT BACK (2026-09-12). The SUBSTANCE
   // of the change, for `claims.change`'s reason: the `admin.change` row says a

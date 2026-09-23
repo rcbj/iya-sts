@@ -282,6 +282,11 @@ const USER_ATTRIBUTES: MapRow[] = [
   { scim: 'displayName', ldap: 'displayName', kind: 'single', schema: 'RFC ' +
       '2798 2.3' },
   { scim: 'title', ldap: 'title', kind: 'single', schema: 'RFC 4519 2.38' },
+  // RFC 7643's honorific prefix — "title in most Western languages" — is the
+  // Claims Registration's `title` (#128). SCIM's own `title` above stays the
+  // JOB title, which is what RFC 7643 section 4.1.1 means by it.
+  { scim: 'name.honorificPrefix', ldap: 'schacPersonalTitle', kind: 'single',
+    schema: 'SCHAC 1.5.0' },
   // RFC 2798 2.7 is `preferredLanguage`; `employeeType` is 2.5. Corrected
   // 2026-09-11 against the RFC text.
   { scim: 'userType', ldap: 'employeeType', kind: 'single', schema: 'RFC ' +
@@ -343,6 +348,33 @@ const USER_ATTRIBUTES: MapRow[] = [
     note: 'A DN in the directory and an id in SCIM, translated both ways by ' +
           'the SCIM handlers since the id became the entryUUID ' +
           '(2026-09-14). A value naming no entry is kept as it was sent.' },
+
+  // THE IDENTITY ASSURANCE CLAIMS (#128): this service's own attribute types,
+  // so this service's own extension.
+  { scim: IYA_STS_USER_SCHEMA + ':salutation', ldap: 'salutation',
+    kind: 'single', extension: true,
+    schema: "this service's own (#128; no standard type)" },
+  { scim: IYA_STS_USER_SCHEMA + ':birthFamilyName', ldap: 'birthFamilyName',
+    kind: 'single', extension: true,
+    schema: "this service's own (#128; no standard type)" },
+  { scim: IYA_STS_USER_SCHEMA + ':birthGivenName', ldap: 'birthGivenName',
+    kind: 'single', extension: true,
+    schema: "this service's own (#128; no standard type)" },
+  { scim: IYA_STS_USER_SCHEMA + ':birthMiddleName', ldap: 'birthMiddleName',
+    kind: 'single', extension: true,
+    schema: "this service's own (#128; no standard type)" },
+  { scim: IYA_STS_USER_SCHEMA + ':alsoKnownAs', ldap: 'alsoKnownAs',
+    kind: 'single', extension: true,
+    schema: "this service's own (#128; no standard type)" },
+  { scim: IYA_STS_USER_SCHEMA + ':placeOfBirthCountry',
+    ldap: 'placeOfBirthCountry', kind: 'single', extension: true,
+    schema: "this service's own (#128; no standard type)" },
+  { scim: IYA_STS_USER_SCHEMA + ':placeOfBirthRegion',
+    ldap: 'placeOfBirthRegion', kind: 'single', extension: true,
+    schema: "this service's own (#128; no standard type)" },
+  { scim: IYA_STS_USER_SCHEMA + ':placeOfBirthLocality',
+    ldap: 'placeOfBirthLocality', kind: 'single', extension: true,
+    schema: "this service's own (#128; no standard type)" },
 
   { scim: IYA_STS_USER_SCHEMA + ':federationLinks', ldap: 'federationLink',
     kind: 'links', extension: true,

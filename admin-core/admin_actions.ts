@@ -165,9 +165,17 @@ import federation = require('../federation/federation');
 // the one place a requested link is checked, shared with SCIM. A static
 // utility class; it registers nothing.
 import fedLinks = require('../federation/federation_links');
+// A relationship's encryption key (#168): issued at create, rotated on
+// request or when its key type changes. A static utility class; it registers
+// nothing.
+import fedEncryption = require('../federation/federation_encryption');
 import spiffeCa = require('../spiffe/spiffe_ca');
 import spiffeRegistry = require('../spiffe/spiffe_registry');
 import spiffeIdLib = require('../spiffe/spiffe_id');
+// The SPIFFE Broker API's broker list (#170): its parser, so the console,
+// /admin-api and the endpoint read `spiffe.brokers` one way. A library that
+// `admin_views.ts` already loaded, so the require moves nothing.
+import spiffeAuth = require('../spiffe/spiffe_auth');
 import signals = require('../ssf/ssf_receivers');
 // WHAT A CREDENTIAL CHANGE SAYS OVER CAEP AND RISC (2026-09-13). A LIBRARY that
 // requires only the logger and reads `ssf/ssf.ts` out of the require cache when
@@ -177,6 +185,7 @@ import accountSignals = require('../ssf/account_signals');
 // on (2026-09-17, #36 follow-up). Two libraries loaded long before this file,
 // neither of which requires anything back.
 import accountState = require('../common/account_state');
+import identityAssurance = require('../common/identity_assurance');
 import backchannel = require('../oauth-oidc/backchannel_logout');
 import oauth2 = require('../oauth-oidc/oauth2');
 import appPermissions = require('../common/app_permissions');
@@ -319,7 +328,11 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // a person (#109, 2026-09-22).
                        'federation-link', 'federation-unlink',
                        // App passwords (#101, 2026-09-22).
-                       'create-app-password', 'revoke-app-password'];
+                       'create-app-password', 'revoke-app-password',
+                       // Who may act for them (#108, 2026-09-23).
+                       'set-not-delegated', 'set-may-act',
+                       // Identity verifications (#127, 2026-09-23).
+                       'record-verification', 'remove-verification'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -360,7 +373,20 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
 // `friendly_name`). `common/credentials.ts` keeps the records.
 const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   'disable-primary-keys', 'disable-mfa', 'require-mfa', 'stop-requiring-mfa',
-  'create-app-password', 'revoke-app-password'];
+  'create-app-password', 'revoke-app-password',
+  // WHO MAY ACT FOR THEM (#108, 2026-09-23): `set-not-delegated` writes
+  // `stsNotDelegated` (`value` TRUE or FALSE) — Kerberos's NOT_DELEGATED, on
+  // the person — and `set-may-act` writes `stsMayAct` (`delegate`, a DN of a
+  // person or application; empty clears), the one party whose `sub` becomes
+  // the `may_act` claim of their access tokens (RFC 8693 section 4.4).
+  // `common/delegation_policy.ts` decides what both mean.
+  'set-not-delegated', 'set-may-act',
+  // IDENTITY VERIFICATIONS (#127, 2026-09-23): `record-verification` keeps
+  // one — OpenID Connect for Identity Assurance's `verification` element, as
+  // JSON or as the console's flat fields, and the `claims` it covered — and
+  // `remove-verification` takes one away by its `id`.
+  // `common/identity_assurance.ts` checks and keeps them.
+  'record-verification', 'remove-verification'];
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the actions in APPLICATION_ACTIONS below.
@@ -507,7 +533,8 @@ const MFA_ACTIONS = ['clear-totp', 'clear-key'];
 // console action has an /admin-api operation, so a list that is short by one is
 // a list that turns the parity check off for that action.
 const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
-                         'revoke-consent', 'forget-user-consent'];
+                         'revoke-consent', 'revoke-application-consent',
+                         'forget-user-consent'];
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for CONSENT_ACTIONS' reason:
 // this repository's own tests/vendored/admin_api.js READS the refusal sentence
@@ -658,6 +685,7 @@ const TRUSTSTORE_ACTIONS = ['add', 'remove'];
 const SPIFFE_ENTRY_ACTIONS = ['create', 'update', 'delete'];
 
 const SPIFFE_AGENT_ACTIONS = ['ban', 'unban', 'delete'];
+const SPIFFE_BROKER_ACTIONS = ['set', 'remove'];
 
 // The console names a field the way the record does and the EDITABLE table
 // names it the way the DIRECTORY does. One map, here, rather than two
@@ -712,11 +740,20 @@ const SPIFFE_ACTIONS = ['rotate', 'federation-set', 'federation-remove'];
 // is a password reset in every respect but one: the person is NOT made to
 // change it at their next sign-in, because a forced change would strand the
 // keytab it was set to produce. `resetPersonKeytab()` below argues the order.
+//
+// **AND AN EIGHTH AND NINTH (#169, 2026-09-23): `rotate-krbtgt` and
+// `rotate-krbtgt-invalidate`**, the realm's krbtgt key. Neither rotates in the
+// request: each QUEUES a run of `krb5.krbtgt-rotate-now` on the scheduler
+// (`kerberos/krb5_krbtgt_rotation.ts`), which runs once, on the leader, and
+// answers with the run's id. The second keeps nothing — every TGT in the
+// realm is refused afterwards — and needs `confirm: "invalidate"`.
+// `drop-previous-service-keys` takes the krbtgt's own name as well.
 const KERBEROS_PRINCIPAL_ACTIONS = ['create-service', 'rotate-service',
                                     'delete-service', 'clear-person-keys',
                                     'drop-previous-service-keys',
                                     'drop-previous-person-keys',
-                                    'reset-person-keytab'];
+                                    'reset-person-keytab', 'rotate-krbtgt',
+                                    'rotate-krbtgt-invalidate'];
 
 interface AdminActionsDeps {
   log: typeof helpers.log;
@@ -743,12 +780,15 @@ interface AdminActionsDeps {
   tlsClientCertificates: typeof tlsClientCertificates;
   federation: typeof federation;
   fedLinks: typeof fedLinks;
+  fedEncryption: typeof fedEncryption;
   spiffeCa: typeof spiffeCa;
   spiffeRegistry: typeof spiffeRegistry;
   spiffeIdLib: typeof spiffeIdLib;
+  spiffeAuth: typeof spiffeAuth;
   signals: typeof signals;
   accountSignals: typeof accountSignals;
   accountState: typeof accountState;
+  identityAssurance: typeof identityAssurance;
   backchannel: typeof backchannel;
   oauth2: typeof oauth2;
   appPermissions: typeof appPermissions;
@@ -758,6 +798,11 @@ interface AdminActionsDeps {
   errorCodes: typeof errorCodes;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
+  // THE KRBTGT ROTATION (#169), LAZILY: it is built by the composition root at
+  // 23b-iii, long after this file is required, and requiring it here would
+  // build a default instance in a process that loads the console without the
+  // root.
+  krbtgtRotation: () => any;
 }
 
 class AdminActions {
@@ -795,12 +840,15 @@ class AdminActions {
       tlsClientCertificates: tlsClientCertificates,
       federation: federation,
       fedLinks: fedLinks,
+      fedEncryption: fedEncryption,
       spiffeCa: spiffeCa,
       spiffeRegistry: spiffeRegistry,
       spiffeIdLib: spiffeIdLib,
+      spiffeAuth: spiffeAuth,
       signals: signals,
       accountSignals: accountSignals,
       accountState: accountState,
+      identityAssurance: identityAssurance,
       backchannel: backchannel,
       oauth2: oauth2,
       appPermissions: appPermissions,
@@ -809,7 +857,10 @@ class AdminActions {
       passwordPolicy: passwordPolicy,
       errorCodes: errorCodes,
       krb5Principals: krb5Principals,
-      krb5PersonKeys: krb5PersonKeys
+      krb5PersonKeys: krb5PersonKeys,
+      krbtgtRotation: function () {
+        return require('../kerberos/krb5_krbtgt_rotation');
+      }
     };
   }
 
@@ -1348,11 +1399,26 @@ class AdminActions {
   // POST /admin-api/logout/{action}. Four of them, and the two NON-SPEC ones
   // are labelled as such wherever they appear — see the header.
   logoutAction(body) {
-    const { log, stats, krb5Principals } = this.deps;
+    const { log, stats, krb5Principals, mode } = this.deps;
     log.debug("Entering AdminActions.logoutAction(). action=" + (body.action ||
                                                                  '(none)'));
     const action = String(body.action || '');
     const user = String(body.user || body.username || '').trim();
+    // RESTORE-KERBEROS IS A DEVELOPMENT TEST CONTROL (#111, 2026-09-23), and
+    // refused here — the one function the console form and `POST
+    // /admin-api/logout/restore-kerberos` both reach (rule 7) — before the
+    // person is even looked up. It re-admits every ticket-granting ticket
+    // authenticated before a sign-out; a product deployment has no use for
+    // that, and a real KDC has no such operation.
+    if (action === 'restore-kerberos' && !mode.opensTestControls()) {
+      log.debug("Leaving AdminActions.logoutAction(). restore-kerberos is " +
+                "development-only.");
+      return this.refused('STS-ADMIN-0804', { ok: false, errors: [
+        'restore-kerberos is a development-only test control and is refused ' +
+        'in product mode. A sign-out instant stands until its horizon — the ' +
+        'latest a ticket from before it could still be valid; authenticate ' +
+        'again (a fresh AS-REQ) for a ticket newer than it.'] });
+    }
     // RETRY A DEAD BACK-CHANNEL DELIVERY (2026-09-17, #36 follow-up). It names
     // a delivery rather than a person — the list it is pressed from is every
     // delivery in the realm — so it is answered before the person is asked
@@ -1475,7 +1541,7 @@ class AdminActions {
     if (action === 'restore-kerberos') {
       // NON-SPEC in the same sense and for the same reason: it is what makes a
       // sign-out something a person can experiment with rather than restart out
-      // of.
+      // of. DEVELOPMENT ONLY — refused at the top of this function in product.
       const was = krb5Principals.clearSignOut([key], krb5Principals.REALM);
       log.debug("Leaving AdminActions.logoutAction().");
       return { ok: true,
@@ -1484,8 +1550,10 @@ class AdminActions {
                (was ? ' (' + was.toISOString() + ') is cleared, so tickets ' +
                       'issued before it are accepted again.'
                     : ' was not set, so nothing changed.') +
-               ' A real KDC has no such operation; a fresh AS-REQ is the ' +
-               'supported way back and clears it too.' };
+               ' A real KDC has no such operation, and this one refuses it ' +
+               'in product mode. A fresh AS-REQ gets a ticket newer than the ' +
+               'instant but does NOT clear it: tickets from before it stay ' +
+               'refused.' };
     }
 
     log.debug("Leaving AdminActions.logoutAction(). Unknown action.");
@@ -2125,6 +2193,115 @@ class AdminActions {
                message: 'The app password "' + gone.revoked.name + '" of ' +
                         who + ' is revoked. A client still sending it is ' +
                         'refused at its next authentication.' };
+    }
+
+    if (action === 'set-not-delegated') {
+      const flag = ['true', 'on', '1', 'yes'].indexOf(
+        String(body.value === undefined ? 'true' : body.value).trim()
+          .toLowerCase()) >= 0;
+      const result = credentials.setNotDelegated(who, flag);
+      audited('admin.delegation.not-delegated',
+              (result.ok ? '' : 'could not ') + (flag ? 'mark ' : 'clear ') +
+              who + (flag ? ' as one who cannot be delegated'
+                          : '\'s stsNotDelegated'),
+              { notDelegated: flag,
+                errors: result.ok ? undefined : (result.errors || []) },
+              result.ok ? 'success' : 'failure');
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "set-not-delegated was refused.");
+        return this.refusedBy('STS-ADMIN-0805', result);
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "set-not-delegated.");
+      return { ok: true, username: who, notDelegated: flag,
+               message: flag
+                 ? who + ' now carries stsNotDelegated: nobody may act for ' +
+                   'them at WS-Trust or the token exchange, whatever any ' +
+                   'application says (enforced in product mode).'
+                 : who + ' no longer carries stsNotDelegated.' };
+    }
+
+    if (action === 'set-may-act') {
+      const named = String(body.delegate || '').trim();
+      const result = credentials.setMayAct(who, named);
+      audited('admin.delegation.may-act',
+              (result.ok ? '' : 'could not ') + (named ? 'name ' + named +
+              ' as the party who may act for ' + who : 'clear the party who ' +
+              'may act for ' + who),
+              { delegate: named,
+                errors: result.ok ? undefined : (result.errors || []) },
+              result.ok ? 'success' : 'failure');
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "set-may-act was refused.");
+        return this.refusedBy('STS-ADMIN-0806', result);
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). set-may-act.");
+      return { ok: true, username: who, mayAct: named,
+               message: named
+                 ? named + ' may now act for ' + who + ': access tokens ' +
+                   'about ' + who + ' carry may_act naming them (RFC 8693 ' +
+                   'section 4.4), and an exchange of one by anybody else is ' +
+                   'refused.'
+                 : 'Nobody is named as acting for ' + who + ' now.' };
+    }
+
+    if (action === 'record-verification') {
+      const { identityAssurance } = this.deps;
+      const kept = identityAssurance.record(who,
+        identityAssurance.fromForm(body), ctx.actor);
+      const verification = kept.ok ? kept.record.verification : null;
+      audited('admin.ida.recorded',
+              (kept.ok ? 'recorded' : 'could not record') + ' an identity ' +
+              'verification for ' + who,
+              kept.ok ? { id: kept.record.id,
+                          trustFramework: verification.trust_framework,
+                          evidence: (verification.evidence || [])
+                            .map(function (one) {
+                              return one.type;
+                            }),
+                          claims: Object.keys(kept.record.claims) }
+                      : { errors: [kept.error] },
+              kept.ok ? 'success' : 'failure');
+      if (!kept.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "record-verification was refused.");
+        return this.refusedBy('STS-ADMIN-0807',
+                              { ok: false, errors: [kept.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "record-verification.");
+      return { ok: true, username: who, verification: kept.record,
+               message: 'An identity verification under ' +
+                        verification.trust_framework + ' is recorded for ' +
+                        who + ', covering ' +
+                        Object.keys(kept.record.claims).join(', ') + '. A ' +
+                        'client asking for verified_claims is answered ' +
+                        'from it while the entry still holds those values.' };
+    }
+
+    if (action === 'remove-verification') {
+      const { identityAssurance } = this.deps;
+      const id = String(body.id || '').trim();
+      const gone = identityAssurance.remove(who, id);
+      audited('admin.ida.removed',
+              (gone.ok ? 'removed' : 'could not remove') + ' identity ' +
+              'verification ' + id + ' of ' + who,
+              { id: id, errors: gone.ok ? undefined : [gone.error] },
+              gone.ok ? 'success' : 'failure');
+      if (!gone.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "remove-verification was refused.");
+        return this.refusedBy('STS-ADMIN-0808',
+                              { ok: false, errors: [gone.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "remove-verification.");
+      return { ok: true, username: who, removed: id,
+               message: 'Identity verification ' + id + ' of ' + who +
+                        ' is removed; nothing is released from it any ' +
+                        'more.' };
     }
 
     // require-mfa and stop-requiring-mfa
@@ -3610,7 +3787,10 @@ class AdminActions {
     }
     if (action === 'mdq-import') {
       log.debug("Leaving AdminActions.saml2Action(). mdq-import.");
-      return spMetadata.mdqImport(identifier, { actor: body.actor || '' })
+      // `origin: 'operator'` (#112): an administrator named this entityID,
+      // which is what a lookup a request starts cannot claim.
+      return spMetadata.mdqImport(identifier, { actor: body.actor || '',
+                                               origin: 'operator' })
         .then(function (result) {
           return self.refusedBy('STS-ADMIN-0532', result);
         });
@@ -3826,6 +4006,15 @@ class AdminActions {
 
     if (action === 'revoke-global-consent') {
       const result = consent.revokeGlobal(client, scope, actor);
+      if (result.ok) {
+        // The `application.update` row is the attribute's; this one is the
+        // withdrawal's, and says what it revoked (#172).
+        auditLog.audit({ action: 'consent.revoke', actor: actor, target: client,
+                      protocol: 'OAuth 2.0 / OIDC', channel: 'http',
+                      detail: 'withdrew the global consent to "' + scope +
+                              '"; ' + (result.revoked || 0) + ' token(s) ' +
+                              'issued under it revoked' });
+      }
       log.debug("Leaving AdminActions.consentAction(). revoke-global-consent " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0540', result);
@@ -3842,9 +4031,30 @@ class AdminActions {
         // consenting.
         auditLog.audit({ action: 'consent.revoke', actor: actor, target: client,
                       protocol: 'OAuth 2.0 / OIDC', channel: 'http',
-                      detail: 'revoked "' + scope + '" for ' + username });
+                      detail: 'revoked "' + scope + '" for ' + username +
+                              '; ' + (result.revoked || 0) + ' token(s) ' +
+                              'issued under it revoked (#172)' });
       }
       log.debug("Leaving AdminActions.consentAction(). revoke-consent " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0540', result);
+    }
+
+    // EVERY SCOPE ONE PERSON AGREED TO FOR ONE APPLICATION (#172) — what a
+    // person does from /portal/consents, offered here so that the console and
+    // /admin-api can do it for them (rule 7).
+    if (action === 'revoke-application-consent') {
+      const result = consent.revokeApplication(username, client, actor);
+      if (result.ok) {
+        auditLog.audit({ action: 'consent.revoke', actor: actor, target: client,
+                      protocol: 'OAuth 2.0 / OIDC', channel: 'http',
+                      detail: 'withdrew every consent (' + result.removed +
+                              ') to "' + client + '" for ' + username +
+                              '; ' + (result.revoked || 0) + ' token(s) ' +
+                              'issued under them revoked' });
+      }
+      log.debug("Leaving AdminActions.consentAction(). " +
+                "revoke-application-consent " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0540', result);
     }
@@ -3856,7 +4066,9 @@ class AdminActions {
                          target: username,
                       protocol: 'OAuth 2.0 / OIDC', channel: 'http',
                       detail: 'forgot every consent (' + result.removed +
-                              ') for ' + username });
+                              ') for ' + username + '; ' +
+                              (result.revoked || 0) + ' token(s) issued ' +
+                              'under them revoked' });
       }
       log.debug("Leaving AdminActions.consentAction(). forget-user-consent " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -5645,6 +5857,69 @@ class AdminActions {
   }
 
   // ---------------------------------------------------------------------------
+  // THE SPIFFE BROKER API'S BROKERS (#170): `/admin/spiffe/brokers` and
+  // `POST /admin-api/spiffe/brokers/:action` (rule 7). `set` adds a broker
+  // or replaces the reference types of one already listed; `remove` takes it
+  // off. Both write `spiffe.brokers` in the current realm through
+  // `config.setOverride()` — the one store, which the endpoint reads on every
+  // call — and an entry that would not parse is refused before anything is
+  // written (STS-SPIFFE-0141).
+  // ---------------------------------------------------------------------------
+  spiffeBrokersAction(body) {
+    const { log, config, spiffeAuth } = this.deps;
+    log.debug("Entering AdminActions.spiffeBrokersAction(). action=" +
+              (body.action || '(none)'));
+    const action = String(body.action || '');
+    if (SPIFFE_BROKER_ACTIONS.indexOf(action) < 0) {
+      log.debug("Leaving AdminActions.spiffeBrokersAction(). Unknown.");
+      return this.spiffeUnknownAction(action, SPIFFE_BROKER_ACTIONS);
+    }
+    const id = String(body.id || '').trim();
+    const listed = spiffeAuth.brokers().filter(function (one) {
+      return one.id !== id;
+    });
+    if (action === 'remove') {
+      const before = spiffeAuth.brokers().length;
+      const result = config.setOverride('spiffe.brokers',
+                                        spiffeAuth.serializeBrokers(listed));
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.spiffeBrokersAction(). Not written.");
+        return this.refusedBy('STS-SPIFFE-0141', result);
+      }
+      log.debug("Leaving AdminActions.spiffeBrokersAction(). remove.");
+      return { ok: true, id: id,
+               message: listed.length < before
+                 ? id + ' is no longer a broker here: its next call to the ' +
+                   'SPIFFE Broker API is refused PERMISSION_DENIED.'
+                 : id + ' was not listed; nothing changed.' };
+    }
+    const types = (Array.isArray(body.referenceTypes)
+      ? body.referenceTypes : this.spiffeCommaList(body.referenceTypes))
+      .map(function (one) {
+        return String(one).trim().toLowerCase();
+      }).filter(Boolean);
+    const parsed = spiffeAuth.parseBrokers(id + '=' + types.join(','))[0];
+    if (!id || !parsed || parsed.problem) {
+      log.debug("Leaving AdminActions.spiffeBrokersAction(). Invalid.");
+      return this.refused('STS-SPIFFE-0141', { ok: false, errors: [
+        (id || 'The broker') + ' cannot be a broker: ' +
+        (parsed && parsed.problem ? parsed.problem
+                                  : 'send `id`, a SPIFFE ID') + '.'] });
+    }
+    const result = config.setOverride('spiffe.brokers',
+      spiffeAuth.serializeBrokers(listed.concat([parsed])));
+    if (!result.ok) {
+      log.debug("Leaving AdminActions.spiffeBrokersAction(). Not written.");
+      return this.refusedBy('STS-SPIFFE-0141', result);
+    }
+    log.debug("Leaving AdminActions.spiffeBrokersAction(). set.");
+    return { ok: true, id: parsed.id, referenceTypes: parsed.types,
+             message: parsed.id + ' may call the SPIFFE Broker API with ' +
+                      parsed.types.join(', ') + ' references, from its next ' +
+                      'call.' };
+  }
+
+  // ---------------------------------------------------------------------------
   // THE ACTION FUNCTION. `/admin-api/federation/:action` calls exactly this,
   // with `action` off the URL instead of out of a hidden input — rule 7, and it
   // is what makes "every console control has an API operation" a property of
@@ -5656,8 +5931,13 @@ class AdminActions {
   // here would be a second opinion about what a relationship may hold, and the
   // one an `ldapmodify` never saw.
   // ---------------------------------------------------------------------------
-  federationAction(body) {
-    const { log, federation } = this.deps;
+  //
+  // **ASYNCHRONOUS SINCE #168**, for the three branches that issue a key: a
+  // create (the relationship's encryption key is issued with it), `set` of
+  // `fedEncryptionKeyType` (a key of the new type), and `rotate-key`.
+  // Issuing is `pki.js`'s, and it awaits. Both callers take the promise.
+  async federationAction(body) {
+    const { log, federation, fedEncryption } = this.deps;
     log.debug("Entering AdminActions.federationAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
@@ -5678,9 +5958,26 @@ class AdminActions {
         log.debug("Leaving AdminActions.federationAction().");
         return this.refusedBy('STS-ADMIN-0575', result);
       }
+      // THE ENCRYPTION KEY A PARTNER ENCRYPTS TO (#168), for the three
+      // protocols that have one. A key that could not be issued leaves the
+      // relationship registered and says so; `rotate-key` issues one later.
+      let keyNote = '';
+      if (federation.encrypts(result.relationship)) {
+        const keyed = await fedEncryption.rotate(id,
+          'the encryption key was issued with the relationship');
+        keyNote = keyed.ok
+          ? ' Its encryption key, ' + keyed.kid + ', is issued: give the ' +
+            'partner the certificate or JWKS on its page.'
+          : ' ITS ENCRYPTION KEY WAS NOT ISSUED: ' +
+            (keyed.errors || []).join(' ') + ' Use rotate-key once the ' +
+            'cause is fixed.';
+        result.relationship = federation.get(id) || result.relationship;
+        result.readiness = federation.readinessOf(result.relationship);
+      }
       log.debug("Leaving AdminActions.federationAction().");
       return Object.assign({}, result, {
-        message: 'Registered, and DISABLED. Set what it needs — ' +
+        message: 'Registered, and DISABLED.' + keyNote + ' Set what it ' +
+          'needs — ' +
           (result.readiness.missing.length
             ? result.readiness.missing.join(', ')
             : 'nothing is missing') +
@@ -5705,7 +6002,40 @@ class AdminActions {
       });
       log.debug("Leaving AdminActions.federationAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
+      // A NEW KEY TYPE IS A NEW KEY (#168): the one held is of the old type
+      // and decrypts nothing under the new policy, so it is rotated out now
+      // and keeps its grace period like any other.
+      if (result.ok && String(body.field || '') === 'fedEncryptionKeyType' &&
+          federation.encrypts(result.relationship)) {
+        const current = federation.currentEncryptionKeyOf(
+          result.relationship);
+        const policy = federation.encryptionPolicyOf(result.relationship);
+        if (!current || current.keyType !== policy.keyType) {
+          const keyed = await fedEncryption.rotate(id,
+            'a key of the new type ' + policy.keyType + ' was issued');
+          return this.refusedBy('STS-ADMIN-0575', keyed.ok
+            ? Object.assign({}, result, {
+                relationship: federation.get(id),
+                readiness: federation.readinessOf(federation.get(id)),
+                message: result.message + ' ' + keyed.message })
+            : keyed);
+        }
+      }
       return this.refusedBy('STS-ADMIN-0575', result);
+    }
+
+    // ROTATE THE ENCRYPTION KEY (#168) — the console's Rotate button and
+    // `POST /admin-api/federation/rotate-key` (rule 7).
+    if (action === 'rotate-key') {
+      const result = await fedEncryption.rotate(id,
+        'the encryption key was rotated by an administrator');
+      log.debug("Leaving AdminActions.federationAction(). rotate-key " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0575', result.ok
+        ? Object.assign({}, result, {
+            relationship: federation.get(id),
+            readiness: federation.readinessOf(federation.get(id)) })
+        : result);
     }
 
     if (action === 'enable' || action === 'disable') {
@@ -5726,9 +6056,9 @@ class AdminActions {
 
     log.debug("Leaving AdminActions.federationAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500', { ok: false,
-             errors: ['Unknown action "' + action + '". The seven are: ' +
+             errors: ['Unknown action "' + action + '". The eight are: ' +
                            'create, set, add-value, remove-value, enable, ' +
-                           'disable, delete.'] });
+                           'disable, rotate-key, delete.'] });
   }
 
   async spiffeAction(body) {
@@ -5958,6 +6288,12 @@ class AdminActions {
       result = krb5PersonKeys.dropPreviousServiceKeys(asked.spn, ctx);
     } else if (action === 'drop-previous-person-keys') {
       result = krb5PersonKeys.dropPreviousPersonKeys(asked.username, ctx);
+    } else if (action === 'rotate-krbtgt' ||
+               action === 'rotate-krbtgt-invalidate') {
+      result = this.deps.krbtgtRotation().requestRotation(realms.currentId(),
+        { invalidate: action === 'rotate-krbtgt-invalidate',
+          confirm: asked.confirm, requestedBy: ctx.actor, via: ctx.via,
+          channel: ctx.via === 'api' ? 'api' : 'console' });
     } else if (action === 'reset-person-keytab') {
       // A PROMISE, and the one action here that answers one: both callers
       // resolve whatever this returns.
@@ -6109,6 +6445,7 @@ export = {
   SPIFFE_ENTRY_ACTIONS: SPIFFE_ENTRY_ACTIONS,
   SPIFFE_AGENT_ACTIONS: SPIFFE_AGENT_ACTIONS,
   spiffeUnknownAction: slot.forward('spiffeUnknownAction'),
+  spiffeBrokersAction: slot.forward('spiffeBrokersAction'),
   spiffeEntriesAction: slot.forward('spiffeEntriesAction'),
   SPIFFE_FIELD_ATTRIBUTES: SPIFFE_FIELD_ATTRIBUTES,
   fieldToAttribute: slot.forward('fieldToAttribute'),

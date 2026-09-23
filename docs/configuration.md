@@ -403,7 +403,7 @@ Both are ordinary attributes on ordinary directory entries, so an `ldapmodify`
 is a configuration change here exactly as it is for a redirect URI, and they
 persist wherever the directory does.
 
-#### The two prompt values, and what is never re-judged
+#### The two prompt values
 
 `prompt=consent` asks again whatever is on the entry and takes nothing away.
 `prompt=none` with something outstanding is **`consent_required`** — OpenID
@@ -411,10 +411,35 @@ Connect Core section 3.1.2.6's own code rather than the general
 `interaction_required`, because a client that gets the general one cannot tell a
 missing session from a missing consent.
 
-**Nothing already issued is touched, ever.** The token endpoint asks nobody
-anything, so a refresh of a code obtained before this was turned on still works,
-and revoking a consent leaves a token already minted valid. `/admin/tokens` is
-where an issued credential is revoked.
+#### Withdrawing a consent ends what was issued under it (#172)
+
+Revoking a consent — one scope, one application, a person's whole list, or a
+global consent — revokes every access and refresh token issued under it, on
+every node, and writes the instant down: `oauthConsentWithdrawn` on the
+person's entry, `oauthGlobalConsentWithdrawn` on the application's. A refresh
+token carries when its grant was made, and the refresh grant refuses it when a
+consent it stood on was withdrawn at or after that — whatever the mode, and even
+after the person consents again. Withdrawing one scope revokes the whole refresh
+token. A person withdraws their own at `/portal/consents`.
+
+### `oauth2.refreshRequiresConsent` — a grant nobody agreed to is not renewed
+
+Runtime, settable on a trust realm, **on by default**. While consent is required
+(`oauth2.consentRequired`, or a FAPI 1.0 profile), a refresh token issued at the
+authorization endpoint is renewed only if every scope it carries was covered,
+when it was granted, by the person's own recorded consent or by the
+application's global consent. Otherwise the refresh is `invalid_grant`
+(`STS-OAUTH-0616`). That is a token obtained while consent was off, or while
+the directory could not record the answer; turning consent on sends each such
+client back through the authorization endpoint once. A withdrawn consent is
+refused whatever this says, and refresh tokens from the grants that never ask
+anybody (the password grant, token exchange and the like) are held to
+withdrawals only.
+
+> **Warning.** Turning this off renews grants that nobody agreed to. A client
+> that obtained a refresh token while consent was off keeps renewing it for the
+> token's whole lifetime — while the person is away, if it holds
+> `offline_access` — although this service now requires their consent.
 
 ### `oauth2.tokenExchangeRefreshToken` — three servers, one switch
 
@@ -849,11 +874,22 @@ value for *the authenticator verified the user* that this service could honestly
 assert, and claiming `mfa` because the ceremony was phishing-resistant would be
 exactly the kind of fake this service refuses everywhere else.
 
-**No attestation statement is verified whatever `webauthn.attestation` asks
-for.** There is no metadata service here, no vendor trust anchor and no model
-allow-list, so the statement is parsed, reported and believed. `direct` is the
-default because this is a debugging service and the object is worth looking at;
-a real deployment with no attestation policy sends `none`.
+**What is done with the attestation statement is `webauthn.attestationPolicy`
+(#105).** `by-mode`, the default, verifies every statement in product mode
+(`verify-if-present`: all eight WebAuthn Level 3 section 8 formats, the chain
+against `webauthn.attestationTrustAnchors` and the FIDO Metadata Service's
+roots, revocation, and MDS status reports) and nothing in development (`off`,
+which product refuses to hold). `require-trusted` accepts only a statement that
+chains to an anchor, which refuses every synced passkey. An AAGUID allow-list
+(`webauthn.attestationAllowedAaguids`), a least certification level
+(`webauthn.attestationMinCertificationLevel`) and FIPS
+(`webauthn.attestationRequireFips`) each demand a trusted statement; a realm
+that demands one asks the browser for `direct` whatever `webauthn.attestation`
+says. `webauthn.attestationAllowSafetynet` and
+`webauthn.attestationAndroidSoftwareKeys` are weaker options, off, each with a
+warning in its description. `direct` is the conveyance default because this is
+a debugging service and the object is worth looking at; a deployment with no
+use for the authenticator's model sends `none`.
 
 **`webauthn.rpId` may only WIDEN the RP ID**, to a registrable domain suffix of
 the host this service was reached on — `example.com` at `sts.example.com`. That
@@ -921,7 +957,9 @@ switched is logged once (`STS-CORE-0106`) — and refuses turning it on
 (`STS-CORE-0103`). The same marker (`onlyWhile` on the row in
 `common/config.js`) makes `ssf.breakSetSignature`, `ssf.legacySubClaim`,
 `spiffe.acceptAssertedSelectors` and `spiffe.attestWorkloads` off development
-only, and the four `…SkipTlsVerification` settings before them (#171).
+only, and the four `…SkipTlsVerification` settings before them (#171). On
+`oid4vp.requireStatusReference` it governs one value only: `off` is
+development only, while `own-only` may be set in product (#165).
 
 ### The four token lifetimes
 

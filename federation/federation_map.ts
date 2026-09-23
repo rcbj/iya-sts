@@ -218,6 +218,16 @@ class FederationMap {
         }
         return;
       }
+      if (claims.length > 1) {
+        // Any other nested claim (#128's `place_of_birth`): matched by its
+        // DOTTED name, which is what flatten() turns the object into — its
+        // members (`country`, `locality`) are the address's names too, and
+        // must not be taken from it.
+        addDefault(claims.join('.'), row.ldap,
+                   'OpenID Connect for Identity Assurance Claims ' +
+                   'Registration 1.0');
+        return;
+      }
       claims.forEach(function (claim) {
         addDefault(claim, row.ldap,
                    'OpenID Connect Core 1.0 / ' + (row.schema || 'the ' +
@@ -452,6 +462,16 @@ class FederationMap {
         Object.keys(value)
               .forEach(function (member) {
                 put(member, value[member]);
+              });
+        return;
+      }
+      // #128: `place_of_birth`'s members by their dotted names — see
+      // buildDefaults().
+      if (name === 'place_of_birth' && value && typeof value === 'object' &&
+          !Array.isArray(value)) {
+        Object.keys(value)
+              .forEach(function (member) {
+                put(name + '.' + member, value[member]);
               });
         return;
       }

@@ -83,6 +83,7 @@ var config = {
     interactionStartModes: "redirect,app,user_code,user_code_uri",         // Interaction start modes
     finishMethods: "redirect,push",                                        // Interaction finish methods
     keyProofs: "httpsig,mtls,jwsd,jws",                                    // Key proofing methods
+    mtlsTrust: "auto",                                                     // Mutual TLS key proof trust
     subIdFormats: "opaque,iss_sub,email,account,uri,phone_number,aliases", // Subject identifier formats
     assertionFormats: "id_token,saml2",                                    // Subject assertion formats
     assertionMaxAgeS: 300,                                                 // Grace for an expired user assertion (seconds)
@@ -116,26 +117,27 @@ var config = {
 
   // --- XACML -----------------------------------------------------------
   xacml: {
-    enforceAccess: true,                 // Decide access with policy
-    accessPolicy: "access-control",      // Access policy name
-    enabled: true,                       // XACML enabled
-    maxPolicies: 200,                    // Policies the repository may hold
-    pepBias: "deny-biased",              // What the embedded PEP does with a non-Permit
-    returnPolicyIdList: false,           // Always return the applicable policy identifiers
-    remotePeps: true,                    // Remote Policy Enforcement Points may register
-    pepRequireCertificate: true,         // A registering PEP must present a client certificate
-    pipMaxPerWindow: 600,                // PIP queries one caller may make per rate-limit window
-    pipMaxDesignators: 50,               // Attributes one PIP query may ask about
-    maxPeps: 50,                         // Remote PEPs the register may hold
-    pepStaleAfterS: 300,                 // Seconds before a registered PEP is reported stale
-    pepNotify: true,                     // Nudge a registered PEP when the repository changes
-    pepNotifyAllowedHosts: "",           // Notify endpoint allowlist
-    pepNotifyAllowHttp: false,           // Allow http:// for a nudge (development only)
-    pepNotifySkipTlsVerification: false, // Skip TLS verification for a nudge (development only)
-    pepNotifyCaFile: "",                 // CA certificates for a nudge
-    pepNotifyTimeoutMs: 2000,            // Nudge timeout (ms)
-    riskResponsePolicy: "risk-response", // The policy a change of risk is answered with
-    issuancePolicy: "role-issuance"      // The policy issuance decisions are made with
+    enforceAccess: true,                     // Decide access with policy
+    accessPolicy: "access-control",          // Access policy name
+    enabled: true,                           // XACML enabled
+    maxPolicies: 200,                        // Policies the repository may hold
+    pepBias: "deny-biased",                  // What the embedded PEP does with a non-Permit
+    returnPolicyIdList: false,               // Always return the applicable policy identifiers
+    remotePeps: true,                        // Remote Policy Enforcement Points may register
+    pepRequireCertificate: true,             // A registering PEP must present a client certificate
+    pipMaxPerWindow: 600,                    // PIP queries one caller may make per rate-limit window
+    pipMaxDesignators: 50,                   // Attributes one PIP query may ask about
+    maxPeps: 50,                             // Remote PEPs the register may hold
+    pepStaleAfterS: 300,                     // Seconds before a registered PEP is reported stale
+    pepNotify: true,                         // Nudge a registered PEP when the repository changes
+    pepNotifyAllowedHosts: "",               // Notify endpoint allowlist
+    pepNotifyAllowHttp: false,               // Allow http:// for a nudge (development only)
+    pepNotifySkipTlsVerification: false,     // Skip TLS verification for a nudge (development only)
+    pepNotifyCaFile: "",                     // CA certificates for a nudge
+    pepNotifyTimeoutMs: 2000,                // Nudge timeout (ms)
+    signalResponsePolicy: "signal-response", // The policy a received signal is answered with
+    riskResponsePolicy: "risk-response",     // The policy a change of risk is answered with
+    issuancePolicy: "role-issuance"          // The policy issuance decisions are made with
   },
 
   // --- Web security ----------------------------------------------------
@@ -204,20 +206,27 @@ var config = {
 
   // --- WebAuthn --------------------------------------------------------
   webauthn: {
-    enabled: true,                       // Offer security keys (WebAuthn)
-    rpName: "Mock authorization server", // Relying party name
-    rpId: "",                            // RP ID override
-    allowedOrigins: "",                  // Allowed origins
-    algorithms: "ES256,RS256",           // Algorithms offered
-    userVerification: "preferred",       // User verification
-    attestation: "direct",               // Attestation conveyance
-    timeoutMs: 60000,                    // Ceremony timeout (ms)
-    authenticatorAttachment: "any",      // Authenticator attachment (CTAP)
-    residentKey: "discouraged",          // Discoverable credential (CTAP resident key)
-    credProps: true,                     // Ask for the credProps extension
-    primaryAllowed: true,                // Allow a key as a PRIMARY credential
-    mfaAllowed: true,                    // Allow a key as a SECOND factor
-    maxKeysPerPerson: 10                 // Keys per person
+    enabled: true,                            // Offer security keys (WebAuthn)
+    rpName: "Mock authorization server",      // Relying party name
+    rpId: "",                                 // RP ID override
+    allowedOrigins: "",                       // Allowed origins
+    algorithms: "ES256,RS256",                // Algorithms offered
+    userVerification: "preferred",            // User verification
+    attestation: "direct",                    // Attestation conveyance
+    attestationPolicy: "by-mode",             // Attestation policy
+    attestationTrustAnchors: "",              // Attestation trust anchors (PEM)
+    attestationAllowedAaguids: "",            // Allowed authenticator models (AAGUIDs)
+    attestationMinCertificationLevel: "none", // Least FIDO certification level
+    attestationRequireFips: false,            // Require a FIPS 140 certified model
+    attestationAllowSafetynet: false,         // Trust android-safetynet attestation
+    attestationAndroidSoftwareKeys: false,    // Accept Android keys not enforced in the TEE
+    timeoutMs: 60000,                         // Ceremony timeout (ms)
+    authenticatorAttachment: "any",           // Authenticator attachment (CTAP)
+    residentKey: "discouraged",               // Discoverable credential (CTAP resident key)
+    credProps: true,                          // Ask for the credProps extension
+    primaryAllowed: true,                     // Allow a key as a PRIMARY credential
+    mfaAllowed: true,                         // Allow a key as a SECOND factor
+    maxKeysPerPerson: 10                      // Keys per person
   },
 
   // --- Key material ----------------------------------------------------
@@ -276,6 +285,7 @@ var config = {
     accessTokenSigningAlg: "default",            // Access token signing algorithm
     jarmResponseLifetimeS: 600,                  // JARM response lifetime (s)
     consentRequired: true,                       // Ask for consent
+    refreshRequiresConsent: true,                // Refresh requires recorded consent
     delegatedPermissionsEnforced: false,         // Enforce delegated permissions
     tokenExchangeRefreshToken: "when-requested", // Refresh token from a token exchange
     breakIdTokenNonce: false,                    // Break the ID Token nonce (development only)
@@ -327,6 +337,8 @@ var config = {
     basicAuthRealm: "sts",                       // Token endpoint Basic realm
     maxAuthorizationServerProfiles: 200,         // Named authorization servers (per realm)
     maxRequestedClaims: 64,                      // Claims one claims request may name
+    idaTrustFrameworks: "urn:sts:local",         // Identity Assurance trust frameworks
+    idaAutomaticVerifications: true,             // Sign-ins record an identity verification
     accessTokenTtlS: 3600,                       // Access token lifetime (s)
     idTokenTtlS: 3600,                           // ID Token lifetime (s)
     refreshTokenTtlS: 86400,                     // Refresh token lifetime (s)
@@ -379,43 +391,43 @@ var config = {
 
   // --- PKI -------------------------------------------------------------
   pki: {
-    crlLifetimeMinutes: 60,                    // How long a CRL claims to be fresh
-    httpPort: 8082,                            // Plain-HTTP revocation listener port; restart to apply
-    distributionBaseUrl: "",                   // Base URL published in CRL and OCSP addresses
-    distributionPort: 0,                       // Port published in HTTP CRL and OCSP addresses
-    distributionLdapHost: "",                  // Host published in ldap:// CRL addresses
-    distributionLdapPort: 0,                   // Port published in ldap:// CRL addresses
-    publishCrlToDirectory: true,               // Publish every CRL into the embedded directory
-    autoBuild: true,                           // Build the certificate authority at startup; restart to apply
-    keyAlgorithm: "rsa-2048",                  // Default CA key algorithm
-    signatureAlgorithm: "",                    // Default CA signature algorithm
-    organisation: "sts",                       // Default organisation name (O=)
-    personSelfService: true,                   // Let a person issue their own signing key pair
-    leafLifetimeDays: 365,                     // Default lifetime of an issued key pair (days)
-    rootLifetimeYears: 0,                      // Root CA lifetime (years, 0 = the profile's)
-    intermediateLifetimeYears: 0,              // Intermediate CA lifetime (years, 0 = the profile's)
-    issuingLifetimeYears: 0,                   // Issuing CA lifetime (years, 0 = the profile's)
-    maxStoredObjects: 200,                     // Certificates and keys the workbench store keeps, per realm
-    personSelfServicePerIdentity: 5,           // Self-issued key pairs one person may ask for per window
-    personSelfServicePerAddress: 5,            // Self-issued key pairs one address may ask for per window
-    personTlsClientCertificateMax: 5,          // TLS client certificates one person may hold
-    applicationTlsClientCertificateMax: 5,     // TLS client certificates one application may hold
-    revocationCheck: "auto",                   // Revocation check on a presented certificate
-    revocationRequireDistributionPoint: false, // Hard-fail refuses a certificate whose issuer names no CRL
-    revocationFetchTimeoutMs: 3000,            // CRL fetch timeout (milliseconds)
-    revocationMaxCrlBytes: 1048576,            // Largest CRL fetched (bytes)
-    revocationCrlCacheEntries: 256,            // Foreign CRLs kept in memory
-    revocationCrlMaxAgeS: 3600,                // Longest a fetched CRL is believed (seconds)
-    revocationFailureRetryS: 60,               // Wait before retrying a CRL that failed (seconds)
-    revocationOcsp: "first",                   // OCSP for a foreign certificate
-    revocationOcspMaxAgeS: 3600,               // Longest an OCSP response is believed (seconds)
-    revocationOcspRequireNonce: false,         // Refuse an OCSP response that does not echo the nonce
-    revocationClockSkewS: 300,                 // Clock skew allowed on CRL and OCSP freshness (seconds)
-    revocationCrlIssuersFile: "",              // Certificates that may sign an indirect CRL
-    revocationLdap: "ldaps",                   // LDAP revocation addresses
-    revocationLdapCaFile: "",                  // CA certificates for ldaps revocation directories
-    revocationLdapDirectory: "",               // Directory for CRL names relative to their issuer
-    enrollmentMaxCertificatesPerEntry: 20      // Enrolled certificates one entry may hold
+    crlLifetimeMinutes: 60,                     // How long a CRL claims to be fresh
+    httpPort: 8082,                             // Plain-HTTP revocation listener port; restart to apply
+    distributionBaseUrl: "",                    // Base URL published in CRL and OCSP addresses
+    distributionPort: 0,                        // Port published in HTTP CRL and OCSP addresses
+    distributionLdapHost: "",                   // Host published in ldap:// CRL addresses
+    distributionLdapPort: 0,                    // Port published in ldap:// CRL addresses
+    publishCrlToDirectory: true,                // Publish every CRL into the embedded directory
+    autoBuild: true,                            // Build the certificate authority at startup; restart to apply
+    keyAlgorithm: "rsa-2048",                   // Default CA key algorithm
+    signatureAlgorithm: "",                     // Default CA signature algorithm
+    organisation: "sts",                        // Default organisation name (O=)
+    personSelfService: true,                    // Let a person issue their own signing key pair
+    leafLifetimeDays: 365,                      // Default lifetime of an issued key pair (days)
+    rootLifetimeYears: 0,                       // Root CA lifetime (years, 0 = the profile's)
+    intermediateLifetimeYears: 0,               // Intermediate CA lifetime (years, 0 = the profile's)
+    issuingLifetimeYears: 0,                    // Issuing CA lifetime (years, 0 = the profile's)
+    maxStoredObjects: 200,                      // Certificates and keys the workbench store keeps, per realm
+    personSelfServicePerIdentity: 5,            // Self-issued key pairs one person may ask for per window
+    personSelfServicePerAddress: 5,             // Self-issued key pairs one address may ask for per window
+    personTlsClientCertificateMax: 5,           // TLS client certificates one person may hold
+    applicationTlsClientCertificateMax: 5,      // TLS client certificates one application may hold
+    revocationCheck: "auto",                    // Revocation check on a presented certificate
+    revocationRequireDistributionPoint: "auto", // Refuse a certificate whose issuer names no CRL and no OCSP responder
+    revocationFetchTimeoutMs: 3000,             // CRL fetch timeout (milliseconds)
+    revocationMaxCrlBytes: 1048576,             // Largest CRL fetched (bytes)
+    revocationCrlCacheEntries: 256,             // Foreign CRLs kept in memory
+    revocationCrlMaxAgeS: 3600,                 // Longest a fetched CRL is believed (seconds)
+    revocationFailureRetryS: 60,                // Wait before retrying a CRL that failed (seconds)
+    revocationOcsp: "first",                    // OCSP for a foreign certificate
+    revocationOcspMaxAgeS: 3600,                // Longest an OCSP response is believed (seconds)
+    revocationOcspRequireNonce: false,          // Refuse an OCSP response that does not echo the nonce
+    revocationClockSkewS: 300,                  // Clock skew allowed on CRL and OCSP freshness (seconds)
+    revocationCrlIssuersFile: "",               // Certificates that may sign an indirect CRL
+    revocationLdap: "ldaps",                    // LDAP revocation addresses
+    revocationLdapCaFile: "",                   // CA certificates for ldaps revocation directories
+    revocationLdapDirectory: "",                // Directory for CRL names relative to their issuer
+    enrollmentMaxCertificatesPerEntry: 20       // Enrolled certificates one entry may hold
   },
 
   // --- ACME ------------------------------------------------------------
@@ -508,7 +520,8 @@ var config = {
     releaseIndexTtlMs: 5000,                                                 // Release-policy index lifetime (ms)
     maxResponseBytes: 262144,                                                // Largest back-channel response (bytes)
     jwtAlgorithms: "RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512",  // Algorithms accepted on a partner's JWT
-    spNameIdFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified"  // NameIDFormat in this service's SP metadata
+    spNameIdFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified", // NameIDFormat in this service's SP metadata
+    encryptionKeyGraceS: 86400                                               // Previous encryption key kept for (seconds)
   },
 
   // --- SAML ------------------------------------------------------------
@@ -546,7 +559,8 @@ var config = {
     spMetadataRefresh: true,                                               // Refresh stale SP metadata in the background
     spMetadataRefreshIntervalS: 300,                                       // Metadata refresher interval (seconds)
     metadataTrustAnchors: "",                                              // Metadata signing trust anchors
-    mdqBaseUrl: ""                                                         // Metadata Query (MDQ) responder
+    mdqBaseUrl: "",                                                        // Metadata Query (MDQ) responder
+    mdqImportWithoutAnchors: false                                         // Allow an MDQ import with no trust anchor (product mode)
   },
 
   // --- SAML 1.1 --------------------------------------------------------
@@ -653,7 +667,9 @@ var config = {
     signInCrossDevice: false,                          // Wallet sign-in QR code (cross-device, relayable)
     signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",     // Wallet sign-in credential formats
     signInDcApiResponseMode: "dc_api.jwt",             // Digital Credentials API response mode
-    statusListMaxCacheS: 3600                          // Longest a fetched status list is kept (s)
+    statusListMaxCacheS: 3600,                         // Longest a fetched status list is kept (s)
+    requireStatusReference: "all",                     // Require a status reference on every presented credential
+    statusOptionalIssuers: ""                          // Trusted issuers exempt from the status reference
   },
 
   // --- Kerberos --------------------------------------------------------
@@ -691,6 +707,7 @@ var config = {
     personKeys: true,                                              // Kerberos keys for directory people
     retainedKeyVersions: 1,                                        // Previous key versions kept
     retainedKeyTtlS: 0,                                            // Previous key version lifetime (s)
+    krbtgtRotationIntervalDays: 180,                               // Rotate the krbtgt key every (days)
     spnegoLoginButton: true,                                       // Offer Kerberos at the sign-in screen
     s2kparams: "omit"                                              // Send s2kparams
   },
@@ -703,7 +720,9 @@ var config = {
     maxEntries: 2000,                                                                                                                           // Maximum entries
     sizeLimit: 500,                                                                                                                             // Search size limit
     plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply
-    selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword"  // Attributes a person may change on their own entry
+    selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword", // Attributes a person may change on their own entry
+    directoryReadableAttributes: "",                                                                                                            // Attributes a person may read of other people
+    groupMembersReadable: false                                                                                                                 // Members may read their group's member list
   },
 
   // --- SCIM ------------------------------------------------------------
@@ -721,7 +740,7 @@ var config = {
     authDigest: true,            // Offer HTTP Digest
     digestPassword: "password!", // The shared Digest password
     digestNonceSeconds: 300,     // Digest nonce lifetime
-    digestMd5: true,             // Offer MD5 for Digest
+    digestMd5: false,            // Offer MD5 for Digest
     maxDigestNonces: 2000,       // Digest nonces held
     authHoba: true,              // Offer HOBA
     hobaMaxAgeSeconds: 600,      // HOBA challenge lifetime
@@ -777,6 +796,7 @@ var config = {
     receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
     receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
+    actOnSignalsInDevelopment: false,                                                                                                                     // The console and portal act on received signals in development
     legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim (development only)
     breakSetSignature: false                                                                                                                              // Sign every SET badly (development only)
   },
@@ -818,11 +838,20 @@ var config = {
     breachCacheSize: 5000,                                 // Range answers each process keeps
     breachTimeoutMs: 3000,                                 // Wait for the range API (milliseconds)
     mdsTrustAnchors: "",                                   // FIDO metadata trust anchors (PEM)
+    mdsUrl: "",                                            // FIDO metadata BLOB address
+    mdsRefreshS: 86400,                                    // Download the FIDO metadata every (seconds)
+    mdsMaxBytes: 33554432,                                 // Largest FIDO metadata BLOB (bytes)
     mdsStaleGraceDays: 7,                                  // FIDO metadata grace after its nextUpdate (days)
     rescoreEveryS: 300,                                    // Re-check live sessions every (seconds)
     standingCacheSize: 20000,                              // People whose standing each process holds
     mediumScorePercent: 100,                               // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,                                // HIGH from (percent of a score of 1)
+    minimumHistory: 5,                                     // Earlier sign-ins before a person is scored
+    accountFailureThreshold: 5,                            // Refused passwords for one person that are a signal
+    networkFailureThreshold: 20,                           // Refused passwords from one network that are a signal
+    signalFactors: "",                                     // Signal factors
+    calibrationMediumPercent: 5,                           // Calibration: MEDIUM or worse (percent of sign-ins)
+    calibrationHighPercent: 1,                             // Calibration: HIGH (percent of sign-ins)
     assessmentRetentionDays: 90,                           // Keep assessments (days)
     historyRetentionDays: 180                              // Keep the model's history (days)
   },
@@ -885,107 +914,125 @@ var config = {
 
   // --- SPIFFE ----------------------------------------------------------
   spiffe: {
-    enabled: true,                                                // Enable SPIFFE
-    trustDomain: "example.org",                                   // Trust domain; restart to apply
-    x509KeyType: "ec-p256",                                       // X.509 authority key; restart to apply
-    jwtKeyType: "ec-p256",                                        // JWT authority key; restart to apply
-    caTtl: 86400,                                                 // Authority lifetime (seconds); restart to apply
-    svidTtl: 3600,                                                // X509-SVID lifetime (seconds)
-    jwtSvidTtl: 300,                                              // JWT-SVID lifetime (seconds)
-    refreshHint: 300,                                             // Bundle refresh hint (seconds)
-    svidSubject: "C=US,O=SPIRE",                                  // SVID subject DN
-    caSubject: "CN=sts SPIFFE {kind} ({trustDomain}),O=sts",      // CA subject DN template
-    retainedAuthorities: 4,                                       // Authorities kept published after a rotation
-    agentSvidTtl: 0,                                              // Agent SVID lifetime (seconds)
-    joinTokenTtl: 600,                                            // Join token lifetime (seconds)
-    nodeAttestors: "join_token",                                  // Node attestors accepted
-    attestationChallengeTimeout: 30,                              // Attestation challenge timeout (s)
-    x509popMode: "external_pki",                                  // x509pop mode
-    x509popCaBundle: "",                                          // x509pop trust anchors (PEM)
-    x509popSpiffePrefix: "/spire-exchange/",                      // x509pop SVID path prefix
-    x509popAgentPathTemplate: "",                                 // x509pop agent path template
-    x509popMaxIntermediates: 4,                                   // x509pop intermediates allowed
-    x509popMaxRsaKeySize: 8192,                                   // x509pop largest RSA key (bits)
-    x509popVerifyClientIp: false,                                 // x509pop verifies the client address
-    x509popGroupTemplate: "",                                     // x509pop group template
-    x509popAllowedGroups: "",                                     // x509pop allowed groups
-    sshpopCertAuthorities: "",                                    // sshpop host certificate authorities
-    sshpopCanonicalDomain: "",                                    // sshpop canonical domain
-    sshpopAgentPathTemplate: "",                                  // sshpop agent path template
-    sshpopVerifyClientIp: false,                                  // sshpop verifies the client address
-    tpmDevidCaBundle: "",                                         // tpm_devid DevID trust anchors (PEM)
-    tpmEndorsementCaBundle: "",                                   // tpm_devid endorsement trust anchors (PEM)
-    k8sPsatClusters: "",                                          // k8s_psat clusters (JSON)
-    httpChallengeAllowedDnsPatterns: "",                          // http_challenge allowed host names (regular expressions)
-    httpChallengeRequiredPort: 0,                                 // http_challenge required port
-    httpChallengeAllowNonRootPorts: true,                         // http_challenge allows ports above 1023
-    httpChallengeTofu: true,                                      // http_challenge trusts on first use
-    httpChallengeVerifyClientIp: false,                           // http_challenge verifies the client address
-    awsIidPartition: "aws",                                       // aws_iid partition
-    awsIidAssumeRole: "",                                         // aws_iid role to assume in the node's account
-    awsIidSkipBlockDevice: false,                                 // aws_iid skips the block device check
-    awsIidDisableInstanceProfileSelectors: false,                 // aws_iid skips the IAM role selectors
-    awsIidLocalValidAccountIds: "",                               // aws_iid accounts trusted without the block device check
-    awsIidAgentPathTemplate: "",                                  // aws_iid agent path template
-    awsIidVerifyOrganization: "",                                 // aws_iid organization check (JSON)
-    awsIidEksClusterNames: "",                                    // aws_iid EKS clusters a node must belong to
-    awsIidEndpoint: "",                                           // aws_iid API endpoint override
-    gcpIitProjectIdAllowList: "",                                 // gcp_iit projects allowed
-    gcpIitAgentPathTemplate: "",                                  // gcp_iit agent path template
-    gcpIitUseInstanceMetadata: false,                             // gcp_iit reads the instance from Compute Engine
-    gcpIitAllowedLabelKeys: "",                                   // gcp_iit instance labels made selectors
-    gcpIitAllowedMetadataKeys: "",                                // gcp_iit instance metadata made selectors
-    gcpIitMaxMetadataValueSize: 128,                              // gcp_iit largest metadata value
-    gcpIitServiceAccountFile: "",                                 // gcp_iit service account key file
-    gcpIitCertsUrl: "https://www.googleapis.com/oauth2/v1/certs", // gcp_iit Google certificate URL
-    azureImdsTenants: "",                                         // azure_imds tenants (JSON)
-    azureImdsAgentPathTemplate: "",                               // azure_imds agent path template
-    azureImdsAllowedMetadataDomains: "metadata.azure.com",        // azure_imds signing certificate domains
-    azureImdsTrustBundle: "",                                     // azure_imds extra roots (PEM)
-    azureImdsIntermediateHost: "www.microsoft.com",               // azure_imds intermediate certificate host
-    azureImdsDiscoveryUrl: "https://login.microsoftonline.com",   // azure_imds tenant discovery base URL
-    workloadAttestors: "unix",                                    // Workload attestors
-    workloadProcRoot: "/proc",                                    // Workload attestation /proc root
-    unixDiscoverWorkloadPath: false,                              // unix: attest the executable's path and digest
-    unixWorkloadSizeLimit: 0,                                     // unix: largest executable hashed (bytes)
-    dockerSocketPath: "unix:///var/run/docker.sock",              // docker: Engine API socket
-    dockerApiVersion: "",                                         // docker: Engine API version
-    k8sKubeletReadOnlyPort: 0,                                    // k8s: kubelet read-only port
-    k8sKubeletSecurePort: 0,                                      // k8s: kubelet secure port
-    k8sNodeName: "",                                              // k8s: node name
-    k8sNodeNameEnv: "MY_NODE_NAME",                               // k8s: node name environment variable
-    k8sCertificateFile: "",                                       // k8s: kubelet client certificate file
-    k8sPrivateKeyFile: "",                                        // k8s: kubelet client key file
-    k8sUseAnonymousAuthentication: false,                         // k8s: anonymous to the kubelet
-    k8sTokenFile: "",                                             // k8s: kubelet bearer token file
-    k8sSkipKubeletVerification: false,                            // k8s: skip kubelet certificate verification (development only)
-    k8sKubeletCaFile: "",                                         // k8s: kubelet CA file
-    k8sMaxPollAttempts: 60,                                       // k8s: pod list attempts
-    k8sPollRetryIntervalMs: 500,                                  // k8s: pod list retry interval (ms)
-    k8sDisableContainerSelectors: false,                          // k8s: pod selectors only
-    k8sEnableNamespaceLabels: false,                              // k8s: namespace label selectors
-    maxJoinTokens: 256,                                           // Unspent join tokens held
-    maxPageSize: 1000,                                            // Largest page a List* returns
-    maxRecordedConnections: 512,                                  // mTLS connections remembered
-    autoCreateEntries: true,                                      // Invent a registration entry on first sight
-    requireSecurityHeader: true,                                  // Require the workload.spiffe.io header
-    trustLocalSocket: true,                                       // Trust the SPIRE Server API socket as local
-    adminIds: "",                                                 // Administrator SPIFFE IDs
-    clockSkew: 60,                                                // Clock skew (s)
-    attestWorkloads: true,                                        // Match Workload API callers on selectors (off: development only)
-    acceptAssertedSelectors: false,                               // Believe selectors a workload asserts (development only)
-    maxEntries: 500,                                              // Maximum registration entries
-    maxAgents: 200,                                               // Maximum attested agents
-    maxFederatedBundles: 32,                                      // Maximum federated bundles
-    bundlePath: "/spiffe/bundle",                                 // Bundle endpoint path; restart to apply
-    workloadSocketEnabled: true,                                  // Workload API on a Unix socket; restart to apply
-    workloadSocket: "/tmp/spire-agent/public/api.sock",           // Workload API socket path; restart to apply
-    workloadPort: 8092,                                           // Workload API TCP port; restart to apply
-    workloadTcpSourceAuthenticated: false,                        // Workload API TCP: the network authenticates source addresses; restart to apply
-    serverPort: 8181,                                             // SPIRE Server API TCP port; restart to apply
-    serverSocketEnabled: false,                                   // SPIRE Server API on a Unix socket; restart to apply
-    serverSocket: "/tmp/spire-server/private/api.sock",           // SPIRE Server API socket path; restart to apply
-    grpcHost: "0.0.0.0"                                           // gRPC bind address; restart to apply
+    enabled: true,                                                            // Enable SPIFFE
+    trustDomain: "example.org",                                               // Trust domain; restart to apply
+    x509KeyType: "ec-p256",                                                   // X.509 authority key; restart to apply
+    jwtKeyType: "ec-p256",                                                    // JWT authority key; restart to apply
+    caTtl: 86400,                                                             // Authority lifetime (seconds); restart to apply
+    svidTtl: 3600,                                                            // X509-SVID lifetime (seconds)
+    jwtSvidTtl: 300,                                                          // JWT-SVID lifetime (seconds)
+    refreshHint: 300,                                                         // Bundle refresh hint (seconds)
+    svidSubject: "C=US,O=SPIRE",                                              // SVID subject DN
+    caSubject: "CN=sts SPIFFE {kind} ({trustDomain}),O=sts",                  // CA subject DN template
+    retainedAuthorities: 4,                                                   // Authorities kept published after a rotation
+    agentSvidTtl: 0,                                                          // Agent SVID lifetime (seconds)
+    joinTokenTtl: 600,                                                        // Join token lifetime (seconds)
+    nodeAttestors: "join_token",                                              // Node attestors accepted
+    attestationChallengeTimeout: 30,                                          // Attestation challenge timeout (s)
+    x509popMode: "external_pki",                                              // x509pop mode
+    x509popCaBundle: "",                                                      // x509pop trust anchors (PEM)
+    x509popSpiffePrefix: "/spire-exchange/",                                  // x509pop SVID path prefix
+    x509popAgentPathTemplate: "",                                             // x509pop agent path template
+    x509popMaxIntermediates: 4,                                               // x509pop intermediates allowed
+    x509popMaxRsaKeySize: 8192,                                               // x509pop largest RSA key (bits)
+    x509popVerifyClientIp: false,                                             // x509pop verifies the client address
+    x509popGroupTemplate: "",                                                 // x509pop group template
+    x509popAllowedGroups: "",                                                 // x509pop allowed groups
+    sshpopCertAuthorities: "",                                                // sshpop host certificate authorities
+    sshpopCanonicalDomain: "",                                                // sshpop canonical domain
+    sshpopAgentPathTemplate: "",                                              // sshpop agent path template
+    sshpopVerifyClientIp: false,                                              // sshpop verifies the client address
+    tpmDevidCaBundle: "",                                                     // tpm_devid DevID trust anchors (PEM)
+    tpmEndorsementCaBundle: "",                                               // tpm_devid endorsement trust anchors (PEM)
+    k8sPsatClusters: "",                                                      // k8s_psat clusters (JSON)
+    httpChallengeAllowedDnsPatterns: "",                                      // http_challenge allowed host names (regular expressions)
+    httpChallengeRequiredPort: 0,                                             // http_challenge required port
+    httpChallengeAllowNonRootPorts: true,                                     // http_challenge allows ports above 1023
+    httpChallengeTofu: true,                                                  // http_challenge trusts on first use
+    httpChallengeVerifyClientIp: false,                                       // http_challenge verifies the client address
+    awsIidPartition: "aws",                                                   // aws_iid partition
+    awsIidAssumeRole: "",                                                     // aws_iid role to assume in the node's account
+    awsIidSkipBlockDevice: false,                                             // aws_iid skips the block device check
+    awsIidDisableInstanceProfileSelectors: false,                             // aws_iid skips the IAM role selectors
+    awsIidLocalValidAccountIds: "",                                           // aws_iid accounts trusted without the block device check
+    awsIidAgentPathTemplate: "",                                              // aws_iid agent path template
+    awsIidVerifyOrganization: "",                                             // aws_iid organization check (JSON)
+    awsIidEksClusterNames: "",                                                // aws_iid EKS clusters a node must belong to
+    awsIidEndpoint: "",                                                       // aws_iid API endpoint override
+    gcpIitProjectIdAllowList: "",                                             // gcp_iit projects allowed
+    gcpIitAgentPathTemplate: "",                                              // gcp_iit agent path template
+    gcpIitUseInstanceMetadata: false,                                         // gcp_iit reads the instance from Compute Engine
+    gcpIitAllowedLabelKeys: "",                                               // gcp_iit instance labels made selectors
+    gcpIitAllowedMetadataKeys: "",                                            // gcp_iit instance metadata made selectors
+    gcpIitMaxMetadataValueSize: 128,                                          // gcp_iit largest metadata value
+    gcpIitServiceAccountFile: "",                                             // gcp_iit service account key file
+    gcpIitCertsUrl: "https://www.googleapis.com/oauth2/v1/certs",             // gcp_iit Google certificate URL
+    azureImdsTenants: "",                                                     // azure_imds tenants (JSON)
+    azureImdsAgentPathTemplate: "",                                           // azure_imds agent path template
+    azureImdsAllowedMetadataDomains: "metadata.azure.com",                    // azure_imds signing certificate domains
+    azureImdsTrustBundle: "",                                                 // azure_imds extra roots (PEM)
+    azureImdsIntermediateHost: "www.microsoft.com",                           // azure_imds intermediate certificate host
+    azureImdsDiscoveryUrl: "https://login.microsoftonline.com",               // azure_imds tenant discovery base URL
+    workloadAttestors: "unix",                                                // Workload attestors
+    workloadProcRoot: "/proc",                                                // Workload attestation /proc root
+    unixDiscoverWorkloadPath: false,                                          // unix: attest the executable's path and digest
+    unixWorkloadSizeLimit: 0,                                                 // unix: largest executable hashed (bytes)
+    dockerSocketPath: "unix:///var/run/docker.sock",                          // docker: Engine API socket
+    dockerApiVersion: "",                                                     // docker: Engine API version
+    dockerPodmanSocketPath: "unix:///run/podman/podman.sock",                 // docker: rootful Podman API socket
+    dockerPodmanSocketPathTemplate: "unix:///run/user/%d/podman/podman.sock", // docker: rootless Podman API socket template
+    dockerUseRootlessPodman: false,                                           // docker: attest rootless Podman containers
+    dockerSigstoreEnabled: false,                                             // docker: require a verified sigstore image signature
+    dockerSigstorePublicKeyFiles: "",                                         // docker sigstore: cosign public key files
+    dockerSigstoreTrustedRootFile: "",                                        // docker sigstore: pinned trusted_root.json file
+    dockerSigstoreAllowedIdentities: "",                                      // docker sigstore: allowed signer identities
+    dockerSigstoreSkippedImages: "",                                          // docker sigstore: images not verified
+    dockerSigstoreAllowedRegistries: "",                                      // docker sigstore: registries signatures are fetched from
+    dockerSigstoreRegistryAuthFile: "",                                       // docker sigstore: registry credentials file
+    dockerSigstoreSkipTlog: false,                                            // docker sigstore: skip the Rekor transparency log (WARNING)
+    dockerSigstoreIgnoreSct: false,                                           // docker sigstore: skip the certificate transparency SCT (WARNING)
+    dockerSigstoreIgnoreAttestations: false,                                  // docker sigstore: do not require image attestations
+    dockerSigstoreTufUrl: "https://tuf-repo-cdn.sigstore.dev",                // docker sigstore: TUF repository
+    dockerSigstoreTufRootFile: "",                                            // docker sigstore: TUF trusted root.json file
+    dockerSigstoreTufRefreshS: 86400,                                         // docker sigstore: TUF refresh interval (s)
+    k8sKubeletReadOnlyPort: 0,                                                // k8s: kubelet read-only port
+    k8sKubeletSecurePort: 0,                                                  // k8s: kubelet secure port
+    k8sNodeName: "",                                                          // k8s: node name
+    k8sNodeNameEnv: "MY_NODE_NAME",                                           // k8s: node name environment variable
+    k8sCertificateFile: "",                                                   // k8s: kubelet client certificate file
+    k8sPrivateKeyFile: "",                                                    // k8s: kubelet client key file
+    k8sUseAnonymousAuthentication: false,                                     // k8s: anonymous to the kubelet
+    k8sTokenFile: "",                                                         // k8s: kubelet bearer token file
+    k8sSkipKubeletVerification: false,                                        // k8s: skip kubelet certificate verification (development only)
+    k8sKubeletCaFile: "",                                                     // k8s: kubelet CA file
+    k8sMaxPollAttempts: 60,                                                   // k8s: pod list attempts
+    k8sPollRetryIntervalMs: 500,                                              // k8s: pod list retry interval (ms)
+    k8sDisableContainerSelectors: false,                                      // k8s: pod selectors only
+    k8sEnableNamespaceLabels: false,                                          // k8s: namespace label selectors
+    maxJoinTokens: 256,                                                       // Unspent join tokens held
+    maxPageSize: 1000,                                                        // Largest page a List* returns
+    maxRecordedConnections: 512,                                              // mTLS connections remembered
+    autoCreateEntries: true,                                                  // Invent a registration entry on first sight
+    requireSecurityHeader: true,                                              // Require the workload.spiffe.io header
+    trustLocalSocket: true,                                                   // Trust the SPIRE Server API socket as local
+    adminIds: "",                                                             // Administrator SPIFFE IDs
+    brokers: "",                                                              // SPIFFE Broker API: authorized brokers
+    clockSkew: 60,                                                            // Clock skew (s)
+    attestWorkloads: true,                                                    // Match Workload API callers on selectors (off: development only)
+    acceptAssertedSelectors: false,                                           // Believe selectors a workload asserts (development only)
+    maxEntries: 500,                                                          // Maximum registration entries
+    maxAgents: 200,                                                           // Maximum attested agents
+    maxFederatedBundles: 32,                                                  // Maximum federated bundles
+    bundlePath: "/spiffe/bundle",                                             // Bundle endpoint path; restart to apply
+    workloadSocketEnabled: true,                                              // Workload API on a Unix socket; restart to apply
+    workloadSocket: "/tmp/spire-agent/public/api.sock",                       // Workload API socket path; restart to apply
+    workloadPort: 8092,                                                       // Workload API TCP port; restart to apply
+    workloadTcpSourceAuthenticated: false,                                    // Workload API TCP: the network authenticates source addresses; restart to apply
+    serverPort: 8181,                                                         // SPIRE Server API TCP port; restart to apply
+    serverSocketEnabled: false,                                               // SPIRE Server API on a Unix socket; restart to apply
+    serverSocket: "/tmp/spire-server/private/api.sock",                       // SPIRE Server API socket path; restart to apply
+    brokerPort: 0,                                                            // SPIFFE Broker API TCP port; restart to apply
+    grpcHost: "0.0.0.0"                                                       // gRPC bind address; restart to apply
   },
 
   // --- Persistence -----------------------------------------------------

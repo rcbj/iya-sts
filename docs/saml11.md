@@ -122,8 +122,13 @@ audience restriction, and an attribute statement including any SAML 1.1
 [custom SAML attributes](saml2-sso.md#custom-saml-attributes).
 
 Both the assertion (`saml11.signAssertion`) and the Response
-(`saml11.signResponse`) are signed by default; Browser/POST requires the
-assertion signature. The algorithm and canonicalization are the shared
+(`saml11.signResponse`) are signed by default. Browser/POST requires the
+**Response** signature (oasis-sstc-saml-bindings-1.1 section 4.1.2.4) and lets
+the assertions in it be signed; this service signs the assertion as well, so
+one that leaves its Response — over the artifact channel, or by
+`AssertionIDReference` — still carries a signature. **Turning either off is
+development mode's alone** (#181): product signs both whatever the setting or
+the relying party's override says, and refuses to turn either off. The algorithm and canonicalization are the shared
 `saml.signatureAlgorithm` and `saml.canonicalizationAlgorithm`. Lifetime,
 signing, NameID format and artifact lifetime are the SAML 1.1 half of the
 [assertion settings every application inherits](saml2-sso.md#the-assertion-settings-every-application-inherits),
@@ -140,7 +145,10 @@ today. It holds **two descriptors**: an `IDPSSODescriptor` for the browser
 profiles and an `AttributeAuthorityDescriptor` for the responder, where a
 Shibboleth service provider looks for its attribute authority.
 
-As with SAML 2.0 it is **per relying party and minted for anything asked for**:
+As with SAML 2.0 it is **per relying party and, in development, minted for
+anything asked for** — in product mode `/saml11/metadata/{rp}`,
+`/saml11/sso/{rp}` and `/saml11/responder/{rp}` answer 404 for a name that is
+not a registered SAML 1.1 relying party:
 the providerID becomes `{providerID}:{slug}` and the endpoints sit under the
 same segment (`saml11.perApplicationProviderId`). The slug is the same one the
 SAML 2.0 profile uses for the same application. In development, a relying
@@ -195,8 +203,8 @@ session hold in **both** modes. See [What is not checked](what-is-not-checked.md
 | `saml11.providerId` | `STS_SAML11_PROVIDER_ID` | `urn:sts:idp:saml11` | yes | This identity provider's name: the assertion `Issuer`, the metadata `entityID`, and what every artifact's SourceID is a hash of. |
 | `saml11.perApplicationProviderId` | `STS_SAML11_PER_APPLICATION_PROVIDER_ID` | `true` | yes | Give each relying party its own providerID, `{providerID}:{slug}`; this also changes every artifact's SourceID. |
 | `saml11.assertionLifetimeMin` | `STS_SAML11_ASSERTION_LIFETIME_MIN` | `60` | yes | Assertion lifetime; per relying party with `saml11AssertionLifetimeMin`. |
-| `saml11.signAssertion` | `STS_SAML11_SIGN_ASSERTION` | `true` | yes | Sign the assertion (required by Browser/POST); per relying party with `saml11SignAssertion`. |
-| `saml11.signResponse` | `STS_SAML11_SIGN_RESPONSE` | `true` | yes | Sign the Response; per relying party with `saml11SignResponse`. |
+| `saml11.signAssertion` | `STS_SAML11_SIGN_ASSERTION` | `true` | yes | Sign the assertion (required by Browser/POST); per relying party with `saml11SignAssertion`. Off is development mode only: product signs every assertion, and turning it off is refused, here and per relying party (#181). |
+| `saml11.signResponse` | `STS_SAML11_SIGN_RESPONSE` | `true` | yes | Sign the Response; per relying party with `saml11SignResponse`. Off is development mode only: Browser/POST requires a signed Response, so product always signs it and refuses turning it off (#181). |
 | `saml11.nameIdFormat` | `STS_SAML11_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified` | yes | The NameIdentifier format, unless the non-spec `format` overrides it; per relying party with `saml11NameIdFormat`. |
 | `saml11.defaultProfile` | `STS_SAML11_DEFAULT_PROFILE` | `post` | yes | `post` or `artifact`, when the request does not say. |
 | `saml11.artifactTtlS` | `STS_SAML11_ARTIFACT_TTL_S` | `300` | yes | How long an unresolved artifact lives (it is one-shot regardless); per relying party with `saml11ArtifactTtlS`. |

@@ -53,6 +53,11 @@ const log = require('bunyan').createLogger({ name: 'kerberos_person_keys',
 
 const ROOT = path.join(__dirname, '..');
 
+// How many enctypes a PRODUCT key record, keytab or listing carries: the
+// four AES types of the default `krb5.enctypes`, which product reads without
+// 23 (rc4-hmac) since #182 — it was five.
+const PRODUCT_ENCTYPES = 4;
+
 // ---------------------------------------------------------------------------
 // AN INDEPENDENT KEYTAB READER. Written from MIT's `kt_file.c` layout, not from
 // `krb5_keytab.js`, and deliberately in a different style so the two share no
@@ -925,9 +930,13 @@ function productModeAuthenticatesPeople(t, r) {
                                           'password');
   t.check(!!r.alice && r.alice.kvno === 3 && r.alice.sealed === true &&
           r.alice.current === true &&
-          r.alice.etypes.length === 5,
-          'SETTING THE PASSWORD DERIVED KEYS: kvno krb5.kvno, every enctype, ' +
-          'sealed, and matching the password', JSON.stringify(r.alice));
+          r.alice.etypes.length === PRODUCT_ENCTYPES &&
+          r.alice.etypes.every(function (e) {
+            return e.etype !== 23;
+          }),
+          'SETTING THE PASSWORD DERIVED KEYS: kvno krb5.kvno, every enctype ' +
+          'product uses (the four AES, no rc4-hmac — #182), sealed, and ' +
+          'matching the password', JSON.stringify(r.alice));
   t.check(r.storedSealed === true && r.storedClearMentionsKey === false,
           'the entry holds ONE sealed value and no key in the clear');
   t.equal(r.boundName, 'kpalice', 'the name is sealed WITH the keys');
@@ -1002,7 +1011,8 @@ function productModeRefusesAndUpgrades(t, r) {
 function keysAreNeverShown(t, r) {
   log.debug("Entering keysAreNeverShown().");
   t.log.info('=== no key in an audit row, a view or a dump ===');
-  t.check(Array.isArray(r.keyMaterial) && r.keyMaterial.length === 5,
+  t.check(Array.isArray(r.keyMaterial) &&
+          r.keyMaterial.length === PRODUCT_ENCTYPES,
           'the child read the real key bytes out of the seal to look for them');
   t.check(r.auditHasDerivedRow === true, 'the derivation IS audited');
   t.check(r.auditHasKey === false && r.auditHasPassword === false,
@@ -1026,11 +1036,11 @@ function servicePrincipalsWork(t, r) {
           JSON.stringify({ ok: r.createOk, errors: r.createErrors,
                            kvno: r.createKvno }));
   const entries = independentKeytabRead(Buffer.from(r.keytab, 'base64'));
-  t.check(entries.length === 5 && entries.every(function (e) {
+  t.check(entries.length === PRODUCT_ENCTYPES && entries.every(function (e) {
     return e.name.join('/') === 'HTTP/web.example.com' &&
-           e.realm === 'EXAMPLE.COM' && e.vno === 3;
-  }), 'THE KEYTAB PARSES WITH THE INDEPENDENT READER: five enctypes for the ' +
-      'SPN at kvno 3',
+           e.realm === 'EXAMPLE.COM' && e.vno === 3 && e.enctype !== 23;
+  }), 'THE KEYTAB PARSES WITH THE INDEPENDENT READER: the four AES enctypes ' +
+      '(no rc4-hmac in product, #182) for the SPN at kvno 3',
      JSON.stringify(entries.map(function (e) { return [e.enctype, e.vno]; })));
   t.check(r.appViewWithheld === true, 'the application view withholds the ' +
                                       'stored key');
@@ -1070,7 +1080,7 @@ function servicePrincipalsWork(t, r) {
                                             'refused');
   t.check(r.krbtgtRefused === true, 'krbtgt/* is refused');
   t.check(Array.isArray(r.unknownAction) &&
-          /Unknown action "nope"\. There are seven: create-service, rotate-service, delete-service, clear-person-keys, drop-previous-service-keys, drop-previous-person-keys, reset-person-keytab\./
+          /Unknown action "nope"\. There are nine: create-service, rotate-service, delete-service, clear-person-keys, drop-previous-service-keys, drop-previous-person-keys, reset-person-keytab, rotate-krbtgt, rotate-krbtgt-invalidate\./
             .test(r.unknownAction.join(' ')),
           'an unknown action gets the house sentence',
           JSON.stringify(r.unknownAction));
@@ -1112,7 +1122,7 @@ function previousPersonVersionsAreKept(t, r) {
   t.check(Array.isArray(r.aliceRetainedAfterChange) &&
           r.aliceRetainedAfterChange.length === 1 &&
           r.aliceRetainedAfterChange[0].kvno === 3 &&
-          r.aliceRetainedAfterChange[0].etypes.length === 5 &&
+          r.aliceRetainedAfterChange[0].etypes.length === PRODUCT_ENCTYPES &&
           !isNaN(Date.parse(r.aliceRetainedAfterChange[0].expiresAt)),
           'the people list shows the kept version: kvno, enctypes and expiry',
           JSON.stringify(r.aliceRetainedAfterChange));
@@ -1182,10 +1192,11 @@ function previousServiceVersionsAreKept(t, r) {
     return entries.map(function (e) { return e.vno; })
       .filter(function (v, i, all) { return all.indexOf(v) === i; }).sort();
   };
-  t.check(rotated.length === 10 && JSON.stringify(vnos(rotated)) === '[3,4]' &&
+  t.check(rotated.length === 2 * PRODUCT_ENCTYPES &&
+          JSON.stringify(vnos(rotated)) === '[3,4]' &&
           JSON.stringify(r.rotateKeytabKvnos) === '[4,3]',
-          'THE ROTATION\'S KEYTAB CARRIES BOTH kvnos — five enctypes at 4 ' +
-          'and five at 3 — read by the independent reader, as MIT\'s ktadd ' +
+          'THE ROTATION\'S KEYTAB CARRIES BOTH kvnos — four enctypes at 4 ' +
+          'and four at 3 — read by the independent reader, as MIT\'s ktadd ' +
           'without -k leaves one',
           JSON.stringify({ vnos: vnos(rotated), count: rotated.length,
                            keytabKvnos: r.rotateKeytabKvnos }));
@@ -1238,7 +1249,7 @@ function previousServiceVersionsAreKept(t, r) {
           JSON.stringify(r.accept4After2));
   t.check(Array.isArray(r.servicesListed) && r.servicesListed.length === 1 &&
           r.servicesListed[0].kvno === 4 &&
-          r.servicesListed[0].etypes.length === 5,
+          r.servicesListed[0].etypes.length === PRODUCT_ENCTYPES,
           'the service list shows kvno 4 kept',
           JSON.stringify(r.servicesListed));
   t.check(r.dropService.ok === true && r.dropService.dropped === 1 &&

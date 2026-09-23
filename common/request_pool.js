@@ -1508,9 +1508,20 @@ function poolFor(url) {
 // `GET /admin-api/debugger` answered by a worker would report a listener that
 // never bound and a child that was never forked. Pinned for that reason; the
 // settings drawn on that page are ordinary configuration either way.
+//
+// **AND THE SPIFFE BROKER ENDPOINTS' LISTENERS (2026-09-23, #170).** A realm's
+// Broker API socket is bound by the front process, like every SPIFFE socket,
+// and `/admin/spiffe/brokers` and `GET /admin-api/spiffe/brokers` report
+// whether it is listening — so answered by a worker they said `listeners: []`
+// about a socket that was bound (`sts_spiffe_broker`, single-node). The
+// brokers they list are ordinary configuration either way. Only these two:
+// `/admin/spiffe` and `/admin-api/spiffe` stay dispatched, for the authority
+// argument above, and `matchesAny()` stops at the segment boundary.
 // ---------------------------------------------------------------------------
 const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
-                          '/admin/debugger', '/admin-api/debugger'];
+                          '/admin/debugger', '/admin-api/debugger',
+                          '/admin/spiffe/brokers',
+                          '/admin-api/spiffe/brokers'];
 
 function dispatched(url) {
   log.debug("Entering dispatched().");

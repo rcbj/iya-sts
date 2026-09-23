@@ -229,14 +229,29 @@ class ProtocolStack {
                'PasswordPolicy');
     this.build('authn/webauthn_policy', require('../authn/webauthn_policy'),
                'WebauthnPolicy');
+    // #105: a registration's attestation statement, verified. A library
+    // (rule 3), asked by both ceremony doors — the sign-in screen and
+    // `credentials.confirmKeyEnrolment()` — after `webauthn.js`'s own checks.
+    this.build('authn/webauthn_attestation',
+               require('../authn/webauthn_attestation'),
+               'WebauthnAttestation');
     this.build('common/credentials', require('./credentials'), 'Credentials');
     this.build('common/account_state', require('./account_state'),
                'AccountState');
+    // #127: a person's identity verifications and the `verified_claims`
+    // answer. A library, asked by the authorization server's claims request,
+    // the console and API, and the wallet and certificate sign-ins.
+    this.build('common/identity_assurance', require('./identity_assurance'),
+               'IdentityAssurance');
     // #110: which scopes a client may be issued. A library, asked at request
     // time by the authorization server, GNAP and the three resource servers
     // behind this service's own protected scopes.
     this.build('common/scope_policy', require('./scope_policy'),
                'ScopePolicy');
+    // #108: who may act for whom at WS-Trust OnBehalfOf / ActAs and the RFC
+    // 8693 token exchange. A library, asked by both doors at request time.
+    this.build('common/delegation_policy', require('./delegation_policy'),
+               'DelegationPolicy');
     this.build('cluster/cluster_secrets', require('../cluster/cluster_secrets'),
                'ClusterSecrets');
     this.build('common/websecurity', require('./websecurity'), 'WebSecurity');
@@ -311,6 +326,12 @@ class ProtocolStack {
     this.build('portal/portal_sign_ins',
                require('../portal/portal_sign_ins'),
                'PortalSignIns');
+    this.build('portal/portal_consents',
+               require('../portal/portal_consents'),
+               'PortalConsents');
+    this.build('portal/portal_delegate',
+               require('../portal/portal_delegate'),
+               'PortalDelegate');
     // THE MAIL CHANNEL (#63, 2026-09-22): two LIBRARIES (rule 3) that
     // register no route — the channel and its uses — built here, before the
     // portal whose `/portal/email`, `/portal/verify-email` and
@@ -482,6 +503,19 @@ class ProtocolStack {
                'FederationSp');
     this.register(app, require('../federation/federation_sp'),
                   'federation/federation_sp');
+    // 10c-ii. A PARTNER'S SIGN-OUT (#167): /federation/slo/{id} and the two
+    // OpenID Connect logout paths. After federation_sp, whose request-context
+    // store, partner-key verifier and page shell it uses, and after
+    // authn/authn, whose session it reads and ends. It requires
+    // `logout/logout.ts` LAZILY — that module is second to last and requires
+    // ldap_server.js, whose routes a require here would drag forward — so
+    // this is a require of libraries and one register() and moves no route.
+    require('../federation/federation_slo');
+    this.build('federation/federation_slo',
+               require('../federation/federation_slo'),
+               'FederationSlo');
+    this.register(app, require('../federation/federation_slo'),
+                  'federation/federation_slo');
     // A cache hit since `oauth2` above; kept so that the require order still
     // reads 11-14 in one place. Its routes were registered above.
     require('../oid4vc/vc_offers');
@@ -868,7 +902,17 @@ class ProtocolStack {
                'RiskAdmin');
     this.register(app, require('../admin-ui/risk_admin'),
                   'admin-ui/risk_admin');
-    // 18k. MAIL (#63, 2026-09-22): Server configuration → Mail and
+    // 18k. THE MODE'S PAGE (#181, 2026-09-23). `/admin/mode` — what
+    // `global.mode` changes and what is in force in the realm, drawn from
+    // `common/mode.js`'s `report()`. 18a's placement and 18a's reason: the
+    // console's shell and `mode.js` (a leaf every module above loaded) are
+    // here, and `mgmt-api/admin_api` requires it in the ordinary direction.
+    require('../admin-ui/mode_admin');
+    this.build('admin-ui/mode_admin', require('../admin-ui/mode_admin'),
+               'ModeAdmin');
+    this.register(app, require('../admin-ui/mode_admin'),
+                  'admin-ui/mode_admin');
+    // 18l. MAIL (#63, 2026-09-22): Server configuration → Mail and
     // Monitoring → Mail outbox, one module for both. 18a's placement and 18a's
     // reason: the console's shell and the channel (built with the portal,
     // above) already here, and `mgmt-api/admin_api` requires it.
@@ -1132,6 +1176,14 @@ class ProtocolStack {
     // signingKeyRotated() it calls (lazily, so the order is for a reader).
     this.build('common/signing_rotation', require('./signing_rotation'),
                'SigningRotation');
+    // 23b-iii. THE KRBTGT KEY'S ROTATION (#169, 2026-09-23): a library that
+    // registers its two scheduler jobs when built and no route. After
+    // `ldap/ldap_server` (21), whose directory slot the register it drives
+    // (`kerberos/krb5_person_keys.ts`) writes the krbtgt key through, and
+    // beside the signing rotation above, whose shape it follows. Everything it
+    // reaches is reached lazily, so the order is for a reader.
+    this.build('kerberos/krb5_krbtgt_rotation',
+               require('../kerberos/krb5_krbtgt_rotation'), 'KrbtgtRotation');
     // -------------------------------------------------------------------------
     // 23c. XACML 3.0 — the PDP, the policy repository, the PIP, the embedded
     // PEPs and the PAP console.
@@ -1179,6 +1231,10 @@ class ProtocolStack {
     // lazily when a person's risk changes. Built here, with its siblings.
     this.build('xacml/xacml_risk_pep', require('../xacml/xacml_risk_pep'),
                'XacmlRiskPep');
+    // The signal-response PEP (#62): a library this service's own receivers
+    // reach lazily when a verified event arrives. Built with its siblings.
+    this.build('xacml/xacml_signal_pep',
+               require('../xacml/xacml_signal_pep'), 'XacmlSignalPep');
     this.build('xacml/xacml', require('../xacml/xacml'), 'XacmlSurface');
     this.register(app, require('../xacml/xacml_admin'), 'xacml/xacml_admin');
     this.register(app, require('../xacml/xacml'), 'xacml/xacml');

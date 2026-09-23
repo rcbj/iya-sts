@@ -487,6 +487,49 @@ and were private to `ssf.ts`, because three receivers reading a SET three ways
 would be three opinions about what arrived. Building a SET and reading one back
 are the two directions of one format and belong in one file.
 
+## AND THEY ACT ON WHAT THEY RECEIVE (#62, 2026-09-22)
+
+rcbj asked for "surfaces act on signals". Until then both receivers only
+recorded what arrived. #117 pointed out that recording only was the one thing
+keeping an unverified SET harmless. So acting came with #117's rule, and the
+rule is enforced in code, not in policy.
+
+* **Nothing acts on a SET unless it verified.** `actOn()` runs only for a
+  SET that passed every check `accept()` makes (typ, iss, aud) AND whose
+  signature verified. That holds whatever `ssf.receiveRequireSignature` says
+  about accepting it. An unverified SET is recorded, and nothing else
+  happens.
+* **What a verified SET may do is policy.** `xacml/xacml_signal_pep.ts` asks
+  the built-in `signal-response` policy (`xacml.signalResponsePolicy`) once
+  per event type in the SET. Its one reaction today, `signal-end-sessions`,
+  ends the RECEIVING surface's own relying-party sessions for the person
+  named, through `authn.endRelyingPartySessions()`. It never ends the
+  provider's sessions: those are the transmitter's to end, and it has
+  usually ended them already (the cascade in `dropSession()`).
+* **Who the SET is about is `isAbout()`**, the portal's fail-closed match,
+  with the person composed as `personOf()` composes one.
+* **Confined to the realm the SET arrived in.** The console keeps every
+  realm's sessions in the default realm's partition, so a session is matched
+  on the realm it came from (`derivedFromRealm`) as well as the person.
+  `alice` in one realm is not `alice` in another.
+* **Development observes** (`mode.observesSignalsOnly()`), unless
+  `ssf.actOnSignalsInDevelopment` is on. A suite driving the console emits
+  events about the people it is signed in as.
+* **The row says what was done.** `reactions` is written onto the inbox row
+  BEFORE the row is recorded, because rows are written once and never
+  rewritten. The row shows whether it was taken and how many sessions it
+  ended, observed, or failed (`STS-SSF-0111`). A policy that cannot be
+  loaded is `STS-SSF-0110`.
+
+`tests/signal_response.js` covers the policy, its decisions, and a real
+signed SET through `accept()`: development observes; the person's own
+console session is ended, once; somebody else's event, an unverified SET
+and an unpermitted event end nothing; and a disabled policy ends nothing.
+
+**Not built: acting on a FOREIGN transmitter's events.** That needs #153
+(this service as a receiver of somebody else's stream), and the same rule
+will bind it.
+
 ---
 
 ## THE OPT-OUT GATE, AND THE EXCEPTION WITHOUT WHICH IT IS A TRAP
@@ -1236,10 +1279,12 @@ carries `onlyWhile: 'spoilsOnPurpose'` — refused on write in a product realm
 `mode.valueInForce()`, `buildSet()` for the claim and `signSet()`'s `.then()`
 for the signature, so a realm switched to product with either still stored
 stops producing the defect on its next SET and says so once (`STS-CORE-0106`).
-`caep.omitEventTimestamp`, `risc.omitEventTimestamp` and
-`risc.googleSubjectType` are NOT marked: the first two are conforming, and the
-third — non-conforming on purpose, and honoured in product — was found in the
-same sweep and left for a decision of its own.
+`caep.omitEventTimestamp` and `risc.omitEventTimestamp` are NOT marked: they
+are conforming. `risc.googleSubjectType` — non-conforming on purpose, and
+honoured in product — was found in the same sweep and left for a decision of
+its own, which **#181 (2026-09-23) took**: it carries `spoilsOnPurpose` too,
+and `risc.ts`'s `googleSubjectType()` and the RISC view read it through
+`mode.valueInForce()`.
 
 **And the second one has a trap in it that cost a test run.** It changes the
 **first** character of the signature and not the last, and that is not a style

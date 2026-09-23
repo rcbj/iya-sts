@@ -414,6 +414,10 @@ import webauthnVerifier = require('./webauthn');
 // cross-implementation test, and a `require('../common/config')` in there would
 // end that silently. See `authn/webauthn_policy.ts`'s header.
 import webauthnPolicy = require('./webauthn_policy');
+// THE ATTESTATION STATEMENT, VERIFIED (#105). Rule 3 as well: a library that
+// requires the policy above, `crypto`, `pki` and `error_codes`, and reaches
+// the FIDO metadata and revocation lazily — nothing that reaches back here.
+import webauthnAttestation = require('./webauthn_attestation');
 // THE AUTHENTICATOR APP'S MECHANISM (2026-09-13), for the enrolment a required
 // second factor asks for: the otpauth URI, the QR code and the grouped secret.
 // A LEAF requiring `config`, `crypto`, `helpers` and `realms`, none of which
@@ -1047,6 +1051,7 @@ interface AuthnDeps {
   accountState: typeof accountState;
   webauthnVerifier: typeof webauthnVerifier;
   webauthnPolicy: typeof webauthnPolicy;
+  webauthnAttestation: typeof webauthnAttestation;
   totp: typeof totp;
 }
 
@@ -1094,6 +1099,7 @@ class Authn {
       accountState: accountState,
       webauthnVerifier: webauthnVerifier,
       webauthnPolicy: webauthnPolicy,
+      webauthnAttestation: webauthnAttestation,
       totp: totp
     };
   }
@@ -2920,6 +2926,10 @@ class Authn {
       uaFingerprint: stsCrypto.userAgentFingerprint(
         headers['user-agent'] || ''),
       ja4: hello ? hello.ja4 : '',
+      // What risk compares: the JA4 with the resumption extensions left out
+      // (`tls/client_hello.ts`'s `stack()`), or a resumed connection reads
+      // as a new TLS client.
+      tlsStack: hello ? (hello.stack || hello.ja4) : '',
       device: fp ? stsCrypto.credentialFingerprint('device:' + fp) : '',
       credential: credential
     };
@@ -3065,6 +3075,7 @@ class Authn {
     session.via = event.via;
     session.lastSeenAt = Date.now();
     session.firstPresentationIsTheSignIn = true;
+    this.bindPartnerSession(session, extra);
     const cookieValue = this.mintSessionHandle(session);
     sessions.set(session.id, session);
     if (extra.cookie !== false) {
@@ -3078,6 +3089,11 @@ class Authn {
     delete statsExtra.risk;
     delete statsExtra.riskDecision;
     delete statsExtra.riskStepUp;
+    // A federation partner's session and its bound (#167) are facts about
+    // the SESSION, recorded on it; the authentication's row names the
+    // relationship through `federation` already.
+    delete statsExtra.fedPartnerSession;
+    delete statsExtra.sessionNotOnOrAfter;
     stats.recordAuthentication(Object.assign({
       presented: username, protocol: event.via,
       method: this.methodPhraseFor(event.amr),
@@ -3114,6 +3130,49 @@ class Authn {
               session.events.length +
               " event(s).");
     return session;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A FEDERATION PARTNER'S SESSION, AND THE BOUND IT PUTS ON THIS ONE (#167).
+  //
+  // `detail.fedPartnerSession` is what `federation/federation_sp.ts` knows
+  // about the PARTNER's session this sign-in came out of — the relationship,
+  // the SAML NameID and SessionIndex, the OpenID Connect `iss`, `sub` and
+  // `sid` — and it is kept ON THE SESSION so that a partner's sign-out can
+  // find the one session it names (`federation/federation_slo.ts`), on any
+  // node: this store is persisted and replicated, so a second index beside it
+  // would be a second answer to which session a partner meant. A later
+  // federated sign-in on the same session replaces it; a local
+  // re-authentication leaves it, because the partner's session did not end.
+  //
+  // `detail.sessionNotOnOrAfter` is the partner's SAML 2.0
+  // `AuthnStatement/@SessionNotOnOrAfter`, as epoch ms: the instant at which
+  // "the session between the principal ... and the SAML authority issuing
+  // this statement MUST be considered ended" (saml-core-2.0-os section
+  // 2.7.2). It can only SHORTEN this session — `expires` becomes the earlier
+  // of the two — and it is the absolute expiry `sessionEnded()` already
+  // reads, so every reader, the sweep and the lazy lookups honour it with no
+  // path of their own. An ID Token's `exp` is NOT such a bound (OpenID
+  // Connect Core section 2 makes it the token's lifetime, not the session's)
+  // and nothing passes one.
+  // ---------------------------------------------------------------------------
+  private bindPartnerSession(session, extra) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.bindPartnerSession().");
+    const detail = extra || {};
+    if (detail.fedPartnerSession && typeof detail.fedPartnerSession ===
+        'object') {
+      session.fedPartnerSession = Object.assign({}, detail.fedPartnerSession);
+    }
+    const bound = Number(detail.sessionNotOnOrAfter) || 0;
+    if (bound > 0 && (!session.expires || bound < session.expires)) {
+      session.expires = bound;
+      session.expiresBoundBy = 'SessionNotOnOrAfter';
+      log.info('authn: session ' + session.id + ' ends at ' +
+               new Date(bound).toISOString() + ', the partner\'s ' +
+               'SessionNotOnOrAfter, which is earlier than its own lifetime.');
+    }
+    log.debug("Leaving Authn.bindPartnerSession().");
   }
 
   // ---------------------------------------------------------------------------
@@ -3243,7 +3302,8 @@ class Authn {
     }
     const now = this.eventContext({ request: req });
     const keyOf = function (c: any): string {
-      return [String(c.uaFingerprint || ''), String(c.ja4 || ''),
+      return [String(c.uaFingerprint || ''),
+              String(c.tlsStack || c.ja4 || ''),
               c.address ? prefixOf(String(c.address)) : ''].join('|');
     };
     const is = keyOf(now);
@@ -3266,7 +3326,8 @@ class Authn {
         moved.push('device');
       }
     }
-    if (String(now.ja4 || '') !== String(last.context.ja4 || '')) {
+    if (String(now.tlsStack || now.ja4 || '') !==
+        String(last.context.tlsStack || last.context.ja4 || '')) {
       moved.push('TLS client');
     }
     if (is.split('|')[2] !== keyOf(last.context).split('|')[2]) {
@@ -3346,6 +3407,46 @@ class Authn {
     });
     log.debug("Leaving Authn.sessionsForRisk(). " + out.length + ".");
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SURFACE'S OWN SESSIONS FOR ONE PERSON, ENDED (#62, 2026-09-22) — what
+  // the console or the portal does with a received signal the
+  // `signal-response` policy permits (`ssf/ssf_receivers.ts`). Only the
+  // relying-party sessions `surfaceId` holds (`admin` or `portal`,
+  // `common/oidc_rp.ts`'s ids), only those that came from `fromRealm` — the
+  // realm the event arrived in; the console keeps every realm's sessions in
+  // the default realm's partition, and `alice` in one realm is not `alice`
+  // in another — and only those whose person `about(user)` says the event
+  // names. Each ends through dropSession(), so it is audited and announced as
+  // any sign-out is. Answers how many ended.
+  // ---------------------------------------------------------------------------
+  endRelyingPartySessions(surfaceId: string, fromRealm: string,
+                          about: (user: any, session?: any) => boolean,
+                          via: string): number {
+    const { log, realms } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.endRelyingPartySessions(). " + surfaceId);
+    const partition = surfaceId === 'admin' ? realms.DEFAULT_ID : fromRealm;
+    const store = sessions.realmMap(partition);
+    const doomed: string[] = [];
+    if (store) {
+      store.forEach(function (session, id) {
+        if (session && session.rpSurface === surfaceId &&
+            String(session.derivedFromRealm || partition) === fromRealm &&
+            session.user && about(session.user, session)) {
+          doomed.push(id);
+        }
+      });
+    }
+    doomed.forEach(function (id: string): void {
+      realms.run(realms.get(partition), function () {
+        self.dropSession(id, via, false);
+      });
+    });
+    log.debug("Leaving Authn.endRelyingPartySessions(). " + doomed.length +
+              " ended.");
+    return doomed.length;
   }
 
   // Whether this realm fingerprints the browser at the sign-in screen (#62
@@ -3777,6 +3878,11 @@ class Authn {
     delete statsExtra.risk;
     delete statsExtra.riskDecision;
     delete statsExtra.riskStepUp;
+    // A federation partner's session and its bound (#167) are facts about
+    // the SESSION, recorded on it; the authentication's row names the
+    // relationship through `federation` already.
+    delete statsExtra.fedPartnerSession;
+    delete statsExtra.sessionNotOnOrAfter;
     stats.recordAuthentication(Object.assign({
       presented: username, protocol: via || 'OAuth 2.0 / OIDC',
       method: authenticatedNow ? this.methodPhraseFor(amr) : 'declined',
@@ -3916,6 +4022,7 @@ class Authn {
       // where the door assessed nothing. P4's re-scoring replaces it.
       risk: risk
     };
+    this.bindPartnerSession(session, extra);
     // A FRESH HANDLE, EVEN FOR AN UPGRADED ARRIVAL ROW. The arrival session's
     // id survives the upgrade on purpose — it is the `sid` a flow was
     // correlated by from its first request — and until 2026-09-14 so did its
@@ -9136,7 +9243,10 @@ class Authn {
             // attachment, which nothing signed says anything about. It was the
             // literal `false` until 2026-09-10, which made `required` a request
             // a browser could decline with nothing here noticing.
-            requireUserVerification: webauthnPolicy.requireUserVerification()
+            requireUserVerification: webauthnPolicy.requireUserVerification(),
+            // WebAuthn Level 3 section 7.1: the credential's alg must be one
+            // of the pubKeyCredParams this realm offered (#105).
+            expectedAlgorithms: webauthnPolicy.algorithmIds()
           });
           if (verdict.ok) {
             // ---------------------------------------------------------------
@@ -9245,7 +9355,7 @@ class Authn {
                 userVerified: !!(verdict.flags && verdict.flags.uv),
                 aaguid: verdict.aaguid || null,
                 algorithm: verdict.algorithm || null
-              } };
+              }, registration: verdict };
             }
           }
         } else {
@@ -9331,8 +9441,33 @@ class Authn {
       }
 
       if (toRegister) {
-        credentials.addKeyClaimed(toRegister.username, toRegister.record,
-                                  toRegister.role).then(function (stored) {
+        // THE ATTESTATION STATEMENT FIRST (#105): section 7.1 steps 21-25,
+        // asynchronous because a certificate path and its revocation are, and
+        // BEFORE the credential id is claimed, so a refused statement leaves
+        // nothing behind. What it answers is recorded on the key row.
+        self.deps.webauthnAttestation.assess(toRegister.registration)
+          .then(function (attested) {
+            if (!attested.ok) {
+              log.info('authn: the security key "' + step.username + '" ' +
+                       'presented was NOT registered: ' + attested.why);
+              verdict = errorCodes.mark({ ok: false,
+                                          checks: verdict.checks,
+                                          failed: [attested.why],
+                                          why: attested.why },
+                                        errorCodes.codeOf(attested) ||
+                                        'STS-AUTHN-0241');
+              return null;
+            }
+            toRegister.record.attestation = attested.attestation;
+            return credentials.addKeyClaimed(toRegister.username,
+                                             toRegister.record,
+                                             toRegister.role);
+          }).then(function (stored) {
+          if (stored === null) {
+            // The attestation refused it, above; the verdict says why.
+            self.finishWebauthn(req, res, base, body, step, verdict);
+            return;
+          }
           if (!stored.ok) {
             // **A REFUSED WRITE IS A REFUSED CEREMONY.** The old code could not
             // fail here — a map takes anything — so there was no branch for it,
@@ -9947,6 +10082,7 @@ export = {
   renewRelyingPartySession: slot.forward('renewRelyingPartySession'),
   tokensExpireAt: slot.forward('tokensExpireAt'),
   relyingPartySessionOf: slot.forward('relyingPartySessionOf'),
+  endRelyingPartySessions: slot.forward('endRelyingPartySessions'),
   // Exported for `logout/logout.ts`, which lists what is live and has to be
   // able to say which rows hang off which. It is a walk rather than an index;
   // see its header.

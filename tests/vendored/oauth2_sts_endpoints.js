@@ -1361,21 +1361,22 @@ async function testIntrospectionAndRevocation(meta, verify) {
   log.debug("Leaving testIntrospectionAndRevocation().");
 }
 
-// Whether this STS's application registry names `oauthAllowedScope` as an
-// editable attribute — the declared scopes of iya-sts #110. Read from the
-// same `editable` table sts_applications.js reads, so an STS that predates
-// the attribute is recognised rather than refused.
-async function allowedScopeEditable(base) {
-  log.debug("Entering allowedScopeEditable(). base=" + base);
+// Whether this STS's application registry names `name` as an editable
+// attribute. Read from the same `editable` table sts_applications.js reads,
+// so an STS that predates the attribute is recognised rather than refused:
+// `oauthAllowedScope` arrived with iya-sts #110, the delegation policy's
+// `appTrustedToImpersonate` / `appAllowedToDelegateTo` with #108.
+async function registryEditable(base, name) {
+  log.debug("Entering registryEditable(). base=" + base + " name=" + name);
   if (!base || !(await registry.registryAvailable(base))) {
-    log.debug("Leaving allowedScopeEditable(). No registry.");
+    log.debug("Leaving registryEditable(). No registry.");
     return false;
   }
   const doc = await registry.adminGet(base, "/applications/new");
   const found = (doc.editable || []).some(function (row) {
-    return row.name === "oauthAllowedScope";
+    return row.name === name;
   });
-  log.debug("Leaving allowedScopeEditable(). " + found);
+  log.debug("Leaving registryEditable(). " + found);
   return found;
 }
 
@@ -1644,7 +1645,14 @@ async function test() {
   // attribute and refuses one it does not know, so it is added only when the
   // registry's `editable` table names it — this file runs against both.
   // ---------------------------------------------------------------------
-  var declaresScopes = await allowedScopeEditable(registry.baseOf(stsBase));
+  var declaresScopes = await registryEditable(registry.baseOf(stsBase),
+                                             "oauthAllowedScope");
+  // THE DELEGATION POLICY (iya-sts #108): in product an RFC 8693 exchange in
+  // which this client impersonates the subject is refused unless the policy
+  // says it may — trusted to impersonate, and allowed to delegate to the API
+  // the exchange aims at. Declared only where the STS knows the attributes.
+  var declaresDelegation = await registryEditable(registry.baseOf(stsBase),
+                                                  "appTrustedToImpersonate");
   var clientFields = {
     oauthClientId: CLIENT_ID,
     oauthRedirectUri: [REDIRECT_URI],
@@ -1670,6 +1678,10 @@ async function test() {
   if (declaresScopes) {
     clientFields.oauthAllowedScope = ["openid", "profile", "email", "api"];
     serviceFields.oauthAllowedScope = ["api"];
+  }
+  if (declaresDelegation) {
+    clientFields.appTrustedToImpersonate = "TRUE";
+    clientFields.appAllowedToDelegateTo = [EXCHANGE_RESOURCE];
   }
   await registry.provision(registry.baseOf(stsBase), {
     identifier: CLIENT_ID,

@@ -577,9 +577,16 @@ never builds an `ErrorResponse`.
   `scim.maxDigestNonces` (2000) and `scim.maxHobaChallenges` (2000) are safe to
   lower for a simpler reason: a forgotten nonce or challenge is refused, never
   accepted.
-* **`scim.digestMd5`** (true) drops MD5 from the challenges and refuses an MD5
-  credential naming the setting. `DIGEST_ALGORITHMS` stays the table of what the
-  BUILD computes, for the crypto report.
+* **`scim.digestMd5`** (false since #182, 2026-09-23; it was true) adds MD5 to
+  the challenges; off, an MD5 credential — or one naming no algorithm, which
+  RFC 7616 reads as MD5 — is refused naming the setting. `DIGEST_ALGORITHMS`
+  stays the table of what the BUILD computes, for the crypto report. **It is
+  DEVELOPMENT MODE ONLY** (`onlyWhile: 'usesBrokenAlgorithms'`): refused on
+  write in a product realm (STS-CORE-0103) and read through
+  `mode.valueInForce()` (STS-CORE-0106). Product offers no Digest at all
+  (STS-SCIM-0056, below), so there the marker only keeps a stored `true` from
+  claiming something the service does not do; development is where the
+  default changed, because the most secure option is the default.
 * **`scim.digestNonceSeconds` and `scim.hobaMaxAgeSeconds` carry `min: 1`** and
   are read straight through; they were `Number(...) || 300` and `|| 600`, which
   rewrote a value the table accepted without saying so.

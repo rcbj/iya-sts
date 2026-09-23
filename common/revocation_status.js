@@ -79,10 +79,13 @@
 //   1. **`http:`, `https:` AND — FOR A CRL OR A CA CERTIFICATE — `ldaps:`.**
 //      Never `file:`, never anything else; plain `ldap:` only where
 //      `pki.revocationLdap` says so, and an OCSP responder is http(s) only
-//      because RFC 6960 appendix A defines no other transport. A distribution
-//      point in another scheme is REPORTED as not fetchable, which is a fact
-//      about the issuer and not a failure to check. LDAP is argued at
-//      `fetchLdap()` as the second protocol this file speaks outbound.
+//      because RFC 6960 appendix A defines no other transport. An address in
+//      another scheme — or one these settings keep this file from dialling —
+//      is `not-dialled` (#174): the issuer published a list and this
+//      service did not read it, so its status could not be established and
+//      hard-fail refuses it (STS-PKI-0188), naming the setting. LDAP is
+//      argued at `fetchLdap()` as the second protocol this file speaks
+//      outbound.
 //   2. **NO REDIRECT IS FOLLOWED.** RFC 5280 section 4.2.1.13 names the URL;
 //      a 302 is a different URL nobody signed, and following one is the SSRF
 //      arriving through the front door.
@@ -132,13 +135,34 @@
 // what development refuses is exactly what somebody revoked, which is the
 // behaviour a client author points a stack here to watch.
 //
-// **A CERTIFICATE NAMING NO FETCHABLE DISTRIBUTION POINT IS NOT REFUSED BY
-// HARD-FAIL** unless `pki.revocationRequireDistributionPoint` says so. That is
-// not a softening of hard-fail: hard-fail exists because an attacker can block
-// a fetch, and a certificate whose issuer publishes no list gives an attacker
-// nothing to block. Refusing it would make every private CA that publishes no
-// CRL — the remote PEP credential the launchers mint is one — unusable in
-// product mode, for no attack it prevents.
+// **"NAMES NONE" AND "NAMES ONLY WHAT WE WILL NOT DIAL" ARE TWO CASES (#174,
+// 2026-09-23), AND UNTIL THEN THEY WERE ONE.** This paragraph read *a
+// certificate naming no fetchable distribution point is not refused by
+// hard-fail … a certificate whose issuer publishes no list gives an attacker
+// nothing to block* — and "no FETCHABLE point" swept in a certificate whose
+// issuer publishes its list at `ldap://…`, which the default
+// `pki.revocationLdap=ldaps` does not dial. That certificate was accepted even
+// when the list REVOKED it. The issuer did publish a list; this service's own
+// policy is what stopped it being read; RFC 5280 section 6.3 calls that an
+// undetermined status, and hard-fail refuses undetermined statuses. So:
+//
+//   * **NOT DIALLED** — every address a certificate names is one this service
+//     is configured not to dial (plain ldap under `ldaps`, any ldap under
+//     `off`, a relative name without `pki.revocationLdapDirectory`, a scheme
+//     never dialled, an ldap OCSP responder, any responder under
+//     `pki.revocationOcsp=off`) and nothing else answers — is REFUSED under
+//     hard-fail, STS-PKI-0188, the why naming the setting that would dial it.
+//   * **NAMES NONE** — no CRL, no responder, no noRevAvail — is refused under
+//     hard-fail where `pki.revocationRequireDistributionPoint` says, and its
+//     default `auto` is `mode.refusesUnrevocableCertificates()`: product
+//     refuses (STS-PKI-0190), development accepts. The argument is no longer
+//     about a fetch — there is none to block — but about the certificate: one
+//     nobody can revoke is good until it expires whatever its issuer learns.
+//     RFC 5280 only RECOMMENDS the extension, which is the cost — a private CA
+//     that publishes nothing — and `off` exists for it, with a warning. A
+//     SELF-SIGNED certificate is untouched: the walk stops at it as an anchor.
+//   * **RFC 9608 noRevAvail** is the issuer saying the absence is deliberate,
+//     and section 4 skips the check for it (`noRevAvailOf()`).
 //
 // ---------------------------------------------------------------------------
 // OCSP (RFC 6960), ADDED THE SAME DAY: what is sent, and what is believed.
@@ -273,6 +297,15 @@ const POLICIES = ['auto', 'off', 'soft-fail', 'hard-fail'];
 // `tests/error_codes.js` looks for a code beside a failure.
 const CODE_REVOKED = 'STS-PKI-0118';
 const CODE_UNKNOWN = 'STS-PKI-0119';
+// THREE MORE REFUSAL CODES (#174, 2026-09-23), each a refusal an operator acts
+// on differently from "a server did not answer". NOT DIALLED is this service's
+// own policy standing between it and a list the issuer published — the fix is
+// a setting, named in the verdict. UNREVOCABLE is an issuer that publishes
+// nothing at all — the fix is the issuer's, or `off`. NOREVAVAIL is a
+// certificate RFC 9608 section 3 says to treat as invalid.
+const CODE_NOT_DIALLED = 'STS-PKI-0188';
+const CODE_NOREVAVAIL = 'STS-PKI-0189';
+const CODE_UNREVOCABLE = 'STS-PKI-0190';
 
 // The deepest chain walked. It is a bound on somebody else's bytes rather than
 // a tunable: a real path is three or four certificates deep, and a loop in a
@@ -291,12 +324,22 @@ function policy() {
     effective = mode.refusesUnknownRevocationStatus() ? 'hard-fail'
                                                       : 'soft-fail';
   }
+  // `auto` ASKS THE MODE (#174): product refuses a certificate nobody can
+  // revoke, development accepts it. An unreadable value is `auto`, which is
+  // the stricter reading in product and the documented one in development.
+  let requireConfigured =
+      String(config.value('pki.revocationRequireDistributionPoint') || 'auto');
+  if (['auto', 'on', 'off'].indexOf(requireConfigured) < 0) {
+    requireConfigured = 'auto';
+  }
+  const requireDistributionPoint = requireConfigured === 'on' ||
+    (requireConfigured === 'auto' && mode.refusesUnrevocableCertificates());
   log.debug('Leaving policy(). ' + effective);
   return {
     configured: configured,
     effective: effective,
-    requireDistributionPoint:
-      config.value('pki.revocationRequireDistributionPoint') === true,
+    requireDistributionPoint: requireDistributionPoint,
+    requireDistributionPointConfigured: requireConfigured,
     decidedBy: configured === 'auto'
       ? 'pki.revocationCheck is auto, so the mode decides: ' +
         (mode.isProduct() ? 'product mode hard-fails' : 'development mode ' +
@@ -383,10 +426,33 @@ function signedBy(cert, issuer) {
   }
 }
 
+// A certificate signed by its OWN key under its own name — decided by the
+// name and the signature alone, NOT by `signedBy()`. That goes through
+// OpenSSL's `checkIssued()`, which also asks the issuer to allow
+// keyCertSign: right for a real issuer, wrong here, because a self-signed
+// END-ENTITY certificate (key usage digitalSignature, no keyCertSign — what a
+// pinned issuer certificate in `oid4vp.trustedIssuerCertificates` commonly
+// is) then read as issued by an authority nobody holds, and under #174's
+// hard-fail product refused it as unrevocable (2026-09-23). A self-signed
+// certificate has no issuer to revoke it; removing it from wherever it is
+// pinned is how it is withdrawn.
 function selfSigned(cert) {
   log.debug("Entering selfSigned().");
-  log.debug("Leaving selfSigned().");
-  return !!cert && cert.subject === cert.issuer && signedBy(cert, cert);
+  if (!cert || cert.subject !== cert.issuer) {
+    log.debug("Leaving selfSigned(). Not self-issued.");
+    return false;
+  }
+  try {
+    const ok = cert.verify(cert.publicKey);
+    log.debug("Leaving selfSigned().");
+    return ok;
+  } catch (e) {
+    log.debug("Caught in selfSigned(): " + ((e && e.message) || e));
+    log.debug("Leaving selfSigned().");
+    // A key node cannot verify with is not a self-signature it can vouch
+    // for; the ordinary path walk then decides.
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -573,6 +639,8 @@ const OID = {
   OCSP_BASIC: '1.3.6.1.5.5.7.48.1.1',
   OCSP_NONCE: '1.3.6.1.5.5.7.48.1.2',
   OCSP_NOCHECK: '1.3.6.1.5.5.7.48.1.5',
+  // RFC 9608: id-ce-noRevAvail, { id-ce 56 }.
+  NO_REV_AVAIL: '2.5.29.56',
   AD_CA_ISSUERS: '1.3.6.1.5.5.7.48.2',
   SHA1: '1.3.14.3.2.26'
 };
@@ -912,9 +980,10 @@ function wholeNameOf(issuerName, rdnElement) {
 // ---------------------------------------------------------------------------
 // WHICH ADDRESSES ARE DIALLED. http and https always; ldaps unless
 // `pki.revocationLdap` is `off`; plain ldap only when it says `ldaps-and-ldap`;
-// nothing else, ever. An address not dialled is REPORTED with the reason, which
-// is a fact about the issuer's choice and this service's policy rather than a
-// failure to check.
+// nothing else, ever. An address not dialled is REPORTED with the reason — and
+// since #174 it is a status this service could not establish rather than "no
+// address", so hard-fail refuses a certificate that names nothing else
+// (`crlNoPointResult()`).
 // ---------------------------------------------------------------------------
 function ldapPolicy() {
   log.debug("Entering ldapPolicy().");
@@ -2388,8 +2457,9 @@ async function ocspSignatureVerifies(basic, parsedCert) {
 // the answer is cached and the policy is read per call: hard-fail does not
 // believe a responder whose status could not be established, soft-fail does and
 // says so. A responder certificate naming no list at all is refused by
-// hard-fail only under `pki.revocationRequireDistributionPoint`, which is the
-// rule a leaf gets.
+// hard-fail only where `pki.revocationRequireDistributionPoint` says (`auto`:
+// in product), which is the rule a leaf gets; one whose list is at an address
+// not dialled is refusable, as a leaf's is (#174).
 // ---------------------------------------------------------------------------
 async function responderStatusOf(parsedCert, x509, target) {
   log.debug('Entering responderStatusOf().');
@@ -3176,20 +3246,75 @@ function crlRevokedResult(target, got, context, delta, entry) {
   };
 }
 
-function crlNoPointResult(points) {
+// ---------------------------------------------------------------------------
+// NAMES NONE, OR NAMES ONLY WHAT THIS SERVICE WILL NOT DIAL (#174, 2026-09-23).
+//
+// **THESE ARE TWO DIFFERENT FACTS AND THEY WERE ONE RESULT.** Until #174 a
+// certificate whose only distribution point was `ldap://…` under the default
+// `pki.revocationLdap=ldaps` was answered exactly like one that named none —
+// `none: true`, `no-distribution-point` — and hard-fail accepted it, even when
+// that list REVOKED it. The header's argument for accepting "names none" is
+// that there is no fetch for an attacker to block; it does not reach this
+// case, because the issuer DID publish a list and this service's own policy
+// is what stopped it being read. RFC 5280 section 6.3: a relying party that
+// cannot obtain a CRL covering the certificate cannot establish its status —
+// which is precisely what hard-fail refuses.
+//
+// So an address in `points.other` — a scheme never dialled, plain ldap under
+// `ldaps`, any ldap under `off`, an LDAP URL this file will not read (no host,
+// a critical extension), a name relative to the CRL issuer with no
+// `pki.revocationLdapDirectory` or a multi-valued RDN — and a point naming a
+// CRL issuer with no address at all, is `not-dialled`: refusable, and refused
+// under hard-fail with its own code (STS-PKI-0188), the why naming the setting
+// that would dial it where one would.
+// ---------------------------------------------------------------------------
+
+// Each address is SAID ONCE PER PROCESS, not per request: the verdict carries
+// it every time, and a log line per refused request is the per-event noise the
+// failure log is kept free of. Bounded, because the addresses are somebody
+// else's bytes.
+const warnedNotDialled = new Set();
+const WARNED_NOT_DIALLED_MAX = 256;
+
+function warnNotDialled(subject, addresses) {
+  log.debug('Entering warnNotDialled().');
+  addresses.forEach(function (address) {
+    if (warnedNotDialled.has(address) ||
+        warnedNotDialled.size >= WARNED_NOT_DIALLED_MAX) {
+      return;
+    }
+    warnedNotDialled.add(address);
+    log.warn(errorCodes.tag(CODE_NOT_DIALLED) + 'revocation: "' +
+             String(subject || '').replace(/\n/g, ', ') + '" names a ' +
+             'revocation address this service is configured not to dial: ' +
+             address + '. Its status cannot be established, so hard-fail ' +
+             'refuses it. (Said once per address per process.)');
+  });
+  log.debug('Leaving warnNotDialled().');
+}
+
+function crlNoPointResult(points, target) {
   log.debug("Entering crlNoPointResult().");
-  let why = 'its issuer publishes no CRL for it — it names no distribution ' +
-            'point';
-  if (points.other.length) {
-    why = 'it names only distribution points this service does not dial (' +
-          points.other.join(', ') + ')';
-  } else if (points.indirect) {
-    why = 'it names only a CRL issuer, with no address to fetch that ' +
-          'issuer\'s list from';
+  const undialled = points.other.slice();
+  if (!undialled.length && points.indirect) {
+    undialled.push('a CRL issuer named with no address to fetch its list ' +
+                   'from (a list found by that issuer\'s name alone would ' +
+                   'need a directory the certificate does not name)');
+  }
+  if (undialled.length) {
+    warnNotDialled(target && target.link && target.link.subject, undialled);
+    log.debug("Leaving crlNoPointResult(). Not dialled.");
+    return { status: 'unknown', kind: 'not-dialled', refusable: true,
+             notDialled: undialled,
+             why: 'its issuer publishes a CRL for it only at addresses this ' +
+                  'service is configured not to dial (' +
+                  undialled.join(', ') + '), so its status could not be ' +
+                  'established' };
   }
   log.debug("Leaving crlNoPointResult().");
   return { status: 'unknown', none: true, kind: 'no-distribution-point',
-           why: why };
+           why: 'its issuer publishes no CRL for it — it names no ' +
+                'distribution point' };
 }
 
 async function crlRoute(target) {
@@ -3219,7 +3344,7 @@ async function crlRoute(target) {
       points.points.filter(function (one) { return one.urls.length > 0; });
   if (!usable.length) {
     log.debug('Leaving crlRoute(). Nothing fetchable.');
-    return crlNoPointResult(points);
+    return crlNoPointResult(points, target);
   }
   const certificateDeltas = distributionPointsOf(target.cert,
                                                  OID.FRESHEST_CRL).fetchable;
@@ -3320,13 +3445,26 @@ async function crlRoute(target) {
 async function ocspRoute(target) {
   log.debug('Entering ocspRoute().');
   const responders = ocspRespondersOf(target.cert);
+  if (!responders.fetchable.length && responders.other.length) {
+    // A RESPONDER THE ISSUER NAMED AND THIS SERVICE WILL NOT ASK (#174): RFC
+    // 6960 appendix A defines http and nothing else, so an `ldap:` responder
+    // is never dialled — and that is still an answer the issuer offered and
+    // was not read. Refusable; a fetchable CRL still answers first.
+    const undialled = responders.other.map(function (one) {
+      return one + ' (an OCSP responder is asked over http or https only — ' +
+             'RFC 6960 appendix A defines no other transport)';
+    });
+    warnNotDialled(target && target.link && target.link.subject, undialled);
+    log.debug('Leaving ocspRoute(). Not dialled.');
+    return { status: 'unknown', kind: 'not-dialled', refusable: true,
+             notDialled: undialled,
+             why: 'it names only OCSP responders this service does not dial ' +
+                  '(' + undialled.join(', ') + ')' };
+  }
   if (!responders.fetchable.length) {
     log.debug('Leaving ocspRoute(). No responder.');
     return { status: 'unknown', none: true, kind: 'no-responder',
-             why: responders.other.length
-               ? 'it names only OCSP responders this service does not dial (' +
-                 responders.other.join(', ') + ')'
-               : 'it names no OCSP responder' };
+             why: 'it names no OCSP responder' };
   }
   const problems = [];
   for (let i = 0; i < responders.fetchable.length; i++) {
@@ -3426,8 +3564,10 @@ async function ocspRoute(target) {
 //     answer that;
 //   * a route that could not answer (unreachable, unusable) is replaced by the
 //     other route's answer, and both reasons are kept on the link.
-// A certificate is only a `no-distribution-point` unknown — the one hard-fail
-// accepts by default — when NEITHER route had anything to dial.
+// A certificate is only a `no-distribution-point` unknown when NEITHER route
+// named anything at all; an address named and not dialled is `not-dialled`
+// (#174), which hard-fail refuses. `no-distribution-point` is refused where
+// `pki.revocationRequireDistributionPoint` says — `auto`, in product.
 // ---------------------------------------------------------------------------
 function applyRouteResult(link, result, results) {
   log.debug('Entering applyRouteResult(). ' + result.status);
@@ -3450,24 +3590,97 @@ function applyRouteResult(link, result, results) {
     link.unknownKind = result.kind;
     link.refusable = !!result.refusable;
   }
+  const undialled = results.concat([result]).reduce(function (all, one) {
+    return all.concat(one.notDialled || []);
+  }, []).filter(function (one, at, all) { return all.indexOf(one) === at; });
+  if (undialled.length) {
+    link.notDialled = undialled;
+  }
   log.debug('Leaving applyRouteResult().');
 }
 
 function combinedUnknown(results) {
   log.debug("Entering combinedUnknown().");
   const failed = results.filter(function (one) { return !one.none; });
+  const undialled = results.reduce(function (all, one) {
+    return all.concat(one.notDialled || []);
+  }, []);
   if (!failed.length) {
+    // NEITHER ROUTE HAD ANYTHING TO DIAL: a certificate nobody can revoke.
+    // Refusable where `pki.revocationRequireDistributionPoint` says — `auto`
+    // is `mode.refusesUnrevocableCertificates()` since #174 — and the why says
+    // which setting decided, because "refused for naming nothing" is the one
+    // refusal here an operator may reasonably want to switch off.
+    const pol = policy();
     log.debug("Leaving combinedUnknown().");
     return { status: 'unknown', kind: 'no-distribution-point',
-             refusable: policy().requireDistributionPoint,
+             refusable: pol.requireDistributionPoint,
              why: results.map(function (one) { return one.why; })
-                         .join(', and ') };
+                         .join(', and ') +
+                  (pol.requireDistributionPoint
+                    ? ' — so nobody can ever revoke it, and ' +
+                      'pki.revocationRequireDistributionPoint is ' +
+                      pol.requireDistributionPointConfigured +
+                      (pol.requireDistributionPointConfigured === 'auto'
+                        ? ', which in product mode refuses such a ' +
+                          'certificate'
+                        : '')
+                    : '') };
   }
   log.debug("Leaving combinedUnknown().");
   return { status: 'unknown', kind: failed[0].kind, refusable: true,
+           notDialled: undialled.length ? undialled : undefined,
            why: failed.concat(results.filter(function (
                one) { return one.none; }))
              .map(function (one) { return one.why; }).join('; and ') };
+}
+
+// ---------------------------------------------------------------------------
+// RFC 9608's noRevAvail: THE ISSUER SAYING NO REVOCATION INFORMATION EXISTS
+// (#174, 2026-09-23).
+//
+// The same kind of statement as OCSP's nocheck, for any end-entity
+// certificate: section 4 amends RFC 5280 section 6.1.3 (a)(3) so that the
+// revocation check is SKIPPED. It became necessary on the day product started
+// refusing a certificate that names no list and no responder — without it,
+// that refusal would reject the one certificate whose issuer has said, in the
+// certificate, that the absence is deliberate.
+//
+// **SECTION 3 IS NOT ADVISORY.** A certificate carrying noRevAvail beside cA
+// TRUE, cRLDistributionPoints, freshestCRL or an OCSP responder "MUST" be
+// considered invalid — two contradictory statements by its issuer — so that
+// is refused under every policy but off (STS-PKI-0189), soft-fail included:
+// it is not a status that could not be established, it is a certificate that
+// is wrong.
+//
+// Believed only where the chain is trusted (`verified`, which a registered
+// certificate is by being registered): anybody can mint a certificate saying
+// anything, and the extension is a claim by its signer.
+// ---------------------------------------------------------------------------
+function noRevAvailOf(cert) {
+  log.debug('Entering noRevAvailOf().');
+  const parsed = pkijsOf(cert);
+  if (!parsed || !extensionOf(parsed, OID.NO_REV_AVAIL)) {
+    log.debug('Leaving noRevAvailOf(). Absent.');
+    return null;
+  }
+  const conflicts = [];
+  if (isCaCertificate(parsed)) {
+    conflicts.push('basicConstraints cA TRUE');
+  }
+  if (extensionOf(parsed, OID.CRL_DISTRIBUTION_POINTS)) {
+    conflicts.push('cRLDistributionPoints');
+  }
+  if (extensionOf(parsed, OID.FRESHEST_CRL)) {
+    conflicts.push('freshestCRL');
+  }
+  const responders = ocspRespondersOf(cert);
+  if (responders.fetchable.length || responders.other.length) {
+    conflicts.push('an id-ad-ocsp responder in its Authority Information ' +
+                   'Access');
+  }
+  log.debug('Leaving noRevAvailOf(). ' + conflicts.length + ' conflict(s).');
+  return { conflicts: conflicts };
 }
 
 async function resolveForeign(link, verified, opts) {
@@ -3486,6 +3699,30 @@ async function resolveForeign(link, verified, opts) {
     }
     log.debug('Leaving resolveForeign(). No issuer.');
     return;
+  }
+  if (verified) {
+    const declared = noRevAvailOf(link.cert);
+    if (declared && declared.conflicts.length) {
+      link.unknownKind = 'norevavail-invalid';
+      link.refusable = true;
+      link.invalid = true;
+      link.why = 'it carries RFC 9608 noRevAvail beside ' +
+                 declared.conflicts.join(', ') + ', which section 3 says ' +
+                 'makes it INVALID — its issuer both disclaims revocation ' +
+                 'information and says where to find it';
+      log.debug('Leaving resolveForeign(). noRevAvail, invalid.');
+      return;
+    }
+    if (declared) {
+      link.status = 'good';
+      link.answeredBy = 'norevavail';
+      link.noRevAvail = true;
+      link.why = 'it carries RFC 9608 noRevAvail: its issuer declares that ' +
+                 'no revocation information will ever be published for it, ' +
+                 'and section 4 skips the check';
+      log.debug('Leaving resolveForeign(). noRevAvail.');
+      return;
+    }
   }
   if (!verified) {
     // See the header: an unverified chain names URLs anybody could have
@@ -3525,6 +3762,23 @@ async function resolveForeign(link, verified, opts) {
       return;
     }
   }
+  if (order === 'off') {
+    // OCSP IS OFF, BUT THE ISSUER NAMED A RESPONDER (#174). Not asking it is
+    // this service's choice, exactly as not dialling an ldap: list is — so it
+    // is `not-dialled`, not "names none", and the setting is named.
+    const named = ocspRespondersOf(target.cert);
+    const all = named.fetchable.concat(named.other);
+    if (all.length) {
+      const undialled = all.map(function (one) {
+        return one + ' (pki.revocationOcsp is off)';
+      });
+      warnNotDialled(link.subject, undialled);
+      results.push({ status: 'unknown', kind: 'not-dialled', refusable: true,
+                     notDialled: undialled,
+                     why: 'the OCSP responder it names is not asked (' +
+                          undialled.join(', ') + ')' });
+    }
+  }
   const signedUnknown = results.filter(function (one) {
     return one.kind === 'responder-unknown';
   })[0];
@@ -3546,10 +3800,19 @@ function summarise(links, checked) {
   const unknown =
       links.filter(function (one) { return one.status === 'unknown'; });
   const status = revoked ? 'revoked' : (unknown.length ? 'unknown' : 'good');
+  // EVERY ADDRESS NOT DIALLED, across the chain (#174), so a door's reply and
+  // /admin-api say which setting stood between this service and a list,
+  // without anybody reading the links.
+  const notDialled = links.reduce(function (all, one) {
+    return all.concat(one.notDialled || []);
+  }, []).filter(function (one, at, all) { return all.indexOf(one) === at; });
   log.debug('Leaving summarise(). ' + status);
   return {
     status: status,
     checked: checked,
+    notDialled: notDialled,
+    noRevAvail: links.filter(function (one) { return one.noRevAvail; })
+                     .map(function (one) { return one.subject; }),
     revoked: revoked ? { depth: revoked.depth, subject: revoked.subject,
                          serialHex: revoked.serialHex, reason: revoked.reason,
                          reasonCode: revoked.reasonCode,
@@ -3557,9 +3820,16 @@ function summarise(links, checked) {
                          answeredBy: revoked.answeredBy || '' }
                      : null,
     unknown: unknown.map(function (one) {
-      return { depth: one.depth, subject: one.subject,
-               kind: one.unknownKind || '',
-               refusable: !!one.refusable, why: one.why };
+      const out = { depth: one.depth, subject: one.subject,
+                    kind: one.unknownKind || '',
+                    refusable: !!one.refusable, why: one.why };
+      if (one.invalid) {
+        out.invalid = true;
+      }
+      if (one.notDialled && one.notDialled.length) {
+        out.notDialled = one.notDialled;
+      }
+      return out;
     }),
     links: links.map(function (one) {
       const out = Object.assign({}, one);
@@ -3694,10 +3964,11 @@ function localVerdictFor(input) {
 // certificate's OWN caIssuers address (RFC 5280 section 4.2.2.1), hop by hop,
 // each fetched certificate believed only because its key verifies the one below
 // it. A certificate that names no caIssuers address and whose issuer is nowhere
-// here gives an attacker nothing to block, so it is refused only under
-// `pki.revocationRequireDistributionPoint` — the no-distribution-point argument
-// made again. One that names an address that could not be fetched IS
-// refusable under hard-fail: that fetch is exactly what an attacker blocks.
+// here gives an attacker nothing to block, so it is refused only where
+// `pki.revocationRequireDistributionPoint` says — the no-distribution-point
+// rule made again, which `auto` resolves to a refusal in product (#174). One
+// that names an address that could not be fetched IS refusable under
+// hard-fail: that fetch is exactly what an attacker blocks.
 //
 // **A BARE KEY IS REPORTED, NOT PRETENDED ABOUT.** A JWK with no x5c has no
 // issuer, no serial and no list; there is nothing to look up, and the verdict
@@ -3932,6 +4203,39 @@ function registeredSummary(verdict) {
          ' under ' + verdict.policy;
 }
 
+// WHICH CODE AN UNKNOWN REFUSAL CARRIES (#174). One of three narrower codes
+// where every refusable link agrees on why — so an operator reading the log
+// can tell "a setting of ours stopped the fetch" (0188) and "nobody can revoke
+// this" (0190) from "a server did not answer" (0119) — and 0119 whenever any
+// link's reason is a fetch that failed, which is the refusal hard-fail exists
+// for and the one to look at first.
+function unknownCodeOf(unknown) {
+  log.debug('Entering unknownCodeOf().');
+  if (unknown.some(function (one) { return one.invalid; })) {
+    log.debug('Leaving unknownCodeOf(). Invalid.');
+    return CODE_NOREVAVAIL;
+  }
+  const kinds = unknown.filter(function (one) { return one.refusable; })
+                       .map(function (one) { return one.kind; });
+  const only = function (allowed) {
+    log.debug('Entering only().');
+    log.debug('Leaving only().');
+    return kinds.length > 0 && kinds.every(function (kind) {
+      return allowed.indexOf(kind) >= 0;
+    });
+  };
+  if (only(['no-distribution-point'])) {
+    log.debug('Leaving unknownCodeOf(). Unrevocable.');
+    return CODE_UNREVOCABLE;
+  }
+  if (only(['not-dialled', 'no-distribution-point'])) {
+    log.debug('Leaving unknownCodeOf(). Not dialled.');
+    return CODE_NOT_DIALLED;
+  }
+  log.debug('Leaving unknownCodeOf().');
+  return CODE_UNKNOWN;
+}
+
 // ---------------------------------------------------------------------------
 // THE POLICY APPLIED. Sets `refused`, `policy` and a sentence, and marks the
 // verdict with its refusal code non-enumerably.
@@ -3965,18 +4269,33 @@ function decide(verdict, pol) {
   if (verdict.status === 'unknown') {
     const refusable = verdict.unknown.filter(function (
         one) { return one.refusable; });
-    verdict.refused = p.effective === 'hard-fail' && refusable.length > 0;
+    // RFC 9608 section 3's INVALID certificate is refused under soft-fail
+    // too: it is not a status that could not be established.
+    const invalid = verdict.unknown.some(function (one) {
+      return one.invalid;
+    });
+    verdict.refused = invalid ||
+                      (p.effective === 'hard-fail' && refusable.length > 0);
     verdict.why = (verdict.refused
-      ? 'REFUSED UNDER HARD-FAIL: the revocation status could not be ' +
-        'established — '
+      ? (invalid ? 'REFUSED: the certificate is invalid — '
+                 : 'REFUSED UNDER HARD-FAIL: the revocation status could ' +
+                   'not be established — ')
       : 'Status unknown and accepted (' + p.effective + '): ') +
       verdict.unknown.map(function (one) { return one.why; }).join('; ') + '.';
     log.debug('Leaving decide(). Unknown, refused=' + verdict.refused);
-    return verdict.refused ? errorCodes.mark(verdict, CODE_UNKNOWN) : verdict;
+    return verdict.refused ? errorCodes.mark(verdict,
+                                             unknownCodeOf(verdict.unknown))
+                           : verdict;
   }
   verdict.refused = false;
   verdict.why = 'Not revoked: every certificate in the chain was looked up ' +
-                'and none is on a list.';
+                'and none is on a list' +
+                ((verdict.noRevAvail || []).length
+                  ? ' — except ' + verdict.noRevAvail.length + ' carrying ' +
+                    'RFC 9608 noRevAvail, whose issuer publishes no ' +
+                    'revocation information for it and whose check section ' +
+                    '4 skips'
+                  : '') + '.';
   log.debug('Leaving decide(). Good.');
   return verdict;
 }
@@ -4037,6 +4356,39 @@ function codeOf(verdict) {
 // WHAT EVERY SURFACE SAYS. One sentence, so /tls, /admin/pki, the crypto report
 // and the mode page cannot describe the policy four ways.
 // ---------------------------------------------------------------------------
+// THE ADDRESSES THIS SERVICE WILL NOT DIAL UNDER THE SETTINGS IN FORCE, as
+// sentences naming the setting that would change each (#174).
+function notDialledNow(p) {
+  log.debug('Entering notDialledNow().');
+  const ldap = ldapPolicy();
+  const out = [];
+  if (ldap === 'off') {
+    out.push('every ldap: and ldaps: address (pki.revocationLdap is off)');
+  } else if (ldap === 'ldaps') {
+    out.push('a plain ldap: address (pki.revocationLdap is ldaps; ' +
+             'ldaps-and-ldap dials it)');
+  }
+  if (!String(config.value('pki.revocationLdapDirectory') || '')) {
+    out.push('a distribution point named relative to its CRL issuer ' +
+             '(pki.revocationLdapDirectory names no directory to look it ' +
+             'up in)');
+  }
+  out.push('a relative name that is a multi-valued RDN, an LDAP URL with no ' +
+           'host or a critical extension, and a CRL issuer named with no ' +
+           'address (no setting dials these)');
+  out.push('any scheme but http, https, ldap and ldaps, and an OCSP ' +
+           'responder that is not http or https (RFC 6960 appendix A)');
+  if (ocspOrder() === 'off') {
+    out.push('every OCSP responder (pki.revocationOcsp is off)');
+  }
+  log.debug('Leaving notDialledNow().');
+  return out.map(function (one) {
+    return one + (p.effective === 'hard-fail'
+      ? ' — refused when it is all a certificate names (STS-PKI-0188)'
+      : ' — reported, and accepted under ' + p.effective);
+  });
+}
+
 function describePolicy() {
   log.debug('Entering describePolicy().');
   const p = policy();
@@ -4045,6 +4397,24 @@ function describePolicy() {
     effective: p.effective,
     decidedBy: p.decidedBy,
     requireDistributionPoint: p.requireDistributionPoint,
+    requireDistributionPointConfigured: p.requireDistributionPointConfigured,
+    // WHAT IS NOT DIALLED, AND WHAT THAT MEANS, listed apart from "names
+    // none" (#174): the two were one case until then, and they are refused
+    // for different reasons under different settings.
+    notDialled: notDialledNow(p),
+    namesNone: p.requireDistributionPoint
+      ? 'REFUSED under hard-fail (STS-PKI-0190): a certificate issued by an ' +
+        'authority this service does not hold that names no CRL and no ' +
+        'OCSP responder, and carries no RFC 9608 noRevAvail, can never be ' +
+        'revoked (pki.revocationRequireDistributionPoint is ' +
+        p.requireDistributionPointConfigured + ').'
+      : 'ACCEPTED: a certificate that names no CRL and no OCSP responder ' +
+        'gives an attacker nothing to block, and ' +
+        'pki.revocationRequireDistributionPoint is ' +
+        p.requireDistributionPointConfigured +
+        (p.requireDistributionPointConfigured === 'off'
+          ? ' — which accepts certificates nobody can ever revoke.'
+          : ', which accepts it in development mode.'),
     consultedAt: ['GET /tls/sign-in (a session and the recorded ' +
                   'authentication)', 'the main port (the remote XACML PEP ' +
                   'and XACML user chains, SCIM\'s client-certificate scheme, ' +
@@ -4066,10 +4436,9 @@ function describePolicy() {
                      'no list',
                      'RFC 8705 token binding, which authenticates nobody',
                      'a delegated OCSP responder carrying id-pkix-ocsp-nocheck',
-                     'a plain ldap: address unless pki.revocationLdap allows ' +
-                     'it, and a distribution point named relative to its CRL ' +
-                     'issuer without pki.revocationLdapDirectory or with a ' +
-                     'multi-valued RDN'],
+                     'an end-entity certificate carrying RFC 9608 ' +
+                     'noRevAvail, whose issuer publishes no revocation ' +
+                     'information for it (section 4 skips the check)'],
     ldap: ldapPolicy(),
     sentence: p.effective === 'off'
       ? 'CONSULTED NOWHERE: pki.revocationCheck is off, so a presented ' +
@@ -4095,10 +4464,21 @@ function describePolicy() {
         (p.effective === 'hard-fail'
           ? 'so is one whose status could not be fetched, verified or ' +
             'trusted as fresh, or that the responder does not ' +
-            'know' + (p.requireDistributionPoint
-              ? ', and one whose issuer names no list and no responder at all.'
-              : ' (one whose issuer names no list and no responder at all is ' +
-                'accepted, because there is nothing an attacker could block).')
+            'know, and one whose only list or responder is at an address ' +
+            'this service is configured not to dial (STS-PKI-0188 — the ' +
+            'issuer published a list, and this service\'s own policy is ' +
+            'what stopped it being read)' +
+            (p.requireDistributionPoint
+              ? '; and one — issued by a CA, without RFC 9608 noRevAvail — ' +
+                'whose issuer names no list and no responder at all, which ' +
+                'nobody could ever revoke (STS-PKI-0190, ' +
+                'pki.revocationRequireDistributionPoint is ' +
+                p.requireDistributionPointConfigured + ').'
+              : '. One whose issuer names no list and no responder at all ' +
+                'is accepted (pki.revocationRequireDistributionPoint is ' +
+                p.requireDistributionPointConfigured + '): there is ' +
+                'nothing an attacker could block, and nothing that could ' +
+                'ever revoke it.')
           : 'one whose status could not be established is accepted and ' +
             'reported.') +
         ' LDAPS 636 requests no client certificate.'

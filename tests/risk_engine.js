@@ -10,7 +10,12 @@
 //   A. The device a User-Agent names (`bowser`) and whether it is an
 //      automated client (`isbot`), and that an empty header is answered
 //      rather than thrown on.
-//   B. A first sign-in is recorded UNSCORED, and moves the history on.
+//   B. A first sign-in is recorded UNSCORED, and moves the history on; and
+//      with `risk.minimumHistory` at its default (5) so is the SECOND — too
+//      little history to score, and no new-tls-stack either — while an
+//      evidence signal (an automated client) still counts. The sections
+//      after it score from the second sign-in (the setting at 1), because
+//      the model and the novelty signals are what they are about.
 //   C. The same person again, from the same network and device, scores LOW —
 //      the model against the history the first sign-in left.
 //   D. The evaluators: an address on a Tor list, an automated client, a TLS
@@ -20,6 +25,8 @@
 //      session's context replaced, the person's standing kept with its
 //      previous level.
 //   F. `assess()` never rejects, and a person nobody named is not assessed.
+//   G. An operator's factor (`risk.signalFactors`, calibration) is the one a
+//      sign-in is scored with, and an entry naming no signal is ignored.
 //
 // Every address is a documentation one (RFC 5737), every list synthetic.
 // ===========================================================================
@@ -86,6 +93,27 @@ async function run(t) {
           'B1. a first sign-in is recorded UNSCORED, and decides nothing',
           JSON.stringify(first && first.signals));
 
+  // --- B, continued. too little history (risk.minimumHistory, 5) -----------
+  const second = await signIn('192.0.2.10', CHROME);
+  t.check(second && second.level === 'UNSCORED' &&
+          second.signals[0].score === null &&
+          /risk\.minimumHistory/.test(String(second.signals[0].why)),
+          'B2. with risk.minimumHistory at its default (5), a SECOND ' +
+          'sign-in is UNSCORED too — one earlier sign-in is too little ' +
+          'history to score, and nothing asks for more',
+          JSON.stringify(second && second.signals));
+  const thinBot = await signIn('192.0.2.10', 'python-requests/2.32',
+                               { ja4: 't13i111111_111111111111_111111111111' });
+  t.check(thinBot && thinBot.signals.some(function (s) {
+    return s.signal === 'automated-client';
+  }) && !thinBot.signals.some(function (s) {
+    return s.signal === 'new-tls-stack' || s.signal === 'new-device';
+  }),
+          'B3. and on so little history the NOVELTY signals wait too, while ' +
+          'an EVIDENCE signal (an automated client) still counts',
+          JSON.stringify(thinBot && thinBot.signals));
+  config.setOverride('risk.minimumHistory', 1);
+
   // --- C. the same person again ---------------------------------------------
   const again = await signIn('192.0.2.10', CHROME);
   t.check(again && again.level === 'LOW' && again.score < 1,
@@ -142,7 +170,7 @@ async function run(t) {
   // --- E. what is kept ------------------------------------------------------
   const view = await riskEngine.view(REALM, {});
   const text = JSON.stringify(view);
-  t.check(view.assessments.total === 5 &&
+  t.check(view.assessments.total === 7 &&
           text.indexOf('192.0.2.10') < 0 && text.indexOf('203.0.113.66') < 0,
           'E1. every assessment is listed, and no address is in any of them ' +
           'in the clear — the network prefix only', view.assessments.total);
@@ -173,7 +201,26 @@ async function run(t) {
           'F1. a sign-in naming nobody is not assessed, and one with no ' +
           'context is assessed rather than rejected', JSON.stringify(odd &&
                                                         odd.level));
+  // --- G. an operator's factor ----------------------------------------------
+  // An operator's factor (calibration, #62): risk.signalFactors changes
+  // the factor a sign-in is scored with, and an entry naming no signal is
+  // ignored rather than breaking the rest.
+  config.setOverride('risk.signalFactors', 'tor-exit=8,no-such-signal=3');
+  let tuned = null;
+  try {
+    tuned = await signIn('203.0.113.66', CHROME);
+  } finally {
+    config.clearOverride('risk.signalFactors');
+  }
+  const factors = riskEngine.factors();
+  t.check(tuned && tuned.signals.some(function (s) {
+    return s.signal === 'tor-exit' && s.factor === 8;
+  }) && factors.factors['tor-exit'] === 5,
+          'G1. risk.signalFactors scores tor-exit at ×8, and cleared it is ' +
+          '×5 again', JSON.stringify(tuned && tuned.signals));
+
   config.setOverride('risk.datasetShrinkLimitPercent', 50);
+  config.clearOverride('risk.minimumHistory');
   log.debug("Leaving run().");
 }
 

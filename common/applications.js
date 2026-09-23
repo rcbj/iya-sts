@@ -1264,6 +1264,21 @@ const SCHEMA = {
             'match one scope; an `ldapmodify` reaches this attribute like ' +
             'every other and is not checked, and /admin/consent shows what ' +
             'it put there.' },
+    // WHEN AN OVERRIDE ABOVE WAS WITHDRAWN (#172), one value per scope. NOT
+    // editable, and that is the point of it: it is what stops a RE-ADDED
+    // override reviving the refresh tokens issued under the one that was
+    // taken away, so a form that could remove it would be a form that could
+    // bring a withdrawn grant back. `common/consent.ts` writes it, through
+    // `noteGlobalConsentWithdrawn()` below, and nothing else does.
+    { name: 'oauthGlobalConsentWithdrawn', kind: 'multi',
+      from: 'the consent register, when a global consent is withdrawn',
+      what: 'WHEN A GLOBAL CONSENT WAS WITHDRAWN, as `<when> <scope>` with ' +
+            'the instant to the millisecond. The refresh grant refuses a ' +
+            'refresh token granted before it that stood on that override, ' +
+            'even after the override is added back — a withdrawn grant is ' +
+            'not revived by the next one. One value per scope; a later ' +
+            'withdrawal replaces the earlier. Written by the consent ' +
+            'register and never by a form.' },
     { name: 'oauthTokenEndpointAuthMethod', kind: 'single', from: 'POST ' +
         '/oauth2/register',
       what: 'How it authenticates. RFC 7591 section 2 makes ' +
@@ -2180,7 +2195,8 @@ const SCHEMA = {
     { name: 'saml2KeyTransportAlgorithm', kind: 'single', from: 'by hand',
       overrides: 'saml2.keyTransportAlgorithm',
       what: 'How the content key is wrapped for this service provider — ' +
-            'rsa-oaep-mgf1p or rsa-1_5 — overriding ' +
+            'rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256; #168) or ' +
+            'rsa-1_5 — overriding ' +
             'saml2.keyTransportAlgorithm. An appliance that accepts only ' +
             'rsa-1_5 is the reason this is per application rather than a ' +
             'decision made once for the whole service.' },
@@ -2345,6 +2361,59 @@ const SCHEMA = {
             'by the XACML PDP against the policy named by ' +
             'xacml.issuancePolicy, not by an if in an issuance site, so the ' +
             'reason for a refusal is a policy somebody can read.' },
+
+    // ---------------------------------------------------------------------
+    // THE DELEGATION POLICY (#108, 2026-09-23): WHO MAY ACT FOR WHOM AT THE
+    // TWO DOORS THAT HAD NO POLICY — WS-Trust `OnBehalfOf` / `ActAs` and the
+    // RFC 8693 token exchange.
+    //
+    // KERBEROS'S MODEL, DELIBERATELY AND BY NAME, and on the same kind of
+    // entry: a KDC decides S4U2Proxy from `msDS-AllowedToDelegateTo` on the
+    // front end and `msDS-AllowedToActOnBehalfOfOtherIdentity` on the back
+    // end, protocol transition from TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION,
+    // and nothing at all for an account flagged NOT_DELEGATED. These four are
+    // those, on `ou=applications`, so there is no new store and no new object
+    // class — an `ldapmodify` IS a policy change, exactly as it is for a
+    // redirect URI. `common/delegation_policy.ts` reads them; the person's
+    // half (`stsNotDelegated`, `stsMayAct`) is on the person's own entry.
+    //
+    // A TARGET IS AN APPLICATION IDENTIFIER. An RFC 8693 `audience` or
+    // `resource` and a WS-Trust `AppliesTo` are resolved to the application
+    // that registered them first (forAudience(), forAppliesTo()), and a value
+    // here may also be the raw string, so an unregistered audience can be
+    // allowed without inventing an entry for it.
+    // ---------------------------------------------------------------------
+    { name: 'appAllowedToDelegateTo', kind: 'multi', from: 'by hand',
+      what: 'THE TARGETS THIS APPLICATION MAY OBTAIN A TOKEN FOR ON SOMEBODY ' +
+            'ELSE\'S BEHALF, when it is the INTERMEDIARY of a WS-Trust ' +
+            'OnBehalfOf / ActAs request or an RFC 8693 token exchange — the ' +
+            'analogue of Kerberos\'s msDS-AllowedToDelegateTo, on the front ' +
+            'end. One application identifier (or the literal audience / ' +
+            'AppliesTo) per value. Enforced in product mode; development ' +
+            'records what would have been refused on /admin/delegation. ' +
+            'appAllowedToActOnBehalfOf on the TARGET is the other way to ' +
+            'allow the same pair.' },
+    { name: 'appAllowedToActOnBehalfOf', kind: 'multi', from: 'by hand',
+      what: 'THE INTERMEDIARIES THIS APPLICATION ACCEPTS as acting for ' +
+            'somebody else when it is the TARGET of a delegation — the ' +
+            'resource-based analogue of Kerberos\'s ' +
+            'msDS-AllowedToActOnBehalfOfOtherIdentity, set on the back end. ' +
+            'One intermediary application identifier per value.' },
+    { name: 'appDelegationSubjectGroup', kind: 'multi', from: 'by hand',
+      what: 'THE PEOPLE THIS INTERMEDIARY MAY ACT FOR, as group DNs: a ' +
+            'subject must be a member of one of them. EMPTY MEANS ANYBODY ' +
+            'who is not protected — a person carrying stsNotDelegated, or a ' +
+            'member of the console\'s Admin Read or Admin Write roster, is ' +
+            'never delegated whatever this says.' },
+    { name: 'appTrustedToImpersonate', kind: 'single', from: 'by hand',
+      what: 'TRUE or FALSE, default FALSE: may this intermediary ' +
+            'IMPERSONATE — WS-Trust OnBehalfOf, or a token exchange with no ' +
+            'actor_token, whose result names the subject and nothing about ' +
+            'the intermediary — as well as DELEGATE (ActAs, or an exchange ' +
+            'with an actor_token, whose result carries `act`)? The analogue ' +
+            'of Kerberos\'s TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION. A ' +
+            'subject_token whose may_act names this party is the one ' +
+            'exception: the subject asked for it.' },
 
     { name: 'appGroupsClaim', kind: 'single', from: 'by hand',
       overrides: 'groups.claim',
@@ -2799,6 +2868,17 @@ const SCHEMA = {
       what: 'The proofing method a key reference is bound to (section 7.1.1: ' +
             '"MUST be bound to a single proofing mechanism"): httpsig, jwsd ' +
             'or jws. Default httpsig.' },
+    { name: 'gnapMtlsTrust', kind: 'single', from: 'the console, or by hand',
+      what: 'How a key this client proves by mutual TLS is trusted, for ' +
+            'this client alone (#107): `pki` or `pinned`, as the realm\'s ' +
+            'gnap.mtlsTrust. It can only make the realm STRICTER — `pki` ' +
+            'where the realm is pinned — and `pinned` is refused where the ' +
+            'realm is pki (STS-REG-0196) and ignored if the realm is made ' +
+            'pki afterwards. Empty follows the realm. Under pki the ' +
+            'certificate must chain to the client truststore and be issued ' +
+            'to this entry by this realm, or carry the one RFC 8705 subject ' +
+            'parameter it registers (oauthTlsClientAuthSubjectDn or an ' +
+            'oauthTlsClientAuthSan* attribute).' },
     { name: 'gnapSymmetricKey', kind: 'single', from: 'the console, or by hand',
       sensitive: true,
       what: 'A SHARED SECRET for a key reference, base64url, at least 32 ' +
@@ -3097,6 +3177,12 @@ const EDITABLE = {
   // having been deliberately withdrawn — which, on the one attribute here
   // that REFUSES people, is the failure worth designing against.
   appRequiredRole: 'multi',
+  // THE DELEGATION POLICY (#108): three lists and a flag. See their SCHEMA
+  // rows and `common/delegation_policy.ts`.
+  appAllowedToDelegateTo: 'multi',
+  appAllowedToActOnBehalfOf: 'multi',
+  appDelegationSubjectGroup: 'multi',
+  appTrustedToImpersonate: 'set',
   // THE IDENTIFIER ATTRIBUTES, one per protocol family (see the PROTOCOLS
   // table). Every one of them is `multi` bar oauthTlsClientAuthSubjectDn below,
   // whose own row says why — an application answering to two client_ids or two
@@ -3298,6 +3384,7 @@ const EDITABLE = {
   gnapKey: 'set',
   gnapKeyReference: 'set',
   gnapKeyProof: 'set',
+  gnapMtlsTrust: 'set',
   gnapSymmetricKey: 'set',
   gnapSymmetricAlg: 'set',
   gnapClassId: 'set',
@@ -5531,6 +5618,36 @@ function pushedAuthorizationAttributeProblem(attribute, value) {
 }
 
 // ---------------------------------------------------------------------------
+// THE DELEGATION POLICY'S TWO GRAMMARS (#108): the flag is TRUE or FALSE, and
+// a subject group is a DN. The two lists of identifiers take any string — an
+// audience or an AppliesTo nobody registered is an ordinary target — so they
+// are not checked here. STS-REG-0194. A CLEAR is never refused.
+// ---------------------------------------------------------------------------
+function delegationAttributeProblem(attribute, value) {
+  log.debug("Entering delegationAttributeProblem(). attribute=" + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (!text) {
+    log.debug("Leaving delegationAttributeProblem(). A clear.");
+    return '';
+  }
+  if (attribute === 'appTrustedToImpersonate' &&
+      ['TRUE', 'FALSE'].indexOf(text.toUpperCase()) < 0) {
+    log.debug("Leaving delegationAttributeProblem(). Not a boolean.");
+    return attribute + ': "' + text + '" is not TRUE or FALSE.';
+  }
+  if (attribute === 'appDelegationSubjectGroup' &&
+      !/^[A-Za-z][A-Za-z0-9-]*=[^,]+(,\s*[A-Za-z][A-Za-z0-9-]*=[^,]+)*$/
+        .test(text)) {
+    log.debug("Leaving delegationAttributeProblem(). Not a DN.");
+    return attribute + ': "' + text + '" is not a DN. Name the group by ' +
+           'its distinguished name, as /admin/groups shows it.';
+  }
+  log.debug("Leaving delegationAttributeProblem(). Nothing refused.");
+  return '';
+}
+
+// ---------------------------------------------------------------------------
 // RFC 8705: WHAT A CLIENT MAY REGISTER ABOUT ITS CERTIFICATE (2026-09-13).
 //
 // Section 2.1.2's five subject parameters, of which a `tls_client_auth` client
@@ -5649,6 +5766,76 @@ function mtlsAttributeProblem(attribute, value, fields) {
                ' first.' };
   }
   log.debug("Leaving mtlsAttributeProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// GNAP MUTUAL TLS: WHICH TRUST MODEL A CLIENT'S CERTIFICATE IS HELD TO (#107,
+// 2026-09-23).
+//
+// The realm's `gnap.mtlsTrust` (`auto` asks `mode.requiresPkiForGnapMtls()`)
+// and an entry's `gnapMtlsTrust`, combined in ONE place so the proof, the
+// grant engine and the write door below cannot disagree about which is in
+// force. The combination is the stricter of the two: an operator may hold one
+// client to a PKI in a realm that pins, and no client may pin itself in a
+// realm that requires a PKI — that would be a client choosing to be checked
+// less, which is not a client's choice. `gnap/gnap_proof.ts` argues the two
+// models.
+//
+//   STS-REG-0195  gnapMtlsTrust is neither pki nor pinned
+//   STS-REG-0196  gnapMtlsTrust=pinned in a realm whose setting is pki
+// ---------------------------------------------------------------------------
+const GNAP_MTLS_TRUSTS = ['pki', 'pinned'];
+
+function gnapRealmMtlsTrust() {
+  log.debug("Entering gnapRealmMtlsTrust().");
+  const set = String(config.value('gnap.mtlsTrust') || 'auto');
+  if (GNAP_MTLS_TRUSTS.indexOf(set) >= 0) {
+    log.debug("Leaving gnapRealmMtlsTrust(). " + set);
+    return set;
+  }
+  log.debug("Leaving gnapRealmMtlsTrust(). auto.");
+  return mode.requiresPkiForGnapMtls() ? 'pki' : 'pinned';
+}
+
+// `fields` is an entry's fields (or null for a caller with no entry yet).
+// Answers `{ trust, realm, entry }`, `entry` being what the entry asked for
+// ('' for nothing, or a value that is not honoured).
+function gnapMtlsTrustFor(fields) {
+  log.debug("Entering gnapMtlsTrustFor().");
+  const realm = gnapRealmMtlsTrust();
+  const asked = String(valuesOf((fields || {}).gnapMtlsTrust)[0] || '')
+    .trim().toLowerCase();
+  const trust = realm === 'pki' || asked === 'pki' ? 'pki' : 'pinned';
+  log.debug("Leaving gnapMtlsTrustFor(). " + trust);
+  return { trust: trust, realm: realm, entry: asked };
+}
+
+// The write door's question about `gnapMtlsTrust`. A clear is never refused.
+// Answers `{ code, message }` or null.
+function gnapMtlsTrustProblem(attribute, value) {
+  log.debug("Entering gnapMtlsTrustProblem(). attribute=" + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (attribute !== 'gnapMtlsTrust' || !text) {
+    log.debug("Leaving gnapMtlsTrustProblem(). Not asked.");
+    return null;
+  }
+  if (GNAP_MTLS_TRUSTS.indexOf(text) < 0) {
+    log.debug("Leaving gnapMtlsTrustProblem(). Not a trust model.");
+    return { code: 'STS-REG-0195',
+             message: 'gnapMtlsTrust: "' + text + '" is not pki or pinned.' };
+  }
+  if (text === 'pinned' && gnapRealmMtlsTrust() === 'pki') {
+    log.debug("Leaving gnapMtlsTrustProblem(). Weaker than the realm.");
+    return { code: 'STS-REG-0196',
+             message: 'gnapMtlsTrust: this realm holds every GNAP key ' +
+               'proved by mutual TLS to a PKI (gnap.mtlsTrust resolves to ' +
+               'pki), and an application may make that stricter for itself, ' +
+               'never weaker. A pinned certificate cannot be revoked or ' +
+               'rotated at a certificate authority (RFC 9635 section 11.4).' };
+  }
+  log.debug("Leaving gnapMtlsTrustProblem(). Nothing refused.");
   return null;
 }
 
@@ -6255,6 +6442,17 @@ function normaliseFields(value) {
       code = code || 'STS-REG-0101';
       return;
     }
+    // The delegation policy's two grammars (#108), every value.
+    const delegationProblems = values.map(function (one) {
+      return delegationAttributeProblem(name, one);
+    }).filter(function (one) {
+      return !!one;
+    });
+    if (delegationProblems.length) {
+      delegationProblems.forEach(function (one) { errors.push(one); });
+      code = code || 'STS-REG-0194';
+      return;
+    }
     // RFC 9126's one.
     const pushedProblem = pushedAuthorizationAttributeProblem(name, values[0]);
     if (pushedProblem) {
@@ -6267,6 +6465,14 @@ function normaliseFields(value) {
     if (subjectProblem) {
       errors.push(subjectProblem);
       code = code || 'STS-REG-0168';
+      return;
+    }
+    // GNAP's mutual TLS trust model (#107): a value, and never weaker than
+    // the realm.
+    const gnapTrustProblem = gnapMtlsTrustProblem(name, values[0]);
+    if (gnapTrustProblem) {
+      errors.push(gnapTrustProblem.message);
+      code = code || gnapTrustProblem.code;
       return;
     }
     // RFC 8705's six, read against the create's OTHER subject parameters,
@@ -8097,6 +8303,16 @@ function createApplication(detail) {
     log.debug("Leaving createApplication().");
     return errorCodes.mark({ ok: false, errors: wrongFamily }, 'STS-REG-0010');
   }
+  // And the mode rule `updateApplication()` applies (#181): a create is the
+  // other door an override attribute can be written through.
+  const modeProblems = Object.keys(given.fields).map(function (name) {
+    return overrideModeProblem(name, valuesOf(given.fields[name])[0]);
+  }).filter(function (one) { return !!one; });
+  if (modeProblems.length) {
+    log.debug("Leaving createApplication(). A development-only value.");
+    return errorCodes.mark({ ok: false, errors: modeProblems },
+                           'STS-REG-0193');
+  }
   const record = loaded.record;
   const now = Date.now();
   record.firstAt = now;
@@ -8262,6 +8478,40 @@ function viewAfterWrite(identifier, record) {
 // against the row rather than trusted, because a `set` on a multi-valued
 // attribute would replace a list of redirect URIs with one and read afterwards
 // as the others having been forgotten.
+// ---------------------------------------------------------------------------
+// AN OVERRIDE THE MODE DOES NOT ALLOW (#181). An attribute that overrides a
+// setting whose row carries `onlyWhile` — `saml2SignAssertion`,
+// `saml11SignAssertion`, `saml11SignResponse`, `saml2KeyTransportAlgorithm` —
+// may not be set to a development-only value in a product realm, for the
+// reason `config.js`'s `modeWriteProblem()` refuses the setting itself: the
+// value would be ignored where it is read (`settingFor()`), and a write that
+// is accepted and then ignored is a console that lies. A value that does not
+// parse is left to `settingFor()`'s own warning, as before; a clear is never
+// refused. Answers the sentence, or ''.
+// ---------------------------------------------------------------------------
+function overrideModeProblem(attribute, value) {
+  log.debug("Entering overrideModeProblem(). attribute=" + attribute);
+  const row = ATTRIBUTE_BY_NAME[attribute];
+  const key = row && row.overrides;
+  if (!key || !value) {
+    log.debug("Leaving overrideModeProblem(). Not an override, or a clear.");
+    return '';
+  }
+  const parsed = config.parseAs(key, value);
+  if (!parsed.ok || mode.allowsValue(key, parsed.value)) {
+    log.debug("Leaving overrideModeProblem(). Allowed.");
+    return '';
+  }
+  const setting = config.SETTINGS.filter(function (one) {
+    return one.key === key;
+  })[0];
+  log.debug("Leaving overrideModeProblem(). Refused.");
+  return '"' + attribute + '" cannot be set to ' + value + ' here: it ' +
+    'overrides ' + key + ', and this realm is in product mode ' +
+    '(global.mode=product), where that value is ignored — ' +
+    mode.writeRefusalReason(setting ? setting.onlyWhile : '');
+}
+
 function updateApplication(identifier, change) {
   log.debug("Entering updateApplication().");
   const asked = change || {};
@@ -8365,6 +8615,14 @@ function updateApplication(identifier, change) {
   // one step further. A value can arrive here by `ldapmodify`, or be left
   // behind by a family being untimed from the entry after it was set, and
   // refusing to remove it would shut the one door that could tidy it up.
+  if (mode === 'set' && value) {
+    const modeProblem = overrideModeProblem(attribute, value);
+    if (modeProblem) {
+      log.debug("Leaving updateApplication(). Development-only value.");
+      return errorCodes.mark({ ok: false, errors: [modeProblem] },
+                             'STS-REG-0193');
+    }
+  }
   if ((mode === 'set' && value) || mode === 'add') {
     const wrongFamily = familyRefusal(attribute,
                                       declaredFamiliesOf(loaded.record),
@@ -8438,6 +8696,15 @@ function updateApplication(identifier, change) {
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0101');
     }
   }
+  // The delegation policy's two grammars (#108), on an ADD or a SET.
+  if ((mode === 'set' || mode === 'add') && value) {
+    const problem = delegationAttributeProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable delegation " +
+                "policy value.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0194');
+    }
+  }
   // RFC 9126's one, on a SET that carries a value.
   if (mode === 'set' && value) {
     const problem = pushedAuthorizationAttributeProblem(attribute, value);
@@ -8463,6 +8730,16 @@ function updateApplication(identifier, change) {
                                          loaded.record.fields);
     if (problem) {
       log.debug("Leaving updateApplication(). Not a usable RFC 8705 value.");
+      return errorCodes.mark({ ok: false, errors: [problem.message] },
+                             problem.code);
+    }
+  }
+  // GNAP's mutual TLS trust model (#107), on a SET that carries a value.
+  if (mode === 'set' && value) {
+    const problem = gnapMtlsTrustProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable GNAP mutual TLS " +
+                "trust model.");
       return errorCodes.mark({ ok: false, errors: [problem.message] },
                              problem.code);
     }
@@ -8676,6 +8953,26 @@ function updateApplication(identifier, change) {
   // ONLY AN ADD IS CHECKED, the same asymmetry the two rules above have and for
   // their reason: a remove names a value already on the entry, and an
   // `ldapmodify` reaches this attribute like every other.
+  // A GLOBAL CONSENT IS TAKEN AWAY ONLY BY THE CONSENT REGISTER (#172).
+  // `consent.revokeGlobal()` records WHEN and revokes every token issued
+  // under the override; a remove through this generic door did neither, so
+  // it left every refresh token standing on it renewable for its whole life.
+  // The register passes `consentRegister`, and it is the one caller that
+  // does. Refused rather than routed, because this module cannot require
+  // the register (it requires this one), and a door that silently did half a
+  // withdrawal would be worse than one that says where the whole one is.
+  if (attribute === 'oauthGlobalConsent' && mode === 'remove' &&
+      asked.consentRegister !== true) {
+    log.debug("Leaving updateApplication(). A global consent is withdrawn " +
+              "through the consent register.");
+    return errorCodes.mark({ ok: false, errors: ['A global consent is ' +
+      'withdrawn through the consent register — the ' +
+      '`revoke-global-consent` action at /admin/consent or `POST ' +
+      '/admin-api/consent/revoke-global-consent` — and not by removing the ' +
+      'value here: withdrawing it also revokes every token issued under it ' +
+      'and records when, so that adding it back revives nothing. Nothing ' +
+      'was changed.'] }, 'STS-REG-0191');
+  }
   if (attribute === 'oauthGlobalConsent' && mode === 'add') {
     const problem = scopeTokenProblem(value);
     if (problem) {
@@ -9906,10 +10203,20 @@ function largestSetting(settingKey, config) {
   return most;
 }
 
+// **A DEVELOPMENT-ONLY VALUE IS NOT IN FORCE IN PRODUCT, WHEREVER IT CAME
+// FROM** (#181). A setting whose row carries `onlyWhile` —
+// `saml2.signAssertion` off, `saml2.keyTransportAlgorithm` `rsa-1_5`, … — is read as `mode.js`
+// says: the setting through `valueInForce()`, and an entry's override of it
+// through `inForce()`, which answers the row's default in a product realm and
+// says so once per setting and attribute (STS-CORE-0106). Checked HERE,
+// because every per-application read comes through this function; a check at
+// each caller would be the one a new caller forgets. `updateApplication()`
+// refuses to write such a value (STS-REG-0193).
 function settingFor(identifier, settingKey, config) {
   log.debug("Entering settingFor(). identifier=" + (identifier || '(none)') +
             ", setting=" + settingKey);
-  const fallback = config.value(settingKey);
+  const fallback = mode.inForce(settingKey, config.value(settingKey),
+                                settingKey);
   if (!identifier) {
     log.debug("Leaving settingFor(). No application named; the setting " +
               "decides.");
@@ -9949,7 +10256,7 @@ function settingFor(identifier, settingKey, config) {
   }
   log.debug("Leaving settingFor(). " + identifier + " overrides " + settingKey +
             ".");
-  return parsed.value;
+  return mode.inForce(settingKey, parsed.value, attribute);
 }
 
 // Which attribute overrides which setting, built ONCE from the schema rows'
@@ -9970,6 +10277,35 @@ function overridableSettings() {
   return Object.keys(OVERRIDE_ATTRIBUTES).map(function (key) {
     return { setting: key, attribute: OVERRIDE_ATTRIBUTES[key] };
   });
+}
+
+// ---------------------------------------------------------------------------
+// THE INSTANT A GLOBAL CONSENT WAS WITHDRAWN (#172), written by
+// `common/consent.ts`'s `revokeGlobal()` and by nothing else — the schema row
+// above says why it is not editable. `stamp` is the register's, so this
+// module knows nothing about its grammar beyond "a value per scope, the scope
+// after the first space". Returns whether it was written.
+// ---------------------------------------------------------------------------
+function noteGlobalConsentWithdrawn(identifier, scope, stamp) {
+  log.debug("Entering noteGlobalConsentWithdrawn(). identifier=" +
+            identifier);
+  const loaded = load(String(identifier || ''));
+  const leaf = String(scope || '').trim();
+  if (!loaded.known || !leaf || !stamp) {
+    log.debug("Leaving noteGlobalConsentWithdrawn(). No entry or no scope.");
+    return false;
+  }
+  const record = loaded.record;
+  const name = 'oauthGlobalConsentWithdrawn';
+  const kept = (record.fields[name] || []).filter(function (one) {
+    const text = String(one);
+    return text.slice(text.indexOf(' ') + 1) !== leaf;
+  });
+  record.fields[name] = kept;
+  setField(record, name, String(stamp) + ' ' + leaf);
+  const saved = save(record);
+  log.debug("Leaving noteGlobalConsentWithdrawn(). saved=" + saved);
+  return saved;
 }
 
 function get(identifier) {
@@ -11247,8 +11583,11 @@ module.exports = {
   OIDC_SUBJECT_ATTRIBUTES: OIDC_SUBJECT_ATTRIBUTES,
   pushedAuthorizationMetadataProblem: pushedAuthorizationMetadataProblem,
   pushedAuthorizationAttributeProblem: pushedAuthorizationAttributeProblem,
+  delegationAttributeProblem: delegationAttributeProblem,
   mtlsMetadataProblem: mtlsMetadataProblem,
   mtlsAttributeProblem: mtlsAttributeProblem,
+  gnapMtlsTrustFor: gnapMtlsTrustFor,
+  gnapMtlsTrustProblem: gnapMtlsTrustProblem,
   TLS_SUBJECT_ATTRIBUTES: TLS_SUBJECT_ATTRIBUTES,
   TLS_BOUND_TOKENS_ATTRIBUTE: TLS_BOUND_TOKENS_ATTRIBUTE,
   // RFC 9396 — what an entry may say about authorization_details, and the
@@ -11289,6 +11628,7 @@ module.exports = {
   createApplication: createApplication,
   seedInternalApplications: seedInternalApplications,
   updateApplication: updateApplication,
+  noteGlobalConsentWithdrawn: noteGlobalConsentWithdrawn,
   regenerateClientSecret: regenerateClientSecret,
   rotateClientSecret: rotateClientSecret,
   sweepClientSecrets: sweepClientSecrets,

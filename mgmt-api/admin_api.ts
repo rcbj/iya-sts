@@ -205,6 +205,8 @@ import secretsAdmin = require('../admin-ui/secrets_admin');
 import cachesAdmin = require('../admin-ui/caches_admin');
 // THE STATUS LISTS' PAGE (#38's follow-ups), for its two functions (rule 7).
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
+// Server configuration → Mode (#181): its one view, rule 7.
+import modeAdmin = require('../admin-ui/mode_admin');
 // The scheduler's page (#49): its view and its two actions, rule 7.
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
 // The mail channel's two pages (#63), mirrored below (rule 7).
@@ -1193,7 +1195,7 @@ class AdminApi {
         operationId: 'getWebauthnSettings',
         summary:
           'The security-key ceremony\'s settings, and what a key may be here',
-        description: 'The thirteen `webauthn.*` settings, in three kinds. ' +
+        description: 'The twenty-one `webauthn.*` settings, in four kinds. ' +
                      '**THE CEREMONY**: the RP name, the RP ID override, the ' +
                      'algorithms offered, the user verification requirement, ' +
                      'the attestation conveyance and the timeout — handed to ' +
@@ -1218,10 +1220,16 @@ class AdminApi {
                      'resident key or the attachment, so a check on those ' +
                      'would compare against a value this service itself ' +
                      'supplied — what it does instead is RECORD what came ' +
-                     'back.\n\n**NO ATTESTATION STATEMENT IS VERIFIED** ' +
-                     'whatever is asked for: there is no metadata service ' +
-                     'here, no vendor trust anchor and no model allow-list. ' +
-                     '`status` carries the COSE algorithm table, read from ' +
+                     'back.\n\n**THE ATTESTATION STATEMENT** (#105): ' +
+                     '`webauthn.attestationPolicy` and the six settings ' +
+                     'beside it — trust anchors, an AAGUID allow-list, a ' +
+                     'certification level, FIPS, SafetyNet and Android ' +
+                     'software keys. `status` reports the policy in force, ' +
+                     'the eight formats verified and the FIDO Metadata ' +
+                     'Service BLOB (`status.mds`); the BLOB itself is ' +
+                     'uploaded through `POST /risk/import`, where #62 put ' +
+                     'it. What each key\'s statement proved is on `GET ' +
+                     '/users`, per key.\n\n`status` carries the COSE algorithm table, read from ' +
                      '`authn/webauthn.js` — the module that checks the ' +
                      'signature — with the offered ones marked.\n\nWho holds ' +
                      'a key is `GET /users`, and removing one is `POST ' +
@@ -1785,6 +1793,45 @@ class AdminApi {
         } },
 
       // ---------------------------------------------------------------------
+      // THE MODE (#181). `modeAdmin.modeView()` — `common/mode.js`'s
+      // `report()` for the realm the call is in, the function `/admin/mode`
+      // answers — and nothing else. It CHANGES nothing: `global.mode` is set
+      // through `POST /admin-api/config/set` like every other setting.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/mode', tag: 'Service',
+        operationId: 'getMode',
+        summary: 'What global.mode changes, and what is in force in this ' +
+                 'realm',
+        description: 'The mode of the realm the call is in (`mode`, ' +
+                     '`isProduct`) and everything it decides: ' +
+                     '`requirements` — each with `id`, `what`, the ' +
+                     '`development` and `product` answers, `inForce` (the ' +
+                     'one this realm gives) and `where` it is implemented; ' +
+                     '`developmentOnlySettings` — every setting whose row ' +
+                     'is marked development-only, with `key`, `group`, the ' +
+                     '`predicate` in common/mode.js that must answer yes, ' +
+                     '`developmentOnlyValues` (null when every value but ' +
+                     'the default is), `default`, the `value` stored, the ' +
+                     'value `inForce`, `ignored` (true exactly where a ' +
+                     'product realm holds a development-only value, which ' +
+                     'is read as the default) and `why`; and `notYet` — ' +
+                     'what product mode still does not check, each with ' +
+                     '`id` and `what`. The mode is per trust realm, so ' +
+                     'call it under /realm/{id}/admin-api/mode for a ' +
+                     'realm.',
+        mirrors: 'GET /admin/mode',
+        responseDescription: 'The mode report.',
+        responseSchema: { type: 'object',
+          description: '`mode`, `isProduct`, `requirements`, ' +
+                       '`developmentOnlySettings` and `notYet`, as ' +
+                       'common/mode.js\'s report() answers them.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API mode endpoint.");
+          self.sendJson(res, 200, modeAdmin.modeView());
+          log.debug("Leaving the management API mode endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
       // THE CACHES (#74). `cachesAdmin.cachesView()` and nothing else — the
       // function the page's `?format=json` answers — with the page's own
       // parameters, so the list and one cache's paged entries are one
@@ -1906,7 +1953,8 @@ class AdminApi {
                        '`failures`.' },
         handler: function (req, res) {
           log.debug("Entering the management API risk endpoint.");
-          riskAdmin.riskView(req.query).then(function (view) {
+          const realmOnly = riskAdmin.realmOnly(req);
+          riskAdmin.riskView(req.query, realmOnly).then(function (view) {
             self.sendJson(res, 200, view);
             log.debug("Leaving the management API risk endpoint.");
           }).catch(function (e) {
@@ -1917,6 +1965,57 @@ class AdminApi {
                                       errors: [String((e && e.message) ||
                                                       e)] });
             log.debug("Leaving the management API risk endpoint. Failed.");
+          });
+        } },
+
+      // Monitoring → Risk Scoring (#62): `riskAdmin.metricsView()`.
+      { method: 'GET', path: BASE + '/risk/metrics', tag: 'Risk',
+        operationId: 'getRiskMetrics',
+        summary: 'The risk scoring system measured',
+        description: 'The realm\'s assessments over `window`, counted in ' +
+                     'the store (`database` says which): `assessments` ' +
+                     'with its `total`, `subjects`, `bots`, `meanScore`, ' +
+                     '`maxScore`, counts `byLevel`, `byDoor`, ' +
+                     '`byDecision`, `byPhase`, `byCountry`, `byBand` (the ' +
+                     'score in decades), `bySignal`, the `feedback` people ' +
+                     'gave, and a `series` of levels per `bucketMs`; the ' +
+                     'people at each level now in `standings`; every ' +
+                     'signal with its `factor` and how often it `fired`; ' +
+                     'the level `thresholds`; and, for THIS process since ' +
+                     'it started, `process` — assessments made and ' +
+                     'failed, the time to assess, the reactions taken, ' +
+                     'observed and failed, the live-session re-checks and ' +
+                     'the breached-password screening.',
+        mirrors: 'GET /admin/risk-scoring',
+        parameters: [
+          { name: 'realm', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The realm counted; the default realm when ' +
+                         'absent.' },
+          { name: 'window', in: 'query', required: false,
+            schema: { type: 'string', enum: ['1h', '24h', '7d', '30d'] },
+            description: 'How far back the assessments are counted; 24h ' +
+                         'when absent.' }
+        ],
+        responseDescription: 'The scoring system\'s metrics.',
+        responseSchema: { type: 'object',
+          description: '`assessments`, `standings`, `signals`, ' +
+                       '`thresholds`, `process`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API risk metrics endpoint.");
+          const realmOnly = riskAdmin.realmOnly(req);
+          riskAdmin.metricsView(req.query, realmOnly).then(function (view) {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API risk metrics endpoint.");
+          }).catch(function (e) {
+            log.warn(errorCodes.tag('STS-RISK-0025') + 'risk: the metrics ' +
+                     'failed: ' + ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-RISK-0025');
+            self.sendJson(res, 500, { ok: false,
+                                      errors: [String((e && e.message) ||
+                                                      e)] });
+            log.debug("Leaving the management API risk metrics endpoint. " +
+                      "Failed.");
           });
         } },
 
@@ -3204,7 +3303,11 @@ class AdminApi {
         ] },
         handler: function (req, res) {
           log.debug("Entering the management API users endpoint.");
-          self.sendJson(res, 200, adminViews.usersJson(req));
+          // The person's current risk, read first (#62) — the console's
+          // route does the same, so the two answers agree.
+          return adminViews.riskFor(req.query).then(function (risk) {
+            self.sendJson(res, 200, adminViews.usersJson(req, risk));
+          });
           log.debug("Leaving the management API users endpoint.");
         } },
 
@@ -3250,6 +3353,35 @@ class AdminApi {
           log.debug("Entering the management API app-passwords endpoint.");
           self.sendJson(res, 200, adminViews.appPasswordsJson(req.query));
           log.debug("Leaving the management API app-passwords endpoint.");
+        } },
+
+      // IDENTITY VERIFICATIONS, ONE PERSON'S, PAGED (#127). The list the
+      // Identity verifications block on /admin/users draws.
+      { method: 'GET', path: BASE + '/users/verifications', tag: 'Users',
+        operationId: 'getUserVerifications',
+        summary: 'One person\'s identity verifications (OpenID Connect for ' +
+                 'Identity Assurance)',
+        description: 'Each verification recorded for the person, newest ' +
+                     'first: its `id`, where it came from (`source`: ' +
+                     'admin, wallet or certificate), when and by whom, the ' +
+                     '`verification` element — trust framework, time, ' +
+                     'evidence — and the `claims` it covered with the ' +
+                     'values that were verified. A client\'s ' +
+                     '`verified_claims` request is answered from these, ' +
+                     'for a claim only while the entry still holds the ' +
+                     'verified value. Beside them, the vocabularies a ' +
+                     'record is made from.',
+        mirrors: 'GET /admin/users',
+        parameters: [
+          { name: 'user', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The person, as /admin-api/users names them.' }
+        ].concat(this.pagingParameters()),
+        responseDescription: 'The page of verifications and its paging.',
+        handler: function (req, res) {
+          log.debug("Entering the management API verifications endpoint.");
+          self.sendJson(res, 200, adminViews.verificationsJson(req.query));
+          log.debug("Leaving the management API verifications endpoint.");
         } },
 
       { method: 'GET', path: BASE + '/users/new', tag: 'Users',
@@ -3969,6 +4101,144 @@ class AdminApi {
             },
             responseDescription: 'The requirement as it now stands.' },
 
+          // WHO MAY ACT FOR A PERSON (#108, 2026-09-23) — the person's half
+          // of the delegation policy (`common/delegation_policy.ts`), drawn
+          // on their /admin/users page. Rule 7.
+          { action: 'set-not-delegated', operationId: 'setUserNotDelegated',
+            summary: 'Mark somebody as one who cannot be delegated',
+            description: 'Sets (`value` true, the default) or clears ' +
+                         '`stsNotDelegated` on the person\'s entry — ' +
+                         'Kerberos\'s NOT_DELEGATED, "sensitive and cannot ' +
+                         'be delegated". While it is set nobody may act for ' +
+                         'them at WS-Trust OnBehalfOf / ActAs or the RFC ' +
+                         '8693 ' +
+                         'token exchange, whatever any application\'s ' +
+                         'delegation attributes say. Enforced in product ' +
+                         'mode; development records what would have been ' +
+                         'refused on /admin/delegation. Members of the ' +
+                         'console\'s Admin Read and Admin Write rosters are ' +
+                         'protected the same way without it.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                value: { type: 'boolean',
+                         description: 'true sets the flag (the default), ' +
+                                      'false clears it.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice', value: true }],
+              additionalProperties: false
+            },
+            responseDescription: 'The flag as it now stands.' },
+
+          { action: 'set-may-act', operationId: 'setUserMayAct',
+            summary: 'Name the one party who may act for somebody',
+            description: 'Sets or clears `stsMayAct` on the person\'s entry: ' +
+                         'the DN of a person or an application in this ' +
+                         'realm. Access tokens issued about the person then ' +
+                         'carry RFC 8693 section 4.4\'s `may_act` naming ' +
+                         'that party (a person by their `urn:uuid:` subject, ' +
+                         'an application by its client_id), and a token ' +
+                         'exchange of such a token by anybody else is ' +
+                         'refused invalid_request in every mode. The person ' +
+                         'sets the same thing themselves on /portal/delegate.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                delegate: { type: 'string',
+                            description: 'The DN of the person or ' +
+                                         'application; empty clears it.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice',
+                           delegate: 'uid=bob,ou=users,dc=example,dc=com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The delegate as it now stands.' },
+
+          { action: 'record-verification',
+            operationId: 'recordUserVerification',
+            summary: 'Record an identity verification for somebody',
+            description: 'Keeps an OpenID Connect for Identity Assurance 1.0 ' +
+                         '`verification` element on the person\'s entry, ' +
+                         'with the claims it covered. `trust_framework` ' +
+                         'must be one of oauth2.idaTrustFrameworks; each ' +
+                         'evidence element is checked by its type ' +
+                         '(document, electronic_record, vouch, ' +
+                         'electronic_signature) against the vocabularies ' +
+                         'discovery publishes; `time` defaults to now. ' +
+                         'Each claim\'s value is taken from the entry as it ' +
+                         'is now, and a claim the entry holds nothing for is ' +
+                         'refused. The console\'s form posts the same thing ' +
+                         'as flat fields.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                verification: { type: 'object',
+                                description: 'The verification element ' +
+                                             '(Identity Assurance section ' +
+                                             '5.1).' },
+                claims: { type: 'array', items: { type: 'string' },
+                          description: 'The claims it covered, from ' +
+                                       'claims_in_verified_claims_supported.' }
+              },
+              required: ['user', 'verification', 'claims'],
+              examples: [{ user: 'alice',
+                           verification: {
+                             trust_framework: 'urn:sts:local',
+                             evidence: [{ type: 'document',
+                               check_details: [{ check_method: 'vpip' }],
+                               document_details: { type: 'passport',
+                                 document_number: 'X1234567' } }] },
+                           claims: ['given_name', 'family_name'] }],
+              additionalProperties: true
+            },
+            responseDescription: 'The verification as recorded.' },
+
+          { action: 'remove-verification',
+            operationId: 'removeUserVerification',
+            summary: 'Remove one of somebody\'s identity verifications',
+            description: 'Takes the verification with this `id` off the ' +
+                         'person\'s entry; nothing is released from it ' +
+                         'afterwards.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                id: { type: 'string',
+                      description: 'The verification\'s id, from GET ' +
+                                   '/admin-api/users/verifications.' }
+              },
+              required: ['user', 'id'],
+              examples: [{ user: 'alice',
+                           id: '00000000-0000-4000-8000-000000000000' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was removed.' },
+
           { action: 'disable', operationId: 'disableUserAccount',
             summary: 'Disable somebody\'s account, and end everything ' +
                      'they hold',
@@ -4629,14 +4899,17 @@ class AdminApi {
             responseDescription: 'Whether it had been revoked.' },
           { action: 'restore-kerberos', operationId: 'clearKerberosSignOut',
             summary: 'NON-SPEC: clear the Kerberos sign-out instant',
-            description: 'Removes the instant a logout stamped on the ' +
+            description: 'Clears the instant a logout stamped on the ' +
                          'principal, so a ticket-granting ticket ' +
-                         'authenticated before it is accepted again.\n\n**A ' +
-                         'real KDC has no such operation**, and it does not ' +
-                         'need one: a fresh AS-REQ is the supported way back ' +
-                         'and clears the instant itself. This exists so a ' +
-                         'test can put a signed-out ticket back into service ' +
-                         'without re-running the AS exchange.',
+                         'authenticated before it is accepted again.\n\n' +
+                         '**DEVELOPMENT MODE ONLY**: product mode refuses it ' +
+                         '(HTTP 400). **A real KDC has no such operation.** ' +
+                         'A fresh AS-REQ gets a ticket newer than the ' +
+                         'instant but does NOT clear it — tickets from ' +
+                         'before it stay refused, renewals included, until ' +
+                         'the latest one of them could still be valid. This ' +
+                         'exists so a test can put a signed-out ticket back ' +
+                         'into service without restarting the service.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -7463,13 +7736,23 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API federation action endpoint.");
           const body = parseBody(req);
-          const result = adminActions.federationAction(self.withAction(req,
-              body));
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0046');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
-          log.debug("Leaving the management API federation action endpoint.");
+          adminActions.federationAction(self.withAction(req, body))
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0046');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API federation action " +
+                        "endpoint.");
+            }, function (e) {
+              log.error(errorCodes.tag('STS-API-0046') + 'the federation ' +
+                        'action threw: ' + ((e && e.stack) || e));
+              errorCodes.mark(res, 'STS-API-0046');
+              self.sendJson(res, 500, { ok: false,
+                errors: ['The federation action failed: ' +
+                         ((e && e.message) || e)] });
+            });
         },
         actions: [
           { action: 'create', operationId: 'createFederationRelationship',
@@ -7693,6 +7976,34 @@ class AdminApi {
             },
             responseDescription: 'The relationship, now disabled.' },
 
+          { action: 'rotate-key', operationId: 'rotateFederationKey',
+            summary: 'Rotate a relationship\'s encryption key',
+            description: 'SAML 2.0, WS-Federation and OpenID Connect ' +
+                         'service-provider-side relationships only (#168). ' +
+                         'A new key of the relationship\'s ' +
+                         '`fedEncryptionKeyType` is issued under this ' +
+                         'realm\'s Intermediate and becomes CURRENT — what ' +
+                         '`/federation/metadata/{id}` and ' +
+                         '`/federation/jwks/{id}` publish. The key it ' +
+                         'replaces still DECRYPTS for ' +
+                         '`federation.encryptionKeyGraceS`, so a partner ' +
+                         'still holding the old certificate is not refused ' +
+                         'mid-change, and then decrypts nothing; the ' +
+                         'scheduler job `federation.encryption-key-retire` ' +
+                         'removes it. A second rotation inside that window ' +
+                         'drops the older key at once. Also the way to issue ' +
+                         'a key for a relationship that has none.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { id: { type: 'string',
+                                  description: 'The relationship.' } },
+              required: ['id'],
+              additionalProperties: false
+            },
+            responseDescription: 'The new key\'s kid, and the relationship ' +
+                                 'as it now stands.' },
+
           { action: 'delete', operationId: 'deleteFederationRelationship',
             summary: 'Delete a relationship',
             description: 'The entry goes and takes its recorded sign-ins ' +
@@ -7723,18 +8034,27 @@ class AdminApi {
                      'SOAP artifact resolution service behind the ' +
                      'third.\n\n**Every service provider gets its own ' +
                      'identity provider metadata** — a distinct entityID and ' +
-                     'its own endpoints — and **a document is minted for any ' +
-                     'entityID asked for**, so nothing has to be provisioned ' +
-                     'before a service provider can be pointed at this ' +
-                     'service. That is why `metadataUrl` is on every row ' +
+                     'its own endpoints — and **in development a document is ' +
+                     'minted for any entityID asked for**, so nothing has to ' +
+                     'be provisioned before a service provider can be ' +
+                     'pointed at this service; in product every ' +
+                     'per-service-provider path is a 404 for an entityID ' +
+                     'that is not registered. That is why `metadataUrl` is ' +
+                     'on every row ' +
                      'rather than being one constant.\n\nThis resource holds ' +
                      'nothing: every row is an entry in `ou=applications`, ' +
                      'the same one `GET /admin-api/applications` ' +
                      'reports.\n\n`?sp=<entityID>` returns one of them, with ' +
                      'what has been recorded about it — and answers 200 with ' +
-                     '`found: false` for an entityID that is not registered, ' +
-                     'whose metadata is still served and whose AuthnRequest ' +
-                     'would still be answered.\n\nThe `?sp=` reply also ' +
+                     '`found: false` for an entityID that is not registered ' +
+                     '— whose metadata is still served and whose ' +
+                     'AuthnRequest would still be answered, in development ' +
+                     'only.\n\nThe list reply carries `mdqRefused`: the ' +
+                     'entityIDs a request asked the Metadata Query responder ' +
+                     'to register and product mode refused (no trust ' +
+                     'anchor, or an answer that did not verify), newest ' +
+                     'first, paged by `mdqRefusedPage`.\n\nThe `?sp=` ' +
+                     'reply also ' +
                      'says what checking its requests\' signatures found ' +
                      '(`lastRequestVerification`), what they are verified ' +
                      'against (`signingCertificates`), the certificate a ' +
@@ -7748,7 +8068,11 @@ class AdminApi {
           { name: 'sp', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'One service provider, by its entityID.' }
-        ].concat(this.pagingParameters()),
+        ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
+          { name: 'mdqRefused',
+            description: 'The Metadata Query lookups refused in product ' +
+                         'mode (#112), newest first.' }
+        ])),
         responseDescription: 'The service providers with the paging that ' +
                              'found them, or one of them with its endpoints ' +
                              'and its record.',
@@ -8044,7 +8368,11 @@ class AdminApi {
                          'consumes the document, held to the realm\'s ' +
                          '`saml2.metadataTrustAnchors`. Refused with no ' +
                          'responder configured; an entry it created is ' +
-                         'removed again if the document is refused.',
+                         'removed again if the document is refused. **In ' +
+                         'product mode with no trust anchor it is refused** ' +
+                         'unless `saml2.mdqImportWithoutAnchors` is on, and ' +
+                         'then the reply carries `warnings`: the document ' +
+                         'was consumed with no signature check.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -14090,8 +14418,10 @@ class AdminApi {
       // Rule 7: `/admin/kerberos/principals` has six controls — the two "Drop
       // previous versions" buttons joined the four on 2026-09-12 — and a
       // person's page under Directory → Users a seventh (#59, "Reset password
-      // and download keytab", posted to the same page), so this resource has
-      // the same seven, through `kerberosPrincipalsAction()` and
+      // and download keytab", posted to the same page), and the krbtgt block
+      // two more (#169, "Rotate the krbtgt key" and "Rotate and
+      // invalidate"), so this resource has the same nine, through
+      // `kerberosPrincipalsAction()` and
       // `kerberosPrincipalsJson()` in `admin-core/`, which reach
       // `kerberos/krb5_person_keys.ts` by a plain require.
       //
@@ -14125,7 +14455,13 @@ class AdminApi {
                      'next verified sign-in derives new ones.\n\n`services` ' +
                      '— the service principals created with a RANDOM key: ' +
                      'the principal, the kvno, the enctypes, when created ' +
-                     'and last rotated.\n\n**NO KEY MATERIAL IS IN THIS ' +
+                     'and last rotated.\n\n`krbtgt` (#169) — the realm\'s ' +
+                     'krbtgt key: where it comes from (`stored`, ' +
+                     '`password` in development, `none`, `unreadable`), ' +
+                     'its kvno and enctypes, when it was made and last ' +
+                     'rotated, the versions kept and until when, and the ' +
+                     'schedule — `scheduled`, `offReason`, `intervalDays`, ' +
+                     '`nextDueAt`.\n\n**NO KEY MATERIAL IS IN THIS ' +
                      'REPLY**, sealed or otherwise — both lists are built ' +
                      'from the public info attributes. A trust realm has a ' +
                      'KDC and a principal database of its own since ' +
@@ -14197,7 +14533,8 @@ class AdminApi {
             summary: 'Create a service principal with a random key, and get ' +
                      'its keytab once',
             description: 'Makes a RANDOM key for every enctype in ' +
-                         '`krb5.enctypes`, at kvno `krb5.kvno`, for `spn` in ' +
+                         '`krb5.enctypes` (never rc4-hmac in product mode), ' +
+                         'at kvno `krb5.kvno`, for `spn` in ' +
                          'this KDC\'s realm, stores them SEALED on the ' +
                          'application entry for `<spn>@<realm>` (creating ' +
                          'that entry if it is not there), and answers with ' +
@@ -14326,7 +14663,9 @@ class AdminApi {
                          'operator wants after a keytab is compromised. ' +
                          'Nothing kept answers `dropped: 0` rather than a ' +
                          'refusal. Refused for an SPN with no stored key, ' +
-                         'and for a key this service cannot open.',
+                         'and for a key this service cannot open. Takes ' +
+                         'the realm\'s own `krbtgt/<REALM>` too (#169), ' +
+                         'ending a krbtgt rotation\'s window now.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -14380,7 +14719,8 @@ class AdminApi {
                          'with `random: true` to a generated one that is ' +
                          'NEVER returned — and answers with an MIT keytab ' +
                          '(format 0x502) in `keytab`, base64, derived from ' +
-                         'it: one entry per enctype in `krb5.enctypes`, at ' +
+                         'it: one entry per enctype in `krb5.enctypes` ' +
+                         '(never rc4-hmac in product mode), at ' +
                          'the CURRENT kvno only.\n\n**THIS IS A PASSWORD ' +
                          'RESET.** A stored key is never read back out, so ' +
                          'a keytab is derived from a password in hand, and ' +
@@ -14430,7 +14770,74 @@ class AdminApi {
                                  '(`password` or `development`), whether ' +
                                  'the password was generated, the sign-out, ' +
                                  'and the keytab (base64) with a file name ' +
-                                 'for it.' }
+                                 'for it.' },
+
+          // #169 (2026-09-23): the realm's krbtgt key, rule 7's twins of the
+          // two krbtgt controls on /admin/kerberos/principals. Each QUEUES a
+          // run of `krb5.krbtgt-rotate-now`; neither returns a key.
+          { action: 'rotate-krbtgt',
+            operationId: 'rotateKerberosKrbtgt',
+            summary: 'Rotate the realm\'s krbtgt key, keeping the one it ' +
+                     'replaces for the TGTs already sealed under it',
+            description: 'Queues a run of the scheduler job ' +
+                         '`krb5.krbtgt-rotate-now` for the trust realm of ' +
+                         'the call, which runs once, on the scheduler\'s ' +
+                         'leader, at its next tick: a new RANDOM key for ' +
+                         'every enctype in `krb5.enctypes`, at the next ' +
+                         'kvno, sealed on the directory entry ' +
+                         '`krbtgt/<REALM>@<REALM>`. The key it replaces is ' +
+                         'KEPT — at most `krb5.retainedKeyVersions`, for the ' +
+                         'longer of the ticket and renew lifetimes plus the ' +
+                         'clock skew unless `krb5.retainedKeyTtlS` names a ' +
+                         'number — so every TGT already issued goes on ' +
+                         'working until it expires. In development mode it ' +
+                         'replaces the key derived from ' +
+                         '`krb5.krbtgtPassword`, which is then the version ' +
+                         'kept.\n\n**NO KEY IS IN THE REPLY, OR ANYWHERE.** ' +
+                         'The answer is the run\'s id; ' +
+                         '`GET /admin-api/kerberos/principals` shows the ' +
+                         '`krbtgt` block with its new kvno once the run has ' +
+                         'happened. Refused in a realm with no KDC.',
+            requestBodyRequired: false,
+            requestBody: {
+              type: 'object', properties: {},
+              examples: [{}],
+              additionalProperties: false
+            },
+            responseDescription: '`queued`, the `runId`, and whether an ' +
+                                 'identical run was already queued.' },
+
+          { action: 'rotate-krbtgt-invalidate',
+            operationId: 'rotateKerberosKrbtgtInvalidate',
+            summary: 'Rotate the realm\'s krbtgt key and keep NOTHING, so ' +
+                     'every TGT in the realm is refused',
+            description: 'Active Directory\'s double reset in one act, for a ' +
+                         'krbtgt key presumed compromised: `rotate-krbtgt` ' +
+                         'with no previous version kept, so every TGT the ' +
+                         'realm issued before the run is refused ' +
+                         'KRB_AP_ERR_BADKEYVER at its next TGS-REQ and every ' +
+                         'person runs a fresh AS exchange. A Shared Signals ' +
+                         'event of this service\'s own vocabulary ' +
+                         '(`urn:iya:sts:secevent:event-type:' +
+                         'kerberos-tickets-invalidated`) says so to every ' +
+                         'stream that takes it. It is also the one act that ' +
+                         'replaces a stored krbtgt record this service ' +
+                         'cannot open. Needs `confirm: "invalidate"`; ' +
+                         'refused without it, and in a realm with no KDC.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                confirm: { type: 'string', enum: ['invalidate'],
+                           description: 'The word `invalidate`, because ' +
+                                        'this cannot be undone.' }
+              },
+              required: ['confirm'],
+              examples: [{ confirm: 'invalidate' }],
+              additionalProperties: false
+            },
+            responseDescription: '`queued`, the `runId`, and `invalidate: ' +
+                                 'true`.' }
         ] },
 
       { method: 'GET', path: BASE + '/audit', tag: 'Audit log',
@@ -14705,10 +15112,13 @@ class AdminApi {
                      'refused delegation appears in NO other resource here: ' +
                      'nothing was accepted, so /admin-api/audit and ' +
                      '/admin-api/users have nothing to say about ' +
-                     'it.\n\n**Nothing checks who may delegate except the ' +
-                     'KDC.** WS-Trust and token exchange are unpoliced here, ' +
-                     'and each act says so in the field that names an ' +
-                     'attribute for a Kerberos one.\n\nBesides the paged ' +
+                     'it.\n\n**Every family is policed now (#108).** The ' +
+                     'KDC decides Kerberos; WS-Trust and token exchange are ' +
+                     'decided by the delegation policy (GET ' +
+                     '/admin-api/delegation/policy), enforced in product ' +
+                     'mode, and each act names what allowed it in ' +
+                     '`authorizedBy` — or, in development, what WOULD have ' +
+                     'refused it.\n\nBesides the paged ' +
                      'acts the reply carries `chains` — the distinct ' +
                      '(mechanism, initial, intermediary, target) tuples ' +
                      'among what MATCHED, one per edge of the picture — ' +
@@ -14772,6 +15182,66 @@ class AdminApi {
           log.debug("Entering the management API delegation endpoint.");
           self.sendJson(res, 200, adminViews.delegationView(req.query).json);
           log.debug("Leaving the management API delegation endpoint.");
+        } },
+
+      // THE WS-TRUST AND TOKEN-EXCHANGE DELEGATION POLICY (#108, 2026-09-23)
+      // — the configured half of those two families, as the Kerberos one is
+      // `policy` on the acts above. READ ONLY here, like the console section
+      // it mirrors: the attributes are EDITED through POST
+      // /admin-api/applications/update and the two person flags through POST
+      // /admin-api/users/set-not-delegated and /set-may-act, which is where
+      // every application and person attribute is edited (rule 7 by
+      // construction). Paged, three lists on three parameters.
+      { method: 'GET', path: BASE + '/delegation/policy', tag: 'Delegation',
+        operationId: 'getDelegationPolicy',
+        summary: 'Who may act for whom at WS-Trust and the token exchange',
+        description: 'The delegation policy `OnBehalfOf` / `ActAs` and the ' +
+                     'RFC 8693 token exchange are decided by — Kerberos\'s ' +
+                     'model on application entries:\n\n* ' +
+                     '`appAllowedToDelegateTo` on the INTERMEDIARY names ' +
+                     'the targets it may reach as somebody else;\n* ' +
+                     '`appAllowedToActOnBehalfOf` on the TARGET names the ' +
+                     'intermediaries it accepts;\n* ' +
+                     '`appDelegationSubjectGroup` on the intermediary names ' +
+                     'the groups of people it may act for (empty: anybody ' +
+                     'unprotected);\n* `appTrustedToImpersonate` TRUE lets ' +
+                     'it IMPERSONATE (OnBehalfOf, an exchange with no ' +
+                     'actor_token) as well as delegate.\n\n`pairs` has one ' +
+                     'row per (intermediary, target, attribute); ' +
+                     '`intermediaries` the applications carrying the flag ' +
+                     'or a subject group; `people` those carrying ' +
+                     '`stsNotDelegated` or `stsMayAct`; `protectedGroups` ' +
+                     'the console rosters, whose members are never ' +
+                     'delegated. `enforced` is true in product mode; in ' +
+                     'development the policy is asked and what it would ' +
+                     'have refused is recorded on the act. Each list is ' +
+                     'paged: `?policyPairsPage=`, `?intermediariesPage=`, ' +
+                     '`?peoplePage=`, and `?per=` for all three.',
+        mirrors: 'GET /admin/delegation',
+        parameters: [
+          { name: 'policyPairsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'The page of `pairs`.' },
+          { name: 'intermediariesPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'The page of `intermediaries`.' },
+          { name: 'peoplePage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'The page of `people`.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Rows per page, for all three lists (default ' +
+                         '10).' }
+        ],
+        responseDescription: 'The three lists, each with its paging, and ' +
+                             'whether the policy is enforced.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation policy " +
+                    "endpoint.");
+          self.sendJson(res, 200,
+                        adminViews.delegationPolicyView(req.query).json);
+          log.debug("Leaving the management API delegation policy " +
+                    "endpoint.");
         } },
 
       // -----------------------------------------------------------------------
@@ -15860,10 +16330,29 @@ class AdminApi {
                          'about the people it covers. Somebody who agreed to ' +
                          'it personally is unaffected — their answer is on ' +
                          'their own entry and `revoke-consent` is what takes ' +
-                         'that away.\n\nNothing already ISSUED is touched. ' +
-                         'An access token minted while the override stood is ' +
-                         'still valid, exactly as revoking a delegated ' +
-                         'permission does not re-judge a grant already made.',
+                         'that away.\n\n**What was issued under it is ' +
+                         'revoked (#172).** Every access and refresh token ' +
+                         'of ' +
+                         'this application carrying the scope, for everybody ' +
+                         'but the people who agreed to it themselves, goes ' +
+                         'on ' +
+                         'the revocation register every node reads — so it ' +
+                         'introspects inactive at once — and the instant is ' +
+                         'written onto the application\'s entry as ' +
+                         '`oauthGlobalConsentWithdrawn`, so a refresh token ' +
+                         'granted before it is refused even if the override ' +
+                         'is added back. `revoked` is how many tokens this ' +
+                         'call revoked. **This is the only way to take a ' +
+                         'global consent away**: the generic ' +
+                         '`applications/remove` of `oauthGlobalConsent` is ' +
+                         'refused (`STS-REG-0191`). On one of this ' +
+                         'service\'s ' +
+                         'own surfaces (`sts-admin-console`, ' +
+                         '`sts-user-portal`, `sts-debugger-ui`) it is not ' +
+                         'refused either: every session of that surface ' +
+                         'standing on the override ends at its next token ' +
+                         'renewal and the person signs in again and is ' +
+                         'asked.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15877,7 +16366,9 @@ class AdminApi {
               examples: [{ client: 'webapp1', scope: 'openid' }],
               additionalProperties: false
             },
-            responseDescription: 'What was removed, and who is asked again.' },
+            responseDescription: 'What was removed, who is asked again, ' +
+                                 'how many tokens were revoked (`revoked`) ' +
+                                 'and when (`withdrawnAt`).' },
 
           { action: 'revoke-consent', operationId: 'revokeConsent',
             summary: 'Take back one answer one person gave',
@@ -15895,8 +16386,16 @@ class AdminApi {
                          'nothing here to remove and this refuses rather ' +
                          'than pretending: `revoke-global-consent` ' +
                          'is the operation for that, and ' +
-                         'the refusal says so. Nothing already issued is ' +
-                         'touched.',
+                         'the refusal says so.\n\n**What was issued under it ' +
+                         'is revoked (#172)**: every access and refresh ' +
+                         'token ' +
+                         'this application holds for this person carrying ' +
+                         'the scope — a refresh token with its whole grant, ' +
+                         'since withdrawing one scope revokes the whole ' +
+                         'refresh token — and the instant goes onto their ' +
+                         'entry as `oauthConsentWithdrawn`, so a refresh ' +
+                         'token granted before it is refused even after they ' +
+                         'consent again.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15919,7 +16418,45 @@ class AdminApi {
                            scope: 'openid' }],
               additionalProperties: false
             },
-            responseDescription: 'What was removed, and what is asked again.' },
+            responseDescription: 'What was removed, what is asked again, ' +
+                                 'how many tokens were revoked (`revoked`) ' +
+                                 'and when (`withdrawnAt`).' },
+
+          { action: 'revoke-application-consent',
+            operationId: 'revokeApplicationConsent',
+            summary: 'Withdraw everything one person agreed to for one ' +
+                     'application',
+            description: 'Every `oauthConsent` value naming this person and ' +
+                         'this application, in one act (#172) — the ' +
+                         'console\'s and the API\'s counterpart of the ' +
+                         'Withdraw button a person has for each application ' +
+                         'on `/portal/consents`. They are asked again the ' +
+                         'next time that application requests anything; ' +
+                         'every access and refresh token it holds for them ' +
+                         'under those scopes is revoked; and the instant ' +
+                         'goes onto their entry, so a refresh token granted ' +
+                         'before it is refused even after they consent ' +
+                         'again. Refused when nothing is recorded for the ' +
+                         'pair — a scope under GLOBAL consent is not on ' +
+                         'anybody\'s entry.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                username: { type: 'string',
+                            description: 'The person, exactly as ' +
+                                         '/admin/users names them.' },
+                client: { type: 'string',
+                          description: 'The application whose every ' +
+                                       'consent is withdrawn.' }
+              },
+              required: ['username', 'client'],
+              examples: [{ username: 'alice', client: 'webapp1' }],
+              additionalProperties: false
+            },
+            responseDescription: 'How many consents were withdrawn ' +
+                                 '(`removed`), how many tokens were revoked ' +
+                                 '(`revoked`) and when (`withdrawnAt`).' },
 
           { action: 'forget-user-consent', operationId: 'forgetUserConsent',
             summary: 'Forget everything one person agreed to',
@@ -15934,8 +16471,11 @@ class AdminApi {
                          'consent, because there is nothing on their entry ' +
                          'to reach — a scope they were never asked about ' +
                          'leaves no record, which is what lets the ' +
-                         'register tell the two apart at all. Nothing ' +
-                         'already issued is touched.',
+                         'register tell the two apart at all.\n\n**What ' +
+                         'was issued under those consents is revoked ' +
+                         '(#172)**, per application, and each withdrawal ' +
+                         'instant is written onto their entry — see ' +
+                         '`revoke-consent`.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15948,7 +16488,8 @@ class AdminApi {
               examples: [{ username: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'How many answers were forgotten.' }
+            responseDescription: 'How many answers were forgotten, and how ' +
+                                 'many tokens were revoked (`revoked`).' }
         ] },
 
       // -----------------------------------------------------------------------
@@ -16391,6 +16932,106 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'That it is gone.' }
+        ] },
+
+      // THE SPIFFE BROKER API'S BROKERS (#170): /admin/spiffe/brokers, rule 7.
+      { method: 'GET', path: BASE + '/spiffe/brokers', tag: 'SPIFFE',
+        operationId: 'getSpiffeBrokers',
+        summary: 'Who may call the SPIFFE Broker API, filtered and paged',
+        description: 'The brokers of `spiffe.brokers`: each SPIFFE ID ' +
+                     'authorized to call the SPIFFE Broker API (Incubating) ' +
+                     'on this realm\'s mutual-TLS Broker endpoint, and which ' +
+                     'workload references it may use — `pid` ' +
+                     '(WorkloadPIDReference), `k8s` (a ' +
+                     'KubernetesObjectReference to a pod) or `*`. An entry ' +
+                     'that does not parse is listed with its `problem` and ' +
+                     'authorizes nothing. `listeners` is where the endpoint ' +
+                     'is bound in this realm, and `port` its ' +
+                     '`spiffe.brokerPort`.',
+        mirrors: 'GET /admin/spiffe/brokers',
+        parameters: [
+          { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+            description: 'Substring of a broker\'s SPIFFE ID or reference ' +
+                         'types, case-insensitive.' }
+        ].concat(this.pagingParameters()),
+        responseDescription:
+          'The matching brokers with the paging that found them.',
+        responseSchema: { type: 'object',
+                          description: 'Authorized brokers and their paging.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API SPIFFE brokers endpoint.");
+          self.sendJson(res, 200, adminViews.spiffeBrokersJson(req).json);
+          log.debug("Leaving the management API SPIFFE brokers endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/spiffe/brokers/:action',
+        tag: 'SPIFFE', mirrors: 'POST /admin/spiffe/brokers',
+        handler: function (req, res) {
+          log.debug("Entering the management API SPIFFE brokers action " +
+                    "endpoint.");
+          const body = parseBody(req);
+          const result = adminActions.spiffeBrokersAction(self.withAction(req,
+              body));
+          if (!result.ok) {
+            errorCodes.mark(res,
+                            errorCodes.codeOf(result) || 'STS-SPIFFE-0141');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API SPIFFE brokers action " +
+                    "endpoint.");
+        },
+        actions: [
+          { action: 'set', operationId: 'setSpiffeBroker',
+            summary: 'Authorize a broker, or replace what it may reference',
+            description: 'Writes the broker into `spiffe.brokers` in the ' +
+                         'realm the call is made in; it takes effect on the ' +
+                         'broker\'s next call. `referenceTypes` must name at ' +
+                         'least one of `pid`, `k8s` and `*` — SPIRE\'s ' +
+                         '`allowed_reference_types`, and the endpoint is ' +
+                         'TCP, so each allows that type over TCP. **A ' +
+                         'process id ' +
+                         'means something only on the node it was read on**: ' +
+                         'allow `pid` only to a broker on this host. A ' +
+                         'broker from a federated trust domain is verified ' +
+                         'against that domain\'s bundle.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string',
+                      description: 'The broker\'s SPIFFE ID.' },
+                referenceTypes: { type: 'array',
+                                  items: { type: 'string',
+                                           enum: ['pid', 'k8s', '*'] },
+                                  description: 'What it may reference: ' +
+                                               'one or more of pid, k8s ' +
+                                               'and *.' }
+              },
+              required: ['id', 'referenceTypes'],
+              examples: [{ id: 'spiffe://example.org/ns/mesh/sa/node-proxy',
+                           referenceTypes: ['k8s'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'The broker as it now stands.' },
+
+          { action: 'remove', operationId: 'removeSpiffeBroker',
+            summary: 'Take a broker off the list',
+            description: 'Its next call to the SPIFFE Broker API is refused ' +
+                         'PERMISSION_DENIED. SVIDs it already fetched for a ' +
+                         'workload keep working until they expire — SPIFFE ' +
+                         'has no revocation.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string',
+                      description: 'The broker\'s SPIFFE ID.' }
+              },
+              required: ['id'],
+              examples: [{ id: 'spiffe://example.org/ns/mesh/sa/node-proxy' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it was listed.' }
         ] },
 
       { method: 'GET', path: BASE + '/spiffe/agents', tag: 'SPIFFE',

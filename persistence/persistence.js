@@ -381,6 +381,16 @@ let flushing = null;
 // The ONE flush queued behind `flushing`, shared by every caller that arrives
 // while it runs. See flush().
 let flushQueued = null;
+// WHAT THE RUNNING FLUSH HAS SENT, realm \n key -> the JSON of each upsert,
+// from the moment it is handed to the driver until the flush settles
+// (2026-09-23). `applyDirectoryChange()` merges a row another process wrote
+// against it rather than against the shadow, which the flush has not advanced
+// yet. Without it a change made here WHILE a flush was out, and undoing the
+// flush's own change, was lost: a person disabled (the flush) and enabled again
+// a moment later looked, beside the shadow, as though this process had
+// changed nothing, so a replicated row still holding the lock won and the
+// enable was never written anywhere (`sts_second_factor_doors`, single-node).
+const inFlightDirectory = new Map();
 
 // True while start() is loading. Every changed() call is a no-op then: restore
 // writes into the live stores through the same functions an operator does, and
@@ -1260,6 +1270,9 @@ function flush() {
         live.set(realmId, rows);
       });
     }
+    changes.upserts.forEach(function (row) {
+      inFlightDirectory.set(row.realm + '\n' + row.key, row.json);
+    });
     return driver.saveDirectory({
       upserts: changes.upserts,
       deletes: changes.deletes,
@@ -1346,6 +1359,7 @@ function flush() {
     log.debug('Leaving flush(). It failed.');
     return { written: false, error: err.message };
   }).then(function (result) {
+    inFlightDirectory.clear();
     flushing = null;
     return result;
   });
@@ -2224,7 +2238,12 @@ function applyDirectoryChange(change) {
     // -----------------------------------------------------------------------
     const key = row ? row.key : change.key;
     const live = entryAt(change.realm, key);
-    const base = rows.has(key) ? rows.get(key) : null;
+    // THE BASE IS WHAT THIS PROCESS LAST SENT for this key when a flush of it
+    // is still out — see `inFlightDirectory` — and the shadow otherwise.
+    const flightKey = change.realm + '\n' + key;
+    const base = inFlightDirectory.has(flightKey)
+      ? inFlightDirectory.get(flightKey)
+      : (rows.has(key) ? rows.get(key) : null);
     const pending = live ? JSON.stringify(live) !== base : base !== null;
     let keep = null;
     if (pending) {

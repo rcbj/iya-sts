@@ -477,6 +477,24 @@ services:
       # refused. The screen is held in process with the API stubbed
       # (tests/breached_passwords.js).
       - STS_RISK_BREACH_CHECK=${STS_RISK_BREACH_CHECK:-off}
+      # Every job here comes from ONE /24, and many refuse a password on
+      # purpose, so the default network threshold (20 an hour) put the
+      # network-failures signal on every first sign-in after the first few
+      # minutes of a product-mode run (2026-09-23). The service's default
+      # is unchanged; only this stack raises it.
+      - STS_RISK_NETWORK_FAILURE_THRESHOLD=${STS_RISK_NETWORK_FAILURE_THRESHOLD:-1000000}
+      # AND MEDIUM FROM THE MODEL ALONE IS OUT OF REACH HERE (2026-09-23).
+      # The THIN-HISTORY half is the service's own fix now: fewer than
+      # risk.minimumHistory (5) earlier sign-ins are UNSCORED. What is left is
+      # this stack's own shape, which no deployment has: every sign-in in it
+      # shares one address and one User-Agent, so
+      # the model's features cancel and its prior alone decides: about the
+      # realm's sign-ins per person over this person's, which puts a new
+      # person's second sign-in over 1 once other jobs have signed in the
+      # same people many times. At 1000 (HIGH's own threshold) MEDIUM cannot
+      # be reached and HIGH still refuses. MEDIUM's step-up is covered in
+      # process by tests/risk_decisions.js.
+      - STS_RISK_MEDIUM_SCORE_PERCENT=${STS_RISK_MEDIUM_SCORE_PERCENT:-1000}
       # WHERE THE TWO PERSISTING MODES DIAL, and it is `sts_app` rather than
       # the owner: postgres/schema.sql builds a role with SELECT, INSERT,
       # UPDATE and DELETE on the rows and no CREATE anywhere, so this service

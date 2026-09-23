@@ -100,8 +100,10 @@ one. What happens to a certificate that is presented:
   truststore is *known*; one that chains to nothing still completes the
   handshake and can still bind a token under RFC 8705 section 3.
 * **It is refused where it is used**: RFC 8705 client authentication at the
-  token endpoint, `/xacml`, `/scim/v2` and `/tls/sign-in` each decide for
-  themselves, carrying OpenSSL's own reason (`authorizationError`) out whole.
+  token endpoint, `/xacml`, `/scim/v2`, `/tls/sign-in` and a GNAP key proved by
+  mutual TLS under `gnap.mtlsTrust=pki` ([GNAP](gnap.md#mutual-tls-trust)) each
+  decide for themselves, carrying OpenSSL's own reason (`authorizationError`)
+  out whole.
 * **A verified certificate is recorded as an authentication** when the
   connection is established — once per connection, not per request — under
   protocol `TLS` on `/admin/users`.
@@ -228,7 +230,7 @@ refusal of an application's certificate — is the same in both modes. See
 | `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | no | `v2` expects a PROXY protocol v2 header on every TCP listener, read before TLS. |
 | `global.proxyProtocolTimeoutMs` | `STS_PROXY_PROTOCOL_TIMEOUT_MS` | `30000` | yes | How long a trusted proxy may take to send a complete header. |
 | `pki.revocationCheck` | `STS_PKI_REVOCATION_CHECK` | `auto` | yes | Whether a presented certificate is checked for revocation: `off`, `soft-fail`, `hard-fail`, or `auto` (hard in product, soft in development). |
-| `pki.revocationRequireDistributionPoint` | `STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT` | `false` | yes | Under hard-fail, also refuse a foreign certificate that names no CRL distribution point. |
+| `pki.revocationRequireDistributionPoint` | `STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT` | `auto` | yes | Under hard-fail, whether a CA-issued foreign certificate that names no CRL and no OCSP responder is refused: `auto` in product mode, `on` in both; **`off` accepts certificates nobody can ever revoke**. |
 | `pki.revocationFetchTimeoutMs` | `STS_PKI_REVOCATION_FETCH_TIMEOUT_MS` | `3000` | yes | How long a fetch of a foreign CRL may take; a request waits on it the first time. |
 
 The remaining `pki.revocation*` settings tune OCSP, CRL caching and LDAP

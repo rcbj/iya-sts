@@ -152,6 +152,11 @@ const MAX_CACHED_LOOKUPS = 10000;
 // The two scheduler jobs.
 const DIRECTORY_JOB = 'risk.dataset-directory';
 const RETENTION_JOB = 'risk.retention';
+// The FIDO MDS3 download (#105): `risk.mdsUrl`, fetched through the outbound
+// rules and imported by `importMds()`. Hourly once the active BLOB is past
+// its own nextUpdate.
+const MDS_JOB = 'risk.mds-refresh';
+const MDS_OVERDUE_EVERY_MS = 60 * 60 * 1000;
 const RETENTION_EVERY_MS = 60 * 60 * 1000;
 
 interface RiskDatasetsDeps {
@@ -165,6 +170,9 @@ interface RiskDatasetsDeps {
   audit(): { audit(event: Json): unknown };
   scheduler(): Json;
   realms(): Json;
+  // The outbound requester every published document is fetched with (#105),
+  // lazily for `audit()`'s reason.
+  federationHttp(): Json;
 }
 
 class RiskDatasets {
@@ -173,6 +181,11 @@ class RiskDatasets {
   static readonly PROVIDERS = PROVIDERS;
   static readonly DIRECTORY_JOB = DIRECTORY_JOB;
   static readonly RETENTION_JOB = RETENTION_JOB;
+  static readonly MDS_JOB = MDS_JOB;
+  // When the active BLOB says the next one is due, as the last run of the
+  // download job saw it; 0 before one has run. What `everyMs()` reads, since
+  // the scheduler asks it synchronously.
+  private mdsDueAt = 0;
 
   // realm + dataset -> { version, publishedAt, kind } for the active version.
   private active: Map<string, Json> | null = null;
@@ -231,6 +244,9 @@ class RiskDatasets {
       },
       realms: function (): Json {
         return require('../common/realms');
+      },
+      federationHttp: function (): Json {
+        return require('../federation/federation_http');
       }
     };
   }
@@ -858,6 +874,157 @@ class RiskDatasets {
     return model ? { model: model, version: active.version } : null;
   }
 
+  // -------------------------------------------------------------------------
+  // THE SAME, BY ANY KEY A MODEL IS LISTED UNDER (#105): `aaguid`, `aaid` or
+  // `acki` — an attestation certificate key identifier, which is how a
+  // fido-u2f authenticator, having no AAGUID, is found. WebAuthn's
+  // attestation verifier asks it for the model's attestation root
+  // certificates (kept in the row's metadata statement) and its status
+  // reports; like the lookup above, null decides nothing.
+  // -------------------------------------------------------------------------
+  async lookupAuthenticatorBy(keyKind: string,
+                              key: string): Promise<Json | null> {
+    const { log, store, now } = this.deps;
+    log.debug("Entering RiskDatasets.lookupAuthenticatorBy(). " + keyKind);
+    const wanted = String(key || '').toLowerCase();
+    if (keyKind === 'aaguid') {
+      log.debug("Leaving RiskDatasets.lookupAuthenticatorBy(). By AAGUID.");
+      return this.lookupAuthenticator(wanted);
+    }
+    if (!wanted || ['aaid', 'acki'].indexOf(keyKind) < 0) {
+      log.debug("Leaving RiskDatasets.lookupAuthenticatorBy(). No key.");
+      return null;
+    }
+    const active = (await this.activeVersions()).get('\u0000fido.mds3');
+    if (!active || this.isStale(CATALOGUE['fido.mds3'], active, now())) {
+      log.debug("Leaving RiskDatasets.lookupAuthenticatorBy(). No usable " +
+                "BLOB.");
+      return null;
+    }
+    const model = await store.lookupFido('fido.mds3', active.version,
+                                         keyKind, wanted);
+    log.debug("Leaving RiskDatasets.lookupAuthenticatorBy(). " +
+              (model ? 'Listed.' : 'Not listed.'));
+    return model ? { model: model, version: active.version } : null;
+  }
+
+  // What the FIDO metadata is, for `/admin/webauthn` and its API (#105): the
+  // active BLOB's serial, version, nextUpdate and whether it is stale, and
+  // where the next one comes from.
+  async mdsState(): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering RiskDatasets.mdsState().");
+    await this.activeVersions();
+    log.debug("Leaving RiskDatasets.mdsState().");
+    return this.mdsSnapshot();
+  }
+
+  // The same, SYNCHRONOUSLY, from what this process holds — a console page's
+  // status block is drawn synchronously. Where nothing is held yet (the
+  // first draw after a start or an activation) it says so and starts the
+  // read, so the next draw has it.
+  mdsSnapshot(): Json {
+    const { log, config, now } = this.deps;
+    log.debug("Entering RiskDatasets.mdsSnapshot().");
+    const held = this.active;
+    if (!held) {
+      this.activeVersions().catch(function (e: Json): void {
+        log.debug("Caught in RiskDatasets.mdsSnapshot(): " +
+                  ((e && e.message) || e));
+        // The next draw asks again; this one already says nothing is known.
+      });
+    }
+    const active = held ? held.get('\u0000fido.mds3') : null;
+    const out = {
+      known: !!held,
+      active: !!active,
+      version: active ? String(active.version || '') : '',
+      serial: active ? Number(active.mdsNo) || 0 : 0,
+      nextUpdateAt: active ? Number(active.nextUpdateAt || 0) : 0,
+      loadedAt: active ? Number(active.loadedAt || 0) : 0,
+      rows: active ? Number(active.rowCount || 0) : 0,
+      stale: active ? this.isStale(CATALOGUE['fido.mds3'], active, now())
+                    : false,
+      url: String(config.value('risk.mdsUrl') || ''),
+      job: MDS_JOB
+    };
+    log.debug("Leaving RiskDatasets.mdsSnapshot(). active=" + out.active);
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE BLOB, DOWNLOADED (#105). MDS3 section 3.2: "The FIDO Server MUST be
+  // able to download the latest metadata BLOB object from the well-known
+  // URL", and its nextUpdate says when at the latest. The address is the
+  // OPERATOR's (`risk.mdsUrl`): no request can name it, which is the
+  // argument the root CLAUDE.md's "dial a URL a caller supplied" row makes
+  // for `saml2.mdqBaseUrl`, and it is dialled through
+  // `federation_http.fetchPublished()` — the outbound kill switch, https
+  // only, internal addresses refused in product, no redirect, a timeout —
+  // with a size cap of its own, since a BLOB is megabytes.
+  //
+  // What arrives is believed of nothing: `importVersion()` refuses it
+  // without a recorded acceptance of `fido-mds3`'s terms (STS-RISK-0014,
+  // #62's licence condition) and `importMds()` then verifies it as any
+  // upload is. A BLOB whose serial is not above the active one is not
+  // imported at all — the ordinary answer on most days, and not a rollback
+  // worth an audit row: MDS3 section 3.2's `localCopySerial` exists so a
+  // server can say exactly that. The serial is read, unverified, only to
+  // decide that NOTHING is done.
+  // -------------------------------------------------------------------------
+  async refreshMds(): Promise<Json> {
+    const { log, config, store } = this.deps;
+    log.debug("Entering RiskDatasets.refreshMds().");
+    const url = String(config.value('risk.mdsUrl') || '');
+    if (!url) {
+      log.debug("Leaving RiskDatasets.refreshMds(). No address.");
+      return { fetched: false, why: 'risk.mdsUrl is empty' };
+    }
+    const versions = await store.listVersions('', 'fido.mds3');
+    const active = versions.filter(function (v: Json): boolean {
+      return v.state === 'active';
+    })[0];
+    const serial = active && active.parameters
+      ? Number(active.parameters.mdsNo) || 0 : 0;
+    const fetched = await this.deps.federationHttp().fetchPublished(url, {
+      accept: 'application/jwt, application/octet-stream, */*',
+      maxBytes: Number(config.value('risk.mdsMaxBytes')) });
+    if (!fetched.ok) {
+      log.warn(errorCodes.tag('STS-RISK-0027') + 'risk: the FIDO MDS3 BLOB ' +
+               'could not be downloaded from ' + url + ': ' +
+               String(fetched.why || fetched.status) + '.');
+      log.debug("Leaving RiskDatasets.refreshMds(). Not fetched.");
+      throw errorCodes.mark(new Error('the BLOB could not be downloaded: ' +
+                                      String(fetched.why || fetched.status)),
+                            'STS-RISK-0027');
+    }
+    const text = Buffer.from(fetched.body).toString('utf8').trim();
+    let offered = NaN;
+    try {
+      offered = Number(JSON.parse(Buffer.from(text.split('.')[1] || '',
+        'base64url').toString('utf8')).no);
+    } catch (e) {
+      log.debug("Caught in RiskDatasets.refreshMds(): " +
+                ((e && e.message) || e));
+      // Left NaN: the import below refuses what is not a BLOB, by name.
+    }
+    if (isFinite(offered) && offered <= serial) {
+      this.mdsDueAt = active ? Number(active.nextUpdateAt || 0) : 0;
+      log.debug("Leaving RiskDatasets.refreshMds(). Not newer.");
+      return { fetched: true, imported: false, serial: serial,
+               why: 'the published BLOB (' + offered + ') is not newer than ' +
+                    'the active one (' + serial + ')' };
+    }
+    const result = await this.importVersion({
+      dataset: 'fido.mds3', format: 'fido-mds3-jwt', content: text,
+      source: 'url', sourceUri: url, actor: 'the ' + MDS_JOB + ' job' });
+    const state = await this.mdsState();
+    this.mdsDueAt = state.nextUpdateAt;
+    log.debug("Leaving RiskDatasets.refreshMds(). ok=" + !!result.ok);
+    return { fetched: true, imported: !!result.ok, serial: result.serial,
+             errors: result.errors || [] };
+  }
+
   private refused(code: string, why: string, o: Json, version?: string): Json {
     const { log } = this.deps;
     log.debug("Entering RiskDatasets.refused(). " + code);
@@ -1061,7 +1228,10 @@ class RiskDatasets {
         provider: v ? v.provider : '',
         attribution: v ? v.attribution : '',
         attributionUrl: v && v.parameters
-          ? String(v.parameters.attributionUrl || '') : '' });
+          ? String(v.parameters.attributionUrl || '') : '',
+        // The MDS3 serial (#105), for `mdsState()`.
+        mdsNo: v && v.parameters ? Number(v.parameters.mdsNo) || 0 : 0,
+        loadedAt: v ? Number(v.loadedAt) || 0 : 0 });
     }
     this.active = out;
     log.debug("Leaving RiskDatasets.activeVersions(). " + out.size + ".");
@@ -1395,6 +1565,31 @@ class RiskDatasets {
       }
     });
     s.register({
+      id: MDS_JOB,
+      title: 'FIDO metadata download',
+      describe: 'Downloads the FIDO MDS3 BLOB from risk.mdsUrl and imports ' +
+                'it when its serial is newer than the active one — verified ' +
+                'to the FIDO root, its chain\'s revocation checked, under ' +
+                'a recorded acceptance of the fido-mds3 terms. Daily ' +
+                '(risk.mdsRefreshS), hourly once the active BLOB is past ' +
+                'its own nextUpdate.',
+      owner: 'risk/risk_datasets.ts',
+      kind: 'cluster',
+      everyMs: function (): number {
+        const due = self.mdsDueAt;
+        return due && Date.now() > due ? MDS_OVERDUE_EVERY_MS
+          : Number(self.deps.config.value('risk.mdsRefreshS')) * 1000;
+      },
+      manual: true,
+      off: function (): string {
+        return String(self.deps.config.value('risk.mdsUrl') || '')
+          ? '' : 'risk.mdsUrl is empty';
+      },
+      run: function (): Promise<Json> {
+        return self.refreshMds();
+      }
+    });
+    s.register({
       id: RETENTION_JOB,
       title: 'Risk retention',
       describe: 'Deletes the rows of dataset versions superseded more than ' +
@@ -1464,6 +1659,11 @@ export = {
   deleteVersion: slot.forward('deleteVersion'),
   lookup: slot.forward('lookup'),
   lookupAuthenticator: slot.forward('lookupAuthenticator'),
+  lookupAuthenticatorBy: slot.forward('lookupAuthenticatorBy'),
+  mdsState: slot.forward('mdsState'),
+  mdsSnapshot: slot.forward('mdsSnapshot'),
+  refreshMds: slot.forward('refreshMds'),
+  MDS_JOB: RiskDatasets.MDS_JOB,
   mdsRowsOf: RiskDatasets.mdsRowsOf,
   registry: slot.forward('registry'),
   importDirectory: slot.forward('importDirectory'),

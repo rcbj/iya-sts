@@ -817,7 +817,24 @@ serviceState.start().then(function (both) {
   // sets the pool already sends (`keystore.sharedAll()`), and was made per
   // realm on first use. The bootstrap is still awaited first — a bootstrap
   // that throws is fatal at startup.
-  return bootstrapped.then(function () {
+  // EVERY PRODUCT REALM'S FIRST KRBTGT KEY (#169, 2026-09-23), after the
+  // bootstrap and before the request workers fork or the listener binds, so a
+  // KDC has its random krbtgt key before its first request — made once for
+  // the cluster, under a claim per realm, by whichever node wins it. Never
+  // rejects: a realm left without a key refuses at its KDC and says why.
+  const krbtgtReady = bootstrapped.then(function () {
+    return require('./kerberos/krb5_krbtgt_rotation').ensureAll();
+  }).then(function (made) {
+    (made || []).forEach(function (one) {
+      if (one && one.ok === false) {
+        log.warn('sts: trust realm "' + (one.realm || 'default') + '" has ' +
+                 'no krbtgt key yet (' + (one.why || 'see above') + '); its ' +
+                 'KDC refuses until one is made.');
+      }
+    });
+    return made;
+  });
+  return krbtgtReady.then(function () {
     // THE MAIL CHANNEL (#63): in PRODUCT, a realm whose configured transport
     // cannot be built — a missing SDK, an unreadable secret, `capture` — is
     // a service that would promise reset links it cannot send, and it does

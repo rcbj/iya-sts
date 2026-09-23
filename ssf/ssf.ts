@@ -206,6 +206,9 @@ import ssfCluster = require('./ssf_cluster');
 // (the call-log funnel records it); a refusal with no response of its own — a
 // transmission, a console action, an automatic emission — is an audit row.
 import errorCodes = require('../common/error_codes');
+// For `refusesUnverifiedSignals()` at /ssf/receive (#117). A leaf that
+// requires only config.
+import mode = require('../common/mode');
 
 // A loose JSON-shaped object: the reports, stream records and results this
 // file builds and passes on. Their shapes are the libraries' own, and those
@@ -2278,7 +2281,9 @@ class SharedSignals {
     // event could not show anybody WHAT arrived or WHY it did not verify,
     // which is the question being asked. `ssf.receiveRequireSignature` turns
     // the 400 on, which is what a real receiver does and is the negative a
-    // transmitter needs to be able to reach.
+    // transmitter needs to be able to reach. **PRODUCT MODE ALWAYS REFUSES
+    // (#117, 2026-09-23)**: there it was an unauthenticated write into a
+    // stored inbox (`mode.refusesUnverifiedSignals()`).
     //
     // The verification is against THIS SERVICE'S OWN key, because that is the
     // only key it has. A SET signed by somebody else is reported as "not
@@ -2332,7 +2337,8 @@ class SharedSignals {
       const verdict: Json = events.verifySet(token, read.header);
       const verified = verdict.verified;
       const verificationNote = verdict.note;
-      if (!verified && config.value('ssf.receiveRequireSignature')) {
+      // Refused in product mode whatever the setting says (#117).
+      if (!verified && mode.refusesUnverifiedSignals()) {
         errorCodes.mark(res, 'STS-SSF-0024');
         this.fail(res, 400, 'invalid_key', verificationNote);
         log.debug('Leaving POST /ssf/receive. Signature required.');
@@ -3260,6 +3266,57 @@ class SharedSignals {
                 ((e && e.message) || e));
       log.error(errorCodes.tag('STS-SSF-0100') + 'ssf: the ' +
                 'signing-key-rotated event could not be sent: ' + e.message);
+      return { sent: 0, streams: candidates.length, why: e.message };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A REALM'S KERBEROS TICKETS WERE INVALIDATED (#169, rcbj's decision 4) —
+  // this service's own event, from `kerberos/krb5_krbtgt_rotation.ts` after a
+  // "rotate and invalidate" of the krbtgt key: every TGT in the realm is
+  // refused from now on. No subject, so every stream that asked for the type
+  // gets it. Never throws, for `signingKeyRotated()`'s reason.
+  // ---------------------------------------------------------------------------
+  kerberosTicketsInvalidated(notice?: Json): Promise<EmitResult> {
+    const { log, events, streams, errorCodes } = this.deps;
+    log.debug('Entering SharedSignals.kerberosTicketsInvalidated().');
+    if (!this.enabled()) {
+      log.debug('Leaving SharedSignals.kerberosTicketsInvalidated(). SSF is ' +
+                'off.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    const n = notice || {};
+    const uri = events.KERBEROS_TICKETS_INVALIDATED;
+    const payload = events.EVENT_BY_URI[uri].generate({
+      realm: n.realm, kerberos_realm: n.kerberos_realm, kvno: n.kvno });
+    const candidates = streams.listStreams().filter((record: Json) => {
+      return streams.deliversEvent(record, uri);
+    });
+    if (!candidates.length) {
+      log.debug('Leaving SharedSignals.kerberosTicketsInvalidated(). No ' +
+                'stream takes it.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    log.debug('Leaving SharedSignals.kerberosTicketsInvalidated().');
+    // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
+    const txn = this.newTxn();
+    return Promise.all(candidates.map((record: Json) => {
+      return this.transmit(record, { txn: txn, uri: uri, payload: payload,
+        toe: payload.event_timestamp });
+    })).then((reports) => {
+      const sent = reports.filter((one) => {
+        return one.ok;
+      }).length;
+      log.info('ssf: kerberos-tickets-invalidated for the "' + payload.realm +
+               '" realm went to ' + sent + ' of ' + candidates.length +
+               ' stream(s).');
+      return { sent: sent, streams: candidates.length, reports: reports };
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.kerberosTicketsInvalidated(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-SSF-0112') + 'ssf: the ' +
+                'kerberos-tickets-invalidated event could not be sent: ' +
+                e.message);
       return { sent: 0, streams: candidates.length, why: e.message };
     });
   }
@@ -4840,6 +4897,7 @@ export = {
   CONSOLE_ACTIONS: SharedSignals.CONSOLE_ACTIONS,
   caepAutoEmit: slot.forward('caepAutoEmit'),
   signingKeyRotated: slot.forward('signingKeyRotated'),
+  kerberosTicketsInvalidated: slot.forward('kerberosTicketsInvalidated'),
   emitProtocolEvent: slot.forward('emitProtocolEvent'),
   caepReport: slot.forward('caepReport'),
   caepAction: slot.forward('caepAction'),

@@ -939,9 +939,10 @@ class ScimAuth {
           'server that accepted anything would not be performing the ' +
           'exchange at all. So it does what Kerberos does for the same ' +
           'reason — ANY username authenticates and every one of them shares ' +
-          'one password (scim.digestPassword). SHA-256, SHA-512-256 and MD5 ' +
-          'are all offered, in that order, with the -sess variants; qop is ' +
-          'auth. A wrong password is a 401, a stale nonce is a 401 with ' +
+          'one password (scim.digestPassword). SHA-256 and SHA-512-256 are ' +
+          'offered, in that order, with the -sess variants, and MD5 last ' +
+          'only where scim.digestMd5 turns it on; qop is auth. A wrong ' +
+          'password is a 401, a stale nonce is a 401 with ' +
           'stale=true, and a replayed nonce count is a 401 — three negatives ' +
           'that are otherwise hard to provoke.',
         attempt: this.attemptDigest.bind(this),
@@ -1079,8 +1080,8 @@ class ScimAuth {
 
   // One challenge per algorithm, strongest first — RFC 7616 section 3.7 says a
   // server MAY send several and SHOULD order them that way, and a client takes
-  // the first it understands. MD5 is last and is offered at all because the
-  // installed base of Digest clients that speak nothing else is most of it.
+  // the first it understands. MD5 is last, and offered only where
+  // `scim.digestMd5` turns it on (off by default, development only, #182).
   private digestChallenge(req, opts?) {
     const { log, crypto } = this.deps;
     log.debug("Entering ScimAuth.digestChallenge().");
@@ -1427,8 +1428,9 @@ class ScimAuth {
   //
   // The algorithms are offered strongest first because RFC 7616 section 3.7
   // says so and because a client takes the first it understands. MD5 is last
-  // and is offered at all because most of the installed base of Digest clients
-  // speaks nothing else; it is not a recommendation, and the page says so.
+  // and is in the table because most of the installed base of Digest clients
+  // speaks nothing else; it is not a recommendation, it is OFF unless
+  // `scim.digestMd5` is set, and that is development's alone (#182).
   // ---------------------------------------------------------------------------
   static readonly DIGEST_CANDIDATES: readonly DigestAlgorithm[] = [
     { token: 'SHA-256', hash: 'sha256' },
@@ -1466,11 +1468,25 @@ class ScimAuth {
   // service always offered. `DIGEST_ALGORITHMS` stays the table of what this
   // BUILD can compute, for `admin-ui/crypto_metadata.ts`; this is what a
   // challenge carries and a credential may use.
+  //
+  // OFF BY DEFAULT AND DEVELOPMENT MODE ONLY SINCE #182 (2026-09-23): the
+  // most secure option is the default, and `mode.usesBrokenAlgorithms()`
+  // governs it — read through `mode.valueInForce()`, so a product realm with
+  // it stored on reads it off and says so once (STS-CORE-0106). Product
+  // offers no Digest at all (`digestAllowedByMode()`), so this is the second
+  // lock on a door the first already shuts.
   // ---------------------------------------------------------------------------
+  private digestMd5() {
+    const { log, mode } = this.deps;
+    log.debug("Entering ScimAuth.digestMd5().");
+    log.debug("Leaving ScimAuth.digestMd5().");
+    return mode.valueInForce('scim.digestMd5') === true;
+  }
+
   private digestAlgorithms() {
-    const { log, config } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering ScimAuth.digestAlgorithms().");
-    const md5 = config.value('scim.digestMd5') !== false;
+    const md5 = this.digestMd5();
     log.debug("Leaving ScimAuth.digestAlgorithms().");
     return this.DIGEST_ALGORITHMS.filter((row) => {
       return md5 || row.token !== 'MD5';
@@ -1635,7 +1651,7 @@ class ScimAuth {
         this.digestAlgorithms().map((row) => { return row.token; }).join(', ') +
         ' (each also with the -sess variant). The challenge lists what it ' +
         'will accept.' +
-        (config.value('scim.digestMd5') === false && /^md5/i.test(algorithm)
+        (!this.digestMd5() && /^md5/i.test(algorithm)
           ? ' MD5 is turned off on this service (scim.digestMd5).' : '')));
     }
     const qop = String(params.qop || '').toLowerCase();

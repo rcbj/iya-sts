@@ -46,7 +46,8 @@ consumers of that definition, not co-owners of it.
    plus the invented, DETERMINISTIC persona that fills what an entry lacks.
    `vc_issuer.ts` (early), `admin.js` (late) and `ldap_server.js` (later) all read it,
    so it must stay a library: it registers no route and requires only `helpers.js`,
-   three leaves (`realms.js`, `mode.js`, `error_codes.js`)
+   four leaves (`realms.js`, `mode.js`, `error_codes.js`, and since #128
+   `country_codes.js`)
    and `admin_stats.js` (for `identityKeyOf()`, so that `alice`,
    `alice@REALM` and her `urn:uuid:<entryUUID>` — or the retired
    `urn:sts:user:alice` — are one invented person and one entry). The DIRECTORY half is inverted the usual way — `setDirectory()` is filled
@@ -60,6 +61,24 @@ consumers of that definition, not co-owners of it.
    undefined term does not go missing, it THROWS inside a cryptosuite at issuance
    time. `buildLdpVc()` filters against the context it actually loaded rather than
    trusting the hand-kept list.
+
+   **THE IDENTITY ASSURANCE CLAIMS REGISTRATION (#128, 2026-09-23)** lives in
+   the catalogue, and brought two new kinds of row. rcbj's answers: the JOB
+   title is `job_title` and `title` is the registration's honorific
+   (`schacPersonalTitle`); `nationality` was REPLACED by `nationalities`; the
+   birth names, `also_known_as`, `salutation` and the three `place_of_birth`
+   members are this service's own attribute types. `mobile_phone_number`
+   became the registered `msisdn` (E.164 digits). **`multi`** makes a claim
+   an ARRAY of every value the attribute holds (`nationalities`, each an ICAO
+   Doc 9303 code — `common/country_codes.js`, where Germany is `D` rather
+   than ISO's `DEU`). **`also`** makes one attribute a SECOND claim — `c` is
+   `address.country` as it always was and `address.country_code` (ISO 3166-1
+   Alpha-3) — because the catalogue is keyed by attribute and a second row
+   for `c` would be a second selection of one fact.
+   `common/claim_attributes.ts` resolves a request for the second claim
+   through `ALSO_PATH`; `federation/federation_map.ts` maps `place_of_birth`
+   by DOTTED member, so its `country` and `locality` are not taken from the
+   address's. `tests/ida_claims_registration.js`.
 
 3a-ii. **`vc_verifier_config.ts` is the same kind of library, and it holds the
    OTHER end of that catalogue.** `vc_claims.ts` says what an issued credential
@@ -454,12 +473,46 @@ certificate that verified the credential, and cached for its `ttl` (bounded by
 NO STATEMENT CAN BE MADE, and the credential is refused (`STS-VC-0072`) rather
 than let through.
 
+**A CREDENTIAL WITH NO REFERENCE AT ALL IS A POLICY QUESTION, AND THE ANSWER
+IS NO (#165, 2026-09-23).** Section 8.3 of the Token Status List draft starts
+from "the existence of a `status` claim" and leaves its absence to the relying
+party; the Bitstring Status List says nothing about a missing
+`credentialStatus`. Until #165 a FOREIGN credential with none was accepted, and
+— the worse half — an `ldp_vc` whose derived proof did not disclose its
+`credentialStatus` returned from `statusCheck()` before anything was asked, so
+a revoked `ldp_vc` of THIS realm passed the bar door by withholding its entry.
+Now:
+
+* `oid4vp.requireStatusReference` — `all` (default, both modes), `own-only`,
+  `off` — read through `mode.valueInForce()`; `off` is development only
+  (`mode.acceptsCredentialsWithoutStatus()`, the `onlyWhile` marker with
+  `onlyWhileValues: ['off']`, because `own-only` is allowed in product). A
+  foreign credential with no reference is refused under `all`
+  (`STS-VC-0088`, from `checkPresented()`); one of this realm's with none
+  is refused under anything but `off`.
+* `oid4vp.statusOptionalIssuers` exempts one trusted issuer by the SHA-256
+  thumbprint of the CERTIFICATE that verified the credential (any of
+  `certificateThumbprint()`'s three spellings) — not by `iss`, which the
+  credential asserts about itself. It covers a MISSING reference only.
+* The bar door's `ldp_vc` DCQL query asks for `credentialStatus`
+  (`vc_verifier_config.ts`), and a presentation that did not disclose it is
+  refused (`STS-VC-0089`) unless the rule is `off`. A bbs-2023 proof cannot
+  tell "absent" from "withheld", and every `ldp_vc` issued here carries the
+  entries, so the Verifier asks and refuses. **The sign-in door keeps its
+  exception**: it asks for the entry too, and reads that credential's status
+  from the register (`disownedReason()`) whether or not it was disclosed.
+
+The response endpoint marks the refusal with `verified.statusErrorCode`
+(0088, 0089, or 0072 for a status that is not VALID or cannot be read).
+
 ### Settings
 
 `oid4vp.signIn` (on), `oid4vp.signInTtlS` (300), `oid4vp.signInPollS` (3),
 `oid4vp.signInCrossDevice` (**OFF**, in both modes: the relayable path),
 `oid4vp.signInFormats` (all three), `oid4vp.signInDcApiResponseMode`
-(`dc_api.jwt`) and `oid4vp.statusListMaxCacheS` (3600) — group OID4VP; and
+(`dc_api.jwt`), `oid4vp.statusListMaxCacheS` (3600),
+`oid4vp.requireStatusReference` (`all`; `off` development only) and
+`oid4vp.statusOptionalIssuers` (empty) — group OID4VP; and
 `oid4vci.statusListTtlS` (300), `oid4vci.statusListLifetimeS` (86400),
 `oid4vci.keyAttestationRequired` (off) and
 `oid4vci.keyAttestationTrustedCertificates` (empty) — group OID4VCI. So

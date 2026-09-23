@@ -102,6 +102,9 @@ function childMain() {
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
     config.setOverride('oauth2.consentRequired', false);
+    // Scored from the second sign-in: this file is about the new-device
+    // signal, which waits for risk.minimumHistory (5 by default).
+    config.setOverride('risk.minimumHistory', 1);
     const CLIENT = 'rf-client';
     const REDIRECT = 'https://rp.fp.example/cb';
     applications.createApplication({ identifier: CLIENT,

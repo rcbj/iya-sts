@@ -4178,7 +4178,8 @@ function create(options) {
       return pool.query(
         'SELECT key_kind, authenticator_key, description, protocol_family, ' +
         'certification_level, latest_status, latest_status_at, compromised, ' +
-        'status_reports FROM sts_risk_fido_authenticators WHERE dataset = ' +
+        'status_reports, metadata_statement FROM ' +
+        'sts_risk_fido_authenticators WHERE dataset = ' +
         '$1 AND version = $2 AND key_kind = $3 AND authenticator_key = $4',
         [dataset, version, keyKind, String(key || '').toLowerCase()]
       ).then(function (r) {
@@ -4190,7 +4191,13 @@ function create(options) {
                        latestStatus: row.latest_status,
                        latestStatusAt: Number(row.latest_status_at) || 0,
                        compromised: !!row.compromised,
-                       statusReports: row.status_reports || [] } : null;
+                       statusReports: row.status_reports || [],
+                       // The model's metadata statement (#105): WebAuthn's
+                       // attestation verifier reads its
+                       // attestationRootCertificates. The memory store
+                       // keeps the whole row, so it answered this already.
+                       metadataStatement: row.metadata_statement || {} }
+                   : null;
       });
     },
 
@@ -4547,6 +4554,113 @@ function create(options) {
                    crossedAt: Number(row.crossed_at) || 0,
                    updatedAt: Number(row.updated_at) || 0 };
         });
+      });
+    },
+
+    // A window of one realm's assessments COUNTED, for Monitoring → Risk
+    // Scoring: the totals, one grouped row per (kind, value) — level, door,
+    // decision, phase, country, score band, answer, signal — and the levels
+    // per bucket of `bucketMs`. `risk_store.metricsOf()` shapes them, as it
+    // does the memory store's. The bands are `RiskStore.bandOf()`'s,
+    // spelled again in SQL; `tests/vendored/sts_admin_risk.js` holds the
+    // two to the same answer for the same rows.
+    riskAssessmentMetrics: function (realm, opts) {
+      log.debug("Entering riskAssessmentMetrics(). realm=" + realm);
+      const o = opts || {};
+      const where = 'WHERE realm = $1 AND at >= $2';
+      const params = [realm || '', Number(o.since) || 0];
+      const band = 'CASE WHEN score < 0.01 THEN \'< 0.01\' ' +
+        'WHEN score < 0.1 THEN \'0.01 – 0.1\' ' +
+        'WHEN score < 1 THEN \'0.1 – 1\' ' +
+        'WHEN score < 10 THEN \'1 – 10\' ' +
+        'WHEN score < 100 THEN \'10 – 100\' ELSE \'≥ 100\' END';
+      const quantiles = (o.quantiles || []).map(Number);
+      log.debug("Leaving riskAssessmentMetrics().");
+      return Promise.all([
+        pool.query(
+          'SELECT count(*) AS total, count(DISTINCT subject) AS subjects, ' +
+          'count(*) FILTER (WHERE bot) AS bots, ' +
+          'coalesce(avg(score), 0) AS mean_score, ' +
+          'coalesce(max(score), 0) AS max_score ' +
+          'FROM sts_risk_assessments ' + where, params),
+        pool.query(
+          'SELECT k, v, count(*) AS n FROM (' +
+          'SELECT \'level\' AS k, level AS v FROM sts_risk_assessments ' +
+          where + ' UNION ALL ' +
+          'SELECT \'door\', door FROM sts_risk_assessments ' + where +
+          ' UNION ALL ' +
+          'SELECT \'decision\', decision FROM sts_risk_assessments ' +
+          where + ' UNION ALL ' +
+          'SELECT \'phase\', phase FROM sts_risk_assessments ' + where +
+          ' UNION ALL ' +
+          'SELECT \'country\', country FROM sts_risk_assessments ' +
+          where + ' UNION ALL ' +
+          'SELECT \'band\', ' + band + ' FROM sts_risk_assessments ' +
+          where + ' UNION ALL ' +
+          'SELECT \'feedback\', feedback FROM sts_risk_assessments ' +
+          where + ' AND feedback <> \'\' UNION ALL ' +
+          'SELECT \'signal\', s->>\'signal\' FROM ' +
+          'sts_risk_assessments, jsonb_array_elements(signals) AS s ' +
+          where + ' UNION ALL ' +
+          // For calibration: a signal's sign-ins by level and by answer,
+          // the two halves apart at U+0001 as the memory store keeps them.
+          'SELECT \'signal-level\', (s->>\'signal\') || chr(1) || level ' +
+          'FROM sts_risk_assessments, jsonb_array_elements(signals) AS s ' +
+          where + ' UNION ALL ' +
+          'SELECT \'signal-feedback\', (s->>\'signal\') || chr(1) || ' +
+          'feedback FROM sts_risk_assessments, ' +
+          'jsonb_array_elements(signals) AS s ' + where +
+          ' AND feedback <> \'\') AS grouped GROUP BY k, v', params),
+        pool.query(
+          'SELECT (at / $3) * $3 AS bucket, level, count(*) AS n ' +
+          'FROM sts_risk_assessments ' + where + ' GROUP BY 1, 2',
+          params.concat([Math.max(60000, Number(o.bucketMs) || 3600000)])),
+        quantiles.length
+          ? pool.query('SELECT percentile_disc($3::float8[]) WITHIN GROUP ' +
+                       '(ORDER BY score) AS q FROM sts_risk_assessments ' +
+                       where, params.concat([quantiles]))
+          : Promise.resolve({ rows: [] })
+      ]).then(function (answers) {
+        const t = answers[0].rows[0] || {};
+        const got = (answers[3].rows[0] || {}).q || [];
+        const byFraction = {};
+        quantiles.forEach(function (f, i) {
+          if (got[i] !== null && got[i] !== undefined) {
+            byFraction[String(f)] = Number(got[i]);
+          }
+        });
+        return {
+          quantiles: byFraction,
+          totals: { total: Number(t.total) || 0,
+                    subjects: Number(t.subjects) || 0,
+                    bots: Number(t.bots) || 0,
+                    meanScore: Number(t.mean_score) || 0,
+                    maxScore: Number(t.max_score) || 0 },
+          groups: answers[1].rows.map(function (r) {
+            return { k: r.k, v: r.v === null ? '' : String(r.v),
+                     n: Number(r.n) };
+          }),
+          series: answers[2].rows.map(function (r) {
+            return { bucket: Number(r.bucket), level: r.level,
+                     n: Number(r.n) };
+          })
+        };
+      });
+    },
+
+    // How many of one realm's people stand at each level now.
+    riskSubjectLevels: function (realm) {
+      log.debug("Entering riskSubjectLevels(). realm=" + realm);
+      log.debug("Leaving riskSubjectLevels().");
+      return pool.query(
+        'SELECT level, count(*) AS n FROM sts_risk_subjects ' +
+        'WHERE realm = $1 GROUP BY level', [realm || '']
+      ).then(function (r) {
+        const out = {};
+        r.rows.forEach(function (row) {
+          out[row.level || 'UNSCORED'] = Number(row.n);
+        });
+        return out;
       });
     },
 

@@ -21,13 +21,16 @@
 // Those are genuinely different code paths, so a mistake in one is not mirrored
 // in the other — which is the whole value of the exercise.
 //
-// Scope: `packed`, `none` and `fido-u2f` attestation are recognised; the
-// statement's own signature is NOT verified and no metadata service is
-// consulted. This is a mock issuer whose purpose is to exercise a wallet, and
-// pretending to attest an authenticator's provenance would be a lie told
-// convincingly. What IS verified is everything a relying party must check about
-// the ceremony itself: challenge, origin, RP ID hash, flags, and the signature
-// over authenticatorData ‖ SHA-256(clientDataJSON).
+// Scope: every check a relying party makes about the ceremony itself —
+// challenge, origin, RP ID hash, flags, the credential's algorithm against
+// what was offered, the credential id's length, and the signature over
+// authenticatorData ‖ SHA-256(clientDataJSON). The ATTESTATION STATEMENT is
+// decoded and handed back (`attStmt`, with the raw authenticator data and the
+// client data hash its verification procedure takes) and NOT verified here:
+// that is `authn/webauthn_attestation.ts` (#105, 2026-09-23), which needs
+// trust anchors, the FIDO Metadata Service and the realm's policy — none of
+// which this file may reach, because it is loaded on its own by the
+// debugger's cross-implementation test.
 // ---------------------------------------------------------------------------
 
 'use strict';
@@ -185,10 +188,29 @@ function cborDecodeFirst(buf, offset) {
 // --- COSE_Key -> JWK ----------------------------------------------------------
 
 const COSE_CURVES = { 1: 'P-256', 2: 'P-384', 3: 'P-521', 6: 'Ed25519' };
+// PS256/384/512 are RFC 8230's RSASSA-PSS, which TPM authenticators commonly
+// use (#105). ML-DSA-44/65/87 are RFC 9964's (published May 2026 from
+// draft-ietf-cose-dilithium-11): key type AKP (7), the public key at label
+// -1. Those six are verified through `common/crypto.js`'s
+// `verifyCoseSignature()`, so a copy of this file loaded ON ITS OWN (see the
+// header) recognises them and refuses their signatures rather than
+// misreading them — it has no RSASSA-PSS salt rule and no ML-DSA.
 const COSE_ALGS = {
   '-7': 'ES256', '-35': 'ES384', '-36': 'ES512', '-8': 'EdDSA',
   '-257': 'RS256', '-258': 'RS384', '-259': 'RS512',
+  '-37': 'PS256', '-38': 'PS384', '-39': 'PS512',
+  '-48': 'ML-DSA-44', '-49': 'ML-DSA-65', '-50': 'ML-DSA-87',
 };
+// COSE key type AKP (RFC 9964 section 4) and its `pub` label.
+const COSE_KTY_AKP = 7;
+// The hash each classical algorithm signs with, for the standalone path.
+const STANDALONE_HASHES = {
+  ES256: 'sha256', ES384: 'sha384', ES512: 'sha512', RS256: 'sha256',
+  RS384: 'sha384', RS512: 'sha512',
+};
+// WebAuthn Level 3 section 7.1: a credential id longer than this SHOULD fail
+// the registration, and here it does.
+const MAX_CREDENTIAL_ID_BYTES = 1023;
 
 // base64url, from common/crypto.js — see the note beside helpers.js's. This
 // was the third copy of the same three lines in this service.
@@ -223,8 +245,26 @@ function coseKeyToJwk(coseKey) {
       throw new Error('unsupported COSE OKP curve ' + coseKey.get(-1));
     }
     jwk = { kty: 'OKP', crv: crv, x: b64u(coseKey.get(-2)) };
+  } else if (kty === COSE_KTY_AKP) {
+    // RFC 9964: the algorithm is part of an AKP key, not beside it, so a key
+    // whose `alg` is not an ML-DSA identifier is not one this reads.
+    if (!/^ML-DSA-/.test(String(COSE_ALGS[String(alg)] || '')) ||
+        !Buffer.isBuffer(coseKey.get(-1))) {
+      throw new Error('an AKP COSE key needs an ML-DSA alg and a pub; this ' +
+                      'one has alg ' + alg);
+    }
+    jwk = { kty: 'AKP', pub: b64u(coseKey.get(-1)) };
   } else {
     throw new Error('unsupported COSE key type ' + kty);
+  }
+  // THE ALGORITHM TRAVELS ON THE JWK (#105), because an assertion is checked
+  // against the stored JWK and nothing else: ES384's hash is SHA-384 and
+  // PS256's padding is PSS, and a key stored without its algorithm was
+  // checked with SHA-256 and PKCS#1 v1.5 whatever it was. A key stored
+  // before this has none, and is read as it always was (see
+  // `coseAlgOfJwk()`).
+  if (COSE_ALGS[String(alg)]) {
+    jwk.alg = COSE_ALGS[String(alg)];
   }
   log.debug('Leaving coseKeyToJwk(). kty=' + jwk.kty + ' alg=' +
             COSE_ALGS[String(alg)]);
@@ -326,6 +366,92 @@ function collect() {
   };
 }
 
+// The COSE algorithm a stored JWK is checked with: its own `alg` where it
+// carries one, and otherwise what a key stored before #105 was always checked
+// with — SHA-256 for RSA and P-256, the curve's own hash for P-384 and P-521
+// (which the old code got wrong), EdDSA for an OKP key.
+function coseAlgOfJwk(jwk) {
+  log.debug("Entering coseAlgOfJwk().");
+  const j = jwk || {};
+  const named = Object.keys(COSE_ALGS).filter(function (id) {
+    return COSE_ALGS[id] === j.alg;
+  })[0];
+  if (named) {
+    log.debug("Leaving coseAlgOfJwk(). " + j.alg);
+    return Number(named);
+  }
+  let alg = -7;
+  if (j.kty === 'RSA') {
+    alg = -257;
+  } else if (j.kty === 'OKP') {
+    alg = -8;
+  } else if (j.crv === 'P-384') {
+    alg = -35;
+  } else if (j.crv === 'P-521') {
+    alg = -36;
+  }
+  log.debug("Leaving coseAlgOfJwk(). " + alg + " by key type.");
+  return alg;
+}
+
+// Does `signature` verify over `data` under the stored `jwk`? Through
+// `common/crypto.js` in the service; a copy of this file loaded on its own
+// checks the classical algorithms with node and refuses the rest.
+function verifyWithJwk(jwk, data, signature) {
+  log.debug("Entering verifyWithJwk().");
+  const coseAlg = coseAlgOfJwk(jwk);
+  if (stsCrypto && typeof stsCrypto.verifyCoseSignature === 'function') {
+    const ok = stsCrypto.verifyCoseSignature(coseAlg, jwk, data, signature);
+    log.debug("Leaving verifyWithJwk(). " + ok);
+    return ok;
+  }
+  const name = COSE_ALGS[String(coseAlg)];
+  const bare = Object.assign({}, jwk);
+  delete bare.alg;
+  const keyObject = crypto.createPublicKey({ key: bare, format: 'jwk' });
+  if (name === 'EdDSA') {
+    log.debug("Leaving verifyWithJwk(). Standalone EdDSA.");
+    return crypto.verify(null, data, keyObject, signature);
+  }
+  if (!STANDALONE_HASHES[name]) {
+    log.debug("Leaving verifyWithJwk(). Standalone, unsupported.");
+    return false;
+  }
+  // node takes an ECDSA signature in its native DER form, which is how it
+  // arrives from the authenticator — no conversion, unlike Web Crypto.
+  log.debug("Leaving verifyWithJwk(). Standalone " + name + ".");
+  return crypto.verify(STANDALONE_HASHES[name], data, keyObject, signature);
+}
+
+// A CBOR value as plain data: a map with text keys becomes an object, an
+// array stays an array, a byte string stays a Buffer. What the attestation
+// statement is handed over as — a Map with integer keys (a COSE key) is kept
+// as a Map, since an object would turn -1 into "-1".
+function plainOf(value) {
+  log.debug("Entering plainOf().");
+  if (value instanceof Map) {
+    const textKeys = Array.from(value.keys()).every(function (k) {
+      return typeof k === 'string';
+    });
+    if (!textKeys) {
+      log.debug("Leaving plainOf(). A map with other keys.");
+      return value;
+    }
+    const out = {};
+    value.forEach(function (v, k) {
+      out[k] = plainOf(v);
+    });
+    log.debug("Leaving plainOf(). An object.");
+    return out;
+  }
+  if (Array.isArray(value)) {
+    log.debug("Leaving plainOf(). An array.");
+    return value.map(plainOf);
+  }
+  log.debug("Leaving plainOf().");
+  return value;
+}
+
 function verifyRegistration(input) {
   log.debug('Entering verifyRegistration().');
   const c = collect();
@@ -357,10 +483,32 @@ function verifyRegistration(input) {
   }
   c.add('attested credential data present', authData.flags.at,
         'AT=' + authData.flags.at);
+  // Section 7.1: "If the BE bit of the flags in authData is not set, verify
+  // that the BS bit is not set" — a credential backed up that is not backup
+  // eligible is an authenticator contradicting itself.
+  c.add('backup state only where backup eligible',
+        authData.flags.be || !authData.flags.bs,
+        'BE=' + authData.flags.be + ' BS=' + authData.flags.bs);
 
   let key = null;
   if (authData.flags.at) {
     key = coseKeyToJwk(authData.credentialPublicKey);
+    // Section 7.1: the credential's "alg" must be one of the
+    // pubKeyCredParams this relying party offered (#105). Only where the
+    // caller says what it offered: a copy of this file checking somebody
+    // else's recorded ceremony has no offer to compare with.
+    if (Array.isArray(input.expectedAlgorithms)) {
+      c.add('credential algorithm was offered',
+            input.expectedAlgorithms.map(Number).indexOf(
+              Number(key.coseAlg)) >= 0,
+            'alg ' + key.coseAlg + ', offered ' +
+              input.expectedAlgorithms.join(', '));
+    }
+    // Section 7.1: a credential id of more than 1023 bytes SHOULD fail the
+    // ceremony (#105).
+    c.add('credential ID is at most 1023 bytes',
+          authData.credentialId.length <= MAX_CREDENTIAL_ID_BYTES,
+          authData.credentialId.length + ' bytes');
   }
 
   const result = {
@@ -381,6 +529,18 @@ function verifyRegistration(input) {
     // It is the same object from the same parse; the asymmetry was an
     // oversight rather than a decision.
     flags: authData.flags,
+    // WHAT THE ATTESTATION STATEMENT'S VERIFICATION PROCEDURE TAKES (#105):
+    // section 7.1 step 22 hands it `attStmt`, the RAW authenticator data and
+    // the client data hash, and none of the three was returned, so no caller
+    // could have verified the statement even had it tried. This file verifies
+    // nothing more for returning them.
+    attStmt: plainOf(decoded.get('attStmt')),
+    authDataRaw: authDataBuf,
+    clientDataHash: sha256(clientDataJSON),
+    credentialPublicKeyCose: authData.credentialPublicKey,
+    credentialIdRaw: authData.credentialId,
+    rpIdHash: authData.rpIdHash,
+    coseAlg: key ? key.coseAlg : null,
   };
   log.debug('Leaving verifyRegistration(). ok=' + result.ok);
   return result;
@@ -424,16 +584,7 @@ function verifyAssertion(input) {
   const signedData = Buffer.concat([authDataBuf, sha256(clientDataJSON)]);
   let signatureValid = false;
   try {
-    const keyObject = crypto.createPublicKey({ key: input.publicKeyJwk,
-                                               format: 'jwk' });
-    if (input.publicKeyJwk.kty === 'OKP') {
-      signatureValid = crypto.verify(null, signedData, keyObject, signature);
-    } else {
-      // node takes an ECDSA signature in its native DER form, which is how it
-      // arrives from the authenticator — no conversion, unlike Web Crypto.
-      signatureValid = crypto.verify('sha256', signedData, keyObject,
-                                     signature);
-    }
+    signatureValid = verifyWithJwk(input.publicKeyJwk, signedData, signature);
   } catch (e) {
     // A key node cannot import, or a signature it cannot parse. Both are
     // verification failures rather than crashes, and the reason belongs in the
@@ -471,6 +622,9 @@ module.exports = {
   // console page that would have drifted the first time one was added here.
   COSE_ALGS,
   COSE_CURVES,
+  COSE_KTY_AKP,
+  MAX_CREDENTIAL_ID_BYTES,
+  coseAlgOfJwk,
   verifyRegistration,
   verifyAssertion,
   parseAuthenticatorData,

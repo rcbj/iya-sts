@@ -107,10 +107,13 @@ import codec = require('./krb5_fast_codec');
 
 type Json = any;
 
-// A Kerberos key as the codec carries one.
+// A Kerberos key as the codec carries one. `kvno` is the krbtgt's key
+// version where the key is one (#169), so a cookie says which it was sealed
+// under.
 interface Key {
   etype: number;
   key: Uint8Array;
+  kvno?: number | null;
 }
 
 // One AS exchange's FAST state, from openAsRequest() to the reply.
@@ -208,13 +211,15 @@ class Krb5Fast {
   }
 
   // The KDC's own idea of now, which `krb5.clockOffset` moves on purpose
-  // (krb5_kdc.js's kdcTime()).
+  // (krb5_kdc.js's kdcTime()) — in development only (#181), so it is read as
+  // in force, the way that function reads it.
   private now(): Date {
-    const { log, config } = this.deps;
+    const { log, mode } = this.deps;
     log.debug('Entering Krb5Fast.now().');
     log.debug('Leaving Krb5Fast.now().');
     return new Date(Date.now() +
-                    Number(config.value('krb5.clockOffset') || 0) * 1000);
+                    (Number(mode.valueInForce('krb5.clockOffset')) || 0) *
+                    1000);
   }
 
   private skewMs(): number {
@@ -233,7 +238,15 @@ class Krb5Fast {
 
   // The krbtgt key of a realm this KDC serves, at its first enctype — what a
   // cookie is sealed under. Null when there is no ticket-granting service.
-  private async tgsKey(realm: string): Promise<Key | null> {
+  //
+  // **A ROTATION (#169) MOVES IT**, so the key carries its kvno and a cookie
+  // names it. `kvno` asks for a PREVIOUS version still kept — a cookie sealed
+  // an instant before a rotation, answered an instant after — and a version
+  // neither current nor kept is null: the cookie then opens to nothing and
+  // the request is refused as answering no challenge this KDC issued, which
+  // is the clean refusal (MIT's client starts the exchange again).
+  private async tgsKey(realm: string, kvno?: number | null):
+      Promise<Key | null> {
     const { log, principals } = this.deps;
     log.debug('Entering Krb5Fast.tgsKey(). ' + realm);
     const krbtgt = principals.find(['krbtgt', realm], realm);
@@ -242,9 +255,18 @@ class Krb5Fast {
       log.debug('Leaving Krb5Fast.tgsKey(). None.');
       return null;
     }
+    if (kvno !== undefined && kvno !== null && krbtgt.directoryKeys &&
+        Number(kvno) !== Number(krbtgt.kvno)) {
+      const kept = principals.retainedKeyFor(krbtgt, etypes[0], Number(kvno));
+      log.debug('Leaving Krb5Fast.tgsKey(). ' + (kept ? 'A kept version.'
+                                                      : 'Not held.'));
+      return kept ? { etype: etypes[0], key: kept.key, kvno: kept.kvno }
+                  : null;
+    }
     const key = await principals.longTermKey(krbtgt, etypes[0]);
     log.debug('Leaving Krb5Fast.tgsKey().');
-    return { etype: etypes[0], key: key };
+    return { etype: etypes[0], key: key,
+             kvno: krbtgt.directoryKeys ? Number(krbtgt.kvno) : null };
   }
 
   // What the KDC advertises OUTSIDE FAST, in every KDC_ERR_PREAUTH_REQUIRED:
@@ -316,9 +338,38 @@ class Krb5Fast {
                          'serves');
     }
     const krbtgt = principals.find(['krbtgt', armorRealm], armorRealm);
+    if (!krbtgt) {
+      log.debug('Leaving Krb5Fast.openAsRequest(). No krbtgt key.');
+      return this.refuse(31, 'STS-KRB-0137', 'this KDC holds no krbtgt key ' +
+                         'for ' + armorRealm + ' to open the armor ticket ' +
+                         'with: ' + (principals.krbtgtUnavailableReason() ||
+                                     'none is configured'));
+    }
+    // THE ARMOR TGT MAY BE SEALED UNDER A PREVIOUS krbtgt VERSION (#169): a
+    // host that got its armor ticket an instant before a rotation still
+    // armors with it, as `ticketKeyFor()` lets a TGS-REQ present it. A kvno
+    // neither current nor kept is KRB_AP_ERR_BADKEYVER, not a decrypt
+    // failure: the ticket is intact and names a key this KDC gave up.
+    const armorKvno = apReq.ticket.encPart.kvno;
+    let keptKey: Uint8Array | null = null;
+    if (krbtgt.directoryKeys && armorKvno !== null &&
+        armorKvno !== undefined && Number(armorKvno) !== Number(krbtgt.kvno)) {
+      const kept = principals.retainedKeyFor(krbtgt,
+                                             apReq.ticket.encPart.etype,
+                                             Number(armorKvno));
+      if (!kept) {
+        log.debug('Leaving Krb5Fast.openAsRequest(). Armor under a dropped ' +
+                  'krbtgt version.');
+        return this.refuse(44, 'STS-KRB-0164', 'the armor ticket was sealed ' +
+                           'under key version ' + armorKvno + ' of krbtgt/' +
+                           armorRealm + ', which holds version ' +
+                           krbtgt.kvno + ' and no longer keeps that one');
+      }
+      keptKey = kept.key;
+    }
     let ticketPart;
     try {
-      const key = await principals.longTermKey(krbtgt,
+      const key = keptKey || await principals.longTermKey(krbtgt,
                                                apReq.ticket.encPart.etype);
       ticketPart = msgs.readEncTicketPart(
         await kcrypto.etypeById(apReq.ticket.encPart.etype).decrypt(
@@ -377,6 +428,27 @@ class Krb5Fast {
       return this.refuse(24, 'STS-KRB-0138', 'the armor AP-REQ\'s ' +
                          'Authenticator carries no subkey, which ' +
                          'FX_FAST_ARMOR_AP_REQUEST requires');
+    }
+    // NO ARMOR OF AN ENCTYPE THE MODE WITHHOLDS (#182, 2026-09-23). The
+    // armor key is KRB-FX-CF2 of the subkey and the ticket's session key and
+    // takes the SUBKEY's enctype (RFC 6113 section 5.1), so a client that
+    // chose an rc4-hmac subkey would have the whole FAST exchange — the
+    // encrypted challenge, the OTP request, the strengthened reply key —
+    // keyed with RC4. `common/crypto.js`'s PRF covers enctype 23 because
+    // development exercises it; product refuses it here, before any key is
+    // made, and a session key of that type with it.
+    const withheldArmor = !principals.etypePermitted(
+      authenticator.subkey.etype) ? authenticator.subkey.etype :
+      (!principals.etypePermitted(ticketPart.key.etype) ?
+        ticketPart.key.etype : null);
+    if (withheldArmor !== null) {
+      log.debug('Leaving Krb5Fast.openAsRequest(). Withheld enctype.');
+      return this.refuse(14, 'STS-KRB-0159', 'the FAST armor ' +
+                         (withheldArmor === authenticator.subkey.etype ?
+                           'subkey' : 'ticket\'s session key') + ' is ' +
+                         kcrypto.etypeName(withheldArmor) + ', which this ' +
+                         'KDC does not use in product mode (RFC 8429 ' +
+                         'deprecates it)');
     }
     let armorKey: Key;
     try {
@@ -579,9 +651,13 @@ class Krb5Fast {
     const cipher = await kcrypto.etypeById(key.etype).encrypt(
       key.key, codec.KEY_USAGE.FX_COOKIE, body);
     log.debug('Leaving Krb5Fast.sealCookie().');
+    // The krbtgt kvno rides in the EncryptedData (#169), so the cookie can
+    // be opened after a rotation under the version it was sealed with.
     return new Uint8Array(Buffer.concat([
       Buffer.from(COOKIE_MAGIC, 'latin1'),
       Buffer.from(msgs.encEncryptedData({ etype: key.etype,
+                                          kvno: key.kvno === undefined
+                                            ? null : key.kvno,
                                           cipher: cipher }))]));
   }
 
@@ -597,15 +673,15 @@ class Krb5Fast {
       log.debug('Leaving Krb5Fast.openCookie(). Not ours.');
       return null;
     }
-    const key = await this.tgsKey(fast.realm);
-    if (!key) {
-      log.debug('Leaving Krb5Fast.openCookie(). No krbtgt key.');
-      return null;
-    }
     let body;
     try {
       const sealed = msgs.readEncryptedData(asn1.readTlv(
         new Uint8Array(bytes.subarray(4)), 0));
+      const key = await this.tgsKey(fast.realm, sealed.kvno);
+      if (!key) {
+        log.debug('Leaving Krb5Fast.openCookie(). No krbtgt key for it.');
+        return null;
+      }
       body = JSON.parse(Buffer.from(await kcrypto.etypeById(sealed.etype)
         .decrypt(key.key, codec.KEY_USAGE.FX_COOKIE, sealed.cipher))
         .toString('utf8'));

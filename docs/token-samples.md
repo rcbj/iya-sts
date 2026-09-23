@@ -3380,9 +3380,10 @@ KVNO Timestamp           Principal
 ```
 
 The key version is `krb5.kvno` (3) for every principal built from
-configuration. One key per `krb5.enctypes` entry, and the list includes RC4
-by default in both modes; see
-[#159](https://github.com/rcbj/iya-sts/issues/159).
+configuration. One key per `krb5.enctypes` entry. The list includes RC4 by
+default in development mode, as above; in product mode it never does, and no
+keytab carries an RC4 key there
+([#182](https://github.com/rcbj/iya-sts/issues/182)).
 
 ### SPNEGO tokens
 

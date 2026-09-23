@@ -69,6 +69,12 @@ function fakeDatabase() {
     const rows = function (list) {
       return Promise.resolve({ rows: list, rowCount: list.length });
     };
+    if (/^COMMIT$/.test(text) && db.hold) {
+      // A COMMIT the test is holding open, so a flush stays in flight.
+      return db.hold.then(function () {
+        return { rows: [], rowCount: 0 };
+      });
+    }
     if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(text)) {
       return rows([]);
     }
@@ -552,6 +558,60 @@ async function sectionD(t, db) {
           'a reset-all clears every setting this process knows is stored');
   t.check(db.appconfig.has('audit.maxEvents'),
           'and not the one it never saw, which is another node\'s to clear');
+
+  // A CHANGE UNDONE WHILE ITS OWN FLUSH IS OUT (2026-09-23). Carol is
+  // disabled (the flush below, held open at its COMMIT) and enabled again
+  // before it settles; meanwhile another node writes her entry from a copy
+  // that holds the lock. Merged against the SHADOW — which the held flush has
+  // not advanced — the enable looked like no change at all, the replicated
+  // lock won, and nothing ever wrote the enable: `sts_second_factor_doors`'s
+  // person still disabled after /users/enable, in single-node.
+  const lockKey = 'uid=lwwcarol,dc=lwwa';
+  if (!dirs.has('lwwa')) {
+    dirs.set('lwwa', new Map());
+  }
+  const carol = function (attributes) {
+    dirs.get('lwwa').set(lockKey, entry(lockKey, attributes));
+    persistence.directoryChanged();
+  };
+  const PERSON = { uid: ['lwwcarol'], entryuuid: ['lc-1'] };
+  const LOCK = ['000001010000Z'];
+  carol(Object.assign({}, PERSON));
+  await persistence.flush();
+  let release = null;
+  db.hold = new Promise(function (resolve) {
+    release = resolve;
+  });
+  carol(Object.assign({ pwdaccountlockedtime: LOCK }, PERSON));
+  const heldFlush = persistence.flush();
+  await tick(20);
+  carol(Object.assign({}, PERSON));
+  db.entries.set('lwwa\n' + lockKey, { realm: 'lwwa', dn_key: lockKey,
+    dn: lockKey, attrs: Object.assign({ pwdaccountlockedtime: LOCK,
+                                        description: ['node b'] }, PERSON),
+    origin: 'seed', created_at: '1', modified_at: '2' });
+  db.log.push({ seq: db.log.length + 1, origin: 'node-b', kind: 'directory',
+                realm: 'lwwa', key: lockKey });
+  const synced = persistence.syncNow();
+  await tick(20);
+  db.hold = null;
+  release();
+  await heldFlush;
+  await synced;
+  await persistence.flush();
+  await tick(20);
+  await persistence.flush();
+  const carolLive = dirs.get('lwwa').get(lockKey) || { attributes: {} };
+  t.check(!carolLive.attributes.pwdaccountlockedtime &&
+          String(carolLive.attributes.description) === 'node b',
+          'A CHANGE UNDONE WHILE ITS FLUSH WAS OUT SURVIVES A ROW ANOTHER ' +
+          'NODE WROTE MEANWHILE: the enable stays, and so does node B\'s ' +
+          'change', JSON.stringify(carolLive.attributes));
+  const carolStored = db.entries.get('lwwa\n' + lockKey) || { attrs: {} };
+  t.check(!carolStored.attrs.pwdaccountlockedtime &&
+          String(carolStored.attrs.description) === 'node b',
+          'and the store ends up holding both', JSON.stringify(
+            carolStored.attrs));
 
   realms.remove('lwwa');
   await persistence.flush();

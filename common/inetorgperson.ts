@@ -284,8 +284,39 @@ const INET_ORG_PERSON: SchemaRow[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// THE IDENTITY ASSURANCE CLAIMS (#128, 2026-09-23) — the attributes behind
+// OpenID Connect for Identity Assurance Claims Registration 1.0's section 4.1,
+// which no LDAP object class defines: SCHAC's two and this service's own
+// eight. A group of their own, drawn after the three classes and saying
+// plainly that it is not one.
+// ---------------------------------------------------------------------------
+const IDENTITY_CLAIMS: SchemaRow[] = [
+  { ldap: 'schacPersonalTitle', label: 'Title (honorific)',
+    rfc: 'SCHAC 1.5.0 (not RFC 4519)' },
+  { ldap: 'salutation', label: 'Salutation',
+    rfc: "this service's own (no standard type)" },
+  { ldap: 'schacCountryOfCitizenship', label: 'Nationalities',
+    rfc: 'SCHAC 1.5.0 (not RFC 4519)' },
+  { ldap: 'birthFamilyName', label: 'Family name at birth',
+    rfc: "this service's own (no standard type)" },
+  { ldap: 'birthGivenName', label: 'Given name at birth',
+    rfc: "this service's own (no standard type)" },
+  { ldap: 'birthMiddleName', label: 'Middle name at birth',
+    rfc: "this service's own (no standard type)" },
+  { ldap: 'alsoKnownAs', label: 'Also known as',
+    rfc: "this service's own (no standard type)" },
+  { ldap: 'placeOfBirthCountry', label: 'Country of birth',
+    rfc: "this service's own (no standard type)" },
+  { ldap: 'placeOfBirthRegion', label: 'Region of birth',
+    rfc: "this service's own (no standard type)" },
+  { ldap: 'placeOfBirthLocality', label: 'Locality of birth',
+    rfc: "this service's own (no standard type)" }
+];
+
+// ---------------------------------------------------------------------------
 // THE THREE CLASSES, IN INHERITANCE ORDER, WHICH IS ALSO THE ORDER A PAGE
-// SHOULD DRAW THEM IN.
+// SHOULD DRAW THEM IN — and, since #128, the identity-assurance group after
+// them.
 //
 // A reader who does not already know that "the inetOrgPerson attributes" means
 // the union of three object classes learns it from the headings, which is
@@ -307,6 +338,13 @@ const CLASSES: SchemaClass[] = [
           'did not: an email address, a photograph, a mobile number, a ' +
           'department.',
     attributes: INET_ORG_PERSON },
+  { id: 'identityClaims', name: 'Identity Assurance claims',
+    rfc: 'OpenID Connect for Identity Assurance Claims Registration 1.0',
+    oid: 'none — not an object class',
+    what: 'What the Claims Registration adds about a person: an honorific, ' +
+          'a salutation, nationalities, names at birth, other names and a ' +
+          'place of birth. No LDAP object class defines these.',
+    attributes: IDENTITY_CLAIMS },
 ];
 
 // Every row, flat, in class order. Built once — the rows are shared because

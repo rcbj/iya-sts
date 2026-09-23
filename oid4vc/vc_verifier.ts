@@ -2296,7 +2296,8 @@ class VcVerifier {
                     'credential issued to you after that will.');
     }
     if (statusRefused) {
-      return refuse('STS-VC-0072', 'The credential\'s status says it is ' +
+      return refuse(verified.statusErrorCode || 'STS-VC-0072',
+                    'The credential\'s status says it is ' +
                     'no longer good (' + (verified.statusDetail || 'revoked ' +
                     'or suspended') + '), so it signs nobody in.');
     }
@@ -2312,6 +2313,9 @@ class VcVerifier {
     return { ok: true, errorCode: '', reason: '', username: username,
              subject: row.subject, amr: assurance.amr, acr: assurance.acr,
              format: format, keyStorage: assurance.keyStorage,
+             // What the presentation disclosed, for the identity
+             // verification a wallet sign-in records (#127).
+             disclosed: verified.claims || {},
              holderKey: (verified.holderJwk.kty || '') +
                         (verified.holderJwk.crv ?
                           ' ' + verified.holderJwk.crv :
@@ -2461,26 +2465,61 @@ class VcVerifier {
   // verified (draft-ietf-oauth-status-list section 8.3: a token that failed
   // its own checks is not looked up). A credential this realm signed is read
   // from the realm's own lists; one a trusted issuer certificate verified has
-  // its list fetched and checked against that certificate's key. An ldp_vc
-  // whose presentation disclosed no status entry is let through here and
-  // nowhere else — the bar door asks for claims, not for the status — and a
-  // sign-in reads that credential's status from its register row instead.
+  // its list fetched and checked against that certificate's key.
+  //
+  // A CREDENTIAL WITH NO REFERENCE IS REFUSED BY DEFAULT (#165):
+  // `oid4vp.requireStatusReference`, read through `mode.valueInForce()` so a
+  // product realm reads its development-only `off` as `all`, and the
+  // per-issuer exemption `oid4vp.statusOptionalIssuers`, keyed by the
+  // thumbprint of the certificate that verified the credential. vc_status.ts's
+  // checkPresented() decides; this passes it the policy and the exemption.
+  //
+  // AN ldp_vc THAT DISCLOSED NO STATUS ENTRY is the case the policy could not
+  // see until #165: a bbs-2023 derived proof discloses what the holder
+  // chooses, the credentialStatus entries are part of what the issuer signed,
+  // and a presentation without them cannot be told from a credential that
+  // never had any. Every ldp_vc this realm issues carries them, so a missing
+  // entry means the holder withheld it — and a revoked credential passed the
+  // bar door by withholding it. The bar door's query now ASKS for
+  // `credentialStatus` (vc_verifier_config.ts's dcqlQuery()), and a
+  // presentation that did not disclose it is refused (STS-VC-0089) unless the
+  // rule is `off`, in development. A SIGN-IN is the exception: its query asks
+  // for the entry too, and the register (`vc_issued.disownedReason()`) reads
+  // that credential's status whether or not it was disclosed.
   // ---------------------------------------------------------------------------
   private async statusCheck(verified: any, format: string,
                             signIn: boolean): Promise<void> {
-    const { log, vcStatus } = this.deps;
+    const { log, vcStatus, mode } = this.deps;
     log.debug("Entering VcVerifier.statusCheck().");
     if (!verified || !verified.ok) {
       log.debug("Leaving VcVerifier.statusCheck(). Not verified.");
       return;
     }
     const own = !verified.issuerCertificatePem;
+    const policy = String(mode.valueInForce('oid4vp.requireStatusReference') ||
+                          'all');
     if (format === 'ldp_vc' && !(verified.credentialStatus || []).length) {
-      this.vpCheck(verified.checks, 'Credential status', true,
-        'no status entry was disclosed' + (signIn ?
-          '; the sign-in register holds this credential\'s status' : '') +
-        '.');
-      log.debug("Leaving VcVerifier.statusCheck(). Not disclosed.");
+      if (signIn || policy === 'off') {
+        this.vpCheck(verified.checks, 'Credential status', true,
+          'no status entry was disclosed' + (signIn ?
+            '; the sign-in register holds this credential\'s status' :
+            ', and oid4vp.requireStatusReference is off (development ' +
+            'only)') + '.');
+        log.debug("Leaving VcVerifier.statusCheck(). Not disclosed, and " +
+                  "not required.");
+        return;
+      }
+      const detail = 'the presentation disclosed no credentialStatus entry, ' +
+        'though the request asked for it: every ldp_vc this realm issues ' +
+        'carries one, so it was withheld, and a credential whose status is ' +
+        'withheld could be one that was revoked (oid4vp.' +
+        'requireStatusReference is ' + policy + ')';
+      this.vpCheck(verified.checks, 'Credential status', false, detail);
+      verified.ok = false;
+      verified.statusRefused = true;
+      verified.statusDetail = detail;
+      verified.statusErrorCode = 'STS-VC-0089';
+      log.debug("Leaving VcVerifier.statusCheck(). Not disclosed: refused.");
       return;
     }
     let key: any = null;
@@ -2499,7 +2538,8 @@ class VcVerifier {
       claims: format === 'ldp_vc' ? {} : verified.credentialClaims,
       credentialStatus: format === 'ldp_vc' ? verified.credentialStatus :
                         undefined,
-      key: key, algs: ISSUER_ALGS
+      key: key, algs: ISSUER_ALGS, policy: policy,
+      exempt: !own && this.statusOptional(verified.issuerCertificatePem)
     });
     this.vpCheck(verified.checks, 'Credential status', answer.ok,
                  answer.detail);
@@ -2507,8 +2547,46 @@ class VcVerifier {
       verified.ok = false;
       verified.statusRefused = true;
       verified.statusDetail = answer.detail;
+      verified.statusErrorCode = answer.errorCode || 'STS-VC-0072';
     }
     log.debug("Leaving VcVerifier.statusCheck(). " + answer.ok + ".");
+  }
+
+  // Is the trusted issuer certificate that verified a credential listed in
+  // `oid4vp.statusOptionalIssuers` (#165)? The setting takes a SHA-256
+  // thumbprint in any of the three spellings `certificateThumbprint()` makes
+  // — hex, colon-hex, base64url — so each is brought to lower-case hex and
+  // compared with the certificate's.
+  private statusOptional(pem: string): boolean {
+    const { log, config, stsCrypto } = this.deps;
+    log.debug("Entering VcVerifier.statusOptional().");
+    const listed = [].concat(config.value('oid4vp.statusOptionalIssuers') ||
+                             []).map(function (one: any) {
+      const raw = String(one || '').trim();
+      const hex = raw.replace(/:/g, '').toLowerCase();
+      if (/^[0-9a-f]{64}$/.test(hex)) {
+        return hex;
+      }
+      return /^[A-Za-z0-9_-]{43}$/.test(raw)
+        ? Buffer.from(raw, 'base64url').toString('hex') : '';
+    }).filter(function (one: string) {
+      return !!one;
+    });
+    if (!listed.length || !pem) {
+      log.debug("Leaving VcVerifier.statusOptional(). None listed.");
+      return false;
+    }
+    let mine = '';
+    try {
+      mine = stsCrypto.certificateThumbprint(pem, { format: 'hex' });
+    } catch (e) {
+      log.debug("Caught in VcVerifier.statusOptional(): " +
+                ((e && e.message) || e));
+      mine = '';
+    }
+    const exempt = !!mine && listed.indexOf(mine) >= 0;
+    log.debug("Leaving VcVerifier.statusOptional(). " + exempt);
+    return exempt;
   }
 
   // ---------------------------------------------------------------------------
@@ -3116,8 +3194,8 @@ class VcVerifier {
         // revocation is named for that, so an operator is sent to the
         // certificate rather than to the wallet.
         errorCodes.mark(res, (verified.revocationRefused && failed.length === 1)
-          ? 'STS-PKI-0129' : verified.statusRefused ? 'STS-VC-0072' :
-          'STS-VC-0041');
+          ? 'STS-PKI-0129' : verified.statusRefused ?
+          (verified.statusErrorCode || 'STS-VC-0072') : 'STS-VC-0041');
         res.status(400).type('application/json').send(JSON.stringify({
           error: 'invalid_request',
           error_description: 'The presentation was refused: ' +

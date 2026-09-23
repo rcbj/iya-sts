@@ -105,6 +105,8 @@ function theRuleAtTheBoundary(t) {
   }
   const before = asStored(web);
   const wasSignedOut = web.signedOutAt;
+  const wasHorizon = web.signOutHorizon;
+  const wasCleared = web.signOutClearedAt;
   const suffix = String(process.pid) + Math.random().toString(36).slice(2, 6);
   const autoKey = 'store-probe-auto-' + suffix + '@EXAMPLE.COM';
   const personKey = 'store-probe-person-' + suffix + '@EXAMPLE.COM';
@@ -139,13 +141,23 @@ function theRuleAtTheBoundary(t) {
             'AND THE RUNTIME STATE CAME FROM THE ROW — a sign-out made ' +
             'before the restart is still in force after it');
 
-    // 2. A replicated clear of that sign-out reaches it too.
+    // 2. A replicated clear of that sign-out reaches it too — as the
+    //    development-only undo's own instant (#111), since a row with NO
+    //    stamp no longer unstamps anything (the merge keeps the later one).
+    const unstamped = asStored(stale);
+    unstamped.signedOutAt = null;
+    handle.restore('', key, unstamped);
+    t.equal(principals.signedOutAt(spn) &&
+            principals.signedOutAt(spn).toISOString(),
+            '2026-01-02T03:04:05.000Z',
+            'A ROW WITHOUT THE STAMP DOES NOT UNSTAMP IT — each sign-out ' +
+            'field merges as the later instant (#111)');
     const cleared = asStored(stale);
-    cleared.signedOutAt = null;
+    cleared.signOutClearedAt = '2026-01-02T03:04:06.000Z';
     handle.restore('', key, cleared);
     t.equal(principals.signedOutAt(spn), null,
-            'a replicated clearSignOut() clears it — the runtime field is ' +
-            'taken both ways, not only when it is set');
+            'a replicated clearSignOut() clears it — its instant is later ' +
+            'than the stamp, and the runtime fields are taken from the row');
 
     // 3. A row the settings do not configure and nothing made at runtime.
     handle.restore('', retiredKey, {
@@ -234,6 +246,8 @@ function theRuleAtTheBoundary(t) {
     'because the rule exists for rows that must not be believed');
   } finally {
     web.signedOutAt = wasSignedOut;
+    web.signOutHorizon = wasHorizon;
+    web.signOutClearedAt = wasCleared;
     // Put back through the accessor's unguarded twin: remove() on keys this
     // section made, which are runtime-made and therefore removable.
     handle.remove('', autoKey);
@@ -328,7 +342,8 @@ function view(record) {
   return record ? { password: record.password, salt: record.salt, kvno: record.kvno,
                     etypes: record.etypes, description: record.description,
                     okAsDelegate: record.okAsDelegate, rid: record.pac && record.pac.rid,
-                    signedOutAt: record.signedOutAt ? new Date(record.signedOutAt).toISOString() : null }
+                    signedOutAt: record.signedOutAt ? new Date(record.signedOutAt).toISOString() : null,
+                    inForce: p.signedOutAt(record.name, record.realm) ? p.signedOutAt(record.name, record.realm).toISOString() : null }
                 : null;
 }
 
@@ -345,7 +360,15 @@ function view(record) {
   const spnKey = spnParts.join('/') + '@' + p.REALM;
   const krbtgtKey = 'krbtgt/' + p.REALM + '@' + p.REALM;
   const svc = p.find(spnParts);
-  const krbtgt = p.find(['krbtgt', p.REALM]);
+  // THE HELD RECORD, not find()'s answer: a product krbtgt has no password
+  // and no stored key in this child (#169), so find() answers null for it,
+  // while the configured record the restore rule protects is still there.
+  function heldKrbtgt() {
+    return p.all().filter(function (one) {
+      return one.name.join('/') + '@' + one.realm === krbtgtKey;
+    })[0] || null;
+  }
+  const krbtgt = heldKrbtgt();
   const report = { enabled: minted.enabled(), mode: config.value('global.mode'),
                    configuredBefore: { svc: view(svc), krbtgt: view(krbtgt) } };
 
@@ -379,16 +402,17 @@ function view(record) {
   report.afterRestore = {
     svcSame: p.find(spnParts) === svc,
     svc: view(p.find(spnParts)),
-    krbtgt: view(p.find(['krbtgt', p.REALM])),
+    krbtgt: view(heldKrbtgt()),
     alice: view(held('alice')),
     dana: view(held('dana')),
     erin: view(held('erin'))
   };
 
-  // Another process signs the service account back in, writing its own record.
+  // Another process clears the service account's sign-out (the development
+  // undo, as its own instant since #111), writing its own record.
   const other = JSON.parse(JSON.stringify(staleSvc));
   other.password = 'svc-other-SECRET-VALUE';
-  other.signedOutAt = null;
+  other.signOutClearedAt = '2026-01-02T03:04:06.000Z';
   put(spnKey, other);
   await minted.applyChange(change(spnKey));
   report.afterReplicatedClear = view(p.find(spnParts));
@@ -402,7 +426,7 @@ function view(record) {
   // A removal of krbtgt arrives, and a removal of dana.
   rows.delete(krbtgtKey);
   await minted.applyChange(change(krbtgtKey));
-  report.krbtgtAfterRemoval = view(p.find(['krbtgt', p.REALM]));
+  report.krbtgtAfterRemoval = view(heldKrbtgt());
   rows.delete('dana@' + p.REALM);
   await minted.applyChange(change('dana@' + p.REALM));
   report.danaAfterRemoval = view(p.all().filter(function (one) { return one.name[0] === 'dana'; })[0]);
@@ -423,6 +447,8 @@ function theDoorsInProductMode(t) {
     STS_MODE: 'product',
     STS_KEYS_SOURCE: 'persisted',
     STS_KEYS_KEK_PROVIDER: 'file',
+    // Set, and IGNORED in product since #169: the krbtgt carries no
+    // password there at all.
     KRB5_KRBTGT_PASSWORD: 'krbtgt-now-configured',
     KRB5_SERVICE_PASSWORD: 'svc-now-configured',
     KRB5_SERVICE_SALT: 'EXAMPLE.COMsvc-now'
@@ -451,9 +477,10 @@ function theDoorsInProductMode(t) {
           JSON.stringify(svc));
   t.equal(svc && svc.signedOutAt, '2026-01-02T03:04:05.000Z',
           'while the sign-out the stored row carried survives the restart');
-  t.equal(r.afterRestore.krbtgt && r.afterRestore.krbtgt.password,
-          'krbtgt-now-configured',
-          'and the krbtgt key is the configured one, not the one in the store');
+  t.check(!!r.afterRestore.krbtgt && r.afterRestore.krbtgt.password === null,
+          'and the krbtgt keeps the NO password its settings build (#169: ' +
+          'product keys it at random), not the one in the store',
+          JSON.stringify(r.afterRestore.krbtgt));
   t.equal(r.afterRestore.alice, null,
           'A DEVELOPMENT FIXTURE LEFT IN THE STORE IS NOT RESTORED INTO ' +
           'PRODUCT MODE — alice with the published password does not come ' +
@@ -464,12 +491,12 @@ function theDoorsInProductMode(t) {
   t.check(!!r.afterRestore.erin && r.afterRestore.erin.rid === 777001,
           'a restored person whose RID another holds is still restored — ' +
           'nothing is renumbered');
-  t.equal(r.afterReplicatedClear && r.afterReplicatedClear.signedOutAt, null,
+  t.equal(r.afterReplicatedClear && r.afterReplicatedClear.inForce, null,
           'ANOTHER PROCESS\'S clearSignOut() REACHES A CONFIGURED ACCOUNT');
   t.equal(r.afterReplicatedClear && r.afterReplicatedClear.password,
           'svc-now-configured',
           'without bringing that process\'s password with it');
-  t.equal(r.afterReplicatedSignOut && r.afterReplicatedSignOut.signedOutAt,
+  t.equal(r.afterReplicatedSignOut && r.afterReplicatedSignOut.inForce,
           '2026-05-06T07:08:09.000Z',
           'and another process\'s signOut() reaches it too');
   t.check(!!r.krbtgtAfterRemoval,

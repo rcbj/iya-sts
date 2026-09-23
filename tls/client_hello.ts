@@ -100,6 +100,10 @@ const HANDSHAKE_CLIENT_HELLO = 0x01;
 const RECORD_HEADER_BYTES = 5;
 const EXT_SERVER_NAME = 0x0000;
 const EXT_ALPN = 0x0010;
+// The two extensions a client adds only when it RESUMES a session (RFC 8446
+// sections 4.2.11 and 4.2.10). They are left out of `stack` — see `stack()`.
+const EXT_PRE_SHARED_KEY = 0x0029;
+const EXT_EARLY_DATA = 0x002a;
 const EXT_SIGNATURE_ALGORITHMS = 0x000d;
 const EXT_SUPPORTED_VERSIONS = 0x002b;
 
@@ -129,6 +133,9 @@ interface ParseResult {
 
 interface HelloInfo {
   ja4: string;
+  // `ja4` with the resumption extensions left out: what risk scoring
+  // compares, because one client has two JA4s — see `stack()`.
+  stack: string;
   version: string;
   sni: string;
   alpn: string[];
@@ -423,6 +430,32 @@ class ClientHello {
     return a + '_' + b + '_' + c;
   }
 
+  // -------------------------------------------------------------------------
+  // stack(hello) — the JA4 of this hello with `pre_shared_key` and
+  // `early_data` taken out of the extension list, before the count and the
+  // hash. NOT FoxIO's JA4, and never shown as one.
+  //
+  // WHY IT EXISTS: a TLS 1.3 client sends those two extensions only when it
+  // resumes a session, so ONE client produces TWO JA4s — the first
+  // connection's and every later one's. Measured 2026-09-23: node's fetch()
+  // sends 11 extensions on its first connection and 12 on every resumed one
+  // (0x0029 added), and Chrome does the same. Risk scoring compared the raw
+  // JA4, so every person's second request looked like a new TLS stack, a
+  // session was re-assessed, `new-tls-stack` fired, and the issuance policy
+  // asked for a security key. What risk means by "the same TLS stack" is the
+  // same library and configuration, which a resumption does not change.
+  // -------------------------------------------------------------------------
+  static stack(hello: ParsedHello, transport?: string): string {
+    log.debug("Entering ClientHello.stack().");
+    const fresh = Object.assign({}, hello, {
+      extensions: hello.extensions.filter(function (value) {
+        return value !== EXT_PRE_SHARED_KEY && value !== EXT_EARLY_DATA;
+      })
+    });
+    log.debug("Leaving ClientHello.stack().");
+    return ClientHello.ja4(fresh, transport);
+  }
+
   // The two ALPN characters of JA4's part a.
   private static alpnMark(first: Buffer | null): string {
     log.debug("Entering ClientHello.alpnMark().");
@@ -456,6 +489,7 @@ class ClientHello {
     log.debug("Leaving ClientHello.describe().");
     return {
       ja4: ClientHello.ja4(hello, 't'),
+      stack: ClientHello.stack(hello, 't'),
       version: VERSION_LABELS[highest] || '00',
       // Bounded, because the bytes are a stranger's and this is copied into
       // a header and onto authentication events.
@@ -585,6 +619,16 @@ class ClientHello {
       socket.on('data', onData);
       socket.once('error', onDone);
       socket.once('close', onDone);
+      // RESUMED, because the socket may arrive PAUSED (2026-09-23). With
+      // `global.proxyProtocol` on, `common/proxy_protocol.ts` is installed
+      // over this file and hands the socket on paused, the header stripped —
+      // right for the tls.Server beneath, and a `data` listener alone never
+      // makes an explicitly paused socket flow. Every connection through the
+      // balancer then waited out HELLO_WAIT_MS before its handshake began:
+      // ten seconds a request, the whole `cluster` mode. A socket straight
+      // from accept is flowing already, so this changes nothing there.
+      // handOver() pauses again before the TLS engine is given the socket.
+      socket.resume();
       log.debug("Leaving capture().");
     }
 
@@ -669,6 +713,10 @@ class ClientHello {
     if (info && typeof info.ja4 === 'string' && JA4_SHAPE.test(info.ja4)) {
       req[INFO] = {
         ja4: info.ja4,
+        // A front process from before `stack` existed sends none; the raw
+        // JA4 is then the only fingerprint there is.
+        stack: typeof info.stack === 'string' && JA4_SHAPE.test(info.stack)
+          ? info.stack : info.ja4,
         version: String(info.version || '').slice(0, 2),
         sni: String(info.sni || '').slice(0, 253),
         alpn: Array.isArray(info.alpn)
@@ -711,6 +759,7 @@ export = {
   MAX_HELLO_BYTES: ClientHello.MAX_HELLO_BYTES,
   parse: ClientHello.parse,
   ja4: ClientHello.ja4,
+  stack: ClientHello.stack,
   describe: ClientHello.describe,
   isGrease: ClientHello.isGrease,
   install: slot.forward('install'),

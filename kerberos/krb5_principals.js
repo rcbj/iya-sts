@@ -45,10 +45,18 @@
 //
 // **ALL OF THAT IS DEVELOPMENT MODE (2026-09-12).** In product mode the fixture
 // accounts, their literal passwords, the delegation rules and the second realm
-// are not created, nothing is created on demand, and the two accounts the
-// service needs — krbtgt and `krb5.servicePrincipal` — exist only where their
-// passwords are set to something other than the value this repository
-// publishes. See SEEDS_DEMO and buildDatabase().
+// are not created, nothing is created on demand, and the account
+// `krb5.servicePrincipal` names exists only where its password is set to
+// something other than the value this repository publishes. See SEEDS_DEMO
+// and buildDatabase().
+//
+// **AND SINCE #169 (2026-09-23) A PRODUCT KRBTGT IS RANDOM.** It is not
+// derived from `krb5.krbtgtPassword` at all: the key source's `krbtgtKeys()`
+// holds a random key per enctype, sealed on the directory entry
+// `krbtgt/<REALM>@<REALM>`, with the PREVIOUS versions a rotation keeps — so
+// a TGT sealed an instant before a rotation still opens. Development keeps
+// the password-derived krbtgt until somebody rotates it by hand. See THE
+// KRBTGT below and `kerberos/krb5_krbtgt_rotation.ts`.
 //
 // **AND SINCE LATER THE SAME DAY A PRODUCT KDC AUTHENTICATES THE DIRECTORY'S
 // PEOPLE.** The sentence here read *what product mode does NOT yet do is give
@@ -137,7 +145,8 @@ const cacheRegistry = require('../common/cache_registry');
 // a password printed in a public repository is an account anybody can use, and
 // a delegation rule nobody configured is a permission nobody granted, so none
 // of it is created. What is left is what the service NEEDS: this realm's
-// `krbtgt` and the account `krb5.servicePrincipal` names — each only where its
+// `krbtgt` — keyed at random from the directory since #169, never from a
+// password — and the account `krb5.servicePrincipal` names, only where its
 // password is not the published default (see `publishedDefault()` below).
 //
 // **CAPTURED WHEN THE DATABASE IS BUILT AND NOT READ PER REQUEST**, and that is
@@ -169,6 +178,9 @@ function publishedDefault(key) {
 // because the workflow has to be able to exercise it — Microsoft is retiring it
 // and a debugger whose only story is "that is deprecated" cannot help anybody
 // still running it — and taking 23 out is what a hardened deployment does.
+// IN DEVELOPMENT MODE ONLY since #182 (2026-09-23): a product realm reads the
+// list without it (RFC 8429) — see `configuredEtypes()` and
+// `etypePermitted()` below.
 //
 // A number the vendored codec does not implement is REFUSED rather than
 // dropped: a list that silently lost an entry would be a KDC offering less than
@@ -211,9 +223,15 @@ function parseEtypes(list) {
 // typo must not stop the service every other realm is on — so the realm's
 // context is left inactive, with the sentence as its reason, and its name is
 // not routed.
+//
+// READ THROUGH `mode.valueInForce()` SINCE #182 (2026-09-23): a product realm
+// reads the list without `23` (rc4-hmac, which RFC 8429 deprecates) and says
+// so once (STS-CORE-0106), so its principals are built with no RC4 etype at
+// all. The build is not the only guard — the mode can change under a built
+// database — which is what `etypePermitted()` below is for.
 function configuredEtypes(realmId) {
   log.debug("Entering configuredEtypes().");
-  const parsed = parseEtypes(config.value('krb5.enctypes'));
+  const parsed = parseEtypes(mode.valueInForce('krb5.enctypes'));
   if (parsed.problems.length) {
     const sentence = 'krb5.enctypes (KRB5_ENCTYPES) names ' +
       parsed.problems.join(', ') + ', which the Kerberos codec here ' +
@@ -470,12 +488,22 @@ function definitionsFor(ctx) {
   log.debug("Entering definitionsFor(). realm=" + ctx.REALM);
   const REALM = ctx.REALM;
   const DOMAIN = ctx.DOMAIN;
-  const KRBTGT_DEFINITION = {
+  // PRODUCT'S KRBTGT HAS NO PASSWORD (#169): `directoryKeys` says its key is
+  // the key source's, and `register()` then leaves `password` null, so no
+  // cache miss can ever derive a krbtgt key from anything.
+  const KRBTGT_DEFINITION = ctx.KRBTGT_FROM_PASSWORD ? {
     name: ['krbtgt', REALM],
     type: 2,                                 // NT-SRV-INST
     password: ctx.KRBTGT_PASSWORD,
     salt: userSalt(REALM, 'krbtgt'),
     description: 'the ticket-granting service, whose key seals every TGT'
+  } : {
+    name: ['krbtgt', REALM],
+    type: 2,                                 // NT-SRV-INST
+    directoryKeys: true,
+    salt: userSalt(REALM, 'krbtgt'),
+    description: 'the ticket-granting service, whose key seals every TGT: ' +
+                 'a RANDOM key kept sealed on the directory and rotated'
   };
 
   const DEFINITIONS = [
@@ -985,16 +1013,30 @@ function realmForService(nameComponents) {
 //     configured account exists because the settings build it, and nothing in
 //     this service deletes one.
 //
-// **WHAT IS RUNTIME STATE ON A CONFIGURED PRINCIPAL IS EXACTLY ONE FIELD**, and
-// that is a finding rather than a guess: every write to a configured principal
-// after buildDatabase() is signOut() and clearSignOut() (called from
-// `logout/logout.ts`, `admin-core/admin_actions.ts` and `krb5_kdc.js`'s AS
-// handler), and both write `signedOutAt`. `revoked` looks like runtime state
-// and is not — it is set only by the `locked` fixture's definition and nothing
-// mutates it. directoryUser() moves `kvno`, `salt` and `etypes`, but only on a
+// **WHAT IS RUNTIME STATE ON A CONFIGURED PRINCIPAL IS THE SIGN-OUT, IN THREE
+// FIELDS**, and that is a finding rather than a guess: every write to a
+// configured principal after buildDatabase() is signOut() (from
+// `logout/logout.ts`) or clearSignOut() (the console's development-only
+// restore-kerberos, `admin-core/admin_actions.ts`). signOut() writes
+// `signedOutAt` and `signOutHorizon`; clearSignOut() writes `signOutClearedAt`
+// (#111 — the KDC's AS handler cleared the stamp until then, and no longer
+// writes anything here). `revoked` looks like runtime state and is not — it is
+// set only by the `locked` fixture's definition and nothing mutates it.
+// directoryUser() moves `kvno`, `salt` and `etypes`, but only on a
 // `directoryKeys` record, which is restored whole. A field that becomes runtime
 // state later is a row added to RUNTIME_FIELDS, in the same commit as its first
 // writer — or a restart silently undoes that writer's work.
+//
+// **ALL THREE ARE INSTANTS, AND ALL THREE MERGE BY THE LATER ONE (#111).** An
+// incoming row does not REPLACE them: reconcileRestored() keeps whichever of
+// the held and the incoming value is later, for a configured principal and for
+// a runtime-made one restored whole alike. A sign-out can therefore never be
+// lost to another node's write of the same row that carried an older copy —
+// the last-writer-wins race `kerberos/CLAUDE.md` recorded on 2026-09-14, when
+// an AS exchange on one node could land its clear after a sign-out committed
+// on another. Nothing moves a stamp backwards any more: the undo is a THIRD
+// instant (`signOutClearedAt`) that beats a stamp older than itself, rather
+// than a null that a max could not tell from "never".
 //
 // **NOTHING IS WRITTEN BACK.** A stale stored row is corrected the next time
 // anything writes that key (a sign-out writes the WHOLE record this process
@@ -1002,7 +1044,8 @@ function realmForService(nameComponents) {
 // applier would be two processes with different settings exchanging one row
 // for ever — the one unbounded failure `persistence/CLAUDE.md` warns about.
 // ---------------------------------------------------------------------------
-const RUNTIME_FIELDS = ['signedOutAt'];
+const RUNTIME_FIELDS = ['signedOutAt', 'signOutHorizon',
+                        'signOutClearedAt'];
 
 // The keys buildDatabase() registered from settings and code are
 // `ctx.configuredKeys`, one set per realm's context. The default realm's is
@@ -1090,13 +1133,14 @@ function reconcileRestored(key, incoming, held, realmId, partition) {
                'process\'s settings build, in ' + differing.join(', ') + '. ' +
                'The settings were kept; ' +
                'only ' + RUNTIME_FIELDS.join(', ') + ' ' +
-               'was taken from the row. The stored row is corrected the next ' +
+               'were merged from the row, each as the later of the two. The ' +
+               'stored row is corrected the next ' +
                'time this principal is written.');
     }
-    RUNTIME_FIELDS.forEach(function (field) {
-      here[field] = incoming[field] === undefined ? null : incoming[field];
-    });
-    log.debug('Leaving reconcileRestored(). Configured; runtime state taken.');
+    // THE LATER OF THE TWO, NEVER THE ROW'S ALONE (#111) — see the paragraph
+    // above RUNTIME_FIELDS.
+    mergeSignOut(here, incoming);
+    log.debug('Leaving reconcileRestored(). Configured; runtime state merged.');
     return here;
   }
   if (incoming.autoCreated || incoming.directoryKeys) {
@@ -1111,8 +1155,16 @@ function reconcileRestored(key, incoming, held, realmId, partition) {
                'keeps its SID — but a service authorizing on the PAC cannot ' +
                'tell the two apart.');
     }
+    // Restored whole — except the sign-out, which is the later of what this
+    // process holds and what the row says (#111): another node writing this
+    // person's row from a copy taken before a sign-out here must not unstamp
+    // them.
+    const whole = withKeyCache(incoming);
+    if (here && here !== incoming) {
+      mergeSignOut(whole, here);
+    }
     log.debug('Leaving reconcileRestored(). Runtime-made; restored whole.');
-    return withKeyCache(incoming);
+    return whole;
   }
   log.warn(errorCodes.tag('STS-KRB-0112') + 'krb5: the stored principal ' +
            key +
@@ -1410,11 +1462,19 @@ function register(def) {
     // never log back in. It does NOT reach a SERVICE TICKET already in a cache,
     // because the service that accepts one never contacts the KDC; that is a
     // fact about Kerberos rather than a gap here, and /logout says so on the
-    // row rather than implying a completeness it has not got. And it is CLEARED
-    // by the next successful AS exchange, in handleAsReq(), because the ticket
-    // that exchange mints is newer than the instant and leaving a stale one
-    // behind would refuse the TGS-REQ that immediately follows it.
-    signedOutAt: null
+    // row rather than implying a completeness it has not got. And it is NOT
+    // cleared by the next successful AS exchange (#111): it was until
+    // 2026-09-23, which put every ticket from before the sign-out back into
+    // service the moment the person authenticated again. The two reasons that
+    // clear gave — whole seconds, and two clocks — are answered in the
+    // comparison instead; see signOut() below.
+    signedOutAt: null,
+    // Until when the stamp above matters: the latest a ticket authenticated
+    // before it could still be presented or renewed. See signOut().
+    signOutHorizon: null,
+    // The development-only undo, as an instant that beats every stamp not
+    // later than itself. See clearSignOut().
+    signOutClearedAt: null
   };
   // THE DERIVED-KEY CACHE IS ATTACHED SEPARATELY AND IS NOT ENUMERABLE — see
   // withKeyCache() below for why.
@@ -1556,13 +1616,24 @@ function sameName(a, b) {
 }
 
 // ---------------------------------------------------------------------------
-// THE KRBTGT, AND THE ONE REFUSAL IT CARRIES IN PRODUCT MODE.
+// THE KRBTGT.
 //
 // Its key seals every TGT, so a krbtgt derived from the published
 // `krbtgt-mock-password` is a key anybody can forge a ticket-granting ticket
-// with — a golden ticket, handed out in the README. Product mode refuses to
-// create it; the KDC then issues nothing, which is the truthful state of a KDC
-// nobody gave a key. The reason is `ctx.krbtgtReason`.
+// with — a golden ticket, handed out in the README. Product mode refused to
+// create it until #169 (`STS-KRB-0062`, retired) and asked for a password of
+// the operator's own instead.
+//
+// **SINCE #169 (2026-09-23) PRODUCT READS NO PASSWORD FOR IT AT ALL.** The
+// krbtgt is registered with `directoryKeys` and no password, and its key is
+// the key source's `krbtgtKeys()` — a RANDOM key per enctype, made once per
+// realm and kept sealed on the directory, with the previous versions a
+// rotation keeps (`storedService()` below builds the principal from it). Until
+// a key is stored `find()` answers null for it and the KDC issues nothing,
+// saying why through `krbtgtUnavailableReason()`. Development derives it from
+// `krb5.krbtgtPassword` as before, so a reader can decrypt a TGT — until a
+// rotation BY HAND stores a random one, which then wins exactly as a stored
+// service key wins over a configured account.
 // ---------------------------------------------------------------------------
 
 // A principal built from settings and code, which a restore may not override.
@@ -1597,17 +1668,9 @@ function buildDatabase(ctx) {
   const defs = definitionsFor(ctx);
   const service = configuredServiceDefinition(ctx);
   let serviceRegistered = false;
-  if (!ctx.SEEDS_DEMO &&
-      defs.krbtgt.password === publishedDefault('krb5.krbtgtPassword')) {
-    ctx.krbtgtReason = 'product mode refuses the published default ' +
-      'krb5.krbtgtPassword (KRB5_KRBTGT_PASSWORD): a krbtgt key derived from ' +
-      'it would let anybody forge a ticket-granting ticket. ' +
-      'krbtgt/' + ctx.REALM + ' ' +
-      'was NOT created, so this KDC issues no ticket until it is set.';
-    log.warn(errorCodes.tag('STS-KRB-0062') + 'krb5: ' + ctx.krbtgtReason);
-  } else {
-    registerConfigured(defs.krbtgt);
-  }
+  // Registered in both modes (#169): from the password in development, and
+  // with no password — its key the key source's — in product.
+  registerConfigured(defs.krbtgt);
   if (ctx.SEEDS_DEMO) {
     defs.fixtures.forEach(function (def) {
       if (service && !serviceRegistered && sameName(def.name, service.name)) {
@@ -1626,9 +1689,10 @@ function buildDatabase(ctx) {
              'and their rules' +
              (ctx.isDefault ? ', and the ' + TRUSTED_REALM + ' realm and ' +
                               'trust' : '') + ') were NOT ' +
-             'created. This KDC holds krbtgt/' + ctx.REALM + ' and ' +
+             'created. This KDC holds krbtgt/' + ctx.REALM + ' (a random ' +
+             'key kept sealed on the directory) and ' +
              (ctx.serviceAccount.spn || 'no service account') + ' where ' +
-             'their passwords are configured, and nothing else.');
+             'its password is configured, and nothing else.');
   }
   if (service && !serviceRegistered) {
     registerConfigured(service);
@@ -1739,7 +1803,7 @@ function inactiveContext(id, reason) {
     REALM: name, DOMAIN: name.toLowerCase(), SEEDS_DEMO: false,
     KDC_ETYPES: [], KVNO: null, USER_PASSWORD: null,
     AUTO_SERVICE_PASSWORD: null, SERVICE_DOMAINS: [], DOMAIN_SID: '',
-    KRBTGT_PASSWORD: null,
+    KRBTGT_PASSWORD: null, KRBTGT_FROM_PASSWORD: false,
     serviceAccount: { spn: '', available: false, reason: reason },
     krbtgtReason: reason, configuredKeys: new Set(),
     signature: builtFromSignature(realms.get(id))
@@ -1753,6 +1817,9 @@ function buildContext(realm) {
     const name = isDefault ? String(config.value('krb5.realm')) :
                              nameOf(realm.id);
     const etypes = configuredEtypes(realm.id);
+    // Where the krbtgt key comes from, decided in THIS realm's mode when its
+    // database is built (#169) — the same capture SEEDS_DEMO is.
+    const fromPassword = mode.derivesKrbtgtFromPassword();
     const built = {
       id: realm.id, isDefault: isDefault, active: true, inactiveReason: '',
       REALM: name,
@@ -1766,7 +1833,11 @@ function buildContext(realm) {
       AUTO_SERVICE_PASSWORD: config.value('krb5.autoServicePassword'),
       SERVICE_DOMAINS: serviceDomainsFor(),
       DOMAIN_SID: config.value('krb5.domainSid'),
-      KRBTGT_PASSWORD: config.value('krb5.krbtgtPassword'),
+      // Development's only (the `onlyWhile` marker): product reads no
+      // password for krbtgt, so it does not ask for one.
+      KRBTGT_PASSWORD: fromPassword ?
+        mode.valueInForce('krb5.krbtgtPassword') : null,
+      KRBTGT_FROM_PASSWORD: fromPassword,
       serviceAccount: { spn: '', available: false, reason: '' },
       krbtgtReason: '',
       configuredKeys: new Set(),
@@ -1966,11 +2037,42 @@ buildContext(realms.DEFAULT_REALM);
 // SIGNING OUT, WHICH IS A STATEMENT ABOUT TICKETS AND NOT ABOUT THE ACCOUNT.
 //
 // `signOut()` stamps the instant described on `signedOutAt` above;
-// `clearSignOut()` removes it, which is what a fresh AS exchange does and what
-// the console's undo does. `signedOut()` is the reader the KDC's TGS handler
-// calls, and it answers with the DATE rather than a boolean so that the refusal
-// can say when — "the ticket was issued at X and this principal signed out at
-// Y" is a sentence somebody can act on, and "revoked" on its own is not.
+// `clearSignOut()` is the console's DEVELOPMENT-ONLY undo (restore-kerberos,
+// refused in product through `mode.opensTestControls()`). `signedOutAt()` is
+// the reader the KDC's handlers call, and it answers with the DATE rather than
+// a boolean so that the refusal can say when — "the ticket was issued at X and
+// this principal signed out at Y" is a sentence somebody can act on, and
+// "revoked" on its own is not.
+//
+// **NOTHING CLEARS THE STAMP ON A FRESH AUTHENTICATION ANY MORE (#111,
+// 2026-09-23).** The KDC's AS handler did, and that re-accepted every
+// ticket-granting ticket from before the sign-out — a renewal of one included,
+// because a renewal keeps `authtime` — the moment the person ran `kinit`
+// again, for up to the renew-till of the oldest. The two reasons it gave are
+// answered where they arose instead:
+//
+//   * **WHOLE SECONDS.** `authtime` is a KerberosTime and carries none; the
+//     stamp has milliseconds. The KDC compares `authtime` with the stamp
+//     rounded UP to the next whole second (`signOutBoundary()`), and an AS
+//     exchange for a principal whose boundary is still ahead waits for it
+//     before it takes `authtime` — at most one second. Every ticket
+//     authenticated before the sign-out is refused and every one authenticated
+//     after it is accepted, with no hole either way.
+//   * **ONE CLOCK.** The stamp is taken on the KDC's clock (`kdcNowMs()`, which
+//     applies `krb5.clockOffset` exactly as the KDC's `now()` does), so the two
+//     instants compared are on the same clock. CHANGING `krb5.clockOffset`
+//     between a sign-out and a TGS-REQ moves one side of the comparison and not
+//     the other; that is what the offset is for, and it is stated rather than
+//     corrected.
+//
+// **AND THE STAMP IS BOUNDED.** No ticket authenticated before the sign-out can
+// outlive `signedOutAt + max(krb5.ticketLifetimeSeconds,
+// krb5.renewLifetimeSeconds) + krb5.clockSkew`: it was issued before the stamp,
+// its renew-till cannot pass that, and every renewal after the sign-out is
+// refused. That instant is stored beside the stamp as `signOutHorizon` — the
+// later of the one already stored and the one today's settings give — and past
+// it the stamp answers as none. Nothing is swept: an expired stamp is inert on
+// the row until the next sign-out overwrites it, so no scheduler job is owed.
 //
 // It creates nothing. A name nobody has ever authenticated as has no principal
 // here, and stamping one into existence would put an account in the database
@@ -1979,6 +2081,41 @@ buildContext(realms.DEFAULT_REALM);
 // one. So a sign-out for an unknown principal is reported as having reached
 // nothing, and /logout prints that rather than a success it did not have.
 // ---------------------------------------------------------------------------
+
+// The KDC's clock, in milliseconds: `krb5_kdc.js`'s `now()` without the Date.
+// Read per call, for that function's reason — the offset is settable at
+// runtime. No Entering/Leaving pair: it is on the hot path, under every
+// reader of a stamp, beside asDate().
+function kdcNowMs() {
+  // As IN FORCE (#181): the offset is development's, 0 in a product realm.
+  return Date.now() +
+    (Number(mode.valueInForce('krb5.clockOffset')) || 0) * 1000;
+}
+
+// The first whole second at or after a stamp — the smallest `authtime` a
+// ticket can carry and still be newer than the sign-out. KerberosTime is
+// truncated to the second on the wire (krb5_asn1.js), so an authtime earlier
+// than the stamp is always earlier than this and one taken at or after this is
+// never refused. Hot path, for kdcNowMs()'s reason.
+function signOutBoundary(stamp) {
+  const at = asDate(stamp);
+  if (!at) {
+    return null;
+  }
+  return new Date(Math.ceil(at.getTime() / 1000) * 1000);
+}
+
+// The latest a ticket authenticated before `atMs` can still be presented or
+// renewed, on today's settings.
+function horizonAfter(atMs) {
+  log.debug("Entering horizonAfter().");
+  const longest = Math.max(Number(config.value('krb5.ticketLifetimeSeconds')),
+                           Number(config.value('krb5.renewLifetimeSeconds')));
+  const skew = Number(config.value('krb5.clockSkew'));
+  log.debug("Leaving horizonAfter().");
+  return new Date(atMs + (longest + skew) * 1000);
+}
+
 function signOut(nameComponents, realm, at) {
   log.debug("Entering signOut(). principal=" +
             (nameComponents || []).join('/'));
@@ -1987,7 +2124,13 @@ function signOut(nameComponents, realm, at) {
     log.debug("Leaving signOut(). No such principal.");
     return null;
   }
-  principal.signedOutAt = asDate(at) || new Date();
+  // On the KDC's clock (#111), the one `authtime` is taken on.
+  principal.signedOutAt = asDate(at) || new Date(kdcNowMs());
+  // The later of the stored horizon and today's: a stamp moved forward by a
+  // second sign-out must not shorten the life of the first one's refusal
+  // because the lifetimes were lowered in between.
+  principal.signOutHorizon = laterOf(principal.signOutHorizon,
+    horizonAfter(principal.signedOutAt.getTime()));
   // WRITTEN BACK THROUGH THE STORE, and not merely mutated (2026-09-08). The
   // principal is an object HELD in `principals`, so stamping a field on it
   // changes this process's memory and nothing else: `realms.map()`
@@ -2002,25 +2145,35 @@ function signOut(nameComponents, realm, at) {
   log.info('krb5: ' + principal.name.join('/') + '@' + principal.realm + ' ' +
       'signed out at ' +
            principal.signedOutAt.toISOString() + '. A TGS-REQ presenting a ' +
-           'ticket issued before that is now refused KDC_ERR_TGT_REVOKED ' +
-           '(20). A service ticket already in a cache still works against ' +
-           'the service that accepts it — nothing contacts this KDC on that ' +
-           'exchange.');
+           'ticket authenticated before that is now refused ' +
+           'KDC_ERR_TGT_REVOKED (20), whatever AS exchanges follow, until ' +
+           asDate(principal.signOutHorizon).toISOString() + ', when no such ' +
+           'ticket can still be valid. A service ticket already in a cache ' +
+           'still works against the service that accepts it — nothing ' +
+           'contacts this KDC on that exchange.');
   log.debug("Leaving signOut(). Stamped " +
             principal.signedOutAt.toISOString() + ".");
   return principal;
 }
 
+// DEVELOPMENT ONLY, and it is the caller's to refuse in product
+// (`admin-core/admin_actions.ts`, `mode.opensTestControls()`). It does not
+// null the stamp: a null cannot win a merge by the later instant, so another
+// node's copy would put the stamp straight back. It writes `signOutClearedAt`
+// instead — an instant that beats every stamp not later than itself, and loses
+// to the next sign-out.
 function clearSignOut(nameComponents, realm) {
   log.debug("Entering clearSignOut(). principal=" +
             (nameComponents || []).join('/'));
   const principal = find(nameComponents, realm);
-  if (!principal || !principal.signedOutAt) {
+  const was = principal ? effectiveSignOut(principal) : null;
+  if (!was) {
     log.debug("Leaving clearSignOut(). Nothing was stamped.");
     return null;
   }
-  const was = asDate(principal.signedOutAt) || new Date(0);
-  principal.signedOutAt = null;
+  // Never earlier than the stamp it clears, whatever the clock offset did in
+  // between — a clear that lost to its own stamp would be no clear at all.
+  principal.signOutClearedAt = new Date(Math.max(kdcNowMs(), was.getTime()));
   // Through the store, for signOut()'s reason above — and this direction
   // matters just as much: a CLEARED stamp that never replicated would leave
   // another process refusing every TGS-REQ from somebody who has signed back
@@ -2070,11 +2223,67 @@ function asDate(value) {
   return isNaN(at.getTime()) ? null : at;
 }
 
+// The later of two instants, as whichever VALUE was later (a Date or the ISO
+// string a stored row carries), or null when neither is one. The merge every
+// sign-out field obeys (#111). Hot path, for asDate()'s reason: the applier
+// calls it for every replicated principal.
+function laterOf(a, b) {
+  const x = asDate(a);
+  const y = asDate(b);
+  if (!x) {
+    return y ? b : null;
+  }
+  if (!y) {
+    return a;
+  }
+  return y.getTime() > x.getTime() ? b : a;
+}
+
+// `target`'s three sign-out fields become the later of its own and `other`'s.
+function mergeSignOut(target, other) {
+  log.debug("Entering mergeSignOut().");
+  RUNTIME_FIELDS.forEach(function (field) {
+    target[field] = laterOf(target[field], other && other[field]);
+  });
+  log.debug("Leaving mergeSignOut().");
+  return target;
+}
+
+// The stamp IN FORCE on a record, as a Date, or null: none was made, the
+// development-only undo is later than it, or its horizon has passed on the
+// KDC's clock. A record with a stamp and no horizon is one a test wrote by
+// hand; it is held to be in force, the stricter reading. Hot path, for
+// asDate()'s reason — every TGS-REQ and every AS-REQ asks.
+function effectiveSignOut(principal) {
+  const at = asDate(principal && principal.signedOutAt);
+  if (!at) {
+    return null;
+  }
+  const cleared = asDate(principal.signOutClearedAt);
+  if (cleared && cleared.getTime() >= at.getTime()) {
+    return null;
+  }
+  const horizon = asDate(principal.signOutHorizon);
+  if (horizon && kdcNowMs() >= horizon.getTime()) {
+    return null;
+  }
+  return at;
+}
+
 function signedOutAt(nameComponents, realm) {
   log.debug("Entering signedOutAt().");
   const principal = find(nameComponents, realm);
   log.debug("Leaving signedOutAt().");
-  return asDate(principal && principal.signedOutAt);
+  return effectiveSignOut(principal);
+}
+
+// Until when the stamp in force matters, or null when none is in force.
+function signOutHorizon(nameComponents, realm) {
+  log.debug("Entering signOutHorizon().");
+  const principal = find(nameComponents, realm);
+  const inForce = effectiveSignOut(principal);
+  log.debug("Leaving signOutHorizon().");
+  return inForce ? asDate(principal.signOutHorizon) : null;
 }
 
 // Every principal currently carrying one, for the console and for /logout's
@@ -2086,10 +2295,12 @@ function signedOutPrincipals() {
   current();
   const out = [];
   principals.forEach(function (principal) {
-    if (asDate(principal.signedOutAt)) {
+    const inForce = effectiveSignOut(principal);
+    if (inForce) {
       out.push({ name: principal.name.slice(0), realm: principal.realm,
                  principal: principal.name.join('/') + '@' + principal.realm,
-                 signedOutAt: asDate(principal.signedOutAt) });
+                 signedOutAt: inForce,
+                 horizon: asDate(principal.signOutHorizon) });
     }
   });
   log.debug("Leaving signedOutPrincipals(). " + out.length + " principal(s).");
@@ -2260,6 +2471,11 @@ function withKeyCache(principal) {
 // ONE OBJECT, VALIDATED WHOLE, for `admin.js`'s `setLogoutReader()` reason: a
 // source that answered services and not people would give a product KDC a
 // keytab path and leave every person refused with nothing saying why.
+//
+// `krbtgtKeys()` (#169) is an OPTIONAL member, like #173's two: this realm's
+// random krbtgt key and its kept versions, in `serviceKeys()`'s shape. A
+// source without it — the parent project's jobs have none — leaves a
+// development krbtgt derived from its password, and a product one absent.
 //
 // **A PROCESS WITH NO SOURCE BEHAVES EXACTLY AS IT DID**, which is every
 // in-process caller that never loads the directory: development mode keys users
@@ -2472,8 +2688,10 @@ function directoryUser(name) {
         extraSids: ['S-1-18-1', 'S-1-5-11']
       }
     });
-    if (kept && kept.signedOutAt) {
-      record.signedOutAt = kept.signedOutAt;
+    // The sign-out, all three of its fields (#111): a person re-keyed after
+    // signing out is still signed out.
+    if (kept) {
+      mergeSignOut(record, kept);
     }
     record.kvno = answer.kvno;
     principals.set(key, record);
@@ -2529,7 +2747,7 @@ function attachRetained(principal, answer) {
 function retainedKeyFor(principal, etype, kvno) {
   log.debug("Entering retainedKeyFor().");
   if (!principal || !principal.directoryKeys || kvno === null ||
-      kvno === undefined) {
+      kvno === undefined || !etypePermitted(etype)) {
     log.debug("Leaving retainedKeyFor().");
     return null;
   }
@@ -2588,17 +2806,28 @@ function lookupUser(nameComponents, realm) {
 // SPN keeps that account's `okAsDelegate`, delegation rules and PAC identity
 // and replaces only its KEY — and over a plain service shape where none does.
 //
-// `krbtgt/*` is never asked: the ticket-granting key is the one key an operator
-// may not replace from a console, because every TGT in the realm is sealed
-// under it.
+// **THIS REALM'S OWN KRBTGT IS ASKED TOO, SINCE #169 (2026-09-23)**, through
+// the key source's `krbtgtKeys()` rather than `serviceKeys()`: the krbtgt key
+// is not an operator's to create or replace from the service-principal
+// controls, and has a rotation of its own (`krb5_krbtgt_rotation.ts`). A
+// stored krbtgt key is built over the CONFIGURED krbtgt record, and carries
+// its previous versions like any stored key, so `ticketKeyFor()` opens a TGT
+// sealed under a kept kvno and refuses one under a kvno neither current nor
+// kept with KRB_AP_ERR_BADKEYVER. `krbtgt/<another realm>` — the inter-realm
+// trust key — is never asked: it is a secret shared with the partner and not
+// this realm's to rotate.
 // ---------------------------------------------------------------------------
 function storedService(nameComponents, realm) {
   log.debug("Entering storedService().");
   const ctx = current();
   const REALM = ctx.REALM;
+  const krbtgt = Array.isArray(nameComponents) &&
+    String(nameComponents[0]).toLowerCase() === 'krbtgt';
   if (!keySource || !ctx.active || !Array.isArray(nameComponents) ||
       nameComponents.length < 2 ||
-      String(nameComponents[0]).toLowerCase() === 'krbtgt' ||
+      (krbtgt && (nameComponents.length !== 2 ||
+                  String(nameComponents[1]) !== REALM ||
+                  typeof keySource.krbtgtKeys !== 'function')) ||
       (realm || REALM) !== REALM) {
     log.debug("Leaving storedService().");
     return null;
@@ -2606,7 +2835,8 @@ function storedService(nameComponents, realm) {
   log.debug('Entering storedService(). spn=' + nameComponents.join('/'));
   let answer = null;
   try {
-    answer = keySource.serviceKeys(nameComponents.join('/'));
+    answer = krbtgt ? keySource.krbtgtKeys()
+                    : keySource.serviceKeys(nameComponents.join('/'));
   } catch (e) {
     // Reported and treated as no stored key: the configured account, if any,
     // still answers — which is what the service did before a key was stored.
@@ -2638,7 +2868,9 @@ function storedService(nameComponents, realm) {
            groups: [RID.DOMAIN_COMPUTERS],
            userAccountControl: UAC.WORKSTATION_TRUST_ACCOUNT, extraSids: [],
            fullName: null, passwordMustChange: null },
-    signedOutAt: null
+    signedOutAt: null,
+    signOutHorizon: null,
+    signOutClearedAt: null
   }, base || {});
   principal.password = null;
   principal.directoryKeys = true;
@@ -2680,6 +2912,16 @@ function find(nameComponents, realm) {
   const held = withKeyCache(
     principals.get(nameComponents.join('/') + '@' +
                    (realm || ctx.REALM))) || null;
+  // A PRODUCT KRBTGT WITH NO STORED KEY (#169) — none made yet, or a record
+  // this process cannot open — is NO krbtgt: the record holds no password to
+  // derive from, and answering it would put a principal with no key in front
+  // of every issuance. `krbtgtUnavailableReason()` says why.
+  if (held && held.directoryKeys && held.type === 2 &&
+      String(held.name[0]) === 'krbtgt' && held.realm === ctx.REALM &&
+      String(held.name[1]) === ctx.REALM) {
+    log.debug("Leaving find(). The krbtgt has no stored key.");
+    return null;
+  }
   // A DIRECTORY PERSON IS READ AGAIN FROM THE SOURCE (2026-09-12). Their
   // record's key cache holds whatever the LAST AS lookup found, so a TGS naming
   // them — as the service a ticket is for, or the ticket being presented —
@@ -2914,6 +3156,16 @@ function findOrCreateService(nameComponents, realm) {
 // file could reach for is the shared development one — see register().
 async function longTermKey(principal, etype) {
   log.debug("Entering longTermKey().");
+  // BEFORE THE CACHE (#182): a key derived while the realm was in development
+  // may still be cached, and product uses no RC4 key — derived, stored or
+  // cached. A caller that meets this throw refuses the way it refuses any
+  // key it cannot have: pre-authentication, a ticket that will not open.
+  if (!etypePermitted(etype)) {
+    log.debug("Leaving longTermKey(). Withheld by the mode.");
+    throw new Error('krb5: ' + kcrypto.etypeName(etype) + ' is not used ' +
+                    'in product mode (RFC 8429 deprecates it), so no key of ' +
+                    'that type is derived or used for ' + keyOf(principal));
+  }
   withKeyCache(principal);
   if (principal.keys.has(etype)) {
     derivedKeyCount.hit();
@@ -2947,14 +3199,58 @@ async function longTermKey(principal, etype) {
   return key;
 }
 
+// ---------------------------------------------------------------------------
+// MAY THIS ENCTYPE BE USED AT ALL, in the ambient realm's mode (#182,
+// 2026-09-23)? `krb5.enctypes` marks `23` (rc4-hmac) — and the DES, 3DES and
+// rc4-hmac-exp numbers the codec does not implement — as development's
+// (`common/mode.js`, `usesBrokenAlgorithms()`), and this asks the SAME marker
+// about one number, so there is one list of what product withholds and it is
+// the settings row's. It is asked at every place a key is chosen, derived or
+// used, not only where the database is built: a realm switched to product
+// under a database built in development still holds RC4 in its etype lists
+// and in its key caches, and the READ is the guard (#104's rule).
+//
+// Hot: asked for every etype a request names and every key used. It is one
+// table lookup and a predicate, so it logs no Entering/Leaving pair — one per
+// enctype per request would drown the log.
+// ---------------------------------------------------------------------------
+function etypePermitted(etype) {
+  return mode.allowsValue('krb5.enctypes', [String(etype)]);
+}
+
+// The etypes this realm's KDC offers NOW: the configured list, less what the
+// mode withholds. `KDC_ETYPES` below answers this, so the person-key register,
+// a new service key and the pages all see the same list the KDC negotiates
+// with.
+function offeredEtypes(ctx) {
+  log.debug("Entering offeredEtypes().");
+  log.debug("Leaving offeredEtypes().");
+  return (ctx.KDC_ETYPES || []).filter(etypePermitted);
+}
+
 // What this principal can offer, in the KDC's preference order rather than the
-// order the definition happened to list.
+// order the definition happened to list — and never an etype the mode
+// withholds (#182), whatever the principal was built with.
 function supportedEtypes(principal) {
   log.debug("Entering supportedEtypes().");
   log.debug("Leaving supportedEtypes().");
-  return current().KDC_ETYPES.filter(function (id) {
+  return offeredEtypes(current()).filter(function (id) {
     return principal.etypes.indexOf(id) !== -1;
   });
+}
+
+// The etypes a request named that this realm's mode withholds, when those are
+// ALL it named — the one case the KDC refuses with its own code
+// (STS-KRB-0156) rather than as an ordinary mismatch, because the fix is on
+// the client and the sentence has to say so. Empty otherwise.
+function onlyWithheldEtypes(requested) {
+  log.debug("Entering onlyWithheldEtypes().");
+  const list = Array.isArray(requested) ? requested : [];
+  const withheld = list.filter(function (id) {
+    return !etypePermitted(id);
+  });
+  log.debug("Leaving onlyWithheldEtypes().");
+  return list.length && withheld.length === list.length ? withheld : [];
 }
 
 // Negotiate: the FIRST etype the client asked for that this principal supports.
@@ -3294,11 +3590,29 @@ module.exports = {
   // Previous key versions (see PREVIOUS KEY VERSIONS).
   retainedKeyFor: retainedKeyFor,
   retainedKvnosOf: retainedKvnosOf,
-  // Empty unless product mode refused to create krbtgt/<realm>.
+  // Empty unless this realm has no usable krbtgt: its Kerberos is off or its
+  // etypes are unusable (the context's reason), or — product, #169 — no
+  // random krbtgt key is stored for it yet, or the one stored cannot be
+  // opened.
   krbtgtUnavailableReason: function () {
     log.debug("Entering krbtgtUnavailableReason().");
-    log.debug("Leaving krbtgtUnavailableReason().");
-    return current().krbtgtReason;
+    const ctx = current();
+    if (ctx.krbtgtReason || !ctx.active || ctx.KRBTGT_FROM_PASSWORD ||
+        storedService(['krbtgt', ctx.REALM], ctx.REALM)) {
+      log.debug("Leaving krbtgtUnavailableReason().");
+      return ctx.krbtgtReason;
+    }
+    log.debug("Leaving krbtgtUnavailableReason(). No stored krbtgt key.");
+    return keySource && typeof keySource.krbtgtKeys === 'function'
+      ? 'no usable random krbtgt key is stored for ' + ctx.REALM + ' yet ' +
+        '(product mode keys krbtgt at random, on the directory entry ' +
+        'krbtgt/' + ctx.REALM + '@' + ctx.REALM + '; it is made at the ' +
+        'first start, and a record this service cannot open is replaced only ' +
+        'by "rotate and invalidate" at /admin/kerberos/principals), so this ' +
+        'KDC issues no ticket'
+      : 'product mode keys krbtgt at random on the directory, and this ' +
+        'process has no key source (the directory is not loaded), so this ' +
+        'KDC issues no ticket';
   },
   publishedDefault: publishedDefault,
   find: find,
@@ -3336,6 +3650,8 @@ module.exports = {
   RUNTIME_FIELDS: RUNTIME_FIELDS.slice(),
   longTermKey: longTermKey,
   supportedEtypes: supportedEtypes,
+  etypePermitted: etypePermitted,
+  onlyWithheldEtypes: onlyWithheldEtypes,
   chooseEtype: chooseEtype,
   etypeInfo2For: etypeInfo2For,
   s2kparamsMode: s2kparamsMode,
@@ -3356,6 +3672,9 @@ module.exports = {
   signOut: signOut,
   clearSignOut: clearSignOut,
   signedOutAt: signedOutAt,
+  signOutHorizon: signOutHorizon,
+  signOutBoundary: signOutBoundary,
+  mergeSignOut: mergeSignOut,
   signedOutPrincipals: signedOutPrincipals
 };
 
@@ -3376,11 +3695,20 @@ module.exports = {
   ['SERVICE_DOMAINS', 'SERVICE_DOMAINS'], ['DOMAIN_SID', 'DOMAIN_SID'],
   // Whether the fixture accounts are in this realm's database — captured when
   // it was built, see SEEDS_DEMO.
-  ['seedsDemoPrincipals', 'SEEDS_DEMO']
+  ['seedsDemoPrincipals', 'SEEDS_DEMO'],
+  // Whether this realm's krbtgt is derived from krb5.krbtgtPassword
+  // (development) or is the key source's random stored key (product) —
+  // captured when it was built, #169.
+  ['krbtgtFromPassword', 'KRBTGT_FROM_PASSWORD']
 ].forEach(function (pair) {
   Object.defineProperty(module.exports, pair[0], {
     enumerable: true,
-    get: function () { return current()[pair[1]]; }
+    // `KDC_ETYPES` is the list OFFERED now (#182), so what a caller derives
+    // or mints from it — a person's keys, a new service key — never carries
+    // an etype the mode withholds.
+    get: pair[0] === 'KDC_ETYPES'
+      ? function () { return offeredEtypes(current()); }
+      : function () { return current()[pair[1]]; }
   });
 });
 

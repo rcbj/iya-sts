@@ -73,6 +73,7 @@ history.
 | OpenID Connect relying parties | its `frontchannel_logout_uri` loads in a hidden iframe, with `iss` and `sid` where it asked for them, and its `backchannel_logout_uri` is POSTed a signed Logout Token |
 | WS-Federation realms | `wa=wsignoutcleanup1.0` as a one-pixel image, with the URL printed beside it |
 | SAML 2.0 service providers | the signed `LogoutRequest`, offered as a link |
+| Federation partners (#167) | the identity provider a session was signed in **through**: its own sign-out — a signed `LogoutRequest`, RP-Initiated Logout with the partner's ID Token as `id_token_hint`, or `wsignout1.0` — offered as a link or a form, from `/logout` in the person's own browser only. SAML 1.1 and OAuth 2.0 partners define no sign-out and are not told. See [Federation](federation.md#a-partners-sign-out) |
 | Tokens | the `jti` joins the same revocation set `/oauth2/revoke` writes to, so `/oauth2/introspect` reports it inactive immediately |
 | Authorization codes | discarded, so no more tokens come from that sign-on |
 | Credential Offer pre-authorized codes | the same |
@@ -99,8 +100,10 @@ Two more things it does not reach, and both are honest rather than missing:
 
 * **A Kerberos service ticket keeps working against the service that accepts
   it.** The sign-out instant is checked at the *KDC*, and accepting a service
-  ticket never contacts the KDC. A fresh `AS-REQ` also succeeds and clears the
-  instant — signing out is not being locked out.
+  ticket never contacts the KDC. A fresh `AS-REQ` also succeeds — signing out
+  is not being locked out — but does not lift the instant: its new ticket is
+  accepted, and every ticket-granting ticket from before the sign-out, renewed
+  or not, stays refused until the latest one could still be valid.
 
   Worth being plain about: **Kerberos itself has no logout, no session and no
   revocation.** There is no CRL, no status query and no list of issued tickets —
@@ -258,8 +261,8 @@ the portal draws a button for it at the foot of its **Overview** page.
 | | Who it is for | Difference |
 |---|---|---|
 | `/logout` | a person, about themselves | no console role needed; it is the browser that loads the notifications |
-| `/admin/logout` | an operator, about somebody else | behind the console's two roles; filtered and paged; has two **NON-SPEC** undos — restoring a revoked token, and clearing a Kerberos sign-out instant |
-| `GET|POST /admin-api/logout` | a test | four operations: `global`, `end`, `restore-token`, `restore-kerberos` |
+| `/admin/logout` | an operator, about somebody else | behind the console's two roles; filtered and paged; has two **NON-SPEC** undos — restoring a revoked token, and clearing a Kerberos sign-out instant (development mode only) |
+| `GET|POST /admin-api/logout` | a test | four operations: `global`, `end`, `restore-token`, `restore-kerberos` (refused in product mode) |
 
 All three call one pair of functions, which is what stops them coming to
 disagree about what a live session is.
@@ -287,6 +290,16 @@ and its refresh tokens revoked; an LDAP row closes a socket; a Kerberos row
 stamps a sign-out instant on the **principal**, refusing every ticket that
 principal authenticated before now, and still reaches no service ticket already
 in a cache.
+
+## A partner ending the session
+
+A federation partner's own sign-out — a SAML `LogoutRequest`, an OpenID
+Connect Back-Channel or Front-Channel logout, a WS-Federation cleanup the
+person confirms — ends the session that partner started, and only that one,
+through this same model: the session and the relying parties riding on it,
+each told as above, with `federation.signout` on the audit log. A partner's
+SAML `SessionNotOnOrAfter` ends the session when it passes, as an expiry. See
+[Federation](federation.md#a-partners-sign-out).
 
 ## A session that simply runs out
 

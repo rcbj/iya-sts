@@ -226,13 +226,44 @@ This service's own console, portal and embedded debugger ask for
 `offline_access`, and their seeded consent grants it. That is what lets a
 console stay signed in after the sign-on session times out (up to the refresh
 token's lifetime). Signing out still ends them and revokes their refresh
-tokens. Remove `offline_access` from an application's global consent on
-`/admin/applications` to turn this off.
+tokens. Withdraw `offline_access` from an application's global consent on
+`/admin/consent` to turn this off: every session of that surface standing on it
+ends at its next token renewal, and the person is asked at their next sign-in.
 
 Consent is **on by default** (`oauth2.consentRequired`). Turning it off means
 nothing is asked and nothing is recorded; it does not mean everybody consented.
-The token endpoint never asks anything, so a grant that was already issued is
-not judged again. `/admin/consent` is the register.
+`/admin/consent` is the register.
+
+#### Withdrawing consent
+
+A consent is withdrawn at `/admin/consent` or through
+`POST /admin-api/consent/{action}` by an administrator, or by the person
+themselves on `/portal/consents`, the user portal's list of what they have
+agreed each application may ask for. Whichever door is used:
+
+* **Every token issued under it is revoked at once.** That is every access and
+  refresh token the application holds for that person carrying the scope, and a
+  refresh token's whole grant with it (RFC 7009 section 2.1). The revocation
+  goes on the register every node reads, so the tokens introspect inactive
+  everywhere. Withdrawing one scope revokes the whole refresh token.
+* **The instant is recorded**: `oauthConsentWithdrawn` on the person's entry,
+  and `oauthGlobalConsentWithdrawn` on the application's entry for a global
+  consent. A refresh token carries the instant its grant was made, and the
+  refresh grant refuses it (`invalid_grant`) when a consent it stood on was
+  withdrawn at or after that instant. Consenting again does not revive it.
+* **The refresh grant re-checks consent at every refresh**, in both modes,
+  against the directory. That makes it hold on every node, including for a
+  token the withdrawal's revocation never saw.
+* **`oauth2.refreshRequiresConsent`** (on by default) also refuses a refresh
+  token from the authorization endpoint whose scopes no recorded consent covers
+  while consent is required. That is a token obtained while consent was off.
+  **Turning it off renews grants nobody agreed to**, including `offline_access`
+  ones that run while the person is away.
+
+Withdrawing a global consent revokes the tokens of everybody it covered, except
+people who agreed to the scope themselves. It is the only way to take a global
+consent away: removing `oauthGlobalConsent` through the generic application
+edit is refused.
 
 ### Scopes a client may be issued
 
@@ -319,6 +350,18 @@ Connect Core section 12.2). An ID Token issued on a browser session carries
    **`claims` request**, read from the person's directory entry,
 4. `sub`, which is always set last.
 
+**The Identity Assurance Claims Registration's claims** can be asked for by
+name in a `claims` request, and are listed in `claims_supported`:
+
+* `place_of_birth`: `country` (ISO 3166-1 alpha-3), `region` and `locality`.
+* `nationalities`: an array of ICAO three-letter codes.
+* `birth_family_name`, `birth_given_name`, `birth_middle_name` and
+  `also_known_as`.
+* `salutation`, and `title`, which is the **honorific** ("Dr"). The job title
+  is `job_title`.
+* `msisdn`, the mobile number as E.164 digits.
+* `address.country_code`, the ISO 3166-1 alpha-3 code beside `country`.
+
 A `claims` request is parsed at the authorization endpoint (a malformed one is
 refused `invalid_request` there), carried **inside the access token** and
 honoured in the ID Token (`id_token` member) and at UserInfo (`userinfo`
@@ -327,6 +370,55 @@ member). A refresh keeps it. An **`acr` marked `essential` with `value` or
 5.5.1.1). For every other claim, `essential`, `value` and `values` are carried
 and **not enforced**: an unavailable claim is left out and logged, and a value
 that does not match is answered with the value this service holds.
+
+### Verified claims (OpenID Connect for Identity Assurance 1.0)
+
+A `claims` request may ask for **`verified_claims`** in its `id_token` or
+`userinfo` member — one element or an array — each with a `verification`
+(which must name `trust_framework`, `null` for any) and a non-empty `claims`
+object:
+
+```json
+{"userinfo": {"verified_claims": {
+  "verification": {"trust_framework": {"value": "eidas"},
+                   "time": {"max_age": 31536000},
+                   "evidence": [{"type": {"value": "document"},
+                                 "document_details": {"type": null}}]},
+  "claims": {"given_name": null, "family_name": null, "birthdate": null}}}}
+```
+
+It is answered from the **identity verifications recorded for the person**:
+
+* an administrator records them on the person's page under Directory → Users,
+  or with `POST /admin-api/users/record-verification` (and lists them with
+  `GET /admin-api/users/verifications`) — a trust framework from
+  `oauth2.idaTrustFrameworks`, one of the four evidence types (`document`,
+  `electronic_record`, `vouch`, `electronic_signature`), and the claims that
+  were checked;
+* a **wallet sign-in** with a credential this realm issued records an
+  `electronic_record` of the disclosed claims the directory agrees with, and a
+  **client certificate sign-in** an `electronic_signature` of the subject's,
+  while `oauth2.idaAutomaticVerifications` is on (the default).
+
+`value`, `values` and `time.max_age` on the verification and its evidence
+**choose** which record answers; an element no record satisfies is left out
+entirely, and only the members you asked for are returned. A claim is released
+as verified only **while the directory still holds the value that was
+verified** — change the entry and the claim drops out of `verified_claims`
+(the ordinary claim carries the new value). A malformed request —
+no `verification`, no `trust_framework` member, empty `claims`, a `purpose`
+outside 3 to 300 characters — is refused `invalid_request`.
+
+**In development mode** a person with no recorded verification is answered
+with an invented one under the trust framework `urn:sts:demo`, so any account
+can exercise a client's parser; a request naming a real framework never
+matches it. **Product mode** releases recorded verifications only.
+
+Discovery publishes `verified_claims_supported`, `trust_frameworks_supported`,
+`evidence_supported`, `documents_supported`,
+`documents_check_methods_supported`, `electronic_records_supported` and
+`claims_in_verified_claims_supported`. Aggregated and distributed verified
+claims, and attachments, are not supported.
 
 UserInfo takes the access token in the `Authorization` header or, on a
 form-encoded `POST`, as an `access_token` body parameter (RFC 6750 section
@@ -425,7 +517,29 @@ Both are recorded on `/admin/delegation`. `audience` and `resource` may be used
 together. A refresh token comes back when the client asks with
 `requested_token_type=urn:ietf:params:oauth:token-type:refresh_token`, or as
 `oauth2.tokenExchangeRefreshToken` says; `issued_token_type` is always
-`access_token`. `may_act` is neither issued nor read.
+`access_token`.
+
+**Who may act for whom** is decided by the delegation policy (#108): the client
+must be allowed to reach every `audience` and `resource` — by
+`appAllowedToDelegateTo` on its own entry or `appAllowedToActOnBehalfOf` on the
+target's — an exchange with no `actor_token` needs `appTrustedToImpersonate`,
+the subject must be in one of the client's `appDelegationSubjectGroup` groups
+where it names any, and a person carrying `stsNotDelegated` or on the console
+roster is never delegated. In **product** mode a refusal is `invalid_request`,
+or `invalid_target` for a target (RFC 8693 section 2.2.2), and a requested
+`scope` wider than the subject_token's is `invalid_scope`; in **development**
+the exchange is issued and `/admin/delegation` says what would have been
+refused. A client exchanging its own token needs nothing. The same attributes
+are edited on the application's page, through `POST
+/admin-api/applications/update`, and listed at `GET
+/admin-api/delegation/policy`.
+
+**`may_act`** (section 4.4) is read in every mode: a subject_token whose
+`may_act` names somebody other than the actor (or the client, with no
+`actor_token`) is refused `invalid_request`. It is issued in every access token
+about a person who has named a delegate — `stsMayAct`, set on
+`/portal/delegate` or with `POST /admin-api/users/set-may-act`. **`act` nests**:
+a prior actor stays beneath the new one (section 4.1).
 
 ### Pushed authorization requests (RFC 9126)
 
@@ -634,8 +748,7 @@ what it reaches.
   for `acr`.
 * Encrypted access tokens, and the RFC 9068 `roles` and `entitlements` claims.
 * An initial access token for registration.
-* `may_act` in token exchange, and a foreign `subject_token` issuer in product
-  mode.
+* A foreign `subject_token` issuer in product mode.
 * Enrichment of declared `authorization_details` types (RFC 9396 section 7).
 
 ## Development and product mode
@@ -848,10 +961,13 @@ be set per [trust realm](trust-realms.md).
   authorization server shows a consent screen at first sign-in, and a client
   that has never met one has never run the code that handles it. The screen adds
   a test case rather than removing one.
-* **A grant already issued is never judged again.** The token endpoint asks
-  nobody anything. Turning on consent or delegated-permission enforcement does
-  not break a refresh of an earlier grant, and revoking a consent does not
-  recall a token.
+* **A withdrawn consent ends the grant it covered** (#172). Withdrawing a
+  consent revokes every token issued under it, and the refresh grant re-checks
+  consent at every refresh: a refresh token granted before a withdrawal is
+  refused even after consent is given again. With
+  `oauth2.refreshRequiresConsent` on (the default), turning consent on also
+  refuses a refresh of a grant nobody consented to. Delegated-permission
+  enforcement still does not re-judge an earlier grant.
 * **A token for an API is for that API alone.** RFC 9068 section 2.2.3 says
   every scope on a token must mean something to its audience, so the OpenID
   Connect scopes are left off a token addressed to an API. They stay granted.

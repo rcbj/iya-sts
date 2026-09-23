@@ -103,9 +103,31 @@ const SIGNALS: Record<string, Json> = {
           'the FIDO metadata' }
 };
 
-// How many refused passwords in the last hour make a signal of each kind.
-const ACCOUNT_FAILURES = 5;
-const NETWORK_FAILURES = 20;
+// How many refused passwords in the last hour make a signal of each kind:
+// `risk.accountFailureThreshold` (5) and `risk.networkFailureThreshold`
+// (20), read per assessment. They were constants until 2026-09-23, when the
+// suite's own deliberate wrong passwords — every job from one /24 — put
+// `network-failures` on every first sign-in in the default realm.
+const accountFailureThreshold = function (): number {
+  return Number(config.value('risk.accountFailureThreshold'));
+};
+const networkFailureThreshold = function (): number {
+  return Number(config.value('risk.networkFailureThreshold'));
+};
+// HOW MANY EARLIER SIGN-INS A PERSON NEEDS BEFORE THE MODEL SCORES THEM
+// (`risk.minimumHistory`, 5; 2026-09-23). The Freeman et al. model compares a
+// sign-in with this person's history, and with one or two earlier sign-ins
+// that history is mostly the population's prior: a new person's second
+// sign-in came out MEDIUM because everybody else shares their network and
+// browser, and the issuance policy asked for a security key. Fewer sign-ins
+// than this are UNSCORED, as a first sign-in always was, and the two NOVELTY
+// signals (`new-device`, `new-tls-stack`) wait for the same history, because
+// "not seen before" says nothing about somebody seen once. The EVIDENCE
+// signals — a list, an automated client, refused passwords, a compromised
+// security key — still apply however new the person is.
+const minimumHistory = function (): number {
+  return Math.max(1, Number(config.value('risk.minimumHistory')) || 1);
+};
 const HOUR_MS = 3600 * 1000;
 
 // The population's subject in `sts_risk_feature_counts`.
@@ -183,6 +205,62 @@ const standingsCount = cacheRegistry.register({
     return out;
   }
 });
+
+// ---------------------------------------------------------------------------
+// WHAT THIS PROCESS HAS DONE, for Monitoring → Risk Scoring (#62). The
+// assessments themselves are rows in the store and are counted there, over
+// any window; what is NOT a row is counted here — how long an assessment
+// took, one that failed, the reactions taken, the live-session re-checks,
+// what people said about their sign-ins — and so it is per process and
+// since the process started, and the page says so. The durations are the
+// last DURATIONS_KEPT, which is what a percentile is taken over.
+// ---------------------------------------------------------------------------
+const DURATIONS_KEPT = 1000;
+const tally = {
+  since: Date.now(),
+  assessed: 0,
+  failed: 0,
+  durations: [] as number[],
+  reactions: { taken: {} as Record<string, number>,
+               observed: {} as Record<string, number>,
+               failed: {} as Record<string, number> },
+  rescore: { runs: 0, sessions: 0, raised: 0 }
+};
+
+// ---------------------------------------------------------------------------
+// THE FACTORS AN OPERATOR SET (#62, calibration): `risk.signalFactors` is a
+// list of `signal=factor` — `tor-exit=8,new-device=1.5` — over SIGNALS'
+// built-in factors, per realm like every setting, so a factor the
+// calibration report suggests is applied without a release. The parse is
+// kept per raw value, and a malformed entry is logged ONCE for that value
+// (STS-RISK-0026) rather than at every sign-in, and ignored: an unknown
+// signal, or a factor that is not a positive number, would otherwise change
+// every score by a typo.
+// ---------------------------------------------------------------------------
+const parsedFactors = new Map<string, Json>();
+
+// How many calibration answers a signal needs before a factor is suggested
+// for it, and how many assessments a window needs before thresholds are:
+// below these a suggestion is noise, and the report says "not enough".
+const MIN_ANSWERS_PER_SIGNAL = 20;
+const MIN_ASSESSMENTS_FOR_THRESHOLDS = 100;
+
+// One more of `key` in a count table. A hot path's helper, no pair.
+function bump(table: Record<string, number>, key: string): void {
+  table[key] = (table[key] || 0) + 1;
+}
+
+// The value at fraction `p` of a sorted list, or 0 for an empty one.
+function percentile(sorted: number[], p: number): number {
+  log.debug("Entering percentile().");
+  if (!sorted.length) {
+    log.debug("Leaving percentile(). Empty.");
+    return 0;
+  }
+  log.debug("Leaving percentile().");
+  return sorted[Math.min(sorted.length - 1,
+                         Math.floor(p * sorted.length))];
+}
 
 class RiskEngine {
   static readonly SIGNALS = SIGNALS;
@@ -618,11 +696,18 @@ class RiskEngine {
       log.debug("Leaving RiskEngine.assess(). Not assessed.");
       return null;
     }
+    const started = Date.now();
     try {
       const answer = await this.assessNow(input);
+      tally.assessed++;
+      tally.durations.push(Date.now() - started);
+      if (tally.durations.length > DURATIONS_KEPT) {
+        tally.durations.splice(0, tally.durations.length - DURATIONS_KEPT);
+      }
       log.debug("Leaving RiskEngine.assess().");
       return answer;
     } catch (e) {
+      tally.failed++;
       log.warn(errorCodes.tag('STS-RISK-0013') + 'risk: a sign-in for ' +
                input.subject + ' at ' + input.door + ' could not be ' +
                'assessed: ' + ((e && e.message) || e) + '. The sign-in ' +
@@ -657,13 +742,21 @@ class RiskEngine {
                                       sealing);
     const population = await this.historyOf(realm, POPULATION, attempt,
                                             true, sealing);
-    const modelled = riskModel.score(attempt, user, population);
+    const enough = user.n >= minimumHistory();
+    const modelled = enough ? riskModel.score(attempt, user, population)
+      : { score: null,
+          why: user.n
+            ? 'only ' + user.n + ' earlier sign-in(s): fewer than ' +
+              'risk.minimumHistory (' + minimumHistory() + ') is too ' +
+              'little history to score'
+            : 'the first sign-in: there is no history to compare it with' };
 
-    // THE EVALUATORS (SIGNALS).
+    // THE EVALUATORS (SIGNALS), each at the realm's factor.
+    const factorOf = this.factors().factors;
     const signals: Json[] = [];
     const add = function (id: string, evidence: string): void {
       log.debug("Entering add(). " + id);
-      signals.push({ signal: id, factor: SIGNALS[id].factor,
+      signals.push({ signal: id, factor: factorOf[id],
                      what: SIGNALS[id].what, evidence: evidence });
       log.debug("Leaving add().");
     };
@@ -683,30 +776,33 @@ class RiskEngine {
           String(authenticator.model.description || credential.aaguid) +
           ' (' + String(authenticator.model.latestStatus || '') + ')');
     }
-    if (context.device && user.n > 0) {
+    if (context.device && enough) {
       const seenDevice = await store.featureCounts(realm, subject,
         [{ feature: 'device', value: String(context.device) }], sealing);
       if (!seenDevice.length) {
         add('new-device', String(context.device).slice(0, 12));
       }
     }
-    if (context.ja4 && user.n > 0) {
+    // THE TLS STACK, not the raw JA4: a resumed session adds two extensions,
+    // so one client has two JA4s (`tls/client_hello.ts`'s `stack()`).
+    const tlsStack = String(context.tlsStack || context.ja4 || '');
+    if (tlsStack && enough) {
       const seen = await store.featureCounts(realm, subject,
-        [{ feature: 'ja4', value: String(context.ja4) }], sealing);
+        [{ feature: 'ja4', value: tlsStack }], sealing);
       if (!seen.length) {
-        add('new-tls-stack', String(context.ja4));
+        add('new-tls-stack', tlsStack);
       }
     }
     const since = at - HOUR_MS;
     const mine = await store.listFailures(realm, { since: since,
       subject: subject, limit: 1 }, sealing);
-    if (mine.total >= ACCOUNT_FAILURES) {
+    if (mine.total >= accountFailureThreshold()) {
       add('account-failures', String(mine.total));
     }
     if (found.prefix) {
       const theirs = await store.listFailures(realm, { since: since,
         prefix: found.prefix, limit: 1 }, sealing);
-      if (theirs.total >= NETWORK_FAILURES) {
+      if (theirs.total >= networkFailureThreshold()) {
         add('network-failures', String(theirs.total));
       }
     }
@@ -796,8 +892,8 @@ class RiskEngine {
       });
     });
     move(POPULATION, 'user', subject);
-    if (context.ja4) {
-      move(subject, 'ja4', String(context.ja4));
+    if (context.tlsStack || context.ja4) {
+      move(subject, 'ja4', String(context.tlsStack || context.ja4));
     }
     if (context.device) {
       move(subject, 'device', String(context.device));
@@ -933,12 +1029,15 @@ class RiskEngine {
       }
       if (reaction !== 'risk-announce' && !enforced) {
         observed.push(reaction);
+        bump(tally.reactions.observed, reaction);
         continue;
       }
       try {
         await this.take(reaction, change);
         taken.push(reaction);
+        bump(tally.reactions.taken, reaction);
       } catch (e) {
+        bump(tally.reactions.failed, reaction);
         log.warn(errorCodes.tag('STS-RISK-0021') + 'risk: the reaction ' +
                  reaction + ' to ' + change.username + '\'s risk going to ' +
                  change.level + ' failed: ' + ((e && e.message) || e));
@@ -1066,13 +1165,13 @@ class RiskEngine {
     const since = now() - HOUR_MS;
     const mine = await store.listFailures(realm, { since: since,
       subject: String(session.user.sub), limit: 1 }, sealing);
-    if (mine.total >= ACCOUNT_FAILURES) {
+    if (mine.total >= accountFailureThreshold()) {
       signals.push('account-failures');
     }
     if (found.prefix) {
       const theirs = await store.listFailures(realm, { since: since,
         prefix: found.prefix, limit: 1 }, sealing);
-      if (theirs.total >= NETWORK_FAILURES) {
+      if (theirs.total >= networkFailureThreshold()) {
         signals.push('network-failures');
       }
     }
@@ -1085,8 +1184,9 @@ class RiskEngine {
       signals.push('authenticator-compromised');
     }
     const held = (risk.signals || []).map(String);
+    const factorOf = this.factors().factors;
     const fresh = signals.filter(function (one: string): boolean {
-      return held.indexOf(one) < 0 && SIGNALS[one].factor > 1;
+      return held.indexOf(one) < 0 && factorOf[one] > 1;
     });
     if (!fresh.length) {
       log.debug("Leaving RiskEngine.rescoreSession(). Nothing new.");
@@ -1094,7 +1194,7 @@ class RiskEngine {
     }
     let score = typeof risk.score === 'number' ? risk.score : 1;
     fresh.forEach(function (one: string): void {
-      score *= SIGNALS[one].factor;
+      score *= factorOf[one];
     });
     const level = this.levelOf(score);
     if ((RANK[level] || 0) <= (RANK[String(risk.level)] || 0)) {
@@ -1122,7 +1222,7 @@ class RiskEngine {
       signals: [{ signal: 'model', score: risk.score, factors: null,
                   why: 'the sign-in\'s score, re-checked' }]
         .concat(held.concat(fresh).map(function (one: string): Json {
-          return { signal: one, factor: SIGNALS[one].factor,
+          return { signal: one, factor: factorOf[one],
                    what: SIGNALS[one].what,
                    evidence: fresh.indexOf(one) >= 0 ? 'new' : 'held' };
         })),
@@ -1169,6 +1269,9 @@ class RiskEngine {
         out.raised++;
       }
     }
+    tally.rescore.runs++;
+    tally.rescore.sessions += out.sessions;
+    tally.rescore.raised += out.raised;
     log.debug("Leaving RiskEngine.rescoreLiveSessions(). " + out.raised +
               " raised.");
     return out;
@@ -1315,6 +1418,240 @@ class RiskEngine {
     return { ok: true, verdict: verdict, moved: moved };
   }
 
+  // -------------------------------------------------------------------------
+  // EVERY SIGNAL'S FACTOR, as scored now: SIGNALS' own, with the realm's
+  // `risk.signalFactors` over them. `invalid` names the entries ignored.
+  // -------------------------------------------------------------------------
+  factors(): Json {
+    const { log, config } = this.deps;
+    log.debug("Entering RiskEngine.factors().");
+    const listed = config.value('risk.signalFactors') || [];
+    const raw = (Array.isArray(listed) ? listed : [listed]).join(',');
+    const held = parsedFactors.get(raw);
+    if (held) {
+      log.debug("Leaving RiskEngine.factors(). Held.");
+      return held;
+    }
+    const map: Record<string, number> = {};
+    Object.keys(SIGNALS).forEach(function (id: string): void {
+      map[id] = SIGNALS[id].factor;
+    });
+    const set: Record<string, number> = {};
+    const invalid: string[] = [];
+    (Array.isArray(listed) ? listed : [listed]).forEach(function (one) {
+      const text = String(one || '').trim();
+      if (!text) {
+        return;
+      }
+      const at = text.indexOf('=');
+      const id = at > 0 ? text.slice(0, at).trim() : '';
+      const value = at > 0 ? Number(text.slice(at + 1).trim()) : NaN;
+      if (!SIGNALS[id] || !isFinite(value) || value <= 0) {
+        invalid.push(text);
+        return;
+      }
+      map[id] = value;
+      set[id] = value;
+    });
+    if (invalid.length) {
+      log.warn(errorCodes.tag('STS-RISK-0026') + 'risk: risk.signalFactors ' +
+               'entries ignored, each needing a known signal and a positive ' +
+               'factor: ' + invalid.join(', ') + '.');
+    }
+    const answer = { factors: map, set: set, invalid: invalid };
+    if (parsedFactors.size > 64) {
+      // Bounded: one entry per distinct value a realm has been given.
+      parsedFactors.clear();
+    }
+    parsedFactors.set(raw, answer);
+    log.debug("Leaving RiskEngine.factors().");
+    return answer;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE CALIBRATION REPORT (#62; rcbj: "calibrate the factors"). Advice, from
+  // the window's assessments, and never applied by itself:
+  //
+  //   * THRESHOLDS: the score at which the target share of sign-ins
+  //     (`risk.calibrationMediumPercent`, `risk.calibrationHighPercent`)
+  //     would be MEDIUM or worse and HIGH — the window's own quantiles.
+  //   * FACTORS: for each signal, how often a sign-in carrying it was
+  //     answered "not me" on /portal/sign-ins against how often any answered
+  //     sign-in was. The suggested factor is the current one scaled by that
+  //     ratio, bounded to [0.1, 100]. The answers are a biased sample — a
+  //     flagged sign-in is likelier to be asked about — which is why this is
+  //     advice and the page says so.
+  // -------------------------------------------------------------------------
+  static calibrate(counted: Json, thresholds: Json, targets: Json,
+                   factors: Json): Json {
+    log.debug("Entering RiskEngine.calibrate().");
+    const total = Number(counted.total) || 0;
+    const shareAtOrAbove = function (levels: string[]): number {
+      return total ? levels.reduce(function (s: number, l: string): number {
+        return s + (Number(counted.byLevel[l]) || 0);
+      }, 0) / total : 0;
+    };
+    const q = counted.scoreQuantiles || {};
+    const enough = total >= MIN_ASSESSMENTS_FOR_THRESHOLDS;
+    const answered = (Number(counted.feedback.denied) || 0) +
+                     (Number(counted.feedback.confirmed) || 0);
+    const baseline = answered
+      ? (Number(counted.feedback.denied) || 0) / answered : 0;
+    // `reported-not-me` IS the answer rather than evidence for one, so it
+    // has nothing to be calibrated against.
+    const signals = Object.keys(factors.factors).filter(function (id) {
+      return id !== 'reported-not-me';
+    }).map(function (id: string) {
+      const fb = (counted.bySignalFeedback || {})[id] || {};
+      const denied = Number(fb.denied) || 0;
+      const confirmed = Number(fb.confirmed) || 0;
+      const levels = (counted.bySignalLevel || {})[id] || {};
+      const fired = Number((counted.bySignal || {})[id]) || 0;
+      const current = factors.factors[id];
+      let suggested: number | null = null;
+      let advice = 'not enough answers (' + (denied + confirmed) + ' of ' +
+                   MIN_ANSWERS_PER_SIGNAL + ')';
+      if (denied + confirmed >= MIN_ANSWERS_PER_SIGNAL && baseline > 0) {
+        const lift = (denied / (denied + confirmed)) / baseline;
+        const raw = Math.min(100, Math.max(0.1, current * lift));
+        suggested = Number(raw.toPrecision(2));
+        advice = suggested > current * 1.25 ? 'raise'
+          : (suggested < current / 1.25 ? 'lower' : 'keep');
+      } else if (denied + confirmed >= MIN_ANSWERS_PER_SIGNAL) {
+        advice = 'nobody has answered "not me" yet: no baseline';
+      }
+      return { signal: id, factor: current, builtIn: SIGNALS[id].factor,
+               fired: fired,
+               high: Number(levels.HIGH) || 0,
+               answered: denied + confirmed, notMe: denied,
+               suggested: suggested, advice: advice };
+    });
+    log.debug("Leaving RiskEngine.calibrate().");
+    return {
+      assessments: total, answered: answered, notMeRate: baseline,
+      minimums: { assessments: MIN_ASSESSMENTS_FOR_THRESHOLDS,
+                  answersPerSignal: MIN_ANSWERS_PER_SIGNAL },
+      thresholds: {
+        medium: { current: thresholds.medium,
+                  share: shareAtOrAbove(['MEDIUM', 'HIGH']),
+                  target: targets.medium,
+                  suggested: enough && q[String(1 - targets.medium)] !==
+                    undefined ? q[String(1 - targets.medium)] : null },
+        high: { current: thresholds.high, share: shareAtOrAbove(['HIGH']),
+                target: targets.high,
+                suggested: enough && q[String(1 - targets.high)] !==
+                  undefined ? q[String(1 - targets.high)] : null }
+      },
+      signals: signals,
+      invalidFactors: factors.invalid
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE SCORING SYSTEM, MEASURED (#62): what Monitoring → Risk Scoring draws
+  // and `GET /admin-api/risk/metrics` returns. Two kinds of number, and the
+  // answer keeps them apart: `assessments` and `standings` are counted in
+  // the STORE over the window (the whole service, on postgres), `process`
+  // is THIS process since it started. `signals` is the table with each
+  // signal's factor beside how often it fired, which is what calibrating a
+  // factor starts from.
+  // -------------------------------------------------------------------------
+  async metrics(realm: string, windowMs: number): Promise<Json> {
+    const { log, store, config, now, lazy } = this.deps;
+    log.debug("Entering RiskEngine.metrics().");
+    const sealing = this.sealing();
+    const span = Math.max(3600000, Number(windowMs) || 86400000);
+    // A bar per five minutes for an hour, per hour for up to two days, and
+    // per day beyond: between twelve and sixty bars on every window offered.
+    const bucketMs = span <= 3600000 ? 300000
+      : (span <= 2 * 86400000 ? 3600000 : 86400000);
+    const since = now() - span;
+    const targets = {
+      medium: Number(config.value('risk.calibrationMediumPercent')) / 100,
+      high: Number(config.value('risk.calibrationHighPercent')) / 100 };
+    const counted = await store.assessmentMetrics(realm, {
+      since: since, bucketMs: bucketMs,
+      quantiles: [1 - targets.medium, 1 - targets.high] }, sealing);
+    const factors = this.factors();
+    const standings = await store.subjectLevels(realm, sealing);
+    const sorted = tally.durations.slice().sort(function (a: number,
+                                                          b: number): number {
+      return a - b;
+    });
+    let breach: Json = null;
+    try {
+      breach = lazy('../common/breached_passwords').metrics();
+    } catch (e) {
+      log.debug("Caught in RiskEngine.metrics(): " + ((e && e.message) || e));
+      // Not loaded in this process: the page says so rather than a zero.
+      breach = null;
+    }
+    const signals = Object.keys(SIGNALS).map(function (id: string): Json {
+      return { signal: id, factor: factors.factors[id],
+               builtIn: SIGNALS[id].factor, what: SIGNALS[id].what,
+               fired: Number(counted.bySignal[id]) || 0 };
+    });
+    const thresholds = {
+      medium: Number(config.value('risk.mediumScorePercent')) / 100,
+      high: Number(config.value('risk.highScorePercent')) / 100 };
+    log.debug("Leaving RiskEngine.metrics().");
+    return {
+      realm: realm, windowMs: span, since: since, bucketMs: bucketMs,
+      database: store.failuresInDatabase(sealing),
+      enforced: this.enforced(),
+      thresholds: thresholds,
+      assessments: counted,
+      calibration: RiskEngine.calibrate(counted, thresholds, targets,
+                                        factors),
+      standings: standings,
+      signals: signals,
+      process: {
+        since: tally.since, assessed: tally.assessed, failed: tally.failed,
+        durationMs: {
+          samples: sorted.length,
+          mean: sorted.length ? sorted.reduce(function (a: number,
+                                                        b: number): number {
+            return a + b;
+          }, 0) / sorted.length : 0,
+          p50: percentile(sorted, 0.5), p95: percentile(sorted, 0.95),
+          p99: percentile(sorted, 0.99),
+          max: sorted.length ? sorted[sorted.length - 1] : 0 },
+        reactions: JSON.parse(JSON.stringify(tally.reactions)),
+        rescore: Object.assign({}, tally.rescore),
+        breachedPasswords: breach
+      }
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // ONE PERSON'S CURRENT STANDING, from the store (#62): what the console's
+  // user page draws large and `/admin-api/users?user=` returns. Null for a
+  // person never assessed. Never rejects.
+  // -------------------------------------------------------------------------
+  async standingFor(realm: string, subject: string): Promise<Json | null> {
+    const { log, store } = this.deps;
+    log.debug("Entering RiskEngine.standingFor().");
+    try {
+      const row = subject ? await store.subjectOf(realm, subject,
+                                                  this.sealing()) : null;
+      log.debug("Leaving RiskEngine.standingFor(). " +
+                (row ? row.level : 'None.'));
+      return row ? { subject: subject, level: String(row.level || ''),
+                     score: Number(row.score) || 0,
+                     previousLevel: String(row.previousLevel || ''),
+                     reason: String(row.reason || ''),
+                     lastAssessment: String(row.lastAssessment || ''),
+                     crossedAt: Number(row.crossedAt) || 0,
+                     updatedAt: Number(row.updatedAt) || 0 } : null;
+    } catch (e) {
+      log.debug("Caught in RiskEngine.standingFor(): " +
+                ((e && e.message) || e));
+      // The store could not answer: the page says the risk is unknown.
+      log.debug("Leaving RiskEngine.standingFor(). Unknown.");
+      return null;
+    }
+  }
+
   // A page of assessments and the people by standing, for the page.
   async view(realm: string, opts: Json): Promise<Json> {
     const { log, store, now } = this.deps;
@@ -1391,6 +1728,10 @@ export = {
   settle: slot.forward('settle'),
   respond: slot.forward('respond'),
   feedback: slot.forward('feedback'),
+  metrics: slot.forward('metrics'),
+  factors: slot.forward('factors'),
+  calibrate: RiskEngine.calibrate,
+  standingFor: slot.forward('standingFor'),
   rescoreSession: slot.forward('rescoreSession'),
   rescoreLiveSessions: slot.forward('rescoreLiveSessions'),
   enforced: slot.forward('enforced'),

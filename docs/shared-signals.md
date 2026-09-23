@@ -293,7 +293,8 @@ client that acts as the transmitter. It verifies the signature when it can
 find a key. A SET that another party signed is reported as *not verifiable
 here*, not as invalid. `GET /ssf/received` lists what arrived.
 `ssf.receiveRequireSignature` makes it refuse a SET whose signature fails, the
-way a strict receiver would.
+way a strict receiver would. **Product mode always refuses one**, at this
+endpoint and at the console's and portal's own receivers (#117).
 
 Every SET that arrives is recorded, and it is then refused if its header's
 `typ` is not `secevent+jwt` (section 4.1.1), if its `iss` is not one
@@ -312,7 +313,10 @@ admin console and one for the user portal. Both ask for every CAEP and RISC
 event type, and both take delivery over a real RFC 8935 push to an endpoint of
 their own. What arrives is shown at `/admin/signals` and `/portal/signals`.
 [Signals received](signals-received.md) explains how this works, and why an
-empty page has five possible causes.
+empty page has five possible causes. **Both act on what they receive**: a
+verified event the `signal-response` policy permits ends the receiving
+surface's own sessions for the person it names (product mode; development
+records it). An unverified event is never acted on.
 
 ### Deliberate defects
 
@@ -320,11 +324,13 @@ A transmitter that is always correct is hard to write error handling against,
 so each of these switches produces a known mistake.
 
 **`ssf.legacySubClaim` and `ssf.breakSetSignature` make a SET wrong, and are
-honoured in development mode only** (#104). A realm in product mode ignores
-them where the SET is built and signed — even one still stored from before the
-realm was switched, which is logged once (`STS-CORE-0106`) — and refuses
-turning them on (`STS-CORE-0103`). The other three produce SETs that conform to
-their specifications, and are honoured in both modes.
+honoured in development mode only** (#104), **and so is
+`risc.googleSubjectType`** (#181), whose `subject_type` RISC 1.0 section 3.1
+says new services MUST NOT use. A realm in product mode ignores them where the
+SET is built and signed — even one still stored from before the realm was
+switched, which is logged once (`STS-CORE-0106`) — and refuses turning them on
+(`STS-CORE-0103`). The other two produce SETs that conform to their
+specifications, and are honoured in both modes.
 
 | Setting | What it breaks |
 |---|---|
@@ -420,7 +426,8 @@ types from what a stream may ask for.
 | `ssf.authScopeRead` | `STS_SSF_AUTH_SCOPE_READ` | `ssf:read` | yes | The scope needed to read a stream, its status or the poll queue. |
 | `ssf.authScopeWrite` | `STS_SSF_AUTH_SCOPE_WRITE` | `ssf:write` | yes | The scope needed to change anything about a stream. |
 | `ssf.receiveEnabled` | `STS_SSF_RECEIVE_ENABLED` | `true` | yes | Whether `POST /ssf/receive` accepts pushed SETs. When off, it answers 501. |
-| `ssf.receiveRequireSignature` | `STS_SSF_RECEIVE_REQUIRE_SIGNATURE` | `false` | yes | Refuses a received SET whose signature fails, with 400 `invalid_key`. |
+| `ssf.receiveRequireSignature` | `STS_SSF_RECEIVE_REQUIRE_SIGNATURE` | `false` | yes | Refuses a received SET whose signature fails, with 400 `invalid_key`, in development mode. Product mode always refuses one (#117). |
+| `ssf.actOnSignalsInDevelopment` | `STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT` | `false` | yes | The console and portal end their own sessions on a received signal in development too; product always does. |
 | `ssf.legacySubClaim` | `STS_SSF_LEGACY_SUB_CLAIM` | `false` | yes | Deliberate defect, development only: adds the deprecated `sub` claim beside `sub_id`. |
 | `ssf.breakSetSignature` | `STS_SSF_BREAK_SET_SIGNATURE` | `false` | yes | Deliberate defect, development only: changes one character of every SET's signature. |
 | `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | A stream owned by a GNAP application only hears about people who approved a grant to it. |
@@ -454,7 +461,7 @@ types from what a stream may ask for.
 | `risc.eventsSupported` | `STS_RISC_EVENTS_SUPPORTED` | all fourteen | yes | Which RISC types a stream may ask for, including the deprecated `sessions-revoked`. |
 | `risc.subjectFormat` | `STS_RISC_SUBJECT_FORMAT` | `iss_sub` | yes | The RFC 9493 format of an account subject: `iss_sub`, `email` or `opaque`. The two identifier events always use `email`. |
 | `risc.honourOptOut` | `STS_RISC_HONOUR_OPT_OUT` | `true` | yes | Suppresses events for an account in the `opt-out` state, except the four opt-out events. |
-| `risc.googleSubjectType` | `STS_RISC_GOOGLE_SUBJECT_TYPE` | `false` | yes | Deliberate defect: spells the subject discriminator `subject_type` on RISC subjects. |
+| `risc.googleSubjectType` | `STS_RISC_GOOGLE_SUBJECT_TYPE` | `false` | yes | Deliberate defect: spells the subject discriminator `subject_type` on RISC subjects. Development mode only: ignored in product, and turning it on is refused (#181). |
 | `risc.reasonLanguage` | `STS_RISC_REASON_LANGUAGE` | `en` | yes | The language tag of the reason members on `credential-compromise`. |
 | `risc.includeReasons` | `STS_RISC_INCLUDE_REASONS` | `true` | yes | Whether `credential-compromise` carries its optional reason members. |
 | `risc.omitEventTimestamp` | `STS_RISC_OMIT_EVENT_TIMESTAMP` | `false` | yes | Deliberate defect: leaves `event_timestamp` off `credential-compromise`. |

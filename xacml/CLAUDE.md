@@ -42,6 +42,7 @@ and the nudge.
 | `xacml_admin.ts` | The five `/admin/xacml` console pages and their actions, and `/admin/xacml/monitor`'s body. |
 | `xacml_monitor.ts` | The decision and enforcement counters behind `/admin/xacml/monitor`. A LEAF. See *`/admin/xacml/monitor`* below. |
 | `xacml_access_pep.ts`, `xacml_role_pep.ts` | The two embedded PEPs that decide THIS service's own access and issuance. See *AND SINCE 2026-09-05 IT DECIDES THIS SERVICE'S OWN ISSUANCE* below. |
+| `xacml_risk_pep.ts`, `xacml_signal_pep.ts` | **The two embedded PEPs for REACTIONS (#62, 2026-09-22)**, each asking a built-in policy one question per reaction, where a Permit means do it. `risk-response` covers what a change of a person's risk leads to (`risk/CLAUDE.md`). `signal-response` covers whether this service's own console or portal ends its own sessions on a CAEP or RISC event it RECEIVED and verified (`ssf/CLAUDE.md`). Both are libraries, reached lazily and built at 23c. |
 | `conformance/` | The vendored OASIS suite. `PROVENANCE.md` is the argument, `MANIFEST.js` the drift check. **Not edited here, ever.** |
 
 Five tests, all in-process, no port, no container:
@@ -1331,6 +1332,31 @@ decider FROM THE CONSOLE, so a process that loaded the console and not
 `xacml/xacml.ts` would gate every issuance in the service with half this family
 present. A require the other way closes a cycle, because `xacml_admin.ts`
 requires `admin.js` for the page shell.
+
+### And one question that is DENY-ONLY: action-id `delegate` (#108, 2026-09-23)
+
+`../common/delegation_policy.ts` decides who may act for whom at WS-Trust and
+RFC 8693 from attributes on the entries (rule 3az), and when they ALLOW an act
+it asks `issuance_gate.checkDelegation()`, which hands this PEP a question with
+`kind: 'delegate'` and `denyOnly: true`. `decideDenyOnly()` builds the usual
+request with no roles required, adds XACML 3.0's
+`subject-category:intermediary-subject` carrying the intermediary as its
+`subject-id` (the target is the `resource-id`, the subject the access
+subject's), `urn:sts:xacml:delegation-mode` on the action and
+`urn:sts:xacml:delegation-protocol` on the environment, and asks the SAME
+issuance policy.
+
+**ONLY AN EXPLICIT DENY REFUSES.** A Permit, a NotApplicable (the built-in
+`role-issuance` document says nothing about `delegate`) and an Indeterminate
+leave the attribute rule's answer standing, and so does a missing or disabled
+policy. That is the opposite of the issuance decision's fail-closed rule and
+it is deliberate: here the attributes ARE a policy, already evaluated, and the
+engine is only where an administrator writes something stricter — so the
+built-in document changes nothing and an operator's rule denying one
+intermediary, subject or target denies exactly that. A Deny is audited as
+`xacml.issuance.refused` (`STS-XACML-0039`) and counted like any other refusal.
+`delegate` is NOT a member of `ISSUANCE`/`KINDS`: delegating issues nothing of
+its own, and every reader of that list lists issuances.
 
 ## THE FOURTEENTH DEFECT: TWO CONTAINERS CLAIMING A PAGE THAT WAS NEVER WRITTEN
 

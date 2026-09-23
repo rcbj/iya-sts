@@ -3695,15 +3695,24 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
     "ways, and an un-revoke that only reached introspection would leave this " +
     "page unable to offer the thing it had just been told about.");
 
-  await ok("/logout/restore-kerberos", { user: username },
-    "cleared the Kerberos sign-out instant");
+  // RESTORE-KERBEROS IS DEVELOPMENT-ONLY (#111): product refuses it on this
+  // door as on the console, and the instant stands.
+  const productMode = await facts.isProduct(rootApi);
+  if (productMode) {
+    await refused("/logout/restore-kerberos", { user: username },
+      /development-only test control/,
+      "refused restore-kerberos in product mode");
+  } else {
+    await ok("/logout/restore-kerberos", { user: username },
+      "cleared the Kerberos sign-out instant");
+  }
   const krb5Row = (await get("/logout?user=" + encodeURIComponent(username)))
       .body.rows.filter(function (one) { return one.family === "krb5"; })[0];
   assert.ok(krb5Row,
     "the sign-out view should always carry a Kerberos row, even when there " +
     "is no principal — the absence is the answer, and omitting it would read " +
     "as a global logout having skipped the KDC.");
-  assert.ok(!krb5Row.startedAt,
+  assert.ok(productMode || !krb5Row.startedAt,
     "AND NO SIGN-OUT INSTANT MAY STAND AFTER `restore-kerberos`. The row's " +
     "`startedAt` IS that instant — it is 0 when there is none — so this is " +
     "the one reading of that action a caller can make; its own reply says " +
@@ -5002,7 +5011,23 @@ const NOT_DRIVEN_HERE = {
   "POST /keys/rotate": "sts_key_rotation.js drives it, and checks what it " +
     "did",
   "POST /keys/emergency": "sts_key_rotation.js drives it in a throwaway " +
-    "realm; an emergency ends every session of the realm it runs in"
+    "realm; an emergency ends every session of the realm it runs in",
+  // A FEDERATION RELATIONSHIP'S ENCRYPTION KEY (#168). Driven by
+  // `sts_federation_encryption.js`, which checks what a rotation did: the
+  // metadata publishes the new key, the replaced one decrypts through its
+  // grace period and not after it, and the retirement job removes it.
+  "POST /federation/rotate-key": "sts_federation_encryption.js drives it, " +
+    "and checks the grace period and the retirement",
+  // THE KRBTGT KEY (#169). Driven by `sts_kerberos_krbtgt_rotation.js`, in a
+  // throwaway realm with a KDC of its own: a rotation is checked by a TGT
+  // from before it still buying a service ticket, which a walk asking for a
+  // 2xx cannot do — and an invalidation ends every TGT of the realm it runs
+  // in, which in the default realm is every other Kerberos job's.
+  "POST /kerberos/principals/rotate-krbtgt": "sts_kerberos_krbtgt_rotation" +
+    ".js drives it in a throwaway realm, with a TGT across it",
+  "POST /kerberos/principals/rotate-krbtgt-invalidate":
+    "sts_kerberos_krbtgt_rotation.js drives it in a throwaway realm; it ends " +
+    "every TGT of the realm it runs in"
 };
 
 function everyDocumentedOperationWasDriven(doc) {

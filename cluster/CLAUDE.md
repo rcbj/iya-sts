@@ -542,12 +542,15 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `signing.rotate` | cluster, realm; hourly, deciding per unit from the NEXT key's age | `common/signing_rotation.ts` (#42) |
 | `signing.retire` | cluster, realm; hourly | `common/signing_rotation.ts` (#42) |
 | `signing.rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/keys` and `POST /admin-api/keys/rotate` queue | `common/signing_rotation.ts` (#48) |
+| `krb5.krbtgt-rotate` | cluster, realm; hourly, deciding per realm from the krbtgt key's own age (`krb5.krbtgtRotationIntervalDays`, 180) and never while the version the last rotation kept is inside its window; off in development and with `krb5.retainedKeyVersions` 0; makes a product realm's first key | `kerberos/krb5_krbtgt_rotation.ts` (#169), `kerberos/CLAUDE.md` |
+| `krb5.krbtgt-rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/kerberos/principals` and `POST /admin-api/kerberos/principals/{rotate-krbtgt,rotate-krbtgt-invalidate}` queue; `params.invalidate` keeps nothing | `kerberos/krb5_krbtgt_rotation.ts` (#169) |
 | `oauth2.backchannel-logout-sweep` | cluster, service; `oauth2.backchannelLogoutSweepS` | `oauth-oidc/backchannel_logout.ts` (P5) |
 | `mail.deliver` | cluster, service; `mail.deliverS` — every realm's outbox: the messages due, dead-lettering past `mail.retentionS`, removing finished rows (#63) | `common/mail.ts` |
 | `ssf.dead-letter-sweep` | per-process; `ssf.deadLetterSweepS` — its summary and history are the process's own | `ssf/ssf.ts` (P5) |
 | `ssf.stream-maintenance` | cluster, realm; `ssf.streamMaintenanceSweepS`, off while `ssf.inactivityTimeoutS` and `ssf.verificationEveryS` are both 0 — SSF 1.0's inactivity timeout and transmitter-initiated verification | `ssf/ssf.ts` (#144) |
 | `risc.opt-out-effective` | cluster, realm; every 5 minutes, off while `risc.enabled` is off — sends RISC `opt-out-effective` for each account whose holder opted out on `/portal/signals` at least `risc.optOutDelayHours` ago (RISC 1.0 section 2.8, #146) | `ssf/ssf.ts` |
 | `risk.dataset-directory` | cluster, service; `risk.datasetsDirectoryScanS`, off while `risk.datasetsDirectory` is empty — imports each manifest's dataset file once (#62) | `risk/risk_datasets.ts` |
+| `risk.mds-refresh` | cluster, service; `risk.mdsRefreshS` (hourly once the active BLOB is past its nextUpdate), off while `risk.mdsUrl` is empty — downloads the FIDO MDS3 BLOB and imports it when its serial is newer (#105) | `risk/risk_datasets.ts` |
 | `risk.rescore` | cluster, service; `risk.rescoreEveryS`, off while `risk.assessSignIns` is — re-checks every live session against the datasets and the failure history and raises one that became riskier (#62 P4) | `risk/risk_engine.ts` |
 | `risk.retention` | cluster, service; hourly — deletes the rows of superseded and refused dataset versions and the failures past their retention (#62) | `risk/risk_datasets.ts` |
 | `saml2.sp-metadata-refresh` | cluster, service; `saml2.spMetadataRefreshIntervalS` | `saml/sp_metadata.ts` (P5) |
@@ -559,7 +562,9 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `cluster.rate-window-purge` | cluster, service; a minute, registered at the first shared count | `cluster/cluster_counters.js` (P5) |
 | `oauth2.used-assertion-purge` | cluster, service; a minute, registered at the first claim against a database | `common/used_assertions.js` (P5) |
 | `ldap.connection-mirror-maintenance` | per-process, quiet; socket-holding processes | `ldap/ldap_cluster_connections.ts` (P5) |
+| `federation.encryption-key-retire` | cluster, realm; five minutes, off while `federation.enabled` is off — removes the encryption key a relationship's rotation replaced once `federation.encryptionKeyGraceS` has passed (it stopped decrypting at that instant already) | `federation/federation_encryption.ts` (#168) |
 | `spiffe.authority-rotation` | cluster, realm; hourly, from each authority's own age, in both modes | `spiffe/spiffe_ca.ts` (D6) |
+| `spiffe.sigstore-tuf-refresh` | cluster, service; `spiffe.dockerSigstoreTufRefreshS` (daily), off while `spiffe.dockerSigstoreTufRootFile` is empty — the sigstore trust root through TUF, a failure keeping the last verified set (#170) | `spiffe/spiffe_sigstore_tuf.ts`, `spiffe/CLAUDE.md` |
 | `caches.eject-expired` | per-process, quiet; every minute — each store's own `eject()` | `admin-ui/caches_admin.ts`, `common/CLAUDE.md` 3ap (P5) |
 | `oauth2.expired-token-purge` | cluster, service; hourly — a token record past its expiry and `oauth2.expiredTokenRetentionS`, and the revocation of an expired token | `common/admin_stats.js` (P5; the ticket's "tracked tokens") |
 | `oauth2.client-secret-expiry` | cluster, realm; daily — warns (audit + log) about secrets expiring within `oauth2.clientSecretExpiryWarningDays` or expired, and clears a rotated-out secret past `oauth2.clientSecretOverlapS` | `common/signing_rotation.ts`, `common/applications.js` (P5) |

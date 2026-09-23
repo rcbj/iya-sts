@@ -105,6 +105,7 @@ import webauthnPolicy = require('../authn/webauthn_policy');
 import backupCodes = require('../common/backup_codes');
 // App passwords (#101): a LIBRARY, for the scope catalogue and the settings.
 import appPasswords = require('../common/app_passwords');
+import identityAssurance = require('../common/identity_assurance');
 // THE SIGN-ON SESSION MAP, which `signOnSessionRows()` walks. It is the same
 // destructured-require trap one module along: admin.js pulls fourteen names
 // out of two modules through multi-line destructures, and a name taken from
@@ -154,6 +155,10 @@ import errorCodes = require('../common/error_codes');
 // nothing here, so the require moves no route and closes no cycle.
 import usedAssertions = require('../common/used_assertions');
 import delegation = require('../common/delegation');
+// WHO MAY ACT FOR WHOM AT WS-TRUST AND THE TOKEN EXCHANGE (#108), for the
+// policy section of /admin/delegation and GET /admin-api/delegation/policy.
+// A library in `common/` that registers nothing.
+import delegationPolicy = require('../common/delegation_policy');
 import krb5Principals = require('../kerberos/krb5_principals');
 // Stored Kerberos keys (2026-09-12), a plain require for the reason
 // `admin_actions.ts` gives beside its own.
@@ -188,6 +193,8 @@ import authorizationServers = require('../oauth-oidc/authorization_servers');
 import federation = require('../federation/federation');
 // A federationLink's format (#109): a static utility class.
 import fedLinks = require('../federation/federation_links');
+// What a partner encrypts to (#168), for the relationship's page and API.
+import fedEncryption = require('../federation/federation_encryption');
 // The receiver half of Shared Signals, which the three reports below draw
 // this service's own registered streams from.
 import signals = require('../ssf/ssf_receivers');
@@ -397,6 +404,7 @@ interface AdminViewsDeps {
   webauthnPolicy: typeof webauthnPolicy;
   backupCodes: typeof backupCodes;
   appPasswords: typeof appPasswords;
+  identityAssurance: typeof identityAssurance;
   sessions: typeof authn.sessions;
   sessionStartedAt: typeof authn.sessionStartedAt;
   config: typeof config;
@@ -423,8 +431,11 @@ interface AdminViewsDeps {
   errorCodes: typeof errorCodes;
   usedAssertions: typeof usedAssertions;
   delegation: typeof delegation;
+  delegationPolicy: typeof delegationPolicy;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
+  // The krbtgt rotation (#169), lazily, for `admin_actions.ts`'s reason.
+  krbtgtRotation: () => any;
   oauth2: typeof oauth2;
   backchannel: typeof backchannel;
   softwareStatement: typeof softwareStatement;
@@ -438,6 +449,7 @@ interface AdminViewsDeps {
   saml11: typeof saml11;
   authorizationServers: typeof authorizationServers;
   federation: typeof federation;
+  fedEncryption: typeof fedEncryption;
   fedLinks: typeof fedLinks;
   signals: typeof signals;
   spiffeRegistry: typeof spiffeRegistry;
@@ -471,6 +483,7 @@ class AdminViews {
       webauthnPolicy: webauthnPolicy,
       backupCodes: backupCodes,
       appPasswords: appPasswords,
+      identityAssurance: identityAssurance,
       sessions: authn.sessions,
       sessionStartedAt: authn.sessionStartedAt,
       config: config,
@@ -497,8 +510,12 @@ class AdminViews {
       errorCodes: errorCodes,
       usedAssertions: usedAssertions,
       delegation: delegation,
+      delegationPolicy: delegationPolicy,
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
+      krbtgtRotation: function () {
+        return require('../kerberos/krb5_krbtgt_rotation');
+      },
       oauth2: oauth2,
       backchannel: backchannel,
       softwareStatement: softwareStatement,
@@ -512,6 +529,7 @@ class AdminViews {
       saml11: saml11,
       authorizationServers: authorizationServers,
       federation: federation,
+      fedEncryption: fedEncryption,
       fedLinks: fedLinks,
       signals: signals,
       spiffeRegistry: spiffeRegistry,
@@ -2902,6 +2920,49 @@ class AdminViews {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE WS-TRUST AND TOKEN-EXCHANGE DELEGATION POLICY (#108, 2026-09-23), for
+  // the section on /admin/delegation and GET /admin-api/delegation/policy —
+  // one function for both doors, `delegationView()`'s reason. Three lists,
+  // each PAGED on a parameter of its own at the page's ten rows
+  // (`policyPairsPage`, `intermediariesPage`, `peoplePage`; `per` for all
+  // three), because the people list is a walk of the directory and has no
+  // natural bound. `common/delegation_policy.ts` builds the register; the
+  // attributes are EDITED where every application attribute is — the
+  // application's own page and POST /admin-api/applications/update — and
+  // the two person flags on the person's page and POST
+  // /admin-api/users/set-not-delegated and /set-may-act.
+  // ---------------------------------------------------------------------------
+  delegationPolicyView(query) {
+    const { log, delegationPolicy } = this.deps;
+    log.debug("Entering AdminViews.delegationPolicyView().");
+    const q = query || {};
+    const register = delegationPolicy.list();
+    const pairs = this.pagedRows(q, register.pairs,
+      { name: 'policyPairs', noun: 'pairs', defaultPer: DELEGATION_PER_PAGE });
+    const intermediaries = this.pagedRows(q, register.intermediaries,
+      { name: 'intermediaries', noun: 'intermediaries',
+        defaultPer: DELEGATION_PER_PAGE });
+    const people = this.pagedRows(q, register.people,
+      { name: 'people', noun: 'people', defaultPer: DELEGATION_PER_PAGE });
+    log.debug("Leaving AdminViews.delegationPolicyView().");
+    return {
+      register: register, pairs: pairs, intermediaries: intermediaries,
+      people: people,
+      json: {
+        enforced: register.enforced,
+        attributes: register.attributes,
+        protectedGroups: register.protectedGroups,
+        pairs: pairs.shown,
+        pairsPaging: this.pagingJson(pairs.paging),
+        intermediaries: intermediaries.shown,
+        intermediariesPaging: this.pagingJson(intermediaries.paging),
+        people: people.shown,
+        peoplePaging: this.pagingJson(people.paging)
+      }
+    };
+  }
+
   // One group as a REPLY carries: what it is and how big, and not the rows.
   //
   // The rows are on the group's own page and in its own `?format=json`. A list
@@ -3326,6 +3387,24 @@ class AdminViews {
   // `krb5.enabled` is off has none, which `kerberos` below says rather than
   // showing an empty table that looks like a service with nothing in it.
   // ---------------------------------------------------------------------------
+  // The krbtgt block of `kerberosPrincipalsJson()` and of `/admin/kerberos`'s
+  // status (#169). A process without the rotation module — a console loaded
+  // without the composition root — answers the register's state alone.
+  krbtgtView() {
+    const { log, krb5PersonKeys, krbtgtRotation } = this.deps;
+    log.debug("Entering AdminViews.krbtgtView().");
+    try {
+      const view = krbtgtRotation().rotationView();
+      log.debug("Leaving AdminViews.krbtgtView().");
+      return view;
+    } catch (e) {
+      log.debug("Caught in AdminViews.krbtgtView(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving AdminViews.krbtgtView(). The register's state.");
+      return krb5PersonKeys.krbtgtState();
+    }
+  }
+
   kerberosPrincipalsJson(req) {
     const { log, config, realms, krb5Principals, krb5PersonKeys,
       adminActions } = this.deps;
@@ -3371,6 +3450,10 @@ class AdminViews {
                    ttlSetting: Number(config.value('krb5.retainedKeyTtlS')) },
       acceptor: { spn: account.spn, available: account.available,
                   storedKey: !!account.storedKey },
+      // THE REALM'S KRBTGT (#169): where its key comes from, the kvno, when
+      // it was made and last rotated, the versions kept, and the schedule —
+      // never a key. `null` in a realm with no KDC.
+      krbtgt: kerberos.enabled ? this.krbtgtView() : null,
       actions: adminActions.KERBEROS_PRINCIPAL_ACTIONS.slice(),
       people: peoplePage.shown,
       peopleTotal: people.length,
@@ -3780,7 +3863,7 @@ class AdminViews {
     log.debug("Entering AdminViews.spiffeListeners().");
     const read = spiffeReader ? spiffeReader() : null;
     log.debug("Leaving AdminViews.spiffeListeners().");
-    return read || { workload: [], api: [],
+    return read || { workload: [], api: [], broker: [],
                      bundlePath: config.value('spiffe.bundlePath') };
   }
 
@@ -3811,7 +3894,9 @@ class AdminViews {
                      chainSubjects: state.chainSubjects,
                      root: state.root,
                      maxRetained: spiffeCa.MAX_RETAINED_AUTHORITIES },
-      listeners: { workloadApi: bindings.workload, serverApi: bindings.api },
+      listeners: { workloadApi: bindings.workload, serverApi: bindings.api,
+                   // The SPIFFE Broker API's (#170).
+                   brokerApi: (bindings as any).broker || [] },
       // What the Workload API's Unix socket attests (#40 phase four): the
       // native module, the attestors, and each open attested connection.
       workloadAttestation: (bindings as any).workloadAttestation || null,
@@ -3845,7 +3930,9 @@ class AdminViews {
                  'spiffe.workloadPort', 'spiffe.serverPort',
                  'spiffe.serverSocketEnabled', 'spiffe.serverSocket',
                  'spiffe.grpcHost', 'spiffe.workloadAttestors',
-                 'spiffe.workloadProcRoot'].map(function (key) {
+                 'spiffe.workloadProcRoot', 'spiffe.brokerPort',
+                 'spiffe.brokers', 'spiffe.dockerSigstoreEnabled',
+                 'spiffe.dockerUseRootlessPodman'].map(function (key) {
         return { key: key, value: config.text(key) };
       })
     };
@@ -3889,6 +3976,45 @@ class AdminViews {
       entries: rows.slice(pg.offset, pg.offset + pg.perPage)
     };
     log.debug("Leaving AdminViews.spiffeEntriesJson(). " + rows.length +
+              " matched.");
+    return { json: json, paging: pg };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SPIFFE BROKER API'S BROKERS (#170): `spiffe.brokers`, parsed by the
+  // one parser the endpoint uses, filtered and paged, with the listeners the
+  // realm bound and what each broker may reference. An entry that does not
+  // parse is listed WITH its problem — it authorizes nothing, and a list
+  // that hid it would leave an operator wondering why a broker is refused.
+  // ---------------------------------------------------------------------------
+  spiffeBrokersJson(req) {
+    const { log, config, spiffeAuth } = this.deps;
+    log.debug("Entering AdminViews.spiffeBrokersJson().");
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const all = spiffeAuth.brokers();
+    const rows = all.filter(function (one) {
+      return !q || (one.id + ' ' + one.types.join(' ') + ' ' + one.problem)
+        .toLowerCase().indexOf(q) >= 0;
+    });
+    const pg = this.pagingOf(req.query, rows.length, { unit: 'broker' });
+    const bindings = this.spiffeListeners();
+    const json = {
+      total: all.length,
+      matched: rows.length,
+      filter: { q: q },
+      paging: { page: pg.page, pages: pg.pages, perPage: pg.perPage,
+                total: pg.total },
+      setting: 'spiffe.brokers',
+      port: config.text('spiffe.brokerPort'),
+      referenceTypes: ['pid', 'k8s', '*'],
+      listeners: (bindings as any).broker || [],
+      brokers: rows.slice(pg.offset, pg.offset + pg.perPage)
+        .map(function (one) {
+          return { id: one.id, referenceTypes: one.types,
+                   problem: one.problem };
+        })
+    };
+    log.debug("Leaving AdminViews.spiffeBrokersJson(). " + rows.length +
               " matched.");
     return { json: json, paging: pg };
   }
@@ -4324,7 +4450,7 @@ class AdminViews {
   // document a client fetches are one pass over the registry.
   // ---------------------------------------------------------------------------
   saml2ListJson(req) {
-    const { log, baseUrlOf, saml2 } = this.deps;
+    const { log, baseUrlOf, saml2, spMetadata } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.saml2ListJson().");
     log.debug("Entering saml2ListPage().");
@@ -4342,6 +4468,14 @@ class AdminViews {
     const paging = paged.paging;
     const filterParams = { q: String(req.query.q || '') || '',
                            per: req.query.per ? paging.perPage : '' };
+    // THE ENTITYIDS A REQUEST-STARTED METADATA QUERY WAS REFUSED FOR (#112):
+    // product mode's record of who asked to be registered by the responder
+    // and was not. A list of its own with a pager of its own
+    // (`mdqRefusedPage`), named after the array as the API's rule for a reply
+    // holding several lists asks.
+    const refused = this.pagedRows(req.query, spMetadata.mdqRefusalList(),
+                                   { name: 'mdqRefused',
+                                     noun: 'refused entityIDs' });
 
     log.debug("Leaving AdminViews.saml2ListJson(). " + filtered.length +
               " of " +
@@ -4349,6 +4483,7 @@ class AdminViews {
     return {
       base: base, all: all, needle: needle, filtered: filtered,
       paged: paged, paging: paging, filterParams: filterParams,
+      refused: refused,
       json: (function () {
       return {
           serviceProviders: paged.shown.map(function (row) {
@@ -4384,7 +4519,9 @@ class AdminViews {
           // while a browser is at the sign-in screen. A count that never falls
           // is a leak.
           artifactsAwaitingResolution: saml2.artifactCount(),
-          requestsHeldForSignIn: saml2.pendingRequestCount()
+          requestsHeldForSignIn: saml2.pendingRequestCount(),
+          mdqRefused: refused.shown,
+          mdqRefusedPaging: refused.paging
       };
       }())
     };
@@ -5740,7 +5877,8 @@ class AdminViews {
   // AND the ones the resource publishes — computed once so a partner reading
   // the document and an operator reading the page are told the same endpoint.
   federationDetailJson(req, id) {
-    const { log, baseUrlOf, realms, federation, fedLinks } = this.deps;
+    const { log, baseUrlOf, realms, federation, fedLinks, fedEncryption } =
+      this.deps;
     const self = this;
     log.debug("Entering AdminViews.federationDetailJson(). id=" + id);
     const record = federation.get(id);
@@ -5787,7 +5925,29 @@ class AdminViews {
     // prefix itself. `realms.href()` is the guarded version and is safe either
     // way.
     const loginPath = realms.href(login);
+    // A PARTNER'S SIGN-OUT (#167): the addresses to register at the partner,
+    // per protocol — the SAML SingleLogoutService and WS-Federation cleanup
+    // URL (one path), and OpenID Connect's three registration members. None
+    // for SAML 1.1 and OAuth 2.0, which define no sign-out.
+    const slo = base + federation.PATHS.slo + '/' + encodeURIComponent(row.id);
+    const signOut = row.protocol === 'saml2'
+      ? { singleLogout: slo }
+      : row.protocol === 'wsfed'
+        ? { signOutCleanup: slo }
+        : row.protocol === 'oidc'
+          ? { backchannelLogout: base + federation.PATHS.backchannelLogout +
+                '/' + encodeURIComponent(row.id),
+              frontchannelLogout: base + federation.PATHS.frontchannelLogout +
+                '/' + encodeURIComponent(row.id),
+              postLogoutRedirect: slo }
+          : {};
 
+    // WHAT A PARTNER ENCRYPTS TO (#168): the policy, the public key table,
+    // and the two places it is published.
+    const encryption = fedEncryption.viewOf(record);
+    const jwks = row.protocol === 'oidc' && row.role === 'service-provider'
+      ? base + federation.PATHS.jwks + '/' + encodeURIComponent(row.id)
+      : null;
     const setFields = federation.fieldsForRole(row.role, 'set')
                                 .filter(function (field) {
       // The four booleans get their own two-button control below, because a
@@ -5796,7 +5956,13 @@ class AdminViews {
       // disabled while the page says it is on.
       return ['fedEnabled', 'fedAutocreateUsers', 'fedUpdateUserAttributes',
               'fedMayAssertAdministrators', 'fedSignRequest',
-              'fedAllowUnsolicited'].indexOf(field.name) === -1;
+              'fedAllowUnsolicited', 'fedAcceptSignout',
+              'fedRequireSignedLogout', 'fedAllowUnencrypted']
+        .indexOf(field.name) === -1 &&
+        // The four encryption fields mean nothing to SAML 1.1 and OAuth 2.0.
+        (federation.encrypts(record) ||
+         ['fedEncryptionKeyType', 'fedKeyManagementAlgorithm',
+          'fedContentEncryptionAlgorithm'].indexOf(field.name) === -1);
     });
     const multiFields = federation.fieldsForRole(row.role, 'multi');
     // THE PEOPLE THIS PARTNER'S SUBJECTS ARE LINKED TO (#109), paged — a
@@ -5816,14 +5982,20 @@ class AdminViews {
     log.debug("Leaving AdminViews.federationDetailJson().");
     return {
       record: record, row: row, base: base, acs: acs, login: login,
-      metadata: metadata, loginPath: loginPath,
+      metadata: metadata, loginPath: loginPath, jwks: jwks,
+      encryption: encryption,
+      signOut: row.role === 'service-provider' ? signOut : {},
       setFields: setFields, multiFields: multiFields, linkPage: linkPage,
       json: (function () {
       return Object.assign({ found: true }, row, {
-          endpoints: { assertionConsumerService: acs, login: loginPath,
+          endpoints: Object.assign({
+                       assertionConsumerService: acs, login: loginPath,
                        metadata: (row.protocol === 'saml2' ||
-                                  row.protocol === 'saml11')
-                         ? metadata : null },
+                                  row.protocol === 'saml11' ||
+                                  row.protocol === 'wsfed')
+                         ? metadata : null,
+                       jwks: jwks },
+                       row.role === 'service-provider' ? signOut : {}),
           // The whole record, MINUS the one sensitive field. `fedClientSecret`
           // is replaced by a boolean saying whether one is set — which is the
           // fact a caller actually needs ("is this configured?") without the
@@ -5842,6 +6014,7 @@ class AdminViews {
             return out;
           })(),
           editable: federation.fieldsForRole(row.role),
+          encryption: encryption,
           // Who this partner's subjects are linked to (#109): the page, and
           // the paging a caller walks it with.
           links: linkPage.shown,
@@ -6287,7 +6460,10 @@ class AdminViews {
                           { name: 'federationLinks', noun: 'links' });
   }
 
-  userDetailJson(req, key) {
+  // `risk` is the person's current standing (#62), read by `riskFor()`
+  // before this synchronous view runs and handed in, because a view reads
+  // nothing off the request but its query.
+  userDetailJson(req, key, risk?: any) {
     const { log, subjectForName, stats } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.userDetailJson(). key=" + key);
@@ -6438,6 +6614,9 @@ class AdminViews {
           // first thing somebody matching a relying party's records to this
           // page needs.
           subject: subjectForName(key),
+          // THE PERSON'S CURRENT RISK (#62) — null for a person never
+          // assessed.
+          risk: risk || null,
           // WHAT THEY CAN SIGN IN WITH, and what they are asked for as a second
           // factor (2026-09-10). It is `factors` here and on every row of the
           // list, so a caller reads one member name whichever view it fetched.
@@ -6499,7 +6678,37 @@ class AdminViews {
   // person does not exist". The page was right and the resource was wrong,
   // which is the exact shape of disagreement this whole directory exists to
   // prevent.
-  usersJson(req) {
+  // -------------------------------------------------------------------------
+  // THE PERSON'S CURRENT RISK, READ FIRST (#62). The user views are
+  // synchronous and a person's standing is a row in the risk store, which is
+  // not; so the console's route and the management API's both await this,
+  // from the same query the view is drawn from, and hand the answer in.
+  // Undefined when no person is named; null when never assessed or the store
+  // could not say. Never rejects.
+  // -------------------------------------------------------------------------
+  async riskFor(query: any): Promise<any> {
+    const { log, subjectForName } = this.deps;
+    log.debug("Entering AdminViews.riskFor().");
+    const wanted = String((query || {}).user || '').trim();
+    if (!wanted) {
+      log.debug("Leaving AdminViews.riskFor(). No person named.");
+      return undefined;
+    }
+    try {
+      const standing = await require('../risk/risk_engine').standingFor(
+        realms.currentId(), String(subjectForName(wanted) || ''));
+      log.debug("Leaving AdminViews.riskFor().");
+      return standing;
+    } catch (e) {
+      log.debug("Caught in AdminViews.riskFor(): " +
+                ((e && e.message) || e));
+      // No risk engine in this process: the page says the risk is unknown.
+      log.debug("Leaving AdminViews.riskFor(). Unknown.");
+      return null;
+    }
+  }
+
+  usersJson(req, risk?: any) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.usersJson().");
     const wanted = String((req.query || {}).user || '').trim();
@@ -6507,7 +6716,7 @@ class AdminViews {
       log.debug("Leaving AdminViews.usersJson().");
       return this.usersListJson(req).json;
     }
-    const detail = this.userDetailJson(req, wanted);
+    const detail = this.userDetailJson(req, wanted, risk);
     if (!detail) {
       log.debug("Leaving AdminViews.usersJson().");
       return { user: wanted, known: false };
@@ -6567,7 +6776,15 @@ class AdminViews {
       keys: (mech.keys || []).map(function (one) {
         return { credentialId: one.credentialId, role: one.role,
                  label: one.label || null, signCount: one.signCount || 0,
-                 enrolledAt: one.enrolledAt || 0 };
+                 enrolledAt: one.enrolledAt || 0,
+                 // WHAT THE ATTESTATION PROVED (#105), the record
+                 // `authn/webauthn_attestation.ts` wrote: format, type,
+                 // verified, trusted, anchor, the model the FIDO metadata
+                 // names and its certification. null for a key written by
+                 // a door that verified nothing; the AAGUID is then only the
+                 // authenticator's claim, which is why it is beside it.
+                 aaguid: one.aaguid || null,
+                 attestation: one.attestation || null };
       }),
       primaryKeys: mech.primaryKeys,
       mfaKeys: mech.mfaKeys,
@@ -6663,6 +6880,40 @@ class AdminViews {
       }),
       passwordOnlyDoors: this.passwordOnlyDoorsFor(who),
       passwords: page.shown,
+      page: page.paging.page, pages: page.paging.pages,
+      perPage: page.paging.perPage, total: page.paging.total,
+      paging: this.pagingJson(page.paging)
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE PERSON'S IDENTITY VERIFICATIONS, PAGED (#127) — `GET
+  // /admin-api/users/verifications`, the list the Identity verifications block
+  // on their /admin/users page draws. The whole record, evidence included:
+  // this is the administrator who recorded it reading it back, and the
+  // directory withholds the attribute from every LDAP read for exactly that
+  // reason. Beside it, the vocabularies a record is made from.
+  // ---------------------------------------------------------------------------
+  verificationsJson(query) {
+    const { log, identityAssurance } = this.deps;
+    log.debug("Entering AdminViews.verificationsJson().");
+    const who = String((query && (query.user || query.username)) || '').trim();
+    const held = who ? identityAssurance.list(who) : [];
+    const page = this.pagedRows(query || {}, held,
+                                { noun: 'identity verifications' });
+    log.debug("Leaving AdminViews.verificationsJson(). " + held.length +
+              " held.");
+    return {
+      user: who,
+      trustFrameworks: identityAssurance.trustFrameworks(),
+      evidenceTypes: identityAssurance.EVIDENCE_TYPES.slice(0),
+      documentTypes: identityAssurance.DOCUMENT_TYPES.slice(0),
+      checkMethods: identityAssurance.CHECK_METHODS.slice(0),
+      electronicRecordTypes:
+        identityAssurance.ELECTRONIC_RECORD_TYPES.slice(0),
+      attestationTypes: identityAssurance.ATTESTATION_TYPES.slice(0),
+      verifiableClaims: identityAssurance.VERIFIABLE_CLAIMS.slice(0),
+      verifications: page.shown,
       page: page.paging.page, pages: page.paging.pages,
       perPage: page.paging.perPage, total: page.paging.total,
       paging: this.pagingJson(page.paging)
@@ -7008,8 +7259,10 @@ export = {
   userDetailSubject: helpers.subjectForName,
   mfaJson: slot.forward('mfaJson'),
   appPasswordsJson: slot.forward('appPasswordsJson'),
+  verificationsJson: slot.forward('verificationsJson'),
   passwordOnlyDoorsFor: slot.forward('passwordOnlyDoorsFor'),
   userDetailJson: slot.forward('userDetailJson'),
+  riskFor: slot.forward('riskFor'),
   personCredentialsState: slot.forward('personCredentialsState'),
   usersJson: slot.forward('usersJson'),
   peopleRows: slot.forward('peopleRows'),
@@ -7060,6 +7313,7 @@ export = {
   spiffeJson: slot.forward('spiffeJson'),
   spiffeEntriesJson: slot.forward('spiffeEntriesJson'),
   spiffeAgentsJson: slot.forward('spiffeAgentsJson'),
+  spiffeBrokersJson: slot.forward('spiffeBrokersJson'),
   setSignalsReporter: slot.forward('setSignalsReporter'),
   setCaepReporter: slot.forward('setCaepReporter'),
   setRiscReporter: slot.forward('setRiscReporter'),
@@ -7090,6 +7344,7 @@ export = {
   errorCodesView: slot.forward('errorCodesView'),
   usedAssertionsView: slot.forward('usedAssertionsView'),
   delegationView: slot.forward('delegationView'),
+  delegationPolicyView: slot.forward('delegationPolicyView'),
   clusterSummary: slot.forward('clusterSummary'),
   permissionGroupsView: slot.forward('permissionGroupsView'),
   queryOne: slot.forward('queryOne'),
@@ -7107,6 +7362,7 @@ export = {
   setTruststore: slot.forward('setTruststore'),
   truststoreJson: slot.forward('truststoreJson'),
   kerberosPrincipalsJson: slot.forward('kerberosPrincipalsJson'),
+  krbtgtView: slot.forward('krbtgtView'),
   consoleRpSession: slot.forward('consoleRpSession'),
   gateStateFor: slot.forward('gateStateFor'),
   signOnSessionRows: slot.forward('signOnSessionRows'),

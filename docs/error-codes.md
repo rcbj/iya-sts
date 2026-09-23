@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3119** of them, in **37** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3255** of them, in **37** subsystems.
 
 ## Where a code appears
 
@@ -56,35 +56,35 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 69
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 174
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 74
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 179
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 204
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 494
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 220
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 503
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 97
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 154
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
+* [Federation (`STS-FED`)](#sts-fed) — 131
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 74
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 123
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 142
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 101
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 24
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 89
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 27
 * [Mail (`STS-MAIL`)](#sts-mail) — 34
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 276
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 180
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 187
 * [Management API (`STS-API`)](#sts-api) — 73
-* [User portal (`STS-PORTAL`)](#sts-portal) — 62
+* [User portal (`STS-PORTAL`)](#sts-portal) — 64
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 123
+* [Registries (`STS-REG`)](#sts-reg) — 129
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -196,10 +196,10 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0100` | A trust realm was given a domain another realm — the default realm's global.domain included — already has. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0101` | An update tried to change a trust realm's domain, which is fixed when the realm is created. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0102` | A cache or replay store could not eject its expired entries; the store still refuses an expired entry where it reads it. | none — logged by the caches.eject-expired job |
-| `STS-CORE-0103` | A write giving a development-only setting a value other than its default — a …SkipTlsVerification or spiffe.k8sSkipKubeletVerification (#171); oauth2.breakIdTokenNonce, ssf.breakSetSignature, ssf.legacySubClaim or spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off (#104) — was refused because the realm it lands in is in product mode. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-CORE-0103` | A write giving a development-only setting a value other than its default — a …SkipTlsVerification or spiffe.k8sSkipKubeletVerification (#171); oauth2.breakIdTokenNonce, ssf.breakSetSignature, ssf.legacySubClaim or spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off (#104); oid4vp.requireStatusReference off (#165); risc.googleSubjectType or saml.allowSha1Signatures on, saml2.signAssertion, saml11.signAssertion, saml11.signResponse or spiffe.requireSecurityHeader off, krb5.clockOffset not 0, or a weak value of saml.signatureAlgorithm (rsa-sha1), saml2.keyTransportAlgorithm (rsa-1_5) or pki.signatureAlgorithm (sha1-rsa, sha1-ecdsa) (#181) — was refused because the realm it lands in is in product mode. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-CORE-0104` | An outbound request (a GNAP push, an SSF push, a federation back channel or an XACML nudge) was not made because the CA file its …CaFile setting names could not be read or holds no certificate. | none — the family's own failure record (a grant history, a dead letter, a relationship's last error, a PEP row) |
 | `STS-CORE-0105` | The service did not start: the appconfig file or the environment still names a setting removed on 2026-09-23 (#171) — gnap.pushAllowInsecure, ssf.pushAllowInsecure, federation.outboundAllowInsecure or xacml.pepNotifyAllowInsecure. | none — the process exits |
-| `STS-CORE-0106` | A development-only setting — oauth2.breakIdTokenNonce, ssf.breakSetSignature, ssf.legacySubClaim or spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off — is stored in a realm that is in product mode, and is ignored: its default is in force. Logged once per process and setting (#104). | none — a warning in the log |
+| `STS-CORE-0106` | A development-only setting — one of those STS-CORE-0103 lists, or an application attribute overriding one (#181) — is stored in a realm that is in product mode, and is ignored: its default is in force. Logged once per process and setting or attribute (#104). | none — a warning in the log |
 
 ## STS-WORKER
 
@@ -461,6 +461,11 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0067` | A realm's signing-key history could not be recorded; the rotation or retirement itself succeeded. | none — logged. The next observation writes the rows, because the history is derived from the key set rather than from the event |
 | `STS-KEYS-0068` | The signing-key history was asked for a unit this realm has no record of. | HTTP 400 from GET /admin-api/keys/history; a refusal on /admin/keys/history |
 | `STS-KEYS-0069` | A certificate authority row listed a certificate it still publishes as revoked; the revocation was dropped rather than written. | none — logged. A row may not publish a certificate its own CRL calls revoked; the drop is evidence of a tier write that was lost |
+| `STS-KEYS-0070` | An XML element encrypted to this realm wrapped its key with rsa-1_5 (RSAES-PKCS1-v1_5), and the realm is in product mode, where that key transport is never unwrapped — XML Encryption 1.1 section 6.1.2 (#181). | the caller's refusal: a LogoutRequest's EncryptedID that cannot be read is answered as the SAML binding says |
+| `STS-KEYS-0071` | An XML element's block cipher, key management or OAEP digest is one the caller's allow-list excludes; refused before any key operation (#168). | the caller's refusal — federation answers STS-FED-0139 |
+| `STS-KEYS-0072` | An rsa-oaep EncryptedKey named a digest and mask generation function this service cannot unwrap with: an unknown one, or two that differ (node derives MGF1 from the OAEP digest). | the caller's refusal |
+| `STS-KEYS-0073` | An XML element's key is agreed by an AgreementMethod other than ECDH-ES. | the caller's refusal |
+| `STS-KEYS-0074` | An XML element encrypted by ECDH-ES key agreement was handed to a recipient whose private key is not an EC key. | the caller's refusal |
 
 ## STS-PKI
 
@@ -644,6 +649,11 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0185` | A CRL was not signed because its CRL number could not be advanced in the store shared by this service's nodes. | HTTP 500 from the CRL distribution point |
 | `STS-PKI-0186` | A certificate was not recorded because the Issuing CA that signed it was replaced, repeatedly, while it was being signed. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-PKI-0187` | The public crypto metadata document (/crypto/metadata) could not be built. | HTTP 500 server_error from /crypto/metadata |
+| `STS-PKI-0188` | A presented certificate chain was refused under pki.revocationCheck=hard-fail because a certificate in it names revocation addresses this service is configured NOT TO DIAL and no other it could use — a plain ldap: CRL under pki.revocationLdap=ldaps, any ldap with it off, a name relative to the CRL issuer without pki.revocationLdapDirectory, a scheme that is never dialled, or an OCSP responder that is not http(s) — so its status could not be established. Distinct from STS-PKI-0119 so that a policy refusal is not read as an unreachable server; also logged, once per address per process, naming the setting that would dial it. | The same refusals as STS-PKI-0118, per door |
+| `STS-PKI-0189` | A presented certificate carries RFC 9608 noRevAvail beside something section 3 forbids with it — cA TRUE, cRLDistributionPoints, freshestCRL, or an OCSP responder in its Authority Information Access — and is refused as INVALID under every policy but off. | The same refusals as STS-PKI-0118, per door |
+| `STS-PKI-0190` | A presented certificate chain was refused under pki.revocationCheck=hard-fail because a certificate in it, issued by an authority this service does not hold, names no CRL distribution point and no OCSP responder, carries no RFC 9608 noRevAvail, and pki.revocationRequireDistributionPoint (auto, in product mode, or on) refuses a certificate nobody can revoke. | The same refusals as STS-PKI-0118, per door |
+| `STS-PKI-0191` | A certificate authority build, or a key pair issued under one, named a SHA-1 signature algorithm (sha1-rsa or sha1-ecdsa) in a realm that is in product mode, where SHA-1 is never used (#181). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-PKI-0192` | An encryption key pair was asked for in a key type this service does not issue one of (rsa-3072 and ec-p256, #168). | the caller's refusal |
 
 ## STS-ENROLL
 
@@ -1087,6 +1097,22 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0223` | A password was set in product mode by a door that did not screen it against Pwned Passwords first, so no breach verdict was there to read. The door is named in the line; it needs a screen(). | — |
 | `STS-AUTHN-0224` | The Pwned Passwords range API did not answer (off, unreachable, refused by the outbound rules, or too slow); a password was set unscreened. | — |
 | `STS-AUTHN-0225` | The browser fingerprint script was asked for while risk.fingerprinting is off in the realm; nothing draws a page that uses it, so it is not served (#62 P6). | HTTP 404 |
+| `STS-AUTHN-0226` | A delegation flag on a person (stsNotDelegated or stsMayAct) could not be written onto their entry, or the credential store is not installed (#108). | none — the caller's refusal |
+| `STS-AUTHN-0227` | A person's delegate (stsMayAct) was refused: it names no person or application entry in this realm, or names the person themselves (#108). | none — the caller's refusal |
+| `STS-AUTHN-0228` | A WebAuthn registration was refused: the credential's algorithm is not one of the pubKeyCredParams this realm offered (webauthn.algorithms) (#105). | W3C WebAuthn Level 3 section 7.1 |
+| `STS-AUTHN-0229` | A WebAuthn registration was refused: the credential id is longer than 1023 bytes (#105). | W3C WebAuthn Level 3 section 7.1 |
+| `STS-AUTHN-0230` | A WebAuthn registration was refused: the authenticator data says the credential is backed up (BS) and not backup eligible (BE) (#105). | W3C WebAuthn Level 3 section 7.1 |
+| `STS-AUTHN-0231` | A WebAuthn registration was refused: its attestation statement format is not one of section 8's eight (#105). | W3C WebAuthn Level 3 sections 7.1 and 8 |
+| `STS-AUTHN-0232` | A WebAuthn registration was refused: its attestation statement does not conform to its format's syntax — a member missing, of the wrong type, or not defined by the format (#105). | W3C WebAuthn Level 3 section 8 |
+| `STS-AUTHN-0233` | A WebAuthn registration was refused: the attestation signature does not verify (#105). | W3C WebAuthn Level 3 section 8 |
+| `STS-AUTHN-0234` | A WebAuthn registration was refused: a requirement of its attestation format failed — the certificate's fields, the key it certifies, the TPM certInfo, the Android challenge or authorization list, the SafetyNet or Apple nonce (#105). | W3C WebAuthn Level 3 section 8 |
+| `STS-AUTHN-0235` | A WebAuthn registration was refused: its attestation does not chain to a trust anchor — to the roots the FIDO Metadata Service lists for a model it lists, or to any anchor where the realm requires a trusted statement (#105). | W3C WebAuthn Level 3 section 7.1 steps 23-25 |
+| `STS-AUTHN-0236` | A WebAuthn registration was refused: the authenticator model's AAGUID is not in webauthn.attestationAllowedAaguids (#105). | — |
+| `STS-AUTHN-0237` | A WebAuthn registration was refused: the FIDO Metadata Service reports the authenticator model REVOKED, USER_VERIFICATION_BYPASS or one of the KEY_COMPROMISE statuses (#105). | FIDO Metadata Service section 3.1.4 |
+| `STS-AUTHN-0238` | A WebAuthn registration was refused: the authenticator model does not hold the certification level, or the FIPS 140 certification, the realm requires — or the FIDO Metadata Service does not list it (#105). | FIDO Metadata Service section 3.1.4.1 |
+| `STS-AUTHN-0239` | A WebAuthn registration was refused: a certificate in the attestation chain is revoked, or its status could not be established under pki.revocationCheck (#105). | W3C WebAuthn Level 3 section 7.1; RFC 5280 section 6.3 |
+| `STS-AUTHN-0240` | A WebAuthn registration was refused: the authenticator sent no attestation or a self attestation, and the realm requires a trusted one (#105). | W3C WebAuthn Level 3 section 7.1 step 24 |
+| `STS-AUTHN-0241` | A WebAuthn registration was refused because its attestation statement could not be checked: the verifier threw. The line names the format and the stack (#105). | — |
 
 ## STS-OAUTH
 
@@ -1590,6 +1616,15 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0612` | An RFC 7009 revocation request from an authenticated or identified client presented a token issued to another client. Refused and nothing revoked; the audit row names both clients (#102). | invalid_grant (HTTP 400, RFC 7009 section 2.1 and RFC 6749 section 5.2) |
 | `STS-OAUTH-0613` | A client authenticating at the revocation endpoint declares a token_endpoint_auth_method the selected authorization server does not list in revocation_endpoint_auth_methods_supported (#102). | invalid_client (HTTP 401) |
 | `STS-OAUTH-0614` | The revocation endpoint failed with an unexpected error outside every refusal it makes (#102). | server_error (HTTP 500) |
+| `STS-OAUTH-0615` | A refresh was refused because a consent its grant stood on — the person's own, or the application's global consent that the person had not given themselves — was withdrawn at or after the grant was made (#172). The refresh token's grant is revoked. | HTTP 400 {error: invalid_grant} |
+| `STS-OAUTH-0616` | A refresh of a grant made at the authorization endpoint was refused because no recorded consent covered one of its scopes when it was granted, while consent is required and oauth2.refreshRequiresConsent is on (#172). | HTTP 400 {error: invalid_grant} |
+| `STS-OAUTH-0617` | Withdrawing a consent could not revoke a refresh family by id; its members known on this node were revoked, and the refresh grant refuses any other at its first use (#172). | none — logged |
+| `STS-OAUTH-0618` | A token exchange was refused by the delegation policy (#108): the subject may not be delegated (stsNotDelegated, or a member of the console roster), the client has no application entry, is not trusted to impersonate (appTrustedToImpersonate), or may not act for this subject (appDelegationSubjectGroup), or no target was named. Product mode only; development records what would have been refused. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0619` | A token exchange was refused because the delegation policy allows no target it names: neither appAllowedToDelegateTo on the client nor appAllowedToActOnBehalfOf on the target lists the other (#108). Product mode only. | invalid_target (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0620` | A token exchange was refused because the verified subject_token carries a may_act claim naming a party other than the actor (the actor_token's subject, or the client when there is no actor_token). Held in every mode (#108). | invalid_request (HTTP 400), RFC 8693 sections 2.2.2 and 4.4 |
+| `STS-OAUTH-0621` | A token exchange asked for a scope wider than the verified subject_token's own scope claim, and product mode refuses an exchange that widens what the subject granted (#108). | invalid_scope (HTTP 400), RFC 6749 section 5.2 |
+| `STS-OAUTH-0622` | A token exchange the delegation attributes allowed was refused because the issuance policy answered Deny for action-id `delegate` — the deny-only XACML layer (#108). Product mode only. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0623` | A person's recorded identity verifications (OpenID Connect for Identity Assurance, #127) could not be read — the value on the entry is not a JSON list — or recording one after a wallet or certificate sign-in threw. Read as none; the sign-in stands. | none — verified_claims is omitted |
 
 ## STS-SAML
 
@@ -1678,6 +1713,11 @@ Raised from: saml/.
 | `STS-SAML-0077` | A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request came from a caller that is not authenticated — no signature verifying against the party's registered certificates and no TLS client certificate that is one of them — where authenticated callers are required (saml2.requireSignedAuthnRequests, on in product by default). The artifact is not spent. | a SOAP response with StatusCode Requester (HTTP 200) |
 | `STS-SAML-0078` | An artifact was asked for by a party other than the one it was issued to (an ArtifactResolve whose Issuer, or a SAML 1.1 responder path, names another). Refused in every mode; the artifact is not spent. | a SOAP response with StatusCode Requester (HTTP 200) |
 | `STS-SAML-0079` | A service provider metadata fetch (a refresh, the background refresher or an MDQ lookup) was refused because the host resolves to a loopback, private, link-local or reserved address, or did not resolve, in product mode (federation_http.ts vetHost()). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-SAML-0080` | A Metadata Query (MDQ) lookup started by a request from an entityID nobody registered was not made: the realm is in product mode (mode.registersFromMetadataQuery()) and has no saml2.metadataTrustAnchors, so no answer could be verified. Nothing is fetched or created; the entityID is listed as refused on the SAML 2.0 page. | — |
+| `STS-SAML-0081` | A Metadata Query (MDQ) answer for an entityID nobody registered, fetched for a lookup a request started, did not verify against any of the realm's saml2.metadataTrustAnchors (product mode). Nothing is created; the entityID is listed as refused on the SAML 2.0 page. | — |
+| `STS-SAML-0082` | A SAML 2.0 per-service-provider path (/saml2/metadata/{sp}, /saml2/sso/{sp}, /saml2/slo/{sp} or /saml2/ars/{sp}) named something that is not a registered SAML 2.0 service provider, in product mode (mode.publishesMetadataForUnregisteredProviders()). | an HTTP 404, text/plain |
+| `STS-SAML-0083` | A SAML 1.1 per-relying-party path (/saml11/metadata/{rp}, /saml11/sso/{rp} or /saml11/responder/{rp}) named something that is not a registered SAML 1.1 relying party, in product mode (mode.publishesMetadataForUnregisteredProviders()). | an HTTP 404, text/plain |
+| `STS-SAML-0084` | An administrator's Import from MDQ was refused: the realm is in product mode and has no saml2.metadataTrustAnchors, so the answer could not be verified, and saml2.mdqImportWithoutAnchors is off. | the caller's refusal (errors on a console or /admin-api reply) |
 
 ## STS-WSTRUST
 
@@ -1704,6 +1744,9 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0015` | The STS endpoint threw an unexpected exception while handling a RequestSecurityToken. | SOAP 1.2 Fault soap:Sender (HTTP 500) |
 | `STS-WSTRUST-0016` | A token was issued but starting the browser sign-on session the exchange also starts threw; the RSTR is unaffected. | — |
 | `STS-WSTRUST-0017` | A JWT was refused because the directory holds no entry for the person, so there is no subject to issue it about. | SOAP Fault (HTTP 400) |
+| `STS-WSTRUST-0018` | An OnBehalfOf or ActAs request was refused by the delegation policy (#108): the subject may not be delegated, the requester is not trusted to impersonate or may not act for this subject, or no attribute allows the AppliesTo. Product mode only; development records what would have been refused. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0019` | An OnBehalfOf or ActAs request was refused because its requester authenticated as a PERSON (or as a name with no application entry): in product mode only an application entry may delegate (#108). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0020` | An OnBehalfOf or ActAs request the delegation attributes allowed was refused because the issuance policy answered Deny for action-id `delegate` (#108). Product mode only. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 
@@ -1748,7 +1791,7 @@ Raised from: federation/.
 | `STS-FED-0008` | A partner's SAMLResponse could not be base64-decoded. | HTTP 400 page |
 | `STS-FED-0009` | A partner's SAMLResponse or WS-Federation wresult is not well-formed XML, or has no document element. | HTTP 400 page |
 | `STS-FED-0010` | A federation partner answered with a SAML status other than Success: it declined to authenticate the person. | HTTP 400 page |
-| `STS-FED-0011` | A partner's SAML Response or WS-Federation token carried no <Assertion> (an encrypted assertion looks like this; it is not decrypted). | HTTP 400 page |
+| `STS-FED-0011` | A partner's SAML Response or WS-Federation token carried no <Assertion> and no <EncryptedAssertion>, an encrypted one reached a SAML 1.1 relationship (which has no encryption construct), or what one decrypted to is not an assertion. | HTTP 400 page |
 | `STS-FED-0012` | A partner's SAML assertion or response carries no XML signature at all, so it is refused as unauthenticated. | HTTP 401 page |
 | `STS-FED-0013` | A partner's XML signature did not verify against the fedSigningCertificate configured on the relationship (a certificate inside the document is never used). | HTTP 401 page |
 | `STS-FED-0014` | A partner's assertion arrived for a relationship with no fedSigningCertificate, so nothing can be verified and nothing is accepted. | HTTP 401 page |
@@ -1761,7 +1804,7 @@ Raised from: federation/.
 | `STS-FED-0021` | A partner's response came back with no RelayState, wctx or state, so it cannot be matched to a sign-in this service started (unsolicited). | HTTP 401 page |
 | `STS-FED-0022` | A partner's response carried a RelayState, wctx or state this service did not mint, or whose sign-in expired or was already spent (a replay or forgery). | HTTP 401 page |
 | `STS-FED-0023` | A partner's SAML 2.0 assertion InResponseTo names a different AuthnRequest from the one this sign-in sent. | HTTP 401 page |
-| `STS-FED-0024` | A WS-Federation message at the federation assertion consumer service is not wa=wsignin1.0 (a federated sign-out is not consumed). | HTTP 400 page |
+| `STS-FED-0024` | A sign-out arrived at the federation assertion consumer service — a WS-Federation wa other than wsignin1.0, or a SAML LogoutRequest — where it is not consumed: a partner's sign-out goes to /federation/slo/{id} (#167). | HTTP 400 page |
 | `STS-FED-0025` | An OAuth 2.0 / OpenID Connect partner redirected back with an error instead of a code. | HTTP 400 page |
 | `STS-FED-0026` | An OpenID Connect partner configured for a front-channel ID Token posted back no id_token. | HTTP 400 page |
 | `STS-FED-0027` | An OAuth 2.0 / OpenID Connect partner redirected back with neither a code nor an error. | HTTP 400 page |
@@ -1835,6 +1878,40 @@ Raised from: federation/.
 | `STS-FED-0111` | The linking step was reached in a browser that did not start it: the cookie binding it to the browser the partner's response arrived in was absent or different. | HTTP 403 page |
 | `STS-FED-0112` | An outbound federation request (a back channel, a metadata or status-list fetch, a Logout Token) was refused because its URL is plain http and the realm is in product mode, whatever federation.outboundAllowHttp says (#171). | the caller's failure: a sign-in page, a dead letter, a refusal |
 | `STS-FED-0113` | Product mode ignored federation.outboundSkipTlsVerification: an outbound request verifies the certificate of whoever answers whatever it says. Logged once per process (#171). | none — a warning in the log |
+| `STS-FED-0114` | A SAML message at a federation single logout endpoint could not be decoded, or is not a well-formed LogoutRequest or LogoutResponse. | HTTP 400 page |
+| `STS-FED-0115` | A partner's SAML LogoutRequest or LogoutResponse is unsigned, and the relationship requires a signed one (saml-profiles-2.0-os section 4.4.4.1; fedRequireSignedLogout). | HTTP 403 page; no session was ended |
+| `STS-FED-0116` | A partner's SAML logout message carries a signature that does not verify against the relationship's fedSigningCertificate, or that cannot be checked (an algorithm with no verifier, SHA-1 while it is off, incomplete Redirect-binding octets). | HTTP 403 page; no session was ended |
+| `STS-FED-0117` | A partner's sign-out (a SAML logout message or a Logout Token) names an issuer other than the relationship's fedPeer. | HTTP 403 page, or HTTP 400 invalid_request on the back channel |
+| `STS-FED-0118` | A partner's signed SAML logout message names no Destination, or one that is not this relationship's single logout endpoint (saml-bindings-2.0-os section 3.4.5.2). | HTTP 403 page; no session was ended |
+| `STS-FED-0119` | A partner's sign-out is outside its validity window: a LogoutRequest past its NotOnOrAfter, or a LogoutRequest or Logout Token issued in the future or longer ago than federation.requestTtlMin. | HTTP 403 page, or HTTP 400 invalid_request on the back channel |
+| `STS-FED-0120` | A partner's sign-out was replayed: its LogoutRequest ID or Logout Token jti has already been accepted (the used-assertion history, rule 3ae). | HTTP 403 page, or HTTP 400 invalid_request on the back channel |
+| `STS-FED-0121` | The used-assertion history could not be asked, or is full, so a partner's sign-out could not be proved unused and was refused (fail closed). | HTTP 503 page, or HTTP 503 on the back channel (the partner retries) |
+| `STS-FED-0122` | A verified partner sign-out matched no session held here: no federated session carries that NameID and SessionIndex, sid or sub through this relationship. | SAML LogoutResponse Requester/UnknownPrincipal; HTTP 200 on the back and front channels (there is nothing left to end) |
+| `STS-FED-0123` | A partner's sign-out was refused because fedAcceptSignout is off on the relationship. | SAML LogoutResponse Responder/RequestDenied; HTTP 400 on the back channel; HTTP 403 page |
+| `STS-FED-0124` | A LogoutResponse at a federation single logout endpoint answers no LogoutRequest this service sent: InResponseTo is absent, unknown, spent or expired. | HTTP 400 page |
+| `STS-FED-0125` | A partner answered this service's LogoutRequest with a status other than Success, so the sign-out there did not complete. | HTTP 200 page saying so; the local session had already ended |
+| `STS-FED-0126` | A WS-Federation cleanup confirmation was posted with a handle this service did not draw, one already spent or expired, or in a browser whose session is not the one it was drawn for. | HTTP 403 page; no session was ended |
+| `STS-FED-0127` | A back-channel logout request carried no logout_token, or one that is not a signed JWT (an encrypted Logout Token is refused: this relying party registers no encryption with a partner). | HTTP 400 invalid_request (Back-Channel Logout 1.0 section 2.8) |
+| `STS-FED-0128` | A Logout Token did not verify against the relationship's partner keys: its signature, algorithm, kid, audience or expiry. | HTTP 400 invalid_request (Back-Channel Logout 1.0 section 2.8) |
+| `STS-FED-0129` | A Logout Token failed Back-Channel Logout 1.0 section 2.6: a typ other than logout+jwt, no events member naming the back-channel logout event, a nonce, no jti, or neither sub nor sid. | HTTP 400 invalid_request (Back-Channel Logout 1.0 section 2.8) |
+| `STS-FED-0130` | A front-channel logout request carried no iss or no sid, or an iss that is not the relationship's partner. | HTTP 400 page |
+| `STS-FED-0131` | A partner's assertion carries an AuthnStatement SessionNotOnOrAfter that has already passed, so no session was started from it. | HTTP 401 page |
+| `STS-FED-0132` | fedRequireSignedLogout was set off in product mode, where an unsigned SAML logout message is never accepted. | action result ok:false (console redirect or /admin-api HTTP 400) |
+| `STS-FED-0133` | fedSloBinding was set to something other than HTTP-Redirect or HTTP-POST. | action result ok:false (console redirect or /admin-api HTTP 400) |
+| `STS-FED-0134` | A browser returned from a partner's end_session_endpoint with a state this service did not mint, or one already spent or expired. | HTTP 400 page |
+| `STS-FED-0135` | A federation single logout endpoint was sent something its relationship's protocol does not define — any sign-out for SAML 1.1 or OAuth 2.0, which define none, another protocol's message, or nothing at all. | HTTP 400 page |
+| `STS-FED-0136` | A partner's verified sign-out matched a session and ending it failed. | HTTP 500 page, or HTTP 500 on the back channel (the partner retries) |
+| `STS-FED-0137` | A partner's encrypted assertion, identifier, attribute, ID Token or Logout Token arrived and the relationship holds no usable encryption key for it — none issued, one of the other key type, a previous key past its grace period, a kid naming no key held, or a sealed key that will not open. | HTTP 500 page (400 JSON on the back channel) |
+| `STS-FED-0138` | A partner's encrypted element or JWE did not decrypt under the relationship's key. ONE code for every cause — a wrong key, an altered ciphertext, a tag, an unwrap — so the answer is no oracle; which step failed is in the log line. | HTTP 401 page (400 JSON on the back channel) |
+| `STS-FED-0139` | A partner encrypted with an algorithm the relationship does not accept — not the key management or content encryption it publishes, or AES-CBC, rsa-1_5 or RSA1_5, which are refused in every mode — or a write tried to configure one of those three. | HTTP 401 page; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-FED-0140` | A partner sent a plaintext SAML 2.0 or WS-Federation assertion, or a signed-only id_token by form_post, to a relationship that requires encryption (product mode, fedAllowUnencrypted off). | HTTP 401 page |
+| `STS-FED-0141` | A JWE arrived where a JWS was expected: an encrypted ID Token or Logout Token whose plaintext is not a signed JWT (OpenID Connect Core section 10.2 is sign-then-encrypt), or an encrypted access token at a plain OAuth 2.0 relationship, which holds no decryption key. | HTTP 401 page (400 JSON on the back channel) |
+| `STS-FED-0142` | A federation relationship's encryption key could not be issued, sealed or written — at create, at a rotation, or when its key type changed. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-FED-0143` | A write to a relationship's encryption fields named a value outside the vocabulary for its protocol, a key management its key type cannot do, or an encryption field on a SAML 1.1 or OAuth 2.0 relationship. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-FED-0144` | An encryption key rotation named no relationship, or one that holds no key — identity-provider-side, SAML 1.1 or OAuth 2.0. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-FED-0145` | The scheduler job federation.encryption-key-retire could not remove a retired key from a relationship; the key already decrypts nothing, and the next run tries again. | none — logged |
+| `STS-FED-0146` | /federation/jwks/{id} named no OpenID Connect service-provider-side relationship. | HTTP 404 page |
+| `STS-FED-0147` | A partner's SAML Response or wresult carried an encrypted assertion beside another assertion; which one a signature covered and which one was read must not be a choice. | HTTP 400 page |
 
 ## STS-KRB
 
@@ -1877,7 +1954,7 @@ Raised from: kerberos/.
 | `STS-KRB-0031` | A TGS-REQ's Authenticator and ticket name different clients. | KRB_AP_ERR_BADMATCH (36) |
 | `STS-KRB-0032` | A TGS-REQ presented an expired ticket. | KRB_AP_ERR_TKT_EXPIRED (32) |
 | `STS-KRB-0033` | A TGS-REQ presented a ticket that is not yet valid. | KRB_AP_ERR_TKT_NYV (33) |
-| `STS-KRB-0034` | A TGS-REQ was refused because the ticket was authenticated before its client signed out (logout.kerberosSignOut). | KDC_ERR_TGT_REVOKED (20) |
+| `STS-KRB-0034` | A TGS-REQ (a renewal included) was refused because the ticket was authenticated before its client signed out (logout.kerberosSignOut); a later AS exchange does not lift it. | KDC_ERR_TGT_REVOKED (20) |
 | `STS-KRB-0035` | A TGS-REQ's Authenticator clock was outside the KDC's clock-skew tolerance. | KRB_AP_ERR_SKEW (37) |
 | `STS-KRB-0036` | A TGS-REQ's Authenticator carried no checksum over the request body. | KRB_AP_ERR_INAPP_CKSUM (50) |
 | `STS-KRB-0037` | A TGS-REQ's Authenticator checksum did not match the request body. | KRB_AP_ERR_INAPP_CKSUM (50) |
@@ -1905,7 +1982,7 @@ Raised from: kerberos/.
 | `STS-KRB-0059` | krb5.servicePrincipal is not a service/host name, so no account was created for the Kerberos acceptor. | — |
 | `STS-KRB-0060` | krb5.servicePassword is empty, so no account was created for the Kerberos acceptor. | — |
 | `STS-KRB-0061` | Product mode refused the published default krb5.servicePassword, so no account was created for the Kerberos acceptor. | — |
-| `STS-KRB-0062` | Product mode refused the published default krb5.krbtgtPassword, so no krbtgt was created and the KDC issues no ticket. | — |
+| `STS-KRB-0062` *(retired)* | Product mode refused the published default krb5.krbtgtPassword, so no krbtgt was created and the KDC issues no ticket. RETIRED 2026-09-23 (#169): product keys krbtgt at random and reads no password for it. | — |
 | `STS-KRB-0063` | The Kerberos acceptor refused a token larger than krb5.serviceMaxTokenBytes. | KRB_ERR_GENERIC (60) |
 | `STS-KRB-0064` | The Kerberos acceptor could not decode the GSS InitialContextToken wrapper. | KRB_ERR_GENERIC (60) |
 | `STS-KRB-0065` | The Kerberos acceptor was sent a GSS token that is not an AP-REQ. | KRB_AP_ERR_MSG_TYPE (40) |
@@ -1998,6 +2075,16 @@ Raised from: kerberos/.
 | `STS-KRB-0152` | A PA-OTP-REQUEST carried no otp-value (a hashed OTP or one used as key material), which this KDC did not ask for. | RFC 6560 section 3.6: KDC_ERR_PREAUTH_FAILED (24) |
 | `STS-KRB-0153` | A ticket's AD-CAMMAC did not verify under the key the ticket is sealed with, so its authentication indicators were ignored. | RFC 7751 section 7, RFC 8129 section 5 |
 | `STS-KRB-0154` | Asking whether a person holds a second factor failed, so the KDC treated a password alone as not enough. | — |
+| `STS-KRB-0155` | An AS exchange waited (at most a second) for its client's sign-out second to pass before taking authtime, so the new ticket is newer than the sign-out. Logged at debug; not a failure. | — |
+| `STS-KRB-0156` | An AS-REQ or TGS-REQ offered only encryption types this realm's mode withholds — rc4-hmac, in product mode (#182). | RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0157` | A TGS-REQ's ticket session key or Authenticator subkey is of an encryption type product mode withholds (rc4-hmac, #182). | RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0158` | The acceptor refused an AP-REQ whose ticket session key or Authenticator subkey is of an encryption type product mode withholds (rc4-hmac, #182). | RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0159` | A FAST armor AP-REQ's subkey or ticket session key is of an encryption type product mode withholds (rc4-hmac, #182), so no armor key was made. | RFC 6113 section 5.4.1.1, RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0160` | A rotation of a trust realm's krbtgt key failed — the new key could not be sealed or written to its directory entry — so nothing changed and the current key still seals every TGT. | — |
+| `STS-KRB-0161` | A trust realm's stored krbtgt key record cannot be opened (sealed under another key-encryption key, stored in the clear in product mode, or bound to another realm). It is never rewritten: the KDC answers as though the realm had no krbtgt, and only "rotate and invalidate" replaces it. | — |
+| `STS-KRB-0162` | A node lost the race to create a trust realm's first random krbtgt key and, re-reading the directory, did not find the winner's key yet; the KDC refuses until it arrives. | — |
+| `STS-KRB-0163` | A trust realm's first random krbtgt key was not made: this node could not ask the shared store whether another node was making it. | — |
+| `STS-KRB-0164` | A FAST armor ticket was sealed under a krbtgt key version the KDC no longer holds (a rotation retired it and its window ended, or "rotate and invalidate" dropped it). | RFC 6113 section 5.4.1.1; KRB_AP_ERR_BADKEYVER (44) |
 
 ## STS-LDAP
 
@@ -2079,6 +2166,8 @@ Raised from: ldap/.
 | `STS-LDAP-0096` | Another node signed an identity out and this node could not close the directory connections bound as it; they may still be open. | none — logged |
 | `STS-LDAP-0097` | An account lock (pwdAccountLockedTime) changed through a directory write and handing the change to account_state.ts failed, so what the person held may not have been ended. | none — logged; the write stands and every door refuses the person |
 | `STS-LDAP-0098` | The node-ldapjs in use does not support the routeAnonymousBinds server option, so an anonymous bind is answered by the library and never reaches the bind handler; product mode cannot refuse it (reads on that connection are still refused). | none — logged at startup |
+| `STS-LDAP-0099` | In product mode, a compare named an attribute the bound identity may not read on that entry (ldap/directory_read_policy.ts); answered whether or not the entry holds it, so the refusal says nothing about the value. | LDAP result code 50, insufficientAccessRights |
+| `STS-LDAP-0100` | In product mode, a bind named a DN that is not a person's — an application, a federation, a container — and was refused before its password was read; only people bind to the directory. | LDAP result code 49, invalidCredentials (RFC 4513 section 5.1.3) |
 
 ## STS-SCIM
 
@@ -2294,6 +2383,25 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0121` | The Workload API was not served over TCP in a product realm: spiffe.workloadTcpSourceAuthenticated is on but spiffe.grpcHost is a wildcard address, and the declaration covers one named network (#166). | nothing listening on the port; gRPC UNAVAILABLE on a port already bound |
 | `STS-SPIFFE-0122` | A SPIFFE registration entry was refused in a product realm because it selects nothing that identifies a workload — no selector, or only transport: and endpoint: ones — at the console, /admin-api or the SPIRE Server API (#166). | gRPC INVALID_ARGUMENT for the item in BatchCreateEntry and BatchUpdateEntry; a refused console or management API action |
 | `STS-SPIFFE-0123` | A SPIFFE registration entry already in the registry that selects nothing identifying a workload answered no Workload API caller, because its realm is in product mode; said once per entry per process (#166). | the entry is left out of the answer; the caller may get an empty SVID list |
+| `STS-SPIFFE-0124` | The systemd workload attestor is named in spiffe.workloadAttestors and the optional D-Bus client (dbus-next) is not installed; every connection it would attest is refused, naming the package (#170). Logged once per process. | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0125` | The systemd workload attestor could not name a caller's unit: D-Bus GetUnitByPID or a unit property failed, or the process the pid named changed while systemd was asked (#170). | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0126` | A docker workload's image signature could not be verified because nothing to verify it with is configured: no cosign public key file, no verified TUF trust root and no pinned trusted_root.json, or a file that could not be read (#170). | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0127` | A docker workload's cosign signature or attestation could not be fetched: its registry is not in spiffe.dockerSigstoreAllowedRegistries, the registry refused or failed, or a blob did not match its digest (#170). | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0128` | A docker workload's image carried no cosign signature that verified: the signature under the key or certificate, the payload's manifest digest, the keyless certificate's chain to a Fulcio root, its SCT, or its signer identity (#170). | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0129` | A cosign signature's Rekor transparency-log bundle was missing or did not verify: no bundle, a signed entry timestamp no trusted Rekor key verifies, or an entry that names another signature, key or payload (#170). | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0130` | A docker workload's image had no in-toto attestation that verified, and spiffe.dockerSigstoreIgnoreAttestations is off (#170). | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0131` | The sigstore TUF refresh failed — a metadata file that did not verify under the trusted root's keys and threshold, a version that went backwards, expired metadata, or a target whose length or hash did not match — and the last verified trust root was kept (#170). | the scheduler job spiffe.sigstore-tuf-refresh fails; attestation goes on with the last verified set |
+| `STS-SPIFFE-0132` | A SPIFFE Broker API call did not carry the broker.spiffe.io: true metadata header (SPIFFE Broker Endpoint section 3). | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0133` | A SPIFFE Broker API caller presented no X509-SVID, or one that did not verify against this trust domain's or a federated bundle (SPIFFE Broker Endpoint section 5). | gRPC UNAUTHENTICATED |
+| `STS-SPIFFE-0134` | A SPIFFE Broker API caller's X509-SVID verified and names no broker in spiffe.brokers (SPIFFE Broker API section 4.1). | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0135` | A SPIFFE Broker API caller named a workload reference type its entry in spiffe.brokers does not allow (#170). | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0136` | A SPIFFE Broker API request carried no workload reference, a malformed one, or a reference type this service does not understand (SPIFFE Broker API sections 3.1.1, 3.1.4 and 4.8, WORKLOAD_REFERENCE_INVALID). | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0137` | A SPIFFE Broker API reference named a process or pod that does not exist, or one that stopped while its stream was open (SPIFFE Broker API sections 4.8 and 4.9, WORKLOAD_NOT_FOUND). | gRPC NOT_FOUND |
+| `STS-SPIFFE-0138` | A SPIFFE Broker API reference named a workload no registration entry entitles to an SVID (SPIFFE Broker API section 4.8, WORKLOAD_NOT_ENTITLED). | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0139` | A SPIFFE Broker API reference could not be attested: a workload attestor failed, or process references cannot be attested here without the native module (#170). | gRPC UNAVAILABLE |
+| `STS-SPIFFE-0140` | A realm's SPIFFE Broker API listener was not bound, because it could not be given a mutual-TLS identity or its address is another realm's; it is never bound plain (#170). | nothing listening on the port |
+| `STS-SPIFFE-0141` | An entry of spiffe.brokers was refused at the console or /admin-api: not a SPIFFE ID, or no reference type from pid, k8s and * (#170). | a refused console or management API action |
+| `STS-SPIFFE-0142` | A rootless Podman workload was not attested by the docker attestor because spiffe.dockerUseRootlessPodman is off, SPIRE's rule; logged once per process (#170). | no docker selectors for that workload |
 
 ## STS-TLS
 
@@ -2432,6 +2540,8 @@ Raised from: oid4vc/.
 | `STS-VC-0085` | A certificate in oid4vci.keyAttestationTrustedCertificates could not be read and was ignored. | — |
 | `STS-VC-0086` | An access token this realm revoked was presented at an OpenID4VCI endpoint (credential, deferred credential or notification) in product mode. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
 | `STS-VC-0087` | A BBS key was asked for at /bbs/keys/<kid> that is not a live generation of this realm's BBS key (current, next, or retired within its grace). | HTTP 404 not_found |
+| `STS-VC-0088` | A credential presented to the OpenID4VP Verifier names no status (no Token Status List claim, no BitstringStatusListEntry) and oid4vp.requireStatusReference requires one: a foreign credential under all whose issuer certificate is not in oid4vp.statusOptionalIssuers, or one this realm signed under all or own-only. | invalid_request (HTTP 400); HTTP 403 page at a sign-in |
+| `STS-VC-0089` | An ldp_vc presented at the OpenID4VP Verifier (not a sign-in, whose register holds the status) disclosed no credentialStatus entry, though the request asked for it and oid4vp.requireStatusReference requires one. | invalid_request (HTTP 400) |
 
 ## STS-SSF
 
@@ -2464,7 +2574,7 @@ Raised from: ssf/.
 | `STS-SSF-0021` | A poll request named a stream that delivers by push, so there is nothing to collect. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0022` | A Security Event Token was pushed at /ssf/receive while this service is not accepting pushed events (ssf.receiveEnabled). | HTTP 501 {err: invalid_request} |
 | `STS-SSF-0023` | A push at /ssf/receive carried an empty body. | HTTP 400 {err: invalid_request} |
-| `STS-SSF-0024` | A Security Event Token pushed at /ssf/receive did not verify while ssf.receiveRequireSignature is on. | HTTP 400 {err: invalid_key} |
+| `STS-SSF-0024` | A Security Event Token pushed at /ssf/receive did not verify, in product mode or while ssf.receiveRequireSignature is on (#117). | HTTP 400 {err: invalid_key} |
 | `STS-SSF-0025` | A Security Event Token pushed at /ssf/receive could not be read as a SET; it was recorded anyway. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0026` | An event was not transmitted on a stream because the stream does not deliver that event type. | — |
 | `STS-SSF-0027` | An event was not transmitted because its payload fails the event type's member rules. | — |
@@ -2511,7 +2621,7 @@ Raised from: ssf/.
 | `STS-SSF-0068` | A push at an internal receive endpoint carried an empty body. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0069` | A Security Event Token delivered to an internal receiver could not be read as a SET; it was recorded anyway. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0070` | A Security Event Token delivered to an internal receiver is not addressed to that receiver's audience; it was recorded and refused. | HTTP 400 {err: invalid_audience} |
-| `STS-SSF-0071` | A Security Event Token delivered to an internal receiver did not verify while ssf.receiveRequireSignature is on. | HTTP 400 {err: invalid_key} |
+| `STS-SSF-0071` | A Security Event Token delivered to an internal receiver did not verify, in product mode or while ssf.receiveRequireSignature is on (#117). | HTTP 400 {err: invalid_key} |
 | `STS-SSF-0072` | The admin console or the user portal could not be registered as a Shared Signals receiver in a realm, because its seeded stream configuration was refused; that surface's inbox stays empty. | — |
 | `STS-SSF-0073` | A protocol family (GNAP) asked ssf.emitProtocolEvent() for an event type that is not one of CAEP's; nothing was sent. | — |
 | `STS-SSF-0074` | A CAEP event a protocol family asked to emit failed ssf_events validation and was not sent. | — |
@@ -2542,6 +2652,9 @@ Raised from: ssf/.
 | `STS-SSF-0107` | An access token (OAuth or GNAP) carried the Shared Signals scope an operation needs, and the client it was issued to no longer declares that scope in its oauthAllowedScope. | HTTP 403 {err: access_denied} |
 | `STS-SSF-0108` | A push delivery endpoint was refused because it is plain http and the realm is in product mode, where RFC 8935 push goes over TLS whatever ssf.pushAllowHttp says (#171). | at stream creation HTTP 400 {err: invalid_request}; at push time none — a dead letter |
 | `STS-SSF-0109` | Product mode ignored ssf.pushSkipTlsVerification: a push verifies the receiver's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
+| `STS-SSF-0110` | No reaction to a signal this service's own console or portal received could be decided: the signal-response policy is disabled, missing or does not load. The event is recorded and nothing is ended. | — |
+| `STS-SSF-0111` | A reaction the signal-response policy permitted to a received signal failed: the receiving surface's sessions for the person could not be ended. | — |
+| `STS-SSF-0112` | The kerberos-tickets-invalidated event (this service's own, #169) could not be transmitted after a krbtgt key was rotated with nothing kept; the rotation itself stands. | none — logged; nothing is sent to a receiver |
 
 ## STS-RISK
 
@@ -2575,6 +2688,9 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0022` | A FIDO MDS3 BLOB was refused: it is not a JWT carrying an x5c chain, the chain does not end at the FIDO root (or the configured risk.mdsTrustAnchors), or its signature does not verify. Nothing was loaded. | FIDO Metadata Service v3.0, section 3.1.8 |
 | `STS-RISK-0023` | A FIDO MDS3 BLOB was refused because a certificate in its signing chain is revoked, or its status is unknown and the revocation policy refuses unknown. Nothing was loaded. | FIDO Metadata Service v3.0, section 3.1.8 |
 | `STS-RISK-0024` | A FIDO MDS3 BLOB was refused because its serial number (no) is not greater than one already processed — a rollback. Nothing was loaded. | FIDO Metadata Service v3.0, section 3.1.8 |
+| `STS-RISK-0025` | Monitoring → Risk Scoring, or GET /admin-api/risk/metrics, could not be answered: the risk store failed to count the window's assessments. | — |
+| `STS-RISK-0026` | An entry of risk.signalFactors was ignored: it names no known signal, or its factor is not a positive number. The signal keeps its built-in factor; logged once for each value the setting is given. | — |
+| `STS-RISK-0027` | The risk.mds-refresh job could not download the FIDO MDS3 BLOB from risk.mdsUrl: outbound is off, the address is refused, the server did not answer 200, or the BLOB is larger than risk.mdsMaxBytes (#105). The active BLOB stays in force. | FIDO Metadata Service section 3.2 |
 
 ## STS-MAIL
 
@@ -2803,6 +2919,12 @@ Raised from: gnap/.
 | `STS-GNAP-0284` | A GNAP request that must carry a Detached-JWS header (a detached JWS proof, a content-less jws request, or a detached JWS key rotation) has none. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
 | `STS-GNAP-0285` | A GNAP request proved by an attached JWS (or an attached-JWS key rotation) does not send a JWS as its content. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
 | `STS-GNAP-0286` | In a GNAP httpsig key rotation, the new key's signature does not cover the old key's Signature and Signature-Input. | HTTP 401 GNAP invalid_rotation |
+| `STS-GNAP-0287` | Under the PKI trust model (gnap.mtlsTrust or the entry's gnapMtlsTrust is pki), the TLS client certificate proving a GNAP key did not verify: no chain to the client truststore, or a certificate this service issued that is not a TLS client identity in this realm (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0288` | Under the PKI trust model, a GNAP client's TLS client certificate verified but was not issued to its application entry by this realm, and the entry registers no RFC 8705 certificate subject to bind it by (or no entry holds the key at all) (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0289` | Under the PKI trust model, a GNAP client's application entry registers more than one RFC 8705 certificate subject parameter, so there is no single subject to bind the certificate by (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0290` | Under the PKI trust model, a GNAP client's TLS client certificate does not carry the RFC 8705 certificate subject its application entry registers (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0291` | Under the PKI trust model, a GNAP client presented a TLS client certificate this realm issued to a different person or application (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0292` | Under the PKI trust model, a GNAP client presented a TLS client certificate this realm issued to its entry that the entry's record no longer lists (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
 | `STS-GNAP-0300` | A GNAP token model's access is not a non-empty array of access rights. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0301` | A GNAP token model's access element is an empty reference, or neither a reference string nor a typed object. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0302` | A GNAP token model's access element has an array dimension or an identifier of the wrong type. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
@@ -3168,6 +3290,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0607` | A Kerberos key could not be sealed or written, so nothing was stored and no keytab was handed out. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0608` | A clear-person-keys action named nobody, or somebody not in the default trust realm's directory. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0609` | The Kerberos key register has no directory in this process, so a principal could be neither listed nor changed. | HTTP 400 { ok: false, errors } / 303 with error= |
+| `STS-ADMIN-0610` | "Rotate and invalidate" of the krbtgt key was asked for without the typed confirmation "invalidate"; nothing was queued. | HTTP 400 { ok: false, errors } / 303 with error= |
+| `STS-ADMIN-0611` | A rotation of the krbtgt key could not be queued on the scheduler (the scheduler is off, or refused the run). | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0620` | Regenerating an application's client secret was refused: the application is not in the registry. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0640` | A certificate details view was asked for with a value that is not a SHA-256 certificate fingerprint (64 hexadecimal digits). | the page with a dialog saying so / HTTP 400 { ok: false, errors } |
 | `STS-ADMIN-0641` | A certificate details view named a fingerprint this service does not hold in the trust realm the request was reached in. | the page with a dialog saying so / HTTP 404 { ok: false, errors } |
@@ -3216,6 +3340,11 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0801` | Revoking somebody's app password was refused; the credential store's own code is on the audit row. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0802` | A password reset for a Kerberos keytab gave neither or both of a password and random, or the new password was refused (the password policy's own code wins where it gave one). Nothing was changed. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0803` | A password reset for a Kerberos keytab SET the password and then no keytab could be made, or a Kerberos principals action threw inside the console. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0804` | restore-kerberos (clearing a Kerberos sign-out instant) was refused because it is a development-only test control. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0805` | set-not-delegated (marking a person as one who cannot be delegated, or clearing it) was refused (#108). | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0806` | set-may-act (naming the one party who may act for a person, or clearing it) was refused (#108). | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0807` | record-verification (an identity verification for OpenID Connect for Identity Assurance, #127) was refused: the verification did not check, a claim is not verifiable or has no value on the entry, or the entry does not exist. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0808` | remove-verification named a verification not recorded for the person, or the directory did not store the change (#127). | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 
@@ -3369,6 +3498,8 @@ Raised from: portal/.
 | `STS-PORTAL-0082` | A POST to /portal/kerberos named an action the page does not have. | HTTP 400 page |
 | `STS-PORTAL-0083` | A POST to /portal/sign-ins was refused: its CSRF token did not match the session. | HTTP 403 page |
 | `STS-PORTAL-0084` | A POST to /portal/sign-ins named a sign-in that is not the person's own, is too old, or has already been answered (#62 P6). | HTTP 400 page |
+| `STS-PORTAL-0085` | A POST to /portal/consents named no consent of the signed-in person's own to withdraw — none held for that application and scope, or no scope named (#172). | HTTP 400 page |
+| `STS-PORTAL-0086` | A POST to /portal/delegate could not set or clear the signed-in person's delegate (stsMayAct) (#108). | HTTP 400 page |
 
 ## STS-LOGOUT
 
@@ -3517,6 +3648,12 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0188` | initiate_login_uri is not an https URL (OpenID Connect Registration section 2) (#120). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0189` | A backchannel_logout_uri with the http scheme for a public client: Back-Channel Logout 1.0 section 2.2 allows http only to a confidential one (#123). At registration, a create and an attribute write. | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0190` | A backchannel_logout_uri the outbound policy would not dial (http with federation.outboundAllowHttp off, or in product mode): every delivery would be dead-lettered, so it is refused where it is written (#123). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0191` | A generic application edit tried to remove a value of oauthGlobalConsent. A global consent is withdrawn only through the consent register (revoke-global-consent), which also revokes what was issued under it and records when (#172). | HTTP 400 page / {ok: false} |
+| `STS-REG-0192` | A consent was withdrawn and its tokens revoked, but the withdrawal instant could not be written onto the person's or the application's entry, so a re-consent could revive a refresh token the revocation did not reach (#172). | none — logged |
+| `STS-REG-0193` | A write setting an application's override of a development-only setting — saml2SignAssertion, saml11SignAssertion or saml11SignResponse to FALSE, or saml2KeyTransportAlgorithm to rsa-1_5 — was refused because the realm is in product mode, where the value would be ignored (#181). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-REG-0194` | A write of a delegation policy attribute was refused (#108): appTrustedToImpersonate that is not TRUE or FALSE, or an appDelegationSubjectGroup value that is not a DN. | console: the page's error list; /admin-api: HTTP 400 |
+| `STS-REG-0195` | A write of gnapMtlsTrust on an application was refused: the value is neither pki nor pinned (#107). | console: the page's error list; /admin-api: HTTP 400 |
+| `STS-REG-0196` | A write of gnapMtlsTrust=pinned on an application was refused because the realm holds GNAP mutual TLS to a PKI (gnap.mtlsTrust resolves to pki); an entry may be stricter than the realm, never weaker (#107). | console: the page's error list; /admin-api: HTTP 400 |
 
 ## STS-DBG
 

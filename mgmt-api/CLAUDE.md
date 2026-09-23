@@ -666,6 +666,9 @@ everything, and it is named.
 KDC has no clear-the-instant; both exist for the reason
 `POST /admin-api/tokens/restore` does, which is that restarting this service to
 get back to a working credential turns a two-second test into a two-minute one.
+**`restore-kerberos` is development-only since #111 (2026-09-23)**: product mode
+refuses it (`STS-ADMIN-0804`, `mode.opensTestControls()`) on this door and the
+console's alike, in `admin_actions.ts`'s `logoutAction()` which both reach.
 
 **What this API cannot do is in the reply rather than absent from it.** A
 front-channel logout notification is an iframe in the signed-out person's own
@@ -1288,11 +1291,29 @@ Four things a caller is told, and the descriptions tell them:
   made says the password WAS set (`STS-ADMIN-0803`). The job drives it last in
   its Kerberos round trip, because it re-derives the keys the clears emptied.
 
+* **NINE SINCE 2026-09-23 (#169)**: `rotate-krbtgt` and
+  `rotate-krbtgt-invalidate` (`confirm: "invalidate"`), the realm's krbtgt key.
+  **Neither rotates in the request**: each QUEUES a run of
+  `krb5.krbtgt-rotate-now` (`kerberos/krb5_krbtgt_rotation.ts`), which runs
+  once on the scheduler's leader, and answers `queued` and the `runId` — the
+  shape `POST /admin-api/keys/rotate` has for #48's reason. Neither answer, nor
+  the GET's new `krbtgt` block (source, kvno, enctypes, created, last rotated,
+  kept versions, `scheduled`, `offReason`, `nextDueAt`), carries a key.
+  Refused: the invalidate form without the word (`STS-ADMIN-0610`), a
+  scheduler that will not queue it (`STS-ADMIN-0611`), a realm with no KDC
+  (`STS-KRB-0128`). `drop-previous-service-keys` takes `krbtgt/<REALM>` too.
+  `GET /admin-api/kerberos`'s `status` carries the same `krbtgt` block as the
+  console's settings page (rule 7). `admin-core/` reaches the rotation module
+  LAZILY: it is built at 23b-iii, long after the console.
+
 **`sts_admin_api_operations.js` HOLDS ALL SEVEN OUT OF ITS EXAMPLE REPLAY**
 (`REPLAY_HELD_BACK`) — for the same reason as the truststore's: the replay runs
 in a throwaway realm and these write in the default one. Its
 `theKerberosPrincipalsRoundTrip()` drives them at the root instead, with a read
-back after every write.
+back after every write. **The two krbtgt actions are in its `NOT_DRIVEN_HERE`**
+(#169): `sts_kerberos_krbtgt_rotation.js` drives them in a throwaway realm with
+a KDC of its own, because an invalidation ends every TGT of the realm it runs
+in, and a rotation is checked by a TGT across it, which a 2xx cannot show.
 
 
 ## `/admin-api/pki` — FOUR OPERATIONS, AND A MODULE REQUIRED IN THE ORDINARY DIRECTION (2026-09-10)
@@ -1594,6 +1615,32 @@ names the realm the call was made in. **`reset-password` answers `password` and
 `issue-password-reset` answers `resetUrl` in the JSON body, once** — neither is
 retrievable afterwards, and neither is in the audit row.
 
+## WHO MAY ACT FOR WHOM (#108, 2026-09-23)
+
+The delegation policy for WS-Trust and RFC 8693 (`../common/CLAUDE.md`, rule
+3az) has three doors here, and rule 7 is kept by construction rather than by a
+new resource:
+
+* **The four application attributes** (`appAllowedToDelegateTo`,
+  `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`,
+  `appTrustedToImpersonate`) are ordinary `EDITABLE` rows, so `POST
+  /admin-api/applications/{add,set,remove,update}` edits them exactly as the
+  application's console page does. `STS-REG-0194` refuses a flag that is not
+  TRUE or FALSE and a subject group that is not a DN.
+* **The person's two** are `POST /admin-api/users/set-not-delegated`
+  (`{ user, value }`, value defaulting to true) and `/set-may-act`
+  (`{ user, delegate }`, a DN; empty clears), through the same `usersAction()`
+  the person's console page posts — `STS-ADMIN-0805` and `0806`.
+* **`GET /admin-api/delegation/policy`** is the read, answered by
+  `adminViews.delegationPolicyView()` — the function the *Who may act for whom*
+  section of `/admin/delegation` draws — three lists PAGED on parameters of
+  their own (`policyPairsPage`, `intermediariesPage`, `peoplePage`, and `per`
+  for all three), because the people list is a walk of the directory with no
+  natural bound. It is read only, like `GET /admin-api/delegation`: a second
+  write door onto an attribute that already has one would be the drift rule 7
+  exists to catch. The console's JSON carries the same object as
+  `delegationPolicy`.
+
 ## FEDERATION LINKS (#109, 2026-09-22)
 
 `POST /admin-api/users/federation-link` and `/federation-unlink` mirror the
@@ -1683,6 +1730,14 @@ claiming gives the claim back and answers 500 (`STS-API-0113`). Everywhere else
 the handler runs synchronously as it did. The directory module is found in the
 require CACHE, never required: it is below this module in the route order. The
 design is `ldap/CLAUDE.md`'s, *Several nodes: a create claims its name*.
+
+## `/admin-api/mode` (#181, 2026-09-23)
+
+One operation, `getMode`: `admin-ui/mode_admin.ts`'s `modeView()`, which is
+`common/mode.js`'s `report()` for the realm the call is in — what
+`/admin/mode?format=json` answers (rule 7). It changes nothing; `global.mode`
+is written through `POST /admin-api/config/set` like every other setting. Call
+it under `/realm/{id}/admin-api/mode` for a realm's answer.
 
 ## `/admin-api/vc-status` (#38's follow-ups, 2026-09-17)
 

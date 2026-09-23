@@ -241,6 +241,12 @@ const JOBS = [
   // it only signs a certificate holder in, which in product claims nothing.
   { file: 'sts_console_bootstrap_product.js', browser: false, local: true },
   { file: 'sts_consent.js',              browser: false, local: true },
+  // WITHDRAWN MEANS WITHDRAWN (#172, 2026-09-23): a consent withdrawn through
+  // /admin-api, globally and on /portal/consents ends the grant it covered,
+  // a re-consent revives nothing, and oauth2.refreshRequiresConsent refuses a
+  // grant nobody consented to. `local: true`: the register, its operations
+  // and the portal are ours. Its realm is left standing.
+  { file: 'sts_consent_withdrawal.js',   browser: false, local: true },
   { file: 'sts_delegated_permissions_example.js', browser: false, local: true },
   // A SCOPE IS TIED TO THE CLIENT (#110, 2026-09-22): the protected scopes
   // refused at issuance and re-checked by SCIM, Shared Signals and
@@ -248,6 +254,11 @@ const JOBS = [
   // holding every other scope to it. `local: true`: the policy is ours. Its
   // realm is left standing.
   { file: 'sts_scope_policy.js',         browser: false, local: true },
+  // WHO MAY ACT FOR WHOM (#108, 2026-09-23): WS-Trust OnBehalfOf / ActAs and
+  // the RFC 8693 token exchange held to the delegation policy, may_act, the
+  // nested act and the policy resource. `local: true`: the policy is ours.
+  // Its realm is left standing.
+  { file: 'sts_delegation_policy.js',    browser: false, local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
@@ -259,6 +270,12 @@ const JOBS = [
   { file: 'sts_gnap_core.js',            browser: false, local: true },
   { file: 'sts_gnap_rs.js',              browser: false, local: true },
   { file: 'sts_gnap_signals.js',         browser: false, local: true },
+  // #107: a key proved by mutual TLS under the pinned and PKI trust models,
+  // revocation in both, the binding to an application entry, rotation at the
+  // authority, the per-client override and the product default. Presents
+  // client certificates on the main port; the foreign leaf names a CRL this
+  // job serves (test_crl_host.js).
+  { file: 'sts_gnap_mtls.js',            browser: false, local: true },
   // CERTIFICATE ENROLLMENT (2026-09-13): ACME, EST and SCEP, each driven by an
   // independent client written from its RFC with no code from acme/, est/ or
   // scep/, each in a throwaway realm it leaves behind.
@@ -452,6 +469,14 @@ const JOBS = [
   // unreachable, a metadata member that promises what the endpoint refuses, or
   // a console control that issues for the wrong profile.
   { file: 'sts_saml2_bearer_grant.js',   browser: false, local: true },
+  // WHAT A SAML PROVIDER NOBODY REGISTERED CAN CAUSE (#112, 2026-09-23): the
+  // per-provider paths of both profiles are 404 in a product realm and minted
+  // in a development one, and a Metadata Query lookup an anonymous
+  // AuthnRequest starts — against this job's own responder — registers the
+  // entity in development and asks nothing in product with no trust anchor.
+  // `local: true`: this repository's own identity provider and /admin-api,
+  // in two throwaway realms.
+  { file: 'sts_saml_unregistered.js',    browser: false, local: true },
   // THE CRL AND OCSP ENDPOINTS, AND THE REVOCATION PANE (2026-09-11).
   // `local: true` on the FIRST of `tests/CLAUDE.md`'s two questions: most of
   // what it drives is `/admin-api/pki` and a pane on `/admin/pki`, and the
@@ -558,6 +583,16 @@ const JOBS = [
   // would otherwise be asserting against a store the other job is still
   // filling.
   { file: 'sts_portal_backup_keys.js',   browser: false, local: true },
+  // A SECURITY KEY'S ATTESTATION, VERIFIED (#105): keys enrolled at
+  // /portal/keys in a throwaway realm with statements this job makes — an
+  // x5c packed statement under a root minted at run time and configured as
+  // the realm's anchor, a self attestation, a forged one, none — under
+  // require-trusted, an AAGUID allow-list and verify-if-present, and what
+  // each proved read back from /portal/keys, /admin-api/users and the
+  // console. `local: true` on the first question: the portal, the API and
+  // the console are this repository's. After the backup-keys job, for the
+  // same reason that one follows the sign-in job.
+  { file: 'sts_webauthn_attestation.js', browser: false, local: true },
   // THE FIVE PASSWORD-ONLY DOORS AND APP PASSWORDS (#101, 2026-09-22): a
   // second-factor person's own password refused at an LDAPS bind, a WS-Trust
   // UsernameToken, SCIM, SSF and EST Basic in product — with a wrong
@@ -635,6 +670,11 @@ const JOBS = [
   // nothing about them. Each drives its protocol against the address the
   // service is reached at, in both modes.
   { file: 'sts_ldaps.js',                browser: false, local: true },
+  // WHO MAY READ WHAT OVER LDAPS, PER IDENTITY (#106, 2026-09-23): a product
+  // realm and a development realm, each with people, groups, an application
+  // and an administrator of its own, asked over 636 as a directory client
+  // asks — so both modes are asserted whichever mode the stack runs in.
+  { file: 'sts_ldap_read_authorization.js', browser: false, local: true },
   { file: 'sts_kerberos_spnego.js',      browser: false, local: true },
   // A PASSWORD ALONE IS NO TICKET FOR A TWO-FACTOR ACCOUNT (#173,
   // 2026-09-22): over TCP 88, the product refusal after the password
@@ -648,17 +688,61 @@ const JOBS = [
   // SIGNED IN WITH by MIT `kinit -k -t` and by `krb5_wire.js` using the
   // keytab's key — against the KDC at the published address, in both modes.
   { file: 'sts_kerberos_keytab.js',      browser: false, local: true },
+  // A KERBEROS SIGN-OUT OUTLIVES THE NEXT AS EXCHANGE (#111, 2026-09-23):
+  // over TCP 88, a TGT from before a global sign-out refused
+  // KDC_ERR_TGT_REVOKED, a new AS exchange straight after it accepted, the
+  // old TGT and a renewal of it still refused, and restore-kerberos refused
+  // in product — in both modes.
+  { file: 'sts_kerberos_signout.js',     browser: false, local: true },
+  // RC4-HMAC AND DIGEST MD5 ARE DEVELOPMENT'S (#182, 2026-09-23): over TCP
+  // 88, an AS-REQ or TGS-REQ offering only rc4-hmac, an RC4 TGS subkey, an
+  // RC4 initiator subkey at the acceptor and RC4 FAST armor refused in
+  // product and working in development; no RC4 key in a product keytab; MIT
+  // kinit restricted to rc4-hmac; krb5.enctypes naming 23 and
+  // scim.digestMd5 refused in a product realm; SCIM Digest MD5 off by
+  // default, and accepted in development only when turned on.
+  { file: 'sts_kerberos_rc4.js',         browser: false, local: true },
+  // #169 (2026-09-23): the krbtgt key, in a throwaway realm's KDC over
+  // MS-KKDCP — rotate-krbtgt queued on the scheduler, a TGT outliving it
+  // through the kept kvno, rotate-krbtgt-invalidate refusing every earlier
+  // TGT 44, the scheduler's two jobs, and the console and the API agreeing
+  // on the kvno — in both modes. `local: true`: this repository's KDC,
+  // scheduler and API.
+  { file: 'sts_kerberos_krbtgt_rotation.js', browser: false, local: true },
   // Both gRPC surfaces over the network. Since #166 (2026-09-23) also the
   // Workload API's TCP port in product: refused where the network is not
   // declared to authenticate source addresses, and entries selecting this
   // job's own peer: address where it is.
   { file: 'sts_spiffe_grpc.js',          browser: false, local: true },
+  // THE SPIFFE BROKER API (#170, 2026-09-23): a development realm and a
+  // product realm's Broker endpoint over mutual TLS — refused without a
+  // broker SVID, the reference refusals with their google.rpc.ErrorInfo, and
+  // a process and a pod reference answered; the broker list through
+  // /admin-api. `local: true`: this repository's endpoint and API.
+  { file: 'sts_spiffe_broker.js',        browser: false, local: true },
   { file: 'sts_oid4vp_wallet.js',        browser: false, local: true },
+  // A STATUS REFERENCE ON EVERY PRESENTED CREDENTIAL (#165, 2026-09-23): a
+  // foreign credential naming none refused unless its issuer is exempted by
+  // certificate thumbprint or the rule is own-only, the ldp_vc query asking
+  // for credentialStatus, and `off` refused and ignored in product.
+  { file: 'sts_oid4vp_status_reference.js', browser: false, local: true },
   { file: 'sts_federation_realms.js',    browser: false, local: true },
   // WHICH PEOPLE A PARTNER MAY ASSERT (#109, 2026-09-22): the subject
   // policies, the linking sign-in, the administrator refusal, the links set
   // and removed through /admin-api and SCIM — over HTTP, in either mode.
   { file: 'sts_federation_subject_policy.js', browser: false, local: true },
+  // A PARTNER'S SIGN-OUT (#167, 2026-09-23): SAML 2.0 Single Logout between
+  // two realms in both directions, a partner written here for every
+  // LogoutRequest refusal and SessionNotOnOrAfter, OpenID Connect
+  // Back-Channel, Front-Channel and RP-Initiated Logout, a WS-Federation
+  // cleanup confirmed in the browser — over HTTP, in either mode.
+  { file: 'sts_federation_signout.js',   browser: false, local: true },
+  // A PARTNER'S ENCRYPTED ASSERTION OR ID TOKEN (#168, 2026-09-23): the
+  // published keys, SAML 2.0 EncryptedAssertion/EncryptedID/
+  // EncryptedAttribute from the IdP realm and from an encryptor written here
+  // (RSA-OAEP and ECDH-ES), WS-Federation, a JWE ID Token, every refused
+  // algorithm, plaintext in product, rotation and its grace period.
+  { file: 'sts_federation_encryption.js', browser: false, local: true },
   // #171 (2026-09-23): the outbound transport policy over HTTP — the write
   // doors in a product realm, SSF push to this job's own listeners in both
   // modes (a skip ignored in product, a CA file honoured), the RFC 9728
@@ -669,6 +753,12 @@ const JOBS = [
   // are read once a realm holding them is switched to product (the ID
   // Token's nonce, a SET's signature, GET /spiffe's view).
   { file: 'sts_development_only_settings.js', browser: false, local: true },
+  // #181 (2026-09-23): six more of that class — the RISC subject type, the
+  // KDC's clock offset, the SAML signature switches, the Workload API header
+  // and the SHA-1 / RSA 1.5 values — refused on write in a product realm
+  // (and on an application's override), ignored where they are read once a
+  // realm holding them is switched; and GET /admin/mode and /admin-api/mode.
+  { file: 'sts_mode_weak_settings.js',   browser: false, local: true },
   // The mail channel (#63): delivery to the Mailpit the stack runs, a
   // product realm of its own, verification, a self-service reset, a dead
   // letter. Skips its delivery sections where there is no catcher.
@@ -829,7 +919,13 @@ const LOCAL_HELPERS = [
   // or notify listener of their own — product mode ignores every skip of
   // verification — and the directory shared with the service its certificate
   // is written to. The vendored PKI encoder; no key material is committed.
-  'outbound_test_ca.js'
+  'outbound_test_ca.js',
+  // A CRL DISTRIBUTION POINT FOR A CA A TEST MADE (#174): an empty list
+  // signed by that CA, served from the job's own process on the address the
+  // service dials a job's listeners at. A product-mode service refuses a
+  // foreign certificate that names no list, so every chain this suite mints
+  // names one — `tests/tools/pep-credential.js` included.
+  'test_crl_host.js'
 ];
 
 // ---------------------------------------------------------------------------

@@ -96,6 +96,15 @@
 // Response cannot disagree about it.
 //
 // ---------------------------------------------------------------------------
+// A SECOND CALLER SINCE #167: `federation/federation_slo.ts` assesses a
+// federation PARTNER's LogoutRequest and LogoutResponse here, with the
+// relationship's `fedSigningCertificate` as the one registered certificate —
+// the same mechanics for the partner an identity provider consumes from as
+// for the service provider it asserts to. The POLICY is that file's own: a
+// partner's logout message must be signed whatever
+// `saml2.requireSignedAuthnRequests` says (saml-profiles-2.0-os section
+// 4.4.4.1), so it reads the outcome and never calls refusal().
+//
 // A LIBRARY (rule 3): it registers no route. It requires `helpers`, `config`,
 // `mode`, `error_codes` and `crypto` — all leaves — so it closes no cycle, and
 // `common/protocol_stack.ts` builds it beside `sp_metadata.ts`.

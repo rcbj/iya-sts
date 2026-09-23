@@ -33,8 +33,19 @@
 // `skip_kubelet_verification` — is honoured in DEVELOPMENT MODE ONLY (#171,
 // `common/outbound_tls.ts`): product ignores it, says so once
 // (STS-SPIFFE-0116) and verifies against the kubelet CA as though it were
-// off. SPIRE's workload broker (`AttestReference`) and
-// sigstore verification are follow-ups on #40.
+// off.
+//
+// **A POD REFERENCE (#170)**: SPIRE's `AttestReference` for a SPIFFE Broker
+// API `KubernetesObjectReference` to `pods`/`core` — `attestPodReference()`
+// below, SPIRE's `attestByPodReference()` with its default `agent_node`
+// scope: the pod is found in THIS node's kubelet pod list, by UID or by
+// namespace and name (both given: the UID must match), and the selectors are
+// the pod ones — no container selectors, since a pod reference names no
+// container. A pod not on this node is NOT_FOUND, as in SPIRE; the cluster
+// scope, which falls back to the API server, is not implemented. A process
+// reference is the table's (`spiffe_broker.ts`), as it is SPIRE's. SPIRE's
+// k8s sigstore verification is not here: the docker attestor's is
+// (`spiffe_sigstore.ts`).
 // ---------------------------------------------------------------------------
 
 import fs = require('fs');
@@ -242,6 +253,55 @@ class K8sWorkloadAttestor {
     });
     log.debug("Leaving K8sWorkloadAttestor.podSelectors().");
     return out;
+  }
+
+  // SPIRE's attestByPodReference() (see the header). Resolves `{ found:
+  // false, why }` for a pod not on this node — NOT_FOUND at the broker — or
+  // `{ found: true, values, pod }`; a kubelet that cannot be read throws.
+  async attestPodReference(ref: { uid: string; namespace: string;
+                                  name: string }):
+      Promise<{ found: boolean; why?: string; values?: string[];
+                pod?: any }> {
+    const { log, config } = this.deps;
+    log.debug("Entering K8sWorkloadAttestor.attestPodReference().");
+    const pods = await this.podList();
+    let pod = null;
+    for (let i = 0; i < pods.length && !pod; i++) {
+      const meta = pods[i].metadata || {};
+      if (ref.name) {
+        if (String(meta.namespace || '') === ref.namespace &&
+            String(meta.name || '') === ref.name) {
+          pod = pods[i];
+        }
+      } else if (String(meta.uid || '') === ref.uid) {
+        pod = pods[i];
+      }
+    }
+    if (!pod) {
+      log.debug("Leaving K8sWorkloadAttestor.attestPodReference(). None.");
+      return { found: false,
+               why: ref.name
+                 ? 'pod ' + ref.namespace + '/' + ref.name +
+                   ' not found on agent node'
+                 : 'pod with UID ' + ref.uid + ' not found on agent node' };
+    }
+    const meta = pod.metadata || {};
+    if (ref.uid && String(meta.uid || '') !== ref.uid) {
+      log.debug("Leaving K8sWorkloadAttestor.attestPodReference(). UID.");
+      return { found: false,
+               why: 'pod ' + meta.namespace + '/' + meta.name + ' has UID ' +
+                    meta.uid + ', expected ' + ref.uid };
+    }
+    const values = this.podSelectors(pod);
+    if (config.value('spiffe.k8sEnableNamespaceLabels')) {
+      const labels = await this.namespaceLabels(String(meta.namespace || ''));
+      Object.keys(labels).forEach(function (key) {
+        values.push('ns-label:' + key + ':' + labels[key]);
+      });
+    }
+    log.debug("Leaving K8sWorkloadAttestor.attestPodReference(). " +
+              values.length);
+    return { found: true, values: values, pod: pod };
   }
 
   async attest(facts: any): Promise<string[]> {

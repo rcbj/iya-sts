@@ -1084,6 +1084,12 @@ specification's own worked example is the test (`tests/tls_client_hello.js`).
   with no fingerprint.
 * **IT IS INSTALLED BEFORE THE PROXY PROTOCOL**, in `server.js`, so that
   wrapper is the outer one and this reads a socket whose header is gone.
+  **And it RESUMES that socket (2026-09-23)**: the PROXY protocol hands it
+  on paused, as a tls.Server needs, and a `data` listener alone never makes an
+  explicitly paused socket flow — so for a week every connection through the
+  `cluster` mode's balancer waited out the ten-second wait above before its
+  handshake began, and the mode ran at ten seconds a request (6000 s spent by
+  job ~298). `tests/proxy_protocol.js` 3j-ii installs both in this order.
 * **THE ANSWER IS HELD BY CONNECTION**, peer address and port, until
   `secureConnection` hands over the TLS socket, and is put on that socket
   then. Node's private `_parent` link from the TLS socket to the raw one

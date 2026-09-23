@@ -481,6 +481,12 @@ const NAV = [
       // `portal_sign_ins.ts`.
       { path: BASE + '/sign-ins', label: 'Recent sign-ins',
         heading: 'Your recent sign-ins' },
+      // CONSENTS (#172, 2026-09-23), under *Your account* for Security
+      // activity's reason: not a credential, but what this person has let
+      // each application ask for — with the one control that belongs there,
+      // taking it back. Drawn by `portal_consents.ts`.
+      { path: BASE + '/consents', label: 'Consents',
+        heading: 'What you have agreed applications may do' },
       // EMAIL (#63, 2026-09-22): the address this service writes to, whether
       // it is verified, which messages may be declined, and what was sent.
       // Under *Your account* for Security activity's reason — it is what this
@@ -539,7 +545,13 @@ const NAV = [
       // credential derived from their own password. Drawn by
       // `portal_kerberos.ts`.
       { path: BASE + '/kerberos', label: 'Kerberos',
-        heading: 'Your Kerberos principal and keytab' }
+        heading: 'Your Kerberos principal and keytab' },
+      // WHO MAY ACT FOR YOU (#108, 2026-09-23), in this section for the
+      // signing keys' reason: `stsMayAct` is on this person's own entry, and
+      // it is what their access tokens' `may_act` claim says. Drawn by
+      // `portal_delegate.ts`.
+      { path: BASE + '/delegate', label: 'Who may act for you',
+        heading: 'Who may act for you' }
     ] }
 ];
 
@@ -2296,6 +2308,26 @@ class Portal {
   // own keys — see the file header, where that is argued as the case that looks
   // like the rule's exception and is not.
   // ---------------------------------------------------------------------------
+  // WHAT THE ATTESTATION PROVED ABOUT ONE OF THE PERSON'S OWN KEYS (#105),
+  // in their words: the model the FIDO metadata names where the statement
+  // chained to an anchor, "verified" where it was checked and anchored
+  // nowhere, and "claimed" where nothing was checked — `/admin/users` draws
+  // the same record for an operator.
+  private attestationText(att) {
+    const { log } = this.deps;
+    log.debug('Entering Portal.attestationText().');
+    let text = 'not verified (the authenticator\'s own claim)';
+    if (att && att.verified && att.trusted) {
+      text = (att.model ? att.model + ' — ' : '') + 'verified and trusted';
+    } else if (att && att.verified) {
+      text = att.type === 'none' || att.type === 'self'
+        ? 'no attestation sent (' + att.type + ')'
+        : 'verified, from an authenticator no trusted root vouches for';
+    }
+    log.debug('Leaving Portal.attestationText().');
+    return this.esc(text);
+  }
+
   private keysPage(session, message, error, base) {
     const self = this;
     const { credentials, log, websecurity } = this.deps;
@@ -2314,12 +2346,13 @@ class Portal {
             : 'None of them is marked as a second factor.')
         : 'You have no security keys enrolled.') + '</p>' +
       (keys.length
-        ? '<table class="grid"><tr><th>Key</th><th>Role</th><th>Enrolled</th>' +
-          '<th></th></tr>' +
+        ? '<table class="grid"><tr><th>Key</th><th>Role</th>' +
+          '<th>Authenticator</th><th>Enrolled</th><th></th></tr>' +
           keys.map(function (one) {
             return '<tr><td>' +
               self.esc(one.label || 'security key') + '</td>' +
               '<td>' + self.esc(one.role) + '</td>' +
+              '<td>' + self.attestationText(one.attestation) + '</td>' +
               '<td>' +
               self.esc(new Date(one.enrolledAt || 0).toISOString()
                 .slice(0, 10)) +
@@ -4037,7 +4070,21 @@ class Portal {
             (row.verified
               ? 'signed by this identity provider and verified'
               : 'NOT VERIFIED — ' + self.esc(row.verificationNote)) +
-            '</span></td></tr>';
+            '</span>' +
+            // WHAT THIS PORTAL DID WITH IT (#62): signed you out here, if
+            // the signal-response policy said to.
+            (row.reactions || []).map(function (r) {
+              return '<span class="ident signal-reaction">' +
+                (r.failed ? 'this portal could not sign you out here'
+                  : r.skipped ? 'this portal left you signed in here (' +
+                                self.esc(r.skipped) + ')'
+                  : (r.observed ? 'this portal would sign you out here ' +
+                                  '(development mode records it only)'
+                    : (Number(r.ended) > 0
+                        ? 'this portal signed you out here'
+                        : 'this portal had no session of yours to end'))) +
+                '</span>';
+            }).join('') + '</td></tr>';
         }).join('') + '</table>'
       : '<p class="note">Nothing has been reported about your account' +
         (st.held ? ' yet' : ' yet') + '. This list fills when this identity ' +
@@ -6122,6 +6169,10 @@ const portalAppPasswords = require('./portal_app_passwords');
 const portalKerberos = require('./portal_kerberos');
 // /portal/sign-ins (#62 P6), the same arrangement, registered after that.
 const portalSignIns = require('./portal_sign_ins');
+// /portal/consents (#172), the same arrangement, registered after that.
+const portalConsents = require('./portal_consents');
+// /portal/delegate (#108), the same arrangement, registered after that.
+const portalDelegate = require('./portal_delegate');
 // /portal/email, /portal/verify-email and /portal/forgot-password (#63),
 // the same arrangement, registered after that.
 const portalMail = require('./portal_mail');
@@ -6172,6 +6223,32 @@ export = {
       audit: audit, errorCodes: errorCodes, config: config
     });
     portalSignIns.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalConsents.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalDelegate.register({
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),

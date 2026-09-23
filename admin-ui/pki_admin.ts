@@ -1337,11 +1337,14 @@ class PkiAdmin {
         // is the shape every settings-backed control in this console has. An
         // empty `pki.signatureAlgorithm` means "the right one for the key
         // algorithm" — see that row's description for why a fixed value there
-        // is wrong for EC.
+        // is wrong for EC. The signature algorithm's default is applied by
+        // `pki.js`'s `algorithmsFrom()`, not here (#181): it reads the setting
+        // AS IN FORCE, so a SHA-1 value stored in a product realm is the
+        // key's own default rather than a refused build, and skips a value
+        // the key cannot produce, as every other build does.
         keyAlg: String(body.keyAlg || '').trim() ||
                 config.value('pki.keyAlgorithm'),
-        signatureAlg: String(body.signatureAlg || '').trim() ||
-                      config.value('pki.signatureAlgorithm') || '',
+        signatureAlg: String(body.signatureAlg || '').trim(),
         organisation: String(body.organisation || '').trim() ||
                       config.value('pki.organisation'),
         country: String(body.country || '').trim(),
@@ -2218,7 +2221,8 @@ class PkiAdmin {
       json.signatureAlgorithms.map(function (one) {
         return '<option value="' + esc(one.id) + '">' + esc(one.label) +
           (one.kind !== kind ? ' — needs a ' + esc(one.kind) + ' key' : '') +
-          (one.weak ? ' [weak, on purpose]' : '') + '</option>';
+          (one.weak ? ' [weak, on purpose — refused in product mode]' : '') +
+          '</option>';
       }).join('');
   }
 

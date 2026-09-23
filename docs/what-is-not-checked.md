@@ -28,8 +28,10 @@ Every row below says what **product** mode does first and what **development**
 mode does after it. [What product mode still does not check](#what-product-mode-still-does-not-check)
 lists what neither mode checks and a deployment should know about.
 
-The service publishes the same split about itself, live: `GET /admin/mode` (and
-`GET /admin-api/mode`) lists every requirement with the answer in force, and
+The service publishes the same split about itself, live: `GET /admin/mode`
+(Server configuration → Mode) and `GET /admin-api/mode` list every requirement
+with the answer in force, and every development-only setting with the value
+stored and the value in force (#181), and
 `GET /oauth2/rfc9700` and `GET /oauth2/oauth21` list each OAuth requirement with
 whether it is enforced. Read those for the running instance; read this page for
 the reasons.
@@ -44,7 +46,10 @@ any of them would be a broken implementation rather than a lenient one:
 
 * a **Kerberos** key and ticket (see [Kerberos](#kerberos-is-the-exception-and-cannot-not-be));
 * an **RFC 6238 one-time code** and a **recovery code**;
-* a **WebAuthn** ceremony — challenge, origin, RP ID, flags, signature and counter;
+* a **WebAuthn** ceremony — challenge, origin, RP ID, flags, the credential's
+  algorithm against the offer, the credential id's length, signature and
+  counter — and, where `webauthn.attestationPolicy` says (product by default),
+  its **attestation statement**;
 * a **TLS client certificate** at `GET /tls/sign-in`, revocation included;
 * a **federation partner's** signature, issuer and audience;
 * an **RFC 7523 or RFC 7522 assertion's** signer, which must be declared;
@@ -58,7 +63,12 @@ any of them would be a broken implementation rather than a lenient one:
 * a **disabled account** (`pwdAccountLockedTime`), refused at every door — see
   the SCIM `active: false` row;
 * a **SPIFFE node attestation**, by all nine of SPIRE's node attestors, and a
-  Workload API caller on the Unix socket, by the workload attestors (#40).
+  Workload API caller on the Unix socket, by the workload attestors (#40,
+  #170) — with a docker workload's **cosign image signature** where
+  `spiffe.dockerSigstoreEnabled` asks for one;
+* a **SPIFFE Broker API** caller's X509-SVID and its place in
+  `spiffe.brokers`, and the workload it references, which is attested here
+  (#170).
 
 ## The list
 
@@ -68,8 +78,9 @@ any of them would be a broken implementation rather than a lenient one:
 | Issue without asking — **this row runs the other way** | Consent is asked: the first time a person signs in to a `client_id` for a scope, `/oauth2/consent` is drawn and nothing is issued until they answer. `oauth2.consentRequired` is ON by default in both modes. See [Consent](#consent-is-asked-in-both-modes) | The same |
 | Hold a new password to a policy | **Enforced**, from the realm's policy (Directory → Policies, `/admin/policies`): a minimum length, a symbol count, an uppercase letter, a number, and none of the current password or the last five. At every door that sets one: the console and `/admin/users/new`, `/admin-api` (including `users/create`), `/portal/password`, `/portal/activate`, the forced change at sign-in, and an LDAP add or modify of `userPassword`. SCIM carries no password. A password already stored is not re-checked | Any password is set. The history is recorded in both modes, and a generated password meets the policy in both |
 | Offer the OAuth 2.0 password grant | **It does not exist**: `unsupported_grant_type` (RFC 9700 section 2.4), because product mode implies RFC 9700 mode | Any password but `invalid` is accepted, as at the sign-in screen — unless `oauth2.rfc9700` or `oauth2.oauth21` is on, which removes the grant here too |
-| Refuse an LDAP bind | Four kinds are refused before a password is read: an anonymous bind (48, `inappropriateAuthentication`), a bind on the plain listener on 389 (13, `confidentialityRequired`), a DN with an empty password (53), and a DN or address with too many failed binds inside `security.rateLimitWindowS` (53 — a correct password during a lockout is refused like a wrong one). Then the password is verified, and a wrong one is 49. The anonymous refusal needs the bundled `node-ldapjs` to support `routeAnonymousBinds`; an older checkout logs `STS-LDAP-0098` and lets the bind through, though every read on that connection is still refused. `ldap.plainListener` turns 389 off | Any DN and any password bind, anonymous included, on 389 and 636 alike — except `invalid` and a disabled account, which get 49 |
-| Require a bind to read the directory, or withhold a credential from a search | A search or compare needs a bind (50, `insufficientAccessRights`). The exceptions are the root DSE and a base search of a certificate revocation list entry under `ou=crl`, which a relying party must be able to fetch anonymously. **No credential attribute is ever returned, matched by a filter or compared** — passwords and their history, client secrets, registration access tokens, private keys, TOTP secrets, recovery codes, activation and reset tokens, Kerberos keys, ACME and SCEP enrolment secrets, GNAP symmetric and macaroon keys — to anybody, administrators included. `createTimestamp`, `modifyTimestamp` and `entryDN` cannot be written by anybody (19, `constraintViolation`). What a bound connection may read beyond that is **not narrowed per identity** | Any connection may read every entry and every attribute, except Kerberos keys and the three certificate-enrolment secrets, which are withheld in every mode. `entryUUID` cannot be written in either mode |
+| Refuse an LDAP bind | Five kinds are refused before a password is read: an anonymous bind (48, `inappropriateAuthentication`), a bind on the plain listener on 389 (13, `confidentialityRequired`), a DN with an empty password (53), a DN that is not a person's — an application, a federation, a container — (49, the same answer as a wrong password), and a DN or address with too many failed binds inside `security.rateLimitWindowS` (53 — a correct password during a lockout is refused like a wrong one). Then the password is verified, and a wrong one is 49. The anonymous refusal needs the bundled `node-ldapjs` to support `routeAnonymousBinds`; an older checkout logs `STS-LDAP-0098` and lets the bind through, though every read on that connection is still refused. `ldap.plainListener` turns 389 off | Any DN and any password bind, anonymous included, on 389 and 636 alike — except `invalid` and a disabled account, which get 49 |
+| Require a bind to read the directory, or withhold a credential from a search | A search or compare needs a bind (50, `insufficientAccessRights`). The exceptions are the root DSE and a base search of a certificate revocation list entry under `ou=crl`, which a relying party must be able to fetch anonymously. **No credential attribute is ever returned, matched by a filter or compared** — passwords and their history, client secrets, registration access tokens, private keys, TOTP secrets, recovery codes, activation and reset tokens, Kerberos keys, ACME and SCEP enrolment secrets, GNAP symmetric and macaroon keys — to anybody, administrators included. `createTimestamp`, `modifyTimestamp` and `entryDN` cannot be written by anybody (19, `constraintViolation`). What a bound connection may read beyond that is the next row | Any connection may read every entry and every attribute, except Kerberos keys and the three certificate-enrolment secrets, which are withheld in every mode. `entryUUID` cannot be written in either mode |
+| Authorize an LDAP read per identity | **Every search and compare is authorized against the identity that bound.** Somebody holding Admin Read or Admin Write reads every entry in their scope — the default realm's roster reaches every realm, a realm's own roster reaches that realm. Anybody else reads their **own entry** whole; of **other people**, only the attributes `ldap.directoryReadableAttributes` names, which is **empty by default**, so another person is not there at all; a **group** only if they are a member of it, and then its `cn`, `description` and `objectClass` (its members too with `ldap.groupMembersReadable`); and the containers by name. **Applications, federations, policies, roles, trust anchors and SPIFFE registrations are invisible** to them. An entry the reader may not see answers noSuchObject (32) exactly as a missing one does; an attribute they may not read is absent from the result **and from a search filter**, so a filter cannot be used to read it; a compare of one is 50. Credentials stay withheld from everybody | Any connection reads every entry and every attribute but the credentials the row above withholds in every mode |
 | Authorize an LDAP write | Every write is authorized against the identity that bound. Anonymous writes nothing. Somebody holding Admin Write in the default realm writes anything; a realm's own administrator writes that realm's directory. Anybody else may modify only the attributes `ldap.selfWritableAttributes` names, on their own entry — contact details, `displayName`, `preferredLanguage` and `userPassword` by default. A role held only because the roster is empty does not count. Refusals are 50 | Any connection, anonymous included, may add, modify, rename or delete any entry in any realm |
 | Verify an access token at the OpenID4VCI endpoints | The credential, deferred credential and notification endpoints refuse a token this realm cannot verify, and one it revoked, with `invalid_token` | A token this realm cannot verify — or has revoked — is read unverified, since OpenID4VCI lets the authorization server be somebody else. A credential issued that way cannot sign anybody in |
 | Verify the tokens in an RFC 8693 token exchange | **Since 2026-09-21**: the `subject_token` and the `actor_token` must verify against this realm's signing key, be unexpired and not revoked, or the exchange is `invalid_request` (`STS-OAUTH-0555`, `0556`, `0557`). Until that date product exchanged a forged token exactly as development does | A `subject_token` this realm cannot verify is read for its name and exchanged, and the `/admin/users` row says the subject was *told about* rather than authenticated. An `actor_token` is read and never verified. A **revoked** token this realm signed is refused in both modes |
@@ -82,21 +93,22 @@ any of them would be a broken implementation rather than a lenient one:
 | Create what something named | **Nothing is created because something named it**: no person, client, SAML service provider, SPIFFE entry, GNAP key or Kerberos principal. A certificate sign-in, federated sign-in, assertion grant or security-key enrolment for somebody with no entry is refused | The first time a name turns up — at the sign-in screen, in a certificate, a presentation, an SVID, a federated assertion, an RFC 7523 `sub`, a `client_id`, an `AuthnRequest` issuer — an entry is created for it |
 | ~~Turn a verified client certificate into a login~~ — reversed 2026-09-05 | `GET /tls/sign-in` starts a session for the holder of a certificate that verified, after consulting revocation: the person the certificate was issued to, when this service issued it, or the entry named by its common name or subject. No entry means no session (`STS-AUTHN-0180`). A certificate from an authority of this service that does not issue client identities is refused, and an application's certificate signs nobody in — it is an RFC 8705 client credential | The same, except that a name with no entry gets one |
 | ~~Turn a verified presentation into a sign-on~~ — reversed 2026-09-17 | "Sign in with a wallet" (`/authn/wallet`, `oid4vp.signIn`, on by default) starts a session for the entry a **holder-bound credential this service issued** was issued for — on an access token it verified, not disowned, with a good status — after a fresh holder proof. It is offered through the W3C Digital Credentials API; the plain QR code, which can be relayed to a victim, is off (`oid4vp.signInCrossDevice`). Any other presentation verifies and signs nobody in. In product the offer page `/issuer/offer` needs a sign-in and a wallet URL must be registered | The same. A credential issued on an unverified token is never in the sign-in register, so it cannot sign in either |
-| ~~Publish a status for a credential it issued~~ — reversed 2026-09-17 | Every credential carries a Token Status List claim, a Bitstring Status List entry, or both, served at `/oid4vci/status-lists*`. A sign-out, a disabled account, a revocation on `/admin/tokens` and `/admin/vc-status` each set the bit; a restore on `/admin/tokens` clears it. The Verifier refuses this realm's own credential with no status reference, and a trusted foreign issuer's whose list cannot be fetched. **A foreign credential that carries no status reference is accepted**, and an `ldp_vc` with no disclosed status entry passes the Verifier (a sign-in reads its status from the register instead) | The same |
+| ~~Publish a status for a credential it issued~~ — reversed 2026-09-17 | Every credential carries a Token Status List claim, a Bitstring Status List entry, or both, served at `/oid4vci/status-lists*`. A sign-out, a disabled account, a revocation on `/admin/tokens` and `/admin/vc-status` each set the bit; a restore on `/admin/tokens` clears it. The Verifier requires a status reference that resolves VALID on every presented credential (`oid4vp.requireStatusReference`, `all` by default, since #165): a foreign credential naming none is refused (`STS-VC-0088`) unless its issuer's certificate thumbprint is in `oid4vp.statusOptionalIssuers` or the rule is relaxed to `own-only` (which warns that such a credential can never be shown revoked); this realm's own with none is refused; a trusted foreign issuer's whose list cannot be fetched is refused; and an `ldp_vc` whose presentation withheld its `credentialStatus` is refused at the Verifier (`STS-VC-0089`) — its query asks for it — while a sign-in reads that credential's status from the register. `off` cannot be set (`STS-CORE-0103`) and is read as `all` | The same, by default. `oid4vp.requireStatusReference` `off` also accepts this realm's own credential with no reference and an `ldp_vc` that withheld its status |
 | Count a wallet as more than one factor | A presentation proves possession of one key: `amr ["pop"]`, `acr "1"`. A verified key attestation for hardware storage adds `hwk`; `acr "mfa"` needs the attestation to say the key is guarded by the person's own authentication as well. A second factor after the presentation — an authenticator app, a security key or the person's password — is asked when the request, the realm or the account demands two | The same, except that the password offered as that second factor is not checked, so a wallet and any password make `acr "mfa"` |
 | Verify anything in an issued credential's values | Nothing is invented: the values come from the access token and then the directory entry, and an attribute neither holds is absent — from the credential, a claims request, and the ID Token and UserInfo profile claims. `email_verified` is `true` only for an address the person verified through a mailed link, else `false` | What the entry lacks is invented from the username |
 | ~~Deactivate anybody on SCIM `active: false`~~ — reversed 2026-09-17 | `active: false` writes `pwdAccountLockedTime`, the same state **Disable** on `/admin/users` writes. Every door then refuses the person — a password anywhere (an LDAP bind included), any sign-in, a session they already hold, a Kerberos AS-REQ or S4U2Self, every token grant and refresh, the issuance of any SAML, WS-Federation, WS-Trust or GNAP artifact, and the management API — and everything they hold is ended and their wallet credentials disowned. `active: true` enables them again | The same |
 | ~~Restrict which people a federation partner may assert~~ — reversed 2026-09-22 ([#109](https://github.com/rcbj/iya-sts/issues/109)) | A partner signs in only the person its subject is **linked** to — a `federationLink` of the relationship, the partner's issuer and its `sub` or persistent NameID. An unlinked subject naming an existing person must first sign in here as that person, password and second factor, before the link is made (`fedSubjectPolicy` `link-at-first-sign-in`, the default); `pre-linked` refuses it (`STS-FED-0091`); `jit-namespaced` never reaches an existing person; **`any-existing`, the old name match, is refused** (`STS-FED-0094`, `STS-FED-0095`). Nothing is written onto an entry before that. Group, domain and DN-pattern rules narrow it further (`STS-FED-0092`), and a console administrator is refused even with a link unless `fedMayAssertAdministrators` is on (`STS-FED-0093`). Nothing is created for a subject naming nobody (`STS-FED-0090`) | The same, except that `any-existing` may be set and matches the name, and a subject naming nobody gets an entry named `<relationship>~<name>`, linked at creation, unless `fedAutocreateUsers` is off. No password is checked at the linking sign-in (the reserved `invalid` is refused) |
-| ~~Verify a SAML `AuthnRequest`'s signature, or consume a service provider's metadata~~ — reversed 2026-09-17 | A signed `AuthnRequest`, `LogoutRequest`, `LogoutResponse` or `ArtifactResolve` is verified against the service provider's **registered** certificates — never the one the request carries — and refused if it does not verify. An **unsigned** request is refused (`saml2.requireSignedAuthnRequests`, `auto`). `WantAssertionsSigned` is honoured. SHA-1 needs `saml.allowSha1Signatures`; MD5, a MAC and a stateful hash-based signature are refused as not checkable. Consumed metadata registers the provider's endpoints, certificates and `NameIDFormat`s; its `validUntil` is enforced, it is refreshed after `cacheDuration`, and it must verify against `saml2.metadataTrustAnchors` when any is set. A metadata or MDQ fetch to an internal address is refused. An artifact is resolved only for the provider it was issued to | A present signature is verified in both modes. An unsigned request is accepted unless the provider's metadata says `AuthnRequestsSigned="true"`. `WantAssertionsSigned` is warned about rather than honoured. Internal addresses may be fetched |
-| Check which entityID a SAML service provider claims | An unknown entityID is not registered by its request: the request is refused, having no registered return address and no signature. **An MDQ responder can register it** — with `saml2.mdqBaseUrl` set, a request from an unknown provider queues a lookup, and a document the responder publishes creates the application, so a later request succeeds. `GET /saml2/metadata/{sp}` still answers for any `{sp}` | Any entityID is accepted, and the first `AuthnRequest` from one creates its application entry |
+| ~~Verify a SAML `AuthnRequest`'s signature, or consume a service provider's metadata~~ — reversed 2026-09-17 | A signed `AuthnRequest`, `LogoutRequest`, `LogoutResponse` or `ArtifactResolve` is verified against the service provider's **registered** certificates — never the one the request carries — and refused if it does not verify. An **unsigned** request is refused (`saml2.requireSignedAuthnRequests`, `auto`). Every assertion is signed, so `WantAssertionsSigned` is always met. SHA-1 is refused, whatever `saml.allowSha1Signatures` says (#181); MD5, a MAC and a stateful hash-based signature are refused as not checkable. Consumed metadata registers the provider's endpoints, certificates and `NameIDFormat`s; its `validUntil` is enforced, it is refreshed after `cacheDuration`, and it must verify against `saml2.metadataTrustAnchors` when any is set. A metadata or MDQ fetch to an internal address is refused. An artifact is resolved only for the provider it was issued to | A present signature is verified in both modes. An unsigned request is accepted unless the provider's metadata says `AuthnRequestsSigned="true"`. `WantAssertionsSigned` is warned about rather than honoured when `saml2.signAssertion` is off. SHA-1 verifies with `saml.allowSha1Signatures` on. Internal addresses may be fetched |
+| Check which entityID a SAML service provider claims | An unknown entityID is not registered by its request: the request is refused, having no registered return address and no signature. **An MDQ lookup the request starts registers it only when a trust anchor vouches for it** ([#112](https://github.com/rcbj/iya-sts/issues/112)): with no `saml2.metadataTrustAnchors` no lookup is made (`STS-SAML-0080`), and with them the answer creates the entry only if it verifies against one (`STS-SAML-0081`); the refused entityIDs are listed on `/admin/saml2` and `GET /admin-api/saml2`. An administrator's Import from MDQ with no anchor is refused (`STS-SAML-0084`) unless `saml2.mdqImportWithoutAnchors` is on — and then the document is consumed **unverified**, which its description warns about. `/saml2/metadata|sso|slo|ars/{sp}` and `/saml11/metadata|sso|responder/{rp}` answer **404** for a name that is not a registered provider of that profile (`STS-SAML-0082`, `STS-SAML-0083`) | Any entityID is accepted, and the first `AuthnRequest` from one creates its application entry; an MDQ answer registers an unknown service provider whether or not it is signed, unless trust anchors are set; the per-provider metadata is minted for any name |
 | Check where a SAML response or WS-Federation token is delivered | The `AssertionConsumerServiceURL`, SAML 1.1 `shire` or `wreply` must be **registered** on the application (`samlAssertionConsumerService`, `wsfedReplyUrl`) and match exactly, with no mock fallback. An address development recorded is marked *observed* (`appReturnAddressObserved`) and refused until an administrator confirms it — **Confirm** and **Discard** under Applications, or `POST /admin-api/applications/confirm-address` and `/discard-address`. A provider whose metadata was consumed is answered only at an endpoint that metadata registered | The address a request names is used as it stands; with none, the registered one or a built-in mock. A consumed-metadata provider is held to its endpoints here too |
 | Authenticate a caller at the SAML 1.1 attribute authority | Both query types are refused | Anybody may send an `AttributeQuery` about anybody. In both modes an `AuthenticationQuery` is answered only from a live session, and an attribute answer carries no invented `AuthenticationStatement` |
 | Require a credential at the WS-Trust STS | A request with no credential is refused; a UsernameToken's password is verified; an assertion is accepted only when this STS signed it and it is inside its `Conditions`; `OnBehalfOf` and `ActAs` need the requester's own credential and an assertion this STS signed (`STS-WSTRUST-0009`); a token asked for encrypted is not sent in the clear (`STS-WSTRUST-0012`, `0013`). Nothing decides **who** may act for whom | A request with no credential gets a token for `anonymous`, an unsigned assertion is believed, and `OnBehalfOf` needs no requester. A requested lifetime is clamped to `wstrust.maxTokenLifetimeMin` in both modes |
 | Encrypt an assertion it was asked to encrypt but holds no certificate for | Refused: a SAML Responder status with no assertion (`STS-SAML-0011`). It never encrypts to a certificate a request merely carried | The assertion is sent in the clear, with a warning. A provider whose metadata publishes an encryption key is encrypted to in both modes |
-| Decrypt an assertion a federation partner encrypted, or consume a federated sign-out | Neither: an encrypted assertion is refused naming "no assertion" (`STS-FED-0011`), and a sign-out request arriving at the federation endpoint is refused (`STS-FED-0024`). Nothing re-checks a federated person with the partner once the session exists | The same |
-| ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)** | All nine of SPIRE's node attestors verify or refuse. The Workload API's Unix socket attests its caller with the `unix`, `docker` and `k8s` workload attestors; without the native module the socket is not served (`STS-SPIFFE-0113`), and asserted selectors are never believed. **A caller over TCP cannot be attested, so the Workload API is not served over TCP** (`STS-SPIFFE-0120`, #166) unless `spiffe.workloadTcpSourceAuthenticated` declares that the network authenticates source addresses, and then only on a named address (`STS-SPIFFE-0121`); an entry must select something that identifies its workload — `peer:<address>` for TCP — never only `transport:` and `endpoint:` (`STS-SPIFFE-0122`) — see [SPIFFE](#the-workload-api-is-the-opposite-case) | The same attestors. Without the native module the socket is served unattested, `spiffe.acceptAssertedSelectors` lets a caller assert its own selectors, and the TCP port is served to anybody who reaches it, where an entry on `transport:tcp` alone is issued to every caller |
+| ~~Decrypt an assertion a federation partner encrypted~~ — reversed 2026-09-23 ([#168](https://github.com/rcbj/iya-sts/issues/168)) | A SAML 2.0 `EncryptedAssertion`, `EncryptedID` and `EncryptedAttribute`, a WS-Federation token and an OpenID Connect JWE ID Token are **decrypted** with the relationship's own key, under exactly the algorithms it publishes. A **plaintext** assertion, or a signed-only `id_token` by form_post, is **refused** (`STS-FED-0140`) unless the relationship sets `fedAllowUnencrypted` | Plaintext is accepted; an encrypted one is decrypted as in product. In both modes AES-CBC, `rsa-1_5` and `RSA1_5` are refused (`STS-FED-0139`) and every decryption failure is one code (`STS-FED-0138`) |
+| ~~Consume a federated sign-out~~ — reversed 2026-09-23 ([#167](https://github.com/rcbj/iya-sts/issues/167)) | A partner's sign-out ends the session it started, and only that one: a SAML 2.0 `LogoutRequest` (signed, verified against `fedSigningCertificate`, issued by `fedPeer`, addressed here, fresh and accepted once — `STS-FED-0115` to `0120`), an OpenID Connect Back-Channel Logout Token (section 2.6 whole, the `jti` once — `0127` to `0129`) or Front-Channel logout (`iss` and `sid` required — `0130`), and a WS-Federation cleanup the person confirms in their own browser (`0126`), at `/federation/slo/{id}` and the two OpenID Connect logout paths. The partner's SAML `SessionNotOnOrAfter` is the session's latest end (`0131`). A sign-out here offers the partner its own. SAML 1.1 and OAuth 2.0 define no sign-out. `fedAcceptSignout` off refuses them all (`0123`) | The same, except that a relationship may set `fedRequireSignedLogout` off and accept an unsigned SAML logout message; product refuses the setting (`STS-FED-0132`) |
+| ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)** | All nine of SPIRE's node attestors verify or refuse. The Workload API's Unix socket attests its caller with the `unix`, `docker` (Docker and Podman), `k8s` and `systemd` workload attestors, and the docker one checks a cosign image signature where asked (#170); without the native module the socket is not served (`STS-SPIFFE-0113`), and asserted selectors are never believed. **A caller over TCP cannot be attested, so the Workload API is not served over TCP** (`STS-SPIFFE-0120`, #166) unless `spiffe.workloadTcpSourceAuthenticated` declares that the network authenticates source addresses, and then only on a named address (`STS-SPIFFE-0121`); an entry must select something that identifies its workload — `peer:<address>` for TCP — never only `transport:` and `endpoint:` (`STS-SPIFFE-0122`) — see [SPIFFE](#the-workload-api-is-the-opposite-case) | The same attestors. Without the native module the socket is served unattested, `spiffe.acceptAssertedSelectors` lets a caller assert its own selectors, and the TCP port is served to anybody who reaches it, where an entry on `transport:tcp` alone is issued to every caller |
 | Let a group grant anything by being a group | A group grants what a role or roster names it for: the console's Admin Read and Admin Write, each realm's own administrator roster, `REMOTE_PEPS` and `XACML_USER` for the XACML surfaces, a configured role's `roleMemberGroup`, and the embedded debugger through the console roles. The groups claim in a token grants nothing | The same |
-| Decide who may delegate to whom, in two of the three families that can | Kerberos polices S4U against `msDS-AllowedToDelegateTo` and `msDS-AllowedToActOnBehalfOfOtherIdentity`, and in product no such rule exists unless an operator writes one, so S4U2Proxy is refused. WS-Trust requires the requester to authenticate but has no rule on who may act for whom. RFC 8693 has no policy: `may_act` is neither issued nor read. An ungranted delegated permission is `invalid_scope` (`STS-OAUTH-0155`). See [Delegation](#delegation-is-policed-in-one-family-out-of-three) | The KDC holds fixture delegation rules. WS-Trust needs no requester at all. An ungranted delegated permission is honoured unless `oauth2.delegatedPermissionsEnforced` is on |
+| ~~Decide who may delegate to whom, in two of the three families that can~~ — **reversed 2026-09-23 (#108)** | Kerberos polices S4U against `msDS-AllowedToDelegateTo` and `msDS-AllowedToActOnBehalfOfOtherIdentity`. WS-Trust `OnBehalfOf` / `ActAs` and RFC 8693 token exchange are decided by the same model on application entries — `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`, `appTrustedToImpersonate` — with `stsNotDelegated` and the console roster protecting people, then a deny-only XACML layer (action-id `delegate`). A refusal is `wst:RequestFailed` (`STS-WSTRUST-0018`, `0019`, `0020`) or `invalid_request` / `invalid_target` (`STS-OAUTH-0618`, `0619`, `0622`); only an application may be a WS-Trust requester that delegates, and an exchange may not widen its subject_token's scope (`STS-OAUTH-0621`). An ungranted delegated permission is `invalid_scope` (`STS-OAUTH-0155`). See [Delegation](#delegation-is-decided-in-all-three-families) | The KDC holds fixture delegation rules. WS-Trust and token exchange issue every delegation and record on the act what product would have refused. WS-Trust needs no requester at all. An ungranted delegated permission is honoured unless `oauth2.delegatedPermissionsEnforced` is on. In both modes a subject_token's `may_act` naming somebody else is refused (`STS-OAUTH-0620`) |
 | Verify the certificate of whoever answers an outbound request — a GNAP push finish, an SSF push, a federation back channel (and the SAML metadata, RFC 9728, Logout Token and status-list fetches that share its policy), an XACML PEP nudge, a kubelet | **Always verified, since 2026-09-23 (#171)**: every `…SkipTlsVerification` setting and `spiffe.k8sSkipKubeletVerification` is ignored (logged once with its family's code) and cannot be turned on (`STS-CORE-0103`). A private CA is trusted through the family's `…CaFile`. Plain http is refused for SSF, federation and XACML whatever `…AllowHttp` says, and allowed for a GNAP push finish to a loopback address only | `…SkipTlsVerification` turns verification off, warned on every request, and `…AllowHttp` admits plain http to any host. Both are off by default |
 | ~~Tie a scope to a client~~ — **reversed 2026-09-22 (#110)** | A client is issued only the scopes its `oauthAllowedScope` declares — or, declaring none, the default set: `openid`, `profile`, `email`, `address`, `phone`, `offline_access` and the realm's OpenID4VCI scopes. Anything else is `invalid_scope` (`STS-OAUTH-0578`); a scope naming an application or a delegated permission keeps its own rules. See [Scopes](#a-scope-is-tied-to-the-client) | Any scope is issued — except this service's own protected scopes (`admin:read`, `admin:write`, the SCIM and Shared Signals scopes, the debugger permission), which are held to the declaration in both modes (`STS-OAUTH-0577`) |
 
@@ -138,21 +150,30 @@ Three things about it are worth knowing:
 
 * **The answer is a record, not a permission.** It is written to `oauthConsent`
   on the person's own entry — one value per (person, application, scope) — and
-  read by exactly one thing: the authorization endpoint, deciding whether to
-  draw the screen again.
-* **Nothing already issued is re-judged.** The token endpoint asks nobody
-  anything, so a refresh of a code obtained before the setting was turned on
-  still works, and revoking somebody's consent leaves a token already minted
-  valid.
+  read by two things: the authorization endpoint, deciding whether to draw the
+  screen again, and the refresh grant, deciding whether the grant still
+  stands.
+* **Withdrawn means withdrawn** (#172). Revoking a consent — at
+  `/admin/consent`, through `/admin-api`, or by the person themselves on
+  `/portal/consents` — revokes every access and refresh token that application
+  holds for them carrying the scope, on every node, and records the instant as
+  `oauthConsentWithdrawn` on their entry. The refresh grant asks again at every
+  refresh, in both modes: a refresh token granted before a withdrawal is
+  refused even after the person consents again, and withdrawing one scope
+  revokes the whole refresh token. With `oauth2.refreshRequiresConsent` (on by
+  default) a refresh token from the authorization endpoint that no recorded
+  consent covers — one obtained while consent was off — is refused as well.
 * **`oauthGlobalConsent` on an application's entry turns the asking off for
   everybody who signs in to it**, without writing anything about anybody — so
-  taking it away asks everybody again. It is keyed on (application, scope) and
-  never on the scope alone.
+  taking it away asks everybody again, and revokes the tokens it covered for
+  everybody who did not agree to the scope themselves. It is keyed on
+  (application, scope) and never on the scope alone, and
+  `revoke-global-consent` is the only way to take it away.
 
 Turning the setting off means nothing is asked and nothing recorded. It does
 **not** mean everybody consented, so turning it back on asks again.
 
-## Delegation is policed in one family out of three
+## Delegation is decided in all three families
 
 `/admin/delegation` records every exchange in which somebody acted on somebody
 else's behalf — Kerberos S4U2Self, S4U2Proxy (classic and resource-based) and a
@@ -160,7 +181,7 @@ forwarded ticket-granting ticket; WS-Trust `OnBehalfOf` and `ActAs`; RFC 8693
 token exchange as impersonation and as delegation — against one model, with the
 initial identity, the intermediary acting for them and the target on every row.
 
-**Kerberos is the only one of the three that decides who may act for whom.** The
+**Kerberos decides who may act for whom from two attributes.** The
 KDC checks `msDS-AllowedToDelegateTo` on the front-end account and
 `msDS-AllowedToActOnBehalfOfOtherIdentity` on the back-end one, enforces the
 asymmetries between them (classic needs forwardable evidence; resource-based
@@ -169,12 +190,38 @@ a message naming both attributes and their current values. In development the
 KDC holds fixture rules so the refusals and the successes can both be reached;
 in product there are none until an operator writes one.
 
-WS-Trust and RFC 8693 authenticate the parties — in product mode WS-Trust needs
-the requester's own credential and an assertion this STS signed, and token
-exchange needs tokens this realm can verify — but neither has a rule about
-**who** may act for **whom**. RFC 8693 leaves that policy to the authorization
-server and this one has none. Each act says which kind of decision it was, so
-the difference is visible rather than inferred.
+**WS-Trust and RFC 8693 are decided by the same model since 2026-09-23 (#108)**,
+on application entries:
+
+* `appAllowedToDelegateTo` on the **intermediary** — the OAuth client, or the
+  application a WS-Trust requester authenticates as — names the targets it may
+  reach as somebody else. An `audience`, `resource` or `AppliesTo` is resolved
+  to the application that registered it first.
+* `appAllowedToActOnBehalfOf` on the **target** names the intermediaries it
+  accepts — the resource-based form.
+* `appDelegationSubjectGroup` narrows the people an intermediary may act for,
+  by group DN; empty means anybody who is not protected.
+* `appTrustedToImpersonate` (default FALSE) lets it **impersonate** —
+  `OnBehalfOf`, or an exchange with no `actor_token` — as well as delegate.
+* A person carrying `stsNotDelegated`, or a member of the console's Admin Read
+  or Admin Write roster, is never delegated.
+
+When the attributes allow, the issuance policy is asked about action-id
+`delegate` with the intermediary, subject and target, and only an explicit Deny
+refuses. **Product enforces it**: WS-Trust answers a SOAP Fault carrying WS-Trust
+1.4 section 11's `wst:RequestFailed`, and only an application entry may be a
+requester that delegates; the token endpoint answers `invalid_request`, or
+`invalid_target` for a target it will not issue for (RFC 8693 section 2.2.2),
+and refuses an exchange that widens the verified subject_token's `scope`
+(`invalid_scope`). **Development asks the same question and issues anyway**,
+and the act says what would have been refused.
+
+**`may_act` (RFC 8693 section 4.4) is read in every mode.** A verified
+subject_token naming a party other than the actor is refused; one naming it
+stands in for `appTrustedToImpersonate` and the subject groups, never for the
+target. It is issued only from the person's own choice, `stsMayAct`, set on
+`/portal/delegate` or by an administrator. `act` nests: a prior actor chain is
+kept beneath the new actor (section 4.1).
 
 **Refusals are recorded, and they are the rows worth having.** A refused
 delegation appears in no other list, which is why that page keeps a store of its
@@ -193,11 +240,14 @@ both encrypted under it, so even a permissive KDC has to pick a key the client
 cannot guess.
 
 **In product mode** none of the fixture accounts exist, nobody is created on
-first sight, and no password is published. Each trust realm with
+first sight, no password is published, and no rc4-hmac key exists (#182). Each trust realm with
 `krb5.enabled` has a KDC, a Kerberos realm and keys of its own, on the shared
-port 88, told apart by the realm name in the request. Its `krbtgt` and the
-account `krb5.servicePrincipal` names are created only when their password
-setting is not the default this repository publishes (`STS-KRB-0062`).
+port 88, told apart by the realm name in the request. **Its `krbtgt` key is
+random** (#169) — made once per realm, sealed on the directory entry
+`krbtgt/<REALM>@<REALM>`, never shown and never derived from
+`krb5.krbtgtPassword`, which product ignores — and the account
+`krb5.servicePrincipal` names is created only when its password setting is not
+the default this repository publishes.
 **People in the directory authenticate with their own passwords**: a person's
 keys are derived when their password is set or a sign-in verifies it, stored
 sealed on their entry, and checked — a wrong password is
@@ -210,8 +260,15 @@ administrator sets with **Reset password and download keytab** — and holds the
 current kvno only. A password change
 or rotation keeps the previous key version for a bounded window
 (`krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS`) so a ticket issued under it
-is still accepted; the old *password* is not. The `krbtgt` key is not rotated
-and keeps no previous version.
+is still accepted; the old *password* is not. **The `krbtgt` key rotates**
+(#169): the `krb5.krbtgt-rotate` job replaces it every
+`krb5.krbtgtRotationIntervalDays` (180 by default) and keeps the version it
+replaced for the longest a TGT under it can live, renewals included, so every
+TGT goes on working until it expires; it never rotates while that window is
+open. An administrator rotates it by hand, or with **rotate and invalidate**
+keeps nothing — every TGT in the realm is refused `KRB_AP_ERR_BADKEYVER` and a
+Shared Signals event says so. The inter-realm trust key (`krbtgt/<partner>`)
+is a secret shared with the partner and is not rotated.
 
 **A person who holds or must hold a second factor gets no ticket on a password
 alone** (#173). An authenticator app, a security key in the `mfa` role,
@@ -322,23 +379,37 @@ the way in is FAST with OTP pre-authentication (see
 [Kerberos](#kerberos-is-the-exception-and-cannot-not-be), #173); an app
 password is not accepted by the KDC.
 
-## A WebAuthn ceremony is verified, and the authenticator behind it is not
+## A WebAuthn ceremony is verified, and so is the authenticator's attestation
 
 The registration and every assertion are checked, in both modes — the
-challenge, the origin, the RP ID hash, the flags, the signature over
+challenge, the origin, the RP ID hash, the flags (BS only where BE), the
+credential's algorithm against the `pubKeyCredParams` offered, a credential id
+of at most 1023 bytes, the signature over
 `authenticatorData || SHA-256(clientDataJSON)` against the COSE public key the
-credential registered, and the signature counter, which only ever goes up.
+credential registered (ES256/384/512, RS256/384/512, PS256/384/512, EdDSA and
+ML-DSA-44/65/87), and the signature counter, which only ever goes up.
 
-**What is NOT checked is the attestation statement.** Whatever
-`webauthn.attestation` asks the browser for, the object that comes back is
-parsed, reported and believed. There is no FIDO metadata service, no trust
-anchor for an authenticator vendor and no model allow-list, so this service can
-tell you what an authenticator *claimed to be* and never what it *is*.
+**The attestation statement is verified since #105** (2026-09-23), under
+`webauthn.attestationPolicy`:
+
+| | In product mode | In development mode |
+|---|---|---|
+| `by-mode` (the default) | `verify-if-present`: every statement is verified by its WebAuthn Level 3 section 8 procedure — packed, tpm, android-key, android-safetynet, fido-u2f, none, apple and compound — and refused if it does not verify. A chain is checked against `webauthn.attestationTrustAnchors` and the roots the FIDO Metadata Service lists for the model; a model MDS lists must chain to its roots, a model MDS reports REVOKED, USER_VERIFICATION_BYPASS or KEY_COMPROMISE is refused, and the chain's revocation is consulted. `none`, self attestation and a chain no anchor knows are accepted and recorded as **untrusted** — synced passkeys send `none` | `off`: the format is recorded and nothing in the statement is checked |
+| `off` | Refused on write (`STS-CORE-0103`) and read as `by-mode` | Nothing is checked |
+| `require-trusted` | Only a statement that chains to an anchor is accepted — no `none`, no self attestation, and so no synced passkey | The same |
+
+An AAGUID allow-list (`webauthn.attestationAllowedAaguids`), a least FIDO
+certification level and FIPS each require a trusted statement whatever the
+policy says. The FIDO MDS3 BLOB is #62's dataset: uploaded on Monitoring →
+Risk, imported by the loader or the dataset directory, or downloaded daily from
+`risk.mdsUrl` by the `risk.mds-refresh` job. What each key's statement proved
+is on its row on `/portal/keys`, `/admin/users` and `GET /admin-api/users`; a
+key whose statement was not verified is shown as *claimed*.
 
 **`webauthn.userVerification: required` is enforced** — the UV flag in the
-signed authenticator data is checked — and it is the only ceremony option that
-could be, because nothing signed says what the browser was asked about
-attestation, the resident key or the attachment.
+signed authenticator data is checked — and it is the only ceremony OPTION that
+could be, because nothing signed says what the browser was asked about the
+attestation conveyance, the resident key or the attachment.
 
 **Where a key can be enrolled depends on the mode.** In product a security key
 that signs in on its own is added only where the person has already proved who
@@ -372,7 +443,33 @@ something to run against:
   Token is built — even with it still stored from before the realm was
   switched, which is logged once (`STS-CORE-0106`) — and refuses turning it on
   (`STS-CORE-0103`). The same is true of SSF's two deliberate defects,
-  `ssf.breakSetSignature` and `ssf.legacySubClaim`.
+  `ssf.breakSetSignature` and `ssf.legacySubClaim`, and since #181 of RISC's,
+  `risc.googleSubjectType`, and the KDC's `krb5.clockOffset`.
+- **Broken algorithms and unsigned SAML are development's** (#181). A product
+  realm signs XML with RSA-SHA256 whatever `saml.signatureAlgorithm` says
+  (`rsa-sha1` is ignored), wraps an encrypted assertion's key with
+  RSA-OAEP whatever `saml2.keyTransportAlgorithm` or an application's
+  `saml2KeyTransportAlgorithm` says (`rsa-1_5` is ignored), refuses to unwrap
+  an `rsa-1_5` key sent to it (`STS-KEYS-0070`), refuses a SHA-1 signature
+  whatever `saml.allowSha1Signatures` says, never signs a certificate with
+  SHA-1 (`STS-PKI-0191` when a build names it), and signs every SAML 2.0
+  assertion and every SAML 1.1 Response and assertion whatever
+  `saml2.signAssertion`, `saml11.signAssertion`, `saml11.signResponse` or an
+  application's override of them says. `spiffe.requireSecurityHeader` off is
+  ignored too. Each is refused on write (`STS-CORE-0103`, `STS-REG-0193` on an
+  application) and logged once when a stored one is ignored (`STS-CORE-0106`);
+  the stronger values of every setting stay available.
+- **rc4-hmac in Kerberos and MD5 in SCIM Digest are development's** (#182).
+  `krb5.enctypes` keeps 23 in its default so a development KDC exercises an
+  RC4 client; a product realm reads the list without it, so no RC4 key is
+  derived, stored or put in a keytab for the `krbtgt`, a service or a person,
+  an AS-REQ or TGS-REQ offering only RC4 is `KDC_ERR_ETYPE_NOSUPP`, and an RC4
+  session key or subkey in a TGS-REQ, an AP-REQ or FAST armor is refused —
+  also in a realm switched to product with RC4 keys already derived.
+  `scim.digestMd5` is off by default in both modes and cannot be turned on in
+  product, which offers no Digest at all. RFC 8429 and RFC 7616 section 3.3.
+  [MS-SFU]'s PA-FOR-USER checksum is HMAC-MD5 whatever the session key, fixed
+  by that specification, and is unaffected.
 - **WS-Federation's `wauth`** is never faked. A relying party demanding
   multi-factor or a hardware token against a session that does not have it
   sends the person back through the sign-in with that factor required — a
@@ -438,6 +535,35 @@ Group, domain and DN-pattern rules apply on top of every policy, and a console
 administrator is refused unless the relationship allows it. Nothing is written
 onto an entry until all of that has passed. In product a subject naming nobody
 is refused; in development it gets an entry `<relationship>~<name>`.
+
+**A partner's sign-out is authenticated exactly as its sign-in is (#167).**
+The partner is the authority on the person's sign-on, so when it ends a
+session its message ends the one session here that it started — matched by the
+SAML NameID and SessionIndex or the OpenID Connect `sid` (or `sub`) through
+that relationship, never a local sign-in of the same person. A SAML
+`LogoutRequest` must be signed and verify against the relationship's
+certificate, come from `fedPeer`, name this endpoint as its Destination, be
+fresh, and not have been seen before; a Logout Token is verified by the code
+that verifies the partner's ID Token and then held to Back-Channel Logout
+section 2.6, its `jti` accepted once ever. WS-Federation's cleanup is unsigned
+by its specification, so it ends nothing until the person presses a button on
+a page this service draws, in the browser holding the session. The partner's
+`SessionNotOnOrAfter` bounds the session. OpenID Connect Session Management
+is not used as a relying party: its iframe needs a script, and Back-Channel
+Logout already carries what it would learn.
+
+**A partner encrypts to the relationship, and product requires it to (#168).**
+Every SAML 2.0, WS-Federation and OpenID Connect relationship holds an
+encryption key of its own, issued under the realm's Intermediate and published
+— `KeyDescriptor use="encryption"` in `/federation/metadata/{id}`, `use: enc`
+at `/federation/jwks/{id}` — with the one key management and content cipher it
+accepts: RSA-OAEP with SHA-256 and MGF1-SHA-256 and AES-256-GCM for XML, ECDH-ES
+and A256GCM for an ID Token, by default. An encrypted assertion's own
+signature is checked on what was inside it; an encrypted ID Token must be a
+signed token, encrypted. Rotating the key keeps the old one decrypting for
+`federation.encryptionKeyGraceS`. SAML 1.1 has no encryption construct, and a
+plain OAuth 2.0 relationship reads no ID Token. There is no post-quantum key
+encapsulation yet: XML Encryption has no ML-KEM method and JOSE's is a draft.
 
 **Federation dials out, and it is not the only thing that does.** The OpenID
 Connect and OAuth 2.0 relationships call the partner's token endpoint, UserInfo
@@ -506,11 +632,21 @@ What is still not checked, in either mode unless a setting says so:
   about, because its issuer said not to.
 * **An OCSP response that echoes no nonce** is believed unless
   `pki.revocationOcspRequireNonce` is on.
-* **A plain `ldap:` distribution point** is not dialled unless
-  `pki.revocationLdap` is `ldaps-and-ldap`. A distribution point named relative
-  to its CRL issuer is used only with `pki.revocationLdapDirectory` set.
-* **A certificate naming no CRL and no responder, under hard-fail**, is accepted
-  unless `pki.revocationRequireDistributionPoint` is on.
+* **A certificate naming no CRL and no responder, in development.**
+  `pki.revocationRequireDistributionPoint` is `auto`: product refuses one
+  issued by a CA it does not hold (`STS-PKI-0190`) — nobody could ever revoke
+  it — and development accepts it. `off` accepts it in product too, and its
+  description says what that costs. A self-signed certificate is an anchor and
+  is never refused for this, and one carrying RFC 9608 `noRevAvail` is not
+  checked in either mode, because its issuer declared that no revocation
+  information exists.
+* **A list this service is configured not to dial** — a plain `ldap:`
+  distribution point under the default `pki.revocationLdap=ldaps`, any LDAP
+  address with it `off`, a name relative to its CRL issuer without
+  `pki.revocationLdapDirectory`, an OCSP responder with `pki.revocationOcsp=off`
+  — is **not read**. When it is all a certificate names, its status could not
+  be established: hard-fail refuses it (`STS-PKI-0188`, the reason naming the
+  setting) and soft-fail accepts it and reports it.
 * **A bare registered key** — a JWK with no `x5c` — names no issuer and no list;
   only taking it off the entry stops it verifying.
 * **LDAPS 636** asks for no client certificate, so there is nothing to check.
@@ -555,7 +691,8 @@ required in both modes, and after authentication the XACML access gate decides
 (it permits by default).
 
 **In product** Basic verifies the password against the entry, Digest is not
-offered and is refused (`STS-SCIM-0056`), and a HOBA key can be registered only
+offered and is refused (`STS-SCIM-0056`) — and MD5 in it cannot be turned on
+(`scim.digestMd5`, #182) — and a HOBA key can be registered only
 by the account's own signed-in owner (`STS-SCIM-0069`) — registration never
 creates an account.
 
@@ -671,9 +808,14 @@ because in GNAP the key IS the client.
   and is refused `invalid_client` in product until it is registered.
 * **The resource owner is whoever the authentication service let in** — in
   product somebody who proved it, in development anybody.
-* **A self-signed client certificate proves itself** in both modes: mutual TLS
-  binds to the certificate the handshake completed with, by thumbprint or key,
-  and no chain or revocation is consulted.
+* **A key proved by mutual TLS is held to a PKI in product and pinned in
+  development** (`gnap.mtlsTrust=auto`). In product the certificate must chain
+  to the client truststore and be bound to the client's application entry:
+  issued to it by this realm, or carrying the RFC 8705 subject the entry
+  registers. In development the certificate the key names proves itself,
+  self-signed included. **A revoked certificate is refused in both.**
+  `gnap.mtlsTrust=pinned` weakens a product realm, and is documented with a
+  warning — see [mutual TLS trust](gnap.md#mutual-tls-trust).
 * **A push finish** must go to a registered URI in product. It dials `http`
   only with `gnap.pushAllowHttp` — any host in development, a loopback address
   only in product (RFC 9635 section 2.5.2.1) — and only hosts in
@@ -740,11 +882,16 @@ verifies a signature and some `Conditions`; a Kerberos service decrypts with its
 own key; an SVID verifies against a bundle. A real identity provider cannot
 recall any of them either.
 
-What the KDC does do is refuse the next `TGS-REQ` presenting a ticket-granting
+What the KDC does do is refuse every `TGS-REQ` presenting a ticket-granting
 ticket authenticated before the sign-out, with `KDC_ERR_TGT_REVOKED` (20), while
-`logout.kerberosSignOut` is on (the default). **The person's next AS-REQ clears
-that mark**, after which an older ticket-granting ticket is accepted again. A
-service ticket already issued is untouched.
+`logout.kerberosSignOut` is on (the default), in both modes. **The person's
+next AS-REQ succeeds and does not lift that**: its new ticket is accepted, and
+every ticket from before the sign-out — a renewal of one included, since a
+renewal keeps `authtime` — stays refused until the latest one could still be
+valid (the sign-out plus the longer of `krb5.ticketLifetimeSeconds` and
+`krb5.renewLifetimeSeconds`, plus `krb5.clockSkew`), on every node. The
+console's undo, `restore-kerberos`, is refused in product mode. A service
+ticket already issued is untouched.
 
 ## The Workload API is the opposite case
 
@@ -763,10 +910,27 @@ into SPIRE's selectors:
 * `unix`: `uid:`, `user:`, `gid:`, `group:`, the supplementary groups, and with
   `spiffe.unixDiscoverWorkloadPath` the executable's `path:` and `sha256:`;
 * `docker`: the container's `label:`, `env:`, `image_id:` and
-  `image_config_digest:`, asked of the Docker Engine;
+  `image_config_digest:`, asked of the Docker Engine — or of **Podman's**
+  API when the container's cgroup says `libpod`: the rootful socket, or a
+  rootless user's own socket only with `spiffe.dockerUseRootlessPodman` on,
+  which is off because that socket is the caller's to answer (#170). With
+  **`spiffe.dockerSigstoreEnabled`** the image must also carry a **cosign
+  signature** that verifies — under a configured key file or a keyless Fulcio
+  certificate with a verifying SCT and an allowed signer, logged in Rekor
+  (`spiffe.dockerSigstoreSkipTlog` skips the log, with a warning) — and its
+  in-toto attestations, and SPIRE's `image-signature…` selectors are added. A
+  signature that does not verify **refuses the connection**, never merely
+  withholds a selector. The keyless trust roots come from sigstore's TUF
+  repository (a scheduler job that keeps the last verified set when a refresh
+  fails) or a pinned `trusted_root.json`;
 * `k8s`: the pod's `sa:`, `ns:`, `pod-name:`, `pod-label:`, `pod-owner:`,
   `container-name:`, `container-image:` and the rest of SPIRE's list, read from
-  the kubelet.
+  the kubelet;
+* `systemd`: the unit's `id:` and `fragment_path:`, asked of systemd over
+  D-Bus (`GetUnitByPID`) — and not believed if the process that connected is
+  no longer the one holding the pid when systemd answers. It needs the optional
+  `dbus-next` package; a realm naming it without that package refuses every
+  connection, saying so (#170).
 
 A connection is attested once, when it is accepted, and **every call on it
 checks that the process is still the one attested**: a process that has exited,
@@ -800,8 +964,21 @@ What is still not attested:
 * **A Unix-socket caller where the native module is missing.** Development serves
   the socket unattested and `GET /spiffe` says so under `workloadAttestation`.
   **Product does not serve the socket at all** (`STS-SPIFFE-0113`).
-* SPIRE's `systemd` workload attestor, the docker attestor's sigstore signature
-  checks and Podman sockets, and the Kubernetes broker. Each is a follow-up on #40.
+* **In an image signature**: a signature that carries no Rekor bundle is
+  refused rather than looked up online; the new sigstore bundle format (OCI
+  1.1 referrers) and RFC 3161 timestamps are not read.
+
+**The SPIFFE Broker API** (#170, `spiffe.brokerPort`, off by default) is the
+other way a workload's SVIDs leave this service, and it is the opposite of the
+Workload API in the one respect that matters: its caller **is** authenticated —
+mutual TLS with an X509-SVID naming a broker in `spiffe.brokers` — and the
+workload it names by reference is attested here, never taken on the broker's
+word: a process id through a pidfd and the same workload attestors, a
+Kubernetes pod through this node's kubelet. A process id means something only
+on the node it was read on and the endpoint is TCP, so allow `pid` only to a
+broker on this host. What it does not do: resolve a reference to a Kubernetes
+object other than a pod (that needs the API server), or notice a stopped
+workload before the stream's next re-send.
 
 **Asserted selectors are never believed in product mode**, and
 `spiffe.acceptAssertedSelectors` cannot be turned on there (#104). In
@@ -866,18 +1043,3 @@ These are true in a product deployment today, and are tracked as issues:
   [#179](https://github.com/rcbj/iya-sts/issues/179). FAST in the TGS exchange
   (implicit armor) is not implemented either: a TGS-REQ that carries it is
   answered unarmored, which MIT's client accepts.
-* **A WebAuthn attestation statement is not verified**: there is no FIDO
-  metadata service ([#105](https://github.com/rcbj/iya-sts/issues/105)).
-* **The directory has no per-identity read authorization**: anybody who has bound
-  reads every non-credential attribute of every entry in the realm
-  ([#106](https://github.com/rcbj/iya-sts/issues/106)).
-* **A GNAP client's self-signed certificate** is matched by thumbprint with no
-  chain or revocation check ([#107](https://github.com/rcbj/iya-sts/issues/107)).
-* **No rule decides who may act for whom** in WS-Trust or RFC 8693
-  ([#108](https://github.com/rcbj/iya-sts/issues/108)).
-* **The KDC's sign-out mark is cleared by the person's next AS-REQ**, after
-  which a ticket-granting ticket from before the sign-out is accepted again
-  ([#111](https://github.com/rcbj/iya-sts/issues/111)).
-* **`GET /saml2/metadata/{sp}`** answers for any `{sp}`, and an MDQ lookup
-  started by an anonymous request can register an unknown service provider
-  ([#112](https://github.com/rcbj/iya-sts/issues/112)).

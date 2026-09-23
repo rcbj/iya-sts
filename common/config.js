@@ -1025,6 +1025,33 @@ const SETTINGS = [
     description: 'Section 9\'s key_proofs_supported. mtls needs the main ' +
                  'port to be HTTPS (global.https) so that a client ' +
                  'certificate can arrive at all.' },
+  // WHAT A CERTIFICATE PROVED BY MUTUAL TLS IS TRUSTED FOR (#107,
+  // 2026-09-23). RFC 9635 section 7.3.2 allows a pinned certificate and
+  // section 11.4 a PKI; `auto` asks `mode.requiresPkiForGnapMtls()`.
+  // `gnap/gnap_proof.ts` argues both models and why revocation is consulted
+  // in each.
+  { key: 'gnap.mtlsTrust', group: 'GNAP',
+    label: 'Mutual TLS key proof trust',
+    path: 'gnap.mtlsTrust', env: 'STS_GNAP_MTLS_TRUST', type: 'enum',
+    enumValues: ['auto', 'pki', 'pinned'], dflt: 'auto', runtime: true,
+    description: 'How a GNAP key proved by mutual TLS (RFC 9635 section ' +
+                 '7.3.2) is trusted. `pki` (section 11.4) requires the TLS ' +
+                 'client certificate to chain to the client truststore — ' +
+                 'this realm\'s TLS client authority, or an anchor installed ' +
+                 'at /tls/trust — and to be bound to the client\'s ' +
+                 'application entry: issued to it by this realm, or carrying ' +
+                 'the one RFC 8705 subject parameter the entry registers ' +
+                 '(oauthTlsClientAuthSubjectDn or an oauthTlsClientAuthSan* ' +
+                 'attribute). A certificate re-issued by the authority is ' +
+                 'then accepted with no new registration. `pinned` accepts ' +
+                 'the certificate the key names, self-signed included, with ' +
+                 'no chain. A revoked certificate is refused in both ' +
+                 '(pki.revocationCheck). **`auto` is pki in product mode and ' +
+                 'pinned in development.** WARNING: `pinned` gives up chain ' +
+                 'validation and rotation at the certificate authority — a ' +
+                 'stolen self-signed key stays good until the entry that ' +
+                 'pins it is edited. An application may make this stricter ' +
+                 'for itself (gnapMtlsTrust=pki), never weaker.' },
   { key: 'gnap.subIdFormats', group: 'GNAP',
     label: 'Subject identifier formats',
     path: 'gnap.subIdFormats', env: 'STS_GNAP_SUB_ID_FORMATS', type: 'csv',
@@ -1940,8 +1967,9 @@ const SETTINGS = [
   // so `required` really does refuse an authenticator that did not verify the
   // person. `attestation`, `residentKey` and `authenticatorAttachment` are
   // REQUESTS — this service records what came back and refuses nothing on
-  // them, which is the position the row below states rather than implying a
-  // check that is not there.
+  // them. What is done with the attestation STATEMENT that comes back is the
+  // fourth kind, below the policy rows: `webauthn.attestationPolicy` and the
+  // six settings beside it (#105), which do refuse.
   // ---------------------------------------------------------------------
   { key: 'webauthn.enabled', group: 'WebAuthn',
     label: 'Offer security keys (WebAuthn)',
@@ -2019,7 +2047,11 @@ const SETTINGS = [
                  'identifiers by `authn/webauthn.js`\'s own table, which is ' +
                  'the module that verifies the signature: `ES256` (-7), ' +
                  '`ES384` (-35), `ES512` (-36), `EdDSA` (-8), `RS256` ' +
-                 '(-257), `RS384` (-258), `RS512` (-259). A name outside ' +
+                 '(-257), `RS384` (-258), `RS512` (-259), `PS256` (-37), ' +
+                 '`PS384` (-38), `PS512` (-39), and RFC 9964\'s `ML-DSA-44` ' +
+                 '(-48), `ML-DSA-65` (-49) and `ML-DSA-87` (-50). A ' +
+                 'credential whose algorithm is not on this list is refused ' +
+                 '(WebAuthn Level 3 section 7.1). A name outside ' +
                  'that table is dropped with a warning rather than sent, ' +
                  'because offering an algorithm this service cannot verify ' +
                  'produces a credential that enrols and then never works. ' +
@@ -2056,16 +2088,138 @@ const SETTINGS = [
                  'the authenticator that made the credential. `direct` is ' +
                  'the default here because this is a DEBUGGING service and ' +
                  'the attestation object is one of the things worth looking ' +
-                 'at; a real deployment with no attestation policy should ' +
-                 'send `none`, which is what the specification recommends ' +
-                 'and what avoids a browser consent prompt about the ' +
-                 'authenticator model. **THIS SERVICE VERIFIES NO ' +
-                 'ATTESTATION STATEMENT WHATEVER IT ASKS FOR** — there is no ' +
-                 'metadata service here, no trust anchor for an ' +
-                 'authenticator vendor, and no model allow-list — so the ' +
-                 'statement is parsed, reported and believed. Asking for ' +
-                 '`enterprise` and getting nothing back is the browser ' +
-                 'refusing, not this service.' },
+                 'at; a deployment that has no use for the authenticator\'s ' +
+                 'model should send `none`, which is what the specification ' +
+                 'recommends and what avoids a browser consent prompt about ' +
+                 'it. **What is DONE with what comes back is ' +
+                 '`webauthn.attestationPolicy`** (#105): every statement ' +
+                 'that arrives is verified in product mode. A realm whose ' +
+                 'policy is `require-trusted`, or that lists AAGUIDs in ' +
+                 '`webauthn.attestationAllowedAaguids`, asks for `direct` ' +
+                 'whatever this says — a policy that needs a statement ' +
+                 'cannot be met by asking for none. Asking for `enterprise` ' +
+                 'and getting nothing back is the browser refusing, not ' +
+                 'this service.' },
+
+  // -------------------------------------------------------------------
+  // THE ATTESTATION POLICY (#105, 2026-09-23). What this service does with
+  // the attestation statement a registration carries — WebAuthn Level 3
+  // section 7.1 steps 21-25 and section 8's eight formats, verified by
+  // `authn/webauthn_attestation.ts`, with the FIDO Metadata Service BLOB
+  // #62 P5 imports as a source of trust anchors and status reports.
+  // -------------------------------------------------------------------
+  { key: 'webauthn.attestationPolicy', group: 'WebAuthn',
+    label: 'Attestation policy', path: 'webauthn.attestationPolicy',
+    env: 'STS_WEBAUTHN_ATTESTATION_POLICY', type: 'enum',
+    enumValues: ['by-mode', 'off', 'verify-if-present', 'require-trusted'],
+    dflt: 'by-mode', runtime: true,
+    onlyWhile: 'acceptsUnverifiedAttestation', onlyWhileValues: ['off'],
+    description: 'What a registration\'s attestation statement must be. ' +
+                 '`verify-if-present` verifies every statement by its ' +
+                 'format\'s procedure (WebAuthn Level 3 section 8: packed, ' +
+                 'tpm, android-key, android-safetynet, fido-u2f, none, ' +
+                 'apple and compound) and refuses one that does not ' +
+                 'verify; a certificate path is checked against the ' +
+                 'anchors this realm configures and those the FIDO ' +
+                 'Metadata Service lists for the model, and a model MDS ' +
+                 'lists is refused when its chain does not reach MDS\'s ' +
+                 'roots, when a status report says it is compromised ' +
+                 '(REVOKED, USER_VERIFICATION_BYPASS, a KEY_COMPROMISE) or ' +
+                 'when a certificate in the chain is revoked. `none` and ' +
+                 'self attestation are accepted and recorded as such, and ' +
+                 'so is a chain no anchor knows — section 7.1 lets a relying ' +
+                 'party treat it as self attestation — because synced ' +
+                 'passkeys (Apple, Google) send `none` as the specification ' +
+                 'allows. `require-trusted` refuses anything that does not ' +
+                 'chain to an anchor: no `none`, no self attestation, and ' +
+                 'so no synced passkey. `by-mode`, the default, is ' +
+                 '`verify-if-present` in product mode and `off` in ' +
+                 'development. `off` verifies nothing and records the ' +
+                 'format — WARNING: a forged statement is then recorded as ' +
+                 'if it were the authenticator\'s, and it is DEVELOPMENT ' +
+                 'MODE ONLY: product refuses to write it and reads it as ' +
+                 '`by-mode`.' },
+
+  { key: 'webauthn.attestationTrustAnchors', group: 'WebAuthn',
+    label: 'Attestation trust anchors (PEM)',
+    path: 'webauthn.attestationTrustAnchors',
+    env: 'STS_WEBAUTHN_ATTESTATION_TRUST_ANCHORS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'Root certificates an attestation certificate may chain ' +
+                 'to, as a PEM bundle, BESIDE those the FIDO Metadata ' +
+                 'Service lists for each model — a corporate TPM ' +
+                 'endorsement CA, a vendor\'s root, the Android or Apple ' +
+                 'attestation root, or a test root. A chain that reaches ' +
+                 'one is TRUSTED. Nothing is shipped: empty trusts only ' +
+                 'what the active MDS BLOB lists.' },
+
+  { key: 'webauthn.attestationAllowedAaguids', group: 'WebAuthn',
+    label: 'Allowed authenticator models (AAGUIDs)',
+    path: 'webauthn.attestationAllowedAaguids',
+    env: 'STS_WEBAUTHN_ATTESTATION_ALLOWED_AAGUIDS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The authenticator models a key may be registered from, ' +
+                 'as AAGUIDs (with or without hyphens), comma-separated. ' +
+                 'Empty — the default — allows any model the policy ' +
+                 'accepts. **Set, it REQUIRES a trusted attestation** ' +
+                 'whatever `webauthn.attestationPolicy` says: an AAGUID is ' +
+                 'a claim in the authenticator data until a statement ' +
+                 'chaining to an anchor vouches for it, so a list honoured ' +
+                 'on an unverified AAGUID would admit anybody who typed one ' +
+                 'in. That means no synced passkey, which sends none.' },
+
+  { key: 'webauthn.attestationMinCertificationLevel', group: 'WebAuthn',
+    label: 'Least FIDO certification level',
+    path: 'webauthn.attestationMinCertificationLevel',
+    env: 'STS_WEBAUTHN_ATTESTATION_MIN_CERTIFICATION', type: 'enum',
+    enumValues: ['none', 'L1', 'L1plus', 'L2', 'L2plus', 'L3', 'L3plus'],
+    dflt: 'none', runtime: true,
+    description: 'The least FIDO Authenticator Certification level (MDS3 ' +
+                 'section 3.1.4.1) a model must hold, read from the FIDO ' +
+                 'Metadata Service\'s status reports; the retired ' +
+                 '`FIDO_CERTIFIED` counts as L1. Anything but `none` ' +
+                 'REQUIRES a trusted attestation from a model the active ' +
+                 'MDS BLOB lists.' },
+
+  { key: 'webauthn.attestationRequireFips', group: 'WebAuthn',
+    label: 'Require a FIPS 140 certified model',
+    path: 'webauthn.attestationRequireFips',
+    env: 'STS_WEBAUTHN_ATTESTATION_REQUIRE_FIPS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Refuse a model the FIDO Metadata Service does not report ' +
+                 'as FIPS 140 certified (a FIPS140_CERTIFIED_L* status ' +
+                 'report, MDS3 section 3.1.4.1). On, it REQUIRES a trusted ' +
+                 'attestation from a model the active MDS BLOB lists.' },
+
+  { key: 'webauthn.attestationAllowSafetynet', group: 'WebAuthn',
+    label: 'Trust android-safetynet attestation',
+    path: 'webauthn.attestationAllowSafetynet',
+    env: 'STS_WEBAUTHN_ATTESTATION_ALLOW_SAFETYNET', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Whether an `android-safetynet` statement (WebAuthn Level ' +
+                 '3 section 8.5) may count as TRUSTED. It is verified ' +
+                 'either way — the JWS, its chain to `attest.android.com`, ' +
+                 'the nonce and `ctsProfileMatch` — but Google shut the ' +
+                 'SafetyNet Attestation API down and the specification ' +
+                 'marks the format deprecated, so off (the default) ' +
+                 'records it as untrusted and `require-trusted` refuses it. ' +
+                 'WARNING: on, a platform the service no longer vouches ' +
+                 'for is trusted on a response nobody can check is current.' },
+
+  { key: 'webauthn.attestationAndroidSoftwareKeys', group: 'WebAuthn',
+    label: 'Accept Android keys not enforced in the TEE',
+    path: 'webauthn.attestationAndroidSoftwareKeys',
+    env: 'STS_WEBAUTHN_ATTESTATION_ANDROID_SOFTWARE', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'An `android-key` statement\'s `origin` and `purpose` ' +
+                 '(WebAuthn Level 3 section 8.4) are read from the ' +
+                 'hardware-enforced (TEE or StrongBox) authorization list ' +
+                 'only — the specification\'s choice for a relying party ' +
+                 'that accepts only keys from a trusted execution ' +
+                 'environment, and the default here. On reads the union of ' +
+                 'the software- and hardware-enforced lists. WARNING: a key ' +
+                 'whose properties only Android\'s software enforces is ' +
+                 'one malware on the device may have made.' },
 
   { key: 'webauthn.timeoutMs', group: 'WebAuthn',
     label: 'Ceremony timeout (ms)', path: 'webauthn.timeoutMs',
@@ -2523,8 +2677,10 @@ const SETTINGS = [
                  'removed: a presented credential is verified against the ' +
                  'hashed `userPassword` on the person\'s directory entry, ' +
                  'every referenced object must have been created ahead of ' +
-                 'time, every OAuth 2.0 and OpenID Connect application must ' +
-                 'hold a client secret, and /admin-api with ' +
+                 'time, every OAuth 2.0 and OpenID Connect application that ' +
+                 'declared a confidential method must authenticate with it ' +
+                 '(a public client is held to RFC 9700 instead), every ' +
+                 'development-only setting is ignored, and /admin-api with ' +
                  'adminApi.authRequired off requires the same sign-in and ' +
                  'roles the console does (with it on, the default in both ' +
                  'modes, it requires an access token). It is settable per ' +
@@ -3275,10 +3431,47 @@ const SETTINGS = [
                  '`consent_required`, which is what OIDC Core section ' +
                  '3.1.2.6 defines it for. With this OFF nothing is asked and ' +
                  'nothing is recorded, which is what this service did before ' +
-                 'the screen existed. It does not re-judge a grant already ' +
-                 'issued: the token endpoint asks nobody anything, so a ' +
-                 'refresh of a code obtained before this was turned on still ' +
-                 'works. /admin/consent is the register.' },
+                 'the screen existed. A grant already issued IS re-judged ' +
+                 '(#172): withdrawing a consent revokes every token issued ' +
+                 'under it, and the refresh grant refuses a refresh token ' +
+                 'whose consent was withdrawn after it was granted — and, ' +
+                 'with oauth2.refreshRequiresConsent on, one from the ' +
+                 'authorization endpoint that no recorded consent covers. ' +
+                 '/admin/consent is the register.' },
+
+  // WHAT THE REFRESH GRANT DOES WITH A GRANT NOBODY WAS ASKED ABOUT (#172).
+  //
+  // A withdrawal is honoured whatever this says: a refresh token whose consent
+  // was withdrawn after it was granted is refused in every mode, because
+  // somebody took it back. This decides the OTHER case — a refresh token from
+  // the authorization endpoint whose scope NO RECORDED CONSENT covers, which
+  // is a token minted while `oauth2.consentRequired` was off, or while the
+  // directory could not hold the answer. ON by default, the most secure
+  // reading: with consent required, a grant nobody agreed to is not one this
+  // service renews. The cost is that turning consent ON sends every client
+  // holding such a token back through the authorization endpoint once.
+  //
+  // `runtime: true` and settable on a realm, `consentRequired`'s reason.
+  { key: 'oauth2.refreshRequiresConsent', group: 'OAuth 2.0 / OIDC',
+    label: 'Refresh requires recorded consent',
+    env: 'STS_OAUTH2_REFRESH_REQUIRES_CONSENT', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'WHETHER THE REFRESH GRANT REFUSES A GRANT NOBODY ' +
+                 'CONSENTED TO. While consent is required ' +
+                 '(oauth2.consentRequired, or a FAPI 1.0 profile), a refresh ' +
+                 'token issued at the authorization endpoint is renewed only ' +
+                 'if every scope it carries was covered, when it was ' +
+                 'granted, by the person\'s own recorded consent or by the ' +
+                 'application\'s global consent — otherwise invalid_grant ' +
+                 '(STS-OAUTH-0616). That is a token minted while consent was ' +
+                 'off, or while the directory could not record the answer. ' +
+                 'A WITHDRAWN consent is refused whatever this says. ' +
+                 'WARNING: TURNING THIS OFF RENEWS GRANTS THAT NOBODY ' +
+                 'AGREED TO — a client that obtained a refresh token while ' +
+                 'consent was off keeps renewing it, while the person is ' +
+                 'absent if it holds offline_access, although this service ' +
+                 'now requires their consent. Leave it on unless a client ' +
+                 'cannot be sent back through the authorization endpoint.' },
 
   // THE SECOND MODE IN THIS FILE, AND IT IS DELIBERATELY NOT PART OF THE FIRST.
   // RFC 9700 mode enforces a published Best Current Practice and every one of
@@ -4124,6 +4317,35 @@ const SETTINGS = [
                  'request may name, across its members. The request rides ' +
                  'inside the access token, so this also bounds the token.' },
 
+  // OpenID Connect for Identity Assurance 1.0 (#127): the frameworks a
+  // person's recorded verifications may name, and whether a sign-in records
+  // one. `common/identity_assurance.ts` argues both.
+  { key: 'oauth2.idaTrustFrameworks', group: 'OAuth 2.0 / OIDC',
+    label: 'Identity Assurance trust frameworks',
+    env: 'STS_OAUTH2_IDA_TRUST_FRAMEWORKS', type: 'csv',
+    dflt: 'urn:sts:local', runtime: true,
+    description: 'The trust frameworks (Identity Assurance section 5.1) an ' +
+                 'administrator may record a person\'s identity ' +
+                 'verification under, comma-separated — the predefined ' +
+                 'values such as eidas, de_aml or nist_800_63A, or a URI of ' +
+                 'your own — and what discovery publishes as ' +
+                 'trust_frameworks_supported. The first is the framework a ' +
+                 'sign-in\'s own verification is recorded under. ' +
+                 'urn:sts:demo is reserved for the verification development ' +
+                 'mode invents and is never accepted here.' },
+
+  { key: 'oauth2.idaAutomaticVerifications', group: 'OAuth 2.0 / OIDC',
+    label: 'Sign-ins record an identity verification',
+    env: 'STS_OAUTH2_IDA_AUTOMATIC_VERIFICATIONS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'ON, the default: a wallet sign-in with a credential this ' +
+                 'realm issued records an electronic_record verification of ' +
+                 'the disclosed claims the person\'s entry agrees with, and ' +
+                 'a client certificate sign-in an electronic_signature one ' +
+                 'of the subject\'s, each replacing its previous one, under ' +
+                 'the first of oauth2.idaTrustFrameworks. OFF, only what an ' +
+                 'administrator records is released as verified_claims.' },
+
   // --- PKI -----------------------------------------------------------------
   // The certificate authority's rows. The revocation publishing ones come
   // first; the four FORM DEFAULTS the group began with (2026-09-10) are
@@ -4278,6 +4500,9 @@ const SETTINGS = [
     label: 'Default CA signature algorithm',
     env: 'STS_PKI_SIGNATURE_ALGORITHM', type: 'string', dflt: '',
     runtime: true,
+    // The two SHA-1 values are DEVELOPMENT ONLY since #181 (2026-09-23).
+    onlyWhile: 'usesBrokenAlgorithms',
+    onlyWhileValues: ['sha1-rsa', 'sha1-ecdsa'],
     description: 'Which signature algorithm the tiers sign each other with. ' +
                  'EMPTY means "the right one for the key algorithm", which ' +
                  'is what almost every deployment wants and is why it is the ' +
@@ -4290,7 +4515,11 @@ const SETTINGS = [
                  'the two deliberately weak ones, sha1-rsa and sha1-ecdsa, ' +
                  'which are here because "does my stack refuse a SHA-1 ' +
                  'certificate?" is a question a debugger should be able to ' +
-                 'ask.' },
+                 'ask. WARNING: those two are DEVELOPMENT MODE ONLY — in ' +
+                 'product mode they are ignored where they are read (the ' +
+                 'key\'s own default is used, logged once, STS-CORE-0106), ' +
+                 'setting either is refused (STS-CORE-0103), and a build or ' +
+                 'a key pair that names one is refused (STS-PKI-0191).' },
   { key: 'pki.organisation', group: 'PKI',
     label: 'Default organisation name (O=)',
     env: 'STS_PKI_ORGANISATION', type: 'string', dflt: 'sts',
@@ -4464,11 +4693,12 @@ const SETTINGS = [
 
   // ---------------------------------------------------------------------
   // REVOCATION, CONSULTED (2026-09-12). Seven rows for
-  // `common/revocation_status.js`: the policy, the one rule hard-fail does NOT
-  // include by default, and the five bounds on the one outbound request it
-  // makes. All runtime, all per realm — the doors read them per certificate —
-  // and `auto` is how the POLICY defaults by mode through
-  // `mode.refusesUnknownRevocationStatus()` rather than through a literal.
+  // `common/revocation_status.js`: the policy, the one rule hard-fail did NOT
+  // include until #174 (it is `auto` now, and product includes it), and the
+  // five bounds on the one outbound request it makes. All runtime, all per
+  // realm — the doors read them per certificate — and `auto` is how the POLICY
+  // defaults by mode through `mode.refusesUnknownRevocationStatus()` rather
+  // than through a literal.
   // ---------------------------------------------------------------------
   { key: 'pki.revocationCheck', group: 'PKI',
     label: 'Revocation check on a presented certificate',
@@ -4477,7 +4707,8 @@ const SETTINGS = [
     dflt: 'auto', runtime: true,
     description: 'Whether a certificate PRESENTED to this service — on the ' +
                  'main port (XACML, SCIM, RFC 8705 client authentication, ' +
-                 'GET /tls/sign-in), at the SPIRE Server API or in an ' +
+                 'a GNAP key proved by mutual TLS, GET /tls/sign-in), at the ' +
+                 'SPIRE Server API or in an ' +
                  'assertion\'s x5c — is checked for revocation. One this ' +
                  'service issued is looked up in its own register; one from ' +
                  'another authority against the CRL it names. `off` consults ' +
@@ -4487,16 +4718,38 @@ const SETTINGS = [
                  'attacker who can block the CRL fetch turning revoked into ' +
                  'accepted. **`auto` is hard-fail in product mode and ' +
                  'soft-fail in development.**' },
+  // AN ENUM SINCE #174 (2026-09-23), and `auto` asks the mode. It was a
+  // boolean, off by default, on the argument that a certificate whose issuer
+  // publishes no list gives an attacker nothing to block. That is true and it
+  // is not the whole question: such a certificate can NEVER be revoked, so a
+  // stolen key is good until it expires, and RFC 5280 section 4.2.1.13 only
+  // RECOMMENDS the extension because the profile could not require it of
+  // every PKI — not because a relying party should accept its absence. So a
+  // product refuses it (`mode.refusesUnrevocableCertificates()`), and `off` is
+  // what a deployment whose private CA publishes nothing sets, knowingly.
   { key: 'pki.revocationRequireDistributionPoint', group: 'PKI',
-    label: 'Hard-fail refuses a certificate whose issuer names no CRL',
-    env: 'STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT', type: 'bool',
-    dflt: false, runtime: true,
-    description: 'Under hard-fail, a foreign certificate naming no http or ' +
-                 'https cRLDistributionPoints is ACCEPTED by default, ' +
-                 'because there is no fetch an attacker could block — the ' +
-                 'issuer simply publishes no list — and refusing it would ' +
-                 'make every private CA without one unusable. Turn this on ' +
-                 'to refuse it too.' },
+    label: 'Refuse a certificate whose issuer names no CRL and no OCSP ' +
+           'responder',
+    env: 'STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT', type: 'enum',
+    enumValues: ['auto', 'on', 'off'],
+    dflt: 'auto', runtime: true,
+    description: 'Under hard-fail, whether a certificate from an authority ' +
+                 'this service does not hold — issued by a CA, not ' +
+                 'self-signed — that names NO CRL distribution point and NO ' +
+                 'OCSP responder is refused. `auto` (the default) refuses it ' +
+                 'in product mode and accepts it in development ' +
+                 '(mode.refusesUnrevocableCertificates()); `on` refuses it ' +
+                 'in both. A certificate carrying RFC 9608 noRevAvail is ' +
+                 'never refused for this: its issuer has declared that no ' +
+                 'revocation information exists. **WARNING: `off` accepts ' +
+                 'certificates NOBODY CAN EVER REVOKE** — a stolen key under ' +
+                 'such an authority is good until the certificate expires, ' +
+                 'and nothing its issuer or this service does can stop it. ' +
+                 'Set it only for a private CA you know publishes nothing, ' +
+                 'and prefer giving that CA a distribution point. An address ' +
+                 'the certificate DOES name that this service is configured ' +
+                 'not to dial is a different case and is refused under ' +
+                 'hard-fail whatever this says (STS-PKI-0188).' },
   { key: 'pki.revocationFetchTimeoutMs', group: 'PKI',
     label: 'CRL fetch timeout (milliseconds)',
     env: 'STS_PKI_REVOCATION_FETCH_TIMEOUT_MS', type: 'int', dflt: 3000,
@@ -4607,7 +4860,11 @@ const SETTINGS = [
                  'VERIFIED against node\'s CA store and ' +
                  'pki.revocationLdapCaFile; `ldaps-and-ldap` also opens ' +
                  'plain LDAP; `off` dials neither. An address not dialled ' +
-                 'counts as no address at all.' },
+                 'is NOT the same as no address: the issuer published a ' +
+                 'list and this setting is what stops it being read, so ' +
+                 'under hard-fail a certificate whose only list is at such ' +
+                 'an address is REFUSED (STS-PKI-0188) — its status could ' +
+                 'not be established.' },
   { key: 'pki.revocationLdapCaFile', group: 'PKI',
     label: 'CA certificates for ldaps revocation directories',
     env: 'STS_PKI_REVOCATION_LDAP_CA_FILE', type: 'string', dflt: '',
@@ -4625,7 +4882,8 @@ const SETTINGS = [
                  'distribution point named RELATIVE TO ITS CRL ISSUER is ' +
                  'looked up in. Such a name is an unambiguous DN and says ' +
                  'nothing about which directory holds it, so without this it ' +
-                 'is not dialled.' },
+                 'is not dialled — and under hard-fail a certificate whose ' +
+                 'only list is named that way is refused (STS-PKI-0188).' },
   { key: 'pki.enrollmentMaxCertificatesPerEntry', group: 'PKI',
     label: 'Enrolled certificates one entry may hold',
     env: 'STS_PKI_ENROLLMENT_MAX_CERTIFICATES_PER_ENTRY', type: 'int',
@@ -6193,6 +6451,21 @@ const SETTINGS = [
                  'configured from that document sends a subject in. The ' +
                  'default is the literal this service has always published.' },
 
+  // --- Federation: the partner's encrypted assertion (#168) ---------------
+  { key: 'federation.encryptionKeyGraceS', group: 'Federation',
+    label: 'Previous encryption key kept for (seconds)',
+    env: 'STS_FEDERATION_ENCRYPTION_KEY_GRACE_S', type: 'int', dflt: 86400,
+    min: 0, max: 2592000, runtime: true,
+    description: 'When a relationship\'s encryption key is rotated, how long ' +
+                 'the key it replaces still DECRYPTS — so a partner that ' +
+                 'has not yet fetched the new metadata or JWKS, or a ' +
+                 'response already in a browser, is not refused. Past it the ' +
+                 'old key decrypts nothing, and the scheduler job ' +
+                 'federation.encryption-key-retire removes it from the ' +
+                 'entry. 0 ends the old key at the rotation. Only the key ' +
+                 'just replaced is kept: a second rotation inside the ' +
+                 'window drops the older one.' },
+
   // --- SAML ----------------------------------------------------------------
   { key: 'saml.issuer', group: 'SAML', label: 'Assertion issuer',
     env: 'STS_SAML_ISSUER', legacyEnv: 'STS_ISSUER', type: 'string',
@@ -6247,6 +6520,8 @@ const SETTINGS = [
     env: 'STS_SAML_SIGNATURE_ALGORITHM', type: 'enum',
     enumValues: ['rsa-sha256', 'rsa-sha384', 'rsa-sha512', 'rsa-sha1'],
     dflt: 'rsa-sha256', runtime: true,
+    // `rsa-sha1` is DEVELOPMENT ONLY since #181 (2026-09-23).
+    onlyWhile: 'usesBrokenAlgorithms', onlyWhileValues: ['rsa-sha1'],
     description: 'The SignatureMethod of every enveloped XML signature this ' +
                  'service makes over a SAML 2.0 or SAML 1.1 assertion or ' +
                  'response, a SAML metadata document, the WS-Federation ' +
@@ -6256,7 +6531,10 @@ const SETTINGS = [
                  'because the key these are made with is RSA. `rsa-sha1` is ' +
                  'BROKEN and offered for the reason rsa-1_5 is: deployed ' +
                  'service providers still demand it and a client library is ' +
-                 'entitled to be tested against them.' },
+                 'entitled to be tested against them. WARNING: rsa-sha1 is ' +
+                 'DEVELOPMENT MODE ONLY — in product mode it is ignored ' +
+                 'where it is read (rsa-sha256 is used, logged once, ' +
+                 'STS-CORE-0106) and setting it is refused (STS-CORE-0103).' },
 
   { key: 'saml.canonicalizationAlgorithm', group: 'SAML',
     label: 'XML canonicalization',
@@ -6285,7 +6563,8 @@ const SETTINGS = [
   { key: 'saml.allowSha1Signatures', group: 'SAML',
     label: 'Accept SHA-1 XML signatures',
     env: 'STS_SAML_ALLOW_SHA1_SIGNATURES', type: 'bool', dflt: false,
-    runtime: true,
+    // DEVELOPMENT ONLY since #181 (2026-09-23): product verifies no SHA-1.
+    runtime: true, onlyWhile: 'usesBrokenAlgorithms',
     description: 'Whether an XML signature this service VERIFIES may use ' +
                  'SHA-1 — as its SignatureMethod (rsa-sha1, ecdsa-sha1, ' +
                  'dsa-sha1, sha1-rsa-MGF1) or as any Reference\'s ' +
@@ -6298,7 +6577,10 @@ const SETTINGS = [
                  'artifact resolution service, a federation partner\'s ' +
                  'Response, an RFC 7522 assertion, WS-Trust and ' +
                  'WS-Federation, SAML 1.1 — and none of what this service ' +
-                 'SIGNS, which is saml.signatureAlgorithm.' },
+                 'SIGNS, which is saml.signatureAlgorithm. WARNING: ON is ' +
+                 'DEVELOPMENT MODE ONLY — in product mode it is ignored ' +
+                 'where it is read (logged once, STS-CORE-0106) and turning ' +
+                 'it on is refused (STS-CORE-0103).' },
 
   { key: 'saml.organizationName', group: 'SAML',
     label: 'Metadata OrganizationName',
@@ -6374,13 +6656,22 @@ const SETTINGS = [
   { key: 'saml2.signAssertion', group: 'SAML 2.0 assertions', label: 'Sign ' +
       'the assertion',
     env: 'STS_SAML2_SIGN_ASSERTION', type: 'bool', dflt: true, runtime: true,
+    // OFF is DEVELOPMENT ONLY since #181 (2026-09-23); `mode.js`'s
+    // `issuesUnsignedAssertions()` argues it from the profile's text.
+    onlyWhile: 'issuesUnsignedAssertions',
     description: 'Sign the <saml:Assertion> itself. ON by default because a ' +
                  'service provider that verifies anything verifies this, and ' +
                  'because an assertion that travels on its own — out of an ' +
                  'ArtifactResponse, say — has nothing else carrying a ' +
-                 'signature. Turning it OFF is a test case rather than a ' +
-                 'mistake: a service provider that accepts an unsigned ' +
-                 'assertion has a hole, and this is how to find out.' },
+                 'signature; saml-profiles-2.0-os sections 4.1.3.5 and ' +
+                 '4.1.4.5 require it over the HTTP POST binding. Turning it ' +
+                 'OFF is a test case rather than a mistake: a service ' +
+                 'provider that accepts an unsigned assertion has a hole, ' +
+                 'and this is how to find out. WARNING: OFF is DEVELOPMENT ' +
+                 'MODE ONLY — in product mode it is ignored where it is ' +
+                 'read, here and on an application\'s saml2SignAssertion ' +
+                 '(the assertion is signed, logged once, STS-CORE-0106), and ' +
+                 'turning it off is refused (STS-CORE-0103, STS-REG-0193).' },
 
   { key: 'saml2.signResponse', group: 'SAML 2.0 assertions', label: 'Sign ' +
       'the response',
@@ -6480,16 +6771,29 @@ const SETTINGS = [
   { key: 'saml2.keyTransportAlgorithm', group: 'SAML 2.0 assertions',
     label: 'Key transport algorithm',
     env: 'STS_SAML2_KEY_TRANSPORT_ALGORITHM', type: 'enum',
-    enumValues: ['rsa-oaep-mgf1p', 'rsa-1_5'],
+    enumValues: ['rsa-oaep-mgf1p', 'rsa-oaep', 'rsa-1_5'],
     dflt: 'rsa-oaep-mgf1p', runtime: true,
+    // `rsa-1_5` is DEVELOPMENT ONLY since #181 (2026-09-23), here and on an
+    // application's `saml2KeyTransportAlgorithm`.
+    onlyWhile: 'usesBrokenAlgorithms', onlyWhileValues: ['rsa-1_5'],
     description: 'How the one-time content key is wrapped to the ' +
-                 'recipient\'s RSA public key. `rsa-1_5` is RSAES-PKCS1-v1_5 ' +
+                 'recipient\'s RSA public key. `rsa-oaep` is XML Encryption ' +
+                 '1.1\'s RSA-OAEP with SHA-256 and MGF1-SHA-256, which this ' +
+                 'service\'s own federation relationships publish and ' +
+                 'require (#168); `rsa-oaep-mgf1p` is OAEP over SHA-1, what ' +
+                 'most service providers read. A recipient whose ' +
+                 'certificate is EC is encrypted to by ECDH-ES key agreement ' +
+                 'whatever this says. `rsa-1_5` is RSAES-PKCS1-v1_5 ' +
                  'and is BROKEN — Bleichenbacher\'s adaptive ' +
                  'chosen-ciphertext attack is against exactly this — and it ' +
                  'is offered because a great many deployed service providers ' +
                  'accept nothing else, which is a fact about the world that ' +
-                 'a client library is entitled to be tested against. Nothing ' +
-                 'this service encrypts is a real secret.' },
+                 'a client library is entitled to be tested against. ' +
+                 'WARNING: rsa-1_5 is DEVELOPMENT MODE ONLY — in product ' +
+                 'mode it is ignored where it is read, on this setting and ' +
+                 'on an application\'s saml2KeyTransportAlgorithm ' +
+                 '(rsa-oaep-mgf1p is used, logged once, STS-CORE-0106), and ' +
+                 'setting it is refused (STS-CORE-0103, STS-REG-0193).' },
 
   { key: 'saml2.encryptLogoutNameId', group: 'SAML 2.0 assertions',
     label: 'Encrypt the NameID in a LogoutRequest',
@@ -6652,7 +6956,15 @@ const SETTINGS = [
                  'default: only an entry with its own certificate is held ' +
                  'to one. Any key an XML signature is verified with here ' +
                  'will do — RSA, EC, EdDSA, ML-DSA, SLH-DSA; a value that is ' +
-                 'not one is named on the SAML 2.0 page and ignored.' },
+                 'not one is named on the SAML 2.0 page and ignored. IN ' +
+                 'PRODUCT MODE these are also what lets the Metadata Query ' +
+                 'responder register a service provider at all: with none, ' +
+                 'a lookup a request starts is not made for an unknown ' +
+                 'entityID (STS-SAML-0080) and an operator\'s import is ' +
+                 'refused (STS-SAML-0084, see ' +
+                 'saml2.mdqImportWithoutAnchors); with some, an answer for ' +
+                 'an unknown entityID registers it only when its signature ' +
+                 'verifies against one of these (STS-SAML-0081).' },
 
   { key: 'saml2.mdqBaseUrl', group: 'SAML 2.0',
     label: 'Metadata Query (MDQ) responder',
@@ -6669,7 +6981,37 @@ const SETTINGS = [
                  'is answered as unknown NOW; the next one finds the ' +
                  'registration). Through the federation outbound policy: ' +
                  'https, federation.outbound, the timeout. EMPTY, the ' +
-                 'default: no responder.' },
+                 'default: no responder. IN PRODUCT MODE a responder alone ' +
+                 'registers nobody: a lookup a request starts for an ' +
+                 'unknown entityID is made only when ' +
+                 'saml2.metadataTrustAnchors is set, and registers the ' +
+                 'entity only when the answer verifies against one of them; ' +
+                 'the Import from MDQ action needs an anchor too unless ' +
+                 'saml2.mdqImportWithoutAnchors is on. An entry that already ' +
+                 'exists is refreshed from the responder in either mode.' },
+
+  { key: 'saml2.mdqImportWithoutAnchors', group: 'SAML 2.0',
+    label: 'Allow an MDQ import with no trust anchor (product mode)',
+    env: 'STS_SAML2_MDQ_IMPORT_WITHOUT_ANCHORS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'PRODUCT MODE ONLY: whether an administrator\'s Import ' +
+                 'from MDQ (the SAML 2.0 page, POST ' +
+                 '/admin-api/saml2/mdq-import) may register a service ' +
+                 'provider when the realm has no saml2.metadataTrustAnchors. ' +
+                 'OFF, the default: it is refused (STS-SAML-0084). ' +
+                 'WARNING: ON, the document the responder answers with is ' +
+                 'consumed WITHOUT ANY SIGNATURE CHECK — its signing ' +
+                 'certificates become what that service provider\'s ' +
+                 'requests are verified against and its endpoints become ' +
+                 'where assertions are sent — so anybody who can answer for ' +
+                 'the responder\'s host (its operator, or whoever sits on ' +
+                 'the path to it) chooses them. Only the administrator\'s ' +
+                 'choice of entityID and of responder stands in for the ' +
+                 'signature. ' +
+                 'Prefer setting a trust anchor. A lookup a REQUEST starts ' +
+                 'is never covered by this: it needs an anchor whatever this ' +
+                 'says. Development imports without an anchor whatever this ' +
+                 'says.' },
 
   // --- SAML 1.1 browser profiles -------------------------------------------
   // A group of its own, for the reason the SAML 2.0 rows above have one and for
@@ -6730,27 +7072,45 @@ const SETTINGS = [
   { key: 'saml11.signAssertion', group: 'SAML 1.1 assertions', label: 'Sign ' +
       'the assertion',
     env: 'STS_SAML11_SIGN_ASSERTION', type: 'bool', dflt: true, runtime: true,
+    // OFF is DEVELOPMENT ONLY since #181 (2026-09-23).
+    onlyWhile: 'issuesUnsignedAssertions',
     description: 'Sign the <saml:Assertion> itself, with ds:Signature as its ' +
                  'LAST child and the reference naming AssertionID — which is ' +
                  'where the 1.1 schema puts it and is not where SAML 2.0 ' +
-                 'does. ON by default because the Browser/POST profile ' +
-                 'REQUIRES a signed assertion (saml-profile-1.1 section ' +
-                 '4.2.1.4): the assertion passes through the browser, so ' +
-                 'nothing else authenticates it. Turning it off is a test ' +
-                 'case rather than a mistake — a relying party that accepts ' +
-                 'it anyway has a hole in it, and this is how somebody finds ' +
-                 'that out.' },
+                 'does. ON by default. The Browser/POST profile ' +
+                 '(oasis-sstc-saml-bindings-1.1 section 4.1.2.4) requires ' +
+                 'the RESPONSE to be signed and lets the assertions in it ' +
+                 'be signed; signing the assertion as well is what protects ' +
+                 'one that leaves the Response — resolved over the artifact ' +
+                 'channel, or referenced by AssertionIDReference. Turning ' +
+                 'it off is a test case rather than a mistake — a relying ' +
+                 'party that accepts it anyway has a hole in it, and this ' +
+                 'is how somebody finds that out. WARNING: OFF is ' +
+                 'DEVELOPMENT MODE ONLY — in product mode it is ignored ' +
+                 'where it is read, here and on an application\'s ' +
+                 'saml11SignAssertion (logged once, STS-CORE-0106), and ' +
+                 'turning it off is refused (STS-CORE-0103, STS-REG-0193).' },
 
   { key: 'saml11.signResponse', group: 'SAML 1.1 assertions', label: 'Sign ' +
       'the response',
     env: 'STS_SAML11_SIGN_RESPONSE', type: 'bool', dflt: true, runtime: true,
+    // OFF is DEVELOPMENT ONLY since #181 (2026-09-23): the Browser/POST
+    // profile requires the Response to be signed.
+    onlyWhile: 'issuesUnsignedAssertions',
     description: 'Sign the <samlp:Response> around the assertion as well, ' +
                  'with the reference naming ResponseID. Real identity ' +
                  'providers differ here and both are worth exercising, which ' +
                  'is why it is a setting: the profile requires the RESPONSE ' +
-                 'to be signed in Browser/POST and says nothing about it for ' +
-                 'the assertion pulled back over the artifact channel, where ' +
-                 'the SOAP exchange is what a relying party is trusting.' },
+                 'to be signed in Browser/POST (oasis-sstc-saml-bindings-1.1 ' +
+                 'section 4.1.2.4) and says nothing about it for the ' +
+                 'assertion pulled back over the artifact channel, where ' +
+                 'the SOAP exchange is what a relying party is trusting. ' +
+                 'WARNING: OFF is DEVELOPMENT MODE ONLY, because it makes a ' +
+                 'Browser/POST response non-conforming — in product mode it ' +
+                 'is ignored where it is read, here and on an ' +
+                 'application\'s saml11SignResponse (logged once, ' +
+                 'STS-CORE-0106), and turning it off is refused ' +
+                 '(STS-CORE-0103, STS-REG-0193).' },
 
   { key: 'saml11.nameIdFormat', group: 'SAML 1.1 assertions',
     label: 'Default ' +
@@ -7660,6 +8020,56 @@ const SETTINGS = [
                  'is never kept past its own exp. 0 fetches for every ' +
                  'presentation.' },
 
+  // A STATUS REFERENCE ON EVERY PRESENTED CREDENTIAL (#165, 2026-09-23).
+  // Neither draft-ietf-oauth-status-list section 8.3 nor the W3C Bitstring
+  // Status List forbids a relying party requiring one — both leave a missing
+  // reference to the relying party's policy — so the most secure reading is
+  // the default in both modes, and the two relaxations are settings with a
+  // warning. `off` is DEVELOPMENT ONLY through `onlyWhileValues` (the one
+  // value the marker names); `own-only` is allowed in product.
+  { key: 'oid4vp.requireStatusReference', group: 'OID4VP',
+    label: 'Require a status reference on every presented credential',
+    env: 'OID4VP_REQUIRE_STATUS_REFERENCE', type: 'enum',
+    enumValues: ['all', 'own-only', 'off'], dflt: 'all', runtime: true,
+    onlyWhile: 'acceptsCredentialsWithoutStatus', onlyWhileValues: ['off'],
+    description: 'all — the default, in both modes — refuses any credential ' +
+                 'presented to the Verifier that names no status (a Token ' +
+                 'Status List `status` claim or a BitstringStatusListEntry) ' +
+                 'resolving VALID, whoever issued it (STS-VC-0088), and an ' +
+                 'ldp_vc whose presentation did not disclose its ' +
+                 'credentialStatus (STS-VC-0089; the request asks for it). ' +
+                 'A trusted issuer that publishes no status is exempted by ' +
+                 'oid4vp.statusOptionalIssuers, not by weakening this. ' +
+                 'own-only accepts a FOREIGN credential with no reference — ' +
+                 'WARNING: such a credential can never be shown to have ' +
+                 'been revoked or suspended, so a credential its issuer took ' +
+                 'back goes on being accepted here. off also accepts one of ' +
+                 'this realm\'s own with no reference and an ldp_vc that ' +
+                 'withheld its status — a revoked credential passes by ' +
+                 'hiding its status entry — and is DEVELOPMENT MODE ONLY: in ' +
+                 'product it is ignored where it is read (logged once, ' +
+                 'STS-CORE-0106) and refused on write (STS-CORE-0103). A ' +
+                 'wallet sign-in reads its own credential\'s status from the ' +
+                 'issued register whatever this says.' },
+
+  { key: 'oid4vp.statusOptionalIssuers', group: 'OID4VP',
+    label: 'Trusted issuers exempt from the status reference',
+    env: 'OID4VP_STATUS_OPTIONAL_ISSUERS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'SHA-256 thumbprints of certificates in ' +
+                 'oid4vp.trustedIssuerCertificates whose credentials may be ' +
+                 'presented with NO status reference while ' +
+                 'oid4vp.requireStatusReference is all — hex, colon-hex as ' +
+                 '`openssl x509 -fingerprint -sha256` prints it, or ' +
+                 'base64url (`x5t#S256`). Keyed by the certificate rather ' +
+                 'than by `iss`, because the certificate is what verified ' +
+                 'the credential. WARNING: a credential from an exempted ' +
+                 'issuer that names no status can never be shown to have ' +
+                 'been revoked. A credential that DOES name a status is ' +
+                 'still checked against it, and a credential this realm ' +
+                 'issued is never exempt. Empty — the default — exempts ' +
+                 'nobody.' },
+
   // --- status lists (#38's follow-ups) ------------------------------------
   { key: 'oid4vci.statusListTtlS', group: 'OID4VCI',
     label: 'Status list time to live (s)',
@@ -7802,10 +8212,18 @@ const SETTINGS = [
                  'its sAMAccountName, which nothing in the SPN reveals, so ' +
                  'an acceptor for tickets from a real KDC needs this set.' },
 
+  // `23` is DEVELOPMENT MODE ONLY since #182 (2026-09-23): the marker is on
+  // the ELEMENT (`onlyWhileValues` over a csv row, `common/mode.js`'s
+  // `allowsValue()`), so the default keeps it for development and a product
+  // realm reads the list without it. 1, 2, 3 (DES, RFC 6649), 16 (3DES) and
+  // 24 (rc4-hmac-exp, RFC 8429) are named beside it for the day the codec
+  // implements them; today it refuses them at startup anyway.
   { key: 'krb5.enctypes', group: 'Kerberos', label: 'Encryption types',
     env: 'KRB5_ENCTYPES', type: 'csv', dflt: '18,17,20,19,23',
     runtime: false,
     realmRuntime: true,
+    onlyWhile: 'usesBrokenAlgorithms',
+    onlyWhileValues: ['1', '2', '3', '16', '23', '24'],
     restartReason: 'every principal\'s supported encryption types are fixed ' +
                    'at startup' +
                    REALM_BUILDS_ITS_OWN,
@@ -7813,12 +8231,17 @@ const SETTINGS = [
                  'RFC 3961 numbers, strongest first: 18 ' +
                  'aes256-cts-hmac-sha1-96, 17 aes128-cts-hmac-sha1-96, 20 ' +
                  'aes256-cts-hmac-sha384-192, 19 aes128-cts-hmac-sha256-128, ' +
-                 '23 rc4-hmac. The default includes RC4 so a client that ' +
-                 'still needs it can be exercised; removing 23 is what a ' +
-                 'hardened domain does, and then the rc4only account stops ' +
-                 'working exactly as it would there. A number the Kerberos ' +
-                 'codec does not implement stops the service at startup ' +
-                 'naming it.' },
+                 '23 rc4-hmac. WARNING: RFC 8429 deprecates rc4-hmac, whose ' +
+                 'key is the unsalted NT hash. The default includes it so a ' +
+                 'client that still needs it can be exercised in ' +
+                 'DEVELOPMENT MODE; removing 23 is what a hardened domain ' +
+                 'does, and then the rc4only account stops working exactly ' +
+                 'as it would there. In PRODUCT MODE 23 is always removed: ' +
+                 'the list is read without it, no RC4 key is derived or put ' +
+                 'in a keytab, a request offering only RC4 is refused ' +
+                 'KDC_ERR_ETYPE_NOSUPP, and a write naming it is refused. A ' +
+                 'number the Kerberos codec does not implement stops the ' +
+                 'service at startup naming it.' },
 
   { key: 'krb5.kvno', group: 'Kerberos', label: 'Key version number',
     env: 'KRB5_KVNO', type: 'int', dflt: 3, min: 1, max: 2147483647,
@@ -7827,18 +8250,19 @@ const SETTINGS = [
     restartReason: 'every principal\'s key version is fixed at startup' +
                    REALM_BUILDS_ITS_OWN,
     description: 'The key version number every account BUILT FROM A PASSWORD ' +
-                 'IN THIS CONFIGURATION holds — krbtgt, the acceptor\'s ' +
-                 'account, and in development every fixture and on-demand ' +
+                 'IN THIS CONFIGURATION holds — the acceptor\'s account, and ' +
+                 'in development krbtgt and every fixture and on-demand ' +
                  'account — which is what KRB_AP_ERR_BADKEYVER compares. For ' +
                  'those, rotation is not modelled and changing this makes ' +
                  'every ticket issued under the old one fail that check. ' +
                  'Since 2026-09-12 it is also the STARTING kvno of the two ' +
                  'kinds of principal whose keys are stored rather than ' +
                  'configured: a directory person\'s first keys (product ' +
-                 'mode) and a service principal created at ' +
-                 '/admin/kerberos/principals. Those two DO rotate — a ' +
-                 'password change and a Rotate each add one to the stored ' +
-                 'kvno — and changing this setting later moves neither.' },
+                 'mode), a service principal created at ' +
+                 '/admin/kerberos/principals, and (#169) a realm\'s random ' +
+                 'krbtgt key. Those DO rotate — a password change and a ' +
+                 'Rotate each add one to the stored kvno — and changing this ' +
+                 'setting later moves none of them.' },
 
   { key: 'krb5.ticketLifetimeSeconds', group: 'Kerberos',
     label: 'Ticket lifetime (s)', env: 'KRB5_TICKET_LIFETIME_S', type: 'int',
@@ -7912,9 +8336,14 @@ const SETTINGS = [
 
   { key: 'krb5.clockOffset', group: 'Kerberos', label: 'Clock offset (s)',
     env: 'KRB5_CLOCK_OFFSET', type: 'int', dflt: 0, runtime: true,
+    // Anything but 0 is DEVELOPMENT ONLY since #181 (2026-09-23).
+    onlyWhile: 'spoilsOnPurpose',
     description: 'Moves this KDC\'s clock deliberately, so a skew failure ' +
                  'can be produced on purpose rather than by changing the ' +
-                 'machine\'s time.' },
+                 'machine\'s time. DEVELOPMENT MODE ONLY: in product mode ' +
+                 'anything but 0 is ignored where it is read (the KDC runs ' +
+                 'on the machine\'s clock, logged once, STS-CORE-0106) and ' +
+                 'setting it is refused (STS-CORE-0103).' },
 
   { key: 'krb5.userPassword', group: 'Kerberos', label: 'User password',
     env: 'KRB5_USER_PASSWORD', type: 'string', dflt: 'password!',
@@ -7966,14 +8395,27 @@ const SETTINGS = [
                  'issued and read the PAC inside it. The CONFIGURED service ' +
                  'accounts keep their own separate passwords.' },
 
+  // DEVELOPMENT'S ONLY SINCE #169 (2026-09-23): product keys krbtgt at
+  // random and reads no password for it (`mode.derivesKrbtgtFromPassword()`),
+  // so the marker makes a value set in a product realm IGNORED where it is
+  // read (`mode.valueInForce()`) and refused where it is written.
   { key: 'krb5.krbtgtPassword', group: 'Kerberos', label: 'krbtgt password',
     env: 'KRB5_KRBTGT_PASSWORD', type: 'string', dflt: 'krbtgt-mock-password',
     runtime: false,
     realmRuntime: true,
+    onlyWhile: 'derivesKrbtgtFromPassword',
     restartReason: 'the krbtgt keys are derived from it at startup' +
                    REALM_BUILDS_ITS_OWN,
-    description: 'The key that seals every Ticket-Granting Ticket this realm ' +
-                 'issues.' },
+    description: 'DEVELOPMENT MODE ONLY: the password the krbtgt key — the ' +
+                 'key that seals every Ticket-Granting Ticket this realm ' +
+                 'issues — is derived from, published so a reader can ' +
+                 'decrypt a TGT. In product mode it is not read at all: the ' +
+                 'krbtgt key is RANDOM, made once per realm, kept sealed on ' +
+                 'the directory entry krbtgt/<REALM>@<REALM> and rotated by ' +
+                 'the krb5.krbtgt-rotate job ' +
+                 '(krb5.krbtgtRotationIntervalDays). A rotation by hand at ' +
+                 '/admin/kerberos/principals replaces the derived key with a ' +
+                 'random stored one in development too.' },
 
   { key: 'krb5.domainSid', group: 'Kerberos', label: 'Domain SID',
     env: 'KRB5_DOMAIN_SID', type: 'string',
@@ -8118,7 +8560,42 @@ const SETTINGS = [
                  'lifetime is never used again, is left out of every list, ' +
                  'and is removed from storage at the next write of that key. ' +
                  'To keep no previous version at all, set ' +
-                 'krb5.retainedKeyVersions to 0.' },
+                 'krb5.retainedKeyVersions to 0. THE KRBTGT KEY (#169) reads ' +
+                 'zero as the LONGER of krb5.ticketLifetimeSeconds and ' +
+                 'krb5.renewLifetimeSeconds, plus krb5.clockSkew — the ' +
+                 'sign-out horizon\'s bound — because every TGT is sealed ' +
+                 'under it.' },
+
+  // ---------------------------------------------------------------------------
+  // THE KRBTGT KEY'S ROTATION (#169, 2026-09-23). Read by the
+  // `krb5.krbtgt-rotate` scheduler job in `kerberos/krb5_krbtgt_rotation.ts`,
+  // which checks daily and rotates a realm whose stored krbtgt key is at least
+  // this old — and never while the version the last rotation kept is still
+  // inside its window, so the schedule can never make Active Directory's
+  // "two resets inside one TGT lifetime" by accident. 0 switches the schedule
+  // off (read directly: 0 is legal and means off). Product only
+  // (`mode.rotatesKerberosKeys()`); a rotation by hand works in both modes.
+  // ---------------------------------------------------------------------------
+  { key: 'krb5.krbtgtRotationIntervalDays', group: 'Kerberos',
+    label: 'Rotate the krbtgt key every (days)',
+    env: 'KRB5_KRBTGT_ROTATION_INTERVAL_DAYS', type: 'int', dflt: 180, min: 0,
+    max: 3650, runtime: true,
+    description: 'How long a trust realm\'s krbtgt key — the key every ' +
+                 'Ticket-Granting Ticket is sealed under — stays current ' +
+                 'before the krb5.krbtgt-rotate job replaces it with a new ' +
+                 'random key at the next kvno. The key it replaces is kept ' +
+                 '(krb5.retainedKeyVersions, for krb5.retainedKeyTtlS) so a ' +
+                 'TGT issued an instant before the rotation still works ' +
+                 'until ' +
+                 'it expires, and the job never rotates while that window is ' +
+                 'open. 180 days is the common Active Directory guidance. 0 ' +
+                 'switches scheduled rotation off; a rotation by hand ' +
+                 '(/admin/kerberos/principals, POST ' +
+                 '/admin-api/kerberos/principals/rotate-krbtgt) still works. ' +
+                 'Product mode only. With krb5.retainedKeyVersions at 0 the ' +
+                 'job stays off too, because a rotation that kept nothing ' +
+                 'would sign every Kerberos user in the realm out ' +
+                 'unannounced.' },
 
   { key: 'krb5.spnegoLoginButton', group: 'Kerberos',
     label: 'Offer Kerberos at the sign-in screen',
@@ -8232,6 +8709,55 @@ const SETTINGS = [
                  'assert it about themselves. Empty lets nobody change ' +
                  'anything on their own entry. Development authorizes no ' +
                  'LDAP write at all.' },
+
+  // WHAT A PERSON MAY READ OF ANYBODY ELSE OVER THE SOCKET, in product mode
+  // (#106, 2026-09-23). The read half of the row above, and an allowlist for
+  // its reason. EMPTY BY DEFAULT — the owner's decision 2 on #106, stricter
+  // than the plan's address-book list — so a person bound over LDAPS reads
+  // their own entry and nobody else's. `ldap/directory_read_policy.ts` is the
+  // rule table; per realm, since it is read in the realm being searched.
+  { key: 'ldap.directoryReadableAttributes', group: 'LDAP',
+    label: 'Attributes a person may read of other people',
+    env: 'LDAP_DIRECTORY_READABLE_ATTRIBUTES', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'In PRODUCT mode, the attributes a connection bound as a ' +
+                 'person may read on OTHER people\'s entries, ' +
+                 'comma-separated ' +
+                 'and matched case-insensitively; a search filter can see ' +
+                 'these and nothing else of theirs. Empty (the default) ' +
+                 'means ' +
+                 'self-only: another person is not in the directory at all ' +
+                 'as far as that connection can tell, and a base search of ' +
+                 'their DN answers noSuchObject. WARNING — widening this ' +
+                 'exposes every person in the realm to every other: ' +
+                 '"objectClass,cn,displayName,uid,mail" is an address book ' +
+                 'and hands anybody with a password the full list of ' +
+                 'usernames and addresses to phish or to guess passwords ' +
+                 'against; telephoneNumber, title and the rest are personal ' +
+                 'data; memberOf and employeeType tell them who the ' +
+                 'administrators are. Credentials are never readable ' +
+                 'whatever this says. Administrators (Admin Read or Admin ' +
+                 'Write) read everything in scope. Development authorizes no ' +
+                 'LDAP read.' },
+
+  // A GROUP'S MEMBER LIST, to a member of it (#106). Off by default: being in
+  // a group is not a reason to learn who else is, and on the console role
+  // groups the list is the list of administrators.
+  { key: 'ldap.groupMembersReadable', group: 'LDAP',
+    label: 'Members may read their group\'s member list',
+    env: 'LDAP_GROUP_MEMBERS_READABLE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'In PRODUCT mode, whether a person bound over LDAP may read ' +
+                 'member, uniqueMember and memberUid on a group they are a ' +
+                 'member of. A person sees a group only if they are in it, ' +
+                 'and then only its cn, description and objectClass; on ' +
+                 'turns the member list on too. WARNING — on the console ' +
+                 'role groups (admin.readGroup, admin.writeGroup) that list ' +
+                 'names every administrator, and on any group it names ' +
+                 'people ldap.directoryReadableAttributes may otherwise ' +
+                 'hide. ' +
+                 'Administrators read every group whole. Development ' +
+                 'authorizes no LDAP read.' },
 
   // --- SCIM ----------------------------------------------------------------
   //
@@ -8375,8 +8901,10 @@ const SETTINGS = [
 
   { key: 'scim.authDigest', group: 'SCIM', label: 'Offer HTTP Digest',
     env: 'SCIM_AUTH_DIGEST', type: 'bool', dflt: true, runtime: true,
-    description: 'RFC 7616, with SHA-256, SHA-512-256 and MD5 offered in ' +
-                 'that order and the -sess variants accepted. NEVER OFFERED ' +
+    description: 'RFC 7616, with SHA-256 and SHA-512-256 offered in that ' +
+                 'order (and MD5 last where scim.digestMd5 turns it on, in ' +
+                 'development only) and the -sess variants accepted. NEVER ' +
+                 'OFFERED ' +
                  'IN PRODUCT MODE: RFC 7616 needs the password or its hash, ' +
                  'and a stored scrypt hash can check neither. In development ' +
                  'it is the one scheme where the password really is checked, ' +
@@ -8409,15 +8937,24 @@ const SETTINGS = [
                  'hand-written clients have never run. Lower it to a few ' +
                  'seconds to make it happen on demand.' },
 
+  // DEVELOPMENT MODE ONLY since #182 (2026-09-23), and OFF by default: the
+  // `onlyWhile` marker's default is the product value, and the most secure
+  // option is the default. Product offers no Digest at all, so on is moot
+  // there — marked so that it cannot be stored meaning something it does not
+  // do.
   { key: 'scim.digestMd5', group: 'SCIM', label: 'Offer MD5 for Digest',
-    env: 'SCIM_DIGEST_MD5', type: 'bool', dflt: true, runtime: true,
+    env: 'SCIM_DIGEST_MD5', type: 'bool', dflt: false, runtime: true,
+    onlyWhile: 'usesBrokenAlgorithms',
     description: 'Whether HTTP Digest offers and accepts MD5 beside SHA-256 ' +
-                 'and SHA-512-256. On by default because most Digest clients ' +
-                 'speak nothing else; RFC 7616 keeps MD5 for backward ' +
-                 'compatibility only, and a deployment whose clients speak ' +
-                 'SHA-256 should turn it off. Off, an MD5 credential is ' +
-                 'refused naming this setting. (Digest itself is never ' +
-                 'offered in product mode — see scim.authDigest.)' },
+                 'and SHA-512-256. WARNING: MD5 is collision-broken, and RFC ' +
+                 '7616 section 3.3 keeps it for backward compatibility only ' +
+                 '— turn it on only to exercise a client that speaks ' +
+                 'nothing else. Off (the default), an MD5 credential, or one ' +
+                 'naming no algorithm (which RFC 7616 reads as MD5), is ' +
+                 'refused naming this setting. DEVELOPMENT MODE ONLY: in ' +
+                 'product it is refused on write and ignored where it is ' +
+                 'read, and Digest itself is never offered there — see ' +
+                 'scim.authDigest.' },
 
   { key: 'scim.maxDigestNonces', group: 'SCIM', label: 'Digest nonces held',
     env: 'SCIM_MAX_DIGEST_NONCES', type: 'int', dflt: 2000, runtime: true,
@@ -9296,7 +9833,20 @@ const SETTINGS = [
                  'person can see what arrived and why it did not verify. ' +
                  'Turning it on answers 400 with err=invalid_key instead, ' +
                  'which is what a real receiver does and is the negative a ' +
-                 'transmitter needs to be able to reach.' },
+                 'transmitter needs to be able to reach. DEVELOPMENT MODE ' +
+                 'ONLY: product mode refuses an unverified SET at every ' +
+                 'receiver whatever this says (#117).' },
+
+  { key: 'ssf.actOnSignalsInDevelopment', group: 'SSF',
+    label: 'The console and portal act on received signals in development',
+    env: 'STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode always does what the signal-response policy ' +
+                 'permits with a verified event this service\'s own console ' +
+                 'or portal receives — ends that surface\'s own sessions for ' +
+                 'the person it names (#62). Development records what it ' +
+                 'would have done and ends nothing, unless this is on. An ' +
+                 'unverified event is never acted on, whatever this says.' },
 
   { key: 'ssf.legacySubClaim', group: 'SSF',
     label: 'Also emit the deprecated `sub` claim (development only)',
@@ -9643,6 +10193,41 @@ const SETTINGS = [
                  'shipped with this service. Set it only to pin a different ' +
                  'root, or for a test BLOB.' },
 
+  { key: 'risk.mdsUrl', group: 'Risk',
+    label: 'FIDO metadata BLOB address',
+    env: 'STS_RISK_MDS_URL', type: 'string', dflt: '', runtime: true,
+    description: 'Where the `risk.mds-refresh` job downloads the FIDO MDS3 ' +
+                 'BLOB from (#105) — https://mds3.fidoalliance.org/ is ' +
+                 'FIDO\'s. MDS3 section 3.2 says a FIDO server MUST be able ' +
+                 'to download it. Empty — the default — dials nobody, and ' +
+                 'the BLOB arrives by upload, the dataset directory or the ' +
+                 'install-time loader as before. Fetched through the ' +
+                 'outbound rules every published document is ' +
+                 '(`federation.outbound`, https, internal addresses refused ' +
+                 'in product), with no redirect, and imported only under a ' +
+                 'recorded acceptance of `fido-mds3`\'s terms and after the ' +
+                 'full MDS3 verification; an older or equal serial is a ' +
+                 'rollback and is refused.' },
+
+  { key: 'risk.mdsRefreshS', group: 'Risk',
+    label: 'Download the FIDO metadata every (seconds)',
+    env: 'STS_RISK_MDS_REFRESH_S', type: 'int', dflt: 86400, min: 3600,
+    max: 604800, runtime: true,
+    description: 'How often `risk.mds-refresh` downloads the BLOB from ' +
+                 '`risk.mdsUrl`: daily by default, which MDS3 section 4 ' +
+                 'recommends. Once the active BLOB is past its own ' +
+                 'nextUpdate it is tried every hour until a newer one is ' +
+                 'imported.' },
+
+  { key: 'risk.mdsMaxBytes', group: 'Risk',
+    label: 'Largest FIDO metadata BLOB (bytes)',
+    env: 'STS_RISK_MDS_MAX_BYTES', type: 'int', dflt: 33554432, min: 65536,
+    max: 268435456, runtime: true,
+    description: 'The most `risk.mds-refresh` reads of a BLOB before it ' +
+                 'stops: FIDO\'s is several megabytes and grows, so it has ' +
+                 'a cap of its own rather than `federation.maxResponseBytes`, ' +
+                 'which is sized for a token response.' },
+
   { key: 'risk.mdsStaleGraceDays', group: 'Risk',
     label: 'FIDO metadata grace after its nextUpdate (days)',
     env: 'STS_RISK_MDS_STALE_GRACE_DAYS', type: 'int', dflt: 7, min: 0,
@@ -9690,6 +10275,66 @@ const SETTINGS = [
     max: 1000000, runtime: true,
     description: 'The score, in hundredths, at which a sign-in is HIGH ' +
                  'risk: 1000 is a score of 10.' },
+
+  { key: 'risk.minimumHistory', group: 'Risk',
+    label: 'Earlier sign-ins before a person is scored',
+    env: 'STS_RISK_MINIMUM_HISTORY', type: 'int', dflt: 5, min: 1,
+    max: 1000, runtime: true,
+    description: 'How many earlier sign-ins a person needs before the model ' +
+                 'scores them. Fewer are UNSCORED, as a first sign-in is, ' +
+                 'and the new-device and new-tls-stack signals wait for the ' +
+                 'same history: with one or two sign-ins the model is ' +
+                 'mostly the population\'s prior, and a new person\'s ' +
+                 'second sign-in would read as MEDIUM. The evidence signals ' +
+                 '(lists, automated clients, refused passwords, a ' +
+                 'compromised security key) apply however new the person ' +
+                 'is. 1 scores from the second sign-in on.' },
+
+  { key: 'risk.accountFailureThreshold', group: 'Risk',
+    label: 'Refused passwords for one person that are a signal',
+    env: 'STS_RISK_ACCOUNT_FAILURE_THRESHOLD', type: 'int', dflt: 5, min: 1,
+    max: 1000000, runtime: true,
+    description: 'How many refused passwords for one person in the last ' +
+                 'hour put the account-failures signal on their next ' +
+                 'sign-in.' },
+
+  { key: 'risk.networkFailureThreshold', group: 'Risk',
+    label: 'Refused passwords from one network that are a signal',
+    env: 'STS_RISK_NETWORK_FAILURE_THRESHOLD', type: 'int', dflt: 20, min: 1,
+    max: 1000000, runtime: true,
+    description: 'How many refused passwords from one network (the address ' +
+                 'prefix risk scoring groups by) in the last hour put the ' +
+                 'network-failures signal on every sign-in from it. Every ' +
+                 'person behind one NAT shares this count.' },
+
+  // CALIBRATION (#62): the factors an operator sets, and the shares of
+  // sign-ins the calibration report suggests thresholds for.
+  { key: 'risk.signalFactors', group: 'Risk',
+    label: 'Signal factors',
+    env: 'STS_RISK_SIGNAL_FACTORS', type: 'csv', dflt: '', runtime: true,
+    description: 'Factors over the built-in ones, as signal=factor, ' +
+                 'comma-separated (tor-exit=8,new-device=1.5) — what ' +
+                 'Monitoring → Risk Scoring\'s calibration suggests, applied ' +
+                 'without a release. Empty uses every built-in factor. An ' +
+                 'entry naming no signal, or with a factor that is not a ' +
+                 'positive number, is ignored and logged (STS-RISK-0026).' },
+
+  { key: 'risk.calibrationMediumPercent', group: 'Risk',
+    label: 'Calibration: MEDIUM or worse (percent of sign-ins)',
+    env: 'STS_RISK_CALIBRATION_MEDIUM_PERCENT', type: 'int', dflt: 5, min: 1,
+    max: 50, runtime: true,
+    description: 'The share of sign-ins the calibration report aims to have ' +
+                 'at MEDIUM or worse: it suggests the score this share of ' +
+                 'the window\'s assessments reaches. Advice only; the ' +
+                 'threshold is risk.mediumScorePercent.' },
+
+  { key: 'risk.calibrationHighPercent', group: 'Risk',
+    label: 'Calibration: HIGH (percent of sign-ins)',
+    env: 'STS_RISK_CALIBRATION_HIGH_PERCENT', type: 'int', dflt: 1, min: 1,
+    max: 50, runtime: true,
+    description: 'The share of sign-ins the calibration report aims to have ' +
+                 'at HIGH, as risk.calibrationMediumPercent. Advice only; ' +
+                 'the threshold is risk.highScorePercent.' },
 
   { key: 'risk.assessmentRetentionDays', group: 'Risk',
     label: 'Keep assessments (days)',
@@ -9936,7 +10581,8 @@ const SETTINGS = [
   { key: 'risc.googleSubjectType', group: 'RISC',
     label: 'Write subject_type instead of format',
     env: 'STS_RISC_GOOGLE_SUBJECT_TYPE', type: 'bool', dflt: false,
-    runtime: true,
+    // DEVELOPMENT ONLY since #181 (2026-09-23): a deliberate defect.
+    runtime: true, onlyWhile: 'spoilsOnPurpose',
     description: 'THE DELIBERATE DEFECT FOR THIS PROFILE, and it is the one ' +
                  'the specification itself names. RISC 1.0 section 3.1 ' +
                  'records that Google\'s production RISC transmitter spells ' +
@@ -9949,7 +10595,10 @@ const SETTINGS = [
                  'RISC subject this service sends, which is how a receiver ' +
                  'finds out whether it has that code before it is pointed ' +
                  'at Google. It does not touch CAEP or SSF events, whose ' +
-                 'specifications never had the problem.' },
+                 'specifications never had the problem. DEVELOPMENT MODE ' +
+                 'ONLY: in product mode it is ignored where it is read ' +
+                 '(logged once, STS-CORE-0106) and turning it on is refused ' +
+                 '(STS-CORE-0103).' },
 
   { key: 'risc.reasonLanguage', group: 'RISC',
     label: 'Language tag on reason_admin / reason_user',
@@ -10226,6 +10875,17 @@ const SETTINGS = [
                  'away without turning xacml.enabled off and losing the ' +
                  'embedded issuance and access PEPs with it.' },
 
+  { key: 'xacml.signalResponsePolicy', group: 'XACML',
+    label: 'The policy a received signal is answered with',
+    env: 'STS_XACML_SIGNAL_RESPONSE_POLICY', type: 'string',
+    dflt: 'signal-response', runtime: true,
+    description: 'The directory entry name of the policy the embedded PEP ' +
+                 'asks when this service\'s own console or portal receives ' +
+                 'a verified CAEP or RISC event (#62): whether it ends that ' +
+                 'surface\'s own sessions for the person named. The built-in ' +
+                 'policy of that name answers until a realm writes its own; ' +
+                 'a DISABLED one decides nothing, so nothing is ended.' },
+
   { key: 'xacml.riskResponsePolicy', group: 'XACML',
     label: 'The policy a change of risk is answered with',
     env: 'STS_XACML_RISK_RESPONSE_POLICY', type: 'string',
@@ -10364,8 +11024,11 @@ const SETTINGS = [
                  'nothing contacts the KDC on that exchange — which is a ' +
                  'fact about Kerberos rather than a gap here, and /logout ' +
                  'says so on the row. An AS-REQ still succeeds: signing out ' +
-                 'is not disabling an account, and the next authentication ' +
-                 'clears the instant. Turning it OFF leaves the KDC behaving ' +
+                 'is not disabling an account. It does NOT lift the instant ' +
+                 '(#111): its new ticket is accepted, while every ticket ' +
+                 'from before the sign-out, a renewal included, stays ' +
+                 'refused until the latest one could still be valid. ' +
+                 'Turning it OFF leaves the KDC behaving ' +
                  'exactly as it did before this feature existed.' },
 
   { key: 'logout.ldapDisconnect', group: 'Logout',
@@ -11015,11 +11678,15 @@ const SETTINGS = [
     label: 'Workload attestors', env: 'STS_SPIFFE_WORKLOAD_ATTESTORS',
     type: 'csv', dflt: 'unix', runtime: true,
     description: 'Which of SPIRE\'s workload attestors run for a connection ' +
-                 'to the Workload API\'s Unix socket: unix, docker, k8s, ' +
-                 'comma-separated. Each runs once per connection, at ' +
-                 'accept; every call then checks the process is still the ' +
-                 'one attested. An attestor that fails fails the ' +
-                 'connection. A TCP caller is never attested.' },
+                 'to the Workload API\'s Unix socket, and for a SPIFFE ' +
+                 'Broker API process reference: unix, docker, k8s, ' +
+                 'systemd, comma-separated. Each runs once per connection, ' +
+                 'at accept; every call then checks the process is still ' +
+                 'the one attested. An attestor that fails fails the ' +
+                 'connection. A TCP caller is never attested. systemd asks ' +
+                 'systemd over D-Bus with the optional package dbus-next, ' +
+                 'and a realm naming it without that package refuses every ' +
+                 'connection, naming the package (#170).' },
 
   { key: 'spiffe.workloadProcRoot', group: 'SPIFFE',
     label: 'Workload attestation /proc root',
@@ -11057,6 +11724,173 @@ const SETTINGS = [
     type: 'string', dflt: '', runtime: true,
     description: 'SPIRE\'s docker_version: empty asks the Engine\'s own ' +
                  'default.' },
+
+  // ----- Podman, through the docker attestor (#170, 2026-09-23) -----------
+  // SPIRE's docker plugin asks Podman's Docker-compatible API when a
+  // workload's cgroups say `libpod`, and the selectors stay `docker:`.
+  { key: 'spiffe.dockerPodmanSocketPath', group: 'SPIFFE',
+    label: 'docker: rootful Podman API socket',
+    env: 'STS_SPIFFE_DOCKER_PODMAN_SOCKET_PATH', type: 'string',
+    dflt: 'unix:///run/podman/podman.sock', runtime: true,
+    description: 'SPIRE\'s podman_socket_path: the socket asked about a ' +
+                 'container whose cgroup path names libpod and no user ' +
+                 'slice.' },
+
+  { key: 'spiffe.dockerPodmanSocketPathTemplate', group: 'SPIFFE',
+    label: 'docker: rootless Podman API socket template',
+    env: 'STS_SPIFFE_DOCKER_PODMAN_SOCKET_PATH_TEMPLATE', type: 'string',
+    dflt: 'unix:///run/user/%d/podman/podman.sock', runtime: true,
+    description: 'SPIRE\'s podman_socket_path_template: %d is the uid read ' +
+                 'from the container\'s user-<uid>.slice cgroup segment. ' +
+                 'Exactly one %d; %% is a literal percent sign. Used only ' +
+                 'with the next setting on.' },
+
+  { key: 'spiffe.dockerUseRootlessPodman', group: 'SPIFFE',
+    label: 'docker: attest rootless Podman containers',
+    env: 'STS_SPIFFE_DOCKER_USE_ROOTLESS_PODMAN', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s use_rootless_podman. Off, a rootless Podman ' +
+                 'container gets no docker selectors. WARNING: the ' +
+                 'per-user socket lives in the caller\'s OWN runtime ' +
+                 'directory, which the caller controls, so a workload can ' +
+                 'answer with whatever labels, environment and image it ' +
+                 'likes; pair every entry that selects on them with unix:uid ' +
+                 'or unix:user, as SPIRE advises.' },
+
+  // ----- sigstore image signatures, through the docker attestor (#170) ----
+  // SPIRE's `sigstore` block. No key and no certificate is a setting: each
+  // is a FILE PATH, because a setting is drawn, returned by /admin-api and
+  // persisted. The keyless trust roots come from the sigstore TUF
+  // repository as a scheduler job (`spiffe.sigstore-tuf-refresh`), or from a
+  // pinned trusted_root.json.
+  { key: 'spiffe.dockerSigstoreEnabled', group: 'SPIFFE',
+    label: 'docker: require a verified sigstore image signature',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_ENABLED', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s sigstore block. On, a docker workload\'s image ' +
+                 'must carry a cosign signature that verifies, with its ' +
+                 'Rekor transparency-log bundle, and the attestation adds ' +
+                 'SPIRE\'s image-signature selectors; a signature that does ' +
+                 'not verify REFUSES the connection (UNAVAILABLE), as SPIRE ' +
+                 'does — it is never merely a missing selector.' },
+
+  { key: 'spiffe.dockerSigstorePublicKeyFiles', group: 'SPIFFE',
+    label: 'docker sigstore: cosign public key files',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_PUBLIC_KEY_FILES', type: 'csv',
+    dflt: '', runtime: true,
+    description: 'PEM public keys a signature may verify under (cosign ' +
+                 '--key), as FILE PATHS. ECDSA, RSA, Ed25519 and the ' +
+                 'post-quantum ML-DSA, SLH-DSA and composite keys are read. ' +
+                 'Empty verifies keyless signatures only, against the ' +
+                 'Fulcio roots.' },
+
+  { key: 'spiffe.dockerSigstoreTrustedRootFile', group: 'SPIFFE',
+    label: 'docker sigstore: pinned trusted_root.json file',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_TRUSTED_ROOT_FILE', type: 'string',
+    dflt: '', runtime: true,
+    description: 'A sigstore trusted_root.json (Fulcio CAs, Rekor and CT log ' +
+                 'keys) read from this FILE PATH — the pinned alternative ' +
+                 'to TUF, used only while spiffe.dockerSigstoreTufRootFile ' +
+                 'is empty. The file is read when a signature is checked, ' +
+                 'so replacing it needs no restart.' },
+
+  { key: 'spiffe.dockerSigstoreAllowedIdentities', group: 'SPIFFE',
+    label: 'docker sigstore: allowed signer identities',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_ALLOWED_IDENTITIES', type: 'csv',
+    dflt: '', runtime: true,
+    description: 'SPIRE\'s allowed_identities, one issuer=subject pair per ' +
+                 'element: the OIDC issuer and the subject a keyless ' +
+                 'signing certificate must name. Either half containing one ' +
+                 'of *+?^${}[]|() is a regular expression, as in SPIRE. ' +
+                 'Empty REFUSES every keyless signature — stricter than ' +
+                 'SPIRE, whose empty list admits any signer the Fulcio ' +
+                 'roots certified.' },
+
+  { key: 'spiffe.dockerSigstoreSkippedImages', group: 'SPIFFE',
+    label: 'docker sigstore: images not verified',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_SKIPPED_IMAGES', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s skipped_images: repository digests ' +
+                 '(repo@sha256:...) attested without verification and ' +
+                 'without image-signature selectors.' },
+
+  { key: 'spiffe.dockerSigstoreAllowedRegistries', group: 'SPIFFE',
+    label: 'docker sigstore: registries signatures are fetched from',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_ALLOWED_REGISTRIES', type: 'csv',
+    dflt: '', runtime: true,
+    description: 'The registry hosts (host or host:port) this service may ' +
+                 'fetch an image\'s cosign signature and attestations from, ' +
+                 'and the token realm each names. The registry comes from ' +
+                 'the image a workload runs, which is the workload\'s ' +
+                 'choice, so a host not listed is not dialled and the ' +
+                 'attestation fails. Empty refuses every registry — ' +
+                 'stricter than SPIRE. Always https.' },
+
+  { key: 'spiffe.dockerSigstoreRegistryAuthFile', group: 'SPIFFE',
+    label: 'docker sigstore: registry credentials file',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_REGISTRY_AUTH_FILE', type: 'string',
+    dflt: '', runtime: true,
+    description: 'SPIRE\'s registry_credentials, as the FILE PATH of a ' +
+                 'Docker config.json whose auths name each registry\'s ' +
+                 'user:password. Empty is anonymous.' },
+
+  { key: 'spiffe.dockerSigstoreSkipTlog', group: 'SPIFFE',
+    label: 'docker sigstore: skip the Rekor transparency log (WARNING)',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_SKIP_TLOG', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s ignore_tlog. Off, every signature must carry a ' +
+                 'Rekor bundle whose signed entry timestamp verifies under ' +
+                 'a trusted Rekor key and whose entry names this signature, ' +
+                 'this key and this payload. WARNING: on, a signature that ' +
+                 'was never logged — one made with a stolen key, or with a ' +
+                 'keyless certificate after its ten minutes — verifies, and ' +
+                 'the image-signature-log-* selectors are not emitted.' },
+
+  { key: 'spiffe.dockerSigstoreIgnoreSct', group: 'SPIFFE',
+    label: 'docker sigstore: skip the certificate transparency SCT (WARNING)',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_IGNORE_SCT', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s ignore_sct. Off, a keyless signing certificate ' +
+                 'must carry an embedded SCT from a trusted CT log that ' +
+                 'verifies (RFC 6962). WARNING: on, a Fulcio certificate ' +
+                 'that was never logged is accepted.' },
+
+  { key: 'spiffe.dockerSigstoreIgnoreAttestations', group: 'SPIFFE',
+    label: 'docker sigstore: do not require image attestations',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_IGNORE_ATTESTATIONS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s ignore_attestations. Off, the image\'s in-toto ' +
+                 'attestations must verify too (cosign\'s .att tag) and ' +
+                 'image-attestations:verified is added — which, as in ' +
+                 'SPIRE, refuses an image that has none.' },
+
+  { key: 'spiffe.dockerSigstoreTufUrl', group: 'SPIFFE',
+    label: 'docker sigstore: TUF repository',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_TUF_URL', type: 'string',
+    dflt: 'https://tuf-repo-cdn.sigstore.dev', runtime: true,
+    perProcess: true,
+    description: 'Where the sigstore TUF repository is: the job ' +
+                 'spiffe.sigstore-tuf-refresh fetches root, timestamp, ' +
+                 'snapshot and targets metadata from it and the ' +
+                 'trusted_root.json target they sign.' },
+
+  { key: 'spiffe.dockerSigstoreTufRootFile', group: 'SPIFFE',
+    label: 'docker sigstore: TUF trusted root.json file',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_TUF_ROOT_FILE', type: 'string',
+    dflt: '', runtime: true, perProcess: true,
+    description: 'The FILE PATH of the TUF root.json this service first ' +
+                 'trusts (sigstore\'s published root, or a mirror\'s). ' +
+                 'Empty turns TUF off and the pinned ' +
+                 'spiffe.dockerSigstoreTrustedRootFile is used. A refresh ' +
+                 'that fails keeps the last verified set and never widens ' +
+                 'it.' },
+
+  { key: 'spiffe.dockerSigstoreTufRefreshS', group: 'SPIFFE',
+    label: 'docker sigstore: TUF refresh interval (s)',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_TUF_REFRESH_S', type: 'int',
+    dflt: 86400, min: 0, max: 31536000, runtime: true, perProcess: true,
+    description: 'How often the scheduler job spiffe.sigstore-tuf-refresh ' +
+                 'runs. 0 is off; Run now on /admin/scheduler still works.' },
 
   { key: 'spiffe.k8sKubeletReadOnlyPort', group: 'SPIFFE',
     label: 'k8s: kubelet read-only port',
@@ -11205,16 +12039,20 @@ const SETTINGS = [
   { key: 'spiffe.requireSecurityHeader', group: 'SPIFFE',
     label: 'Require the workload.spiffe.io header',
     env: 'STS_SPIFFE_REQUIRE_SECURITY_HEADER', type: 'bool', dflt: true,
-    runtime: true,
-    description: 'The Workload Endpoint specification says a client MUST ' +
-                 'send `workload.spiffe.io: true` on every call and a server ' +
-                 'MUST refuse one without it. It is a conformance check ' +
-                 'rather than a security one — it exists so that a caller ' +
-                 'cannot reach the endpoint by accident — and it is ON here ' +
-                 'even though this service is permissive by default, ' +
-                 'because a client that omits it has a bug this is the only ' +
-                 'thing that will ever tell them about. Off is for the case ' +
-                 'where you are deliberately testing something else.' },
+    // OFF is DEVELOPMENT ONLY since #181 (2026-09-23).
+    runtime: true, onlyWhile: 'servesWithoutSecurityHeader',
+    description: 'The Workload Endpoint specification (section 3) says a ' +
+                 'client MUST send `workload.spiffe.io: true` on every call ' +
+                 'and a server MUST refuse one without it — a hardening ' +
+                 'measure against server-side request forgery, since an ' +
+                 'attacker who can make a workload send a request rarely ' +
+                 'controls its gRPC metadata. It is ON here even in ' +
+                 'development, because a client that omits it has a bug ' +
+                 'this is the only thing that will ever tell them about. ' +
+                 'WARNING: OFF is DEVELOPMENT MODE ONLY, for deliberately ' +
+                 'testing something else — in product mode it is ignored ' +
+                 'where it is read (logged once, STS-CORE-0106) and turning ' +
+                 'it off is refused (STS-CORE-0103).' },
 
   { key: 'spiffe.trustLocalSocket', group: 'SPIFFE',
     label: 'Trust the SPIRE Server API socket as local',
@@ -11248,6 +12086,20 @@ const SETTINGS = [
                  'call, so either takes effect at once. An id here that is ' +
                  'not in this trust domain or a federated one can never ' +
                  'match, because nothing else would verify its certificate.' },
+
+  { key: 'spiffe.brokers', group: 'SPIFFE',
+    label: 'SPIFFE Broker API: authorized brokers',
+    env: 'STS_SPIFFE_BROKERS', type: 'string', dflt: '', runtime: true,
+    description: 'Who may call the SPIFFE Broker API, and with which ' +
+                 'workload references: entries separated by spaces, each ' +
+                 '<SPIFFE ID>=<types>, the types comma-separated from pid ' +
+                 '(a WorkloadPIDReference), k8s (a KubernetesObjectReference ' +
+                 'to a pod) and * (both). A broker not listed is refused ' +
+                 'PERMISSION_DENIED; an entry naming no type allows nothing. ' +
+                 'Managed on /admin/spiffe/brokers and ' +
+                 '/admin-api/spiffe/brokers. WARNING: the endpoint is TCP, ' +
+                 'and a process id means something only on the node it was ' +
+                 'read on — allow pid only to a broker on this host.' },
 
   { key: 'spiffe.clockSkew', group: 'SPIFFE', label: 'Clock skew (s)',
     env: 'STS_SPIFFE_CLOCK_SKEW', type: 'int', dflt: 60, runtime: true,
@@ -11444,6 +12296,25 @@ const SETTINGS = [
                    'two realms cannot share one socket',
     description: 'Where that socket lives when it is on. SPIRE\'s own ' +
                  'default path, for the same reason the Workload API\'s is.' },
+
+  // THE SPIFFE BROKER ENDPOINT (#170, 2026-09-23): the SPIFFE Broker API
+  // (spiffe/standards/SPIFFE_Broker_API.md, Incubating) on a listener of its
+  // own, mutual TLS, per realm like the other SPIFFE sockets.
+  { key: 'spiffe.brokerPort', group: 'SPIFFE',
+    label: 'SPIFFE Broker API TCP port',
+    env: 'STS_SPIFFE_BROKER_PORT', type: 'port', dflt: 0, runtime: false,
+    realmRuntime: true,
+    restartReason: 'the listener is bound when the process starts; a ' +
+                   'REALM\'s is bound when its SPIFFE is turned on, on its ' +
+                   'own address',
+    description: 'The SPIFFE Broker Endpoint: the Broker API ' +
+                 '(SubscribeToX509SVID, SubscribeToX509Bundles, ' +
+                 'FetchJWTSVID, SubscribeToJWTBundles) over gRPC with ' +
+                 'MUTUAL TLS on spiffe.grpcHost. A caller presents an ' +
+                 'X509-SVID naming a broker in spiffe.brokers and asks for ' +
+                 'the SVIDs of a workload it REFERENCES — a process id or a ' +
+                 'Kubernetes pod — which this service attests itself. 0 ' +
+                 '(the default) binds nothing.' },
 
   { key: 'spiffe.grpcHost', group: 'SPIFFE', label: 'gRPC bind address',
     env: 'STS_SPIFFE_GRPC_HOST', type: 'string', dflt: '0.0.0.0',
@@ -12612,10 +13483,32 @@ function replacedBy(key) {
 // `ssf.breakSetSignature`, `ssf.legacySubClaim` — carry `spoilsOnPurpose`,
 // `spiffe.acceptAssertedSelectors` carries `believesAssertedSelectors`, and
 // `spiffe.attestWorkloads` (whose default is ON, so what is refused is OFF)
-// carries `servesUnattestedEntries` (#104). In a product realm a write of a
-// value other than the default is refused (STS-CORE-0103), through /admin and
+// carries `servesUnattestedEntries` (#104), and
+// `oid4vp.requireStatusReference` carries `acceptsCredentialsWithoutStatus`
+// with `onlyWhileValues: ['off']` (#165) — the marker governing only the
+// values it lists, because that enum's `own-only` is allowed in product.
+// #181 marked eleven more: `risc.googleSubjectType` and `krb5.clockOffset`
+// carry `spoilsOnPurpose`; `saml2.signAssertion`, `saml11.signAssertion` and
+// `saml11.signResponse` (default ON, so OFF is refused) carry
+// `issuesUnsignedAssertions`; `spiffe.requireSecurityHeader` carries
+// `servesWithoutSecurityHeader`; and `usesBrokenAlgorithms` governs
+// `saml.allowSha1Signatures` and, through `onlyWhileValues`, the weak values
+// alone of `saml.signatureAlgorithm` (`rsa-sha1`),
+// `saml2.keyTransportAlgorithm` (`rsa-1_5`) and `pki.signatureAlgorithm`
+// (`sha1-rsa`, `sha1-ecdsa`). #182 added `scim.digestMd5` and, on the csv
+// row `krb5.enctypes`, the ELEMENT `23` (rc4-hmac): a list is refused when
+// any element is one `onlyWhileValues` names — its default included, which
+// keeps 23 for development — and is read in product without those elements.
+// An APPLICATION's override of a marked setting
+// (`saml2SignAssertion` …) is held to the same rule by
+// `common/applications.js`: ignored where `settingFor()` reads it, refused
+// where `updateApplication()` writes it (STS-REG-0193). In
+// a product realm a write of a marked value other than the default is refused
+// (STS-CORE-0103), through /admin and
 // /admin-api alike — the `set`, `set-many` and realm `set` doors. Writing the
-// default is always allowed, which is how a stored value is taken back.
+// default is always allowed, which is how a stored value is taken back — with
+// one exception, the list row above whose default itself carries a marked
+// element: there a stored value is taken back by CLEARING it.
 // `mode.writeRefusalReason()` supplies the sentence that says why, per
 // predicate, so the refusal and the read-time warning cannot disagree.
 //

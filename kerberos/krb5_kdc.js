@@ -234,11 +234,15 @@ function renewLifetimeSeconds() {
 }
 
 // A test can ask this KDC to lie about its clock, so the client's skew handling
-// can be exercised without changing anybody's system time.
+// can be exercised without changing anybody's system time. DEVELOPMENT ONLY
+// since #181 (2026-09-23): read through `mode.valueInForce()`, so a product
+// realm's KDC runs on the machine's clock whatever is stored, and says so
+// once (STS-CORE-0106). `mode` was already required here, so this adds no
+// require to the parent project's COPY closure.
 function clockOffsetSeconds() {
   log.debug("Entering clockOffsetSeconds().");
   log.debug("Leaving clockOffsetSeconds().");
-  return config.value('krb5.clockOffset');
+  return Number(mode.valueInForce('krb5.clockOffset')) || 0;
 }
 
 // The most a client may send on one TCP connection before it is closed. It was
@@ -1434,6 +1438,59 @@ async function checkEncTimestamp(client, etype, padata) {
 // source — the parent's in-process jobs — has no provider, so PA-FX-FAST is
 // ignored as unknown padata was before, and nothing here changes for it.
 // ---------------------------------------------------------------------------
+// A pause inside one AS exchange, for awaitSignOutSecond(). Not periodic and
+// not a timer of this module's: it resolves once, and the exchange waits on it.
+function pauseMs(ms) {
+  log.debug("Entering pauseMs(). " + ms + " ms");
+  log.debug("Leaving pauseMs().");
+  return new Promise(function (resolve) {
+    setTimeout(resolve, ms);
+  });
+}
+
+// WAIT FOR THE SIGN-OUT'S SECOND TO PASS (#111), so the ticket this exchange
+// mints carries an authtime at or after the sign-out boundary and is not
+// refused KDC_ERR_TGT_REVOKED by the TGS-REQ that follows it. Recorded as
+// STS-KRB-0155 at debug and nowhere else: each wait is a state the exchange
+// passes through, not a failure of anything.
+//
+// A boundary more than a second ahead is not waited for. On one clock that
+// cannot happen — the stamp is taken on the KDC's clock and a boundary is at
+// most a second after it — so it means `krb5.clockOffset` moved back after
+// the sign-out, and waiting out the difference would hang a client for as
+// long as the offset moved. The exchange goes on, and the ticket it mints is
+// refused until the horizon, which is the documented consequence of moving
+// the clock between a sign-out and a TGS-REQ.
+async function awaitSignOutSecond(client) {
+  log.debug("Entering awaitSignOutSecond().");
+  const stamp = principals.signedOutAt(client.name, client.realm);
+  const boundary = stamp ? principals.signOutBoundary(stamp).getTime() : 0;
+  const ahead = boundary - now().getTime();
+  if (ahead <= 0) {
+    log.debug("Leaving awaitSignOutSecond(). Nothing to wait for.");
+    return;
+  }
+  if (ahead > 1000) {
+    log.info('krb5: ' + client.name.join('/') + '@' + client.realm +
+             '\'s sign-out boundary is ' + ahead + ' ms ahead of this ' +
+             'KDC\'s clock, which only a krb5.clockOffset moved back since ' +
+             'the sign-out can do. Not waited for; the ticket about to be ' +
+             'issued predates it and will be refused KDC_ERR_TGT_REVOKED.');
+    log.debug("Leaving awaitSignOutSecond(). Not waited for.");
+    return;
+  }
+  log.debug(errorCodes.tag('STS-KRB-0155') + 'krb5: waiting ' + ahead +
+            ' ms for ' + client.name.join('/') + '@' + client.realm +
+            '\'s sign-out second to pass, so this ticket\'s authtime is ' +
+            'after it.');
+  // A loop rather than one pause: a timer may fire a millisecond before the
+  // wall clock this compares with has moved.
+  while (now().getTime() < boundary) {
+    await pauseMs(Math.max(1, boundary - now().getTime()));
+  }
+  log.debug("Leaving awaitSignOutSecond(). Waited.");
+}
+
 async function handleAsReq(request) {
   log.debug('Entering handleAsReq().');
   const provider = principals.preauthProvider();
@@ -1657,6 +1714,29 @@ async function answerAsReq(request, fast) {
 
   // Negotiate. The client's order is its preference; a KDC honours it.
   const etype = principals.chooseEtype(client, body.etypes);
+  // A request offering ONLY enctypes this realm's mode withholds — rc4-hmac
+  // in product (#182, RFC 8429) — is the same KDC_ERR_ETYPE_NOSUPP under a
+  // code of its own, because the fix is the client's configuration and the
+  // e-text has to say which.
+  const withheld = etype === null ?
+    principals.onlyWithheldEtypes(body.etypes) : [];
+  if (withheld.length) {
+    log.info('krb5: ' + client.name.join('/') + ' offered only ' +
+             withheld.map(kcrypto.etypeName).join(', ') + ', which product ' +
+             'mode does not use (RFC 8429).');
+    log.debug("Leaving answerAsReq().");
+    return errorReply(14, {
+      errorCode: 'STS-KRB-0156',
+      crealm: body.realm, cname: body.cname, sname: body.sname,
+      eText: 'the request offers only ' +
+             withheld.map(kcrypto.etypeName).join(', ') + ', which this ' +
+             'KDC does not use in product mode (RFC 8429 deprecates it); ' +
+             'offer one of ' +
+             principals.supportedEtypes(client)
+                       .map(kcrypto.etypeName)
+                       .join(', ')
+    });
+  }
   if (etype === null) {
     log.info('krb5: no common etype for ' + client.name.join('/') + '. It ' +
         'offers [' +
@@ -1801,24 +1881,25 @@ async function answerAsReq(request, fast) {
   // the ticket for the service and the one in the enc-part for the client —
   // must be the same bytes, which is the whole mechanism.
   const sessionKey = kcrypto.randomBytes(profile.keyBytes);
-  const authtime = now();
-  // A SUCCESSFUL AS EXCHANGE CLEARS ANY SIGN-OUT INSTANT, and it has to.
+  // A SUCCESSFUL AS EXCHANGE NO LONGER CLEARS A SIGN-OUT INSTANT (#111,
+  // 2026-09-23). It did, and that put every ticket-granting ticket from
+  // before the sign-out back into service — a renewal of one too, since a
+  // renewal keeps authtime — the moment the person authenticated again. The
+  // stamp stays, and handleTgsReq() goes on refusing what was authenticated
+  // before it until its horizon (krb5_principals.js's signOut()).
   //
-  // Signing out says "the tickets you already hold are finished"; it does not
-  // disable the account, so this exchange succeeds. But the ticket about to be
-  // minted carries THIS authtime, and if the instant stayed behind at a later
-  // moment than... no: it would be earlier, and the check in handleTgsReq()
-  // compares authtime against it — so leaving a stale instant would be
-  // harmless for THIS ticket and would silently keep refusing the older ones
-  // forever, which is right. What it would NOT survive is a clock offset:
-  // KRB5_CLOCK_OFFSET exists here to make this KDC lie about the time on
-  // purpose, and a stamp taken from Date.now() against an authtime taken from
-  // the offset clock can sit on either side of it. Clearing on a fresh
-  // authentication removes the question entirely: after somebody proves who
-  // they are again, nothing about the sign-out before it is still in force.
+  // What the clear used to paper over is this exchange's to get right
+  // instead: `authtime` goes out in whole seconds, so a ticket minted in the
+  // same second as the sign-out would carry an authtime earlier than the
+  // stamp and be refused by the very next TGS-REQ. So an AS exchange for a
+  // principal whose sign-out boundary (the stamp rounded up to a whole
+  // second) is still ahead WAITS for it before taking authtime — at most one
+  // second, and only right after a sign-out. awaitSignOutSecond() says what
+  // it does when the clock offset makes the wait longer than that.
   if (config.value('logout.kerberosSignOut')) {
-    principals.clearSignOut(client.name, client.realm);
+    await awaitSignOutSecond(client);
   }
+  const authtime = now();
   const requestedTill = body.till && body.till > authtime ? body.till :
                         kdcTime(ticketLifetimeSeconds());
   const endtime = new Date(Math.min(requestedTill.getTime(),
@@ -2160,6 +2241,28 @@ async function handleTgsReq(request) {
              'key at key usage 7' });
   }
 
+  // NO KEY OF AN ENCTYPE THE MODE WITHHOLDS (#182): the TGT's session key —
+  // RC4 only if it was issued before the realm became product — and the
+  // Authenticator's subkey, which is the CLIENT's choice and which the
+  // reply's enc-part would be sealed under (key usage 9).
+  const withheldKey = !principals.etypePermitted(ticketPart.key.etype) ?
+    ticketPart.key.etype :
+    (authenticator.subkey &&
+     !principals.etypePermitted(authenticator.subkey.etype) ?
+      authenticator.subkey.etype : null);
+  if (withheldKey !== null) {
+    log.info('krb5: refusing a TGS-REQ whose session key or subkey is ' +
+             kcrypto.etypeName(withheldKey) + ', which product mode does ' +
+             'not use.');
+    log.debug("Leaving handleTgsReq().");
+    return errorReply(14, { realm: ourRealm(), sname: body.sname,
+      errorCode: 'STS-KRB-0157',
+      eText: 'the ' + (withheldKey === ticketPart.key.etype ?
+                       'ticket\'s session key' : 'Authenticator\'s subkey') +
+             ' is ' + kcrypto.etypeName(withheldKey) + ', which this KDC ' +
+             'does not use in product mode (RFC 8429 deprecates it)' });
+  }
+
   // The Authenticator's cname must match the ticket's, or one client's TGT
   // would authenticate a request naming another.
   if (authenticator.cname.name.join('/') !== ticketPart.cname.name.join('/') ||
@@ -2211,9 +2314,12 @@ async function handleTgsReq(request) {
   // is the single most obvious way to get this wrong.
   //
   // It is in handleTgsReq() and NOT in handleAsReq(), because signing out is
-  // not disabling an account: the next AS exchange must succeed, and it CLEARS
-  // the instant so the ticket it mints is not immediately refused by this very
-  // check.
+  // not disabling an account: the next AS exchange must succeed. It does NOT
+  // clear the instant (#111, 2026-09-23 — it did, and that re-admitted every
+  // older ticket): it waits for the sign-out's second to pass, and the
+  // comparison below is against that whole second, so the ticket it mints is
+  // newer than the instant and every ticket from before it stays refused
+  // until the stamp's horizon, whatever AS exchanges come between.
   //
   // It is on the TICKET'S client and not on the request's `cname` — a TGS-REQ
   // does not carry one — so a ticket obtained for somebody through S4U2Self is
@@ -2227,16 +2333,28 @@ async function handleTgsReq(request) {
   if (config.value('logout.kerberosSignOut')) {
     const signedOut = principals.signedOutAt(ticketPart.cname.name,
                                              ticketPart.crealm);
-    if (signedOut && ticketPart.authtime && ticketPart.authtime < signedOut) {
+    // IN WHOLE SECONDS (#111): `authtime` came off the wire truncated to the
+    // second, so it is compared with the stamp rounded UP to one — which
+    // refuses every ticket authenticated before the sign-out and none
+    // authenticated after it, because the AS exchange waits for that same
+    // boundary before it takes authtime.
+    const boundary = signedOut ? principals.signOutBoundary(signedOut) : null;
+    if (boundary && ticketPart.authtime && ticketPart.authtime < boundary) {
+      const until = principals.signOutHorizon(ticketPart.cname.name,
+                                              ticketPart.crealm);
       log.info('krb5: refusing a TGS-REQ for ' +
                ticketPart.cname.name.join('/') + '@' +
                ticketPart.crealm + ' — the ticket was authenticated at ' +
                ticketPart.authtime.toISOString() + ' and that principal ' +
                                                    'signed out at ' +
-               signedOut.toISOString() + '. KDC_ERR_TGT_REVOKED. A fresh ' +
-               'AS-REQ works and clears the instant; a service ticket ' +
-               'already in the cache is untouched, because accepting one ' +
-               'never reaches this KDC.');
+               signedOut.toISOString() + '. KDC_ERR_TGT_REVOKED' +
+               ((body.kdcOptions || []).indexOf(msgs.KDC_OPTION.RENEW) !== -1
+                 ? ' (a renewal, which keeps authtime)' : '') +
+               ', until ' + (until ? until.toISOString() : 'the stamp is ' +
+                                                           'cleared') +
+               '. A fresh AS-REQ works and its ticket is accepted; this one ' +
+               'stays refused. A service ticket already in the cache is ' +
+               'untouched, because accepting one never reaches this KDC.');
       log.debug("Leaving handleTgsReq().");
       return errorReply(20, {
         errorCode: 'STS-KRB-0034',
@@ -2247,7 +2365,8 @@ async function handleTgsReq(request) {
                ' and ' + ticketPart.cname.name.join(
                    '/') + '@' + ticketPart.crealm +
                ' signed out at ' + signedOut.toISOString() +
-               '; authenticate again to get a ticket newer than that instant'
+               '; authenticate again to get a ticket newer than that instant ' +
+               '(this one stays refused, renewed or not)'
       });
     }
   }
@@ -2418,6 +2537,22 @@ async function handleTgsReq(request) {
       eText: 'this KDC has no krbtgt principal for ' + answeringRealm });
   }
   const etype = principals.chooseEtype(service, body.etypes);
+  const withheld = etype === null ?
+    principals.onlyWithheldEtypes(body.etypes) : [];
+  if (withheld.length) {
+    // STS-KRB-0156's case in the TGS exchange (#182): see answerAsReq().
+    log.debug("Leaving handleTgsReq().");
+    return errorReply(14, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+      errorCode: 'STS-KRB-0156',
+      realm: answeringRealm, sname: body.sname,
+      eText: 'the request offers only ' +
+             withheld.map(kcrypto.etypeName).join(', ') + ', which this ' +
+             'KDC does not use in product mode (RFC 8429 deprecates it); ' +
+             service.name.join('/') + ' supports ' +
+             principals.supportedEtypes(service)
+                       .map(kcrypto.etypeName)
+                       .join(', ') });
+  }
   if (etype === null) {
     log.debug("Leaving handleTgsReq().");
     return errorReply(14, { crealm: ticketPart.crealm, cname: ticketPart.cname,
@@ -3050,8 +3185,49 @@ async function handleTgsReq(request) {
 // file in-process from a COPY set (kerberos/CLAUDE.md); both modules are
 // already in that closure through common/app.js.
 // ---------------------------------------------------------------------------
+// **AND WITH REQUEST WORKERS, ON ONE NODE TOO (2026-09-23).** A password
+// set, a principal created, an authenticator enrolled or a sign-out stamped is
+// written by whichever request WORKER answered it, and this KDC answers in the
+// FRONT process, which learns of it through the change log. Port 88 had no
+// read-your-write barrier, so in the single-node mode a KDC request 7-16 ms
+// after such a write was answered from the old copy:
+// KDC_ERR_C_PRINCIPAL_UNKNOWN for a principal that exists, a TGT on a
+// password alone for an account whose second factor had just been enrolled,
+// and a ticket for somebody who had just signed out. So first, wherever
+// `workers.readYourWrite` is on and workers exist, the front process waits
+// for what the workers have answered to commit and pulls it — the same two
+// steps `request_pool.js` takes for an HTTP request it keeps. Lazy and
+// guarded for the parent's COPY set, as below.
+async function catchUpWithWorkers() {
+  log.debug('Entering catchUpWithWorkers().');
+  let pool = null;
+  let persistence = null;
+  try {
+    pool = require('../common/request_pool');
+    persistence = require('../persistence/persistence');
+  } catch (e) {
+    log.debug('Caught in catchUpWithWorkers(): ' + ((e && e.message) || e));
+    log.debug('Leaving catchUpWithWorkers(). No request pool here.');
+    return;
+  }
+  if (!pool.readYourWrite() || !(pool.size() > 0)) {
+    log.debug('Leaving catchUpWithWorkers(). No workers to wait for.');
+    return;
+  }
+  try {
+    await pool.awaitCommitConfirmations(null);
+    await persistence.syncNow();
+  } catch (e) {
+    log.debug('Caught in catchUpWithWorkers(): ' + ((e && e.message) || e));
+    // Answered from what this process has, as every other caller of the
+    // barrier is when the store cannot be read.
+  }
+  log.debug('Leaving catchUpWithWorkers().');
+}
+
 async function catchUpWithCluster() {
   log.debug('Entering catchUpWithCluster().');
+  await catchUpWithWorkers();
   if (!config.value('logout.kerberosSignOut')) {
     log.debug('Leaving catchUpWithCluster(). Sign-out stamps are off.');
     return null;
@@ -3539,12 +3715,18 @@ app.get('/krb5/principals', function (req, res) {
                      'this process has no directory'),
                   'OTP pre-authentication (RFC 6560) with an authenticator ' +
                     'app, the password as the PIN',
-                  'authentication indicators (RFC 8129): otp'],
+                  'authentication indicators (RFC 8129): otp',
+                  // #169: where the directory is loaded (the key rides in
+                  // its key source).
+                  'krbtgt key rotation, a previous kvno kept for the TGT ' +
+                    'lifetime (#169)' +
+                    (principals.keySourceInstalled() ? '' : ' - not here: ' +
+                     'this process has no directory')],
     notImplementedYet: ['FAST in the TGS exchange (RFC 6113 implicit armor)',
                         'PKINIT (RFC 4556, #179)',
                         'kpasswd (RFC 3244)', 'user-to-user (ENC-TKT-IN-SKEY)',
                         'SID filtering across a trust',
-                        'key rotation for krbtgt'],
+                        'rotation of an inter-realm trust key'],
     principals: list
   });
 });

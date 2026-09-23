@@ -102,6 +102,9 @@ const realms = require('./realms');
 // with no caller to hand it to is `tag()`ged onto its log line instead: this
 // module does not require `audit.js`, for the leaf rule above.
 const errorCodes = require('./error_codes');
+// THE MODE, for SHA-1 certificate signatures, which are development's (#181).
+// A LEAF (`config` and `error_codes` only), so no cycle.
+const mode = require('./mode');
 // The debugger's own PKI code, byte-identical. DO NOT EDIT THEM HERE — see
 // `common/vendored/CLAUDE.md`.
 const x509 = require('./vendored/x509');
@@ -116,6 +119,9 @@ const pqc = require('./vendored/pqc');
 // certificate whose key OpenSSL does not parse, which `certificateHoldsKey()`
 // compares against a registered post-quantum JWK.
 const pkijs = require('pkijs');
+// The DER reader pkijs is built on, for the two sigstore extensions pkijs
+// does not parse itself (#170).
+const asn1js = require('asn1js');
 // The table of what active-active mode depends on, for `pki.agreement` (at the
 // bottom of this file). A LEAF over config and bunyan.
 const capabilities = require('../cluster/cluster_capabilities');
@@ -623,12 +629,19 @@ function realmIdOf(realmId) {
 // the preference stands; under a parent it is the parent's, and a preference
 // its key cannot produce is REPLACED rather than refused — the caller asked
 // for an EC *hierarchy*, and the tier they asked for is EC whatever signed it.
+// A SHA-1 value (`weak` in the vendored table) is passed over the same way in
+// PRODUCT (#181, `mode.usesBrokenAlgorithms()`): a tier or a leaf under an
+// authority a development realm built with SHA-1 is signed with the key's
+// default once the realm is switched, rather than refused — the refusal is
+// for somebody NAMING SHA-1, which `algorithmsFrom()` and
+// `issueSigningKeyPair()` make.
 function signatureForIssuer(parent, preferred, subjectKeyAlg) {
   log.debug("Entering signatureForIssuer().");
   const issuerKeyAlg = parent ? parent.keyAlg : subjectKeyAlg;
   const issuerDesc = keyMaterial.keyAlg(issuerKeyAlg);
   const wanted = x509.sigAlg(preferred);
-  if (issuerDesc && wanted && wanted.kind === issuerDesc.kind) {
+  if (issuerDesc && wanted && wanted.kind === issuerDesc.kind &&
+      (!wanted.weak || mode.usesBrokenAlgorithms())) {
     log.debug("Leaving signatureForIssuer().");
     return preferred;
   }
@@ -1199,7 +1212,13 @@ function algorithmsFrom(options) {
   // CALLER that names a mismatched pair is still refused below, because that is
   // somebody asking for the impossible rather than a default not fitting.
   // -------------------------------------------------------------------------
-  const configuredSig = String(config.value('pki.signatureAlgorithm') ||
+  //
+  // **SHA-1 IS DEVELOPMENT'S (#181).** The setting is read AS IN FORCE, so
+  // `sha1-rsa` or `sha1-ecdsa` stored in a product realm reads as empty (the
+  // key's own default), said once; and a CALLER naming either is refused
+  // below, because a build form is a second door onto the same choice.
+  // -------------------------------------------------------------------------
+  const configuredSig = String(mode.valueInForce('pki.signatureAlgorithm') ||
                                '').trim();
   const configuredFits = !!configuredSig && !!x509.sigAlg(configuredSig) &&
                          x509.sigAlg(configuredSig).kind === keyDesc.kind;
@@ -1212,6 +1231,18 @@ function algorithmsFrom(options) {
     return errorCodes.mark({ ok: false,
              errors: ['"' + sigAlgId + '" is not a signature algorithm this ' +
                       'service can produce.'] }, 'STS-PKI-0003');
+  }
+  if (sig.weak && !mode.usesBrokenAlgorithms()) {
+    log.debug("Leaving algorithmsFrom(). SHA-1, in product.");
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + sigAlgId + '" signs with SHA-1, which this ' +
+                      'realm does not use in product mode ' +
+                      '(global.mode=product). Choose ' +
+                      signatureAlgorithms(keyAlgId).filter(function (one) {
+                        return !one.weak;
+                      }).map(function (one) {
+                        return one.id;
+                      }).join(', ') + '.'] }, 'STS-PKI-0191');
   }
   if (sig.kind !== keyDesc.kind) {
     log.debug("Leaving algorithmsFrom().");
@@ -1314,17 +1345,20 @@ async function buildScopeNow(scopeId, opts) {
   const id = String(scopeId);
   const kind = scopeKindOf(id);
   const options = opts || {};
+  // The algorithms are decided BEFORE the Root is made, so that a build
+  // refused for its algorithm (a SHA-1 one in product, #181, or an
+  // impossible pair) creates nothing on its way to the refusal.
+  const chosen = algorithmsFrom(options);
+  if (!chosen.ok) {
+    log.debug('Leaving buildScope(). ' + chosen.errors.join(' '));
+    return chosen;
+  }
   const rooted = await ensureRoot(options);
   if (!rooted.ok) {
     log.debug('Leaving buildScope(). No Root.');
     return rooted;
   }
   const root = serviceRoot();
-  const chosen = algorithmsFrom(options);
-  if (!chosen.ok) {
-    log.debug('Leaving buildScope(). ' + chosen.errors.join(' '));
-    return chosen;
-  }
   const organisation = String(options.organisation ||
                               (serviceRow() || {}).organisation ||
                               DEFAULT_ORGANISATION);
@@ -1895,10 +1929,55 @@ function purposeFor(id) {
          null;
 }
 
+// ---------------------------------------------------------------------------
+// AN ENCRYPTION KEY PAIR (#168): the same leaf, the same Issuing CA, the same
+// revocation register — for a KEY THIS SERVICE DECRYPTS WITH rather than one
+// it or somebody else signs with. A federation relationship's service-provider
+// key is the first, published in its metadata (`KeyDescriptor
+// use="encryption"`) and its relying-party JWKS (`use: enc`).
+//
+// It differs from a signing leaf in exactly four places, and each is RFC
+// 5280's or RFC 7517's rather than a preference: KeyUsage says
+// `keyEncipherment` for an RSA key (it transports a content key) and
+// `keyAgreement` for an EC one (it agrees one), and never `digitalSignature`
+// — a decryption key that also signs is the XML Encryption 1.1 section 6.1.3
+// hazard; the JWK says `use: enc`; the subjectAltName URN names a federation
+// relationship; and the kid is prefixed `fedenc-`.
+//
+// It goes through `issueSigningKeyPair()` rather than beside it, with a
+// marker only this module can make, because the other ninety lines — the
+// chain, the lifetime clamp, the issuer's algorithm, the revocation
+// extensions, the serial the OCSP responder answers for — are the SAME and a
+// second copy is the one that drifts. The marker is a Symbol, so no request
+// body passed through to that function can ask for it.
+// ---------------------------------------------------------------------------
+const ENCRYPTION_LEAF = Symbol('encryption-leaf');
+const ENCRYPTION_KEY_ALGS = ['rsa-3072', 'ec-p256'];
+
+async function issueEncryptionKeyPair(realmId, opts) {
+  log.debug('Entering issueEncryptionKeyPair().');
+  const options = opts || {};
+  const keyAlg = String(options.keyAlg || 'rsa-3072');
+  if (ENCRYPTION_KEY_ALGS.indexOf(keyAlg) < 0) {
+    log.debug('Leaving issueEncryptionKeyPair(). Unknown key type.');
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + keyAlg + '" is not a key type this service ' +
+                      'issues an encryption key pair of. It issues ' +
+                      ENCRYPTION_KEY_ALGS.join(' and ') + '.'] },
+                           'STS-PKI-0192');
+  }
+  const out = await issueSigningKeyPair(realmId, Object.assign({}, options,
+    { keyAlg: keyAlg, [ENCRYPTION_LEAF]: true }));
+  log.debug('Leaving issueEncryptionKeyPair(). ' + (out.ok ? 'Issued.' :
+                                                    'Refused.'));
+  return out;
+}
+
 async function issueSigningKeyPair(realmId, opts) {
   log.debug('Entering issueSigningKeyPair().');
   const id = realmIdOf(realmId);
   const options = opts || {};
+  const encryption = options[ENCRYPTION_LEAF] === true;
   const chain = rawChainFor(id);
   if (!chain) {
     log.debug('Leaving issueSigningKeyPair(). No hierarchy.');
@@ -1921,7 +2000,9 @@ async function issueSigningKeyPair(realmId, opts) {
   // named and unknown: a caller that asked for a purpose this service does not
   // have wants a certificate for something, and silently handing back a JWT
   // one would put a key pair on the wrong attribute set with nothing saying so.
-  const purpose = purposeFor(options.purpose);
+  const purpose = encryption
+    ? { id: 'encryption', label: 'an encryption key', profileUri: '' }
+    : purposeFor(options.purpose);
   if (!purpose) {
     log.debug('Leaving issueSigningKeyPair(). Unknown purpose.');
     return errorCodes.mark({ ok: false,
@@ -1934,7 +2015,10 @@ async function issueSigningKeyPair(realmId, opts) {
   // subject kind this service does not have wants a certificate that says
   // something, and handing back an `application` one would put the wrong URN
   // in the subjectAltName with nothing saying so.
-  const subjectKind = subjectKindFor(options.subjectKind);
+  const subjectKind = encryption
+    ? { id: 'federation', label: 'a federation relationship',
+        urnPrefix: 'urn:sts:federation:', kidPrefix: 'fedenc-' }
+    : subjectKindFor(options.subjectKind);
   if (!subjectKind) {
     log.debug('Leaving issueSigningKeyPair(). Unknown subject kind.');
     return errorCodes.mark({ ok: false,
@@ -1961,7 +2045,22 @@ async function issueSigningKeyPair(realmId, opts) {
   // the wrong way round produces a certificate whose declared algorithm and
   // actual signature disagree, which `openssl verify` reports as a bad
   // signature naming neither — the vendored module's header says so at length.
-  const sigAlgId = String(options.signatureAlg || chain.signatureAlg);
+  if (options.signatureAlg &&
+      (x509.sigAlg(String(options.signatureAlg)) || {}).weak &&
+      !mode.usesBrokenAlgorithms()) {
+    log.debug("Leaving issueSigningKeyPair(). SHA-1, in product.");
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + options.signatureAlg + '" signs with SHA-1, ' +
+                      'which this realm does not use in product mode ' +
+                      '(global.mode=product).'] }, 'STS-PKI-0191');
+  }
+  // An algorithm INHERITED from the branch is passed over in product when it
+  // is SHA-1 (#181), as `signatureForIssuer()` does for the tiers.
+  const inherited = x509.sigAlg(String(chain.signatureAlg || '')) || {};
+  const sigAlgId = String(options.signatureAlg ||
+                          (inherited.weak && !mode.usesBrokenAlgorithms()
+                            ? defaultSignatureAlgorithmFor(issuing.keyAlg)
+                            : chain.signatureAlg));
   const sig = x509.sigAlg(sigAlgId);
   const issuerDesc = keyMaterial.keyAlg(issuing.keyAlg);
   if (!sig || !issuerDesc || sig.kind !== issuerDesc.kind) {
@@ -2012,7 +2111,7 @@ async function issueSigningKeyPair(realmId, opts) {
       subject: subject,
       subjectPublicKey: pair.publicPem,
       signatureAlg: sigAlgId,
-      profile: 'digital-signature',
+      profile: encryption ? 'key-encipherment' : 'digital-signature',
       notBefore: notBefore.toISOString(),
       notAfter: notAfter.toISOString(),
       issuer: { certificatePem: issuing.certificatePem,
@@ -2021,7 +2120,10 @@ async function issueSigningKeyPair(realmId, opts) {
       extensions: Object.assign({
         basicConstraints: { present: true, critical: true, ca: false },
         keyUsage: { present: true, critical: true,
-                    usages: ['digitalSignature', 'nonRepudiation'] },
+                    usages: !encryption
+                      ? ['digitalSignature', 'nonRepudiation']
+                      : (keyDesc.kind === 'ec' ? ['keyAgreement']
+                                               : ['keyEncipherment']) },
         subjectKeyIdentifier: { present: true },
         authorityKeyIdentifier: { present: true },
         // The subject's own identifier as a URI subjectAltName, so that a
@@ -2073,8 +2175,8 @@ async function issueSigningKeyPair(realmId, opts) {
   const jwsAlg = jwsAlgFor(keyDesc, sigAlgId);
   publicJwk.kid = subjectKind.kidPrefix +
                   stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
-  publicJwk.use = 'sig';
-  if (jwsAlg) {
+  publicJwk.use = encryption ? 'enc' : 'sig';
+  if (jwsAlg && !encryption) {
     publicJwk.alg = jwsAlg;
   }
   // `x5c` is the certificate chain in the JWK itself (RFC 7517 section 4.7):
@@ -6863,6 +6965,20 @@ async function extensionsOf(one) {
   return (described && described.extensions) || [];
 }
 
+// A certificate's subject as one line, for a reason. A certificate with an
+// EMPTY subject — a TPM attestation key's (WebAuthn Level 3 section 8.3.1,
+// #105), whose name is in its subjectAltName — has none at all as far as
+// node's X509Certificate is concerned, so it is named by its SAN instead.
+function subjectText(one) {
+  log.debug("Entering subjectText().");
+  const subject = String((one && one.x509 && one.x509.subject) || '');
+  log.debug("Leaving subjectText().");
+  return subject ? subject.replace(/\n/g, ', ')
+    : 'the certificate with an empty subject' +
+      (one && one.x509 && one.x509.subjectAltName
+        ? ' (' + String(one.x509.subjectAltName) + ')' : '');
+}
+
 // A critical extension nothing here evaluates, or a CA's nameConstraints,
 // as a sentence; '' when neither.
 async function foreignCriticalProblem(one, isCa, allowed) {
@@ -6871,7 +6987,7 @@ async function foreignCriticalProblem(one, isCa, allowed) {
                       'subjectAltName', 'authorityKeyIdentifier',
                       'subjectKeyIdentifier'];
   const extensions = await extensionsOf(one);
-  const name = '"' + one.x509.subject.replace(/\n/g, ', ') + '"';
+  const name = '"' + subjectText(one) + '"';
   for (let i = 0; i < extensions.length; i++) {
     const ext = extensions[i];
     if (isCa && ext.name === 'nameConstraints') {
@@ -6894,7 +7010,7 @@ async function foreignCriticalProblem(one, isCa, allowed) {
 // or ''.
 async function foreignCaProblem(one, below) {
   log.debug("Entering foreignCaProblem().");
-  const name = '"' + one.x509.subject.replace(/\n/g, ', ') + '"';
+  const name = '"' + subjectText(one) + '"';
   if (!one.x509.ca) {
     log.debug("Leaving foreignCaProblem(). Not a CA.");
     return name + ' issued a certificate and is not a CA ' +
@@ -6976,7 +7092,7 @@ async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
     if (next < 0) {
       log.debug("Leaving verifyPathToAnchors(). No path.");
       return { ok: false, reason: 'no path from "' +
-               top.x509.subject.replace(/\n/g, ', ') +
+               subjectText(top) +
                '" to a configured trust anchor' };
     }
     used[next] = true;
@@ -6997,7 +7113,7 @@ async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
   const at = options.now === undefined ? Date.now() : options.now;
   for (let i = 0; i < path.length; i++) {
     const one = path[i];
-    const name = '"' + one.x509.subject.replace(/\n/g, ', ') + '"';
+    const name = '"' + subjectText(one) + '"';
     if (Date.parse(one.x509.validFrom) > at ||
         Date.parse(one.x509.validTo) < at) {
       log.debug("Leaving verifyPathToAnchors(). Outside validity.");
@@ -7028,6 +7144,125 @@ async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
   log.debug("Leaving verifyPathToAnchors(). " + path.length +
             " certificate(s).");
   return { ok: true, chain: path };
+}
+
+
+// ----- WebAuthn attestation certificates (#105) -----------------------------
+//
+// What `authn/webauthn_attestation.ts` asks of an attestation certificate —
+// sections 8.2.1 (packed), 8.3.1 (tpm), 8.4.1 (android-key), 8.6
+// (fido-u2f) and 8.8 (apple) of WebAuthn Level 3 — read here with pkijs
+// because every certificate question this service asks is answered in this
+// module (rcbj, 2026-09-21). The EXTENSION VALUES WebAuthn defines are
+// decoded by `crypto.js`'s section 10; this answers only the certificate's
+// own fields and hands the raw values over.
+
+// Subject attribute types by OID, for the four section 8.2.1 names.
+const SUBJECT_TYPES = { '2.5.4.6': 'C', '2.5.4.10': 'O', '2.5.4.11': 'OU',
+                        '2.5.4.3': 'CN' };
+
+// `{ version, subject: { C, O, OU, CN }, subjectEmpty, ca, eku: [oids],
+// extensions: { oid: { critical, value } }, sanDirectoryTypes: [oids],
+// publicKeyJwk, keyType, curve }` for a DER certificate, or null when it is
+// not one. `version` is X.509's (3 for v3). `ca` is null when there is no
+// basicConstraints. `sanDirectoryTypes` are the attribute types inside the
+// directoryName entries of subjectAltName, which is where a TPM AIK
+// certificate names its TPM (TCG EK Credential Profile section 3.2.9).
+function attestationCertificateFacts(der) {
+  log.debug("Entering attestationCertificateFacts().");
+  let cert = null;
+  let node = null;
+  try {
+    cert = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(der || [])));
+    node = new nodeCrypto.X509Certificate(Buffer.from(der || []));
+  } catch (e) {
+    log.debug("Caught in attestationCertificateFacts(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving attestationCertificateFacts(). Not a certificate.");
+    return null;
+  }
+  const subject = {};
+  (cert.subject.typesAndValues || []).forEach(function (tv) {
+    const name = SUBJECT_TYPES[tv.type];
+    if (name) {
+      subject[name] = String(tv.value.valueBlock.value);
+    }
+  });
+  const extensions = {};
+  let ca = null;
+  let eku = [];
+  let sanDirectoryTypes = [];
+  (cert.extensions || []).forEach(function (ext) {
+    extensions[ext.extnID] = {
+      critical: !!ext.critical,
+      value: Buffer.from(ext.extnValue.valueBlock.valueHexView) };
+    try {
+      if (ext.extnID === '2.5.29.19') {
+        ca = !!(ext.parsedValue && ext.parsedValue.cA);
+      } else if (ext.extnID === '2.5.29.37') {
+        eku = ((ext.parsedValue && ext.parsedValue.keyPurposes) || [])
+          .map(String);
+      } else if (ext.extnID === '2.5.29.17') {
+        ((ext.parsedValue && ext.parsedValue.altNames) || [])
+          .forEach(function (name) {
+            if (name.type === 4 && name.value &&
+                Array.isArray(name.value.typesAndValues)) {
+              name.value.typesAndValues.forEach(function (tv) {
+                sanDirectoryTypes.push(String(tv.type));
+              });
+            }
+          });
+      }
+    } catch (e) {
+      log.debug("Caught in attestationCertificateFacts(): " +
+                ((e && e.message) || e));
+      // An extension pkijs could not parse is reported as present, with no
+      // parsed meaning; the caller's check then fails on what it needed.
+    }
+  });
+  let publicKeyJwk = null;
+  let keyType = '';
+  let curve = '';
+  try {
+    keyType = String(node.publicKey.asymmetricKeyType || '');
+    curve = String((node.publicKey.asymmetricKeyDetails || {}).namedCurve ||
+                   '');
+    publicKeyJwk = node.publicKey.export({ format: 'jwk' });
+  } catch (e) {
+    log.debug("Caught in attestationCertificateFacts(): " +
+              ((e && e.message) || e));
+    // A key node cannot export (a post-quantum one): no JWK, and a caller
+    // comparing it with a credential's key finds no match.
+  }
+  log.debug("Leaving attestationCertificateFacts().");
+  return { version: Number(cert.version) + 1, subject: subject,
+           subjectEmpty: !(cert.subject.typesAndValues || []).length,
+           ca: ca, eku: eku, extensions: extensions,
+           sanDirectoryTypes: sanDirectoryTypes, publicKeyJwk: publicKeyJwk,
+           keyType: keyType, curve: curve, pem: node.toString(),
+           subjectText: String(node.subject || ''),
+           subjectAltName: String(node.subjectAltName || '') };
+}
+
+// An attestation certificate's key identifier as the FIDO Metadata Service
+// lists it (`attestationCertificateKeyIdentifiers`, FIDO Metadata Statement
+// section 4): the hex SHA-1 of the subjectPublicKey BIT STRING's value,
+// RFC 5280 section 4.2.1.2 method (1). How a fido-u2f authenticator, which
+// has no AAGUID, is found in MDS. '' when the certificate cannot be read.
+function attestationKeyIdentifier(der) {
+  log.debug("Entering attestationKeyIdentifier().");
+  try {
+    const cert = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(der)));
+    const bits = Buffer.from(cert.subjectPublicKeyInfo.subjectPublicKey
+      .valueBlock.valueHexView);
+    log.debug("Leaving attestationKeyIdentifier().");
+    return nodeCrypto.createHash('sha1').update(bits).digest('hex');
+  } catch (e) {
+    log.debug("Caught in attestationKeyIdentifier(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving attestationKeyIdentifier(). Unreadable.");
+    return '';
+  }
 }
 
 // ----- OpenSSH --------------------------------------------------------------
@@ -7525,7 +7760,243 @@ async function verifyFidoMdsBlob(token, opts) {
            }) };
 }
 
+
+// ----- sigstore signing certificates and their SCTs (#170) ----------------
+//
+// What `spiffe/spiffe_sigstore.ts` asks of a Fulcio (keyless cosign)
+// signing certificate, answered here because every certificate question
+// this service asks is answered in this module. The path itself is
+// `verifyPathToAnchors()` above, at the certificate's own notBefore — cosign's
+// `TrustedCert()`, which treats the certificate as trusted forever and checks
+// instead that the SIGNATURE was made inside its window.
+
+// Fulcio's extension OIDs (sigstore/fulcio docs/oid-info.md): the OIDC
+// issuer, deprecated raw form and the DER UTF8String that replaced it.
+const OID_FULCIO_ISSUER_V1 = '1.3.6.1.4.1.57264.1.1';
+const OID_FULCIO_ISSUER_V2 = '1.3.6.1.4.1.57264.1.8';
+// RFC 6962's embedded SignedCertificateTimestampList.
+const OID_SCT_LIST = '1.3.6.1.4.1.11129.2.4.2';
+const OID_CODE_SIGNING = '1.3.6.1.5.5.7.3.3';
+
+// A signing certificate's facts: `{ subject, issuer, codeSigning, notBefore,
+// notAfter, spki }`, `subject` being the first non-empty subjectAltName in
+// the order sigstore's `GetSubjectAlternateNames()` lists them (DNS, email,
+// IP, URI, then an otherName's value) — SPIRE's `extractSubject()` — and
+// `issuer` the OIDC issuer extension, the UTF8String form first. null when
+// the bytes are not a certificate.
+function sigstoreSignerFacts(der) {
+  log.debug("Entering sigstoreSignerFacts().");
+  let cert = null;
+  let node = null;
+  try {
+    cert = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(der || [])));
+    node = new nodeCrypto.X509Certificate(Buffer.from(der || []));
+  } catch (e) {
+    log.debug("Caught in sigstoreSignerFacts(): " + ((e && e.message) || e));
+    log.debug("Leaving sigstoreSignerFacts(). Not a certificate.");
+    return null;
+  }
+  const names = { dns: [], email: [], ip: [], uri: [], other: [] };
+  let issuerV1 = '';
+  let issuerV2 = '';
+  let codeSigning = false;
+  (cert.extensions || []).forEach(function (ext) {
+    try {
+      if (ext.extnID === '2.5.29.17') {
+        ((ext.parsedValue && ext.parsedValue.altNames) || [])
+          .forEach(function (name) {
+            if (name.type === 2) names.dns.push(String(name.value));
+            if (name.type === 1) names.email.push(String(name.value));
+            if (name.type === 6) names.uri.push(String(name.value));
+            if (name.type === 7 && name.value && name.value.valueBlock) {
+              const ip = Buffer.from(name.value.valueBlock.valueHexView);
+              names.ip.push(ip.length === 4 ? Array.from(ip).join('.')
+                                            : ip.toString('hex'));
+            }
+            if (name.type === 0 && name.value) {
+              const inner = name.value.value;
+              const block = inner && (inner.valueBlock ||
+                                      (inner[0] && inner[0].valueBlock));
+              if (block && typeof block.value === 'string') {
+                names.other.push(block.value);
+              }
+            }
+          });
+      } else if (ext.extnID === '2.5.29.37') {
+        codeSigning = ((ext.parsedValue && ext.parsedValue.keyPurposes) || [])
+          .map(String).indexOf(OID_CODE_SIGNING) >= 0;
+      } else if (ext.extnID === OID_FULCIO_ISSUER_V1) {
+        issuerV1 = Buffer.from(ext.extnValue.valueBlock.valueHexView)
+          .toString('utf8');
+      } else if (ext.extnID === OID_FULCIO_ISSUER_V2) {
+        const raw = Buffer.from(ext.extnValue.valueBlock.valueHexView);
+        // asn1js declares `result` as the union of every block kind, most of
+        // which have no string value; the check below is what narrows it.
+        const read = /** @type {any} */ (asn1js.fromBER(new Uint8Array(raw)));
+        if (read.offset !== -1 && read.result && read.result.valueBlock &&
+            typeof read.result.valueBlock.value === 'string') {
+          issuerV2 = read.result.valueBlock.value;
+        }
+      }
+    } catch (e) {
+      // An extension pkijs could not read contributes nothing, and the
+      // caller's check fails on what it needed.
+      log.debug("Caught in sigstoreSignerFacts(): " + ((e && e.message) || e));
+    }
+  });
+  const subject = names.dns.concat(names.email, names.ip, names.uri,
+                                   names.other).filter(Boolean)[0] || '';
+  let spki = null;
+  try {
+    spki = Buffer.from(cert.subjectPublicKeyInfo.toSchema().toBER(false));
+  } catch (e) {
+    log.debug("Caught in sigstoreSignerFacts(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving sigstoreSignerFacts(). " + subject);
+  return { subject: subject, issuer: issuerV2 || issuerV1,
+           codeSigning: codeSigning,
+           notBefore: Date.parse(node.validFrom),
+           notAfter: Date.parse(node.validTo), spki: spki,
+           pem: node.toString() };
+}
+
+// RFC 6962 section 3.2: the precertificate TBS an embedded SCT signs is the
+// leaf's TBS without the SCT list extension. null when it cannot be built.
+function precertificateTbs(cert) {
+  log.debug("Entering precertificateTbs().");
+  try {
+    cert.extensions = (cert.extensions || []).filter(function (ext) {
+      return ext.extnID !== OID_SCT_LIST;
+    });
+    const tbs = Buffer.from(cert.encodeTBS().toBER(false));
+    log.debug("Leaving precertificateTbs().");
+    return tbs;
+  } catch (e) {
+    log.debug("Caught in precertificateTbs(): " + ((e && e.message) || e));
+    log.debug("Leaving precertificateTbs(). Unbuildable.");
+    return null;
+  }
+}
+
+// THE EMBEDDED SCTs OF A SIGNING CERTIFICATE (cosign's `VerifyEmbeddedSCT()`,
+// sigstore-go's `VerifySignedCertificateTimestamp()` with a threshold of
+// one): every SCT in the leaf's list is parsed, and the answer is ok when at
+// least one is from a CT log in `logs` (`[{ logIdHex, spki, startMs,
+// endMs }]`), was made inside that log key's window, and verifies over the
+// precertificate entry — version 0, certificate_timestamp, the timestamp,
+// precert_entry, SHA-256 of the ISSUER's SubjectPublicKeyInfo, the TBS
+// without the list, the SCT's extensions. Resolves `{ ok, why }`.
+async function verifyEmbeddedScts(leafDer, issuerDer, logs) {
+  log.debug("Entering verifyEmbeddedScts().");
+  let leaf = null;
+  let issuer = null;
+  try {
+    leaf = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(leafDer)));
+    issuer = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(issuerDer)));
+  } catch (e) {
+    log.debug("Caught in verifyEmbeddedScts(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyEmbeddedScts(). Unreadable.");
+    return { ok: false, why: 'the certificate or its issuer could not be ' +
+             'read' };
+  }
+  const ext = (leaf.extensions || []).filter(function (one) {
+    return one.extnID === OID_SCT_LIST;
+  })[0];
+  if (!ext) {
+    log.debug("Leaving verifyEmbeddedScts(). None.");
+    return { ok: false, why: 'certificate does not include required ' +
+             'embedded SCT' };
+  }
+  let list = null;
+  try {
+    // The same union as above; an OCTET STRING has the hex view, and any
+    // other block throws here and is refused below.
+    const read = /** @type {any} */ (asn1js.fromBER(new Uint8Array(
+      Buffer.from(ext.extnValue.valueBlock.valueHexView))));
+    list = Buffer.from(read.result.valueBlock.valueHexView);
+  } catch (e) {
+    log.debug("Caught in verifyEmbeddedScts(): " + ((e && e.message) || e));
+  }
+  if (!list || list.length < 2 || list.readUInt16BE(0) !== list.length - 2) {
+    log.debug("Leaving verifyEmbeddedScts(). A malformed list.");
+    return { ok: false, why: 'the embedded SCT list is malformed' };
+  }
+  const tbs = precertificateTbs(leaf);
+  let issuerKeyHash = null;
+  try {
+    issuerKeyHash = nodeCrypto.createHash('sha256').update(Buffer.from(
+      issuer.subjectPublicKeyInfo.toSchema().toBER(false))).digest();
+  } catch (e) {
+    log.debug("Caught in verifyEmbeddedScts(): " + ((e && e.message) || e));
+  }
+  if (!tbs || !issuerKeyHash) {
+    log.debug("Leaving verifyEmbeddedScts(). No entry to verify.");
+    return { ok: false, why: 'the precertificate entry could not be built' };
+  }
+  const tbsLength = Buffer.alloc(3);
+  tbsLength.writeUIntBE(tbs.length, 0, 3);
+  const problems = [];
+  let at = 2;
+  while (at + 2 <= list.length) {
+    const size = list.readUInt16BE(at);
+    const sct = list.subarray(at + 2, at + 2 + size);
+    at += 2 + size;
+    if (sct.length !== size || size < 47 || sct[0] !== 0) {
+      problems.push('an SCT that is not version 1');
+      continue;
+    }
+    const logId = sct.subarray(1, 33).toString('hex');
+    const timestamp = Number(sct.readBigUInt64BE(33));
+    const extLength = sct.readUInt16BE(41);
+    const extensions = sct.subarray(43, 43 + extLength);
+    let p = 43 + extLength;
+    if (p + 4 > sct.length) {
+      problems.push('a truncated SCT');
+      continue;
+    }
+    const sigLength = sct.readUInt16BE(p + 2);
+    const signature = sct.subarray(p + 4, p + 4 + sigLength);
+    p += 4 + sigLength;
+    if (p !== sct.length || signature.length !== sigLength) {
+      problems.push('a truncated SCT signature');
+      continue;
+    }
+    const trusted = (logs || []).filter(function (one) {
+      return String(one.logIdHex || '').toLowerCase() === logId;
+    })[0];
+    if (!trusted) {
+      problems.push('an SCT from a CT log not in the trust root (' + logId +
+                    ')');
+      continue;
+    }
+    if ((trusted.startMs && timestamp < trusted.startMs) ||
+        (trusted.endMs && timestamp > trusted.endMs)) {
+      problems.push('an SCT made outside its log key\'s validity');
+      continue;
+    }
+    const time = Buffer.alloc(8);
+    time.writeBigUInt64BE(BigInt(timestamp));
+    const extLen = Buffer.alloc(2);
+    extLen.writeUInt16BE(extensions.length);
+    const signed = Buffer.concat([Buffer.from([0, 0]), time,
+                                  Buffer.from([0, 1]), issuerKeyHash,
+                                  tbsLength, tbs, extLen, extensions]);
+    if (await stsCrypto.verifyWithPublicKey(trusted.spki, signed,
+                                            signature)) {
+      log.debug("Leaving verifyEmbeddedScts(). Verified by " + logId);
+      return { ok: true, why: '' };
+    }
+    problems.push('an SCT whose signature does not verify under its log');
+  }
+  log.debug("Leaving verifyEmbeddedScts(). None verified.");
+  return { ok: false, why: 'no embedded SCT verified: ' +
+           (problems.join('; ') || 'the list is empty') };
+}
+
 module.exports = {
+  // --- sigstore signing certificates (#170) ---
+  sigstoreSignerFacts: sigstoreSignerFacts,
+  verifyEmbeddedScts: verifyEmbeddedScts,
   // --- somebody else's certificates (#40) ---
   certificateFromDer: certificateFromDer,
   certificateBundle: certificateBundle,
@@ -7533,6 +8004,9 @@ module.exports = {
   spkiOf: spkiOf,
   keyUsageOf: keyUsageOf,
   verifyPathToAnchors: verifyPathToAnchors,
+  // --- WebAuthn attestation certificates (#105) ---
+  attestationCertificateFacts: attestationCertificateFacts,
+  attestationKeyIdentifier: attestationKeyIdentifier,
   // --- the FIDO MDS3 BLOB (#62 P5) ---
   fidoMdsRoots: fidoMdsRoots,
   verifyFidoMdsBlob: verifyFidoMdsBlob,
@@ -7628,12 +8102,18 @@ module.exports = {
   keyAlgorithms: keyAlgorithms,
   signatureAlgorithms: signatureAlgorithms,
   defaultSignatureAlgorithmFor: defaultSignatureAlgorithmFor,
+  // What a build would sign with, decided before any key is made — exported
+  // for `tests/mode_weak_settings.js` (#181), which asks it about SHA-1 in
+  // each mode without building a hierarchy to find out.
+  algorithmsFrom: algorithmsFrom,
   buildChain: buildChain,
   hasChain: hasChain,
   describe: describe,
   chainPemFor: chainPemFor,
   trustAnchorsFor: trustAnchorsFor,
   issueSigningKeyPair: issueSigningKeyPair,
+  issueEncryptionKeyPair: issueEncryptionKeyPair,
+  ENCRYPTION_KEY_ALGS: ENCRYPTION_KEY_ALGS,
   registerCertificate: registerCertificate,
   verifyLeaf: verifyLeaf,
   // The signer certificate's chain, validated wherever an RFC 7523 or RFC 7522

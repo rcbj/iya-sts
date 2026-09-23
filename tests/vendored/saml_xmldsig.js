@@ -149,6 +149,7 @@ function id() {
 //       section 2.5.1 makes the assertion Invalid, which is RFC 7522 item 11)
 //   version — "1.1", to send the wrong specification's document
 //   id — a fixed one, so a replay can be built deliberately
+//   sessionIndex / sessionNotOnOrAfter — on the AuthnStatement (#167)
 // ---------------------------------------------------------------------------
 function buildAssertion(o) {
   log.debug("Entering buildAssertion().");
@@ -192,8 +193,14 @@ function buildAssertion(o) {
   // authenticated the subject itself, and NONE where the client is acting
   // autonomously on their behalf. Both are conforming and the job asserts that
   // this service reports which.
+  // `sessionIndex` and `sessionNotOnOrAfter` (#167): what a federation
+  // partner's AuthnStatement says about ITS session — the index its
+  // LogoutRequest will name, and when it says the session ends.
   const authn = options.authnStatement
-    ? el("saml:AuthnStatement", { AuthnInstant: iso(0) },
+    ? el("saml:AuthnStatement", {
+        AuthnInstant: iso(0),
+        SessionIndex: options.sessionIndex,
+        SessionNotOnOrAfter: options.sessionNotOnOrAfter },
         el("saml:AuthnContext", {},
           el("saml:AuthnContextClassRef", {},
              "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport")))

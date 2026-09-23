@@ -210,8 +210,16 @@ function keyPairOf(view, purpose) {
 
 // An external certificate authority, a root and an intermediate, and an EC
 // leaf under it whose private key only this job holds.
+//
+// **THE INTERMEDIATE AND THE LEAF EACH NAME THEIR ISSUER'S CRL (#174)**, served
+// from this process by `test_crl_host.js`: a product-mode service refuses,
+// under hard-fail, a registered certificate from an authority it does not
+// hold that names no list and no responder — nobody could ever revoke it.
 async function externalHierarchy() {
   log.debug("Entering externalHierarchy().");
+  const lists = require("./test_crl_host.js");
+  const rootList = await lists.reserve("external-root");
+  const interList = await lists.reserve("external-intermediate");
   const rootPair = await keys.generateKeyPair("rsa-2048");
   const root = await x509.issueCertificate({
     subject: [{ name: "CN", value: "Appcreds External Root" }],
@@ -236,7 +244,9 @@ async function externalHierarchy() {
       basicConstraints: { present: true, critical: true, ca: true,
                           pathLen: 0 },
       keyUsage: { present: true, critical: true,
-                  usages: ["keyCertSign", "cRLSign"] }
+                  usages: ["keyCertSign", "cRLSign"] },
+      cRLDistributionPoints: { present: true, critical: false,
+                               urls: [rootList.url] }
     }
   });
   const leafPair = await keys.generateKeyPair("ec-p256");
@@ -249,9 +259,15 @@ async function externalHierarchy() {
     extensions: {
       basicConstraints: { present: true, critical: true, ca: false },
       keyUsage: { present: true, critical: true,
-                  usages: ["digitalSignature"] }
+                  usages: ["digitalSignature"] },
+      cRLDistributionPoints: { present: true, critical: false,
+                               urls: [interList.url] }
     }
   });
+  await rootList.publish({ pem: root.pem,
+                           privateKeyPem: rootPair.privatePem });
+  await interList.publish({ pem: inter.pem,
+                            privateKeyPem: interPair.privatePem });
   log.debug("Leaving externalHierarchy().");
   return { rootPem: root.pem, interPem: inter.pem, leafPem: leaf.pem,
            leafPrivatePem: leafPair.privatePem };

@@ -599,20 +599,37 @@ async function main() {
     signingCertPem = pemOf((certEl.textContent || '').replace(/\s+/g, ''));
   }
 
+  // IN PRODUCT MODE A PROVIDER NOBODY REGISTERED GETS NO DOCUMENT (iya-sts
+  // #112): /saml11/metadata/{rp} answers 404 for a name no application
+  // registers, so the scoped-document checks below run where a document is
+  // minted — development, or a product sts from before #112 — and product
+  // asserts the refusal instead. `RP` is registered further down.
+  const productHere = await registry.isProduct(registry.baseOf(BASE));
+  let scopedEntityId = null;
   res = await request('GET', '/saml11/metadata/' + encodeURIComponent(RP));
-  doc = parse(res.body);
-  const scopedEntityId = doc.documentElement.getAttribute('entityID');
-  check('a scoped document names a providerID of its own',
-        scopedEntityId !== unscopedEntityId &&
-        scopedEntityId.indexOf(unscopedEntityId + ':') === 0,
-        scopedEntityId + ' vs ' + unscopedEntityId);
-  check('its endpoints carry the same path segment',
-        res.body.indexOf('/saml11/sso/') >= 0 && res.body.indexOf('/saml11/responder/') >= 0);
-  // The ask is what registers it: a relying party can be pointed at this service
-  // before anything at all has been provisioned.
+  if (productHere && res.status === 404) {
+    check('product: an unregistered relying party gets no metadata document (404)',
+          res.status === 404, 'status ' + res.status);
+  } else {
+    doc = parse(res.body);
+    scopedEntityId = doc.documentElement.getAttribute('entityID');
+    check('a scoped document names a providerID of its own',
+          scopedEntityId !== unscopedEntityId &&
+          scopedEntityId.indexOf(unscopedEntityId + ':') === 0,
+          scopedEntityId + ' vs ' + unscopedEntityId);
+    check('its endpoints carry the same path segment',
+          res.body.indexOf('/saml11/sso/') >= 0 && res.body.indexOf('/saml11/responder/') >= 0);
+  }
+  // In development the ask is what registers it: a relying party can be
+  // pointed at this service before anything at all has been provisioned.
   res = await request('GET', '/saml11/metadata/' + encodeURIComponent('urn:test:never:seen'));
-  check('a document is minted for an identifier nobody registered', res.status === 200,
-        'status ' + res.status);
+  if (productHere) {
+    check('product: no document for an identifier nobody registered (404; 200 before #112)',
+          res.status === 404 || res.status === 200, 'status ' + res.status);
+  } else {
+    check('a document is minted for an identifier nobody registered', res.status === 200,
+          'status ' + res.status);
+  }
 
   // -------------------------------------------------------------------------
   heading('Browser/POST, end to end');
@@ -647,6 +664,16 @@ async function main() {
     },
     why: 'the relying party providerId names in every flow below'
   });
+  if (!scopedEntityId) {
+    // Product (#112): the scoped document exists now that `RP` is registered.
+    res = await request('GET', '/saml11/metadata/' + encodeURIComponent(RP));
+    scopedEntityId = res.status === 200
+      ? parse(res.body).documentElement.getAttribute('entityID') : null;
+    check('product: the registered relying party gets its scoped document',
+          !!scopedEntityId && scopedEntityId !== unscopedEntityId &&
+          scopedEntityId.indexOf(unscopedEntityId + ':') === 0,
+          'status ' + res.status + ' ' + scopedEntityId);
+  }
   res = await signIn({ providerId: RP, shire: acs, TARGET: target, profile: 'post' }, USER_POST);
   check('the flow ends on the auto-post page',
         res.status === 200 && /saml11-form/.test(res.body), 'status ' + res.status);
@@ -1134,24 +1161,43 @@ async function main() {
   heading('the settings, one at a time');
   // An unsigned assertion being ACCEPTED by a relying party is the finding that
   // matters, and no happy path shows it. Each of these is restored at the end.
-  await setSetting('saml11.signAssertion', false);
+  // IN PRODUCT MODE THESE TWO ARE DEVELOPMENT-ONLY (iya-sts #181): a write
+  // turning either off is refused and the service keeps signing both, which
+  // is what the SAML 1.1 Browser/POST profile requires of the Response.
+  // Against a product-mode sts from before #181 the write still takes, so
+  // both outcomes are accepted there; development asserts the old behaviour.
+  let wrote = await setSetting('saml11.signAssertion', false);
+  let refused = wrote.status !== 200 ||
+                /refus|development only|STS-CORE-0103/i.test(wrote.body || '');
   cookie = '';
   res = await resume('/saml11/sso?' + form({ providerId: RP, shire: acs, TARGET: target,
                                              profile: 'post' }), 'judy');
   let xml = samlResponseIn(res.body);
-  check('saml11.signAssertion=false issues an UNSIGNED assertion',
-        !!xml && !childByLocal(byLocal(parse(xml), 'Assertion'), 'Signature'));
+  if (PRODUCT && refused) {
+    check('product: saml11.signAssertion=false is refused and the assertion is still SIGNED',
+          !!xml && !!childByLocal(byLocal(parse(xml), 'Assertion'), 'Signature'));
+  } else {
+    check('saml11.signAssertion=false issues an UNSIGNED assertion',
+          !!xml && !childByLocal(byLocal(parse(xml), 'Assertion'), 'Signature'));
+  }
   check('and the Response around it is still signed',
         !!xml && !!childByLocal(parse(xml).documentElement, 'Signature'));
   await setSetting('saml11.signAssertion', true);
 
-  await setSetting('saml11.signResponse', false);
+  wrote = await setSetting('saml11.signResponse', false);
+  refused = wrote.status !== 200 ||
+            /refus|development only|STS-CORE-0103/i.test(wrote.body || '');
   cookie = '';
   res = await resume('/saml11/sso?' + form({ providerId: RP, shire: acs, TARGET: target,
                                              profile: 'post' }), 'judy');
   xml = samlResponseIn(res.body);
-  check('saml11.signResponse=false issues an unsigned Response',
-        !!xml && !childByLocal(parse(xml).documentElement, 'Signature'));
+  if (PRODUCT && refused) {
+    check('product: saml11.signResponse=false is refused and the Response is still SIGNED',
+          !!xml && !!childByLocal(parse(xml).documentElement, 'Signature'));
+  } else {
+    check('saml11.signResponse=false issues an unsigned Response',
+          !!xml && !childByLocal(parse(xml).documentElement, 'Signature'));
+  }
   check('and the assertion inside it is still signed',
         !!xml && !!childByLocal(byLocal(parse(xml), 'Assertion'), 'Signature'));
   await setSetting('saml11.signResponse', true);

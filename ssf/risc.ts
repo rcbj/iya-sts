@@ -178,7 +178,7 @@ interface RiscRegisterDeps {
   iso(): string;
   nameForSubject(subject: string): string;
   config: { value(key: string): any };
-  mode: { inventsClaimValues(): boolean };
+  mode: { inventsClaimValues(): boolean; valueInForce(key: string): any };
   audit: { audit(row: object): unknown };
   events: {
     RISC_PREFIX: string;
@@ -525,11 +525,15 @@ class RiscRegister {
   // SSF's own events keep `format`, because their specifications never had the
   // problem and a service that renamed everything would be testing a
   // transmitter nobody has.
+  //
+  // DEVELOPMENT ONLY since #181 (2026-09-23): read through
+  // `mode.valueInForce()`, so a product realm with it still stored sends
+  // `format` and says so once (STS-CORE-0106).
   // ---------------------------------------------------------------------------
   googleSubjectType(subject: any): any {
-    const { log, config } = this.deps;
+    const { log, mode } = this.deps;
     log.debug("Entering RiscRegister.googleSubjectType().");
-    if (!config.value('risc.googleSubjectType') || !subject ||
+    if (!mode.valueInForce('risc.googleSubjectType') || !subject ||
         typeof subject !== 'object' ||
         !Object.prototype.hasOwnProperty.call(subject, 'format')) {
       log.debug("Leaving RiscRegister.googleSubjectType(). Unchanged.");
@@ -1900,7 +1904,9 @@ class RiscRegister {
         return AUTO_ACTS[act];
       }),
       honourOptOut: !!config.value('risc.honourOptOut'),
-      googleSubjectType: !!config.value('risc.googleSubjectType'),
+      // As IN FORCE (#181): false in a product realm whatever is stored.
+      googleSubjectType: !!this.deps.mode.valueInForce(
+        'risc.googleSubjectType'),
       subjectFormat: String(config.value('risc.subjectFormat') || 'iss_sub'),
       omitEventTimestamp: !!config.value('risc.omitEventTimestamp'),
       eventTypes: types,

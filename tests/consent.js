@@ -111,6 +111,7 @@ const REGISTRY = [
 function consentStore(seed) {
   log.debug("Entering consentStore().");
   const held = {};
+  const withdrawn = {};
   Object.keys(seed || {}).forEach(function (key) {
     held[key] = (seed[key] || []).slice(0);
   });
@@ -149,6 +150,28 @@ function consentStore(seed) {
           return { dn: 'uid=' + key + ',ou=users', username: key,
                    values: held[key].slice(0) };
         });
+      },
+      // THE WITHDRAWALS (#172). The slot is validated whole, so a stub
+      // without them is refused; they are a second map, since
+      // `oauthConsentWithdrawn` is a second attribute.
+      withdrawalsOf: function (key) {
+        log.debug("Entering withdrawalsOf().");
+        log.debug("Leaving withdrawalsOf().");
+        return { values: (withdrawn[key] || []).slice(0) };
+      },
+      addWithdrawal: function (key, values) {
+        log.debug("Entering addWithdrawal().");
+        withdrawn[key] = (withdrawn[key] || []).concat(values);
+        log.debug("Leaving addWithdrawal().");
+        return { ok: true, dn: 'uid=' + key + ',ou=users' };
+      },
+      removeWithdrawal: function (key, values) {
+        log.debug("Entering removeWithdrawal().");
+        withdrawn[key] = (withdrawn[key] || []).filter(function (one) {
+          return values.indexOf(one) < 0;
+        });
+        log.debug("Leaving removeWithdrawal().");
+        return { ok: true, dn: 'uid=' + key + ',ou=users' };
       }
     }
   };
@@ -282,7 +305,8 @@ function run(t) {
   const store = consentStore({
     alice: [consent.consentValueOf('profile', 'webapp1', when)]
   });
-  consent.setDirectory(store.hooks);
+  t.check(consent.setDirectory(store.hooks) === true,
+          'the stub, WITH its three withdrawal hooks, is taken whole');
 
   const mixed = consent.outstanding({
     username: 'alice', clientId: 'webapp1',
@@ -457,6 +481,21 @@ function run(t) {
                            log.debug("Entering listConsents().");
                            log.debug("Leaving listConsents().");
                            return [];
+                         },
+                         withdrawalsOf: function () {
+                           log.debug("Entering withdrawalsOf().");
+                           log.debug("Leaving withdrawalsOf().");
+                           return { values: [] };
+                         },
+                         addWithdrawal: function () {
+                           log.debug("Entering addWithdrawal().");
+                           log.debug("Leaving addWithdrawal().");
+                           return { ok: false, reason: 'noEntry' };
+                         },
+                         removeWithdrawal: function () {
+                           log.debug("Entering removeWithdrawal().");
+                           log.debug("Leaving removeWithdrawal().");
+                           return { ok: false };
                          } });
   const unstored = consent.record('dave', 'webapp2', ['profile']);
   t.equal(unstored.ok, true,

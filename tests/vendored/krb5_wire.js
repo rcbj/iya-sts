@@ -242,8 +242,10 @@ function errorSummary(error) {
 }
 
 // The one AS-REQ shape every call below sends. `padata` is the only thing
-// that changes between the two round trips of an exchange.
-function asRequest(realm, username, padata, nonce) {
+// that changes between the two round trips of an exchange. `etypes` replaces
+// ETYPES for a job that offers something else — only rc4-hmac, for #182's
+// product refusal.
+function asRequest(realm, username, padata, nonce, etypes) {
   log.debug("Entering asRequest().");
   const now = Date.now();
   log.debug("Leaving asRequest().");
@@ -263,7 +265,7 @@ function asRequest(realm, username, padata, nonce) {
       till: new Date(now + 8 * 3600 * 1000),
       rtime: new Date(now + 24 * 3600 * 1000),
       nonce: nonce,
-      etypes: ETYPES
+      etypes: etypes || ETYPES
     }
   });
 }
@@ -288,6 +290,7 @@ function asRequest(realm, username, padata, nonce) {
 // read out of a KEYTAB (#59, `sts_kerberos_keytab.js`) — is used IN PLACE OF a
 // password: the etype chosen is the first one the KDC offered that a key is
 // given for, and no string-to-key runs at all, which is what `kinit -k` does.
+// `opts.etypes` is the list OFFERED, in place of ETYPES (#182).
 // ---------------------------------------------------------------------------
 async function asExchange(transport, realm, username, opts) {
   log.debug("Entering asExchange(). " + username + "@" + realm + " over " +
@@ -296,8 +299,10 @@ async function asExchange(transport, realm, username, opts) {
   const out = { first: null, offered: [], info: null, second: null,
                 tgt: null };
 
+  const offered = options.etypes || ETYPES;
   const bare = msgs.readKdcResponse(
-    await transport.send(asRequest(realm, username, [], randomNonce())));
+    await transport.send(asRequest(realm, username, [], randomNonce(),
+                                   offered)));
   out.first = bare.kind === "KRB-ERROR"
     ? { kind: bare.kind, error: errorSummary(bare.error) }
     : { kind: bare.kind };
@@ -325,7 +330,7 @@ async function asExchange(transport, realm, username, opts) {
   }
   const infos = msgs.readEtypeInfo2(entry.value) || [];
   const given = options.keys || null;
-  const chosen = ETYPES.map(function (id) {
+  const chosen = offered.map(function (id) {
     return infos.filter(function (one) {
       return one.etype === id && (!given || !!given[id]);
     })[0];
@@ -361,7 +366,7 @@ async function asExchange(transport, realm, username, opts) {
   }];
   const nonce = randomNonce();
   const reply = msgs.readKdcResponse(
-    await transport.send(asRequest(realm, username, padata, nonce)));
+    await transport.send(asRequest(realm, username, padata, nonce, offered)));
   if (reply.kind === "KRB-ERROR") {
     out.second = { kind: reply.kind, error: errorSummary(reply.error) };
     log.debug("Leaving asExchange(). Refused: " + out.second.error.toString());
@@ -388,7 +393,12 @@ async function asExchange(transport, realm, username, opts) {
     nonceEchoed: part.nonce === nonce,
     kvno: rep.encPart.kvno,
     replyEtype: rep.encPart.etype,
-    endtime: part.endtime
+    endtime: part.endtime,
+    // The two times a sign-out job asserts on (#111): `authtime` is what the
+    // KDC compares with the sign-out instant, and `renewTill` bounds a
+    // renewal.
+    authtime: part.authtime,
+    renewTill: part.renewTill
   };
   log.debug("Leaving asExchange(). A TGT, flags " +
             out.tgt.flagNames.join(","));
@@ -406,21 +416,41 @@ async function asExchange(transport, realm, username, opts) {
 // enc-part is key usage 8 (no subkey is sent here, so never 9).
 //
 // Answers { ok: true, ticket, sessionKey, etype, client, realm, sname, srealm,
-// flagNames, nonceEchoed } or { ok: false, error }.
+// flagNames, nonceEchoed, endtime, authtime, renewTill } or
+// { ok: false, error }.
+//
+// `opts.renew` sets the RENEW option (RFC 4120 section 3.3.3.1): "the same
+// ticket again, later", for the ticket being presented — so `sname` must be
+// that ticket's own service, and the answer keeps its authtime (#111's
+// renewal case).
+//
+// `opts.etypes` is the list offered, in place of ETYPES, and `opts.subkeyEtype`
+// puts a fresh random subkey of that enctype in the Authenticator — the reply
+// is then sealed under it at key usage 9 (#182: an rc4-hmac subkey, refused
+// in product).
 // ---------------------------------------------------------------------------
-async function tgsExchange(transport, tgt, sname, realm) {
+async function tgsExchange(transport, tgt, sname, realm, opts) {
   log.debug("Entering tgsExchange(). " + (sname.name || []).join("/") +
             " over " + transport.label);
+  const options = opts || {};
   const profile = kcrypto.etypeById(tgt.etype);
   const nonce = randomNonce();
+  const kdcOptions = [msgs.KDC_OPTION.FORWARDABLE, msgs.KDC_OPTION.RENEWABLE];
+  if (options.renew) {
+    kdcOptions.push(msgs.KDC_OPTION.RENEW);
+  }
   const body = msgs.encKdcReqBody({
-    kdcOptions: [msgs.KDC_OPTION.FORWARDABLE, msgs.KDC_OPTION.RENEWABLE],
+    kdcOptions: kdcOptions,
     realm: realm || tgt.realm,
     sname: sname,
     till: new Date(Date.now() + 8 * 3600 * 1000),
     nonce: nonce,
-    etypes: ETYPES
+    etypes: options.etypes || ETYPES
   });
+  const subkey = options.subkeyEtype ? {
+    etype: options.subkeyEtype,
+    key: kcrypto.randomBytes(kcrypto.etypeById(options.subkeyEtype).keyBytes)
+  } : null;
   const checksum = await profile.checksum(tgt.sessionKey,
     kcrypto.KEY_USAGE.TGS_REQ_AUTH_CKSUM, body);
   const now = new Date();
@@ -430,7 +460,7 @@ async function tgsExchange(transport, tgt, sname, realm) {
     cksum: { type: profile.checksumType, checksum: checksum },
     cusec: (now.getMilliseconds() * 1000) % 1000000,
     ctime: new Date(Math.floor(now.getTime() / 1000) * 1000),
-    subkey: null,
+    subkey: subkey,
     seqNumber: randomNonce()
   });
   const apReq = msgs.encApReq({
@@ -456,8 +486,11 @@ async function tgsExchange(transport, tgt, sname, realm) {
   }
   const rep = reply.rep;
   const part = msgs.readEncKdcRepPart(
-    await kcrypto.etypeById(rep.encPart.etype).decrypt(tgt.sessionKey,
-      kcrypto.KEY_USAGE.TGS_REP_ENCPART_SESSKEY, rep.encPart.cipher));
+    await kcrypto.etypeById(rep.encPart.etype).decrypt(
+      subkey ? subkey.key : tgt.sessionKey,
+      subkey ? kcrypto.KEY_USAGE.TGS_REP_ENCPART_SUBKEY
+             : kcrypto.KEY_USAGE.TGS_REP_ENCPART_SESSKEY,
+      rep.encPart.cipher));
   log.debug("Leaving tgsExchange(). A ticket for " +
             msgs.principalToString(part.sname, part.srealm));
   return {
@@ -472,7 +505,9 @@ async function tgsExchange(transport, tgt, sname, realm) {
     srealm: part.srealm,
     flagNames: msgs.ticketFlagNames(part.flags),
     nonceEchoed: part.nonce === nonce,
-    endtime: part.endtime
+    endtime: part.endtime,
+    authtime: part.authtime,
+    renewTill: part.renewTill
   };
 }
 
@@ -486,7 +521,8 @@ async function tgsExchange(transport, tgt, sname, realm) {
 //
 // `opts.ctimeOffsetMs` moves the Authenticator's time, for the skew negative;
 // `opts.corrupt` flips a byte of the sealed Authenticator, for the integrity
-// negative. Answers { token, apReq, subkey, ctime, cusec }.
+// negative; `opts.subkeyEtype` makes the subkey of that enctype. Answers
+// { token, apReq, subkey, ctime, cusec }.
 // ---------------------------------------------------------------------------
 async function apRequest(ticket, opts) {
   log.debug("Entering apRequest().");
@@ -502,8 +538,12 @@ async function apRequest(ticket, opts) {
   const ctime = new Date(Math.floor(at.getTime() / 1000) * 1000);
   const cusec = (at.getMilliseconds() * 1000 +
                  Math.floor(Math.random() * 1000)) % 1000000;
-  const subkey = { etype: ticket.etype,
-                   key: kcrypto.randomBytes(profile.keyBytes) };
+  // `opts.subkeyEtype`: an initiator subkey of another enctype than the
+  // ticket's session key — rc4-hmac, which product refuses (#182).
+  const subkeyEtype = options.subkeyEtype || ticket.etype;
+  const subkey = { etype: subkeyEtype,
+                   key: kcrypto.randomBytes(
+                     kcrypto.etypeById(subkeyEtype).keyBytes) };
   const authenticator = msgs.encAuthenticator({
     crealm: ticket.realm,
     cname: ticket.client,
@@ -687,7 +727,9 @@ function nfold(input, outBytes) {
 }
 
 // The pseudo-random function of the four AES enctypes (RFC 3962 section 4,
-// RFC 8009 section 5).
+// RFC 8009 section 5), and of rc4-hmac — HMAC-SHA1 over the octets under the
+// key, MIT's and `common/crypto.js`'s — so a job can build FAST armor with an
+// RC4 subkey and watch product refuse it (#182).
 function prf(etype, key, octets) {
   log.debug("Entering prf(). " + etype);
   const k = Buffer.from(key);
@@ -722,6 +764,11 @@ function prf(etype, key, octets) {
       .update(Buffer.concat([Buffer.from([0, 0, 0, 1]), Buffer.from("prf"),
                              Buffer.from([0]), Buffer.from(octets), len]))
       .digest().subarray(0, bits / 8);
+  }
+  if (etype === 23) {
+    log.debug("Leaving prf().");
+    return nodeCrypto.createHmac("sha1", k).update(Buffer.from(octets))
+      .digest();
   }
   log.debug("Leaving prf(). Unsupported.");
   // error-code: none — a test client's own refusal, not a service failure
@@ -843,13 +890,17 @@ function readKeytab(buf) {
 //
 // Answers { ok: false, armored, code, eText, padata } for an error — the
 // PA-FX-ERROR's, read inside the armor — or { ok: true, tgt, finishedOk,
-// nonceOk, strengthened, padata } for an AS-REP.
+// nonceOk, strengthened, padata } for an AS-REP. `opts.subkeyEtype` makes the
+// armor subkey (and so the armor key) of another enctype than aes256 (#182).
 // ---------------------------------------------------------------------------
 async function fastAsExchange(transport, realm, username, armor, inner,
                               opts) {
   log.debug("Entering fastAsExchange(). " + username + "@" + realm);
   const options = opts || {};
-  const subkey = { etype: 18, key: kcrypto.randomBytes(32) };
+  const subkeyEtype = options.subkeyEtype || 18;
+  const subkey = { etype: subkeyEtype,
+                   key: kcrypto.randomBytes(
+                     kcrypto.etypeById(subkeyEtype).keyBytes) };
   const armorKey = cf2(subkey, { etype: armor.etype, key: armor.sessionKey },
                        "subkeyarmor", "ticketarmor");
   const armorProfile = kcrypto.etypeById(armorKey.etype);

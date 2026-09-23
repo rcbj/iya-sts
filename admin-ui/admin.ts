@@ -215,6 +215,7 @@ const auditView = adminViews.auditView;
 const errorCodesView = adminViews.errorCodesView;
 const usedAssertionsView = adminViews.usedAssertionsView;
 const delegationView = adminViews.delegationView;
+const delegationPolicyView = adminViews.delegationPolicyView;
 const clusterSummary = adminViews.clusterSummary;
 const permissionGroupsView = adminViews.permissionGroupsView;
 const queryOne = adminViews.queryOne;
@@ -238,6 +239,7 @@ const spiffeListeners = adminViews.spiffeListeners;
 const spiffeJson = adminViews.spiffeJson;
 const spiffeEntriesJson = adminViews.spiffeEntriesJson;
 const spiffeAgentsJson = adminViews.spiffeAgentsJson;
+const spiffeBrokersJson = adminViews.spiffeBrokersJson;
 const spiffeSelectorText = adminViews.spiffeSelectorText;
 const newUserContainer = adminViews.newUserContainer;
 const CREDENTIAL_CHOICES = adminViews.CREDENTIAL_CHOICES;
@@ -349,6 +351,7 @@ const samlAssertionsAction = adminActions.samlAssertionsAction;
 const sessionsAction = adminActions.sessionsAction;
 const signalsAction = adminActions.signalsAction;
 const spiffeAgentsAction = adminActions.spiffeAgentsAction;
+const spiffeBrokersAction = adminActions.spiffeBrokersAction;
 const spiffeCommaList = adminActions.spiffeCommaList;
 const spiffeEntriesAction = adminActions.spiffeEntriesAction;
 const spiffeUnknownAction = adminActions.spiffeUnknownAction;
@@ -1425,7 +1428,8 @@ const SECTIONS = [
       { path: '/admin/webauthn', label: 'WebAuthn',
         blurb: 'Security keys &mdash; W3C WebAuthn Level 3 over FIDO CTAP2 ' +
                '&mdash; as a second factor OR as the only credential on an ' +
-               'account, and the thirteen settings behind the ceremony. ' +
+               'account, the settings behind the ceremony, and what is done ' +
+               'with an authenticator\'s attestation statement. ' +
                '<strong>There were none of these until 2026-09-10</strong>: ' +
                'the RP name, the algorithms offered, the user verification ' +
                'requirement, the attestation conveyance and the timeout were ' +
@@ -1593,6 +1597,12 @@ const SECTIONS = [
                    'configuration — this service wrote all of it when the ' +
                    'agent attested — which is why nothing on an agent is ' +
                    'editable and the ban is the only control.' },
+          { path: '/admin/spiffe/brokers', label: 'Brokers',
+            blurb: 'Who may call the SPIFFE Broker API — the node proxies ' +
+                   'and meshes that ask for a workload\'s SVIDs by ' +
+                   'referencing it — and which kinds of reference each may ' +
+                   'use. The list is <code>spiffe.brokers</code>, read on ' +
+                   'every call.' },
         ] },
       { path: '/admin/tls', label: 'TLS / mutual TLS',
         blurb: 'The certificate the main port and LDAPS 636 present, ' +
@@ -2438,6 +2448,15 @@ const SECTIONS = [
                'about an address, import a list, activate, roll back. ' +
                'Below, every refused password in the realm, attributed to a ' +
                'person and a network and never to a typed name.' },
+      // The scoring itself measured (#62): drawn by the same file.
+      { path: '/admin/risk-scoring', label: 'Risk scoring',
+        blurb: 'The risk scoring system measured over a window: ' +
+               'assessments over time by level, how scores and levels ' +
+               'fell, every signal beside its factor and how often it ' +
+               'fired, decisions, doors and countries, what people said ' +
+               'about their own sign-ins, and &mdash; for this process ' +
+               '&mdash; how long an assessment takes and the reactions ' +
+               'taken.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +
@@ -2493,6 +2512,19 @@ const SECTIONS = [
                'a value NOWHERE stops the service from starting rather than ' +
                'defaulting quietly. Like every writing page here, it writes ' +
                'the realm it is read IN.' },
+      // BESIDE Configuration, because it answers the question that page's
+      // `global.mode` row raises: what does the mode change? It is drawn by
+      // `admin-ui/mode_admin.ts` (#181) and changes nothing — the setting is
+      // written on Configuration.
+      { path: '/admin/mode', label: 'Mode',
+        blurb: 'What <code>global.mode</code> changes, and what is in force ' +
+               'in this realm: every requirement with its development and ' +
+               'product answers, every development-only setting with the ' +
+               'value stored and the value in force — a product realm ' +
+               'ignores a development-only value it still holds — and ' +
+               'what product mode still does not check. Read from ' +
+               '<code>common/mode.js</code>, the one place the two modes ' +
+               'are told apart.' },
       { path: '/admin/persistence', label: 'Persistence',
         blurb: 'Whether anything here survives a restart, and where it is ' +
                'written. THREE things can be — the embedded directory (which ' +
@@ -2670,6 +2702,7 @@ interface AdminConsoleDeps {
   spiffeJson: typeof spiffeJson;
   spiffeEntriesJson: typeof spiffeEntriesJson;
   spiffeAgentsJson: typeof spiffeAgentsJson;
+  spiffeBrokersJson: typeof spiffeBrokersJson;
   spiffeSelectorText: typeof spiffeSelectorText;
   newUserContainer: typeof newUserContainer;
   CREDENTIAL_CHOICES: typeof CREDENTIAL_CHOICES;
@@ -2733,6 +2766,7 @@ interface AdminConsoleDeps {
   sessionsAction: typeof sessionsAction;
   signalsAction: typeof signalsAction;
   spiffeAgentsAction: typeof spiffeAgentsAction;
+  spiffeBrokersAction: typeof spiffeBrokersAction;
   spiffeEntriesAction: typeof spiffeEntriesAction;
   spiffeAction: typeof spiffeAction;
   ssfAction: typeof ssfAction;
@@ -2853,6 +2887,7 @@ class AdminConsole {
       spiffeJson: spiffeJson,
       spiffeEntriesJson: spiffeEntriesJson,
       spiffeAgentsJson: spiffeAgentsJson,
+      spiffeBrokersJson: spiffeBrokersJson,
       spiffeSelectorText: spiffeSelectorText,
       newUserContainer: newUserContainer,
       CREDENTIAL_CHOICES: CREDENTIAL_CHOICES,
@@ -2916,6 +2951,7 @@ class AdminConsole {
       sessionsAction: sessionsAction,
       signalsAction: signalsAction,
       spiffeAgentsAction: spiffeAgentsAction,
+      spiffeBrokersAction: spiffeBrokersAction,
       spiffeEntriesAction: spiffeEntriesAction,
       spiffeAction: spiffeAction,
       ssfAction: ssfAction,
@@ -7856,15 +7892,25 @@ class AdminConsole {
           'restore button is: having to restart this service to get back to ' +
           'a working credential turns a two-second test into a two-minute ' +
           'one.') +
-          '<form method="post" action="/admin/logout">' +
-          '<input type="hidden" name="action" value="restore-kerberos">' +
-          '<input type="hidden" name="user" value="' + this.esc(wantedUser) +
-          '">' +
-          this.logoutBackField(back) +
-          '<p><button type="submit">Clear the Kerberos sign-out ' +
-          'instant</button> <span class="sub">Tickets issued before it are ' +
-          'accepted again. A fresh AS-REQ does this too, and is the ' +
-          'supported way back.</span></p></form><form method="post" ' +
+          // DEVELOPMENT ONLY (#111): refused in product by the action, and
+          // so not offered there — a note says why in its place.
+          (mode.opensTestControls()
+            ? '<form method="post" action="/admin/logout">' +
+              '<input type="hidden" name="action" ' +
+              'value="restore-kerberos">' +
+              '<input type="hidden" name="user" value="' +
+              this.esc(wantedUser) + '">' +
+              this.logoutBackField(back) +
+              '<p><button type="submit">Clear the Kerberos sign-out ' +
+              'instant</button> <span class="sub">Tickets issued before it ' +
+              'are accepted again. Development mode only. A fresh AS-REQ ' +
+              'does NOT do this: it gets a newer ticket and the older ones ' +
+              'stay refused.</span></p></form>'
+            : this.note('Clearing a Kerberos sign-out instant is a ' +
+              'development-only test control and is not offered in product ' +
+              'mode: the instant stands until the latest a ticket from ' +
+              'before it could still be valid.')) +
+          '<form method="post" ' +
           'action="/admin/logout"><input type="hidden" name="action" ' +
           'value="restore-token"><input type="hidden" name="user" ' +
           'value="' + this.esc(wantedUser) + '">' +
@@ -8184,6 +8230,144 @@ class AdminConsole {
         return self.esc(e);
       }).join('<br><br>') + '</td>' +
       '</tr>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHO MAY ACT FOR WHOM AT WS-TRUST AND THE TOKEN EXCHANGE (#108,
+  // 2026-09-23) — the section of /admin/delegation drawn from
+  // `adminViews.delegationPolicyView()`, the function GET
+  // /admin-api/delegation/policy answers with. READ ONLY here: each value is
+  // an attribute on an application or a person, so it is edited where every
+  // attribute of one is — the application's page (and POST
+  // /admin-api/applications/update) and the person's page (and POST
+  // /admin-api/users/set-not-delegated, /set-may-act). A second form here
+  // would be a second door onto the same attribute, which this console
+  // refuses everywhere else.
+  // ---------------------------------------------------------------------------
+  delegationPolicySection(req, view) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.delegationPolicySection().");
+    const navParams = pageParamsOf(req.query);
+    const pairsNav = self.pageNavPair('/admin/delegation', navParams,
+                                      view.pairs.paging);
+    const intermediariesNav = self.pageNavPair('/admin/delegation', navParams,
+                                               view.intermediaries.paging);
+    const peopleNav = self.pageNavPair('/admin/delegation', navParams,
+                                       view.people.paging);
+    const appLink = function (identifier) {
+      log.debug("Entering appLink().");
+      log.debug("Leaving appLink().");
+      // The application's page is `?application=`, not a path segment:
+      // `/admin/applications/<id>` is no route and 404s, which the console
+      // crawl in `sts_admin_console.js` reports (2026-09-23).
+      return '<a href="' + self.esc('/admin/applications?application=' +
+        encodeURIComponent(String(identifier))) + '"><code>' +
+        self.esc(identifier) + '</code></a>';
+    };
+    const pairRows = view.pairs.shown.map(function (pair) {
+      return '<tr><td><code>' + self.esc(pair.mechanism) + '</code></td>' +
+        '<td class="who">' + appLink(pair.intermediary) +
+        (pair.impersonates ? '<br><span class="state-expired">may ' +
+          'impersonate</span>' : '') + '</td>' +
+        '<td class="who"><code>' + self.esc(pair.target) + '</code>' +
+        (pair.targetApplication && pair.targetApplication !== pair.target
+          ? '<br><span class="state-none">the application ' +
+            self.esc(pair.targetApplication) + '</span>' : '') + '</td>' +
+        '<td class="who"><code>' + self.esc(pair.attribute) + '</code><br>' +
+        '<span class="state-none">on the ' + self.esc(pair.setOnRole) +
+        ', ' + appLink(pair.setOn) + '</span></td>' +
+        '<td>' + (pair.subjectGroups.length
+          ? pair.subjectGroups.map(function (dn) {
+            return '<code>' + self.esc(dn) + '</code>';
+          }).join('<br>')
+          : 'anybody not protected') + '</td>' +
+        '<td>' + (pair.warning
+          ? '<span class="state-expired">' + self.esc(pair.warning) +
+            '</span>'
+          : '<span class="state-valid">nothing else is missing</span>') +
+        '</td></tr>';
+    }).join('');
+    const intermediaryRows = view.intermediaries.shown.map(function (row) {
+      return '<tr><td class="who">' + appLink(row.application) + '</td>' +
+        '<td>' + (row.trustedToImpersonate
+          ? '<code>appTrustedToImpersonate</code> TRUE' : '&mdash;') +
+        '</td><td>' + (row.subjectGroups.length
+          ? row.subjectGroups.map(function (dn) {
+            return '<code>' + self.esc(dn) + '</code>';
+          }).join('<br>') : 'anybody not protected') + '</td></tr>';
+    }).join('');
+    const peopleRows = view.people.shown.map(function (row) {
+      return '<tr><td class="who"><a href="' + self.esc('/admin/users?user=' +
+        encodeURIComponent(String(row.username))) + '">' +
+        self.esc(row.username) + '</a></td><td>' +
+        (row.notDelegated ? '<code>stsNotDelegated</code> — nobody may act ' +
+          'for them' : '&mdash;') + '</td><td>' +
+        (row.mayAct ? '<code>' + self.esc(row.mayAct) + '</code>'
+                    : '&mdash;') + '</td></tr>';
+    }).join('');
+    const register = view.register;
+    log.debug("Leaving AdminConsole.delegationPolicySection().");
+    return '<h2 id="delegation-policy">Who may act for whom &mdash; WS-Trust ' +
+      'and token exchange</h2>' +
+      self.note('<strong>Kerberos\'s model, on application entries</strong> ' +
+      '(#108). A WS-Trust <code>OnBehalfOf</code> or <code>ActAs</code> and ' +
+      'an RFC 8693 token exchange are decided from four attributes: ' +
+      '<code>appAllowedToDelegateTo</code> on the INTERMEDIARY names the ' +
+      'targets it may reach as somebody else (the analogue of ' +
+      '<code>msDS-AllowedToDelegateTo</code>); ' +
+      '<code>appAllowedToActOnBehalfOf</code> on the TARGET names the ' +
+      'intermediaries it accepts (the resource-based one); ' +
+      '<code>appDelegationSubjectGroup</code> narrows who the intermediary ' +
+      'may act for; and <code>appTrustedToImpersonate</code> lets it ' +
+      'IMPERSONATE — <code>OnBehalfOf</code>, or an exchange with no ' +
+      '<code>actor_token</code> — as well as delegate. Only an application ' +
+      'may be an intermediary. A person carrying ' +
+      '<code>stsNotDelegated</code>, or a member of ' +
+      (register.protectedGroups.length
+        ? register.protectedGroups.map(function (one) {
+          return '<code>' + self.esc(one) + '</code>';
+        }).join(' or ')
+        : 'a console roster') +
+      ', is never delegated. When the attributes allow, the issuance policy ' +
+      'is asked about action-id <code>delegate</code> and only a Deny ' +
+      'refuses. ' + (register.enforced
+        ? '<strong>This realm is in product mode, so this is ' +
+          'ENFORCED</strong>: ' +
+          'a refusal is <code>wst:RequestFailed</code>, ' +
+          '<code>invalid_request</code> or <code>invalid_target</code>.'
+        : '<strong>This realm is in development mode, so nothing is ' +
+          'refused</strong>: the policy is asked and each act above says ' +
+          'what WOULD have been refused in product.') +
+      ' Edit an application\'s four on its own page, and a person\'s two ' +
+      'on theirs. <code>GET /admin-api/delegation/policy</code> is this ' +
+      'section as JSON.') +
+      pairsNav.head +
+      '<table><tr><th>Mechanism</th><th>Intermediary (who acts)</th>' +
+      '<th>Target (what is reached)</th><th>Attribute, and where it ' +
+      'lives</th><th>May act for</th><th>Anything missing?</th></tr>' +
+      (pairRows || '<tr><td colspan="6">No application here names a ' +
+        'delegation target or an intermediary it accepts, so every ' +
+        'WS-Trust and token-exchange delegation is ' +
+        (register.enforced ? 'refused' : 'one product would refuse') +
+        '.</td></tr>') + '</table>' + pairsNav.foot +
+      '<h3>Intermediaries</h3>' +
+      intermediariesNav.head +
+      '<table><tr><th>Application</th><th>May impersonate</th>' +
+      '<th>May act for</th></tr>' +
+      (intermediaryRows || '<tr><td colspan="3">No application carries ' +
+        '<code>appTrustedToImpersonate</code> or a subject group.</td></tr>') +
+      '</table>' + intermediariesNav.foot +
+      '<h3>People</h3>' +
+      self.note('<code>stsMayAct</code> is a person\'s own choice of the ' +
+      'one party who may act for them; the access tokens issued about them ' +
+      'carry it as RFC 8693\'s <code>may_act</code>, and a token exchange ' +
+      'of one by anybody else is refused in every mode.') +
+      peopleNav.head +
+      '<table><tr><th>Person</th><th>Cannot be delegated</th>' +
+      '<th>May act for them (stsMayAct)</th></tr>' +
+      (peopleRows || '<tr><td colspan="3">Nobody carries either flag.' +
+        '</td></tr>') + '</table>' + peopleNav.foot;
   }
 
   // ---------------------------------------------------------------------------
@@ -11471,7 +11655,7 @@ class AdminConsole {
   // ===========================================================================
   mfaSection(row, key, state, back) {
     const { log, credentials, totp, webauthnPolicy, backupCodes,
-            adminViews } = this.deps;
+            adminViews, mode } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.mfaSection(). key=" + key);
     const heading = '<h2>Second factors, and what this person can sign in ' +
@@ -11650,6 +11834,7 @@ class AdminConsole {
         // both, and the cell rendered the literal characters `<code title=…>`.
         '<td>' + self.shortened(one.credentialId || '', 24) + '</td>' +
         '<td class="num">' + self.esc(String(one.signCount || 0)) + '</td>' +
+        '<td>' + self.attestationCell(one.attestation, one.aaguid) + '</td>' +
         '<td>' +
         self.esc(one.enrolledAt ? self.whenText(one.enrolledAt) : '—') +
         '</td><td>' + (state.write
@@ -11670,7 +11855,8 @@ class AdminConsole {
     const keysBlock = '<h3>Security keys (WebAuthn)</h3>' +
       (allKeys.length
         ? '<table><tr><th>Label</th><th>Role</th><th>Credential id</th>' +
-          '<th class="num">Sign count</th><th>Enrolled</th><th></th></tr>' +
+          '<th class="num">Sign count</th><th>Attestation</th>' +
+          '<th>Enrolled</th><th></th></tr>' +
           allKeys.map(keyRow).join('') + '</table>' +
           this.note('<strong>The sign count is WebAuthn\'s replay ' +
           'defence</strong>: an authenticator\'s counter only ever goes up, ' +
@@ -11887,6 +12073,135 @@ class AdminConsole {
         : this.note('Making or revoking one needs <strong>Admin ' +
                     'Write</strong>.'));
 
+    // --- identity verifications (#127, 2026-09-23) ------------------------
+    // WHAT A CLIENT'S `verified_claims` REQUEST IS ANSWERED FROM (OpenID
+    // Connect for Identity Assurance 1.0). The list — framework, evidence,
+    // the claims covered, where it came from — with a Remove per row, and a
+    // form that records one: a single evidence element as flat fields, which
+    // `identity_assurance.ts`'s `fromForm()` turns into the element the API
+    // takes as JSON. With no script, every type's fields are drawn and those
+    // of the types not chosen are ignored. `POST
+    // /admin-api/users/record-verification` and `remove-verification` are
+    // the same two acts (rule 7), and `GET /admin-api/users/verifications`
+    // is this list, paged.
+    const ida = adminViews.verificationsJson({ user: key, per: 100 });
+    const option = function (value, label?) {
+      log.debug("Entering option().");
+      log.debug("Leaving option().");
+      return '<option value="' + self.esc(value) + '">' +
+             self.esc(label || value) + '</option>';
+    };
+    const select = function (name, values, blank?) {
+      log.debug("Entering select().");
+      log.debug("Leaving select().");
+      return '<select name="' + name + '">' +
+             (blank ? option('', blank) : '') +
+             values.map(function (one) {
+               return option(one);
+             }).join('') + '</select>';
+    };
+    const field = function (label, name, placeholder?) {
+      log.debug("Entering field().");
+      log.debug("Leaving field().");
+      return '<label>' + self.esc(label) + ' <input type="text" name="' +
+             name + '" maxlength="256"' + (placeholder
+               ? ' placeholder="' + self.esc(placeholder) + '"' : '') +
+             '></label> ';
+    };
+    const idaRow = function (one) {
+      log.debug("Entering idaRow().");
+      const v = one.verification || {};
+      log.debug("Leaving idaRow().");
+      return '<tr><td><code>' + self.esc(v.trust_framework || '') +
+        '</code>' + (v.assurance_level
+          ? ' (' + self.esc(v.assurance_level) + ')' : '') + '</td><td>' +
+        self.esc((v.evidence || []).map(function (e) {
+          const detail = (e.document_details && e.document_details.type) ||
+                         (e.record && e.record.type) ||
+                         (e.attestation && e.attestation.type) ||
+                         e.signature_type || '';
+          return e.type + (detail ? ' — ' + detail : '');
+        }).join('; ') || 'none') + '</td><td>' +
+        self.esc(Object.keys(one.claims || {}).join(', ')) + '</td><td>' +
+        self.esc(v.time ? self.whenText(v.time) : '—') + '</td><td>' +
+        self.esc(one.source || '') + (one.by ? ' (' + self.esc(one.by) +
+                                      ')' : '') + '</td><td>' +
+        (state.write
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" value="remove-verification">' +
+            '<input type="hidden" name="user" value="' + self.esc(key) +
+            '"><input type="hidden" name="id" value="' + self.esc(one.id) +
+            '"><input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + self.esc(back) +
+            '"><button class="danger" type="submit">Remove</button></form>'
+          : '') + '</td></tr>';
+    };
+    const verificationsBlock = '<h3>Identity verifications</h3>' +
+      this.note('What a client asking for <code>verified_claims</code> ' +
+                '(OpenID Connect for Identity Assurance 1.0) is answered ' +
+                'from. A claim is released as verified only while this ' +
+                'entry still holds the value that was verified. ' +
+                (mode.inventsClaimValues()
+                  ? 'In development mode a person with none is answered ' +
+                    'with an invented one under <code>urn:sts:demo</code>.'
+                  : 'Nothing is released for a person with none.')) +
+      (ida.verifications.length
+        ? '<table><tr><th>Trust framework</th><th>Evidence</th>' +
+          '<th>Claims</th><th>Verified</th><th>Source</th><th></th></tr>' +
+          ida.verifications.map(idaRow).join('') + '</table>'
+        : this.note('<strong>None recorded.</strong>')) +
+      (state.write && ida.trustFrameworks.length
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="record-verification">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          '<input type="hidden" name="from" value="user">' +
+          '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
+          '<div class="formrow"><label>Trust framework ' +
+          select('trust_framework', ida.trustFrameworks) + '</label> ' +
+          field('Assurance level', 'assurance_level') +
+          field('Verified at', 'time', '2026-09-23T10:00:00Z (now if empty)') +
+          '</div><div class="formrow"><label>Evidence ' +
+          select('evidence_type', ida.evidenceTypes, 'none') + '</label> ' +
+          '<label>Check method ' + select('check_method', ida.checkMethods,
+                                          'none') + '</label></div>' +
+          '<div class="formrow"><strong>document:</strong> <label>Type ' +
+          select('document_type', ida.documentTypes) + '</label> ' +
+          field('Number', 'document_number') +
+          field('Issuer', 'issuer_name') +
+          field('Issuer country', 'issuer_country', 'DEU') +
+          field('Issued', 'date_of_issuance', 'YYYY-MM-DD') +
+          field('Expires', 'date_of_expiry', 'YYYY-MM-DD') + '</div>' +
+          '<div class="formrow"><strong>electronic_record:</strong> ' +
+          '<label>Type ' + select('record_type', ida.electronicRecordTypes) +
+          '</label> ' + field('Source', 'source_name') + '</div>' +
+          '<div class="formrow"><strong>vouch:</strong> <label>Type ' +
+          select('attestation_type', ida.attestationTypes) + '</label> ' +
+          field('Reference', 'reference_number') +
+          field('Voucher', 'voucher_name') + '</div>' +
+          '<div class="formrow"><strong>electronic_signature:</strong> ' +
+          field('Signature type', 'signature_type') +
+          field('Issuer', 'signature_issuer') +
+          field('Serial number', 'serial_number') +
+          field('Created', 'created_at', '2026-09-23T10:00:00Z') + '</div>' +
+          '<div class="formrow">Claims verified: ' +
+          ida.verifiableClaims.map(function (claim) {
+            // One field per claim, as the app-password doors are: a form
+            // body keeps only the last of a repeated name.
+            return '<label><input type="checkbox" name="claim_' +
+                   self.esc(claim) + '" value="on"> ' + self.esc(claim) +
+                   '</label> ';
+          }).join('') + '</div><div class="formrow"><button ' +
+          'type="submit" title="' + this.esc('Records the verification ' +
+            'with each ticked claim\'s value as the entry holds it now.') +
+          '">Record a verification</button></div></form>'
+        : (state.write
+            ? this.note('No trust framework is configured ' +
+                        '(<code>oauth2.idaTrustFrameworks</code> on <a ' +
+                        'href="/admin/oauth2">OAuth 2.0 / OIDC</a>), so ' +
+                        'none can be recorded.')
+            : this.note('Recording or removing one needs <strong>Admin ' +
+                        'Write</strong>.')));
+
     const html = heading +
       this.note('Everything in this section is about <code>' +
                 this.esc(row.name) +
@@ -11896,7 +12211,8 @@ class AdminConsole {
       'href="/admin/totp">TOTP MFA</a> and <a ' +
       'href="/admin/webauthn">WebAuthn</a> under Protocols; this is who ' +
       'holds what.') +
-      wayIn + totpBlock + keysBlock + recoveryBlock + appPasswordsBlock;
+      wayIn + totpBlock + keysBlock + recoveryBlock + appPasswordsBlock +
+      verificationsBlock;
 
     log.debug("Leaving AdminConsole.mfaSection(). totp=" + mech.totp + ", " +
               allKeys.length +
@@ -12510,16 +12826,93 @@ class AdminConsole {
              'was taken over</option><option value="bulk-account">' +
              'bulk-account — one of many created in bulk</option>' +
              '</select></label></div>'));
+    // WHO MAY ACT FOR THEM (#108, 2026-09-23): the person's half of the
+    // WS-Trust and token-exchange delegation policy. POST
+    // /admin-api/users/set-not-delegated and /set-may-act are the same acts.
+    const facts = this.deps.credentials.delegationFactsFor(key) || {};
+    const delegationBlock = '<h3 id="delegation">Who may act for them</h3>' +
+      this.note('<code>stsNotDelegated</code> is Kerberos\'s ' +
+        '<code>NOT_DELEGATED</code> for WS-Trust <code>OnBehalfOf</code> / ' +
+        '<code>ActAs</code> and the RFC 8693 token exchange: while it is ' +
+        'set nobody may act for them, whatever any application\'s ' +
+        'delegation attributes say (enforced in product mode; see ' +
+        '<a href="/admin/delegation#delegation-policy">the policy</a>). It ' +
+        'is ' + (facts.notDelegated ? '<strong>set</strong>' : 'not set') +
+        '. <code>stsMayAct</code> names the one party who may act for them ' +
+        '— their access tokens carry it as <code>may_act</code> — and is ' +
+        (facts.mayAct ? '<code>' + this.esc(facts.mayAct) + '</code>'
+                      : 'empty') + '.') +
+      form('set-not-delegated', facts.notDelegated
+        ? 'Allow them to be delegated' : 'Never delegate this person',
+           'Writes stsNotDelegated.', !facts.notDelegated,
+           '<input type="hidden" name="value" value="' +
+           (facts.notDelegated ? 'false' : 'true') + '">') +
+      form('set-may-act', 'Set who may act for them',
+           'Writes stsMayAct; empty clears it.', false,
+           '<div class="formrow"><label>Delegate DN <input type="text" ' +
+           'name="delegate" size="60" value="' +
+           this.esc(facts.mayAct || '') + '" placeholder="uid=bob,ou=users,' +
+           '... or cn=app,ou=applications,..."></label></div>');
     log.debug("Leaving AdminConsole.userCredentialControlsSection().");
-    return heading + state + signalsNote + account + reset + passkeys + mfa;
+    return heading + state + signalsNote + account + reset + passkeys + mfa +
+      delegationBlock;
   }
 
-  userDetailPage(req, key) {
+  // -------------------------------------------------------------------------
+  // THE PERSON'S CURRENT RISK, LARGE AND IN COLOUR (#62; rcbj asked for it
+  // exactly so): the first thing on their page, the level in the colour an
+  // administrator reads at a glance — green, amber, red, grey for nobody
+  // assessed yet — with the score, the level it came from, when it moved,
+  // what moved it, and a link to the assessments behind it. No script: a
+  // styled block, as every tile on this page is.
+  // -------------------------------------------------------------------------
+  private riskBadge(standing: any): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.riskBadge().");
+    const level = standing ? String(standing.level || 'UNSCORED')
+                           : 'UNKNOWN';
+    const palette: Record<string, string[]> = {
+      LOW: ['#188038', '#ffffff'], MEDIUM: ['#f9ab00', '#202124'],
+      HIGH: ['#d93025', '#ffffff'], UNSCORED: ['#5f6368', '#ffffff'],
+      UNKNOWN: ['#dadce0', '#202124'] };
+    const colours = palette[level] || palette.UNKNOWN;
+    const when = function (ms: number): string {
+      return ms ? new Date(ms).toISOString().replace('T', ' ').slice(0, 16) +
+                  ' UTC' : '';
+    };
+    const facts = standing
+      ? 'score ' + this.esc(Number(standing.score).toPrecision(3)) +
+        (standing.previousLevel ? ' &middot; was ' +
+          this.esc(standing.previousLevel) : '') +
+        (standing.crossedAt ? ' &middot; since ' +
+          this.esc(when(standing.crossedAt)) : '') +
+        (standing.reason ? '<br>because: ' + this.esc(standing.reason) : '')
+      : 'This person has not been assessed: nobody has signed in as them ' +
+        'since risk scoring began, or it is off.';
+    log.debug("Leaving AdminConsole.riskBadge(). " + level + ".");
+    return '<div class="risk-badge" style="display:flex;align-items:center;' +
+      'gap:28px;margin:14px 0 18px;padding:20px 28px;border-radius:14px;' +
+      'background:' + colours[0] + ';color:' + colours[1] + '">' +
+      '<div style="font-size:3em;font-weight:800;letter-spacing:.05em;' +
+      'line-height:1">' + this.esc(level) + '</div>' +
+      '<div style="font-size:1.05em;line-height:1.5"><div style="font-size:' +
+      '1.3em;font-weight:700">Current risk</div>' + facts +
+      '<div style="margin-top:6px"><a style="color:inherit;font-weight:600" ' +
+      'href="' + this.esc(standing && standing.subject
+        ? '/admin/risk?subject=' + encodeURIComponent(standing.subject) +
+          '#risk-assessments'
+        : '/admin/risk') + '">Assessments &rarr;</a></div>' +
+      '</div></div>';
+  }
+
+  // `risk` as `userDetailJson()` takes it; undefined draws no badge, because
+  // nobody read the standing.
+  userDetailPage(req, key, risk?: any) {
     const { log, adminViews, gateStateFor, queryWith, DEFAULT_BLOCKS_PER_PAGE,
             DEFAULT_PER_PAGE } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.userDetailPage(). key=" + key);
-    const view = adminViews.userDetailJson(req, key);
+    const view = adminViews.userDetailJson(req, key, risk);
     if (!view) {
       log.debug("Leaving AdminConsole.userDetailPage(). Nothing known.");
       return null;
@@ -12573,6 +12966,7 @@ class AdminConsole {
                                          artifactPage.paging);
 
     const inner = this.messagesOf(req) +
+      (risk === undefined ? '' : this.riskBadge(risk)) +
       '<div class="tiles">' +
         this.tile(row.authentications, 'authentications') +
         this.tile(row.protocols.length, 'protocols') +
@@ -13252,12 +13646,12 @@ class AdminConsole {
     };
   }
 
-  usersView(req) {
+  usersView(req, risk?: any) {
     const { log, stats, queryWith } = this.deps;
     log.debug("Entering AdminConsole.usersView().");
     const wantedUser = String(req.query.user || '').trim();
     if (wantedUser) {
-      const detail = this.userDetailPage(req, wantedUser);
+      const detail = this.userDetailPage(req, wantedUser, risk);
       if (!detail) {
         // Not a 404: this service has simply never seen the name, or has
         // forgotten it to the cap since the link was drawn. Both are answers
@@ -18223,7 +18617,22 @@ class AdminConsole {
     const paging = view.paging;
     const filterParams = view.filterParams;
     const nav = this.pageNavPair('/admin/saml2', filterParams, paging);
+    // The refused-lookup list's own pager (#112), carrying every other
+    // parameter so the service-provider table stays where it was.
+    const refused = view.refused;
+    const refusedNav = this.pageNavPair('/admin/saml2',
+                                        adminViews.pageParamsOf(req.query),
+                                        refused.paging);
     const listView = this.listViewOf('/admin/saml2', req.query);
+    const refusedRows = refused.shown.map(function (row) {
+      return '<tr><td><code>' + self.esc(row.entityId) + '</code></td><td>' +
+             self.esc(row.why) + '</td><td>' + self.esc(String(row.count)) +
+             '</td><td>' + self.esc(row.firstAt.replace('T', ' ')
+                                      .slice(0, 19)) +
+             '</td><td>' + self.esc(row.lastAt.replace('T', ' ')
+                                      .slice(0, 19)) +
+             '</td></tr>';
+    }).join('');
     const rows = paged.shown.map(function (row) {
       const facts = saml2Facts(base, row.identifier);
       const href = '/admin/saml2' + queryWith(listView, { sp: row.identifier });
@@ -18258,10 +18667,12 @@ class AdminConsole {
       this.note('<strong>Every service provider gets its own metadata ' +
       'document.</strong> The identity provider names itself differently to ' +
       'each one and publishes endpoints scoped to it, which is what Okta and ' +
-      'Ping do. <strong>And it is minted for anything asked for</strong> — a ' +
-      'service provider does not have to appear here before it can be ' +
-      'pointed at this service, because asking for its metadata is what ' +
-      'creates it. The unscoped document at <a ' +
+      'Ping do. <strong>In development it is minted for anything asked ' +
+      'for</strong> — a service provider does not have to appear here before ' +
+      'it can be pointed at this service, because asking for its metadata is ' +
+      'what creates it. <strong>In product it is not</strong>: a name that ' +
+      'is not registered below is a 404 at every per-service-provider ' +
+      'path. The unscoped document at <a ' +
       'href="/saml2/metadata">/saml2/metadata</a> works too and names one ' +
       'identity provider for everybody.') +
       '<p class="sub"><a href="/saml2">what the profile is</a> &middot; <a ' +
@@ -18292,10 +18703,12 @@ class AdminConsole {
           (needle ? ' under that filter' : '') + '. Start one at <a ' +
           'href="/saml2/sp">the mock service provider</a>, or register an ' +
           'entityID below.')) +
-      '<h2>Register a service provider</h2><p class="sub">Optional, and it ' +
-      'changes nothing about whether a request is accepted — an entityID is ' +
-      'accepted whether or not it is here. What it buys is a metadata ' +
-      'document to hand somebody before they have sent anything.</p><form ' +
+      '<h2>Register a service provider</h2><p class="sub">Optional in ' +
+      'development, where an entityID is accepted whether or not it is here ' +
+      'and what this buys is a metadata document to hand somebody before ' +
+      'they have sent anything. In product it is how a service provider ' +
+      'comes to exist: its metadata and endpoints answer only once it is ' +
+      'registered.</p><form ' +
       'method="post" action="/admin/saml2"><div class="formrow"><input ' +
       'type="hidden" name="action" value="register"><label ' +
       'for="new_sp">entityID</label><input type="text" id="new_sp" name="sp" ' +
@@ -18308,12 +18721,29 @@ class AdminConsole {
       'the entry if the answer describes it, and consumes the document — ' +
       'held to the realm\'s metadata trust anchors when it has any. A ' +
       'request from a service provider with no metadata starts the same ' +
-      'lookup in the background.</p><form method="post" ' +
+      'lookup in the background. <strong>In product mode the answer must ' +
+      'verify against a trust anchor</strong> ' +
+      '(<code>saml2.metadataTrustAnchors</code>): with none, this import is ' +
+      'refused unless <code>saml2.mdqImportWithoutAnchors</code> is on — ' +
+      'and then the document is consumed with no signature check — and a ' +
+      'lookup a request starts for an unknown entityID is not made at ' +
+      'all.</p><form method="post" ' +
       'action="/admin/saml2"><div class="formrow"><input type="hidden" ' +
       'name="action" value="mdq-import"><label for="mdq_sp">entityID</label>' +
       '<input type="text" id="mdq_sp" name="sp" ' +
       'placeholder="https://sp.example.com/saml"><button>Import</button>' +
       '</div></form>' +
+      '<h2>Metadata Query lookups refused</h2><p ' +
+      'class="sub">EntityIDs a request asked to be registered through the ' +
+      'responder and was not (product mode): no trust anchor, so nothing ' +
+      'was fetched, or an answer that did not verify against one. Newest ' +
+      'first; this process\'s record, since it started. To register one, ' +
+      'import it above or register it by hand.</p>' +
+      (refusedRows
+        ? refusedNav.head + '<table><thead><tr><th>entityID</th><th>Why' +
+          '</th><th>Times</th><th>First</th><th>Last</th></tr></thead>' +
+          '<tbody>' + refusedRows + '</tbody></table>' + refusedNav.foot
+        : '<p class="sub">None.</p>') +
       this.configFormsFor('/admin/saml2') +
       this.note('These decide the SHAPE of an assertion — who issued it, how ' +
       'long it is good for, what is signed. <a ' +
@@ -24099,6 +24529,137 @@ class AdminConsole {
     return { html: html, json: info };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE ATTESTATION POLICY (#105): what `authn/webauthn_attestation.ts` does
+  // with a registration's statement, and where its trust anchors come from —
+  // this realm's `webauthn.attestationTrustAnchors` and the FIDO Metadata
+  // Service BLOB, whose state is read from what this process holds
+  // (`risk_datasets.mdsSnapshot()`, since a status block is drawn
+  // synchronously). The BLOB is uploaded on Monitoring → Risk and its
+  // `/admin-api/risk` twin, where #62 P5 put it; it is not uploaded twice.
+  // ---------------------------------------------------------------------------
+  private attestationPolicyBlock(info) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.attestationPolicyBlock().");
+    let mds = null;
+    try {
+      mds = require('../risk/risk_datasets').mdsSnapshot();
+    } catch (e) {
+      log.debug("Caught in AdminConsole.attestationPolicyBlock(): " +
+                ((e && e.message) || e));
+      // Drawn as "not read": the policy rows above do not depend on it.
+      mds = null;
+    }
+    info.mds = mds;
+    const policyText = {
+      off: 'nothing is verified — the format is recorded and the ' +
+           'statement believed. Development only.',
+      'verify-if-present': 'every statement that arrives is VERIFIED by ' +
+           'its format\'s procedure and refused if it does not verify; a ' +
+           'chain is checked against the anchors below, and a model the ' +
+           'FIDO Metadata Service lists must chain to the roots it lists ' +
+           'and is refused when MDS reports it compromised. ' +
+           '<code>none</code> and self attestation are accepted as ' +
+           'untrusted — which is what a synced passkey sends.',
+      'require-trusted': 'only a statement that CHAINS TO AN ANCHOR is ' +
+           'accepted: no <code>none</code>, no self attestation, and so no ' +
+           'synced passkey.'
+    };
+    const html = '<h3>The attestation statement</h3>' +
+      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      '<tr><th>Policy</th><td><code>' + this.esc(info.attestationPolicy) +
+        '</code>' + (info.attestationPolicyConfigured === 'by-mode'
+          ? ' (<code>by-mode</code>)' : '') + ' — ' +
+        (policyText[info.attestationPolicy] || '') +
+        (info.attestationDemandsTrust &&
+         info.attestationPolicy !== 'require-trusted'
+          ? ' <strong>A trusted statement is required anyway</strong>, by ' +
+            'the allow-list, certification level or FIPS rows below.'
+          : '') + '</td></tr>' +
+      '<tr><th>Formats verified</th><td>' +
+        info.attestationFormats.map((f) => {
+          return '<code>' + this.esc(f) + '</code>';
+        }).join(', ') + ' — all eight of WebAuthn Level 3 section 8.' +
+        '</td></tr>' +
+      '<tr><th>Trust anchors</th><td>' +
+        this.esc(String(info.attestationTrustAnchors)) + ' configured ' +
+        '(<code>webauthn.attestationTrustAnchors</code>), and the roots ' +
+        'the FIDO Metadata Service lists for each model.</td></tr>' +
+      '<tr><th>FIDO Metadata Service</th><td>' +
+        (!mds || !mds.known
+          ? 'not read in this process yet — the next draw has it.'
+          : (mds.active
+              ? 'BLOB <code>' + this.esc(String(mds.serial)) + '</code> (' +
+                this.esc(String(mds.rows)) + ' key(s)), next due ' +
+                this.esc(mds.nextUpdateAt
+                  ? new Date(mds.nextUpdateAt).toISOString().slice(0, 10)
+                  : 'unstated') +
+                (mds.stale ? ' — <strong>STALE</strong>, so no model is ' +
+                             'known from it' : '')
+              : 'no BLOB is active, so no model\'s roots or status are ' +
+                'known.') +
+            ' ' + (mds.url
+              ? 'Downloaded from <code>' + this.esc(mds.url) + '</code> by ' +
+                'the <code>' + this.esc(mds.job) + '</code> job.'
+              : 'Uploaded on <a href="/admin/risk">Monitoring → Risk</a> ' +
+                '(<code>risk.mdsUrl</code> is empty).')) +
+        '</td></tr>' +
+      '<tr><th>Allowed models</th><td>' +
+        (info.attestationAllowedAaguids.length
+          ? info.attestationAllowedAaguids.map((a) => {
+            return '<code>' + this.esc(a) + '</code>';
+          }).join(', ')
+          : 'any the policy accepts') + '</td></tr>' +
+      '<tr><th>Certification</th><td>at least <code>' +
+        this.esc(info.attestationMinCertificationLevel) + '</code>' +
+        (info.attestationRequireFips ? ', and FIPS 140 certified' : '') +
+        '</td></tr>' +
+      '<tr><th>android-safetynet</th><td>' +
+        (info.attestationAllowSafetynet
+          ? '<strong>trusted</strong> — deprecated, and Google no longer ' +
+            'runs the service'
+          : 'verified and recorded as untrusted (deprecated)') + '</td></tr>' +
+      '<tr><th>android-key</th><td>' +
+        (info.attestationAndroidSoftwareKeys
+          ? 'the software- and hardware-enforced lists'
+          : 'the hardware-enforced (TEE) list only') + '</td></tr>' +
+      '</table>' +
+      this.note('What a key\'s statement proved is on its row under <a ' +
+      'href="/admin/users">Users</a> and on <code>/portal/keys</code>: ' +
+      'the format, whether it was verified and trusted, and the model the ' +
+      'metadata names.');
+    log.debug("Leaving AdminConsole.attestationPolicyBlock().");
+    return html;
+  }
+
+  // A key's attestation, for its row (#105): what the statement proved, or
+  // "claimed" where nothing was verified — the AAGUID then is only what the
+  // authenticator data said.
+  attestationCell(att, aaguid) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.attestationCell().");
+    if (!att || !att.verified) {
+      log.debug("Leaving AdminConsole.attestationCell(). Not verified.");
+      return '<span class="state-none" title="' +
+        this.esc('Nothing about the authenticator was verified' +
+                 (att && att.format ? ' (format ' + att.format + ', policy ' +
+                  att.policy + ')' : '') + '. The AAGUID, where there is ' +
+                 'one, is what the authenticator claimed.') + '">claimed' +
+        (aaguid ? ' <code>' + this.esc(aaguid) + '</code>' : '') + '</span>';
+    }
+    log.debug("Leaving AdminConsole.attestationCell().");
+    return '<span class="' + (att.trusted ? 'state-valid' : 'state-none') +
+      '" title="' + this.esc('Format ' + att.format + ', type ' + att.type +
+      (att.trusted ? ', chained to ' + (att.anchor === 'mds'
+        ? 'a FIDO Metadata Service root' : 'a configured anchor')
+        : ', not chained to an anchor') +
+      (att.certificationLevel ? ', ' + att.certificationLevel : '') +
+      '.') + '">' + (att.trusted ? 'verified, trusted' : 'verified, ' +
+      'untrusted') + '</span>' +
+      (att.model ? ' — ' + this.esc(att.model) : '') +
+      ' <code>' + this.esc(att.format) + '</code>';
+  }
+
   webauthnMechanismBlock() {
     const { log, webauthnPolicy } = this.deps;
     const self = this;
@@ -24148,12 +24709,14 @@ class AdminConsole {
             'says anything about.'
           : 'requested only. Nothing is refused on it.') + '</td></tr>' +
       '<tr><th>Attestation</th><td><code>' + this.esc(info.attestation) +
-      '</code>, ' +
-        'conveyance requested. <strong>NO ATTESTATION STATEMENT IS VERIFIED ' +
-        'HERE whatever is asked for</strong> — there is no metadata service, ' +
-        'no vendor trust anchor and no model allow-list — so the statement ' +
-        'is parsed, reported and believed. Formats recognised: ' +
-        this.esc(info.attestationFormats.join(', ')) + '.</td></tr>' +
+      '</code>, conveyance requested' +
+        (info.attestationDemandsTrust && info.attestation !== 'enterprise' &&
+         info.attestation !== 'direct'
+          ? ' — and <strong>sent as <code>direct</code></strong>, because ' +
+            'this realm requires a trusted statement and a browser asked ' +
+            'for less may strip it'
+          : '') +
+        '. What is done with the statement is the next section.</td></tr>' +
       '<tr><th>Timeout</th><td>' + this.esc(String(info.timeoutMs)) + 'ms, ' +
         'and it is a HINT: the specification lets a client clamp it and ' +
         'browsers do. The pending step this service holds expires on its own ' +
@@ -24161,6 +24724,7 @@ class AdminConsole {
         'counter</th><td>' + this.esc(info.signatureCounter) +
         '</td></tr>' +
       '</table>' +
+      this.attestationPolicyBlock(info) +
       '<h3>CTAP</h3>' +
       this.note('These three are what a browser translates into what it asks ' +
       'the AUTHENTICATOR for. <strong>They are requests and not ' +
@@ -24281,6 +24845,41 @@ class AdminConsole {
     const row = (what: string, answer: string) => {
       return '<tr><th>' + this.esc(what) + '</th><td>' + answer + '</td></tr>';
     };
+    // THE KRBTGT KEY (#169): its kvno, last rotation and next scheduled one,
+    // drawn here as well as on Principals (where its controls are) because
+    // it is the KDC's state somebody comes to this page to find. Read
+    // lazily: the view lives in `admin-core/`, loaded after this file.
+    let krbtgt: any = null;
+    try {
+      krbtgt = krb5Principals.kerberosRealmOf().enabled
+        ? require('../admin-core/admin_views').krbtgtView() : null;
+    } catch (e) {
+      log.debug("Caught in AdminConsole.kerberosPreauthStatusBlock(): " +
+                ((e && e.message) || e));
+      krbtgt = null;
+    }
+    const krbtgtHtml = !krbtgt ? '' :
+      '<h3>The krbtgt key</h3>' +
+      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      row('Key from', this.esc(krbtgt.source === 'stored'
+        ? 'a random key stored on the directory'
+        : krbtgt.source === 'password'
+          ? 'krb5.krbtgtPassword (development)'
+          : krbtgt.source === 'unreadable'
+            ? 'a stored record this service cannot open — no TGT is issued'
+            : 'nothing yet — no TGT is issued')) +
+      row('kvno', this.esc(krbtgt.kvno == null ? '—' : String(krbtgt.kvno))) +
+      row('Last rotated', this.esc(krbtgt.lastRotatedAt || 'never')) +
+      row('Next scheduled rotation', krbtgt.scheduled
+        ? this.esc(String(krbtgt.nextDueAt || '—'))
+        : 'none — ' + this.esc(String(krbtgt.offReason || ''))) +
+      row('Previous versions kept', this.esc((krbtgt.retained || [])
+        .map(function (one: any) {
+          return 'kvno ' + one.kvno + ' until ' + one.expiresAt;
+        }).join('; ') || 'none')) +
+      '</table>' +
+      '<p><a href="/admin/kerberos/principals">Rotate it on ' +
+      'Principals</a></p>';
     const html =
       '<h3>Pre-authentication, and a second factor</h3>' +
       '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
@@ -24311,8 +24910,9 @@ class AdminConsole {
           'service tickets; <code>/authn/spnego</code> counts it as the ' +
           'second factor (<code>amr</code> pwd, otp; <code>acr</code> mfa)'
         : '—') +
-      '</table>';
-    const json = Object.assign({ passwordAloneRefused: refuses }, info);
+      '</table>' + krbtgtHtml;
+    const json = Object.assign({ passwordAloneRefused: refuses }, info,
+                               { krbtgt: krbtgt });
     log.debug("Leaving AdminConsole.kerberosPreauthStatusBlock().");
     return { html: html, json: json };
   }
@@ -24833,6 +25433,8 @@ class AdminConsole {
       '<th>What a caller presents</th></tr>' +
       this.spiffeListenerRows(json.listeners.workloadApi, 'Workload API') +
       this.spiffeListenerRows(json.listeners.serverApi, 'SPIRE Server API') +
+      this.spiffeListenerRows(json.listeners.brokerApi || [],
+                              'SPIFFE Broker API') +
       '</table>' +
 
       this.spiffeWorkloadAttestation(json.workloadAttestation) +
@@ -24940,6 +25542,8 @@ class AdminConsole {
       '<li><a href="/admin/spiffe/agents">Attested agents</a> &mdash; ' +
       this.esc(json.counts.agents) + ' of at most ' +
       this.esc(json.counts.maxAgents) +
+      '</li><li><a href="/admin/spiffe/brokers">SPIFFE Broker API ' +
+      'brokers</a> &mdash; who may ask for a referenced workload\'s SVIDs' +
       '</li><li><a href="/spiffe">What this is, and what it does not ' +
       'check</a></li><li><a href="/admin/ldap/spiffe">The containers and ' +
       'their schema</a></li><li><a href="/admin-api/spiffe">The same, over ' +
@@ -25322,6 +25926,75 @@ class AdminConsole {
     return { json: { agent: agent }, inner: inner };
   }
 
+  // THE SPIFFE BROKER API'S BROKERS (#170): the list, a remove per row, and
+  // the form that adds a broker or replaces what it may reference.
+  spiffeBrokersPage(req) {
+    const { log, spiffeBrokersJson, queryWith, spiffeCa } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.spiffeBrokersPage().");
+    const view = spiffeBrokersJson(req);
+    const json = view.json;
+    const listView = this.listViewOf('/admin/spiffe/brokers', req.query);
+    const back = '<input type="hidden" name="back" value="' +
+                 this.esc(queryWith(listView, {})) + '">';
+    const rows = json.brokers.map(function (one) {
+      return '<tr><td><code>' + self.esc(one.id) + '</code></td><td>' +
+        (one.problem ? '<strong>refused:</strong> ' + self.esc(one.problem)
+                     : self.esc(one.referenceTypes.join(', '))) +
+        '</td><td><form method="post" action="/admin/spiffe/brokers">' +
+        '<input type="hidden" name="action" value="remove"><input ' +
+        'type="hidden" name="id" value="' + self.esc(one.id) + '">' + back +
+        '<button class="danger">Remove</button></form></td></tr>';
+    }).join('') || '<tr><td colspan="3">No broker is authorized, so every ' +
+      'call to the SPIFFE Broker API is refused PERMISSION_DENIED.</td></tr>';
+    const listening = json.listeners.filter(function (b) {
+      return b.listening;
+    }).map(function (b) {
+      return '<code>' + self.esc(b.address) + '</code>';
+    }).join(', ');
+    const inner = this.messagesOf(req) +
+      this.note('The SPIFFE Broker API (Incubating) lets a trusted ' +
+      'infrastructure component ask for the SVIDs of a workload it ' +
+      'REFERENCES — a process id, or a Kubernetes pod — which this service ' +
+      'attests itself before answering. It is served with mutual TLS on ' +
+      '<code>spiffe.grpcHost</code> and <code>spiffe.brokerPort</code> (' +
+      (listening ? 'listening on ' + listening
+                 : 'not listening in this realm: <code>spiffe.brokerPort' +
+                   '</code> is ' + this.esc(json.port)) + '). A caller ' +
+      'presents an X509-SVID, and one whose SPIFFE ID is not listed here is ' +
+      'refused.') +
+      this.note('<strong>A process id means something only on the node it ' +
+      'was read on.</strong> The endpoint is TCP, so allow ' +
+      '<code>pid</code> only to a broker running on this host; ' +
+      '<code>k8s</code> resolves a pod in this node\'s kubelet pod list.') +
+      '<form method="get" action="/admin/spiffe/brokers"><div ' +
+      'class="formrow"><label for="q">Search</label><input id="q" name="q" ' +
+      'value="' + this.esc(json.filter.q) + '" size="30" placeholder="a ' +
+      'SPIFFE ID or a reference type"><label for="per">Rows</label><select ' +
+      'id="per" name="per">' + this.perPageOptions(view.paging.perPage) +
+      '</select><button class="secondary">Filter</button></div></form>' +
+      '<table><tr><th>Broker</th><th>May reference</th><th></th></tr>' +
+      rows + '</table>' +
+      this.pageNavPair('/admin/spiffe/brokers', this.filterOnly(listView),
+                       view.paging).head +
+      '<h2>Authorize a broker</h2>' +
+      '<form method="post" action="/admin/spiffe/brokers"><div ' +
+      'class="formrow"><input type="hidden" name="action" value="set">' +
+      back + '<label for="b-id">SPIFFE ID</label><input id="b-id" name="id" ' +
+      'size="44" placeholder="spiffe://' + this.esc(spiffeCa.trustDomain()) +
+      '/ns/mesh/sa/node-proxy"></div><div class="formrow"><label><input ' +
+      'type="checkbox" name="referenceTypes" value="pid"> pid ' +
+      '(WorkloadPIDReference)</label><label><input type="checkbox" ' +
+      'name="referenceTypes" value="k8s"> k8s (a pod)</label><label><input ' +
+      'type="checkbox" name="referenceTypes" value="*"> * (both)</label>' +
+      '<button>Save</button>' +
+      this.note('A broker already listed has its reference types replaced. ' +
+      'An ID from a federated trust domain is verified against that ' +
+      'domain\'s bundle.') + '</div></form>';
+    log.debug("Leaving AdminConsole.spiffeBrokersPage().");
+    return { json: json, inner: inner, title: 'SPIFFE brokers' };
+  }
+
   spiffeAgentsView(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.spiffeAgentsView().");
@@ -25656,14 +26329,19 @@ class AdminConsole {
       row.role === 'service-provider'
         ? ['fedAutocreateUsers', 'fedUpdateUserAttributes',
            'fedMayAssertAdministrators', 'fedAllowUnsolicited',
-           'fedSignRequest']
+           'fedSignRequest', 'fedAcceptSignout', 'fedRequireSignedLogout']
+            .concat(federation.encrypts(record) ? ['fedAllowUnencrypted']
+                                                : [])
         : []).map(function (name) {
       const field = federation.SCHEMA.attributes.filter(
           function (f) { return f.name === name; })[0];
       if (!field) return '';
-      // The two provisioning switches default ON; the rest default off.
+      // The two provisioning switches and the two sign-out switches (#167)
+      // default ON; the rest default off.
       const dflt = name === 'fedAutocreateUsers' ||
-                   name === 'fedUpdateUserAttributes';
+                   name === 'fedUpdateUserAttributes' ||
+                   name === 'fedAcceptSignout' ||
+                   name === 'fedRequireSignedLogout';
       const on = federation.boolOf(record[name], dflt);
       return '<tr><td><code>' + self.esc(name) + '</code></td>' +
         '<td class="' + (on ? 'ok' : 'off') + '">' + (on ? 'TRUE' : 'FALSE') +
@@ -25784,8 +26462,11 @@ class AdminConsole {
             'name for this service per partner, so a partner keying its ' +
             'trust store off an entityID gets one that is only ' +
             'ours-with-them</span></td></tr>' +
-          ((row.protocol === 'saml2' || row.protocol === 'saml11')
-            ? '<tr><td>Our SAML metadata</td><td class="who"><a href="' +
+          ((row.protocol === 'saml2' || row.protocol === 'saml11' ||
+            row.protocol === 'wsfed')
+            ? '<tr><td>Our ' + (row.protocol === 'wsfed' ? 'WS-Federation'
+                                                         : 'SAML') +
+              ' metadata</td><td class="who"><a href="' +
               this.esc(federation.PATHS.metadata + '/' +
                        encodeURIComponent(row.id)) +
               '"><code>' +
@@ -25794,7 +26475,62 @@ class AdminConsole {
               'publishes proves nothing they did not already have to ' +
               'trust</span></td></tr>'
             : '') +
+          // A PARTNER'S SIGN-OUT (#167): what the partner registers so it can
+          // tell this service a session ended, and — below the table — what
+          // this service tells it.
+          Object.keys(view.signOut || {}).map(function (name) {
+            const words = {
+              singleLogout: 'SingleLogoutService (Redirect and POST), for ' +
+                            'the partner\'s LogoutRequest and its ' +
+                            'LogoutResponse to ours',
+              signOutCleanup: 'Sign-out cleanup URL, for wsignoutcleanup1.0 ' +
+                              '— the person confirms it here',
+              backchannelLogout: '<code>backchannel_logout_uri</code>',
+              frontchannelLogout: '<code>frontchannel_logout_uri</code>, ' +
+                                  'with <code>frontchannel_logout_session' +
+                                  '_required</code>',
+              postLogoutRedirect: '<code>post_logout_redirect_uri</code>, ' +
+                                  'for a sign-out here that ends at the ' +
+                                  'partner'
+            };
+            return '<tr><td>' + (words[name] || self.esc(name)) + '</td><td ' +
+              'class="who"><code>' + self.esc(view.signOut[name]) +
+              '</code></td></tr>';
+          }).join('') +
+          ((row.protocol === 'saml11' || row.protocol === 'oauth2')
+            ? '<tr><td>Sign-out</td><td><span class="sub">none — ' +
+              (row.protocol === 'saml11' ? 'SAML 1.1' : 'OAuth 2.0') +
+              ' defines no sign-out, so the partner cannot end a session ' +
+              'here and is not told of one ending</span></td></tr>'
+            : '') +
+          // THE KEY THE PARTNER ENCRYPTS TO (#168): the certificate, or
+          // for OpenID Connect the JWKS and the two registration members.
+          (view.encryption
+            ? '<tr><td>Encryption certificate (<code>' +
+              this.esc(view.encryption.policy.keyType) + '</code>)</td>' +
+              '<td class="who">' + (view.encryption.certificatePem
+                ? '<pre>' + this.esc(view.encryption.certificatePem) +
+                  '</pre>'
+                : '<span class="warn">none — rotate the key below to ' +
+                  'issue one</span>') + '</td></tr>' +
+              (view.jwks
+                ? '<tr><td><code>jwks_uri</code> (or its contents as ' +
+                  '<code>jwks</code>)</td><td class="who"><code>' +
+                  this.esc(view.jwks) + '</code></td></tr>' +
+                  '<tr><td><code>id_token_encrypted_response_alg</code> / ' +
+                  '<code>_enc</code></td><td><code>' +
+                  this.esc(view.encryption.policy.management) +
+                  '</code> / <code>' +
+                  this.esc(view.encryption.policy.content) + '</code></td>' +
+                  '</tr>'
+                : '<tr><td>Encryption algorithms</td><td><code>' +
+                  this.esc(view.encryption.policy.content) + '</code> under ' +
+                  '<code>' + this.esc(view.encryption.policy.management) +
+                  '</code>, published in the metadata</td></tr>')
+            : '') +
           '</table>' +
+          (view.encryption ? this.federationEncryptionSection(row,
+                               view.encryption, carryBack) : '') +
           this.note('<a class="btn" href="' + this.esc(login) +
                     '">Start a federated ' +
           'sign-in through this ' +
@@ -25855,6 +26591,52 @@ class AdminConsole {
 
     log.debug("Leaving AdminConsole.federationDetailPage(). " + row.id + ".");
     return { inner: inner, json: view.json };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A RELATIONSHIP'S ENCRYPTION KEY (#168): whether plaintext is refused, the
+  // key table — never a private key — and the Rotate button, whose API twin
+  // is `POST /admin-api/federation/rotate-key` (rule 7).
+  // ---------------------------------------------------------------------------
+  federationEncryptionSection(row, encryption, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.federationEncryptionSection().");
+    const rows = encryption.keys.map(function (key) {
+      return '<tr><td><code>' + self.esc(key.kid) + '</code></td><td>' +
+        self.esc(key.keyType) + '</td><td class="' +
+        (key.decrypts ? 'ok' : 'off') + '">' + self.esc(key.state) +
+        (key.retiresAt ? ' — decrypts until ' +
+          self.esc(new Date(key.retiresAt).toISOString()) : '') +
+        '</td><td>' + self.esc(key.notAfter || '') + '</td><td>' +
+        (key.sealed ? 'sealed' : 'in clear (keys do not persist)') +
+        '</td></tr>';
+    }).join('');
+    log.debug("Leaving AdminConsole.federationEncryptionSection().");
+    return '<h2 id="encryption">Encryption</h2>' +
+      this.note(encryption.required
+        ? '<strong>A plaintext assertion is refused.</strong> The partner ' +
+          'must encrypt to the key above, with the algorithms above.'
+        : (encryption.allowUnencrypted
+            ? '<strong class="warn">fedAllowUnencrypted is on: a plaintext ' +
+              'assertion is ACCEPTED</strong>, and the person\'s ' +
+              'identifier and attributes may cross their browser in clear.'
+            : 'A plaintext assertion is accepted in development mode; ' +
+              'product mode refuses it. An encrypted one is decrypted and ' +
+              'held to the algorithms above in both.')) +
+      (rows
+        ? '<table><tr><th>kid</th><th>Type</th><th>State</th><th>Expires' +
+          '</th><th>At rest</th></tr>' + rows + '</table>'
+        : this.note('No key is held.')) +
+      '<form method="post" action="/admin/federation"><div class="formrow">' +
+      carryBack +
+      '<input type="hidden" name="action" value="rotate-key">' +
+      '<input type="hidden" name="id" value="' + this.esc(row.id) + '">' +
+      '<button type="submit">Rotate the encryption key</button>' +
+      '<span class="sub">A new key is issued under this realm\'s ' +
+      'Intermediate and published at once; the one it replaces still ' +
+      'decrypts for ' + this.esc(String(encryption.graceS)) + ' seconds ' +
+      '(federation.encryptionKeyGraceS).</span></div></form>';
   }
 
   federationView(req) {
@@ -26269,6 +27051,7 @@ class AdminConsole {
             caepJson, caepAction, caepSessionsState, caepApplicationsState,
             riscJson, riscAction, riscAccountsState, riscApplicationsState,
             spiffeAction, spiffeEntriesAction, spiffeAgentsAction,
+            spiffeBrokersAction,
             federationAction, federationDiagram, federation } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.registerRoutes().");
@@ -29120,6 +29903,9 @@ class AdminConsole {
       const paging = view.paging;
       const summary = view.summary;
       const policy = view.policy;
+      // WS-Trust and token exchange (#108): the view GET
+      // /admin-api/delegation/policy answers with.
+      const exchangePolicy = delegationPolicyView(req.query);
       const known = knownUserKeys();
       // What every paging link on this page carries with it, for the reason the
       // tokens page gives: a "next" that dropped the filter would be page 2 of
@@ -29524,15 +30310,12 @@ class AdminConsole {
         'and in development only when ' +
         '<code>oauth2.delegatedPermissionsEnforced</code> is set; these two ' +
         'attributes are a KDC decision that has always been made, on every ' +
-        'S4U request, whatever anything is set to. WS-Trust puts no ' +
-        'authorization on <code>OnBehalfOf</code> or <code>ActAs</code> and ' +
-        'this service adds none; RFC 8693 leaves the policy to the ' +
-        'authorization server, and what this one now has is the register ' +
-        'above rather than nothing. All of that is stated on every row it ' +
-        'produces, in the same column that names an attribute for a Kerberos ' +
-        'row — <strong>the asymmetry is still the most useful thing on this ' +
-        'page</strong>: the same picture, policed at one end and not at the ' +
-        'other.') +
+        'S4U request, whatever anything is set to. WS-Trust and the RFC ' +
+        '8693 token exchange are decided by the same model since #108 — ' +
+        'the section below — ENFORCED in product mode and, in development, ' +
+        'asked and recorded as what would have been refused. Every row says ' +
+        'which attribute allowed it, in the same column for all three ' +
+        'families.') +
         self.note('The whole of the KDC\'s decision rests on two attributes ' +
         'on two OPPOSITE accounts, which is why they are in one table with a ' +
         'column saying which account carries the permission. Same messages, ' +
@@ -29573,6 +30356,8 @@ class AdminConsole {
           'flags.</td></tr>') +
         '</table>' +
         flagsNav.foot +
+
+        self.delegationPolicySection(req, exchangePolicy) +
 
         '<h3>The mechanisms</h3>' +
         self.note('Read off the same table this page records against, so a ' +
@@ -29695,7 +30480,10 @@ class AdminConsole {
                     { permissions: pagingJson(allowedState.permPage.paging),
                             grants: pagingJson(allowedState.grantPage.paging) }
                 },
-                settings: self.configSettingsJson('/admin/delegation')
+                settings: self.configSettingsJson('/admin/delegation'),
+                // WS-Trust and token exchange (#108), paged as GET
+                // /admin-api/delegation/policy pages it.
+                delegationPolicy: exchangePolicy.json
               }),
                    'Delegation', '/admin/delegation', inner);
       log.debug("Leaving the admin delegation page.");
@@ -31724,10 +32512,13 @@ class AdminConsole {
 
     app.get('/admin/users', function (req, res) {
       log.debug("Entering the admin users page.");
-      const view = self.usersView(req);
-      self.respond(req, res, view.json, view.title, '/admin/users', view.inner,
-                   view.up);
-      log.debug("Leaving the admin users page. " + view.title + ".");
+      // A person's current risk is read before the page is drawn (#62).
+      adminViews.riskFor(req.query).then(function (risk) {
+        const view = self.usersView(req, risk);
+        self.respond(req, res, view.json, view.title, '/admin/users',
+                     view.inner, view.up);
+        log.debug("Leaving the admin users page. " + view.title + ".");
+      });
     });
 
     app.post('/admin/users', function (req, res, next) {
@@ -32338,7 +33129,12 @@ class AdminConsole {
         'written about anybody</strong> &mdash; so removing a row here asks ' +
         'everybody again, including the people who would have said yes. That ' +
         'is the whole difference from the table below it, where removing a ' +
-        'row asks one person.<br><br>It is keyed on the PAIR and not on the ' +
+        'row asks one person. Removing a row also revokes every token of ' +
+        'that application carrying the scope, except for people who agreed ' +
+        'to it themselves, and this is the only door that removes one ' +
+        '&mdash; on this service\'s own console, portal or debugger too, ' +
+        'whose sessions standing on it then end at their next renewal.' +
+        '<br><br>It is keyed on the PAIR and not on the ' +
         'scope alone: consenting <code>read</code> here consents it for this ' +
         'application, and an application registered five minutes from now ' +
         'that spells the same word is still asked. It is an ordinary ' +
@@ -32386,12 +33182,17 @@ class AdminConsole {
         'sixth alone &mdash; which is what the screen shows and what these ' +
         'rows have to be able to express. The timestamp is when they pressed ' +
         'Allow.<br><br>Revoking a row asks that one person again the next ' +
-        'time that one application requests that one scope. It does NOT ' +
-        'touch anything already issued: an access token minted before the ' +
-        'revoke is still valid, exactly as taking a delegated permission ' +
-        'away does not re-judge a grant already made. <a ' +
-        'href="/admin/tokens">Tokens</a> is where something already issued ' +
-        'is revoked.') +
+        'time that one application requests that one scope, and it ' +
+        '<strong>WITHDRAWS</strong> it: every access and refresh token that ' +
+        'application holds for them carrying the scope is revoked on every ' +
+        'node, and the instant is written onto their entry as <code>' +
+        self.esc(consent.WITHDRAWN_ATTRIBUTE) + '</code>, so a refresh ' +
+        'token granted before it is refused at the token endpoint even after ' +
+        'they agree again. Withdrawing one scope revokes the whole refresh ' +
+        'token. Removing a global consent above does the same for everybody ' +
+        'it covered, and <code>oauth2.refreshRequiresConsent</code> refuses ' +
+        'a refresh token from the authorization endpoint that no recorded ' +
+        'consent covers.') +
         self.sectionSearchForm({
           path: '/admin/consent', query: req.query, param: 'q',
           // The list this search narrows, so that a new search starts at page 1
@@ -32418,6 +33219,27 @@ class AdminConsole {
                 'asked for is under global consent above, because an ' +
                 'override writes nothing down.')) +
         consentsNav.foot +
+
+        '<h4>Withdraw everything one person agreed to for one ' +
+        'application</h4>' +
+        self.note('Every recorded consent between one person and one ' +
+        'application, in one act &mdash; what the person can do themselves ' +
+        'from <code>/portal/consents</code>. Every token that application ' +
+        'holds for them under those scopes is revoked.') +
+        '<form method="post" action="/admin/consent">' +
+        self.consentBack(listView) +
+          '<input type="hidden" name="from" value="recorded">' +
+          '<div class="formrow">' +
+          '<input type="hidden" name="action" ' +
+            'value="revoke-application-consent">' +
+          '<label for="ac-username">Person</label>' +
+          '<input type="text" id="ac-username" name="username" size="24" ' +
+            'placeholder="alice">' +
+          '<label for="ac-client">Application</label>' +
+          '<select id="ac-client" name="client">' + applicationOptions +
+          '</select>' +
+          '<button type="submit" class="danger">Withdraw</button>' +
+        '</div></form>' +
 
         '<h4>Forget everything one person agreed to</h4>' +
         self.note('Every recorded consent for one person, in one act, so ' +
@@ -35036,6 +35858,18 @@ class AdminConsole {
                        'the transmitter\'s pedantry — and it is said out ' +
                        'loud rather than passed over.') +
                        '">media type</div>') +
+          // WHAT THIS CONSOLE DID WITH IT (#62): the signal-response
+          // policy's reactions, taken, observed or failed.
+          (row.reactions || []).map(function (r) {
+            return '<div class="signal-reaction ' +
+              (r.failed ? 'state-invalid' : 'sub') + '">' + (r.failed
+                ? 'could not end its sessions'
+                : r.skipped ? 'ended nothing: ' + self.esc(r.skipped)
+                : (r.observed ? 'would end this console\'s sessions ' +
+                                '(development observes)'
+                              : 'ended ' + self.esc(String(r.ended)) +
+                                ' console session(s)')) + '</div>';
+          }).join('') +
           '</td>' +
           '<td class="sub"><code>' + self.esc(row.jti) + '</code>' +
           '<div><code>' + self.esc(row.stream || '') + '</code></div></td>' +
@@ -35851,6 +36685,97 @@ class AdminConsole {
         : 'Development mode keys every user from krb5.userPassword, so ' +
           'nobody here holds stored keys.') + '</td></tr>';
 
+      // THE REALM'S KRBTGT (#169): its own block, because none of the
+      // service-principal controls applies to it — no keytab is ever made
+      // for it — and two controls of its own do, both of which QUEUE a run
+      // of `krb5.krbtgt-rotate-now` on the scheduler rather than rotating in
+      // this request. The invalidate form is a typed confirmation, not a
+      // script: the word goes in a text field and the action refuses
+      // without it (STS-ADMIN-0610).
+      const k = json.krbtgt;
+      const krbtgtSection = !k ? '' :
+        '<h2>The krbtgt key</h2>' +
+        self.note('Every ticket-granting ticket this realm issues is sealed ' +
+          'under this key. ' + (k.source === 'password'
+            ? 'In this development realm it is derived from the published ' +
+              '<code>krb5.krbtgtPassword</code>, so a reader can decrypt a ' +
+              'TGT; rotating it here replaces it with a random stored key.'
+            : 'It is a RANDOM key per enctype, kept sealed on the directory ' +
+              'entry <code>' + self.esc(k.principal || '') + '</code> and ' +
+              'never shown — there is no keytab for it.') +
+          ' A rotation keeps the version it replaces for ' +
+          self.esc(String(k.retainedTtlSeconds)) + ' seconds (the longest a ' +
+          'TGT under it can live, renewals included), so every TGT goes on ' +
+          'working; <strong>rotate and invalidate</strong> keeps nothing — ' +
+          'Active Directory\'s double reset in one act — and every TGT in ' +
+          'the realm is refused at its next use.') +
+        (k.source === 'unreadable'
+          ? self.warn('<strong>The stored krbtgt key cannot be opened ' +
+              'here</strong> (' + self.esc(k.why) + '), so this KDC issues ' +
+              'no ticket. Only <strong>rotate and invalidate</strong> ' +
+              'replaces it.')
+          : k.source === 'none'
+            ? self.warn('No krbtgt key is stored for this realm yet, so its ' +
+                'KDC issues no ticket. It is made at the next start, or by ' +
+                'the <code>krb5.krbtgt-rotate</code> job, or by a rotation ' +
+                'here.')
+            : '') +
+        '<table class="key">' +
+        '<tr><th>Principal</th><td><code>' + self.esc(k.principal || '—') +
+        '</code></td></tr>' +
+        '<tr><th>Key from</th><td>' + self.esc({
+          stored: 'a random key stored on the directory',
+          password: 'krb5.krbtgtPassword (development)',
+          none: 'nothing yet', unreadable: 'a record this service cannot open'
+        }[k.source] || k.source) + '</td></tr>' +
+        '<tr><th>kvno</th><td>' + self.esc(k.kvno == null ? '—'
+                                                          : String(k.kvno)) +
+        '</td></tr><tr><th>Enctypes</th><td>' + etypeList(k.etypes) +
+        '</td></tr><tr><th>Created</th><td class="sub">' +
+        self.esc(k.createdAt || '—') + '</td></tr>' +
+        '<tr><th>Last rotated</th><td class="sub">' +
+        self.esc(k.lastRotatedAt || 'never') +
+        (k.invalidatedAt ? '<br>last invalidated ' +
+          self.esc(k.invalidatedAt) : '') + '</td></tr>' +
+        '<tr><th>Next scheduled rotation</th><td class="sub">' +
+        (k.scheduled
+          ? self.esc(k.nextDueAt || '—') + ' (every ' +
+            self.esc(String(k.intervalDays)) + ' days, ' +
+            '<code>krb5.krbtgtRotationIntervalDays</code>)'
+          : 'none — ' + self.esc(k.offReason)) + '</td></tr>' +
+        '<tr><th>Previous versions</th><td>' + retainedCell(k.retained) +
+        '</td></tr></table>' +
+        (mayChange
+          ? '<form method="post" action="/admin/kerberos/principals">' +
+            '<input type="hidden" name="action" value="rotate-krbtgt">' +
+            '<input type="hidden" name="back" value="' + self.esc(back) +
+            '"><button type="submit" title="' + self.esc('A new random ' +
+              'krbtgt key at the next kvno; the current one is kept for the ' +
+              'TGTs already sealed under it. Queued on the scheduler.') +
+            '">Rotate the krbtgt key</button></form>' +
+            ((k.retained || []).length
+              ? rowButton('drop-previous-service-keys', 'spn',
+                  String(k.principal || '').replace(/@[^@]*$/, ''),
+                  'Drop previous versions',
+                  'Stops accepting TGTs sealed under kvno ' +
+                  k.retained.map(function (one) {
+                    return one.kvno;
+                  }).join(', ') + ' now. The current key is untouched.')
+              : '') +
+            '<form method="post" action="/admin/kerberos/principals">' +
+            '<input type="hidden" name="action" ' +
+            'value="rotate-krbtgt-invalidate">' +
+            '<input type="hidden" name="back" value="' + self.esc(back) +
+            '"><div class="formrow"><label for="krbtgt-confirm">Type ' +
+            '<code>' + self.esc(k.confirmWord || 'invalidate') + '</code> ' +
+            'to end every TGT in the realm</label>' +
+            '<input type="text" id="krbtgt-confirm" name="confirm" size="12" ' +
+            'autocomplete="off">' +
+            '<button type="submit" class="danger">Rotate and ' +
+            'invalidate</button></div></form>'
+          : self.note('Rotating the krbtgt key needs <strong>Admin ' +
+                      'Write</strong>.'));
+
       const inner = self.messagesOf(req) +
         self.note('<strong>Who this KDC holds a stored key for.</strong> ' +
                   self.esc(json.notes.mode)) +
@@ -35886,6 +36811,7 @@ class AdminConsole {
                         'one.') +
                   ' <code>krb5.personKeys</code> is ' +
                   (json.personKeys ? 'on' : 'OFF') + '.') +
+        krbtgtSection +
         '<h2>Service principals</h2>' + servicesNav.head +
         '<table><tr><th>Principal</th><th>kvno</th><th>Enctypes</th>' +
         '<th>Created</th><th>Previous versions</th><th>At ' +
@@ -35898,11 +36824,12 @@ class AdminConsole {
                       '<code>HTTP/web.example.com</code>, with or without ' +
                       '<code>@' + self.esc(json.realm) + '</code>. It gets a ' +
                       'RANDOM key for every enctype in ' +
-                      '<code>krb5.enctypes</code> at kvno ' +
+                      '<code>krb5.enctypes</code> (never rc4-hmac in product ' +
+                      'mode) at kvno ' +
                       self.esc(String(json.startingKvno)) + ', stored sealed ' +
                       'on its application entry, and the next page shows its ' +
-                      'keytab ONCE. <code>krbtgt</code> is refused: that key ' +
-                      'is <code>krb5.krbtgtPassword</code>.') +
+                      'keytab ONCE. <code>krbtgt</code> is refused: it has ' +
+                      'its own block above, and no keytab.') +
             '<form method="post" action="/admin/kerberos/principals">' +
             '<input type="hidden" name="action" value="create-service">' +
             '<input type="hidden" name="back" value="' + self.esc(back) + '">' +
@@ -37820,6 +38747,25 @@ class AdminConsole {
       log.debug("Leaving the admin SPIFFE agents action endpoint.");
     });
 
+    app.get('/admin/spiffe/brokers', function (req, res) {
+      log.debug("Entering the admin SPIFFE brokers page.");
+      const view = self.spiffeBrokersPage(req);
+      self.respond(req, res, view.json, view.title, '/admin/spiffe/brokers',
+                   view.inner);
+      log.debug("Leaving the admin SPIFFE brokers page.");
+    });
+
+    app.post('/admin/spiffe/brokers', function (req, res) {
+      log.debug("Entering the admin SPIFFE brokers action endpoint.");
+      const body = parseBody(req);
+      const result = spiffeBrokersAction(body);
+      const listView = self.listViewFromBack('/admin/spiffe/brokers',
+                                             body.back);
+      self.respondToAction(req, res, '/admin/spiffe/brokers' +
+                           queryWith(listView, {}), result);
+      log.debug("Leaving the admin SPIFFE brokers action endpoint.");
+    });
+
     app.get('/admin/federation', function (req, res) {
       log.debug("Entering the admin federation page.");
       const view = self.federationView(req);
@@ -37835,24 +38781,32 @@ class AdminConsole {
     app.post('/admin/federation', function (req, res) {
       log.debug("Entering the admin federation action endpoint.");
       const body = parseBody(req);
-      const result = federationAction(body);
-      const id = String(body.id || body.relationship || '').trim();
-      // The list state the form carried, REBUILT rather than echoed — see
-      // listViewFromBack(), and the note in admin-ui/CLAUDE.md about a new form
-      // on a drill-down needing `carryBack` in it. Every form on the drill-down
-      // above has it.
-      const listView = self.listViewFromBack('/admin/federation', body.back);
-      // A DELETE goes back to the LIST and everything else stays on the
-      // drill-down, which is the one place this differs from the SAML 2.0
-      // page's handler: landing on the detail page of something that no longer
-      // exists would answer with "there is no relationship called…", which
-      // reads as the delete having failed.
-      const back = (id && result.ok !== false &&
-                    String(body.action || '') !== 'delete')
-        ? '/admin/federation' + queryWith(listView, { relationship: id })
-        : '/admin/federation' + queryWith(listView, {});
-      self.respondToAction(req, res, back, result);
-      log.debug("Leaving the admin federation action endpoint.");
+      // A PROMISE SINCE #168: a create and a key rotation issue a key.
+      federationAction(body).then(function (result) {
+        const id = String(body.id || body.relationship || '').trim();
+        // The list state the form carried, REBUILT rather than echoed — see
+        // listViewFromBack(), and the note in admin-ui/CLAUDE.md about a new
+        // form on a drill-down needing `carryBack` in it. Every form on the
+        // drill-down above has it.
+        const listView = self.listViewFromBack('/admin/federation', body.back);
+        // A DELETE goes back to the LIST and everything else stays on the
+        // drill-down, which is the one place this differs from the SAML 2.0
+        // page's handler: landing on the detail page of something that no
+        // longer exists would answer with "there is no relationship
+        // called…", which reads as the delete having failed.
+        const back = (id && result.ok !== false &&
+                      String(body.action || '') !== 'delete')
+          ? '/admin/federation' + queryWith(listView, { relationship: id })
+          : '/admin/federation' + queryWith(listView, {});
+        self.respondToAction(req, res, back, result);
+        log.debug("Leaving the admin federation action endpoint.");
+      }, function (e) {
+        log.error(errorCodes.tag('STS-ADMIN-0575') + 'the federation action ' +
+                  'threw: ' + ((e && e.stack) || e));
+        self.respondToAction(req, res, '/admin/federation',
+          { ok: false, errors: ['The federation action failed: ' +
+                                ((e && e.message) || e)] });
+      });
     });
 
     app.get('/admin/federation/map', function (req, res) {
@@ -38352,8 +39306,9 @@ const SETTING_HOMES = [
   // /admin/users now; these two rows are the mechanisms.
   //
   // The old comment also said WebAuthn "has no settings at all and so has no
-  // row here". It has thirteen since 2026-09-10 — every parameter of the
-  // ceremony, which had been literals in a string in `authn/authn.ts`.
+  // row here". It has had settings since 2026-09-10 — every parameter of the
+  // ceremony, which had been literals in a string in `authn/authn.ts` — and
+  // the attestation policy's seven since #105.
   { group: 'TOTP MFA', pages: ['/admin/totp'] },
   { group: 'GNAP', pages: ['/admin/gnap'] },
   // ===== certificate enrollment setting homes (2026-09-13) =====
@@ -38463,6 +39418,7 @@ const LIST_PARAMS = {
                             'clientsPage'],
   '/admin/spiffe/entries': ['q', 'origin', 'per', 'page'],
   '/admin/spiffe/agents': ['q', 'per', 'page'],
+  '/admin/spiffe/brokers': ['q', 'per', 'page'],
   // `personq` and `personfrom` are the grant pane's search (2026-09-13), so a
   // grant or a Revoke lands back on the results the reader was working
   // through. `person` is deliberately NOT here: it is the one they picked, and
@@ -40503,10 +41459,18 @@ const PROTOCOL_SETTINGS_PAGES = [
            'sent to the browser AND checked against the UV flag when the ' +
            'ceremony returns, because that flag is inside the bytes the ' +
            'authenticator signed. Nothing signed says what the browser was ' +
-           'asked about attestation, the resident key or the attachment — so ' +
-           'a check on those would be a comparison against a value this ' +
-           'service itself supplied. What it does instead is RECORD what ' +
-           'came back.',
+           'asked about the attestation conveyance, the resident key or the ' +
+           'attachment — so a check on those would be a comparison against ' +
+           'a value this service itself supplied. What it does instead is ' +
+           'RECORD what came back.',
+           '<strong>THE ATTESTATION STATEMENT IS VERIFIED (SINCE ' +
+           '#105)</strong> ' +
+           'under <code>webauthn.attestationPolicy</code> — in product mode ' +
+           'by default, all eight formats of WebAuthn Level 3 section 8, the ' +
+           'chain against this realm\'s anchors and the FIDO Metadata ' +
+           'Service\'s roots, revocation, and MDS status reports. What each ' +
+           'key\'s statement proved is on its row under <a ' +
+           'href="/admin/users">Users</a>.',
            '<strong>Raising user verification does not change what a session ' +
            'CLAIMS.</strong> A passwordless sign-in still records <code>amr ' +
            '["hwk"]</code> and <code>acr "1"</code> — one factor — even ' +
@@ -40708,7 +41672,14 @@ const PROTOCOL_SETTINGS_PAGES = [
            'Credential status</a>; one a trusted foreign issuer signed has ' +
            'its status list fetched, kept for its ttl and at most <code>' +
            'oid4vp.statusListMaxCacheS</code>, and a credential whose status ' +
-           'cannot be read is refused.'],
+           'cannot be read is refused. <strong>So is one that names no ' +
+           'status</strong> (<code>oid4vp.requireStatusReference</code>, ' +
+           '<code>all</code> by default in both modes), and an ldp_vc whose ' +
+           'presentation withheld its <code>credentialStatus</code>, which ' +
+           'the request asks for; a trusted issuer that publishes no status ' +
+           'is exempted by its certificate\'s thumbprint in <code>' +
+           'oid4vp.statusOptionalIssuers</code>. The result page names the ' +
+           'rule that refused.'],
     links: [['/oid4vp/verifier', 'the verifier, for a person'],
             ['/admin/vc-verifier-config', 'what it asks for']] },
 
