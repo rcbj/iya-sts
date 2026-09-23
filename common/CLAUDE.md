@@ -6779,9 +6779,29 @@ says no, logged once per process and setting (`STS-CORE-0106`, a set bounded
 by the table). The read is the guard, because `global.mode` is runtime and a
 realm can be switched with a value still stored. `trustsUnverifiedLocalSocket()`
 is the SPIRE Server API's `local` socket (the `spire-local-socket` row,
-`spiffe/CLAUDE.md`). **`mode.report()` has no page**: the prose says
-`/admin/mode` and `GET /admin-api/mode` draw it, and neither route is
-registered today; only tests read it.
+`spiffe/CLAUDE.md`).
+
+**#181 (2026-09-23) MARKED ELEVEN MORE ROWS AND GAVE THE REPORT ITS PAGES.**
+`risc.googleSubjectType` and `krb5.clockOffset` joined `spoilsOnPurpose()`;
+`saml2.signAssertion`, `saml11.signAssertion` and `saml11.signResponse` off
+carry `issuesUnsignedAssertions()`; `spiffe.requireSecurityHeader` off carries
+`servesWithoutSecurityHeader()`; and `usesBrokenAlgorithms()` governs
+`saml.allowSha1Signatures` and — through `onlyWhileValues`, the weak values
+alone — `saml.signatureAlgorithm` `rsa-sha1`, `saml2.keyTransportAlgorithm`
+`rsa-1_5` and `pki.signatureAlgorithm` `sha1-rsa`/`sha1-ecdsa`. Three reads
+needed more than `valueInForce()`: an application's OVERRIDE of a marked
+setting (`applications.settingFor()` passes it through **`mode.inForce(key,
+value, source)`**, said once per setting and attribute, and
+`updateApplication()` / `createApplication()` refuse writing one,
+`STS-REG-0193`); an inbound `rsa-1_5` EncryptedKey, which no setting governs
+(`crypto.js`'s `decryptElement()`, `STS-KEYS-0070`); and a CA build or key
+pair NAMING SHA-1 (`pki.js`, `STS-PKI-0191`; an algorithm inherited from a
+branch built in development is replaced by the key's default instead).
+`mode.report()` gained `developmentOnlySettings` — every marked row with its
+stored value, the value in force and whether it is ignored — and is drawn by
+**`GET /admin/mode`** (`admin-ui/mode_admin.ts`, Server configuration → Mode)
+and answered by **`GET /admin-api/mode`**; until then the prose cited both
+routes and neither was registered.
 
 ## `outbound_tls.ts`: THE TRANSPORT OF AN OUTBOUND REQUEST (#171, 2026-09-23)
 

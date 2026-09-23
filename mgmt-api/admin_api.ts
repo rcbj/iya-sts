@@ -205,6 +205,8 @@ import secretsAdmin = require('../admin-ui/secrets_admin');
 import cachesAdmin = require('../admin-ui/caches_admin');
 // THE STATUS LISTS' PAGE (#38's follow-ups), for its two functions (rule 7).
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
+// Server configuration → Mode (#181): its one view, rule 7.
+import modeAdmin = require('../admin-ui/mode_admin');
 // The scheduler's page (#49): its view and its two actions, rule 7.
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
 // Monitoring → Risk (#62): its view and its four actions, rule 7.
@@ -1780,6 +1782,45 @@ class AdminApi {
           log.debug("Entering the management API encryption report endpoint.");
           self.sendJson(res, 200, encryptionAdmin.encryptionView());
           log.debug("Leaving the management API encryption report endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // THE MODE (#181). `modeAdmin.modeView()` — `common/mode.js`'s
+      // `report()` for the realm the call is in, the function `/admin/mode`
+      // answers — and nothing else. It CHANGES nothing: `global.mode` is set
+      // through `POST /admin-api/config/set` like every other setting.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/mode', tag: 'Service',
+        operationId: 'getMode',
+        summary: 'What global.mode changes, and what is in force in this ' +
+                 'realm',
+        description: 'The mode of the realm the call is in (`mode`, ' +
+                     '`isProduct`) and everything it decides: ' +
+                     '`requirements` — each with `id`, `what`, the ' +
+                     '`development` and `product` answers, `inForce` (the ' +
+                     'one this realm gives) and `where` it is implemented; ' +
+                     '`developmentOnlySettings` — every setting whose row ' +
+                     'is marked development-only, with `key`, `group`, the ' +
+                     '`predicate` in common/mode.js that must answer yes, ' +
+                     '`developmentOnlyValues` (null when every value but ' +
+                     'the default is), `default`, the `value` stored, the ' +
+                     'value `inForce`, `ignored` (true exactly where a ' +
+                     'product realm holds a development-only value, which ' +
+                     'is read as the default) and `why`; and `notYet` — ' +
+                     'what product mode still does not check, each with ' +
+                     '`id` and `what`. The mode is per trust realm, so ' +
+                     'call it under /realm/{id}/admin-api/mode for a ' +
+                     'realm.',
+        mirrors: 'GET /admin/mode',
+        responseDescription: 'The mode report.',
+        responseSchema: { type: 'object',
+          description: '`mode`, `isProduct`, `requirements`, ' +
+                       '`developmentOnlySettings` and `notYet`, as ' +
+                       'common/mode.js\'s report() answers them.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API mode endpoint.");
+          self.sendJson(res, 200, modeAdmin.modeView());
+          log.debug("Leaving the management API mode endpoint.");
         } },
 
       // ---------------------------------------------------------------------

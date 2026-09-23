@@ -234,11 +234,15 @@ function renewLifetimeSeconds() {
 }
 
 // A test can ask this KDC to lie about its clock, so the client's skew handling
-// can be exercised without changing anybody's system time.
+// can be exercised without changing anybody's system time. DEVELOPMENT ONLY
+// since #181 (2026-09-23): read through `mode.valueInForce()`, so a product
+// realm's KDC runs on the machine's clock whatever is stored, and says so
+// once (STS-CORE-0106). `mode` was already required here, so this adds no
+// require to the parent project's COPY closure.
 function clockOffsetSeconds() {
   log.debug("Entering clockOffsetSeconds().");
   log.debug("Leaving clockOffsetSeconds().");
-  return config.value('krb5.clockOffset');
+  return Number(mode.valueInForce('krb5.clockOffset')) || 0;
 }
 
 // The most a client may send on one TCP connection before it is closed. It was

@@ -67,6 +67,9 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
 import config = require('../common/config');
+// A LEAF (it requires `config` and `error_codes` only), for the one
+// development-only setting this file reads (#181).
+import mode = require('../common/mode');
 // THE REALM REGISTRY, for the one thing an operation has to carry that this
 // file did not know about when the operation seam was written — see
 // `methodRequest()`. A LIBRARY (rule 3), loaded by `app.js` long before this
@@ -149,6 +152,7 @@ interface SpiffeGrpcDeps {
   loader: typeof loader;
   log: typeof log;
   config: typeof config;
+  mode: typeof mode;
   realms: typeof realms;
   audit: typeof audit;
   errorCodes: typeof errorCodes;
@@ -197,6 +201,7 @@ class SpiffeGrpc {
       loader: loader,
       log: log,
       config: config,
+      mode: mode,
       realms: realms,
       audit: audit,
       errorCodes: errorCodes,
@@ -425,11 +430,15 @@ class SpiffeGrpc {
     return !!config.value('spiffe.enabled');
   }
 
+  // OFF is honoured in development only (#181): the Workload Endpoint
+  // specification section 3 says a call without the header MUST be refused,
+  // so a product realm with off still stored refuses it and says so once
+  // (`mode.valueInForce()`, STS-CORE-0106).
   requireSecurityHeader() {
-    const { log, config } = this.deps;
+    const { log, mode } = this.deps;
     log.debug("Entering SpiffeGrpc.requireSecurityHeader().");
     log.debug("Leaving SpiffeGrpc.requireSecurityHeader().");
-    return !!config.value('spiffe.requireSecurityHeader');
+    return !!mode.valueInForce('spiffe.requireSecurityHeader');
   }
 
   // A refusal descriptor from `spiffe_auth.ts` — `{ status, message }` where

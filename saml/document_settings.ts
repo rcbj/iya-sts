@@ -38,6 +38,9 @@
 // ---------------------------------------------------------------------------
 
 import config = require('../common/config');
+// A LEAF, for `saml.signatureAlgorithm`'s `rsa-sha1`, which is development's
+// (#181).
+import mode = require('../common/mode');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
@@ -52,6 +55,7 @@ interface SignatureOptions {
 
 interface DocumentSettingsDeps {
   config: { value(key: string): unknown };
+  mode: { valueInForce(key: string): unknown };
   log: { debug(message: string): void; warn(message: string): void };
   xmlEscape(value: unknown): string;
 }
@@ -90,6 +94,7 @@ class DocumentSettings {
     helpers.log.debug("Leaving DocumentSettings.defaultDeps().");
     return {
       config: config,
+      mode: mode,
       log: helpers.log,
       xmlEscape: helpers.xmlEscape
     };
@@ -100,12 +105,16 @@ class DocumentSettings {
   // enum on the setting already refuses one at the door, so this is reachable
   // only by a table and a setting that disagree, which is a bug worth a log
   // line and not worth a failed assertion.
+  //
+  // THE ALGORITHM IS READ AS IN FORCE (#181): `rsa-sha1` is development's, so
+  // a product realm with it still stored signs with the default RSA-SHA256
+  // and says so once (`mode.valueInForce()`, STS-CORE-0106).
   signatureOptions(): SignatureOptions {
-    const { log, config } = this.deps;
+    const { log, config, mode } = this.deps;
     const SIGNATURE_ALGORITHMS = DocumentSettings.SIGNATURE_ALGORITHMS;
     const CANONICALIZATIONS = DocumentSettings.CANONICALIZATIONS;
     log.debug("Entering DocumentSettings.signatureOptions().");
-    const sigName = String(config.value('saml.signatureAlgorithm') ||
+    const sigName = String(mode.valueInForce('saml.signatureAlgorithm') ||
                            'rsa-sha256');
     const c14nName = String(config.value('saml.canonicalizationAlgorithm') ||
                             'exclusive');

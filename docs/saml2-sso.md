@@ -127,7 +127,14 @@ attributes](#custom-saml-attributes). Both the assertion and the Response are
 signed by default (`saml2.signAssertion`, `saml2.signResponse`); on the Redirect
 binding `signResponse` means the query-string signature. The signature algorithm
 and canonicalization are `saml.signatureAlgorithm` and
-`saml.canonicalizationAlgorithm`.
+`saml.canonicalizationAlgorithm`. **In product mode the assertion is always
+signed** (#181): saml-profiles-2.0-os sections 4.1.3.5 and 4.1.4.5 require it
+over the HTTP POST binding, and an assertion that leaves its Response — by
+artifact, by `AssertionIDReference`, as an RFC 7522 grant — carries no other
+signature, so `saml2.signAssertion` off (or an application's
+`saml2SignAssertion` FALSE) is development's alone. `saml2.signResponse` off
+stays allowed in product, because with the assertion signed the profile asks
+for no more.
 
 A Response on the Redirect binding longer than `saml2.redirectWarnLength` is
 logged at WARN and sent anyway — bindings section 4.1.2 says a response should
@@ -182,6 +189,7 @@ LogoutResponse or ArtifactResolve is **verified in every mode**:
 | signed, and does not verify | refused | refused |
 | signed, and not checkable (MD5, a MAC, HSS/LMS, XMSS, signature wrapping) | refused | refused |
 | signed with SHA-1, `saml.allowSha1Signatures` off | refused | refused |
+| signed with SHA-1, `saml.allowSha1Signatures` on | accepted, recorded weak | refused (#181) |
 | from a service provider whose consumed metadata has expired | refused | refused |
 | signed, with no certificate registered | accepted, not verified | refused |
 | unsigned | accepted | refused |
@@ -255,7 +263,11 @@ the service provider's consumed metadata publishes an encryption key.
 Four block ciphers (`aes256-gcm`, `aes128-gcm`, `aes256-cbc`, `aes128-cbc`) and
 two key transports (`rsa-oaep-mgf1p`, `rsa-1_5`). CBC is unauthenticated and
 `rsa-1_5` is Bleichenbacher-broken; both are offered because deployed service
-providers require them.
+providers require them. **`rsa-1_5` is development mode's only** (#181): a
+product realm wraps with `rsa-oaep-mgf1p` whatever the setting or the
+application says, refuses to set it, and refuses an `rsa-1_5` key sent to it
+in an `EncryptedID` before unwrapping it (`STS-KEYS-0070`) — XML Encryption 1.1
+section 6.1.2, and 6.1.3's warning about a key that both decrypts and signs.
 
 ### The mock service provider
 
@@ -348,7 +360,9 @@ being answered.
 | An unknown entityID's request, or a metadata request for one | accepted, and its application entry created | answered without creating an entry; its AuthnRequest is refused — no registered return address and no signature (an MDQ lookup can register it) |
 | Encryption wanted and no certificate | sent **in clear**, with a WARN | refused with a `Responder` status and no assertion |
 | Encryption to an observed request certificate | yes | only once an operator confirms it |
-| `WantAssertionsSigned` in the SP's metadata with `saml2.signAssertion` off | the setting wins, and the request is logged | the assertion is signed |
+| `WantAssertionsSigned` in the SP's metadata with `saml2.signAssertion` off | the setting wins, and the request is logged | the assertion is signed — as it is for every service provider (#181) |
+| `saml2.signAssertion` off, or an application's `saml2SignAssertion` FALSE | the assertion is unsigned | ignored (logged once, `STS-CORE-0106`), and writing it is refused (`STS-CORE-0103`, `STS-REG-0193`) |
+| `saml.signatureAlgorithm` `rsa-sha1`, `saml2.keyTransportAlgorithm` `rsa-1_5` | used | ignored — `rsa-sha256`, `rsa-oaep-mgf1p` — and writing either is refused |
 | Given name, surname, mail, display name | invented | read off the directory entry, or omitted |
 | Empty `saml2.entityId` | replaced with `urn:sts:idp` | SSO and metadata refuse, naming the setting |
 | Artifact resolver authentication | not required (follows `requireSignedAuthnRequests`) | required |
@@ -365,9 +379,9 @@ one-shot artifact are enforced in **both** modes. See
 |---|---|---|---|---|
 | `saml.issuer` | `STS_SAML_ISSUER` (or `STS_ISSUER`) | `urn:wstrust:mock:sts` | yes | Who signed an assertion: the issuer of the SAML assertions WS-Trust and WS-Federation carry, and what `/wsfed/rp` checks one against. The browser profiles name themselves with `saml2.entityId` and `saml11.providerId`. |
 | `saml.clockSkewS` | `STS_SAML_CLOCK_SKEW_S` | `0` | yes | Seconds added to both ends of every issued assertion's validity window (at most 300). |
-| `saml.signatureAlgorithm` | `STS_SAML_SIGNATURE_ALGORITHM` | `rsa-sha256` | yes | The XML signature algorithm and Redirect `SigAlg`: `rsa-sha256`, `rsa-sha384`, `rsa-sha512`, or the broken `rsa-sha1`. |
+| `saml.signatureAlgorithm` | `STS_SAML_SIGNATURE_ALGORITHM` | `rsa-sha256` | yes | The XML signature algorithm and Redirect `SigAlg`: `rsa-sha256`, `rsa-sha384`, `rsa-sha512`, or the broken `rsa-sha1`. `rsa-sha1` is development mode only: product signs with `rsa-sha256` instead and refuses setting it (#181). |
 | `saml.canonicalizationAlgorithm` | `STS_SAML_CANONICALIZATION_ALGORITHM` | `exclusive` | yes | `exclusive` or `exclusive-with-comments`; inclusive c14n is not offered. |
-| `saml.allowSha1Signatures` | `STS_SAML_ALLOW_SHA1_SIGNATURES` | `false` | yes | Whether an XML signature this service verifies may use SHA-1; if allowed it is recorded as weak. |
+| `saml.allowSha1Signatures` | `STS_SAML_ALLOW_SHA1_SIGNATURES` | `false` | yes | Whether an XML signature this service verifies may use SHA-1; if allowed it is recorded as weak. On is development mode only: product refuses SHA-1 whatever this says, and refuses turning it on (#181). |
 | `saml.organizationName` | `STS_SAML_ORGANIZATION_NAME` | `sts` | yes | `<md:OrganizationName>` in the SAML metadata; empty omits `<md:Organization>`. |
 | `saml.organizationDisplayName` | `STS_SAML_ORGANIZATION_DISPLAY_NAME` | `Mock security token service` | yes | `<md:OrganizationDisplayName>`; empty omits the organisation. |
 | `saml.organizationUrl` | `STS_SAML_ORGANIZATION_URL` | *(empty)* | yes | `<md:OrganizationURL>`; empty means this service's base URL. |
@@ -379,13 +393,13 @@ one-shot artifact are enforced in **both** modes. See
 | `saml2.entityId` | `STS_SAML2_ENTITY_ID` | `urn:sts:idp` | yes | The identity provider's entityID and the `Issuer` of every Response and assertion this profile issues. |
 | `saml2.perApplicationEntityId` | `STS_SAML2_PER_APPLICATION_ENTITY_ID` | `true` | yes | Give each service provider its own entityID, `<entityID>:{sp}`. |
 | `saml2.assertionLifetimeMin` | `STS_SAML2_ASSERTION_LIFETIME_MIN` | `60` | yes | Assertion lifetime; per application with `saml2AssertionLifetimeMin`. |
-| `saml2.signAssertion` | `STS_SAML2_SIGN_ASSERTION` | `true` | yes | Sign the assertion; per application with `saml2SignAssertion`. |
+| `saml2.signAssertion` | `STS_SAML2_SIGN_ASSERTION` | `true` | yes | Sign the assertion; per application with `saml2SignAssertion`. Off is development mode only: product signs every assertion, and turning it off is refused, here and per application (#181). |
 | `saml2.signResponse` | `STS_SAML2_SIGN_RESPONSE` | `true` | yes | Sign the Response (the query string on the Redirect binding); per application with `saml2SignResponse`. |
 | `saml2.nameIdFormat` | `STS_SAML2_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified` | yes | The NameID format when the request names none; per application with `saml2NameIdFormat`. |
 | `saml2.artifactTtlS` | `STS_SAML2_ARTIFACT_TTL_S` | `300` | yes | How long an unresolved artifact lives (it is one-shot regardless); per application with `saml2ArtifactTtlS`. |
 | `saml2.encryptAssertion` | `STS_SAML2_ENCRYPT_ASSERTION` | `false` | yes | Encrypt the assertion; per application with `saml2EncryptAssertion`. |
 | `saml2.encryptionAlgorithm` | `STS_SAML2_ENCRYPTION_ALGORITHM` | `aes256-gcm` | yes | The block cipher: `aes256-gcm`, `aes128-gcm`, `aes256-cbc`, `aes128-cbc`. |
-| `saml2.keyTransportAlgorithm` | `STS_SAML2_KEY_TRANSPORT_ALGORITHM` | `rsa-oaep-mgf1p` | yes | The key wrap: `rsa-oaep-mgf1p` or the broken `rsa-1_5`. |
+| `saml2.keyTransportAlgorithm` | `STS_SAML2_KEY_TRANSPORT_ALGORITHM` | `rsa-oaep-mgf1p` | yes | The key wrap: `rsa-oaep-mgf1p` or the broken `rsa-1_5`. `rsa-1_5` is development mode only: product wraps with `rsa-oaep-mgf1p` instead, here and per application, and refuses setting it (#181). |
 | `saml2.encryptLogoutNameId` | `STS_SAML2_ENCRYPT_LOGOUT_NAMEID` | `false` | yes | Send `<saml:EncryptedID>` in the LogoutRequests this service sends. |
 | `saml2.autocreateApplications` | `STS_SAML2_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry for a new entityID on its first valid AuthnRequest or metadata request. |
 | `saml2.requireSignedAuthnRequests` | `STS_SAML2_REQUIRE_SIGNED_AUTHN_REQUESTS` | `auto` | yes | Refuse unsigned requests: `auto` (on in product), `on` or `off`; also sets `WantAuthnRequestsSigned`. |
@@ -435,10 +449,12 @@ changed on those pages or with `POST /admin-api/config/set`.
 * **Encryption without a key is a mode.** Development sends plaintext and says
   so, because a mock that stops issuing is useless while it is being set up;
   product refuses, because plaintext is what encryption was asked to prevent.
-* **Broken algorithms are offered on purpose.** `rsa-1_5`, CBC and `rsa-sha1`
-  exist because deployed service providers demand them, and a client library is
-  entitled to be tested against them. SHA-1 is refused when **verifying** unless
-  `saml.allowSha1Signatures` is on.
+* **Broken algorithms are offered on purpose — in development.** `rsa-1_5`,
+  CBC and `rsa-sha1` exist because deployed service providers demand them, and
+  a client library is entitled to be tested against them. SHA-1 is refused
+  when **verifying** unless `saml.allowSha1Signatures` is on. Since #181
+  product mode uses neither `rsa-sha1` nor `rsa-1_5` and never accepts SHA-1,
+  whatever is stored; CBC is still offered in both modes.
 * **A refusal about the return address is a page, not a Response.** Sending a
   failure Response to the address in question would be delivering to it anyway.
 * **The clock skew moves `Conditions` only.** Backdating `IssueInstant` or

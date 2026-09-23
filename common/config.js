@@ -2519,8 +2519,10 @@ const SETTINGS = [
                  'removed: a presented credential is verified against the ' +
                  'hashed `userPassword` on the person\'s directory entry, ' +
                  'every referenced object must have been created ahead of ' +
-                 'time, every OAuth 2.0 and OpenID Connect application must ' +
-                 'hold a client secret, and /admin-api with ' +
+                 'time, every OAuth 2.0 and OpenID Connect application that ' +
+                 'declared a confidential method must authenticate with it ' +
+                 '(a public client is held to RFC 9700 instead), every ' +
+                 'development-only setting is ignored, and /admin-api with ' +
                  'adminApi.authRequired off requires the same sign-in and ' +
                  'roles the console does (with it on, the default in both ' +
                  'modes, it requires an access token). It is settable per ' +
@@ -4311,6 +4313,9 @@ const SETTINGS = [
     label: 'Default CA signature algorithm',
     env: 'STS_PKI_SIGNATURE_ALGORITHM', type: 'string', dflt: '',
     runtime: true,
+    // The two SHA-1 values are DEVELOPMENT ONLY since #181 (2026-09-23).
+    onlyWhile: 'usesBrokenAlgorithms',
+    onlyWhileValues: ['sha1-rsa', 'sha1-ecdsa'],
     description: 'Which signature algorithm the tiers sign each other with. ' +
                  'EMPTY means "the right one for the key algorithm", which ' +
                  'is what almost every deployment wants and is why it is the ' +
@@ -4323,7 +4328,11 @@ const SETTINGS = [
                  'the two deliberately weak ones, sha1-rsa and sha1-ecdsa, ' +
                  'which are here because "does my stack refuse a SHA-1 ' +
                  'certificate?" is a question a debugger should be able to ' +
-                 'ask.' },
+                 'ask. WARNING: those two are DEVELOPMENT MODE ONLY — in ' +
+                 'product mode they are ignored where they are read (the ' +
+                 'key\'s own default is used, logged once, STS-CORE-0106), ' +
+                 'setting either is refused (STS-CORE-0103), and a build or ' +
+                 'a key pair that names one is refused (STS-PKI-0191).' },
   { key: 'pki.organisation', group: 'PKI',
     label: 'Default organisation name (O=)',
     env: 'STS_PKI_ORGANISATION', type: 'string', dflt: 'sts',
@@ -6308,6 +6317,8 @@ const SETTINGS = [
     env: 'STS_SAML_SIGNATURE_ALGORITHM', type: 'enum',
     enumValues: ['rsa-sha256', 'rsa-sha384', 'rsa-sha512', 'rsa-sha1'],
     dflt: 'rsa-sha256', runtime: true,
+    // `rsa-sha1` is DEVELOPMENT ONLY since #181 (2026-09-23).
+    onlyWhile: 'usesBrokenAlgorithms', onlyWhileValues: ['rsa-sha1'],
     description: 'The SignatureMethod of every enveloped XML signature this ' +
                  'service makes over a SAML 2.0 or SAML 1.1 assertion or ' +
                  'response, a SAML metadata document, the WS-Federation ' +
@@ -6317,7 +6328,10 @@ const SETTINGS = [
                  'because the key these are made with is RSA. `rsa-sha1` is ' +
                  'BROKEN and offered for the reason rsa-1_5 is: deployed ' +
                  'service providers still demand it and a client library is ' +
-                 'entitled to be tested against them.' },
+                 'entitled to be tested against them. WARNING: rsa-sha1 is ' +
+                 'DEVELOPMENT MODE ONLY — in product mode it is ignored ' +
+                 'where it is read (rsa-sha256 is used, logged once, ' +
+                 'STS-CORE-0106) and setting it is refused (STS-CORE-0103).' },
 
   { key: 'saml.canonicalizationAlgorithm', group: 'SAML',
     label: 'XML canonicalization',
@@ -6346,7 +6360,8 @@ const SETTINGS = [
   { key: 'saml.allowSha1Signatures', group: 'SAML',
     label: 'Accept SHA-1 XML signatures',
     env: 'STS_SAML_ALLOW_SHA1_SIGNATURES', type: 'bool', dflt: false,
-    runtime: true,
+    // DEVELOPMENT ONLY since #181 (2026-09-23): product verifies no SHA-1.
+    runtime: true, onlyWhile: 'usesBrokenAlgorithms',
     description: 'Whether an XML signature this service VERIFIES may use ' +
                  'SHA-1 — as its SignatureMethod (rsa-sha1, ecdsa-sha1, ' +
                  'dsa-sha1, sha1-rsa-MGF1) or as any Reference\'s ' +
@@ -6359,7 +6374,10 @@ const SETTINGS = [
                  'artifact resolution service, a federation partner\'s ' +
                  'Response, an RFC 7522 assertion, WS-Trust and ' +
                  'WS-Federation, SAML 1.1 — and none of what this service ' +
-                 'SIGNS, which is saml.signatureAlgorithm.' },
+                 'SIGNS, which is saml.signatureAlgorithm. WARNING: ON is ' +
+                 'DEVELOPMENT MODE ONLY — in product mode it is ignored ' +
+                 'where it is read (logged once, STS-CORE-0106) and turning ' +
+                 'it on is refused (STS-CORE-0103).' },
 
   { key: 'saml.organizationName', group: 'SAML',
     label: 'Metadata OrganizationName',
@@ -6435,13 +6453,22 @@ const SETTINGS = [
   { key: 'saml2.signAssertion', group: 'SAML 2.0 assertions', label: 'Sign ' +
       'the assertion',
     env: 'STS_SAML2_SIGN_ASSERTION', type: 'bool', dflt: true, runtime: true,
+    // OFF is DEVELOPMENT ONLY since #181 (2026-09-23); `mode.js`'s
+    // `issuesUnsignedAssertions()` argues it from the profile's text.
+    onlyWhile: 'issuesUnsignedAssertions',
     description: 'Sign the <saml:Assertion> itself. ON by default because a ' +
                  'service provider that verifies anything verifies this, and ' +
                  'because an assertion that travels on its own — out of an ' +
                  'ArtifactResponse, say — has nothing else carrying a ' +
-                 'signature. Turning it OFF is a test case rather than a ' +
-                 'mistake: a service provider that accepts an unsigned ' +
-                 'assertion has a hole, and this is how to find out.' },
+                 'signature; saml-profiles-2.0-os sections 4.1.3.5 and ' +
+                 '4.1.4.5 require it over the HTTP POST binding. Turning it ' +
+                 'OFF is a test case rather than a mistake: a service ' +
+                 'provider that accepts an unsigned assertion has a hole, ' +
+                 'and this is how to find out. WARNING: OFF is DEVELOPMENT ' +
+                 'MODE ONLY — in product mode it is ignored where it is ' +
+                 'read, here and on an application\'s saml2SignAssertion ' +
+                 '(the assertion is signed, logged once, STS-CORE-0106), and ' +
+                 'turning it off is refused (STS-CORE-0103, STS-REG-0193).' },
 
   { key: 'saml2.signResponse', group: 'SAML 2.0 assertions', label: 'Sign ' +
       'the response',
@@ -6543,14 +6570,21 @@ const SETTINGS = [
     env: 'STS_SAML2_KEY_TRANSPORT_ALGORITHM', type: 'enum',
     enumValues: ['rsa-oaep-mgf1p', 'rsa-1_5'],
     dflt: 'rsa-oaep-mgf1p', runtime: true,
+    // `rsa-1_5` is DEVELOPMENT ONLY since #181 (2026-09-23), here and on an
+    // application's `saml2KeyTransportAlgorithm`.
+    onlyWhile: 'usesBrokenAlgorithms', onlyWhileValues: ['rsa-1_5'],
     description: 'How the one-time content key is wrapped to the ' +
                  'recipient\'s RSA public key. `rsa-1_5` is RSAES-PKCS1-v1_5 ' +
                  'and is BROKEN — Bleichenbacher\'s adaptive ' +
                  'chosen-ciphertext attack is against exactly this — and it ' +
                  'is offered because a great many deployed service providers ' +
                  'accept nothing else, which is a fact about the world that ' +
-                 'a client library is entitled to be tested against. Nothing ' +
-                 'this service encrypts is a real secret.' },
+                 'a client library is entitled to be tested against. ' +
+                 'WARNING: rsa-1_5 is DEVELOPMENT MODE ONLY — in product ' +
+                 'mode it is ignored where it is read, on this setting and ' +
+                 'on an application\'s saml2KeyTransportAlgorithm ' +
+                 '(rsa-oaep-mgf1p is used, logged once, STS-CORE-0106), and ' +
+                 'setting it is refused (STS-CORE-0103, STS-REG-0193).' },
 
   { key: 'saml2.encryptLogoutNameId', group: 'SAML 2.0 assertions',
     label: 'Encrypt the NameID in a LogoutRequest',
@@ -6791,27 +6825,45 @@ const SETTINGS = [
   { key: 'saml11.signAssertion', group: 'SAML 1.1 assertions', label: 'Sign ' +
       'the assertion',
     env: 'STS_SAML11_SIGN_ASSERTION', type: 'bool', dflt: true, runtime: true,
+    // OFF is DEVELOPMENT ONLY since #181 (2026-09-23).
+    onlyWhile: 'issuesUnsignedAssertions',
     description: 'Sign the <saml:Assertion> itself, with ds:Signature as its ' +
                  'LAST child and the reference naming AssertionID — which is ' +
                  'where the 1.1 schema puts it and is not where SAML 2.0 ' +
-                 'does. ON by default because the Browser/POST profile ' +
-                 'REQUIRES a signed assertion (saml-profile-1.1 section ' +
-                 '4.2.1.4): the assertion passes through the browser, so ' +
-                 'nothing else authenticates it. Turning it off is a test ' +
-                 'case rather than a mistake — a relying party that accepts ' +
-                 'it anyway has a hole in it, and this is how somebody finds ' +
-                 'that out.' },
+                 'does. ON by default. The Browser/POST profile ' +
+                 '(oasis-sstc-saml-bindings-1.1 section 4.1.2.4) requires ' +
+                 'the RESPONSE to be signed and lets the assertions in it ' +
+                 'be signed; signing the assertion as well is what protects ' +
+                 'one that leaves the Response — resolved over the artifact ' +
+                 'channel, or referenced by AssertionIDReference. Turning ' +
+                 'it off is a test case rather than a mistake — a relying ' +
+                 'party that accepts it anyway has a hole in it, and this ' +
+                 'is how somebody finds that out. WARNING: OFF is ' +
+                 'DEVELOPMENT MODE ONLY — in product mode it is ignored ' +
+                 'where it is read, here and on an application\'s ' +
+                 'saml11SignAssertion (logged once, STS-CORE-0106), and ' +
+                 'turning it off is refused (STS-CORE-0103, STS-REG-0193).' },
 
   { key: 'saml11.signResponse', group: 'SAML 1.1 assertions', label: 'Sign ' +
       'the response',
     env: 'STS_SAML11_SIGN_RESPONSE', type: 'bool', dflt: true, runtime: true,
+    // OFF is DEVELOPMENT ONLY since #181 (2026-09-23): the Browser/POST
+    // profile requires the Response to be signed.
+    onlyWhile: 'issuesUnsignedAssertions',
     description: 'Sign the <samlp:Response> around the assertion as well, ' +
                  'with the reference naming ResponseID. Real identity ' +
                  'providers differ here and both are worth exercising, which ' +
                  'is why it is a setting: the profile requires the RESPONSE ' +
-                 'to be signed in Browser/POST and says nothing about it for ' +
-                 'the assertion pulled back over the artifact channel, where ' +
-                 'the SOAP exchange is what a relying party is trusting.' },
+                 'to be signed in Browser/POST (oasis-sstc-saml-bindings-1.1 ' +
+                 'section 4.1.2.4) and says nothing about it for the ' +
+                 'assertion pulled back over the artifact channel, where ' +
+                 'the SOAP exchange is what a relying party is trusting. ' +
+                 'WARNING: OFF is DEVELOPMENT MODE ONLY, because it makes a ' +
+                 'Browser/POST response non-conforming — in product mode it ' +
+                 'is ignored where it is read, here and on an ' +
+                 'application\'s saml11SignResponse (logged once, ' +
+                 'STS-CORE-0106), and turning it off is refused ' +
+                 '(STS-CORE-0103, STS-REG-0193).' },
 
   { key: 'saml11.nameIdFormat', group: 'SAML 1.1 assertions',
     label: 'Default ' +
@@ -8023,9 +8075,14 @@ const SETTINGS = [
 
   { key: 'krb5.clockOffset', group: 'Kerberos', label: 'Clock offset (s)',
     env: 'KRB5_CLOCK_OFFSET', type: 'int', dflt: 0, runtime: true,
+    // Anything but 0 is DEVELOPMENT ONLY since #181 (2026-09-23).
+    onlyWhile: 'spoilsOnPurpose',
     description: 'Moves this KDC\'s clock deliberately, so a skew failure ' +
                  'can be produced on purpose rather than by changing the ' +
-                 'machine\'s time.' },
+                 'machine\'s time. DEVELOPMENT MODE ONLY: in product mode ' +
+                 'anything but 0 is ignored where it is read (the KDC runs ' +
+                 'on the machine\'s clock, logged once, STS-CORE-0106) and ' +
+                 'setting it is refused (STS-CORE-0103).' },
 
   { key: 'krb5.userPassword', group: 'Kerberos', label: 'User password',
     env: 'KRB5_USER_PASSWORD', type: 'string', dflt: 'password!',
@@ -10104,7 +10161,8 @@ const SETTINGS = [
   { key: 'risc.googleSubjectType', group: 'RISC',
     label: 'Write subject_type instead of format',
     env: 'STS_RISC_GOOGLE_SUBJECT_TYPE', type: 'bool', dflt: false,
-    runtime: true,
+    // DEVELOPMENT ONLY since #181 (2026-09-23): a deliberate defect.
+    runtime: true, onlyWhile: 'spoilsOnPurpose',
     description: 'THE DELIBERATE DEFECT FOR THIS PROFILE, and it is the one ' +
                  'the specification itself names. RISC 1.0 section 3.1 ' +
                  'records that Google\'s production RISC transmitter spells ' +
@@ -10117,7 +10175,10 @@ const SETTINGS = [
                  'RISC subject this service sends, which is how a receiver ' +
                  'finds out whether it has that code before it is pointed ' +
                  'at Google. It does not touch CAEP or SSF events, whose ' +
-                 'specifications never had the problem.' },
+                 'specifications never had the problem. DEVELOPMENT MODE ' +
+                 'ONLY: in product mode it is ignored where it is read ' +
+                 '(logged once, STS-CORE-0106) and turning it on is refused ' +
+                 '(STS-CORE-0103).' },
 
   { key: 'risc.reasonLanguage', group: 'RISC',
     label: 'Language tag on reason_admin / reason_user',
@@ -11387,16 +11448,20 @@ const SETTINGS = [
   { key: 'spiffe.requireSecurityHeader', group: 'SPIFFE',
     label: 'Require the workload.spiffe.io header',
     env: 'STS_SPIFFE_REQUIRE_SECURITY_HEADER', type: 'bool', dflt: true,
-    runtime: true,
-    description: 'The Workload Endpoint specification says a client MUST ' +
-                 'send `workload.spiffe.io: true` on every call and a server ' +
-                 'MUST refuse one without it. It is a conformance check ' +
-                 'rather than a security one — it exists so that a caller ' +
-                 'cannot reach the endpoint by accident — and it is ON here ' +
-                 'even though this service is permissive by default, ' +
-                 'because a client that omits it has a bug this is the only ' +
-                 'thing that will ever tell them about. Off is for the case ' +
-                 'where you are deliberately testing something else.' },
+    // OFF is DEVELOPMENT ONLY since #181 (2026-09-23).
+    runtime: true, onlyWhile: 'servesWithoutSecurityHeader',
+    description: 'The Workload Endpoint specification (section 3) says a ' +
+                 'client MUST send `workload.spiffe.io: true` on every call ' +
+                 'and a server MUST refuse one without it — a hardening ' +
+                 'measure against server-side request forgery, since an ' +
+                 'attacker who can make a workload send a request rarely ' +
+                 'controls its gRPC metadata. It is ON here even in ' +
+                 'development, because a client that omits it has a bug ' +
+                 'this is the only thing that will ever tell them about. ' +
+                 'WARNING: OFF is DEVELOPMENT MODE ONLY, for deliberately ' +
+                 'testing something else — in product mode it is ignored ' +
+                 'where it is read (logged once, STS-CORE-0106) and turning ' +
+                 'it off is refused (STS-CORE-0103).' },
 
   { key: 'spiffe.trustLocalSocket', group: 'SPIFFE',
     label: 'Trust the SPIRE Server API socket as local',
@@ -12404,7 +12469,19 @@ function replacedBy(key) {
 // carries `servesUnattestedEntries` (#104), and
 // `oid4vp.requireStatusReference` carries `acceptsCredentialsWithoutStatus`
 // with `onlyWhileValues: ['off']` (#165) — the marker governing only the
-// values it lists, because that enum's `own-only` is allowed in product. In
+// values it lists, because that enum's `own-only` is allowed in product.
+// #181 marked eleven more: `risc.googleSubjectType` and `krb5.clockOffset`
+// carry `spoilsOnPurpose`; `saml2.signAssertion`, `saml11.signAssertion` and
+// `saml11.signResponse` (default ON, so OFF is refused) carry
+// `issuesUnsignedAssertions`; `spiffe.requireSecurityHeader` carries
+// `servesWithoutSecurityHeader`; and `usesBrokenAlgorithms` governs
+// `saml.allowSha1Signatures` and, through `onlyWhileValues`, the weak values
+// alone of `saml.signatureAlgorithm` (`rsa-sha1`),
+// `saml2.keyTransportAlgorithm` (`rsa-1_5`) and `pki.signatureAlgorithm`
+// (`sha1-rsa`, `sha1-ecdsa`). An APPLICATION's override of a marked setting
+// (`saml2SignAssertion` …) is held to the same rule by
+// `common/applications.js`: ignored where `settingFor()` reads it, refused
+// where `updateApplication()` writes it (STS-REG-0193). In
 // a product realm a write of a marked value other than the default is refused
 // (STS-CORE-0103), through /admin and
 // /admin-api alike — the `set`, `set-many` and realm `set` doors. Writing the

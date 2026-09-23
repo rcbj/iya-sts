@@ -102,7 +102,9 @@ format yet, and inventing one would work here and interoperate with nothing.
 the life of the connection and **re-sent at half the shortest SVID lifetime**,
 so a client's rotation path runs without an hour's wait. A call without the
 metadata header `workload.spiffe.io: true` is refused, because the specification
-requires it (`spiffe.requireSecurityHeader`).
+requires it (section 3, a hardening measure against server-side request
+forgery). `spiffe.requireSecurityHeader` off serves such a call in development
+mode only (#181); product ignores it and refuses turning it off.
 
 **Which entries answer a caller.** A caller is given the registration entries
 whose selectors are a **subset** of the caller's selectors, as SPIRE matches
@@ -364,7 +366,7 @@ are reconciled, which happens whenever one of the realm's settings changes.
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `spiffe.requireSecurityHeader` | `STS_SPIFFE_REQUIRE_SECURITY_HEADER` | `true` | yes | Refuse a call without `workload.spiffe.io: true`, as the specification requires. |
+| `spiffe.requireSecurityHeader` | `STS_SPIFFE_REQUIRE_SECURITY_HEADER` | `true` | yes | Refuse a call without `workload.spiffe.io: true`, as the specification requires. Off is development mode only: product always requires the header and refuses turning it off (#181). |
 | `spiffe.attestWorkloads` | `STS_SPIFFE_ATTEST_WORKLOADS` | `true` | yes | Answer a caller only with the entries its selectors match; off answers every caller with every entry, in development only. |
 | `spiffe.autoCreateEntries` | `STS_SPIFFE_AUTOCREATE_ENTRIES` | `true` | yes | In development, create an entry for a caller that matches none; off gives it an empty SVID list. |
 | `spiffe.acceptAssertedSelectors` | `STS_SPIFFE_ACCEPT_ASSERTED_SELECTORS` | `false` | yes | In development, believe selectors a caller sends in `x-sts-workload-selector`. Nothing verifies them. Refused in product. |

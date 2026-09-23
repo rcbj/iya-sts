@@ -744,8 +744,14 @@ const CODES = [
       'spiffe.k8sSkipKubeletVerification (#171); oauth2.breakIdTokenNonce, ' +
       'ssf.breakSetSignature, ssf.legacySubClaim or ' +
       'spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off ' +
-      '(#104) — was refused because the realm it lands in is in product ' +
-      'mode.',
+      '(#104); oid4vp.requireStatusReference off (#165); ' +
+      'risc.googleSubjectType or saml.allowSha1Signatures on, ' +
+      'saml2.signAssertion, saml11.signAssertion, saml11.signResponse or ' +
+      'spiffe.requireSecurityHeader off, krb5.clockOffset not 0, or a weak ' +
+      'value of saml.signatureAlgorithm (rsa-sha1), ' +
+      'saml2.keyTransportAlgorithm (rsa-1_5) or pki.signatureAlgorithm ' +
+      '(sha1-rsa, sha1-ecdsa) (#181) — was refused because the realm it ' +
+      'lands in is in product mode.',
     spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
       '{ ok: false, errors }' },
   { code: 'STS-CORE-0104',
@@ -761,11 +767,11 @@ const CODES = [
       'federation.outboundAllowInsecure or xacml.pepNotifyAllowInsecure.',
     spec: 'none — the process exits' },
   { code: 'STS-CORE-0106',
-    summary: 'A development-only setting — oauth2.breakIdTokenNonce, ' +
-      'ssf.breakSetSignature, ssf.legacySubClaim or ' +
-      'spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off — ' +
-      'is stored in a realm that is in product mode, and is ignored: its ' +
-      'default is in force. Logged once per process and setting (#104).',
+    summary: 'A development-only setting — one of those STS-CORE-0103 ' +
+      'lists, or an application attribute overriding one (#181) — is ' +
+      'stored in a realm that is in product mode, and is ignored: its ' +
+      'default is in force. Logged once per process and setting or ' +
+      'attribute (#104).',
     spec: 'none — a warning in the log' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
@@ -1718,6 +1724,13 @@ const CODES = [
       'written.',
     spec: 'none — logged. A row may not publish a certificate its own CRL ' +
       'calls revoked; the drop is evidence of a tier write that was lost' },
+  { code: 'STS-KEYS-0070',
+    summary: 'An XML element encrypted to this realm wrapped its key with ' +
+      'rsa-1_5 (RSAES-PKCS1-v1_5), and the realm is in product mode, where ' +
+      'that key transport is never unwrapped — XML Encryption 1.1 section ' +
+      '6.1.2 (#181).',
+    spec: 'the caller\'s refusal: a LogoutRequest\'s EncryptedID that ' +
+      'cannot be read is answered as the SAML binding says' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -2595,6 +2608,12 @@ const CODES = [
       'pki.revocationRequireDistributionPoint (auto, in product mode, or ' +
       'on) refuses a certificate nobody can revoke.',
     spec: 'The same refusals as STS-PKI-0118, per door' },
+  { code: 'STS-PKI-0191',
+    summary: 'A certificate authority build, or a key pair issued under ' +
+      'one, named a SHA-1 signature algorithm (sha1-rsa or sha1-ecdsa) in a ' +
+      'realm that is in product mode, where SHA-1 is never used (#181).',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }' },
   // ===== ENROLL ============================================================
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
@@ -14076,6 +14095,14 @@ const CODES = [
       'application\'s entry, so a re-consent could revive a refresh token ' +
       'the revocation did not reach (#172).',
     spec: 'none — logged' },
+  { code: 'STS-REG-0193',
+    summary: 'A write setting an application\'s override of a ' +
+      'development-only setting — saml2SignAssertion, saml11SignAssertion or ' +
+      'saml11SignResponse to FALSE, or saml2KeyTransportAlgorithm to ' +
+      'rsa-1_5 — was refused because the realm is in product mode, where ' +
+      'the value would be ignored (#181).',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

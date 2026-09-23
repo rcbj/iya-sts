@@ -45,7 +45,8 @@ client cannot guess.
 * **Cross-realm referrals**, in development mode, to a second realm
   (`krb5.trustedRealm`, `PARTNER.COM`) through an inter-realm trust key.
 * **A deliberate clock offset** (`krb5.clockOffset`), so `KRB_AP_ERR_SKEW` can
-  be produced on purpose, and **names that stay unknown**
+  be produced on purpose — in development mode only: a product realm's KDC runs
+  on the machine's clock whatever is stored (#181) — and **names that stay unknown**
   (`krb5.unknownUsers`), so `KDC_ERR_C_PRINCIPAL_UNKNOWN` stays reachable.
 
 `GET /krb5/principals` lists the principal database, what each account is for,
@@ -154,7 +155,7 @@ fractions — while every ticket from before the sign-out stays refused until th
 latest one could still be valid (the sign-out plus the longer of
 `krb5.ticketLifetimeSeconds` and `krb5.renewLifetimeSeconds`, plus
 `krb5.clockSkew`). The instant is taken on the KDC's clock, so
-`krb5.clockOffset` moves it with `authtime`. A service ticket already in a cache
+`krb5.clockOffset` (development only) moves it with `authtime`. A service ticket already in a cache
 keeps working against the service that accepts it — nothing contacts the KDC on
 that exchange — and `/logout` says so. `logout.kerberosSignOut` turns it off.
 The console's `restore-kerberos` clears an instant in development mode and is
@@ -311,7 +312,7 @@ modes**, and a replay is refused in both. See
 | `krb5.spnegoPendingTtlSeconds` | `KRB5_SPNEGO_PENDING_TTL_S` | `120` | yes | How long a `request-mic` exchange may sit between its two requests. |
 | `krb5.spnegoMaxPending` | `KRB5_SPNEGO_MAX_PENDING` | `64` | yes | How many of those are held at once; the oldest is dropped. |
 | `krb5.clockSkew` | `KRB5_CLOCK_SKEW` | `300` | yes | How far the KDC's and a client's clocks may differ before `KRB_AP_ERR_SKEW`. |
-| `krb5.clockOffset` | `KRB5_CLOCK_OFFSET` | `0` | yes | Moves the KDC's clock deliberately, to produce a skew failure on purpose. |
+| `krb5.clockOffset` | `KRB5_CLOCK_OFFSET` | `0` | yes | Moves the KDC's clock deliberately, to produce a skew failure on purpose. Development mode only: anything but 0 is ignored in product (the KDC runs on the machine's clock), and setting it is refused (#181). |
 | `krb5.userPassword` | `KRB5_USER_PASSWORD` | `password!` | no | The one password every development user account has, published on `/krb5/principals`. |
 | `krb5.unknownUsers` | `KRB5_UNKNOWN_USERS` | `nosuchuser,nobody` | yes | Names never created on demand, so `KDC_ERR_C_PRINCIPAL_UNKNOWN` stays reachable. |
 | `krb5.serviceDomains` | `KRB5_SERVICE_DOMAINS` | the realm's domain, `localhost`, `sts`, `127.0.0.1` | no | The host domains a service principal is created on demand for; empty creates none. |

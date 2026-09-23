@@ -2491,6 +2491,19 @@ const SECTIONS = [
                'a value NOWHERE stops the service from starting rather than ' +
                'defaulting quietly. Like every writing page here, it writes ' +
                'the realm it is read IN.' },
+      // BESIDE Configuration, because it answers the question that page's
+      // `global.mode` row raises: what does the mode change? It is drawn by
+      // `admin-ui/mode_admin.ts` (#181) and changes nothing — the setting is
+      // written on Configuration.
+      { path: '/admin/mode', label: 'Mode',
+        blurb: 'What <code>global.mode</code> changes, and what is in force ' +
+               'in this realm: every requirement with its development and ' +
+               'product answers, every development-only setting with the ' +
+               'value stored and the value in force — a product realm ' +
+               'ignores a development-only value it still holds — and ' +
+               'what product mode still does not check. Read from ' +
+               '<code>common/mode.js</code>, the one place the two modes ' +
+               'are told apart.' },
       { path: '/admin/persistence', label: 'Persistence',
         blurb: 'Whether anything here survives a restart, and where it is ' +
                'written. THREE things can be — the embedded directory (which ' +

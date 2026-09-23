@@ -1687,6 +1687,14 @@ the handler runs synchronously as it did. The directory module is found in the
 require CACHE, never required: it is below this module in the route order. The
 design is `ldap/CLAUDE.md`'s, *Several nodes: a create claims its name*.
 
+## `/admin-api/mode` (#181, 2026-09-23)
+
+One operation, `getMode`: `admin-ui/mode_admin.ts`'s `modeView()`, which is
+`common/mode.js`'s `report()` for the realm the call is in — what
+`/admin/mode?format=json` answers (rule 7). It changes nothing; `global.mode`
+is written through `POST /admin-api/config/set` like every other setting. Call
+it under `/realm/{id}/admin-api/mode` for a realm's answer.
+
 ## `/admin-api/vc-status` (#38's follow-ups, 2026-09-17)
 
 Two operations, and both are `admin-ui/vc_status_admin.ts`'s own functions

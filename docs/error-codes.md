@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3125** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3128** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -56,8 +56,8 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 69
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 177
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 70
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 178
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 63
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 125
+* [Registries (`STS-REG`)](#sts-reg) — 126
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -195,10 +195,10 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0100` | A trust realm was given a domain another realm — the default realm's global.domain included — already has. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0101` | An update tried to change a trust realm's domain, which is fixed when the realm is created. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0102` | A cache or replay store could not eject its expired entries; the store still refuses an expired entry where it reads it. | none — logged by the caches.eject-expired job |
-| `STS-CORE-0103` | A write giving a development-only setting a value other than its default — a …SkipTlsVerification or spiffe.k8sSkipKubeletVerification (#171); oauth2.breakIdTokenNonce, ssf.breakSetSignature, ssf.legacySubClaim or spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off (#104) — was refused because the realm it lands in is in product mode. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-CORE-0103` | A write giving a development-only setting a value other than its default — a …SkipTlsVerification or spiffe.k8sSkipKubeletVerification (#171); oauth2.breakIdTokenNonce, ssf.breakSetSignature, ssf.legacySubClaim or spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off (#104); oid4vp.requireStatusReference off (#165); risc.googleSubjectType or saml.allowSha1Signatures on, saml2.signAssertion, saml11.signAssertion, saml11.signResponse or spiffe.requireSecurityHeader off, krb5.clockOffset not 0, or a weak value of saml.signatureAlgorithm (rsa-sha1), saml2.keyTransportAlgorithm (rsa-1_5) or pki.signatureAlgorithm (sha1-rsa, sha1-ecdsa) (#181) — was refused because the realm it lands in is in product mode. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-CORE-0104` | An outbound request (a GNAP push, an SSF push, a federation back channel or an XACML nudge) was not made because the CA file its …CaFile setting names could not be read or holds no certificate. | none — the family's own failure record (a grant history, a dead letter, a relationship's last error, a PEP row) |
 | `STS-CORE-0105` | The service did not start: the appconfig file or the environment still names a setting removed on 2026-09-23 (#171) — gnap.pushAllowInsecure, ssf.pushAllowInsecure, federation.outboundAllowInsecure or xacml.pepNotifyAllowInsecure. | none — the process exits |
-| `STS-CORE-0106` | A development-only setting — oauth2.breakIdTokenNonce, ssf.breakSetSignature, ssf.legacySubClaim or spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off — is stored in a realm that is in product mode, and is ignored: its default is in force. Logged once per process and setting (#104). | none — a warning in the log |
+| `STS-CORE-0106` | A development-only setting — one of those STS-CORE-0103 lists, or an application attribute overriding one (#181) — is stored in a realm that is in product mode, and is ignored: its default is in force. Logged once per process and setting or attribute (#104). | none — a warning in the log |
 
 ## STS-WORKER
 
@@ -460,6 +460,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0067` | A realm's signing-key history could not be recorded; the rotation or retirement itself succeeded. | none — logged. The next observation writes the rows, because the history is derived from the key set rather than from the event |
 | `STS-KEYS-0068` | The signing-key history was asked for a unit this realm has no record of. | HTTP 400 from GET /admin-api/keys/history; a refusal on /admin/keys/history |
 | `STS-KEYS-0069` | A certificate authority row listed a certificate it still publishes as revoked; the revocation was dropped rather than written. | none — logged. A row may not publish a certificate its own CRL calls revoked; the drop is evidence of a tier write that was lost |
+| `STS-KEYS-0070` | An XML element encrypted to this realm wrapped its key with rsa-1_5 (RSAES-PKCS1-v1_5), and the realm is in product mode, where that key transport is never unwrapped — XML Encryption 1.1 section 6.1.2 (#181). | the caller's refusal: a LogoutRequest's EncryptedID that cannot be read is answered as the SAML binding says |
 
 ## STS-PKI
 
@@ -646,6 +647,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0188` | A presented certificate chain was refused under pki.revocationCheck=hard-fail because a certificate in it names revocation addresses this service is configured NOT TO DIAL and no other it could use — a plain ldap: CRL under pki.revocationLdap=ldaps, any ldap with it off, a name relative to the CRL issuer without pki.revocationLdapDirectory, a scheme that is never dialled, or an OCSP responder that is not http(s) — so its status could not be established. Distinct from STS-PKI-0119 so that a policy refusal is not read as an unreachable server; also logged, once per address per process, naming the setting that would dial it. | The same refusals as STS-PKI-0118, per door |
 | `STS-PKI-0189` | A presented certificate carries RFC 9608 noRevAvail beside something section 3 forbids with it — cA TRUE, cRLDistributionPoints, freshestCRL, or an OCSP responder in its Authority Information Access — and is refused as INVALID under every policy but off. | The same refusals as STS-PKI-0118, per door |
 | `STS-PKI-0190` | A presented certificate chain was refused under pki.revocationCheck=hard-fail because a certificate in it, issued by an authority this service does not hold, names no CRL distribution point and no OCSP responder, carries no RFC 9608 noRevAvail, and pki.revocationRequireDistributionPoint (auto, in product mode, or on) refuses a certificate nobody can revoke. | The same refusals as STS-PKI-0118, per door |
+| `STS-PKI-0191` | A certificate authority build, or a key pair issued under one, named a SHA-1 signature algorithm (sha1-rsa or sha1-ecdsa) in a realm that is in product mode, where SHA-1 is never used (#181). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 
 ## STS-ENROLL
 
@@ -3513,6 +3515,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0190` | A backchannel_logout_uri the outbound policy would not dial (http with federation.outboundAllowHttp off, or in product mode): every delivery would be dead-lettered, so it is refused where it is written (#123). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0191` | A generic application edit tried to remove a value of oauthGlobalConsent. A global consent is withdrawn only through the consent register (revoke-global-consent), which also revokes what was issued under it and records when (#172). | HTTP 400 page / {ok: false} |
 | `STS-REG-0192` | A consent was withdrawn and its tokens revoked, but the withdrawal instant could not be written onto the person's or the application's entry, so a re-consent could revive a refresh token the revocation did not reach (#172). | none — logged |
+| `STS-REG-0193` | A write setting an application's override of a development-only setting — saml2SignAssertion, saml11SignAssertion or saml11SignResponse to FALSE, or saml2KeyTransportAlgorithm to rsa-1_5 — was refused because the realm is in product mode, where the value would be ignored (#181). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 
 ## STS-DBG
 
