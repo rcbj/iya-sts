@@ -694,7 +694,8 @@ crosses to a request worker is the caller, already plain.
 **What is still not attested, and why each is a sentence rather than a gap:**
 
 * **A caller over TCP** — no peer process to ask. It keeps the `transport:`,
-  `endpoint:` and `peer:` selectors.
+  `endpoint:` and `peer:` selectors, and **product does not serve it without a
+  declared network** — see *The Workload API over TCP* below (#166).
 * **A peer in another pid namespace** (pid 0 from `SO_PEERCRED`) — attested on
   its kernel uid and gid alone; nothing that needs the process is invented.
 * **The socket without the native module** — development serves it
@@ -718,6 +719,52 @@ which made the attestation above meaningless. Both rows carry `onlyWhile`
 refuses the non-default value on write (`STS-CORE-0103`), and
 `spiffe_auth.ts` reads both through `mode.valueInForce()`, which answers the
 default there whatever is stored and says so once (`STS-CORE-0106`).
+
+### The Workload API over TCP, and what an entry must select (#166, 2026-09-23)
+
+The Workload Endpoint specification section 3: "TCP transport MUST NOT be used
+unless the underlying network allows the Workload Endpoint server to strongly
+authenticate the workload based on source IP address." Sections 3.1 and 5 rule
+out TLS and client authentication, so the source address is the only identity a
+TCP caller can carry — and product bound 8092 on `0.0.0.0` and attested nobody.
+Whether a network authenticates source addresses is not observable from here, so
+the operator DECLARES it. Decisions taken on the issue, the most secure in each
+case:
+
+* **`SpiffeAuth.workloadTcpPosture()` IS THE ONE ANSWER**, read in the ambient
+  realm by three askers: `bindAll()` (a product realm without
+  `spiffe.workloadTcpSourceAuthenticated` does not bind the TCP address,
+  `STS-SPIFFE-0120`; with it and a wildcard `spiffe.grpcHost`, not either,
+  `STS-SPIFFE-0121` — the operator names the address they vouch for),
+  `prepareCall()` (a realm switched to product, or whose declaration was
+  withdrawn, after its port was bound refuses every call on it `UNAVAILABLE` —
+  the listeners are bound once, so the read is the guard), and
+  `workloadAttestationState().tcp`, which `GET /spiffe`, `/admin/spiffe` and
+  `/admin-api/spiffe` draw. The predicate is `mode.servesUnattestedWorkloadTcp()`
+  and the setting is `realmRuntime`, like the port it governs. A refused
+  binding carries its code as `errorCodes.mark()`, never as a member: the row is
+  drawn and returned.
+* **AN ENTRY MUST IDENTIFY ITS WORKLOAD** (`mode.registersUnidentifyingEntries()`,
+  `registry.identifiesWorkload()`): in product, one with no selector or only
+  `transport:`/`endpoint:` is refused in `checkRecord()` (`STS-SPIFFE-0122`), so
+  the console, `/admin-api` and `BatchCreateEntry`/`BatchUpdateEntry`
+  (INVALID_ARGUMENT per item) are held to it alike; the code rides the result as
+  a mark and each door records it. An entry written in development answers
+  nobody once the realm is in product (`answersWorkloads()` in
+  `entitledEntries()`, `STS-SPIFFE-0123`, said once per entry). Empty is refused
+  too because SPIRE itself refuses an empty selector list.
+* **`peer:` STAYS EXACT.** No CIDR prefixes: SPIRE has no such selector, and a
+  prefix would be this service inventing a matching rule a client written
+  against SPIRE would not expect.
+* **Development is unchanged**, and `workloadSelectors()` too: `peer:` was
+  already the only TCP selector that says WHO; the refusal is what makes
+  `transport:` and `endpoint:` descriptive.
+
+`tests/spiffe_workload_tcp_product.js` holds all of it — the posture, a real
+bind in both modes with a gRPC client over TCP, the three doors, exact `peer:`;
+`tests/vendored/sts_spiffe_grpc.js` the network's view in both states. The test
+stacks (`docker-compose-run-tests.yml`) DECLARE their bridge, which only this
+launcher's containers are on, so the product modes exercise the declared path.
 
 ### The `local` entity, verified in product (#104)
 

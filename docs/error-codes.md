@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3075** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3079** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 154
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 119
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 123
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 101
@@ -2285,6 +2285,10 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0117` | A caller on the SPIRE Server API's Unix socket was not trusted as the local entity, in a product realm, because the socket was not verified private: it was not made 0600 (STS-SPIFFE-0010), the connection came before it was, or the socket or its directory has a group or other bit (#104). | gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, which it may call only as another entity |
 | `STS-SPIFFE-0118` | A caller on the SPIRE Server API's Unix socket was not trusted as the local entity, in a product realm, because the kernel says it runs as a uid that is not this service's own (#104). | gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, which it may call only as another entity |
 | `STS-SPIFFE-0119` | A caller on the SPIRE Server API's Unix socket was not trusted as the local entity, in a product realm, because its kernel credentials could not be read — the native module is not built, or SO_PEERCRED failed (#104). | gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, which it may call only as another entity |
+| `STS-SPIFFE-0120` | The Workload API was not served over TCP in a product realm, because spiffe.workloadTcpSourceAuthenticated does not declare that the network authenticates source addresses (SPIFFE Workload Endpoint section 3) — the port was not bound, or a realm switched to product with it bound refused the call (#166). | nothing listening on the port; gRPC UNAVAILABLE on a port already bound |
+| `STS-SPIFFE-0121` | The Workload API was not served over TCP in a product realm: spiffe.workloadTcpSourceAuthenticated is on but spiffe.grpcHost is a wildcard address, and the declaration covers one named network (#166). | nothing listening on the port; gRPC UNAVAILABLE on a port already bound |
+| `STS-SPIFFE-0122` | A SPIFFE registration entry was refused in a product realm because it selects nothing that identifies a workload — no selector, or only transport: and endpoint: ones — at the console, /admin-api or the SPIRE Server API (#166). | gRPC INVALID_ARGUMENT for the item in BatchCreateEntry and BatchUpdateEntry; a refused console or management API action |
+| `STS-SPIFFE-0123` | A SPIFFE registration entry already in the registry that selects nothing identifying a workload answered no Workload API caller, because its realm is in product mode; said once per entry per process (#166). | the entry is left out of the answer; the caller may get an empty SVID list |
 
 ## STS-TLS
 
