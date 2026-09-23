@@ -29,6 +29,13 @@
 // are pre-provisioned through `POST /scim/v2/Users` in the service provider's
 // realm. Nothing is called behind the protocol's back.
 //
+// SINCE #109 (2026-09-22) the relationship is under `fedSubjectPolicy`'s
+// default, link-at-first-sign-in: a pre-provisioned person meets the service
+// provider's own sign-in screen once, as themselves, before their account is
+// linked to the partner (development checks no password there), and an entry
+// a sign-in CREATES is named `<relationship>~<name>`. Which people a partner
+// may assert is `tests/federation_subject_policy.js`'s.
+//
 // WHY A CHILD PROCESS: it loads the whole protocol stack, serves it on a
 // loopback port, creates a realm and flips four settings.
 // ===========================================================================
@@ -118,7 +125,7 @@ function childMain() {
               json = { parseError: e.message };
             }
             resolve({ status: res.statusCode, headers: res.headers,
-                      text: text, json: json });
+                      text: text, json: json, path: url.pathname });
           });
         });
         req.end(body);
@@ -137,7 +144,14 @@ function childMain() {
         }
         const authnId = /name="authn_id" value="([^"]+)"/.exec(r.text);
         if (r.status === 200 && authnId) {
-          r = await request('POST', '/authn/login', { form: {
+          // THE SCREEN'S OWN REALM (#109): the partner's, or — for a person
+          // who already exists here and is not linked yet — the service
+          // provider's own linking sign-in (link-at-first-sign-in, the
+          // default), where the name is fixed and development checks no
+          // password.
+          const realmPrefix = r.path.indexOf('/realm/' + SP + '/') === 0
+            ? '/realm/' + SP : '';
+          r = await request('POST', realmPrefix + '/authn/login', { form: {
             authn_id: authnId[1], username: username, password: 'x',
             action: 'login' } });
           continue;
@@ -203,10 +217,12 @@ function childMain() {
     // 1. DYNAMIC PROVISIONING: the first sign-in creates the entry
     // =======================================================================
     let r = await federatedSignIn('fp-dyn');
-    const dyn = await inSp(function () { return entryOf('fp-dyn'); });
+    // #109: an entry a sign-in CREATES is namespaced to the relationship.
+    const dyn = await inSp(function () { return entryOf(REL + '~fp-dyn'); });
     note(r.status === 200 && dyn,
          '1a. DYNAMIC: a person nobody provisioned signs in through the ' +
-         'partner, and the service provider CREATES their entry',
+         'partner, and the service provider CREATES their entry — ' +
+         'namespaced to the relationship since #109',
          r.status + ' ' + r.text.replace(/\s+/g, ' ').slice(0, 200));
     note(dyn && attr(dyn, 'entryUUID').length === 1,
          '1b. and it has an entryUUID — the subject of the session',
@@ -216,13 +232,19 @@ function childMain() {
          dyn && JSON.stringify(attr(dyn, 'mail')));
     note(dyn && attr(dyn, 'federationRelationship').indexOf(REL) >= 0,
          '1d. and a record of the relationship it came through');
+    note(dyn && attr(dyn, 'federationLink').length === 1 &&
+         attr(dyn, 'federationLink')[0].indexOf(REL + ' ') === 0,
+         '1e. and the link to the partner\'s subject, made at creation',
+         dyn && JSON.stringify(attr(dyn, 'federationLink')));
 
     // =======================================================================
     // 2. PRE-PROVISIONING, NOBODY PROVISIONED: refused
     // =======================================================================
     await setRel('fedAutocreateUsers', 'FALSE');
     r = await federatedSignIn('fp-absent');
-    const absent = await inSp(function () { return entryOf('fp-absent'); });
+    const absent = await inSp(function () {
+      return entryOf('fp-absent') || entryOf(REL + '~fp-absent');
+    });
     // The SERVICE PROVIDER's audit log: a realm's rows are its own.
     const refusedCodes = (await inSp(function () {
       return audit.list();
@@ -297,21 +319,22 @@ function childMain() {
 
     await setRel('fedAutocreateUsers', 'TRUE');
     r = await federatedSignIn('fp-new-noupdate');
+    const NEW_NOUPDATE = REL + '~fp-new-noupdate';
     const fresh = await inSp(function () {
-      return entryOf('fp-new-noupdate');
+      return entryOf(NEW_NOUPDATE);
     });
     note(r.status === 200 && fresh && /@/.test(attr(fresh, 'mail')[0] || ''),
          '5c. REFRESH OFF with provisioning ON: an entry the sign-in CREATES ' +
          'still takes the partner\'s attributes — "off" is about returning ' +
          'people', fresh && JSON.stringify(attr(fresh, 'mail')));
     await inSp(function () {
-      ldap.writePerson(ldap.existingUserEntry('fp-new-noupdate').dn,
-        Object.assign({}, ldap.existingUserEntry('fp-new-noupdate').attributes,
+      ldap.writePerson(ldap.existingUserEntry(NEW_NOUPDATE).dn,
+        Object.assign({}, ldap.existingUserEntry(NEW_NOUPDATE).attributes,
                       { mail: ['edited@directory.example'] }));
     });
     r = await federatedSignIn('fp-new-noupdate');
     const again = await inSp(function () {
-      return entryOf('fp-new-noupdate');
+      return entryOf(NEW_NOUPDATE);
     });
     note(r.status === 200 &&
          JSON.stringify(attr(again, 'mail')) === '["edited@directory.example"]',
@@ -324,7 +347,7 @@ function childMain() {
     await setRel('fedUpdateUserAttributes', 'TRUE');
     r = await federatedSignIn('fp-new-noupdate');
     const refreshed = await inSp(function () {
-      return entryOf('fp-new-noupdate');
+      return entryOf(NEW_NOUPDATE);
     });
     note(r.status === 200 &&
          (attr(refreshed, 'mail')[0] || '') !== 'edited@directory.example',
@@ -367,7 +390,8 @@ function childMain() {
          recorded && JSON.stringify(attr(recorded, 'mail')));
     r = await federatedSignIn('fp-nocreate-nobody');
     const nobody = await inSp(function () {
-      return entryOf('fp-nocreate-nobody');
+      return entryOf('fp-nocreate-nobody') ||
+             entryOf(REL + '~fp-nocreate-nobody');
     });
     note(r.status === 403 && !nobody,
          '7c. while somebody nobody provisioned is still refused and ' +

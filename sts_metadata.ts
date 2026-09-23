@@ -8025,6 +8025,27 @@ const ENDPOINTS: EndpointEntry[] = [
           'the person\'s sign-in already succeeded at the partner and the ' +
           'only interesting question is what this service disliked about the ' +
           'answer.' },
+  { path: '/federation/link/:handle', group: 'Federation',
+    name: 'Link a partner\'s subject at first sign-in',
+    specs: ['oidc', 'saml2', 'saml2-profiles', 'ws-federation', 'rfc6749'],
+    effect: 'records a federationLink on the person\'s entry, writes the ' +
+            'partner\'s attributes and STARTS the federated session — only ' +
+            'after a local sign-in as that person',
+    what: 'Where the local sign-in of fedSubjectPolicy link-at-first-sign-in ' +
+          'returns (#109). A partner named an existing person whose account ' +
+          'is not linked to its subject; a name is not an identifier (OpenID ' +
+          'Connect Core section 5.7; SAML 2.0 Core section 8.3.7 links a ' +
+          'persistent NameID rather than matching it), so the person signs ' +
+          'in HERE as themselves first — password, and a second factor ' +
+          'where one is held or required — and this path records the link. ' +
+          'The handle is single-use and server-side, and bound by a cookie ' +
+          'to the browser the partner\'s response arrived in (STS-FED-0111, ' +
+          'the account-linking CSRF); it refuses a Cancel ' +
+          '(STS-FED-0099), a spent or unknown handle (STS-FED-0100) and any ' +
+          'browser whose latest sign-in is not that local one, as that ' +
+          'person, just now (STS-FED-0101), and asks the subject policy, the ' +
+          'rules and the administrator refusal again before writing ' +
+          'anything.' },
   { path: '/federation/metadata/:id', group: 'Federation',
     name: 'This service\'s OWN SAML metadata, per partner',
     specs: ['saml2-metadata', 'saml2', 'saml11'],

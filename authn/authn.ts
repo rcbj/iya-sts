@@ -4689,11 +4689,20 @@ class Authn {
                'phishing-resistant that factor is.');
       forcePasswordless = false;
     }
+    // A SIGN-IN AS ONE NAMED PERSON (#109, 2026-09-22): federation's
+    // link-at-first-sign-in, where a partner named an existing person and
+    // they must prove they ARE that person before their account is linked.
+    // The screen draws the name fixed, and the POST reads it off the RECORD —
+    // a typed name is not read at all — so this sign-in can only ever be a
+    // sign-in as them. No passwordless key and no anonymous session: the
+    // password is what the linking rests on.
+    const lockedUsername = String(opts.lockedUsername || '').trim();
     const record = {
       id: randomId(18),
       returnTo: returnTo,
       details: Array.isArray(opts.details) ? opts.details : [],
-      hint: String(opts.hint || ''),
+      hint: lockedUsername || String(opts.hint || ''),
+      lockedUsername: lockedUsername,
       forceMfa: forceMfa,
       // A SECURITY KEY DEMANDED (2026-09-17) — alone or after a password; see
       // the entry point's header. On the record for `forcePasswordless`'s
@@ -5509,6 +5518,9 @@ class Authn {
     // same three answers, because markup is what a person sees and the handler
     // is what decides.
     const keyPolicy = webauthnPolicy.settings();
+    // A sign-in as one named person (#109): the name drawn fixed, and nothing
+    // offered that is not a password — see beginAuthentication().
+    const locked = String(record.lockedUsername || '');
     const page = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
       'charset="utf-8"><title>Sign in — mock authentication ' +
       'service</title><style>' + CARD_CSS +
@@ -5517,11 +5529,18 @@ class Authn {
       '<p class="sub">Mock authentication service at <code>' + xmlEscape(base) +
       '</code></p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
+      (locked
+        ? '<p class="sub"><strong>Link your account.</strong> A federation ' +
+          'partner signed you in as <code>' + xmlEscape(locked) + '</code>, ' +
+          'and that account is not linked to it yet. Sign in here as ' +
+          xmlEscape(locked) + ' to link them; Cancel links nothing.</p>'
+        : '') +
       '<form method="post" action="' + LOGIN_PATH + '">' +
       '<input type="hidden" name="authn_id" value="' + xmlEscape(record.id) +
       '"><label ' +
       'for="username">Username</label><input type="text" id="username" ' +
-      'name="username" autocomplete="username" autofocus ' +
+      'name="username" autocomplete="username" ' +
+      (locked ? 'readonly ' : 'autofocus ') +
       'value="' + xmlEscape(record.hint) + '"><label ' +
       'for="password">Password</label><input type="password" id="password" ' +
       'name="password" autocomplete="current-password">' +
@@ -5585,7 +5604,7 @@ class Authn {
               'A security key as a second factor is switched off here ' +
               '(<code>webauthn.mfaAllowed</code>).</label>'
             : '')) +
-      (keyPolicy.enabled && keyPolicy.primaryAllowed
+      (keyPolicy.enabled && keyPolicy.primaryAllowed && !locked
         ? '<label class="chk"><input type="checkbox" id="webauthn_only" ' +
           'name="webauthn_only" value="1"' +
           (record.forceMfa ? ' disabled' : '') +
@@ -5630,7 +5649,7 @@ class Authn {
       // read one: whatever is typed above is ignored, because a session that
       // took a name from the form and called itself unauthenticated would be
       // claiming both things at once.
-      (config.value('authn.unauthenticatedSessions')
+      (config.value('authn.unauthenticatedSessions') && !locked
          ? '<button type="submit" id="kc-anonymous" name="action" ' +
            'value="anonymous" class="secondary" title="' +
            xmlEscape('Continue as the anonymous principal. The flow goes on ' +
@@ -5663,14 +5682,16 @@ class Authn {
       // signs somebody in on a typed name. These have to leave for somewhere
       // else entirely, and a GET is what leaving looks like.
       // ---------------------------------------------------------------------
-      this.federatedOptionsHtml(record) +
+      // None of the three on a linking sign-in (#109): it is a sign-in as
+      // one person, with a password, and each of these is another door.
+      (locked ? '' : this.federatedOptionsHtml(record)) +
       // AND THE KERBEROS DOOR, under the partners. Under rather than over,
       // because the partners are what an application was CONFIGURED with and
       // this is offered to everybody — a configured route belongs above an
       // ambient one.
-      this.integratedOptionHtml(record) +
+      (locked ? '' : this.integratedOptionHtml(record)) +
       // AND THE WALLET (#38), last: offered to everybody, like Kerberos.
-      this.walletOptionHtml(record) +
+      (locked ? '' : this.walletOptionHtml(record)) +
       // WHAT THIS SCREEN CHECKS, BY MODE (2026-09-21). It said "no password
       // is checked" and "a key is enrolled on first use" in product too, where
       // both have been false — the first since 2026-09-06, the second since
@@ -7719,6 +7740,7 @@ class Authn {
       // place to refuse it than the authorization endpoint, because there is
       // still a screen to say so on.
       if (String(body.action || '') === 'anonymous' &&
+          !record.lockedUsername &&
           config.value('authn.unauthenticatedSessions')) {
         const anonRoleAnswer = gate.check({
           application: String(record.application || ''),
@@ -7772,7 +7794,10 @@ class Authn {
         return undefined;
       }
 
-      const username = String(body.username || '').trim();
+      // A LOCKED RECORD'S NAME IS THE RECORD'S (#109): see
+      // beginAuthentication(). Whatever was typed is not read.
+      const username = record.lockedUsername ||
+                       String(body.username || '').trim();
       // The only two ways to fail: no username to put in the tokens, and the
       // reserved password the rest of this mock also refuses.
       if (!username) {
@@ -7810,6 +7835,20 @@ class Authn {
       const secondFactor = !passwordless &&
                            (!!record.forceMfa || !!record.forceKey ||
                             String(body.use_webauthn || '') === '1');
+
+      // LINKING RESTS ON THE PASSWORD (#109). A passwordless key would be one
+      // factor the person may have enrolled at this very screen in
+      // development, which is no proof they are the local person a partner
+      // named; the screen does not offer it and this is the check.
+      if (passwordless && record.lockedUsername) {
+        log.debug("Leaving the authentication endpoint. Passwordless at a " +
+                  "linking sign-in.");
+        errorCodes.mark(res, 'STS-AUTHN-0212');
+        return this.sendLoginPage(res, this.loginPage(base, record,
+          'Linking an account signs in with its password — and its second ' +
+          'factor, where it has one — so a security key on its own is not ' +
+          'offered here.'));
+      }
 
       // ---------------------------------------------------------------------
       // THE POLICY, CHECKED HERE AND NOT ONLY ON THE SCREEN (2026-09-10).

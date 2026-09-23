@@ -211,7 +211,8 @@ unauthenticated HTTP request claiming to be a person, and the session it would
 produce is the same one every other protocol here reads — so "accept anything"
 would be an authentication bypass for the whole process rather than a permissive
 mock. A relationship must be configured, is created disabled, and refuses an
-assertion that does not verify against the certificate configured on it. **The
-gate is on the signer, not the subject**: any person a partner asserts is
-accepted — created on first sight in development, required to exist already in
-product. See [what is not checked](what-is-not-checked.md).
+assertion that does not verify against the certificate configured on it. **And
+the gate is on the subject too**: a partner signs in only the person its subject
+is linked to, and an unlinked one naming an existing person must first sign in
+here as that person (#109). See [federation](federation.md) and
+[what is not checked](what-is-not-checked.md).

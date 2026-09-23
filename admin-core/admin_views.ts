@@ -184,6 +184,8 @@ import requestSignature = require('../saml/request_signature');
 import spMetadata = require('../saml/sp_metadata');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
 import federation = require('../federation/federation');
+// A federationLink's format (#109): a static utility class.
+import fedLinks = require('../federation/federation_links');
 // The receiver half of Shared Signals, which the three reports below draw
 // this service's own registered streams from.
 import signals = require('../ssf/ssf_receivers');
@@ -433,6 +435,7 @@ interface AdminViewsDeps {
   saml11: typeof saml11;
   authorizationServers: typeof authorizationServers;
   federation: typeof federation;
+  fedLinks: typeof fedLinks;
   signals: typeof signals;
   spiffeRegistry: typeof spiffeRegistry;
   spiffeCa: typeof spiffeCa;
@@ -505,6 +508,7 @@ class AdminViews {
       saml11: saml11,
       authorizationServers: authorizationServers,
       federation: federation,
+      fedLinks: fedLinks,
       signals: signals,
       spiffeRegistry: spiffeRegistry,
       spiffeCa: spiffeCa,
@@ -5729,7 +5733,8 @@ class AdminViews {
   // AND the ones the resource publishes — computed once so a partner reading
   // the document and an operator reading the page are told the same endpoint.
   federationDetailJson(req, id) {
-    const { log, baseUrlOf, realms, federation } = this.deps;
+    const { log, baseUrlOf, realms, federation, fedLinks } = this.deps;
+    const self = this;
     log.debug("Entering AdminViews.federationDetailJson(). id=" + id);
     const record = federation.get(id);
     if (!record) {
@@ -5783,16 +5788,29 @@ class AdminViews {
       // "yes" and "1" into — and one of those is how a relationship stays
       // disabled while the page says it is on.
       return ['fedEnabled', 'fedAutocreateUsers', 'fedUpdateUserAttributes',
-              'fedSignRequest', 'fedAllowUnsolicited'].indexOf(field.name) ===
-                                -1;
+              'fedMayAssertAdministrators', 'fedSignRequest',
+              'fedAllowUnsolicited'].indexOf(field.name) === -1;
     });
     const multiFields = federation.fieldsForRole(row.role, 'multi');
+    // THE PEOPLE THIS PARTNER'S SUBJECTS ARE LINKED TO (#109), paged — a
+    // relationship with ten thousand linked people is an ordinary one, and a
+    // page drawing all of them is not. Service-provider side only: an
+    // identity-provider-side relationship asserts, and nobody is linked to it.
+    const linkPage = this.pagedRows(req.query,
+      row.role === 'service-provider'
+        ? federation.linkedThrough(record.fedId).map(function (one) {
+            const parts = fedLinks.parse(one.value) || {};
+            return { username: one.username, dn: one.dn, link: one.value,
+                     issuer: parts.issuer, subject: parts.subject };
+          })
+        : [],
+      { name: 'links', noun: 'links' });
 
     log.debug("Leaving AdminViews.federationDetailJson().");
     return {
       record: record, row: row, base: base, acs: acs, login: login,
       metadata: metadata, loginPath: loginPath,
-      setFields: setFields, multiFields: multiFields,
+      setFields: setFields, multiFields: multiFields, linkPage: linkPage,
       json: (function () {
       return Object.assign({ found: true }, row, {
           endpoints: { assertionConsumerService: acs, login: loginPath,
@@ -5816,7 +5834,11 @@ class AdminViews {
             });
             return out;
           })(),
-          editable: federation.fieldsForRole(row.role)
+          editable: federation.fieldsForRole(row.role),
+          // Who this partner's subjects are linked to (#109): the page, and
+          // the paging a caller walks it with.
+          links: linkPage.shown,
+          linksPaging: self.pagingJson(linkPage.paging)
       });
       }())
     };
@@ -6237,6 +6259,27 @@ class AdminViews {
   // One person: their sessions, what was issued on each, and the credentials
   // they hold. The four paged lists come with the computation although the page
   // declares them among its markup — the resource publishes each one's paging.
+  // One person's federation links as rows, paged (#109). Shared by the
+  // console's panel and the JSON beside it, so the two cannot disagree.
+  federationLinksOf(query, key) {
+    const { log, federation, fedLinks } = this.deps;
+    log.debug("Entering AdminViews.federationLinksOf().");
+    const person = federation.federatedPerson(key);
+    const rows = (person ? person.links : []).map(function (value) {
+      const parts = fedLinks.parse(value) || {};
+      const record = parts.relationship ? federation.get(parts.relationship)
+                                        : null;
+      return { link: value, relationship: String(parts.relationship || ''),
+               issuer: String(parts.issuer || ''),
+               subject: String(parts.subject || ''),
+               relationshipExists: !!record &&
+                                   record.fedRole === 'service-provider' };
+    });
+    log.debug("Leaving AdminViews.federationLinksOf(). " + rows.length);
+    return this.pagedRows(query || {}, rows,
+                          { name: 'federationLinks', noun: 'links' });
+  }
+
   userDetailJson(req, key) {
     const { log, subjectForName, stats } = this.deps;
     const self = this;
@@ -6354,6 +6397,12 @@ class AdminViews {
                                              noun: 'tokens' });
     const artifactPage = this.pagedRows(req.query, detail.artifacts,
                                    { name: 'artifacts', noun: 'artifacts' });
+    // THE PARTNERS' SUBJECTS THIS PERSON IS LINKED TO (#109), paged like the
+    // five lists above. Read off the entry, one row per federationLink value,
+    // with whether the relationship it names is still registered here — a
+    // link through a deleted relationship matches nothing, and saying so is
+    // cheaper than leaving a reader to wonder why it does nothing.
+    const federationLinkPage = this.federationLinksOf(req.query, key);
     log.debug("Leaving AdminViews.userDetailJson().");
     return {
       detail: detail, row: row, sessionRows: sessionRows, live: live,
@@ -6367,6 +6416,7 @@ class AdminViews {
       sessionPage: sessionPage, sessionTokenPages: sessionTokenPages,
       endedPage: endedPage, sessionlessPage: sessionlessPage, artifactPage:
                                                                 artifactPage,
+      federationLinkPage: federationLinkPage,
       json: (function () {
       return {
           user: row,
@@ -6410,7 +6460,12 @@ class AdminViews {
           // THE ASSERTION KEY PAIRS (2026-09-13) — `credentials`, the member
           // name an application's drill-down uses for its own. No private key,
           // for the reason personCredentialsState() gives.
-          credentials: credentialsState.json
+          credentials: credentialsState.json,
+          // Which partners' subjects sign this person in (#109). Set and
+          // removed with POST /admin-api/users/federation-link and
+          // /federation-unlink.
+          federationLinks: federationLinkPage.shown,
+          federationLinksPaging: self.pagingJson(federationLinkPage.paging)
       };
       }())
     };

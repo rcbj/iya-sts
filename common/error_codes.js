@@ -3975,6 +3975,11 @@ const CODES = [
       'signed authorization request to /oauth2/par, so its sign-in could ' +
       'not start (#139).',
     spec: 'the console\'s, portal\'s or debugger\'s sign-in refusal page' },
+  { code: 'STS-AUTHN-0212',
+    summary: 'A passwordless security-key sign-in was asked for at the ' +
+      'sign-in screen federation\'s link-at-first-sign-in draws, which ' +
+      'signs in with the password (#109).',
+    spec: 'HTTP 200 sign-in screen with an error' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -6940,6 +6945,104 @@ const CODES = [
     summary: 'A federated sign-in verified, but the directory holds no entry ' +
       'for the person and none was created (dynamic provisioning off on the ' +
       'relationship, or the directory declined), so no session was started.',
+    spec: 'HTTP 403 page' },
+  // #109 (2026-09-22): which people a partner may assert.
+  { code: 'STS-FED-0091',
+    summary: 'A federated sign-in verified, but the relationship\'s ' +
+      'fedSubjectPolicy is pre-linked and no entry carries a federationLink ' +
+      'for the partner\'s subject.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0092',
+    summary: 'A federated sign-in verified, but the person it would sign in ' +
+      'is outside the relationship\'s subject rules (fedSubjectGroup, ' +
+      'fedSubjectDomain or fedSubjectPattern).',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0093',
+    summary: 'A federated sign-in named a console administrator (Admin Read ' +
+      'or Admin Write) or a holder of REMOTE_PEPS, and the relationship ' +
+      'does not set fedMayAssertAdministrators.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0094',
+    summary: 'A federated sign-in arrived at a relationship whose ' +
+      'fedSubjectPolicy is any-existing, which product mode refuses ' +
+      '(mode.matchesFederatedNames()).',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0095',
+    summary: 'An update asked for fedSubjectPolicy any-existing in product ' +
+      'mode.',
+    spec: 'action result ok:false (console redirect or /admin-api HTTP ' +
+      '400)' },
+  { code: 'STS-FED-0096',
+    summary: 'A federated sign-in carried no stable subject to link: an ' +
+      'empty subject, a SAML 2.0 transient NameID, or an issuer that cannot ' +
+      'be part of a federationLink.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0097',
+    summary: 'A federated sign-in\'s federationLink is carried by more than ' +
+      'one directory entry, so which person it names is ambiguous.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0098',
+    summary: 'A federated sign-in would create a namespaced entry, and an ' +
+      'entry of that name already exists without a link to this subject.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0099',
+    summary: 'First-sign-in linking ended without a local sign-in: the ' +
+      'person cancelled at the sign-in screen, or it refused them.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0100',
+    summary: 'The linking step named a handle this service did not mint, ' +
+      'one already spent, or one that expired.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0101',
+    summary: 'The linking step was reached without a fresh local sign-in, ' +
+      'through that step, as the person being linked.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0102',
+    summary: 'An update set fedSubjectPolicy to a value that is not one of ' +
+      'the four.',
+    spec: 'action result ok:false (console redirect or /admin-api HTTP ' +
+      '400)' },
+  { code: 'STS-FED-0103',
+    summary: 'An update set fedSubjectPattern to a pattern that does not ' +
+      'compile, is longer than 256 characters, or nests a quantifier or ' +
+      'uses a backreference.',
+    spec: 'action result ok:false (console redirect or /admin-api HTTP ' +
+      '400)' },
+  { code: 'STS-FED-0104',
+    summary: 'A federation link or unlink named no person, or a person the ' +
+      'directory holds no entry for.',
+    spec: 'action result ok:false (console redirect, /admin-api HTTP 400, ' +
+      'or SCIM 400 invalidValue)' },
+  { code: 'STS-FED-0105',
+    summary: 'A federation link named no relationship, or one that is not a ' +
+      'service-provider-side relationship in this realm.',
+    spec: 'action result ok:false (console redirect, /admin-api HTTP 400, ' +
+      'or SCIM 400 invalidValue)' },
+  { code: 'STS-FED-0106',
+    summary: 'A federation link carried no subject, or an issuer or subject ' +
+      'that cannot be written as a federationLink value.',
+    spec: 'action result ok:false (console redirect, /admin-api HTTP 400, ' +
+      'or SCIM 400 invalidValue)' },
+  { code: 'STS-FED-0107',
+    summary: 'A federation link is already carried by a different person.',
+    spec: 'action result ok:false (console redirect, /admin-api HTTP 400, ' +
+      'or SCIM 409 uniqueness)' },
+  { code: 'STS-FED-0108',
+    summary: 'A federation unlink named a link the person does not carry.',
+    spec: 'action result ok:false (console redirect or /admin-api HTTP ' +
+      '400)' },
+  { code: 'STS-FED-0109',
+    summary: 'The directory would not write a federation link or unlink.',
+    spec: 'action result ok:false (console redirect or /admin-api HTTP ' +
+      '400)' },
+  { code: 'STS-FED-0110',
+    summary: 'A federation link was removed and ending the sessions that ' +
+      'partner had signed the person in to failed; the unlink stands.',
+    spec: '' },
+  { code: 'STS-FED-0111',
+    summary: 'The linking step was reached in a browser that did not start ' +
+      'it: the cookie binding it to the browser the partner\'s response ' +
+      'arrived in was absent or different.',
     spec: 'HTTP 403 page' },
   // ===== KRB ===============================================================
   { code: 'STS-KRB-0001',

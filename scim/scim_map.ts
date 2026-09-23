@@ -216,6 +216,12 @@ const USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
 const GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
 const ENTERPRISE_SCHEMA =
     'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';
+// THIS SERVICE'S OWN USER EXTENSION (#109, 2026-09-22), carrying the one
+// member no standard schema has: which federation partners' subjects are
+// linked to the person. RFC 7643 section 3.3 is how a service provider adds
+// attributes of its own, under a URN it names.
+const IYA_STS_USER_SCHEMA =
+    'urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User';
 
 // ---------------------------------------------------------------------------
 // THE ATTRIBUTES THIS SERVICE INVENTED FOR SCIM.
@@ -248,6 +254,9 @@ const OWN_NAMES = [
 //   'multi'    a SCIM array of complex values, one LDAP attribute per `type`
 //   'complex'  a SCIM complex value whose sub-attributes are separate LDAP types
 //   'derived'  read-only: computed rather than stored (`groups`, the meta block)
+//   'links'    the person's federation links (#109): converted in `scim.ts`,
+//              which has to ask the federation register whether each link is
+//              one this realm can hold, so every converter here steps over it
 //
 // `schema` names the document that defines the LDAP attribute, the way
 // vc_claims.ts's rows do, so that a reader can tell an RFC 4519 type from one
@@ -335,6 +344,17 @@ const USER_ATTRIBUTES: MapRow[] = [
           'the SCIM handlers since the id became the entryUUID ' +
           '(2026-09-14). A value naming no entry is kept as it was sent.' },
 
+  { scim: IYA_STS_USER_SCHEMA + ':federationLinks', ldap: 'federationLink',
+    kind: 'links', extension: true,
+    schema: "this service's own (#109; no standard type)",
+    note: 'Which federation partners\' subjects sign this person in, each ' +
+          '{ relationship, issuer, subject } — issuer optional on the way ' +
+          'in, the relationship\'s fedPeer. NOT SENT: unchanged, so a ' +
+          'provisioning client that knows nothing of this extension cannot ' +
+          'unlink anybody by leaving it out. Sent, even empty: replaced, and ' +
+          'every link removed ends the sessions that partner signed the ' +
+          'person in to. A link another person carries is refused 409.' },
+
   { scim: 'groups', ldap: '(member, uniqueMember, memberUid on the group)',
     kind: 'derived', readOnly: true,
     schema: 'RFC 4519 2.17, 2.40; RFC 2307 2.3',
@@ -416,6 +436,7 @@ class ScimMap {
   static readonly USER_SCHEMA = USER_SCHEMA;
   static readonly GROUP_SCHEMA = GROUP_SCHEMA;
   static readonly ENTERPRISE_SCHEMA = ENTERPRISE_SCHEMA;
+  static readonly IYA_STS_USER_SCHEMA = IYA_STS_USER_SCHEMA;
   static readonly OWN_NAMES = OWN_NAMES;
   static readonly USER_ATTRIBUTES = USER_ATTRIBUTES;
   static readonly GROUP_ATTRIBUTES = GROUP_ATTRIBUTES;
@@ -463,7 +484,7 @@ class ScimMap {
     let checked = 0;
     USER_ATTRIBUTES.concat(GROUP_ATTRIBUTES)
       .forEach(function (row) {
-      if (row.kind === 'derived') {
+      if (row.kind === 'derived' || row.kind === 'links') {
         return;
       }
       const known = canonicalNames[String(row.ldap).toLowerCase()];
@@ -762,7 +783,7 @@ class ScimMap {
 
     const address: Record<string, any> = {};
     USER_ATTRIBUTES.forEach(function (row) {
-      if (row.kind === 'derived') {
+      if (row.kind === 'derived' || row.kind === 'links') {
         return;
       }
       const values = self.valuesOf(attributes, row.ldap);
@@ -900,7 +921,8 @@ class ScimMap {
     // is what makes it true for the rows the resource does not mention at all.
     USER_ATTRIBUTES.forEach(function (row) {
       // The lock is REPLACED only when the resource says `active` — below.
-      if (row.kind === 'derived' || row.readOnly || row.kind === 'lock') {
+      if (row.kind === 'derived' || row.readOnly || row.kind === 'lock' ||
+          row.kind === 'links') {
         return;
       }
       Object.keys(out).forEach(function (name) {
@@ -915,7 +937,7 @@ class ScimMap {
       ? resource.addresses[0] : {};
 
     USER_ATTRIBUTES.forEach(function (row) {
-      if (row.kind === 'derived' || row.readOnly) {
+      if (row.kind === 'derived' || row.readOnly || row.kind === 'links') {
         return;
       }
       if (row.kind === 'lock') {
@@ -1240,6 +1262,7 @@ export = {
   describeMapping: slot.forward('describeMapping'),
   GROUP_SCHEMA: ScimMap.GROUP_SCHEMA,
   ENTERPRISE_SCHEMA: ScimMap.ENTERPRISE_SCHEMA,
+  IYA_STS_USER_SCHEMA: ScimMap.IYA_STS_USER_SCHEMA,
   USER_ATTRIBUTES: ScimMap.USER_ATTRIBUTES,
   GROUP_ATTRIBUTES: ScimMap.GROUP_ATTRIBUTES,
   OWN_NAMES: ScimMap.OWN_NAMES,

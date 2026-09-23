@@ -4848,6 +4848,7 @@ with this service at **either end** of it.
 | `GET /federation` | what all of this is, every configured relationship in both directions, and the URL to give each partner |
 | `GET /federation/login/{id}` | **start.** Sends the browser to the partner — an `<AuthnRequest>`, an inter-site transfer URL, `wa=wsignin1.0`, or an OAuth 2.0 authorization request, whichever the relationship says. Takes `?returnTo=`, a path on this service to land on afterwards, and `?application=`, which names what the person is signing in TO so the relationship can count that pair — a HINT, checked against the live register before anything is written down |
 | `GET\|POST /federation/acs/{id}` | **finish.** The assertion consumer service, the WS-Federation `wreply` and the OAuth 2.0 `redirect_uri`, all one path. **This is the URL to configure at the partner** |
+| `GET /federation/link/{handle}` | where a partner's sign-in comes back after the person it named signed in HERE as themselves, so that their account can be linked to the partner's subject (`fedSubjectPolicy` `link-at-first-sign-in`, #109). Single-use, and it records the link only for a fresh local sign-in as that person |
 | `GET /federation/metadata/{id}` | this service's own SAML metadata for that partner — an `SPSSODescriptor`, which is the half of this service that is a service provider |
 
 Configure them at `/admin/federation`, or through `POST
@@ -4927,10 +4928,18 @@ What that costs is one sentence in the documentation and four in the code:
   on that relationship — **not** against a certificate the document brought with
   it, which is the difference between a signature check and a decoration.
 
-**Past that gate, everything is as permissive as the rest of this service.** Any
-username in a verified assertion is accepted. Any attribute is mapped. Nothing
-about the person is checked, and a directory entry is created for them. *The gate
-is on the signer, not on the subject.*
+**Past that gate there is a second one, on the SUBJECT (#109).** A verified
+assertion signs in only the person its partner's subject is linked to — a
+`federationLink` of the relationship, the partner's issuer and its `sub` or
+NameID, never a name (OpenID Connect Core section 5.7). What happens to a
+subject nobody linked is the relationship's `fedSubjectPolicy`: the person it
+names signs in here first and is then linked (`link-at-first-sign-in`, the
+default), it is refused (`pre-linked`), it gets a new entry
+`<relationship>~<name>` (`jit-namespaced`), or — development only — the old
+name match (`any-existing`). Group, domain and DN-pattern rules narrow it, a
+console administrator is refused unless `fedMayAssertAdministrators` is on, and
+nothing is written onto an entry before all of that passes. See
+docs/federation.md.
 
 #### What a federated sign-in leaves behind
 
@@ -4943,7 +4952,7 @@ uid=fedalice,ou=users,dc=example,dc=com
   mail: alice@partner.example     <- from the partner
   federationRelationship: partner-a
   federationIssuer: https://idp.partner.example/saml
-  federationSubject: alice@partner.example
+  federationLink: partner-a https://idp.partner.example/saml alice@partner.example
   federationAttribute: cn | mail | givenName | sn
   federationLastSeen: 20260824T235014Z
 ```
