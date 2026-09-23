@@ -217,6 +217,50 @@ A session's risk is not fixed at sign-in:
 Both update the person's standing, so a change is answered by `risk-response`
 as any other is.
 
+### What people say about their own sign-ins
+
+Each person sees their own assessed sign-ins of the last thirty days on the
+user portal, at **Recent sign-ins** (`/portal/sign-ins`): when, from where,
+with what browser and system, and at what level. Each has two buttons:
+
+- **This wasn't me** puts the person's risk at HIGH. By default that ends
+  every session they hold, this one included, and RISC is told their
+  credential is compromised. They are asked to sign in again and change their
+  password.
+- **This was me** is recorded, and lowers the person's risk to LOW only when
+  it is said from a different session that is itself low-risk. Said from the
+  flagged session itself, it moves nothing: that session could be the one an
+  attacker is using.
+
+Each sign-in can be answered once. Administrators see the answers on
+Monitoring → Risk.
+
+## Breached passwords
+
+In product mode, a password is checked against Have I Been Pwned's **Pwned
+Passwords** when it is set, and one that has appeared in a data breach is
+refused (NIST SP 800-63B section 3.1.1.2). The check uses **k-anonymity**:
+only the first five characters of the password's SHA-1 are sent, to
+`risk.breachApiUrl`. The service matches the rest itself, so neither the
+password nor its full digest ever leaves it. Nothing from the corpus is kept
+beyond a short cache of the answers.
+
+Every door that sets a password is checked: the portal's password change,
+activation link and reset link, the forced change at sign-in, the console and
+`/admin-api`, and an LDAP add or modify of `userPassword`. A password the
+service generates is not checked.
+
+With `risk.breachCheckAtSignIn` on, a correct password typed at the sign-in
+screen is checked too. One that has appeared in a breach must be changed
+before the sign-in finishes.
+
+**If the API cannot be reached, the password is set unchecked.** An outage of
+a service you do not run should not stop people changing their passwords.
+The request goes through the same outbound rules as every other:
+`federation.outbound` switches it off, and product mode verifies its TLS.
+Point `risk.breachApiUrl` at a mirror to keep the check inside your network.
+Development mode checks no password.
+
 ## Datasets
 
 **iya-sts distributes no third-party dataset.** None is in the repository,
@@ -353,7 +397,7 @@ acceptance.
 | Your own lists | yours | Nothing to accept. |
 | **MaxMind GeoLite2** | GeoLite EULA | **Not supported.** An import naming it is refused. |
 | **FIDO MDS3** | FIDO Alliance metadata terms | Contractual metadata, not open data: use it for FIDO authentication, keep only the latest BLOB, and do not copy or redistribute it. |
-| **Pwned Passwords** | Have I Been Pwned's Pwned Passwords terms | Planned. |
+| **Pwned Passwords** | the range API, which carries no licensing or attribution requirement | Asked by k-anonymity when a password is set; nothing is imported, so there is nothing to accept. |
 
 ## What is kept about the people who sign in
 
@@ -399,6 +443,12 @@ kept in step with `common/config.js`.
 |---|---|---|---|
 | `risk.assessSignIns` | `STS_RISK_ASSESS_SIGN_INS` | `true` | Score and record every sign-in, and give the issuance policy its risk. |
 | `risk.enforceInDevelopment` | `STS_RISK_ENFORCE_IN_DEVELOPMENT` | `false` | Enforce the policy's risk decisions in development mode too. |
+| `risk.breachCheck` | `STS_RISK_BREACH_CHECK` | `on` | Refuse a password known from a data breach (product mode). |
+| `risk.breachCheckAtSignIn` | `STS_RISK_BREACH_CHECK_AT_SIGN_IN` | `true` | Also ask for a breached password to be changed at sign-in. |
+| `risk.breachApiUrl` | `STS_RISK_BREACH_API_URL` | `https://api.pwnedpasswords.com/range/` | Where the five-character prefix is sent. |
+| `risk.breachCacheMinutes` | `STS_RISK_BREACH_CACHE_MINUTES` | `60` | How long one prefix's answer is reused. |
+| `risk.breachCacheSize` | `STS_RISK_BREACH_CACHE_SIZE` | `5000` | How many answers each process keeps. |
+| `risk.breachTimeoutMs` | `STS_RISK_BREACH_TIMEOUT_MS` | `3000` | How long a password being set waits for the API. |
 | `risk.mdsTrustAnchors` | `STS_RISK_MDS_TRUST_ANCHORS` | *(empty)* | The certificates a FIDO MDS3 BLOB's chain must end at; empty uses GlobalSign Root CA - R3 from the Node.js root store. |
 | `risk.mdsStaleGraceDays` | `STS_RISK_MDS_STALE_GRACE_DAYS` | `7` | How long past its `nextUpdate` the active BLOB still answers. |
 | `risk.rescoreEveryS` | `STS_RISK_RESCORE_EVERY_S` | `300` | How often the `risk.rescore` job re-checks every live session. |
@@ -442,7 +492,6 @@ The next phases of [issue #62](https://github.com/rcbj/iya-sts/issues/62)
 will do the following:
 
 - **Add more checks.**
-  - Check new passwords against Pwned Passwords with a probabilistic filter.
   - Add optional browser fingerprinting. It will be off by default, with its
     own switch per realm.
 

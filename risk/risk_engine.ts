@@ -88,6 +88,12 @@ const SIGNALS: Record<string, Json> = {
   // #62 P5: the FIDO Metadata Service says the security key's MODEL was
   // revoked, or its keys can be extracted or its user verification bypassed.
   // A key from such a model proves possession of something anybody may hold.
+  // #62 P6: the person said, on /portal/sign-ins, that a sign-in of theirs
+  // was NOT them. Not a factor on a score — it sets their standing to HIGH
+  // outright — and named so the risk-response policy can tell RISC the
+  // credential used is compromised.
+  'reported-not-me': { factor: 1,
+    what: 'the person reported a sign-in as not theirs' },
   'authenticator-compromised': { factor: 50,
     what: 'the security key\'s model is reported revoked or compromised in ' +
           'the FIDO metadata' }
@@ -1196,14 +1202,115 @@ class RiskEngine {
     return true;
   }
 
+  // -------------------------------------------------------------------------
+  // WHAT THE PERSON SAID ABOUT ONE OF THEIR OWN SIGN-INS (#62 P6), from
+  // /portal/sign-ins. `input`: realm, subject, username, assessmentId,
+  // verdict (`confirmed` | `denied`), and the session it was said FROM with
+  // that session's level. Answered once per assessment.
+  //
+  // **"THIS WASN'T ME" is taken at its word**: the person's standing goes to
+  // HIGH, `reported-not-me`, and the change is answered by the risk-response
+  // policy like any other — everything they hold ended, RISC told the
+  // credential is compromised. Anybody who can sign in as the person can say
+  // it, and the worst it does is sign the person out and ask them to change
+  // a password, which is the right answer to anybody holding it.
+  //
+  // **"THIS WAS ME" only vouches from somewhere trusted**: it lowers the
+  // standing to LOW only when said from a DIFFERENT session that is itself
+  // LOW (or unscored) — a hijacked session confirming its own sign-in would
+  // otherwise talk its way back to LOW. Said from the flagged session, it is
+  // recorded, for calibration, and moves nothing.
+  // -------------------------------------------------------------------------
+  async feedback(input: Json): Promise<Json> {
+    const { log, store, now } = this.deps;
+    log.debug("Entering RiskEngine.feedback(). " + input.verdict);
+    const realm = String(input.realm || '');
+    const subject = String(input.subject || '');
+    const verdict = input.verdict === 'denied' ? 'denied' : 'confirmed';
+    const sealing = this.sealing();
+    const at = now();
+    const held = await store.listAssessments(realm, { since: 0,
+      subject: subject, limit: 500 }, sealing);
+    const row = held.rows.filter(function (a: Json): boolean {
+      return a.id === input.assessmentId;
+    })[0];
+    if (!row) {
+      log.debug("Leaving RiskEngine.feedback(). Not theirs.");
+      return { ok: false, why: 'That sign-in is not one of yours, or it is ' +
+               'too old to answer.' };
+    }
+    const recorded = await store.setFeedback(realm, row.id, subject, verdict,
+                                             at, sealing);
+    if (!recorded) {
+      log.debug("Leaving RiskEngine.feedback(). Already answered.");
+      return { ok: false, why: 'That sign-in has already been answered.' };
+    }
+    const before = await store.subjectOf(realm, subject, sealing);
+    let moved = '';
+    if (verdict === 'denied') {
+      const high = Number(this.deps.config.value('risk.highScorePercent')) /
+                   100;
+      const score = Math.max(high, before ? Number(before.score) || 0 : 0);
+      await store.upsertSubject({ realm: realm, subject: subject,
+        score: score, level: 'HIGH', reason: 'reported-not-me',
+        lastAssessment: row.id, updatedAt: at }, sealing);
+      this.holdStanding(realm, String(input.username || ''),
+        { level: 'HIGH', score: score, signals: ['reported-not-me'],
+          assessmentId: row.id, at: at });
+      this.noteChange(realm, subject, String(input.username || ''),
+        before ? String(before.level || '') : '',
+        { id: 'feedback:' + row.id, level: 'HIGH', score: score,
+          signals: [{ signal: 'reported-not-me' }], at: at });
+      moved = 'HIGH';
+    } else if (String(input.fromSessionId || '') !== String(row.sessionId ||
+               '') && ['LOW', 'UNSCORED', ''].indexOf(
+                 String(input.fromSessionLevel || '')) >= 0 && before &&
+               (before.level === 'MEDIUM' || before.level === 'HIGH')) {
+      await store.upsertSubject({ realm: realm, subject: subject,
+        score: Math.min(Number(before.score) || 0, 0.5), level: 'LOW',
+        reason: 'confirmed by the person', lastAssessment: row.id,
+        updatedAt: at }, sealing);
+      this.holdStanding(realm, String(input.username || ''),
+        { level: 'LOW', score: 0.5, signals: [], assessmentId: row.id,
+          at: at });
+      this.noteChange(realm, subject, String(input.username || ''),
+        String(before.level), { id: 'feedback:' + row.id, level: 'LOW',
+                                score: 0.5, signals: [], at: at });
+      moved = 'LOW';
+    }
+    try {
+      this.deps.lazy('../common/audit').audit({
+        action: 'risk.feedback', actor: String(input.username || subject),
+        protocol: 'Risk scoring', channel: 'http', target: row.id,
+        summary: String(input.username || subject) + ' said a sign-in (' +
+                 row.level + ', ' + String(row.door || '') + ') ' +
+                 (verdict === 'denied' ? 'WAS NOT them' : 'was them') +
+                 (moved ? '; their standing is now ' + moved : ''),
+        detail: { assessment: row.id, verdict: verdict,
+                  level: String(row.level || ''), moved: moved } });
+    } catch (e) {
+      log.debug("Caught in RiskEngine.feedback(): " + ((e && e.message) ||
+                                                        e));
+      // No audit log in this process; the log line below is the record.
+    }
+    log.info('risk: ' + String(input.username || subject) + ' said sign-in ' +
+             row.id + ' ' + (verdict === 'denied' ? 'was NOT them' :
+                             'was them') + (moved ? '; standing ' + moved :
+                                            '') + '.');
+    log.debug("Leaving RiskEngine.feedback().");
+    return { ok: true, verdict: verdict, moved: moved };
+  }
+
   // A page of assessments and the people by standing, for the page.
   async view(realm: string, opts: Json): Promise<Json> {
     const { log, store, now } = this.deps;
     log.debug("Entering RiskEngine.view().");
     const sealing = this.sealing();
     const o = opts || {};
+    // `subject` and `days` for one person's own page (#62 P6).
     const assessments = await store.listAssessments(realm, {
-      since: now() - 7 * 86400000, level: o.level || '',
+      since: now() - (Number(o.days) || 7) * 86400000, level: o.level || '',
+      subject: String(o.subject || ''),
       limit: 50, offset: Number(o.offset) || 0 }, sealing);
     const subjects = await store.listSubjects(realm, { limit: 25 }, sealing);
     log.debug("Leaving RiskEngine.view().");
@@ -1269,6 +1376,7 @@ export = {
   loadStanding: slot.forward('loadStanding'),
   settle: slot.forward('settle'),
   respond: slot.forward('respond'),
+  feedback: slot.forward('feedback'),
   rescoreSession: slot.forward('rescoreSession'),
   rescoreLiveSessions: slot.forward('rescoreLiveSessions'),
   enforced: slot.forward('enforced'),

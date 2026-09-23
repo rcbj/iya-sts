@@ -308,6 +308,9 @@ class ProtocolStack {
     this.build('portal/portal_kerberos',
                require('../portal/portal_kerberos'),
                'PortalKerberos');
+    this.build('portal/portal_sign_ins',
+               require('../portal/portal_sign_ins'),
+               'PortalSignIns');
     this.build('portal/portal', require('../portal/portal'), 'Portal');
     this.register(app, require('../portal/portal'), 'portal/portal');
     // The consent screen. It must come AFTER authn.js and BEFORE oauth2.js, and
@@ -844,6 +847,10 @@ class ProtocolStack {
                'RiskDatasets');
     this.build('risk/risk_failures', require('../risk/risk_failures'),
                'RiskFailures');
+    // The Pwned Passwords screen (#62 P6): a library every password door
+    // reaches lazily. Built here, with the risk modules it belongs beside.
+    this.build('common/breached_passwords',
+               require('./breached_passwords'), 'BreachedPasswords');
     this.build('risk/risk_engine', require('../risk/risk_engine'),
                'RiskEngine');
     require('../admin-ui/risk_admin');

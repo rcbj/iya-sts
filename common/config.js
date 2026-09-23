@@ -9550,6 +9550,60 @@ const SETTINGS = [
                  'elsewhere. Older than this, the issuance carries no risk ' +
                  'facts and the roles decide.' },
 
+  { key: 'risk.breachCheck', group: 'Risk',
+    label: 'Refuse passwords known from data breaches',
+    env: 'STS_RISK_BREACH_CHECK', type: 'enum', dflt: 'on',
+    enumValues: ['on', 'off'], runtime: true,
+    description: 'In product mode, a password being set is checked against ' +
+                 'Have I Been Pwned\'s Pwned Passwords by k-anonymity (#62 ' +
+                 'P6, NIST SP 800-63B section 3.1.1.2): the first five ' +
+                 'characters of its SHA-1 go to risk.breachApiUrl, and one ' +
+                 'that has appeared in a breach is refused. The password ' +
+                 'itself never leaves this service. An unreachable API sets ' +
+                 'the password unscreened rather than refusing it. Also ' +
+                 'asked at sign-in (risk.breachCheckAtSignIn). Development ' +
+                 'mode checks no password.' },
+
+  { key: 'risk.breachCheckAtSignIn', group: 'Risk',
+    label: 'Ask a breached password to be changed at sign-in',
+    env: 'STS_RISK_BREACH_CHECK_AT_SIGN_IN', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'With risk.breachCheck on, a correct password typed at the ' +
+                 'sign-in screen is checked too, and one that has appeared ' +
+                 'in a breach must be changed before the sign-in finishes — ' +
+                 'the same step a password an administrator set does.' },
+
+  { key: 'risk.breachApiUrl', group: 'Risk',
+    label: 'Pwned Passwords range API',
+    env: 'STS_RISK_BREACH_API_URL', type: 'string',
+    dflt: 'https://api.pwnedpasswords.com/range/', runtime: true,
+    description: 'Where the five-character prefix is sent; the prefix is ' +
+                 'appended to it. The operator\'s address — a mirror, or an ' +
+                 'internal copy of the service — never a caller\'s. Every ' +
+                 'request goes through the outbound rules ' +
+                 '(federation.outbound, TLS verified in product mode).' },
+
+  { key: 'risk.breachCacheMinutes', group: 'Risk',
+    label: 'Keep a range answer (minutes)',
+    env: 'STS_RISK_BREACH_CACHE_MINUTES', type: 'int', dflt: 60, min: 1,
+    max: 10080, runtime: true,
+    description: 'How long the answer for one five-character prefix is ' +
+                 'reused before it is asked for again.' },
+
+  { key: 'risk.breachCacheSize', group: 'Risk',
+    label: 'Range answers each process keeps',
+    env: 'STS_RISK_BREACH_CACHE_SIZE', type: 'int', dflt: 5000, min: 1,
+    max: 1048576, runtime: true,
+    description: 'The bound on the per-process cache of range answers; full, ' +
+                 'the oldest is dropped.' },
+
+  { key: 'risk.breachTimeoutMs', group: 'Risk',
+    label: 'Wait for the range API (milliseconds)',
+    env: 'STS_RISK_BREACH_TIMEOUT_MS', type: 'int', dflt: 3000, min: 100,
+    max: 60000, runtime: true,
+    description: 'How long a password being set waits for the range API ' +
+                 'before it is set unscreened.' },
+
   { key: 'risk.mdsTrustAnchors', group: 'Risk',
     label: 'FIDO metadata trust anchors (PEM)',
     env: 'STS_RISK_MDS_TRUST_ANCHORS', type: 'string', dflt: '',

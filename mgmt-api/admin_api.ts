@@ -3057,6 +3057,11 @@ class AdminApi {
           log.debug("Entering the management API users action endpoint.");
           const body = parseBody(req);
           const request = self.withAction(req, body);
+          // A PASSWORD IN THE REQUEST IS SCREENED AGAINST PWNED PASSWORDS
+          // FIRST (#62 P6), for the console route's reason: the action is
+          // synchronous and reads the verdict this leaves.
+          return require('../common/breached_passwords')
+            .screenAll([request.password]).then(function () {
           // A CREATE CLAIMS ITS NAME FIRST — see `claimForCreate()`.
           return self.runClaimed(res, request.action === 'create'
             ? { username: String(request.username || request.user || '') }
@@ -3078,6 +3083,7 @@ class AdminApi {
             self.sendJson(res, result.ok ? 200 : 400, result);
             log.debug("Leaving the management API users action endpoint.");
           });
+            });
         },
         actions: [
           { action: 'issue-activation', operationId: 'issueActivationLink',

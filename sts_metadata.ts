@@ -4949,6 +4949,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'so the keytab holds that key and the page says so. The identity ' +
           'is the session\'s; nothing on the form names a person. A real ' +
           'submit button and no script.' },
+  { path: '/portal/sign-ins', group: 'User portal',
+    name: 'Your recent sign-ins, and whether each was you',
+    specs: [],
+    effect: 'records "this was me" or "this wasn\'t me" on one of the ' +
+            'signed-in person\'s own assessed sign-ins; "not me" puts their ' +
+            'risk at HIGH, which ends everything they hold',
+    what: 'NON-SPEC page (#62 P6). The signed-in person\'s own risk ' +
+          'assessments of the last thirty days — when, from where (the city, ' +
+          'country and network the datasets named), with what browser and ' +
+          'system, through which door, at what level — each with two ' +
+          'buttons until answered. "This was me" is recorded for ' +
+          'calibration and lowers the person\'s standing to LOW only when ' +
+          'said from another, low-risk session. "This wasn\'t me" puts the ' +
+          'standing at HIGH (reported-not-me), which the risk-response ' +
+          'policy answers — every session ended, RISC told the credential is ' +
+          'compromised. The identity is the session\'s; the assessment ' +
+          'named must be the person\'s own. Real submit buttons and no ' +
+          'script.' },
   { path: '/portal/signing-key', group: 'User portal',
     name: 'Your own RFC 7523 signing key',
     specs: ['rfc7521', 'rfc7523', 'rfc5280'],

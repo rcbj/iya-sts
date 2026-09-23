@@ -8424,6 +8424,8 @@ class Authn {
       // no credential at all; the SCREEN says only that authentication failed,
       // because telling a browser which of the two happened is the account
       // enumeration answer.
+      // Set when the password just verified is known from a breach (#62 P6).
+      let breachedAtSignIn = false;
       if (!passwordless) {
         // ---------------------------------------------------------------------
         // RATE LIMITED (2026-09-06). OWASP A04/A07.
@@ -8484,6 +8486,22 @@ class Authn {
         // their password four times is not one attempt from a lockout the
         // moment they get it right.
         await websecurity.succeededShared('sign-in', req, username);
+        // A PASSWORD KNOWN FROM A DATA BREACH MUST BE CHANGED BEFORE THIS
+        // SIGN-IN FINISHES (#62 P6, `risk.breachCheckAtSignIn`). It verified,
+        // so it is this person's — and it is on a list people guess from.
+        // `pwdReset` is set, and the change step just below asks for a new
+        // one, saying why; the new one is screened like any other.
+        if (this.deps.config.value('risk.breachCheckAtSignIn') !== false) {
+          const breach = await require('../common/breached_passwords')
+            .screen(String(body.password || ''));
+          if (breach.breached) {
+            credentials.setPasswordResetRequired(username, true);
+            breachedAtSignIn = true;
+            log.info('authn: the password "' + username + '" signed in with ' +
+                     'has appeared in a data breach; it must be changed ' +
+                     'before the sign-in finishes.');
+          }
+        }
       }
 
       // ---------------------------------------------------------------------
@@ -8513,7 +8531,10 @@ class Authn {
         log.debug("Leaving the authentication endpoint. Asking for a new " +
                   "password.");
         return this.sendPasswordChangePage(res,
-          this.passwordChangePage(changeId, username, ''));
+          this.passwordChangePage(changeId, username, breachedAtSignIn
+            ? 'The password you signed in with has appeared in a data ' +
+              'breach, so it has to be changed now. Choose one you have ' +
+              'not used anywhere else.' : ''));
       }
 
       await this.finishPasswordSignIn(req, res, base, record, username,
@@ -8575,6 +8596,8 @@ class Authn {
         return this.sendPasswordChangePage(res,
           this.passwordChangePage(changeId, step.username, problem));
       }
+      // Screened against Pwned Passwords first (#62 P6).
+      await require('../common/breached_passwords').screen(chosen);
       const written = credentials.setPassword(step.username, chosen,
                                               { via: 'the forced password ' +
                                                   'change' });

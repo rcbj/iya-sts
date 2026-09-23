@@ -30,7 +30,7 @@ policy*, below.
 | P3 | **Done** (2026-09-22): the risk facts in every issuance request, three risk rules in the built-in `role-issuance` policy, step-up at the doors that can ask, enforced in product and observed in development. The design change is on #62 (comment 5787912263). |
 | P4 | **Done** (2026-09-22): the `risk-response` policy and the reactions it permits, taken once per assessment; continuous evaluation of a live session's device, TLS client and network; the `risk.rescore` job; CAEP risk-level-change emitted on its own. |
 | P5 | **Done** (2026-09-22): FIDO MDS3 — the `fido.mds3` dataset, the BLOB verified to the FIDO root and its chain's revocation checked, a rollback refused, the latest BLOB only, and `authenticator-compromised` scored at sign-in and by the rescore job. Mail (#63) is its own ticket. |
-| P6 | Optional fingerprinting, the breached-password filter, "this was me" — the plan comment. |
+| P6 | In progress (2026-09-22). **Done: "this was me" / "this wasn't me"** on `/portal/sign-ins` (schema 9's `feedback`), and **breached passwords** by the Pwned Passwords k-anonymity range API (`common/breached_passwords.ts`). Next: optional fingerprinting, off by default. |
 
 ## THE LICENCE BOUNDARY: NOTHING THIRD-PARTY IS SHIPPED (2026-09-22)
 
@@ -440,6 +440,56 @@ resting on it. `risk-response`'s default `credentialSignals` include it, and
 RISC `credential-compromise` then names a FIDO credential. An unlisted
 model, and the all-zero AAGUID of an authenticator that attests nothing, are
 unknown and decide nothing.
+
+## WHAT THE PERSON SAYS ABOUT A SIGN-IN (P6, 2026-09-22)
+
+`/portal/sign-ins` (`portal/portal_sign_ins.ts`) lists a person's own
+assessments of thirty days, and `risk_engine.ts`'s `feedback()` records what
+they say about one — once, and only about their own (schema 9's
+`sts_risk_assessments.feedback`, `feedback_at`):
+
+* **"This wasn't me" is taken at its word**: the standing goes to HIGH with
+  `reported-not-me`, and the change is answered by the risk-response policy —
+  everything the person holds ended (this session included), RISC told the
+  credential is compromised (`reported-not-me` is in the default
+  `credentialSignals`). Anybody who can sign in as the person can say it,
+  and the worst it does is what should happen to anybody holding the
+  password.
+* **"This was me" vouches only from somewhere trusted**: it lowers the
+  standing to LOW only when said from ANOTHER session that is itself LOW or
+  unscored. From the flagged session it is recorded — calibration reads it —
+  and moves nothing, or a hijacked session could talk itself back to LOW.
+
+Monitoring → Risk shows each answer beside its assessment.
+
+## BREACHED PASSWORDS (P6, 2026-09-22)
+
+rcbj chose the **range API** over a filter built from the downloadable
+corpus (whose terms were the open question): `common/breached_passwords.ts`
+sends the first five characters of the password's SHA-1
+(`crypto.pwnedPasswordDigest()`) to `risk.breachApiUrl` through
+`federation_http.fetchPublished()`, matches the suffix itself, and caches the
+answer per prefix. It is in `common/` because every password door reaches
+it, and it is a password rule (NIST SP 800-63B 3.1.1.2) before it is a risk
+signal.
+
+**THE DOORS STAY SYNCHRONOUS**: `screen()` is awaited at each door and
+leaves a VERDICT for a few minutes; `credentials.preparePassword()` —
+synchronous, and inside LDAP's atomic modify — reads it with `verdictOf()`
+and refuses a breached password (STS-AUTHN-0222). The doors: the portal's
+three (activation, reset, change), the forced change at sign-in, the console
+and `/admin-api` users routes (`screenAll()` before `runClaimed()`), a typed
+keytab-reset password, and LDAP add/modify (`screenedThen()` wraps the two
+handlers, which are now `ldapAddNow()` / `ldapModifyNow()`). A door that
+did not screen sets the password and is named in the log (STS-AUTHN-0223);
+an API that did not answer sets it too (STS-AUTHN-0224). **Product mode
+only**, and **OFF in every test run**: `tests/run.js` and
+`docker-compose-run-tests.yml` default it off so no run dials the internet;
+`tests/breached_passwords.js` turns it on with the API stubbed.
+
+At sign-in (`risk.breachCheckAtSignIn`), a verified password that is
+breached sets `pwdReset`, and the existing change step asks for a new one,
+saying why.
 
 ## THE REQUIRE ORDER, AND THE TRAP IT HIT
 

@@ -142,7 +142,7 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // tables of risk scoring (#62) — see their block in SCHEMA_OBJECTS. 8 SINCE
 // 2026-09-23, for `sts_risk_terms_acceptances`, the record of who accepted
 // which dataset provider's terms (the second licence review on #62).
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -677,6 +677,8 @@ const SCHEMA_OBJECTS = [
   '  policy_id          text    NOT NULL DEFAULT \'\',' +
   '  error_code         text    NOT NULL DEFAULT \'\',' +
   '  origin             text    NOT NULL DEFAULT \'\',' +
+  '  feedback           text    NOT NULL DEFAULT \'\',' +
+  '  feedback_at        bigint  NOT NULL DEFAULT 0,' +
   '  PRIMARY KEY (realm, id))' },
   { name: 'sts_risk_assessments_subject', statement:
   'CREATE INDEX IF NOT EXISTS sts_risk_assessments_subject ON ' +
@@ -797,7 +799,14 @@ const SCHEMA_OBJECTS = [
 // `postgres/schema.sql`, which carries the same `ADD COLUMN IF NOT EXISTS`.
 const SCHEMA_COLUMNS = [
   { table: 'sts_realms', column: 'domain', statement:
-  'ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS domain text' }
+  'ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS domain text' },
+  // What the person said about a sign-in (#62 P6, schema version 9).
+  { table: 'sts_risk_assessments', column: 'feedback', statement:
+  'ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback text ' +
+  'NOT NULL DEFAULT \'\'' },
+  { table: 'sts_risk_assessments', column: 'feedback_at', statement:
+  'ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback_at ' +
+  'bigint NOT NULL DEFAULT 0' }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing
@@ -4393,7 +4402,8 @@ function create(options) {
           'address_prefix, asn, as_org, country, subdivision, city, ' +
           'ip_lists, ua_family, ua_os, ua_platform, bot, ja4, ' +
           'credential_kind, aaguid, backup_eligible, backup_state, ' +
-          'datasets, signals, score, level, decision FROM ' +
+          'datasets, signals, score, level, decision, feedback, ' +
+          'feedback_at FROM ' +
           'sts_risk_assessments ' + where +
           ' ORDER BY at DESC, id DESC LIMIT $5 OFFSET $6',
           params.concat([Number(o.limit) || 50, Number(o.offset) || 0])),
@@ -4417,9 +4427,25 @@ function create(options) {
                      backupState: r.backup_state,
                      datasets: r.datasets || {}, signals: r.signals || [],
                      score: Number(r.score), level: r.level,
-                     decision: r.decision };
+                     decision: r.decision,
+                     feedback: r.feedback || '',
+                     feedbackAt: Number(r.feedback_at) || 0 };
           })
         };
+      });
+    },
+
+    // WHAT THE PERSON SAID about one of their own sign-ins (#62 P6): only
+    // an assessment of that subject is touched, and only once.
+    riskSetFeedback: function (realm, id, subject, feedback, at) {
+      log.debug("Entering riskSetFeedback(). " + id);
+      log.debug("Leaving riskSetFeedback().");
+      return pool.query(
+        'UPDATE sts_risk_assessments SET feedback = $4, feedback_at = $5 ' +
+        'WHERE realm = $1 AND id = $2 AND subject = $3 AND feedback = \'\'',
+        [realm || '', id, subject, feedback, Number(at)]
+      ).then(function (r) {
+        return r.rowCount > 0;
       });
     },
 
