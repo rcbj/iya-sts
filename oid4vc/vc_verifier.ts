@@ -936,6 +936,8 @@ class VcVerifier {
     if (hints.length) {
       payload.authority_hints = hints;
     }
+    // certificate-header: none — an Entity Configuration's trust is the
+    // key it names and the chain of statements above it, never an X.509 path.
     const jwt = signJwt(payload, null,
                         { header: { typ: 'entity-statement+jwt' } });
     log.debug("Leaving VcVerifier.entityConfiguration().");
@@ -996,6 +998,8 @@ class VcVerifier {
     // setting's description says; it is what makes the prefix testable.
     const sub = String(this.vpClientId());
     const now = nowSec();
+    // certificate-header: none — a self-attestation names its key in `cnf`;
+    // a chain would claim a trust the attestation does not have.
     const jwt = signJwt({ iss: baseUrlOf(req), sub: sub, iat: now,
                           exp: now + 3600, cnf: { jwk: ours } }, null,
                         { header: { typ: 'verifier-attestation+jwt' } });
