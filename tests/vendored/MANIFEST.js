@@ -654,6 +654,11 @@ const JOBS = [
   // job's own peer: address where it is.
   { file: 'sts_spiffe_grpc.js',          browser: false, local: true },
   { file: 'sts_oid4vp_wallet.js',        browser: false, local: true },
+  // A STATUS REFERENCE ON EVERY PRESENTED CREDENTIAL (#165, 2026-09-23): a
+  // foreign credential naming none refused unless its issuer is exempted by
+  // certificate thumbprint or the rule is own-only, the ldp_vc query asking
+  // for credentialStatus, and `off` refused and ignored in product.
+  { file: 'sts_oid4vp_status_reference.js', browser: false, local: true },
   { file: 'sts_federation_realms.js',    browser: false, local: true },
   // WHICH PEOPLE A PARTNER MAY ASSERT (#109, 2026-09-22): the subject
   // policies, the linking sign-in, the administrator refusal, the links set

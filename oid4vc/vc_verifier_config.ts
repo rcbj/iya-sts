@@ -568,6 +568,20 @@ class VcVerifierConfig {
     // which is the opposite of what this Verifier is for — so a configuration
     // naming no claims sends no member, and every page that shows this says so
     // in as many words rather than printing an empty list.
+    // AN ldp_vc IS ASKED FOR ITS STATUS (#165). A bbs-2023 derived proof
+    // discloses only what the query names, and the `credentialStatus`
+    // entries are part of what this issuer signed: a query that did not name
+    // them let a conforming wallet leave them out, and a revoked credential
+    // passed by not being asked. The Verifier refuses one without them
+    // (STS-VC-0089), so the query asks — and asks even where no claim is
+    // configured, because a query of the status alone is still a narrower
+    // one than the whole credential. The JOSE formats are not asked: this
+    // issuer puts `status` (and a jwt_vc_json's `credentialStatus`) in the
+    // signed payload in the clear, and a foreign SD-JWT VC whose `status`
+    // sits in a Disclosure the holder withheld is refused as naming none.
+    if (wanted === 'ldp_vc') {
+      claims.push({ path: ['credentialStatus'] });
+    }
     if (claims.length) {
       credential.claims = claims;
     }

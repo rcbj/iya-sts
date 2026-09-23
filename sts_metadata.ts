@@ -2241,7 +2241,10 @@ const SPECS: Spec[] = [
               'of what comes back in all three formats — a Key Binding JWT, ' +
               'a VP JWT with nonce, aud and iat, a VerifiablePresentation ' +
               'with a Data Integrity proof (B.1.3.2.5) — and each ' +
-              'credential\'s status. Since 2026-09-17 a presentation can ' +
+              'credential\'s status, which every presented credential must ' +
+              'name (oid4vp.requireStatusReference, all by default; an ' +
+              'ldp_vc query asks for credentialStatus and one that ' +
+              'withholds it is refused). Since 2026-09-17 a presentation can ' +
               'SIGN SOMEBODY IN at /authn/wallet — through the Digital ' +
               'Credentials API (Appendix A: openid4vp-v1-signed, ' +
               'expected_origins, dc_api.jwt or dc_api, the origin: ' +
