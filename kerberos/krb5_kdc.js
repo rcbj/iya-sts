@@ -1434,6 +1434,59 @@ async function checkEncTimestamp(client, etype, padata) {
 // source — the parent's in-process jobs — has no provider, so PA-FX-FAST is
 // ignored as unknown padata was before, and nothing here changes for it.
 // ---------------------------------------------------------------------------
+// A pause inside one AS exchange, for awaitSignOutSecond(). Not periodic and
+// not a timer of this module's: it resolves once, and the exchange waits on it.
+function pauseMs(ms) {
+  log.debug("Entering pauseMs(). " + ms + " ms");
+  log.debug("Leaving pauseMs().");
+  return new Promise(function (resolve) {
+    setTimeout(resolve, ms);
+  });
+}
+
+// WAIT FOR THE SIGN-OUT'S SECOND TO PASS (#111), so the ticket this exchange
+// mints carries an authtime at or after the sign-out boundary and is not
+// refused KDC_ERR_TGT_REVOKED by the TGS-REQ that follows it. Recorded as
+// STS-KRB-0155 at debug and nowhere else: each wait is a state the exchange
+// passes through, not a failure of anything.
+//
+// A boundary more than a second ahead is not waited for. On one clock that
+// cannot happen — the stamp is taken on the KDC's clock and a boundary is at
+// most a second after it — so it means `krb5.clockOffset` moved back after
+// the sign-out, and waiting out the difference would hang a client for as
+// long as the offset moved. The exchange goes on, and the ticket it mints is
+// refused until the horizon, which is the documented consequence of moving
+// the clock between a sign-out and a TGS-REQ.
+async function awaitSignOutSecond(client) {
+  log.debug("Entering awaitSignOutSecond().");
+  const stamp = principals.signedOutAt(client.name, client.realm);
+  const boundary = stamp ? principals.signOutBoundary(stamp).getTime() : 0;
+  const ahead = boundary - now().getTime();
+  if (ahead <= 0) {
+    log.debug("Leaving awaitSignOutSecond(). Nothing to wait for.");
+    return;
+  }
+  if (ahead > 1000) {
+    log.info('krb5: ' + client.name.join('/') + '@' + client.realm +
+             '\'s sign-out boundary is ' + ahead + ' ms ahead of this ' +
+             'KDC\'s clock, which only a krb5.clockOffset moved back since ' +
+             'the sign-out can do. Not waited for; the ticket about to be ' +
+             'issued predates it and will be refused KDC_ERR_TGT_REVOKED.');
+    log.debug("Leaving awaitSignOutSecond(). Not waited for.");
+    return;
+  }
+  log.debug(errorCodes.tag('STS-KRB-0155') + 'krb5: waiting ' + ahead +
+            ' ms for ' + client.name.join('/') + '@' + client.realm +
+            '\'s sign-out second to pass, so this ticket\'s authtime is ' +
+            'after it.');
+  // A loop rather than one pause: a timer may fire a millisecond before the
+  // wall clock this compares with has moved.
+  while (now().getTime() < boundary) {
+    await pauseMs(Math.max(1, boundary - now().getTime()));
+  }
+  log.debug("Leaving awaitSignOutSecond(). Waited.");
+}
+
 async function handleAsReq(request) {
   log.debug('Entering handleAsReq().');
   const provider = principals.preauthProvider();
@@ -1801,24 +1854,25 @@ async function answerAsReq(request, fast) {
   // the ticket for the service and the one in the enc-part for the client —
   // must be the same bytes, which is the whole mechanism.
   const sessionKey = kcrypto.randomBytes(profile.keyBytes);
-  const authtime = now();
-  // A SUCCESSFUL AS EXCHANGE CLEARS ANY SIGN-OUT INSTANT, and it has to.
+  // A SUCCESSFUL AS EXCHANGE NO LONGER CLEARS A SIGN-OUT INSTANT (#111,
+  // 2026-09-23). It did, and that put every ticket-granting ticket from
+  // before the sign-out back into service — a renewal of one too, since a
+  // renewal keeps authtime — the moment the person authenticated again. The
+  // stamp stays, and handleTgsReq() goes on refusing what was authenticated
+  // before it until its horizon (krb5_principals.js's signOut()).
   //
-  // Signing out says "the tickets you already hold are finished"; it does not
-  // disable the account, so this exchange succeeds. But the ticket about to be
-  // minted carries THIS authtime, and if the instant stayed behind at a later
-  // moment than... no: it would be earlier, and the check in handleTgsReq()
-  // compares authtime against it — so leaving a stale instant would be
-  // harmless for THIS ticket and would silently keep refusing the older ones
-  // forever, which is right. What it would NOT survive is a clock offset:
-  // KRB5_CLOCK_OFFSET exists here to make this KDC lie about the time on
-  // purpose, and a stamp taken from Date.now() against an authtime taken from
-  // the offset clock can sit on either side of it. Clearing on a fresh
-  // authentication removes the question entirely: after somebody proves who
-  // they are again, nothing about the sign-out before it is still in force.
+  // What the clear used to paper over is this exchange's to get right
+  // instead: `authtime` goes out in whole seconds, so a ticket minted in the
+  // same second as the sign-out would carry an authtime earlier than the
+  // stamp and be refused by the very next TGS-REQ. So an AS exchange for a
+  // principal whose sign-out boundary (the stamp rounded up to a whole
+  // second) is still ahead WAITS for it before taking authtime — at most one
+  // second, and only right after a sign-out. awaitSignOutSecond() says what
+  // it does when the clock offset makes the wait longer than that.
   if (config.value('logout.kerberosSignOut')) {
-    principals.clearSignOut(client.name, client.realm);
+    await awaitSignOutSecond(client);
   }
+  const authtime = now();
   const requestedTill = body.till && body.till > authtime ? body.till :
                         kdcTime(ticketLifetimeSeconds());
   const endtime = new Date(Math.min(requestedTill.getTime(),
@@ -2211,9 +2265,12 @@ async function handleTgsReq(request) {
   // is the single most obvious way to get this wrong.
   //
   // It is in handleTgsReq() and NOT in handleAsReq(), because signing out is
-  // not disabling an account: the next AS exchange must succeed, and it CLEARS
-  // the instant so the ticket it mints is not immediately refused by this very
-  // check.
+  // not disabling an account: the next AS exchange must succeed. It does NOT
+  // clear the instant (#111, 2026-09-23 — it did, and that re-admitted every
+  // older ticket): it waits for the sign-out's second to pass, and the
+  // comparison below is against that whole second, so the ticket it mints is
+  // newer than the instant and every ticket from before it stays refused
+  // until the stamp's horizon, whatever AS exchanges come between.
   //
   // It is on the TICKET'S client and not on the request's `cname` — a TGS-REQ
   // does not carry one — so a ticket obtained for somebody through S4U2Self is
@@ -2227,16 +2284,28 @@ async function handleTgsReq(request) {
   if (config.value('logout.kerberosSignOut')) {
     const signedOut = principals.signedOutAt(ticketPart.cname.name,
                                              ticketPart.crealm);
-    if (signedOut && ticketPart.authtime && ticketPart.authtime < signedOut) {
+    // IN WHOLE SECONDS (#111): `authtime` came off the wire truncated to the
+    // second, so it is compared with the stamp rounded UP to one — which
+    // refuses every ticket authenticated before the sign-out and none
+    // authenticated after it, because the AS exchange waits for that same
+    // boundary before it takes authtime.
+    const boundary = signedOut ? principals.signOutBoundary(signedOut) : null;
+    if (boundary && ticketPart.authtime && ticketPart.authtime < boundary) {
+      const until = principals.signOutHorizon(ticketPart.cname.name,
+                                              ticketPart.crealm);
       log.info('krb5: refusing a TGS-REQ for ' +
                ticketPart.cname.name.join('/') + '@' +
                ticketPart.crealm + ' — the ticket was authenticated at ' +
                ticketPart.authtime.toISOString() + ' and that principal ' +
                                                    'signed out at ' +
-               signedOut.toISOString() + '. KDC_ERR_TGT_REVOKED. A fresh ' +
-               'AS-REQ works and clears the instant; a service ticket ' +
-               'already in the cache is untouched, because accepting one ' +
-               'never reaches this KDC.');
+               signedOut.toISOString() + '. KDC_ERR_TGT_REVOKED' +
+               ((body.kdcOptions || []).indexOf(msgs.KDC_OPTION.RENEW) !== -1
+                 ? ' (a renewal, which keeps authtime)' : '') +
+               ', until ' + (until ? until.toISOString() : 'the stamp is ' +
+                                                           'cleared') +
+               '. A fresh AS-REQ works and its ticket is accepted; this one ' +
+               'stays refused. A service ticket already in the cache is ' +
+               'untouched, because accepting one never reaches this KDC.');
       log.debug("Leaving handleTgsReq().");
       return errorReply(20, {
         errorCode: 'STS-KRB-0034',
@@ -2247,7 +2316,8 @@ async function handleTgsReq(request) {
                ' and ' + ticketPart.cname.name.join(
                    '/') + '@' + ticketPart.crealm +
                ' signed out at ' + signedOut.toISOString() +
-               '; authenticate again to get a ticket newer than that instant'
+               '; authenticate again to get a ticket newer than that instant ' +
+               '(this one stays refused, renewed or not)'
       });
     }
   }

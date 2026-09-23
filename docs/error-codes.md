@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3086** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3088** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 97
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 154
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 155
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 123
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 276
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 180
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 181
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 62
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -1876,7 +1876,7 @@ Raised from: kerberos/.
 | `STS-KRB-0031` | A TGS-REQ's Authenticator and ticket name different clients. | KRB_AP_ERR_BADMATCH (36) |
 | `STS-KRB-0032` | A TGS-REQ presented an expired ticket. | KRB_AP_ERR_TKT_EXPIRED (32) |
 | `STS-KRB-0033` | A TGS-REQ presented a ticket that is not yet valid. | KRB_AP_ERR_TKT_NYV (33) |
-| `STS-KRB-0034` | A TGS-REQ was refused because the ticket was authenticated before its client signed out (logout.kerberosSignOut). | KDC_ERR_TGT_REVOKED (20) |
+| `STS-KRB-0034` | A TGS-REQ (a renewal included) was refused because the ticket was authenticated before its client signed out (logout.kerberosSignOut); a later AS exchange does not lift it. | KDC_ERR_TGT_REVOKED (20) |
 | `STS-KRB-0035` | A TGS-REQ's Authenticator clock was outside the KDC's clock-skew tolerance. | KRB_AP_ERR_SKEW (37) |
 | `STS-KRB-0036` | A TGS-REQ's Authenticator carried no checksum over the request body. | KRB_AP_ERR_INAPP_CKSUM (50) |
 | `STS-KRB-0037` | A TGS-REQ's Authenticator checksum did not match the request body. | KRB_AP_ERR_INAPP_CKSUM (50) |
@@ -1997,6 +1997,7 @@ Raised from: kerberos/.
 | `STS-KRB-0152` | A PA-OTP-REQUEST carried no otp-value (a hashed OTP or one used as key material), which this KDC did not ask for. | RFC 6560 section 3.6: KDC_ERR_PREAUTH_FAILED (24) |
 | `STS-KRB-0153` | A ticket's AD-CAMMAC did not verify under the key the ticket is sealed with, so its authentication indicators were ignored. | RFC 7751 section 7, RFC 8129 section 5 |
 | `STS-KRB-0154` | Asking whether a person holds a second factor failed, so the KDC treated a password alone as not enough. | — |
+| `STS-KRB-0155` | An AS exchange waited (at most a second) for its client's sign-out second to pass before taking authtime, so the new ticket is newer than the sign-out. Logged at debug; not a failure. | — |
 
 ## STS-LDAP
 
@@ -3173,6 +3174,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0801` | Revoking somebody's app password was refused; the credential store's own code is on the audit row. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0802` | A password reset for a Kerberos keytab gave neither or both of a password and random, or the new password was refused (the password policy's own code wins where it gave one). Nothing was changed. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0803` | A password reset for a Kerberos keytab SET the password and then no keytab could be made, or a Kerberos principals action threw inside the console. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0804` | restore-kerberos (clearing a Kerberos sign-out instant) was refused because it is a development-only test control. | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 

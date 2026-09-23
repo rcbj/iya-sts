@@ -1545,7 +1545,7 @@ Three things about these do not fit in a cell.
 |---|---|---|---|---|
 | `delegation.maxRecords` | `DELEGATION_MAX_RECORDS` | `2000` | yes | How many delegation acts /admin/delegation keeps before the oldest are dropped. An act is one exchange in which somebody acted on somebody else's behalf — a Kerberos S4U request or forwarded ticket, a WS-Trust OnBehalfOf or ActAs, an RFC 8693 token exchange — and REFUSED attempts are recorded too. What was dropped is COUNTED and shown. |
 | `logout.anyUser` | `LOGOUT_ANY_USER` | `true` | yes | Whether `/logout` honours a `username` naming somebody other than whoever the session cookie names. **In development mode** it grants nothing that was not already true — no password is checked at any sign-in screen there, so becoming that person takes one request — and what it buys is a headless test. **In product mode it is ignored**: a sign-out may name only the signed-in caller, because otherwise an anonymous request could end anybody's sessions and revoke their tokens. Off, `/logout` acts only on the caller's own session and 403s a request that names another name; `/admin/logout` and `/admin-api/logout` are unaffected. |
-| `logout.kerberosSignOut` | `LOGOUT_KERBEROS_SIGN_OUT` | `true` | yes | Whether a logout stamps a sign-out instant on the Kerberos principal, after which a `TGS-REQ` carrying a ticket whose `authtime` is earlier is refused KDC_ERR_TGT_REVOKED (20). It does NOT stop a service ticket already in a cache — accepting one never contacts the KDC — and an `AS-REQ` still succeeds and clears the instant. Off, the KDC behaves exactly as it did before this feature existed. |
+| `logout.kerberosSignOut` | `LOGOUT_KERBEROS_SIGN_OUT` | `true` | yes | Whether a logout stamps a sign-out instant on the Kerberos principal, after which a `TGS-REQ` carrying a ticket whose `authtime` is earlier is refused KDC_ERR_TGT_REVOKED (20). It does NOT stop a service ticket already in a cache — accepting one never contacts the KDC. An `AS-REQ` still succeeds and does not lift the instant: the older tickets, renewals included, stay refused until the latest could still be valid. Off, the KDC behaves exactly as it did before this feature existed. |
 | `logout.ldapDisconnect` | `LOGOUT_LDAP_DISCONNECT` | `true` | yes | Whether a logout closes every connection to the embedded directory, 389 and 636 alike, whose bind DN names that person. RFC 4511 section 4.2 makes the bind the authorization state of a CONNECTION, so the connection is the session. Off, they are left alone and listed on `/logout` as untouched rather than hidden. |
 | `logout.maxRows` | `LOGOUT_MAX_ROWS` | `500` | yes | How many live items `/logout` lists for one person. The cap is on what is DRAWN and offered as a checkbox, never on what a termination reaches — a global logout still ends all of them. |
 
@@ -4319,8 +4319,12 @@ is earlier is refused. It is checked on `authtime` and not on the issue time bec
 renewed ticket deliberately preserves `authtime`, and checking anything else
 would let a renewal launder a signed-out ticket back into a live one. **It does
 not reach a service ticket already in a cache** — accepting one never contacts
-the KDC — and a fresh `AS-REQ` succeeds and clears the instant, because signing
-out is not being locked out. `logout.kerberosSignOut` turns it off.
+the KDC. A fresh `AS-REQ` succeeds, because signing out is not being locked
+out, and **does not lift the instant** (#111): its ticket is accepted, while
+every ticket from before the sign-out, renewed or not, stays refused until the
+latest one could still be valid — the sign-out plus the longer of the ticket and
+renew lifetimes, plus the clock skew — on every node. `logout.kerberosSignOut`
+turns it off.
 
 **LDAP.** The connection is the session, so the sign-out is the socket closing.
 What the client sees is its connection ending mid-conversation, which is what a
@@ -4341,7 +4345,8 @@ story.
 **Two more doors onto the same two functions.** `/admin/logout` is the operator's
 view — the same lists for a person *named*, filtered and paged, behind the
 console's two roles, and with the two NON-SPEC undos this page has not (restoring
-a revoked token, clearing a Kerberos sign-out instant). `GET|POST
+a revoked token, and — in development mode only — clearing a Kerberos sign-out
+instant). `GET|POST
 /admin-api/logout` is the same again for a test, with four operations. All three
 call one pair of functions in `logout/logout.ts`, which is what stops them coming
 to disagree about what a live session is.

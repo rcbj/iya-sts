@@ -1117,8 +1117,11 @@ class Logout {
               'before it is refused KDC_ERR_TGT_REVOKED. IT DOES NOT REACH ' +
               'A SERVICE TICKET ALREADY IN A CACHE: accepting one never ' +
               'contacts this KDC, which is a fact about Kerberos rather ' +
-              'than a gap here. A fresh AS-REQ succeeds and clears the ' +
-              'instant, because signing out is not being locked out.',
+              'than a gap here. A fresh AS-REQ succeeds, because signing ' +
+              'out is not being locked out — and its ticket is accepted ' +
+              'while every ticket from before the sign-out, renewed or ' +
+              'not, stays refused until the latest one could still be ' +
+              'valid.',
         collect: (ctx) => {
           log.debug("Entering krb5.collect().");
           if (!ctx.key) {
@@ -1794,11 +1797,19 @@ class Logout {
         amr: [],
         acr: '',
         carries: [],
+        // "Already refused" only for a ticket issued BEFORE the sign-out
+        // (#111): the next AS exchange no longer clears the instant, so a
+        // ticket issued after it is live beside a stamp that still stands.
+        // `issuedAt` is this service's own clock and the stamp the KDC's, so
+        // under a `krb5.clockOffset` the sentence can be wrong by the offset;
+        // the KDC's own comparison is on `authtime` and is not.
         detail: 'issued by this KDC for ' + (record.realm || realm) +
                 (record.etype ? ', ' + record.etype : '') +
-                (already ? '; the principal was signed out at ' +
-                  already.toISOString() + ', so this ticket is already ' +
-                  'refused at the KDC' : ''),
+                (already && record.issuedAt &&
+                 record.issuedAt < already.getTime()
+                  ? '; the principal was signed out at ' +
+                    already.toISOString() + ', so this ticket is already ' +
+                    'refused at the KDC' : ''),
         // A TGT IS A CREDENTIAL HAVING BEEN ACCEPTED — it exists because an
         // AS-REQ decrypted under a real long-term key. There is no
         // unauthenticated Kerberos session; see the note on the browser rows.
