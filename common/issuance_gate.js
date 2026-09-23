@@ -195,17 +195,18 @@ function check(request) {
   // question is waived, and only a Deny about risk refuses.
   // -------------------------------------------------------------------------
   const risk = riskFactsOf(asked);
-  // THE AUTHENTICATION A SESSION STANDS ON (#64) keeps the policy asked for
-  // the same reason risk facts do: a rule about it must not be skipped
-  // because the role question was.
-  const authentication = asked.authentication || null;
+  // THE AUTHENTICATION A SESSION STANDS ON (#64) rides along whenever the
+  // policy IS asked, and does not make it asked: a sign-in that names no
+  // application and carries no risk facts is not put to the policy, as it
+  // never was. A rule refusing an emailed factor therefore reaches every
+  // session an application is being signed in to, and every assessed one.
   const enforceRoles = config.value('roles.enforceIssuance') !== false;
-  if (!enforceRoles && !risk && !authentication) {
+  if (!enforceRoles && !risk) {
     log.debug('Leaving check(). Enforcement is switched off.');
     return allow('roles.enforceIssuance is off, so the decision was not ' +
                  'asked for.');
   }
-  if (!asked.application && !risk && !authentication) {
+  if (!asked.application && !risk) {
     log.debug('Leaving check(). No application to decide about.');
     return allow('Nothing named an application, so there is no requirement ' +
                  'to check.');

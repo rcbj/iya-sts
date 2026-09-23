@@ -272,7 +272,7 @@ is a secret shared with the partner and is not rotated.
 
 **A person who holds or must hold a second factor gets no ticket on a password
 alone** (#173). An authenticator app, a security key in the `mfa` role,
-`stsMfaRequired` on their entry or `authn.mfaRequired` for the realm — the
+`stsMfaRequired` on their entry or the realm's authentication policy (`requireSecondFactor`) — the
 same rule as the [password-only doors](#app-passwords-at-the-password-only-doors) —
 and an AS-REQ proving only the password (`PA-ENC-TIMESTAMP`, or FAST's
 encrypted challenge) is refused `KDC_ERR_POLICY` (12). The refusal comes
@@ -328,7 +328,7 @@ an authenticator integration to test against.
   door instead (see [App passwords](#app-passwords-at-the-password-only-doors)).
   Development accepts the password there as it accepts every password.
 * **A second factor can be required** of a person (`stsMfaRequired`, set from
-  `/admin/users`) or of a realm (`authn.mfaRequired`); somebody who holds none is
+  `/admin/users`) or of a realm (the authentication policy's `requireSecondFactor`); somebody who holds none is
   then asked to enrol one at `/authn/mfa-setup` before the sign-in completes.
 * **It can never be a first factor.** This service holds the same shared secret
   the app does, which is fine for proving somebody still has the app and is not
@@ -349,8 +349,9 @@ Basic and EST Basic take a password and have nowhere to ask for anything more
 3.2.3). NIST SP 800-63B section 4.2 puts an account bound to two factors at
 AAL2, and a door that accepts one of them alone brings it down to AAL1. So, **in
 product mode**, a person who holds an authenticator app or a security key in
-the `mfa` role, or of whom a second factor is required (`stsMfaRequired`,
-`authn.mfaRequired`), is refused their own password at those five doors:
+the `mfa` role, or an emailed second factor they opted into, or of whom a
+second factor is required (`stsMfaRequired`, or the authentication policy's
+`requireSecondFactor`), is refused their own password at those five doors:
 
 * **The answer is a wrong password's**, byte for byte — LDAP
   `invalidCredentials` (49), the WS-Trust fault, SCIM's, Shared Signals' and

@@ -338,7 +338,7 @@ agree with the rest of the screen:
   here, and `oid4vc/CLAUDE.md` carries the argument:
   * `beginSecondFactorAfterWallet()` — asked by the wallet door once a
     presentation has named somebody, and it answers whether a second factor
-    is needed (`forceMfa`, `authn.mfaRequired`, the person's own
+    is needed (`forceMfa`, the authentication policy, the person's own
     `stsMfaRequired`, or a second factor they hold) and draws it: their
     authenticator app, their security key, or their PASSWORD at
     `/authn/password-factor` — a new screen with one field, no script, rate
@@ -1772,7 +1772,7 @@ change.**
 
 `credentials.mfaRequirementFor(username)` answers `{ required, byUser, byRealm }`
 — `stsMfaRequired` on the entry, set by **Require MFA** on the person's console
-page, or `authn.mfaRequired` for the realm. `finishPasswordSignIn()` asks it
+page, or the realm's authentication policy (`requireSecondFactor`). `finishPasswordSignIn()` asks it
 after computing `factor`:
 
 * **A passwordless sign-in under the requirement is refused** on the login page
@@ -2124,3 +2124,50 @@ to know the sign-in it is shown was made through this screen, as that person,
 just now. Development checks no password here any more than anywhere (the
 reserved `invalid` is refused); product verifies it.
 
+
+## THE EMAILED CODE AND THE EMAILED SIGN-IN LINK (#64, 2026-09-23)
+
+`authn/email_factor.ts` draws and checks both, as a FIRST factor (the sign-in
+screen's "Email me a sign-in code" / "…link" buttons — submit buttons of the
+same form, so the username goes with them and no script is needed) and as a
+SECOND (a `pendingMfa` step whose `factor` is `email-code` or `email-link`,
+or whose `email` offers one as a way round the factor asked for). This module
+declares the three paths and owns the step store; that one registers the six
+routes just after this module and reaches the steps only through
+`mintMfaStep()`, `saveMfaStep()`, `dropMfaStep()`, `finishEmailSecondFactor()`
+and `finishEmailFirstFactor()` — the wallet door's arrangement.
+
+**OFF BY DEFAULT** — the authentication policy's four email rows
+(`common/CLAUDE.md` 3bd) — because NIST SP 800-63B-4 section 3.1.3.1 says
+email SHALL NOT be used for out-of-band authentication. Where they are on:
+
+- **Only a VERIFIED address is mailed**, and a person holds the emailed SECOND
+  factor only by opting in (`common/CLAUDE.md` 3be).
+- **As a first factor the page never says whether the account exists**: an
+  unknown name, a disabled account or an unverified address gets a DECOY step
+  no code can finish, the same page, and no mail.
+- **The secret is a scrypt hash on the step**, valid for at most ten minutes,
+  spent once for the cluster (a claim on the step and the send), replaced by a
+  resend no sooner than `emailResendS`, at most three sends a step; the step
+  ENDS after `emailCodeAttempts` wrong ones; `mfa-code`'s rate limits apply.
+- **A link finishes only in the browser that started the sign-in** (rcbj's
+  D3): the step holds the SHA-256 of a cookie set when the link was sent, and
+  the landing page is refused without it. Approving from another device is the
+  login-CSRF shape and is not offered. **The landing GET spends nothing**; a
+  Continue button posts. The waiting page refreshes with a `<meta>` tag and,
+  once the step is spent, says the sign-in went on in the other tab.
+- **No script on any of the six pages** — so none is on the root file's list
+  of pages that relax the policy; each argued its case the same way
+  `/authn/totp` did.
+- **`amr ["otp"]`**, the first factor's `amr` plus `otp` and `acr "mfa"` as a
+  second (D1, D2); the event's credential kind is `email-code` or
+  `email-link`, which the issuance policy is told and `risk_engine` reads: an
+  emailed factor meets no risk step-up. `beginSecondFactorAfterWallet()`
+  (named for its first caller) runs after an emailed first factor with
+  `opts.first: 'email'`, so the email is never the second factor after itself,
+  and the password fallback is offered only where the policy accepts a password
+  as a second factor.
+
+`startSession()` asks the authentication policy of every door: a mechanism it
+does not accept in the role it answered in gets no session (STS-AUTHN-0268,
+-0269), held second factors excepted by the contract `totp.enabled` kept.

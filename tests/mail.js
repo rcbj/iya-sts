@@ -1602,6 +1602,23 @@ module.exports = {
             'real server with DKIM, the uses, and realms',
   run: async function (t) {
     log.debug('Entering run().');
+    // THE DIRECTORY SLOT IS PUT BACK AFTERWARDS (#64): every section installs
+    // a stub of its own, and a file run after this one in the same process
+    // (tests/mail_address_sources.js) must reach the real directory.
+    const mailModule = require('../common/mail');
+    const original = mailModule.directory();
+    try {
+      await sections(t);
+    } finally {
+      mailModule.setDirectory(original);
+    }
+    log.debug('Leaving run().');
+  }
+};
+
+async function sections(t) {
+  log.debug('Entering sections().');
+  {
     templates(t);
     await recipients(t);
     await ceilings(t);
@@ -1617,6 +1634,6 @@ module.exports = {
     await layout(t);
     await recoveryCodeReset(t);
     await addressChange(t);
-    log.debug('Leaving run().');
   }
-};
+  log.debug('Leaving sections().');
+}

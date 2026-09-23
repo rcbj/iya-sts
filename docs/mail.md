@@ -211,40 +211,74 @@ saved** (`STS-MAIL-0016`):
   nobody when it was read.
 - Every value is escaped, and a value can never add a line to a header.
 
+**Every message is wrapped in the realm's layout** (#64): the `layout`
+message on `/admin/mail`, reworded like any other. It carries the message's own
+body as `{{content}}` — exactly once in the text part and once in the HTML part
+— and its subject as `{{subject}}`, and says why the person received it
+(`{{reason}}`). A layout without `{{content}}`, or with it twice, is refused
+when it is saved. It is never sent on its own.
+
 ## Categories, and what a person may decline
 
 | Category | Messages | May be declined |
 |---|---|---|
-| Security notices | disabled, sessions ended, password changed, compromised, recovery started, address changed | **no** |
+| Security notices | disabled, sessions ended, password changed, compromised, recovery started, address changed, a sign-in code or link (#64), a refused reset | **no** |
 | Links somebody asked for | reset, activation, verification, test | **no** |
-| Notifications | none yet (#62, #64) | yes, on `/portal/email` |
+| Notifications | none yet (#62) | yes, on `/portal/email` |
 
 ## The uses
 
 **Forgot your password?** This is offered where `mail.selfServiceReset` is on,
-a transport is available, and the mode checks passwords (product). A person
-names their account, by username or by the address on it. **The page says the
-same sentence whatever happened**, and says it before any work is done, so
-neither the wording nor the timing reveals whether an account exists. Behind
-the answer:
+a transport is available, and the mode checks passwords (product). **By
+default a person gives three things** (#64, `mail.resetRequiresBackupCode`):
+their username, the verified address on the account, and one of their recovery
+codes. A link is mailed only when all three are right, and the recovery code is
+used up then. A wrong code with the right username and address tells the
+address owner that somebody tried. **The page says the same sentence whatever
+happened**, and says it before any work is done, so neither the wording nor the
+timing reveals whether an account exists. Behind the answer:
 
 - The link goes only to a **verified** address
   (`mail.resetRequiresVerifiedAddress`, on by default).
 - The account's current password keeps working until the link is used.
 - RISC `recovery-activated` is sent with the person as the initiating entity.
 
+> **Warning.** `mail.resetRequiresBackupCode=false` is a weaker setting. The
+> form goes back to one field — a username or the address on the account — and
+> a reset is then exactly as strong as the mailbox it goes to. A person who
+> holds no recovery codes cannot reset their own password while it is on; an
+> administrator can.
+
 > **Warning.** `mail.resetRequiresVerifiedAddress=false` is a weaker setting.
 > It mails reset links to addresses that an import, a provisioning feed or an
 > administrator wrote, and that nobody ever proved. Turn it off only for a
 > directory whose addresses you trust as written.
+
+**Which addresses are verified** (#64). An address is verified as written
+when an administrator sets it (the console, `POST /admin-api/users/create` or
+`set-mail`), when SCIM provisions it, when an administrator writes it over LDAP,
+or when a federation partner sends it — unless the partner says
+`email_verified: false`. An address a PERSON provides is verified by a link:
+changing it themselves over LDAP sends them one, and on `/portal/email` a new
+address stays **pending** — resets and codes still go to the old one — until
+the link sent to the new one is followed; the old address is then told it
+changed. An address this service invented for a development persona is never
+verified.
 
 **Address verification.** A person sends themselves a link from
 `/portal/email`, or an administrator sends one (`POST /admin-api/mail/verify`).
 Opening the link spends nothing: it draws a button, so a mail scanner that
 follows every link verifies nothing. The button records **the address** as
 verified. An entry whose `mail` changes is therefore unverified with nothing to
-clear. In product mode, UserInfo's `email_verified` is `true` exactly when
-the `email` it sends is that verified address, and `false` otherwise.
+clear. A link is bound to the address the account had when it was sent, so it
+outlives no change of address by anybody. In product mode, UserInfo's
+`email_verified` is `true` exactly when the `email` it sends is that verified
+address, and `false` otherwise.
+
+**Emailed sign-in codes and links** (#64) are the authentication policy's, on
+[the sign-in service's page](authentication.md#emailed-codes-and-links), and
+off by default. Where a realm cannot send mail they are never offered, and
+Directory → Policies draws them disabled with the reason.
 
 **An administrator's links.** On `/admin/users` the reset-link form, and the
 activation choice on `/admin/users/new`, have a **mail the link** box. It is

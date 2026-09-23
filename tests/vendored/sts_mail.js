@@ -18,9 +18,12 @@
 //      (STS-MAIL-0003). A person with an address and a password.
 //   1. A test message — delivered over STARTTLS (the catcher accepts nothing
 //      else), From no-reply@ the realm's domain, Auto-Submitted, no image.
-//   2. Address verification sent by an administrator: the link names this
-//      service's pinned origin; opening it spends nothing; the form spends it;
-//      the address is verified.
+//   2. An address an ADMINISTRATOR provided is already verified (#64: an
+//      administrator is a trusted source), so the verification an
+//      administrator asks for sends nothing. The link flow — the pinned
+//      origin, a GET that spends nothing, a form that spends it once — is
+//      `sts_email_verification.js`'s now, through a person's own change of
+//      address, which is where an unverified address comes from.
 //   3. Forgot password: an unknown account and a known one get the SAME
 //      page; only the known one is mailed; the link sets a new password; the
 //      person is then told their password changed.
@@ -234,6 +237,9 @@ async function test() {
              "mail.smtpPort": SMTP_PORT, "mail.smtpTls": "starttls",
              "mail.smtpCaFile": CA_FILE, "mail.smtpAuth": "none",
              "mail.attempts": "1", "mail.ratePerCategory": "20",
+             // THE ONE-FIELD FORM, which section 3 drives: the recovery
+             // code form (#64, D4) is `sts_email_verification.js`'s.
+             "mail.resetRequiresBackupCode": "false",
              "global.publicBaseUrl": base },
            "pointed the realm's SMTP transport at the catcher");
   r = await call("GET", realmBase() + "/admin-api/mail");
@@ -275,33 +281,13 @@ async function test() {
   // =========================================================================
   // 2. ADDRESS VERIFICATION
   // =========================================================================
-  await ok(realmBase() + "/admin-api/mail/verify", { user: PERSON },
-           "an administrator sent a verification link");
-  got = await arrived(ADDRESS, /Confirm your address/, seen);
-  seen.push(got.id);
-  const verifyLink = linkIn(got.message);
-  check("2. the verification link is this service's pinned origin and " +
-        "/portal/verify-email", function () {
-    assert.ok(verifyLink.indexOf(base + "/realm/" + REALM +
-                                 "/portal/verify-email?") === 0, verifyLink);
-  });
-  r = await call("GET", verifyLink);
-  check("2. opening the link spends nothing: it draws a button", function () {
+  r = await call("POST", realmBase() + "/admin-api/mail/verify",
+                 { user: PERSON });
+  check("2. the address an administrator created the account with is " +
+        "already VERIFIED — an administrator is a trusted source (#64) — " +
+        "so asking to verify it sends nothing", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-    assert.ok(/Verify this address/.test(r.text));
-  });
-  const vUser = hiddenValue(r.text, "user");
-  const vToken = hiddenValue(r.text, "token");
-  r = await call("POST", realmBase() + "/portal/verify-email",
-                 { user: vUser, token: vToken }, {}, true);
-  check("2. the form verifies the address", function () {
-    assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-    assert.ok(/Address verified/.test(r.text), r.text.slice(0, 300));
-  });
-  r = await call("POST", realmBase() + "/portal/verify-email",
-                 { user: vUser, token: vToken }, {}, true);
-  check("2. and only once", function () {
-    assert.strictEqual(r.status, 400, r.text.slice(0, 300));
+    assert.strictEqual(r.json.verified, true, r.text.slice(0, 300));
   });
 
   // =========================================================================
@@ -429,7 +415,7 @@ async function test() {
               r.text.slice(0, 300));
   });
 
-  assert.ok(checks + skipped >= 20, "only " + checks + " checks ran and " +
+  assert.ok(checks + skipped >= 17, "only " + checks + " checks ran and " +
             skipped + " were skipped; a section has stopped being called.");
   log.info(checks + " check(s) passed, " + skipped + " skipped.");
   log.info("Test completed successfully.");

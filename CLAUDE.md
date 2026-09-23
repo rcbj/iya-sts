@@ -120,7 +120,7 @@ these protocol families:
 - **Federation**: either end of a relationship with a foreign identity service, in five protocols.
 - **OAuth 2.0 / OpenID Connect**: a full authorization server, with DPoP — Native SSO, whose devices are entries in the directory, and CIBA, approved on the portal.
 - **RFC 7521/7523 and RFC 7521/7522**: JWT and SAML assertions as client credentials and as grants.
-- **WebAuthn Level 3, RFC 6238 TOTP and recovery codes**: the second factors on the sign-in screen.
+- **WebAuthn Level 3, RFC 6238 TOTP and recovery codes**: the second factors on the sign-in screen — and, OFF by default (NIST SP 800-63B-4 section 3.1.3.1), an emailed code or sign-in link as a first or second factor (#64), each where the realm's authentication policy on Directory → Policies allows it.
 - **OpenID4VCI 1.0, OpenID4VP 1.0**, and W3C DID Core with DIF domain linkage — and a wallet sign-in, `/authn/wallet`, which also takes a SIOPv2 self-issued ID Token from an enrolled key.
 - **LDAP v3**: an embedded directory on 389 and LDAPS 636.
 - **SCIM 2.0**: provisioning into that same directory, with no store of its own.
@@ -441,6 +441,7 @@ is and the named file says why.
 | 6a | `home/home` | No constraint; first among the route modules, and so the first `register()`. | `home/CLAUDE.md` |
 | 8 | `authn/authn` | Before `oauth2`: it owns the session that module reads. | `authn/CLAUDE.md` |
 | 7 | `ws-trust/wstrust` | After `authn` since 2026-09-05 (it calls `startSession()`); the number predates the move. | `ws-trust/CLAUDE.md` |
+| 8-email | `authn/email_factor` (and `common/mail_factor`, a library built with it) | Just after `authn`, whose pending steps it reads through that module's exports and whose three `/authn/email-*` paths it registers (#64) — `vc_signin`'s and `spnego_authn`'s arrangement. | `authn/CLAUDE.md` |
 | 8a | `portal/portal` | After `authn`, whose session every portal route reads; an OIDC relying party of `oauth2`, which needs that module's routes registered, not required. | `portal/CLAUDE.md` |
 | 8a-mail | `common/mail`, `common/mail_uses`, `portal/portal_mail` | Built with the portal, before it: the portal's `registerRoutes()` registers `portal_mail`'s three pages. The channel and its uses are LIBRARIES; the directory fills the channel's slot at 21. | `common/CLAUDE.md` |
 | 8b | `oauth-oidc/consent_screen` | After `authn`, before `oauth2`. | `oauth-oidc/CLAUDE.md` |
@@ -544,6 +545,8 @@ in every file, including the ones in the source comments. This is the index.
 | 3ba | `siop.ts`, SIOPv2 as the relying party (#129): a self-issued subject enrolled on the entry (by proof on the portal, by value by an administrator), refused unenrolled in both modes, section 11.1, a did:web fetched only when enrolled, the four Client Identifier prefixes | `oid4vc/CLAUDE.md` |
 | 3ay | `identity_assurance.ts`, OpenID Connect for Identity Assurance 1.0 (#127): verifications recorded on the entry by an administrator or a wallet or certificate sign-in, only directory values verified and released while unchanged, `value`/`values` enforced on the verification only, development's `urn:sts:demo` | `common/CLAUDE.md` |
 | 3ba | `mail.ts`, `mail_transports.ts`, `mail_templates.ts`, `mail_uses.ts`, #63: one outbound mail channel — a per-realm persisted outbox delivered once for the cluster by a claimed lease and the `mail.deliver` job, five transports behind one method, recipients from the directory only, links on the pinned origin, ceilings and duplicates, templates that load nothing, and the four uses | `common/CLAUDE.md` |
+| 3bd | `authn_policy.ts` and `admin-core/policy_kinds.ts`, #64: which mechanisms a realm accepts as first and second factors — a policy of its own, inherited from the default realm, on the ONE Policies page that holds every kind of policy; it retired `authn.mfaRequired`, `totp.enabled` and `backupCodes.enabled` | `common/CLAUDE.md` |
+| 3be | `mail_factor.ts` and `authn/email_factor.ts`, #64: the emailed code and sign-in link, off by default (NIST SP 800-63B-4 3.1.3.1), a person's opt-in, hashed single-use secrets, a link bound to its browser, and which addresses are verified by whom | `common/CLAUDE.md`, `authn/CLAUDE.md` |
 | 3ap | `cache_registry.js`, every cache and replay store describing itself to `/admin/caches`: why a leaf in JavaScript, why a row is five members, where a lookup is counted, and why valid is the owner's call | `common/CLAUDE.md` |
 | 3p | `user_graph.js`, and why the union of two registers is a library rather than a page | `common/CLAUDE.md` |
 | 3o | `federation.js`, why four modules may require it, and why `PATHS` is not beside the routes | `federation/CLAUDE.md` |

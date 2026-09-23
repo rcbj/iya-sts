@@ -1025,7 +1025,8 @@ NOT.** `pki.personSelfService`, on by default, checked at the DOOR as well as
 on the page — `authn.js`'s rule about the anonymous button, read again: the page
 is markup and the handler is the door, so a form posted by hand while the
 setting is off must issue nothing. **Turning it off takes nobody's key away**,
-which is `totp.enabled`'s contract word for word: a key already on an entry goes
+which is the TOTP row's contract (it was `totp.enabled`) word for word: a key
+already on an entry goes
 on verifying, and what stops is new ones *from the portal* — an operator issuing
 from `/admin/pki` is unaffected, which is the point of having the switch.
 

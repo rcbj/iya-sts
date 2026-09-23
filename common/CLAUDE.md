@@ -5691,7 +5691,7 @@ that minted a key able to assert about anybody would hand every person who can
 sign in a token as every other person — and because that refusal lives in the
 GRANT rather than on either page, neither door can forget it.
 `pki.personSelfService` turns the portal's offer off without touching a key
-anybody already holds, which is `totp.enabled`'s contract; `portal/CLAUDE.md`
+anybody already holds, which is the TOTP row's contract (it was `totp.enabled` until #64); `portal/CLAUDE.md`
 argues the page.
 
 `tests/rfc7523_person_issuer.js` is the in-process half and section 13 of
@@ -7751,7 +7751,7 @@ For the *Password and second factors* section of a person's console page.
   none issued, `0166` expired, `0167` mismatch, `0168` incomplete) for the audit
   row; the page shows the requester one sentence for all of them.
 * **`mfaRequirementFor(username)`** is `{ required, byUser, byRealm }` —
-  `stsMfaRequired` on the entry OR `authn.mfaRequired` — and `setMfaRequired()`
+  `stsMfaRequired` on the entry OR the authentication policy's `requireSecondFactor` (it was `authn.mfaRequired` until #64) — and `setMfaRequired()`
   writes the first (`0170`). `mechanismsFor()` carries it as `mfaRequirement`,
   beside `passwordResetLink`.
 * **`removePrimaryKeys()`** removes every key in the `primary` role and refuses
@@ -7767,7 +7767,7 @@ For the *Password and second factors* section of a person's console page.
   the key store and was true for anybody — both found by the protocol suite
   run against a product-mode deployment.
 
-**Two settings**: `authn.mfaRequired` (group *Second-factor requirement*, drawn
+**Two settings**: the authentication policy's `requireSecondFactor` (it was `authn.mfaRequired` until #64) (group *Second-factor requirement*, drawn
 on `/admin/totp` and `/admin/webauthn`) and `security.passwordResetTtlMinutes`.
 **Two defaults changed**: `caep.autoEmitTypes` names `credential-change` and
 `risc.autoEmitTypes` names `account-credential-change-required` and
@@ -8343,6 +8343,16 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   and product mails no link without the pin (STS-MAIL-0015).
 - **A template loads nothing, runs nothing and writes no address of its own**,
   checked when a realm saves one.
+- **Every message is wrapped in the realm's LAYOUT (#64)** — the built-in
+  `layout` template, reworded per realm like any other, which carries the
+  message's body as `{{content}}` exactly once in each part (checked on save)
+  and says why the person received it (`{{reason}}`, the category's). It is a
+  template and not a message: `send()` refuses it by name.
+- **The second exception to "the recipient is `mail`" (#64)** is
+  `sendToPendingAddress()`: the verification link of a person's own CHANGE of
+  address goes to the entry's pending `stsMailVerifyAddress` — written by
+  their signed-in form, never a request's — for the former-address rule's
+  reason read the other way round.
 
 **The uses, and why each is shaped the way it is:**
 
@@ -8352,12 +8362,28 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   administrator's reset link, because a request anybody can make must not be
   able to lock somebody out. It mails only a VERIFIED address by default
   (`mail.resetRequiresVerifiedAddress` — most secure by default, with the
-  weaker setting warned about in docs/mail.md).
+  weaker setting warned about in docs/mail.md). **Since #64 it asks for
+  THREE things by default** (`mail.resetRequiresBackupCode`, rcbj's D4): the
+  username, the verified address on the account, and one of the person's
+  recovery codes, which is SPENT when all three are right — so one code cannot
+  be replayed into a stream of reset mail. A wrong code with the right name
+  and address tells the address owner (`reset-refused-attempt`), once an hour
+  at most. Every combination is answered with the same sentence.
 - **Verification records the ADDRESS, not a flag** (`stsMailVerified`). A
   changed `mail` is unverified with nothing to clear. The GET of the link draws
   a button and spends nothing, because a mail scanner follows every link. The
   same state is UserInfo's `email_verified` in product (`oauth2.ts`,
-  `personFromDirectory()`).
+  `personFromDirectory()`). **Since #64 the link's hash is of the token AND
+  the address the account had when it was sent**, so no link outlives a change
+  of address by anybody; and **a person may CHANGE their own address**
+  (`startAddressChange()`, rcbj's D5): the new one is held pending, mailed a
+  link, and becomes `mail` — verified, with the former address told — only
+  when the link is followed. **Who wrote an address decides whether it is
+  verified** (`ldap_server.js`'s `verifyWrittenMail()`): an administrator (the
+  console, `/admin-api`, `set-mail`), SCIM, an administrator's LDAP write and
+  a federation partner (unless it said `email_verified: false`) are trusted
+  sources; a person's own LDAP write is sent a verification link; an address
+  `namePlan()` invented is never verified.
 - **Security notices hook the places every door already passes through**,
   never each door:
   - `AccountSignals` sees every password change, compromise and recovery
@@ -8374,3 +8400,80 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
 `smtp-server` with STARTTLS and DKIM. `tests/vendored/sts_mail.js` drives it
 over HTTP into the Mailpit the compose stack runs. docs/mail.md is the
 operator's guide.
+
+## 3bd. `authn_policy.ts` and `admin-core/policy_kinds.ts`: THE AUTHENTICATION POLICY, AND ONE POLICIES PAGE FOR EVERY KIND (#64, 2026-09-23)
+
+**Which mechanisms a realm accepts as a FIRST factor, which as a SECOND, and
+when a second is required** — rcbj's "default policy under Directory >
+Policies that defines primary authentication mechanisms and MFA mechanisms,
+overridden per realm by an administrator". The module's header argues it; the
+decisions are rcbj's, on the ticket:
+
+- **A SEPARATE POLICY FROM THE PASSWORD POLICY, ON THE SAME PAGE.** Its own
+  module, container (`ou=authnPolicies`) and schema, sharing nothing with
+  `password_policy.ts` but the SHAPE — a `FIELDS` table read five ways, not
+  seeded, a save carrying every field. `/admin/policies` and
+  `/admin-api/policies` hold both, and every policy defined later:
+  `policy_kinds.ts` is a list of KINDS, each a module with that interface and
+  two actions (`save-<id>-policy`, `reset-<id>-policy`); the page, the JSON,
+  the API's operations (with each save's body schema from the kind's FIELDS)
+  and the refusal sentence the parity checks read are all drawn from it. A
+  future policy is a module and a row there.
+- **A REALM INHERITS (D6)**: its own `cn=default`, then the DEFAULT realm's,
+  then the built-in defaults. `reset` deletes the realm's own. `read().from`
+  says which is in force — which the password policy, whose realms do not
+  inherit, has no need of.
+- **IT RETIRED THREE SETTINGS, WITH NO SHIM (D7)**: `authn.mfaRequired` is
+  `requireSecondFactor` (`if-held` | `always` — there is no `never`: a held
+  factor is always asked for), and `totp.enabled` and `backupCodes.enabled`
+  are the TOTP and recovery-code rows, which keep those settings' contract:
+  off stops ENROLMENT, never a factor already held.
+- **WHERE IT IS ASKED.** `authn.startSession()`, the line every door
+  reaches, refuses a session whose mechanism the policy does not accept in
+  the role it answered in (STS-AUTHN-0268 first, -0269 second); held second
+  factors are not refused there, by the contract above. The sign-in screen
+  draws only what it accepts, `webauthnPolicy.roleAllowed()` asks the two
+  security-key rows, `totp.settings().enabled` and
+  `backupCodes.settings().enabled` read theirs, and
+  `credentials.mfaRequirementFor()` reads `requireSecondFactor`.
+- **EMAIL IS OFF BY DEFAULT, AND GUARDED (D1)**: NIST SP 800-63B-4 section
+  3.1.3.1. An email row cannot be SAVED on in a realm that cannot send mail
+  (STS-AUTHN-0244), one already on there is not ACTIVE (`active()`, fail
+  closed), and the page draws such rows DISABLED with the reason.
+
+**Authorization is still policy (rcbj's rule).** What a session stands on —
+`amr`, `acr` and the credential kinds — goes to the issuance policy as
+environment attributes (`urn:sts:xacml:amr`, `acr`, `credential-kind`) when
+the session starts; the built-in `role-issuance` template's
+`refuseEmailFactor` option is the rule an operator writes to refuse a session
+on an emailed factor, carrying an obligation the PEP refuses on even where
+the role question is waived. The facts ride along whenever the policy is
+asked and do not make it asked.
+
+`tests/authn_policy.js` holds the module, the inheritance, the mail guard,
+the retired settings and a kind registered later.
+
+## 3be. `mail_factor.ts`: THE EMAILED FACTOR AS A FACT ABOUT A PERSON (#64, 2026-09-23)
+
+The emailed six-digit code and the emailed sign-in link are drawn and checked
+by `authn/email_factor.ts` (`authn/CLAUDE.md`); what the screens, the
+credential store, the portal and the console must agree on is here:
+
+- **A PERSON OPTS IN (D8)** — `stsMailFactor` (`code` | `link`), from
+  `/portal/mfa`, cleared by an administrator (`clear-email-factor`). It is
+  HELD only while it is usable: allowed as a second factor, mail working, the
+  address verified. `credentials.mechanismsFor()` counts a held one in
+  `mfaRequired` and names it LAST in `secondFactor`, after a key and an app:
+  it is the weakest.
+- **THE SECRETS** are minted from the CSPRNG and kept only as a scrypt hash
+  (`crypto.hashSecret()`) on the sign-in step.
+- **THE FAILURES** are counted on the entry (`stsMailFactorFailures`): a count
+  on a step dies with the step and an attacker starts another. At the
+  policy's `emailFailureLimit` (at most 100, section 3.2.2) the opt-in is
+  cleared and the person and their administrators are told.
+
+An emailed factor is `amr ["otp"]` (RFC 8176 has no value for email, D2) and
+meets NO risk step-up (`risk_engine.satisfiedBy()`'s `kinds`, D1).
+`tests/email_factor.js` drives it end to end in process;
+`tests/vendored/sts_email_factor.js` over HTTP into Mailpit.
+

@@ -777,6 +777,13 @@ const JOBS = [
   // product realm of its own, verification, a self-service reset, a dead
   // letter. Skips its delivery sections where there is no catcher.
   { file: 'sts_mail.js',                 browser: false, local: true },
+  // The emailed code and sign-in link (#64): the authentication policy on
+  // the Policies resource, and both mechanisms as a first and a second
+  // factor, in a product realm, delivered to the same catcher.
+  { file: 'sts_email_factor.js',         browser: false, local: true },
+  // #64's addresses: an administrator's verified, a person's own change
+  // pending until its link is followed, and the recovery-code reset.
+  { file: 'sts_email_verification.js',   browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE

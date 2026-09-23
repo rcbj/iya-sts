@@ -1150,7 +1150,7 @@ standardised.
 
 **THE REFUSAL** (`handleAsReq()`, after pre-authentication): a person for whom
 `principals.personSecondFactor()` answers `needed` — an authenticator app, a key
-in the `mfa` role, `stsMfaRequired`, or `authn.mfaRequired`; the answer is
+in the `mfa` role, `stsMfaRequired`, or the realm's authentication policy; the answer is
 `common/credentials.ts`'s `secondFactorDemand()`, the one #101's doors ask —
 who proved only the password (PA-ENC-TIMESTAMP, or FAST's encrypted challenge) is
 refused `KDC_ERR_POLICY` (12), `STS-KRB-0135`, where

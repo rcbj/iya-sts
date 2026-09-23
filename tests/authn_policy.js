@@ -62,9 +62,15 @@ function withRealm(t, id, overrides, fn) {
     return undefined;
   }
   log.debug('Leaving withRealm().');
-  return realms.run(made.realm, function () {
-    return fn(made.realm);
-  });
+  try {
+    return realms.run(made.realm, function () {
+      return fn(made.realm);
+    });
+  } finally {
+    // REMOVED AGAIN: every other file in this run asserts that only the
+    // default realm is left when it finishes.
+    realms.remove(id);
+  }
 }
 
 function realmId(stem) {

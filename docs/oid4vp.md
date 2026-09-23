@@ -230,7 +230,7 @@ answered once and finished once, across the cluster.
   `acr` is `"mfa"`. Only what the issuer recorded is believed, never what a
   presentation says about itself.
 * **A wallet, then a second factor.** When the request, the realm
-  (`authn.mfaRequired`) or the account demands two factors, the person is then
+  (the authentication policy's `requireSecondFactor`) or the account demands two factors, the person is then
   asked for their authenticator app, their security key, or their password at
   `/authn/password-factor`. The session then says, for example,
   `amr ["pop","otp"]` and `acr "mfa"`.
