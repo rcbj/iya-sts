@@ -100,7 +100,7 @@ function childMain() {
     eq(fapi.withProfile('', function () {
       return fapi.enabled();
     }), false, 'A. a server with no value of its own follows its realm');
-    eq(fapi.withProfile('2-security', function () {
+    eq(fapi.withProfile('3-imaginary', function () {
       return fapi.enabled();
     }), false, 'A. a value that is not a profile is no profile');
     note(fapi.known('1-baseline') && fapi.known('off') &&
@@ -298,12 +298,22 @@ function childMain() {
     };
     let lastIssued = null;
     let issueDays = 365;
+    let chainRefused = false;
+    const chainAsked = [];
     const fakePki = {
       hasRoot: function () {
         return true;
       },
       ensureScope: async function () {
         return { ok: true };
+      },
+      // What the token endpoint asks of the held certificate (J's rebuilt
+      // Root case): refused while `chainRefused` is set.
+      verifySignerChain: async function (realmId, material) {
+        chainAsked.push(material && material.certificate);
+        return chainRefused
+          ? { ok: false, why: 'the Root was rebuilt under it' }
+          : { ok: true, anchor: 'realm' };
       },
       issueSigningKeyPair: async function (realmId, opts) {
         if (pkiFails) {
@@ -381,6 +391,25 @@ function childMain() {
                                                  10 * 86400000);
     got = await authenticate();
     eq(issues, 2, 'J. a key within 30 days of expiry is replaced');
+
+    // A ROOT REBUILT UNDER THE HELD KEY (2026-09-23): build-root replaces
+    // every Intermediate, and the token endpoint refuses a key whose chain
+    // ran through the old one — every console and portal sign-in after one
+    // build-root in single-node mode, until this was asked here too.
+    fields.oauthAssertionCertificate = 'held-certificate';
+    got = await authenticate();
+    note(got.answer.ok && issues === 2 &&
+         chainAsked.indexOf('held-certificate') >= 0,
+         'J. a held key whose chain still holds is asked about and reused',
+         JSON.stringify(chainAsked));
+    fields.oauthAssertionCertificate = 'held-certificate';
+    chainRefused = true;
+    got = await authenticate();
+    chainRefused = false;
+    note(got.answer.ok && issues === 3 &&
+         fields.oauthAssertionKid === 'surface-3',
+         'J. one whose chain the token endpoint would refuse is replaced',
+         JSON.stringify(got.answer));
 
     Object.keys(fields).forEach(function (name) {
       delete fields[name];

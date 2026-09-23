@@ -3110,7 +3110,7 @@ const SETTINGS = [
   // than a flag because #139-#141 add three more profiles to the same switch.
   { key: 'oauth2.fapi', group: 'OAuth 2.0 / OIDC', label: 'FAPI profile',
     env: 'STS_OAUTH2_FAPI', type: 'enum',
-    enumValues: ['off', '1-baseline', '1-advanced'],
+    enumValues: ['off', '1-baseline', '1-advanced', '2-security'],
     dflt: 'off', runtime: false, realmRuntime: true,
     restartReason: 'a profile turns RFC 9700 mode on, which decides whether ' +
                    'the main port is bound as HTTPS (global.https), and a ' +
@@ -3136,8 +3136,13 @@ const SETTINGS = [
                  'sender-constrained access tokens only, tls_client_auth, ' +
                  'self_signed_tls_client_auth or private_key_jwt and no ' +
                  'public client, PS256 or ES256 for every signature, and ' +
-                 'PKCE only for pushed requests. OFF by default. GET ' +
-                 '/oauth2/fapi lists every requirement.' },
+                 'PKCE only for pushed requests. 2-security is the FAPI 2.0 ' +
+                 'Security Profile (final), a profile of its own: ' +
+                 'confidential clients, PAR always, code only, PKCE S256, ' +
+                 'mTLS or DPoP sender constraint, mTLS or private_key_jwt, ' +
+                 'codes of 60 s, no refresh rotation, PS256, ES256 or ' +
+                 'EdDSA. OFF by default. GET /oauth2/fapi lists every ' +
+                 'requirement.' },
 
   // FAPI 1.0 Advanced's strict reading of section 5.2.2 item 5 (#139, rcbj's
   // decision): off, a DPoP-bound access token satisfies "sender-constrained"
@@ -6931,20 +6936,38 @@ const SETTINGS = [
     restartReason: 'the TLS contexts are built when the listeners are created',
     description: 'The lowest protocol version LDAPS and the main ' +
                  'HTTPS port will negotiate. TLSv1.2 is node\'s own default ' +
-                 'and what this service always did; TLSv1.3 refuses every ' +
+                 'and the floor FAPI 2.0 allows (TLS 1.3 is preferred ' +
+                 'whenever a client offers it); TLSv1.3 refuses every ' +
                  'client that cannot speak it, which is the setting a ' +
                  'deployment usually wants and a debugger of old clients ' +
                  'usually does not. The two older values exist so a ' +
                  'client\'s downgrade handling can be exercised, and need an ' +
                  'OpenSSL security level that still allows them.' },
 
+  // BCP 195 BY DEFAULT (#140, rcbj's decision): RFC 9325 section 4.2's four
+  // recommended TLS 1.2 suites and nothing else, behind the three TLS 1.3
+  // ones, which come FIRST — "a strong preference for TLS v1.3" — with the
+  // server's order honoured (`tls_server.js`'s `protocolOptions()`). FAPI 2.0
+  // section 5.2.2 asks exactly this of a server, and it is the default for
+  // every listener rather than a FAPI switch, because a cipher suite is a
+  // property of the SOCKET and a profile is a property of a realm. A weaker
+  // list stays settable; README.md and docs/tls.md say what that costs.
   { key: 'tls.ciphers', group: 'TLS', label: 'TLS cipher list',
-    env: 'STS_TLS_CIPHERS', type: 'string', dflt: '', runtime: false,
+    env: 'STS_TLS_CIPHERS', type: 'string',
+    dflt: 'TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:' +
+          'TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:' +
+          'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:' +
+          'ECDHE-RSA-AES256-GCM-SHA384',
+    runtime: false,
     restartReason: 'the TLS contexts are built when the listeners are created',
-    description: 'An OpenSSL cipher list for the TLS 1.2 suites (and, with ' +
-                 'TLS_ prefixed names, the TLS 1.3 ones) on the same two ' +
-                 'sockets. Empty means node\'s default list, which is what ' +
-                 'this service always used. A list matching NO cipher stops ' +
+    description: 'An OpenSSL cipher list for the TLS 1.3 suites (TLS_ ' +
+                 'prefixed names) and the TLS 1.2 ones on the main port, ' +
+                 'LDAPS and the debugger\'s listener. The default is BCP ' +
+                 '195 (RFC 9325 section 4.2): the TLS 1.3 suites first, then ' +
+                 'only the four ECDHE AES-GCM suites for TLS 1.2 — what FAPI ' +
+                 '2.0 section 5.2.2 requires — and the server\'s order wins. ' +
+                 'Empty means node\'s own default list, which allows more ' +
+                 'than BCP 195 recommends. A list matching NO cipher stops ' +
                  'the service at startup naming this setting, rather than ' +
                  'leaving listeners that complete no handshake.' },
 

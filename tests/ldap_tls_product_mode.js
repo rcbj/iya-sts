@@ -423,9 +423,19 @@ async function theProtocolPolicyIsApplied(t) {
   t.log.info('=== tls.minVersion and tls.ciphers ===');
   const tlsServer = require('../tls/tls_server.js');
   const defaults = tlsServer.protocolOptions();
-  t.check(defaults.minVersion === 'TLSv1.2' && defaults.ciphers === undefined,
-          'the defaults are node\'s own written down — TLSv1.2, and no ' +
-          'cipher list',
+  // BCP 195 SINCE #140: the TLS 1.3 suites first and RFC 9325's four
+  // ECDHE AES-GCM suites for TLS 1.2, in the server's order.
+  const suites = String(defaults.ciphers || '').split(':');
+  t.check(defaults.minVersion === 'TLSv1.2' &&
+          defaults.honorCipherOrder === true &&
+          suites.slice(0, 3).every(function (one) {
+            return /^TLS_/.test(one);
+          }) &&
+          JSON.stringify(suites.slice(3).sort()) === JSON.stringify([
+            'ECDHE-ECDSA-AES128-GCM-SHA256', 'ECDHE-ECDSA-AES256-GCM-SHA384',
+            'ECDHE-RSA-AES128-GCM-SHA256', 'ECDHE-RSA-AES256-GCM-SHA384']),
+          'the defaults are TLSv1.2 as the floor and BCP 195\'s suites, TLS ' +
+          '1.3\'s first, in the server\'s order',
           JSON.stringify(defaults));
   t.equal(tlsServer.clientTruststoreOptions().minVersion, 'TLSv1.2',
           'and they ride in the context every listener is built from and ' +

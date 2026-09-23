@@ -86,6 +86,8 @@ import mtls = require('./mtls');
 // back. It is required HERE for mtls.js's reason: presentedAccessToken() is
 // the single check seven surfaces share.
 import senderConstraints = require('./sender_constraints');
+// FAPI 2.0's limit on a proof dated in the future (#140). A leaf.
+import fapi = require('./fapi');
 // RFC 9068 — what an access token's header, issuer and audience must be. A
 // library that registers no route and requires only `common/` modules and
 // `authorization_servers.ts`, none of which requires this one, so the no-cycle
@@ -932,6 +934,14 @@ class Dpop {
                   'a number') +
                   '; this server accepts ' + window + ' seconds either way ' +
                   '(oauth2.dpopIatSkewS).');
+    }
+    // FAPI 2.0 section 5.3.2.1 item 13 (#140): whatever the window, a proof
+    // more than a minute AHEAD is refused under the profile.
+    const ahead = fapi.futureTimestampRefusal({ iat: claims.iat },
+                                              'the DPoP proof');
+    if (ahead) {
+      log.debug("Leaving Dpop.verifyProof(). FAPI 2.0: iat in the future.");
+      return fail(ahead.errorCode || 'STS-OAUTH-0590', ahead.description);
     }
 
     // Check 10: the nonce, when this server is asking for one. The order

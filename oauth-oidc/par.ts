@@ -105,6 +105,8 @@ import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
 import monitor = require('./oauth2_monitor');
+// FAPI 2.0's request_uri lifetime (#140). A leaf.
+import fapi = require('./fapi');
 
 // A JSON-shaped value: a stored record, an entry, a listing.
 type Json = any;
@@ -168,8 +170,9 @@ class PushedRequests {
     const { log, config } = this.deps;
     log.debug("Entering PushedRequests.lifetimeS().");
     const raw = Number(config.value('oauth2.parRequestUriLifetimeS'));
-    const seconds = isFinite(raw) ?
-      Math.min(600, Math.max(5, Math.floor(raw))) : 60;
+    // Under FAPI 2.0, under six hundred seconds (section 5.3.2.2 item 12).
+    const seconds = fapi.requestUriLifetimeS(isFinite(raw) ?
+      Math.min(600, Math.max(5, Math.floor(raw))) : 60);
     log.debug("Leaving PushedRequests.lifetimeS(). " + seconds + "s.");
     return seconds;
   }

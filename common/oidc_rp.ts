@@ -408,7 +408,14 @@ const JWKS_PATH = '/oauth2/jwks';
 //   for an elliptic curve key, and a signature of microseconds.
 // * **Issued on first need and again before it runs out** — within
 //   `KEY_RENEW_BEFORE_MS` of `oauthAssertionExpiresAt`, or when the entry has
-//   none (a fresh realm, an entry an operator cleared). Through a CLUSTER
+//   none (a fresh realm, an entry an operator cleared), **or when its
+//   certificate no longer chains** (2026-09-23): `/admin/pki`'s build-root
+//   replaces the Root and every Intermediate, the token endpoint validates the
+//   registered certificate's whole chain at every use
+//   (`pki.verifySignerChain()`), and a held key whose chain ran through the
+//   old branch was refused there for the rest of the process's life — every
+//   console and portal sign-in after one build-root, in product mode, until a
+//   restart. The same function is asked here first. Through a CLUSTER
 //   CLAIM, because two nodes issuing at once would each write a key and the
 //   loser's sign-in would sign with a key the entry no longer holds. The
 //   node that loses the claim waits for the winner's key to reach the entry.
@@ -1568,7 +1575,54 @@ class OidcRelyingParty {
       return null;
     }
     log.debug("Leaving OidcRelyingParty.heldSurfaceKey(). kid=" + kid);
-    return { ok: true, privateKeyPem: pem, kid: kid };
+    return { ok: true, privateKeyPem: pem, kid: kid,
+             certificatePem: first(fields.oauthAssertionCertificate),
+             chainPem: first(fields.oauthAssertionCertificateChain) };
+  }
+
+  // The held key, if the token endpoint would still believe it: its
+  // certificate's chain asked of `pki.verifySignerChain()`, the function
+  // `client_auth.js` asks at every use. A chain that no longer holds — the
+  // Root rebuilt under it — answers null, so the caller issues a new key
+  // through the claim. With no Root at all there is nothing to ask and the
+  // held key is used, since issuing would fail for the same reason.
+  private async usableSurfaceKey(surface: Surface): Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering OidcRelyingParty.usableSurfaceKey().");
+    const held = this.heldSurfaceKey(surface);
+    if (!held) {
+      log.debug("Leaving OidcRelyingParty.usableSurfaceKey(). None held.");
+      return null;
+    }
+    const pki = this.deps.loadPki();
+    if (!held.certificatePem || (pki.hasRoot && !pki.hasRoot())) {
+      log.debug("Leaving OidcRelyingParty.usableSurfaceKey(). Nothing to " +
+                "ask.");
+      return held;
+    }
+    let verdict: any = null;
+    try {
+      verdict = await pki.verifySignerChain(undefined, {
+        certificate: held.certificatePem, chain: held.chainPem,
+        source: 'the key the ' + surface.label + ' holds'
+      });
+    } catch (e) {
+      log.debug("Caught in OidcRelyingParty.usableSurfaceKey(): " +
+                ((e && e.message) || e));
+      // Not a verdict: the held key is used, and the token endpoint, which
+      // asks the same question, answers for it.
+      verdict = { ok: true };
+    }
+    if (!verdict || !verdict.ok) {
+      log.info('oidc_rp: the ' + surface.label + '\'s key (kid ' +
+               held.kid + ') no longer chains to this realm\'s certificate ' +
+               'authority, so a new one is issued: ' +
+               String((verdict && verdict.why) || ''));
+      log.debug("Leaving OidcRelyingParty.usableSurfaceKey(). Chain refused.");
+      return null;
+    }
+    log.debug("Leaving OidcRelyingParty.usableSurfaceKey(). Usable.");
+    return held;
   }
 
   // The certificate and key this surface presents at the handshake: under
@@ -1626,7 +1680,9 @@ class OidcRelyingParty {
     query.forEach(function (value, name) {
       claims[name] = value;
     });
-    claims.response_mode = 'jwt';
+    if (this.deps.fapi.advanced()) {
+      claims.response_mode = 'jwt';
+    }
     claims.iss = surface.clientId;
     claims.aud = this.assertionAudience(host);
     claims.iat = now;
@@ -1759,7 +1815,7 @@ class OidcRelyingParty {
   private async surfaceKey(surface: Surface): Promise<any> {
     const { log, realms, clusterClaims, errorCodes } = this.deps;
     log.debug("Entering OidcRelyingParty.surfaceKey(). " + surface.clientId);
-    const held = this.heldSurfaceKey(surface);
+    const held = await this.usableSurfaceKey(surface);
     if (held) {
       log.debug("Leaving OidcRelyingParty.surfaceKey(). Held.");
       return held;
@@ -1781,7 +1837,7 @@ class OidcRelyingParty {
         await new Promise(function (resolve) {
           setTimeout(resolve, 200);
         });
-        const arrived = this.heldSurfaceKey(surface);
+        const arrived = await this.usableSurfaceKey(surface);
         if (arrived) {
           log.debug("Leaving OidcRelyingParty.surfaceKey(). Issued by " +
                     "another process.");
@@ -2054,7 +2110,10 @@ class OidcRelyingParty {
       }
       // FAPI 1.0 ADVANCED (#139): signed, pushed and answered with JARM —
       // `advancedRedirect()`. A promise, which the three callers settle.
-      if (self.deps.fapi.advanced()) {
+      // FAPI 2.0 (#140) takes the same path without JARM: its section
+      // 5.3.2.2 requires the push and `code`, and a signed object inside the
+      // push is allowed.
+      if (self.deps.fapi.advanced() || self.deps.fapi.fapi2()) {
         log.debug('Leaving OidcRelyingParty.beginSignIn(). FAPI Advanced.');
         return self.advancedRedirect(req, res, surface, found.client, query,
                                      opts.authorizationBase || publicBase,
