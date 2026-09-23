@@ -1083,6 +1083,61 @@ var config = {
     disabledJobs: "", // Jobs switched off
     runTimeoutS: 600  // The longest a run may take (seconds)
   },
+
+  // --- Mail ------------------------------------------------------------
+  mail: {
+    transport: "default",                // Mail transport
+    from: "",                            // From address
+    fromName: "",                        // From display name
+    defaultLanguage: "en",               // Default message language
+    smtpPreset: "custom",                // SMTP preset
+    smtpHost: "",                        // SMTP host
+    smtpPort: 587,                       // SMTP port
+    smtpTls: "starttls",                 // SMTP TLS
+    smtpCaFile: "",                      // SMTP trust anchor file
+    smtpServerName: "",                  // SMTP certificate name
+    smtpAuth: "none",                    // SMTP authentication
+    smtpUser: "",                        // SMTP username
+    smtpPasswordProvider: "none",        // Where the SMTP password is read from
+    smtpPasswordRef: "",                 // The SMTP password's location
+    smtpPasswordField: "",               // The SMTP password's field
+    smtpClientCertFile: "",              // SMTP client certificate file
+    smtpClientKeyFile: "",               // SMTP client key file
+    dkimDomain: "",                      // DKIM signing domain
+    dkimSelector: "",                    // DKIM selector
+    dkimAlgorithm: "rsa-sha256",         // DKIM algorithm
+    dkimKeyProvider: "none",             // Where the DKIM private key is read from
+    dkimKeyRef: "",                      // The DKIM private key's location
+    dkimKeyField: "",                    // The DKIM private key's field
+    sesRegion: "",                       // Amazon SES region
+    sesConfigurationSet: "",             // Amazon SES configuration set
+    acsEndpoint: "",                     // Azure Communication Services endpoint
+    acsAuth: "managed-identity",         // Azure Communication Services authentication
+    acsConnectionStringProvider: "none", // Where the Azure connection string is read from
+    acsConnectionStringRef: "",          // The Azure connection string's location
+    acsConnectionStringField: "",        // The Azure connection string's field
+    gmailSender: "",                     // Gmail API mailbox
+    gmailKeyProvider: "none",            // Where the Gmail service account key is read from
+    gmailKeyRef: "",                     // The Gmail service account key's location
+    gmailKeyField: "",                   // The Gmail service account key's field
+    deliverS: 15,                        // Outbox sweep (seconds)
+    attempts: 5,                         // Delivery attempts
+    backoffS: 60,                        // Retry backoff (seconds)
+    timeoutMs: 30000,                    // Send timeout (ms)
+    leaseMs: 120000,                     // Attempt lease (ms)
+    concurrency: 4,                      // Sends in flight
+    retentionS: 604800,                  // Outbox retention (seconds)
+    maxRows: 10000,                      // Outbox rows per realm
+    ratePerRecipient: 20,                // Messages per recipient per window
+    ratePerCategory: 5,                  // Messages per recipient per category per window
+    rateWindowS: 3600,                   // Rate window (seconds)
+    dedupWindowS: 600,                   // Duplicate suppression window (seconds)
+    selfServiceReset: true,              // Self-service password reset
+    resetRequiresVerifiedAddress: true,  // Self-service reset needs a verified address
+    verificationTtlMinutes: 1440,        // Address verification link lifetime (minutes)
+    securityNotices: true,               // Security notices
+    notifyAdministrators: true           // Tell administrators of system acts
+  },
 };
 
 module.exports = config;

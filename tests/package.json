@@ -36,7 +36,12 @@
     "implementations five jobs verify this service's output against. The two",
     "@noble pins are EXACT and match the parent's, deliberately — a test whose",
     "job is to be a second opinion must not float to a different version of",
-    "the curve library than the opinion it is being compared with."
+    "the curve library than the opinion it is being compared with.",
+    "",
+    "smtp-server (MIT-0) is here for tests/mail.js (#63): an SMTP server",
+    "in the test's own process, with STARTTLS, AUTH and a refusal on demand, so",
+    "the mail channel's SMTP transport is driven against a real server rather",
+    "than a stub. It is the same project as nodemailer, the client it tests."
   ],
   "dependencies": {
     "@noble/curves": "1.4.0",
@@ -47,6 +52,7 @@
     "commander": "^14.0.2",
     "node-forge": "^1.3.1",
     "selenium-webdriver": "^4.38.0",
+    "smtp-server": "^3.19.13",
     "typescript": "7.0.2"
   }
 }

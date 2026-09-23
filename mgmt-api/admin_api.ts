@@ -209,6 +209,8 @@ import vcStatusAdmin = require('../admin-ui/vc_status_admin');
 import modeAdmin = require('../admin-ui/mode_admin');
 // The scheduler's page (#49): its view and its two actions, rule 7.
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
+// The mail channel's two pages (#63), mirrored below (rule 7).
+import mailAdmin = require('../admin-ui/mail_admin');
 // Monitoring → Risk (#62): its view and its four actions, rule 7.
 import riskAdmin = require('../admin-ui/risk_admin');
 // The embedded protocol debugger's report (2026-09-13). A page module required
@@ -2142,6 +2144,240 @@ class AdminApi {
       },
 
       // ---------------------------------------------------------------------
+      // MAIL (#63, 2026-09-22). `mailAdmin.settingsView()` and
+      // `outboxView()` — what the two pages' `?format=json` answer — and
+      // `settingsAction()` and `outboxAction()`, the functions their forms
+      // post to. The paths are the pages' paths, so a realm administrator is
+      // confined by the same rule on both surfaces.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/mail', tag: 'Service',
+        operationId: 'getMail',
+        summary: 'The mail channel in this realm: its transport, its ' +
+                 'messages, its settings',
+        description: 'The effective `transport` (`capture`, `smtp`, `ses`, ' +
+                     '`acs`, `gmail` or `off`) and the `setting` it came ' +
+                     'from, whether mail is `available`, the `relay` (host, ' +
+                     'port, TLS, AUTH method, DKIM) for SMTP, the last ' +
+                     '`buildProblem` in the answering process, the `from` ' +
+                     'address, `linkBase` (where a mailed link points) and ' +
+                     'whether it is pinned, the outbox `counts`, the ' +
+                     '`categories`, and `templates` — every message with ' +
+                     'its placeholders and the languages this realm has its ' +
+                     'own wording in — and the Mail `settings`. **No secret ' +
+                     'is ever in it.** With `template` (and `lang`), that ' +
+                     'message\'s wording as `template`.',
+        mirrors: 'GET /admin/mail',
+        parameters: [
+          { name: 'template', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A message id, to answer its wording.' },
+          { name: 'lang', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The language of `template`; `en` by default.' }
+        ],
+        responseDescription: 'The mail channel\'s state in this realm.',
+        responseSchema: { type: 'object',
+          description: '`realm`, `mode`, `setting`, `transport`, ' +
+                       '`available`, `from`, `linkBase`, `linkBasePinned`, ' +
+                       '`relay`, `buildProblem`, `counts`, `categories`, ' +
+                       '`selfServiceReset`, `securityNotices`, `templates`, ' +
+                       '`settings`, and `template` when asked for.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API mail endpoint.");
+          const json = mailAdmin.settingsView(req, req.query);
+          if (req.query && req.query.template && !json.template) {
+            errorCodes.mark(res, 'STS-MAIL-0017');
+            self.sendJson(res, 404, { ok: false, errors: ['There is no ' +
+              'message "' + String(req.query.template) + '".'] });
+            log.debug("Leaving the management API mail endpoint. Unknown.");
+            return;
+          }
+          self.sendJson(res, 200, json);
+          log.debug("Leaving the management API mail endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/mail/:action', tag: 'Service',
+        mirrors: 'POST /admin/mail',
+        handler: function (req, res) {
+          log.debug("Entering the management API mail action.");
+          const result = mailAdmin.settingsAction(
+            self.withAction(req, parseBody(req)), '',
+            'the management API at /admin-api/mail');
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-MAIL-0025');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API mail action.");
+        },
+        actions: [
+          { action: 'test', operationId: 'sendMailTestMessage',
+            summary: 'Send a test message to a person in this realm',
+            description: 'Queues the `test-message` message for `user` — a ' +
+                         'person in this realm\'s directory — at the address ' +
+                         'on their entry, through the realm\'s transport. ' +
+                         '**Never to an address**: there is no parameter for ' +
+                         'one. Refused (STS-MAIL-0027) when the person has ' +
+                         'no address, and with the channel\'s own code when ' +
+                         'it refuses to queue (no transport, a ceiling). ' +
+                         'The outbox shows where it got to.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description: 'The person, by username.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The message queued, and its id.' },
+          { action: 'verify', operationId: 'sendMailVerificationLink',
+            summary: 'Mail a person a link that verifies their address',
+            description: 'A single-use link to `/portal/verify-email`, ' +
+                         'mailed to the address on `user`\'s entry and ' +
+                         'never returned: the person follows it, and the ' +
+                         'address becomes `stsMailVerified`. The same link ' +
+                         'the person\'s own button on `/portal/email` sends. ' +
+                         'Refused for nobody (STS-MAIL-0012), no address ' +
+                         '(STS-MAIL-0011) or no transport (STS-MAIL-0032); ' +
+                         'answers that it is already verified when it is.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description: 'The person, by username.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether a link was sent.' },
+          { action: 'save-template', operationId: 'saveMailTemplate',
+            summary: 'Save this realm\'s wording of a message in a language',
+            description: 'The subject, the text part and the HTML part of ' +
+                         '`template` in `lang` (a BCP 47 tag). Refused ' +
+                         '(STS-MAIL-0016) when it writes an address of its ' +
+                         'own (a link is a placeholder), loads or runs ' +
+                         'anything, uses a placeholder the message does not ' +
+                         'offer, or leaves a link out of the text part.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                template: { type: 'string',
+                            description: 'The message id.' },
+                lang: { type: 'string', description: 'A BCP 47 tag.' },
+                subject: { type: 'string', description: 'One line.' },
+                text: { type: 'string', description: 'The text part.' },
+                html: { type: 'string', description: 'The HTML part.' }
+              },
+              required: ['template', 'lang', 'subject', 'text', 'html'],
+              examples: [{ template: 'test-message', lang: 'de',
+                           subject: '{{service}} Testnachricht',
+                           text: 'Eine Testnachricht ({{transport}}).\n',
+                           html: '<p>Eine Testnachricht ' +
+                                 '({{transport}}).</p>' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it was saved.' },
+          { action: 'reset-template', operationId: 'resetMailTemplate',
+            summary: 'Put a message back to the built-in wording',
+            description: 'Removes this realm\'s wording of `template` in ' +
+                         '`lang`; the built-in English is used again. ' +
+                         'Refused (STS-MAIL-0017) when there is none.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                template: { type: 'string',
+                            description: 'The message id.' },
+                lang: { type: 'string', description: 'A BCP 47 tag.' }
+              },
+              required: ['template', 'lang'],
+              examples: [{ template: 'test-message', lang: 'de' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it was reset.' }
+        ]
+      },
+
+      { method: 'GET', path: BASE + '/mail/outbox', tag: 'Service',
+        operationId: 'getMailOutbox',
+        summary: 'Every message this realm queued, and what became of it',
+        description: 'The outbox, newest first: `counts` (`pending`, ' +
+                     '`sent`, `captured`, `dead`) and `rows`, each `id`, ' +
+                     '`username`, `to`, `category`, `template`, `lang`, ' +
+                     '`subject`, `state`, `transport`, `attempts`, ' +
+                     '`generation`, `errorCode`, `why`, `providerId`, ' +
+                     '`messageId` and the times — **never a body**, in ' +
+                     '`rowsPaging`. With `message`, that one message as ' +
+                     '`message`, which carries `text` and `html` only when ' +
+                     'it was CAPTURED (development).',
+        mirrors: 'GET /admin/mail/outbox',
+        parameters: [
+          { name: 'state', in: 'query', required: false,
+            schema: { type: 'string', enum: ['pending', 'sent', 'captured',
+                                             'dead'] },
+            description: 'Only messages in this state (`dead`: the dead ' +
+                         'letters).' },
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A person, an address, a message or a code.' },
+          { name: 'message', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'One message\'s id.' }
+        ].concat(self.pagingParameters()),
+        responseDescription: 'The outbox.',
+        responseSchema: { type: 'object',
+          description: '`realm`, `transport`, `counts`, `state`, `q`, ' +
+                       '`rows`, `rowsPaging`, and `message` when asked for.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API mail outbox endpoint.");
+          self.sendJson(res, 200, mailAdmin.outboxView(req, req.query));
+          log.debug("Leaving the management API mail outbox endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/mail/outbox/:action', tag: 'Service',
+        mirrors: 'POST /admin/mail/outbox',
+        handler: function (req, res) {
+          log.debug("Entering the management API mail outbox action.");
+          const result = mailAdmin.outboxAction(
+            self.withAction(req, parseBody(req)), '');
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-MAIL-0025');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API mail outbox action.");
+        },
+        actions: [
+          { action: 'retry', operationId: 'retryMailDeadLetter',
+            summary: 'Send a dead letter again',
+            description: 'A new generation of `message` — a fresh attempt ' +
+                         'budget, the same body and Message-ID — to the ' +
+                         'address the person\'s entry holds NOW, through the ' +
+                         'realm\'s transport as it is now. Refused ' +
+                         '(STS-MAIL-0018) for an unknown message, one that ' +
+                         'is not a dead letter, one that kept no body, or a ' +
+                         'person with no usable address.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                message: { type: 'string',
+                           description: 'The message id, as the outbox ' +
+                                        'lists it.' }
+              },
+              required: ['message'],
+              examples: [{ message: 'no-such-message' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The message, queued again.' }
+        ]
+      },
+
+      // ---------------------------------------------------------------------
       // THE SCHEDULER (#49, 2026-09-22). `schedulerAdmin.schedulerView()` —
       // the function the page's `?format=json` answers — and
       // `schedulerAdmin.schedulerAction()`, the function its two forms post
@@ -3249,9 +3485,10 @@ class AdminApi {
                          'is opened, because a link burned by a mail scanner ' +
                          'or a browser prefetch would strand the person it ' +
                          'was for.\n\nThere is deliberately no self-service ' +
-                         'version: with no mail channel here it would have ' +
-                         'to show the link on screen, which is an account ' +
-                         'takeover with a username as the only input.',
+                         'version: until the account is activated nobody has ' +
+                         'proved the address on it is theirs. `deliver: ' +
+                         '"mail"` (#63) has this service mail it instead of ' +
+                         'returning it.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -3260,14 +3497,25 @@ class AdminApi {
                         description: 'The person, as /admin-api/users names ' +
                                      'them. They must already exist.' },
                 username: { type: 'string',
-                            description: 'Accepted for `user`.' }
+                            description: 'Accepted for `user`.' },
+                deliver: { type: 'string', enum: ['show', 'mail'],
+                           description: '`mail` (#63) sends the link to the ' +
+                                        'address on the person\'s entry ' +
+                                        'through the realm\'s mail ' +
+                                        'transport and does NOT return it: ' +
+                                        'the answer carries `mailedTo`. If ' +
+                                        'it cannot be mailed the link is ' +
+                                        'returned as with `show` (the ' +
+                                        'default), with `mailError` saying ' +
+                                        'why.' }
               },
               required: ['user'],
               examples: [{ user: 'alice' }],
               additionalProperties: false
             },
             responseDescription:
-              'The activation URL, ONCE, and when it expires.' },
+              'The activation URL, ONCE, and when it expires — or, with ' +
+              '`deliver: "mail"`, the address it was mailed to.' },
 
           { action: 'create', operationId: 'createUser',
             summary: 'Put a person in the directory before they authenticate',
@@ -3422,7 +3670,18 @@ class AdminApi {
                                                 'API caller with one ' +
                                                 'value has nothing to ' +
                                                 'mistype against and may ' +
-                                                'omit it.' }
+                                                'omit it.' },
+                deliver: { type: 'string', enum: ['show', 'mail'],
+                           description: 'With `credential: activation`, `mail` (#63) sends ' +
+                                        'the link to the ' +
+                                        'address on the person\'s entry ' +
+                                        'through the realm\'s mail ' +
+                                        'transport and does NOT return it: ' +
+                                        'the answer carries `mailedTo`. If ' +
+                                        'it cannot be mailed the link is ' +
+                                        'returned as with `show` (the ' +
+                                        'default), with `mailError` saying ' +
+                                        'why.' }
               },
               required: ['username'],
               examples: [{ username: 'rcbj' },
@@ -3693,7 +3952,17 @@ class AdminApi {
                                description: 'The reset is BECAUSE a ' +
                                  'credential was compromised: RISC ' +
                                  '`credential-compromise` (`password`) is ' +
-                                 'sent as well (#146).' }
+                                 'sent as well (#146).' },
+                deliver: { type: 'string', enum: ['show', 'mail'],
+                           description: '`mail` (#63) sends the link to the ' +
+                                        'address on the person\'s entry ' +
+                                        'through the realm\'s mail ' +
+                                        'transport and does NOT return it: ' +
+                                        'the answer carries `mailedTo`. If ' +
+                                        'it cannot be mailed the link is ' +
+                                        'returned as with `show` (the ' +
+                                        'default), with `mailError` saying ' +
+                                        'why.' }
               },
               required: ['user'],
               examples: [{ user: 'alice' }, { user: 'alice',

@@ -1542,7 +1542,9 @@ do
 
     # THE TWO ONE-SHOT CONTAINERS ARE NOT ATTACHED (2026-09-14), OR THEIR
     # FINISHING ENDS THE MODE. `openbao-tls` and `openbao-seed` exit 0 by
-    # design. The `up -d sts` above already ran both; this `up` names every
+    # design, and so does `mailpit-tls` (#63; `mailpit` is not attached
+    # either, because its log is every message the suite sends). The `up -d
+    # sts` above already ran both; this `up` names every
     # service, so compose STARTS them again, and `--abort-on-container-exit`
     # counts an ATTACHED container's exit — any container's — as the signal
     # to stop the stack. So each mode stopped `sts` a few seconds after
@@ -1578,6 +1580,7 @@ do
     then
       docker_compose_bounded "${STS_MODE_TIMEOUT}" "${COMPOSE_FILE_ARGS[@]}" up \
         --no-attach openbao-tls --no-attach openbao-seed \
+        --no-attach mailpit-tls --no-attach mailpit \
         --abort-on-container-exit --exit-code-from tests
       MODE_RC=$?
     else

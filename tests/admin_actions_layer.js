@@ -446,6 +446,12 @@ function checkNothingRequiresItEarly(t) {
                    // Required at 18j, after the console, so the require is a
                    // cache hit and moves no route.
                    'admin-ui/risk_admin.ts',
+                   // The mail pages (#63, 2026-09-22), for the gate state
+                   // only — who pressed "send a test message", whose own
+                   // address it goes to. Required at 18k, after the
+                   // console, so the require is a cache hit and moves no
+                   // route.
+                   'admin-ui/mail_admin.ts',
                    // The key pairs page (#48, 2026-09-22), for the gate
                    // state only — who asked for a rotation. Required LAZILY,
                    // in the request, and the page is 20a, after the console,

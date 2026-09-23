@@ -170,6 +170,24 @@ class AccountSignals {
     });
   }
 
+  // THE SAME ACT, TOLD TO THE PERSON BY MAIL (#63, 2026-09-22). Every door
+  // that changes a password, marks a credential compromised or starts
+  // recovery already reports it here, so this is the one place the mail
+  // channel's security notices hear of it — whether or not Shared Signals is
+  // loaded. Lazily required (`common/mail_uses.ts` reaches the credential
+  // store) and never allowed to throw into the act that happened.
+  private mailNotice(act: string, notice: object): void {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.mailNotice(). ' + act);
+    try {
+      require('../common/mail_uses').fromAccountSignal(act, notice || {});
+    } catch (e) {
+      log.warn('account signals: the ' + act + ' mail notice could not be ' +
+               'queued: ' + ((e && e.message) || e));
+    }
+    log.debug('Leaving AccountSignals.mailNotice().');
+  }
+
   // A key record's CAEP credential type, from its recorded attachment.
   static keyCredentialType(record?: { attachment?: string } | null): string {
     helpers.log.debug('Entering AccountSignals.keyCredentialType().');
@@ -183,6 +201,7 @@ class AccountSignals {
   credentialChanged(change?: CredentialChange): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.credentialChanged().');
+    this.mailNotice('credentialChanged', change || {});
     log.debug('Leaving AccountSignals.credentialChanged().');
     return this.deliver('a CAEP credential-change', 'emitCredentialChange',
                         change || {});
@@ -219,10 +238,12 @@ class AccountSignals {
   }
 
   // RISC recovery-activated (#146): account recovery was started — an
-  // administrator issued a password-reset link.
+  // administrator issued a password-reset link, or (#63) a person asked for
+  // one on the forgot-password form.
   recoveryActivated(notice?: object): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.recoveryActivated().');
+    this.mailNotice('recoveryActivated', notice || {});
     log.debug('Leaving AccountSignals.recoveryActivated().');
     return this.deliver('a RISC recovery-activated', 'emitRiscAccountAct',
                         Object.assign({}, notice || {},
@@ -237,6 +258,7 @@ class AccountSignals {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.credentialCompromised().');
     const asked = notice || {};
+    this.mailNotice('credentialCompromised', asked);
     log.debug('Leaving AccountSignals.credentialCompromised().');
     return this.deliver('a RISC credential-compromise', 'emitRiscAccountAct',
       Object.assign({}, asked, { act: 'credentialCompromise',

@@ -1203,6 +1203,32 @@ function dialsPlainHttpOutbound() {
   return !isProduct();
 }
 
+// Is a message the mail channel sends KEPT and shown on the console instead
+// of sent (#63)? Development answers yes: `mail.transport` `default` is the
+// capture transport there, and `capture` may be chosen outright. Product
+// answers no: `default` sends nothing, `capture` is refused on write and at
+// start (STS-MAIL-0003), because a captured message keeps its body and a
+// password reset link on Monitoring → Mail is a credential shown to whoever
+// may read that page.
+function capturesMail() {
+  log.debug("Entering capturesMail().");
+  log.debug("Leaving capturesMail().");
+  return !isProduct();
+}
+
+// May a link this service MAILS be built on the listener's configured address
+// when `global.publicBaseUrl` is empty (#63)? Never on the request's — a link
+// in a message is not answered to whoever asked, so a `Host` header it came
+// from would let anybody choose where a password reset link points. Development
+// answers yes and builds https://<global.host or localhost>:<global.port>;
+// product answers no and refuses to mail a link at all until the operator
+// pins the public base URL (STS-MAIL-0015).
+function mailsLinksFromListenerAddress() {
+  log.debug("Entering mailsLinksFromListenerAddress().");
+  log.debug("Leaving mailsLinksFromListenerAddress().");
+  return !isProduct();
+}
+
 // Is an RFC 9728 protected resource metadata document that fails a MUST a
 // client applies accepted with a warning (2026-09-13)? Two of them: section
 // 3.3's `resource` matching the well-known URL the document was fetched from,
@@ -1584,6 +1610,22 @@ const REQUIREMENTS = [
              'resolved once and the connection pinned to the address that ' +
              'was checked. A malformed document is refused in both modes.',
     where: 'oauth-oidc/protected_resource_metadata.ts' },
+  { id: 'mail',
+    what: 'Mail is sent, not kept; a mailed link names the pinned public ' +
+          'address',
+    development: 'mail.transport `default` is the CAPTURE transport: every ' +
+                 'message is kept with its body and shown on Monitoring → ' +
+                 'Mail rather than sent, unless a real transport is ' +
+                 'configured. A mailed link is built on ' +
+                 'global.publicBaseUrl, or on the listener\'s configured ' +
+                 'host and port when that is empty — never on the request.',
+    product: '`default` is `off`, and `capture` is refused on write and at ' +
+             'start (STS-MAIL-0003), because a captured password reset link ' +
+             'is a credential on the console. A configured transport that ' +
+             'cannot be built stops the service starting (STS-MAIL-0002). A ' +
+             'link is mailed only when global.publicBaseUrl is set ' +
+             '(STS-MAIL-0015).',
+    where: 'common/mail.ts' },
   { id: 'outbound-tls',
     what: 'An outbound request verifies the certificate of whoever answers, ' +
           'and does not go out over plain http',
@@ -1953,7 +1995,9 @@ const REQUIREMENTS = [
                  'Connect for Identity Assurance 1.0, #127).',
     product: 'A value comes from the person\'s directory entry or is ' +
              'omitted; `verified_claims` are released only from a ' +
-             'verification recorded on the entry.',
+             'verification recorded on the entry, and email_verified is ' +
+             'true only for an address the person verified through a ' +
+             'mailed link (#63).',
     where: 'common/helpers.js, oauth-oidc/oauth2.ts, oid4vc/vc_claims.ts, ' +
            'ssf/ssf_subjects.js, ssf/risc.ts, ' +
            'common/identity_assurance.js' },
@@ -2827,6 +2871,8 @@ module.exports = {
   dialsInternalAddresses: dialsInternalAddresses,
   skipsOutboundTlsVerification: skipsOutboundTlsVerification,
   dialsPlainHttpOutbound: dialsPlainHttpOutbound,
+  capturesMail: capturesMail,
+  mailsLinksFromListenerAddress: mailsLinksFromListenerAddress,
   acceptsNonconformingResourceMetadata: acceptsNonconformingResourceMetadata,
   gatesConsole: gatesConsole,
   gatesScim: gatesScim,

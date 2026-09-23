@@ -835,6 +835,19 @@ serviceState.start().then(function (both) {
     return made;
   });
   return krbtgtReady.then(function () {
+    // THE MAIL CHANNEL (#63): in PRODUCT, a realm whose configured transport
+    // cannot be built — a missing SDK, an unreadable secret, `capture` — is
+    // a service that would promise reset links it cannot send, and it does
+    // not start. Asked here, after the store restored every realm's settings
+    // and before anything forks or binds. Development answers '' whatever it
+    // finds (common/mail.ts, startupProblem()).
+    return require('./common/mail').startupProblem();
+  }).then(function (mailProblem) {
+    if (mailProblem) {
+      // error-code: none — the problem's own STS-MAIL code leads the message
+      log.fatal(mailProblem + ' The service is NOT STARTING.');
+      process.exit(1);
+    }
     return requestPool.start().then(function (pool) {
       if (pool.wanted) {
         log.info('sts: ' + pool.started + ' of ' + pool.wanted + ' request ' +

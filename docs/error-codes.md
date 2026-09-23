@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3221** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3255** of them, in **37** subsystems.
 
 ## Where a code appears
 
@@ -76,6 +76,7 @@ is an ordinary outcome.
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 89
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 27
+* [Mail (`STS-MAIL`)](#sts-mail) — 34
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
@@ -2690,6 +2691,49 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0025` | Monitoring → Risk Scoring, or GET /admin-api/risk/metrics, could not be answered: the risk store failed to count the window's assessments. | — |
 | `STS-RISK-0026` | An entry of risk.signalFactors was ignored: it names no known signal, or its factor is not a positive number. The signal keeps its built-in factor; logged once for each value the setting is given. | — |
 | `STS-RISK-0027` | The risk.mds-refresh job could not download the FIDO MDS3 BLOB from risk.mdsUrl: outbound is off, the address is refused, the server did not answer 200, or the BLOB is larger than risk.mdsMaxBytes (#105). The active BLOB stays in force. | FIDO Metadata Service section 3.2 |
+
+## STS-MAIL
+
+**Mail.** The one outbound mail channel (#63): the outbox and its delivery job, the five transports (capture, SMTP, Amazon SES, Azure Communication Services, the Gmail API), the templates, the rate ceilings, and the uses — self-service password reset, address verification, an administrator's links mailed, and the security notices. No code here is ever sent to a recipient.
+
+Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, common/mail_templates.ts, admin-ui/mail_admin.ts, portal/portal_mail.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-MAIL-0001` | A message was not queued because no mail transport is configured in the realm (mail.transport is off, or default in product mode). | — |
+| `STS-MAIL-0002` | Product mode: a configured mail transport cannot be built, and the service does not start. | the service does not start |
+| `STS-MAIL-0003` | The capture mail transport was asked for in product mode, where a captured message would put its body on the console; refused on write and at start. | HTTP 400 on a settings write; the service does not start |
+| `STS-MAIL-0004` | A mail transport could not be built (a missing host, an unreadable file, a half-configured option); the attempt is retried and then dead-lettered. | — |
+| `STS-MAIL-0005` | A cloud mail transport needs its SDK (an optional peer) and it is not installed. | — |
+| `STS-MAIL-0006` | A mail secret (the SMTP password, the DKIM key, the Azure connection string or the Gmail key) could not be read from its store. | — |
+| `STS-MAIL-0007` | A mail secret was read and is empty. | — |
+| `STS-MAIL-0008` | The relay or provider refused the message permanently (an SMTP 5xx, a rejected sender or recipient, a failed Azure operation); it is a dead letter. | — |
+| `STS-MAIL-0009` | A message could not be handed over this time (a timeout, a lost connection, an SMTP 4xx, throttling or a 5xx); it is retried with backoff. | — |
+| `STS-MAIL-0010` | A message was not queued because its recipient reached a rate ceiling (mail.ratePerRecipient or mail.ratePerCategory in mail.rateWindowS). | — |
+| `STS-MAIL-0011` | A message was not queued because the recipient's entry has no mail address (or, for a self-service reset, no verified one). | — |
+| `STS-MAIL-0012` | A message was not queued because there is no entry for the recipient in the realm. | — |
+| `STS-MAIL-0013` | A message was not queued because the recipient declined its (optional) category. | — |
+| `STS-MAIL-0014` | TLS with the mail relay failed (its certificate did not verify, or the upgrade was refused) and nothing is sent in the clear. | — |
+| `STS-MAIL-0015` | A message carrying a link was not queued: global.publicBaseUrl is empty and product mode never builds a mailed link from a request. | — |
+| `STS-MAIL-0016` | A realm's message template was refused when saved: an address of its own, remote content, script, an unknown placeholder or a missing link. | HTTP 400 |
+| `STS-MAIL-0017` | A message template was named that does not exist, or a template to reset has no realm wording. | HTTP 400 |
+| `STS-MAIL-0018` | A mail retry was refused: the message is unknown, not a dead letter, kept no body, or its recipient has no usable address now. | HTTP 400 |
+| `STS-MAIL-0019` | A message still pending mail.retentionS after it was queued was dead-lettered. | — |
+| `STS-MAIL-0020` | A delivery attempt was deferred because the claim store could not be reached; the next sweep tries again. | — |
+| `STS-MAIL-0021` | The mail relay refused this service's SMTP login. | — |
+| `STS-MAIL-0022` | DKIM signing is configured and cannot be done (no key, no selector, or a key that cannot sign). | — |
+| `STS-MAIL-0023` | A message was not queued because an address (the recipient's mail attribute or mail.from) is not one plain mailbox. | — |
+| `STS-MAIL-0024` | An address verification link was refused: used, expired, or sent to an address the entry no longer has. | HTTP 400 page on /portal/verify-email |
+| `STS-MAIL-0025` | A console or management API mail action was unknown or malformed. | HTTP 400 |
+| `STS-MAIL-0026` | A console session that may read but not write posted a mail action. | HTTP 400 |
+| `STS-MAIL-0027` | A test message was asked for by an administrator whose own entry has no usable mail address. | HTTP 400 |
+| `STS-MAIL-0028` | The periodic mail summary line counted dead letters or deferred attempts since the last one. | — |
+| `STS-MAIL-0029` | The mail outbox sweep failed in a realm. | — |
+| `STS-MAIL-0030` | A self-service password reset was asked for and no link was sent (not offered, the account disabled, or none could be issued); the form answers exactly as if one was. | — |
+| `STS-MAIL-0031` | A message or security notice could not be queued because of an unexpected error in the mail channel. | — |
+| `STS-MAIL-0032` | An address verification was asked for where no mail transport is available. | HTTP 400 |
+| `STS-MAIL-0033` | A self-service password reset page was asked for where it is not offered (mail.selfServiceReset off, no transport, or passwords are not verified). | HTTP 404 |
+| `STS-MAIL-0034` | A person tried to decline a mail category that cannot be declined (security notices, requested links). | HTTP 400 |
 
 ## STS-GNAP
 

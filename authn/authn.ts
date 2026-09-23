@@ -6044,6 +6044,24 @@ class Authn {
     return html;
   }
 
+  // Is a self-service password reset offered in this realm (#63)? Asked of
+  // `common/mail_uses.ts` LAZILY — it reaches the credential store, which
+  // this module must not load early — and "no" if it cannot be asked.
+  private offersPasswordReset(): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Authn.offersPasswordReset().");
+    let offered = false;
+    try {
+      offered = !!require('../common/mail_uses').resetOffered();
+    } catch (e) {
+      log.debug("Caught in Authn.offersPasswordReset(): " +
+                ((e && e.message) || e));
+      offered = false;
+    }
+    log.debug("Leaving Authn.offersPasswordReset(). " + offered);
+    return offered;
+  }
+
   private loginPage(base, record, error) {
     const { log, xmlEscape, config, webauthnPolicy } = this.deps;
     log.debug("Entering Authn.loginPage(). protocol=" + record.protocol +
@@ -6198,6 +6216,15 @@ class Authn {
          : '') +
       '<button type="submit" id="kc-cancel" name="action" value="cancel" ' +
       'class="secondary">Cancel</button></div></form>' +
+      // FORGOT YOUR PASSWORD? (#63, 2026-09-22): the portal's self-service
+      // reset, offered only where `common/mail_uses.ts` says it is — the
+      // setting on, a mail transport, and a mode that checks passwords — and
+      // never on a screen whose name is locked. A root-relative link on the
+      // realm's prefix: it is answered to the browser that is here.
+      (!locked && this.offersPasswordReset()
+        ? '<p class="meta"><a href="' +
+          xmlEscape(realms.currentPrefix() + '/portal/forgot-password') +
+          '">Forgot your password?</a></p>' : '') +
       // ---------------------------------------------------------------------
       // AND THE FEDERATION PARTNERS, if any are configured and usable.
       //

@@ -701,9 +701,10 @@ const SPECS: Spec[] = [
               'NOT covered: no detector finds a ' +
               'compromised credential by itself (#62); the deprecated ' +
               'sessions-revoked is emitted only by hand from /admin/risc or ' +
-              'POST /admin-api/risc/emit; a person cannot start recovery ' +
-              'themselves until there is a mail channel (#63); and a ' +
-              'received event is not acted on (#153, #117).' },
+              'POST /admin-api/risc/emit; and a received event is not acted ' +
+              'on (#153, #117). recovery-activated is sent both when an ' +
+              'administrator issues a reset link and when a person asks for ' +
+              'one at /portal/forgot-password (#63).' },
 
   { id: 'rfc8936', name: 'RFC 8936 — Poll-Based Delivery of Security Event ' +
                          'Tokens',
@@ -2611,6 +2612,53 @@ const SPECS: Spec[] = [
               'GetNextCACert (501), PENDING (nothing is approved by hand), ' +
               'a non-RSA requester key (the reply is RSA-encrypted to it), ' +
               'SHA-1/MD5 and DES/3DES (refused badAlg).' },
+  // THE MAIL CHANNEL (#63, 2026-09-22). This service SENDS mail and receives
+  // none, so each of these is the sending half.
+  { id: 'rfc5321', name: 'Simple Mail Transfer Protocol (RFC 5321)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc5321',
+    coverage: 'partial: the client half, to one configured relay (through ' +
+              'nodemailer) — EHLO, MAIL FROM, RCPT TO, DATA; a 4xx reply is ' +
+              'retried with backoff and a 5xx is a dead letter. Missing: ' +
+              'everything a server does, and MX delivery — this service ' +
+              'hands every message to the relay it was given.' },
+  { id: 'rfc3207', name: 'SMTP Service Extension for Secure SMTP over TLS ' +
+                         '(RFC 3207)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc3207',
+    coverage: 'full for a client: STARTTLS is REQUIRED (a relay that does ' +
+              'not offer it is refused), the relay\'s certificate is ' +
+              'verified against its name and a configured trust anchor, TLS ' +
+              '1.2 at the least. There is no cleartext mode.' },
+  { id: 'rfc8314', name: 'Cleartext Considered Obsolete: Use of TLS for Email ' +
+                         'Submission and Access (RFC 8314)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8314',
+    coverage: 'full for submission: implicit TLS on 465 is offered beside ' +
+              'STARTTLS on 587, and cleartext is not offered at all.' },
+  { id: 'rfc4954', name: 'SMTP Service Extension for Authentication ' +
+                         '(RFC 4954)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc4954',
+    coverage: 'partial: PLAIN and LOGIN after TLS, and XOAUTH2 (a Google ' +
+              'and Microsoft mechanism, not an RFC one), with the secret ' +
+              'read from a secret store. Missing: CRAM-MD5 and SCRAM.' },
+  { id: 'rfc5322', name: 'Internet Message Format (RFC 5322)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc5322',
+    coverage: 'full for what this service writes: From, To, Subject, Date, ' +
+              'Message-ID and a multipart/alternative text and HTML body ' +
+              '(MIME, RFC 2045–2049), with Auto-Submitted: auto-generated ' +
+              '(RFC 3834). A value in a header cannot carry a line break.' },
+  { id: 'rfc6376', name: 'DomainKeys Identified Mail (DKIM) Signatures ' +
+                         '(RFC 6376)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc6376',
+    coverage: 'partial: signing, relaxed/relaxed, rsa-sha256 with a key of ' +
+              'at least 2048 bits (RFC 8301), in common/crypto.js, on what ' +
+              'the SMTP transport sends when a domain is configured. ' +
+              'Missing: simple canonicalization, l= and verification of ' +
+              'mail anybody else sent — this service receives none. DKIM ' +
+              'has no post-quantum algorithm registered.' },
+  { id: 'rfc8463', name: 'A New Cryptographic Signature Method for DKIM ' +
+                         '(RFC 8463)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8463',
+    coverage: 'full for signing: ed25519-sha256, Ed25519 over the SHA-256 ' +
+              'of the canonicalized header data.' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -4979,6 +5027,42 @@ const ENDPOINTS: EndpointEntry[] = [
           'form carries a CSRF token, changing a password requires the ' +
           'current one even though the person is signed in, and both are ' +
           'rate limited.' },
+  { path: '/portal/email', group: 'User portal',
+    name: 'Your email address, its verification, and what was sent to you',
+    specs: [],
+    effect: 'sends a verification link, or declines optional messages',
+    what: 'NON-SPEC (#63). Signed in. The address on the person\'s own ' +
+          'entry and whether it is verified, a button that mails a ' +
+          'single-use verification link to it, the categories of message ' +
+          'with the one that may be declined (notifications; security ' +
+          'notices and requested links may not), and what this service ' +
+          'sent them — never a body. CSRF-protected; the identity is the ' +
+          'session\'s.' },
+  { path: '/portal/verify-email', group: 'User portal',
+    name: 'Follow an address verification link',
+    specs: [],
+    effect: 'records the address as verified and spends the link',
+    what: 'NON-SPEC (#63). Unauthenticated: the TOKEN is the credential, ' +
+          'as on /portal/activate. The GET spends nothing and draws a ' +
+          'button, so a mail scanner that opens every link verifies ' +
+          'nothing; the POST records stsMailVerified as the address the ' +
+          'link was sent to, if the entry still has it. Hashed at rest, ' +
+          'single use, valid for mail.verificationTtlMinutes, rate limited, ' +
+          'and every failure is one sentence.' },
+  { path: '/portal/forgot-password', group: 'User portal',
+    name: 'Ask for a password reset link by mail',
+    specs: [],
+    effect: 'mails a /portal/reset-password link to the account\'s address',
+    what: 'NON-SPEC (#63). Unauthenticated; linked from the sign-in screen. ' +
+          'A person names their account by username or by the address on ' +
+          'it, and a single-use reset link is mailed to that address (a ' +
+          'verified one, by default) — the password they have keeps ' +
+          'working until it is used. The answer is ONE SENTENCE whatever ' +
+          'happened and is sent before the work is done. RISC ' +
+          'recovery-activated is sent with the person as the initiating ' +
+          'entity. Rate limited per account and per address; 404 where it ' +
+          'is not offered (mail.selfServiceReset, a transport, product ' +
+          'mode).' },
   { path: '/portal/reset-password', group: 'User portal',
     name: 'Spend a password reset link and choose a new password',
     specs: [],
@@ -5910,6 +5994,32 @@ const ENDPOINTS: EndpointEntry[] = [
           'and status — computed from what was set here, an administrator\'s ' +
           'revocation on /admin/tokens and a global sign-out\'s disown — ' +
           'with Suspend, Reinstate and Revoke. Add ?format=json.' },
+  { path: '/admin/mail', group: 'Admin',
+    name: 'How this service sends mail',
+    specs: ['rfc5321', 'rfc3207', 'rfc8314', 'rfc4954', 'rfc5322', 'rfc6376',
+            'rfc8463'],
+    effect: 'sends a test message, or saves a realm\'s wording of a message',
+    what: 'NON-SPEC (#63). Filed under Server configuration. The transport ' +
+          'this realm sends through — capture (development), SMTP, Amazon ' +
+          'SES v2, Azure Communication Services Email or the Gmail API, the ' +
+          'service\'s or the realm\'s own — whether it could be built, where ' +
+          'a mailed link points (global.publicBaseUrl; never a request), a ' +
+          'test message or a verification link to a person\'s own address, ' +
+          'each message\'s wording ' +
+          'per language (a link is a placeholder; an address of its own, an ' +
+          'image or a script is refused), and the Mail settings. POST: ' +
+          'test, save-template, reset-template, Admin Write. Add ' +
+          '?format=json.' },
+  { path: '/admin/mail/outbox', group: 'Admin',
+    name: 'What this service sent, and the dead letters',
+    specs: [],
+    effect: 'queues a dead letter again',
+    what: 'NON-SPEC (#63). Filed under Monitoring. The outbox: every ' +
+          'message queued in this realm, its recipient, its state (pending, ' +
+          'sent, captured, dead) and its attempts, with a Retry on each ' +
+          'dead letter (Admin Write) and, in development, a captured ' +
+          'message\'s whole body. A sent message keeps no body. Add ' +
+          '?format=json.' },
   { path: '/admin/scheduler', group: 'Admin',
     name: 'Every scheduled job, its last run and its next',
     specs: [],
@@ -6772,6 +6882,34 @@ const ENDPOINTS: EndpointEntry[] = [
           'the leader starts at its next tick, 202 with its runId; and ' +
           'step-down: the leader gives up ops.scheduler at its next tick and ' +
           'another node takes it. The console\'s two buttons.' },
+  { path: '/admin-api/mail', group: 'Management API',
+    name: 'Mail', specs: ['openapi'],
+    what: 'NON-SPEC (#63). What GET /admin/mail draws, as data: the ' +
+          'transport this realm sends through and whether it could be ' +
+          'built, the From address, where a mailed link points, the outbox ' +
+          'counts, every message with its placeholders and this realm\'s ' +
+          'languages, and the Mail settings — never a secret. ?template= ' +
+          'answers one message\'s wording. Mirrors GET /admin/mail.' },
+  { path: '/admin-api/mail/:action', group: 'Management API',
+    name: 'Mail actions', specs: ['openapi'],
+    effect: 'queues a test message, or saves or resets a realm\'s wording',
+    what: 'NON-SPEC (#63). test, with { user }: a test message to that ' +
+          'person\'s own address (never an address); verify, with { user }: ' +
+          'a single-use address verification link to it; save-template and ' +
+          'reset-template, with { template, lang, … }: this realm\'s wording ' +
+          'of a message, checked when saved. The console\'s three forms.' },
+  { path: '/admin-api/mail/outbox', group: 'Management API',
+    name: 'Mail outbox', specs: ['openapi'],
+    what: 'NON-SPEC (#63). What GET /admin/mail/outbox draws: every message ' +
+          'this realm queued, whom it was for and what became of it, paged ' +
+          'and filtered by state and search — never a body, except a ' +
+          'captured message\'s (development) through ?message=. Mirrors GET ' +
+          '/admin/mail/outbox.' },
+  { path: '/admin-api/mail/outbox/:action', group: 'Management API',
+    name: 'Mail outbox actions', specs: ['openapi'],
+    effect: 'queues a dead letter again',
+    what: 'NON-SPEC (#63). retry, with { message }: a dead letter sent ' +
+          'again, a new generation, to the address the entry holds now.' },
   { path: '/admin-api/caches', group: 'Management API',
     name: 'Caches', specs: [],
     what: 'NON-SPEC (#74). Everything /admin/caches draws, as JSON: every ' +

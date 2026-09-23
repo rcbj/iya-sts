@@ -2425,6 +2425,17 @@ const SECTIONS = [
                'page names; a per-process job has a row per process. ' +
                'Admin Write may run a job now, and on a cluster may ask ' +
                'the leader to hand the scheduler to another node.' },
+      // MAIL (#63, 2026-09-22), after the scheduler: what this service SENT
+      // — the outbox, its dead letters, and in development the captured
+      // messages. Drawn by `admin-ui/mail_admin.ts` out of `common/mail.ts`;
+      // how it is configured to send is Server configuration → Mail.
+      { path: '/admin/mail/outbox', label: 'Mail outbox',
+        blurb: 'Every message this realm queued &mdash; a reset link, a ' +
+               'verification link, a security notice, a test &mdash; to ' +
+               'whom, and what became of it: sent, captured (development), ' +
+               'pending or a DEAD LETTER an administrator can retry. A sent ' +
+               'message keeps no body; in development a captured one is ' +
+               'shown whole, links included.' },
       // RISK (#62, 2026-09-22), after the scheduler and before the audit log:
       // the external datasets a risk score reads and the refused passwords it
       // counts. Drawn by `admin-ui/risk_admin.ts` out of `risk/`.
@@ -2534,6 +2545,19 @@ const SECTIONS = [
                'which lease, and what active-active mode still refuses to ' +
                'start without. Every clustered write is fenced by the ' +
                'node\'s membership, and a node that loses it exits.' },
+      // MAIL (#63, 2026-09-22), beside Cluster: how this service SENDS
+      // mail — the transport, where a link points, the realm's wording of
+      // each message, a test message, and the Mail settings group. Drawn by
+      // `admin-ui/mail_admin.ts`; what it sent is Monitoring → Mail outbox.
+      { path: '/admin/mail', label: 'Mail',
+        blurb: 'The one outbound mail channel: which transport this realm ' +
+               'sends through (SMTP with STARTTLS or implicit TLS and ' +
+               'optional DKIM, Amazon SES, Azure Communication Services, ' +
+               'the Gmail API &mdash; or, in development, the capture ' +
+               'transport), whether it could be built, where a mailed link ' +
+               'points, a test message, and the wording of each message ' +
+               'per language. A realm may override the service\'s ' +
+               'transport. No secret is ever shown here.' },
       { path: '/admin/rbac', label: 'Admin roles',
         blurb: 'Who holds the two roles that grant this console — Admin ' +
                'Read and Admin Write — granted and revoked here. They are ' +
@@ -12726,7 +12750,8 @@ class AdminConsole {
            'sign-in; they are signed out everywhere.', true, compromisedBox) +
       form('issue-password-reset', 'Generate a password reset link',
            'Removes their current password, signs them out everywhere, and ' +
-           'shows a single-use link to send them.', true, compromisedBox);
+           'shows a single-use link to send them — or mails it to them.',
+           true, compromisedBox + this.mailLinkBox('the link'));
     const passkeys = '<h3>Passwordless sign-in</h3>' + (factors.primaryKeys > 0
       ? (factors.password
           ? this.note('Removes all ' + this.esc(String(factors.primaryKeys)) +
@@ -13746,6 +13771,10 @@ class AdminConsole {
           : 'The forced change could not be recorded, so it will go on ' +
             'working until somebody changes it.')));
     }
+    if (result.mailError) {
+      out.push(this.warn('<strong>The link was NOT mailed:</strong> ' +
+        this.esc(result.mailError) + ' It is shown below instead.'));
+    }
     if (result.resetUrl) {
       out.push('<h2>The password reset link for ' + who + ', shown once</h2>' +
         '<div class="secret">' + this.esc(result.resetUrl) + '</div>' +
@@ -13919,6 +13948,27 @@ class AdminConsole {
       '<td class="sub">' + this.esc(row.schema) + '</td></tr>';
   }
 
+  // THE "MAIL IT TO THEM" BOX (#63): `deliver=mail` on the reset link and
+  // the activation link, TICKED when the realm has a mail transport — an
+  // administrator who never sees a person's link cannot be the one who used
+  // it — and absent, with the reason, when it has none.
+  mailLinkBox(what) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.mailLinkBox().");
+    const mailChannel = require('../common/mail');
+    if (!mailChannel.available()) {
+      log.debug("Leaving AdminConsole.mailLinkBox(). No transport.");
+      return this.note('This realm has no mail transport ' +
+        '(<a href="/admin/mail">Mail</a>), so ' + this.esc(what) + ' is ' +
+        'shown to you to pass on.');
+    }
+    log.debug("Leaving AdminConsole.mailLinkBox().");
+    return '<div class="formrow"><label><input type="checkbox" ' +
+      'name="deliver" value="mail" checked> mail ' + this.esc(what) +
+      ' to the address on their entry, and do not show it to me</label>' +
+      '</div>';
+  }
+
   credentialChoiceRow(choice, chosen) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.credentialChoiceRow().");
@@ -14067,6 +14117,7 @@ class AdminConsole {
           'meets it in both modes.') +
       ' If the password is refused the person is still created, with no ' +
       'credential, and the page says why.') +
+      this.mailLinkBox('the activation link') +
 
       '<h2>What is known about them</h2>' +
       this.note('Every attribute a person in this directory can carry, which ' +
@@ -14231,6 +14282,20 @@ class AdminConsole {
         'a scrypt hash. If it is lost, set a new one; there is no recovery ' +
         'because there is nothing to recover.'));
     }
+    if (result.mailedTo) {
+      secret.push('<h2>The activation link was mailed</h2>' +
+        this.note('It went to <strong>' + this.esc(result.mailedTo) +
+                  '</strong>, valid until ' +
+                  this.esc(result.expiresAt || 'it expires') + ', and is ' +
+                  'not shown here. Monitoring &rarr; ' +
+                  '<a href="/admin/mail/outbox">Mail</a> shows where it got ' +
+                  'to.'));
+    }
+    if (result.mailError) {
+      secret.push(this.warn('<strong>The activation link was NOT ' +
+        'mailed:</strong> ' + this.esc(result.mailError) + ' It is shown ' +
+        'below instead.'));
+    }
     if (result.activationUrl) {
       // ABSOLUTE, and built from the request rather than from a setting: this
       // is a link somebody is about to paste into a message, and a
@@ -14250,9 +14315,10 @@ class AdminConsole {
         'password or enrolling a security key. It is spent when that setup ' +
         'FINISHES rather than when the link is opened, so a mail scanner or ' +
         'a browser prefetch cannot burn it. There is deliberately no ' +
-        'self-service version of this link: with no mail channel here, a ' +
-        'form that issued one would hand any visitor an activation link for ' +
-        'any unactivated account.'));
+        'self-service version of this link: until the account is activated ' +
+        'nobody has proved the address on it is theirs. Tick <em>mail the ' +
+        'activation link</em> on the form to have this service send it ' +
+        'instead.'));
     }
     const inner =
       (result.credentialError
@@ -39200,6 +39266,7 @@ const SETTING_HOMES = [
   // THE SCHEDULER'S SETTINGS (2026-09-22, #49), on the page that shows the
   // jobs they switch and the ticks they time.
   { group: 'Scheduler', pages: ['/admin/scheduler'] },
+  { group: 'Mail', pages: ['/admin/mail'] },
   { group: 'SCIM', pages: ['/admin/scim'] },
   // Shared Signals. A page of its own rather than a section of anything, for
   // the reason /admin/federation is ungrouped: SSF is not a variant of another

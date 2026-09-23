@@ -646,8 +646,10 @@ after delivery, so without the claim a second run of the job would send
 
 **Not here:**
 - `credential-compromise` has no detector (#62).
-- A person cannot start recovery themselves until there is a mail channel
-  (#63).
+- ~~A person cannot start recovery themselves until there is a mail channel
+  (#63).~~ Since #63 (2026-09-22) a person starts it at
+  `/portal/forgot-password`, and `recovery-activated` is sent with the person
+  as the initiating entity (`common/mail_uses.ts`).
 - The deprecated `sessions-revoked` is by hand only.
 - A received event is not acted on (#153, #117).
 

@@ -1373,6 +1373,7 @@ class AdminActions {
     // refusal rather than as a success that did nothing.
     const done = (result.terminated || []).length;
     const unknown = (result.unknown || []).length;
+    this.mailSessionsEnded(key, done, 'an administrator (the sessions page)');
     const said = []
       .concat((result.terminated || []).map(function (
           one) { return one.message; }))
@@ -1465,6 +1466,8 @@ class AdminActions {
         actor: user, channel: 'console',
         by: 'the admin console at /admin/logout'
       });
+      this.mailSessionsEnded(user, result.terminated.length,
+                             'an administrator (the admin console at /admin/logout)');
       log.debug("Leaving AdminActions.logoutAction(). A global logout ended " +
                 result.terminated.length + ".");
       return { ok: true, result: result, message: result.message +
@@ -1499,6 +1502,8 @@ class AdminActions {
         actor: user, channel: 'console',
         by: 'the admin console at /admin/logout'
       });
+      this.mailSessionsEnded(user, result.terminated.length,
+                             'an administrator (the admin console at /admin/logout)');
       log.debug("Leaving AdminActions.logoutAction(). Ended " +
                 result.terminated.length +
                 ".");
@@ -1786,6 +1791,54 @@ class AdminActions {
   // `/admin/logout`'s global button calls. A process without the logout module
   // is reported rather than refused: the credential change has happened either
   // way.
+  // AN ADMINISTRATOR'S LINK, MAILED TO THE PERSON (#63) when the request
+  // says `deliver: "mail"` — the reset link, the activation link, the one a
+  // create issues. `null` when mail was not asked for; otherwise
+  // `common/mail_uses.ts`'s answer, `{ ok, mailedTo }` or a refusal whose
+  // reason the administrator is shown beside the link, which is then shown
+  // as it always was.
+  private mailedLink(kind, who, token, body, actor, via) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.mailedLink(). " + kind);
+    if (String((body && body.deliver) || '') !== 'mail') {
+      log.debug("Leaving AdminActions.mailedLink(). Not asked.");
+      return null;
+    }
+    let answer = null;
+    try {
+      answer = require('../common/mail_uses').mailAdministratorLink(kind,
+        who, token, String(actor || ''), String(via || 'the admin console'));
+    } catch (e) {
+      log.debug("Caught in AdminActions.mailedLink(): " +
+                ((e && e.message) || e));
+      answer = { ok: false, errors: ['the mail channel failed: ' +
+                                     ((e && e.message) || e)] };
+    }
+    log.debug("Leaving AdminActions.mailedLink(). " + !!(answer && answer.ok));
+    return answer;
+  }
+
+  // A PERSON WHOSE SESSIONS AN ADMINISTRATOR ENDED IS TOLD BY MAIL (#63): a
+  // security notice they cannot decline. Only here, at the administrator's
+  // two doors — a person's own sign-out tells nobody, and a reset or a
+  // disable sends its own notice. Lazily required; never thrown into the act.
+  private mailSessionsEnded(username, count, by) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.mailSessionsEnded(). " + count);
+    if (!count || !username) {
+      log.debug("Leaving AdminActions.mailSessionsEnded(). Nothing ended.");
+      return;
+    }
+    try {
+      require('../common/mail_uses').sessionsEnded(String(username), count,
+                                                   by);
+    } catch (e) {
+      log.debug("Caught in AdminActions.mailSessionsEnded(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving AdminActions.mailSessionsEnded().");
+  }
+
   private signOutEverywhere(who, ctx, why) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminActions.signOutEverywhere(). who=" + who);
@@ -1919,9 +1972,16 @@ class AdminActions {
         reasonAdmin: 'An administrator issued a password reset link for ' +
                      who +
                      '.' });
+      // MAILED TO THE PERSON when asked (#63) — and then NOT shown here: an
+      // administrator who never sees a person's reset link cannot be the one
+      // who used it.
+      const mailed = this.mailedLink('reset', who, issued.token, body,
+                                     ctx.actor, ctx.via === 'api'
+                                       ? '/admin-api/users' : 'the admin console');
       // A RESET LINK IS ACCOUNT RECOVERY STARTED (#146), which is RISC's
-      // recovery-activated. A person's own start comes with #63.
+      // recovery-activated. A person's own start is `common/mail_uses.ts`'s.
       accountSignals.recoveryActivated({ username: who,
+        mailed: !!(mailed && mailed.ok),
         reasonAdmin: 'An administrator started account recovery for ' + who +
                      ' with a password reset link.' });
       if (body.compromised === true || body.compromised === 'true' ||
@@ -1936,10 +1996,26 @@ class AdminActions {
                (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + ').');
       log.debug("Leaving AdminActions.credentialAdminAction(). " +
                 "issue-password-reset.");
+      if (mailed && mailed.ok) {
+        return { ok: true, username: who, mailedTo: mailed.mailedTo,
+                 expiresAt: issued.expiresAt,
+                 passwordRevoked: removed.removed, signedOut: signedOut,
+                 message: 'A password reset link for ' + who + ', valid ' +
+                          'until ' + issued.expiresAt + ', was MAILED to ' +
+                          mailed.mailedTo + ' and is not shown here. ' +
+                          (removed.removed ? 'Their old password was ' +
+                            'removed, so until the link is used they cannot ' +
+                            'sign in with a password. ' : '') +
+                          'They were signed out of everything: ' +
+                          signedOut.message };
+      }
       return { ok: true, username: who,
                resetUrl: (ctx.base || '') + path, expiresAt: issued.expiresAt,
                passwordRevoked: removed.removed, signedOut: signedOut,
-               message: 'A password reset link for ' + who +
+               mailError: mailed ? (mailed.errors || []).join(' ') : undefined,
+               message: (mailed ? 'THE LINK WAS NOT MAILED: ' +
+                          (mailed.errors || []).join(' ') + ' ' : '') +
+                        'A password reset link for ' + who +
                         ' is valid until ' +
                         issued.expiresAt +
                         '. IT IS SHOWN ONCE — this service ' +
@@ -2419,11 +2495,14 @@ class AdminActions {
     // invalidates the previous one, which is also how a link that expired or
     // was never delivered is replaced.
     //
-    // It is an ADMIN act rather than a self-service one, deliberately. There is
-    // no mail channel here, so a self-service "send me a link" form would have
-    // to show the link on screen — handing any visitor an activation link for
-    // any unactivated account, which is an account takeover with a username as
-    // the only input.
+    // It is an ADMIN act rather than a self-service one, deliberately. Before
+    // #63 there was no mail channel, and a self-service "send me a link" form
+    // would have had to show the link on screen — handing any visitor an
+    // activation link for any unactivated account, an account takeover with a
+    // username as the only input. There is a mail channel now, and the
+    // administrator may send the link through it (`deliver: "mail"`); an
+    // unactivated account still has no self-service door, because until it
+    // is activated nobody has proved the address on it is theirs.
     if (action === 'issue-activation') {
       const who = String(body.user || body.username || '').trim();
       if (!who) {
@@ -2443,8 +2522,20 @@ class AdminActions {
         summary: 'an activation link was issued for ' + who,
         detail: { expiresAt: issued.expiresAt }
       });
+      const mailed = this.mailedLink('activation', who, issued.token, body,
+                                     body.actor, 'the users page');
+      if (mailed && mailed.ok) {
+        log.debug("Leaving AdminActions.usersAction(). Mailed.");
+        return { ok: true, username: who, expiresAt: issued.expiresAt,
+                 mailedTo: mailed.mailedTo,
+                 message: 'An activation link for ' + who + ', valid until ' +
+                          issued.expiresAt + ', was MAILED to ' +
+                          mailed.mailedTo + ' and is not shown here. Issuing ' +
+                          'another invalidates it.' };
+      }
       log.debug("Leaving AdminActions.usersAction().");
       return { ok: true, username: who, expiresAt: issued.expiresAt,
+               mailError: mailed ? (mailed.errors || []).join(' ') : undefined,
                // THE ONLY TIME THIS VALUE EXISTS OUTSIDE THE PERSON'S BROWSER.
                activationUrl: '/portal/activate?user=' +
                               encodeURIComponent(who) + '&token=' +
@@ -2828,15 +2919,30 @@ class AdminActions {
                      ' as they were created',
             detail: { expiresAt: issued.expiresAt }
           });
-          answer.activationUrl = '/portal/activate?user=' +
-                                 encodeURIComponent(result.username) +
-                                 '&token=' +
-                                 encodeURIComponent(issued.token);
           answer.expiresAt = issued.expiresAt;
-          credentialSaid = ' They have NO credential and an activation link ' +
-            'instead, valid until ' + issued.expiresAt + ' and shown once. ' +
-            'They choose a password, a security key or both at it; nothing ' +
-            'about this account is decided until they do.';
+          const mailed = this.mailedLink('activation', result.username,
+                                         issued.token, body, body.actor,
+                                         'the new user screen');
+          if (mailed && mailed.ok) {
+            answer.mailedTo = mailed.mailedTo;
+            credentialSaid = ' They have NO credential and an activation ' +
+              'link instead, valid until ' + issued.expiresAt + ', which was ' +
+              'MAILED to ' + mailed.mailedTo + ' and is not shown here.';
+          } else {
+            answer.activationUrl = '/portal/activate?user=' +
+                                   encodeURIComponent(result.username) +
+                                   '&token=' +
+                                   encodeURIComponent(issued.token);
+            if (mailed) {
+              answer.mailError = (mailed.errors || []).join(' ');
+            }
+            credentialSaid = (mailed ? ' THE LINK WAS NOT MAILED: ' +
+                answer.mailError : '') + ' They have NO credential and an ' +
+              'activation link instead, valid until ' + issued.expiresAt +
+              ' and shown once. They choose a password, a security key or ' +
+              'both at it; nothing about this account is decided until they ' +
+              'do.';
+          }
         }
       } else if (credential !== 'none') {
         answer.credentialError = 'Unknown credential option "' + credential +
