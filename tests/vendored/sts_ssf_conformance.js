@@ -183,6 +183,38 @@ function receiver(token) {
   };
 }
 
+// DRAINED UNTIL WHAT IS AWAITED HAS ARRIVED, or five seconds have passed.
+// Delivery is asynchronous by specification — SSF 1.0 section 8.1.4.2 says a
+// receiver "MUST NOT depend on the Verification Event being transmitted
+// synchronously", and a stream-updated event is queued the same way — so one
+// drain straight after the request asks too early wherever the poll can be
+// answered by another node (`cluster` mode found it: the verify answered on
+// one node, the drain on the other, and it was empty). Everything drained is
+// kept, so a check on the whole list sees every SET that arrived.
+async function drainUntil(receiver, id, arrived) {
+  log.debug("Entering drainUntil().");
+  const deadline = Date.now() + 5000;
+  let got = [];
+  for (;;) {
+    got = got.concat(await receiver.drain(id));
+    if (arrived(got) || Date.now() >= deadline) {
+      log.debug("Leaving drainUntil().");
+      return got;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+  }
+}
+
+function hasType(list, type) {
+  log.debug("Entering hasType().");
+  log.debug("Leaving hasType().");
+  return list.some(function (one) {
+    return typeOf(one) === type;
+  });
+}
+
 function typeOf(set) {
   log.debug("Entering typeOf().");
   log.debug("Leaving typeOf().");
@@ -391,7 +423,9 @@ async function test() {
   check("a verification request answers 204 (section 8.1.4.2)", function () {
     assert.strictEqual(r.status, 204, r.text);
   });
-  let got = await alice.drain(aliceStream);
+  let got = await drainUntil(alice, aliceStream, function (list) {
+    return hasType(list, VERIFICATION);
+  });
   const verification = got.filter(function (one) {
     return typeOf(one) === VERIFICATION;
   })[0];
@@ -417,7 +451,9 @@ async function test() {
   await ok(realmApi + "/risc/emit", { type: "account-disabled",
     account_id: usernameFor("ssf-conf-person"),
     reason_admin: "sts_ssf_conformance" }, "emitted account-disabled");
-  got = await alice.drain(aliceStream);
+  got = await drainUntil(alice, aliceStream, function (list) {
+    return hasType(list, UPDATED);
+  });
   check("A PAUSED POLL STREAM HANDS OUT ITS stream-updated EVENT (status " +
         "paused) AND NOTHING ELSE — the account-disabled waits", function () {
           assert.deepStrictEqual(got.map(typeOf), [UPDATED],
@@ -428,7 +464,9 @@ async function test() {
         });
   r = await alice.send("POST", "/ssf/status", { stream_id: aliceStream,
                                                 status: "enabled" });
-  got = await alice.drain(aliceStream);
+  got = await drainUntil(alice, aliceStream, function (list) {
+    return hasType(list, UPDATED) && hasType(list, ACCOUNT_DISABLED);
+  });
   check("enabling it hands out stream-updated (status enabled) and then the " +
         "account-disabled held while it was paused", function () {
           assert.strictEqual(r.status, 200, r.text);
