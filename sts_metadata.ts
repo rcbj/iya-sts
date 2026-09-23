@@ -611,9 +611,10 @@ const SPECS: Spec[] = [
               'risc.googleSubjectType. NOT covered: no detector finds a ' +
               'compromised credential by itself (#62); the deprecated ' +
               'sessions-revoked is emitted only by hand from /admin/risc or ' +
-              'POST /admin-api/risc/emit; a person cannot start recovery ' +
-              'themselves until there is a mail channel (#63); and a ' +
-              'received event is not acted on (#153, #117).' },
+              'POST /admin-api/risc/emit; and a received event is not acted ' +
+              'on (#153, #117). recovery-activated is sent both when an ' +
+              'administrator issues a reset link and when a person asks for ' +
+              'one at /portal/forgot-password (#63).' },
 
   { id: 'rfc8936', name: 'RFC 8936 — Poll-Based Delivery of Security Event ' +
                          'Tokens',

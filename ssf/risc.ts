@@ -225,8 +225,9 @@ const AUTO_ACTS: Record<string, string> = {
   //     account. The directory SEES that — a create or a contact change — and
   //     `recycledActs()` reads it off the register's own history.
   //   * `recoveryActivated`: an administrator issued a password-reset link,
-  //     which is where account recovery starts here (#63 will add a person's
-  //     own start).
+  //     or (#63, 2026-09-22) a person asked for one at
+  //     /portal/forgot-password — the two places account recovery starts
+  //     here.
   //   * `credentialCompromise`: an administrator said a reset was BECAUSE a
   //     credential was compromised (#62 will add a detector).
   //   * the four opt-out moves of section 2.8, which the PERSON makes on the

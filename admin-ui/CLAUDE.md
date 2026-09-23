@@ -6189,3 +6189,33 @@ copied, since an app password is the third secret that exists once and must
 never ride a redirect's query string. The three settings are in the existing
 *Second-factor requirement* group, so `SETTING_HOMES` gained no row.
 `authn/CLAUDE.md` owns the rule; `mgmt-api/CLAUDE.md` has the API twin.
+
+## `/admin/mail` AND `/admin/mail/outbox`: THE MAIL CHANNEL'S TWO PAGES (2026-09-22, #63)
+
+One module, `mail_admin.ts`, filed in two sections by the console's filing
+rule:
+
+- **Server configuration → Mail** answers *how does this service send mail*:
+  - the transport and whether it could be built, and where a mailed link points;
+  - a test message, and a verification link, both to a PERSON in the realm by
+    username;
+  - each message's wording per language;
+  - the `Mail` settings group (`SETTING_HOMES`).
+- **Monitoring → Mail outbox** answers *what did it send*: the outbox, the dead
+  letters and their Retry, and in development a captured message whole.
+
+The API mirrors both at the same paths (`/admin-api/mail`,
+`/admin-api/mail/outbox`, and their `:action`s), so a realm administrator is
+confined by one rule on both surfaces. A realm's `mail.*` rows are its override
+of the service's, and a realm administrator edits those and no other realm's.
+
+**No form here takes an address.** A console form that sent a message to an
+address typed on it would be an open relay with a login. The channel has no
+parameter for one (`common/mail.ts`, point 5).
+
+**"Mail the link"** is a box on the reset-link form on `/admin/users` and
+beside the activation choice on `/admin/users/new` (`mailLinkBox()`,
+`deliver=mail`). It is TICKED whenever the realm has a transport: an
+administrator who never sees a person's reset link cannot be the one who used
+it. It is replaced by a sentence when there is no transport. A link that could
+not be mailed is shown as before, with the reason.

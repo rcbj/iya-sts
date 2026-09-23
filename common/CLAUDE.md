@@ -7940,3 +7940,93 @@ bypassed; and `keys.plaintext`, whose decrypted key is dropped by a one-shot
 deadline re-armed at each use — to the second, where a minute-long job would
 leave it decrypted up to a minute longer than `keys.plaintextTtlS` says.
 
+
+## 3ay. The mail channel: `mail.ts`, `mail_transports.ts`, `mail_templates.ts`, `mail_uses.ts` (#63, 2026-09-22)
+
+Until #63 this service had no way to tell a person anything. A reset link and
+an activation link were shown to an administrator to pass on by hand, and a
+person could not start recovery themselves. **Four files, and the split is
+the design.**
+
+| File | What it is | Who may require it |
+|---|---|---|
+| `mail.ts` | THE CHANNEL: `send()`, the outbox, the claim per attempt, the `mail.deliver` job, the ceilings, the templates store, the preferences, the startup check | anybody, through `send()`; the directory fills its slot |
+| `mail_transports.ts` | FIVE TRANSPORTS behind `send(message)`: capture, SMTP (nodemailer), SES v2, Azure Communication Services, the Gmail API | `mail.ts` ONLY |
+| `mail_templates.ts` | THE MESSAGES: the built-in English wording of each, rendering, and the rules a realm's own wording must keep | `mail.ts` ONLY |
+| `mail_uses.ts` | WHAT IT IS FOR: self-service reset, address verification, an administrator's links, security notices | the portal, the console, `account_signals.ts`, `account_state.ts`, `admin_actions.ts`, `ldap_server.js` — every one LAZILY |
+
+**Nothing reaches a transport except through the channel.** A module that
+did would skip the outbox, the claim, the ceiling and the audit row, and those
+are every property the channel exists to have.
+
+Rcbj's three decisions (#63):
+
+- **One transport for the service, which a realm may override.** Every `mail.*`
+  row is an ordinary realm-overridable row. A built transport is cached per
+  realm on the INSTANCE, keyed by a fingerprint of its settings, so a changed
+  setting rebuilds it and re-reads its secret.
+- **Development captures unless a transport is configured.** Product's
+  `default` is `off`.
+- **Both Google routes.** The Workspace SMTP relay is a preset of the SMTP
+  transport, and the Gmail API has a transport of its own.
+
+**Capture never reaches product.** A captured message keeps its body, and a
+password reset link on the console is a credential shown to whoever may read
+it. So `capture` is refused on write (`config.js`'s `modeWriteProblem()`,
+STS-MAIL-0003) and at start. More generally, a product service whose configured
+transport cannot be built does not start (`startupProblem()`, awaited by
+`server.js` before the workers fork, STS-MAIL-0002).
+
+**The outbox is back-channel logout's arrangement, for its reason** (rule
+3aq): a persisted per-realm row per message, attempted at once by the process
+that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
+
+- **It has no retry timer of its own** — a retry waits for the sweep, which is
+  what `tests/no_periodic_timers.js` holds.
+- **A SENT message loses its body.** A dead letter keeps its body for the
+  retry, and a captured one keeps it because the body is all it is for.
+
+**Three rules keep it from being an open relay or a phishing kit:**
+
+- **The recipient is a DIRECTORY ENTRY.** `send()` takes a username, and the
+  address is the entry's `mail`. The one exception is `address-changed`, sent
+  to the entry's FORMER address, which `ldap_server.js`'s account observer
+  hands over from the directory's own before-image.
+- **A link is built on `global.publicBaseUrl`, never on the request.**
+  `baseUrlOf(req)` reads the Host header, and a Host header choosing where a
+  reset link points is the poisoned-reset attack. Development falls back to
+  the listener's configured address (`mode.mailsLinksFromListenerAddress()`),
+  and product mails no link without the pin (STS-MAIL-0015).
+- **A template loads nothing, runs nothing and writes no address of its own**,
+  checked when a realm saves one.
+
+**The uses, and why each is shaped the way it is:**
+
+- **Forgot password answers ONE SENTENCE, BEFORE doing the work** (the portal
+  answers and then `setImmediate`s `requestReset()`), so neither the words nor
+  the time say whether an account exists. It removes nothing, unlike an
+  administrator's reset link, because a request anybody can make must not be
+  able to lock somebody out. It mails only a VERIFIED address by default
+  (`mail.resetRequiresVerifiedAddress` — most secure by default, with the
+  weaker setting warned about in docs/mail.md).
+- **Verification records the ADDRESS, not a flag** (`stsMailVerified`). A
+  changed `mail` is unverified with nothing to clear. The GET of the link draws
+  a button and spends nothing, because a mail scanner follows every link. The
+  same state is UserInfo's `email_verified` in product (`oauth2.ts`,
+  `personFromDirectory()`).
+- **Security notices hook the places every door already passes through**,
+  never each door:
+  - `AccountSignals` sees every password change, compromise and recovery
+    start, whether or not SSF is loaded.
+  - `AccountState` sees every disable.
+  - `admin_actions.ts`'s two session-ending doors are the administrator's
+    alone. A person's own sign-out tells nobody.
+
+  An app password (a `friendlyName`) is not "your password was changed". A
+  recovery whose link was itself mailed (`mailed: true`) sends no second
+  message.
+
+`tests/mail.js` holds all of it in process, including SMTP against a real
+`smtp-server` with STARTTLS and DKIM. `tests/vendored/sts_mail.js` drives it
+over HTTP into the Mailpit the compose stack runs. docs/mail.md is the
+operator's guide.

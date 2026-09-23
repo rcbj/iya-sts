@@ -88,8 +88,16 @@ cluster (`security.rateLimit*`).
   `POST /admin-api/users/issue-password-reset`) removes the current password,
   signs the person out everywhere, and issues a single-use link to
   `/portal/reset-password`. The link is valid for
-  `security.passwordResetTtlMinutes`, stored hashed, and handed over by the
-  operator: there is no mail channel.
+  `security.passwordResetTtlMinutes`, stored hashed, and either shown to the
+  operator to hand over or — with **Mail the link** ticked, or `deliver:
+  "mail"` — mailed to the address on the person's entry and never shown
+  ([mail](mail.md)).
+* **Forgot your password?** Where a mail transport is configured and the mode
+  verifies passwords, the sign-in screen links to `/portal/forgot-password`: a
+  person names their account and a single-use reset link is mailed to its
+  (verified, by default) address. The answer is the same whether or not the
+  account exists, and the current password keeps working until the link is
+  used ([mail](mail.md)).
 * **Activation link.** A new account may be given a single-use activation link
   to `/portal/activate` (`security.activationTtlMinutes`), where the person sets
   a password or enrols a security key or an authenticator app.
@@ -412,9 +420,12 @@ be changed with `POST /admin-api/config/set`.
   lock is `pwdAccountLockedTime`, which LDAP tooling already understands, and
   it is enforced more widely than the draft requires, which is the safe
   direction for a lock.
-* **Neither the reset link nor the activation link is mailed.** There is no
-  mail channel. Both are single-use, stored hashed, and handed over by an
-  operator.
+* **A reset link or an activation link is mailed only to the address on the
+  person's entry** — never to an address a request supplies — and a
+  self-service reset only to a VERIFIED one by default
+  (`mail.resetRequiresVerifiedAddress`). Both links are single-use and stored
+  hashed; an operator may still be shown one to hand over instead
+  ([mail](mail.md)).
 
 ## In the running service
 

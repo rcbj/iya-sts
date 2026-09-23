@@ -1728,6 +1728,69 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `persistence.realms` | `STS_PERSISTENCE_REALMS` | `true` | **restart** — the realm rows are restored before the listener binds | Whether trust realm definitions — names, descriptions and per-realm settings — are written down beside the directory. Turning it off is a half-persisted service rather than a smaller one: a realm holds its own directory, so its entries would be stored with no realm to restore them into, and the next run's first write would remove them. |
 | `persistence.appconfig` | `STS_PERSISTENCE_APPCONFIG` | `true` | **restart** — the saved overrides are applied before the listener binds | Whether a setting changed through the console or the management API survives a restart. It adds NO LAYER: the saved values are re-applied at startup through the same `setOverride()` a caller uses, so the five layers above are unchanged and a runtime override is simply durable. Only a runtime-changeable setting can be saved, because only one can be set — which is what makes applying them after every module has loaded safe. |
 
+#### Mail
+
+The one outbound mail channel (#63): the transport this service sends through,
+which a trust realm may override, its secrets (each a provider, a location and
+a field, read through `common/secrets.js` — never a value here), the outbox the
+`mail.deliver` job sweeps, the ceilings, and the uses built on it.
+[docs/mail.md](docs/mail.md) is the operator's guide; Server configuration →
+**Mail** (`/admin/mail`) draws these rows.
+
+| Setting | Environment | Default | Change while running | What it does |
+|---|---|---|---|---|
+| `mail.transport` | `STS_MAIL_TRANSPORT` | `default` | yes | How a message this service sends leaves it. |
+| `mail.from` | `STS_MAIL_FROM` | *(empty)* | yes | The address every message is sent from. |
+| `mail.fromName` | `STS_MAIL_FROM_NAME` | *(empty)* | yes | The display name beside the From address. |
+| `mail.defaultLanguage` | `STS_MAIL_DEFAULT_LANGUAGE` | `en` | yes | The language a message is written in when the recipient's entry names no preferredLanguage this realm has a template for. |
+| `mail.smtpPreset` | `STS_MAIL_SMTP_PRESET` | `custom` | yes | A known relay, which fills in the host (and port) when mail.smtpHost is empty. |
+| `mail.smtpHost` | `STS_MAIL_SMTP_HOST` | *(empty)* | yes | The relay's host name. |
+| `mail.smtpPort` | `STS_MAIL_SMTP_PORT` | `587` | yes | The relay's port: 587 for STARTTLS (submission), 465 for implicit TLS (submissions, RFC 8314). |
+| `mail.smtpTls` | `STS_MAIL_SMTP_TLS` | `starttls` | yes | How the connection is protected. |
+| `mail.smtpCaFile` | `STS_MAIL_SMTP_CA_FILE` | *(empty)* | yes | A PEM file of the CA certificate(s) the relay's certificate must chain to. |
+| `mail.smtpServerName` | `STS_MAIL_SMTP_SERVER_NAME` | *(empty)* | yes | The name the relay's certificate must carry, when it is not mail.smtpHost (an address, or a name behind a load balancer). |
+| `mail.smtpAuth` | `STS_MAIL_SMTP_AUTH` | `none` | yes | SMTP AUTH (RFC 4954) after TLS is up: `plain` or `login` with mail.smtpUser and the password secret, `xoauth2` with an OAuth 2.0 bearer (the secret holds either an access token or a JSON object with clientId, clientSecret, refreshToken and accessUrl). |
+| `mail.smtpUser` | `STS_MAIL_SMTP_USER` | *(empty)* | yes | The SMTP AUTH username (or the XOAUTH2 mailbox). |
+| `mail.smtpPasswordProvider` | `STS_MAIL_SMTP_PASSWORD_PROVIDER` | `none` | yes | The secret store the SMTP AUTH password (or XOAUTH2 credential) is read from — the providers keys.kekProvider offers, through common/secrets.js. |
+| `mail.smtpPasswordRef` | `STS_MAIL_SMTP_PASSWORD_REF` | *(empty)* | yes | A path for `file`, a name or ARN for `aws`, a resource name for `gcp`, a secret name for `azure`, a read path for `vault`. |
+| `mail.smtpPasswordField` | `STS_MAIL_SMTP_PASSWORD_FIELD` | *(empty)* | yes | The member of a JSON value to take. |
+| `mail.smtpClientCertFile` | `STS_MAIL_SMTP_CLIENT_CERT_FILE` | *(empty)* | yes | A PEM certificate this service presents to the relay, for a relay that authenticates its clients by certificate. |
+| `mail.smtpClientKeyFile` | `STS_MAIL_SMTP_CLIENT_KEY_FILE` | *(empty)* | yes | The PEM private key of mail.smtpClientCertFile, as a mounted file the way a listener's key is. |
+| `mail.dkimDomain` | `STS_MAIL_DKIM_DOMAIN` | *(empty)* | yes | The d= of a DKIM-Signature (RFC 6376) this service puts on every message it sends through the SMTP transport. |
+| `mail.dkimSelector` | `STS_MAIL_DKIM_SELECTOR` | *(empty)* | yes | The s= of the signature: the public key is published at <selector>._domainkey.<domain>. |
+| `mail.dkimAlgorithm` | `STS_MAIL_DKIM_ALGORITHM` | `rsa-sha256` | yes | `rsa-sha256` (RFC 6376; a 2048-bit key or larger, per RFC 8301) or `ed25519-sha256` (RFC 8463). |
+| `mail.dkimKeyProvider` | `STS_MAIL_DKIM_KEY_PROVIDER` | `none` | yes | The secret store the PEM private key of the DKIM selector is read from. |
+| `mail.dkimKeyRef` | `STS_MAIL_DKIM_KEY_REF` | *(empty)* | yes | Its location in that store; empty means the key-encryption key's, with mail.dkimKeyField naming the member. |
+| `mail.dkimKeyField` | `STS_MAIL_DKIM_KEY_FIELD` | *(empty)* | yes | The member of a JSON value to take. |
+| `mail.sesRegion` | `STS_MAIL_SES_REGION` | *(empty)* | yes | The AWS region of the SES v2 endpoint (and of the `aws-ses-smtp` preset). |
+| `mail.sesConfigurationSet` | `STS_MAIL_SES_CONFIGURATION_SET` | *(empty)* | yes | An SES configuration set to send under, for its event destinations and suppression settings. |
+| `mail.acsEndpoint` | `STS_MAIL_ACS_ENDPOINT` | *(empty)* | yes | https://<resource>.communication.azure.com — used with mail.acsAuth `managed-identity`. |
+| `mail.acsAuth` | `STS_MAIL_ACS_AUTH` | `managed-identity` | yes | `managed-identity` (the default, and the one with no secret to hold) authenticates with @azure/identity's DefaultAzureCredential against mail.acsEndpoint. |
+| `mail.acsConnectionStringProvider` | `STS_MAIL_ACS_CONNECTION_STRING_PROVIDER` | `none` | yes | The secret store the Communication Services connection string is read from, when mail.acsAuth is `connection-string`. |
+| `mail.acsConnectionStringRef` | `STS_MAIL_ACS_CONNECTION_STRING_REF` | *(empty)* | yes | Its location; empty means the key-encryption key's. |
+| `mail.acsConnectionStringField` | `STS_MAIL_ACS_CONNECTION_STRING_FIELD` | *(empty)* | yes | The member of a JSON value to take. |
+| `mail.gmailSender` | `STS_MAIL_GMAIL_SENDER` | *(empty)* | yes | The Workspace mailbox the service account impersonates (domain-wide delegation of the gmail.send scope). |
+| `mail.gmailKeyProvider` | `STS_MAIL_GMAIL_KEY_PROVIDER` | `none` | yes | The secret store the service account's JSON key (client_email and private_key) is read from. |
+| `mail.gmailKeyRef` | `STS_MAIL_GMAIL_KEY_REF` | *(empty)* | yes | Its location; empty means the key-encryption key's. |
+| `mail.gmailKeyField` | `STS_MAIL_GMAIL_KEY_FIELD` | *(empty)* | yes | The member of a JSON value to take. |
+| `mail.deliverS` | `STS_MAIL_DELIVER_S` | `15` | yes | How often the scheduler job `mail.deliver` sends every message that is due — a retry whose backoff has passed, a lease that lapsed, a row restored after a restart. |
+| `mail.attempts` | `STS_MAIL_ATTEMPTS` | `5` | yes | How many times one message is tried before it becomes a DEAD LETTER. |
+| `mail.backoffS` | `STS_MAIL_BACKOFF_S` | `60` | yes | The wait before the second attempt, doubling after each. |
+| `mail.timeoutMs` | `STS_MAIL_TIMEOUT_MS` | `30000` | yes | How long one attempt may take, connection and TLS included — for Azure, the whole long-running send. |
+| `mail.leaseMs` | `STS_MAIL_LEASE_MS` | `120000` | yes | How long a node holds the claim on one attempt. |
+| `mail.concurrency` | `STS_MAIL_CONCURRENCY` | `4` | yes | How many messages one process sends at once from a sweep. |
+| `mail.retentionS` | `STS_MAIL_RETENTION_S` | `604800` | yes | How long a row stays in the outbox after it was queued, finished or not: a message still pending this long is dead-lettered, and a finished one is removed. |
+| `mail.maxRows` | `STS_MAIL_MAX_ROWS` | `10000` | yes | The cap on the outbox, per realm: the oldest FINISHED row is dropped first, and a pending one never. |
+| `mail.ratePerRecipient` | `STS_MAIL_RATE_PER_RECIPIENT` | `20` | yes | The ceiling on messages to one person in mail.rateWindowS, whatever their category — so that a storm of risk events or an attacker pressing a button cannot turn this service into a mail cannon. |
+| `mail.ratePerCategory` | `STS_MAIL_RATE_PER_CATEGORY` | `5` | yes | The ceiling on one category (security, account, notification) to one person in mail.rateWindowS. |
+| `mail.rateWindowS` | `STS_MAIL_RATE_WINDOW_S` | `3600` | yes | The window both ceilings count over. |
+| `mail.dedupWindowS` | `STS_MAIL_DEDUP_WINDOW_S` | `600` | yes | A notice that names what it is about (the same act on the same account) is sent once in this window, however many doors reported it. |
+| `mail.selfServiceReset` | `STS_MAIL_SELF_SERVICE_RESET` | `true` | yes | Offer "Forgot your password?" on the sign-in screen and at /portal/forgot-password: a person names their account and a single-use /portal/reset-password link is mailed to the address on its entry. |
+| `mail.resetRequiresVerifiedAddress` | `STS_MAIL_RESET_REQUIRES_VERIFIED_ADDRESS` | `true` | yes | Mail a self-service reset link only to an address the person has VERIFIED (a link they followed from it). |
+| `mail.verificationTtlMinutes` | `STS_MAIL_VERIFICATION_TTL_MINUTES` | `1440` | yes | How long an address verification link works. |
+| `mail.securityNotices` | `STS_MAIL_SECURITY_NOTICES` | `true` | yes | Tell a person, at the address on their entry, when their account is disabled, their sessions are ended by an administrator, their password is changed or reset, their credential is marked compromised or recovery is started. |
+| `mail.notifyAdministrators` | `STS_MAIL_NOTIFY_ADMINISTRATORS` | `true` | yes | When the SERVICE, not a person, marks a credential compromised or disables an account (risk scoring), also mail every member of the realm's Admin Write roster that has an address. |
+
 ## How it is put together
 
 A mock Security Token Service used by the test suite, **split across forty-nine files at its root** (it was one 4,489-line `server.js` until 2026-08-03; eight protocol families in one file meant no way to see what was in it short of reading it). `server.js` is now the shell — it requires `app.js` (the express app and every middleware, which must load before any route) and `helpers.js` (the log, the keys, and the helpers more than one protocol needs), then the modules that register routes, and listens: `authn.js`, `wstrust.ts`, `oauth2.js`, `wsfed.ts`, `vc_offers.js`, `vc_did.js`, `vc_issuer.js`, `vc_verifier.js`, `krb5_kdc.js`, `krb5_service.js`, `spnego.js`, `admin.js`, `admin_api.js`, `ldap_server.js`, `tls_server.js`, `sts_metadata.js`. The rest are reached through those rather than named there — `saml2.ts`, `saml11.ts`, `vc_configs.js`, `vc_claims.js`, `vc_verifier_config.js`, `claim_attributes.js`, `group_claims.js`, `dpop.js`, `admin_stats.js`, `audit.js`, `bbs2023.js`, `webauthn.js`, `admin_api_spec.js`, `admin_api_docs.js` and the nine `krb5_*.js` files under the KDC and the negotiation — which is not a hierarchy so much as the consequence of the rule below. One file among them is **not a module at all**: `admin_api_explorer.js` is browser code, read off disk by `admin_api_docs.js` and served verbatim at `/admin/api-explorer/explorer.js`, and nothing in node ever requires it.
@@ -5887,7 +5950,7 @@ Where there is no entry the section says **which** of the five reasons it is, be
 
 * **Disable the account** / **Enable the account** (2026-09-17) writes the password-policy lock `pwdAccountLockedTime` on the entry — the state the table above the controls reports as *Account: DISABLED*. While it is set **every door refuses that person**: a password anywhere (the sign-in screen, an LDAP bind, the OAuth password grant, a WS-Trust UsernameToken, SCIM and SSF Basic, EST), a session from any sign-in (a security key, federation, SPNEGO, a client certificate, a wallet), a Kerberos AS-REQ (`KDC_ERR_CLIENT_REVOKED`), every token grant made on their behalf including a refresh token, every assertion, and this service's own management API. Disabling also **ends everything they hold at once**, exactly as a global logout does: their sessions (with the back-channel Logout Tokens to their relying parties and CAEP `session-revoked`), their tokens, their outstanding codes, their directory connections and their Kerberos tickets — and RISC receivers are told `account-disabled`. **SCIM's `active: false` is the same act**, and `active: true` the enable.
 * **Reset password** generates a password this realm's policy accepts, stores it, marks it for change at the next sign-in (`pwdReset`), withdraws any reset link, signs the person out everywhere, and shows the password **once**, on the page that comes back. The administrator passes it on.
-* **Send a reset link** removes the current password (it goes into the history, so it cannot be set again), signs the person out everywhere, and shows a single-use link to `/portal/reset-password` once. The link lasts `security.passwordResetTtlMinutes`; issuing another replaces it. This service sends no mail: the administrator passes the link on. The person chooses a new password there without signing in.
+* **Send a reset link** removes the current password (it goes into the history, so it cannot be set again), signs the person out everywhere, and shows a single-use link to `/portal/reset-password` once. The link lasts `security.passwordResetTtlMinutes`; issuing another replaces it. With **mail the link** ticked (`deliver: "mail"` on the API) it is MAILED to the address on the person's entry through the realm's mail transport and not shown to the administrator at all; otherwise the administrator passes it on. The person chooses a new password there without signing in. A person may also ask for one themselves at `/portal/forgot-password` ([docs/mail.md](docs/mail.md)).
 * **Disable passkeys** removes every security key that could sign the person in on its own, and leaves their password and second factors alone. It is offered only while they have a password, so it cannot lock anybody out.
 * **Disable all MFA** removes the authenticator app, every second-factor key and the recovery codes.
 * **Require MFA** / **Stop requiring MFA** marks the person (`stsMfaRequired`), so the sign-in screen makes them enrol an authenticator app or a security key at `/authn/mfa-setup` before it starts a session. `authn.mfaRequired` does the same for everybody in the realm. In product mode either one also refuses the person's own password at the five password-only doors (an LDAP bind, WS-Trust, SCIM, SSF and EST Basic), where an app password is used instead.

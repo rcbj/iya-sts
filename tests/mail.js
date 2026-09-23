@@ -464,8 +464,9 @@ async function retries(t) {
             '6e. the retry is a new generation, and sent',
             JSON.stringify(row));
     const kept = mailModule.message(id);
-    t.check(kept && kept.text === undefined && kept.html === undefined,
-            '6f. a sent message keeps no body');
+    t.check(kept && kept.text === undefined && kept.html === undefined &&
+            kept.bodyKept === false,
+            '6f. a sent message keeps no body', JSON.stringify(kept));
     const permanent = stubTransports(function () {
       throw transportsModule.sendError('550 no such user', 'STS-MAIL-0008',
                                        false);
@@ -477,8 +478,9 @@ async function retries(t) {
       return x.id === r2.queued[0].id;
     })[0];
     t.check(dead.state === 'dead' && dead.attempts === 1 &&
-            dead.errorCode === 'STS-MAIL-0008',
-            '6g. a permanent refusal is dead at the first attempt',
+            dead.errorCode === 'STS-MAIL-0008' && dead.bodyKept === true,
+            '6g. a permanent refusal is dead at the first attempt, and ' +
+            'keeps its body for a retry',
             JSON.stringify(dead));
   });
   await withRealm(t, realms, realmId('mail-capture'), {},

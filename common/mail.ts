@@ -1554,6 +1554,9 @@ class Mail {
       attempts: row.attempts, inFlight: !!row.inFlight,
       holder: row.holder || '', errorCode: row.errorCode, why: row.why,
       providerId: row.providerId || '',
+      // WHETHER A BODY IS STILL HELD — a fact, never the body: a dead letter
+      // keeps one for its retry, a sent message none (header point 8).
+      bodyKept: !!(row.text || row.html),
       queuedAt: iso(row.queuedAt), nextAttemptAt: iso(row.nextAttemptAt),
       lastAttemptAt: iso(row.lastAttemptAt), finishedAt: iso(row.finishedAt)
     };

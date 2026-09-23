@@ -1340,8 +1340,9 @@ const SETTINGS = [
                  'setup on its own, so a leaked one is an account takeover — ' +
                  'which is why it is single-use, hashed at rest like a ' +
                  'password, and expires. A day is the default because the ' +
-                 'link is delivered by hand here (there is no mail channel), ' +
-                 'and an hour would strand most of them.' },
+                 'link may be delivered by hand, and an hour would strand ' +
+                 'most of them; an administrator may have it mailed to the ' +
+                 'address on the entry instead (#63).' },
 
   // A PASSWORD RESET LINK (2026-09-13), the administrator's second way to
   // reset a password on a person's /admin/users page. It is its own setting
@@ -1360,9 +1361,12 @@ const SETTINGS = [
                  'Issuing one REMOVES the person\'s current password and ' +
                  'signs them out everywhere, so the link is the only way ' +
                  'back to a password until it is spent. It is single-use, ' +
-                 'hashed at rest like a password, and delivered by hand ' +
-                 '(there is no mail channel). A link that expires unused is ' +
-                 'replaced by issuing another.' },
+                 'hashed at rest like a password, and either delivered by ' +
+                 'hand or mailed to the address on the entry (#63). A ' +
+                 'self-service link a person asks for at ' +
+                 '/portal/forgot-password lasts this long too, and removes ' +
+                 'nothing. A link that expires unused is replaced by ' +
+                 'issuing another.' },
 
   // ---------------------------------------------------------------------
   // SESSIONS AND THE SIGN-IN CLOCKS (2026-09-12). Four literals in
