@@ -320,7 +320,8 @@ const SPECS: Spec[] = [
               'pre-authentication (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 ' +
               'carrying the salt, ticket flags, clock-skew enforcement and ' +
               'the error catalogue. Two realms with a trust between them, so ' +
-              'cross-realm referrals work. No FAST, no request signatures, ' +
+              'cross-realm referrals work. FAST and OTP pre-authentication are ' +
+              'their own rows (RFC 6113, RFC 6560); no request signatures, ' +
               'no PKINIT, no kpasswd (S4U is [MS-SFU], its own row). The AP ' +
               'exchange belongs to the protected service, not here. ' +
               // The rule for these notes is that they say what would mislead
@@ -338,10 +339,59 @@ const SPECS: Spec[] = [
               'password is published, and krbtgt and the configured service ' +
               'account exist only where krb5.krbtgtPassword and ' +
               'krb5.servicePassword are set to something other than their ' +
-              'published defaults — so a product KDC authenticates NOBODY ' +
-              '(directory people get no Kerberos account) and its useful ' +
-              'half is the acceptor, for tickets a real KDC issued to ' +
-              'krb5.servicePrincipal.' },
+              'published defaults. A product KDC authenticates the ' +
+              'directory\'s PEOPLE with keys derived from their own ' +
+              'passwords (after they sign in once), and service principals ' +
+              'with random keys an operator created; and a person who holds ' +
+              'or must hold a second factor gets NO ticket on the password ' +
+              'alone (KDC_ERR_POLICY, after the password verified) — only ' +
+              'through FAST with OTP pre-authentication.' },
+  { id: 'rfc6113', name: 'A Generalized Framework for Kerberos ' +
+                         'Pre-Authentication — FAST (RFC 6113)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc6113',
+    coverage: 'partial: FAST in the AS exchange with the one armor type, ' +
+              'FX_FAST_ARMOR_AP_REQUEST — a TGT for this realm\'s ' +
+              'ticket-granting service with a subkey, the armor key ' +
+              'KRB-FX-CF2 of the two — the req-checksum, the armored ' +
+              'KrbFastReq replacing the outer request, every error carried ' +
+              'as PA-FX-ERROR inside the armor, a KrbFastFinished over the ' +
+              'ticket, the reply key always strengthened, PA-FX-COOKIE, and ' +
+              'the encrypted challenge (section 5.4.6) with its replay check. ' +
+              'PA-FX-FAST is advertised in every KDC_ERR_PREAUTH_REQUIRED ' +
+              'wherever the directory is loaded. NOT implemented: FAST in ' +
+              'the TGS exchange (implicit armor — a TGS-REQ that carries it ' +
+              'is answered unarmored, which MIT\'s client accepts), ' +
+              'anonymous PKINIT armor, the hide-client-names option ' +
+              '(refused as an unknown critical option), authentication sets ' +
+              '(section 5.3) and AD-authentication-strength.' },
+  { id: 'rfc6560', name: 'One-Time Password (OTP) Pre-Authentication ' +
+                         '(RFC 6560)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc6560',
+    coverage: 'partial: PA-OTP-CHALLENGE and PA-OTP-REQUEST inside FAST, ' +
+              'four-pass (the nonce bound by a cookie) and two-pass, for ONE ' +
+              'kind of token: the person\'s authenticator app (RFC 6238), ' +
+              'verified by the sign-in screen\'s own verifier and once-only ' +
+              'step. The token information asks for the PIN separately, and ' +
+              'the PIN IS THE PASSWORD, checked as the Kerberos key it ' +
+              'derives — so one exchange proves both factors, and an app ' +
+              'password is refused. The OTP value travels in otp-value (the ' +
+              'host-key armor authenticates the KDC); must-encrypt-nonce, ' +
+              'hashed OTP values, PIN change and resynchronisation are not ' +
+              'implemented.' },
+  { id: 'rfc8129', name: 'Authentication Indicator in Kerberos Tickets ' +
+                         '(RFC 8129, over RFC 7751\'s AD-CAMMAC)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc8129',
+    coverage: 'partial: a ticket from an OTP pre-authentication carries the ' +
+              'indicator `otp` in an AD-CAMMAC (inside AD-IF-RELEVANT) with ' +
+              'a kdc-verifier and a svc-verifier; the TGS copies it from this ' +
+              'realm\'s own TGT into the tickets it buys (never under S4U or ' +
+              'across a trust); the acceptor reads it only from a CAMMAC ' +
+              'that verifies under its key, and /authn/spnego counts it as ' +
+              'a second factor. No other indicator is issued, and ' +
+              'other-verifiers are neither written nor read.' },
   { id: 'rfc3961', name: 'Kerberos encryption framework (RFC 3961/3962/8009, ' +
                          'RFC 4757)',
     where: 'IETF',
@@ -2322,7 +2372,8 @@ const ENDPOINTS: EndpointEntry[] = [
     // specification nothing links to is an IDLE CLAIM, which
     // tests/vendored/sts_metadata.js fails the page for. It was listed and
     // unlinked when the Kerberos rows were first added.
-    specs: ['ms-kkdcp', 'rfc4120', 'rfc3961'],
+    specs: ['ms-kkdcp', 'rfc4120', 'rfc3961', 'rfc6113', 'rfc6560',
+            'rfc8129'],
     what: 'Relays a KDC-PROXY-MESSAGE to the KDC listening on TCP and UDP ' +
           'port 88 in this process. A browser cannot open a raw socket, so ' +
           'this is how the in-browser client reaches a KDC without the api ' +
@@ -8302,7 +8353,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'two partners are left the sign-in screen is drawn instead.' },
   { path: '/authn/spnego', group: 'Authentication',
     name: 'Sign in with a Kerberos ticket',
-    specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'oidc'],
+    specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'rfc8129',
+            'oidc'],
     effect: 'answers 401 with "WWW-Authenticate: Negotiate" and, to a ' +
             'request carrying a valid service ticket, establishes the ' +
             'browser session and returns to whatever was interrupted',

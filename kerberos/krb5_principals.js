@@ -2329,6 +2329,60 @@ function personDisabled(nameComponents, realm) {
   return disabled;
 }
 
+// ---------------------------------------------------------------------------
+// DOES THIS PERSON HOLD, OR OWE, A SECOND FACTOR? (#173, 2026-09-22). Asked by
+// the KDC AFTER pre-authentication verified a password alone, for the same
+// names `personDisabled()` is asked about: one component, this KDC's own
+// realm. The answer is the source's (`krb5_person_keys.ts`, which asks
+// `common/credentials.ts`): `{ person, totp, key, holds, required, byUser,
+// needed }`. A source without the function, or none, answers `needed: false`
+// — which is every process that never loads the directory, the parent
+// project's in-process jobs among them.
+// ---------------------------------------------------------------------------
+const NO_SECOND_FACTOR = Object.freeze({ person: false, totp: false,
+  key: false, holds: false, required: false, byUser: false, needed: false });
+
+function personSecondFactor(nameComponents, realm) {
+  log.debug('Entering personSecondFactor().');
+  const ctx = current();
+  if (!keySource || typeof keySource.personSecondFactor !== 'function' ||
+      !Array.isArray(nameComponents) || nameComponents.length !== 1 ||
+      !nameComponents[0] || (realm || ctx.REALM) !== ctx.REALM) {
+    log.debug('Leaving personSecondFactor(). Not asked.');
+    return NO_SECOND_FACTOR;
+  }
+  let answer = NO_SECOND_FACTOR;
+  try {
+    answer = keySource.personSecondFactor(String(nameComponents[0])) ||
+             NO_SECOND_FACTOR;
+  } catch (e) {
+    // A source that threw cannot say the person owes nothing. Answered as
+    // NEEDED, so a product KDC refuses the password alone rather than issue on
+    // a question it could not ask: the caller refuses, and says why.
+    log.error(errorCodes.tag('STS-KRB-0149') + 'krb5: asking whether ' +
+              nameComponents[0] + ' holds a second factor threw, so a ' +
+              'password alone is treated as not enough: ' +
+              ((e && e.message) || e));
+    answer = Object.assign({}, NO_SECOND_FACTOR, { person: true,
+                                                   needed: true,
+                                                   unreadable: true });
+  }
+  log.debug('Leaving personSecondFactor(). needed=' + !!answer.needed);
+  return answer;
+}
+
+// THE FAST PROVIDER (#173): `krb5_fast.ts`'s instance, handed over INSIDE the
+// key source, or null — which is what a process without the directory has,
+// and a KDC without it neither advertises nor accepts FAST, exactly as
+// before.
+function preauthProvider() {
+  log.debug('Entering preauthProvider().');
+  log.debug('Leaving preauthProvider().');
+  return (keySource && keySource.fast &&
+          typeof keySource.fast.openAsRequest === 'function')
+    ? keySource.fast : null;
+}
+
 // The e-texts, one per state the source can report. No em dash and nothing
 // non-ASCII, for handleAsReq()'s reason: a KerberosString is a GeneralString
 // and a client decoding it as Latin-1 renders UTF-8 as mojibake in the one
@@ -3235,6 +3289,8 @@ module.exports = {
   },
   lookupUser: lookupUser,
   personDisabled: personDisabled,
+  personSecondFactor: personSecondFactor,
+  preauthProvider: preauthProvider,
   // Previous key versions (see PREVIOUS KEY VERSIONS).
   retainedKeyFor: retainedKeyFor,
   retainedKvnosOf: retainedKvnosOf,

@@ -103,10 +103,18 @@
 // story of resource-based delegation, and the FORWARDED block in handleTgsReq()
 // for the one control that limits unconstrained delegation at all.
 //
-// It does NOT check request signatures, does not implement FAST, does not
-// implement kpasswd, and does not apply SID filtering across a trust. The AS
-// and TGS exchanges are both served; the AP exchange belongs to a SERVICE
-// rather than to a KDC and lives in krb5_service.js.
+// It does NOT check request signatures, does not implement FAST in the TGS
+// exchange, does not implement kpasswd or PKINIT, and does not apply SID
+// filtering across a trust. The AS and TGS exchanges are both served; the AP
+// exchange belongs to a SERVICE rather than to a KDC and lives in
+// krb5_service.js.
+//
+// **FAST IN THE AS EXCHANGE, OTP PRE-AUTHENTICATION AND AUTHENTICATION
+// INDICATORS ARE SERVED SINCE 2026-09-22 (#173)** — RFC 6113, RFC 6560 and RFC
+// 8129 — and a person who holds or must hold a second factor gets no ticket on
+// a password alone in product mode. The code is krb5_fast.ts, reached through
+// the principal database's key source (`principals.preauthProvider()`) so that
+// this file gains no require; see handleAsReq() and kerberos/CLAUDE.md.
 //
 // **THE TWO REALMS, THE FIXTURE ACCOUNTS AND THE PUBLISHED PASSWORDS ARE
 // DEVELOPMENT MODE (2026-09-12).** In product mode krb5_principals.js builds a
@@ -1183,6 +1191,10 @@ function refuseS4u(intent, code, options) {
 // write a second row for a KdcProxy refusal the call log already records.
 const REFUSAL = Symbol('krb5.kdc.refusal');
 
+// RFC 6560's PA-OTP-REQUEST, which the vendored codec's PA_TYPE table does not
+// name (it has RFC 6113's FAST types). #173.
+const PA_OTP_REQUEST = 142;
+
 function errorReply(code, options) {
   log.debug('Entering errorReply().');
   const opts = options || {};
@@ -1258,8 +1270,23 @@ function recordRawRefusal(reply, transport) {
 
 // KDC_ERR_PREAUTH_REQUIRED, with the ETYPE-INFO2 that makes it useful rather
 // than merely negative.
-function preAuthRequiredReply(client, request) {
+//
+// **AND, SINCE 2026-09-22 (#173), THE FAST METHODS.** Outside FAST the list
+// gains PA-FX-FAST, empty, whenever the FAST provider is installed — RFC 6113
+// section 5.4.2's advertisement, and what makes MIT's `kinit -T` upgrade an
+// ordinary exchange to an armored one. INSIDE FAST (`fast` set) the methods
+// are the FAST factors instead — the OTP challenge first for a person with an
+// authenticator app (`offer.otp`), then the encrypted challenge, then a
+// PA-FX-COOKIE — and handleAsReq() carries the whole error inside the armor.
+// PA-ENC-TIMESTAMP is not offered inside FAST: MIT's client never sends it
+// there, and the encrypted challenge is the same proof bound to the armor.
+async function preAuthRequiredReply(client, request, fast, offer) {
   log.debug('Entering preAuthRequiredReply().');
+  const provider = principals.preauthProvider();
+  const methods = fast && provider
+    ? await provider.offers(client, fast, offer || {})
+    : [{ type: msgs.PA_TYPE.ENC_TIMESTAMP, value: new Uint8Array(0) }]
+        .concat(provider ? [provider.outerAdvertisement()] : []);
   const entries = principals.etypeInfo2For(client);
   log.info('krb5: ' + client.name.join('/') + ' needs pre-authentication; ' +
                                               'sending ETYPE-INFO2 with ' +
@@ -1278,8 +1305,8 @@ function preAuthRequiredReply(client, request) {
     sname: request.reqBody.sname,
     eText: 'NEEDED_PREAUTH',
     // ---------------------------------------------------------------------
-    // THREE ENTRIES, AND THE FIRST ONE IS THE ONE THAT MAKES THIS WORK WITH A
-    // REAL CLIENT.
+    // THE METHODS, THEN ETYPE-INFO2 AND PA-PW-SALT — and outside FAST the
+    // first method is the one that makes this work with a real client.
     //
     // **PA-ENC-TIMESTAMP, EMPTY, FIRST.** RFC 4120 section 5.9.1 makes the
     // e-data of KDC_ERR_PREAUTH_REQUIRED a METHOD-DATA: the list of
@@ -1310,14 +1337,12 @@ function preAuthRequiredReply(client, request) {
     // PA-PW-SALT is there for clients that predate ETYPE-INFO2; a client should
     // prefer the newer one, and being able to see both is the point.
     // ---------------------------------------------------------------------
-    eData: asn1.encSequenceOf([
-      msgs.encPaData({ type: msgs.PA_TYPE.ENC_TIMESTAMP,
-                       value: new Uint8Array(0) }),
+    eData: asn1.encSequenceOf(methods.map(msgs.encPaData).concat([
       msgs.encPaData({ type: msgs.PA_TYPE.ETYPE_INFO2,
                        value: msgs.encEtypeInfo2(entries) }),
       msgs.encPaData({ type: msgs.PA_TYPE.PW_SALT,
                        value: prim.utf8(client.salt) })
-    ])
+    ]))
   });
 }
 
@@ -1390,9 +1415,93 @@ async function checkEncTimestamp(client, etype, padata) {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// THE AS EXCHANGE, AND FAST AROUND IT (#173, 2026-09-22).
+//
+// An AS-REQ carrying PA-FX-FAST is ARMORED (RFC 6113 section 5.4): the real
+// request — its body and its padata — is inside, encrypted under an armor key
+// made from a TGT the client host holds, and "a conforming KDC ignores the
+// outer KDC-REQ-BODY field". So this function opens the armor, answers the
+// INNER request with answerAsReq() exactly as it answers an ordinary one, and
+// carries every error that comes back inside the armor (section 5.4.4) —
+// which is what lets a KRB-ERROR name a FAST factor to the client without an
+// attacker on the path reading or rewriting it.
+//
+// **THE FAST CODE IS NOT IN THIS FILE**, which belongs to the parent project
+// and may gain no require outside its `sts/` COPY set (kerberos/CLAUDE.md). It
+// is `krb5_fast.ts`, handed over inside the KEY SOURCE the principal database
+// already takes (`principals.preauthProvider()`). A process without that
+// source — the parent's in-process jobs — has no provider, so PA-FX-FAST is
+// ignored as unknown padata was before, and nothing here changes for it.
+// ---------------------------------------------------------------------------
 async function handleAsReq(request) {
   log.debug('Entering handleAsReq().');
+  const provider = principals.preauthProvider();
+  const armored = provider ? (request.padata || []).filter(function (pa) {
+    return pa.type === msgs.PA_TYPE.FX_FAST;
+  })[0] : null;
+  if (!armored) {
+    const plain = await answerAsReq(request, null);
+    log.debug('Leaving handleAsReq().');
+    return plain;
+  }
+  const opened = await provider.openAsRequest(request, armored);
+  if (!opened.ok) {
+    // NOT ARMORED, because the armor is what failed: there is no key to seal
+    // a KrbFastResponse under, and section 5.4.4 lets a client read such an
+    // error as the KDC being unable to accept its armor.
+    log.debug('Leaving handleAsReq(). The armor was refused.');
+    return errorReply(opened.code, {
+      // error-code: none — the code is the refusal's own, STS-KRB-0131..0136, chosen in krb5_fast.ts
+      errorCode: opened.errorCode,
+      crealm: request.reqBody.realm, cname: request.reqBody.cname,
+      sname: request.reqBody.sname, eText: opened.eText
+    });
+  }
+  const reply = await answerAsReq({
+    pvno: request.pvno, msgType: request.msgType,
+    padata: opened.padata, reqBody: opened.reqBody
+  }, opened.fast);
+  const kind = msgs.identify(reply);
+  if (!kind || kind.applicationNumber !== msgs.APPLICATION.KRB_ERROR) {
+    log.debug('Leaving handleAsReq(). An armored AS-REP.');
+    return reply;
+  }
+  let wrapped;
+  try {
+    wrapped = await provider.wrapError(reply, opened.fast);
+  } catch (e) {
+    // The error still reaches the client, unarmored — a client may refuse an
+    // unprotected error, which is the right outcome for a KDC that could not
+    // protect it. Logged, because it should not happen.
+    log.warn('krb5: a KRB-ERROR could not be armored, so it is sent as it ' +
+             'is: ' + ((e && e.message) || e));
+    log.debug('Leaving handleAsReq(). Unarmored.');
+    return reply;
+  }
+  // The coded refusal the transport records travels with the new bytes.
+  const refusal = refusalOf(reply);
+  if (refusal) {
+    try {
+      Object.defineProperty(wrapped, REFUSAL, { enumerable: false,
+                                                configurable: true,
+                                                value: refusal });
+    } catch (e) {
+      // Swallowed with errorReply()'s reason: the reply is correct without
+      // its code.
+      log.debug('Caught in handleAsReq(): ' + ((e && e.message) || e));
+    }
+  }
+  log.debug('Leaving handleAsReq(). An armored KRB-ERROR.');
+  return wrapped;
+}
+
+// The AS exchange proper. `fast` is null for an ordinary AS-REQ and the
+// provider's state for an armored one, whose INNER request `request` then is.
+async function answerAsReq(request, fast) {
+  log.debug('Entering answerAsReq().');
   const body = request.reqBody;
+  const provider = principals.preauthProvider();
 
   // A Kerberos realm the AMBIENT trust realm's KDC answers for — two in the
   // default realm in development, one otherwise (realmsServed()).
@@ -1403,7 +1512,7 @@ async function handleAsReq(request) {
     log.info('krb5: wrong realm ' + JSON.stringify(body.realm) + '; this KDC ' +
         'serves ' +
       principals.realmsServed().join(' and '));
-    log.debug("Leaving handleAsReq().");
+    log.debug("Leaving answerAsReq().");
     return errorReply(68, {
       errorCode: 'STS-KRB-0018',
       // This KDC's OWN realm, not the one asked for: `asRealm` does not exist
@@ -1418,7 +1527,7 @@ async function handleAsReq(request) {
   }
   const asRealm = body.realm;
   if (!body.cname) {
-    log.debug("Leaving handleAsReq().");
+    log.debug("Leaving answerAsReq().");
     return errorReply(6, { errorCode: 'STS-KRB-0019',
       realm: ourRealm(), sname: body.sname,
       eText: 'no client name in the request' });
@@ -1444,7 +1553,7 @@ async function handleAsReq(request) {
       principals.personDisabled(body.cname.name, asRealm)) {
     log.info('krb5: ' + body.cname.name.join('/') + '@' + asRealm + ' is ' +
              'disabled; the AS-REQ is refused.');
-    log.debug("Leaving handleAsReq(). Disabled.");
+    log.debug("Leaving answerAsReq(). Disabled.");
     return errorReply(18, {
       errorCode: 'STS-KRB-0129',
       crealm: body.realm, cname: body.cname, sname: body.sname,
@@ -1454,7 +1563,7 @@ async function handleAsReq(request) {
   const lookup = principals.lookupUser(body.cname.name, asRealm);
   const client = lookup.principal;
   if (!client && lookup.refusal) {
-    log.debug("Leaving handleAsReq().");
+    log.debug("Leaving answerAsReq().");
     return errorReply(6, {
       // error-code: none — the code is the refusal's own, STS-KRB-0101..0105, chosen in krb5_principals.js
       errorCode: lookup.refusal.errorCode,
@@ -1463,7 +1572,7 @@ async function handleAsReq(request) {
     });
   }
   if (!client) {
-    log.debug("Leaving handleAsReq().");
+    log.debug("Leaving answerAsReq().");
     return errorReply(6, {
       errorCode: 'STS-KRB-0020',
       crealm: body.realm, cname: body.cname, sname: body.sname,
@@ -1480,7 +1589,7 @@ async function handleAsReq(request) {
   }
   const service = principals.find((body.sname || {}).name || [], asRealm);
   if (!service) {
-    log.debug("Leaving handleAsReq().");
+    log.debug("Leaving answerAsReq().");
     return errorReply(7, {
       errorCode: 'STS-KRB-0021',
       crealm: body.realm, cname: body.cname, sname: body.sname,
@@ -1498,7 +1607,7 @@ async function handleAsReq(request) {
     // key.
     log.error(errorCodes.tag('STS-KRB-0022') +
               'krb5: there is no krbtgt principal, so no ticket can be signed');
-    log.debug("Leaving handleAsReq().");
+    log.debug("Leaving answerAsReq().");
     return errorReply(7,
                       { crealm: body.realm, cname: body.cname,
       sname: body.sname,
@@ -1530,7 +1639,7 @@ async function handleAsReq(request) {
     }
   });
   if (client.revoked) {
-    log.debug("Leaving handleAsReq().");
+    log.debug("Leaving answerAsReq().");
     return errorReply(18,
                       { crealm: body.realm, cname: body.cname,
       sname: body.sname,
@@ -1538,7 +1647,7 @@ async function handleAsReq(request) {
       eText: 'the account is disabled or locked out' });
   }
   if (client.passwordExpired) {
-    log.debug("Leaving handleAsReq().");
+    log.debug("Leaving answerAsReq().");
     return errorReply(23,
                       { crealm: body.realm, cname: body.cname,
       sname: body.sname,
@@ -1555,7 +1664,7 @@ async function handleAsReq(request) {
         '], ' +
           'the client asked for [' +
       (body.etypes || []).map(kcrypto.etypeName).join(', ') + ']');
-    log.debug("Leaving handleAsReq().");
+    log.debug("Leaving answerAsReq().");
     return errorReply(14, {
       errorCode: 'STS-KRB-0025',
       crealm: body.realm, cname: body.cname, sname: body.sname,
@@ -1568,30 +1677,124 @@ async function handleAsReq(request) {
   const profile = kcrypto.etypeById(etype);
 
   // Pre-authentication.
-  const encTimestamp = (request.padata || []).filter(function (pa) {
-    return pa.type === msgs.PA_TYPE.ENC_TIMESTAMP;
-  })[0];
-  if (client.requiresPreAuth && !encTimestamp) {
-    log.debug("Leaving handleAsReq().");
-    return preAuthRequiredReply(client, request);
+  //
+  // THREE METHODS SINCE 2026-09-22 (#173), and which one proved what is the
+  // point. PA-ENC-TIMESTAMP (RFC 4120) and, inside FAST, PA-ENCRYPTED-CHALLENGE
+  // (RFC 6113 section 5.4.6) prove the long-term key — the PASSWORD. Inside
+  // FAST, PA-OTP-REQUEST (RFC 6560) proves the password AS WELL AS an
+  // authenticator app's code: see krb5_fast.ts, which checks both. The
+  // strongest one present is the one checked, OTP first.
+  const padataIn = request.padata || [];
+  const findPa = function (type) {
+    log.debug('Entering findPa().');
+    log.debug('Leaving findPa().');
+    return padataIn.filter(function (pa) {
+      return pa.type === type;
+    })[0] || null;
+  };
+  const encTimestamp = findPa(msgs.PA_TYPE.ENC_TIMESTAMP);
+  const encChallenge = fast ? findPa(msgs.PA_TYPE.ENCRYPTED_CHALLENGE) : null;
+  const otpRequest = fast ? findPa(PA_OTP_REQUEST) : null;
+  // A SECOND FACTOR HELD OR REQUIRED (#173). Asked here, once, and acted on in
+  // two places below: it forces pre-authentication, and it refuses a password
+  // alone — both only where `mode.issuesTicketsOnPasswordAlone()` says no.
+  const secondFactor = principals.personSecondFactor(client.name, asRealm);
+  const passwordAloneRefused = !!secondFactor.needed &&
+                               !mode.issuesTicketsOnPasswordAlone();
+  if ((client.requiresPreAuth || passwordAloneRefused) &&
+      !encTimestamp && !encChallenge && !otpRequest) {
+    log.debug("Leaving answerAsReq().");
+    return preAuthRequiredReply(client, request, fast,
+                                { otp: !!(provider && secondFactor.totp) });
   }
-  if (encTimestamp) {
+  // What pre-authentication proved: the method, the indicators it puts in
+  // the ticket, the padata the KDC answers with inside FAST, and — for OTP —
+  // the reply key it REPLACES the long-term key with (RFC 6560 section 3.6).
+  let preauth = null;
+  const preauthFailed = async function (failure) {
+    log.debug('Entering preauthFailed().');
+    log.debug('Leaving preauthFailed().');
+    return errorReply(failure.code, {
+      // error-code: none — the code is the check's own, STS-KRB-0014..0017 here or STS-KRB-0137..0147 in krb5_fast.ts
+      errorCode: failure.errorCode || 'STS-KRB-0016',
+      crealm: body.realm, cname: body.cname, sname: body.sname,
+      eText: failure.eText,
+      // A KDC re-sends ETYPE-INFO2 with PREAUTH_FAILED as well, because the
+      // client may have used the wrong salt and this is how it finds out.
+      eData: failure.code === 24
+        ? asn1.encSequenceOf([msgs.encPaData({
+            type: msgs.PA_TYPE.ETYPE_INFO2,
+            value: msgs.encEtypeInfo2(principals.etypeInfo2For(client)) })])
+        : null
+    });
+  };
+  if (otpRequest) {
+    const result = await provider.checkOtpRequest(client, etype, otpRequest,
+                                                  fast);
+    if (!result.ok) {
+      log.debug("Leaving answerAsReq().");
+      return preauthFailed(result);
+    }
+    preauth = { method: 'PA-OTP-REQUEST inside FAST (password and an ' +
+                        'authenticator code)',
+                indicators: result.indicators || [],
+                replyKey: result.replyKey, kdcPadata: [] };
+  } else if (encChallenge) {
+    const result = await provider.checkEncryptedChallenge(client, etype,
+                                                          encChallenge, fast);
+    if (!result.ok) {
+      log.debug("Leaving answerAsReq().");
+      return preauthFailed(result);
+    }
+    preauth = { method: 'PA-ENCRYPTED-CHALLENGE inside FAST',
+                indicators: [], replyEtype: result.etype,
+                replyKey: null, kdcPadata: result.kdcPadata || [] };
+  } else if (encTimestamp) {
     const failure = await checkEncTimestamp(client, etype, encTimestamp);
     if (failure) {
-      log.debug("Leaving handleAsReq().");
-      return errorReply(failure.code, {
-        errorCode: failure.errorCode || 'STS-KRB-0016',
-        crealm: body.realm, cname: body.cname, sname: body.sname,
-        eText: failure.eText,
-        // A KDC re-sends ETYPE-INFO2 with PREAUTH_FAILED as well, because the
-        // client may have used the wrong salt and this is how it finds out.
-        eData: failure.code === 24
-          ? asn1.encSequenceOf([msgs.encPaData({
-              type: msgs.PA_TYPE.ETYPE_INFO2,
-              value: msgs.encEtypeInfo2(principals.etypeInfo2For(client)) })])
-          : null
-      });
+      log.debug("Leaving answerAsReq().");
+      return preauthFailed(failure);
     }
+    preauth = { method: 'PA-ENC-TIMESTAMP' + (fast ? ' inside FAST' : ''),
+                indicators: [], replyKey: null, kdcPadata: [] };
+  }
+
+  // ---------------------------------------------------------------------
+  // A PASSWORD ALONE, FROM A PERSON WHO HOLDS OR OWES A SECOND FACTOR (#173).
+  //
+  // Refused KDC_ERR_POLICY (12) — RFC 4120's code for a request the KDC's
+  // policy will not grant — under STS-KRB-0130, in product
+  // (`mode.issuesTicketsOnPasswordAlone()`). **AFTER the password verified,
+  // and only then**: a wrong password was answered KDC_ERR_PREAUTH_FAILED
+  // above, exactly as for anybody, so this refusal tells nobody who lacks the
+  // password anything — not even that the account has a second factor. A
+  // person who has the password learns it is right, which is also what the
+  // sign-in screen tells them by asking for the code next: this door, unlike
+  // #101's five, CAN ask for the second factor, and the e-text says how.
+  // ---------------------------------------------------------------------
+  if (preauth && preauth.indicators.indexOf('otp') === -1 &&
+      passwordAloneRefused) {
+    const why = secondFactor.holds
+      ? 'this account holds a second factor'
+      : (secondFactor.byUser
+        ? 'a second factor is required of this account'
+        : 'this realm requires a second factor of everybody');
+    log.info('krb5: ' + body.cname.name.join('/') + '@' + asRealm +
+             ' proved the password alone (' + preauth.method + '), and ' +
+             why + ', so no ticket is issued. KDC_ERR_POLICY.');
+    log.debug("Leaving answerAsReq(). A password alone.");
+    return errorReply(12, {
+      errorCode: 'STS-KRB-0130',
+      crealm: body.realm, cname: body.cname, sname: body.sname,
+      // ASCII only, for the reason every eText here is.
+      eText: 'a password alone is not enough: ' + why + '. ' +
+             (secondFactor.totp
+               ? 'Use FAST armor with OTP pre-authentication and your ' +
+                 'authenticator app code (kinit -T <armor ccache>).'
+               : 'Kerberos can take an authenticator app code (FAST with ' +
+                 'OTP); enrol one on the portal. A security key over ' +
+                 'Kerberos (PKINIT) is not supported.')
+    });
   }
 
   // Issue. The session key is fresh per ticket; both copies of it — the one in
@@ -1641,8 +1844,10 @@ async function handleAsReq(request) {
   if (wantsRenewable) flags.push(msgs.TICKET_FLAG.RENEWABLE);
   // pre-authent is set only if pre-authentication actually happened. A service
   // can read this flag and insist on it, so setting it unconditionally would be
-  // a lie with security consequences.
-  if (encTimestamp) flags.push(msgs.TICKET_FLAG.PRE_AUTHENT);
+  // a lie with security consequences. Any of the three methods sets it; what
+  // an OTP added is the authentication indicator below, not a flag —
+  // hw-authent claims hardware, and an authenticator app is not that.
+  if (preauth) flags.push(msgs.TICKET_FLAG.PRE_AUTHENT);
   if (service.okAsDelegate) flags.push(msgs.TICKET_FLAG.OK_AS_DELEGATE);
   const renewTill = wantsRenewable ? kdcTime(renewLifetimeSeconds()) : null;
 
@@ -1651,8 +1856,16 @@ async function handleAsReq(request) {
   // The PAC. `encodeTicketPart` is passed as a function because the ticket
   // signature has to be computed over the ticket the PAC is going INTO, which
   // does not exist until the PAC does — see buildPacFor().
+  //
+  // `indicatorAd` is the RFC 8129 authentication indicator (#173), appended
+  // after whatever authorization data the caller passes — so the PAC's ticket
+  // signature covers it, and the indicator's own kdc-verifier, computed first
+  // while this is still empty, covers the ticket with its elements alone
+  // (RFC 7751 section 4).
+  let indicatorAd = [];
   const encodeTicketPart = function (authorizationData) {
     log.debug("Entering encodeTicketPart().");
+    const ad = (authorizationData || []).concat(indicatorAd);
     log.debug("Leaving encodeTicketPart().");
     return msgs.encEncTicketPart({
       flags: flags,
@@ -1663,9 +1876,18 @@ async function handleAsReq(request) {
       starttime: authtime,
       endtime: endtime,
       renewTill: renewTill,
-      authorizationData: authorizationData
+      authorizationData: ad.length ? ad : null
     });
   };
+  if (preauth && preauth.indicators.length && provider) {
+    indicatorAd = await provider.indicatorAuthData({
+      indicators: preauth.indicators,
+      encodeTicketPart: encodeTicketPart,
+      kdcKey: { etype: etype,
+                key: await principals.longTermKey(krbtgt, etype) },
+      serviceKey: { etype: etype, key: serviceKey }
+    });
+  }
   // A client that DECLINED a PAC gets none. That is not a curiosity: it is the
   // only way to see what a Windows service does when the groups it authorizes
   // on are not there, and the request page offers it as a checkbox — so
@@ -1704,7 +1926,14 @@ async function handleAsReq(request) {
     }
   };
 
-  const clientKey = await principals.longTermKey(client, etype);
+  // THE REPLY KEY. The long-term key, of the enctype the password factor
+  // was proven with; for OTP the armor key (RFC 6560 section 3.6); and inside
+  // FAST, STRENGTHENED (RFC 6113 section 5.4.3), which finishAsReply() does
+  // below once the ticket exists for its KrbFastFinished.
+  const replyEtype = (preauth && preauth.replyEtype) || etype;
+  let replyKey = (preauth && preauth.replyKey) ||
+    { etype: replyEtype,
+      key: await principals.longTermKey(client, replyEtype) };
   const encRepPart = msgs.encEncKdcRepPart({
     key: { etype: etype, key: sessionKey },
     lastReq: [{ type: 0, value: authtime }],
@@ -1749,23 +1978,41 @@ async function handleAsReq(request) {
   stats.recordAuthentication({
     presented: body.cname.name.join('/') + '@' + asRealm,
     protocol: 'Kerberos v5',
-    method: encTimestamp ? 'AS-REQ with PA-ENC-TIMESTAMP' : 'AS-REQ without ' +
+    method: preauth ? 'AS-REQ with ' + preauth.method : 'AS-REQ without ' +
         'pre-authentication',
     note: 'Encryption type ' + profile.name + '. The client proved ' +
           'possession of its long-term key, which is the only credential ' +
-          'this service genuinely checks.'
+          'this service genuinely checks.' +
+          (preauth && preauth.indicators.length
+            ? ' It also proved an authenticator app code, so the ticket ' +
+              'carries the authentication indicator(s) ' +
+              preauth.indicators.join(', ') + ' (RFC 8129).'
+            : '')
   });
 
-  log.debug("Leaving handleAsReq().");
+  // FAST: the reply's padata goes inside the armor with a KrbFastFinished
+  // over this ticket, and the reply key is strengthened.
+  let replyPadata = null;
+  if (fast && provider) {
+    const finished = await provider.finishAsReply({
+      fast: fast, ticket: ticket, crealm: asRealm, cname: body.cname,
+      replyKey: replyKey, padata: (preauth && preauth.kdcPadata) || []
+    });
+    replyPadata = finished.padata;
+    replyKey = finished.replyKey;
+  }
+
+  log.debug("Leaving answerAsReq().");
   return msgs.encKdcRep({
     msgType: msgs.MSG_TYPE.AS_REP,
+    padata: replyPadata,
     crealm: asRealm,
     cname: body.cname,
     ticket: ticket,
     encPart: {
-      etype: etype,
-      cipher: await profile.encrypt(clientKey, kcrypto.KEY_USAGE.AS_REP_ENCPART,
-                                    encRepPart)
+      etype: replyKey.etype,
+      cipher: await kcrypto.etypeById(replyKey.etype).encrypt(replyKey.key,
+        kcrypto.KEY_USAGE.AS_REP_ENCPART, encRepPart)
     }
   });
 }
@@ -1866,9 +2113,14 @@ async function handleTgsReq(request) {
   let ticketPart;
   // The current key, or a PREVIOUS version still kept — see ticketKeyFor().
   let badKeyVersion = '';
+  // The key that opened the ticket, kept for one more use: an RFC 8129
+  // indicator in a TGT is carried on only if its svc-verifier verifies under
+  // it (#173, below).
+  let ticketOpeningKey = null;
   try {
     const opening = await ticketKeyFor(ticketService, apReq.ticket.encPart);
     if (opening.key) {
+      ticketOpeningKey = opening.key;
       ticketPart = msgs.readEncTicketPart(await ticketProfile.decrypt(
         opening.key, kcrypto.KEY_USAGE.KDC_REP_TICKET,
         apReq.ticket.encPart.cipher));
@@ -2446,8 +2698,13 @@ async function handleTgsReq(request) {
   // is a simplification worth naming: it means a change to a principal takes
   // effect on the next service ticket rather than on the next TGT, where AD
   // would keep serving the groups the TGT was minted with until it expired.
+  // `indicatorAd` is the authentication indicator carried from the TGT
+  // (#173, below), appended after whatever the caller passes, as in the AS
+  // exchange.
+  let indicatorAd = [];
   const encodeTicketPart = function (authorizationData) {
     log.debug("Entering encodeTicketPart().");
+    const ad = (authorizationData || []).concat(indicatorAd);
     log.debug("Leaving encodeTicketPart().");
     return msgs.encEncTicketPart({
       flags: flags,
@@ -2462,7 +2719,7 @@ async function handleTgsReq(request) {
       starttime: at,
       endtime: endtime,
       renewTill: ticketPart.renewTill,
-      authorizationData: authorizationData
+      authorizationData: ad.length ? ad : null
     });
   };
   // The client's account lives in the realm the TICKET came from, not
@@ -2471,6 +2728,48 @@ async function handleTgsReq(request) {
   // which is the point there.
   const ticketClient = principals.find(clientName.name, clientRealm);
   const crossRealm = clientRealm !== answeringRealm;
+
+  // ---------------------------------------------------------------------
+  // THE AUTHENTICATION INDICATORS OF THE TGT GO INTO WHAT IT BUYS (#173).
+  //
+  // RFC 8129 section 3: "The KDC MAY copy it from a ticket-granting ticket
+  // into service tickets" — and here it must, or an OTP-backed sign-in would
+  // reach SPNEGO as one factor, because a service only ever sees a SERVICE
+  // ticket. Copied only from this realm's own TGT for its own client, never
+  // under S4U (the ticket names somebody who did not authenticate here) and
+  // never across a trust (an indicator is a statement of the realm that
+  // wrote it, section 5). And only a CAMMAC whose svc-verifier verifies
+  // under the krbtgt key that opened this TGT counts — RFC 7751 section 7's
+  // second criterion — which krb5_fast.ts checks.
+  // ---------------------------------------------------------------------
+  const preauthProvider = principals.preauthProvider();
+  const tgtSname = apReq.ticket.sname.name || [];
+  if (preauthProvider && ticketOpeningKey && s4u.mode === 'none' &&
+      !crossRealm && tgtSname.length === 2 && tgtSname[0] === 'krbtgt' &&
+      tgtSname[1] === answeringRealm &&
+      apReq.ticket.realm === answeringRealm) {
+    const carried = await preauthProvider.ticketIndicators(
+      ticketPart.authorizationData || [],
+      { etype: apReq.ticket.encPart.etype, key: ticketOpeningKey });
+    if (carried.problem) {
+      log.error(errorCodes.tag('STS-KRB-0148') + 'krb5: the TGT for ' +
+                ticketPart.cname.name.join('/') + '@' + ticketPart.crealm +
+                ' carries ' + carried.problem + '; its authentication ' +
+                'indicators are NOT carried into the service ticket');
+    }
+    if (carried.indicators.length) {
+      indicatorAd = await preauthProvider.indicatorAuthData({
+        indicators: carried.indicators,
+        encodeTicketPart: encodeTicketPart,
+        kdcKey: { etype: etype,
+                  key: await principals.longTermKey(krbtgt, etype) },
+        serviceKey: { etype: etype, key: serviceKey }
+      });
+      log.info('krb5: the authentication indicator(s) ' +
+               carried.indicators.join(', ') + ' of the TGT are carried ' +
+               'into the ticket for ' + (body.sname.name || []).join('/'));
+    }
+  }
 
   // The delegation audit trail, if this hop is one. It names the target and
   // every service the client has already been delegated through — appended to
@@ -3232,11 +3531,20 @@ app.get('/krb5/principals', function (req, res) {
                                                  'signatures)',
                   'cross-realm referrals (development mode)', 'S4U2Self',
                   'S4U2Proxy (classic and resource-based)', 'forwarded TGTs',
-                  'renewal', 'MS-KKDCP (/KdcProxy)'],
-    notImplementedYet: ['FAST (RFC 6113)', 'PKINIT (RFC 4556)',
+                  'renewal', 'MS-KKDCP (/KdcProxy)',
+                  // #173: where the directory is loaded (the provider rides
+                  // in its key source), so not in a process without it.
+                  'FAST in the AS exchange (RFC 6113; armor: a TGT)' +
+                    (principals.preauthProvider() ? '' : ' - not here: ' +
+                     'this process has no directory'),
+                  'OTP pre-authentication (RFC 6560) with an authenticator ' +
+                    'app, the password as the PIN',
+                  'authentication indicators (RFC 8129): otp'],
+    notImplementedYet: ['FAST in the TGS exchange (RFC 6113 implicit armor)',
+                        'PKINIT (RFC 4556, #179)',
                         'kpasswd (RFC 3244)', 'user-to-user (ENC-TKT-IN-SKEY)',
                         'SID filtering across a trust',
-                        'key rotation (one kvno per account)'],
+                        'key rotation for krbtgt'],
     principals: list
   });
 });

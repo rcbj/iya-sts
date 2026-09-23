@@ -171,6 +171,11 @@ import kcrypto = require('./krb5_crypto');
 import prim = require('./krb5_primitives');
 import principals = require('./krb5_principals');
 import keytab = require('./krb5_keytab');
+// FAST, OTP PRE-AUTHENTICATION AND AUTHENTICATION INDICATORS (#173). Built
+// here and handed to the KDC INSIDE the key source, so `krb5_kdc.js` reaches
+// it through the slot it already reads and gains no require (see
+// `installSlots()`).
+import Krb5Fast = require('./krb5_fast');
 
 // A stored record, an info value, a directory row: JSON this file wrote.
 type Json = any;
@@ -199,6 +204,8 @@ interface PrincipalDatabase {
     personKeys(name: string): Json;
     serviceKeys(spn: string): Json;
     personDisabled?(name: string): boolean;
+    personSecondFactor?(name: string): Json;
+    fast?: Krb5Fast;
   }): unknown;
 }
 
@@ -206,6 +213,7 @@ interface PrincipalDatabase {
 interface CredentialStore {
   setPasswordObserver?(fn: (name: string, password: string,
                             info?: Json) => void): unknown;
+  secondFactorDemand?(name: string): Json;
 }
 
 // What `openRecord()` answers.
@@ -235,6 +243,7 @@ interface Krb5PersonKeysDeps {
   principals: PrincipalDatabase;
   keytab: typeof keytab;
   nodeCrypto: typeof nodeCrypto;
+  fast: Krb5Fast;
 }
 
 // What `keystore.seal()` counts these under, for `/admin/encryption`.
@@ -299,7 +308,8 @@ class Krb5PersonKeys {
       prim: prim,
       principals: principals as unknown as PrincipalDatabase,
       keytab: keytab,
-      nodeCrypto: nodeCrypto
+      nodeCrypto: nodeCrypto,
+      fast: new Krb5Fast(Krb5Fast.defaultDeps())
     };
   }
 
@@ -802,6 +812,43 @@ class Krb5PersonKeys {
     log.debug('Leaving Krb5PersonKeys.personDisabled(). ' +
               !!(current && current.disabled));
     return !!(current && current.disabled);
+  }
+
+  // -------------------------------------------------------------------------
+  // DOES THIS PERSON HOLD, OR OWE, A SECOND FACTOR? (#173, 2026-09-22). Asked
+  // by the KDC after pre-authentication verified, for a person-shaped name in
+  // its own realm, in BOTH modes — what the answer REFUSES is
+  // `mode.issuesTicketsOnPasswordAlone()`'s, at the KDC. The answer is
+  // `common/credentials.ts`'s `secondFactorDemand()`, the one the five
+  // password-only doors of #101 ask, so the two cannot come to disagree about
+  // who is a two-factor account: `{ person, totp, key, holds, required,
+  // byUser, needed }`. Nobody by that name, or no directory, answers
+  // `needed: false`.
+  // -------------------------------------------------------------------------
+  personSecondFactor(name: string): Json {
+    const { log, credentials } = this.deps;
+    log.debug('Entering Krb5PersonKeys.personSecondFactor(). name=' + name);
+    const none = { person: false, totp: false, key: false, holds: false,
+                   required: false, byUser: false, needed: false };
+    if (!this.directory || this.personNameProblem(name) ||
+        typeof credentials.secondFactorDemand !== 'function') {
+      log.debug('Leaving Krb5PersonKeys.personSecondFactor(). Nothing to ' +
+                'ask.');
+      return none;
+    }
+    const answer = credentials.secondFactorDemand(name) || none;
+    log.debug('Leaving Krb5PersonKeys.personSecondFactor(). needed=' +
+              !!answer.needed);
+    return answer;
+  }
+
+  // What the KDC does about pre-authentication in the AMBIENT realm, for the
+  // console and the management API (rule 7). See `Krb5Fast.policy()`.
+  preauthPolicy(): Json {
+    const { log, fast } = this.deps;
+    log.debug('Entering Krb5PersonKeys.preauthPolicy().');
+    log.debug('Leaving Krb5PersonKeys.preauthPolicy().');
+    return fast.policy();
   }
 
   serviceKeys(spn: string): Json {
@@ -1762,10 +1809,21 @@ class Krb5PersonKeys {
                'not an error.');
     }
     if (typeof principals.setKeySource === 'function') {
+      // THE FAST PROVIDER RIDES IN THE KEY SOURCE (#173). It is not a key,
+      // but it needs the same two things the key source is the KDC's only
+      // door to — the directory's people (their second factors) and the
+      // credential store (their authenticator codes) — and a second slot
+      // would be rule 3e's "a slot by analogy". One object, validated whole
+      // by `setKeySource()` as before; the two new members are optional
+      // there, so a source without them (the parent project's jobs have
+      // none) leaves the KDC exactly as it was.
       principals.setKeySource({ personKeys: this.personKeys.bind(this),
                                 serviceKeys: this.serviceKeys.bind(this),
                                 personDisabled:
-                                  this.personDisabled.bind(this) });
+                                  this.personDisabled.bind(this),
+                                personSecondFactor:
+                                  this.personSecondFactor.bind(this),
+                                fast: this.deps.fast });
     } else {
       log.warn('krb5-keys: kerberos/krb5_principals.js offers no ' +
                'setKeySource(), so stored Kerberos keys are never read. That ' +
@@ -1813,6 +1871,8 @@ export = {
   deriveKey: slot.forward('deriveKey'),
   personKeys: slot.forward('personKeys'),
   personDisabled: slot.forward('personDisabled'),
+  personSecondFactor: slot.forward('personSecondFactor'),
+  preauthPolicy: slot.forward('preauthPolicy'),
   serviceKeys: slot.forward('serviceKeys'),
   observePassword: slot.forward('observePassword'),
   idle: slot.forward('idle'),

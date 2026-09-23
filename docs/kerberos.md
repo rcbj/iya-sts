@@ -31,6 +31,9 @@ client cannot guess.
 * **Pre-authentication**: `KDC_ERR_PREAUTH_REQUIRED` offers PA-ENC-TIMESTAMP
   and carries the salt in PA-ETYPE-INFO2. MIT Kerberos `kinit`, `klist`, `kvno`
   and `curl --negotiate` complete against it end to end.
+* **FAST and a second factor** (RFC 6113, RFC 6560, RFC 8129) — see
+  [A second factor over Kerberos](#a-second-factor-over-kerberos-fast-and-otp)
+  below.
 * **Encryption types** from `krb5.enctypes`: aes256-cts-hmac-sha1-96 (18),
   aes128-cts-hmac-sha1-96 (17), aes256-cts-hmac-sha384-192 (20),
   aes128-cts-hmac-sha256-128 (19) and rc4-hmac (23). Removing 23 is what a
@@ -112,7 +115,11 @@ verified. What the session claims is read off the **ticket's own flags**:
 | `pre-authent` | `["pwd"]` | `1` |
 | `hw-authent` | `["hwk"]` | `1` |
 | both | `["pwd","hwk"]` | `mfa` |
+| `pre-authent`, and the RFC 8129 indicator `otp` | `["pwd","otp"]` | `mfa` |
 | neither | *(empty)* | `0` |
+
+The indicator is believed only from an AD-CAMMAC whose verifier checks under
+the service's own key, and only in a ticket from this realm's KDC.
 
 The local realm is stripped from the principal (`alice@EXAMPLE.COM` signs in
 `alice`, the same entry a typed sign-in finds); a foreign realm is kept whole.
@@ -181,10 +188,59 @@ it on is refused until it has a `krb5.realm` no other realm answers to
   the window early.
 * No page, API reply, directory search or audit row ever shows a key.
 
+### A second factor over Kerberos: FAST and OTP
+
+**In product, a person who holds or must hold a second factor gets no ticket
+on a password alone** — an authenticator app, a security key in the `mfa`
+role, `stsMfaRequired` on their entry, or `authn.mfaRequired` for the realm,
+the same rule the [password-only doors](what-is-not-checked.md#app-passwords-at-the-password-only-doors)
+follow. An AS-REQ that proves only the password is refused `KDC_ERR_POLICY`
+(12), **after** the password verified: a wrong password is still
+`KDC_ERR_PREAUTH_FAILED`, so the refusal tells nobody without the password
+anything. Development issues the ticket (`mode.issuesTicketsOnPasswordAlone()`).
+
+What such a person uses instead:
+
+* **FAST armor (RFC 6113).** Every `KDC_ERR_PREAUTH_REQUIRED` advertises
+  PA-FX-FAST. The armor is a ticket-granting ticket the client HOST got with its
+  own keytab — make the host a principal at `/admin/kerberos/principals` (or
+  `POST /admin-api/kerberos/principals/create-service`) and `kinit -k` it. The
+  armored exchange carries every padata and every error encrypted; the reply
+  carries a KrbFastFinished over the ticket, and the reply key is always
+  strengthened. The encrypted challenge (the password inside FAST) is served,
+  with a replay check.
+* **OTP pre-authentication (RFC 6560)** inside the armor, for a person with an
+  authenticator app: the KDC asks for the code and, separately, the PIN — and
+  **the PIN is the password**, checked as the Kerberos key it derives. Both
+  factors in one exchange. The code is verified by the sign-in screen's own
+  verifier and spent from the same once-only step, so one code cannot be used
+  at both. An app password is not a Kerberos key and is refused.
+* **The ticket says so (RFC 8129)**: an AD-CAMMAC carrying the authentication
+  indicator `otp`, copied into the service tickets the TGT buys. At
+  [`/authn/spnego`](#signing-in-with-a-ticket-authnspnego) it makes the session
+  two factors.
+
+With MIT Kerberos:
+
+```bash
+kinit -k -t host.keytab -c FILE:/tmp/armor host/ws1.example.com@EXAMPLE.COM
+kinit -T FILE:/tmp/armor alice@EXAMPLE.COM
+# Enter OTP Token Value: <the six digits>
+# OTP Token PIN: <alice's password>
+```
+
+`/admin/kerberos` and `GET /admin-api/kerberos` (`status`) say what the KDC
+does in the realm. A person whose only second factor is a security key cannot
+use Kerberos yet: PKINIT is [#179](https://github.com/rcbj/iya-sts/issues/179).
+
 ### Not implemented
 
-FAST, PKINIT, kpasswd, user-to-user, SID filtering, and rotation of the
-`krbtgt` key (a TGT under an older `krb5.krbtgtPassword` is refused).
+PKINIT (#179), FAST in the TGS exchange (a TGS-REQ carrying implicit armor is
+answered unarmored, which MIT's client accepts), anonymous PKINIT armor, the
+FAST hide-client-names option (refused as an unknown critical option), OTP
+PIN change and hashed OTP values, kpasswd, user-to-user, SID filtering, and
+rotation of the `krbtgt` key (a TGT under an older `krb5.krbtgtPassword` is
+refused).
 `GET /krb5/principals` carries the current list. The UDP socket cannot carry a
 PROXY protocol header, so behind a load balancer Kerberos clients use TCP.
 
@@ -199,6 +255,7 @@ PROXY protocol header, so behind a load balancer Kerberos clients use TCP.
 | Passwords on `/krb5/principals` | published, so a reader can decrypt a ticket and read its PAC | withheld |
 | The PAC | invents `passwordLastSet` and `logonCount` | the zero FILETIME and 0 |
 | Delegation | fixture rules make every refusal and success reachable | no rule until an operator writes one |
+| A password alone, for a person who holds or must hold a second factor | a ticket | `KDC_ERR_POLICY`, after the password verified; FAST with OTP gets one |
 
 What stays a refusal in development: a service-shaped name for a host this
 service is not willing to be (`KDC_ERR_S_PRINCIPAL_UNKNOWN`), the names in

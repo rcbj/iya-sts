@@ -452,11 +452,16 @@ async function acceptInRealm(tokenBytes, opts) {
 
   const ticketProfile = kcrypto.etypeById(apReq.ticket.encPart.etype);
   let ticketPart;
+  // Kept past the decryption for one more use: the ticket's RFC 8129
+  // authentication indicators are believed only from an AD-CAMMAC whose
+  // svc-verifier verifies under this key (#173, after the checks below).
+  let ticketKey = null;
   try {
+    ticketKey = retained ? retained.key :
+      await principals.longTermKey(me, apReq.ticket.encPart.etype);
     ticketPart = msgs.readEncTicketPart(await ticketProfile.decrypt(
-      retained ? retained.key :
-      await principals.longTermKey(me, apReq.ticket.encPart.etype),
-      kcrypto.KEY_USAGE.KDC_REP_TICKET, apReq.ticket.encPart.cipher));
+      ticketKey, kcrypto.KEY_USAGE.KDC_REP_TICKET,
+      apReq.ticket.encPart.cipher));
     check('ticket decrypts with this service\'s key', true,
           ticketProfile.name + ', ' +
         'key usage 2');
@@ -745,6 +750,35 @@ async function acceptInRealm(tokenBytes, opts) {
     ', flags [' + msgs.ticketFlagNames(ticketPart.flags).join(', ') + ']' +
     (mutualWanted ? ', mutual authentication requested' : '') + ')');
 
+  // ---------------------------------------------------------------------
+  // THE AUTHENTICATION INDICATORS (RFC 8129, #173): what the KDC recorded
+  // about how the client authenticated beyond the flags — `otp` when the TGT
+  // came from FAST with OTP pre-authentication. Read through the FAST
+  // provider the principal database holds (krb5_fast.ts, reached through the
+  // key source, so this file gains no require), and only from an AD-CAMMAC
+  // whose svc-verifier verifies under THIS service's key: section 5's "MUST
+  // validate the AD-CAMMAC container before making authorization decisions".
+  // A process without the provider reads none, as before.
+  // ---------------------------------------------------------------------
+  let authIndicators = [];
+  const preauthProvider = principals.preauthProvider();
+  if (preauthProvider && ticketKey) {
+    try {
+      const read = await preauthProvider.ticketIndicators(
+        ticketPart.authorizationData || [],
+        { etype: apReq.ticket.encPart.etype, key: ticketKey });
+      authIndicators = read.indicators || [];
+      if (read.problem) {
+        log.error(errorCodes.tag('STS-KRB-0148') + 'krb5-service: the ' +
+                  'ticket for ' + clientName + ' carries ' + read.problem +
+                  '; its authentication indicators are ignored');
+      }
+    } catch (e) {
+      log.debug('Caught in acceptInRealm(): ' + ((e && e.message) || e));
+      authIndicators = [];
+    }
+  }
+
   if (!mutualWanted) {
     log.debug("Leaving acceptInRealm().");
     // Nothing to send back. Worth noting rather than silently returning
@@ -756,6 +790,7 @@ async function acceptInRealm(tokenBytes, opts) {
       ok: true,
       client: clientName,
       ticketFlags: msgs.ticketFlagNames(ticketPart.flags),
+      authIndicators: authIndicators,
       gss: gssInfo,
       // The INITIATOR's subkey, and the etype of the session key it falls back
       // to. Neither is used over the raw socket, and both are needed by
@@ -800,6 +835,7 @@ async function acceptInRealm(tokenBytes, opts) {
     ok: true,
     client: clientName,
     ticketFlags: msgs.ticketFlagNames(ticketPart.flags),
+    authIndicators: authIndicators,
     gss: gssInfo,
     mutual: true,
     acceptorSubkey: acceptorSubkey,
@@ -997,6 +1033,7 @@ const acceptAndRecord = async function (bytes, opts) {
     client: result.client || null,
     mutual: !!result.mutual,
     ticketFlags: result.ticketFlags || null,
+    authIndicators: result.authIndicators || null,
     gssFlags: result.gss ? result.gss.flagNames : null,
     checks: result.checks
   };

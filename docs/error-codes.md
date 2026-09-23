@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2991** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3011** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 95
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 149
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 115
@@ -1942,6 +1942,26 @@ Raised from: kerberos/.
 | `STS-KRB-0127` | Two trust realms answer to one Kerberos realm name (a restored or replicated realm the registry did not re-judge), so the KDC routes that name to the first and not the second. | none (logged when the router finds it) |
 | `STS-KRB-0128` | A Kerberos key act — creating, rotating, deleting or clearing a stored key — was asked of a trust realm that has no KDC, so there is no principal for the key to belong to. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-KRB-0129` | An AS-REQ, or an S4U2Self naming a person, was refused because that person's account is disabled. | KDC_ERR_CLIENT_REVOKED (18) |
+| `STS-KRB-0130` | An AS-REQ pre-authenticated with a password alone (PA-ENC-TIMESTAMP, or FAST's PA-ENCRYPTED-CHALLENGE) was refused, in product mode, because the person holds or is required to hold a second factor. Refused only after the password verified. | KDC_ERR_POLICY (12) |
+| `STS-KRB-0131` | A FAST-armored AS-REQ (PA-FX-FAST) did not decode, carried no armor, named an armor type other than FX_FAST_ARMOR_AP_REQUEST, or its armor was not an AP-REQ. | RFC 6113 section 5.4.1: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0132` | A FAST armor ticket was refused: not a TGT for the ticket-granting service of the realm asked, sealed under another key, expired or not yet valid. | RFC 6113 section 5.4.1.1: KDC_ERR_PREAUTH_FAILED (24), KRB_AP_ERR_BAD_INTEGRITY (31), KRB_AP_ERR_TKT_EXPIRED (32), KRB_AP_ERR_TKT_NYV (33) |
+| `STS-KRB-0133` | A FAST armor AP-REQ's Authenticator was refused: it did not decrypt, named another client, was outside the clock tolerance, or carried no subkey. | RFC 6113 section 5.4.1.1: KRB_AP_ERR_BAD_INTEGRITY (31), KRB_AP_ERR_BADMATCH (36), KRB_AP_ERR_SKEW (37), KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0134` | A FAST req-checksum did not cover the outer request body under the armor key. | RFC 6113 section 5.4.2: KRB_AP_ERR_MODIFIED (41) |
+| `STS-KRB-0135` | A FAST enc-fast-req did not open under the armor key, or the KrbFastReq inside it did not decode. | RFC 6113 section 5.4.2: KRB_AP_ERR_BAD_INTEGRITY (31) |
+| `STS-KRB-0136` | A FAST request set a critical FAST option this KDC does not implement (hide-client-names). | RFC 6113 section 5.4.2: KDC_ERR_UNKNOWN_CRITICAL_FAST_OPTIONS (93) |
+| `STS-KRB-0137` | A PA-ENCRYPTED-CHALLENGE did not decode or did not decrypt under the challenge key: a wrong password inside FAST. | RFC 6113 section 5.4.6: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0138` | A PA-ENCRYPTED-CHALLENGE's timestamp was outside the clock tolerance. | RFC 6113 section 5.4.6: KRB_AP_ERR_SKEW (37) |
+| `STS-KRB-0139` | A PA-ENCRYPTED-CHALLENGE was presented a second time (the same ciphertext). | RFC 6113 section 5.4.6: KRB_AP_ERR_REPEAT (34) |
+| `STS-KRB-0140` | A PA-ENCRYPTED-CHALLENGE could not be proved unused because the claim store could not be asked. | KRB_ERR_GENERIC (60) |
+| `STS-KRB-0141` | A PA-OTP-REQUEST did not decode, its encData was not under the armor key or did not open, or it answered no PA-OTP-CHALLENGE this KDC issued (or its timestamp was outside the tolerance). | RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24), KDC_ERR_ETYPE_NOSUPP (14), KRB_AP_ERR_SKEW (37) |
+| `STS-KRB-0142` | A PA-OTP-REQUEST carried no otp-pin, and this KDC requires the password as the PIN. | RFC 6560 section 3.4: KDC_ERR_PIN_REQUIRED (97) |
+| `STS-KRB-0143` | A PA-OTP-REQUEST's otp-pin was not the person's password (it does not derive the Kerberos key the KDC holds; an app password never does). | RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0144` | A PA-OTP-REQUEST's code was refused by the authenticator verifier: wrong, or no authenticator app enrolled. | RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0145` | A PA-OTP-REQUEST's code had already been used, at the KDC or at the sign-in screen (one step counter for both). | RFC 6238 section 5.2: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0146` | A PA-OTP-REQUEST's code could not be proved unspent because the step store could not be asked. | KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0147` | A PA-OTP-REQUEST carried no otp-value (a hashed OTP or one used as key material), which this KDC did not ask for. | RFC 6560 section 3.6: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0148` | A ticket's AD-CAMMAC did not verify under the key the ticket is sealed with, so its authentication indicators were ignored. | RFC 7751 section 7, RFC 8129 section 5 |
+| `STS-KRB-0149` | Asking whether a person holds a second factor failed, so the KDC treated a password alone as not enough. | — |
 
 ## STS-LDAP
 

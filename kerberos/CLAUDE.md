@@ -2,8 +2,9 @@
 
 Kerberos v5 — a KDC on raw TCP and UDP 88 and over MS-KKDCP, a Kerberos-protected
 service, the same acceptor over HTTP as SPNEGO (RFC 4559/4178), and **a way of
-signing in with it**. Sixteen files, and they divide into three groups — the two
-stored-key modules of 2026-09-12 belong to the service group and are described at the foot.
+signing in with it**. Eighteen files, and they divide into three groups — the two
+stored-key modules of 2026-09-12 and the two FAST modules of 2026-09-22 belong to
+the service group and are described at the foot.
 
 **The codec**, which knows nothing about this service: `krb5_primitives.js`,
 `krb5_asn1.js`, `krb5_crypto.js`, `krb5_messages.js`, `krb5_ndr.js`,
@@ -139,7 +140,10 @@ Five things about it are load-bearing:
   `acr "0"`**, because filling in `pwd` there would be telling a relying party
   a password was checked when nothing knows whether one was. `initial` is
   reported on the page and used for nothing — it says where the credential was
-  minted, not what was checked.
+  minted, not what was checked. **Since #173 the RFC 8129 indicator `otp`** —
+  read by the acceptor from an AD-CAMMAC that verifies under its own key, and
+  counted only from this realm's tickets — adds `otp` to `pwd` and makes it
+  `acr "mfa"` (see the FAST section at the foot).
 
 ### It is available to every application, three ways, and none of them is registration
 
@@ -692,8 +696,10 @@ not create.
 fixtures AND the ambient realm opens test controls** — both, because a development realm
 inside a product process must not publish the process's passwords. They are replaced by
 a sentence rather than omitted. `notImplementedYet` said PAC, cross-realm referrals,
-S4U2Self and S4U2Proxy for as long as all four had been implemented; it names FAST,
-PKINIT, kpasswd, user-to-user, SID filtering and key rotation now.
+S4U2Self and S4U2Proxy for as long as all four had been implemented; since #173 it
+names FAST in the TGS exchange, PKINIT (#179), kpasswd, user-to-user, SID filtering
+and krbtgt key rotation, and `implemented` gained FAST in the AS exchange, OTP and
+the indicator.
 
 **Two bugs wrong in every mode, fixed unconditionally.** Every listener here bound the
 literal `'0.0.0.0'` rather than `global.host` (the UDP socket is `udp6` for an IPv6
@@ -989,3 +995,103 @@ in the parent project's COPY closure through `common/app.js`, and
 not carry `cluster/` yet, it is the directory already owed above, not a new
 line. Not measured on a live pair: the sign-out probe in `ldap/CLAUDE.md` ran
 against LDAP only.
+
+
+## A SECOND FACTOR OVER KERBEROS: FAST, OTP AND THE AUTHENTICATION INDICATOR (2026-09-22, #173)
+
+**THE HOLE.** A product person's keys come from their own password, and
+`handleAsReq()` asked the key source only whether the account was disabled — so
+`kinit alice` with her password alone got a TGT, and through SPNEGO a session in
+every browser protocol, for a person the sign-in screen would have asked for a
+code. #101's hole at a sixth door. **The answer has two halves and rcbj asked for
+both in one ticket:** refuse the password alone, and build the way in Kerberos
+standardised.
+
+**THE REFUSAL** (`handleAsReq()`, after pre-authentication): a person for whom
+`principals.personSecondFactor()` answers `needed` — an authenticator app, a key
+in the `mfa` role, `stsMfaRequired`, or `authn.mfaRequired`; the answer is
+`common/credentials.ts`'s `secondFactorDemand()`, the one #101's doors ask —
+who proved only the password (PA-ENC-TIMESTAMP, or FAST's encrypted challenge) is
+refused `KDC_ERR_POLICY` (12), `STS-KRB-0130`, where
+`mode.issuesTicketsOnPasswordAlone()` is false (product). **ONLY AFTER THE PASSWORD
+VERIFIED**: a wrong one is `KDC_ERR_PREAUTH_FAILED` as for anybody, so nothing
+without the password learns anything; the same person with no pre-authentication
+at all is sent `KDC_ERR_PREAUTH_REQUIRED` even if their record did not require it.
+A source that throws is read as `needed` (`STS-KRB-0149`).
+
+**THE WAY IN — `krb5_fast.ts` and `krb5_fast_codec.ts`, two new files, neither
+vendored.** RFC 6113 FAST in the AS exchange (armor: a TGT for this realm's TGS
+with a subkey — the client HOST's, got with a keytab from
+`/admin/kerberos/principals`), RFC 6560 OTP pre-authentication inside it, and the
+RFC 8129 indicator `otp` over RFC 7751's AD-CAMMAC. `krb5_fast.ts`'s header argues
+each section; the decisions a reader needs here:
+
+* **THE PIN IS THE PASSWORD.** The OTP token information says collect-pin and
+  separate-pin-required, MIT's `kinit` prompts "Enter OTP Token Value" and "OTP
+  Token PIN", and the PIN is checked as the Kerberos key it derives (the
+  principal's own salt, compared in constant time). One exchange, both factors —
+  what RFC 6113's authentication sets would otherwise express, which MIT does not
+  implement. An APP PASSWORD derives no Kerberos key and is refused as a wrong one.
+* **THE CODE IS THE SIGN-IN SCREEN'S.** `credentials.verifyTotpAsync()`, its
+  entry counter and the cluster counter `authn.totp-step`: one code cannot be
+  spent at `/authn/totp` and at the KDC. The order is nonce, PIN, code, so a
+  wrong password never spends a step.
+* **RFC 6560's ASN.1 IS IMPLICIT TAGS** and RFC 6113's, 7751's and 8129's are
+  explicit. The codec was written explicit first, the suite's own client agreed,
+  and MIT's `kinit` refused the challenge ("ASN.1 structure is missing a required
+  field") — the reason `tests/vendored/sts_kerberos_fast_otp.js` drives real
+  `kinit` wherever MIT Kerberos is installed. MIT also sends `iterationCount 0`
+  beside a plain OTP value; zero is not read as a hashed OTP.
+* **THE COOKIE** is sealed under the realm's krbtgt key (MIT's private key usage
+  513) and carries the client and the OTP nonce, so any node holding the krbtgt
+  key can check a PA-OTP-REQUEST answers a challenge this KDC issued. A cookie
+  rides in every armored `KDC_ERR_PREAUTH_REQUIRED` (section 5.2's MUST) and in
+  no other error, because MIT's client retries whenever a cookie is present.
+* **EVERY ERROR AFTER THE ARMOR OPENS IS ARMORED** (`handleAsReq()` wraps what
+  `answerAsReq()` returns, keeping the coded refusal the transport records); a
+  refusal OF the armor is not, having no key to seal under.
+* **THE INDICATOR** goes into the AS ticket with a kdc-verifier and a
+  svc-verifier; the TGS copies it from THIS realm's own TGT (never under S4U,
+  never across a trust) after checking the TGT's svc-verifier under the krbtgt
+  key that opened it; the acceptor reads it only from a CAMMAC whose svc-verifier
+  checks under its own key (`STS-KRB-0148` otherwise, and the indicator is
+  dropped).
+* **THE PRF AND KRB-FX-CF2 ARE `common/crypto.js`'s** (section 9) — the vendored
+  codec has no PRF and may not be edited — held to RFC 3961's n-fold vectors and
+  MIT's `t_prf.c` and `t_cf2.expected`.
+
+**NO REQUIRE REACHES THE PARENT PROJECT'S COPY SET.** `krb5_fast.ts` is built by
+`krb5_person_keys.ts` and handed to `krb5_principals.js` INSIDE the key source
+(`setKeySource({ ..., personSecondFactor, fast })`, two optional members — not a
+new slot, which rule 3e would ask to be argued), and the KDC and the acceptor
+reach it through `principals.preauthProvider()`. `krb5_kdc.js`, `krb5_service.js`,
+`spnego_exchange.js` and `krb5_principals.js` gained no require. **A process
+without the key source — the parent's four in-process jobs — has no provider**:
+PA-FX-FAST is not advertised and is ignored as unknown padata, nobody is asked
+about a second factor, and every answer is what it was. What a parent job pointed
+at a full stack WILL see is one more entry, PA-FX-FAST (136), in every
+`KDC_ERR_PREAUTH_REQUIRED` method list.
+
+**What `/admin/kerberos` says**: a `status` block (`kerberosPreauthStatusBlock()`,
+`admin-ui/admin.ts`) — whether a password alone is refused here, FAST, the second
+factor it takes, the indicator — which `GET /admin-api/kerberos` carries as
+`status` (rule 7).
+
+**NOT BUILT**: FAST in the TGS exchange (MIT puts implicit armor in every TGS-REQ;
+this KDC answers it unarmored, which MIT accepts — `kvno` after `kinit -T` is
+asserted), anonymous PKINIT armor, PKINIT itself (#179 — so a person whose only
+second factor is a security key cannot get a ticket in product), hide-client-names
+(refused as an unknown critical option), RFC 6113 authentication sets, OTP PIN
+change and hashed OTP values.
+
+**TESTS.** `tests/kerberos_fast_otp.js` (in process: the vectors, the codec's DER
+by hand, `factorsFor()`, and in a product child the refusal decision for all four
+kinds of person, FAST's armor and refusals, the encrypted challenge and its
+replay, OTP with the portal-spent step refused, a wrong and a missing PIN, a
+foreign nonce, a replayed code, and the indicator through the TGS to the
+acceptor). `tests/vendored/sts_kerberos_fast_otp.js` (`local: true`, over TCP 88,
+both modes: the host armor from a keytab the API hands over, the portal-enrolled
+code, the refusal and PREAUTH_FAILED, FAST and OTP with its own client in
+`krb5_wire.js`, the indicator read with the keytab key, the SPNEGO session's
+`amr`, and MIT `kinit -k`, `kinit -T` and `kvno`).
+

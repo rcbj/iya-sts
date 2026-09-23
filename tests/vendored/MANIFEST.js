@@ -613,6 +613,13 @@ const JOBS = [
   // service is reached at, in both modes.
   { file: 'sts_ldaps.js',                browser: false, local: true },
   { file: 'sts_kerberos_spnego.js',      browser: false, local: true },
+  // A PASSWORD ALONE IS NO TICKET FOR A TWO-FACTOR ACCOUNT (#173,
+  // 2026-09-22): over TCP 88, the product refusal after the password
+  // verified, RFC 6113 FAST armored by a host's TGT, RFC 6560 OTP with the
+  // password as the PIN and the portal's own once-only step, and the RFC 8129
+  // indicator in the tickets — with real MIT kinit where it is installed.
+  // `local: true`: this repository's KDC, portal and API.
+  { file: 'sts_kerberos_fast_otp.js',    browser: false, local: true },
   { file: 'sts_spiffe_grpc.js',          browser: false, local: true },
   { file: 'sts_oid4vp_wallet.js',        browser: false, local: true },
   { file: 'sts_federation_realms.js',    browser: false, local: true },
@@ -731,6 +738,8 @@ const LOCAL_HELPERS = [
   // AP-REQ and SPNEGO — for `sts_kerberos_spnego.js` (2026-09-18). It reuses
   // the service's codec for the encodings and works out key usages and
   // checksums itself, so the exchange is not the KDC agreeing with itself.
+  // Since #173 it also carries a FAST, OTP and authentication-indicator
+  // client for `sts_kerberos_fast_otp.js`, written apart from the KDC's.
   'krb5_wire.js',
   // What the three sts_directory_bulk_load_*.js jobs share, which is
   // everything except the door.

@@ -697,7 +697,10 @@ async function negotiate(req, opts) {
       initiatorKey: keyToRow(initiatorKey),
       acceptorSubkey: keyToRow(result.acceptorSubkey || null),
       client: result.client,
-      ticketFlags: result.ticketFlags || null
+      ticketFlags: result.ticketFlags || null,
+      // The RFC 8129 indicators the acceptor verified (#173), carried to the
+      // continuation as the flags are.
+      authIndicators: result.authIndicators || []
     });
     log.debug('Leaving negotiate(). request-mic.');
     return tokenVerdict(door, 'request-mic',
@@ -819,6 +822,7 @@ async function continuation(req, door, parsed) {
       ok: true,
       client: entry.client,
       ticketFlags: entry.ticketFlags,
+      authIndicators: entry.authIndicators || [],
       acceptorSubkey: keyFromRow(entry.acceptorSubkey),
       checks: [{ name: 'mechListMIC verifies', ok: true,
                  detail: 'sent by the ' + verdict.senderRole +
@@ -948,6 +952,10 @@ async function accept(door, ctx) {
     reason: 'the context is established',
     client: result.client || null,
     ticketFlags: result.ticketFlags || [],
+    // What the KDC recorded beyond the flags (RFC 8129, #173): `otp` when
+    // the TGT came from FAST with OTP pre-authentication. spnego_authn.ts
+    // counts it as a second factor.
+    authIndicators: result.authIndicators || [],
     selected: ctx.selected,
     micVerified: ctx.micVerified,
     rawKerberos: ctx.rawKerberos,
