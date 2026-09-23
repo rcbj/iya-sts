@@ -138,8 +138,11 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // for `sts_realms.domain` — a realm's DNS domain, fixed at creation — which is
 // the first COLUMN this schema has added to a table that already existed, and
 // so the first that `CREATE TABLE IF NOT EXISTS` cannot add: see
-// SCHEMA_COLUMNS below.
-const SCHEMA_VERSION = 6;
+// SCHEMA_COLUMNS below. 7 SINCE 2026-09-22, for the thirteen `sts_risk_*`
+// tables of risk scoring (#62) — see their block in SCHEMA_OBJECTS. 8 SINCE
+// 2026-09-23, for `sts_risk_terms_acceptances`, the record of who accepted
+// which dataset provider's terms (the second licence review on #62).
+const SCHEMA_VERSION = 8;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -499,6 +502,282 @@ const SCHEMA_OBJECTS = [
   '  applied     bigint NOT NULL,' +
   '  started_at  bigint NOT NULL,' +
   '  reported_at bigint NOT NULL)' },
+  // ---------------------------------------------------------------------------
+  // RISK SCORING (#62, schema version 7, 2026-09-22). Thirteen tables, added
+  // whole so the schema moves once for the subsystem rather than once per
+  // phase. `risk/CLAUDE.md` argues the design; three things are this file's:
+  //
+  //   * EVERY EXTERNAL DATASET IS ROWS, by version (`sts_risk_dataset_*`, the
+  //     geo, ASN, IP-list and FIDO tables), so what a score used can be named
+  //     after the dataset has rotated. An IP range is `inet` start and end
+  //     rather than `cidr`, because DB-IP publishes ranges that are not
+  //     CIDR-aligned; a lookup is one probe of the primary key.
+  //   * THE HISTORY THE MODEL KEEPS IS ROWS TOO (`sts_risk_assessments`,
+  //     `_feature_counts`, `_failures`, `_session_context`, `_subjects`),
+  //     because it needs atomic upserts every node agrees on and SQL to
+  //     aggregate — which a sealed `sts_minted` body gives neither of.
+  //   * AN ADDRESS IS PERSONAL DATA AND NOT A CREDENTIAL, so it is kept SEALED
+  //     (`address_sealed`, under the key-encryption key `sts_minted` uses) and
+  //     as a /24 or /48 `cidr` prefix SQL can group on. Nothing here holds a
+  //     `User-Agent`, a credential id or a name a person typed in the clear.
+  // ---------------------------------------------------------------------------
+  { name: 'sts_risk_datasets', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_datasets (' +
+  '  realm            text   NOT NULL DEFAULT \'\',' +
+  '  dataset          text   NOT NULL,' +
+  '  kind             text   NOT NULL,' +
+  '  active_version   text   NOT NULL DEFAULT \'\',' +
+  '  previous_version text   NOT NULL DEFAULT \'\',' +
+  '  state            text   NOT NULL,' +
+  '  updated_at       bigint NOT NULL,' +
+  '  PRIMARY KEY (realm, dataset))' },
+  { name: 'sts_risk_dataset_versions', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_dataset_versions (' +
+  '  realm           text   NOT NULL DEFAULT \'\',' +
+  '  dataset         text   NOT NULL,' +
+  '  version         text   NOT NULL,' +
+  '  format          text   NOT NULL,' +
+  '  provider        text   NOT NULL,' +
+  '  licence         text   NOT NULL,' +
+  '  attribution     text   NOT NULL DEFAULT \'\',' +
+  '  source          text   NOT NULL,' +
+  '  source_uri      text   NOT NULL DEFAULT \'\',' +
+  '  sha256          text   NOT NULL,' +
+  '  byte_count      bigint NOT NULL,' +
+  '  row_count       bigint NOT NULL DEFAULT 0,' +
+  '  parameters      jsonb  NOT NULL DEFAULT \'{}\'::jsonb,' +
+  '  verification    text   NOT NULL,' +
+  '  published_at    bigint NOT NULL,' +
+  '  next_update_at  bigint NOT NULL DEFAULT 0,' +
+  '  fetched_at      bigint NOT NULL,' +
+  '  loaded_at       bigint NOT NULL DEFAULT 0,' +
+  '  activated_at    bigint NOT NULL DEFAULT 0,' +
+  '  superseded_at   bigint NOT NULL DEFAULT 0,' +
+  '  rows_deleted_at bigint NOT NULL DEFAULT 0,' +
+  '  state           text   NOT NULL,' +
+  '  refusal         text   NOT NULL DEFAULT \'\',' +
+  '  error_code      text   NOT NULL DEFAULT \'\',' +
+  '  origin          text   NOT NULL DEFAULT \'\',' +
+  '  PRIMARY KEY (realm, dataset, version))' },
+  { name: 'sts_risk_dataset_blobs', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_dataset_blobs (' +
+  '  realm   text    NOT NULL DEFAULT \'\',' +
+  '  dataset text    NOT NULL,' +
+  '  version text    NOT NULL,' +
+  '  part    integer NOT NULL,' +
+  '  content bytea   NOT NULL,' +
+  '  PRIMARY KEY (realm, dataset, version, part))' },
+  { name: 'sts_risk_geo_locations', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_geo_locations (' +
+  '  dataset     text   NOT NULL,' +
+  '  version     text   NOT NULL,' +
+  '  location_id bigint NOT NULL,' +
+  '  continent   text   NOT NULL DEFAULT \'\',' +
+  '  country     text   NOT NULL DEFAULT \'\',' +
+  '  subdivision text   NOT NULL DEFAULT \'\',' +
+  '  city        text   NOT NULL DEFAULT \'\',' +
+  '  time_zone   text   NOT NULL DEFAULT \'\',' +
+  '  PRIMARY KEY (dataset, version, location_id))' },
+  { name: 'sts_risk_geo_ranges', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_geo_ranges (' +
+  '  dataset            text             NOT NULL,' +
+  '  version            text             NOT NULL,' +
+  '  range_start        inet             NOT NULL,' +
+  '  range_end          inet             NOT NULL,' +
+  '  location_id        bigint           NOT NULL DEFAULT 0,' +
+  '  continent          text             NOT NULL DEFAULT \'\',' +
+  '  country            text             NOT NULL DEFAULT \'\',' +
+  '  subdivision        text             NOT NULL DEFAULT \'\',' +
+  '  city               text             NOT NULL DEFAULT \'\',' +
+  '  registered_country text             NOT NULL DEFAULT \'\',' +
+  '  latitude           double precision,' +
+  '  longitude          double precision,' +
+  '  accuracy_km        integer          NOT NULL DEFAULT 0,' +
+  '  anonymous_proxy    boolean          NOT NULL DEFAULT false,' +
+  '  satellite          boolean          NOT NULL DEFAULT false,' +
+  '  PRIMARY KEY (dataset, version, range_start))' },
+  { name: 'sts_risk_asn_ranges', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_asn_ranges (' +
+  '  dataset     text   NOT NULL,' +
+  '  version     text   NOT NULL,' +
+  '  range_start inet   NOT NULL,' +
+  '  range_end   inet   NOT NULL,' +
+  '  asn         bigint NOT NULL,' +
+  '  as_org      text   NOT NULL DEFAULT \'\',' +
+  '  as_domain   text   NOT NULL DEFAULT \'\',' +
+  '  PRIMARY KEY (dataset, version, range_start))' },
+  { name: 'sts_risk_ip_lists', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_ip_lists (' +
+  '  realm       text NOT NULL DEFAULT \'\',' +
+  '  dataset     text NOT NULL,' +
+  '  version     text NOT NULL,' +
+  '  range_start inet NOT NULL,' +
+  '  range_end   inet NOT NULL,' +
+  '  category    text NOT NULL,' +
+  '  note        text NOT NULL DEFAULT \'\',' +
+  '  PRIMARY KEY (realm, dataset, version, range_start))' },
+  { name: 'sts_risk_fido_authenticators', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_fido_authenticators (' +
+  '  dataset             text    NOT NULL,' +
+  '  version             text    NOT NULL,' +
+  '  key_kind            text    NOT NULL,' +
+  '  authenticator_key   text    NOT NULL,' +
+  '  description         text    NOT NULL DEFAULT \'\',' +
+  '  protocol_family     text    NOT NULL DEFAULT \'\',' +
+  '  certification_level text    NOT NULL DEFAULT \'\',' +
+  '  latest_status       text    NOT NULL DEFAULT \'\',' +
+  '  latest_status_at    bigint  NOT NULL DEFAULT 0,' +
+  '  compromised         boolean NOT NULL DEFAULT false,' +
+  '  status_reports      jsonb   NOT NULL DEFAULT \'[]\'::jsonb,' +
+  '  metadata_statement  jsonb   NOT NULL DEFAULT \'{}\'::jsonb,' +
+  '  PRIMARY KEY (dataset, version, key_kind, authenticator_key))' },
+  { name: 'sts_risk_fido_by_key', statement:
+  'CREATE INDEX IF NOT EXISTS sts_risk_fido_by_key ON ' +
+  'sts_risk_fido_authenticators (key_kind, authenticator_key)' },
+  { name: 'sts_risk_assessments', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_assessments (' +
+  '  realm              text    NOT NULL,' +
+  '  id                 text    NOT NULL,' +
+  '  at                 bigint  NOT NULL,' +
+  '  phase              text    NOT NULL,' +
+  '  door               text    NOT NULL,' +
+  '  subject            text    NOT NULL DEFAULT \'\',' +
+  '  session_id         text    NOT NULL DEFAULT \'\',' +
+  '  client_id          text    NOT NULL DEFAULT \'\',' +
+  '  address_sealed     text    NOT NULL,' +
+  '  address_prefix     cidr    NOT NULL,' +
+  '  asn                bigint  NOT NULL DEFAULT 0,' +
+  '  as_org             text    NOT NULL DEFAULT \'\',' +
+  '  country            text    NOT NULL DEFAULT \'\',' +
+  '  subdivision        text    NOT NULL DEFAULT \'\',' +
+  '  city               text    NOT NULL DEFAULT \'\',' +
+  '  latitude           double precision,' +
+  '  longitude          double precision,' +
+  '  accuracy_km        integer NOT NULL DEFAULT 0,' +
+  '  ip_lists           text[]  NOT NULL DEFAULT \'{}\',' +
+  '  ua_hash            text    NOT NULL DEFAULT \'\',' +
+  '  ua_family          text    NOT NULL DEFAULT \'\',' +
+  '  ua_os              text    NOT NULL DEFAULT \'\',' +
+  '  ua_platform        text    NOT NULL DEFAULT \'\',' +
+  '  bot                boolean NOT NULL DEFAULT false,' +
+  '  ja4                text    NOT NULL DEFAULT \'\',' +
+  '  credential_kind    text    NOT NULL DEFAULT \'\',' +
+  '  credential_hash    text    NOT NULL DEFAULT \'\',' +
+  '  aaguid             text    NOT NULL DEFAULT \'\',' +
+  '  authenticator_cert text    NOT NULL DEFAULT \'\',' +
+  '  backup_eligible    boolean,' +
+  '  backup_state       boolean,' +
+  '  jkt                text    NOT NULL DEFAULT \'\',' +
+  '  cert_fingerprint   text    NOT NULL DEFAULT \'\',' +
+  '  datasets           jsonb   NOT NULL DEFAULT \'{}\'::jsonb,' +
+  '  signals            jsonb   NOT NULL DEFAULT \'[]\'::jsonb,' +
+  '  score              real    NOT NULL,' +
+  '  level              text    NOT NULL,' +
+  '  decision           text    NOT NULL,' +
+  '  policy_id          text    NOT NULL DEFAULT \'\',' +
+  '  error_code         text    NOT NULL DEFAULT \'\',' +
+  '  origin             text    NOT NULL DEFAULT \'\',' +
+  '  PRIMARY KEY (realm, id))' },
+  { name: 'sts_risk_assessments_subject', statement:
+  'CREATE INDEX IF NOT EXISTS sts_risk_assessments_subject ON ' +
+  'sts_risk_assessments (realm, subject, at)' },
+  { name: 'sts_risk_assessments_session', statement:
+  'CREATE INDEX IF NOT EXISTS sts_risk_assessments_session ON ' +
+  'sts_risk_assessments (realm, session_id)' },
+  { name: 'sts_risk_assessments_at', statement:
+  'CREATE INDEX IF NOT EXISTS sts_risk_assessments_at ON ' +
+  'sts_risk_assessments (at)' },
+  { name: 'sts_risk_feature_counts', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_feature_counts (' +
+  '  realm    text   NOT NULL,' +
+  '  subject  text   NOT NULL,' +
+  '  feature  text   NOT NULL,' +
+  '  value    text   NOT NULL,' +
+  '  count    bigint NOT NULL,' +
+  '  first_at bigint NOT NULL,' +
+  '  last_at  bigint NOT NULL,' +
+  '  PRIMARY KEY (realm, subject, feature, value))' },
+  { name: 'sts_risk_feature_counts_age', statement:
+  'CREATE INDEX IF NOT EXISTS sts_risk_feature_counts_age ON ' +
+  'sts_risk_feature_counts (realm, last_at)' },
+  { name: 'sts_risk_failures', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_failures (' +
+  '  realm          text      NOT NULL,' +
+  '  id             bigserial NOT NULL,' +
+  '  at             bigint    NOT NULL,' +
+  '  door           text      NOT NULL,' +
+  '  subject        text      NOT NULL DEFAULT \'\',' +
+  '  name_hmac      text      NOT NULL DEFAULT \'\',' +
+  '  address_sealed text      NOT NULL,' +
+  '  address_prefix cidr      NOT NULL,' +
+  '  asn            bigint    NOT NULL DEFAULT 0,' +
+  '  error_code     text      NOT NULL,' +
+  '  origin         text      NOT NULL DEFAULT \'\',' +
+  '  PRIMARY KEY (realm, id))' },
+  { name: 'sts_risk_failures_subject', statement:
+  'CREATE INDEX IF NOT EXISTS sts_risk_failures_subject ON ' +
+  'sts_risk_failures (realm, subject, at)' },
+  { name: 'sts_risk_failures_name', statement:
+  'CREATE INDEX IF NOT EXISTS sts_risk_failures_name ON ' +
+  'sts_risk_failures (realm, name_hmac, at)' },
+  { name: 'sts_risk_failures_prefix', statement:
+  'CREATE INDEX IF NOT EXISTS sts_risk_failures_prefix ON ' +
+  'sts_risk_failures (realm, address_prefix, at)' },
+  { name: 'sts_risk_failures_at', statement:
+  'CREATE INDEX IF NOT EXISTS sts_risk_failures_at ON ' +
+  'sts_risk_failures (at)' },
+  { name: 'sts_risk_session_context', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_session_context (' +
+  '  realm          text   NOT NULL,' +
+  '  session_id     text   NOT NULL,' +
+  '  subject        text   NOT NULL,' +
+  '  address_prefix cidr   NOT NULL,' +
+  '  asn            bigint NOT NULL DEFAULT 0,' +
+  '  country        text   NOT NULL DEFAULT \'\',' +
+  '  ua_hash        text   NOT NULL DEFAULT \'\',' +
+  '  ja4            text   NOT NULL DEFAULT \'\',' +
+  '  jkt            text   NOT NULL DEFAULT \'\',' +
+  '  score          real   NOT NULL,' +
+  '  level          text   NOT NULL,' +
+  '  updated_at     bigint NOT NULL,' +
+  '  PRIMARY KEY (realm, session_id))' },
+  { name: 'sts_risk_subjects', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_subjects (' +
+  '  realm           text  NOT NULL,' +
+  '  subject         text  NOT NULL,' +
+  '  score           real  NOT NULL,' +
+  '  level           text  NOT NULL,' +
+  '  previous_level  text  NOT NULL DEFAULT \'\',' +
+  '  reason          text  NOT NULL DEFAULT \'\',' +
+  '  last_assessment text  NOT NULL DEFAULT \'\',' +
+  '  crossed_at      bigint NOT NULL DEFAULT 0,' +
+  '  actions         jsonb NOT NULL DEFAULT \'{}\'::jsonb,' +
+  '  feedback        text  NOT NULL DEFAULT \'\',' +
+  '  updated_at      bigint NOT NULL,' +
+  '  PRIMARY KEY (realm, subject))' },
+  // WHO ACCEPTED WHICH PROVIDER'S TERMS (#62, schema version 8, 2026-09-23 —
+  // the second licence review). One row per acceptance, never updated: the
+  // provider, a digest and the text of the terms as this build states them,
+  // who accepted them and through which door, the deployment, and the digest
+  // of the provider's own terms page when the install-time loader was asked
+  // to fetch it. An import of a provider's data is refused unless a row here
+  // matches that provider's CURRENT terms digest (`risk/risk_terms.ts`).
+  { name: 'sts_risk_terms_acceptances', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_terms_acceptances (' +
+  '  id            bigserial NOT NULL,' +
+  '  provider      text      NOT NULL,' +
+  '  terms_digest  text      NOT NULL,' +
+  '  terms_text    text      NOT NULL,' +
+  '  accepted_by   text      NOT NULL,' +
+  '  accepted_via  text      NOT NULL,' +
+  '  deployment    text      NOT NULL DEFAULT \'\',' +
+  '  page_digest   text      NOT NULL DEFAULT \'\',' +
+  '  accepted_at   bigint    NOT NULL,' +
+  '  origin        text      NOT NULL DEFAULT \'\',' +
+  '  PRIMARY KEY (id))' },
+  { name: 'sts_risk_terms_acceptances_provider', statement:
+  'CREATE INDEX IF NOT EXISTS sts_risk_terms_acceptances_provider ON ' +
+  'sts_risk_terms_acceptances (provider, accepted_at)' },
   // What version of the above is on disk. One row, and nothing reads it yet —
   // it is here so that a future change has something to look at other than the
   // shape of the tables.
@@ -849,6 +1128,72 @@ const ORIGIN_SCOPE = 'persistence.origin';
 function create(options) {
   const url = options.url;
   const log = options.log;
+
+  // RISK ROWS (#62) in the shapes `risk/risk_store.ts` works in: camelCase,
+  // times as numbers, an `inet` as its text.
+  function riskDatasetFrom(r) {
+    log.debug("Entering riskDatasetFrom().");
+    log.debug("Leaving riskDatasetFrom().");
+    return { realm: r.realm, dataset: r.dataset, kind: r.kind,
+             activeVersion: r.active_version,
+             previousVersion: r.previous_version, state: r.state,
+             updatedAt: Number(r.updated_at) || 0 };
+  }
+
+  function riskVersionFrom(r) {
+    log.debug("Entering riskVersionFrom().");
+    log.debug("Leaving riskVersionFrom().");
+    return { realm: r.realm, dataset: r.dataset, version: r.version,
+             format: r.format, provider: r.provider, licence: r.licence,
+             attribution: r.attribution, source: r.source,
+             sourceUri: r.source_uri, sha256: r.sha256,
+             byteCount: Number(r.byte_count) || 0,
+             rowCount: Number(r.row_count) || 0,
+             parameters: r.parameters || {},
+             verification: r.verification,
+             publishedAt: Number(r.published_at) || 0,
+             nextUpdateAt: Number(r.next_update_at) || 0,
+             fetchedAt: Number(r.fetched_at) || 0,
+             loadedAt: Number(r.loaded_at) || 0,
+             activatedAt: Number(r.activated_at) || 0,
+             supersededAt: Number(r.superseded_at) || 0,
+             rowsDeletedAt: Number(r.rows_deleted_at) || 0,
+             state: r.state, refusal: r.refusal, errorCode: r.error_code,
+             origin: r.origin };
+  }
+
+  function riskRangeFrom(kind, r) {
+    log.debug("Entering riskRangeFrom(). kind=" + kind);
+    const out = { start: String(r.range_start), end: String(r.range_end) };
+    if (kind === 'geo') {
+      Object.assign(out, {
+        locationId: Number(r.location_id) || 0, continent: r.continent,
+        country: r.country, subdivision: r.subdivision, city: r.city,
+        registeredCountry: r.registered_country,
+        latitude: r.latitude === null ? null : Number(r.latitude),
+        longitude: r.longitude === null ? null : Number(r.longitude),
+        accuracyKm: Number(r.accuracy_km) || 0,
+        anonymousProxy: !!r.anonymous_proxy, satellite: !!r.satellite });
+    } else if (kind === 'asn') {
+      Object.assign(out, { asn: Number(r.asn) || 0, asOrg: r.as_org,
+                           asDomain: r.as_domain });
+    } else {
+      Object.assign(out, { category: r.category, note: r.note });
+    }
+    log.debug("Leaving riskRangeFrom().");
+    return out;
+  }
+
+  function riskFailureFrom(r) {
+    log.debug("Entering riskFailureFrom().");
+    log.debug("Leaving riskFailureFrom().");
+    return { id: String(r.id), realm: r.realm, at: Number(r.at) || 0,
+             door: r.door, subject: r.subject, nameHmac: r.name_hmac,
+             addressSealed: r.address_sealed,
+             addressPrefix: String(r.address_prefix),
+             asn: Number(r.asn) || 0, errorCode: r.error_code,
+             origin: r.origin };
+  }
 
   // A stored used-assertion row in the shape `common/used_assertions.js` works
   // in. `bigint` columns arrive from `pg` as STRINGS, because a 64-bit integer
@@ -3529,6 +3874,635 @@ function create(options) {
                         [String(realmId)]).then(function (r) {
         const row = (r.rows || [])[0];
         return row ? row.material : null;
+      });
+    },
+
+    // =========================================================================
+    // RISK SCORING (#62): the external datasets by version, and the
+    // attributable failure history. `risk/risk_store.ts` picks this group by
+    // its names (RISK_GROUP there) and holds the same shapes in memory when
+    // the driver has none of them. `risk/CLAUDE.md` argues both.
+    // =========================================================================
+
+    // Every dataset's live version and state, for every realm.
+    riskListDatasets: function () {
+      log.debug("Entering riskListDatasets().");
+      log.debug("Leaving riskListDatasets().");
+      return pool.query(
+        'SELECT realm, dataset, kind, active_version, previous_version, ' +
+        'state, updated_at FROM sts_risk_datasets ORDER BY realm, dataset'
+      ).then(function (r) {
+        return r.rows.map(riskDatasetFrom);
+      });
+    },
+
+    // Every version of one dataset (or of every dataset, for ''), newest
+    // first — refused and deleted ones included, because this table is the
+    // record of what was loaded.
+    riskListVersions: function (realm, dataset) {
+      log.debug("Entering riskListVersions(). dataset=" + dataset);
+      log.debug("Leaving riskListVersions().");
+      return pool.query(
+        'SELECT * FROM sts_risk_dataset_versions ' +
+        'WHERE realm = $1 AND ($2 = \'\' OR dataset = $2) ' +
+        'ORDER BY fetched_at DESC, version DESC',
+        [String(realm || ''), String(dataset || '')]
+      ).then(function (r) {
+        return r.rows.map(riskVersionFrom);
+      });
+    },
+
+    // A version begun: its row in `loading`, or false when that version of
+    // that dataset is already recorded — a second node importing the same
+    // file, or the same file seen again, loads nothing twice.
+    riskBeginVersion: function (v) {
+      log.debug("Entering riskBeginVersion(). " + v.dataset + " " +
+                v.version);
+      log.debug("Leaving riskBeginVersion().");
+      return pool.query(
+        'INSERT INTO sts_risk_dataset_versions (realm, dataset, version, ' +
+        'format, provider, licence, attribution, source, source_uri, ' +
+        'sha256, byte_count, parameters, verification, published_at, ' +
+        'next_update_at, fetched_at, state, origin) VALUES ($1, $2, $3, $4, ' +
+        '$5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, ' +
+        '\'loading\', $17) ON CONFLICT (realm, dataset, version) DO NOTHING ' +
+        'RETURNING version',
+        [v.realm || '', v.dataset, v.version, v.format, v.provider,
+         v.licence, v.attribution || '', v.source, v.sourceUri || '',
+         v.sha256, Number(v.byteCount) || 0,
+         JSON.stringify(v.parameters || {}), v.verification,
+         Number(v.publishedAt) || 0, Number(v.nextUpdateAt) || 0,
+         Number(v.fetchedAt) || 0, processId]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // -------------------------------------------------------------------------
+    // ROWS, IN BATCHES, AS ONE `INSERT … SELECT FROM unnest()` PER BATCH: one
+    // array parameter per column rather than one parameter per value, so a
+    // batch is not bounded by the protocol's 65,535 bind parameters that
+    // `recordChanges()` above had to learn about. `COPY` would be faster and
+    // needs a dependency (pg-copy-streams); a city dataset is a few million
+    // rows, loaded once a week, off every request's path.
+    // -------------------------------------------------------------------------
+    riskInsertRows: function (kind, realm, dataset, version, rows) {
+      log.debug("Entering riskInsertRows(). kind=" + kind + " rows=" +
+                rows.length);
+      // A column's values, with its default where a row has none: an
+      // explicit null in an unnest() array is a NULL, which a NOT NULL
+      // column refuses whatever its DEFAULT says. `null` as the default is
+      // for the two nullable columns (latitude, longitude).
+      const col = function (name, dflt) {
+        return rows.map(function (row) {
+          const value = row[name];
+          return value === undefined || value === null
+            ? (dflt === undefined ? null : dflt) : value;
+        });
+      };
+      let statement;
+      let params;
+      if (kind === 'geo') {
+        statement =
+          'INSERT INTO sts_risk_geo_ranges (dataset, version, range_start, ' +
+          'range_end, location_id, continent, country, subdivision, city, ' +
+          'registered_country, latitude, longitude, accuracy_km, ' +
+          'anonymous_proxy, satellite) SELECT $1, $2, u.* FROM unnest(' +
+          '$3::inet[], $4::inet[], $5::bigint[], $6::text[], $7::text[], ' +
+          '$8::text[], $9::text[], $10::text[], $11::float8[], ' +
+          '$12::float8[], $13::int[], $14::bool[], $15::bool[]) AS u ' +
+          'ON CONFLICT DO NOTHING';
+        params = [dataset, version, col('start'), col('end'),
+                  col('locationId', 0), col('continent', ''),
+                  col('country', ''), col('subdivision', ''),
+                  col('city', ''), col('registeredCountry', ''),
+                  col('latitude'), col('longitude'), col('accuracyKm', 0),
+                  col('anonymousProxy', false), col('satellite', false)];
+      } else if (kind === 'asn') {
+        statement =
+          'INSERT INTO sts_risk_asn_ranges (dataset, version, range_start, ' +
+          'range_end, asn, as_org, as_domain) SELECT $1, $2, u.* FROM ' +
+          'unnest($3::inet[], $4::inet[], $5::bigint[], $6::text[], ' +
+          '$7::text[]) AS u ON CONFLICT DO NOTHING';
+        params = [dataset, version, col('start'), col('end'),
+                  col('asn', 0), col('asOrg', ''), col('asDomain', '')];
+      } else if (kind === 'iplist') {
+        statement =
+          'INSERT INTO sts_risk_ip_lists (realm, dataset, version, ' +
+          'range_start, range_end, category, note) SELECT $1, $2, $3, u.* ' +
+          'FROM unnest($4::inet[], $5::inet[], $6::text[], $7::text[]) AS u ' +
+          'ON CONFLICT DO NOTHING';
+        params = [realm || '', dataset, version, col('start'), col('end'),
+                  col('category', ''), col('note', '')];
+      } else {
+        log.debug("Leaving riskInsertRows(). Unknown kind.");
+        return Promise.reject(new Error(errorCodes.tag('STS-RISK-0006') +
+          'no risk dataset table holds rows of kind "' + kind + '".'));
+      }
+      log.debug("Leaving riskInsertRows().");
+      return pool.query(statement, params).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    // A version's outcome: `ready` with its row count, or `refused` with the
+    // reason and the code.
+    riskFinishVersion: function (realm, dataset, version, patch) {
+      log.debug("Entering riskFinishVersion(). " + dataset + " " + version +
+                " " + patch.state);
+      log.debug("Leaving riskFinishVersion().");
+      return pool.query(
+        'UPDATE sts_risk_dataset_versions SET state = $4, row_count = $5, ' +
+        'loaded_at = $6, refusal = $7, error_code = $8, ' +
+        'parameters = parameters || $9::jsonb ' +
+        'WHERE realm = $1 AND dataset = $2 AND version = $3',
+        [realm || '', dataset, version, patch.state,
+         Number(patch.rowCount) || 0, Number(patch.loadedAt) || 0,
+         String(patch.refusal || ''), String(patch.errorCode || ''),
+         JSON.stringify(patch.parameters || {})]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // -------------------------------------------------------------------------
+    // ACTIVATION, IN ONE TRANSACTION WITH ITS CHANGE ROW. The dataset's row
+    // names the new version and remembers the one it replaces, the new
+    // version becomes `active` and the old one `superseded`, and a
+    // `risk-dataset` change row tells every other process to drop what it
+    // cached — so no node answers from a version the others have left. The
+    // version must be `ready` or `superseded` (a rollback); anything else is
+    // refused without writing.
+    // -------------------------------------------------------------------------
+    riskActivate: function (realm, dataset, kind, version, now) {
+      log.debug("Entering riskActivate(). " + dataset + " " + version);
+      const r0 = String(realm || '');
+      log.debug("Leaving riskActivate().");
+      return withTransaction(function (client) {
+        return client.query(
+          'SELECT state FROM sts_risk_dataset_versions WHERE realm = $1 ' +
+          'AND dataset = $2 AND version = $3 FOR UPDATE',
+          [r0, dataset, version]
+        ).then(function (r) {
+          const state = r.rows[0] ? r.rows[0].state : '';
+          if (state !== 'ready' && state !== 'superseded' &&
+              state !== 'active') {
+            return { activated: false, state: state };
+          }
+          return client.query(
+            'SELECT active_version FROM sts_risk_datasets WHERE realm = $1 ' +
+            'AND dataset = $2 FOR UPDATE', [r0, dataset]
+          ).then(function (d) {
+            const previous = d.rows[0] ? d.rows[0].active_version : '';
+            if (previous === version) {
+              return { activated: true, previous: previous, unchanged: true };
+            }
+            return client.query(
+              'INSERT INTO sts_risk_datasets (realm, dataset, kind, ' +
+              'active_version, previous_version, state, updated_at) VALUES ' +
+              '($1, $2, $3, $4, $5, \'active\', $6) ON CONFLICT (realm, ' +
+              'dataset) DO UPDATE SET active_version = EXCLUDED.' +
+              'active_version, previous_version = EXCLUDED.previous_version, ' +
+              'kind = EXCLUDED.kind, state = \'active\', updated_at = ' +
+              'EXCLUDED.updated_at',
+              [r0, dataset, kind, version, previous, Number(now)]
+            ).then(function () {
+              return client.query(
+                'UPDATE sts_risk_dataset_versions SET state = \'superseded\', ' +
+                'superseded_at = $4 WHERE realm = $1 AND dataset = $2 AND ' +
+                'state = \'active\' AND version <> $3',
+                [r0, dataset, version, Number(now)]);
+            }).then(function () {
+              return client.query(
+                'UPDATE sts_risk_dataset_versions SET state = \'active\', ' +
+                'activated_at = $4, superseded_at = 0 WHERE realm = $1 AND ' +
+                'dataset = $2 AND version = $3',
+                [r0, dataset, version, Number(now)]);
+            }).then(function () {
+              return recordChanges(client, [{ kind: 'risk-dataset',
+                                              realm: r0, key: dataset }]);
+            }).then(function () {
+              return { activated: true, previous: previous };
+            });
+          });
+        });
+      });
+    },
+
+    // A version's rows, deleted a batch at a time (the application role has
+    // no TRUNCATE and cannot drop a partition). The count deleted, so the
+    // caller knows when it is done.
+    riskDeleteRows: function (kind, realm, dataset, version, limit) {
+      log.debug("Entering riskDeleteRows(). kind=" + kind + " " + dataset +
+                " " + version);
+      const table = { geo: 'sts_risk_geo_ranges',
+                      asn: 'sts_risk_asn_ranges',
+                      iplist: 'sts_risk_ip_lists' }[kind];
+      if (!table) {
+        log.debug("Leaving riskDeleteRows(). Unknown kind.");
+        return Promise.resolve(0);
+      }
+      const realmClause = kind === 'iplist' ? 'realm = $4 AND ' : '';
+      const params = [dataset, version, Number(limit) || 10000];
+      if (kind === 'iplist') {
+        params.push(realm || '');
+      }
+      log.debug("Leaving riskDeleteRows().");
+      return pool.query(
+        'DELETE FROM ' + table + ' WHERE ctid IN (SELECT ctid FROM ' + table +
+        ' WHERE ' + realmClause + 'dataset = $1 AND version = $2 LIMIT $3)',
+        params
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    // The version's rows are gone; its row stays, as the record.
+    riskMarkRowsDeleted: function (realm, dataset, version, now) {
+      log.debug("Entering riskMarkRowsDeleted(). " + dataset + " " + version);
+      log.debug("Leaving riskMarkRowsDeleted().");
+      return pool.query(
+        'UPDATE sts_risk_dataset_versions SET state = \'deleted\', ' +
+        'rows_deleted_at = $4 WHERE realm = $1 AND dataset = $2 AND ' +
+        'version = $3 AND state <> \'active\'',
+        [realm || '', dataset, version, Number(now)]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // -------------------------------------------------------------------------
+    // ONE ADDRESS IN ONE VERSION: the range with the greatest start not above
+    // it, kept only if its end is not below it. One descending probe of the
+    // primary key. IPv4 sorts before IPv6 in `inet`, so an IPv6 address with
+    // no IPv6 range beneath it finds an IPv4 range whose end is below it and
+    // answers nothing, which is right.
+    // -------------------------------------------------------------------------
+    riskLookupRange: function (kind, realm, dataset, version, address) {
+      log.debug("Entering riskLookupRange(). kind=" + kind);
+      const table = { geo: 'sts_risk_geo_ranges',
+                      asn: 'sts_risk_asn_ranges',
+                      iplist: 'sts_risk_ip_lists' }[kind];
+      if (!table) {
+        log.debug("Leaving riskLookupRange(). Unknown kind.");
+        return Promise.resolve(null);
+      }
+      const realmClause = kind === 'iplist' ? 'realm = $4 AND ' : '';
+      const params = [dataset, version, String(address)];
+      if (kind === 'iplist') {
+        params.push(realm || '');
+      }
+      log.debug("Leaving riskLookupRange().");
+      return pool.query(
+        'SELECT * FROM (SELECT * FROM ' + table + ' WHERE ' + realmClause +
+        'dataset = $1 AND version = $2 AND range_start <= $3::inet ' +
+        'ORDER BY range_start DESC LIMIT 1) s WHERE s.range_end >= $3::inet',
+        params
+      ).then(function (r) {
+        return r.rows[0] ? riskRangeFrom(kind, r.rows[0]) : null;
+      });
+    },
+
+    // One attributable failure. The address arrives sealed and as a prefix;
+    // the name as a subject or a keyed digest — never as typed.
+    riskRecordFailure: function (row) {
+      log.debug("Entering riskRecordFailure(). door=" + row.door);
+      log.debug("Leaving riskRecordFailure().");
+      return pool.query(
+        'INSERT INTO sts_risk_failures (realm, at, door, subject, name_hmac, ' +
+        'address_sealed, address_prefix, asn, error_code, origin) VALUES ' +
+        '($1, $2, $3, $4, $5, $6, $7::cidr, $8, $9, $10) RETURNING id',
+        [row.realm || '', Number(row.at), row.door, row.subject || '',
+         row.nameHmac || '', row.addressSealed || '', row.addressPrefix,
+         Number(row.asn) || 0, row.errorCode, processId]
+      ).then(function (r) {
+        return r.rows[0] ? String(r.rows[0].id) : '';
+      });
+    },
+
+    // A page of one realm's failures, newest first, since `since`, narrowed
+    // to one subject, one name digest or one prefix; with the matching count.
+    riskListFailures: function (realm, opts) {
+      log.debug("Entering riskListFailures(). realm=" + realm);
+      const o = opts || {};
+      const where = 'WHERE realm = $1 AND at >= $2 ' +
+        'AND ($3 = \'\' OR subject = $3) AND ($4 = \'\' OR name_hmac = $4) ' +
+        'AND ($5 = \'\' OR address_prefix = $5::cidr) ' +
+        'AND ($6 = \'\' OR door = $6)';
+      const params = [realm || '', Number(o.since) || 0, o.subject || '',
+                      o.nameHmac || '', o.prefix || '', o.door || ''];
+      log.debug("Leaving riskListFailures().");
+      return Promise.all([
+        pool.query(
+          'SELECT id, realm, at, door, subject, name_hmac, address_sealed, ' +
+          'host(address_prefix) || \'/\' || masklen(address_prefix) AS ' +
+          'address_prefix, asn, error_code, origin FROM sts_risk_failures ' +
+          where + ' ORDER BY at DESC, id DESC LIMIT $7 OFFSET $8',
+          params.concat([Number(o.limit) || 50, Number(o.offset) || 0])),
+        pool.query('SELECT count(*) AS total FROM sts_risk_failures ' + where,
+                   params)
+      ]).then(function (answers) {
+        return { rows: answers[0].rows.map(riskFailureFrom),
+                 total: Number((answers[1].rows[0] || {}).total) || 0 };
+      });
+    },
+
+    // Failures older than `beforeMs`, deleted a batch at a time.
+    riskPurgeFailures: function (beforeMs, limit) {
+      log.debug("Entering riskPurgeFailures().");
+      log.debug("Leaving riskPurgeFailures().");
+      return pool.query(
+        'DELETE FROM sts_risk_failures WHERE ctid IN (SELECT ctid FROM ' +
+        'sts_risk_failures WHERE at < $1 LIMIT $2)',
+        [Number(beforeMs), Number(limit) || 10000]
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    // ===== THE MODEL'S HISTORY (#62 P2) =====================================
+
+    // The counts of the given (feature, value) pairs for one subject — a
+    // person's sub, or '*' for the realm's population. A pair never seen has
+    // no row and is left out; the caller reads it as 0.
+    riskFeatureCounts: function (realm, subject, pairs) {
+      log.debug("Entering riskFeatureCounts(). pairs=" + pairs.length);
+      log.debug("Leaving riskFeatureCounts().");
+      return pool.query(
+        'SELECT c.feature, c.value, c.count FROM sts_risk_feature_counts c ' +
+        'JOIN unnest($3::text[], $4::text[]) AS p(feature, value) ' +
+        'ON c.feature = p.feature AND c.value = p.value ' +
+        'WHERE c.realm = $1 AND c.subject = $2',
+        [realm || '', subject, pairs.map(function (p) {
+          return p.feature;
+        }), pairs.map(function (p) {
+          return p.value;
+        })]
+      ).then(function (r) {
+        return r.rows.map(function (row) {
+          return { feature: row.feature, value: row.value,
+                   count: Number(row.count) || 0 };
+        });
+      });
+    },
+
+    // How many distinct values a feature has for one subject, optionally
+    // only those beginning with `prefix` — which is how a combination
+    // feature (`ip>asn`, valued `<ip>|<asn>`) answers "how many networks has
+    // this address been seen in".
+    riskDistinctValues: function (realm, subject, feature, prefix) {
+      log.debug("Entering riskDistinctValues(). " + feature);
+      log.debug("Leaving riskDistinctValues().");
+      return pool.query(
+        'SELECT count(*) AS n FROM sts_risk_feature_counts WHERE realm = $1 ' +
+        'AND subject = $2 AND feature = $3 AND ($4 = \'\' OR ' +
+        'starts_with(value, $4))',
+        [realm || '', subject, feature, prefix || '']
+      ).then(function (r) {
+        return Number((r.rows[0] || {}).n) || 0;
+      });
+    },
+
+    // One sign-in counted: each (subject, feature, value) goes up by one, in
+    // ONE statement, so two nodes counting at once never lose a count. The
+    // caller has made the rows distinct (a statement may touch a row once).
+    riskIncrementCounts: function (realm, rows, at) {
+      log.debug("Entering riskIncrementCounts(). rows=" + rows.length);
+      log.debug("Leaving riskIncrementCounts().");
+      return pool.query(
+        'INSERT INTO sts_risk_feature_counts (realm, subject, feature, value, ' +
+        'count, first_at, last_at) SELECT $1, u.subject, u.feature, u.value, ' +
+        '1, $5, $5 FROM unnest($2::text[], $3::text[], $4::text[]) AS ' +
+        'u(subject, feature, value) ON CONFLICT (realm, subject, feature, ' +
+        'value) DO UPDATE SET count = sts_risk_feature_counts.count + 1, ' +
+        'last_at = EXCLUDED.last_at',
+        [realm || '', rows.map(function (r) {
+          return r.subject;
+        }), rows.map(function (r) {
+          return r.feature;
+        }), rows.map(function (r) {
+          return r.value;
+        }), Number(at)]
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    // One assessment, as `risk/risk_engine.ts` builds it. The address comes
+    // sealed and as a prefix, as a failure's does.
+    riskRecordAssessment: function (a) {
+      log.debug("Entering riskRecordAssessment(). " + a.id);
+      log.debug("Leaving riskRecordAssessment().");
+      return pool.query(
+        'INSERT INTO sts_risk_assessments (realm, id, at, phase, door, ' +
+        'subject, session_id, client_id, address_sealed, address_prefix, ' +
+        'asn, as_org, country, subdivision, city, latitude, longitude, ' +
+        'accuracy_km, ip_lists, ua_hash, ua_family, ua_os, ua_platform, bot, ' +
+        'ja4, credential_kind, credential_hash, aaguid, authenticator_cert, ' +
+        'backup_eligible, backup_state, jkt, cert_fingerprint, datasets, ' +
+        'signals, score, level, decision, policy_id, error_code, origin) ' +
+        'VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::cidr, $11, $12, ' +
+        '$13, $14, $15, $16, $17, $18, $19::text[], $20, $21, $22, $23, $24, ' +
+        '$25, $26, $27, $28, $29, $30, $31, $32, $33, $34::jsonb, ' +
+        '$35::jsonb, $36, $37, $38, $39, $40, $41) ON CONFLICT DO NOTHING',
+        [a.realm || '', a.id, Number(a.at), a.phase, a.door, a.subject || '',
+         a.sessionId || '', a.clientId || '', a.addressSealed || '',
+         a.addressPrefix, Number(a.asn) || 0, a.asOrg || '', a.country || '',
+         a.subdivision || '', a.city || '',
+         a.latitude === null || a.latitude === undefined ? null
+           : Number(a.latitude),
+         a.longitude === null || a.longitude === undefined ? null
+           : Number(a.longitude),
+         Number(a.accuracyKm) || 0, a.ipLists || [], a.uaHash || '',
+         a.uaFamily || '', a.uaOs || '', a.uaPlatform || '', !!a.bot,
+         a.ja4 || '', a.credentialKind || '', a.credentialHash || '',
+         a.aaguid || '', a.authenticatorCert || '',
+         typeof a.backupEligible === 'boolean' ? a.backupEligible : null,
+         typeof a.backupState === 'boolean' ? a.backupState : null,
+         a.jkt || '', a.certFingerprint || '',
+         JSON.stringify(a.datasets || {}), JSON.stringify(a.signals || []),
+         Number(a.score), a.level, a.decision, a.policyId || '',
+         a.errorCode || '', processId]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // A page of one realm's assessments, newest first, optionally one
+    // subject's or one level's; with the matching count. Never the sealed
+    // address.
+    riskListAssessments: function (realm, opts) {
+      log.debug("Entering riskListAssessments(). realm=" + realm);
+      const o = opts || {};
+      const where = 'WHERE realm = $1 AND at >= $2 AND ($3 = \'\' OR ' +
+        'subject = $3) AND ($4 = \'\' OR level = $4)';
+      const params = [realm || '', Number(o.since) || 0, o.subject || '',
+                      o.level || ''];
+      log.debug("Leaving riskListAssessments().");
+      return Promise.all([
+        pool.query(
+          'SELECT id, at, phase, door, subject, session_id, client_id, ' +
+          'host(address_prefix) || \'/\' || masklen(address_prefix) AS ' +
+          'address_prefix, asn, as_org, country, subdivision, city, ' +
+          'ip_lists, ua_family, ua_os, ua_platform, bot, ja4, ' +
+          'credential_kind, aaguid, backup_eligible, backup_state, ' +
+          'datasets, signals, score, level, decision FROM ' +
+          'sts_risk_assessments ' + where +
+          ' ORDER BY at DESC, id DESC LIMIT $5 OFFSET $6',
+          params.concat([Number(o.limit) || 50, Number(o.offset) || 0])),
+        pool.query('SELECT count(*) AS total FROM sts_risk_assessments ' +
+                   where, params)
+      ]).then(function (answers) {
+        return {
+          total: Number((answers[1].rows[0] || {}).total) || 0,
+          rows: answers[0].rows.map(function (r) {
+            return { id: r.id, at: Number(r.at), phase: r.phase,
+                     door: r.door, subject: r.subject,
+                     sessionId: r.session_id, clientId: r.client_id,
+                     addressPrefix: String(r.address_prefix),
+                     asn: Number(r.asn) || 0, asOrg: r.as_org,
+                     country: r.country, subdivision: r.subdivision,
+                     city: r.city, ipLists: r.ip_lists || [],
+                     uaFamily: r.ua_family, uaOs: r.ua_os,
+                     uaPlatform: r.ua_platform, bot: !!r.bot, ja4: r.ja4,
+                     credentialKind: r.credential_kind, aaguid: r.aaguid,
+                     backupEligible: r.backup_eligible,
+                     backupState: r.backup_state,
+                     datasets: r.datasets || {}, signals: r.signals || [],
+                     score: Number(r.score), level: r.level,
+                     decision: r.decision };
+          })
+        };
+      });
+    },
+
+    // A person's current standing, replaced whole.
+    riskUpsertSubject: function (s) {
+      log.debug("Entering riskUpsertSubject().");
+      log.debug("Leaving riskUpsertSubject().");
+      return pool.query(
+        'INSERT INTO sts_risk_subjects (realm, subject, score, level, ' +
+        'previous_level, reason, last_assessment, crossed_at, actions, ' +
+        'feedback, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ' +
+        '$9::jsonb, $10, $11) ON CONFLICT (realm, subject) DO UPDATE SET ' +
+        'score = EXCLUDED.score, level = EXCLUDED.level, previous_level = ' +
+        'sts_risk_subjects.level, reason = EXCLUDED.reason, last_assessment ' +
+        '= EXCLUDED.last_assessment, crossed_at = CASE WHEN ' +
+        'sts_risk_subjects.level <> EXCLUDED.level THEN EXCLUDED.updated_at ' +
+        'ELSE sts_risk_subjects.crossed_at END, updated_at = ' +
+        'EXCLUDED.updated_at',
+        [s.realm || '', s.subject, Number(s.score), s.level, '', s.reason || '',
+         s.lastAssessment || '', Number(s.updatedAt), JSON.stringify({}), '',
+         Number(s.updatedAt)]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // The realm's people by current standing, highest score first.
+    riskListSubjects: function (realm, opts) {
+      log.debug("Entering riskListSubjects(). realm=" + realm);
+      const o = opts || {};
+      log.debug("Leaving riskListSubjects().");
+      return pool.query(
+        'SELECT subject, score, level, previous_level, reason, ' +
+        'last_assessment, crossed_at, updated_at FROM sts_risk_subjects ' +
+        'WHERE realm = $1 ORDER BY score DESC, updated_at DESC LIMIT $2',
+        [realm || '', Number(o.limit) || 50]
+      ).then(function (r) {
+        return r.rows.map(function (row) {
+          return { subject: row.subject, score: Number(row.score),
+                   level: row.level, previousLevel: row.previous_level,
+                   reason: row.reason, lastAssessment: row.last_assessment,
+                   crossedAt: Number(row.crossed_at) || 0,
+                   updatedAt: Number(row.updated_at) || 0 };
+        });
+      });
+    },
+
+    // The last context a live session was assessed in, replaced whole — what
+    // continuous evaluation (P4) compares a later request with.
+    riskUpsertSessionContext: function (c) {
+      log.debug("Entering riskUpsertSessionContext().");
+      log.debug("Leaving riskUpsertSessionContext().");
+      return pool.query(
+        'INSERT INTO sts_risk_session_context (realm, session_id, subject, ' +
+        'address_prefix, asn, country, ua_hash, ja4, jkt, score, level, ' +
+        'updated_at) VALUES ($1, $2, $3, $4::cidr, $5, $6, $7, $8, $9, $10, ' +
+        '$11, $12) ON CONFLICT (realm, session_id) DO UPDATE SET subject = ' +
+        'EXCLUDED.subject, address_prefix = EXCLUDED.address_prefix, asn = ' +
+        'EXCLUDED.asn, country = EXCLUDED.country, ua_hash = ' +
+        'EXCLUDED.ua_hash, ja4 = EXCLUDED.ja4, jkt = EXCLUDED.jkt, score = ' +
+        'EXCLUDED.score, level = EXCLUDED.level, updated_at = ' +
+        'EXCLUDED.updated_at',
+        [c.realm || '', c.sessionId, c.subject, c.addressPrefix,
+         Number(c.asn) || 0, c.country || '', c.uaHash || '', c.ja4 || '',
+         c.jkt || '', Number(c.score), c.level, Number(c.updatedAt)]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // Assessments, feature counts and session contexts past their
+    // retention, a batch at a time.
+    riskPurgeHistory: function (table, beforeMs, limit) {
+      log.debug("Entering riskPurgeHistory(). " + table);
+      const column = { assessments: 'at', counts: 'last_at',
+                       sessions: 'updated_at' }[table];
+      const name = { assessments: 'sts_risk_assessments',
+                     counts: 'sts_risk_feature_counts',
+                     sessions: 'sts_risk_session_context' }[table];
+      if (!column) {
+        log.debug("Leaving riskPurgeHistory(). Unknown table.");
+        return Promise.resolve(0);
+      }
+      log.debug("Leaving riskPurgeHistory().");
+      return pool.query(
+        'DELETE FROM ' + name + ' WHERE ctid IN (SELECT ctid FROM ' + name +
+        ' WHERE ' + column + ' < $1 LIMIT $2)',
+        [Number(beforeMs), Number(limit) || 10000]
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    // ===== WHO ACCEPTED WHICH PROVIDER'S TERMS (#62, schema 8) ==============
+
+    // One acceptance, appended; never updated or deleted, because it is the
+    // record of who agreed to hold a provider's data on what terms.
+    riskRecordAcceptance: function (a) {
+      log.debug("Entering riskRecordAcceptance(). " + a.provider);
+      log.debug("Leaving riskRecordAcceptance().");
+      return pool.query(
+        'INSERT INTO sts_risk_terms_acceptances (provider, terms_digest, ' +
+        'terms_text, accepted_by, accepted_via, deployment, page_digest, ' +
+        'accepted_at, origin) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ' +
+        'RETURNING id',
+        [a.provider, a.termsDigest, a.termsText, a.acceptedBy, a.acceptedVia,
+         a.deployment || '', a.pageDigest || '', Number(a.acceptedAt),
+         processId]
+      ).then(function (r) {
+        return r.rows[0] ? String(r.rows[0].id) : '';
+      });
+    },
+
+    // Every acceptance, newest first.
+    riskListAcceptances: function () {
+      log.debug("Entering riskListAcceptances().");
+      log.debug("Leaving riskListAcceptances().");
+      return pool.query(
+        'SELECT id, provider, terms_digest, terms_text, accepted_by, ' +
+        'accepted_via, deployment, page_digest, accepted_at FROM ' +
+        'sts_risk_terms_acceptances ORDER BY accepted_at DESC, id DESC'
+      ).then(function (r) {
+        return r.rows.map(function (row) {
+          return { id: String(row.id), provider: row.provider,
+                   termsDigest: row.terms_digest, termsText: row.terms_text,
+                   acceptedBy: row.accepted_by,
+                   acceptedVia: row.accepted_via,
+                   deployment: row.deployment, pageDigest: row.page_digest,
+                   acceptedAt: Number(row.accepted_at) || 0 };
+        });
       });
     },
 

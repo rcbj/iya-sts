@@ -2741,7 +2741,12 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
     session = authn.startSession(res, username, ['swk'], '1',
                                  'a client certificate on the ' + mode +
                                  '-client-certificate listener',
-                                 { request: req });
+                                 // Which certificate, as a thumbprint the
+                                 // event fingerprints again (#62 P0).
+                                 { request: req,
+                                   credential: {
+                                     kind: 'certificate',
+                                     id: cert.fingerprint256 || '' } });
   } catch (e) {
     // Bookkeeping must never break a connection that has already been
     // accepted — the same rule recordClientCertificate() states.

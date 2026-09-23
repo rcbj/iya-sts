@@ -1674,6 +1674,19 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `risc.historyPerAccount` | `STS_RISC_HISTORY_PER_ACCOUNT` | `10` | yes | How many credential-compromise and identifier-change records a RISC row keeps, each. |
 | `risc.recycleWindowDays` | `STS_RISC_RECYCLE_WINDOW_DAYS` | `365` | yes | How long after an account released an email address or phone number another account taking it is reported as RISC `identifier-recycled` (#146). Bounded by `risc.maxAccountsTracked` too. `0` reports nothing. |
 | `risc.optOutDelayHours` | `STS_RISC_OPT_OUT_DELAY_HOURS` | `24` | yes | How long an account holder's opt-out on `/portal/signals` stays in `opt-out-initiated` before the `risc.opt-out-effective` scheduler job makes it effective (RISC section 2.8, #146). |
+| `risk.datasetsDirectory` | `STS_RISK_DATASETS_DIRECTORY` | *(empty)* | yes | A directory the `risk.dataset-directory` job imports risk datasets from: each `<name>.json` manifest names a dataset, a format and the file beside it. How a GeoIP dataset of millions of rows arrives — an operator pipeline puts it there; this service fetches nothing. Empty turns the job off. |
+| `risk.datasetsDirectoryScanS` | `STS_RISK_DATASETS_DIRECTORY_SCAN_S` | `300` | yes | How often that directory is read. A version already recorded is never loaded twice. |
+| `risk.datasetShrinkLimitPercent` | `STS_RISK_DATASET_SHRINK_LIMIT_PERCENT` | `50` | yes | A new version with this many percent fewer rows than the active one is refused and the active one stays — a truncated download looks exactly like a smaller dataset. |
+| `risk.supersededRetentionDays` | `STS_RISK_SUPERSEDED_RETENTION_DAYS` | `30` | yes | How long a superseded version's rows are kept for rollback; GeoLite2's licence says thirty. |
+| `risk.geoStaleAfterDays` | `STS_RISK_GEO_STALE_AFTER_DAYS` | `45` | yes | How old a geolocation or ASN version may be before it counts for nothing. Stale data never refuses a sign-in. |
+| `risk.ipListStaleAfterHours` | `STS_RISK_IP_LIST_STALE_AFTER_HOURS` | `24` | yes | The same for a Tor exit or reputation list; an operator's own lists are never stale. |
+| `risk.recordFailures` | `STS_RISK_RECORD_FAILURES` | `true` | yes | Whether every refused password, at every door that checks one, is recorded with the person (or a keyed digest of a name that matched nobody), the network and the code — in the database only where the address can be sealed. |
+| `risk.failureRetentionDays` | `STS_RISK_FAILURE_RETENTION_DAYS` | `30` | yes | How long a recorded failure is kept. |
+| `risk.assessSignIns` | `STS_RISK_ASSESS_SIGN_INS` | `true` | yes | Whether every sign-in that starts or re-authenticates a session is scored — the Freeman et al. model plus the evaluators — and recorded on Monitoring → Risk. **Observe only**: nothing is decided by a score yet, and no sign-in waits for one. |
+| `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `100` | yes | The score, in hundredths, from which a sign-in is MEDIUM (100 is a score of 1). |
+| `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | yes | The score, in hundredths, from which a sign-in is HIGH. |
+| `risk.assessmentRetentionDays` | `STS_RISK_ASSESSMENT_RETENTION_DAYS` | `90` | yes | How long an assessment is kept. |
+| `risk.historyRetentionDays` | `STS_RISK_HISTORY_RETENTION_DAYS` | `180` | yes | How long the model remembers a value nobody has signed in with since — an address, a network, a device. |
 | `persistence.mode` | `STS_PERSISTENCE_MODE` | `memory` | **restart** — the store is opened and READ before the HTTP listener binds, so a mode changed at runtime would leave a service whose directory came from one place and whose writes went to another | Where the embedded directory, the trust realm registry and the runtime setting changes are written down. `memory` writes nothing and is what this service did until 2026-08-27. `ldif` writes an RFC 2849 file per realm plus two JSON files into `dataDir` and needs no database. `postgres` writes six tables. What this service MINTS — sessions, tokens, codes, artifacts, Kerberos principals, the replay caches, the counters and the audit log — is persisted in PRODUCT mode on `postgres` and in no other configuration, each row encrypted under the same key-encryption key as the signing keys; development mode persists none of it, because the signing key is regenerated on every start there. See *Persistence* above. |
 | `persistence.dataDir` | `STS_PERSISTENCE_DATA_DIR` | `./data` | **restart** — same reason | Where `ldif` mode writes. A relative path resolves against the package root rather than the working directory, for the reason `CONFIG_FILE` does. Ignored in the other two modes. In a container this is what a volume mounts over. |
 | `persistence.databaseUrl` | `STS_DATABASE_URL` | `postgres://sts:sts@localhost:5432/sts` | **restart** — the connection pool is opened before the listener binds | The connection string `postgres` mode dials. **The default names an OWNER and the compose stack does not**: the default is for a local database with nothing in it, which this service builds for itself, while the stack dials the least-privileged `sts_app` that `postgres/schema.sql` created — see *Building the schema*. The default is a LOCAL DEVELOPMENT one matching the Postgres service in this repository's `docker-compose.yml` (user, password and database all `sts`), so turning persistence on against a local database is one setting rather than two. **It is never dialled unless `persistence.mode` is `postgres`**, which is not the default, so it is inert on an ordinary run. The compose stack sets this variable itself with `postgres` as the host, that being the service name on its network. It carries a password, so this service never echoes it back — `/admin/persistence` reports the host, port, database and user parsed out of it. |
@@ -8260,6 +8273,86 @@ whole point is the opposite — this process holds the CA private keys and a
 browser must never — so every choice is a form field, every computation is on
 the server, and `script-src 'none'` is untouched.
 
+## Risk scoring — Monitoring → Risk (#62)
+
+Every sign-in that starts or re-authenticates a session is scored: a port of
+Freeman et al.'s statistical model (das-group's `rba-algorithm`, MIT) against
+the person's own sign-in history and the realm's, plus evaluators — the
+address on a Tor, reputation or operator list, an automated client, a TLS
+client (JA4) never seen, recent refused passwords. The level is CAEP's LOW,
+MEDIUM or HIGH. **Today it observes and records only**; deciding at sign-in
+(a second factor at MEDIUM, refusal at HIGH, in product mode) is the next
+phase. Every assessment is listed on Monitoring → Risk and returned by
+`GET /admin-api/risk`.
+
+### Third-party datasets: supplied by you, never shipped
+
+**iya-sts distributes no third-party dataset** — not in the repository, not in
+its images, not in its tests (the fixtures are synthetic, and
+`tests/no_third_party_datasets.js` fails if a provider's file is added). The
+geolocation, network and IP-list data a score reads is **supplied by the
+deployment**, under each provider's own terms, and pulled into the
+deployment's own database at install time:
+
+```bash
+STS_DATABASE_URL=postgres://… node risk/risk_install.js \
+  --manifest datasets.json \
+  --accept-terms dbip-lite,tor-project \
+  --operator "Jo Operator" \
+  --terms-log ./risk-terms-acceptance.log \
+  --check-terms
+```
+
+`datasets.json` lists each dataset (`dataset`, `format`, and a `url` or a
+`file`; optionally `version`, `publishedAt`, `sha256`). Run inside the image,
+the loader downloads over HTTPS only, checks the SHA-256 where you name one,
+refuses a version much smaller than the active one, and activates each that
+loads. The running service fetches nothing itself. Monitoring → Risk and
+`POST /admin-api/risk/import` take a list you can paste, and
+`risk.datasetsDirectory` takes files an operator pipeline drops there.
+
+**No provider's data is imported until somebody has accepted that provider's
+current terms, and the acceptance is recorded**: who, through which door,
+from which deployment, when, and the terms text itself, in the database
+(`sts_risk_terms_acceptances`) and on the audit log; the loader also appends a
+JSON line to `--terms-log`. Terms can be accepted on Monitoring → Risk, with
+`POST /admin-api/risk/accept-terms`, or by the loader's `--accept-terms`. If a
+later build restates a provider's terms, the earlier acceptance no longer
+covers them and imports of that provider stop until somebody accepts again;
+`--check-terms` also fetches each provider's own terms page and warns when it
+has changed since the last acceptance.
+
+| Provider | Terms | What that means for you |
+|---|---|---|
+| **DB-IP Lite** (city, country, ASN) | CC BY 4.0 | **The recommended default.** Attribution with a link back is required on pages that show its results; this service draws it — the source linked, the licence named and linked, and that the data was reformatted here — wherever a result appears. |
+| **IPinfo Lite** (country, ASN) | CC BY-SA 4.0 | **IPinfo data must remain isolated in your database; do not bundle it with a software distribution.** ShareAlike binds whoever distributes the data. DB-IP Lite covers the same country and ASN data without ShareAlike. |
+| **Tor Project exit list** | as published | Check the terms of the exact list you download. |
+| **FireHOL lists** | per constituent list | An aggregate: each list inside it (DShield, Feodo, Fullbogons, Spamhaus DROP, …) keeps its own terms. Use internally; never redistribute. |
+| **MaxMind GeoLite2** | GeoLite EULA | **Not supported.** An import naming it is refused. |
+| **FIDO MDS3** | FIDO Alliance metadata terms | Planned. Contractual metadata: the latest valid BLOB only, statements no longer in it deleted, no redistribution. |
+| **Pwned Passwords** | HIBP's Pwned Passwords terms (not CC BY) | Planned. The filter is built by the deployment from its own download, after the corpus terms are checked. |
+
+### What is kept about the people who sign in
+
+Risk scoring builds a profile of how each person signs in, and that is
+personal data. What is kept, and for how long:
+
+| Kept | Where | For how long |
+|---|---|---|
+| Each assessment: the address **sealed** under the key-encryption key and as a /24 or /48 network, country, city, network (ASN), browser family, OS, device type, a fingerprint of the User-Agent (never the header), the TLS client fingerprint, which credential answered, the score and the signals | `sts_risk_assessments` | `risk.assessmentRetentionDays` (90) |
+| How often each person has used each network, address digest and device | `sts_risk_feature_counts` | `risk.historyRetentionDays` (180) since last use |
+| Each refused password: the person, or a keyed digest of a name that matched nobody — never the name as typed — and the network | `sts_risk_failures` | `risk.failureRetentionDays` (30) |
+
+All of it goes to the database **only where the key-encryption key can seal
+it** (product mode requires one); otherwise it is held in the process and gone
+at the next restart. `risk.assessSignIns` and `risk.recordFailures` turn the
+two halves off. **The lawful basis for this processing, the notice given to
+the people who sign in, and the retention your policy requires are the
+deployment's to decide and document** — the settings above are how you carry
+them out. Browser fingerprinting is not built; when it is, it will be off by
+default, per realm, switchable in the console and the API, and a scripted page
+that argues its own case.
+
 ## Versioning
 
 The version is **M.N.O**:
@@ -8524,4 +8617,9 @@ almost nothing, which is the same argument `sts_dpop.js` makes over there.
 
 ## Licence
 
-MIT — see [LICENSE.md](LICENSE.md).
+MIT — see [LICENSE.md](LICENSE.md). It also carries the notices for the code
+this repository takes from others under their own terms: FoxIO's BSD-3
+licence for JA4 (and only JA4 — none of JA4+ is implemented), das-group's MIT
+licence for the ported risk model, and the OASIS XACML conformance suite
+under Apache-2.0. **No third-party dataset is distributed**; see *Risk
+scoring*, above.

@@ -5424,6 +5424,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'single connection the page borrows. Empty with a sentence saying ' +
           'WHICH of three reasons unless persistence.mode is postgres. Add ' +
           '?format=json, or GET /admin-api/database.' },
+  { path: '/admin/risk', group: 'Admin',
+    name: 'Risk',
+    specs: [],
+    effect: 'imports, activates, rolls back or deletes a risk dataset version',
+    what: 'NON-SPEC (#62). The external datasets a risk score reads — ' +
+          'geolocation, ASN, Tor exits, IP reputation, an operator\'s allow ' +
+          'and deny lists — with each one\'s active version, freshness and ' +
+          'every version loaded or refused; a lookup of one address; and the ' +
+          'realm\'s refused passwords, attributed to a person or a name\'s ' +
+          'digest and a network, never an address. Add ?format=json.' },
   { path: '/admin/vc-status', group: 'Admin',
     name: 'Credential status',
     specs: ['token-status-list', 'bitstring-status-list'],
@@ -6247,6 +6257,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'and `why` says which of three reasons. No connection string is in ' +
           'the reply and nothing here changes anything. Mirrors GET ' +
           '/admin/database.' },
+  { path: '/admin-api/risk', group: 'Management API',
+    name: 'Risk', specs: ['openapi'],
+    what: 'NON-SPEC (#62). GET /admin/risk over JSON: the datasets, a lookup ' +
+          'with ?address=, and a page of the realm\'s refused passwords.' },
+  { path: '/admin-api/risk/:action', group: 'Management API',
+    name: 'Risk actions', specs: ['openapi'],
+    what: 'NON-SPEC (#62). import, activate, rollback, delete and ' +
+          'accept-terms: the console\'s five forms.' },
   { path: '/admin-api/vc-status', group: 'Management API',
     name: 'Credential status', specs: ['token-status-list', 'openapi'],
     what: 'NON-SPEC. GET /admin/vc-status over JSON.' },

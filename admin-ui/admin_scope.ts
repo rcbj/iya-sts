@@ -114,7 +114,10 @@ const SERVICE_PAGES = [
   // The explorer mints a DEFAULT-realm token for whoever holds the session,
   // which would hand a realm administrator a service credential. It is a
   // realm page only once it mints a realm token for a realm authority.
-  '/admin/api-explorer'
+  '/admin/api-explorer',
+  // The risk datasets are the whole service's (#62): a realm's operator list
+  // and failure history are drawn here too, but by a service administrator.
+  '/admin/risk'
 ];
 
 // Settings a realm administrator may not write. A row a realm may not carry at
@@ -123,7 +126,7 @@ const SERVICE_PAGES = [
 // keys a realm CAN carry that still name the whole service.
 const SERVICE_SETTING_PREFIXES = [
   'admin.', 'adminApi.', 'realms.', 'workers.', 'persistence.', 'debugger.',
-  'tls.', 'keys.', 'security.passwordHash'
+  'tls.', 'keys.', 'security.passwordHash', 'risk.'
 ];
 
 const SERVICE_SETTING_KEYS = [

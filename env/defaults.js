@@ -778,6 +778,23 @@ var config = {
     omitEventTimestamp: false                                                                                                                                                         // Leave event_timestamp out
   },
 
+  // --- Risk ------------------------------------------------------------
+  risk: {
+    datasetsDirectory: "",         // Dataset directory
+    datasetsDirectoryScanS: 300,   // Dataset directory scan interval (seconds)
+    datasetShrinkLimitPercent: 50, // Largest shrink accepted (percent)
+    supersededRetentionDays: 30,   // Keep a superseded version (days)
+    geoStaleAfterDays: 45,         // Geolocation and ASN data is stale after (days)
+    ipListStaleAfterHours: 24,     // Tor and reputation lists are stale after (hours)
+    recordFailures: true,          // Record attributable failures
+    failureRetentionDays: 30,      // Keep failures (days)
+    assessSignIns: true,           // Assess every sign-in
+    mediumScorePercent: 100,       // MEDIUM from (percent of a score of 1)
+    highScorePercent: 1000,        // HIGH from (percent of a score of 1)
+    assessmentRetentionDays: 90,   // Keep assessments (days)
+    historyRetentionDays: 180      // Keep the model's history (days)
+  },
+
   // --- RISC ------------------------------------------------------------
   risc: {
     enabled: true,                                                                                                                                                                                                                                                                                    // RISC enabled

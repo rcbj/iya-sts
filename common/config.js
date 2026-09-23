@@ -9207,6 +9207,136 @@ const SETTINGS = [
                  'lists, and the list is OPEN — an alias two parties agreed ' +
                  'is carried with a warning rather than refused.' },
 
+  // -------------------------------------------------------------------------
+  // RISK SCORING (#62, 2026-09-22): the external datasets a score reads, and
+  // the failure history it counts. `risk/CLAUDE.md` argues each row; the
+  // console page is Monitoring → Risk.
+  // -------------------------------------------------------------------------
+  { key: 'risk.datasetsDirectory', group: 'Risk',
+    label: 'Dataset directory', env: 'STS_RISK_DATASETS_DIRECTORY',
+    type: 'string', dflt: '', runtime: true,
+    description: 'A directory the risk.dataset-directory job imports ' +
+                 'datasets from: each <name>.json manifest there names a ' +
+                 'dataset, a format and the file beside it (and optionally ' +
+                 'its version, publication date, provider, licence and ' +
+                 'SHA-256). This is how a GeoIP dataset of millions of rows ' +
+                 'arrives — an operator pipeline such as MaxMind\'s ' +
+                 'geoipupdate, a sidecar or a shared volume puts it here, ' +
+                 'and this service opens no connection to anybody to fetch ' +
+                 'it. Empty turns the job off.' },
+
+  { key: 'risk.datasetsDirectoryScanS', group: 'Risk',
+    label: 'Dataset directory scan interval (seconds)',
+    env: 'STS_RISK_DATASETS_DIRECTORY_SCAN_S', type: 'int', dflt: 300,
+    min: 30, max: 86400, runtime: true,
+    description: 'How often the dataset directory is read for a manifest ' +
+                 'not yet imported. A version already recorded is never ' +
+                 'loaded twice, so a short interval costs a directory ' +
+                 'listing and a checksum per new file.' },
+
+  { key: 'risk.datasetShrinkLimitPercent', group: 'Risk',
+    label: 'Largest shrink accepted (percent)',
+    env: 'STS_RISK_DATASET_SHRINK_LIMIT_PERCENT', type: 'int', dflt: 50,
+    min: 0, max: 100, runtime: true,
+    description: 'A new version of a dataset with this many percent fewer ' +
+                 'rows than the active one is REFUSED and the active one ' +
+                 'stays: a truncated download looks exactly like a smaller ' +
+                 'dataset, and this is the check that tells them apart. 100 ' +
+                 'accepts any size; 0 refuses any version smaller than the ' +
+                 'one it would replace.' },
+
+  { key: 'risk.supersededRetentionDays', group: 'Risk',
+    label: 'Keep a superseded version (days)',
+    env: 'STS_RISK_SUPERSEDED_RETENTION_DAYS', type: 'int', dflt: 30,
+    min: 0, max: 3650, runtime: true,
+    description: 'How long a superseded dataset version\'s rows are kept ' +
+                 'for rollback before the risk.retention job deletes them; ' +
+                 'the version\'s own row stays as the record. 30 is ' +
+                 'GeoLite2\'s licence limit — its EULA requires a database ' +
+                 'to be deleted within 30 days of a newer release — and no ' +
+                 'provider this service knows asks for less.' },
+
+  { key: 'risk.geoStaleAfterDays', group: 'Risk',
+    label: 'Geolocation and ASN data is stale after (days)',
+    env: 'STS_RISK_GEO_STALE_AFTER_DAYS', type: 'int', dflt: 45,
+    min: 1, max: 3650, runtime: true,
+    description: 'How old a geolocation or ASN version may be, from its ' +
+                 'publication date, before its answers count for nothing: ' +
+                 'a stale dataset makes its signal unknown and never makes ' +
+                 'a sign-in refused. 45 days covers DB-IP Lite\'s monthly ' +
+                 'release with two weeks to spare.' },
+
+  { key: 'risk.ipListStaleAfterHours', group: 'Risk',
+    label: 'Tor and reputation lists are stale after (hours)',
+    env: 'STS_RISK_IP_LIST_STALE_AFTER_HOURS', type: 'int', dflt: 24,
+    min: 1, max: 8760, runtime: true,
+    description: 'How old a Tor exit or reputation list may be before it ' +
+                 'counts for nothing. A Tor exit list is worth little a few ' +
+                 'hours after it was published; an operator\'s own allow ' +
+                 'and deny lists are never stale.' },
+
+  { key: 'risk.recordFailures', group: 'Risk',
+    label: 'Record attributable failures',
+    env: 'STS_RISK_RECORD_FAILURES', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether every refused password — at the sign-in screen, ' +
+                 'an LDAP bind, the password grant, WS-Trust, SCIM Basic, ' +
+                 'EST — is recorded with the person it was about (or a ' +
+                 'keyed digest of a name that matched nobody), the network ' +
+                 'it came from and the error code. Held in the database ' +
+                 'only where it can be sealed, which product mode ensures.' },
+
+  { key: 'risk.failureRetentionDays', group: 'Risk',
+    label: 'Keep failures (days)',
+    env: 'STS_RISK_FAILURE_RETENTION_DAYS', type: 'int', dflt: 30,
+    min: 1, max: 3650, runtime: true,
+    description: 'How long a recorded failure is kept before the ' +
+                 'risk.retention job deletes it.' },
+
+  { key: 'risk.assessSignIns', group: 'Risk',
+    label: 'Assess every sign-in', env: 'STS_RISK_ASSESS_SIGN_INS',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Whether every sign-in that starts or re-authenticates a ' +
+                 'session is scored (#62 P2): the Freeman et al. model ' +
+                 'against the person\'s history and the realm\'s, and the ' +
+                 'evaluators — Tor, reputation and operator lists, an ' +
+                 'automated client, a TLS stack never seen, recent refused ' +
+                 'passwords. OBSERVE ONLY: an assessment is recorded and ' +
+                 'decides nothing yet, and a sign-in never waits for it.' },
+
+  { key: 'risk.mediumScorePercent', group: 'Risk',
+    label: 'MEDIUM from (percent of a score of 1)',
+    env: 'STS_RISK_MEDIUM_SCORE_PERCENT', type: 'int', dflt: 100, min: 1,
+    max: 1000000, runtime: true,
+    description: 'The score, in hundredths, at which a sign-in is MEDIUM ' +
+                 'risk: 100 is a score of 1, where the Freeman et al. model ' +
+                 'says the sign-in is as likely an attacker\'s as the ' +
+                 'person\'s. Familiar sign-ins score far below it.' },
+
+  { key: 'risk.highScorePercent', group: 'Risk',
+    label: 'HIGH from (percent of a score of 1)',
+    env: 'STS_RISK_HIGH_SCORE_PERCENT', type: 'int', dflt: 1000, min: 1,
+    max: 1000000, runtime: true,
+    description: 'The score, in hundredths, at which a sign-in is HIGH ' +
+                 'risk: 1000 is a score of 10.' },
+
+  { key: 'risk.assessmentRetentionDays', group: 'Risk',
+    label: 'Keep assessments (days)',
+    env: 'STS_RISK_ASSESSMENT_RETENTION_DAYS', type: 'int', dflt: 90,
+    min: 1, max: 3650, runtime: true,
+    description: 'How long a sign-in\'s assessment is kept before the ' +
+                 'risk.retention job deletes it.' },
+
+  { key: 'risk.historyRetentionDays', group: 'Risk',
+    label: 'Keep the model\'s history (days)',
+    env: 'STS_RISK_HISTORY_RETENTION_DAYS', type: 'int', dflt: 180,
+    min: 1, max: 3650, runtime: true,
+    description: 'How long a feature value nobody has signed in with is ' +
+                 'remembered — an address, a network, a device a person used ' +
+                 'once — and how long a session\'s last context is kept. ' +
+                 'Shorter forgets habits sooner, and scores more sign-ins ' +
+                 'as new.' },
+
   { key: 'caep.defaultRiskLevel', group: 'CAEP',
     label: 'Default risk level', env: 'STS_CAEP_DEFAULT_RISK_LEVEL',
     type: 'string', dflt: 'MEDIUM', runtime: true,

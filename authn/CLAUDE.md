@@ -1405,6 +1405,67 @@ token there would refuse a credential the policy had just allowed.
 
 ---
 
+## EVERY SIGN-IN SCREEN ANSWERS A REFUSED SESSION, AND THE REFUSAL SAYS WHY (2026-09-22, #62 P0)
+
+`startSession()` refuses by returning null (the section above), and **three
+callers on this module's own screens did not look**: the password door, the
+anonymous *Continue without signing in*, and `/authn/password-factor`. The
+password door then called `returnToCaller()`, whose request ran again with no
+session and sent the browser straight back to the sign-in screen with nothing
+said. The four second-factor paths looked, but answered only a DISABLED account
+(`refusedAsDisabled()`); a policy refusal or a missing directory entry fell
+through to the same loop. Risk scoring (#62) will refuse sessions at this same
+funnel, so every refusal has to be answered first.
+
+* **THE REFUSAL SAYS WHY ON THE CALLER'S OWN `detail`.** Each refusal writes
+  `refusedWith` (its error code) and, for the issuance policy, `refusedWhy`
+  onto the object the caller passed. The return value stays a null for the
+  reason above: two callers wrap this in a `try`, and a richer return type
+  would have changed what every caller tests.
+* **`refusedSession()` IS THE SCREENS' ONE READER**, replacing
+  `refusedAsDisabled()`: the sign-in screen again, with the policy's sentence
+  where the policy refused (the password door already shows it before a
+  password is typed) and otherwise only *Authentication failed* — the
+  enumeration answer, which a disabled account and a missing entry both fall
+  under. Every one of the seven callers on this module's screens goes through
+  it.
+* **THE PENDING SIGN-IN IS PUT BACK.** Every door deletes its pending record
+  before asking for the session, so the screen redrawn after a refusal named a
+  record the next POST could not find — a second failure, saying nothing about
+  the first. `refusedSession()` restores it while it has time left, so the
+  person can sign in as somebody else, or again once an administrator has
+  acted.
+
+`tests/authn_session_refusals.js` A and B hold it, measured with the refusal
+easiest to cause from outside: no directory entry with `ldap.autocreateUsers`
+off.
+
+## AN AUTHENTICATION EVENT SAYS WHERE IT CAME FROM (2026-09-22, #62 P0)
+
+An event (*What an authenticated identity is here*) said HOW somebody proved who
+they were and nothing about from where; the address was kept only on
+`admin_stats.js`'s list, capped at fifty. Risk scoring compares one sign-in
+against the last, so each event now carries `context`:
+
+| Field | What | Never |
+|---|---|---|
+| `address` | `audit.currentAddress()`, the source `/admin/users` and the audit log already answer from | a second answer to where a sign-in came from |
+| `uaFingerprint` | `stsCrypto.userAgentFingerprint()` of the `User-Agent` — CAEP's `fp_ua` | the header itself |
+| `ja4` | the connection's JA4 TLS fingerprint, `tls/client_hello.ts` | anything on plain HTTP, where there is no ClientHello |
+| `credential` | `{ kind, fingerprint, aaguid, backupEligible, backupState }` from `detail.credential` | the credential id: `stsCrypto.credentialFingerprint()` of it |
+
+**The request is the caller's `detail.request`, or the audit log's ambient
+one** (`audit.currentRequest()`), so a door that hands `startSession()` a
+detail without its request is still described. Every door names its
+credential's `kind` — `password`, `webauthn`, `totp`, `backup-code`,
+`wallet`, `certificate`, `kerberos`, `federation`; the WebAuthn door adds the
+key that answered, its AAGUID and the authenticator data's BE and BS flags
+(a device-bound key and a synced passkey are different evidence). A row
+persisted before 2026-09-22 has events with no `context`, and a
+re-authentication of such a row gives its synthesised first event an empty
+one.
+`tests/authn_session_refusals.js` C holds it.
+
 ## A MACHINE ENDPOINT REGISTERED UNDER A FRONT DOOR MINTED AN ARRIVAL SESSION PER REQUEST (2026-09-10)
 
 `ARRIVAL_PATHS` is a list of FRONT DOORS, matched by PREFIX, and its own comment

@@ -270,6 +270,11 @@ const SUBSYSTEMS = [
     where: 'ssf/',
     what: 'Streams, subjects, delivery by push and poll, the receivers this ' +
           'service registers for itself, and the outbound push.' },
+  { id: 'RISK', label: 'Risk scoring',
+    where: 'risk/, admin-ui/risk_admin.ts',
+    what: 'The external datasets a risk score reads — their import, ' +
+          'verification, activation, rollback and retention — and the ' +
+          'attributable failure history (#62).' },
   { id: 'GNAP', label: 'GNAP (RFC 9635 / RFC 9767)',
     where: 'gnap/',
     what: 'The grant request and continuation endpoints; interaction ' +
@@ -9539,6 +9544,80 @@ const CODES = [
       'scope an operation needs, and the client it was issued to no longer ' +
       'declares that scope in its oauthAllowedScope.',
     spec: 'HTTP 403 {err: access_denied}' },
+  // ===== RISK ==============================================================
+  { code: 'STS-RISK-0001',
+    summary: 'A dataset import was refused before anything was loaded: the ' +
+      'dataset, the format or the realm is not one this service knows, or ' +
+      'the format is not one that dataset takes.',
+    spec: '' },
+  { code: 'STS-RISK-0002',
+    summary: 'A dataset import was refused: the file\'s SHA-256 is not the ' +
+      'one its manifest or the caller named. Nothing was loaded and the ' +
+      'active version stays.',
+    spec: '' },
+  { code: 'STS-RISK-0003',
+    summary: 'A dataset version was refused because it has fewer rows than ' +
+      'risk.datasetShrinkLimitPercent allows against the active version — ' +
+      'what a truncated download looks like. Its rows were deleted and the ' +
+      'active version stays.',
+    spec: '' },
+  { code: 'STS-RISK-0004',
+    summary: 'A dataset version was refused because no line of the file ' +
+      'was a row of its format.',
+    spec: '' },
+  { code: 'STS-RISK-0005',
+    summary: 'A dataset import failed in the store part-way through; the ' +
+      'version is recorded as refused with the reason, its rows are ' +
+      'deleted, and the active version stays.',
+    spec: '' },
+  { code: 'STS-RISK-0006',
+    summary: 'The store was asked to hold dataset rows of a kind it has no ' +
+      'table for — a defect in the caller.',
+    spec: '' },
+  { code: 'STS-RISK-0007',
+    summary: 'A dataset version could not be activated or rolled back to: ' +
+      'it is not one that loaded (it is loading, refused or deleted).',
+    spec: '' },
+  { code: 'STS-RISK-0008',
+    summary: 'The dataset directory could not be read, or a manifest in it ' +
+      'is not JSON naming a dataset, a format and a file beside it; the ' +
+      'manifest is skipped and the rest of the directory is imported.',
+    spec: '' },
+  { code: 'STS-RISK-0009',
+    summary: 'The risk retention job failed; superseded versions and old ' +
+      'failures stay until its next run.',
+    spec: '' },
+  { code: 'STS-RISK-0010',
+    summary: 'An attributable failure could not be recorded in the store. ' +
+      'The refusal it describes stands; only its record is lost.',
+    spec: '' },
+  { code: 'STS-RISK-0011',
+    summary: 'A Monitoring → Risk action or its /admin-api twin was refused: ' +
+      'a read-only session, an unknown action, or a field it needs is ' +
+      'missing.',
+    spec: '' },
+  { code: 'STS-RISK-0012',
+    summary: 'The install-time dataset loader (risk/risk_install.ts) could ' +
+      'not import an entry: no database was named, the provider\'s terms ' +
+      'were not accepted with --accept-terms, or the download failed. The ' +
+      'other entries are imported and the loader exits non-zero.',
+    spec: '' },
+  { code: 'STS-RISK-0013',
+    summary: 'A sign-in could not be assessed for risk (the store or a ' +
+      'dataset lookup failed part-way). The sign-in stands; only its ' +
+      'assessment is missing.',
+    spec: '' },
+  { code: 'STS-RISK-0014',
+    summary: 'A dataset import was refused because nobody has accepted its ' +
+      'provider\'s current terms (or the terms changed since they were ' +
+      'accepted), or an acceptance was asked for a provider with none to ' +
+      'accept.',
+    spec: '' },
+  { code: 'STS-RISK-0015',
+    summary: 'The install-time loader fetched a provider\'s terms page ' +
+      '(--check-terms) and it differs from the page seen at the last ' +
+      'acceptance: read it before relying on the acceptance.',
+    spec: '' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
