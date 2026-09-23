@@ -4551,10 +4551,10 @@ const CODES = [
       'registered for the client (section 2.1).',
     spec: 'invalid_request (HTTP 400, not redirected)' },
   { code: 'STS-OAUTH-0123',
-    summary: 'In RFC 9700 mode, an RP-Initiated Logout ' +
-      'post_logout_redirect_uri is not registered (no open ' +
-      'redirector).',
-    spec: 'invalid_request (HTTP 400)' },
+    summary: 'An RP-Initiated Logout post_logout_redirect_uri is not among ' +
+      'the ones the client registered — in every mode since #124 — so it ' +
+      'is not followed; the person is signed out and told on the page.',
+    spec: 'none (the sign-out page says so)' },
   { code: 'STS-OAUTH-0124',
     summary: 'In RFC 9700 mode, a state, code_challenge or nonce value ' +
       'already used by another client was presented (section 2.1.1).',
@@ -4757,8 +4757,9 @@ const CODES = [
     spec: 'login_required (redirected error, or HTTP 400 page)' },
   { code: 'STS-OAUTH-0171',
     summary: 'An RP-Initiated Logout request is malformed (the input ' +
-      'validator refused it).',
-    spec: 'invalid_request (HTTP 400)' },
+      'validator refused it). Since #124 the session is NOT ended, and ' +
+      'the answer is a page for the person.',
+    spec: 'HTTP 400 (an HTML page)' },
   { code: 'STS-OAUTH-0172',
     summary: 'An access token presented at UserInfo did not verify: expired, ' +
       'not yet valid, or not issued by this service.',
@@ -5183,10 +5184,10 @@ const CODES = [
       'credentials grant with token_endpoint_auth_method=none.',
     spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-OAUTH-0290',
-    summary: 'RFC 9700 or OAuth 2.1 mode: a private-use ' +
-      'post_logout_redirect_uri was given and the client the request names ' +
-      'has not registered it.',
-    spec: 'invalid_request (HTTP 400)' },
+    summary: 'A private-use post_logout_redirect_uri was given and the ' +
+      'client the request names has not registered it (every mode since ' +
+      '#124): not followed.',
+    spec: 'none (the sign-out page says so)' },
   { code: 'STS-OAUTH-0291',
     summary: 'An RFC 9701 JWT introspection request (Accept: ' +
       'application/token-introspection+jwt) did not authenticate the ' +
@@ -6220,6 +6221,26 @@ const CODES = [
       'oauth2.sessionManagement is off in the realm (#121): a 404 naming ' +
       'the setting.',
     spec: 'HTTP 404' },
+  { code: 'STS-OAUTH-0602',
+    summary: 'An RP-Initiated Logout id_token_hint did not verify as an ID ' +
+      'Token this authorization server issued to the client the request ' +
+      'names — or a client_id it was not issued to was given beside it ' +
+      '(section 2\'s MUST, #124, #115). Refused in every mode; the session ' +
+      'is not ended.',
+    spec: 'HTTP 400 (an HTML page)' },
+  { code: 'STS-OAUTH-0603',
+    summary: 'In product mode, an RP-Initiated Logout ' +
+      'post_logout_redirect_uri named no client that registered it (#124): ' +
+      'not followed. Development still follows one.',
+    spec: 'none (the sign-out page says so)' },
+  { code: 'STS-OAUTH-0604',
+    summary: 'An RP-Initiated Logout request sent with POST was not a form ' +
+      '(application/x-www-form-urlencoded, section 2) (#124).',
+    spec: 'HTTP 400 (an HTML page)' },
+  { code: 'STS-OAUTH-0605',
+    summary: 'The RP-Initiated Logout endpoint failed while answering ' +
+      '(#124).',
+    spec: 'HTTP 500 (an HTML page)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

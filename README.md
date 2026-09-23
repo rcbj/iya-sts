@@ -2232,9 +2232,10 @@ members — ID Token, UserInfo and request object — are published now that eac
 implemented, ID Token encryption since 2026-09-17, and `acr_values_supported` is published since RFC 9470 made the authorization endpoint
 honour `acr_values` — see *Step-up authentication*), because none is implemented and an invented value is worse than the member's
 absence, which says exactly the right thing. `end_session_endpoint` *is* advertised
-because `/oauth2/logout` really does end the session — but it neither requires nor
-checks `id_token_hint` and does not validate the redirect target, so it is the shape of
-RP-initiated logout and not its security, and `/admin/sts-metadata` grades it `mock`.
+because `/oauth2/logout` really does end the session, and since #124 it is the whole
+of RP-Initiated Logout 1.0: GET and POST, a verified `id_token_hint`, a confirmation
+page unless the hint is for this session, and a return held to the client's registered
+`post_logout_redirect_uris` in every mode.
 
 **Three URLs, because an issuer with a path resolves differently in the two specs** —
 which is the usual reason a discovery fetch 404s. Discovery section 4 *appends*
@@ -2344,11 +2345,10 @@ redirector until then. `error=invalid_request` forwarded to an arbitrary URL is 
 the browser being forwarded to an arbitrary URL, and an attacker does not mind which
 parameters ride along.
 
-The same comparison now guards **`post_logout_redirect_uri`** at
-`/oauth2/logout`, which without the mode is the plainest open redirector in the
-service: any absolute `http(s)` URL in a query parameter, followed, with no client and
-no session involved. `/admin/sts-metadata` says that about it in both directions rather than
-only the flattering one.
+**`post_logout_redirect_uri`** at `/oauth2/logout` is held to the client's own
+registered list in EVERY mode since #124 — it used to be this mode only, and without it
+was the plainest open redirector in the service. Development still follows an address
+for a client that registered none; this mode, OAuth 2.1 mode and product do not.
 
 #### The port itself becomes HTTPS
 
