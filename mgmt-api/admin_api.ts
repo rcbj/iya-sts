@@ -3119,6 +3119,35 @@ class AdminApi {
           log.debug("Leaving the management API app-passwords endpoint.");
         } },
 
+      // IDENTITY VERIFICATIONS, ONE PERSON'S, PAGED (#127). The list the
+      // Identity verifications block on /admin/users draws.
+      { method: 'GET', path: BASE + '/users/verifications', tag: 'Users',
+        operationId: 'getUserVerifications',
+        summary: 'One person\'s identity verifications (OpenID Connect for ' +
+                 'Identity Assurance)',
+        description: 'Each verification recorded for the person, newest ' +
+                     'first: its `id`, where it came from (`source`: ' +
+                     'admin, wallet or certificate), when and by whom, the ' +
+                     '`verification` element — trust framework, time, ' +
+                     'evidence — and the `claims` it covered with the ' +
+                     'values that were verified. A client\'s ' +
+                     '`verified_claims` request is answered from these, ' +
+                     'for a claim only while the entry still holds the ' +
+                     'verified value. Beside them, the vocabularies a ' +
+                     'record is made from.',
+        mirrors: 'GET /admin/users',
+        parameters: [
+          { name: 'user', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The person, as /admin-api/users names them.' }
+        ].concat(this.pagingParameters()),
+        responseDescription: 'The page of verifications and its paging.',
+        handler: function (req, res) {
+          log.debug("Entering the management API verifications endpoint.");
+          self.sendJson(res, 200, adminViews.verificationsJson(req.query));
+          log.debug("Leaving the management API verifications endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/users/new', tag: 'Users',
         operationId: 'getNewUserForm',
         summary: 'Every attribute a person may be created with, and the four ' +
@@ -3869,6 +3898,77 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The delegate as it now stands.' },
+
+          { action: 'record-verification',
+            operationId: 'recordUserVerification',
+            summary: 'Record an identity verification for somebody',
+            description: 'Keeps an OpenID Connect for Identity Assurance 1.0 ' +
+                         '`verification` element on the person\'s entry, ' +
+                         'with the claims it covered. `trust_framework` ' +
+                         'must be one of oauth2.idaTrustFrameworks; each ' +
+                         'evidence element is checked by its type ' +
+                         '(document, electronic_record, vouch, ' +
+                         'electronic_signature) against the vocabularies ' +
+                         'discovery publishes; `time` defaults to now. ' +
+                         'Each claim\'s value is taken from the entry as it ' +
+                         'is now, and a claim the entry holds nothing for is ' +
+                         'refused. The console\'s form posts the same thing ' +
+                         'as flat fields.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                verification: { type: 'object',
+                                description: 'The verification element ' +
+                                             '(Identity Assurance section ' +
+                                             '5.1).' },
+                claims: { type: 'array', items: { type: 'string' },
+                          description: 'The claims it covered, from ' +
+                                       'claims_in_verified_claims_supported.' }
+              },
+              required: ['user', 'verification', 'claims'],
+              examples: [{ user: 'alice',
+                           verification: {
+                             trust_framework: 'urn:sts:local',
+                             evidence: [{ type: 'document',
+                               check_details: [{ check_method: 'vpip' }],
+                               document_details: { type: 'passport',
+                                 document_number: 'X1234567' } }] },
+                           claims: ['given_name', 'family_name'] }],
+              additionalProperties: true
+            },
+            responseDescription: 'The verification as recorded.' },
+
+          { action: 'remove-verification',
+            operationId: 'removeUserVerification',
+            summary: 'Remove one of somebody\'s identity verifications',
+            description: 'Takes the verification with this `id` off the ' +
+                         'person\'s entry; nothing is released from it ' +
+                         'afterwards.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                id: { type: 'string',
+                      description: 'The verification\'s id, from GET ' +
+                                   '/admin-api/users/verifications.' }
+              },
+              required: ['user', 'id'],
+              examples: [{ user: 'alice',
+                           id: '00000000-0000-4000-8000-000000000000' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was removed.' },
 
           { action: 'disable', operationId: 'disableUserAccount',
             summary: 'Disable somebody\'s account, and end everything ' +

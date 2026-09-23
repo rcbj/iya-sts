@@ -337,6 +337,8 @@ var config = {
     basicAuthRealm: "sts",                       // Token endpoint Basic realm
     maxAuthorizationServerProfiles: 200,         // Named authorization servers (per realm)
     maxRequestedClaims: 64,                      // Claims one claims request may name
+    idaTrustFrameworks: "urn:sts:local",         // Identity Assurance trust frameworks
+    idaAutomaticVerifications: true,             // Sign-ins record an identity verification
     accessTokenTtlS: 3600,                       // Access token lifetime (s)
     idTokenTtlS: 3600,                           // ID Token lifetime (s)
     refreshTokenTtlS: 86400,                     // Refresh token lifetime (s)

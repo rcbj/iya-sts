@@ -185,6 +185,7 @@ import accountSignals = require('../ssf/account_signals');
 // on (2026-09-17, #36 follow-up). Two libraries loaded long before this file,
 // neither of which requires anything back.
 import accountState = require('../common/account_state');
+import identityAssurance = require('../common/identity_assurance');
 import backchannel = require('../oauth-oidc/backchannel_logout');
 import oauth2 = require('../oauth-oidc/oauth2');
 import appPermissions = require('../common/app_permissions');
@@ -329,7 +330,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // App passwords (#101, 2026-09-22).
                        'create-app-password', 'revoke-app-password',
                        // Who may act for them (#108, 2026-09-23).
-                       'set-not-delegated', 'set-may-act'];
+                       'set-not-delegated', 'set-may-act',
+                       // Identity verifications (#127, 2026-09-23).
+                       'record-verification', 'remove-verification'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -377,7 +380,13 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // person or application; empty clears), the one party whose `sub` becomes
   // the `may_act` claim of their access tokens (RFC 8693 section 4.4).
   // `common/delegation_policy.ts` decides what both mean.
-  'set-not-delegated', 'set-may-act'];
+  'set-not-delegated', 'set-may-act',
+  // IDENTITY VERIFICATIONS (#127, 2026-09-23): `record-verification` keeps
+  // one — OpenID Connect for Identity Assurance's `verification` element, as
+  // JSON or as the console's flat fields, and the `claims` it covered — and
+  // `remove-verification` takes one away by its `id`.
+  // `common/identity_assurance.ts` checks and keeps them.
+  'record-verification', 'remove-verification'];
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the actions in APPLICATION_ACTIONS below.
@@ -779,6 +788,7 @@ interface AdminActionsDeps {
   signals: typeof signals;
   accountSignals: typeof accountSignals;
   accountState: typeof accountState;
+  identityAssurance: typeof identityAssurance;
   backchannel: typeof backchannel;
   oauth2: typeof oauth2;
   appPermissions: typeof appPermissions;
@@ -838,6 +848,7 @@ class AdminActions {
       signals: signals,
       accountSignals: accountSignals,
       accountState: accountState,
+      identityAssurance: identityAssurance,
       backchannel: backchannel,
       oauth2: oauth2,
       appPermissions: appPermissions,
@@ -2158,6 +2169,63 @@ class AdminActions {
                    'section 4.4), and an exchange of one by anybody else is ' +
                    'refused.'
                  : 'Nobody is named as acting for ' + who + ' now.' };
+    }
+
+    if (action === 'record-verification') {
+      const { identityAssurance } = this.deps;
+      const kept = identityAssurance.record(who,
+        identityAssurance.fromForm(body), ctx.actor);
+      const verification = kept.ok ? kept.record.verification : null;
+      audited('admin.ida.recorded',
+              (kept.ok ? 'recorded' : 'could not record') + ' an identity ' +
+              'verification for ' + who,
+              kept.ok ? { id: kept.record.id,
+                          trustFramework: verification.trust_framework,
+                          evidence: (verification.evidence || [])
+                            .map(function (one) {
+                              return one.type;
+                            }),
+                          claims: Object.keys(kept.record.claims) }
+                      : { errors: [kept.error] },
+              kept.ok ? 'success' : 'failure');
+      if (!kept.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "record-verification was refused.");
+        return this.refusedBy('STS-ADMIN-0807',
+                              { ok: false, errors: [kept.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "record-verification.");
+      return { ok: true, username: who, verification: kept.record,
+               message: 'An identity verification under ' +
+                        verification.trust_framework + ' is recorded for ' +
+                        who + ', covering ' +
+                        Object.keys(kept.record.claims).join(', ') + '. A ' +
+                        'client asking for verified_claims is answered ' +
+                        'from it while the entry still holds those values.' };
+    }
+
+    if (action === 'remove-verification') {
+      const { identityAssurance } = this.deps;
+      const id = String(body.id || '').trim();
+      const gone = identityAssurance.remove(who, id);
+      audited('admin.ida.removed',
+              (gone.ok ? 'removed' : 'could not remove') + ' identity ' +
+              'verification ' + id + ' of ' + who,
+              { id: id, errors: gone.ok ? undefined : [gone.error] },
+              gone.ok ? 'success' : 'failure');
+      if (!gone.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "remove-verification was refused.");
+        return this.refusedBy('STS-ADMIN-0808',
+                              { ok: false, errors: [gone.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "remove-verification.");
+      return { ok: true, username: who, removed: id,
+               message: 'Identity verification ' + id + ' of ' + who +
+                        ' is removed; nothing is released from it any ' +
+                        'more.' };
     }
 
     // require-mfa and stop-requiring-mfa

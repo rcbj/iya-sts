@@ -6515,6 +6515,12 @@ const CODES = [
       'refused because the issuance policy answered Deny for action-id ' +
       '`delegate` — the deny-only XACML layer (#108). Product mode only.',
     spec: 'invalid_request (HTTP 400), RFC 8693 section 2.2.2' },
+  { code: 'STS-OAUTH-0623',
+    summary: 'A person\'s recorded identity verifications (OpenID Connect ' +
+      'for Identity Assurance, #127) could not be read — the value on the ' +
+      'entry is not a JSON list — or recording one after a wallet or ' +
+      'certificate sign-in threw. Read as none; the sign-in stands.',
+    spec: 'none — verified_claims is omitted' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -13364,6 +13370,16 @@ const CODES = [
   { code: 'STS-ADMIN-0806',
     summary: 'set-may-act (naming the one party who may act for a person, ' +
       'or clearing it) was refused (#108).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0807',
+    summary: 'record-verification (an identity verification for OpenID ' +
+      'Connect for Identity Assurance, #127) was refused: the ' +
+      'verification did not check, a claim is not verifiable or has no ' +
+      'value on the entry, or the entry does not exist.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0808',
+    summary: 'remove-verification named a verification not recorded for ' +
+      'the person, or the directory did not store the change (#127).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +

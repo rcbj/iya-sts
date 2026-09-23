@@ -225,6 +225,9 @@ const MAX_ANCHORS = 32;
 // A LEAF requiring only `config`; `helpers.js` above already requires it.
 // ---------------------------------------------------------------------------
 const serviceMode = require('../common/mode');
+// A person's identity verifications (#127): a certificate sign-in records an
+// electronic_signature one. A library; it registers nothing.
+const identityAssurance = require('../common/identity_assurance');
 // For the one question below that must be asked of the PROCESS rather than of
 // the ambient realm. A LEAF this module's closure already holds (`app.js` and
 // `helpers.js` both require it).
@@ -2681,6 +2684,45 @@ function startCertificateSession(req, res, mode, revocation, identity) {
   });
 }
 
+// WHAT A CLIENT CERTIFICATE SAYS ABOUT ITS HOLDER, in claim names (#127):
+// the subject's common name, given name, surname and e-mail address (the
+// attribute or an rfc822Name in subjectAltName), with the issuer, serial and
+// start of validity an electronic_signature evidence element names.
+function certificateFacts(cert) {
+  log.debug('Entering certificateFacts().');
+  const subject = (cert && cert.subject) || {};
+  const first = function (value) {
+    log.debug('Entering first().');
+    log.debug('Leaving first().');
+    return Array.isArray(value) ? String(value[0] || '') :
+      String(value || '');
+  };
+  const claims = {};
+  if (first(subject.CN)) {
+    claims.name = first(subject.CN);
+  }
+  if (first(subject.GN)) {
+    claims.given_name = first(subject.GN);
+  }
+  if (first(subject.SN)) {
+    claims.family_name = first(subject.SN);
+  }
+  const email = first(subject.emailAddress) ||
+    ((String((cert && cert.subjectaltname) || '')
+      .match(/(?:^|,\s*)email:([^,\s]+)/) || [])[1] || '');
+  if (email) {
+    claims.email = email;
+  }
+  const started = Date.parse(String((cert && cert.valid_from) || ''));
+  log.debug('Leaving certificateFacts(). ' + Object.keys(claims).length +
+            ' claim(s).');
+  return { claims: claims,
+           issuer: cert && cert.issuer ? dnRfc4514(cert.issuer) : '',
+           serial: String((cert && cert.serialNumber) || ''),
+           notBefore: isNaN(started) ? '' :
+             new Date(started).toISOString().replace(/\.\d+Z$/, 'Z') };
+}
+
 function startCertificateSessionIn(req, res, mode, revocation, gated) {
   log.debug('Entering startCertificateSessionIn(). mode=' + mode);
   const socket = req.socket;
@@ -2783,6 +2825,12 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
     ? 'its revocation was consulted (' + revocation.policy + '): ' +
       revocation.why
     : 'NO REVOCATION WAS CHECKED (pki.revocationCheck is off)';
+  // AN IDENTITY VERIFICATION (#127): what the certificate's subject says
+  // that the entry agrees with, as an electronic_signature under the
+  // certificate's issuer and serial. Never throws, and switched by
+  // `oauth2.idaAutomaticVerifications`.
+  identityAssurance.recordAutomatic(username, 'certificate',
+                                    certificateFacts(cert));
   log.info('tls: ' + username + ' is signed in on a verified client ' +
            'certificate ' +
            '(' + mode + ' listener). The chain verified and ' + revocationSaid);

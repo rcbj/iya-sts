@@ -2430,6 +2430,13 @@ directory or from the invented persona, and a UserInfo response that agreed with
 whatever a client asked it to assert would be the one surface here that cannot
 be used to test anything. The mismatch is reported instead.
 
+**`verified_claims` (#127) is not a claim name** and is not answered from the
+catalogue: `parseClaimsRequest()` hands it to `common/identity_assurance.ts`
+(section 6's refusals), and `requestedClaimsOf()` asks that library for the
+answer beside the ordinary claims. Unlike them, its `value`/`values` on the
+VERIFICATION are enforced — they choose the record, and an element nothing
+satisfies is omitted. `common/CLAUDE.md` 3ay argues it.
+
 **NON-SPEC: the endpoint also takes a claims request on the request itself.**
 Section 5.3.1 defines no request parameters at all. `?claims={json}` and a
 repeated `?claim=name` are accepted anyway, on GET and on a form-encoded POST,

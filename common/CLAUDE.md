@@ -7816,6 +7816,62 @@ What is this directory's is where it is decided and what an app password is.
 `tests/second_factor_doors.js` is the in-process half;
 `tests/vendored/sts_second_factor_doors.js` drives the five doors over the wire.
 
+## 3ay. `identity_assurance.ts`: a person's identity verifications, and `verified_claims` (#127, 2026-09-23)
+
+OpenID Connect for Identity Assurance 1.0. **A verification is a RECORD ON THE
+ENTRY, not a property of a sign-in**: `stsIdaVerification` holds up to sixteen
+of them as one JSON value, newest first, each the specification's
+`verification` element (`trust_framework`, `assurance_level`, `time`,
+`verification_process`, `evidence`) and the claims it covered **with the values
+that were verified**. It is withheld from every LDAP read (SECRET_ATTRIBUTES):
+evidence carries document numbers. `directory_merge.js` merges it whole, as a
+credential.
+
+rcbj's answers, and where each lives:
+
+* **Three sources.** An administrator records one on the person's
+  `/admin/users` page or `POST /admin-api/users/record-verification` (and
+  removes one by id); a wallet sign-in with a credential this realm issued
+  records an `electronic_record` checked `vcrypt` (`vc_signin.ts`); a client
+  certificate sign-in records an `electronic_signature` under the
+  certificate's issuer and serial (`tls_server.js`'s `certificateFacts()`).
+  An automatic record covers only what the sign-in presented AND the entry
+  holds, replaces the previous record of its kind, never throws, and is
+  switched by `oauth2.idaAutomaticVerifications`. It is recorded under the
+  FIRST of `oauth2.idaTrustFrameworks`.
+* **Only a value the DIRECTORY holds is verified.** `currentValues()` drops a
+  claim any of whose values the catalogue invented (report `source` not
+  `directory`), so development's persona can never be recorded as checked. A
+  claim is RELEASED as verified only while the entry still holds the recorded
+  value — a name changed after the passport was looked at is left out, and
+  the log says why. The ordinary claim still carries the new value.
+* **All four evidence types**, each held to what section 5.1.1 requires and to
+  the vocabularies discovery publishes (`DOCUMENT_TYPES`, `CHECK_METHODS`,
+  `ELECTRONIC_RECORD_TYPES` — the schema's plus this service's
+  `urn:sts:verifiable-credential`). An unknown member of `verification` is
+  dropped, so a record can only say what discovery says is supported.
+* **`value`/`values` are ENFORCED on the verification and its evidence**, with
+  `max_age` on `time`; an element nothing satisfies is OMITTED, never answered
+  with a weaker one; only the members asked for are returned
+  (`matches()`/`project()`). On the claims inside `verified_claims` they are
+  reported and not enforced, as on every ordinary claim.
+* **Development invents one** — `demoRecord()`, trust framework
+  `urn:sts:demo`, for a person with no record, under
+  `mode.inventsClaimValues()` and listed on `/admin/mode`. It is never
+  recordable, published in discovery only in development, and a request
+  naming any real framework never matches it. Product releases recorded
+  verifications only.
+* **Aggregated and distributed claims are #147's**; attachments are not
+  stored (`attachments_supported: []`).
+
+The request is parsed in `oauth2.ts`'s `parseClaimsRequest()` (section 6's
+refusals are `invalid_request`, STS-OAUTH-0157 like every malformed claims
+request; each node counts toward `oauth2.maxRequestedClaims`), normalised to
+an array so the copy in the access token parses again at UserInfo, and
+answered in `requestedClaimsOf()` beside the ordinary claims — so the
+federation release policy applies to it as to any requested claim.
+`tests/identity_assurance.js` holds it.
+
 ## Several nodes: second factors, links, enrollment credentials and the bootstrap (2026-09-14, #46)
 
 Issue #46 sections 2 and 8. Every value here was spent by reading an entry (or

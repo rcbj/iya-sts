@@ -4313,6 +4313,35 @@ const SETTINGS = [
                  'request may name, across its members. The request rides ' +
                  'inside the access token, so this also bounds the token.' },
 
+  // OpenID Connect for Identity Assurance 1.0 (#127): the frameworks a
+  // person's recorded verifications may name, and whether a sign-in records
+  // one. `common/identity_assurance.ts` argues both.
+  { key: 'oauth2.idaTrustFrameworks', group: 'OAuth 2.0 / OIDC',
+    label: 'Identity Assurance trust frameworks',
+    env: 'STS_OAUTH2_IDA_TRUST_FRAMEWORKS', type: 'csv',
+    dflt: 'urn:sts:local', runtime: true,
+    description: 'The trust frameworks (Identity Assurance section 5.1) an ' +
+                 'administrator may record a person\'s identity ' +
+                 'verification under, comma-separated — the predefined ' +
+                 'values such as eidas, de_aml or nist_800_63A, or a URI of ' +
+                 'your own — and what discovery publishes as ' +
+                 'trust_frameworks_supported. The first is the framework a ' +
+                 'sign-in\'s own verification is recorded under. ' +
+                 'urn:sts:demo is reserved for the verification development ' +
+                 'mode invents and is never accepted here.' },
+
+  { key: 'oauth2.idaAutomaticVerifications', group: 'OAuth 2.0 / OIDC',
+    label: 'Sign-ins record an identity verification',
+    env: 'STS_OAUTH2_IDA_AUTOMATIC_VERIFICATIONS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'ON, the default: a wallet sign-in with a credential this ' +
+                 'realm issued records an electronic_record verification of ' +
+                 'the disclosed claims the person\'s entry agrees with, and ' +
+                 'a client certificate sign-in an electronic_signature one ' +
+                 'of the subject\'s, each replacing its previous one, under ' +
+                 'the first of oauth2.idaTrustFrameworks. OFF, only what an ' +
+                 'administrator records is released as verified_claims.' },
+
   // --- PKI -----------------------------------------------------------------
   // The certificate authority's rows. The revocation publishing ones come
   // first; the four FORM DEFAULTS the group began with (2026-09-10) are

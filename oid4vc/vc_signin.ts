@@ -155,6 +155,7 @@ import verifier = require('./vc_verifier');
 import vcDid = require('./vc_did');
 // THE ATOMIC "ONCE" (#46), for finishing a sign-in on exactly one node.
 import clusterClaims = require('../cluster/cluster_claims');
+import identityAssurance = require('../common/identity_assurance');
 
 const { log, xmlEscape } = helpers;
 
@@ -250,6 +251,7 @@ interface VcSigninDeps {
   verifier: typeof verifier;
   stsDid: (req: any) => string;
   clusterClaims: typeof clusterClaims;
+  identityAssurance: typeof identityAssurance;
   contentSecurityPolicy: (overrides: any) => string;
   qrSvg: (text: string) => Promise<string>;
 }
@@ -283,6 +285,7 @@ class VcSignin {
       verifier: verifier,
       stsDid: vcDid.stsDid,
       clusterClaims: clusterClaims,
+      identityAssurance: identityAssurance,
       contentSecurityPolicy: app.contentSecurityPolicy,
       // The QR code as SVG, as `common/totp.ts` draws its own — see there for
       // why SVG and why server-side.
@@ -1014,6 +1017,11 @@ class VcSignin {
     }
     log.info('oid4vp-signin: ' + username + ' signed in with a wallet ' +
              '(transaction ' + tx.state + ', session ' + session.id + ').');
+    // AN IDENTITY VERIFICATION (#127): the disclosed claims the entry agrees
+    // with, checked cryptographically, as an electronic_record. Never throws;
+    // `oauth2.idaAutomaticVerifications` switches it.
+    this.deps.identityAssurance.recordAutomatic(username, 'wallet',
+      { claims: outcome.disclosed || {}, format: outcome.format });
     authn.completeAuthentication(res, record);
     log.debug("Leaving VcSignin.finish(). Signed in.");
   }

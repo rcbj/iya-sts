@@ -371,6 +371,55 @@ member). A refresh keeps it. An **`acr` marked `essential` with `value` or
 and **not enforced**: an unavailable claim is left out and logged, and a value
 that does not match is answered with the value this service holds.
 
+### Verified claims (OpenID Connect for Identity Assurance 1.0)
+
+A `claims` request may ask for **`verified_claims`** in its `id_token` or
+`userinfo` member — one element or an array — each with a `verification`
+(which must name `trust_framework`, `null` for any) and a non-empty `claims`
+object:
+
+```json
+{"userinfo": {"verified_claims": {
+  "verification": {"trust_framework": {"value": "eidas"},
+                   "time": {"max_age": 31536000},
+                   "evidence": [{"type": {"value": "document"},
+                                 "document_details": {"type": null}}]},
+  "claims": {"given_name": null, "family_name": null, "birthdate": null}}}}
+```
+
+It is answered from the **identity verifications recorded for the person**:
+
+* an administrator records them on the person's page under Directory → Users,
+  or with `POST /admin-api/users/record-verification` (and lists them with
+  `GET /admin-api/users/verifications`) — a trust framework from
+  `oauth2.idaTrustFrameworks`, one of the four evidence types (`document`,
+  `electronic_record`, `vouch`, `electronic_signature`), and the claims that
+  were checked;
+* a **wallet sign-in** with a credential this realm issued records an
+  `electronic_record` of the disclosed claims the directory agrees with, and a
+  **client certificate sign-in** an `electronic_signature` of the subject's,
+  while `oauth2.idaAutomaticVerifications` is on (the default).
+
+`value`, `values` and `time.max_age` on the verification and its evidence
+**choose** which record answers; an element no record satisfies is left out
+entirely, and only the members you asked for are returned. A claim is released
+as verified only **while the directory still holds the value that was
+verified** — change the entry and the claim drops out of `verified_claims`
+(the ordinary claim carries the new value). A malformed request —
+no `verification`, no `trust_framework` member, empty `claims`, a `purpose`
+outside 3 to 300 characters — is refused `invalid_request`.
+
+**In development mode** a person with no recorded verification is answered
+with an invented one under the trust framework `urn:sts:demo`, so any account
+can exercise a client's parser; a request naming a real framework never
+matches it. **Product mode** releases recorded verifications only.
+
+Discovery publishes `verified_claims_supported`, `trust_frameworks_supported`,
+`evidence_supported`, `documents_supported`,
+`documents_check_methods_supported`, `electronic_records_supported` and
+`claims_in_verified_claims_supported`. Aggregated and distributed verified
+claims, and attachments, are not supported.
+
 UserInfo takes the access token in the `Authorization` header or, on a
 form-encoded `POST`, as an `access_token` body parameter (RFC 6750 section
 2.2). Sending both is refused.

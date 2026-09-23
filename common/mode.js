@@ -1947,10 +1947,16 @@ const REQUIREMENTS = [
     development: 'A token names a persona — family name `Mock`, an address ' +
                  'at sts.example with email_verified true — a credential ' +
                  'fills an absent attribute with a generated value, and a ' +
-                 'security event names an @example.com subject.',
-    product: 'A value comes from the person\'s directory entry or is omitted.',
+                 'security event names an @example.com subject, and a ' +
+                 'person with no recorded identity verification is answered ' +
+                 'one under the trust framework `urn:sts:demo` (OpenID ' +
+                 'Connect for Identity Assurance 1.0, #127).',
+    product: 'A value comes from the person\'s directory entry or is ' +
+             'omitted; `verified_claims` are released only from a ' +
+             'verification recorded on the entry.',
     where: 'common/helpers.js, oauth-oidc/oauth2.ts, oid4vc/vc_claims.ts, ' +
-           'ssf/ssf_subjects.js, ssf/risc.ts' },
+           'ssf/ssf_subjects.js, ssf/risc.ts, ' +
+           'common/identity_assurance.js' },
   { id: 'saml-request-signatures',
     what: 'A SAML 2.0 service provider\'s request is signed',
     development: 'An unsigned AuthnRequest or LogoutRequest is accepted ' +
