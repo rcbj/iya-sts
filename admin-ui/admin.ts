@@ -5394,8 +5394,14 @@ class AdminConsole {
     const inner = '<div class="err"><strong>' + this.esc(title) + '</strong> ' +
                   this.esc(message) + '</div>' +
       (detail.html || '');
+    // THROUGH `withCsrf()` LIKE EVERY OTHER PAGE (2026-09-23). The shell draws
+    // the Sign out form for anybody with a session, and a refusal page is
+    // exactly where the gate says a refused person must still be able to sign
+    // out — without the token the gate's own exemption refused that POST as
+    // `csrf (missing)`, so a person refused a role could not leave.
     res.status(status).type('text/html')
-       .send(this.page(title, '', inner, null, gateStateFor(req), req));
+       .send(this.withCsrf(req, this.page(title, '', inner, null,
+                                          gateStateFor(req), req)));
     log.debug("Leaving AdminConsole.refuse(). Answered HTML.");
   }
 

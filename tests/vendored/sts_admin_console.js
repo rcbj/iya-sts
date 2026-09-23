@@ -5995,6 +5995,14 @@ async function theRolesArePressedAndEnforced(driver, created) {
              "POST was refused 403.");
   } finally {
     await restoreTheRoster(driver, [CONSOLE_USER, reader]);
+    // AND THE WRITER GETS BOTH ROLES BACK (2026-09-23). The restore revokes
+    // everything CONSOLE_USER holds, including what grantTheWriter() gave it
+    // at sign-in; in development the emptied roster reopened the bootstrap
+    // window and hid that, and product mode never opens it (#103) — so every
+    // section after this one met a 403 refusal page, the Sign out button
+    // included. revokeTheWriter() still takes both away at the end.
+    writerGranted = false;
+    await grantTheWriter(CONSOLE_USER);
   }
   log.debug("Leaving theRolesArePressedAndEnforced().");
 }
