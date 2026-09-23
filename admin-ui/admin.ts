@@ -35042,6 +35042,17 @@ class AdminConsole {
                        'the transmitter\'s pedantry — and it is said out ' +
                        'loud rather than passed over.') +
                        '">media type</div>') +
+          // WHAT THIS CONSOLE DID WITH IT (#62): the signal-response
+          // policy's reactions, taken, observed or failed.
+          (row.reactions || []).map(function (r) {
+            return '<div class="signal-reaction ' +
+              (r.failed ? 'state-invalid' : 'sub') + '">' + (r.failed
+                ? 'could not end its sessions'
+                : (r.observed ? 'would end this console\'s sessions ' +
+                                '(development observes)'
+                              : 'ended ' + self.esc(String(r.ended)) +
+                                ' console session(s)')) + '</div>';
+          }).join('') +
           '</td>' +
           '<td class="sub"><code>' + self.esc(row.jti) + '</code>' +
           '<div><code>' + self.esc(row.stream || '') + '</code></div></td>' +

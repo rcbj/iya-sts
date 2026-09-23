@@ -312,7 +312,10 @@ admin console and one for the user portal. Both ask for every CAEP and RISC
 event type, and both take delivery over a real RFC 8935 push to an endpoint of
 their own. What arrives is shown at `/admin/signals` and `/portal/signals`.
 [Signals received](signals-received.md) explains how this works, and why an
-empty page has five possible causes.
+empty page has five possible causes. **Both act on what they receive**: a
+verified event the `signal-response` policy permits ends the receiving
+surface's own sessions for the person it names (product mode; development
+records it). An unverified event is never acted on.
 
 ### Deliberate defects
 
@@ -421,6 +424,7 @@ types from what a stream may ask for.
 | `ssf.authScopeWrite` | `STS_SSF_AUTH_SCOPE_WRITE` | `ssf:write` | yes | The scope needed to change anything about a stream. |
 | `ssf.receiveEnabled` | `STS_SSF_RECEIVE_ENABLED` | `true` | yes | Whether `POST /ssf/receive` accepts pushed SETs. When off, it answers 501. |
 | `ssf.receiveRequireSignature` | `STS_SSF_RECEIVE_REQUIRE_SIGNATURE` | `false` | yes | Refuses a received SET whose signature fails, with 400 `invalid_key`. |
+| `ssf.actOnSignalsInDevelopment` | `STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT` | `false` | yes | The console and portal end their own sessions on a received signal in development too; product always does. |
 | `ssf.legacySubClaim` | `STS_SSF_LEGACY_SUB_CLAIM` | `false` | yes | Deliberate defect, development only: adds the deprecated `sub` claim beside `sub_id`. |
 | `ssf.breakSetSignature` | `STS_SSF_BREAK_SET_SIGNATURE` | `false` | yes | Deliberate defect, development only: changes one character of every SET's signature. |
 | `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | A stream owned by a GNAP application only hears about people who approved a grant to it. |
