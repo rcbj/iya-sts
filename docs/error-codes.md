@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2903** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2915** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -75,6 +75,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 99
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 12
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 275
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
@@ -2420,6 +2421,27 @@ Raised from: ssf/.
 | `STS-SSF-0105` | A Security Event Token delivered to one of this service's receivers carries an iss other than its stream's, or one ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was recorded and refused. | HTTP 400 {err: invalid_issuer} |
 | `STS-SSF-0106` | A Security Event Token pushed at POST /ssf/receive is addressed to no audience ssf.receiveAudiences lists; it was recorded and refused. | HTTP 400 {err: invalid_audience} |
 | `STS-SSF-0107` | An access token (OAuth or GNAP) carried the Shared Signals scope an operation needs, and the client it was issued to no longer declares that scope in its oauthAllowedScope. | HTTP 403 {err: access_denied} |
+
+## STS-RISK
+
+**Risk scoring.** The external datasets a risk score reads — their import, verification, activation, rollback and retention — and the attributable failure history (#62).
+
+Raised from: risk/, admin-ui/risk_admin.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-RISK-0001` | A dataset import was refused before anything was loaded: the dataset, the format or the realm is not one this service knows, or the format is not one that dataset takes. | — |
+| `STS-RISK-0002` | A dataset import was refused: the file's SHA-256 is not the one its manifest or the caller named. Nothing was loaded and the active version stays. | — |
+| `STS-RISK-0003` | A dataset version was refused because it has fewer rows than risk.datasetShrinkLimitPercent allows against the active version — what a truncated download looks like. Its rows were deleted and the active version stays. | — |
+| `STS-RISK-0004` | A dataset version was refused because no line of the file was a row of its format. | — |
+| `STS-RISK-0005` | A dataset import failed in the store part-way through; the version is recorded as refused with the reason, its rows are deleted, and the active version stays. | — |
+| `STS-RISK-0006` | The store was asked to hold dataset rows of a kind it has no table for — a defect in the caller. | — |
+| `STS-RISK-0007` | A dataset version could not be activated or rolled back to: it is not one that loaded (it is loading, refused or deleted). | — |
+| `STS-RISK-0008` | The dataset directory could not be read, or a manifest in it is not JSON naming a dataset, a format and a file beside it; the manifest is skipped and the rest of the directory is imported. | — |
+| `STS-RISK-0009` | The risk retention job failed; superseded versions and old failures stay until its next run. | — |
+| `STS-RISK-0010` | An attributable failure could not be recorded in the store. The refusal it describes stands; only its record is lost. | — |
+| `STS-RISK-0011` | A Monitoring → Risk action or its /admin-api twin was refused: a read-only session, an unknown action, or a field it needs is missing. | — |
+| `STS-RISK-0012` | The install-time dataset loader (risk/risk_install.ts) could not import an entry: no database was named, the provider's terms were not accepted with --accept-terms, or the download failed. The other entries are imported and the loader exits non-zero. | — |
 
 ## STS-GNAP
 

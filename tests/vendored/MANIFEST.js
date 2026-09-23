@@ -312,6 +312,12 @@ const JOBS = [
   // and a step-down hands it over. `local: true`: this repository's own
   // /admin and /admin-api.
   { file: 'sts_scheduler.js',            browser: false, local: true },
+  // RISK DATASETS AND THE FAILURE HISTORY (#62 P1, 2026-09-22): an operator
+  // list imported, looked up, refused on a bad SHA-256, replaced and rolled
+  // back — through the balancer in `cluster`, so both nodes follow — and a
+  // refused SCIM Basic password recorded under a digest, never the name.
+  // `local: true`: this repository's own /admin and /admin-api.
+  { file: 'sts_admin_risk.js',           browser: false, local: true },
   // SIGNING KEY ROTATION OVER HTTP (#42/#48, 2026-09-22): the refusals, a
   // rotation keeping the retired key verifying, the /admin/keys Rotate form,
   // and an emergency after which an earlier token is refused — in a

@@ -821,6 +821,23 @@ class ProtocolStack {
                require('../admin-ui/scheduler_admin'), 'SchedulerAdmin');
     this.register(app, require('../admin-ui/scheduler_admin'),
                   'admin-ui/scheduler_admin');
+    // 18j. RISK SCORING (#62 P1, 2026-09-22): the store, the datasets and
+    // the failure history are LIBRARIES (rule 3) that register no route, and
+    // then Monitoring → Risk, for 18a's reason — the console's shell and the
+    // scheduler (whose two risk jobs the datasets module registers when it
+    // is wired) are loaded, and `mgmt-api/admin_api` requires the page.
+    // Nothing loads the three libraries before this line: `persistence.js`
+    // and `credentials.ts` reach them lazily, at run time.
+    this.build('risk/risk_store', require('../risk/risk_store'), 'RiskStore');
+    this.build('risk/risk_datasets', require('../risk/risk_datasets'),
+               'RiskDatasets');
+    this.build('risk/risk_failures', require('../risk/risk_failures'),
+               'RiskFailures');
+    require('../admin-ui/risk_admin');
+    this.build('admin-ui/risk_admin', require('../admin-ui/risk_admin'),
+               'RiskAdmin');
+    this.register(app, require('../admin-ui/risk_admin'),
+                  'admin-ui/risk_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module

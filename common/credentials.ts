@@ -771,11 +771,47 @@ class Credentials {
               'asks for a new one' });
   }
 
+  // ---------------------------------------------------------------------------
+  // A REFUSED PASSWORD IS RECORDED FOR RISK SCORING (#62 P1, 2026-09-22), from
+  // here because every password door in this service meets here — see
+  // `risk/risk_failures.ts`. Not awaited and never throws: the record is
+  // evidence about the refusal, and must not be the reason it is late.
+  //
+  // Two refusals are NOT a failure of the person's and are left out: the
+  // store could not be asked (`no-store`, `store-error`) — the service
+  // failed, nobody guessed wrong — and `password-reset-required`, where the
+  // password was RIGHT. Required LAZILY, because this file loads long before
+  // the composition root builds the risk modules.
+  // ---------------------------------------------------------------------------
+  private noteRefusal(username, opts, answer) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.noteRefusal().');
+    const reason = String((answer && answer.reason) || '');
+    if (!answer || answer.ok || reason === 'no-store' ||
+        reason === 'store-error' || reason === 'password-reset-required') {
+      log.debug('Leaving Credentials.noteRefusal(). Not a failure to record.');
+      return;
+    }
+    try {
+      require('../risk/risk_failures').recordFailure(
+        String(username == null ? '' : username),
+        (opts && opts.via) || 'unstated',
+        errorCodes.codeOf(answer) || 'STS-AUTHN-0054');
+    } catch (e) {
+      log.debug('Caught in Credentials.noteRefusal(): ' +
+                ((e && e.message) || e));
+      // The risk modules are not loaded in this process (a test that loads
+      // this file alone): nothing to record into, and the refusal stands.
+    }
+    log.debug('Leaving Credentials.noteRefusal().');
+  }
+
   verify(username, password, opts?) {
     const { log, crypto } = this.deps;
     log.debug('Entering Credentials.verify().');
     const ready = this.verifyPrepare(username, password, opts);
     if (ready.done) {
+      this.noteRefusal(username, opts, ready.done);
       log.debug('Leaving Credentials.verify(). Decided without a derivation.');
       return ready.done;
     }
@@ -786,6 +822,7 @@ class Credentials {
       // The plaintext was just CONFIRMED — see the password observer above.
       this.notifyPassword(ready.name, password, 'verified');
     }
+    this.noteRefusal(username, opts, answer);
     log.debug('Leaving Credentials.verify().');
     return answer;
   }
@@ -808,6 +845,7 @@ class Credentials {
     log.debug('Entering Credentials.verifyAsync().');
     const ready = this.verifyPrepare(username, password, opts);
     if (ready.done) {
+      this.noteRefusal(username, opts, ready.done);
       log.debug('Leaving Credentials.verifyAsync(). Decided without a ' +
                 'derivation.');
       return Promise.resolve(ready.done);
@@ -821,6 +859,7 @@ class Credentials {
         if (answer.ok && answer.reason === 'verified') {
           this.notifyPassword(ready.name, password, 'verified');
         }
+        this.noteRefusal(username, opts, answer);
         return answer;
       });
   }

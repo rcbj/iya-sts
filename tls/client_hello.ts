@@ -16,6 +16,12 @@
 // ClientHello to a comparable string, so this computes JA4 and nothing of the
 // rest of JA4+, which is under a non-commercial licence.
 //
+// **THAT IS A LEGAL BOUNDARY, NOT A TODO** (the licence review on #62). JA4S,
+// JA4H, JA4X, JA4SSH and the rest of JA4+ are under the FoxIO License 1.1,
+// which restricts commercial use; the BSD-3 notice in `LICENSE.md` covers JA4
+// alone. None of them is to be added to this file or anywhere else here
+// without a licence decision of its own.
+//
 // **IT IS COMPUTED HERE, NOT BY A LIBRARY**, because the one maintained Node
 // library (`read-tls-client-hello`) is Apache-2.0 and this project takes MIT
 // dependencies where it can (#62's plan, §1). Parsing a ClientHello is a few

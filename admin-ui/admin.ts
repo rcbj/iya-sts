@@ -2414,6 +2414,18 @@ const SECTIONS = [
                'page names; a per-process job has a row per process. ' +
                'Admin Write may run a job now, and on a cluster may ask ' +
                'the leader to hand the scheduler to another node.' },
+      // RISK (#62, 2026-09-22), after the scheduler and before the audit log:
+      // the external datasets a risk score reads and the refused passwords it
+      // counts. Drawn by `admin-ui/risk_admin.ts` out of `risk/`.
+      { path: '/admin/risk', label: 'Risk',
+        blurb: 'The external datasets a risk score reads &mdash; ' +
+               'geolocation, the network an address belongs to, Tor exits, ' +
+               'IP reputation and an operator\'s own allow and deny lists ' +
+               '&mdash; each with its active version, whether it is fresh, ' +
+               'and every version loaded or refused. Look up what they say ' +
+               'about an address, import a list, activate, roll back. ' +
+               'Below, every refused password in the realm, attributed to a ' +
+               'person and a network and never to a typed name.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +
@@ -37639,6 +37651,9 @@ const SETTING_HOMES = [
   // of the first. The MONITORING page beneath it edits nothing, so it is not
   // named here — this table is about where a setting is EDITED.
   { group: 'CAEP', pages: ['/admin/caep'] },
+  // RISK SCORING (#62): its datasets and failure history, on the Monitoring
+  // page that shows them, because there is no protocol for them to belong to.
+  { group: 'Risk', pages: ['/admin/risk'] },
   // RISC, on the CAEP group's terms: the second vocabulary over SSF is a
   // second specification and not a corner of the first, and the MONITORING
   // page beneath it edits nothing so it is not named here.

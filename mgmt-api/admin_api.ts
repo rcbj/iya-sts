@@ -207,6 +207,8 @@ import cachesAdmin = require('../admin-ui/caches_admin');
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
 // The scheduler's page (#49): its view and its two actions, rule 7.
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
+// Monitoring → Risk (#62): its view and its four actions, rule 7.
+import riskAdmin = require('../admin-ui/risk_admin');
 // The embedded protocol debugger's report (2026-09-13). A page module required
 // at 18 like the one above, and it reads the listener's status lazily, so this
 // require moves no route.
@@ -1850,6 +1852,158 @@ class AdminApi {
             responseDescription: 'The index and its new status.'
           };
         })
+      },
+
+      // ---------------------------------------------------------------------
+      // RISK SCORING (#62 P1, 2026-09-22): `riskAdmin.riskView()` and
+      // `riskAdmin.riskAction()`, the two functions `/admin/risk` answers.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/risk', tag: 'Risk',
+        operationId: 'getRisk',
+        summary: 'The risk datasets, a lookup, and the refused passwords',
+        description: 'Which `store` holds the risk data (the database, or ' +
+                     'this process where there is none); every dataset in ' +
+                     '`datasets` with its `state` (active, stale or empty), ' +
+                     'active and previous version, publication date, row ' +
+                     'count, provider attribution and every recorded ' +
+                     '`versions` row (refused ones with their `refusal`); ' +
+                     'the `formats` a file may be in; with `address`, what ' +
+                     'the active datasets say about it in `lookup` (`geo`, ' +
+                     '`asn`, `lists`, the `datasets` versions that answered ' +
+                     'and any `stale` ones left out); and a page of the ' +
+                     'realm\'s refused passwords in `failures` — a subject ' +
+                     'or a name\'s digest, the door, the network prefix, the ' +
+                     'ASN and the code, never an address.',
+        mirrors: 'GET /admin/risk',
+        parameters: [
+          { name: 'realm', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The realm whose failures and operator lists are ' +
+                         'shown; the default realm when absent.' },
+          { name: 'address', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'An IPv4 or IPv6 address to look up.' },
+          { name: 'offset', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 0 },
+            description: 'Where the page of failures starts.' }
+        ],
+        responseDescription: 'The datasets, the lookup and the failures.',
+        responseSchema: { type: 'object',
+          description: '`store`, `datasets`, `formats`, `lookup`, ' +
+                       '`failures`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API risk endpoint.");
+          riskAdmin.riskView(req.query).then(function (view) {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API risk endpoint.");
+          }).catch(function (e) {
+            log.warn(errorCodes.tag('STS-RISK-0011') + 'risk: the view ' +
+                     'failed: ' + ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-RISK-0011');
+            self.sendJson(res, 500, { ok: false,
+                                      errors: [String((e && e.message) ||
+                                                      e)] });
+            log.debug("Leaving the management API risk endpoint. Failed.");
+          });
+        } },
+
+      { method: 'POST', route: BASE + '/risk/:action', tag: 'Risk',
+        mirrors: 'POST /admin/risk',
+        handler: function (req, res) {
+          log.debug("Entering the management API risk action.");
+          riskAdmin.riskAction(self.withAction(req, parseBody(req)),
+                               'the management API at /admin-api/risk')
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-RISK-0011');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API risk action.");
+            }).catch(function (e) {
+              log.warn(errorCodes.tag('STS-RISK-0011') + 'risk: an action ' +
+                       'failed: ' + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-RISK-0011');
+              self.sendJson(res, 500, { ok: false,
+                                        errors: [String((e && e.message) ||
+                                                        e)] });
+              log.debug("Leaving the management API risk action. Threw.");
+            });
+        },
+        actions: [
+          { action: 'import', operationId: 'importRiskDataset',
+            summary: 'Import one version of a risk dataset, and activate it',
+            description: 'Loads `content` as `format` into `dataset` (in ' +
+                         '`realm` for an operator list). Refused, and kept ' +
+                         'as a refused version, when `sha256` is named and ' +
+                         'does not match, when no line is a row, or when it ' +
+                         'has more than risk.datasetShrinkLimitPercent ' +
+                         'fewer rows than the active version. A version ' +
+                         'already recorded is not loaded again ' +
+                         '(`duplicate: true`). `activate: false` loads ' +
+                         'without activating. A file of millions of rows ' +
+                         'belongs in risk.datasetsDirectory instead.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                dataset: { type: 'string' },
+                format: { type: 'string' },
+                content: { type: 'string' },
+                realm: { type: 'string' },
+                version: { type: 'string' },
+                publishedAt: { type: 'string',
+                               description: 'An ISO 8601 date.' },
+                sha256: { type: 'string' },
+                provider: { type: 'string' },
+                licence: { type: 'string' },
+                attribution: { type: 'string' },
+                activate: { type: 'boolean' }
+              },
+              required: ['dataset', 'format', 'content'],
+              examples: [{ dataset: 'iplist.tor-exit', format: 'ip-list',
+                           content: '192.0.2.10\n198.51.100.0/24\n' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The version, its row count and state.' },
+          { action: 'activate', operationId: 'activateRiskDataset',
+            summary: 'Make a loaded version of a dataset the active one',
+            description: 'The version must have loaded (`ready`) or have ' +
+                         'been active before (`superseded`).',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { dataset: { type: 'string' },
+                            version: { type: 'string' },
+                            realm: { type: 'string' } },
+              required: ['dataset', 'version'],
+              examples: [{ dataset: 'asn', version: '2026-09' }],
+              additionalProperties: false },
+            responseDescription: 'The active version and the one it ' +
+                                 'replaced.' },
+          { action: 'rollback', operationId: 'rollbackRiskDataset',
+            summary: 'Make the previous version of a dataset active again',
+            description: 'Refused when there is no previous version.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { dataset: { type: 'string' },
+                            realm: { type: 'string' } },
+              required: ['dataset'],
+              examples: [{ dataset: 'asn' }],
+              additionalProperties: false },
+            responseDescription: 'The version now active.' },
+          { action: 'delete', operationId: 'deleteRiskDatasetVersion',
+            summary: 'Delete the rows of a version that is not active',
+            description: 'Its record stays, as `deleted`.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { dataset: { type: 'string' },
+                            version: { type: 'string' },
+                            realm: { type: 'string' } },
+              required: ['dataset', 'version'],
+              examples: [{ dataset: 'asn', version: '2026-08' }],
+              additionalProperties: false },
+            responseDescription: 'How many rows were deleted.' }
+        ]
       },
 
       // ---------------------------------------------------------------------
