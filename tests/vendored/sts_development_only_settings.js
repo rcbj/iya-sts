@@ -502,6 +502,13 @@ async function readSites() {
               a.attestWorkloads === false, JSON.stringify(a));
   });
 
+  // RISK SCORING (#62) ENFORCES IN PRODUCT, and this job's HTTP client is an
+  // automated one on a TLS stack the realm has never seen — a MEDIUM risk that
+  // the issuance policy answers by asking for a security key this person does
+  // not hold. What is asserted here is the nonce, not the risk policy, so the
+  // throwaway realm stops scoring before it is switched; the setting is put
+  // back below with the rest.
+  await setting(DEV, "risk.assessSignIns", false);
   await setting(DEV, "global.mode", "product");
   const config = await call("GET", realmBase(DEV) + "/admin-api/config");
   check("product: the development values are still STORED in the realm",
@@ -548,6 +555,7 @@ async function readSites() {
     await setting(DEV, key, !value);
   }
   await setting(DEV, "global.mode", "development");
+  await setting(DEV, "risk.assessSignIns", true);
   log.debug("Leaving readSites().");
 }
 
