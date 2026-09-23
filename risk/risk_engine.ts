@@ -84,7 +84,13 @@ const SIGNALS: Record<string, Json> = {
   'account-failures': { factor: 3,
     what: 'refused passwords for this person in the last hour' },
   'network-failures': { factor: 3,
-    what: 'refused passwords from this network in the last hour' }
+    what: 'refused passwords from this network in the last hour' },
+  // #62 P5: the FIDO Metadata Service says the security key's MODEL was
+  // revoked, or its keys can be extracted or its user verification bypassed.
+  // A key from such a model proves possession of something anybody may hold.
+  'authenticator-compromised': { factor: 50,
+    what: 'the security key\'s model is reported revoked or compromised in ' +
+          'the FIDO metadata' }
 };
 
 // How many refused passwords in the last hour make a signal of each kind.
@@ -659,6 +665,14 @@ class RiskEngine {
     if (device.bot) {
       add('automated-client', device.browser || 'unnamed');
     }
+    // THE SECURITY KEY'S MODEL, from the FIDO metadata (#62 P5).
+    const authenticator = credential.aaguid
+      ? await datasets.lookupAuthenticator(String(credential.aaguid)) : null;
+    if (authenticator && authenticator.model.compromised) {
+      add('authenticator-compromised',
+          String(authenticator.model.description || credential.aaguid) +
+          ' (' + String(authenticator.model.latestStatus || '') + ')');
+    }
     if (context.ja4 && user.n > 0) {
       const seen = await store.featureCounts(realm, subject,
         [{ feature: 'ja4', value: String(context.ja4) }], sealing);
@@ -715,9 +729,14 @@ class RiskEngine {
       credentialKind: String(credential.kind || ''),
       credentialHash: String(credential.fingerprint || ''),
       aaguid: String(credential.aaguid || ''),
+      // The model's FIDO certification level, where the metadata lists it.
+      authenticatorCert: authenticator
+        ? String(authenticator.model.certificationLevel || '') : '',
       backupEligible: credential.backupEligible,
       backupState: credential.backupState,
       datasets: Object.assign({}, found.datasets,
+                              authenticator
+                                ? { 'fido.mds3': authenticator.version } : {},
                               { stale: found.stale,
                                 attributions: found.attributions }),
       signals: [{ signal: 'model', score: modelled.score,
@@ -959,13 +978,23 @@ class RiskEngine {
         throw new Error(String(ended.message || 'nothing was ended'));
       }
     } else if (reaction === 'risk-credential-compromise') {
-      await lazy('../ssf/account_signals').credentialCompromised({
-        username: change.username, credentialType: 'password',
+      const signals = lazy('../ssf/account_signals');
+      // WHICH CREDENTIAL: the security key where the evidence is its model
+      // (#62 P5), the password otherwise.
+      const aKey = (change.signals || []).indexOf(
+        'authenticator-compromised') >= 0;
+      await signals.credentialCompromised({
+        username: change.username,
+        credentialType: aKey ? signals.KEY_CREDENTIAL_TYPE : 'password',
         initiatingEntity: 'system',
         reasonAdmin: change.username + '\'s risk went to ' + change.level +
-                     ' on evidence about their password (' + reason + ').',
-        reasonUser: 'Your password may be known to somebody else. Change ' +
-                    'it.' });
+                     ' on evidence about their ' +
+                     (aKey ? 'security key' : 'password') + ' (' + reason +
+                     ').',
+        reasonUser: aKey
+          ? 'The model of security key you signed in with is reported ' +
+            'compromised. Replace it.'
+          : 'Your password may be known to somebody else. Change it.' });
     } else if (reaction === 'risk-disable') {
       const done = lazy('../common/account_state').setDisabled(
         change.username, true, { actor: 'risk scoring', via: 'internal',
@@ -1026,6 +1055,14 @@ class RiskEngine {
       if (theirs.total >= NETWORK_FAILURES) {
         signals.push('network-failures');
       }
+    }
+    // A key whose MODEL the FIDO metadata has since reported compromised
+    // (#62 P5): the session rests on it.
+    const aaguid = last.context.credential
+      ? String(last.context.credential.aaguid || '') : '';
+    const listed = aaguid ? await datasets.lookupAuthenticator(aaguid) : null;
+    if (listed && listed.model.compromised) {
+      signals.push('authenticator-compromised');
     }
     const held = (risk.signals || []).map(String);
     const fresh = signals.filter(function (one: string): boolean {
