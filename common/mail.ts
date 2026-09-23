@@ -307,15 +307,6 @@ const HOLDER = os.hostname() + ':' + process.pid;
 // THE DIRECTORY (header point 5), filled by `ldap/ldap_server.js`.
 let directory: Directory | null = null;
 
-// BUILT TRANSPORTS, per realm, by fingerprint — a socket pool is held by one
-// process and shared by none (root CLAUDE.md, "One front process"), so this
-// is this process's and NOT a realm store: every process builds its own from
-// the same settings.
-const built = new Map<string, Json>();
-
-// The last build failure per realm, for the console.
-const buildProblems = new Map<string, Json>();
-
 // Per realm, what this process did since its last summary line.
 const tallies = new Map<string, Json>();
 const lastSummaryAt = new Map<string, number>();
@@ -328,6 +319,16 @@ class Mail {
   static readonly TRANSPORTS = TRANSPORTS;
   static readonly ATTEMPT_SCOPE = ATTEMPT_SCOPE;
   static readonly DELIVER_JOB = DELIVER_JOB;
+
+  // BUILT TRANSPORTS, per realm, by fingerprint — a socket pool is held by
+  // one process and shared by none (root CLAUDE.md, "One front process"), so
+  // this is this INSTANCE's and NOT a realm store: every process builds its
+  // own from the same settings, and an instance built with other transports
+  // (a test's) never answers with another's.
+  private readonly built = new Map<string, Json>();
+
+  // The last build failure per realm, for the console.
+  private readonly buildProblems = new Map<string, Json>();
 
   constructor(private readonly deps: MailDeps) {
     deps.log.debug("Entering Mail.constructor().");
@@ -452,7 +453,7 @@ class Mail {
         'console', 'STS-MAIL-0003', false);
     }
     const print = this.fingerprint(cfg);
-    const held = built.get(realmId);
+    const held = this.built.get(realmId);
     if (held && held.print === print) {
       log.debug("Leaving Mail.transport(). Cached.");
       return held.transport;
@@ -463,13 +464,13 @@ class Mail {
           'function') {
         held.transport.close();
       }
-      built.set(realmId, { print: print, transport: made });
-      buildProblems.delete(realmId);
+      this.built.set(realmId, { print: print, transport: made });
+      this.buildProblems.delete(realmId);
       log.debug("Leaving Mail.transport(). Built " + made.name + ".");
       return made;
     } catch (e) {
       log.debug("Caught in Mail.transport(): " + ((e && e.message) || e));
-      buildProblems.set(realmId, { at: Date.now(),
+      this.buildProblems.set(realmId, { at: Date.now(),
         code: errorCodes.codeOf(e) || 'STS-MAIL-0004',
         why: String((e && e.message) || e) });
       if (!errorCodes.codeOf(e)) {
@@ -486,7 +487,7 @@ class Mail {
     const { log, realms } = this.deps;
     log.debug("Entering Mail.buildProblem().");
     log.debug("Leaving Mail.buildProblem().");
-    return buildProblems.get(realms.currentId()) || null;
+    return this.buildProblems.get(realms.currentId()) || null;
   }
 
   // The From address: the setting, or `no-reply@` the realm's DNS domain.
@@ -749,6 +750,7 @@ class Mail {
                  why: string): Json {
     const { log, audit, errorCodes } = this.deps;
     log.debug("Entering Mail.refuse(). " + code);
+    // error-code: none — the code is the caller's, passed in as `code`
     audit.audit({ action: 'mail.refused', outcome: 'refused',
       errorCode: code, actor: req.actor || '', target: username,
       protocol: 'Mail', channel: 'internal',

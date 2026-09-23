@@ -35,6 +35,7 @@ import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import mail = require('../common/mail');
+import mailUses = require('../common/mail_uses');
 
 type Req = import('express').Request;
 type Res = import('express').Response;
@@ -45,7 +46,8 @@ const OUTBOX = '/admin/mail/outbox';
 
 // The actions each page takes, for the sentence an unknown one is answered
 // with (the parity jobs read the list back out of it).
-const SETTINGS_ACTIONS = ['test', 'save-template', 'reset-template'];
+const SETTINGS_ACTIONS = ['test', 'verify', 'save-template',
+                          'reset-template'];
 const OUTBOX_ACTIONS = ['retry'];
 
 interface MailAdminDeps {
@@ -54,6 +56,7 @@ interface MailAdminDeps {
   adminViews: typeof adminViews;
   errorCodes: typeof errorCodes;
   mail: typeof mail;
+  mailUses: typeof mailUses;
   parseBody: typeof helpers.parseBody;
 }
 
@@ -75,6 +78,7 @@ class MailAdmin {
       adminViews: adminViews,
       errorCodes: errorCodes,
       mail: mail,
+      mailUses: mailUses,
       parseBody: helpers.parseBody
     };
   }
@@ -135,7 +139,7 @@ class MailAdmin {
     if (SETTINGS_ACTIONS.indexOf(action) < 0) {
       log.debug("Leaving MailAdmin.settingsAction(). Unknown.");
       return this.refuse('STS-MAIL-0025', 'Unknown action "' + action +
-        '". The three are: ' + SETTINGS_ACTIONS.join(', ') + '.');
+        '". The four are: ' + SETTINGS_ACTIONS.join(', ') + '.');
     }
     if (action === 'test') {
       const who = String(b.user || actor || '').trim();
@@ -170,6 +174,25 @@ class MailAdmin {
           '(Monitoring → Mail) shows where it got to.'
         : 'A test message was queued.',
         message_id: sent.queued[0] ? sent.queued[0].id : '' };
+    }
+    if (action === 'verify') {
+      // A VERIFICATION LINK TO A PERSON'S OWN ADDRESS, sent by an
+      // administrator — the person's own button is on /portal/email. It is
+      // the same link, spent by the person at /portal/verify-email; the
+      // administrator never sees it.
+      const who = String(b.user || '').trim();
+      if (!who) {
+        log.debug("Leaving MailAdmin.settingsAction(). verify: nobody.");
+        return this.refuse('STS-MAIL-0012', 'Name the person whose address ' +
+                           'to verify in `user`.');
+      }
+      if (!mail.available()) {
+        log.debug("Leaving MailAdmin.settingsAction(). verify: no mail.");
+        return this.refuse('STS-MAIL-0032', 'This realm has no mail ' +
+                           'transport, so no verification link can be sent.');
+      }
+      log.debug("Leaving MailAdmin.settingsAction(). verify.");
+      return this.deps.mailUses.startVerification(who, via, actor || via);
     }
     const id = String(b.template || '');
     const lang = String(b.lang || '');
@@ -281,7 +304,17 @@ class MailAdmin {
         '<div class="formrow"><label for="mail-test-user">Person</label>' +
         '<input type="text" id="mail-test-user" name="user" size="24" ' +
         'maxlength="256" placeholder="yourself"><button type="submit">' +
-        'Send a test message</button></div></form>'
+        'Send a test message</button></div></form>' +
+        '<h2>Verify a person\'s address</h2>' +
+        admin.note('Sends a single-use verification link to the address on ' +
+                   'their entry; they follow it. You never see it. A person ' +
+                   'can send themselves one from <code>/portal/email</code>.') +
+        '<form method="post" action="' + PAGE + '">' +
+        '<input type="hidden" name="action" value="verify">' +
+        '<div class="formrow"><label for="mail-verify-user">Person</label>' +
+        '<input type="text" id="mail-verify-user" name="user" size="24" ' +
+        'maxlength="256" required><button type="submit">Send a verification ' +
+        'link</button></div></form>'
       : '';
     const templates = '<h2>Messages</h2>' +
       admin.note('Every message this service sends, in English, and the ' +

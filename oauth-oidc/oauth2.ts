@@ -807,11 +807,17 @@ const PERSONA_CLAIMS = ['name', 'given_name', 'family_name',
 //     never `undefined` on an object that a later `Object.assign` could use to
 //     clobber a configured claim of the same name. `definedOnly()` below is
 //     what the payloads go through.
-//   * **`email_verified` IS NEVER SET HERE.** Nothing in a directory entry says
-//     a mailbox was verified, and the invented `true` this replaced was the
-//     single most harmful claim in the persona: relying parties link accounts
-//     on a verified email. An absent claim is what OIDC Core 5.1 permits for a
-//     value the provider cannot vouch for.
+//   * **`email_verified` IS THE MAIL CHANNEL'S VERIFICATION, AND NOTHING
+//     ELSE (#63, 2026-09-22).** Until #63 nothing in a directory entry said a
+//     mailbox was verified, so the claim was never set here — the invented
+//     `true` this replaced was the single most harmful claim in the persona,
+//     because relying parties link accounts on a verified email. Now an entry
+//     carries `stsMailVerified`, the address its person PROVED by following
+//     a link sent to it, and the claim is `true` exactly when that is the
+//     `email` being sent and `false` otherwise (OIDC Core 5.1: "otherwise,
+//     false"). It is set only beside an `email` this function took from the
+//     directory — an address a federated sign-in or a certificate put on the
+//     person is not one this service verified.
 //   * DEVELOPMENT IS UNTOUCHED — `userFor()` filled all six there, so this
 //     function finds nothing undefined and returns the object as it was given.
 //
@@ -4626,6 +4632,26 @@ class OAuth2Server {
       Object.assign({}, user, { sub: sub }) : user;
   }
 
+  // Whether `email` is the address this person verified (#63) — read through
+  // the mail channel's view of the entry, LAZILY: that module is a library
+  // this one must not load early. `false` whenever it cannot be said.
+  emailVerified(username: string, email: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.emailVerified().");
+    let verified = false;
+    try {
+      const who = require('../common/mail').recipient(String(username));
+      verified = !!(who && who.verified && String(who.address).toLowerCase() ===
+                                           String(email).toLowerCase());
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.emailVerified(): " +
+                ((e && e.message) || e));
+      verified = false;
+    }
+    log.debug("Leaving OAuth2Server.emailVerified(). " + verified);
+    return verified;
+  }
+
   personFromDirectory(user: Json): Json {
     const { log, mode, errorCodes, claimAttributes } = this.deps;
     const self = this;
@@ -4665,6 +4691,9 @@ class OAuth2Server {
         delete out[name];
       }
     });
+    if (missing.indexOf('email') >= 0 && out.email) {
+      out.email_verified = self.emailVerified(user.username, out.email);
+    }
     log.debug("Leaving OAuth2Server.personFromDirectory(). " +
               DIRECTORY_PERSONA_CLAIMS.filter(function (n) {
                 return out[n] !== undefined;

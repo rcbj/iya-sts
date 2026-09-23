@@ -2122,6 +2122,28 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The message queued, and its id.' },
+          { action: 'verify', operationId: 'sendMailVerificationLink',
+            summary: 'Mail a person a link that verifies their address',
+            description: 'A single-use link to `/portal/verify-email`, ' +
+                         'mailed to the address on `user`\'s entry and ' +
+                         'never returned: the person follows it, and the ' +
+                         'address becomes `stsMailVerified`. The same link ' +
+                         'the person\'s own button on `/portal/email` sends. ' +
+                         'Refused for nobody (STS-MAIL-0012), no address ' +
+                         '(STS-MAIL-0011) or no transport (STS-MAIL-0032); ' +
+                         'answers that it is already verified when it is.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description: 'The person, by username.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether a link was sent.' },
           { action: 'save-template', operationId: 'saveMailTemplate',
             summary: 'Save this realm\'s wording of a message in a language',
             description: 'The subject, the text part and the HTML part of ' +

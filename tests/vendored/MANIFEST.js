@@ -642,6 +642,10 @@ const JOBS = [
   // modes (a skip ignored in product, a CA file honoured), the RFC 9728
   // import under federation's policy, and XACML's in-force view.
   { file: 'sts_outbound_tls.js',         browser: false, local: true },
+  // The mail channel (#63): delivery to the Mailpit the stack runs, a
+  // product realm of its own, verification, a self-service reset, a dead
+  // letter. Skips its delivery sections where there is no catcher.
+  { file: 'sts_mail.js',                 browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE

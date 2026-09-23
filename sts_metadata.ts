@@ -5649,14 +5649,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'with Suspend, Reinstate and Revoke. Add ?format=json.' },
   { path: '/admin/mail', group: 'Admin',
     name: 'How this service sends mail',
-    specs: ['rfc5321', 'rfc3207', 'rfc8314', 'rfc4954', 'rfc6376', 'rfc8463'],
+    specs: ['rfc5321', 'rfc3207', 'rfc8314', 'rfc4954', 'rfc5322', 'rfc6376',
+            'rfc8463'],
     effect: 'sends a test message, or saves a realm\'s wording of a message',
     what: 'NON-SPEC (#63). Filed under Server configuration. The transport ' +
           'this realm sends through — capture (development), SMTP, Amazon ' +
           'SES v2, Azure Communication Services Email or the Gmail API, the ' +
           'service\'s or the realm\'s own — whether it could be built, where ' +
           'a mailed link points (global.publicBaseUrl; never a request), a ' +
-          'test message to a person\'s own address, each message\'s wording ' +
+          'test message or a verification link to a person\'s own address, ' +
+          'each message\'s wording ' +
           'per language (a link is a placeholder; an address of its own, an ' +
           'image or a script is refused), and the Mail settings. POST: ' +
           'test, save-template, reset-template, Admin Write. Add ' +
@@ -6526,7 +6528,8 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Mail actions', specs: ['openapi'],
     effect: 'queues a test message, or saves or resets a realm\'s wording',
     what: 'NON-SPEC (#63). test, with { user }: a test message to that ' +
-          'person\'s own address (never an address); save-template and ' +
+          'person\'s own address (never an address); verify, with { user }: ' +
+          'a single-use address verification link to it; save-template and ' +
           'reset-template, with { template, lang, … }: this realm\'s wording ' +
           'of a message, checked when saved. The console\'s three forms.' },
   { path: '/admin-api/mail/outbox', group: 'Management API',
