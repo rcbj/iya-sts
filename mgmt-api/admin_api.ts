@@ -13801,14 +13801,17 @@ class AdminApi {
       // THE STORED KERBEROS KEYS (2026-09-12).
       //
       // Rule 7: `/admin/kerberos/principals` has six controls — the two "Drop
-      // previous versions" buttons joined the four on 2026-09-12 — so this
-      // resource has the same six, through `kerberosPrincipalsAction()` and
+      // previous versions" buttons joined the four on 2026-09-12 — and a
+      // person's page under Directory → Users a seventh (#59, "Reset password
+      // and download keytab", posted to the same page), so this resource has
+      // the same seven, through `kerberosPrincipalsAction()` and
       // `kerberosPrincipalsJson()` in `admin-core/`, which reach
       // `kerberos/krb5_person_keys.ts` by a plain require.
       //
-      // **NO KEY IS IN ANY REPLY BUT TWO**, and those two are the whole reason
+      // **NO KEY IS IN ANY REPLY BUT THREE**, and those are the whole reason
       // a service principal can be created from a machine: `create-service` and
-      // `rotate-service` return the KEYTAB, base64, ONCE. Nothing reads a
+      // `rotate-service` return the KEYTAB, base64, ONCE — and so does
+      // `reset-person-keytab` (#59), derived from the password it sets. Nothing reads a
       // stored key back out afterwards — a lost keytab is replaced by rotating.
       // The GET is built from the public half of each pair of attributes and
       // opens nothing.
@@ -13875,15 +13878,31 @@ class AdminApi {
           log.debug("Entering the management API Kerberos principals action " +
                     "endpoint.");
           const body = parseBody(req);
-          const result = adminActions.kerberosPrincipalsAction(
+          // `reset-person-keytab` (#59) answers a PROMISE — its string-to-key
+          // is asynchronous — so every answer is resolved.
+          Promise.resolve(adminActions.kerberosPrincipalsAction(
               self.withAction(req, body),
-                                                               { via: 'api' });
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0065');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
+              { via: 'api' }))
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0065');
+              }
+              if (result.ok && result.keytab) {
+                // A key is in the body.
+                res.set('Cache-Control', 'no-store');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+            }, function (e) {
+              log.error(errorCodes.tag('STS-API-0065') + 'admin-api: a ' +
+                        'Kerberos principals action threw: ' +
+                        ((e && e.stack) || e));
+              errorCodes.mark(res, 'STS-API-0065');
+              self.sendJson(res, 500, { ok: false, errors: ['The action ' +
+                'failed inside this service; the log says why.'] });
+            });
           log.debug("Leaving the management API Kerberos principals action " +
-                    "endpoint.");
+                    "endpoint. Answering when the action settles.");
         },
         actions: [
           { action: 'create-service',
@@ -14062,7 +14081,69 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'How many previous versions were dropped, ' +
-                                 'their kvnos, and the current kvno.' }
+                                 'their kvnos, and the current kvno.' },
+
+          // #59 (2026-09-22): the console's "Reset password and download
+          // keytab" on a person's page, rule 7's twin.
+          { action: 'reset-person-keytab',
+            operationId: 'resetKerberosPersonKeytab',
+            summary: 'Reset a person\'s password, and get the keytab derived ' +
+                     'from it once',
+            description: 'SETS `username`\'s password — to `password`, or ' +
+                         'with `random: true` to a generated one that is ' +
+                         'NEVER returned — and answers with an MIT keytab ' +
+                         '(format 0x502) in `keytab`, base64, derived from ' +
+                         'it: one entry per enctype in `krb5.enctypes`, at ' +
+                         'the CURRENT kvno only.\n\n**THIS IS A PASSWORD ' +
+                         'RESET.** A stored key is never read back out, so ' +
+                         'a keytab is derived from a password in hand, and ' +
+                         'the only one an administrator can have is one set ' +
+                         'now. The old password stops working in every ' +
+                         'protocol, the kvno moves up by one, an outstanding ' +
+                         'reset link is spent, the person is signed out of ' +
+                         'everything, and a CAEP credential-change is sent. ' +
+                         'They are NOT made to change it at their next ' +
+                         'sign-in (that would end the keytab), and a ' +
+                         'pending forced change is cleared.\n\nThe password ' +
+                         'is held to the realm\'s password policy. The key ' +
+                         'derived from it is checked against the one the ' +
+                         'KDC holds before the keytab is returned. In ' +
+                         'DEVELOPMENT mode the KDC keys every user from ' +
+                         '`krb5.userPassword`, not from their own, so ' +
+                         'the keytab is derived from that — `source` says ' +
+                         'which. **THE KEYTAB IS IN THIS REPLY AND NOWHERE ' +
+                         'ELSE.** Refused, before anything changes, for a ' +
+                         'realm with no KDC, a name with no entry, a ' +
+                         'disabled account, and `krb5.personKeys` off in ' +
+                         'product mode; and for neither or both of ' +
+                         '`password` and `random`. The person makes their ' +
+                         'own, from their own password and with nothing ' +
+                         'reset, at `/portal/kerberos`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                username: { type: 'string',
+                            description: 'The person, as they sign in, in ' +
+                                         'the trust realm of the call.' },
+                password: { type: 'string',
+                            description: 'The new password. Leave out with ' +
+                                         '`random`.' },
+                random: { type: 'boolean',
+                          description: 'A generated password under the ' +
+                                       'password policy, never returned.' }
+              },
+              required: ['username'],
+              examples: [{ username: 'alice',
+                           password: 'A-New-Strong-Passw0rd!' },
+                         { username: 'batch-job', random: true }],
+              additionalProperties: false
+            },
+            responseDescription: 'The principal, kvno, enctypes, `source` ' +
+                                 '(`password` or `development`), whether ' +
+                                 'the password was generated, the sign-out, ' +
+                                 'and the keytab (base64) with a file name ' +
+                                 'for it.' }
         ] },
 
       { method: 'GET', path: BASE + '/audit', tag: 'Audit log',

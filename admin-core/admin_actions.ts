@@ -704,10 +704,19 @@ const SPIFFE_ACTIONS = ['rotate', 'federation-set', 'federation-remove'];
 // that to stop now. They drop the previous versions and nothing else: the
 // current key, and so the person's sign-in or the service's current keytab, is
 // untouched.
+//
+// **AND A SEVENTH (#59, 2026-09-22): `reset-person-keytab`**, the one of them
+// that is ASYNCHRONOUS (string-to-key is Web Crypto) and the one that is also
+// a credential act. An administrator SETS the person's password — typed, or
+// generated and never shown — and gets the keytab derived from it, once. It
+// is a password reset in every respect but one: the person is NOT made to
+// change it at their next sign-in, because a forced change would strand the
+// keytab it was set to produce. `resetPersonKeytab()` below argues the order.
 const KERBEROS_PRINCIPAL_ACTIONS = ['create-service', 'rotate-service',
                                     'delete-service', 'clear-person-keys',
                                     'drop-previous-service-keys',
-                                    'drop-previous-person-keys'];
+                                    'drop-previous-person-keys',
+                                    'reset-person-keytab'];
 
 interface AdminActionsDeps {
   log: typeof helpers.log;
@@ -5714,7 +5723,109 @@ class AdminActions {
     return this.spiffeUnknownAction(action, SPIFFE_ACTIONS);
   }
 
+  // ---------------------------------------------------------------------------
+  // RESET A PERSON'S PASSWORD AND HAND OVER THE KEYTAB DERIVED FROM IT (#59).
+  //
+  // THE ORDER IS THE ARGUMENT:
+  //
+  //   1. ASK THE REGISTER FIRST whether a keytab can be made for this person
+  //      at all — a KDC in this realm, an entry, an account not disabled —
+  //      so a refusal changes nothing. A password reset followed by "no
+  //      keytab" would have taken somebody's password away for nothing.
+  //   2. SET THE PASSWORD through `credentials.setPassword()`, the door every
+  //      other one uses, so the realm's password policy applies to a typed
+  //      one, the history is kept, and the observer derives the new keys at
+  //      the next kvno. A generated one (`random`) is drawn against the same
+  //      policy and NEVER SHOWN: the keytab is then the only credential that
+  //      opens the account until somebody sets a password again.
+  //   3. What a reset does to the rest of the account, as `reset-password`
+  //      does it: an outstanding reset link is spent (the administrator has
+  //      just decided what the password is), they are signed out of
+  //      everything, the act is audited and said over Shared Signals. **NOT
+  //      a forced change** — `pwdReset` is CLEARED, not set — because the
+  //      person changing the password would kill the keytab this was for.
+  //   4. THE KEYTAB, from the password just set (`personKeytab()`), which
+  //      waits for the derivation and checks it against what the KDC holds.
+  //
+  // A keytab refused AFTER step 2 is reported as exactly that — the password
+  // WAS changed — rather than as a refusal that implies nothing happened.
+  // ---------------------------------------------------------------------------
+  private async resetPersonKeytab(asked, ctx) {
+    const { log, credentials, auditLog, accountSignals, errorCodes,
+            krb5PersonKeys } = this.deps;
+    log.debug("Entering AdminActions.resetPersonKeytab().");
+    const who = String(asked.username || asked.user || '').trim();
+    const random = this.truthy(asked.random);
+    const typed = typeof asked.password === 'string' ? asked.password : '';
+    if (random === !!typed) {
+      log.debug("Leaving AdminActions.resetPersonKeytab(). Neither or both.");
+      return this.refused('STS-ADMIN-0802', { ok: false, errors: [
+        'Either give the new password in `password`, or set `random` for a ' +
+        'generated one that is never shown — one of the two, not both.'] });
+    }
+    const refused = krb5PersonKeys.personKeytabRefusal(who);
+    if (refused) {
+      log.debug("Leaving AdminActions.resetPersonKeytab(). The register " +
+                "refused before anything changed.");
+      return refused;
+    }
+    const password = random ? credentials.generatePassword(who) : typed;
+    const set = credentials.setPassword(who, password,
+                                        random ? { generated: true } : {});
+    if (!set.ok) {
+      log.debug("Leaving AdminActions.resetPersonKeytab(). The password was " +
+                "refused.");
+      return this.refusedBy('STS-ADMIN-0802', set);
+    }
+    credentials.setPasswordResetRequired(who, false);
+    credentials.consumePasswordReset(who);
+    const signedOut = this.signOutEverywhere(who, ctx,
+                                             'a password reset for a keytab');
+    auditLog.record({ category: 'admin', action: 'admin.password.reset-keytab',
+      actor: ctx.actor, target: who, outcome: 'success',
+      summary: 'an administrator reset the password of ' + who + ' to make ' +
+               'a Kerberos keytab',
+      detail: { username: who, via: ctx.via, generated: random,
+                sessionsEnded: signedOut.terminated } });
+    accountSignals.credentialChanged({ username: who,
+      credentialType: 'password', changeType: 'update', via: ctx.via,
+      reasonAdmin: 'An administrator reset the password of ' + who +
+                   ' to make a Kerberos keytab.',
+      reasonUser: 'Your password was reset by an administrator.' });
+    const made = await krb5PersonKeys.personKeytab(who, password, ctx);
+    if (!made || !made.ok) {
+      log.error(errorCodes.tag('STS-ADMIN-0803') + 'admin: the password of ' +
+                who + ' was reset for a keytab and the keytab could not be ' +
+                'made: ' + ((made && made.errors) || []).join(' '));
+      log.debug("Leaving AdminActions.resetPersonKeytab(). No keytab.");
+      return this.refused('STS-ADMIN-0803', { ok: false, passwordSet: true,
+        errors: ['The password of ' + who + ' WAS reset' +
+                 (random ? ' (to a generated one nobody was shown)' : '') +
+                 ', and signed them out, but the keytab could not be made: ' +
+                 (((made && made.errors) || []).join(' ') ||
+                  'the register gave no reason') + ' Set a password again ' +
+                 'to let them sign in with one.'] });
+    }
+    log.info('admin: the password of "' + who + '" was reset for a Kerberos ' +
+             'keytab by ' + (ctx.actor || 'an unnamed caller') + ' (' +
+             ctx.via + ').');
+    log.debug("Leaving AdminActions.resetPersonKeytab(). kvno " + made.kvno +
+              ".");
+    return Object.assign({}, made, {
+      passwordSet: true, generated: random, signedOut: signedOut,
+      message: 'The password of ' + who + ' was reset' +
+               (random ? ' to a GENERATED one that was not shown and ' +
+                         'cannot be — the keytab is now the only thing that ' +
+                         'signs them in, until a password is set again'
+                       : ' to the one you typed') +
+               ', they were signed out of everything, and they are not ' +
+               'asked to change it (that would end the keytab). ' +
+               made.message
+    });
+  }
+
   kerberosPrincipalsAction(body, context) {
+    const self = this;
     const { log, numberWord, realms, krb5PersonKeys } = this.deps;
     log.debug("Entering AdminActions.kerberosPrincipalsAction(). action=" +
               String((body || {}).action));
@@ -5735,6 +5846,17 @@ class AdminActions {
       result = krb5PersonKeys.dropPreviousServiceKeys(asked.spn, ctx);
     } else if (action === 'drop-previous-person-keys') {
       result = krb5PersonKeys.dropPreviousPersonKeys(asked.username, ctx);
+    } else if (action === 'reset-person-keytab') {
+      // A PROMISE, and the one action here that answers one: both callers
+      // resolve whatever this returns.
+      log.debug("Leaving AdminActions.kerberosPrincipalsAction(). " +
+                "Asynchronous.");
+      return this.resetPersonKeytab(asked, ctx).then(function (answer) {
+        if (answer && answer.ok) {
+          answer.trustRealm = realms.currentId();
+        }
+        return self.refusedBy('STS-ADMIN-0602', answer);
+      });
     } else {
       // THE HOUSE SENTENCE, which `tests/vendored/sts_admin_api_operations.js`
       // and `tests/vendored/admin_api.js` both READ.

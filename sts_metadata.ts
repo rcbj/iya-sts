@@ -4898,6 +4898,25 @@ const ENDPOINTS: EndpointEntry[] = [
           'last use and revokes one (a CAEP credential-change). The identity ' +
           'is the session\'s; nothing on the form names a person. A real ' +
           'submit button and no script.' },
+  { path: '/portal/kerberos', group: 'User portal',
+    name: 'Your Kerberos principal, and a keytab from your own password',
+    specs: ['rfc4120', 'rfc3961'],
+    effect: 'makes the signed-in person a keytab for their own principal, ' +
+            'shown once; changes nothing on the account',
+    what: 'NON-SPEC page (#59). Shows the signed-in person\'s Kerberos ' +
+          'principal in this realm and the PUBLIC half of their keys (kvno, ' +
+          'enctypes), and makes them an MIT keytab (format 0x502) from their ' +
+          'CURRENT PASSWORD, typed on the form and verified first — which is ' +
+          'also the re-authentication a password-equivalent export needs, ' +
+          'counted against the password change\'s budget. RFC 3961 ' +
+          'string-to-key over that password and the account\'s salt, at the ' +
+          'current kvno only, checked against the key the KDC holds before ' +
+          'it is handed over; a stored key is never read back out. SHOWN ' +
+          'ONCE on the 200 that answers the form, no-store, and not kept. In ' +
+          'development mode the KDC keys every user from krb5.userPassword, ' +
+          'so the keytab holds that key and the page says so. The identity ' +
+          'is the session\'s; nothing on the form names a person. A real ' +
+          'submit button and no script.' },
   { path: '/portal/signing-key', group: 'User portal',
     name: 'Your own RFC 7523 signing key',
     specs: ['rfc7521', 'rfc7523', 'rfc5280'],

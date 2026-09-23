@@ -1646,6 +1646,335 @@ class Krb5PersonKeys {
   }
 
   // -------------------------------------------------------------------------
+  // WHETHER A KEYTAB CAN BE MADE FOR `name` AT ALL, asked before anything is
+  // derived — and by the console's reset BEFORE it changes the person's
+  // password, so an administrator is never left having reset a password for a
+  // keytab that was then refused. A refusal, or null.
+  // -------------------------------------------------------------------------
+  personKeytabRefusal(name: unknown): Json {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Krb5PersonKeys.personKeytabRefusal(). name=' + name);
+    const noKdc = this.noKdcHere();
+    if (noKdc) {
+      log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). No KDC in ' +
+                'this trust realm.');
+      return noKdc;
+    }
+    const who = String(name == null ? '' : name).trim();
+    if (!directory) {
+      log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). No ' +
+                'directory.');
+      return this.refusal('STS-KRB-0130', 'There is no directory in this ' +
+                          'process, so there is nobody to make a keytab for.');
+    }
+    if (!who || this.personNameProblem(who)) {
+      log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). No usable ' +
+                'name.');
+      return this.refusal('STS-KRB-0130', 'Name the person whose keytab to ' +
+                          'make, as `username`: a single-component name, ' +
+                          'which is what a Kerberos user principal is.');
+    }
+    if (!directory.readPerson(who)) {
+      log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). Nobody by ' +
+                'that name.');
+      return this.refusal('STS-KRB-0130', 'There is nobody called "' + who +
+                          '" in this trust realm\'s directory, which is the ' +
+                          'one its KDC reads.');
+    }
+    if (this.personDisabled(who)) {
+      log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). Disabled.');
+      return this.refusal('STS-KRB-0134', who + '\'s account is disabled, ' +
+                          'and the KDC refuses a disabled account ' +
+                          'KDC_ERR_CLIENT_REVOKED whatever key it presents, ' +
+                          'so a keytab for it would be a file that cannot ' +
+                          'sign in. Enable the account first.');
+    }
+    if (this.productKdc() && !this.personKeysEnabled()) {
+      log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). Switched ' +
+                'off.');
+      return this.refusal('STS-KRB-0131', 'krb5.personKeys is off, so this ' +
+                          'KDC authenticates no person with keys of their ' +
+                          'own and a keytab would sign nobody in.');
+    }
+    log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). None.');
+    return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // A PERSON'S KEYTAB (#59, 2026-09-22) — FROM A PASSWORD IN HAND, AND FROM
+  // NOTHING ELSE.
+  //
+  // A keytab is how a client that cannot type a password — a batch job, a
+  // cron entry, `kinit -k` on a server — authenticates as a person, and it is
+  // exactly as good as that person's password: whoever holds it can get a TGT
+  // as them. So the rule this file has kept since it was written holds here
+  // too: **A STORED KEY IS NEVER READ BACK OUT.** The keytab is DERIVED, at
+  // the moment of asking, from a password the caller has in hand:
+  //
+  //   * the PORTAL: the person's own current password, typed on the form and
+  //     verified by `credentials.verify()` before this is called — which is
+  //     also the re-authentication a password-equivalent export needs (a
+  //     browser left signed in is not enough);
+  //   * the CONSOLE and `/admin-api`: a password an administrator has just SET
+  //     for the person (typed, or generated) — so the act is a password
+  //     reset, the kvno moves up by one, and the person's old password stops
+  //     working. An administrator never learns a password they did not
+  //     choose.
+  //
+  // **THE DERIVED KEY IS COMPARED WITH THE ONE THE KDC HOLDS**, in constant
+  // time, before anything is handed over, and a mismatch is a refusal. The
+  // stored key is opened for that comparison and for nothing else. What it
+  // buys: a keytab that would not work is never handed out — a password
+  // written behind the observer, a stale record, a derivation that failed —
+  // and the kvno and salt in the keytab are the KDC's own, rather than a guess
+  // about them.
+  //
+  // **ONLY THE CURRENT kvno.** A client keytab is read by `kinit -k`, which
+  // needs the key a new AS-REQ is checked against and nothing else; the
+  // previous versions this file keeps exist to open tickets ALREADY issued,
+  // and a keytab carrying them would be more password-equivalent material for
+  // no use.
+  //
+  // **DEVELOPMENT MODE.** A development KDC does not key a person from their
+  // password at all: every user shares `krb5.userPassword` (a service or
+  // computer fixture has a literal one of its own, `krb5_principals.js`,
+  // which no directory person is). A keytab
+  // from the password the caller typed would not open a single AS-REP there,
+  // so a development keytab is derived from the password THAT KDC uses for
+  // the principal — which the service publishes on `/krb5/principals` anyway
+  // — and the answer says so. The typed password is then not what the keytab
+  // is made from, and nothing pretends otherwise.
+  // -------------------------------------------------------------------------
+  async personKeytab(name: unknown, password: unknown,
+                     context?: ActContext): Promise<Json> {
+    const { log, principals, kcrypto, keytab, audit, nodeCrypto,
+            realms } = this.deps;
+    log.debug('Entering Krb5PersonKeys.personKeytab(). name=' + name);
+    const refused = this.personKeytabRefusal(name);
+    if (refused) {
+      log.debug('Leaving Krb5PersonKeys.personKeytab(). Refused before ' +
+                'anything was derived.');
+      return refused;
+    }
+    const who = String(name).trim();
+    const via = String((context || {}).via || 'console');
+    let made: Json;
+    if (this.productKdc()) {
+      made = await this.productPersonKeys(who, password);
+    } else {
+      made = await this.developmentPersonKeys(who);
+    }
+    if (!made.ok) {
+      log.debug('Leaving Krb5PersonKeys.personKeytab(). Refused: ' +
+                (made.errors || []).join(' '));
+      return made;
+    }
+    const now = new Date();
+    const entries = made.keys.map(function (pair: [number, Uint8Array]) {
+      return { realm: principals.REALM, components: [who],
+               nameType: keytab.NAME_TYPE_PRINCIPAL, timestamp: now,
+               kvno: made.kvno, etype: pair[0], key: pair[1] };
+    });
+    const bytes = keytab.writeKeytab(entries);
+    const etypes = made.keys.map(function (pair: [number, Uint8Array]) {
+      return pair[0];
+    });
+    const principal = who + '@' + principals.REALM;
+    audit.audit({
+      action: 'krb5.keytab.person',
+      actor: String((context || {}).actor || who),
+      protocol: 'Kerberos', channel: 'internal', target: principal,
+      summary: 'A keytab for ' + principal + ' (kvno ' + made.kvno + ', ' +
+               etypes.map(kcrypto.etypeName).join(', ') + ') was made from ' +
+               (made.source === 'password'
+                 ? 'a password in hand'
+                 : 'the development KDC\'s password for the principal') +
+               ' through the ' + via,
+      // The kvno, the enctypes and where it came from. Never a key, a salt
+      // beyond what ETYPE-INFO2 publishes, the keytab or the password.
+      detail: { kvno: made.kvno, etypes: etypes, source: made.source,
+                via: via, fingerprint: nodeCrypto.createHash('sha256')
+                  .update(bytes).digest('hex').slice(0, 16) }
+    });
+    log.info('krb5-keys: a keytab for ' + principal + ' at kvno ' +
+             made.kvno + ' was made through the ' + via + ' and handed to ' +
+             'the caller; it is not kept.');
+    log.debug('Leaving Krb5PersonKeys.personKeytab(). kvno ' + made.kvno +
+              '.');
+    return {
+      ok: true, username: who, principal: principal,
+      realm: principals.REALM, trustRealm: realms.currentId(),
+      kvno: made.kvno, etypes: etypes, keytabKvnos: [made.kvno],
+      source: made.source,
+      keytabFilename: who.replace(/[^A-Za-z0-9.-]+/g, '_') + '.kvno' +
+                      made.kvno + '.keytab',
+      keytab: bytes.toString('base64'),
+      message: 'A keytab for ' + principal + ' at kvno ' + made.kvno +
+               ' is in this answer and is not kept: this service cannot ' +
+               'show it again. ' +
+               (made.source === 'password'
+                 ? 'It holds the keys derived from the password, and stops ' +
+                   'working when that password changes.'
+                 : 'This is a DEVELOPMENT KDC, which keys this principal ' +
+                   'from the password on its principal record (krb5.userPassword ' +
+                   'for every user) ' +
+                   'rather than the person\'s, so that is what the keytab ' +
+                   'was derived from.') +
+               ' kinit -k -t ' +
+               who.replace(/[^A-Za-z0-9.-]+/g, '_') + '.kvno' + made.kvno +
+               '.keytab ' + principal + ' uses it.'
+    };
+  }
+
+  // The keys a PRODUCT KDC holds for a person, re-derived from `password` and
+  // checked against them. `{ ok, kvno, keys, source }` or a refusal.
+  private async productPersonKeys(who: string, password: unknown):
+      Promise<Json> {
+    const self = this;
+    const { log, principals, nodeCrypto } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Krb5PersonKeys.productPersonKeys(). name=' + who);
+    if (typeof password !== 'string' || !password) {
+      log.debug('Leaving Krb5PersonKeys.productPersonKeys(). No password.');
+      return this.refusal('STS-KRB-0132', 'A keytab is derived from the ' +
+                          'person\'s password, and none was given.');
+    }
+    // The password was just SET or VERIFIED, and either queued a derivation
+    // (`observePassword()`); settle it so that the record read below is the
+    // one this password produced.
+    await this.idle();
+    const current = directory.readPerson(who);
+    const opened: Opened = current && current.keys
+      ? this.openRecord(current.keys) : { ok: false, why: 'none' };
+    if (!opened.ok || opened.record.name !== who ||
+        opened.record.realm !== principals.REALM || !current.passwordHash ||
+        opened.record.stamp !== this.stampOf(current.passwordHash)) {
+      log.debug('Leaving Krb5PersonKeys.productPersonKeys(). No current ' +
+                'keys (' + (opened.ok ? 'stale or bound elsewhere'
+                                      : opened.why) + ').');
+      return this.refusal('STS-KRB-0131', who + ' holds no Kerberos keys ' +
+                          'for the password on their entry' +
+                          (opened.ok || opened.why === 'none' ? ''
+                            : ' (' + opened.why + ')') +
+                          ', so the KDC would refuse any keytab. Their keys ' +
+                          'are derived when a password is set or verified ' +
+                          'here; a password written behind this service (an ' +
+                          'ldapmodify) derives none until then.');
+    }
+    const record = opened.record;
+    const pairs = this.keyPairs(record.keys);
+    if (!pairs.length) {
+      log.debug('Leaving Krb5PersonKeys.productPersonKeys(). No key for an ' +
+                'enctype this KDC offers.');
+      return this.refusal('STS-KRB-0131', who + '\'s stored keys cover no ' +
+                          'enctype in krb5.enctypes; their next verified ' +
+                          'sign-in derives the ones it lists.');
+    }
+    const keys: Array<[number, Uint8Array]> = [];
+    for (const pair of pairs) {
+      const derived = await self.deriveKey(pair[0], password, record.salt,
+                                           null);
+      const a = Buffer.from(derived);
+      const b = Buffer.from(pair[1]);
+      if (a.length !== b.length || !nodeCrypto.timingSafeEqual(a, b)) {
+        log.debug('Leaving Krb5PersonKeys.productPersonKeys(). The password ' +
+                  'does not give the stored key.');
+        return this.refusal('STS-KRB-0132', 'That password does not give ' +
+                            'the Kerberos key the KDC holds for ' + who +
+                            ', so no keytab was made.');
+      }
+      keys.push([pair[0], Uint8Array.from(a)]);
+    }
+    log.debug('Leaving Krb5PersonKeys.productPersonKeys(). kvno ' +
+              record.kvno + '.');
+    return { ok: true, kvno: Number(record.kvno), keys: keys,
+             source: 'password' };
+  }
+
+  // The keys a DEVELOPMENT KDC uses for a person: the principal it answers
+  // with — created on first sight, as its AS exchange would — and that
+  // principal's own password and salt.
+  private async developmentPersonKeys(who: string): Promise<Json> {
+    const { log, principals } = this.deps;
+    log.debug('Entering Krb5PersonKeys.developmentPersonKeys(). name=' + who);
+    const db = principals as unknown as Json;
+    const found = db.lookupUser([who]);
+    const principal = found && found.principal;
+    if (!principal) {
+      log.debug('Leaving Krb5PersonKeys.developmentPersonKeys(). No ' +
+                'principal.');
+      return this.refusal('STS-KRB-0133', 'The development KDC has no ' +
+                          'principal ' + who + '@' + principals.REALM +
+                          ' and will not make one (' +
+                          'a name krb5.unknownUsers keeps unknown), so a ' +
+                          'keytab would name nobody it knows.');
+    }
+    const keys: Array<[number, Uint8Array]> = [];
+    for (const etype of db.supportedEtypes(principal)) {
+      keys.push([etype, Uint8Array.from(await db.longTermKey(principal,
+                                                             etype))]);
+    }
+    if (!keys.length) {
+      log.debug('Leaving Krb5PersonKeys.developmentPersonKeys(). No ' +
+                'enctype.');
+      return this.refusal('STS-KRB-0133', who + '@' + principals.REALM +
+                          ' supports no enctype this KDC offers.');
+    }
+    log.debug('Leaving Krb5PersonKeys.developmentPersonKeys(). kvno ' +
+              principal.kvno + '.');
+    return { ok: true, kvno: Number(principal.kvno), keys: keys,
+             source: 'development' };
+  }
+
+  // What one person's Kerberos account IS, for their page on the console and
+  // their own in the portal: the principal, whether this realm has a KDC,
+  // which kind, and the PUBLIC half of their keys. Nothing is opened.
+  personKerberosState(name: unknown): Json {
+    const { log, principals, kcrypto } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Krb5PersonKeys.personKerberosState(). name=' + name);
+    const who = String(name == null ? '' : name).trim();
+    const state = principals.kerberosRealmOf();
+    const kdc = !!(state.enabled && state.active);
+    const out: Json = {
+      kdc: kdc, realm: kdc ? principals.REALM : '',
+      trustRealm: state.trustRealm,
+      reason: kdc ? '' : (state.reason || 'krb5.enabled is off for it'),
+      productKdc: kdc ? this.productKdc() : null,
+      personKeys: this.personKeysEnabled(),
+      principal: kdc && who ? who + '@' + principals.REALM : '',
+      nameUsable: !!who && !this.personNameProblem(who),
+      person: false, disabled: false, keys: null
+    };
+    if (!directory || !out.nameUsable) {
+      log.debug('Leaving Krb5PersonKeys.personKerberosState(). No directory ' +
+                'or no usable name.');
+      return out;
+    }
+    const current = directory.readPerson(who);
+    out.person = !!current;
+    out.disabled = !!(current && current.disabled);
+    const info = current ? this.parseInfo(current.info) : null;
+    if (kdc && info) {
+      out.keys = {
+        kvno: info.kvno == null ? null : Number(info.kvno),
+        etypes: (info.etypes || []).map(function (etype) {
+          return { etype: Number(etype),
+                   name: kcrypto.etypeName(Number(etype)) };
+        }),
+        derivedAt: info.derivedAt || '', derivedOn: info.event || '',
+        sealed: !!info.sealed,
+        current: !!current.passwordHash &&
+                 info.stamp === this.stampOf(current.passwordHash),
+        retained: this.retainedRows(info.retained, Date.now())
+      };
+    }
+    log.debug('Leaving Krb5PersonKeys.personKerberosState().');
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
   // WHAT IS HELD, WITHOUT A KEY IN IT — for `/admin/kerberos/principals` and
   // its operation. Built from the PUBLIC info attributes only; nothing is
   // opened.
@@ -1823,6 +2152,9 @@ export = {
   clearPersonKeys: slot.forward('clearPersonKeys'),
   dropPreviousPersonKeys: slot.forward('dropPreviousPersonKeys'),
   dropPreviousServiceKeys: slot.forward('dropPreviousServiceKeys'),
+  personKeytabRefusal: slot.forward('personKeytabRefusal'),
+  personKeytab: slot.forward('personKeytab'),
+  personKerberosState: slot.forward('personKerberosState'),
   retainedVersionsLimit: slot.forward('retainedVersionsLimit'),
   retainedTtlSeconds: slot.forward('retainedTtlSeconds'),
   listPeople: slot.forward('listPeople'),

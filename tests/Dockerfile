@@ -176,6 +176,16 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
         gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
+# MIT KERBEROS FOR sts_kerberos_keytab.js (#59, 2026-09-22): `kinit -k -t` and
+# `klist -k` against a keytab the service handed out, so the file is used by
+# the client every other Kerberos deployment uses rather than only by this
+# suite's own. Its own layer below the source copy, for the compiler's
+# reason; noninteractive, because the package otherwise asks for a default
+# realm.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        krb5-user \
+    && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
 COPY .npmrc ./
 COPY node-ldapjs ./node-ldapjs

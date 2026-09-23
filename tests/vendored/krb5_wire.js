@@ -280,7 +280,10 @@ function asRequest(realm, username, padata, nonce) {
 //
 // `opts.password` is what the client key is derived from; a WRONG one is how
 // the job produces KDC_ERR_PREAUTH_FAILED. `opts.stampOffsetMs` moves the
-// PA-ENC-TIMESTAMP, for a skew negative.
+// PA-ENC-TIMESTAMP, for a skew negative. `opts.keys` — `{ <etype>: bytes }`,
+// read out of a KEYTAB (#59, `sts_kerberos_keytab.js`) — is used IN PLACE OF a
+// password: the etype chosen is the first one the KDC offered that a key is
+// given for, and no string-to-key runs at all, which is what `kinit -k` does.
 // ---------------------------------------------------------------------------
 async function asExchange(transport, realm, username, opts) {
   log.debug("Entering asExchange(). " + username + "@" + realm + " over " +
@@ -317,9 +320,10 @@ async function asExchange(transport, realm, username, opts) {
     return out;
   }
   const infos = msgs.readEtypeInfo2(entry.value) || [];
+  const given = options.keys || null;
   const chosen = ETYPES.map(function (id) {
     return infos.filter(function (one) {
-      return one.etype === id;
+      return one.etype === id && (!given || !!given[id]);
     })[0];
   }).filter(Boolean)[0];
   if (!chosen) {
@@ -333,9 +337,11 @@ async function asExchange(transport, realm, username, opts) {
   // ASYNCHRONOUS, like every call on a profile (krb5_drive.js says why that
   // bites).
   const profile = kcrypto.etypeById(chosen.etype);
-  const key = await profile.stringToKey(
-    String(options.password), prim.utf8(chosen.salt || (realm + username)),
-    chosen.s2kparams);
+  const key = given
+    ? Uint8Array.from(given[chosen.etype])
+    : await profile.stringToKey(
+      String(options.password), prim.utf8(chosen.salt || (realm + username)),
+      chosen.s2kparams);
   const stamp = msgs.encPaEncTsEnc(
     new Date(Date.now() + Number(options.stampOffsetMs || 0)), 0);
   const padata = [{

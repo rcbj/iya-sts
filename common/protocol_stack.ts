@@ -305,6 +305,9 @@ class ProtocolStack {
     this.build('portal/portal_app_passwords',
                require('../portal/portal_app_passwords'),
                'PortalAppPasswords');
+    this.build('portal/portal_kerberos',
+               require('../portal/portal_kerberos'),
+               'PortalKerberos');
     this.build('portal/portal', require('../portal/portal'), 'Portal');
     this.register(app, require('../portal/portal'), 'portal/portal');
     // The consent screen. It must come AFTER authn.js and BEFORE oauth2.js, and
