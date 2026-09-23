@@ -51,8 +51,19 @@ then
   export STS_ADMIN_API_TOKEN
 fi
 
+# THE CREDENTIAL'S CRLs ARE SERVED BY THE PEP CONTAINER (#174): a product-mode
+# service refuses a chain whose CAs name no list, and this container exits
+# long before the chain is presented. The PEP shares this task's address (the
+# same one its PEP_NOTIFY_URL is built from) and serves ${OUT}/crl at /crl/.
+TASK_IP="$(node -e "fetch(process.env.ECS_CONTAINER_METADATA_URI_V4+'/task').then(r=>r.json()).then(t=>process.stdout.write(t.Containers[0].Networks[0].IPv4Addresses[0]))" 2>/dev/null || true)"
+CRL_BASE_ARG=()
+if [ -n "${TASK_IP}" ];
+then
+  CRL_BASE_ARG=(--crl-base="http://${TASK_IP}:9090/crl")
+fi
+
 if node tests/tools/pep-credential.js --url="${URL}" --out="${OUT}" \
-     --subject="${SUBJECT}";
+     --subject="${SUBJECT}" "${CRL_BASE_ARG[@]}";
 then
   # The PEP container runs as another user; this key lives for one run.
   chmod 0644 "${OUT}/pep.key" 2>/dev/null || true

@@ -4460,11 +4460,12 @@ const SETTINGS = [
 
   // ---------------------------------------------------------------------
   // REVOCATION, CONSULTED (2026-09-12). Seven rows for
-  // `common/revocation_status.js`: the policy, the one rule hard-fail does NOT
-  // include by default, and the five bounds on the one outbound request it
-  // makes. All runtime, all per realm — the doors read them per certificate —
-  // and `auto` is how the POLICY defaults by mode through
-  // `mode.refusesUnknownRevocationStatus()` rather than through a literal.
+  // `common/revocation_status.js`: the policy, the one rule hard-fail did NOT
+  // include until #174 (it is `auto` now, and product includes it), and the
+  // five bounds on the one outbound request it makes. All runtime, all per
+  // realm — the doors read them per certificate — and `auto` is how the POLICY
+  // defaults by mode through `mode.refusesUnknownRevocationStatus()` rather
+  // than through a literal.
   // ---------------------------------------------------------------------
   { key: 'pki.revocationCheck', group: 'PKI',
     label: 'Revocation check on a presented certificate',
@@ -4483,16 +4484,38 @@ const SETTINGS = [
                  'attacker who can block the CRL fetch turning revoked into ' +
                  'accepted. **`auto` is hard-fail in product mode and ' +
                  'soft-fail in development.**' },
+  // AN ENUM SINCE #174 (2026-09-23), and `auto` asks the mode. It was a
+  // boolean, off by default, on the argument that a certificate whose issuer
+  // publishes no list gives an attacker nothing to block. That is true and it
+  // is not the whole question: such a certificate can NEVER be revoked, so a
+  // stolen key is good until it expires, and RFC 5280 section 4.2.1.13 only
+  // RECOMMENDS the extension because the profile could not require it of
+  // every PKI — not because a relying party should accept its absence. So a
+  // product refuses it (`mode.refusesUnrevocableCertificates()`), and `off` is
+  // what a deployment whose private CA publishes nothing sets, knowingly.
   { key: 'pki.revocationRequireDistributionPoint', group: 'PKI',
-    label: 'Hard-fail refuses a certificate whose issuer names no CRL',
-    env: 'STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT', type: 'bool',
-    dflt: false, runtime: true,
-    description: 'Under hard-fail, a foreign certificate naming no http or ' +
-                 'https cRLDistributionPoints is ACCEPTED by default, ' +
-                 'because there is no fetch an attacker could block — the ' +
-                 'issuer simply publishes no list — and refusing it would ' +
-                 'make every private CA without one unusable. Turn this on ' +
-                 'to refuse it too.' },
+    label: 'Refuse a certificate whose issuer names no CRL and no OCSP ' +
+           'responder',
+    env: 'STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT', type: 'enum',
+    enumValues: ['auto', 'on', 'off'],
+    dflt: 'auto', runtime: true,
+    description: 'Under hard-fail, whether a certificate from an authority ' +
+                 'this service does not hold — issued by a CA, not ' +
+                 'self-signed — that names NO CRL distribution point and NO ' +
+                 'OCSP responder is refused. `auto` (the default) refuses it ' +
+                 'in product mode and accepts it in development ' +
+                 '(mode.refusesUnrevocableCertificates()); `on` refuses it ' +
+                 'in both. A certificate carrying RFC 9608 noRevAvail is ' +
+                 'never refused for this: its issuer has declared that no ' +
+                 'revocation information exists. **WARNING: `off` accepts ' +
+                 'certificates NOBODY CAN EVER REVOKE** — a stolen key under ' +
+                 'such an authority is good until the certificate expires, ' +
+                 'and nothing its issuer or this service does can stop it. ' +
+                 'Set it only for a private CA you know publishes nothing, ' +
+                 'and prefer giving that CA a distribution point. An address ' +
+                 'the certificate DOES name that this service is configured ' +
+                 'not to dial is a different case and is refused under ' +
+                 'hard-fail whatever this says (STS-PKI-0188).' },
   { key: 'pki.revocationFetchTimeoutMs', group: 'PKI',
     label: 'CRL fetch timeout (milliseconds)',
     env: 'STS_PKI_REVOCATION_FETCH_TIMEOUT_MS', type: 'int', dflt: 3000,
@@ -4603,7 +4626,11 @@ const SETTINGS = [
                  'VERIFIED against node\'s CA store and ' +
                  'pki.revocationLdapCaFile; `ldaps-and-ldap` also opens ' +
                  'plain LDAP; `off` dials neither. An address not dialled ' +
-                 'counts as no address at all.' },
+                 'is NOT the same as no address: the issuer published a ' +
+                 'list and this setting is what stops it being read, so ' +
+                 'under hard-fail a certificate whose only list is at such ' +
+                 'an address is REFUSED (STS-PKI-0188) — its status could ' +
+                 'not be established.' },
   { key: 'pki.revocationLdapCaFile', group: 'PKI',
     label: 'CA certificates for ldaps revocation directories',
     env: 'STS_PKI_REVOCATION_LDAP_CA_FILE', type: 'string', dflt: '',
@@ -4621,7 +4648,8 @@ const SETTINGS = [
                  'distribution point named RELATIVE TO ITS CRL ISSUER is ' +
                  'looked up in. Such a name is an unambiguous DN and says ' +
                  'nothing about which directory holds it, so without this it ' +
-                 'is not dialled.' },
+                 'is not dialled — and under hard-fail a certificate whose ' +
+                 'only list is named that way is refused (STS-PKI-0188).' },
   { key: 'pki.enrollmentMaxCertificatesPerEntry', group: 'PKI',
     label: 'Enrolled certificates one entry may hold',
     env: 'STS_PKI_ENROLLMENT_MAX_CERTIFICATES_PER_ENTRY', type: 'int',

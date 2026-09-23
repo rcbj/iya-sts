@@ -5653,9 +5653,12 @@ outside.
   certificate-checked: the CRL's own signature is the authentication.
 * **`auto` IS `mode.refusesUnknownRevocationStatus()`**: hard-fail in product,
   soft-fail in development. Development checks too, because the register cannot
-  make a good certificate fail. A certificate naming no fetchable list is not
-  refused by hard-fail unless `pki.revocationRequireDistributionPoint` — there
-  is no fetch to block.
+  make a good certificate fail. **A certificate naming no list and no
+  responder is refused by hard-fail where
+  `pki.revocationRequireDistributionPoint` says, and its `auto` is
+  `mode.refusesUnrevocableCertificates()` — product refuses (#174).** One naming
+  only addresses this service will not dial is a different case, refused under
+  hard-fail whatever that says — see *NOT DIALLED* below.
 * **THE MAIN PORT IS ANNOTATED, NOT REFUSED.** `common/app.js` runs
   `annotateRequest()` below `requestPool.middleware()` — in the worker that
   answers a dispatched request — onto `req.certificateRevocation`, and the
@@ -5748,9 +5751,10 @@ That paragraph listed four gaps and all four are closed; the module header's
   endpoint (`oid4vp.trustedIssuerCertificates`). **Every one of those paths is
   asynchronous and was made to wait**, so there is no register-only twin. Its
   issuer is fetched hop by hop from its own caIssuers address, because nothing
-  presents one; a certificate naming no such address is refused only under
-  `pki.revocationRequireDistributionPoint`, one naming an address that did not
-  answer is refusable under hard-fail. **A bare key is reported `bare` and never
+  presents one; a certificate naming no such address is refused where
+  `pki.revocationRequireDistributionPoint` says (`auto`: in product, since
+  #174), one naming an address that did not answer is refusable under
+  hard-fail. **A bare key is reported `bare` and never
   `good`.** SPIFFE federated bundles are trust anchors, which no list revokes.
 
 The two defence-in-depth delta checks — a delta signed by another authorised key
@@ -5772,6 +5776,55 @@ ldapjs directory on ephemeral ports. **They are children for what they share wit
 a process**: `global.mode`, a dozen `pki.revocation*` settings, authorities
 revoked in the keystore's rows, and the module-wide caches. The branch race that
 first put them there is fixed below.
+
+### NOT DIALLED, NAMES NONE, AND noRevAvail (#174, 2026-09-23)
+
+**TWO CASES THAT WERE ONE.** `crlNoPointResult()` answered *names only
+distribution points this service does not dial* with the same `none: true,
+no-distribution-point` as *names none*, so under the default
+`pki.revocationLdap=ldaps` a certificate whose issuer published its list at
+`ldap://…` was ACCEPTED by hard-fail — even when that list revoked it. The
+argument for accepting "names none" (no fetch to block) does not reach it: the
+issuer published a list and this service's policy is what stopped it being
+read, which RFC 5280 section 6.3 calls an undetermined status.
+
+* **`not-dialled` is refusable, and refused under hard-fail as `STS-PKI-0188`**
+  — an address in a scheme never dialled, plain ldap under `ldaps`, any ldap
+  under `off`, an LDAP URL this file will not read, a relative name without
+  `pki.revocationLdapDirectory` or with a multi-valued RDN, a cRLIssuer with no
+  address, an OCSP responder that is not http(s), any responder under
+  `pki.revocationOcsp=off`. Only when nothing else answers: a fetchable CRL
+  beside an ldap responder is still good. The verdict carries `notDialled` (per
+  link and at the top), the why names the setting that would dial it, and each
+  address is logged once per process rather than per request.
+  `describePolicy()` lists what is not dialled apart from what names none, and
+  `/admin/pki`, `/tls` and the crypto report draw its sentence.
+* **Names none is `pki.revocationRequireDistributionPoint`, an enum since #174**
+  — `auto` (the default) asks `mode.refusesUnrevocableCertificates()`, `on`,
+  `off`. Product refuses a CA-issued foreign certificate with no list, no
+  responder and no noRevAvail (`STS-PKI-0190`), because nobody can ever revoke
+  it; `off` is documented with that warning. A self-signed certificate is never
+  asked: the walk stops at it as an anchor. The registered path's
+  issuer-not-found case rides the same flag.
+* **RFC 9608 noRevAvail is honoured** (`noRevAvailOf()`): section 4 skips the
+  check, which the product default made necessary — without it the refusal
+  above would reject the one certificate whose issuer SAID the absence is
+  deliberate. Section 3's contradictions (with cA TRUE, a CDP, freshestCRL or an
+  OCSP responder) are INVALID and refused under every policy but off,
+  soft-fail included (`STS-PKI-0189`). Believed only for a verified chain or a
+  registered certificate.
+* **`unknownCodeOf()` picks the code**: 0189 for an invalid certificate, 0190
+  where every refusable link names nothing, 0188 where they are not dialled or
+  name nothing, and 0119 as soon as any link's reason is a fetch that failed.
+  A registered certificate's refusal is still 0129.
+
+**THE SUITE'S OWN CHAINS PAY FOR IT.** Every chain a job or launcher mints and
+presents to a product-mode service — the remote PEP credential, XACML users,
+certificate sign-ins, uploaded application and person keys — names its CAs'
+lists now, served by `tests/vendored/test_crl_host.js` from the job's own
+process, or (for the launcher's PEP credential, whose minter exits) written by
+`tests/tools/pep-credential.js --crl-base` and served by the PEP container at
+`GET /crl/<name>`. None of it is committed key material.
 
 ### A BRANCH IS BUILT ONCE, IN ONE PROCESS (2026-09-12)
 

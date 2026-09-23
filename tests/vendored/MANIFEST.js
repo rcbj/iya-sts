@@ -836,7 +836,13 @@ const LOCAL_HELPERS = [
   // or notify listener of their own — product mode ignores every skip of
   // verification — and the directory shared with the service its certificate
   // is written to. The vendored PKI encoder; no key material is committed.
-  'outbound_test_ca.js'
+  'outbound_test_ca.js',
+  // A CRL DISTRIBUTION POINT FOR A CA A TEST MADE (#174): an empty list
+  // signed by that CA, served from the job's own process on the address the
+  // service dials a job's listeners at. A product-mode service refuses a
+  // foreign certificate that names no list, so every chain this suite mints
+  // names one — `tests/tools/pep-credential.js` included.
+  'test_crl_host.js'
 ];
 
 // ---------------------------------------------------------------------------

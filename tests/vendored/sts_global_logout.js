@@ -610,9 +610,10 @@ function serialFor(username, suffix) {
   return hash.toString(16).padStart(6, "0") + suffix;
 }
 
-function makeCertificate(username) {
+async function makeCertificate(username) {
   log.debug("Entering makeCertificate().");
   const forge = require("node-forge");
+  const list = await require("./test_crl_host.js").reserve("ca");
   const caKeys = forge.pki.rsa.generateKeyPair(2048);
   const ca = forge.pki.createCertificate();
   ca.publicKey = caKeys.publicKey;
@@ -658,12 +659,23 @@ function makeCertificate(username) {
                    { name: "organizationName", value: "mock-sts global " +
                                                       "logout test" }]);
   leaf.setIssuer(caName);
+  // THE CA'S OWN LIST (#174). A product-mode service refuses, under
+  // hard-fail, a certificate from an authority it does not hold that names no
+  // CRL and no OCSP responder — nobody could ever revoke it — so the leaf names
+  // one, served from this process (`test_crl_host.js`) for as long as the
+  // certificate is presented.
   leaf.setExtensions([{ name: "basicConstraints", cA: false },
-                      { name: "extKeyUsage", clientAuth: true }]);
+                      { name: "extKeyUsage", clientAuth: true },
+                      { name: "cRLDistributionPoints",
+                        altNames: [{ type: 6, value: list.url }] }]);
   leaf.sign(caKeys.privateKey, forge.md.sha256.create());
+  const caPem = forge.pki.certificateToPem(ca);
+  await list.publish({ pem: caPem,
+                       privateKeyPem: forge.pki.privateKeyToPem(
+                           caKeys.privateKey) });
 
   log.debug("Leaving makeCertificate().");
-  return { caPem: forge.pki.certificateToPem(ca),
+  return { caPem: caPem,
            certPem: forge.pki.certificateToPem(leaf),
            keyPem: forge.pki.privateKeyToPem(leafKeys.privateKey) };
 }
@@ -671,7 +683,7 @@ function makeCertificate(username) {
 async function x509(username) {
   log.debug("Entering x509().");
   const https = require("https");
-  const pki = makeCertificate(username);
+  const pki = await makeCertificate(username);
 
   // The anchor goes in through `tests/tools/pep-credential.js`'s
   // `trustAnchor()` (2026-09-18): the GATED door, POST

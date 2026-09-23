@@ -866,8 +866,10 @@ function verifyCertificate(opts) {
   if (revocation && revocation.refused) {
     log.debug("Leaving verifyCertificate(). Refused on revocation.");
     return { ok: false,
-             errorCode: revocation.status === 'revoked' ? 'STS-PKI-0118' :
-                        'STS-PKI-0119',
+             // The verdict's own code — 0118 revoked, 0119 unestablished,
+             // and since #174 0188 not dialled, 0189 an invalid noRevAvail,
+             // 0190 a certificate nobody can revoke.
+             errorCode: revocationStatus.codeOf(revocation),
              description: 'RFC 8705 section 2: the client certificate on ' +
                           'this connection was refused on revocation ' +
                           '(pki.revocationCheck is ' +

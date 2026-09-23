@@ -214,9 +214,10 @@ async function signInWithPassword(realmBase, user, password, newPassword) {
 // so every node of a cluster applies it — and the session lands in the
 // DEFAULT realm, the realm of an anchor installed there (`tls/CLAUDE.md`).
 // ---------------------------------------------------------------------------
-function makeCertificate(commonName) {
+async function makeCertificate(commonName) {
   log.debug("Entering makeCertificate(). " + commonName);
   const forge = require("node-forge");
+  const list = await require("./test_crl_host.js").reserve("ca");
   const caKeys = forge.pki.rsa.generateKeyPair(2048);
   const ca = forge.pki.createCertificate();
   ca.publicKey = caKeys.publicKey;
@@ -241,11 +242,21 @@ function makeCertificate(commonName) {
   leaf.validity.notAfter = new Date(Date.now() + 3600 * 1000);
   leaf.setSubject([{ name: "commonName", value: commonName }]);
   leaf.setIssuer(caName);
+  // THE CA'S OWN LIST (#174): this job runs in product mode, which refuses
+  // under hard-fail a certificate from an authority it does not hold that
+  // names no CRL and no responder. Served from this process
+  // (`test_crl_host.js`) while the certificate is presented.
   leaf.setExtensions([{ name: "basicConstraints", cA: false },
-                      { name: "extKeyUsage", clientAuth: true }]);
+                      { name: "extKeyUsage", clientAuth: true },
+                      { name: "cRLDistributionPoints",
+                        altNames: [{ type: 6, value: list.url }] }]);
   leaf.sign(caKeys.privateKey, forge.md.sha256.create());
+  const caPem = forge.pki.certificateToPem(ca);
+  await list.publish({ pem: caPem,
+                       privateKeyPem: forge.pki.privateKeyToPem(
+                           caKeys.privateKey) });
   log.debug("Leaving makeCertificate().");
-  return { caPem: forge.pki.certificateToPem(ca),
+  return { caPem: caPem,
            certPem: forge.pki.certificateToPem(leaf),
            keyPem: forge.pki.privateKeyToPem(leafKeys.privateKey) };
 }
@@ -278,7 +289,7 @@ function certificateRequest(pki, path, cookie) {
 
 async function signInWithCertificate(commonName) {
   log.debug("Entering signInWithCertificate(). " + commonName);
-  const pki = makeCertificate(commonName);
+  const pki = await makeCertificate(commonName);
   const added = await api("POST", "/admin-api/tls/trust/add",
                           { certificates: pki.caPem });
   assert.strictEqual(added.status, 200,

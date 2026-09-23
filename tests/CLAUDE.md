@@ -1535,6 +1535,35 @@ CA-file delivery in product. Everything else in both jobs still runs. A mount
 that is named but not seen by the service is a misconfiguration and fails, on
 `STS-CORE-0104`.
 
+## EVERY CHAIN A JOB PRESENTS NAMES ITS CAs' LISTS (#174, 2026-09-23)
+
+Since #174 a product-mode service refuses, under hard-fail, a certificate from
+an authority it does not hold that names no CRL and no OCSP responder
+(`pki.revocationRequireDistributionPoint=auto`, `STS-PKI-0190`): nobody could
+ever revoke it. Every chain this suite mints and presents — or registers —
+used to be exactly that, so each certificate below a Root now names its
+issuer's list, and the list is a REAL one: empty, signed by that CA, fetched and
+verified by the service like any other.
+
+* **`tests/vendored/test_crl_host.js`** (a LOCAL helper) signs the list and
+  serves it from the JOB'S own process, on `OUTBOUND_TEST_HOST` or
+  `GNAP_PUSH_HOST` — the address a job's push listeners are already reached
+  at — `unref()`ed so it never holds a job open. `reserve()` hands back the
+  URL before the list exists, because the child certificate has to name it.
+* **`tests/tools/pep-credential.js`'s `mint()`** uses it by default, so every
+  job that mints a PEP or XACML-user chain gets lists without a line changed;
+  `sts_global_logout.js`, `sts_console_bootstrap_product.js` and the two
+  credentials jobs' external hierarchies name theirs directly.
+* **The launcher's PEP credential outlives its minter**, so `--crl-base`
+  names `http://xacml-pep:9090/crl` (the AWS runner: the task's address) and
+  writes `root.crl` and `issuing.crl` beside the credential; the PEP container
+  serves them at `GET /crl/<name>` (`xacml-pep/CLAUDE.md`).
+
+Nothing is committed: the CA is made at run time, and a CRL is a public signed
+document. **A new job that presents a CA-issued chain to a product-mode
+service owes the same**, or it is refused for a reason that has nothing to do
+with what it tests.
+
 ## THREE CI-ONLY FAILURES, AND WHAT EACH ONE TEACHES (2026-08-30, 2026-09-10)
 
 The first two were found by a manual `workflow_dispatch` of
