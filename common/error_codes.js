@@ -10317,8 +10317,8 @@ const CODES = [
     summary: 'A push at /ssf/receive carried an empty body.',
     spec: 'HTTP 400 {err: invalid_request}' },
   { code: 'STS-SSF-0024',
-    summary: 'A Security Event Token pushed at /ssf/receive did not verify ' +
-      'while ssf.receiveRequireSignature is on.',
+    summary: 'A Security Event Token pushed at /ssf/receive did not verify, ' +
+      'in product mode or while ssf.receiveRequireSignature is on (#117).',
     spec: 'HTTP 400 {err: invalid_key}' },
   { code: 'STS-SSF-0025',
     summary: 'A Security Event Token pushed at /ssf/receive could not be ' +
@@ -10529,7 +10529,8 @@ const CODES = [
     spec: 'HTTP 400 {err: invalid_audience}' },
   { code: 'STS-SSF-0071',
     summary: 'A Security Event Token delivered to an internal receiver did ' +
-      'not verify while ssf.receiveRequireSignature is on.',
+      'not verify, in product mode or while ssf.receiveRequireSignature is ' +
+      'on (#117).',
     spec: 'HTTP 400 {err: invalid_key}' },
   { code: 'STS-SSF-0072',
     summary: 'The admin console or the user portal could not be registered ' +

@@ -904,7 +904,8 @@ class SsfReceivers {
             'name is not in the `aud` of this Security Event Token. It has ' +
             'been recorded and is on ' + surface.inboxPath + '.' } };
     }
-    if (!entry.verified && config.value('ssf.receiveRequireSignature')) {
+    // Refused in product mode whatever the setting says (#117).
+    if (!entry.verified && this.deps.mode.refusesUnverifiedSignals()) {
       log.debug("Leaving SsfReceivers.accept(). Signature required.");
       errorCodes.mark(req.res, 'STS-SSF-0071');
       log.debug("Leaving SsfReceivers.accept().");

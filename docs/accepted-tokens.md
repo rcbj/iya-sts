@@ -68,8 +68,8 @@ one of the two mandatory; see *Require DPoP or mutual TLS* in
 | Door | Token | Development | Product |
 |---|---|---|---|
 | SPIFFE `ValidateJWTSVID` | A JWT-SVID | Verified against the bundle of the trust domain its `sub` names, with the audience the caller gives and no clock leeway. A trust domain with no bundle is refused | The same |
-| `POST /ssf/receive` | A Security Event Token | **Recorded whether or not it verifies**, and shown as unverified. Nothing acts on it | The same unless `ssf.receiveRequireSignature` is on — [#117](https://github.com/rcbj/iya-sts/issues/117) |
-| The console's and portal's own SSF receivers | A Security Event Token | The stream's own authorization secret, and this receiver in `aud`. An unverified one is recorded unless `ssf.receiveRequireSignature` is on, and is never acted on. A verified one the `signal-response` policy permits is recorded as what it would have ended, unless `ssf.actOnSignalsInDevelopment` is on | The same, and a verified one the policy permits ends the surface's own sessions for the person named |
+| `POST /ssf/receive` | A Security Event Token | **Recorded whether or not it verifies**, and shown as unverified. Nothing acts on it | Refused (400 `invalid_key`) — [#117](https://github.com/rcbj/iya-sts/issues/117) |
+| The console's and portal's own SSF receivers | A Security Event Token | The stream's own authorization secret, and this receiver in `aud`. An unverified one is recorded unless `ssf.receiveRequireSignature` is on, and is never acted on. A verified one the `signal-response` policy permits is recorded as what it would have ended, unless `ssf.actOnSignalsInDevelopment` is on | An unverified one is refused (400 `invalid_key`, #117); a verified one the `signal-response` policy permits ends the surface's own sessions for the person named |
 
 ## Where the two open issues are
 
