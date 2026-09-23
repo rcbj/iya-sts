@@ -6083,6 +6083,11 @@ const CODES = [
       'seconds in the future (section 5.3.2.1 item 13).',
     spec: 'HTTP 400 {error: invalid_request}, invalid_request_object, or ' +
       'invalid_dpop_proof' },
+  { code: 'STS-OAUTH-0591',
+    summary: 'Under FAPI 2.0 Message Signing, an authorization request did ' +
+      'not ask for a JWT-secured response (JARM), which the profile ' +
+      'requires (section 5.4.2 item 1).',
+    spec: 'redirect or HTTP 400 {error: invalid_request}' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
