@@ -116,13 +116,27 @@ async function apiAs(token, method, path, payload) {
   return reply;
 }
 
+// EVERY PAGE OF JOBS (2026-09-23). The job list is paged on `jobsPage`, and
+// a REALM job has a row per realm — so once the suite has made enough realms
+// the 200 rows of page one no longer hold `scheduler.history`, and jobOf()
+// answered null for a job the service was running (cluster mode, job 334).
+// A claim about what the list CONTAINS is a claim about the whole list.
 async function report(prefix) {
   log.debug("Entering report().");
-  const r = await api("GET", (prefix || "") + "/admin-api/scheduler?per=200");
+  const path = (prefix || "") + "/admin-api/scheduler?per=200";
+  const r = await api("GET", path);
   assert.strictEqual(r.status, 200, "GET /admin-api/scheduler answered " +
                      r.status + " " + r.text.slice(0, 300));
+  const body = r.body;
+  const pages = Number((body.jobsPaging || {}).pages) || 1;
+  for (let page = 2; page <= pages; page++) {
+    const more = await api("GET", path + "&jobsPage=" + page);
+    assert.strictEqual(more.status, 200, "GET /admin-api/scheduler page " +
+                       page + " answered " + more.status);
+    body.jobs = (body.jobs || []).concat(more.body.jobs || []);
+  }
   log.debug("Leaving report().");
-  return r.body;
+  return body;
 }
 
 // Polls `fn` until it answers something truthy, at the service's own tick,
