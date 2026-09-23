@@ -47,6 +47,13 @@
 // happens, and activated when it loaded. A version already recorded is not
 // loaded again, so running this twice is safe.
 //
+// **THE FIDO METADATA (#62 P5)** is one more entry: `{ "dataset":
+// "fido.mds3", "format": "fido-mds3-jwt", "url":
+// "https://mds3.fidoalliance.org/" }`, with `--accept-terms fido-mds3`. The
+// BLOB is verified against the FIDO root and its chain's CRLs are fetched
+// (MDS3 section 3.1.8) inside `importVersion()`, and only the latest BLOB is
+// kept. Run it again when the BLOB's `nextUpdate` comes round.
+//
 // **ONLY THE SERVICE'S OWN DATASETS AND THE DEFAULT REALM'S LISTS.** A list
 // for another realm is imported through Monitoring → Risk or the API, where
 // the realm is known to exist.

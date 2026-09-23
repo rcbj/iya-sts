@@ -1740,77 +1740,87 @@ function checkRedirectUri(opts) {
   return { ok: true, matched: matched.uri, how: matched.how };
 }
 
-// The same comparison for RP-Initiated Logout's post_logout_redirect_uri, which
-// without this mode is the plainest open redirector in this service: it
-// forwards the browser to any absolute http(s) URL in a query parameter, with
-// no session and no client involved. A registered client's own
-// post_logout_redirect_uris are used when the request names one; otherwise the
-// setting is, on the ground that somebody who listed a URI as a place this
-// server may return a browser to has said the same thing about it either way.
+// RP-Initiated Logout's post_logout_redirect_uri, in EVERY mode since #124
+// (2026-09-23): it was RFC 9700 mode only, and without that mode it was the
+// plainest open redirector in this service. The client is the one the
+// request names — by `id_token_hint`, or `client_id` — and `oauth2.ts`'s
+// `logoutEndpoint()` asks this before the session is ended, so a refused
+// target leaves the person on a page rather than following it.
 function checkPostLogoutRedirectUri(opts) {
   log.debug("Entering checkPostLogoutRedirectUri().");
-  if (!enabled()) {
-    log.debug("Leaving checkPostLogoutRedirectUri(). RFC 9700 mode is off.");
-    return { ok: true };
-  }
   const client = opts.client;
   const declared = client && Array.isArray(client.post_logout_redirect_uris)
     ? client.post_logout_redirect_uris.map(String) : [];
   const presented = String(opts.target || '');
-  // A PRIVATE-USE ADDRESS IS BELIEVED ONLY WHEN A CLIENT VOUCHES FOR IT
-  // (2026-09-13). Sign-out needs no client at all, so a service-wide list that
-  // admitted a protocol handler would be a redirector to it with nobody
-  // accountable for the entry; the address has to be on the entry of the client
-  // this request names. OAuth 2.1 mode goes further and reads no service-wide
-  // list for ANY address, for the reason registeredUrisFor() gives.
+  // THE CLIENT's OWN LIST, EXACTLY, IN EVERY MODE (#124). RP-Initiated Logout
+  // 1.0 section 3: the OP SHOULD NOT redirect to a value that does not
+  // exactly match one of the client's registered post_logout_redirect_uris.
+  if (declared.length) {
+    const found = declared.some(function (uri) {
+      return uriMatches(uri, presented).ok;
+    });
+    if (!found) {
+      log.debug("Leaving checkPostLogoutRedirectUri(). Not registered.");
+      return { ok: false, errorCode: 'STS-OAUTH-0123',
+               error: 'invalid_request', requirement: 'no-open-redirector',
+               description: 'RP-Initiated Logout 1.0 section 3: "' +
+                 presented + '" is not among the ' + declared.length +
+                 ' post_logout_redirect_uri(s) this client registered: ' +
+                 declared.join(', ') + '.' };
+    }
+    log.debug("Leaving checkPostLogoutRedirectUri(). Registered.");
+    return { ok: true };
+  }
+  // NOTHING REGISTERED. A private-use address is believed only when a client
+  // vouches for it, in every mode (2026-09-13): a sign-out forwarding to any
+  // protocol handler an operating system registers is a redirector nobody is
+  // accountable for. OAuth 2.1 mode (section 2.3.1) and PRODUCT mode believe
+  // no unregistered address at all; development keeps its acceptance of one,
+  // #118's rule for redirect URIs, which is how a relying party under test is
+  // pointed here without registering first. `oauth2.redirectUris` — the
+  // AUTHORIZATION redirect list — is no longer read for a sign-out (#124).
   const privateUse = validation.isPrivateUseRedirect(presented);
-  if (!declared.length && (privateUse || oauth21.enabled())) {
-    log.debug("Leaving checkPostLogoutRedirectUri(). No client vouches for " +
-              "it.");
-    return privateUse
-      ? { ok: false, errorCode: 'STS-OAUTH-0290', error: 'invalid_request',
-          requirement: 'no-open-redirector',
-          description: 'RFC 9700 section 2.1: "' + presented + '" is a ' +
-                       'native application\'s private-use address, and one ' +
-                       'is followed after a sign-out only when the client ' +
-                       'this request names (client_id) registered it as a ' +
-                       'post_logout_redirect_uri. ' +
-                       (client && client.known
-                         ? 'That client has registered none.'
-                         : 'This request names no client this service ' +
-                           'holds.') }
-      : { ok: false, errorCode: 'STS-OAUTH-0286', error: 'invalid_request',
-          requirement: 'registered-client-required',
-          description: 'OAuth 2.1 (' + oauth21.DRAFT + ') section 2.3.1: a ' +
-                       'post_logout_redirect_uri is followed only when the ' +
-                       'client this request names registered it, and ' +
-                       (client && client.known
-                         ? 'that client has registered none'
-                         : 'this request names no client this service ' +
-                           'holds') + '. The service-wide ' +
-                       'oauth2.redirectUris list is not read in this mode.' };
-  }
-  // Same rule as the redirect URIs: the attribute is the list, however it got
-  // onto the entry.
-  const list = declared.length ? declared : configuredRedirectUris();
-  const found = list.some(function (uri) {
-    return uriMatches(uri, presented).ok;
-  });
-  if (!found) {
-    log.debug("Leaving checkPostLogoutRedirectUri(). Not registered.");
-    return { ok: false, errorCode: 'STS-OAUTH-0123', error: 'invalid_request',
+  if (privateUse) {
+    log.debug("Leaving checkPostLogoutRedirectUri(). A private-use address " +
+              "no client vouches for.");
+    return { ok: false, errorCode: 'STS-OAUTH-0290', error: 'invalid_request',
              requirement: 'no-open-redirector',
-             description: 'RFC 9700 section 2.1: an authorization server ' +
-                          'must not forward the browser to an arbitrary URI. ' +
-                          '"' + presented + '" ' +
-                              'is not among the ' +
-                          (list.length ?
-                           list.length + ' registered URI(s): ' +
-                           list.join(', ')
-                                       : 'registered URIs, and none are ' +
-                                         'registered') + '.' };
+             description: '"' + presented + '" is a native application\'s ' +
+                          'private-use address, and one is followed after a ' +
+                          'sign-out only when the client this request names ' +
+                          'registered it as a post_logout_redirect_uri. ' +
+                          (client && client.known
+                            ? 'That client has registered none.'
+                            : 'This request names no client this service ' +
+                              'holds.') };
   }
-  log.debug("Leaving checkPostLogoutRedirectUri(). Accepted.");
+  if (oauth21.enabled()) {
+    log.debug("Leaving checkPostLogoutRedirectUri(). OAuth 2.1 mode.");
+    return { ok: false, errorCode: 'STS-OAUTH-0286', error: 'invalid_request',
+             requirement: 'registered-client-required',
+             description: 'OAuth 2.1 (' + oauth21.DRAFT + ') section 2.3.1: a ' +
+                          'post_logout_redirect_uri is followed only when the ' +
+                          'client this request names registered it, and ' +
+                          (client && client.known
+                            ? 'that client has registered none'
+                            : 'this request names no client this service ' +
+                              'holds') + '.' };
+  }
+  if (!mode.acceptsUnregisteredAddresses()) {
+    log.debug("Leaving checkPostLogoutRedirectUri(). Product mode.");
+    return { ok: false, errorCode: 'STS-OAUTH-0603', error: 'invalid_request',
+             requirement: 'no-open-redirector',
+             description: 'RP-Initiated Logout 1.0 section 3: "' + presented +
+                          '" is followed only when the client this request ' +
+                          'names (by id_token_hint or client_id) registered ' +
+                          'it, and ' +
+                          (client && client.known
+                            ? 'that client has registered none'
+                            : 'this request names no client this service ' +
+                              'holds') + '.' };
+  }
+  log.debug("Leaving checkPostLogoutRedirectUri(). Development accepts an " +
+            "unregistered address.");
   return { ok: true };
 }
 

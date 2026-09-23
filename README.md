@@ -886,7 +886,7 @@ unedited service behaves exactly as it did.
 | `authn.sessionIdleTimeoutS` | `STS_AUTHN_SESSION_IDLE_TIMEOUT_S` | `0` | yes — applies to sessions that already exist | How long a session may go unused before it ends, on top of the lifetime. **Zero means no idle timeout**, which is what this service has always done. A request to the console or the portal counts as use of the sign-on session behind it. |
 | `authn.pendingTtlS` | `STS_AUTHN_PENDING_TTL_S` | `600` | yes | How long a sign-in waits at the screen — and the console's and portal's own authorization code flows, and an arrival session's inactivity window, which are the same clock on purpose. |
 | `authn.mfaStepTtlS` | `STS_AUTHN_MFA_STEP_TTL_S` | `300` | yes | How long somebody past the password step has to present a security key, a one-time code or a recovery code. |
-| `authn.mfaRequired` | `STS_AUTHN_MFA_REQUIRED` | `false` | yes | Require a second factor — an authenticator app or a security key in the `mfa` role — of everybody who signs in at this realm's sign-in screen. Somebody who holds neither is shown `/authn/mfa-setup` after their password is accepted and gets no session until one is enrolled; a passwordless security-key sign-in is refused. The same requirement can be placed on one person from their `/admin/users` page. In product mode it also refuses the person's own password at the five password-only doors — an LDAP bind, a WS-Trust UsernameToken, SCIM, SSF and EST Basic — answered as a wrong password; an app password scoped to the door is what they use there (#101). **What it does not reach**: a federated assertion, a SPNEGO ticket or a Kerberos AS-REQ, a TLS client certificate. |
+| `authn.mfaRequired` | `STS_AUTHN_MFA_REQUIRED` | `false` | yes | Require a second factor — an authenticator app or a security key in the `mfa` role — of everybody who signs in at this realm's sign-in screen. Somebody who holds neither is shown `/authn/mfa-setup` after their password is accepted and gets no session until one is enrolled; a passwordless security-key sign-in is refused. The same requirement can be placed on one person from their `/admin/users` page. In product mode it also refuses the person's own password at the five password-only doors — an LDAP bind, a WS-Trust UsernameToken, SCIM, SSF and EST Basic — answered as a wrong password; an app password scoped to the door is what they use there (#101). In product it also refuses a Kerberos AS-REQ proving the password alone (`KDC_ERR_POLICY`, after the password verified); FAST with OTP pre-authentication — the password and an authenticator code — gets them a ticket (#173). **What it does not reach**: a federated assertion, a TLS client certificate, and a SPNEGO ticket from a KDC other than this one. |
 | `authn.passwordAloneDoors` | `STS_AUTHN_PASSWORD_ALONE_DOORS` | *(empty)* | yes | Product mode only. The password-only doors — any of `ldap`, `wstrust`, `scim`, `ssf`, `est` — at which a person who holds or must hold a second factor is STILL accepted with their own password. Empty refuses it at all five and accepts only an app password there. **Warning: every door listed lowers every such person to ONE factor at that door** (NIST SP 800-63B section 4.2), so a stolen password opens it without the second factor. |
 | `appPasswords.enabled` | `STS_APP_PASSWORDS_ENABLED` | `true` | yes | Whether a person may make an app password on `/portal/app-passwords`, and an administrator one for them on their `/admin/users` page or `POST /admin-api/users/create-app-password`. Generated, shown once, stored as a scrypt hash, named and scoped to password-only doors; never accepted at the sign-in screen. Turning it off does not invalidate one already made. |
 | `appPasswords.maxPerPerson` | `STS_APP_PASSWORDS_MAX` | `10` | yes | How many app passwords one person may hold at once (1–50). |
@@ -1704,6 +1704,8 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | yes | The score, in hundredths, from which a sign-in is HIGH. |
 | `risk.assessmentRetentionDays` | `STS_RISK_ASSESSMENT_RETENTION_DAYS` | `90` | yes | How long an assessment is kept. |
 | `risk.historyRetentionDays` | `STS_RISK_HISTORY_RETENTION_DAYS` | `180` | yes | How long the model remembers a value nobody has signed in with since — an address, a network, a device. |
+| `risk.mdsTrustAnchors` | `STS_RISK_MDS_TRUST_ANCHORS` | *(empty)* | yes | The certificates a FIDO MDS3 BLOB's signing chain must end at (#62 P5), as PEM; empty uses the FIDO root, GlobalSign Root CA - R3, from node's own root store — nothing FIDO-specific is shipped. |
+| `risk.mdsStaleGraceDays` | `STS_RISK_MDS_STALE_GRACE_DAYS` | `7` | yes | How long past its own `nextUpdate` the active MDS3 BLOB still answers; after it no authenticator's status is known. |
 | `risk.rescoreEveryS` | `STS_RISK_RESCORE_EVERY_S` | `300` | yes | How often the `risk.rescore` job re-checks every live sign-on session against the datasets and the failure history, raising (never lowering) one that became riskier (#62 P4). |
 | `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | yes | The policy asked, once per reaction, what happens when a person's risk level changes: a CAEP risk-level-change, everything they hold ended, a RISC credential-compromise, the account disabled. Built in; a realm's entry of this name overrides it. |
 | `persistence.mode` | `STS_PERSISTENCE_MODE` | `memory` | **restart** — the store is opened and READ before the HTTP listener binds, so a mode changed at runtime would leave a service whose directory came from one place and whose writes went to another | Where the embedded directory, the trust realm registry and the runtime setting changes are written down. `memory` writes nothing and is what this service did until 2026-08-27. `ldif` writes an RFC 2849 file per realm plus two JSON files into `dataDir` and needs no database. `postgres` writes six tables. What this service MINTS — sessions, tokens, codes, artifacts, Kerberos principals, the replay caches, the counters and the audit log — is persisted in PRODUCT mode on `postgres` and in no other configuration, each row encrypted under the same key-encryption key as the signing keys; development mode persists none of it, because the signing key is regenerated on every start there. See *Persistence* above. |
@@ -2232,9 +2234,10 @@ members — ID Token, UserInfo and request object — are published now that eac
 implemented, ID Token encryption since 2026-09-17, and `acr_values_supported` is published since RFC 9470 made the authorization endpoint
 honour `acr_values` — see *Step-up authentication*), because none is implemented and an invented value is worse than the member's
 absence, which says exactly the right thing. `end_session_endpoint` *is* advertised
-because `/oauth2/logout` really does end the session — but it neither requires nor
-checks `id_token_hint` and does not validate the redirect target, so it is the shape of
-RP-initiated logout and not its security, and `/admin/sts-metadata` grades it `mock`.
+because `/oauth2/logout` really does end the session, and since #124 it is the whole
+of RP-Initiated Logout 1.0: GET and POST, a verified `id_token_hint`, a confirmation
+page unless the hint is for this session, and a return held to the client's registered
+`post_logout_redirect_uris` in every mode.
 
 **Three URLs, because an issuer with a path resolves differently in the two specs** —
 which is the usual reason a discovery fetch 404s. Discovery section 4 *appends*
@@ -2344,11 +2347,10 @@ redirector until then. `error=invalid_request` forwarded to an arbitrary URL is 
 the browser being forwarded to an arbitrary URL, and an attacker does not mind which
 parameters ride along.
 
-The same comparison now guards **`post_logout_redirect_uri`** at
-`/oauth2/logout`, which without the mode is the plainest open redirector in the
-service: any absolute `http(s)` URL in a query parameter, followed, with no client and
-no session involved. `/admin/sts-metadata` says that about it in both directions rather than
-only the flattering one.
+**`post_logout_redirect_uri`** at `/oauth2/logout` is held to the client's own
+registered list in EVERY mode since #124 — it used to be this mode only, and without it
+was the plainest open redirector in the service. Development still follows an address
+for a client that registered none; this mode, OAuth 2.1 mode and product do not.
 
 #### The port itself becomes HTTPS
 
@@ -6506,11 +6508,19 @@ aes128/256-cts-hmac-sha1-96 (17, 18 — the AD workhorses), aes128/256-cts-hmac-
 only story about RC4 is "that is deprecated" cannot help anybody still running it. DES
 decodes and is never produced: Windows Server 2025 removed it and it is not coming back.
 
-**Not implemented, and each for a reason worth knowing:** FAST (RFC 6113), PKINIT,
-kpasswd, SPNEGO (`krb5_gss.js` recognises the SPNEGO OID and says it is not implemented
-rather than failing opaquely — the GSS layer is separate from the AP-REQ precisely so
-that this is a wrapper to add and not a rewrite), request signatures, and the SID
-filtering noted above. The **AP exchange** is not missing from the KDC — it belongs to a
+**FAST, OTP pre-authentication and authentication indicators (2026-09-22, #173).** RFC
+6113 FAST in the AS exchange, armored by a TGT the client host got with its own keytab;
+the encrypted challenge; RFC 6560 OTP pre-authentication with the person's authenticator
+app, the password as the PIN, verified by the sign-in screen's verifier and once-only
+step; and the RFC 8129 indicator `otp` in an AD-CAMMAC, carried into service tickets and
+counted as a second factor at `/authn/spnego`. In product a person who holds or must hold
+a second factor gets `KDC_ERR_POLICY` for a password alone — after the password verified,
+so a wrong one is still `KDC_ERR_PREAUTH_FAILED`. MIT `kinit -T` completes it end to end.
+The KRB-FX-CF2 and the Kerberos PRF are `common/crypto.js`'s section 9, held to RFC 3961's
+and MIT's vectors.
+
+**Not implemented, and each for a reason worth knowing:** PKINIT (#179), FAST in the TGS
+exchange, kpasswd, request signatures, and the SID filtering noted above. The **AP exchange** is not missing from the KDC — it belongs to a
 service rather than to a KDC, and it lives in `krb5_service.js`.
 
 ### LDAP v3 — the other protocol here that is not HTTP
@@ -8346,6 +8356,10 @@ HIGH, tells RISC a credential is compromised on evidence about one, and
 disables nobody unless an operator builds it to. A live session presented
 from another device, TLS client or network is assessed again, and the
 `risk.rescore` job raises a session whose address has since become risky.
+**The FIDO Metadata Service (P5)**: an MDS3 BLOB the deployment loads —
+verified to the FIDO root, its chain's CRLs checked, never older than the
+last, and only the latest kept — makes a security key whose model is
+reported revoked or compromised a HIGH sign-in.
 Every assessment, with the decision it met, is listed on Monitoring → Risk
 and returned by `GET /admin-api/risk`.
 

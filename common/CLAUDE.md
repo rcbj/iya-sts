@@ -11,7 +11,7 @@ more than one family needs it, not because it felt general.
 | `config_file.js` | The one place that decides what `CONFIG_FILE` means. Requires nothing at all. |
 | `config.js` | Every setting this service has, and the refusal to start without one. The only module `helpers.js` depends on. |
 | `helpers.js` | Log, keys, `signJwt()`, `userFor()`, the cross-protocol parsers. |
-| `crypto.js` | **EVERY SIGNATURE AND EVERY CIPHER IN THIS SERVICE, since 2026-08-27.** XML Signature and XML Encryption, JWS, JWE, key and certificate generation, thumbprints, constant-time comparison — and since 2026-09-21 (#40) signatures over raw bytes and TPM 2.0 KDFa / MakeCredential (section 8). A LEAF — it sits UNDER `helpers.js` and may never require it back. See below. |
+| `crypto.js` | **EVERY SIGNATURE AND EVERY CIPHER IN THIS SERVICE, since 2026-08-27.** XML Signature and XML Encryption, JWS, JWE, key and certificate generation, thumbprints, constant-time comparison — and since 2026-09-21 (#40) signatures over raw bytes and TPM 2.0 KDFa / MakeCredential (section 8), and since 2026-09-22 (#173) the Kerberos PRF and KRB-FX-CF2 (section 9). A LEAF — it sits UNDER `helpers.js` and may never require it back. See below. |
 | `app.js` | The express app and every middleware. Requiring it is how a protocol module gets somewhere to register. |
 | `admin_stats.js` | The counters, the revocation set, and `recordAuthentication()` — the single authentication funnel. |
 | `audit.js` | What happened, when, and to whom, as discrete events. Sits BESIDE `admin_stats.js`, not under it. |
@@ -206,6 +206,18 @@ What `crypto.js` adds is what is true of THIS service — which placements its
 documents use, that a verifier must be TOLD which element it is checking, that a
 decryption answers rather than throws, that a token read back against our own
 certificate gets the configured clock skew.
+
+**SECTION 9: THE KERBEROS PRF AND KRB-FX-CF2 (2026-09-22, #173).** RFC 6113
+FAST combines keys with KRB-FX-CF2, which is built on each enctype's RFC 3961
+`pseudo-random()` — and the vendored Kerberos codec has no PRF and may not be
+edited, so it is here, synchronous on node's crypto: `krb5Nfold()` (RFC 3961
+section 5.1), `krb5Prf()` for the two RFC 3962 AES enctypes (SHA-1 of the input
+encrypted under DK(key, "prf")), the two RFC 8009 ones (KDF-HMAC-SHA2) and RC4
+(HMAC-SHA1), `krb5PrfPlus()` and `krbFxCf2()`. An enctype with no PRF here is
+refused by name. `tests/kerberos_fast_otp.js` holds it to RFC 3961's n-fold
+vectors and MIT's `t_prf.c` and `t_cf2.expected`, which are external answers;
+the suite's own client (`tests/vendored/krb5_wire.js`) has an independent copy
+written from the RFCs, and MIT's `kinit` agrees with both.
 
 **SECTION 8: SIGNATURES OVER RAW BYTES, AND THE TPM (2026-09-21, #40).**
 SPIFFE's node attestors prove possession of a key in four formats that are
@@ -7532,6 +7544,11 @@ sends what.
 refused at the five password-only doors in product, as a wrong password is).
 What is this directory's is where it is decided and what an app password is.
 
+* **`secondFactorDemand(name)`** (#173) is the account half of it on its own
+  — `{ person, totp, key, holds, required, byUser, needed }`, mode-free — so
+  the KDC, which verifies a password as a Kerberos key and never calls
+  `verify()`, asks the same question (`kerberos/CLAUDE.md`, the FAST
+  section). `secondFactorRefusal()` is built on it.
 * **`secondFactorRefusal(answer, name, opts)`** runs right after
   `resetRefusal()` in `verify()` and `verifyAsync()`, only on a `verified`
   answer, only in product (`mode.acceptsPasswordAloneFromSecondFactorAccounts()`

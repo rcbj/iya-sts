@@ -9561,6 +9561,26 @@ const SETTINGS = [
                  'elsewhere. Older than this, the issuance carries no risk ' +
                  'facts and the roles decide.' },
 
+  { key: 'risk.mdsTrustAnchors', group: 'Risk',
+    label: 'FIDO metadata trust anchors (PEM)',
+    env: 'STS_RISK_MDS_TRUST_ANCHORS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The certificates a FIDO MDS3 BLOB\'s signing chain must ' +
+                 'end at (#62 P5), as a PEM bundle. Empty — the default — ' +
+                 'uses the root FIDO documents, GlobalSign Root CA - R3, ' +
+                 'found in node\'s own root store: nothing FIDO-specific is ' +
+                 'shipped with this service. Set it only to pin a different ' +
+                 'root, or for a test BLOB.' },
+
+  { key: 'risk.mdsStaleGraceDays', group: 'Risk',
+    label: 'FIDO metadata grace after its nextUpdate (days)',
+    env: 'STS_RISK_MDS_STALE_GRACE_DAYS', type: 'int', dflt: 7, min: 0,
+    max: 365, runtime: true,
+    description: 'How long past the date the active MDS3 BLOB says the ' +
+                 'next one is due (its nextUpdate) the metadata still ' +
+                 'answers. Past it, no authenticator\'s status is known ' +
+                 'and none is scored on it: unknown never denies.' },
+
   { key: 'risk.rescoreEveryS', group: 'Risk',
     label: 'Re-check live sessions every (seconds)',
     env: 'STS_RISK_RESCORE_EVERY_S', type: 'int', dflt: 300, min: 30,

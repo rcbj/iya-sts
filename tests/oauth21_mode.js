@@ -446,7 +446,8 @@ function postLogout(t) {
             'but is when the client registered it');
     t.check(bcp.checkPostLogoutRedirectUri({ target: LISTED,
       client: { known: false, post_logout_redirect_uris: [] } }).ok,
-            'and an https address on the list still is, in RFC 9700 mode');
+            'and an unregistered https address still is in development ' +
+            '(#118\'s rule, #124); oauth2.redirectUris is not read');
   });
   inRealm(REALMS.V21_LIST, function () {
     const refused = bcp.checkPostLogoutRedirectUri({ target: LISTED,

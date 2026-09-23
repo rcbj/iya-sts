@@ -1245,7 +1245,16 @@ class AdminApi {
                      '`KDC_ERR_C_PRINCIPAL_UNKNOWN` — every other name gets ' +
                      'an account — and `krb5.clockOffset` moves this KDC\'s ' +
                      'idea of now so a client can be shown `KRB_AP_ERR_SKEW` ' +
-                     'without anybody touching a system clock.' },
+                     'without anybody touching a system clock.\n\nAND A ' +
+                     '`status` MEMBER (#173): what the KDC does about ' +
+                     'pre-authentication in this realm — whether a password ' +
+                     'alone gets a ticket for a person who holds or must hold ' +
+                     'a second factor (`passwordAloneRefused`; product ' +
+                     'refuses it with KDC_ERR_POLICY after the password ' +
+                     'verified), whether RFC 6113 FAST is served (`fast`, ' +
+                     'with its armor types and factors), and the RFC 8129 ' +
+                     'indicator an OTP pre-authentication puts in a ticket ' +
+                     '(`otpIndicator`).' },
       { path: '/ldap', console: '/admin/ldap', tag: 'LDAP',
         operationId: 'getLdapSettings',
         summary: 'The embedded directory\'s own settings',

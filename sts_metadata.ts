@@ -320,7 +320,8 @@ const SPECS: Spec[] = [
               'pre-authentication (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 ' +
               'carrying the salt, ticket flags, clock-skew enforcement and ' +
               'the error catalogue. Two realms with a trust between them, so ' +
-              'cross-realm referrals work. No FAST, no request signatures, ' +
+              'cross-realm referrals work. FAST and OTP pre-authentication are ' +
+              'their own rows (RFC 6113, RFC 6560); no request signatures, ' +
               'no PKINIT, no kpasswd (S4U is [MS-SFU], its own row). The AP ' +
               'exchange belongs to the protected service, not here. ' +
               // The rule for these notes is that they say what would mislead
@@ -338,10 +339,59 @@ const SPECS: Spec[] = [
               'password is published, and krbtgt and the configured service ' +
               'account exist only where krb5.krbtgtPassword and ' +
               'krb5.servicePassword are set to something other than their ' +
-              'published defaults — so a product KDC authenticates NOBODY ' +
-              '(directory people get no Kerberos account) and its useful ' +
-              'half is the acceptor, for tickets a real KDC issued to ' +
-              'krb5.servicePrincipal.' },
+              'published defaults. A product KDC authenticates the ' +
+              'directory\'s PEOPLE with keys derived from their own ' +
+              'passwords (after they sign in once), and service principals ' +
+              'with random keys an operator created; and a person who holds ' +
+              'or must hold a second factor gets NO ticket on the password ' +
+              'alone (KDC_ERR_POLICY, after the password verified) — only ' +
+              'through FAST with OTP pre-authentication.' },
+  { id: 'rfc6113', name: 'A Generalized Framework for Kerberos ' +
+                         'Pre-Authentication — FAST (RFC 6113)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc6113',
+    coverage: 'partial: FAST in the AS exchange with the one armor type, ' +
+              'FX_FAST_ARMOR_AP_REQUEST — a TGT for this realm\'s ' +
+              'ticket-granting service with a subkey, the armor key ' +
+              'KRB-FX-CF2 of the two — the req-checksum, the armored ' +
+              'KrbFastReq replacing the outer request, every error carried ' +
+              'as PA-FX-ERROR inside the armor, a KrbFastFinished over the ' +
+              'ticket, the reply key always strengthened, PA-FX-COOKIE, and ' +
+              'the encrypted challenge (section 5.4.6) with its replay check. ' +
+              'PA-FX-FAST is advertised in every KDC_ERR_PREAUTH_REQUIRED ' +
+              'wherever the directory is loaded. NOT implemented: FAST in ' +
+              'the TGS exchange (implicit armor — a TGS-REQ that carries it ' +
+              'is answered unarmored, which MIT\'s client accepts), ' +
+              'anonymous PKINIT armor, the hide-client-names option ' +
+              '(refused as an unknown critical option), authentication sets ' +
+              '(section 5.3) and AD-authentication-strength.' },
+  { id: 'rfc6560', name: 'One-Time Password (OTP) Pre-Authentication ' +
+                         '(RFC 6560)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc6560',
+    coverage: 'partial: PA-OTP-CHALLENGE and PA-OTP-REQUEST inside FAST, ' +
+              'four-pass (the nonce bound by a cookie) and two-pass, for ONE ' +
+              'kind of token: the person\'s authenticator app (RFC 6238), ' +
+              'verified by the sign-in screen\'s own verifier and once-only ' +
+              'step. The token information asks for the PIN separately, and ' +
+              'the PIN IS THE PASSWORD, checked as the Kerberos key it ' +
+              'derives — so one exchange proves both factors, and an app ' +
+              'password is refused. The OTP value travels in otp-value (the ' +
+              'host-key armor authenticates the KDC); must-encrypt-nonce, ' +
+              'hashed OTP values, PIN change and resynchronisation are not ' +
+              'implemented.' },
+  { id: 'rfc8129', name: 'Authentication Indicator in Kerberos Tickets ' +
+                         '(RFC 8129, over RFC 7751\'s AD-CAMMAC)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc8129',
+    coverage: 'partial: a ticket from an OTP pre-authentication carries the ' +
+              'indicator `otp` in an AD-CAMMAC (inside AD-IF-RELEVANT) with ' +
+              'a kdc-verifier and a svc-verifier; the TGS copies it from this ' +
+              'realm\'s own TGT into the tickets it buys (never under S4U or ' +
+              'across a trust); the acceptor reads it only from a CAMMAC ' +
+              'that verifies under its key, and /authn/spnego counts it as ' +
+              'a second factor. No other indicator is issued, and ' +
+              'other-verifiers are neither written nor read.' },
   { id: 'rfc3961', name: 'Kerberos encryption framework (RFC 3961/3962/8009, ' +
                          'RFC 4757)',
     where: 'IETF',
@@ -2138,11 +2188,21 @@ const SPECS: Spec[] = [
   { id: 'oidc-logout', name: 'OpenID Connect RP-Initiated Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-rpinitiated-1_0.html',
-    coverage: 'mock: end_session_endpoint really does end the session, but ' +
-              'id_token_hint is neither required nor checked and ' +
-              'post_logout_redirect_uri is not validated against any ' +
-              'registration. Front-channel and back-channel logout are ' +
-              'implemented beside it and are rows of their own.' },
+    coverage: 'full (#124, which folded #115 in, 2026-09-23): ' +
+              'end_session_endpoint answers GET and POST; the request is ' +
+              'validated before the session ends; id_token_hint is verified ' +
+              'as an ID Token this authorization server issued (expired ' +
+              'ones accepted, as section 2 allows) and its audience is the ' +
+              'client, a client_id it was not issued to being refused; the ' +
+              'End-User is asked to confirm — a page with a real button and ' +
+              'no script — unless the hint names this session and any ' +
+              'logout_hint names them; post_logout_redirect_uri is followed ' +
+              'only on an exact match with the client\'s registered list, ' +
+              'in every mode (development still follows one for a client ' +
+              'that registered none; product and OAuth 2.1 mode do not), and ' +
+              'state is returned. ui_locales is accepted and every page is ' +
+              'English, the only language this service has. Front-channel ' +
+              'and back-channel logout are rows of their own.' },
   { id: 'oid4vci', name: 'OpenID for Verifiable Credential Issuance 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html',
@@ -2371,7 +2431,8 @@ const ENDPOINTS: EndpointEntry[] = [
     // specification nothing links to is an IDLE CLAIM, which
     // tests/vendored/sts_metadata.js fails the page for. It was listed and
     // unlinked when the Kerberos rows were first added.
-    specs: ['ms-kkdcp', 'rfc4120', 'rfc3961'],
+    specs: ['ms-kkdcp', 'rfc4120', 'rfc3961', 'rfc6113', 'rfc6560',
+            'rfc8129'],
     what: 'Relays a KDC-PROXY-MESSAGE to the KDC listening on TCP and UDP ' +
           'port 88 in this process. A browser cannot open a raw socket, so ' +
           'this is how the in-browser client reaches a KDC without the api ' +
@@ -8373,7 +8434,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'two partners are left the sign-in screen is drawn instead.' },
   { path: '/authn/spnego', group: 'Authentication',
     name: 'Sign in with a Kerberos ticket',
-    specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'oidc'],
+    specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'rfc8129',
+            'oidc'],
     effect: 'answers 401 with "WWW-Authenticate: Negotiate" and, to a ' +
             'request carrying a valid service ticket, establishes the ' +
             'browser session and returns to whatever was interrupted',
@@ -8625,24 +8687,19 @@ const ENDPOINTS: EndpointEntry[] = [
           'to the asking origin only.' },
   { path: '/oauth2/logout', group: 'OAuth 2.0 / OIDC', name: 'Session end ' +
       '(end_session_endpoint)',
-    specs: ['oidc', 'oidc-logout', 'rfc9700'],
-    effect: 'drops the mock session cookie, and in RFC 9700 mode revokes the ' +
-            'refresh tokens issued on that session',
+    specs: ['oidc', 'oidc-logout', 'oidc-bclogout'],
+    effect: 'ends the browser session (after confirmation unless a verified ' +
+            'id_token_hint names it), and revokes the refresh tokens issued ' +
+            'on it without offline_access',
     what: 'What end_session_endpoint in the OIDC discovery document points ' +
-          'at. Drops the session cookie and returns to ' +
-          'post_logout_redirect_uri. id_token_hint is neither required nor ' +
-          'checked. The redirect target is not validated either — this is an ' +
-          'OPEN REDIRECTOR, and the plainest one in this service — UNLESS ' +
-          'RFC 9700 mode is on, which matches it against the client\'s ' +
-          'registered post_logout_redirect_uris (or the oauth2.redirectUris ' +
-          'setting) exactly as an authorization request\'s redirect_uri, and ' +
-          'answers a miss with a 400 rather than following it. That mode ' +
-          'also makes signing out mean something to the BACK channel: every ' +
-          'refresh token issued on the session is revoked (RFC 9700 section ' +
-          '2.2.2\'s security-event MAY), since otherwise a sign-out drops a ' +
-          'cookie and leaves a thirty-day credential in the client\'s hands. ' +
-          'Access tokens are left alone — they expire in an hour, and ' +
-          'revoking them would remove the evidence of what the session did.' },
+          'at, on GET and POST (#124). The request is validated BEFORE ' +
+          'anything ends; an id_token_hint is verified as an ID Token this ' +
+          'server issued (an expired one still counts) and names the ' +
+          'client; the person is asked to confirm unless that hint is for ' +
+          'this very session; post_logout_redirect_uri is followed only when ' +
+          'the client registered it exactly — development still follows one ' +
+          'for a client that registered none, product does not — and ' +
+          'state goes back with it. Refusals are pages, not JSON.' },
   { path: '/oauth2/token', group: 'OAuth 2.0 / OIDC', name: 'Token endpoint',
     specs: ['rfc6749', 'oidc', 'rfc8693', 'rfc9396', 'oid4vci', 'rfc9449',
             'rfc7800', 'rfc9700',
@@ -8817,6 +8874,7 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/:as/oauth2/logout', group: 'OAuth 2.0 / OIDC',
     name: 'Session end (a named authorization server)',
     specs: ['oidc', 'oidc-logout'],
+    // GET and POST, as at /oauth2/logout (#124).
     what: 'The session is ONE session across every authorization server in ' +
           'this process, because it is one browser and one cookie.' },
   { path: '/:as/oauth2/jwks', group: 'OAuth 2.0 / OIDC',

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3039** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3066** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -63,19 +63,19 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 200
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 481
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 485
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 97
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 134
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 154
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 119
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 101
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 21
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 24
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 276
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
@@ -1213,7 +1213,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0120` | In RFC 9700 mode, the redirect_uri uses http on a host that is not a loopback address (section 2.6). | invalid_request (HTTP 400, not redirected) |
 | `STS-OAUTH-0121` | In RFC 9700 mode, no redirect URIs are registered for the client, so the redirect_uri cannot be exact-matched. | invalid_request (HTTP 400, not redirected) |
 | `STS-OAUTH-0122` | In RFC 9700 mode, the redirect_uri matches none of the URIs registered for the client (section 2.1). | invalid_request (HTTP 400, not redirected) |
-| `STS-OAUTH-0123` | In RFC 9700 mode, an RP-Initiated Logout post_logout_redirect_uri is not registered (no open redirector). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0123` | An RP-Initiated Logout post_logout_redirect_uri is not among the ones the client registered — in every mode since #124 — so it is not followed; the person is signed out and told on the page. | none (the sign-out page says so) |
 | `STS-OAUTH-0124` | In RFC 9700 mode, a state, code_challenge or nonce value already used by another client was presented (section 2.1.1). | invalid_request (redirected error) |
 | `STS-OAUTH-0125` | In RFC 9700 mode, a state, code_challenge or nonce value was reused after its authorization code was redeemed. | invalid_request (redirected error) |
 | `STS-OAUTH-0126` | In RFC 9700 mode, the authorization request asked for a response type that issues an access token from the authorization endpoint (section 2.1.2). | unsupported_response_type (redirected error) |
@@ -1261,7 +1261,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0168` | Consent is outstanding and the request carried prompt=none, which forbids showing the consent screen. | consent_required (redirected error) |
 | `STS-OAUTH-0169` | The authorization response could not be issued because of an unexpected failure while minting it. | server_error (redirected error, or HTTP 400 page) |
 | `STS-OAUTH-0170` | The request carried prompt=none and there is no sign-on session. | login_required (redirected error, or HTTP 400 page) |
-| `STS-OAUTH-0171` | An RP-Initiated Logout request is malformed (the input validator refused it). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0171` | An RP-Initiated Logout request is malformed (the input validator refused it). Since #124 the session is NOT ended, and the answer is a page for the person. | HTTP 400 (an HTML page) |
 | `STS-OAUTH-0172` | An access token presented at UserInfo did not verify: expired, not yet valid, or not issued by this service. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
 | `STS-OAUTH-0173` | The token presented at UserInfo is not an access token (its typ is not Bearer). | invalid_token (HTTP 401, WWW-Authenticate challenge) |
 | `STS-OAUTH-0174` | The access token presented at UserInfo has been revoked. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
@@ -1359,7 +1359,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0287` | OAuth 2.1 mode: a client registration asked for token_endpoint_auth_method=saml2_bearer. | invalid_client_metadata (HTTP 400) |
 | `STS-OAUTH-0288` | A stored frontchannel_logout_uri is not an http or https URL, so the client was not notified and the value was not framed. | none — the client is listed as not notified |
 | `STS-OAUTH-0289` | OAuth 2.1 mode: a client registration asked for the client credentials grant with token_endpoint_auth_method=none. | invalid_client_metadata (HTTP 400) |
-| `STS-OAUTH-0290` | RFC 9700 or OAuth 2.1 mode: a private-use post_logout_redirect_uri was given and the client the request names has not registered it. | invalid_request (HTTP 400) |
+| `STS-OAUTH-0290` | A private-use post_logout_redirect_uri was given and the client the request names has not registered it (every mode since #124): not followed. | none (the sign-out page says so) |
 | `STS-OAUTH-0291` | An RFC 9701 JWT introspection request (Accept: application/token-introspection+jwt) did not authenticate the resource server: no credential, an unknown or public client, nothing on file to verify, or a credential that did not verify. Refused in every mode, because the response is addressed to the caller. | invalid_client (HTTP 400, RFC 9701 section 5) |
 | `STS-OAUTH-0292` | Product mode: an RFC 7662 introspection request did not authenticate the caller as a client with a credential that verified. | invalid_client (HTTP 401, RFC 7662 section 2.3) |
 | `STS-OAUTH-0293` | The JWT introspection response a client registered could not be produced: an algorithm this service does not have (set by ldapmodify), an enc with no alg, no usable key in its jwks, or the signature failed. | server_error (HTTP 500) |
@@ -1572,6 +1572,10 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0599` | A client's registered jwks_uri could not be read: the outbound policy refused it, it did not answer 200, or it did not answer a JSON Web Key Set (#120). Logged at warn; the verification or encryption that needed the key is refused with its own code. | none (log only) |
 | `STS-OAUTH-0600` | A client that registered grant_types without refresh_token was answered with no refresh token (RFC 7591 section 2) (#120). Recorded, not refused. | none (the token response omits refresh_token) |
 | `STS-OAUTH-0601` | The OP iframe or its script was asked for while oauth2.sessionManagement is off in the realm (#121): a 404 naming the setting. | HTTP 404 |
+| `STS-OAUTH-0602` | An RP-Initiated Logout id_token_hint did not verify as an ID Token this authorization server issued to the client the request names — or a client_id it was not issued to was given beside it (section 2's MUST, #124, #115). Refused in every mode; the session is not ended. | HTTP 400 (an HTML page) |
+| `STS-OAUTH-0603` | In product mode, an RP-Initiated Logout post_logout_redirect_uri named no client that registered it (#124): not followed. Development still follows one. | none (the sign-out page says so) |
+| `STS-OAUTH-0604` | An RP-Initiated Logout request sent with POST was not a form (application/x-www-form-urlencoded, section 2) (#124). | HTTP 400 (an HTML page) |
+| `STS-OAUTH-0605` | The RP-Initiated Logout endpoint failed while answering (#124). | HTTP 500 (an HTML page) |
 
 ## STS-SAML
 
@@ -1960,6 +1964,26 @@ Raised from: kerberos/.
 | `STS-KRB-0132` | A keytab was refused because the password given does not derive the key the product KDC holds for the person, or none was given. | HTTP 400 { ok: false, errors } / a 400 portal page |
 | `STS-KRB-0133` | A development-mode keytab was refused because the development KDC has no principal for the person and will not make one (a name krb5.unknownUsers reserves), or it offers no enctype. | HTTP 400 { ok: false, errors } / a 400 portal page |
 | `STS-KRB-0134` | A keytab was refused because the person's account is disabled, which the KDC refuses whatever key is presented. | HTTP 400 { ok: false, errors } / a 400 portal page |
+| `STS-KRB-0135` | An AS-REQ pre-authenticated with a password alone (PA-ENC-TIMESTAMP, or FAST's PA-ENCRYPTED-CHALLENGE) was refused, in product mode, because the person holds or is required to hold a second factor. Refused only after the password verified. | KDC_ERR_POLICY (12) |
+| `STS-KRB-0136` | A FAST-armored AS-REQ (PA-FX-FAST) did not decode, carried no armor, named an armor type other than FX_FAST_ARMOR_AP_REQUEST, or its armor was not an AP-REQ. | RFC 6113 section 5.4.1: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0137` | A FAST armor ticket was refused: not a TGT for the ticket-granting service of the realm asked, sealed under another key, expired or not yet valid. | RFC 6113 section 5.4.1.1: KDC_ERR_PREAUTH_FAILED (24), KRB_AP_ERR_BAD_INTEGRITY (31), KRB_AP_ERR_TKT_EXPIRED (32), KRB_AP_ERR_TKT_NYV (33) |
+| `STS-KRB-0138` | A FAST armor AP-REQ's Authenticator was refused: it did not decrypt, named another client, was outside the clock tolerance, or carried no subkey. | RFC 6113 section 5.4.1.1: KRB_AP_ERR_BAD_INTEGRITY (31), KRB_AP_ERR_BADMATCH (36), KRB_AP_ERR_SKEW (37), KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0139` | A FAST req-checksum did not cover the outer request body under the armor key. | RFC 6113 section 5.4.2: KRB_AP_ERR_MODIFIED (41) |
+| `STS-KRB-0140` | A FAST enc-fast-req did not open under the armor key, or the KrbFastReq inside it did not decode. | RFC 6113 section 5.4.2: KRB_AP_ERR_BAD_INTEGRITY (31) |
+| `STS-KRB-0141` | A FAST request set a critical FAST option this KDC does not implement (hide-client-names). | RFC 6113 section 5.4.2: KDC_ERR_UNKNOWN_CRITICAL_FAST_OPTIONS (93) |
+| `STS-KRB-0142` | A PA-ENCRYPTED-CHALLENGE did not decode or did not decrypt under the challenge key: a wrong password inside FAST. | RFC 6113 section 5.4.6: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0143` | A PA-ENCRYPTED-CHALLENGE's timestamp was outside the clock tolerance. | RFC 6113 section 5.4.6: KRB_AP_ERR_SKEW (37) |
+| `STS-KRB-0144` | A PA-ENCRYPTED-CHALLENGE was presented a second time (the same ciphertext). | RFC 6113 section 5.4.6: KRB_AP_ERR_REPEAT (34) |
+| `STS-KRB-0145` | A PA-ENCRYPTED-CHALLENGE could not be proved unused because the claim store could not be asked. | KRB_ERR_GENERIC (60) |
+| `STS-KRB-0146` | A PA-OTP-REQUEST did not decode, its encData was not under the armor key or did not open, or it answered no PA-OTP-CHALLENGE this KDC issued (or its timestamp was outside the tolerance). | RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24), KDC_ERR_ETYPE_NOSUPP (14), KRB_AP_ERR_SKEW (37) |
+| `STS-KRB-0147` | A PA-OTP-REQUEST carried no otp-pin, and this KDC requires the password as the PIN. | RFC 6560 section 3.4: KDC_ERR_PIN_REQUIRED (97) |
+| `STS-KRB-0148` | A PA-OTP-REQUEST's otp-pin was not the person's password (it does not derive the Kerberos key the KDC holds; an app password never does). | RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0149` | A PA-OTP-REQUEST's code was refused by the authenticator verifier: wrong, or no authenticator app enrolled. | RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0150` | A PA-OTP-REQUEST's code had already been used, at the KDC or at the sign-in screen (one step counter for both). | RFC 6238 section 5.2: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0151` | A PA-OTP-REQUEST's code could not be proved unspent because the step store could not be asked. | KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0152` | A PA-OTP-REQUEST carried no otp-value (a hashed OTP or one used as key material), which this KDC did not ask for. | RFC 6560 section 3.6: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0153` | A ticket's AD-CAMMAC did not verify under the key the ticket is sealed with, so its authentication indicators were ignored. | RFC 7751 section 7, RFC 8129 section 5 |
+| `STS-KRB-0154` | Asking whether a person holds a second factor failed, so the KDC treated a password alone as not enough. | — |
 
 ## STS-LDAP
 
@@ -2530,6 +2554,9 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0019` | In development mode (observe only) the issuance policy would have refused on risk, and did not: the decision is recorded on the assessment and the issuance went ahead. risk.enforceInDevelopment turns enforcement on. | — |
 | `STS-RISK-0020` | A person's risk level changed and no reaction could be decided: the risk-response policy is disabled or does not load. The change is recorded; nothing is announced, ended or disabled. | — |
 | `STS-RISK-0021` | A reaction the risk-response policy permitted (announce, end sessions, RISC credential-compromise, disable) failed part-way. The others were still taken; the change of risk is recorded. | — |
+| `STS-RISK-0022` | A FIDO MDS3 BLOB was refused: it is not a JWT carrying an x5c chain, the chain does not end at the FIDO root (or the configured risk.mdsTrustAnchors), or its signature does not verify. Nothing was loaded. | FIDO Metadata Service v3.0, section 3.1.8 |
+| `STS-RISK-0023` | A FIDO MDS3 BLOB was refused because a certificate in its signing chain is revoked, or its status is unknown and the revocation policy refuses unknown. Nothing was loaded. | FIDO Metadata Service v3.0, section 3.1.8 |
+| `STS-RISK-0024` | A FIDO MDS3 BLOB was refused because its serial number (no) is not greater than one already processed — a rollback. Nothing was loaded. | FIDO Metadata Service v3.0, section 3.1.8 |
 
 ## STS-GNAP
 

@@ -810,6 +810,8 @@ var config = {
     assessSignIns: true,           // Assess every sign-in
     enforceInDevelopment: false,   // Enforce risk decisions in development mode
     standingValidMinutes: 720,     // A person's standing answers for (minutes)
+    mdsTrustAnchors: "",           // FIDO metadata trust anchors (PEM)
+    mdsStaleGraceDays: 7,          // FIDO metadata grace after its nextUpdate (days)
     rescoreEveryS: 300,            // Re-check live sessions every (seconds)
     standingCacheSize: 20000,      // People whose standing each process holds
     mediumScorePercent: 100,       // MEDIUM from (percent of a score of 1)
