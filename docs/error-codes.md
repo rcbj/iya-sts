@@ -2572,7 +2572,7 @@ Raised from: ssf/.
 | `STS-SSF-0021` | A poll request named a stream that delivers by push, so there is nothing to collect. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0022` | A Security Event Token was pushed at /ssf/receive while this service is not accepting pushed events (ssf.receiveEnabled). | HTTP 501 {err: invalid_request} |
 | `STS-SSF-0023` | A push at /ssf/receive carried an empty body. | HTTP 400 {err: invalid_request} |
-| `STS-SSF-0024` | A Security Event Token pushed at /ssf/receive did not verify while ssf.receiveRequireSignature is on. | HTTP 400 {err: invalid_key} |
+| `STS-SSF-0024` | A Security Event Token pushed at /ssf/receive did not verify, in product mode or while ssf.receiveRequireSignature is on (#117). | HTTP 400 {err: invalid_key} |
 | `STS-SSF-0025` | A Security Event Token pushed at /ssf/receive could not be read as a SET; it was recorded anyway. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0026` | An event was not transmitted on a stream because the stream does not deliver that event type. | — |
 | `STS-SSF-0027` | An event was not transmitted because its payload fails the event type's member rules. | — |
@@ -2619,7 +2619,7 @@ Raised from: ssf/.
 | `STS-SSF-0068` | A push at an internal receive endpoint carried an empty body. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0069` | A Security Event Token delivered to an internal receiver could not be read as a SET; it was recorded anyway. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0070` | A Security Event Token delivered to an internal receiver is not addressed to that receiver's audience; it was recorded and refused. | HTTP 400 {err: invalid_audience} |
-| `STS-SSF-0071` | A Security Event Token delivered to an internal receiver did not verify while ssf.receiveRequireSignature is on. | HTTP 400 {err: invalid_key} |
+| `STS-SSF-0071` | A Security Event Token delivered to an internal receiver did not verify, in product mode or while ssf.receiveRequireSignature is on (#117). | HTTP 400 {err: invalid_key} |
 | `STS-SSF-0072` | The admin console or the user portal could not be registered as a Shared Signals receiver in a realm, because its seeded stream configuration was refused; that surface's inbox stays empty. | — |
 | `STS-SSF-0073` | A protocol family (GNAP) asked ssf.emitProtocolEvent() for an event type that is not one of CAEP's; nothing was sent. | — |
 | `STS-SSF-0074` | A CAEP event a protocol family asked to emit failed ssf_events validation and was not sent. | — |

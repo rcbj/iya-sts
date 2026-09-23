@@ -9800,7 +9800,9 @@ const SETTINGS = [
                  'person can see what arrived and why it did not verify. ' +
                  'Turning it on answers 400 with err=invalid_key instead, ' +
                  'which is what a real receiver does and is the negative a ' +
-                 'transmitter needs to be able to reach.' },
+                 'transmitter needs to be able to reach. DEVELOPMENT MODE ' +
+                 'ONLY: product mode refuses an unverified SET at every ' +
+                 'receiver whatever this says (#117).' },
 
   { key: 'ssf.actOnSignalsInDevelopment', group: 'SSF',
     label: 'The console and portal act on received signals in development',

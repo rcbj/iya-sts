@@ -206,6 +206,9 @@ import ssfCluster = require('./ssf_cluster');
 // (the call-log funnel records it); a refusal with no response of its own — a
 // transmission, a console action, an automatic emission — is an audit row.
 import errorCodes = require('../common/error_codes');
+// For `refusesUnverifiedSignals()` at /ssf/receive (#117). A leaf that
+// requires only config.
+import mode = require('../common/mode');
 
 // A loose JSON-shaped object: the reports, stream records and results this
 // file builds and passes on. Their shapes are the libraries' own, and those
@@ -2278,7 +2281,9 @@ class SharedSignals {
     // event could not show anybody WHAT arrived or WHY it did not verify,
     // which is the question being asked. `ssf.receiveRequireSignature` turns
     // the 400 on, which is what a real receiver does and is the negative a
-    // transmitter needs to be able to reach.
+    // transmitter needs to be able to reach. **PRODUCT MODE ALWAYS REFUSES
+    // (#117, 2026-09-23)**: there it was an unauthenticated write into a
+    // stored inbox (`mode.refusesUnverifiedSignals()`).
     //
     // The verification is against THIS SERVICE'S OWN key, because that is the
     // only key it has. A SET signed by somebody else is reported as "not
@@ -2332,7 +2337,8 @@ class SharedSignals {
       const verdict: Json = events.verifySet(token, read.header);
       const verified = verdict.verified;
       const verificationNote = verdict.note;
-      if (!verified && config.value('ssf.receiveRequireSignature')) {
+      // Refused in product mode whatever the setting says (#117).
+      if (!verified && mode.refusesUnverifiedSignals()) {
         errorCodes.mark(res, 'STS-SSF-0024');
         this.fail(res, 400, 'invalid_key', verificationNote);
         log.debug('Leaving POST /ssf/receive. Signature required.');
