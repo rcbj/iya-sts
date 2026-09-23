@@ -3271,10 +3271,47 @@ const SETTINGS = [
                  '`consent_required`, which is what OIDC Core section ' +
                  '3.1.2.6 defines it for. With this OFF nothing is asked and ' +
                  'nothing is recorded, which is what this service did before ' +
-                 'the screen existed. It does not re-judge a grant already ' +
-                 'issued: the token endpoint asks nobody anything, so a ' +
-                 'refresh of a code obtained before this was turned on still ' +
-                 'works. /admin/consent is the register.' },
+                 'the screen existed. A grant already issued IS re-judged ' +
+                 '(#172): withdrawing a consent revokes every token issued ' +
+                 'under it, and the refresh grant refuses a refresh token ' +
+                 'whose consent was withdrawn after it was granted — and, ' +
+                 'with oauth2.refreshRequiresConsent on, one from the ' +
+                 'authorization endpoint that no recorded consent covers. ' +
+                 '/admin/consent is the register.' },
+
+  // WHAT THE REFRESH GRANT DOES WITH A GRANT NOBODY WAS ASKED ABOUT (#172).
+  //
+  // A withdrawal is honoured whatever this says: a refresh token whose consent
+  // was withdrawn after it was granted is refused in every mode, because
+  // somebody took it back. This decides the OTHER case — a refresh token from
+  // the authorization endpoint whose scope NO RECORDED CONSENT covers, which
+  // is a token minted while `oauth2.consentRequired` was off, or while the
+  // directory could not hold the answer. ON by default, the most secure
+  // reading: with consent required, a grant nobody agreed to is not one this
+  // service renews. The cost is that turning consent ON sends every client
+  // holding such a token back through the authorization endpoint once.
+  //
+  // `runtime: true` and settable on a realm, `consentRequired`'s reason.
+  { key: 'oauth2.refreshRequiresConsent', group: 'OAuth 2.0 / OIDC',
+    label: 'Refresh requires recorded consent',
+    env: 'STS_OAUTH2_REFRESH_REQUIRES_CONSENT', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'WHETHER THE REFRESH GRANT REFUSES A GRANT NOBODY ' +
+                 'CONSENTED TO. While consent is required ' +
+                 '(oauth2.consentRequired, or a FAPI 1.0 profile), a refresh ' +
+                 'token issued at the authorization endpoint is renewed only ' +
+                 'if every scope it carries was covered, when it was ' +
+                 'granted, by the person\'s own recorded consent or by the ' +
+                 'application\'s global consent — otherwise invalid_grant ' +
+                 '(STS-OAUTH-0616). That is a token minted while consent was ' +
+                 'off, or while the directory could not record the answer. ' +
+                 'A WITHDRAWN consent is refused whatever this says. ' +
+                 'WARNING: TURNING THIS OFF RENEWS GRANTS THAT NOBODY ' +
+                 'AGREED TO — a client that obtained a refresh token while ' +
+                 'consent was off keeps renewing it, while the person is ' +
+                 'absent if it holds offline_access, although this service ' +
+                 'now requires their consent. Leave it on unless a client ' +
+                 'cannot be sent back through the authorization endpoint.' },
 
   // THE SECOND MODE IN THIS FILE, AND IT IS DELIBERATELY NOT PART OF THE FIRST.
   // RFC 9700 mode enforces a published Best Current Practice and every one of

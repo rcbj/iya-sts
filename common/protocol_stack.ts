@@ -311,6 +311,9 @@ class ProtocolStack {
     this.build('portal/portal_sign_ins',
                require('../portal/portal_sign_ins'),
                'PortalSignIns');
+    this.build('portal/portal_consents',
+               require('../portal/portal_consents'),
+               'PortalConsents');
     this.build('portal/portal', require('../portal/portal'), 'Portal');
     this.register(app, require('../portal/portal'), 'portal/portal');
     // The consent screen. It must come AFTER authn.js and BEFORE oauth2.js, and

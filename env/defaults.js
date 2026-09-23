@@ -277,6 +277,7 @@ var config = {
     accessTokenSigningAlg: "default",            // Access token signing algorithm
     jarmResponseLifetimeS: 600,                  // JARM response lifetime (s)
     consentRequired: true,                       // Ask for consent
+    refreshRequiresConsent: true,                // Refresh requires recorded consent
     delegatedPermissionsEnforced: false,         // Enforce delegated permissions
     tokenExchangeRefreshToken: "when-requested", // Refresh token from a token exchange
     breakIdTokenNonce: false,                    // Break the ID Token nonce (development only)
