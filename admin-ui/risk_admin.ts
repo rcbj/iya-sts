@@ -35,6 +35,7 @@
 // ===========================================================================
 
 import admin = require('./admin');
+import adminViews = require('../admin-core/admin_views');
 import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
@@ -50,7 +51,7 @@ type Json = any;
 const PAGE = '/admin/risk';
 
 // What `riskAction()` does, and what each needs.
-const ACTIONS = ['import', 'activate', 'rollback', 'delete'];
+const ACTIONS = ['import', 'activate', 'rollback', 'delete', 'accept-terms'];
 
 // The failure page's size, and the window it reads.
 const FAILURES_PER_PAGE = 50;
@@ -59,6 +60,7 @@ const FAILURE_WINDOW_MS = 7 * 86400000;
 interface RiskAdminDeps {
   log: typeof helpers.log;
   admin: typeof admin;
+  adminViews: typeof adminViews;
   errorCodes: typeof errorCodes;
   realms: typeof realms;
   datasets: typeof riskDatasets;
@@ -83,6 +85,7 @@ class RiskAdmin {
     return {
       log: helpers.log,
       admin: admin,
+      adminViews: adminViews,
       errorCodes: errorCodes,
       realms: realms,
       datasets: riskDatasets,
@@ -133,6 +136,8 @@ class RiskAdmin {
       datasets: registry.datasets,
       formats: registry.formats,
       providers: registry.providers,
+      acceptances: registry.acceptances,
+      attributions: registry.attributions,
       redistribution: registry.redistribution,
       lookup: lookup,
       assessments: assessed.assessments,
@@ -151,9 +156,14 @@ class RiskAdmin {
   // THE ACTIONS: the four the page's forms post and `/admin-api/risk/:action`
   // calls. `via` names the door, for the audit row.
   // -------------------------------------------------------------------------
-  async riskAction(body: Json, via: string): Promise<Json> {
+  // `actor` names who acted: the console's signed-in administrator, or ''
+  // for the management API, which authenticates a client rather than a
+  // person — its audit row for the request names the caller.
+  async riskAction(body: Json, via: string, actor?: string): Promise<Json> {
     const { log, datasets, errorCodes } = this.deps;
     log.debug("Entering RiskAdmin.riskAction().");
+    const who = String(actor || '') || (/api/i.test(via)
+      ? 'a management API client' : via);
     const b = body || {};
     const action = String(b.action || '');
     const refuse = (why: string): Json => {
@@ -163,6 +173,16 @@ class RiskAdmin {
     if (ACTIONS.indexOf(action) < 0) {
       return refuse('Unknown action "' + action + '". The ' + ACTIONS.length +
                     ' are: ' + ACTIONS.join(', ') + '.');
+    }
+    if (action === 'accept-terms') {
+      const provider = String(b.provider || '').trim();
+      if (!provider) {
+        return refuse('Name the provider whose terms are accepted.');
+      }
+      const accepted = await require('../risk/risk_terms').accept({
+        provider: provider, acceptedBy: who, via: via });
+      log.debug("Leaving RiskAdmin.riskAction(). Terms.");
+      return accepted;
     }
     const dataset = String(b.dataset || '').trim();
     const realm = String(b.realm || '').trim();
@@ -186,17 +206,21 @@ class RiskAdmin {
                                                  : String(b.attribution),
         sha256: String(b.sha256 || '').trim() || undefined,
         activate: String(b.activate) !== 'false', source: 'upload',
-        actor: via });
+        // The console's checkbox (`on`) or the API's boolean: accept the
+        // provider's current terms as part of this import, for this actor.
+        acceptTerms: b.acceptTerms === true || b.acceptTerms === 'true' ||
+                     b.acceptTerms === 'on',
+        actor: who });
     } else if (action === 'activate' || action === 'delete') {
       const version = String(b.version || '').trim();
       if (!version) {
         return refuse('Name the version.');
       }
       result = action === 'activate'
-        ? await datasets.activateVersion(realm, dataset, version, via)
-        : await datasets.deleteVersion(realm, dataset, version, via);
+        ? await datasets.activateVersion(realm, dataset, version, who)
+        : await datasets.deleteVersion(realm, dataset, version, who);
     } else {
-      result = await datasets.rollback(realm, dataset, via);
+      result = await datasets.rollback(realm, dataset, who);
     }
     log.debug("Leaving RiskAdmin.riskAction(). ok=" + !!(result && result.ok));
     return result;
@@ -272,8 +296,10 @@ class RiskAdmin {
         (d.activeVersion ? ': version <code>' + esc(d.activeVersion) +
                            '</code>, ' + d.rows + ' rows, published ' +
                            esc(self.when(d.publishedAt)) : '') +
-        (d.attribution ? '<br><small>' + self.credit(d.attribution,
-                                                     d.attributionUrl) +
+        (d.attribution ? '<br><small>' + self.credit(
+          view.attributions.filter(function (c: Json): boolean {
+            return c.provider === d.provider;
+          })[0] || { text: d.attribution, url: d.attributionUrl }) +
                          '</small>' : '') +
         (canWrite && d.previousVersion
           ? ' ' + self.form('rollback', d, '', 'Roll back to ' +
@@ -293,7 +319,7 @@ class RiskAdmin {
                      '</pre>' + (view.lookup.attributions || [])
                        .map(function (a: Json): string {
                          return '<p class="attribution"><small>' +
-                           self.credit(a.text, a.url) + '</small></p>';
+                           self.credit(a) + '</small></p>';
                        }).join('') : '');
     const importForm = !canWrite ? '' :
       '<h3>Import a version</h3><form method="post" action="' + PAGE + '">' +
@@ -312,6 +338,9 @@ class RiskAdmin {
       '<label>Version <input type="text" name="version" ' +
       'placeholder="default: its SHA-256"></label> <label>SHA-256 ' +
       '<input type="text" name="sha256"></label><br>' +
+      '<label><input type="checkbox" name="acceptTerms" ' +
+      'id="risk-import-accept"> I have read and accept the provider\'s ' +
+      'terms (below), recorded in my name</label><br>' +
       '<textarea name="content" rows="8" cols="80" id="risk-import-content" ' +
       'placeholder="One address, CIDR block or range per line"></textarea>' +
       '<br><button type="submit" id="risk-import">Import and activate' +
@@ -335,18 +364,42 @@ class RiskAdmin {
       esc(view.redistribution) + '</strong> Each provider\'s terms bind ' +
       'the deployment that downloads its data, and some of them bind ' +
       'whoever redistributes it.</p><table class="grid"><thead><tr>' +
-      '<th>Provider</th><th>Licence</th><th>Terms</th><th>Here</th></tr>' +
-      '</thead><tbody>' + view.providers.map(function (p: Json): string {
+      '<th>Provider</th><th>Licence</th><th>Terms</th><th>Accepted</th>' +
+      '</tr></thead><tbody>' + view.providers.map(function (p: Json): string {
+        const acceptance = !p.supported ? 'not supported'
+          : !p.needsAcceptance ? 'nothing to accept'
+          : p.accepted ? 'by ' + esc(p.accepted.acceptedBy) + ' through ' +
+                         esc(p.accepted.acceptedVia) + '<br><small>' +
+                         esc(self.when(p.accepted.acceptedAt)) + ' on ' +
+                         esc(p.accepted.deployment) + '</small>'
+          : '<strong>' + (p.changed ? 'the terms changed since they were ' +
+                                      'accepted' : 'not accepted') +
+            '</strong>';
+        const form = canWrite && p.needsAcceptance && !p.accepted
+          ? '<form method="post" action="' + PAGE + '" class="inline">' +
+            '<input type="hidden" name="action" value="accept-terms">' +
+            '<input type="hidden" name="provider" value="' + esc(p.provider) +
+            '"><button type="submit" id="risk-accept-' + esc(p.provider) +
+            '">I have read and accept these terms</button></form>' : '';
         return '<tr><td>' + (p.url ? '<a href="' + esc(p.url) + '">' +
           esc(p.title) + '</a>' : esc(p.title)) + '</td><td>' +
-          esc(p.licence) + '</td><td><small>' + esc(p.terms) +
-          '</small></td><td>' + (p.supported ? 'supported' : 'not yet') +
+          (p.licenceUrl ? '<a href="' + esc(p.licenceUrl) + '">' +
+           esc(p.licence) + '</a>' : esc(p.licence)) + '</td><td><small>' +
+          esc(p.terms) + '</small></td><td>' + acceptance + form +
           '</td></tr>';
       }).join('') + '</tbody></table>';
+    // EVERY PROVIDER WHOSE DATA AN ACTIVE DATASET HOLDS, credited under
+    // everything on this page — the failures' networks and the assessments'
+    // locations included — as CC BY 4.0 and CC BY-SA 4.0 ask.
+    const credits = view.attributions.length
+      ? '<h3>Data credits</h3>' + view.attributions.map(function (c: Json) {
+          return '<p class="attribution"><small>' + self.credit(c) +
+            '</small></p>';
+        }).join('') : '';
     const assessments = this.assessmentsHtml(view);
     log.debug("Leaving RiskAdmin.html().");
     return tiles + about + assessments + '<h3>Look up an address</h3>' +
-      lookupForm + rows + importForm + providers + failures +
+      lookupForm + rows + importForm + providers + failures + credits +
       '<h2>Settings</h2>' + admin.configFormsFor(PAGE);
   }
 
@@ -369,7 +422,7 @@ class RiskAdmin {
     const rows = view.assessments.rows.map(function (a: Json): string {
       ((a.datasets && a.datasets.attributions) || [])
         .forEach(function (c: Json): void {
-          credits.set(c.text, c);
+          credits.set(c.provider || c.text, c);
         });
       const signals = (a.signals || []).filter(function (x: Json): boolean {
         return x.signal !== 'model';
@@ -402,7 +455,7 @@ class RiskAdmin {
     }).join('');
     let credit = '';
     credits.forEach(function (c: Json): void {
-      credit += '<p class="attribution"><small>' + self.credit(c.text, c.url) +
+      credit += '<p class="attribution"><small>' + self.credit(c) +
         '</small></p>';
     });
     log.debug("Leaving RiskAdmin.assessmentsHtml().");
@@ -422,15 +475,22 @@ class RiskAdmin {
                           '</tr>') + '</tbody></table>';
   }
 
-  // A provider's attribution as its terms want it: the sentence, LINKED to
-  // the provider where it has an address — DB-IP's licence asks for exactly
-  // that on every page that displays its results.
-  private credit(text: string, url: string): string {
+  // A provider's credit as its licence asks (`risk_terms.attributionOf()`):
+  // the attribution LINKED to the source, the licence named and linked, and
+  // that the data was modified here — CC BY 4.0 section 3(a), which DB-IP's
+  // licence asks for on every page that displays its results.
+  private credit(c: Json): string {
     const { log, admin } = this.deps;
     log.debug("Entering RiskAdmin.credit().");
+    const esc = admin.esc.bind(admin);
+    const source = c.url ? '<a href="' + esc(c.url) + '" rel="noopener">' +
+      esc(c.text) + '</a>' : esc(c.text);
+    const licence = c.licence ? ', licensed under ' + (c.licenceUrl
+      ? '<a href="' + esc(c.licenceUrl) + '" rel="noopener">' +
+        esc(c.licence) + '</a>' : esc(c.licence)) : '';
     log.debug("Leaving RiskAdmin.credit().");
-    return url ? '<a href="' + admin.esc(url) + '" rel="noopener">' +
-      admin.esc(text) + '</a>' : admin.esc(text);
+    return source + licence + (c.modified ? '; ' + esc(c.modified) : '') +
+      '.';
   }
 
   // One small POST form: an action on one dataset (and version).
@@ -479,7 +539,9 @@ class RiskAdmin {
         log.debug('Leaving POST ' + PAGE + '. Read-only.');
         return;
       }
-      self.riskAction(parseBody(req), 'the admin console')
+      const state = self.deps.adminViews.gateStateFor(req);
+      self.riskAction(parseBody(req), 'the admin console',
+                      (state && state.username) || '')
         .then(function (result: Json): void {
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-RISK-0011');

@@ -55,7 +55,8 @@ const RISK_GROUP = ['riskListDatasets', 'riskListVersions', 'riskBeginVersion',
                     'riskDistinctValues', 'riskIncrementCounts',
                     'riskRecordAssessment', 'riskListAssessments',
                     'riskUpsertSubject', 'riskListSubjects',
-                    'riskUpsertSessionContext', 'riskPurgeHistory'];
+                    'riskUpsertSessionContext', 'riskPurgeHistory',
+                    'riskRecordAcceptance', 'riskListAcceptances'];
 
 // The most assessments one realm holds in memory, as for failures.
 const MAX_MEMORY_ASSESSMENTS = 50000;
@@ -97,6 +98,8 @@ class RiskStore {
   private readonly assessments = new Map<string, Json[]>();
   private readonly subjectStates = new Map<string, Map<string, Json>>();
   private readonly sessionContexts = new Map<string, Map<string, Json>>();
+  // Terms acceptances held here when there is no database.
+  private readonly acceptances: Json[] = [];
   private readonly listeners: Array<(realm: string, dataset: string) => void> =
     [];
 
@@ -932,6 +935,38 @@ class RiskStore {
     return Promise.resolve(removed);
   }
 
+  // ===== TERMS ACCEPTANCES (#62, schema 8) =================================
+  //
+  // Not personal data about the people who sign in — the operator's own name
+  // for their own act — so in the database whenever there is one, sealing or
+  // not.
+
+  recordAcceptance(a: Json): Promise<string> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.recordAcceptance(). " + a.provider);
+    if (this.driver) {
+      log.debug("Leaving RiskStore.recordAcceptance(). Database.");
+      return Promise.resolve(this.driver.riskRecordAcceptance(a));
+    }
+    const id = String(this.acceptances.length + 1);
+    this.acceptances.unshift(Object.assign({ id: id }, a));
+    log.debug("Leaving RiskStore.recordAcceptance(). Memory.");
+    return Promise.resolve(id);
+  }
+
+  listAcceptances(): Promise<Json[]> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.listAcceptances().");
+    if (this.driver) {
+      log.debug("Leaving RiskStore.listAcceptances(). Database.");
+      return Promise.resolve(this.driver.riskListAcceptances());
+    }
+    log.debug("Leaving RiskStore.listAcceptances(). Memory.");
+    return Promise.resolve(this.acceptances.map(function (a: Json): Json {
+      return Object.assign({}, a);
+    }));
+  }
+
   // For tests: forget everything held in this process.
   reset(): void {
     const { log } = this.deps;
@@ -946,6 +981,7 @@ class RiskStore {
     this.assessments.clear();
     this.subjectStates.clear();
     this.sessionContexts.clear();
+    this.acceptances.length = 0;
     log.debug("Leaving RiskStore.reset().");
   }
 }
@@ -999,5 +1035,7 @@ export = {
   upsertSessionContext: slot.forward('upsertSessionContext'),
   sessionContextOf: slot.forward('sessionContextOf'),
   purgeHistory: slot.forward('purgeHistory'),
+  recordAcceptance: slot.forward('recordAcceptance'),
+  listAcceptances: slot.forward('listAcceptances'),
   reset: slot.forward('reset')
 };

@@ -139,8 +139,10 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // the first COLUMN this schema has added to a table that already existed, and
 // so the first that `CREATE TABLE IF NOT EXISTS` cannot add: see
 // SCHEMA_COLUMNS below. 7 SINCE 2026-09-22, for the thirteen `sts_risk_*`
-// tables of risk scoring (#62) — see their block in SCHEMA_OBJECTS.
-const SCHEMA_VERSION = 7;
+// tables of risk scoring (#62) — see their block in SCHEMA_OBJECTS. 8 SINCE
+// 2026-09-23, for `sts_risk_terms_acceptances`, the record of who accepted
+// which dataset provider's terms (the second licence review on #62).
+const SCHEMA_VERSION = 8;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -753,6 +755,29 @@ const SCHEMA_OBJECTS = [
   '  feedback        text  NOT NULL DEFAULT \'\',' +
   '  updated_at      bigint NOT NULL,' +
   '  PRIMARY KEY (realm, subject))' },
+  // WHO ACCEPTED WHICH PROVIDER'S TERMS (#62, schema version 8, 2026-09-23 —
+  // the second licence review). One row per acceptance, never updated: the
+  // provider, a digest and the text of the terms as this build states them,
+  // who accepted them and through which door, the deployment, and the digest
+  // of the provider's own terms page when the install-time loader was asked
+  // to fetch it. An import of a provider's data is refused unless a row here
+  // matches that provider's CURRENT terms digest (`risk/risk_terms.ts`).
+  { name: 'sts_risk_terms_acceptances', statement:
+  'CREATE TABLE IF NOT EXISTS sts_risk_terms_acceptances (' +
+  '  id            bigserial NOT NULL,' +
+  '  provider      text      NOT NULL,' +
+  '  terms_digest  text      NOT NULL,' +
+  '  terms_text    text      NOT NULL,' +
+  '  accepted_by   text      NOT NULL,' +
+  '  accepted_via  text      NOT NULL,' +
+  '  deployment    text      NOT NULL DEFAULT \'\',' +
+  '  page_digest   text      NOT NULL DEFAULT \'\',' +
+  '  accepted_at   bigint    NOT NULL,' +
+  '  origin        text      NOT NULL DEFAULT \'\',' +
+  '  PRIMARY KEY (id))' },
+  { name: 'sts_risk_terms_acceptances_provider', statement:
+  'CREATE INDEX IF NOT EXISTS sts_risk_terms_acceptances_provider ON ' +
+  'sts_risk_terms_acceptances (provider, accepted_at)' },
   // What version of the above is on disk. One row, and nothing reads it yet —
   // it is here so that a future change has something to look at other than the
   // shape of the tables.
@@ -4438,6 +4463,46 @@ function create(options) {
         [Number(beforeMs), Number(limit) || 10000]
       ).then(function (r) {
         return r.rowCount || 0;
+      });
+    },
+
+    // ===== WHO ACCEPTED WHICH PROVIDER'S TERMS (#62, schema 8) ==============
+
+    // One acceptance, appended; never updated or deleted, because it is the
+    // record of who agreed to hold a provider's data on what terms.
+    riskRecordAcceptance: function (a) {
+      log.debug("Entering riskRecordAcceptance(). " + a.provider);
+      log.debug("Leaving riskRecordAcceptance().");
+      return pool.query(
+        'INSERT INTO sts_risk_terms_acceptances (provider, terms_digest, ' +
+        'terms_text, accepted_by, accepted_via, deployment, page_digest, ' +
+        'accepted_at, origin) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ' +
+        'RETURNING id',
+        [a.provider, a.termsDigest, a.termsText, a.acceptedBy, a.acceptedVia,
+         a.deployment || '', a.pageDigest || '', Number(a.acceptedAt),
+         processId]
+      ).then(function (r) {
+        return r.rows[0] ? String(r.rows[0].id) : '';
+      });
+    },
+
+    // Every acceptance, newest first.
+    riskListAcceptances: function () {
+      log.debug("Entering riskListAcceptances().");
+      log.debug("Leaving riskListAcceptances().");
+      return pool.query(
+        'SELECT id, provider, terms_digest, terms_text, accepted_by, ' +
+        'accepted_via, deployment, page_digest, accepted_at FROM ' +
+        'sts_risk_terms_acceptances ORDER BY accepted_at DESC, id DESC'
+      ).then(function (r) {
+        return r.rows.map(function (row) {
+          return { id: String(row.id), provider: row.provider,
+                   termsDigest: row.terms_digest, termsText: row.terms_text,
+                   acceptedBy: row.accepted_by,
+                   acceptedVia: row.accepted_via,
+                   deployment: row.deployment, pageDigest: row.page_digest,
+                   acceptedAt: Number(row.accepted_at) || 0 };
+        });
       });
     },
 

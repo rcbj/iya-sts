@@ -591,6 +591,24 @@ CREATE TABLE IF NOT EXISTS sts_risk_subjects (
   updated_at      bigint NOT NULL,
   PRIMARY KEY (realm, subject));
 
+-- WHO ACCEPTED WHICH DATASET PROVIDER'S TERMS (#62, schema version 8,
+-- 2026-09-23): the audit trail the second licence review asked for. An import
+-- of a provider's data is refused without a row for its current terms.
+CREATE TABLE IF NOT EXISTS sts_risk_terms_acceptances (
+  id            bigserial NOT NULL,
+  provider      text      NOT NULL,
+  terms_digest  text      NOT NULL,
+  terms_text    text      NOT NULL,
+  accepted_by   text      NOT NULL,
+  accepted_via  text      NOT NULL,
+  deployment    text      NOT NULL DEFAULT '',
+  page_digest   text      NOT NULL DEFAULT '',
+  accepted_at   bigint    NOT NULL,
+  origin        text      NOT NULL DEFAULT '',
+  PRIMARY KEY (id));
+
+CREATE INDEX IF NOT EXISTS sts_risk_terms_acceptances_provider ON sts_risk_terms_acceptances (provider, accepted_at);
+
 CREATE TABLE IF NOT EXISTS sts_schema (
   version int PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now());
@@ -598,7 +616,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (7) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (8) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

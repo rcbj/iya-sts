@@ -124,6 +124,11 @@ with a link back that the Risk console page draws), IPinfo Lite (CC BY-SA
 under its own terms), the FIDO Metadata Service (FIDO Alliance terms), Pwned
 Passwords (HIBP's terms), MaxMind GeoLite2 (the GeoLite EULA, not yet
 supported) — and pulls it into its own database at install time with
-`risk/risk_install.ts`. The fixtures in `tests/` are synthetic: documentation
-address ranges and invented names in each provider's format.
+`risk/risk_install.ts`. **No provider's data is imported until somebody has
+accepted that provider's current terms, and each acceptance is recorded** —
+who, when, through which door, from which deployment, and the terms text —
+in the deployment's database and audit log (`risk/risk_terms.ts`). IPinfo
+data in particular must remain isolated in that database and must not be
+bundled with a software distribution. The fixtures in `tests/` are synthetic:
+documentation address ranges and invented names in each provider's format.
 `tests/no_third_party_datasets.js` fails if a provider's file is ever added.

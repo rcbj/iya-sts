@@ -22,6 +22,9 @@
 //      answered by BOTH, which is the `risk-dataset` change row at work;
 //   5. RULE 7: an unknown action is refused in the sentence the API's own
 //      tests parse, and a superseded version's rows can be deleted;
+//   5b. TERMS: every provider is listed with its terms; accepting FireHOL's
+//      through the API is recorded, GeoLite2's cannot be, and a FireHOL list
+//      then imports (the second licence review on #62);
 //   6. THE FAILURE HISTORY: a refused SCIM Basic password (the reserved
 //      password `invalid`, refused in every mode) is recorded for the door,
 //      under a digest of a name that matched nobody — and the typed name is
@@ -291,8 +294,8 @@ async function ruleSeven() {
         function () {
           assert.strictEqual(unknown.status, 400, unknown.text.slice(0, 300));
           assert.strictEqual(unknown.body.errors[0],
-                             'Unknown action "explode". The 4 are: import, ' +
-                             'activate, rollback, delete.');
+                             'Unknown action "explode". The 5 are: import, ' +
+                             'activate, rollback, delete, accept-terms.');
         });
   const deleted = await api("POST", "/admin-api/risk/delete", {
     dataset: DATASET, realm: REALM, version: "run-" + STAMP + "-b" });
@@ -302,6 +305,42 @@ async function ruleSeven() {
           assert.strictEqual(deleted.body.rows, 5, deleted.text);
         });
   log.debug("Leaving ruleSeven().");
+}
+
+async function theTermsAreAccepted() {
+  log.debug("Entering theTermsAreAccepted().");
+  log.info("=== 5b. a provider's terms are accepted, and recorded ===");
+  const view = await api("GET", "/admin-api/risk?realm=" + REALM);
+  const firehol = (view.body.providers || []).filter(function (p) {
+    return p.provider === "firehol";
+  })[0];
+  check("every provider is listed with its terms, their digest and whether " +
+        "they need accepting", function () {
+          assert.ok(firehol && firehol.termsDigest && firehol.needsAcceptance,
+                    JSON.stringify(firehol));
+        });
+  const accepted = await api("POST", "/admin-api/risk/accept-terms",
+                             { provider: "firehol" });
+  check("POST /admin-api/risk/accept-terms records an acceptance of " +
+        "FireHOL's terms", function () {
+          assert.strictEqual(accepted.status, 200, accepted.text.slice(0, 300));
+          assert.strictEqual(accepted.body.acceptance.provider, "firehol");
+          assert.ok(/management API/.test(accepted.body.acceptance.acceptedVia),
+                    accepted.text.slice(0, 300));
+        });
+  const nothing = await api("POST", "/admin-api/risk/accept-terms",
+                            { provider: "maxmind-geolite2" });
+  check("GeoLite2's terms cannot be accepted: it is not supported",
+        function () {
+          assert.strictEqual(nothing.status, 400, nothing.text.slice(0, 300));
+        });
+  const loaded = await api("POST", "/admin-api/risk/import", {
+    dataset: "iplist.reputation", format: "ip-list",
+    content: listOf(40), version: "run-" + STAMP + "-rep" });
+  check("and a FireHOL-provider list then imports", function () {
+    assert.strictEqual(loaded.status, 200, loaded.text.slice(0, 400));
+  });
+  log.debug("Leaving theTermsAreAccepted().");
 }
 
 async function theFailureHistory() {
@@ -378,6 +417,7 @@ async function main() {
   await aVersionIsVerified();
   await aSecondVersionThenRollback();
   await ruleSeven();
+  await theTermsAreAccepted();
   await theFailureHistory();
   await signInsAreAssessed(cookie);
   log.info("sts_admin_risk: " + checks + " check(s) passed.");

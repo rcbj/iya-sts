@@ -9498,6 +9498,17 @@ const CODES = [
       'dataset lookup failed part-way). The sign-in stands; only its ' +
       'assessment is missing.',
     spec: '' },
+  { code: 'STS-RISK-0014',
+    summary: 'A dataset import was refused because nobody has accepted its ' +
+      'provider\'s current terms (or the terms changed since they were ' +
+      'accepted), or an acceptance was asked for a provider with none to ' +
+      'accept.',
+    spec: '' },
+  { code: 'STS-RISK-0015',
+    summary: 'The install-time loader fetched a provider\'s terms page ' +
+      '(--check-terms) and it differs from the page seen at the last ' +
+      'acceptance: read it before relying on the acceptance.',
+    spec: '' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

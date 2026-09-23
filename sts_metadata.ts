@@ -6178,8 +6178,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'with ?address=, and a page of the realm\'s refused passwords.' },
   { path: '/admin-api/risk/:action', group: 'Management API',
     name: 'Risk actions', specs: ['openapi'],
-    what: 'NON-SPEC (#62). import, activate, rollback and delete: the ' +
-          'console\'s four forms.' },
+    what: 'NON-SPEC (#62). import, activate, rollback, delete and ' +
+          'accept-terms: the console\'s five forms.' },
   { path: '/admin-api/vc-status', group: 'Management API',
     name: 'Credential status', specs: ['token-status-list', 'openapi'],
     what: 'NON-SPEC. GET /admin/vc-status over JSON.' },

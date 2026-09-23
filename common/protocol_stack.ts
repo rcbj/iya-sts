@@ -829,6 +829,7 @@ class ProtocolStack {
     // Nothing loads the three libraries before this line: `persistence.js`
     // and `credentials.ts` reach them lazily, at run time.
     this.build('risk/risk_store', require('../risk/risk_store'), 'RiskStore');
+    this.build('risk/risk_terms', require('../risk/risk_terms'), 'RiskTerms');
     this.build('risk/risk_datasets', require('../risk/risk_datasets'),
                'RiskDatasets');
     this.build('risk/risk_failures', require('../risk/risk_failures'),

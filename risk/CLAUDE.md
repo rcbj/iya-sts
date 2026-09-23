@@ -12,6 +12,7 @@ what is not here yet.
 | `risk_failures.ts` | Every refused password, attributed to a person or a name's digest and a network. |
 | `risk_model.ts` | **The Freeman et al. score, ported** from das-group's notebook (MIT; the notice is at its head and in `LICENSE.md`). Pure: it reads counts and answers a number. |
 | `risk_engine.ts` | **Assessing one sign-in**: enrichment, the device, the history read before it is moved, the model, the evaluators, the level, and every row it writes. Observe only. |
+| `risk_terms.ts` | **Whose data, on what terms, and who accepted them**: the provider table, each provider's credit as its licence asks (`attributionOf()`), and the recorded acceptance without which no provider's data is imported. |
 | `risk_install.ts` | **The install-time loader**: an operator's CLI, not part of the running service, that pulls each dataset into the database under the provider terms the operator accepts by name. |
 
 `admin-ui/risk_admin.ts` is Monitoring → Risk; `/admin-api/risk` and
@@ -87,6 +88,53 @@ table of the addresses the service dials has no new row, and P5's in-service
 fetching may not be needed at all. It imports the service's datasets and the
 default realm's lists; another realm's list goes through the console or the
 API, where the realm is known to exist.
+
+## AN ACCEPTANCE IS RECORDED, AND AN IMPORT NEEDS ONE (2026-09-23)
+
+The second licence review on #62 approved the plan on four conditions, and
+this is the first of them: **operator accountability for third-party terms**.
+Until it, only the install-time loader asked, and it recorded nothing; the
+console, the API and the dataset directory imported a provider's data with
+nobody having agreed to anything.
+
+* **No provider's data is imported without an acceptance of its CURRENT
+  terms** (`STS-RISK-0014`), from any door: the loader's `--accept-terms`,
+  the console's checkbox or its *I have read and accept these terms* button,
+  the API's `acceptTerms: true` or `POST /admin-api/risk/accept-terms`. The
+  dataset directory never accepts on anyone's behalf; it needs one recorded
+  already. The operator's own list needs none.
+* **An acceptance is a row in `sts_risk_terms_acceptances` (schema 8)**,
+  appended and never changed: the provider, the terms TEXT as this build
+  states it and its DIGEST, who (the console's administrator, the loader's
+  `--operator` or OS user, or "a management API client", whose request the
+  audit log names), the door, the deployment (host name), the provider's
+  terms-page digest when the loader fetched it, and when. Also an audit row
+  (`risk.terms.accept`), and a JSON line in the loader's `--terms-log` —
+  written where the loader runs, never in the source tree. **Acceptances are
+  not personal data about the people who sign in**, so they go to the
+  database whenever there is one, sealing or not.
+* **Terms that change must be accepted again.** The acceptance is of the
+  digest: a build that restates a provider's terms stops that provider's
+  imports until somebody accepts the new text, and the page says *the terms
+  changed since they were accepted*. The loader's `--check-terms` fetches the
+  provider's own terms page and warns (`STS-RISK-0015`) when it differs from
+  the page seen at the last acceptance, which is how a change on the
+  PROVIDER's side is noticed.
+* **A credit is what CC BY 4.0 section 3(a) asks**: the attribution linked to
+  the source, the licence named and linked, and that the data was imported
+  and reformatted here (`attributionOf()`). Every lookup and every assessment
+  carries its providers' credits, and Monitoring → Risk draws a *Data
+  credits* block under everything it shows — the failures' networks
+  included — for every provider an active dataset holds.
+* **The review's other conditions**: DB-IP's attribution on every output (the
+  credits block); IPinfo documented in the operator-facing README as data that
+  must stay in the deployment's database and never be bundled with a
+  software distribution, with DB-IP the documented default; and the
+  fingerprinting opt-out, which binds P6 — off by default, per realm, a
+  console and API switch, and its own scripted-page argument. The README's
+  *What is kept about the people who sign in* is the privacy statement a
+  deployment builds its own notice from; the lawful basis is the
+  deployment's.
 
 ## THE DATA IS IN THE DATABASE, AND THAT IS A POSTGRES GUARANTEE
 

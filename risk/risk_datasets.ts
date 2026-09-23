@@ -16,7 +16,7 @@
 //      Monitoring → Risk or `/admin-api/risk`, or dropped in
 //      `risk.datasetsDirectory` with a manifest — and is imported before any
 //      lookup reads it. This file opens no connection to any provider, and
-//      no dataset is ever shipped with iya-sts (PROVIDERS, below).
+//      no dataset is ever shipped with iya-sts (`risk_terms.ts`).
 //   2. **A VERSION IS VERIFIED BEFORE IT IS ACTIVE.** The file's SHA-256 is
 //      checked against the one its manifest names; a version with more than
 //      `risk.datasetShrinkLimitPercent` fewer rows than the active one is
@@ -50,6 +50,7 @@ import errorCodes = require('../common/error_codes');
 import cacheRegistry = require('../common/cache_registry');
 import InstanceSlot = require('../common/instance_slot');
 import riskStore = require('./risk_store');
+import riskTerms = require('./risk_terms');
 
 const log = bunyan.createLogger({ name: 'sts-risk-datasets' });
 config.registerLogger(log);
@@ -97,82 +98,11 @@ const CATALOGUE: Record<string, Json> = {
           'a VPN concentrator.' }
 };
 
-// ---------------------------------------------------------------------------
-// WHO A DATASET COMES FROM, AND ON WHAT TERMS (2026-09-22, the independent
-// licence review on #62).
-//
-// **iya-sts DISTRIBUTES NO THIRD-PARTY DATASET.** Every dataset here is an
-// ADMINISTRATOR-SUPPLIED input: the operator obtains it under its provider's
-// terms and pulls it into the database at install time (`risk_install.ts`),
-// through the dataset directory, or by an upload. Nothing in this repository,
-// its images or its tests is a provider's data (`tests/
-// no_third_party_datasets.js` holds that), because several of these terms
-// bind whoever redistributes: IPinfo's ShareAlike, FireHOL's constituent
-// lists, FIDO's metadata terms, GeoLite2's EULA.
-//
-// `attribution` and `url` are DRAWN wherever a result is shown — on
-// Monitoring → Risk and in every lookup's `attributions` — because DB-IP's
-// licence requires a link back on every page that displays or uses its
-// results, and a sentence in a document is not that. `supported: false`
-// names a provider the plan uses later; nothing can be imported from it yet.
-// ---------------------------------------------------------------------------
-const PROVIDERS: Record<string, Json> = {
-  'dbip-lite': { title: 'DB-IP Lite', licence: 'CC-BY-4.0',
-    attribution: 'IP Geolocation by DB-IP', url: 'https://db-ip.com',
-    supported: true,
-    terms: 'CC BY 4.0. A web application must link back to DB-IP on the ' +
-           'pages that display or use its results; this service draws that ' +
-           'link wherever a result is shown.' },
-  'ipinfo-lite': { title: 'IPinfo Lite', licence: 'CC-BY-SA-4.0',
-    attribution: 'IP address data powered by IPinfo',
-    url: 'https://ipinfo.io', supported: true,
-    terms: 'CC BY-SA 4.0 — ShareAlike. Supported only as an ' +
-           'administrator-supplied dataset: nothing IPinfo-derived is ' +
-           'distributed with iya-sts, and a deployment that distributes its ' +
-           'own database must resolve ShareAlike first.' },
-  'tor-project': { title: 'Tor Project exit list',
-    licence: 'as published by the Tor Project',
-    attribution: 'Tor exit list from the Tor Project',
-    url: 'https://check.torproject.org/torbulkexitlist', supported: true,
-    terms: 'Published by the Tor Project; check the terms of the exact list ' +
-           'you download. Administrator-supplied, never shipped.' },
-  'firehol': { title: 'FireHOL blocklist-ipsets',
-    licence: 'per constituent list',
-    attribution: 'FireHOL blocklist-ipsets',
-    url: 'https://github.com/firehol/blocklist-ipsets', supported: true,
-    terms: 'An AGGREGATE: each constituent list (level 1 carries DShield, ' +
-           'Feodo, Fullbogons and Spamhaus DROP, among others) has terms of ' +
-           'its own, which the aggregate does not replace. ' +
-           'Administrator-supplied and used internally; iya-sts neither ' +
-           'ships nor redistributes it.' },
-  'operator': { title: 'The operator', licence: 'as supplied by the operator',
-    attribution: '', url: '', supported: true,
-    terms: 'The operator\'s own list, under whatever terms the operator ' +
-           'holds it.' },
-  'maxmind-geolite2': { title: 'MaxMind GeoLite2', licence: 'GeoLite EULA',
-    attribution: 'GeoLite2 data created by MaxMind',
-    url: 'https://www.maxmind.com', supported: false,
-    terms: 'Not supported until the EULA question on #62 is settled: it ' +
-           'requires deletion within 30 days of a newer release and forbids ' +
-           'redistribution. Never shipped.' },
-  'fido-mds3': { title: 'FIDO Metadata Service (MDS3)',
-    licence: 'FIDO Alliance metadata terms', attribution: '',
-    url: 'https://fidoalliance.org/metadata/', supported: false,
-    terms: 'Contractual terms, not open data: use is for enabling FIDO ' +
-           'authentication, the latest valid BLOB must be used and a ' +
-           'statement no longer in it deleted, and copying or ' +
-           'redistributing the metadata is restricted. Fetched by the ' +
-           'deployment (P5); never shipped, and tested with a synthetic ' +
-           'BLOB.' },
-  'hibp-pwned-passwords': { title: 'Pwned Passwords (Have I Been Pwned)',
-    licence: 'HIBP Pwned Passwords terms', attribution: '',
-    url: 'https://haveibeenpwned.com/Passwords', supported: false,
-    terms: 'Not CC BY 4.0 (that is HIBP\'s breach and paste data): the ' +
-           'Pwned Passwords API carries no licensing or attribution ' +
-           'requirement. The downloadable corpus\'s terms are checked ' +
-           'before use; the filter is built by the deployment from its own ' +
-           'download (P6), never shipped.' }
-};
+// WHO A DATASET COMES FROM, AND ON WHAT TERMS, is `risk_terms.ts`'s: the
+// provider table, the licence links a result is credited with, and the
+// recorded acceptance without which no provider's data is imported (the two
+// licence reviews on #62).
+const PROVIDERS = riskTerms.PROVIDERS;
 
 // ---------------------------------------------------------------------------
 // THE FORMATS A FILE MAY BE IN, and whose data each one normally carries.
@@ -513,6 +443,31 @@ class RiskDatasets {
             return PROVIDERS[id].supported;
           }).join(', ') + '.', o);
     }
+    // THE PROVIDER'S TERMS MUST BE ACCEPTED (the second licence review on
+    // #62). An import may carry the acceptance itself (`acceptTerms`, the
+    // console's checkbox and the API's field), recorded for its actor; a
+    // directory import may not, and needs one recorded already.
+    let acceptance = null;
+    if (riskTerms.needsAcceptance(providerId)) {
+      acceptance = await riskTerms.currentFor(providerId);
+      if (!acceptance && o.acceptTerms === true) {
+        const accepted = await riskTerms.accept({
+          provider: providerId, acceptedBy: String(o.actor || 'unnamed'),
+          via: String(o.source || 'upload') });
+        acceptance = accepted.ok ? accepted.acceptance : null;
+      }
+      if (!acceptance) {
+        log.debug("Leaving RiskDatasets.importVersion(). Terms.");
+        return this.refused('STS-RISK-0014', 'The terms of ' +
+          provider.title + ' have not been accepted' +
+          ((await riskTerms.status()).providers.some(function (p: Json) {
+            return p.provider === providerId && p.changed;
+          }) ? ' since they changed' : '') + '. ' + provider.terms +
+          ' Accept them on Monitoring → Risk, through POST ' +
+          '/admin-api/risk/accept-terms, or with the install-time ' +
+          'loader\'s --accept-terms ' + providerId + '.', o);
+      }
+    }
     const sha256 = o.path
       ? await stsCrypto.sha256OfFile(o.path, 0)
       : stsCrypto.truncatedSha256Hex(o.content, 64);
@@ -531,7 +486,10 @@ class RiskDatasets {
       source: String(o.source || 'upload'),
       sourceUri: String(o.sourceUri || ''),
       sha256: sha256, byteCount: byteCount,
-      parameters: { attributionUrl: provider.url },
+      parameters: { attributionUrl: provider.url,
+                    termsAcceptance: acceptance ? String(acceptance.id) : '',
+                    termsDigest: acceptance
+                      ? String(acceptance.termsDigest) : '' },
       verification: o.sha256 ? 'checksum' : 'none',
       publishedAt: Number(o.publishedAt) || fetchedAt,
       nextUpdateAt: 0, fetchedAt: fetchedAt
@@ -948,11 +906,11 @@ class RiskDatasets {
     Object.keys(out.datasets).forEach(function (id: string): void {
       const active = actives.get((CATALOGUE[id].perRealm ? realm : '') +
                                  '\u0000' + id);
-      if (active && active.attribution && !seen.has(active.attribution)) {
-        seen.add(active.attribution);
-        out.attributions.push({ provider: active.provider,
-                                text: active.attribution,
-                                url: active.attributionUrl });
+      const credit = active ? riskTerms.attributionOf(active.provider)
+                            : null;
+      if (credit && !seen.has(credit.provider)) {
+        seen.add(credit.provider);
+        out.attributions.push(credit);
       }
     });
     if (this.lookups.size >= MAX_CACHED_LOOKUPS) {
@@ -978,6 +936,16 @@ class RiskDatasets {
     const actives = await this.activeVersions();
     const at = now();
     const rows = [];
+    const terms = await riskTerms.status();
+    const attributions: Json[] = [];
+    actives.forEach(function (active: Json): void {
+      const credit = riskTerms.attributionOf(active.provider);
+      if (credit && !attributions.some(function (c: Json): boolean {
+        return c.provider === credit.provider;
+      })) {
+        attributions.push(credit);
+      }
+    });
     for (const id of Object.keys(CATALOGUE)) {
       const entry = CATALOGUE[id];
       const inRealm = entry.perRealm ? realm : '';
@@ -1004,9 +972,12 @@ class RiskDatasets {
              formats: Object.keys(FORMATS).map(function (id: string): Json {
                return Object.assign({ format: id }, FORMATS[id]);
              }),
-             providers: Object.keys(PROVIDERS).map(function (id: string): Json {
-               return Object.assign({ provider: id }, PROVIDERS[id]);
-             }),
+             providers: terms.providers,
+             acceptances: terms.acceptances,
+             // Every provider whose data an ACTIVE dataset holds, credited
+             // as its licence asks: the page draws these under everything
+             // it shows, and the API returns them with every view.
+             attributions: attributions,
              redistribution: 'iya-sts distributes no third-party dataset. ' +
                'Every dataset here was supplied by this deployment\'s ' +
                'administrator under its provider\'s terms.',

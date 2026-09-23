@@ -94,6 +94,8 @@ async function run(t) {
 
   // --- D. the evaluators ----------------------------------------------------
   config.setOverride('risk.datasetShrinkLimitPercent', 100);
+  await require('../risk/risk_terms').accept({ provider: 'tor-project',
+    acceptedBy: 'a test', via: 'upload' });
   await riskDatasets.importVersion({ dataset: 'iplist.tor-exit',
     format: 'ip-list', content: '203.0.113.66\n', version: 'tor-test',
     source: 'upload' });

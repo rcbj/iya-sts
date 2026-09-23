@@ -7,7 +7,9 @@
 // 2026-09-22, the independent licence review's recommendation).
 //
 //   node risk/risk_install.js --manifest datasets.json \
-//        --accept-terms dbip-lite,tor-project [--dry-run]
+//        --accept-terms dbip-lite,tor-project [--operator "Jo Bloggs"] \
+//        [--terms-log ./risk-terms-acceptance.log] [--check-terms] \
+//        [--dry-run]
 //
 // with `STS_DATABASE_URL` naming the deployment's database. It is an
 // OPERATOR'S TOOL, run by whoever installs a deployment — from a shell, an
@@ -21,6 +23,16 @@
 //     provider not named in `--accept-terms` is refused, with that provider's
 //     terms printed — IPinfo's ShareAlike, FireHOL's constituent lists, the
 //     Tor Project's list — so nobody pulls data they have not agreed to hold.
+//   * **AND THE ACCEPTANCE IS RECORDED** (the second licence review on #62):
+//     each provider named is accepted in `--operator`'s name (the OS user
+//     and host by default) through `risk_terms.ts` — a row in
+//     `sts_risk_terms_acceptances` with the terms text and its digest — and
+//     appended as a JSON line to `--terms-log` on the machine that ran this,
+//     BEFORE anything is imported. `--check-terms` also fetches each named
+//     provider's own terms page and records its digest, and warns
+//     (STS-RISK-0015) when it differs from the page seen at the previous
+//     acceptance: terms that change after an installation are then noticed
+//     at the next one.
 //   * **THE RUNNING SERVICE STILL DIALS NOBODY.** The downloads happen here,
 //     in this process, before or beside the service; the service reads the
 //     rows this writes. The root `CLAUDE.md`'s table of the addresses the
@@ -49,6 +61,8 @@ import zlib = require('zlib');
 import errorCodes = require('../common/error_codes');
 import riskStore = require('./risk_store');
 import riskDatasets = require('./risk_datasets');
+import riskTerms = require('./risk_terms');
+import stsCrypto = require('../common/crypto');
 
 const log = bunyan.createLogger({ name: 'sts-risk-install',
                                   level: process.env.STS_LOG_LEVEL || 'info' });
@@ -64,13 +78,25 @@ interface Options {
   manifest: string;
   accepted: string[];
   dryRun: boolean;
+  operator?: string;
+  termsLog?: string;
+  checkTerms?: boolean;
 }
+
+// Where the acceptance log goes when --terms-log names nothing: the
+// directory the loader was run from, which is the installation's, never the
+// source tree's (an image's is read-only, and a log is not source).
+const DEFAULT_TERMS_LOG = 'risk-terms-acceptance.log';
+// The most of a terms page read for its digest.
+const MAX_TERMS_PAGE_BYTES = 2 * 1024 * 1024;
 
 class RiskInstall {
   // The command line, or null with the reason printed.
   static optionsOf(argv: string[]): Options | null {
     log.debug("Entering RiskInstall.optionsOf().");
-    const out: Options = { manifest: '', accepted: [], dryRun: false };
+    const out: Options = { manifest: '', accepted: [], dryRun: false,
+                           operator: '', termsLog: DEFAULT_TERMS_LOG,
+                           checkTerms: false };
     for (let i = 0; i < argv.length; i++) {
       const arg = argv[i];
       if (arg === '--manifest') {
@@ -81,6 +107,12 @@ class RiskInstall {
         }).filter(Boolean);
       } else if (arg === '--dry-run') {
         out.dryRun = true;
+      } else if (arg === '--operator') {
+        out.operator = String(argv[++i] || '');
+      } else if (arg === '--terms-log') {
+        out.termsLog = String(argv[++i] || '');
+      } else if (arg === '--check-terms') {
+        out.checkTerms = true;
       } else {
         process.stderr.write('risk_install: unknown argument ' + arg + '\n');
         log.debug("Leaving RiskInstall.optionsOf(). Unknown argument.");
@@ -90,7 +122,8 @@ class RiskInstall {
     if (!out.manifest) {
       process.stderr.write('usage: node risk/risk_install.js --manifest ' +
                            '<datasets.json> --accept-terms <provider,...> ' +
-                           '[--dry-run]\n');
+                           '[--operator <name>] [--terms-log <file>] ' +
+                           '[--check-terms] [--dry-run]\n');
       log.debug("Leaving RiskInstall.optionsOf(). No manifest.");
       return null;
     }
@@ -162,6 +195,123 @@ class RiskInstall {
     });
   }
 
+  // A page's text over HTTPS, for its digest: one redirect at most, bounded.
+  static fetchText(url: string, hops?: number): Promise<string> {
+    log.debug("Entering RiskInstall.fetchText(). " + url);
+    const left = hops === undefined ? 1 : hops;
+    log.debug("Leaving RiskInstall.fetchText().");
+    return new Promise(function (resolve, reject) {
+      if (!/^https:\/\//i.test(url)) {
+        reject(new Error('only https addresses are fetched, not ' + url));
+        return;
+      }
+      https.get(url, function (res) {
+        const status = res.statusCode || 0;
+        if (status >= 300 && status < 400 && res.headers.location &&
+            left > 0) {
+          res.resume();
+          RiskInstall.fetchText(new URL(String(res.headers.location), url)
+            .toString(), left - 1).then(resolve, reject);
+          return;
+        }
+        if (status !== 200) {
+          res.resume();
+          reject(new Error(url + ' answered ' + status));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        let size = 0;
+        res.on('data', function (chunk: Buffer) {
+          size += chunk.length;
+          if (size <= MAX_TERMS_PAGE_BYTES) {
+            chunks.push(chunk);
+          }
+        });
+        res.on('end', function () {
+          resolve(Buffer.concat(chunks).toString('utf8'));
+        });
+        res.on('error', reject);
+      }).on('error', reject);
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ACCEPTANCES: each provider named in --accept-terms accepted in the
+  // operator's name, recorded through `risk_terms.ts` and appended to the
+  // terms log, before anything is imported. With --check-terms each
+  // provider's own terms page is fetched and its digest recorded beside the
+  // acceptance, with a warning when it differs from the last one seen.
+  // Answers how many could not be recorded.
+  // -------------------------------------------------------------------------
+  static async acceptNamed(options: Options): Promise<number> {
+    log.debug("Entering RiskInstall.acceptNamed().");
+    const operator = options.operator ||
+      (os.userInfo().username + '@' + os.hostname());
+    let failed = 0;
+    for (const providerId of options.accepted) {
+      if (!riskTerms.needsAcceptance(providerId)) {
+        continue;
+      }
+      const provider = riskTerms.PROVIDERS[providerId];
+      let pageDigest = '';
+      if (options.checkTerms && provider.termsUrl) {
+        try {
+          pageDigest = stsCrypto.truncatedSha256Hex(
+            await RiskInstall.fetchText(provider.termsUrl), 64);
+          const earlier = (await riskTerms.status()).acceptances
+            .filter(function (a: Json): boolean {
+              return a.provider === providerId && a.pageDigest;
+            })[0];
+          if (earlier && earlier.pageDigest !== pageDigest) {
+            process.stderr.write(errorCodes.tag('STS-RISK-0015') +
+              'risk_install: ' + provider.title + '\'s terms page (' +
+              provider.termsUrl + ') has changed since it was last ' +
+              'accepted (' + new Date(earlier.acceptedAt).toISOString() +
+              ' by ' + earlier.acceptedBy + '). Read it before relying on ' +
+              'this acceptance.\n');
+          }
+        } catch (e) {
+          process.stderr.write('risk_install: ' + provider.title + '\'s ' +
+            'terms page could not be fetched (' + ((e && e.message) || e) +
+            '); the acceptance is recorded without its digest.\n');
+          pageDigest = '';
+        }
+      }
+      if (options.dryRun) {
+        process.stdout.write('risk_install: would record ' + operator +
+                             '\'s acceptance of ' + provider.title +
+                             '\'s terms.\n');
+        continue;
+      }
+      const accepted = await riskTerms.accept({
+        provider: providerId, acceptedBy: operator,
+        via: 'the install-time loader', pageDigest: pageDigest });
+      if (!accepted.ok) {
+        failed += 1;
+        continue;
+      }
+      try {
+        fs.appendFileSync(options.termsLog || DEFAULT_TERMS_LOG,
+          JSON.stringify({
+            at: new Date(accepted.acceptance.acceptedAt).toISOString(),
+            provider: providerId, acceptedBy: operator,
+            deployment: accepted.acceptance.deployment,
+            termsDigest: accepted.acceptance.termsDigest,
+            pageDigest: pageDigest, terms: accepted.acceptance.termsText
+          }) + '\n');
+      } catch (e) {
+        process.stderr.write('risk_install: the terms log ' +
+          (options.termsLog || DEFAULT_TERMS_LOG) + ' could not be written (' +
+          ((e && e.message) || e) + '); the acceptance is recorded in the ' +
+          'database.\n');
+      }
+      process.stdout.write('risk_install: ' + operator + ' accepted the ' +
+                           'terms of ' + provider.title + '.\n');
+    }
+    log.debug("Leaving RiskInstall.acceptNamed(). " + failed + " failed.");
+    return failed;
+  }
+
   // -------------------------------------------------------------------------
   // THE RUN: each manifest entry checked against the accepted terms,
   // fetched or read, and imported into the database. Answers the number of
@@ -186,7 +336,7 @@ class RiskInstall {
       riskStore.setDriver(driver, 'postgres');
     }
     const work = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-risk-install-'));
-    let failed = 0;
+    let failed = await RiskInstall.acceptNamed(options);
     try {
       for (const entry of entries) {
         const failedOne = await RiskInstall.one(entry, options, work);

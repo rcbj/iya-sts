@@ -8268,6 +8268,86 @@ whole point is the opposite — this process holds the CA private keys and a
 browser must never — so every choice is a form field, every computation is on
 the server, and `script-src 'none'` is untouched.
 
+## Risk scoring — Monitoring → Risk (#62)
+
+Every sign-in that starts or re-authenticates a session is scored: a port of
+Freeman et al.'s statistical model (das-group's `rba-algorithm`, MIT) against
+the person's own sign-in history and the realm's, plus evaluators — the
+address on a Tor, reputation or operator list, an automated client, a TLS
+client (JA4) never seen, recent refused passwords. The level is CAEP's LOW,
+MEDIUM or HIGH. **Today it observes and records only**; deciding at sign-in
+(a second factor at MEDIUM, refusal at HIGH, in product mode) is the next
+phase. Every assessment is listed on Monitoring → Risk and returned by
+`GET /admin-api/risk`.
+
+### Third-party datasets: supplied by you, never shipped
+
+**iya-sts distributes no third-party dataset** — not in the repository, not in
+its images, not in its tests (the fixtures are synthetic, and
+`tests/no_third_party_datasets.js` fails if a provider's file is added). The
+geolocation, network and IP-list data a score reads is **supplied by the
+deployment**, under each provider's own terms, and pulled into the
+deployment's own database at install time:
+
+```bash
+STS_DATABASE_URL=postgres://… node risk/risk_install.js \
+  --manifest datasets.json \
+  --accept-terms dbip-lite,tor-project \
+  --operator "Jo Operator" \
+  --terms-log ./risk-terms-acceptance.log \
+  --check-terms
+```
+
+`datasets.json` lists each dataset (`dataset`, `format`, and a `url` or a
+`file`; optionally `version`, `publishedAt`, `sha256`). Run inside the image,
+the loader downloads over HTTPS only, checks the SHA-256 where you name one,
+refuses a version much smaller than the active one, and activates each that
+loads. The running service fetches nothing itself. Monitoring → Risk and
+`POST /admin-api/risk/import` take a list you can paste, and
+`risk.datasetsDirectory` takes files an operator pipeline drops there.
+
+**No provider's data is imported until somebody has accepted that provider's
+current terms, and the acceptance is recorded**: who, through which door,
+from which deployment, when, and the terms text itself, in the database
+(`sts_risk_terms_acceptances`) and on the audit log; the loader also appends a
+JSON line to `--terms-log`. Terms can be accepted on Monitoring → Risk, with
+`POST /admin-api/risk/accept-terms`, or by the loader's `--accept-terms`. If a
+later build restates a provider's terms, the earlier acceptance no longer
+covers them and imports of that provider stop until somebody accepts again;
+`--check-terms` also fetches each provider's own terms page and warns when it
+has changed since the last acceptance.
+
+| Provider | Terms | What that means for you |
+|---|---|---|
+| **DB-IP Lite** (city, country, ASN) | CC BY 4.0 | **The recommended default.** Attribution with a link back is required on pages that show its results; this service draws it — the source linked, the licence named and linked, and that the data was reformatted here — wherever a result appears. |
+| **IPinfo Lite** (country, ASN) | CC BY-SA 4.0 | **IPinfo data must remain isolated in your database; do not bundle it with a software distribution.** ShareAlike binds whoever distributes the data. DB-IP Lite covers the same country and ASN data without ShareAlike. |
+| **Tor Project exit list** | as published | Check the terms of the exact list you download. |
+| **FireHOL lists** | per constituent list | An aggregate: each list inside it (DShield, Feodo, Fullbogons, Spamhaus DROP, …) keeps its own terms. Use internally; never redistribute. |
+| **MaxMind GeoLite2** | GeoLite EULA | **Not supported.** An import naming it is refused. |
+| **FIDO MDS3** | FIDO Alliance metadata terms | Planned. Contractual metadata: the latest valid BLOB only, statements no longer in it deleted, no redistribution. |
+| **Pwned Passwords** | HIBP's Pwned Passwords terms (not CC BY) | Planned. The filter is built by the deployment from its own download, after the corpus terms are checked. |
+
+### What is kept about the people who sign in
+
+Risk scoring builds a profile of how each person signs in, and that is
+personal data. What is kept, and for how long:
+
+| Kept | Where | For how long |
+|---|---|---|
+| Each assessment: the address **sealed** under the key-encryption key and as a /24 or /48 network, country, city, network (ASN), browser family, OS, device type, a fingerprint of the User-Agent (never the header), the TLS client fingerprint, which credential answered, the score and the signals | `sts_risk_assessments` | `risk.assessmentRetentionDays` (90) |
+| How often each person has used each network, address digest and device | `sts_risk_feature_counts` | `risk.historyRetentionDays` (180) since last use |
+| Each refused password: the person, or a keyed digest of a name that matched nobody — never the name as typed — and the network | `sts_risk_failures` | `risk.failureRetentionDays` (30) |
+
+All of it goes to the database **only where the key-encryption key can seal
+it** (product mode requires one); otherwise it is held in the process and gone
+at the next restart. `risk.assessSignIns` and `risk.recordFailures` turn the
+two halves off. **The lawful basis for this processing, the notice given to
+the people who sign in, and the retention your policy requires are the
+deployment's to decide and document** — the settings above are how you carry
+them out. Browser fingerprinting is not built; when it is, it will be off by
+default, per realm, switchable in the console and the API, and a scripted page
+that argues its own case.
+
 ## Versioning
 
 The version is **M.N.O**:
@@ -8532,4 +8612,9 @@ almost nothing, which is the same argument `sts_dpop.js` makes over there.
 
 ## Licence
 
-MIT — see [LICENSE.md](LICENSE.md).
+MIT — see [LICENSE.md](LICENSE.md). It also carries the notices for the code
+this repository takes from others under their own terms: FoxIO's BSD-3
+licence for JA4 (and only JA4 — none of JA4+ is implemented), das-group's MIT
+licence for the ported risk model, and the OASIS XACML conformance suite
+under Apache-2.0. **No third-party dataset is distributed**; see *Risk
+scoring*, above.

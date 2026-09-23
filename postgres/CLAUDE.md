@@ -24,7 +24,8 @@ So there are two roles now. `sts` owns the tables — seven on 2026-09-13,
 when `sts_used_assertions` joined them, and fifteen (counting `sts_schema`)
 since the cluster's tables arrived with schema version 5 (#46), and
 twenty-eight since the thirteen `sts_risk_*` tables of risk scoring arrived with
-version 7 (#62, 2026-09-22); `sts_app` holds
+version 7 (#62, 2026-09-22), and twenty-nine since `sts_risk_terms_acceptances`
+arrived with version 8 (2026-09-23); `sts_app` holds
 `SELECT`, `INSERT`, `UPDATE` and `DELETE` on them and `USAGE` — not `CREATE` —
 on the schema, and is what `STS_DATABASE_URL` dials. `schema.sql` creates both
 halves and argues every line of it; do not argue it again here.

@@ -49,6 +49,7 @@ const riskDatasets = require('../risk/risk_datasets');
 const riskFailures = require('../risk/risk_failures');
 const riskAdmin = require('../admin-ui/risk_admin');
 const riskInstall = require('../risk/risk_install');
+const riskTerms = require('../risk/risk_terms');
 
 const log = require('bunyan').createLogger({ name: 'risk_datasets',
   level: process.env.LOG_LEVEL || 'info' });
@@ -169,13 +170,16 @@ async function partB(t) {
           'answers', JSON.stringify(resolver.geo));
   t.check(one.attributions.some(function (a) {
     return a.provider === 'dbip-lite' && a.url === 'https://db-ip.com' &&
-      /DB-IP/.test(a.text);
+      /DB-IP/.test(a.text) && a.licence === 'CC BY 4.0' &&
+      a.licenceUrl === 'https://creativecommons.org/licenses/by/4.0/' &&
+      /reformatted/.test(a.modified);
   }) && resolver.attributions.some(function (a) {
     return a.provider === 'ipinfo-lite';
   }),
-          'B10. every lookup carries the attribution, with the link, of each ' +
-          'provider whose data answered — DB-IP\'s licence asks for it on ' +
-          'every page that shows a result', JSON.stringify(one.attributions));
+          'B10. every lookup carries the credit CC BY 4.0 asks of each ' +
+          'provider whose data answered: the attribution linked, the licence ' +
+          'named and linked, and that it was modified here',
+          JSON.stringify(one.attributions));
   log.debug("Leaving partB().");
 }
 
@@ -387,8 +391,8 @@ async function partI(t) {
   const unknown = await riskAdmin.riskAction({ action: 'explode',
                                                dataset: 'asn' }, 'a test');
   t.equal(unknown.errors && unknown.errors[0],
-          'Unknown action "explode". The 4 are: import, activate, rollback, ' +
-          'delete.',
+          'Unknown action "explode". The 5 are: import, activate, rollback, ' +
+          'delete, accept-terms.',
           'I1. an unknown action is refused in rule 7\'s sentence');
   const imported = await riskAdmin.riskAction({
     action: 'import', dataset: 'iplist.operator-allow', realm: 'acme',
@@ -474,6 +478,88 @@ async function partJ(t) {
   log.debug("Leaving partJ().");
 }
 
+// ---------------------------------------------------------------------------
+// K. THE TERMS (the second licence review on #62): no provider's data is
+// imported until somebody has accepted its CURRENT terms, the acceptance is
+// recorded with who, how and the terms text, an import may carry its own
+// acceptance, terms that changed must be accepted again, and the
+// install-time loader writes its acceptances to the store and a log file.
+// Run first, before anything has been accepted.
+// ---------------------------------------------------------------------------
+async function partK(t) {
+  log.debug("Entering partK().");
+  const refused = await riskDatasets.importVersion({ dataset: 'asn',
+    format: 'dbip-asn-csv', content: DBIP_ASN, source: 'upload' });
+  t.check(!refused.ok && /have not been accepted/.test(refused.errors[0]),
+          'K1. a DB-IP import with nobody having accepted DB-IP\'s terms is ' +
+          'refused, and says how to accept them', JSON.stringify(refused));
+  const own = await riskDatasets.importVersion({
+    dataset: 'iplist.operator-deny', realm: 'acme', format: 'ip-list',
+    content: '192.0.2.250\n', version: 'own-1', source: 'upload' });
+  t.check(own.ok, 'K2. the operator\'s own list needs no acceptance',
+          JSON.stringify(own));
+  const carried = await riskDatasets.importVersion({ dataset: 'asn',
+    format: 'dbip-asn-csv', content: DBIP_ASN, version: 'asn-0',
+    source: 'upload', acceptTerms: true, actor: 'an-administrator' });
+  const status = await riskTerms.status();
+  const dbip = status.providers.filter(function (p) {
+    return p.provider === 'dbip-lite';
+  })[0];
+  t.check(carried.ok && dbip.accepted &&
+          dbip.accepted.acceptedBy === 'an-administrator' &&
+          dbip.accepted.acceptedVia === 'upload' &&
+          dbip.accepted.termsDigest === riskTerms.termsOf('dbip-lite').digest &&
+          /CC BY 4\.0/.test(dbip.accepted.termsText),
+          'K3. an import may carry its own acceptance, which is recorded ' +
+          'with who, through which door, the terms text and its digest',
+          JSON.stringify(dbip.accepted));
+  // TERMS THAT CHANGED: an acceptance of an older text covers nothing.
+  await riskStore.recordAcceptance({ provider: 'firehol',
+    termsDigest: 'an-older-statement', termsText: 'older terms',
+    acceptedBy: 'someone', acceptedVia: 'upload', deployment: 'x',
+    pageDigest: '', acceptedAt: Date.now() - 1000 });
+  const changed = await riskDatasets.importVersion({
+    dataset: 'iplist.reputation', format: 'ip-list', content: '192.0.2.9\n',
+    source: 'upload' });
+  t.check(!changed.ok && /since they changed/.test(changed.errors[0]),
+          'K4. terms accepted before they changed must be accepted again',
+          JSON.stringify(changed.errors));
+  const none = await riskTerms.accept({ provider: 'operator',
+                                        acceptedBy: 'x', via: 'y' });
+  const geolite = await riskTerms.accept({ provider: 'maxmind-geolite2',
+                                           acceptedBy: 'x', via: 'y' });
+  t.check(!none.ok && !geolite.ok,
+          'K5. there is nothing to accept for the operator\'s own list, and ' +
+          'GeoLite2 cannot be accepted: it is not supported',
+          JSON.stringify([none.errors, geolite.errors]));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'risk-terms-'));
+  const logFile = path.join(dir, 'acceptances.log');
+  const failed = await riskInstall.RiskInstall.acceptNamed({
+    manifest: '', accepted: ['tor-project', 'firehol', 'operator'],
+    dryRun: false, operator: 'Jo Operator', termsLog: logFile });
+  const lines = fs.readFileSync(logFile, 'utf8').trim().split('\n')
+    .map(function (l) {
+      return JSON.parse(l);
+    });
+  fs.rmSync(dir, { recursive: true, force: true });
+  const after = await riskTerms.status();
+  t.check(failed === 0 && lines.length === 2 &&
+          lines.every(function (l) {
+            return l.acceptedBy === 'Jo Operator' && l.termsDigest &&
+              l.terms && l.deployment;
+          }) && after.providers.filter(function (p) {
+            return p.provider === 'firehol';
+          })[0].accepted.acceptedVia === 'the install-time loader',
+          'K6. the install-time loader records each named provider\'s ' +
+          'acceptance in the operator\'s name, in the store and as a line ' +
+          'of its terms log with the terms text — and the operator\'s own ' +
+          'list, having no terms, is not one of them', JSON.stringify(lines));
+  // What every later part imports.
+  await riskTerms.accept({ provider: 'ipinfo-lite', acceptedBy: 'a test',
+                           via: 'upload' });
+  log.debug("Leaving partK().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   // A realm of its own, for the per-realm lists (F, I): an operator list for
@@ -482,6 +568,8 @@ async function run(t) {
     realms.create({ id: 'acme', name: 'risk datasets test' });
   }
   riskStore.reset();
+  riskDatasets.forget();
+  await partK(t);
   riskDatasets.forget();
   await partA(t);
   await partB(t);

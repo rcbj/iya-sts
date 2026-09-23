@@ -1940,7 +1940,10 @@ class AdminApi {
                          'has more than risk.datasetShrinkLimitPercent ' +
                          'fewer rows than the active version. A version ' +
                          'already recorded is not loaded again ' +
-                         '(`duplicate: true`). `activate: false` loads ' +
+                         '(`duplicate: true`). The provider\'s current ' +
+                         'terms must have been accepted (accept-terms, or ' +
+                         '`acceptTerms: true` here) unless the list is the ' +
+                         'operator\'s own. `activate: false` loads ' +
                          'without activating. A file of millions of rows ' +
                          'belongs in risk.datasetsDirectory instead.',
             requestBodyRequired: true,
@@ -1958,7 +1961,12 @@ class AdminApi {
                 provider: { type: 'string' },
                 licence: { type: 'string' },
                 attribution: { type: 'string' },
-                activate: { type: 'boolean' }
+                activate: { type: 'boolean' },
+                acceptTerms: { type: 'boolean',
+                  description: 'Accept the provider\'s current terms as ' +
+                               'part of this import. Without it, an import ' +
+                               'of a provider whose terms nobody has ' +
+                               'accepted is refused.' }
               },
               required: ['dataset', 'format', 'content'],
               examples: [{ dataset: 'iplist.tor-exit', format: 'ip-list',
@@ -1991,6 +1999,23 @@ class AdminApi {
               examples: [{ dataset: 'asn' }],
               additionalProperties: false },
             responseDescription: 'The version now active.' },
+          { action: 'accept-terms', operationId: 'acceptRiskProviderTerms',
+            summary: 'Accept a dataset provider\'s current terms',
+            description: 'Records that the terms of `provider`, as this ' +
+                         'build states them (GET /admin-api/risk lists ' +
+                         'every provider\'s terms and digest), are ' +
+                         'accepted: through the management API, from this ' +
+                         'deployment, now. No provider\'s data is imported ' +
+                         'without an acceptance of its current terms; a ' +
+                         'change to the terms needs a new one. The audit ' +
+                         'row for the request names the caller.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { provider: { type: 'string' } },
+              required: ['provider'],
+              examples: [{ provider: 'dbip-lite' }],
+              additionalProperties: false },
+            responseDescription: 'The acceptance recorded.' },
           { action: 'delete', operationId: 'deleteRiskDatasetVersion',
             summary: 'Delete the rows of a version that is not active',
             description: 'Its record stays, as `deleted`.',
