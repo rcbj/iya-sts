@@ -770,6 +770,21 @@ function matchesFederatedNames() {
   return !isProduct();
 }
 
+// May a federation partner's SAML LogoutRequest or LogoutResponse arrive
+// UNSIGNED (#167)? saml-profiles-2.0-os section 4.4.4.1 says a logout message
+// on the HTTP-Redirect or HTTP-POST binding MUST be signed, and a signature
+// that is present is verified in every mode. What development may relax is
+// ABSENCE, and only on a relationship whose `fedRequireSignedLogout` is set
+// off: a partner under test that cannot sign yet is otherwise impossible to
+// point at this service. Product refuses the unsigned message whatever the
+// relationship says — an unsigned LogoutRequest is anybody signing anybody
+// out — and refuses the setting too (STS-FED-0132).
+function acceptsUnsignedFederatedLogout() {
+  log.debug("Entering acceptsUnsignedFederatedLogout().");
+  log.debug("Leaving acceptsUnsignedFederatedLogout().");
+  return !isProduct();
+}
+
 // May a request object be UNSIGNED — `alg: none` — at the authorization
 // endpoint (2026-09-13)? RFC 9101 section 4 says a request object is signed, or
 // signed and then encrypted, and nothing else; OpenID Connect Core section 6.1
@@ -1117,6 +1132,20 @@ const REQUIREMENTS = [
              'the console-administrator refusal.',
     where: 'federation/federation_sp.ts, federation/federation_links.ts, ' +
            'federation/federation.js' },
+  { id: 'federated-logout-signature',
+    what: 'A federation partner\'s SAML sign-out is signed by that partner',
+    development: 'A relationship whose fedRequireSignedLogout is set off ' +
+                 'accepts an UNSIGNED LogoutRequest or LogoutResponse from ' +
+                 'its partner. A signature that is present is verified ' +
+                 'against fedSigningCertificate exactly as in product, and ' +
+                 'the setting is on for every relationship unless somebody ' +
+                 'turns it off.',
+    product: 'Every SAML logout message from a partner must be signed and ' +
+             'verify against the relationship\'s certificate ' +
+             '(saml-profiles-2.0-os section 4.4.4.1): an unsigned one is ' +
+             'refused (STS-FED-0115) whatever fedRequireSignedLogout says, ' +
+             'and turning the setting off is refused (STS-FED-0132).',
+    where: 'federation/federation_slo.ts, federation/federation.js' },
   { id: 'passkey-first-use',
     what: 'The sign-in screen does not enrol a security key for somebody ' +
           'who has not proved who they are',
@@ -2069,6 +2098,7 @@ module.exports = {
     acceptsPasswordAloneFromSecondFactorAccounts,
   issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,
   matchesFederatedNames: matchesFederatedNames,
+  acceptsUnsignedFederatedLogout: acceptsUnsignedFederatedLogout,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
   acceptsLooseRequestUris: acceptsLooseRequestUris,
   acceptsUnsignedSamlRequests: acceptsUnsignedSamlRequests,

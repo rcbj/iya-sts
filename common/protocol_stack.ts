@@ -472,6 +472,19 @@ class ProtocolStack {
                'FederationSp');
     this.register(app, require('../federation/federation_sp'),
                   'federation/federation_sp');
+    // 10c-ii. A PARTNER'S SIGN-OUT (#167): /federation/slo/{id} and the two
+    // OpenID Connect logout paths. After federation_sp, whose request-context
+    // store, partner-key verifier and page shell it uses, and after
+    // authn/authn, whose session it reads and ends. It requires
+    // `logout/logout.ts` LAZILY — that module is second to last and requires
+    // ldap_server.js, whose routes a require here would drag forward — so
+    // this is a require of libraries and one register() and moves no route.
+    require('../federation/federation_slo');
+    this.build('federation/federation_slo',
+               require('../federation/federation_slo'),
+               'FederationSlo');
+    this.register(app, require('../federation/federation_slo'),
+                  'federation/federation_slo');
     // A cache hit since `oauth2` above; kept so that the require order still
     // reads 11-14 in one place. Its routes were registered above.
     require('../oid4vc/vc_offers');

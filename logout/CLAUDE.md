@@ -58,6 +58,7 @@ termination is a call into that same module:
 | OIDC relying parties | `frontchannel_logout.js`, off the session | forgotten there, notified by iframe, and POSTed a Logout Token by `backchannel_logout.ts` |
 | WS-Federation realms | `wsfed.cleanupTargetsFor()` | forgotten, cleanup image |
 | SAML 2.0 service providers | `saml2_sso.logoutTargetsFor()` | forgotten, LogoutRequest link |
+| Federation partners (#167) | the session's `fedPartnerSession` | the partner's own sign-out, a link or form from `federation_slo.partnerLogoutFor()` — from `/logout` in the person's browser only |
 | Tokens | `admin_stats.js` | `stats.revoke()` — the ONE revocation set |
 | Authorization codes | `oauth2.outstandingCodesFor()` | `oauth2.dropCode()` |
 | Pre-authorized codes | `vc_offers.preAuthorizedCodes` | deleted there |
@@ -315,6 +316,31 @@ changed, because the wallet door goes through `startSession()` like every other
 door, and CAEP's `session-established` and `session-revoked` follow from that.
 
 ---
+
+## A FEDERATION PARTNER IS ONE ROW, AND ENDING A SESSION IS ONE MORE DOOR (#167)
+
+**`federation-partner` is the one family that is the party a session was
+signed in THROUGH** rather than a party it signed somebody in to. `endOrder`
+13, beside the federated lists and before the session whose
+`fedPartnerSession` it reads. Telling a partner is a browser going there, so
+the row is terminable only when `terminate()` is told there is a browser —
+`browser: true` and the request's `base`, which only `POST /logout` passes; on
+`/admin/logout`, `/admin/sessions` and the API it is listed with the reason and
+is part of the honest short-fall. What it builds lands in
+`result.partnerLogouts`, drawn by `federation_slo.renderPartnerLogouts()`.
+
+**A PARTNER ENDING A SESSION IS A NEW TRIGGER, AND IT COMES THROUGH HERE.**
+`endPartnerSession(session, { by, issuer, channel })` is a selective
+`terminate()` of exactly that session and the `oidc-rp`, `wsfed-rp` and
+`saml2-sp` rows riding on it — never the `federation-partner` row (it would
+bounce the partner's own sign-out back at it) and never the person's other
+sessions (rcbj's decision 4 on #167). `federation/federation_slo.ts` requires
+this module LAZILY for it, because this module is second to last and requires
+`ldap_server.js`. **`fanOutOf(results)` is the result page's fan-out** — the
+front-channel iframes, the back-channel deliveries, the cleanup images, the
+LogoutRequest links and the two CSP relaxations they need — split out of
+`resultPage()` so the page a partner's sign-out answers with fans out exactly
+as this one does; `resultPage()` calls it too.
 
 ## `liveSessions()` — the same question asked across everybody (2026-09-04)
 

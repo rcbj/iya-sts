@@ -3065,6 +3065,7 @@ class Authn {
     session.via = event.via;
     session.lastSeenAt = Date.now();
     session.firstPresentationIsTheSignIn = true;
+    this.bindPartnerSession(session, extra);
     const cookieValue = this.mintSessionHandle(session);
     sessions.set(session.id, session);
     if (extra.cookie !== false) {
@@ -3078,6 +3079,11 @@ class Authn {
     delete statsExtra.risk;
     delete statsExtra.riskDecision;
     delete statsExtra.riskStepUp;
+    // A federation partner's session and its bound (#167) are facts about
+    // the SESSION, recorded on it; the authentication's row names the
+    // relationship through `federation` already.
+    delete statsExtra.fedPartnerSession;
+    delete statsExtra.sessionNotOnOrAfter;
     stats.recordAuthentication(Object.assign({
       presented: username, protocol: event.via,
       method: this.methodPhraseFor(event.amr),
@@ -3114,6 +3120,49 @@ class Authn {
               session.events.length +
               " event(s).");
     return session;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A FEDERATION PARTNER'S SESSION, AND THE BOUND IT PUTS ON THIS ONE (#167).
+  //
+  // `detail.fedPartnerSession` is what `federation/federation_sp.ts` knows
+  // about the PARTNER's session this sign-in came out of — the relationship,
+  // the SAML NameID and SessionIndex, the OpenID Connect `iss`, `sub` and
+  // `sid` — and it is kept ON THE SESSION so that a partner's sign-out can
+  // find the one session it names (`federation/federation_slo.ts`), on any
+  // node: this store is persisted and replicated, so a second index beside it
+  // would be a second answer to which session a partner meant. A later
+  // federated sign-in on the same session replaces it; a local
+  // re-authentication leaves it, because the partner's session did not end.
+  //
+  // `detail.sessionNotOnOrAfter` is the partner's SAML 2.0
+  // `AuthnStatement/@SessionNotOnOrAfter`, as epoch ms: the instant at which
+  // "the session between the principal ... and the SAML authority issuing
+  // this statement MUST be considered ended" (saml-core-2.0-os section
+  // 2.7.2). It can only SHORTEN this session — `expires` becomes the earlier
+  // of the two — and it is the absolute expiry `sessionEnded()` already
+  // reads, so every reader, the sweep and the lazy lookups honour it with no
+  // path of their own. An ID Token's `exp` is NOT such a bound (OpenID
+  // Connect Core section 2 makes it the token's lifetime, not the session's)
+  // and nothing passes one.
+  // ---------------------------------------------------------------------------
+  private bindPartnerSession(session, extra) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.bindPartnerSession().");
+    const detail = extra || {};
+    if (detail.fedPartnerSession && typeof detail.fedPartnerSession ===
+        'object') {
+      session.fedPartnerSession = Object.assign({}, detail.fedPartnerSession);
+    }
+    const bound = Number(detail.sessionNotOnOrAfter) || 0;
+    if (bound > 0 && (!session.expires || bound < session.expires)) {
+      session.expires = bound;
+      session.expiresBoundBy = 'SessionNotOnOrAfter';
+      log.info('authn: session ' + session.id + ' ends at ' +
+               new Date(bound).toISOString() + ', the partner\'s ' +
+               'SessionNotOnOrAfter, which is earlier than its own lifetime.');
+    }
+    log.debug("Leaving Authn.bindPartnerSession().");
   }
 
   // ---------------------------------------------------------------------------
@@ -3777,6 +3826,11 @@ class Authn {
     delete statsExtra.risk;
     delete statsExtra.riskDecision;
     delete statsExtra.riskStepUp;
+    // A federation partner's session and its bound (#167) are facts about
+    // the SESSION, recorded on it; the authentication's row names the
+    // relationship through `federation` already.
+    delete statsExtra.fedPartnerSession;
+    delete statsExtra.sessionNotOnOrAfter;
     stats.recordAuthentication(Object.assign({
       presented: username, protocol: via || 'OAuth 2.0 / OIDC',
       method: authenticatedNow ? this.methodPhraseFor(amr) : 'declined',
@@ -3916,6 +3970,7 @@ class Authn {
       // where the door assessed nothing. P4's re-scoring replaces it.
       risk: risk
     };
+    this.bindPartnerSession(session, extra);
     // A FRESH HANDLE, EVEN FOR AN UPGRADED ARRIVAL ROW. The arrival session's
     // id survives the upgrade on purpose — it is the `sid` a flow was
     // correlated by from its first request — and until 2026-09-14 so did its

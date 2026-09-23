@@ -670,6 +670,12 @@ const JOBS = [
   // policies, the linking sign-in, the administrator refusal, the links set
   // and removed through /admin-api and SCIM — over HTTP, in either mode.
   { file: 'sts_federation_subject_policy.js', browser: false, local: true },
+  // A PARTNER'S SIGN-OUT (#167, 2026-09-23): SAML 2.0 Single Logout between
+  // two realms in both directions, a partner written here for every
+  // LogoutRequest refusal and SessionNotOnOrAfter, OpenID Connect
+  // Back-Channel, Front-Channel and RP-Initiated Logout, a WS-Federation
+  // cleanup confirmed in the browser — over HTTP, in either mode.
+  { file: 'sts_federation_signout.js',   browser: false, local: true },
   // #171 (2026-09-23): the outbound transport policy over HTTP — the write
   // doors in a product realm, SSF push to this job's own listeners in both
   // modes (a skip ignored in product, a CA file honoured), the RFC 9728

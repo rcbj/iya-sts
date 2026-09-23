@@ -5787,6 +5787,22 @@ class AdminViews {
     // prefix itself. `realms.href()` is the guarded version and is safe either
     // way.
     const loginPath = realms.href(login);
+    // A PARTNER'S SIGN-OUT (#167): the addresses to register at the partner,
+    // per protocol — the SAML SingleLogoutService and WS-Federation cleanup
+    // URL (one path), and OpenID Connect's three registration members. None
+    // for SAML 1.1 and OAuth 2.0, which define no sign-out.
+    const slo = base + federation.PATHS.slo + '/' + encodeURIComponent(row.id);
+    const signOut = row.protocol === 'saml2'
+      ? { singleLogout: slo }
+      : row.protocol === 'wsfed'
+        ? { signOutCleanup: slo }
+        : row.protocol === 'oidc'
+          ? { backchannelLogout: base + federation.PATHS.backchannelLogout +
+                '/' + encodeURIComponent(row.id),
+              frontchannelLogout: base + federation.PATHS.frontchannelLogout +
+                '/' + encodeURIComponent(row.id),
+              postLogoutRedirect: slo }
+          : {};
 
     const setFields = federation.fieldsForRole(row.role, 'set')
                                 .filter(function (field) {
@@ -5796,7 +5812,8 @@ class AdminViews {
       // disabled while the page says it is on.
       return ['fedEnabled', 'fedAutocreateUsers', 'fedUpdateUserAttributes',
               'fedMayAssertAdministrators', 'fedSignRequest',
-              'fedAllowUnsolicited'].indexOf(field.name) === -1;
+              'fedAllowUnsolicited', 'fedAcceptSignout',
+              'fedRequireSignedLogout'].indexOf(field.name) === -1;
     });
     const multiFields = federation.fieldsForRole(row.role, 'multi');
     // THE PEOPLE THIS PARTNER'S SUBJECTS ARE LINKED TO (#109), paged — a
@@ -5817,13 +5834,16 @@ class AdminViews {
     return {
       record: record, row: row, base: base, acs: acs, login: login,
       metadata: metadata, loginPath: loginPath,
+      signOut: row.role === 'service-provider' ? signOut : {},
       setFields: setFields, multiFields: multiFields, linkPage: linkPage,
       json: (function () {
       return Object.assign({ found: true }, row, {
-          endpoints: { assertionConsumerService: acs, login: loginPath,
+          endpoints: Object.assign({
+                       assertionConsumerService: acs, login: loginPath,
                        metadata: (row.protocol === 'saml2' ||
                                   row.protocol === 'saml11')
                          ? metadata : null },
+                       row.role === 'service-provider' ? signOut : {}),
           // The whole record, MINUS the one sensitive field. `fedClientSecret`
           // is replaced by a boolean saying whether one is set — which is the
           // fact a caller actually needs ("is this configured?") without the

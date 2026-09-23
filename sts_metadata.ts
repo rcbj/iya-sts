@@ -1192,7 +1192,15 @@ const SPECS: Spec[] = [
               'than firing them into frames it cannot observe. NOT here: ' +
               'identity-provider-initiated SSO with an unsolicited Response, ' +
               'the ECP profile (4.2), Name Identifier Management (4.5), and ' +
-              'the Assertion Query and Request profile (6). The ' +
+              'the Assertion Query and Request profile (6). As a SERVICE ' +
+              'PROVIDER of a federation partner (#167), Single Logout in ' +
+              'both ' +
+              'directions at /federation/slo/{id}: the partner\'s signed ' +
+              'LogoutRequest ends the sessions its NameID and SessionIndex ' +
+              'name and is answered with a signed LogoutResponse, and a ' +
+              'sign-out here sends it a signed LogoutRequest whose ' +
+              'LogoutResponse is matched by InResponseTo; the partner\'s ' +
+              'SessionNotOnOrAfter bounds the session. The ' +
               'AssertionConsumerServiceURL is accepted as sent in ' +
               'development mode and must be registered on the service ' +
               'provider\'s entry in PRODUCT mode (2026-09-12), with no ' +
@@ -1287,7 +1295,11 @@ const SPECS: Spec[] = [
               'wsignin1.0 with wtrealm, wreply, wctx, wct, wfresh, wauth, ' +
               'whr and wreq, the sign-in response as a form POST, and ' +
               'wsignout1.0/wsignoutcleanup1.0 with front-channel cleanup ' +
-              'requests. Signed federation metadata (section 3.1) at the AD ' +
+              'requests; as a federation relying party (#167) a partner\'s ' +
+              'cleanup, unsigned by the specification, ends the session only ' +
+              'after the person confirms it on a page with a real button, ' +
+              'and a sign-out here sends the partner wsignout1.0. Signed ' +
+              'federation metadata (section 3.1) at the AD ' +
               'FS path. NOT implemented, and each is named rather than left ' +
               'silent: the active (SOAP) requestor profile beyond what /sts ' +
               'already answers, wresultptr, the attribute service (wattr1.0) ' +
@@ -2091,7 +2103,10 @@ const SPECS: Spec[] = [
               'seen until the relying party asks again (Back-Channel ' +
               'Logout is what tells it); an unregistered development client ' +
               'cannot frame the iframe; and a native client (a private-use ' +
-              'redirect URI) gets no session_state.' },
+              'redirect URI) gets no session_state. NOT as a relying party ' +
+              '(#167): polling a partner\'s check_session_iframe needs a ' +
+              'script in the relying party\'s page, and Back-Channel Logout ' +
+              'already tells a federation service provider what it would.' },
   { id: 'oidc-fclogout', name: 'OpenID Connect Front-Channel Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-frontchannel-1_0.html',
@@ -2119,7 +2134,10 @@ const SPECS: Spec[] = [
               'is printed as a link beside its iframe rather than reported ' +
               'as sent. oauth2.frontchannelLogout turns all of it off, the ' +
               'advertisement included; the sid claim stays while ' +
-              'back-channel logout, which needs it too, is on.' },
+              'back-channel logout, which needs it too, is on. As a RELYING ' +
+              'PARTY (#167): /federation/frontchannel-logout/{id} requires ' +
+              'iss and sid (session_required), frameable by the partner\'s ' +
+              'origin only, no script.' },
   { id: 'oidc-bclogout', name: 'OpenID Connect Back-Channel Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-backchannel-1_0.html',
@@ -2158,7 +2176,13 @@ const SPECS: Spec[] = [
               'summary line. Front-channel logout cannot follow an expiry: ' +
               'it needs the browser. oauth2.backchannelLogout turns the ' +
               'members, the claim contribution and the fan-out off ' +
-              'together.' },
+              'together. And for the RELYING PARTY, as a federation ' +
+              'service provider (#167): /federation/backchannel-logout/{id} ' +
+              'runs section 2.6 whole — signature, iss, aud, iat, the events ' +
+              'member, no nonce, sub or sid, and the jti once ever — ends ' +
+              'the matched session by sid or by sub (section 2.7) and ' +
+              'answers section 2.8. An encrypted Logout Token is refused: ' +
+              'this relying party registers no encryption.' },
   { id: 'oidc-discovery', name: 'OpenID Connect Discovery 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-discovery-1_0.html',
@@ -2218,7 +2242,11 @@ const SPECS: Spec[] = [
               'that registered none; product and OAuth 2.1 mode do not), and ' +
               'state is returned. ui_locales is accepted and every page is ' +
               'English, the only language this service has. Front-channel ' +
-              'and back-channel logout are rows of their own.' },
+              'and back-channel logout are rows of their own. As a RELYING ' +
+              'PARTY (#167): a sign-out at /logout offers the federation ' +
+              'partner\'s end_session_endpoint with id_token_hint, ' +
+              'client_id, post_logout_redirect_uri and state, and the return ' +
+              'is matched at /federation/slo/{id}.' },
   { id: 'oid4vci', name: 'OpenID for Verifiable Credential Issuance 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html',
@@ -8258,6 +8286,59 @@ const ENDPOINTS: EndpointEntry[] = [
           'person, just now (STS-FED-0101), and asks the subject policy, the ' +
           'rules and the administrator refusal again before writing ' +
           'anything.' },
+  { path: '/federation/slo/:id', group: 'Federation',
+    name: 'A partner\'s sign-out, in a browser (#167)',
+    specs: ['saml2-profiles', 'saml2-bindings', 'saml2', 'ws-federation',
+            'oidc-logout', 'xmldsig'],
+    effect: 'ENDS the federated session the partner names, and the relying ' +
+            'parties riding on it, through /logout\'s one model',
+    what: 'ONE PATH for every sign-out a partner sends through a browser, ' +
+          'for the ACS\'s reason: a SAML 2.0 <LogoutRequest> (the partner ' +
+          'signing somebody out) and <LogoutResponse> (its answer to ours), ' +
+          'on the Redirect or POST binding; a WS-Federation ' +
+          'wsignoutcleanup1.0 or wsignout1.0; and the browser coming back ' +
+          'from an OpenID Provider\'s end_session_endpoint. A SAML message ' +
+          'is ' +
+          'authenticated exactly as an assertion is — signed ' +
+          '(saml-profiles-2.0-os section 4.4.4.1; fedRequireSignedLogout, ' +
+          'off in development only), verified against fedSigningCertificate ' +
+          'and nothing else, issued by fedPeer, addressed here, fresh, and ' +
+          'accepted once ever (the used-assertion history) — and ends only ' +
+          'the sessions carrying that NameID and SessionIndex through this ' +
+          'relationship, answering a signed LogoutResponse (UnknownPrincipal ' +
+          'where nothing matched). A WS-Federation cleanup is unsigned by ' +
+          'its specification, so it draws a page with a real button and ' +
+          'ends the session in THIS browser only when that is pressed. SAML ' +
+          '1.1 and OAuth 2.0 define no sign-out and are refused naming ' +
+          'that.' },
+  { path: '/federation/backchannel-logout/:id', group: 'Federation',
+    name: 'OpenID Connect Back-Channel Logout, as a relying party (#167)',
+    specs: ['oidc-bclogout', 'oidc', 'rfc7519'],
+    effect: 'ENDS the federated sessions the partner\'s Logout Token names',
+    what: 'The backchannel_logout_uri to register at an OpenID Connect ' +
+          'partner. The Logout Token is verified by the function that ' +
+          'verifies the partner\'s ID Token — its keys, the key\'s algorithm ' +
+          'family, aud = fedClientId, iss = fedPeer — and then held to ' +
+          'section 2.6: the events member, no nonce, sub or sid, a jti ' +
+          'accepted once ever, an iat inside federation.requestTtlMin. Ends ' +
+          'the session with that sid (or every session of that sub, section ' +
+          '2.7) through this relationship and no other; answers 200, or 400 ' +
+          'with invalid_request (section 2.8).' },
+  { path: '/federation/frontchannel-logout/:id', group: 'Federation',
+    name: 'OpenID Connect Front-Channel Logout, as a relying party (#167)',
+    specs: ['oidc-fclogout', 'oidc'],
+    effect: 'ENDS the federated session with that sid',
+    what: 'The frontchannel_logout_uri to register at an OpenID Connect ' +
+          'partner, with frontchannel_logout_session_required: iss must be ' +
+          'the partner and sid is required, because the page is loaded in ' +
+          'the partner\'s iframe and must not end whatever session a ' +
+          'browser holds on the strength of a URL any page can load. The ' +
+          'one page here whose frame-ancestors names somebody else — the ' +
+          'partner\'s origin, narrowed through ' +
+          'app.framedContentSecurityPolicy() and never dropped — and it runs ' +
+          'no script. Best-effort by nature (third-party cookies are not ' +
+          'needed, but the iframe is); Back-Channel Logout is the reliable ' +
+          'path.' },
   { path: '/federation/metadata/:id', group: 'Federation',
     name: 'This service\'s OWN SAML metadata, per partner',
     specs: ['saml2-metadata', 'saml2', 'saml11'],
@@ -9698,7 +9779,14 @@ const PROTOCOLS: Protocol[] = [
           'assertion" would not be a permissive mock of federation, it would ' +
           'be an authentication bypass for every protocol in this process. A ' +
           'relationship is created disabled, at /admin/federation or POST ' +
-          '/admin-api/federation/create.' },
+          '/admin-api/federation/create.\n\n**A PARTNER\'S SIGN-OUT ENDS ' +
+          'THE SESSION IT STARTED (#167)**: a SAML 2.0 LogoutRequest, an ' +
+          'OpenID Connect Back-Channel or Front-Channel logout and a ' +
+          'WS-Federation cleanup (confirmed by the person) are verified as ' +
+          'a sign-in is and end only the session they name; a sign-out here ' +
+          'offers the partner its own; and the partner\'s ' +
+          'SessionNotOnOrAfter bounds the session. SAML 1.1 and OAuth 2.0 ' +
+          'define no sign-out.' },
   { name: 'Shared Signals', groups: ['Shared Signals'],
     specs: ['ssf', 'rfc8417', 'rfc9493', 'rfc8935', 'rfc8936'],
     what: 'A Shared Signals TRANSMITTER (OpenID SSF 1.0, final September ' +
