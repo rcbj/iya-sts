@@ -293,7 +293,8 @@ client that acts as the transmitter. It verifies the signature when it can
 find a key. A SET that another party signed is reported as *not verifiable
 here*, not as invalid. `GET /ssf/received` lists what arrived.
 `ssf.receiveRequireSignature` makes it refuse a SET whose signature fails, the
-way a strict receiver would.
+way a strict receiver would. **Product mode always refuses one**, at this
+endpoint and at the console's and portal's own receivers (#117).
 
 Every SET that arrives is recorded, and it is then refused if its header's
 `typ` is not `secevent+jwt` (section 4.1.1), if its `iss` is not one
@@ -425,7 +426,7 @@ types from what a stream may ask for.
 | `ssf.authScopeRead` | `STS_SSF_AUTH_SCOPE_READ` | `ssf:read` | yes | The scope needed to read a stream, its status or the poll queue. |
 | `ssf.authScopeWrite` | `STS_SSF_AUTH_SCOPE_WRITE` | `ssf:write` | yes | The scope needed to change anything about a stream. |
 | `ssf.receiveEnabled` | `STS_SSF_RECEIVE_ENABLED` | `true` | yes | Whether `POST /ssf/receive` accepts pushed SETs. When off, it answers 501. |
-| `ssf.receiveRequireSignature` | `STS_SSF_RECEIVE_REQUIRE_SIGNATURE` | `false` | yes | Refuses a received SET whose signature fails, with 400 `invalid_key`. |
+| `ssf.receiveRequireSignature` | `STS_SSF_RECEIVE_REQUIRE_SIGNATURE` | `false` | yes | Refuses a received SET whose signature fails, with 400 `invalid_key`, in development mode. Product mode always refuses one (#117). |
 | `ssf.actOnSignalsInDevelopment` | `STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT` | `false` | yes | The console and portal end their own sessions on a received signal in development too; product always does. |
 | `ssf.legacySubClaim` | `STS_SSF_LEGACY_SUB_CLAIM` | `false` | yes | Deliberate defect, development only: adds the deprecated `sub` claim beside `sub_id`. |
 | `ssf.breakSetSignature` | `STS_SSF_BREAK_SET_SIGNATURE` | `false` | yes | Deliberate defect, development only: changes one character of every SET's signature. |

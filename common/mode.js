@@ -1303,6 +1303,21 @@ function observesRiskOnly() {
   return !isProduct();
 }
 
+// Does a RECEIVER here refuse a Security Event Token whose signature does
+// not verify (#117, 2026-09-23)? Product says yes, whatever
+// `ssf.receiveRequireSignature` says: an unverified SET was an
+// unauthenticated write into a stored inbox, and since #62 the console and
+// portal ACT on what they receive (they act only on a verified one, but a
+// product inbox should not hold forgeries either). Development keeps the
+// debugger's posture — accept it and say why it did not verify, which is the
+// question a person testing a transmitter is asking — unless the setting
+// turns the refusal on. `/ssf/receive` and `ssf/ssf_receivers.ts` ask it.
+function refusesUnverifiedSignals() {
+  log.debug("Entering refusesUnverifiedSignals().");
+  log.debug("Leaving refusesUnverifiedSignals().");
+  return isProduct() || config.value('ssf.receiveRequireSignature') === true;
+}
+
 // Does a surface's reaction to a RECEIVED signal only OBSERVE (#62,
 // 2026-09-22)? This service's own console and portal receive the CAEP and
 // RISC events it transmits, and the `signal-response` policy decides which
@@ -1352,6 +1367,18 @@ const REQUIREMENTS = [
              'key, or that this realm revoked, is refused invalid_token ' +
              '(HTTP 401) before anything is issued.',
     where: 'oid4vc/vc_issuer.ts, oauth-oidc/dpop.ts' },
+  { id: 'unverified-signals',
+    what: 'A received Security Event Token whose signature does not verify ' +
+          'is refused',
+    development: 'POST /ssf/receive and the console\'s and portal\'s own ' +
+                 'receivers accept it, record it and say why it did not ' +
+                 'verify — the debugger\'s posture — unless ' +
+                 'ssf.receiveRequireSignature is on. Nothing acts on it.',
+    product: 'Every receiver answers 400 invalid_key, whatever ' +
+             'ssf.receiveRequireSignature says (#117): /ssf/receive, which ' +
+             'authenticates nobody, records nothing; the console\'s and ' +
+             'portal\'s receivers, behind their stream\'s own secret, keep ' +
+             'it on their inbox marked refused.' },
   { id: 'signal-reactions',
     what: 'What this service\'s own console and portal do with a CAEP or ' +
           'RISC event they receive is done',
@@ -2801,6 +2828,7 @@ module.exports = {
   gatesSpireServerApi: gatesSpireServerApi,
   observesRiskOnly: observesRiskOnly,
   observesSignalsOnly: observesSignalsOnly,
+  refusesUnverifiedSignals: refusesUnverifiedSignals,
   usesBrokenAlgorithms: usesBrokenAlgorithms,
   issuesUnsignedAssertions: issuesUnsignedAssertions,
   servesWithoutSecurityHeader: servesWithoutSecurityHeader,

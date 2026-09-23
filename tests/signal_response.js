@@ -21,6 +21,9 @@
 //      way (#117's rule), even while it is accepted; an event the policy does
 //      not permit ends nothing.
 //   D. A DISABLED POLICY decides nothing, and nothing is ended.
+//   F. PRODUCT MODE REFUSES AN UNVERIFIED SET (#117) at the console's
+//      receiver and at /ssf/receive, whatever ssf.receiveRequireSignature
+//      says; development still accepts one at /ssf/receive and records it.
 //
 // In a child process, because it loads the whole protocol stack.
 // ===========================================================================
@@ -263,6 +266,65 @@ function childMain() {
          'D1. a disabled policy decides nothing, and nothing is ended',
          JSON.stringify([written && written.why, decided.why]));
     config.clearOverride('ssf.actOnSignalsInDevelopment');
+
+    // --- F. product refuses an unverified SET (#117) ------------------------
+    const http = require('http');
+    const app = require(ROOT + '/common/app');
+    const server = http.createServer(app);
+    await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
+    const pushAtReceive = function (token) {
+      return new Promise(function (resolve) {
+        const req = http.request({ host: '127.0.0.1',
+          port: server.address().port, path: '/ssf/receive', method: 'POST',
+          headers: { 'content-type': 'application/secevent+jwt',
+                     'content-length': Buffer.byteLength(token) } },
+        function (res) {
+          let text = '';
+          res.on('data', function (c) { text += c; });
+          res.on('end', function () {
+            resolve({ status: res.statusCode, text: text });
+          });
+        });
+        req.end(token);
+      });
+    };
+    const forgedToken = function () {
+      const claims = events.buildSet({ uri: events.CAEP_PREFIX +
+        'session-revoked', issuer: record.iss, audience: 'sts-admin-console',
+        subject: { format: 'iss_sub', iss: record.iss, sub: erin },
+        payload: { event_timestamp: Math.floor(Date.now() / 1000) } });
+      const token = events.signSetSync(claims);
+      return token.slice(0, -4) + (token.slice(-4) === 'AAAA' ? 'BBBB'
+                                                             : 'AAAA');
+    };
+    config.setOverride('ssf.receiveRequireSignature', false);
+    const devReceive = await pushAtReceive(forgedToken());
+    config.setOverride('global.mode', 'product');
+    let prodInternal = null;
+    let prodReceive = null;
+    try {
+      prodInternal = push('session-revoked', erin, {}, true);
+      prodReceive = await pushAtReceive(forgedToken());
+    } finally {
+      config.clearOverride('global.mode');
+      config.clearOverride('ssf.receiveRequireSignature');
+      server.close();
+    }
+    // Development passes the signature step and RECORDS it; this test's
+    // issuer is not the listener's own, so it is then refused for that.
+    note(!/invalid_key/.test(devReceive.text) &&
+         /has been recorded/.test(devReceive.text),
+         'F1. development gets an unverified SET past the signature step at ' +
+         '/ssf/receive and records it, as the debugger needs',
+         devReceive.status + ' ' + devReceive.text.slice(0, 200));
+    note(prodInternal.status === 400 &&
+         prodInternal.body.err === 'invalid_key' &&
+         prodInternal.entry.reactions.length === 0 &&
+         prodReceive.status === 400 && /invalid_key/.test(prodReceive.text),
+         'F2. product refuses one at the console\'s receiver and at ' +
+         '/ssf/receive with invalid_key, the setting off (#117)',
+         JSON.stringify([prodInternal.status, prodReceive.status,
+                         prodReceive.text.slice(0, 200)]));
 
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
