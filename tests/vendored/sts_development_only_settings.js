@@ -29,9 +29,9 @@
 //      `ssf.breakSetSignature` on the verification event's SET does not
 //      verify against the realm's published keys in development and does in
 //      product, still stored.
-//   4. SPIFFE: `GET /spiffe?format=json` in the realm reports `attestWorkloads` on and
-//      `acceptAssertedSelectors` off in product, though the stored values say
-//      otherwise.
+//   4. SPIFFE: `GET /spiffe?format=json` in the realm reports
+//      `attestWorkloads` on and `acceptAssertedSelectors` off in product,
+//      though the stored values say otherwise.
 //
 // The legacy `sub` claim, the Workload API's answer and the SPIRE Server
 // API's `local` socket are asserted in process — `tests/
