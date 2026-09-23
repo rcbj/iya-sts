@@ -10213,6 +10213,16 @@ const CODES = [
       'is not greater than one already processed — a rollback. Nothing was ' +
       'loaded.',
     spec: 'FIDO Metadata Service v3.0, section 3.1.8' },
+  { code: 'STS-RISK-0025',
+    summary: 'Monitoring → Risk Scoring, or GET /admin-api/risk/metrics, ' +
+      'could not be answered: the risk store failed to count the window\'s ' +
+      'assessments.',
+    spec: '' },
+  { code: 'STS-RISK-0026',
+    summary: 'An entry of risk.signalFactors was ignored: it names no known ' +
+      'signal, or its factor is not a positive number. The signal keeps its ' +
+      'built-in factor; logged once for each value the setting is given.',
+    spec: '' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

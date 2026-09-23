@@ -3585,10 +3585,15 @@ tables, each refused only to a realm authority (`refusalFor()`):
   realm has a Kerberos realm, a principal database and keys of its own, so
   `/admin/kerberos` and `/admin/kerberos/principals` show that realm's and a
   realm administrator manages them. What is still the process's is refused per
-  SETTING below.
+  SETTING below. **The two RISK pages left it on 2026-09-22 (#62)**:
+  `/admin/risk` and `/admin/risk-scoring` show a realm administrator their own
+  realm, and `risk_admin.ts` leaves off what is the service's (`realmOnly`).
 * **`SERVICE_ACTIONS`** — creating or removing a realm, or naming another realm
   on `/admin/realms`; `build-root` or a `*` scope on `/admin/pki`; exporting the
-  `tls-server` key. `REALM_READS` refuses `/admin/realms?realm=<another>`.
+  `tls-server` key; on `/admin/risk`, accepting a provider's terms, any
+  dataset but the operator lists, or another realm's list.
+  `REALM_READS` refuses `?realm=<another>` on `/admin/realms`, `/admin/risk`
+  and `/admin/risk-scoring`.
 * **SETTINGS** — every `perProcess` row (a realm write of one lands PROCESS-WIDE
   in `config.setOverride()`, so a Save on a realm's page would change the
   process), the `admin.`, `adminApi.`, `realms.`, `workers.`, `persistence.`,

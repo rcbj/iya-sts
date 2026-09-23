@@ -32,6 +32,14 @@
 //   7. SIGN-INS ARE ASSESSED (P2), AND THE ISSUANCE POLICY DECIDED ON THEM
 //      (P3): the console sign-in this job made is an assessment, with the
 //      decision it met written on it and its person's standing kept.
+//   8. THE SCORING MEASURED: `/admin-api/risk/metrics` counts that sign-in,
+//      and its counts by level, score band and bucket each add up to the
+//      total — in `single-node` and `cluster` that is the postgres driver's
+//      GROUP BY, held to what `tests/risk_metrics.js` holds the memory
+//      store to; Monitoring → Risk Scoring is drawn.
+//   9. THE BADGE: the signed-in administrator's own Directory → Users page
+//      opens with their current risk, and `/admin-api/users?user=` carries
+//      the same standing.
 //
 // Every list here is the default realm's own operator deny list, and each
 // run's content differs (the stamp is in a comment), so a run against a
@@ -411,6 +419,90 @@ async function signInsAreAssessed(cookie) {
   log.debug("Leaving signInsAreAssessed().");
 }
 
+// The values of a count table, added up.
+function sumOf(table) {
+  log.debug("Entering sumOf().");
+  log.debug("Leaving sumOf().");
+  return Object.keys(table || {}).reduce(function (s, k) {
+    return s + Number(table[k]);
+  }, 0);
+}
+
+async function theScoringMeasured(cookie) {
+  log.debug("Entering theScoringMeasured().");
+  log.info("=== 8. the scoring measured ===");
+  const r = await api("GET", "/admin-api/risk/metrics?realm=" + REALM +
+                      "&window=24h");
+  check("GET /admin-api/risk/metrics answers the window, the signals with " +
+        "their factors, and this process", function () {
+          assert.strictEqual(r.status, 200, r.text.slice(0, 300));
+          assert.strictEqual(r.body.window, "24h", JSON.stringify(r.body));
+          assert.ok(Array.isArray(r.body.signals) &&
+                    r.body.signals.every(function (s) {
+                      return typeof s.factor === "number" &&
+                             typeof s.fired === "number";
+                    }), JSON.stringify(r.body.signals));
+          assert.ok(r.body.process &&
+                    typeof r.body.process.assessed === "number",
+                    JSON.stringify(r.body.process));
+        });
+  const a = r.body.assessments;
+  check("its counts by level, by score band and per bucket each add up to " +
+        "the total", function () {
+          assert.strictEqual(sumOf(a.byLevel), a.total, JSON.stringify(a));
+          assert.strictEqual(sumOf(a.byBand), a.total, JSON.stringify(a));
+          assert.strictEqual(a.series.reduce(function (s, b) {
+            return s + b.total;
+          }, 0), a.total, JSON.stringify(a.series));
+        });
+  if (cookie) {
+    check("and it counts the console sign-in this job made", function () {
+      assert.ok(a.total >= 1 && a.subjects >= 1, JSON.stringify(a));
+    });
+    const page = await call("GET", base + "/admin/risk-scoring?window=24h",
+                            { headers: { Cookie: cookie } });
+    check("Monitoring → Risk Scoring is drawn, with its timeline and signals",
+          function () {
+            assert.strictEqual(page.status, 200, page.text.slice(0, 300));
+            assert.ok(page.text.indexOf('id="risk-timeline"') >= 0 &&
+                      page.text.indexOf('id="risk-signals"') >= 0,
+                      "no timeline or signals table on the page");
+          });
+  }
+  log.debug("Leaving theScoringMeasured().");
+}
+
+async function theBadge(cookie, admin) {
+  log.debug("Entering theBadge().");
+  log.info("=== 9. the risk badge on a user page ===");
+  if (!cookie) {
+    log.info("  (the console gate is off in this stack: nobody signed in, " +
+             "so nobody was assessed)");
+    log.debug("Leaving theBadge(). Gate off.");
+    return;
+  }
+  const r = await api("GET", "/admin-api/users?user=" +
+                      encodeURIComponent(admin));
+  check("/admin-api/users?user= carries the person's current standing",
+        function () {
+          assert.strictEqual(r.status, 200, r.text.slice(0, 300));
+          assert.ok(r.body.risk && r.body.risk.level,
+                    JSON.stringify(r.body.risk));
+        });
+  const page = await call("GET", base + "/admin/users?user=" +
+                          encodeURIComponent(admin),
+                          { headers: { Cookie: cookie } });
+  check("and their Directory → Users page opens with it, in its level's " +
+        "colour", function () {
+          assert.strictEqual(page.status, 200, page.text.slice(0, 300));
+          const at = page.text.indexOf('class="risk-badge"');
+          assert.ok(at >= 0, "no risk badge on the page");
+          assert.ok(page.text.indexOf(">" + r.body.risk.level + "<", at) > 0,
+                    "the badge does not name " + r.body.risk.level);
+        });
+  log.debug("Leaving theBadge().");
+}
+
 async function main() {
   log.debug("Entering main().");
   const admin = "risk-admin-" + STAMP;
@@ -424,6 +516,8 @@ async function main() {
   await theTermsAreAccepted();
   await theFailureHistory();
   await signInsAreAssessed(cookie);
+  await theScoringMeasured(cookie);
+  await theBadge(cookie, admin);
   log.info("sts_admin_risk: " + checks + " check(s) passed.");
   log.debug("Leaving main().");
 }

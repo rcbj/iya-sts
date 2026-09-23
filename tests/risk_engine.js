@@ -20,6 +20,8 @@
 //      session's context replaced, the person's standing kept with its
 //      previous level.
 //   F. `assess()` never rejects, and a person nobody named is not assessed.
+//   G. An operator's factor (`risk.signalFactors`, calibration) is the one a
+//      sign-in is scored with, and an entry naming no signal is ignored.
 //
 // Every address is a documentation one (RFC 5737), every list synthetic.
 // ===========================================================================
@@ -173,6 +175,24 @@ async function run(t) {
           'F1. a sign-in naming nobody is not assessed, and one with no ' +
           'context is assessed rather than rejected', JSON.stringify(odd &&
                                                         odd.level));
+  // --- G. an operator's factor ----------------------------------------------
+  // An operator's factor (calibration, #62): risk.signalFactors changes
+  // the factor a sign-in is scored with, and an entry naming no signal is
+  // ignored rather than breaking the rest.
+  config.setOverride('risk.signalFactors', 'tor-exit=8,no-such-signal=3');
+  let tuned = null;
+  try {
+    tuned = await signIn('203.0.113.66', CHROME);
+  } finally {
+    config.clearOverride('risk.signalFactors');
+  }
+  const factors = riskEngine.factors();
+  t.check(tuned && tuned.signals.some(function (s) {
+    return s.signal === 'tor-exit' && s.factor === 8;
+  }) && factors.factors['tor-exit'] === 5,
+          'G1. risk.signalFactors scores tor-exit at ×8, and cleared it is ' +
+          '×5 again', JSON.stringify(tuned && tuned.signals));
+
   config.setOverride('risk.datasetShrinkLimitPercent', 50);
   log.debug("Leaving run().");
 }

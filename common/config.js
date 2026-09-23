@@ -9737,6 +9737,35 @@ const SETTINGS = [
     description: 'The score, in hundredths, at which a sign-in is HIGH ' +
                  'risk: 1000 is a score of 10.' },
 
+  // CALIBRATION (#62): the factors an operator sets, and the shares of
+  // sign-ins the calibration report suggests thresholds for.
+  { key: 'risk.signalFactors', group: 'Risk',
+    label: 'Signal factors',
+    env: 'STS_RISK_SIGNAL_FACTORS', type: 'csv', dflt: '', runtime: true,
+    description: 'Factors over the built-in ones, as signal=factor, ' +
+                 'comma-separated (tor-exit=8,new-device=1.5) — what ' +
+                 'Monitoring → Risk Scoring\'s calibration suggests, applied ' +
+                 'without a release. Empty uses every built-in factor. An ' +
+                 'entry naming no signal, or with a factor that is not a ' +
+                 'positive number, is ignored and logged (STS-RISK-0026).' },
+
+  { key: 'risk.calibrationMediumPercent', group: 'Risk',
+    label: 'Calibration: MEDIUM or worse (percent of sign-ins)',
+    env: 'STS_RISK_CALIBRATION_MEDIUM_PERCENT', type: 'int', dflt: 5, min: 1,
+    max: 50, runtime: true,
+    description: 'The share of sign-ins the calibration report aims to have ' +
+                 'at MEDIUM or worse: it suggests the score this share of ' +
+                 'the window\'s assessments reaches. Advice only; the ' +
+                 'threshold is risk.mediumScorePercent.' },
+
+  { key: 'risk.calibrationHighPercent', group: 'Risk',
+    label: 'Calibration: HIGH (percent of sign-ins)',
+    env: 'STS_RISK_CALIBRATION_HIGH_PERCENT', type: 'int', dflt: 1, min: 1,
+    max: 50, runtime: true,
+    description: 'The share of sign-ins the calibration report aims to have ' +
+                 'at HIGH, as risk.calibrationMediumPercent. Advice only; ' +
+                 'the threshold is risk.highScorePercent.' },
+
   { key: 'risk.assessmentRetentionDays', group: 'Risk',
     label: 'Keep assessments (days)',
     env: 'STS_RISK_ASSESSMENT_RETENTION_DAYS', type: 'int', dflt: 90,

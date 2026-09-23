@@ -1705,6 +1705,9 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `risk.standingCacheSize` | `STS_RISK_STANDING_CACHE_SIZE` | `20000` | yes | How many people's standing each process holds; full, the oldest is dropped, which decides that person's next sessionless issuance on roles alone. |
 | `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `100` | yes | The score, in hundredths, from which a sign-in is MEDIUM (100 is a score of 1). |
 | `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | yes | The score, in hundredths, from which a sign-in is HIGH. |
+| `risk.signalFactors` | `STS_RISK_SIGNAL_FACTORS` | *(empty)* | yes | Factors over the built-in ones, as `signal=factor`, comma-separated (`tor-exit=8,new-device=1.5`): what Monitoring → Risk Scoring's calibration suggests, applied without a release. A bad entry is ignored and logged (`STS-RISK-0026`). |
+| `risk.calibrationMediumPercent` | `STS_RISK_CALIBRATION_MEDIUM_PERCENT` | `5` | yes | The share of sign-ins the calibration report aims to have at MEDIUM or worse; it suggests the score that share reaches. Advice only. |
+| `risk.calibrationHighPercent` | `STS_RISK_CALIBRATION_HIGH_PERCENT` | `1` | yes | The same, for HIGH. |
 | `risk.assessmentRetentionDays` | `STS_RISK_ASSESSMENT_RETENTION_DAYS` | `90` | yes | How long an assessment is kept. |
 | `risk.historyRetentionDays` | `STS_RISK_HISTORY_RETENTION_DAYS` | `180` | yes | How long the model remembers a value nobody has signed in with since — an address, a network, a device. |
 | `risk.fingerprinting` | `STS_RISK_FINGERPRINTING` | `false` | yes | OFF BY DEFAULT (#62 P6). The sign-in screen runs FingerprintJS (MIT; it sends nothing) and the service keeps a keyed digest of the browser's identifier, scoring a browser the person never used as `new-device`. Personal data: complete the privacy impact assessment in `docs/risk-scoring.md` first. |

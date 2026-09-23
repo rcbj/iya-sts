@@ -462,6 +462,110 @@ they say about one — once, and only about their own (schema 9's
 
 Monitoring → Risk shows each answer beside its assessment.
 
+## MONITORING → RISK SCORING (2026-09-22)
+
+rcbj asked for "a Monitoring → Risk Scoring page that includes metrics about
+the risk scoring system". It is `/admin/risk-scoring`, drawn by
+`admin-ui/risk_admin.ts` beside `/admin/risk`, and returned as JSON by
+`GET /admin-api/risk/metrics`.
+
+**It shows two kinds of number, and the page keeps them apart.**
+
+* **Counts over a window**: the assessments by level, door, decision,
+  phase, country, score band, signal and feedback, a series per bucket,
+  and the standings. These are rows, so the STORE counts them:
+  `risk_store.assessmentMetrics()` and `subjectLevels()`. On postgres the
+  driver groups them with GROUP BY, and on the memory store they are counted
+  in process. Both hand back the same grouped rows to `metricsOf()`, so the
+  two stores cannot answer in different shapes.
+* **Counts this process keeps**: things that are not rows (the time to
+  assess, a failed assessment, the reactions taken, the rescore runs, the
+  breached-password screening). The engine's `tally` and
+  `breached_passwords`' own counts hold them for THIS process since it
+  started. They are the one per-process part of the page, and the page says
+  so.
+
+The score bands are decades around the level thresholds (see
+*Calibration*, below). `RiskStore.bandOf()` spells them in TypeScript, and
+the driver spells them again in SQL. The 2026-09-22 probes ran a throwaway
+postgres and the driver against `tests/risk_metrics.js`'s rows, the
+calibration rows included, and gave the same answers from both stores.
+
+## CALIBRATION (2026-09-22)
+
+rcbj asked for the factors to be calibrated. **Nothing can be calibrated
+without real sign-ins**, so what was built is the means:
+
+* **The report**: `RiskEngine.calibrate()`, on Monitoring → Risk Scoring
+  and in `/admin-api/risk/metrics`.
+  - Thresholds come from the window's own score quantiles:
+    `percentile_disc` on postgres, and the same index rule in memory.
+  - A factor's suggestion is the current factor scaled by its signal's
+    "not me" rate against the baseline, where the rates come from the
+    answers on `/portal/sign-ins`.
+  - Below 100 assessments no threshold is suggested, and below 20 answers
+    for a signal no factor is (constants in the engine, both stated on the
+    page).
+  - `reported-not-me` is left out, because it is the answer rather than
+    evidence for one.
+* **The knob**: `risk.signalFactors`, per realm, read by `factors()` at
+  every scoring site: the evaluators, the live-session re-check and the
+  report itself. That makes the report's suggestion the value it
+  measures from.
+
+**The answers are a biased sample**, since a flagged sign-in is likelier to
+be asked about. The report says so, and it never applies itself.
+
+**The score bands were wrong in the first version of the page.** They were
+decades up to "≥ 1", as though the thresholds were fractions of 1. The
+score is a likelihood ratio, and MEDIUM and HIGH begin at 1 and 10, so
+everything MEDIUM or worse fell into one band. They now run from below 0.01
+to 100 and over, and those two thresholds are edges.
+
+## A REALM ADMINISTRATOR ON THE RISK PAGES (2026-09-22)
+
+Both pages were service pages until rcbj asked for "realm admins see
+/admin/risk". **Most of what they show is a realm's**:
+
+* the assessments;
+* the standings;
+* the refused passwords;
+* the operator allow and deny lists, whose rows carry the realm.
+
+So they are realm pages now, **with the service's parts cut out in two
+places that agree**:
+
+* **The gate**: `admin_scope.ts`'s `/admin/risk` action rule refuses a
+  provider's terms, any dataset but a per-realm one, and a list of another
+  realm. Its read rule refuses `?realm=` naming another realm.
+* **The page**: `risk_admin.ts`'s `realmOnly` view drops the service's
+  datasets, providers and acceptances (the acceptances name service
+  administrators). The page drops the settings, all `risk.` rows and so all
+  service-only, and the scoring page drops `process`, since this process's
+  counts are every realm's.
+
+**The data credits stay**, because DB-IP's licence asks for them on any page
+that displays its results.
+
+**The unnamed realm is the one the page is drawn in** (`realms.currentId()`),
+which it was not before: `realmOf()` answered `default`, and that was right
+only while nobody but a service administrator in the default realm saw the
+page.
+
+## A PERSON'S RISK ON THEIR USER PAGE (2026-09-22)
+
+rcbj asked for it "large and colorful": `admin.ts`'s `riskBadge()` opens
+the Directory → Users page of a person with their standing, in the level's
+colour. **The standing is read before the page is drawn**, by
+`admin_views.riskFor(req.query)`, which both the console's route and
+`/admin-api/users` await and hand to the view as an argument: the user
+views are synchronous and the standing is a row in a store that is not.
+**It is an argument, not a field on the request**, because
+`tests/admin_actions_layer.js` holds that a view reads nothing off the
+request but its query — the first version hung it on `req` and failed that. `engine.standingFor()` never rejects;
+a store that cannot answer draws the grey UNKNOWN badge, the same as a
+person never assessed, because the page must still open.
+
 ## BREACHED PASSWORDS (P6, 2026-09-22)
 
 rcbj chose the **range API** over a filter built from the downloadable
@@ -535,6 +639,18 @@ hit the same trap through `request_pool.js` in P0.
   development observing, a realm override that disables, CAEP's new act, a
   browser update not assessed and a replayed cookie assessed and ended, and
   the rescore job raising a session whose address became a Tor exit.
+* `tests/risk_metrics.js` — Monitoring → Risk Scoring on the memory store:
+  every count of a window, the old and the other realm's left out, the
+  signals beside their factors, a series that adds up, the standings, this
+  process's counts, and the page without a script.
+  `tests/vendored/sts_admin_risk.js` sections 8 and 9 hold the postgres
+  driver's GROUP BY to the same sums over HTTP.
+* `tests/risk_realm_admin.js` — a realm administrator on both risk pages:
+  the gate's refusals and permissions, the realm-only views, and the pages
+  drawn for them.
+* `tests/risk_user_badge.js` — the badge on a person's Directory → Users
+  page in each colour, grey when never assessed, the same standing on
+  `/admin-api/users?user=`, and the link narrowed to the person.
 
 **Not tested yet**: a real DB-IP or IPinfo release at full size — and it will
 not be tested with one in this repository, because none may be committed; a

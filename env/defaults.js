@@ -825,6 +825,9 @@ var config = {
     standingCacheSize: 20000,                              // People whose standing each process holds
     mediumScorePercent: 100,                               // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,                                // HIGH from (percent of a score of 1)
+    signalFactors: "",                                     // Signal factors
+    calibrationMediumPercent: 5,                           // Calibration: MEDIUM or worse (percent of sign-ins)
+    calibrationHighPercent: 1,                             // Calibration: HIGH (percent of sign-ins)
     assessmentRetentionDays: 90,                           // Keep assessments (days)
     historyRetentionDays: 180                              // Keep the model's history (days)
   },

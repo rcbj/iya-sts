@@ -1904,7 +1904,8 @@ class AdminApi {
                        '`failures`.' },
         handler: function (req, res) {
           log.debug("Entering the management API risk endpoint.");
-          riskAdmin.riskView(req.query).then(function (view) {
+          const realmOnly = riskAdmin.realmOnly(req);
+          riskAdmin.riskView(req.query, realmOnly).then(function (view) {
             self.sendJson(res, 200, view);
             log.debug("Leaving the management API risk endpoint.");
           }).catch(function (e) {
@@ -1915,6 +1916,57 @@ class AdminApi {
                                       errors: [String((e && e.message) ||
                                                       e)] });
             log.debug("Leaving the management API risk endpoint. Failed.");
+          });
+        } },
+
+      // Monitoring → Risk Scoring (#62): `riskAdmin.metricsView()`.
+      { method: 'GET', path: BASE + '/risk/metrics', tag: 'Risk',
+        operationId: 'getRiskMetrics',
+        summary: 'The risk scoring system measured',
+        description: 'The realm\'s assessments over `window`, counted in ' +
+                     'the store (`database` says which): `assessments` ' +
+                     'with its `total`, `subjects`, `bots`, `meanScore`, ' +
+                     '`maxScore`, counts `byLevel`, `byDoor`, ' +
+                     '`byDecision`, `byPhase`, `byCountry`, `byBand` (the ' +
+                     'score in decades), `bySignal`, the `feedback` people ' +
+                     'gave, and a `series` of levels per `bucketMs`; the ' +
+                     'people at each level now in `standings`; every ' +
+                     'signal with its `factor` and how often it `fired`; ' +
+                     'the level `thresholds`; and, for THIS process since ' +
+                     'it started, `process` — assessments made and ' +
+                     'failed, the time to assess, the reactions taken, ' +
+                     'observed and failed, the live-session re-checks and ' +
+                     'the breached-password screening.',
+        mirrors: 'GET /admin/risk-scoring',
+        parameters: [
+          { name: 'realm', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The realm counted; the default realm when ' +
+                         'absent.' },
+          { name: 'window', in: 'query', required: false,
+            schema: { type: 'string', enum: ['1h', '24h', '7d', '30d'] },
+            description: 'How far back the assessments are counted; 24h ' +
+                         'when absent.' }
+        ],
+        responseDescription: 'The scoring system\'s metrics.',
+        responseSchema: { type: 'object',
+          description: '`assessments`, `standings`, `signals`, ' +
+                       '`thresholds`, `process`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API risk metrics endpoint.");
+          const realmOnly = riskAdmin.realmOnly(req);
+          riskAdmin.metricsView(req.query, realmOnly).then(function (view) {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API risk metrics endpoint.");
+          }).catch(function (e) {
+            log.warn(errorCodes.tag('STS-RISK-0025') + 'risk: the metrics ' +
+                     'failed: ' + ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-RISK-0025');
+            self.sendJson(res, 500, { ok: false,
+                                      errors: [String((e && e.message) ||
+                                                      e)] });
+            log.debug("Leaving the management API risk metrics endpoint. " +
+                      "Failed.");
           });
         } },
 
@@ -2968,7 +3020,11 @@ class AdminApi {
         ] },
         handler: function (req, res) {
           log.debug("Entering the management API users endpoint.");
-          self.sendJson(res, 200, adminViews.usersJson(req));
+          // The person's current risk, read first (#62) — the console's
+          // route does the same, so the two answers agree.
+          return adminViews.riskFor(req.query).then(function (risk) {
+            self.sendJson(res, 200, adminViews.usersJson(req, risk));
+          });
           log.debug("Leaving the management API users endpoint.");
         } },
 
