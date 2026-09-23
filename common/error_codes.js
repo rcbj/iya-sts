@@ -6252,6 +6252,17 @@ const CODES = [
     summary: 'The RP-Initiated Logout endpoint failed while answering ' +
       '(#124).',
     spec: 'HTTP 500 (an HTML page)' },
+  { code: 'STS-OAUTH-0606',
+    summary: 'response_type none was combined with another response type; ' +
+      'it asks for nothing to be issued (Multiple Response Type Encoding ' +
+      'Practices section 4, #125).',
+    spec: 'redirect {error: unsupported_response_type}' },
+  { code: 'STS-OAUTH-0607',
+    summary: 'response_mode=query was asked for a response type that ' +
+      'returns a token or an ID Token, which section 2.1 of Multiple ' +
+      'Response Type Encoding Practices forbids (#125). The refusal goes in ' +
+      'the fragment.',
+    spec: 'redirect {error: invalid_request}' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

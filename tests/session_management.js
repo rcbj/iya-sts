@@ -66,8 +66,10 @@ async function askTheIframe(script, cookie, origin, message) {
             source: { postMessage: function (text, to) {
               answers.push({ text: text, to: to });
             } } });
-  for (let i = 0; i < 20 && !answers.length; i++) {
-    await new Promise(function (resolve) { setTimeout(resolve, 5); });
+  // Up to five seconds: Web Crypto's digest is asynchronous, and a full
+  // suite's load once took it past the 100 ms this waited at first.
+  for (let i = 0; i < 500 && !answers.length; i++) {
+    await new Promise(function (resolve) { setTimeout(resolve, 10); });
   }
   log.debug("Leaving askTheIframe().");
   return answers[0] || { text: '(no answer)', to: '' };

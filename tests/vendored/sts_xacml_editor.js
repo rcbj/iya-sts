@@ -1616,6 +1616,21 @@ async function createThePeople() {
             consoleAccount.body.ok,
     "creating the console account " + CONSOLE_USER + " answered " +
     consoleAccount.status + " " + String(consoleAccount.text).slice(0, 300));
+  // ADMIN WRITE, WHERE THE CONSOLE IS NOT OPEN TO ANYONE (2026-09-23). This
+  // account holds no console role, and product mode never opens the window an
+  // unclaimed bootstrap administrator leaves (#103) — so there it was refused
+  // 403 `insufficient_role` on every editor page, and the survey below read a
+  // refusal page's empty notice list as the editor saying nothing. The same
+  // arrangement `sts_realm_administrators.js` makes; a grant to somebody else
+  // does not claim the window.
+  const rbac = await json(base + "/admin-api/rbac");
+  if (!(rbac.body && rbac.body.openToAnyone)) {
+    const granted = await apiPost("/admin-api/rbac/grant",
+                                  { username: CONSOLE_USER, role: "write" });
+    assert.ok(granted.status === 200,
+      "granting " + CONSOLE_USER + " Admin Write answered " + granted.status +
+      " " + String(granted.text).slice(0, 300));
+  }
   for (const who of [SUBJECT, OTHER_STAFF]) {
     const r = await apiPost("/realm/" + REALM + "/admin-api/users/create", {
       username: who, invent: false,

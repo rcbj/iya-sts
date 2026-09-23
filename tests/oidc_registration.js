@@ -74,6 +74,8 @@ function library(t) {
        redirect_uris: ['https://rp.example/cb'] }, 'STS-REG-0183',
      'a response type returning an access token without the implicit grant'],
     [WEB, '', 'a plain web client'],
+    [{ response_types: ['none'], redirect_uris: ['https://rp.example/cb'] },
+     '', 'response_types none alone, with the default grant (#125)'],
     [{ application_type: 'desktop' }, 'STS-REG-0181', 'an unknown ' +
      'application_type'],
     [{ application_type: 'native',
