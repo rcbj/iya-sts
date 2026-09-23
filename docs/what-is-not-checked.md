@@ -100,7 +100,7 @@ any of them would be a broken implementation rather than a lenient one:
 | ~~Consume a federated sign-out~~ — reversed 2026-09-23 ([#167](https://github.com/rcbj/iya-sts/issues/167)) | A partner's sign-out ends the session it started, and only that one: a SAML 2.0 `LogoutRequest` (signed, verified against `fedSigningCertificate`, issued by `fedPeer`, addressed here, fresh and accepted once — `STS-FED-0115` to `0120`), an OpenID Connect Back-Channel Logout Token (section 2.6 whole, the `jti` once — `0127` to `0129`) or Front-Channel logout (`iss` and `sid` required — `0130`), and a WS-Federation cleanup the person confirms in their own browser (`0126`), at `/federation/slo/{id}` and the two OpenID Connect logout paths. The partner's SAML `SessionNotOnOrAfter` is the session's latest end (`0131`). A sign-out here offers the partner its own. SAML 1.1 and OAuth 2.0 define no sign-out. `fedAcceptSignout` off refuses them all (`0123`) | The same, except that a relationship may set `fedRequireSignedLogout` off and accept an unsigned SAML logout message; product refuses the setting (`STS-FED-0132`) |
 | ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)** | All nine of SPIRE's node attestors verify or refuse. The Workload API's Unix socket attests its caller with the `unix`, `docker` and `k8s` workload attestors; without the native module the socket is not served (`STS-SPIFFE-0113`), and asserted selectors are never believed. **A caller over TCP cannot be attested, so the Workload API is not served over TCP** (`STS-SPIFFE-0120`, #166) unless `spiffe.workloadTcpSourceAuthenticated` declares that the network authenticates source addresses, and then only on a named address (`STS-SPIFFE-0121`); an entry must select something that identifies its workload — `peer:<address>` for TCP — never only `transport:` and `endpoint:` (`STS-SPIFFE-0122`) — see [SPIFFE](#the-workload-api-is-the-opposite-case) | The same attestors. Without the native module the socket is served unattested, `spiffe.acceptAssertedSelectors` lets a caller assert its own selectors, and the TCP port is served to anybody who reaches it, where an entry on `transport:tcp` alone is issued to every caller |
 | Let a group grant anything by being a group | A group grants what a role or roster names it for: the console's Admin Read and Admin Write, each realm's own administrator roster, `REMOTE_PEPS` and `XACML_USER` for the XACML surfaces, a configured role's `roleMemberGroup`, and the embedded debugger through the console roles. The groups claim in a token grants nothing | The same |
-| Decide who may delegate to whom, in two of the three families that can | Kerberos polices S4U against `msDS-AllowedToDelegateTo` and `msDS-AllowedToActOnBehalfOfOtherIdentity`, and in product no such rule exists unless an operator writes one, so S4U2Proxy is refused. WS-Trust requires the requester to authenticate but has no rule on who may act for whom. RFC 8693 has no policy: `may_act` is neither issued nor read. An ungranted delegated permission is `invalid_scope` (`STS-OAUTH-0155`). See [Delegation](#delegation-is-policed-in-one-family-out-of-three) | The KDC holds fixture delegation rules. WS-Trust needs no requester at all. An ungranted delegated permission is honoured unless `oauth2.delegatedPermissionsEnforced` is on |
+| ~~Decide who may delegate to whom, in two of the three families that can~~ — **reversed 2026-09-23 (#108)** | Kerberos polices S4U against `msDS-AllowedToDelegateTo` and `msDS-AllowedToActOnBehalfOfOtherIdentity`. WS-Trust `OnBehalfOf` / `ActAs` and RFC 8693 token exchange are decided by the same model on application entries — `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`, `appTrustedToImpersonate` — with `stsNotDelegated` and the console roster protecting people, then a deny-only XACML layer (action-id `delegate`). A refusal is `wst:RequestFailed` (`STS-WSTRUST-0018`, `0019`, `0020`) or `invalid_request` / `invalid_target` (`STS-OAUTH-0618`, `0619`, `0622`); only an application may be a WS-Trust requester that delegates, and an exchange may not widen its subject_token's scope (`STS-OAUTH-0621`). An ungranted delegated permission is `invalid_scope` (`STS-OAUTH-0155`). See [Delegation](#delegation-is-decided-in-all-three-families) | The KDC holds fixture delegation rules. WS-Trust and token exchange issue every delegation and record on the act what product would have refused. WS-Trust needs no requester at all. An ungranted delegated permission is honoured unless `oauth2.delegatedPermissionsEnforced` is on. In both modes a subject_token's `may_act` naming somebody else is refused (`STS-OAUTH-0620`) |
 | Verify the certificate of whoever answers an outbound request — a GNAP push finish, an SSF push, a federation back channel (and the SAML metadata, RFC 9728, Logout Token and status-list fetches that share its policy), an XACML PEP nudge, a kubelet | **Always verified, since 2026-09-23 (#171)**: every `…SkipTlsVerification` setting and `spiffe.k8sSkipKubeletVerification` is ignored (logged once with its family's code) and cannot be turned on (`STS-CORE-0103`). A private CA is trusted through the family's `…CaFile`. Plain http is refused for SSF, federation and XACML whatever `…AllowHttp` says, and allowed for a GNAP push finish to a loopback address only | `…SkipTlsVerification` turns verification off, warned on every request, and `…AllowHttp` admits plain http to any host. Both are off by default |
 | ~~Tie a scope to a client~~ — **reversed 2026-09-22 (#110)** | A client is issued only the scopes its `oauthAllowedScope` declares — or, declaring none, the default set: `openid`, `profile`, `email`, `address`, `phone`, `offline_access` and the realm's OpenID4VCI scopes. Anything else is `invalid_scope` (`STS-OAUTH-0578`); a scope naming an application or a delegated permission keeps its own rules. See [Scopes](#a-scope-is-tied-to-the-client) | Any scope is issued — except this service's own protected scopes (`admin:read`, `admin:write`, the SCIM and Shared Signals scopes, the debugger permission), which are held to the declaration in both modes (`STS-OAUTH-0577`) |
 
@@ -165,7 +165,7 @@ Three things about it are worth knowing:
 Turning the setting off means nothing is asked and nothing recorded. It does
 **not** mean everybody consented, so turning it back on asks again.
 
-## Delegation is policed in one family out of three
+## Delegation is decided in all three families
 
 `/admin/delegation` records every exchange in which somebody acted on somebody
 else's behalf — Kerberos S4U2Self, S4U2Proxy (classic and resource-based) and a
@@ -173,7 +173,7 @@ forwarded ticket-granting ticket; WS-Trust `OnBehalfOf` and `ActAs`; RFC 8693
 token exchange as impersonation and as delegation — against one model, with the
 initial identity, the intermediary acting for them and the target on every row.
 
-**Kerberos is the only one of the three that decides who may act for whom.** The
+**Kerberos decides who may act for whom from two attributes.** The
 KDC checks `msDS-AllowedToDelegateTo` on the front-end account and
 `msDS-AllowedToActOnBehalfOfOtherIdentity` on the back-end one, enforces the
 asymmetries between them (classic needs forwardable evidence; resource-based
@@ -182,12 +182,38 @@ a message naming both attributes and their current values. In development the
 KDC holds fixture rules so the refusals and the successes can both be reached;
 in product there are none until an operator writes one.
 
-WS-Trust and RFC 8693 authenticate the parties — in product mode WS-Trust needs
-the requester's own credential and an assertion this STS signed, and token
-exchange needs tokens this realm can verify — but neither has a rule about
-**who** may act for **whom**. RFC 8693 leaves that policy to the authorization
-server and this one has none. Each act says which kind of decision it was, so
-the difference is visible rather than inferred.
+**WS-Trust and RFC 8693 are decided by the same model since 2026-09-23 (#108)**,
+on application entries:
+
+* `appAllowedToDelegateTo` on the **intermediary** — the OAuth client, or the
+  application a WS-Trust requester authenticates as — names the targets it may
+  reach as somebody else. An `audience`, `resource` or `AppliesTo` is resolved
+  to the application that registered it first.
+* `appAllowedToActOnBehalfOf` on the **target** names the intermediaries it
+  accepts — the resource-based form.
+* `appDelegationSubjectGroup` narrows the people an intermediary may act for,
+  by group DN; empty means anybody who is not protected.
+* `appTrustedToImpersonate` (default FALSE) lets it **impersonate** —
+  `OnBehalfOf`, or an exchange with no `actor_token` — as well as delegate.
+* A person carrying `stsNotDelegated`, or a member of the console's Admin Read
+  or Admin Write roster, is never delegated.
+
+When the attributes allow, the issuance policy is asked about action-id
+`delegate` with the intermediary, subject and target, and only an explicit Deny
+refuses. **Product enforces it**: WS-Trust answers a SOAP Fault carrying WS-Trust
+1.4 section 11's `wst:RequestFailed`, and only an application entry may be a
+requester that delegates; the token endpoint answers `invalid_request`, or
+`invalid_target` for a target it will not issue for (RFC 8693 section 2.2.2),
+and refuses an exchange that widens the verified subject_token's `scope`
+(`invalid_scope`). **Development asks the same question and issues anyway**,
+and the act says what would have been refused.
+
+**`may_act` (RFC 8693 section 4.4) is read in every mode.** A verified
+subject_token naming a party other than the actor is refused; one naming it
+stands in for `appTrustedToImpersonate` and the subject groups, never for the
+target. It is issued only from the person's own choice, `stsMayAct`, set on
+`/portal/delegate` or by an administrator. `act` nests: a prior actor chain is
+kept beneath the new actor (section 4.1).
 
 **Refusals are recorded, and they are the rows worth having.** A refused
 delegation appears in no other list, which is why that page keeps a store of its
@@ -941,5 +967,3 @@ These are true in a product deployment today, and are tracked as issues:
   metadata service ([#105](https://github.com/rcbj/iya-sts/issues/105)).
 * **A GNAP client's self-signed certificate** is matched by thumbprint with no
   chain or revocation check ([#107](https://github.com/rcbj/iya-sts/issues/107)).
-* **No rule decides who may act for whom** in WS-Trust or RFC 8693
-  ([#108](https://github.com/rcbj/iya-sts/issues/108)).

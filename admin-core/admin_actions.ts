@@ -319,7 +319,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // a person (#109, 2026-09-22).
                        'federation-link', 'federation-unlink',
                        // App passwords (#101, 2026-09-22).
-                       'create-app-password', 'revoke-app-password'];
+                       'create-app-password', 'revoke-app-password',
+                       // Who may act for them (#108, 2026-09-23).
+                       'set-not-delegated', 'set-may-act'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -360,7 +362,14 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
 // `friendly_name`). `common/credentials.ts` keeps the records.
 const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   'disable-primary-keys', 'disable-mfa', 'require-mfa', 'stop-requiring-mfa',
-  'create-app-password', 'revoke-app-password'];
+  'create-app-password', 'revoke-app-password',
+  // WHO MAY ACT FOR THEM (#108, 2026-09-23): `set-not-delegated` writes
+  // `stsNotDelegated` (`value` TRUE or FALSE) — Kerberos's NOT_DELEGATED, on
+  // the person — and `set-may-act` writes `stsMayAct` (`delegate`, a DN of a
+  // person or application; empty clears), the one party whose `sub` becomes
+  // the `may_act` claim of their access tokens (RFC 8693 section 4.4).
+  // `common/delegation_policy.ts` decides what both mean.
+  'set-not-delegated', 'set-may-act'];
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the actions in APPLICATION_ACTIONS below.
@@ -2067,6 +2076,58 @@ class AdminActions {
                message: 'The app password "' + gone.revoked.name + '" of ' +
                         who + ' is revoked. A client still sending it is ' +
                         'refused at its next authentication.' };
+    }
+
+    if (action === 'set-not-delegated') {
+      const flag = ['true', 'on', '1', 'yes'].indexOf(
+        String(body.value === undefined ? 'true' : body.value).trim()
+          .toLowerCase()) >= 0;
+      const result = credentials.setNotDelegated(who, flag);
+      audited('admin.delegation.not-delegated',
+              (result.ok ? '' : 'could not ') + (flag ? 'mark ' : 'clear ') +
+              who + (flag ? ' as one who cannot be delegated'
+                          : '\'s stsNotDelegated'),
+              { notDelegated: flag,
+                errors: result.ok ? undefined : (result.errors || []) },
+              result.ok ? 'success' : 'failure');
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "set-not-delegated was refused.");
+        return this.refusedBy('STS-ADMIN-0805', result);
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "set-not-delegated.");
+      return { ok: true, username: who, notDelegated: flag,
+               message: flag
+                 ? who + ' now carries stsNotDelegated: nobody may act for ' +
+                   'them at WS-Trust or the token exchange, whatever any ' +
+                   'application says (enforced in product mode).'
+                 : who + ' no longer carries stsNotDelegated.' };
+    }
+
+    if (action === 'set-may-act') {
+      const named = String(body.delegate || '').trim();
+      const result = credentials.setMayAct(who, named);
+      audited('admin.delegation.may-act',
+              (result.ok ? '' : 'could not ') + (named ? 'name ' + named +
+              ' as the party who may act for ' + who : 'clear the party who ' +
+              'may act for ' + who),
+              { delegate: named,
+                errors: result.ok ? undefined : (result.errors || []) },
+              result.ok ? 'success' : 'failure');
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "set-may-act was refused.");
+        return this.refusedBy('STS-ADMIN-0806', result);
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). set-may-act.");
+      return { ok: true, username: who, mayAct: named,
+               message: named
+                 ? named + ' may now act for ' + who + ': access tokens ' +
+                   'about ' + who + ' carry may_act naming them (RFC 8693 ' +
+                   'section 4.4), and an exchange of one by anybody else is ' +
+                   'refused.'
+                 : 'Nobody is named as acting for ' + who + ' now.' };
     }
 
     // require-mfa and stop-requiring-mfa

@@ -1938,6 +1938,11 @@ const OWN_NAMES = [
   // (2026-09-13) — see readPersonFlags(): a second factor required of them, and
   // the hash of a password reset link.
   'stsMfaRequired', 'stsPasswordResetToken', 'stsPasswordResetExpires',
+  // WHO MAY ACT FOR A PERSON (#108, 2026-09-23): "sensitive and cannot be
+  // delegated" (Kerberos's NOT_DELEGATED, on the person), and the one party
+  // they have named as their delegate, whose `sub` becomes the `may_act` claim
+  // of their access tokens. See `common/delegation_policy.ts`.
+  'stsNotDelegated', 'stsMayAct',
 
   // THE CLIENT TRUSTSTORE'S DURABLE HALF (2026-09-12): one entry per anchor
   // under ou=trustAnchors in the DEFAULT realm. A CA certificate is public, so
@@ -8630,6 +8635,50 @@ if (typeof credentials.setDirectory === 'function') {
       log.debug("Leaving writeMfaRequired().");
       return writePersonFlag(key, 'stsMfaRequired', value ? true : '');
     },
+    // WHO MAY ACT FOR THIS PERSON (#108, 2026-09-23), for
+    // `common/delegation_policy.ts` through `credentials.ts`. Checked where
+    // they are used, like the pairs above. ONE READ answers everything the
+    // policy asks about a subject: whether they are a person here, the two
+    // flags, their groups (DN and cn, both directions of membership) and the
+    // delegate named by `stsMayAct` resolved to its kind, name and `sub`.
+    readDelegationFacts: function (key) {
+      log.debug("Entering readDelegationFacts().");
+      log.debug("Leaving readDelegationFacts().");
+      return readDelegationFacts(key);
+    },
+    writeNotDelegated: function (key, value) {
+      log.debug("Entering writeNotDelegated().");
+      log.debug("Leaving writeNotDelegated().");
+      return writePersonFlag(key, 'stsNotDelegated', value ? true : '');
+    },
+    writeMayAct: function (key, value) {
+      log.debug("Entering writeMayAct().");
+      log.debug("Leaving writeMayAct().");
+      return writePersonFlag(key, 'stsMayAct', value ? String(value) : '');
+    },
+    // Every person in the realm carrying either flag, for the policy table on
+    // /admin/delegation. One walk of the people, reading two attributes.
+    delegationFlaggedPersons: function () {
+      log.debug("Entering delegationFlaggedPersons().");
+      const out = [];
+      // The STORED entries (lower-cased attribute keys), not allPersons()'s
+      // display objects.
+      eachEntryInRealm(function (entry) {
+        if (!isPersonEntry(entry)) {
+          return;
+        }
+        const a = entry.attributes;
+        const notDelegated =
+          String((a.stsnotdelegated || [])[0] || '').toUpperCase() === 'TRUE';
+        const mayAct = String((a.stsmayact || [])[0] || '');
+        if (notDelegated || mayAct) {
+          out.push({ username: usernameOfEntry(entry), dn: entry.dn,
+                     notDelegated: notDelegated, mayAct: mayAct });
+        }
+      });
+      log.debug("Leaving delegationFlaggedPersons(). " + out.length);
+      return out;
+    },
     // A DISABLED ACCOUNT (2026-09-17): the draft's administrative lock, in the
     // ambient realm like the rest of the person's credentials.
     readAccountDisabled: function (key) {
@@ -9258,10 +9307,54 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 // One reader and one writer for them, narrowed to exactly these names, so that
 // neither slot below becomes a general attribute writer.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// WHAT THE DELEGATION POLICY ASKS ABOUT A SUBJECT (#108, 2026-09-23), in one
+// read. `key` is any of `locateEntry()`'s shapes — a username, a
+// `urn:uuid:` subject, a DN. `delegate` is `stsMayAct` resolved: a person
+// (their name and `urn:uuid:` subject) or an entry under ou=applications (its
+// DN; the policy turns that into an identifier through `applications.js`), or
+// `null` when the attribute names nothing in this realm.
+// ---------------------------------------------------------------------------
+function readDelegationFacts(key) {
+  log.debug('Entering readDelegationFacts(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readDelegationFacts(). No entry.');
+    return { found: false, person: false, dn: '', username: '',
+             notDelegated: false, mayAct: '', delegate: null, groups: [] };
+  }
+  const flags = readPersonFlags(stored.dn);
+  const mayAct = flags ? flags.mayAct : '';
+  let delegate = null;
+  if (mayAct) {
+    const named = locateEntry(mayAct).stored;
+    if (named && isPersonEntry(named)) {
+      delegate = { kind: 'person', dn: named.dn,
+                   name: usernameOfEntry(named),
+                   sub: 'urn:uuid:' + entryUuidOf(named) };
+    } else if (named && normalizeDn(named.dn).endsWith(
+      ',' + normalizeDn(applicationsDn()))) {
+      delegate = { kind: 'application', dn: named.dn, name: '', sub: '' };
+    }
+  }
+  const membership = groupsOfUser(stored.dn);
+  log.debug('Leaving readDelegationFacts().');
+  return { found: true, person: isPersonEntry(stored), dn: stored.dn,
+           username: isPersonEntry(stored) ? usernameOfEntry(stored) : '',
+           notDelegated: !!(flags && flags.notDelegated), mayAct: mayAct,
+           delegate: delegate,
+           groups: (membership.groups || []).map(function (one) {
+             return { dn: one.dn, cn: one.cn };
+           }) };
+}
+
 const PERSON_FLAGS = ['pwdReset', 'stsBootstrapAdministrator',
                       'stsConsoleClaimedAt', 'stsMfaRequired',
                       'stsPasswordResetToken', 'stsPasswordResetExpires',
-                      'pwdAccountLockedTime'];
+                      'pwdAccountLockedTime',
+                      // #108: see readDelegationFacts().
+                      'stsNotDelegated', 'stsMayAct'];
 
 // The value an administrator's lock is written with: the draft's "locked
 // permanently, until a password administrator unlocks it".
@@ -9290,7 +9383,9 @@ function readPersonFlags(key) {
            mfaRequired: one('stsMfaRequired').toUpperCase() === 'TRUE',
            passwordResetToken: one('stsPasswordResetToken'),
            passwordResetExpires: Number(one('stsPasswordResetExpires') || 0),
-           accountLockedTime: one('pwdAccountLockedTime') };
+           accountLockedTime: one('pwdAccountLockedTime'),
+           notDelegated: one('stsNotDelegated').toUpperCase() === 'TRUE',
+           mayAct: one('stsMayAct') };
 }
 
 function writePersonFlag(key, name, value, options) {

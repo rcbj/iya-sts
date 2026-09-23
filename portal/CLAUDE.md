@@ -1222,6 +1222,26 @@ withdrawal does; four things are this page's:
   console's and the API's counterpart of *Withdraw everything for this
   application* is `revoke-application-consent` (rule 7).
 
+## `/portal/delegate`: WHO MAY ACT FOR YOU (2026-09-23, #108)
+
+RFC 8693 section 4.4's `may_act` "makes a statement that one party is
+authorized to become the actor and act on behalf of another party", and the
+owner's decision on #108 is that the statement is the PERSON's: `stsMayAct` on
+their own entry, the DN of one person or application in the realm. Every access
+token issued about them then carries `may_act` naming that party
+(`../common/delegation_policy.ts`, `mayActClaimFor()`), and a token exchange of
+one by anybody else is refused in every mode. `portal_delegate.ts` draws it the
+way `portal_app_passwords.ts` draws its page — a file beside `portal.ts`,
+`register(context)`, a real submit button and no script — in *Your account*.
+
+**The form names the DELEGATE, never whose delegate it is**: the identity is the
+session's, this directory's rule. `credentials.setMayAct()` refuses a DN naming
+nobody and the person themselves (`STS-AUTHN-0227`); the page answers 400 with
+`STS-PORTAL-0086` and the store's sentence. An administrator's
+`stsNotDelegated` on the account is SAID on the page, because it makes whatever
+the person names moot. An administrator sets the same attribute from the
+person's `/admin/users` page and `POST /admin-api/users/set-may-act`.
+
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 
 **Send a reset link** on a person's `/admin/users` page stores a hash of a

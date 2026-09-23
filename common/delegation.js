@@ -47,8 +47,10 @@
 // you which of two attributes on which of two accounts is missing, and that is
 // the question people actually arrive with. The KDC already builds that
 // sentence for its own error reply; this file keeps it beside the parties it
-// was about, where the other two protocols — which check nothing at all — can
-// be seen not to have one.
+// was about. The other two protocols checked nothing at all until #108
+// (2026-09-23); now `delegation_policy.ts` decides them too, and a refusal of
+// either carries that module's sentence in the same way — in development as
+// "would have been refused", because it is recorded there and not enforced.
 //
 // **THERE IS NO FUNNEL AND THERE CANNOT BE ONE.** signJwt() is the single point
 // every JWT passes; recordAuthentication() is the single point every accepted
@@ -154,9 +156,10 @@ const MODE_IDS = MODES.map(function (one) { return one.mode; });
 // trust.
 //
 // `policed` says whether THIS SERVICE decides who may perform the act. It is
-// true for the four Kerberos rows and the two assertion-grant rows and false
-// for WS-Trust and token exchange, and that asymmetry is real rather than an
-// omission — see the note on `authorizedBy`.
+// true for every row since #108 (2026-09-23): the four Kerberos rows and the
+// two assertion-grant rows always were, and WS-Trust and token exchange are
+// decided by `common/delegation_policy.ts` — enforced in PRODUCT mode, and in
+// development asked and recorded on the row as "would have been refused".
 const TYPES = [
   { type: 'krb5-s4u2self', protocol: 'Kerberos v5', mode: 'impersonation',
     label: 'S4U2Self (protocol transition)', spec: '[MS-SFU] 3.2.5.1',
@@ -193,24 +196,24 @@ const TYPES = [
           'protected (NOT_DELEGATED) rather than on any service.' },
   { type: 'wstrust-onbehalfof', protocol: 'WS-Trust', mode: 'impersonation',
     label: 'WS-Trust OnBehalfOf', spec: 'WS-Trust 1.3 §9.2',
-    policed: false,
+    policed: true,
     what: 'The requester asked for a token ABOUT somebody else. The token ' +
           'names that somebody and does not name the requester, so the ' +
           'relying party sees an ordinary sign-in.' },
   { type: 'wstrust-actas', protocol: 'WS-Trust', mode: 'delegation',
     label: 'WS-Trust ActAs (composite)', spec: 'WS-Trust 1.4 §9.3',
-    policed: false,
+    policed: true,
     what: 'The 1.4 addition, and composite by definition: the token is about ' +
           'the named subject AND says the requester is acting. It is the ' +
           'element to reach for when the far end must be able to tell.' },
   { type: 'oauth-impersonation', protocol: 'OAuth 2.0', mode: 'impersonation',
     label: 'Token exchange — impersonation', spec: 'RFC 8693 §1.1',
-    policed: false,
+    policed: true,
     what: 'A subject_token and no actor_token. What comes back is a token ' +
           'for the subject with no record of who exchanged it.' },
   { type: 'oauth-delegation', protocol: 'OAuth 2.0', mode: 'delegation',
     label: 'Token exchange — delegation', spec: 'RFC 8693 §4.1',
-    policed: false,
+    policed: true,
     what: 'A subject_token AND an actor_token. What comes back carries an ' +
           '`act` claim naming the actor — and `act` nests, so a second hop ' +
           'appears underneath the first rather than replacing it.' },

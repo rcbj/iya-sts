@@ -1597,6 +1597,32 @@ names the realm the call was made in. **`reset-password` answers `password` and
 `issue-password-reset` answers `resetUrl` in the JSON body, once** — neither is
 retrievable afterwards, and neither is in the audit row.
 
+## WHO MAY ACT FOR WHOM (#108, 2026-09-23)
+
+The delegation policy for WS-Trust and RFC 8693 (`../common/CLAUDE.md`, rule
+3az) has three doors here, and rule 7 is kept by construction rather than by a
+new resource:
+
+* **The four application attributes** (`appAllowedToDelegateTo`,
+  `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`,
+  `appTrustedToImpersonate`) are ordinary `EDITABLE` rows, so `POST
+  /admin-api/applications/{add,set,remove,update}` edits them exactly as the
+  application's console page does. `STS-REG-0194` refuses a flag that is not
+  TRUE or FALSE and a subject group that is not a DN.
+* **The person's two** are `POST /admin-api/users/set-not-delegated`
+  (`{ user, value }`, value defaulting to true) and `/set-may-act`
+  (`{ user, delegate }`, a DN; empty clears), through the same `usersAction()`
+  the person's console page posts — `STS-ADMIN-0805` and `0806`.
+* **`GET /admin-api/delegation/policy`** is the read, answered by
+  `adminViews.delegationPolicyView()` — the function the *Who may act for whom*
+  section of `/admin/delegation` draws — three lists PAGED on parameters of
+  their own (`policyPairsPage`, `intermediariesPage`, `peoplePage`, and `per`
+  for all three), because the people list is a walk of the directory with no
+  natural bound. It is read only, like `GET /admin-api/delegation`: a second
+  write door onto an attribute that already has one would be the drift rule 7
+  exists to catch. The console's JSON carries the same object as
+  `delegationPolicy`.
+
 ## FEDERATION LINKS (#109, 2026-09-22)
 
 `POST /admin-api/users/federation-link` and `/federation-unlink` mirror the

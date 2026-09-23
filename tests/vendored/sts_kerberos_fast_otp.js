@@ -404,20 +404,8 @@ async function setUp(tcp) {
             })));
           assert.deepStrictEqual(aes.name, spn.split("/"));
         });
-  // The principal is created in whichever request worker answered the
-  // create, and the KDC answers in the front process, which learns of it
-  // through the change log — up to a moment later. With request workers
-  // the first AS exchange can therefore meet KDC_ERR_C_PRINCIPAL_UNKNOWN
-  // for a principal that exists (measured 2026-09-23: 7 ms after the create,
-  // in the single-node mode). So it is asked again for up to three seconds;
-  // a principal that never appears still fails the check below.
-  let armor = await wire.asExchange(tcp, K.realm, spn, { key: aes.key });
-  for (let tries = 0; !armor.tgt && tries < 15; tries += 1) {
-    await new Promise(function (resolve) {
-      setTimeout(resolve, 200);
-    });
-    armor = await wire.asExchange(tcp, K.realm, spn, { key: aes.key });
-  }
+  const armor = await wire.asExchange(tcp, K.realm, spn,
+                                      { key: aes.key });
   check("the host gets a TGT with its keytab key — the ARMOR ticket " +
         "(RFC 6113 section 5.4.1.1)", function () {
           assert.ok(armor.tgt, "no TGT for " + spn + ": " +

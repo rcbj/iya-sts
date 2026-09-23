@@ -237,6 +237,10 @@ class ProtocolStack {
     // behind this service's own protected scopes.
     this.build('common/scope_policy', require('./scope_policy'),
                'ScopePolicy');
+    // #108: who may act for whom at WS-Trust OnBehalfOf / ActAs and the RFC
+    // 8693 token exchange. A library, asked by both doors at request time.
+    this.build('common/delegation_policy', require('./delegation_policy'),
+               'DelegationPolicy');
     this.build('cluster/cluster_secrets', require('../cluster/cluster_secrets'),
                'ClusterSecrets');
     this.build('common/websecurity', require('./websecurity'), 'WebSecurity');
@@ -314,6 +318,9 @@ class ProtocolStack {
     this.build('portal/portal_consents',
                require('../portal/portal_consents'),
                'PortalConsents');
+    this.build('portal/portal_delegate',
+               require('../portal/portal_delegate'),
+               'PortalDelegate');
     this.build('portal/portal', require('../portal/portal'), 'Portal');
     this.register(app, require('../portal/portal'), 'portal/portal');
     // The consent screen. It must come AFTER authn.js and BEFORE oauth2.js, and

@@ -4125,6 +4125,16 @@ const CODES = [
       'risk.fingerprinting is off in the realm; nothing draws a page that ' +
       'uses it, so it is not served (#62 P6).',
     spec: 'HTTP 404' },
+  { code: 'STS-AUTHN-0226',
+    summary: 'A delegation flag on a person (stsNotDelegated or stsMayAct) ' +
+      'could not be written onto their entry, or the credential store is ' +
+      'not installed (#108).',
+    spec: 'none — the caller\'s refusal' },
+  { code: 'STS-AUTHN-0227',
+    summary: 'A person\'s delegate (stsMayAct) was refused: it names no ' +
+      'person or application entry in this realm, or names the person ' +
+      'themselves (#108).',
+    spec: 'none — the caller\'s refusal' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -6381,6 +6391,38 @@ const CODES = [
       'its members known on this node were revoked, and the refresh grant ' +
       'refuses any other at its first use (#172).',
     spec: 'none — logged' },
+  // #108: the delegation policy at the RFC 8693 token exchange
+  // (`common/delegation_policy.ts`).
+  { code: 'STS-OAUTH-0618',
+    summary: 'A token exchange was refused by the delegation policy (#108): ' +
+      'the subject may not be delegated (stsNotDelegated, or a member of the ' +
+      'console roster), the client has no application entry, is not trusted ' +
+      'to impersonate (appTrustedToImpersonate), or may not act for this ' +
+      'subject (appDelegationSubjectGroup), or no target was named. Product ' +
+      'mode only; development records what would have been refused.',
+    spec: 'invalid_request (HTTP 400), RFC 8693 section 2.2.2' },
+  { code: 'STS-OAUTH-0619',
+    summary: 'A token exchange was refused because the delegation policy ' +
+      'allows no target it names: neither appAllowedToDelegateTo on the ' +
+      'client nor appAllowedToActOnBehalfOf on the target lists the other ' +
+      '(#108). Product mode only.',
+    spec: 'invalid_target (HTTP 400), RFC 8693 section 2.2.2' },
+  { code: 'STS-OAUTH-0620',
+    summary: 'A token exchange was refused because the verified ' +
+      'subject_token carries a may_act claim naming a party other than the ' +
+      'actor (the actor_token\'s subject, or the client when there is no ' +
+      'actor_token). Held in every mode (#108).',
+    spec: 'invalid_request (HTTP 400), RFC 8693 sections 2.2.2 and 4.4' },
+  { code: 'STS-OAUTH-0621',
+    summary: 'A token exchange asked for a scope wider than the verified ' +
+      'subject_token\'s own scope claim, and product mode refuses an ' +
+      'exchange that widens what the subject granted (#108).',
+    spec: 'invalid_scope (HTTP 400), RFC 6749 section 5.2' },
+  { code: 'STS-OAUTH-0622',
+    summary: 'A token exchange the delegation attributes allowed was ' +
+      'refused because the issuance policy answered Deny for action-id ' +
+      '`delegate` — the deny-only XACML layer (#108). Product mode only.',
+    spec: 'invalid_request (HTTP 400), RFC 8693 section 2.2.2' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -6863,6 +6905,24 @@ const CODES = [
     summary: 'A JWT was refused because the directory holds no entry for the ' +
       'person, so there is no subject to issue it about.',
     spec: 'SOAP Fault (HTTP 400)' },
+  { code: 'STS-WSTRUST-0018',
+    summary: 'An OnBehalfOf or ActAs request was refused by the delegation ' +
+      'policy (#108): the subject may not be delegated, the requester is not ' +
+      'trusted to impersonate or may not act for this subject, or no ' +
+      'attribute allows the AppliesTo. Product mode only; development ' +
+      'records what would have been refused.',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
+  { code: 'STS-WSTRUST-0019',
+    summary: 'An OnBehalfOf or ActAs request was refused because its ' +
+      'requester authenticated as a PERSON (or as a name with no ' +
+      'application entry): in product mode only an application entry may ' +
+      'delegate (#108).',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
+  { code: 'STS-WSTRUST-0020',
+    summary: 'An OnBehalfOf or ActAs request the delegation attributes ' +
+      'allowed was refused because the issuance policy answered Deny for ' +
+      'action-id `delegate` (#108). Product mode only.',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
   // ===== WSFED =============================================================
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
@@ -12949,6 +13009,14 @@ const CODES = [
     summary: 'restore-kerberos (clearing a Kerberos sign-out instant) was ' +
       'refused because it is a development-only test control.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0805',
+    summary: 'set-not-delegated (marking a person as one who cannot be ' +
+      'delegated, or clearing it) was refused (#108).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0806',
+    summary: 'set-may-act (naming the one party who may act for a person, ' +
+      'or clearing it) was refused (#108).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -13558,6 +13626,10 @@ const CODES = [
       'person\'s own to withdraw — none held for that application and ' +
       'scope, or no scope named (#172).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0086',
+    summary: 'A POST to /portal/delegate could not set or clear the ' +
+      'signed-in person\'s delegate (stsMayAct) (#108).',
+    spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
@@ -14164,6 +14236,11 @@ const CODES = [
       'the value would be ignored (#181).',
     spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
       '{ ok: false, errors }' },
+  { code: 'STS-REG-0194',
+    summary: 'A write of a delegation policy attribute was refused (#108): ' +
+      'appTrustedToImpersonate that is not TRUE or FALSE, or an ' +
+      'appDelegationSubjectGroup value that is not a DN.',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

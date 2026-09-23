@@ -803,6 +803,25 @@ function exchangesUnverifiedTokens() {
   return !isProduct();
 }
 
+// Does THIS SERVICE DECIDE who may act for whom at the two delegating doors
+// that had no policy — WS-Trust `OnBehalfOf` / `ActAs` and the RFC 8693 token
+// exchange (#108, 2026-09-23)? Product says yes: `common/delegation_policy.ts`
+// is asked with the intermediary, the subject and the targets, and a refusal
+// is a refusal — `wst:RequestFailed`, `invalid_request` or `invalid_target`.
+// Development says no, and still ASKS: the answer is written on the act's row
+// on `/admin/delegation` as "would have been refused", which is Kerberos's
+// development fixtures' arrangement and `exchangesUnverifiedTokens()`'s. The
+// same predicate refuses an exchange that WIDENS the verified subject_token's
+// scope, because that is the same question — what may a middle tier obtain in
+// somebody else's name — asked about the scope rather than the party.
+// `may_act` is NOT behind it: a subject_token naming its authorized actor is
+// honoured in every mode, because the token itself asks for it.
+function authorizesDelegation() {
+  log.debug("Entering authorizesDelegation().");
+  log.debug("Leaving authorizesDelegation().");
+  return isProduct();
+}
+
 // Does the authorization server issue a scope the client never DECLARED
 // (#110, 2026-09-22)? Development says yes: a client under test asks for
 // whatever word it likes and is given it, which is what lets it be driven with
@@ -1287,6 +1306,26 @@ const REQUIREMENTS = [
              'unexpired and not revoked, or the exchange is refused ' +
              'invalid_request (HTTP 400, RFC 8693 section 2.2.2).',
     where: 'oauth-oidc/oauth2.ts' },
+  // #108 (2026-09-23). `may_act` is not a row: it is honoured in both modes.
+  { id: 'delegation-policy',
+    what: 'Who may act for whom is decided at WS-Trust OnBehalfOf / ActAs ' +
+          'and the RFC 8693 token exchange',
+    development: 'Every delegation is issued. The policy is still asked and ' +
+                 'its answer is recorded on the act on /admin/delegation as ' +
+                 '"would have been refused: ...", and an exchange may ask ' +
+                 'for a scope wider than its subject_token\'s.',
+    product: 'The delegation attributes decide (appAllowedToDelegateTo, ' +
+             'appAllowedToActOnBehalfOf, appDelegationSubjectGroup, ' +
+             'appTrustedToImpersonate on application entries; ' +
+             'stsNotDelegated and the console roster on people), then the ' +
+             'issuance policy may Deny action-id `delegate`. A refusal is ' +
+             'invalid_request or invalid_target (RFC 8693 section 2.2.2) or ' +
+             'a wst:RequestFailed SOAP Fault (WS-Trust 1.4 section 11). Only ' +
+             'an application entry may delegate as a WS-Trust requester, and ' +
+             'an exchange may not widen its subject_token\'s scope ' +
+             '(invalid_scope).',
+    where: 'common/delegation_policy.ts, oauth-oidc/oauth2.ts, ' +
+           'ws-trust/wstrust.ts' },
   // #110 (2026-09-22). The protected scopes are not a row: they are held to
   // the declaration in both modes, which is what a mode does not change.
   { id: 'declared-scopes',
@@ -2564,6 +2603,7 @@ module.exports = {
   opensRevocation: opensRevocation,
   acceptsUnverifiedIssuerTokens: acceptsUnverifiedIssuerTokens,
   exchangesUnverifiedTokens: exchangesUnverifiedTokens,
+  authorizesDelegation: authorizesDelegation,
   grantsUndeclaredScopes: grantsUndeclaredScopes,
   honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,

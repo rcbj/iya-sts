@@ -3185,8 +3185,49 @@ async function handleTgsReq(request) {
 // file in-process from a COPY set (kerberos/CLAUDE.md); both modules are
 // already in that closure through common/app.js.
 // ---------------------------------------------------------------------------
+// **AND WITH REQUEST WORKERS, ON ONE NODE TOO (2026-09-23).** A password
+// set, a principal created, an authenticator enrolled or a sign-out stamped is
+// written by whichever request WORKER answered it, and this KDC answers in the
+// FRONT process, which learns of it through the change log. Port 88 had no
+// read-your-write barrier, so in the single-node mode a KDC request 7-16 ms
+// after such a write was answered from the old copy:
+// KDC_ERR_C_PRINCIPAL_UNKNOWN for a principal that exists, a TGT on a
+// password alone for an account whose second factor had just been enrolled,
+// and a ticket for somebody who had just signed out. So first, wherever
+// `workers.readYourWrite` is on and workers exist, the front process waits
+// for what the workers have answered to commit and pulls it — the same two
+// steps `request_pool.js` takes for an HTTP request it keeps. Lazy and
+// guarded for the parent's COPY set, as below.
+async function catchUpWithWorkers() {
+  log.debug('Entering catchUpWithWorkers().');
+  let pool = null;
+  let persistence = null;
+  try {
+    pool = require('../common/request_pool');
+    persistence = require('../persistence/persistence');
+  } catch (e) {
+    log.debug('Caught in catchUpWithWorkers(): ' + ((e && e.message) || e));
+    log.debug('Leaving catchUpWithWorkers(). No request pool here.');
+    return;
+  }
+  if (!pool.readYourWrite() || !(pool.size() > 0)) {
+    log.debug('Leaving catchUpWithWorkers(). No workers to wait for.');
+    return;
+  }
+  try {
+    await pool.awaitCommitConfirmations(null);
+    await persistence.syncNow();
+  } catch (e) {
+    log.debug('Caught in catchUpWithWorkers(): ' + ((e && e.message) || e));
+    // Answered from what this process has, as every other caller of the
+    // barrier is when the store cannot be read.
+  }
+  log.debug('Leaving catchUpWithWorkers().');
+}
+
 async function catchUpWithCluster() {
   log.debug('Entering catchUpWithCluster().');
+  await catchUpWithWorkers();
   if (!config.value('logout.kerberosSignOut')) {
     log.debug('Leaving catchUpWithCluster(). Sign-out stamps are off.');
     return null;
