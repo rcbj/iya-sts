@@ -960,6 +960,46 @@ function encryptsToObservedCertificates() {
   return !isProduct();
 }
 
+// May a Metadata Query (MDQ) lookup REGISTER a SAML 2.0 service provider
+// nobody registered, on an answer no trust anchor verified (2026-09-23, #112)?
+// A request from an unknown entityID starts a lookup (`saml/sp_metadata.ts`'s
+// `queueMdqLookup()`), so what the answer may do is decided by whoever sends
+// an AuthnRequest — anybody. Development answers yes: a service provider under
+// test is registered by the responder the moment it asks, which is the
+// zero-configuration behaviour MDQ has had since the #37 follow-up. Product
+// answers no. A lookup a REQUEST started is not made at all for an unknown
+// entityID unless the realm has `saml2.metadataTrustAnchors`, and then the
+// answer registers the entity only when its signature verifies against one of
+// them (draft-young-md-query-25 section 6.1 and draft-young-md-query-saml-25
+// section 4.1 put a response's integrity in a signature the requester checks
+// against a key it already holds). An OPERATOR's import is refused too with no
+// anchor, unless `saml2.mdqImportWithoutAnchors` says otherwise. An entry that
+// already exists is refreshed from MDQ as before in both modes.
+function registersFromMetadataQuery() {
+  log.debug("Entering registersFromMetadataQuery().");
+  log.debug("Leaving registersFromMetadataQuery().");
+  return !isProduct();
+}
+
+// Does this identity provider PUBLISH itself to a service provider nobody
+// registered (2026-09-23, #112)? `/saml2/metadata/{sp}` and
+// `/saml11/metadata/{rp}` mint a signed document naming an identity provider
+// of its own for the segment, and the SSO, SLO and artifact endpoints under
+// that segment answer for it. Development answers yes — a service provider
+// can be pointed here before anything is provisioned, which is the mock's
+// decision 1 in both profiles. Product answers no: every one of those paths
+// is a 404 for a name that is not a registered service provider (SAML 2.0) or
+// relying party (SAML 1.1), so this service signs no document about a party
+// an operator never agreed to serve. The unscoped `/saml2/metadata` and
+// `/saml11/metadata` are unchanged. A per-SP document is this service's own
+// extension (SAML Metadata 2.0 section 4.1 defines one document per entity),
+// so the 404 breaks no specification.
+function publishesMetadataForUnregisteredProviders() {
+  log.debug("Entering publishesMetadataForUnregisteredProviders().");
+  log.debug("Leaving publishesMetadataForUnregisteredProviders().");
+  return !isProduct();
+}
+
 // Does this process embed the identity protocol debugger (2026-09-13)?
 // `debugger.enabled` decides where it says `on` or `off`; its default, `auto`,
 // is this predicate's own answer: yes in development, where the debugger is
@@ -1730,6 +1770,36 @@ const REQUIREMENTS = [
              'not encrypted to until an operator confirms it on the SAML 2.0 ' +
              'page or with POST /admin-api/saml2/confirm-signing-certificate.',
     where: 'saml/request_signature.ts, saml/saml2_sso.ts' },
+  { id: 'saml-metadata-query',
+    what: 'A Metadata Query lookup registers only a service provider an ' +
+          'operator or a trust anchor vouched for',
+    development: 'A request from an unknown entityID starts an MDQ lookup ' +
+                 '(saml2.mdqBaseUrl), and an answer that describes that ' +
+                 'entity creates the application entry, held to ' +
+                 'saml2.metadataTrustAnchors only when any are set. The ' +
+                 'Import from MDQ action does the same with or without ' +
+                 'anchors.',
+    product: 'A lookup started by a request is not made for an unknown ' +
+             'entityID when the realm has no saml2.metadataTrustAnchors ' +
+             '(STS-SAML-0080); with anchors the answer creates the entry ' +
+             'only when its signature verifies against one of them ' +
+             '(STS-SAML-0081). An operator\'s Import from MDQ with no anchor ' +
+             'is refused (STS-SAML-0084) unless ' +
+             'saml2.mdqImportWithoutAnchors is on. The refused entityIDs ' +
+             'are listed on the SAML 2.0 page and GET /admin-api/saml2 ' +
+             '(mdqRefused).',
+    where: 'saml/sp_metadata.ts, saml/saml2_sso.ts' },
+  { id: 'saml-unregistered-providers',
+    what: 'Per-provider SAML metadata and endpoints answer only for a ' +
+          'registered provider',
+    development: 'GET /saml2/metadata/{sp} and /saml11/metadata/{rp} mint a ' +
+                 'signed document for any name, and the SSO, SLO, artifact ' +
+                 'and responder endpoints under {sp} or {rp} answer for it.',
+    product: 'Each of those paths answers 404 for a name that is not a ' +
+             'registered SAML 2.0 service provider (STS-SAML-0082) or SAML ' +
+             '1.1 relying party (STS-SAML-0083). The unscoped documents are ' +
+             'unchanged.',
+    where: 'saml/saml2_sso.ts, saml/saml11_sso.ts' },
   { id: 'return-addresses',
     what: 'A response goes where the request says',
     development: 'Any absolute URL a SAML AuthnRequest, a SAML 1.1 shire, a ' +
@@ -2467,6 +2537,9 @@ module.exports = {
   acceptsLooseRequestUris: acceptsLooseRequestUris,
   acceptsUnsignedSamlRequests: acceptsUnsignedSamlRequests,
   encryptsToObservedCertificates: encryptsToObservedCertificates,
+  registersFromMetadataQuery: registersFromMetadataQuery,
+  publishesMetadataForUnregisteredProviders:
+    publishesMetadataForUnregisteredProviders,
   embedsProtocolDebugger: embedsProtocolDebugger,
   limitsDebuggerDestinations: limitsDebuggerDestinations,
   dialsInternalAddresses: dialsInternalAddresses,

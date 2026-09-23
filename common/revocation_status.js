@@ -426,10 +426,33 @@ function signedBy(cert, issuer) {
   }
 }
 
+// A certificate signed by its OWN key under its own name — decided by the
+// name and the signature alone, NOT by `signedBy()`. That goes through
+// OpenSSL's `checkIssued()`, which also asks the issuer to allow
+// keyCertSign: right for a real issuer, wrong here, because a self-signed
+// END-ENTITY certificate (key usage digitalSignature, no keyCertSign — what a
+// pinned issuer certificate in `oid4vp.trustedIssuerCertificates` commonly
+// is) then read as issued by an authority nobody holds, and under #174's
+// hard-fail product refused it as unrevocable (2026-09-23). A self-signed
+// certificate has no issuer to revoke it; removing it from wherever it is
+// pinned is how it is withdrawn.
 function selfSigned(cert) {
   log.debug("Entering selfSigned().");
-  log.debug("Leaving selfSigned().");
-  return !!cert && cert.subject === cert.issuer && signedBy(cert, cert);
+  if (!cert || cert.subject !== cert.issuer) {
+    log.debug("Leaving selfSigned(). Not self-issued.");
+    return false;
+  }
+  try {
+    const ok = cert.verify(cert.publicKey);
+    log.debug("Leaving selfSigned().");
+    return ok;
+  } catch (e) {
+    log.debug("Caught in selfSigned(): " + ((e && e.message) || e));
+    log.debug("Leaving selfSigned().");
+    // A key node cannot verify with is not a self-signature it can vouch
+    // for; the ordinary path walk then decides.
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------

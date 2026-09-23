@@ -548,7 +548,8 @@ var config = {
     spMetadataRefresh: true,                                               // Refresh stale SP metadata in the background
     spMetadataRefreshIntervalS: 300,                                       // Metadata refresher interval (seconds)
     metadataTrustAnchors: "",                                              // Metadata signing trust anchors
-    mdqBaseUrl: ""                                                         // Metadata Query (MDQ) responder
+    mdqBaseUrl: "",                                                        // Metadata Query (MDQ) responder
+    mdqImportWithoutAnchors: false                                         // Allow an MDQ import with no trust anchor (product mode)
   },
 
   // --- SAML 1.1 --------------------------------------------------------

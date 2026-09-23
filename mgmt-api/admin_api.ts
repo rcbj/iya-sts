@@ -7554,18 +7554,27 @@ class AdminApi {
                      'SOAP artifact resolution service behind the ' +
                      'third.\n\n**Every service provider gets its own ' +
                      'identity provider metadata** — a distinct entityID and ' +
-                     'its own endpoints — and **a document is minted for any ' +
-                     'entityID asked for**, so nothing has to be provisioned ' +
-                     'before a service provider can be pointed at this ' +
-                     'service. That is why `metadataUrl` is on every row ' +
+                     'its own endpoints — and **in development a document is ' +
+                     'minted for any entityID asked for**, so nothing has to ' +
+                     'be provisioned before a service provider can be ' +
+                     'pointed at this service; in product every ' +
+                     'per-service-provider path is a 404 for an entityID ' +
+                     'that is not registered. That is why `metadataUrl` is ' +
+                     'on every row ' +
                      'rather than being one constant.\n\nThis resource holds ' +
                      'nothing: every row is an entry in `ou=applications`, ' +
                      'the same one `GET /admin-api/applications` ' +
                      'reports.\n\n`?sp=<entityID>` returns one of them, with ' +
                      'what has been recorded about it — and answers 200 with ' +
-                     '`found: false` for an entityID that is not registered, ' +
-                     'whose metadata is still served and whose AuthnRequest ' +
-                     'would still be answered.\n\nThe `?sp=` reply also ' +
+                     '`found: false` for an entityID that is not registered ' +
+                     '— whose metadata is still served and whose ' +
+                     'AuthnRequest would still be answered, in development ' +
+                     'only.\n\nThe list reply carries `mdqRefused`: the ' +
+                     'entityIDs a request asked the Metadata Query responder ' +
+                     'to register and product mode refused (no trust ' +
+                     'anchor, or an answer that did not verify), newest ' +
+                     'first, paged by `mdqRefusedPage`.\n\nThe `?sp=` ' +
+                     'reply also ' +
                      'says what checking its requests\' signatures found ' +
                      '(`lastRequestVerification`), what they are verified ' +
                      'against (`signingCertificates`), the certificate a ' +
@@ -7579,7 +7588,11 @@ class AdminApi {
           { name: 'sp', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'One service provider, by its entityID.' }
-        ].concat(this.pagingParameters()),
+        ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
+          { name: 'mdqRefused',
+            description: 'The Metadata Query lookups refused in product ' +
+                         'mode (#112), newest first.' }
+        ])),
         responseDescription: 'The service providers with the paging that ' +
                              'found them, or one of them with its endpoints ' +
                              'and its record.',
@@ -7875,7 +7888,11 @@ class AdminApi {
                          'consumes the document, held to the realm\'s ' +
                          '`saml2.metadataTrustAnchors`. Refused with no ' +
                          'responder configured; an entry it created is ' +
-                         'removed again if the document is refused.',
+                         'removed again if the document is refused. **In ' +
+                         'product mode with no trust anchor it is refused** ' +
+                         'unless `saml2.mdqImportWithoutAnchors` is on, and ' +
+                         'then the reply carries `warnings`: the document ' +
+                         'was consumed with no signature check.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',

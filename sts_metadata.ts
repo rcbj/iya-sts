@@ -1237,11 +1237,16 @@ const SPECS: Spec[] = [
               'IDPSSODescriptor, and ONE PER SERVICE PROVIDER — a distinct ' +
               'entityID and its own endpoints, which is what Okta and Ping ' +
               'publish, with WantAuthnRequestsSigned following what is ' +
-              'enforced. It is minted for any entityID asked for. A service ' +
+              'enforced. In development it is minted for any entityID ' +
+              'asked for; in product (#112) a per-service-provider document ' +
+              'is a 404 for an entityID nobody registered. A service ' +
               'provider\'s metadata IS CONSUMED since 2026-09-17, by an ' +
               'explicit refresh of its samlSpMetadataUrl or an uploaded ' +
               'document, by the Metadata Query Protocol ' +
-              '(draft-young-md-query, saml2.mdqBaseUrl) and by a ' +
+              '(draft-young-md-query, saml2.mdqBaseUrl — in product a ' +
+              'lookup registers an unknown entity only when the answer ' +
+              'verifies against a realm trust anchor, and a request with ' +
+              'none makes no lookup at all) and by a ' +
               'background refresher — never while issuing: the ' +
               'SPSSODescriptor\'s ' +
               'AssertionConsumerService and SingleLogoutService endpoints ' +
@@ -8093,9 +8098,12 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['saml2-metadata', 'xmldsig'],
     what: 'THE SAME DOCUMENT, PER APPLICATION: a distinct identity provider ' +
           'entityID and endpoints scoped to that service provider, which is ' +
-          'what Okta and Ping publish. IT 404s FOR NOTHING — an entityID ' +
-          'nobody registered is registered BY THE ASK, so a service provider ' +
-          'can be pointed here before anything is provisioned. The segment ' +
+          'what Okta and Ping publish. IN DEVELOPMENT IT 404s FOR NOTHING — ' +
+          'an entityID nobody registered is registered BY THE ASK, so a ' +
+          'service provider can be pointed here before anything is ' +
+          'provisioned. IN PRODUCT (#112) it is a 404 for anything that is ' +
+          'not a registered SAML 2.0 service provider, and so is every ' +
+          'other {sp} path (STS-SAML-0082). The segment ' +
           'is the percent-encoded entityID, or a slug (app-<12 hex>) where ' +
           'the entityID is not safe in a path. saml2.perApplicationEntityId ' +
           'turns the separate entityID off; the endpoints stay ' +
@@ -8123,7 +8131,8 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Single Sign-On service for ONE service provider',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'xmldsig'],
     effect: 'the same, and it is the same endpoint',
-    what: 'The address the per-application metadata publishes. The scope in ' +
+    what: 'In product, a 404 for a name nobody registered (#112). ' +
+          'The address the per-application metadata publishes. The scope in ' +
           'the path decides which identity provider names itself in the ' +
           'answer; the AuthnRequest\'s own Issuer decides who the assertion ' +
           'is for either way, so a request that disagrees with the path is ' +
@@ -8144,7 +8153,8 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/saml2/ars/:sp', group: 'SAML 2.0',
     name: 'Artifact Resolution Service for ONE service provider',
     specs: ['saml2', 'saml2-bindings'],
-    what: 'The address the per-application metadata publishes, and the same ' +
+    what: 'In product, a 404 for a name nobody registered (#112). ' +
+          'The address the per-application metadata publishes, and the same ' +
           'service: an artifact is found by its own value rather than by the ' +
           'path it is resolved at.' },
   { path: '/saml2/slo', group: 'SAML 2.0', name: 'Single Logout service',
@@ -8166,7 +8176,8 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Single Logout service for ONE service provider',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles'],
     effect: 'the same, and it is the same endpoint',
-    what: 'The address the per-application metadata publishes.' },
+    what: 'In product, a 404 for a name nobody registered (#112). ' +
+          'The address the per-application metadata publishes.' },
   { path: '/saml2/autopost.js', group: 'SAML 2.0', name: 'HTTP POST binding ' +
       'auto-post script',
     specs: ['saml2-bindings'],
@@ -8217,8 +8228,11 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Identity provider metadata for ONE relying party',
     specs: ['saml11', 'saml2-metadata', 'xmldsig'],
     what: 'THE SAME DOCUMENT, PER APPLICATION, and the same rule the SAML ' +
-          '2.0 one follows: it 404s for nothing, because an identifier ' +
-          'nobody registered is registered BY THE ASK. The segment is the ' +
+          '2.0 one follows: in development it 404s for nothing, because an ' +
+          'identifier nobody registered is registered BY THE ASK; in ' +
+          'product (#112) it, /saml11/sso/{rp} and /saml11/responder/{rp} ' +
+          'are a 404 for anything that is not a registered SAML 1.1 ' +
+          'relying party (STS-SAML-0083). The segment is the ' +
           'percent-encoded identifier or a slug, and the slug is THE SAME ' +
           'ONE /saml2 uses — one application has one handle across both ' +
           'profiles, or the console would show one entry as two. ' +
@@ -8243,7 +8257,8 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Inter-site transfer service for ONE relying party',
     specs: ['saml11', 'saml11-profiles'],
     effect: 'the same, and it is the same endpoint',
-    what: 'The address the per-application metadata publishes. With no ' +
+    what: 'In product, a 404 for a name nobody registered (#112). ' +
+          'The address the per-application metadata publishes. With no ' +
           'providerId parameter the path segment is what names the relying ' +
           'party — which in SAML 1.1 matters more than it does in 2.0, where ' +
           'the request\'s own Issuer always could.' },
@@ -8267,7 +8282,8 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/saml11/responder/:rp', group: 'SAML 1.1',
     name: 'SAML responder for ONE relying party',
     specs: ['saml11', 'saml11-bindings'],
-    what: 'The address the per-application metadata publishes, and the same ' +
+    what: 'In product, a 404 for a name nobody registered (#112). ' +
+          'The address the per-application metadata publishes, and the same ' +
           'service: an artifact is found by its own value rather than by the ' +
           'path it is resolved at. The scope decides the Recipient on the ' +
           'answer and the audience of a query\'s assertion when the query ' +
