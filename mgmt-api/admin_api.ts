@@ -4360,14 +4360,17 @@ class AdminApi {
             responseDescription: 'Whether it had been revoked.' },
           { action: 'restore-kerberos', operationId: 'clearKerberosSignOut',
             summary: 'NON-SPEC: clear the Kerberos sign-out instant',
-            description: 'Removes the instant a logout stamped on the ' +
+            description: 'Clears the instant a logout stamped on the ' +
                          'principal, so a ticket-granting ticket ' +
-                         'authenticated before it is accepted again.\n\n**A ' +
-                         'real KDC has no such operation**, and it does not ' +
-                         'need one: a fresh AS-REQ is the supported way back ' +
-                         'and clears the instant itself. This exists so a ' +
-                         'test can put a signed-out ticket back into service ' +
-                         'without re-running the AS exchange.',
+                         'authenticated before it is accepted again.\n\n' +
+                         '**DEVELOPMENT MODE ONLY**: product mode refuses it ' +
+                         '(HTTP 400). **A real KDC has no such operation.** ' +
+                         'A fresh AS-REQ gets a ticket newer than the ' +
+                         'instant but does NOT clear it — tickets from ' +
+                         'before it stay refused, renewals included, until ' +
+                         'the latest one of them could still be valid. This ' +
+                         'exists so a test can put a signed-out ticket back ' +
+                         'into service without restarting the service.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',

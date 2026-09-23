@@ -4089,8 +4089,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'cookie, filtered by family and paged, with a global logout button ' +
           'and per-row controls. It also carries the two UNDOs /logout has ' +
           'not — restoring a revoked token and clearing a Kerberos sign-out ' +
-          'instant, both labelled NON-SPEC because no real deployment could ' +
-          'offer either. What it cannot do is deliver the front-channel ' +
+          'instant (development mode only), both labelled NON-SPEC because ' +
+          'no real deployment could offer either. What it cannot do is deliver the front-channel ' +
           'notifications: those are iframes in the signed-out person\'s own ' +
           'browser. Add ?format=json.' },
   { path: '/admin/metrics', group: 'Admin', name: 'Metrics',
@@ -6287,7 +6287,8 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['openapi'],
     what: 'What this service is still holding for one identity across every ' +
           'protocol family, and the four operations that act on it — global, ' +
-          'end, restore-token and restore-kerberos. It mirrors /admin/logout ' +
+          'end, restore-token and restore-kerberos (the last refused in ' +
+          'product mode). It mirrors /admin/logout ' +
           'and calls the same two functions, so the console and this API ' +
           'cannot come to disagree about what a live session is. The rows ' +
           'that CANNOT be ended are in the reply with a `why`, which is the ' +

@@ -1474,11 +1474,15 @@ const REQUIREMENTS = [
                  '/krb5/principals, signing another person out with ' +
                  '?username=, open dynamic client registration, the SAML ' +
                  '1.1 attribute authority and HOBA key registration all ' +
-                 'answer anybody, and a refused SCIM Digest challenge prints ' +
-                 'the shared password.',
+                 'answer anybody, a refused SCIM Digest challenge prints ' +
+                 'the shared password, and the console\'s restore-kerberos ' +
+                 'clears a Kerberos sign-out instant.',
     product: 'Each is refused, or requires the credential its administrative ' +
              'equivalent already requires. A sign-out naming anybody but the ' +
              'signed-in caller is refused whatever logout.anyUser says. ' +
+             'restore-kerberos is refused on the console and on ' +
+             '/admin-api alike, so a Kerberos sign-out stands until the ' +
+             'latest a ticket from before it could be valid. ' +
              'Dynamic client registration is refused unless ' +
              'oauth2.openRegistration is on — or the registration carries a ' +
              'software statement this realm trusts (it issued it, or an ' +
@@ -1487,7 +1491,8 @@ const REQUIREMENTS = [
              'operator deciding who may register by deciding whose ' +
              'statements to trust.',
     where: 'tls/tls_server.js, oauth-oidc/oauth2.ts, kerberos/krb5_kdc.js, ' +
-           'logout/logout.ts, saml/saml11_sso.ts, scim/scim_auth.ts' },
+           'logout/logout.ts, saml/saml11_sso.ts, scim/scim_auth.ts, ' +
+           'admin-core/admin_actions.ts' },
   { id: 'directory-writes',
     what: 'A write to the directory over LDAP is authorized',
     development: 'Any connection may add, modify, rename or delete any entry ' +

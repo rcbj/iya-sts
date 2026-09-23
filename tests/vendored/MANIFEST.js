@@ -648,6 +648,12 @@ const JOBS = [
   // SIGNED IN WITH by MIT `kinit -k -t` and by `krb5_wire.js` using the
   // keytab's key — against the KDC at the published address, in both modes.
   { file: 'sts_kerberos_keytab.js',      browser: false, local: true },
+  // A KERBEROS SIGN-OUT OUTLIVES THE NEXT AS EXCHANGE (#111, 2026-09-23):
+  // over TCP 88, a TGT from before a global sign-out refused
+  // KDC_ERR_TGT_REVOKED, a new AS exchange straight after it accepted, the
+  // old TGT and a renewal of it still refused, and restore-kerberos refused
+  // in product — in both modes.
+  { file: 'sts_kerberos_signout.js',     browser: false, local: true },
   // Both gRPC surfaces over the network. Since #166 (2026-09-23) also the
   // Workload API's TCP port in product: refused where the network is not
   // declared to authenticate source addresses, and entries selecting this

@@ -325,9 +325,13 @@ async function theDatabase(t) {
             'and the same alice record, salted its own way');
 
     // A REBUILD keeps what is runtime state. `krb5.kvno` is one of the
-    // settings a realm's database is built from.
+    // settings a realm's database is built from. The stamp is a recent whole
+    // second, inside its horizon (#111): a stamp older than the longest a
+    // ticket can live is no longer in force, rebuild or not.
+    const signedOutWhen = new Date(Math.floor(Date.now() / 1000) * 1000 -
+                                   60000);
     realms.run(realm, function () {
-      principals.signOut(['alice'], ACME, new Date('2026-03-04T05:06:07Z'));
+      principals.signOut(['alice'], ACME, signedOutWhen);
     });
     const changed = realms.setOverride('krr-db', 'krb5.kvno', '9');
     t.check(changed.ok, 'a setting the database is built from may be changed ' +
@@ -339,7 +343,7 @@ async function theDatabase(t) {
               principals.find(['alice']).kvno, 9,
               'so its accounts carry it');
       const stamp = principals.signedOutAt(['alice'], ACME);
-      t.equal(stamp && stamp.toISOString(), '2026-03-04T05:06:07.000Z',
+      t.equal(stamp && stamp.toISOString(), signedOutWhen.toISOString(),
               'AND THE SIGN-OUT SURVIVED THE REBUILD — runtime state is ' +
               'carried onto the record the new settings built');
     });

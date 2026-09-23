@@ -147,10 +147,18 @@ and `/spnego/protected` still performs the whole handshake.
 A [sign-out](signing-out.md) stamps a **sign-out instant** on the principal,
 and a TGS-REQ whose ticket was authenticated before it is refused
 **`KDC_ERR_TGT_REVOKED` (20)**. It is checked on `authtime`, so a renewal cannot
-launder a signed-out ticket; the next AS exchange succeeds and clears the
-instant. A service ticket already in a cache keeps working against the service
-that accepts it — nothing contacts the KDC on that exchange — and `/logout`
-says so. `logout.kerberosSignOut` turns it off.
+launder a signed-out ticket. The next AS exchange succeeds, and **does not lift
+the instant**: its new ticket is accepted — the exchange waits, at most a
+second, for the sign-out's whole second to pass, because `authtime` has no
+fractions — while every ticket from before the sign-out stays refused until the
+latest one could still be valid (the sign-out plus the longer of
+`krb5.ticketLifetimeSeconds` and `krb5.renewLifetimeSeconds`, plus
+`krb5.clockSkew`). The instant is taken on the KDC's clock, so
+`krb5.clockOffset` moves it with `authtime`. A service ticket already in a cache
+keeps working against the service that accepts it — nothing contacts the KDC on
+that exchange — and `/logout` says so. `logout.kerberosSignOut` turns it off.
+The console's `restore-kerberos` clears an instant in development mode and is
+refused in product mode.
 
 ### A KDC per trust realm
 
@@ -361,9 +369,10 @@ appconfig file.
   which is also where disabling an Active Directory account bites.
   `KDC_ERR_TGT_REVOKED` is registered but no specification emits it — this is an
   invention using the closest code.
-* **Signing out is not disabling.** The next AS exchange succeeds and clears the
-  instant; a disabled account is `KDC_ERR_CLIENT_REVOKED` and refuses the AS
-  exchange too.
+* **Signing out is not disabling.** The next AS exchange succeeds — without
+  lifting the instant, so tickets from before it stay refused (#111); a
+  disabled account is `KDC_ERR_CLIENT_REVOKED` and refuses the AS exchange
+  too.
 * **Port 88 routes by the realm name in the request.** Every AS-REQ and TGS-REQ
   names a realm, so that is the discriminator; routing once, before any
   handler, means no handler can answer from the wrong realm's database.
