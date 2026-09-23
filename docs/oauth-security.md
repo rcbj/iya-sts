@@ -385,7 +385,6 @@ default**:
 * `mtls_endpoint_aliases` (RFC 8705 section 5): the endpoints already ask for a
   certificate where they are.
 * A client certificate forwarded in a header by a TLS-terminating proxy.
-* Client authentication at `/oauth2/revoke`, in any mode.
 * `acr_values` on the device and token-exchange grants; GNAP's interaction does
   not read a step-up requirement.
 

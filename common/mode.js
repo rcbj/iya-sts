@@ -600,6 +600,28 @@ function opensIntrospection() {
   return !isProduct();
 }
 
+// May a caller that does not authenticate revoke a token at /oauth2/revoke
+// (#102, 2026-09-22)? RFC 7009 section 2.1 has the server first validate "the
+// client credentials (in case of a confidential client)" and then whether the
+// token "was issued to the client making the revocation request" — and
+// development answers yes anyway, for `opensIntrospection()`'s reason: the
+// suites and every client under test revoke with nothing but the token, and a
+// refusal there removes the case they run. Product answers no: a confidential
+// client must present a credential that verifies, a public one must name a
+// registered `client_id`, and either may revoke only its own token. A token
+// issued to somebody else is refused `invalid_grant` there.
+//
+// **A CREDENTIAL THAT IS PRESENTED IS VERIFIED IN BOTH MODES**, which is where
+// this differs from introspection: a client under test that authenticates at
+// the revocation endpoint should meet section 2.1's refusals, the wrong-secret
+// 401 and another client's token, rather than a quiet 200.
+// `oauth-oidc/oauth2.ts`'s `revokeRequest()` makes both decisions.
+function opensRevocation() {
+  log.debug("Entering opensRevocation().");
+  log.debug("Leaving opensRevocation().");
+  return !isProduct();
+}
+
 // Does an OpenID4VCI endpoint — the credential, deferred credential and
 // notification endpoints — accept an access token this realm CANNOT VERIFY
 // (2026-09-18)? OID4VCI lets the authorization server be somebody else, so
@@ -1266,6 +1288,23 @@ const REQUIREMENTS = [
              '401 invalid_client otherwise (400 for a JWT request, RFC 9701 ' +
              'section 5).',
     where: 'oauth-oidc/oauth2.ts, oauth-oidc/introspection_jwt.ts' },
+  { id: 'revocation',
+    what: 'A caller of /oauth2/revoke authenticates, and revokes only its ' +
+          'own token',
+    development: 'An RFC 7009 revocation with no client credential revokes ' +
+                 'any access or refresh token this realm issued, for anybody ' +
+                 'who holds the token string. A caller that DOES present a ' +
+                 'credential is held to what product holds it to: a ' +
+                 'credential that does not verify is refused 401 ' +
+                 'invalid_client, and a token issued to another client ' +
+                 'is refused invalid_grant.',
+    product: 'Every revocation request must come from a client: a ' +
+             'confidential one presents a credential that verifies (the ' +
+             'token endpoint\'s methods), a public one names its registered ' +
+             'client_id, and anything else is refused 401 invalid_client ' +
+             '(RFC 7009 section 2.1). A token issued to another client is ' +
+             'refused 400 invalid_grant and nothing is revoked.',
+    where: 'oauth-oidc/oauth2.ts' },
   { id: 'request-objects',
     what: 'A JWT-secured authorization request is signed, and a request_uri ' +
           'is HTTPS',
@@ -1967,6 +2006,7 @@ module.exports = {
   refusesUnknownRevocationStatus: refusesUnknownRevocationStatus,
   requiresEnrollmentTls: requiresEnrollmentTls,
   opensIntrospection: opensIntrospection,
+  opensRevocation: opensRevocation,
   acceptsUnverifiedIssuerTokens: acceptsUnverifiedIssuerTokens,
   exchangesUnverifiedTokens: exchangesUnverifiedTokens,
   grantsUndeclaredScopes: grantsUndeclaredScopes,

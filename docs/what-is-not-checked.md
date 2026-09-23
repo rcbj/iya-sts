@@ -74,6 +74,7 @@ any of them would be a broken implementation rather than a lenient one:
 | Verify an access token at the OpenID4VCI endpoints | The credential, deferred credential and notification endpoints refuse a token this realm cannot verify, and one it revoked, with `invalid_token` | A token this realm cannot verify — or has revoked — is read unverified, since OpenID4VCI lets the authorization server be somebody else. A credential issued that way cannot sign anybody in |
 | Verify the tokens in an RFC 8693 token exchange | **Since 2026-09-21**: the `subject_token` and the `actor_token` must verify against this realm's signing key, be unexpired and not revoked, or the exchange is `invalid_request` (`STS-OAUTH-0555`, `0556`, `0557`). Until that date product exchanged a forged token exactly as development does | A `subject_token` this realm cannot verify is read for its name and exchanged, and the `/admin/users` row says the subject was *told about* rather than authenticated. An `actor_token` is read and never verified. A **revoked** token this realm signed is refused in both modes |
 | Require DPoP or mutual TLS | Refresh tokens rotate (product implies RFC 9700 mode). Nothing else here changes with the mode, and `POST /dpop/nonce-mode` is refused | Four settings make a sender constraint mandatory, all off unless set: `oauth2.accessTokenRequireDpop` and `oauth2.accessTokenRequireMtls` refuse a presented access token with no `cnf.jkt` or `cnf["x5t#S256"]` at every surface that takes one, and `oauth2.refreshTokenRequireDpop` and `oauth2.refreshTokenRequireMtls` refuse to issue or redeem an unbound refresh token. Neither OAuth 2.1 nor RFC 9700 asks for these, so no mode turns one on. The access-token pair refuses at the resource only, and the mutual TLS pair needs `global.https`. `oauth2.dpopNonceRequired` makes proofs fresher, not mandatory |
+| Require a client to revoke a token | `POST /oauth2/revoke` requires client authentication — a confidential client's credential, or a public client's registered `client_id` — and refuses without it (401 `invalid_client`). A client may revoke only its own tokens (`invalid_grant`) | Anybody holding the token string may revoke it. **A credential that is presented is verified in both modes**, and then only the client's own tokens may be revoked |
 | Require a credential to introspect a token as JSON | `POST /oauth2/introspect` requires client authentication and refuses without it (401 `invalid_client`). A caller learns only about tokens meant for it | Anybody holding the token string gets RFC 7662 JSON. **An RFC 9701 JWT response requires client authentication in both modes** |
 | Require a request object to be signed | An RFC 9101 request object with `alg: none` is refused, and a `request_uri` must be https and answer with the `oauth-authz-req+jwt` or `jwt` media type | `alg: none` is accepted unless `oauth2.requireSignedRequestObject`, the client or a named authorization server asks for a signed one. In both modes a signed object is always verified, a `request_uri` is fetched only from an address the client registered, and a `jti` is accepted once |
 | Refuse a pushed authorization request whose client credential did not verify | A client that declared a confidential method is refused 401; a public client may push without one. The pushed request is always validated and bound to its client | The credential is observed and the push accepted. Section 2.4's unregistered `redirect_uri` (`oauth2.parAllowUnregisteredRedirectUris`, off) needs a credential that verified in every mode |
@@ -850,8 +851,7 @@ URI, and a token request naming a client whose entry declares nothing is
 refused. `GET /oauth2/oauth21` says which requirements are enforced and which are
 inherited.
 
-What it still does not check: a client at `/oauth2/revoke` (see below); a client
-at `/oauth2/introspect` beyond what that endpoint checks in every mode; and the
+What it still does not check: a client at `/oauth2/introspect` beyond what that endpoint checks in every mode; and the
 client of an assertion grant that names none. In product a pre-authorized code
 grant that names no client is refused.
 
@@ -866,9 +866,6 @@ These are true in a product deployment today, and are tracked as issues:
   [#179](https://github.com/rcbj/iya-sts/issues/179). FAST in the TGS exchange
   (implicit armor) is not implemented either: a TGS-REQ that carries it is
   answered unarmored, which MIT's client accepts.
-* **`/oauth2/revoke` authenticates no client** and does not check that the token
-  belongs to the caller (RFC 7009 section 2.1). Anybody holding a token string
-  can revoke it ([#102](https://github.com/rcbj/iya-sts/issues/102)).
 * **A WebAuthn attestation statement is not verified**: there is no FIDO
   metadata service ([#105](https://github.com/rcbj/iya-sts/issues/105)).
 * **The directory has no per-identity read authorization**: anybody who has bound

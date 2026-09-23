@@ -112,9 +112,9 @@
 // (oauth-oidc/CLAUDE.md 3f and 3ah). Client authentication at
 // `/oauth2/introspect` is not this mode's either: an RFC 9701 JWT request
 // authenticates in every mode and a JSON one in product mode (3ai).
-// `/oauth2/revoke` authenticates nobody. And the requirements RFC 9700 places
-// on the CLIENT stay the client's — this service can detect several of them
-// and fix none.
+// Nor is `/oauth2/revoke`'s, which is `mode.opensRevocation()`'s (#102). And
+// the requirements RFC 9700 places on the CLIENT stay the client's — this
+// service can detect several of them and fix none.
 // ===========================================================================
 
 const crypto = require('crypto');
@@ -2853,9 +2853,11 @@ function forgetStaleRefreshTokens() {
 //      ITS OWN.** The family was found by looking the parent's jti up here, so
 //      a parent record not yet replicated (or dropped by the cap) split the
 //      chain, and a later replay revoked half of it. So the family id now
-//      travels IN THE REFRESH TOKEN (`FAMILY_CLAIM`, RFC 9700 mode only, inside
-//      the JWE where no client reads it), and `familyForIssuance()` prefers
-//      what the parent's own token says.
+//      travels IN THE REFRESH TOKEN (`FAMILY_CLAIM`, inside the JWE where no
+//      client reads it), and `familyForIssuance()` prefers what the parent's
+//      own token says. **In every mode since #102 (2026-09-22)**, rotation or
+//      not: RFC 7009's revocation of a refresh token takes its whole grant,
+//      and a chain that does not rotate is still one grant.
 //   2. **`family.members.push()` LOST MEMBERS.** The family row is written
 //      whole, so two nodes each adding a child wrote back two arrays with one
 //      child each, and the last writer won. Membership is no longer stored as
@@ -2877,7 +2879,8 @@ const FAMILY_CLAIM = 'refresh_family';
 // the presented token's own `refresh_family` claim, where it has one.
 function familyForIssuance(jti, parentJti, parentFamily) {
   log.debug("Entering familyForIssuance().");
-  const parent = parentJti ? refreshTokens.get(String(parentJti)) : null;
+  const parent = parentJti ? (refreshTokens.get(String(parentJti)) ||
+                              grantTokens.get(String(parentJti))) : null;
   // The root's own jti names the family. It needs no randomness of its own and
   // it makes a family identifiable in a log line without a second lookup.
   const familyId = String(parentFamily || '') ||
@@ -2951,6 +2954,122 @@ function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
   refreshFamilies.set(familyId, family);
   forgetStaleRefreshTokens();
   log.debug("Leaving noteRefreshIssued(). Family " + familyId + ".");
+}
+
+// ---------------------------------------------------------------------------
+// WHAT ONE GRANT ISSUED, FOR RFC 7009 (#102, 2026-09-22).
+//
+// Section 2.1: revoking a refresh token SHOULD also invalidate "all access
+// tokens based on the same authorization grant". The bookkeeping above knows
+// a family's REFRESH tokens, and only while rotation is required; it never
+// knew an access token at all — and its header says why that was right for a
+// REPLAY. A revocation is a different act (see `revokeRequest()` in
+// `oauth2.ts`): the client is finished with the grant, and what it was issued
+// under that grant goes with it.
+//
+// **ONE ROW PER TOKEN SET, keyed by the refresh token's jti**, naming its
+// family and the access token minted beside it — in every mode, because the
+// SHOULD does not depend on rotation. One key per issuance rather than an
+// array on the family row, for (2) above: two nodes writing two different
+// keys cannot lose either. `grantMembersOf()` derives the membership, and
+// adds what the rotation bookkeeping knows.
+//
+// **FORGOTTEN WHEN BOTH TOKENS ARE PAST THEIR `exp`**, when nothing is left to
+// revoke, and bounded by the refresh bookkeeping's own setting at twice its
+// value — one row per token set against its one per refresh token, plus the
+// slack of a chain that does not rotate. Pruned at insert, as that
+// bookkeeping is (`forgetStaleRefreshTokens()`); a row dropped at the cap is
+// an access token the revocation of its grant will not reach, which is the
+// safe direction — it still expires — and is logged.
+// ---------------------------------------------------------------------------
+// refresh jti -> { family, access, clientId, forget }
+const grantTokens = realms.map({ persist: 'oauth2_bcp.grantTokens',
+                                 tombstone: true });
+
+function forgetStaleGrantTokens() {
+  log.debug("Entering forgetStaleGrantTokens().");
+  const now = Date.now();
+  grantTokens.forEach(function (record, jti) {
+    if (!record || record.forget < now) {
+      grantTokens.delete(jti);
+    }
+  });
+  const cap = 2 * maxRefreshTokens();
+  let dropped = 0;
+  while (grantTokens.size > cap) {
+    const oldest = grantTokens.keys().next();
+    if (oldest.done) {
+      break;
+    }
+    grantTokens.delete(oldest.value);
+    dropped++;
+  }
+  if (dropped) {
+    log.warn('RFC 7009: ' + dropped + ' record(s) of what a grant issued ' +
+             'were forgotten because twice oauth2.maxRefreshTokenFamilies (' +
+             cap + ') is full of unexpired token sets. Those tokens still ' +
+             'work until they expire, but revoking their refresh token will ' +
+             'no longer revoke them with it. Raise the setting.');
+  }
+  log.debug("Leaving forgetStaleGrantTokens(). " + grantTokens.size + " " +
+            "remembered.");
+}
+
+// Called from `refreshToken()` in `oauth2.ts`, the one function that mints a
+// refresh token, with the access token `tokenSet()` minted beside it (empty
+// where there was none). `expSec` is the later of the two `exp`s.
+function noteGrantTokens(familyId, refreshJti, accessJti, clientId, expSec) {
+  log.debug("Entering noteGrantTokens(). family=" + familyId);
+  if (!familyId || !refreshJti) {
+    log.debug("Leaving noteGrantTokens(). Nothing to record.");
+    return;
+  }
+  const skew = Number(config.value('oauth2.clockSkewS'));
+  const exp = Number(expSec);
+  grantTokens.set(String(refreshJti), {
+    family: String(familyId),
+    access: String(accessJti || ''),
+    clientId: String(clientId || ''),
+    forget: (isFinite(exp) ? exp * 1000 : Date.now() +
+             refreshFamilyWindowMs()) + (isFinite(skew) ? skew * 1000 : 0)
+  });
+  forgetStaleGrantTokens();
+  log.debug("Leaving noteGrantTokens().");
+}
+
+// The family a presented refresh token belongs to: what its own token says,
+// then what either record here says, then the token itself as the root of a
+// family of one (a token minted before #102 carried no claim outside RFC 9700
+// mode).
+function familyOfRefresh(claims) {
+  log.debug("Entering familyOfRefresh().");
+  const c = claims || {};
+  const jti = String(c.jti || '');
+  const known = jti ? (refreshTokens.get(jti) || grantTokens.get(jti)) : null;
+  const familyId = String(c[FAMILY_CLAIM] || (known && known.family) || jti);
+  log.debug("Leaving familyOfRefresh(). family=" + (familyId || '(none)'));
+  return familyId;
+}
+
+// Every jti of the grant a family is: its refresh tokens and the access tokens
+// minted beside them, as recorded here, and the members the rotation
+// bookkeeping knows (`membersOf()`). `alsoJti` is the presented token's own.
+function grantMembersOf(familyId, alsoJti) {
+  log.debug("Entering grantMembersOf().");
+  const wanted = String(familyId || '');
+  const out = new Set(membersOf(wanted, alsoJti));
+  if (wanted) {
+    grantTokens.forEach(function (record, jti) {
+      if (record && record.family === wanted) {
+        out.add(String(jti));
+        if (record.access) {
+          out.add(String(record.access));
+        }
+      }
+    });
+  }
+  log.debug("Leaving grantMembersOf(). " + out.size + " jti(s).");
+  return Array.from(out);
 }
 
 // How long a family revoked by a replay stays revoked: as long as any member
@@ -3845,6 +3964,11 @@ module.exports = {
   // family by id.
   FAMILY_CLAIM: FAMILY_CLAIM,
   familyForIssuance: familyForIssuance,
+  // #102: what one grant issued, for RFC 7009's revocation of a refresh
+  // token.
+  noteGrantTokens: noteGrantTokens,
+  familyOfRefresh: familyOfRefresh,
+  grantMembersOf: grantMembersOf,
   // #34: re-exported so that `oauth2.js` asks ONE name whether refresh tokens
   // rotate, whatever turned it on. The answer lives in sender_constraints.js,
   // which this file may require and which may never require this file back.

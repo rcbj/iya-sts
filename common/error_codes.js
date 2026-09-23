@@ -6263,6 +6263,43 @@ const CODES = [
       'Response Type Encoding Practices forbids (#125). The refusal goes in ' +
       'the fragment.',
     spec: 'redirect {error: invalid_request}' },
+  { code: 'STS-OAUTH-0608',
+    summary: 'An RFC 7009 revocation request named no token: section 2.1 ' +
+      'makes the token parameter REQUIRED (#102). In both modes.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0609',
+    summary: 'An RFC 7009 revocation request from a registered client did ' +
+      'not authenticate: in product mode a confidential client presented no ' +
+      'credential, or (in either mode) a credential that did not verify, ' +
+      'or an entry that declares no method presented none (#102).',
+    spec: 'invalid_client (HTTP 401, RFC 7009 section 2.1)' },
+  { code: 'STS-OAUTH-0610',
+    summary: 'Product mode: an RFC 7009 revocation request named no client ' +
+      'this realm has registered — no client_id at all, or one with no ' +
+      'entry — so there is no client to validate (#102).',
+    spec: 'invalid_client (HTTP 401, RFC 7009 section 2.1)' },
+  { code: 'STS-OAUTH-0611',
+    summary: 'An RFC 7009 revocation request presented a token this realm ' +
+      'signed that is neither an access token nor a refresh token — an ID ' +
+      'Token, a logout token, a SET — which this server does not revoke ' +
+      '(#102).',
+    spec: 'unsupported_token_type (HTTP 400, RFC 7009 section 2.2.1)' },
+  { code: 'STS-OAUTH-0612',
+    summary: 'An RFC 7009 revocation request from an authenticated or ' +
+      'identified client presented a token issued to another client. ' +
+      'Refused and nothing revoked; the audit row names both clients ' +
+      '(#102).',
+    spec: 'invalid_grant (HTTP 400, RFC 7009 section 2.1 and RFC 6749 ' +
+      'section 5.2)' },
+  { code: 'STS-OAUTH-0613',
+    summary: 'A client authenticating at the revocation endpoint declares a ' +
+      'token_endpoint_auth_method the selected authorization server does ' +
+      'not list in revocation_endpoint_auth_methods_supported (#102).',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0614',
+    summary: 'The revocation endpoint failed with an unexpected error ' +
+      'outside every refusal it makes (#102).',
+    spec: 'server_error (HTTP 500)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
