@@ -65,7 +65,7 @@ will not bind on an ordinary user account.
 | 8888 | The Kerberos-protected test service | `krb5.servicePort` | `KRB5_SERVICE_PORT` |
 | 389 | The LDAP directory | `ldap.port` | `LDAP_PORT` |
 | 636 | The same directory over TLS (LDAPS) | `ldap.tlsPort` | `LDAPS_PORT` |
-| 8092 | The SPIFFE Workload API over gRPC | `spiffe.workloadPort` | `STS_SPIFFE_WORKLOAD_PORT` |
+| 8092 | The SPIFFE Workload API over gRPC (product mode: only where `spiffe.workloadTcpSourceAuthenticated` is on) | `spiffe.workloadPort` | `STS_SPIFFE_WORKLOAD_PORT` |
 | 8181 | The SPIRE Server API over gRPC | `spiffe.serverPort` | `STS_SPIFFE_SERVER_PORT` |
 | — | The Workload API's **Unix socket**, at `/tmp/spire-agent/public/api.sock` | `spiffe.workloadSocket` | `STS_SPIFFE_WORKLOAD_SOCKET` |
 

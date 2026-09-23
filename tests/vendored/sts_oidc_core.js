@@ -800,7 +800,27 @@ async function test() {
     assert.strictEqual(back.params.get("error"), "invalid_request");
   });
 
-  assert.ok(checks >= 33, "only " + checks + " checks ran; a section has " +
+  log.info("=== o. form_post, a successful code response (#126) ===");
+  const formPost = codeRequest(plain, { response_mode: "form_post" });
+  r = await authorize(alice, formPost.params, ALICE);
+  const hidden = function (name) {
+    const m = new RegExp('name="' + name + '" value="([^"]*)"').exec(r.text);
+    return m ? m[1].replace(/&amp;/g, "&") : null;
+  };
+  check("response_mode=form_post answers a form POSTing code, state and iss " +
+        "to the redirect URI, with a real button (Form Post Response Mode " +
+        "section 2)", function () {
+    assert.strictEqual(r.status, 200, r.status + " " + r.location);
+    assert.ok(new RegExp('<form[^>]+method="post"[^>]+action="' +
+      REDIRECT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + '"').test(r.text),
+      r.text.slice(0, 400));
+    assert.ok(hidden("code"), "no code field");
+    assert.strictEqual(hidden("state"), formPost.params.state);
+    assert.ok(hidden("iss"), "no iss field");
+    assert.ok(/type="submit"/.test(r.text), "no button");
+  });
+
+  assert.ok(checks >= 34, "only " + checks + " checks ran; a section has " +
                                              "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

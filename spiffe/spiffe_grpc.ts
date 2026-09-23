@@ -695,6 +695,24 @@ class SpiffeGrpc {
                              'else.') };
     }
     const caller = auth.callerOf(call, surface);
+    // THE WORKLOAD API OVER TCP, ASKED PER CALL (#166). `bindAll()` does not
+    // bind the port where the posture refuses it; this is the other half: a
+    // realm switched to product — or whose declaration was withdrawn — after
+    // its port was bound keeps the socket, because the listeners are bound
+    // once, and refuses every call on it here with the reason's own code
+    // (STS-SPIFFE-0120 or STS-SPIFFE-0121). The mode is runtime, so the read
+    // is the guard.
+    if (surface === 'workload' && caller.transport !== 'uds') {
+      const posture = auth.workloadTcpPosture();
+      if (!posture.served) {
+        log.debug('Leaving SpiffeGrpc.prepareCall(). TCP is not served.');
+        return { caller: caller,
+                 errorCode: posture.errorCode || 'STS-SPIFFE-0120',
+                 refusal: this.unavailable('The Workload API is not served ' +
+                                           'over TCP here: ' + posture.why +
+                                           '.') };
+      }
+    }
     // A CONNECTION ACCEPTED ON THE ATTESTED SOCKET (#40 phase four). Its
     // facts were gathered, and its workload attestors run, before gRPC saw
     // it; here, on EVERY call, the process must still be the one attested,

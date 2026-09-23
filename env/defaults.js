@@ -981,6 +981,7 @@ var config = {
     workloadSocketEnabled: true,                                  // Workload API on a Unix socket; restart to apply
     workloadSocket: "/tmp/spire-agent/public/api.sock",           // Workload API socket path; restart to apply
     workloadPort: 8092,                                           // Workload API TCP port; restart to apply
+    workloadTcpSourceAuthenticated: false,                        // Workload API TCP: the network authenticates source addresses; restart to apply
     serverPort: 8181,                                             // SPIRE Server API TCP port; restart to apply
     serverSocketEnabled: false,                                   // SPIRE Server API on a Unix socket; restart to apply
     serverSocket: "/tmp/spire-server/private/api.sock",           // SPIRE Server API socket path; restart to apply
