@@ -134,6 +134,21 @@ Restart-only and settable on a trust realm, for exactly the reason above.
 `GET /oauth2/oauth21` lists every requirement it adds, which it inherits, and
 the grants it deliberately exempts.
 
+### `oauth2.fapi` — a FAPI security profile, and it turns RFC 9700 mode on
+
+`off` by default. `1-baseline` enforces FAPI 1.0 Part 1: Baseline (final):
+RFC 9700 mode, plus confidential clients authenticating by mutual TLS,
+`private_key_jwt` or `client_secret_jwt`, key sizes, PKCE with S256 for every
+client, an https `redirect_uri` always sent, `nonce` with `openid` and `state`
+without it, the person's own consent, one client per request, and access
+tokens of at most ten minutes unless sender-constrained.
+
+Restart-only and settable on a trust realm, for the reason above. A **named
+authorization server** may also carry its own value, or `off` to opt out of
+its realm's (the `fapi` member on `/admin/authorization-servers`).
+`GET /oauth2/fapi` lists every requirement. See
+[OAuth security](oauth-security.md#fapi-10-baseline).
+
 ### Sender constraints — five settings that ask for more than either mode
 
 **Neither OAuth 2.1 nor RFC 9700 requires DPoP**, and that is worth saying once

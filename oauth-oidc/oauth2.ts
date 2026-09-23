@@ -3654,6 +3654,28 @@ class OAuth2Server {
     return null;
   }
 
+  // `exp` - `iat` of a JWT this service just signed, or `fallback` when it
+  // cannot be read.
+  lifetimeOf(token: string, fallback: number): number {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.lifetimeOf().");
+    let lifetime = fallback;
+    try {
+      const claims = JSON.parse(Buffer.from(String(token).split('.')[1] || '',
+                                            'base64url').toString('utf8'));
+      const read = Number(claims.exp) - Number(claims.iat);
+      lifetime = read > 0 ? read : fallback;
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.lifetimeOf(): " +
+                ((e && e.message) || e));
+      // Not a JWS this module can read: the configured lifetime is the
+      // answer the response always gave.
+      lifetime = fallback;
+    }
+    log.debug("Leaving OAuth2Server.lifetimeOf(). " + lifetime);
+    return lifetime;
+  }
+
   // ASYNCHRONOUS BECAUSE idToken() IS, and for no other reason: everything else
   // it mints is RS256 and stays in this process.
   async tokenSet(base: Json, opts: Json): Promise<Json> {
@@ -3781,10 +3803,9 @@ class OAuth2Server {
       // — a bound token announced as Bearer would be presented as one and
       // refused.
       token_type: opts.jkt ? 'DPoP' : 'Bearer',
-      // The token's own lifetime, FAPI's cap included (#138): the binding
-      // test is the one noteTokenBinding() above uses.
-      expires_in: fapi.accessTokenLifetime(self.accessTokenTtl(opts.client_id),
-        !!(opts.jkt || (opts.request && mtls.presentedThumbprint(opts.request)))),
+      // The lifetime the token CARRIES, so FAPI's cap (#138), applied in
+      // accessToken() by whether the token has a cnf, is the one reported.
+      expires_in: self.lifetimeOf(access, self.accessTokenTtl(opts.client_id)),
       // RFC 6749 section 5.1: `scope` describes the ACCESS TOKEN that was
       // issued, and this one no longer carries the value that became its
       // audience. It is therefore not identical to what was requested, which is

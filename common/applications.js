@@ -10380,8 +10380,10 @@ function debuggerApplications() {
 const HOSTED_SURFACE_CLIENT_IDS = Object.freeze(['sts-admin-console',
   'sts-user-portal', 'sts-debugger-ui']);
 
-// The two, built fresh on each call because each carries two credentials that
-// are generated rather than declared.
+// The rows, built fresh on each call because each carries a credential that is
+// generated rather than declared — a registration access token, and a client
+// secret for the management API alone: the three hosted surfaces authenticate
+// by private_key_jwt with a key `oidc_rp.ts` has issued (#138).
 function internalApplications() {
   log.debug("Entering internalApplications().");
   const base = internalBaseUrl();

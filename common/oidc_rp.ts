@@ -1490,6 +1490,8 @@ class OidcRelyingParty {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering OidcRelyingParty.clientAssertion().");
     const now = Math.floor(Date.now() / 1000);
+    // certificate-header: none — the token endpoint verifies against the key
+    // registered on the surface's own entry, never one the assertion carries.
     const signed = stsCrypto.signJws({
       iss: surface.clientId,
       sub: surface.clientId,

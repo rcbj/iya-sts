@@ -3068,7 +3068,8 @@ const SETTINGS = [
                  'client_secret_jwt only, registered keys of RSA 2048 / EC ' +
                  '160 bits or more, one client named per request, the ' +
                  'user\'s own consent (an administrator\'s global consent ' +
-                 'does not count), and access tokens under ten minutes unless ' +
+                 'does not count), and access tokens under ten minutes ' +
+                 'unless ' +
                  'sender-constrained. A named authorization server may carry ' +
                  'its own value (the fapi member on ' +
                  '/admin/authorization-servers). OFF by default. GET ' +

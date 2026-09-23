@@ -6737,8 +6737,8 @@ Since 2026-09-06. `/admin` and `/portal` used to authenticate by REDIRECTING
 STRAIGHT TO THE SIGN-IN SCREEN and then reading the session that screen minted.
 They are **OpenID Connect relying parties** now: an unauthenticated request is
 sent to `/oauth2/authorize`, comes back to a registered redirect URI with a
-code, and the code is redeemed at `/oauth2/token` with a client secret and a
-PKCE verifier for an ID Token that establishes a session of that surface's own.
+code, and the code is redeemed at `/oauth2/token` with a `private_key_jwt`
+client assertion (a client secret until #138) and a PKCE verifier for an ID Token that establishes a session of that surface's own.
 
 **WHAT WAS WRONG WITH THE OLD ARRANGEMENT IS THE WHOLE ARGUMENT**: this
 service's own two applications were the only applications in the process that
@@ -6750,9 +6750,12 @@ reach outside it and this is the index of them:
 
 1. **THEY ARE ORDINARY ENTRIES IN THE REGISTRY.** `sts-admin-console` and
    `sts-user-portal` under `ou=applications`, seeded at startup
-   (`applications.seedInternal`), each a confidential client with a secret
-   minted per start, `authorization_code` + `refresh_token`, `response_types:
-   ['code']` and `client_secret_basic`. **Deleting one takes its surface offline
+   (`applications.seedInternal`), each a confidential client,
+   `authorization_code` + `refresh_token`, `response_types: ['code']` and —
+   since #138 (2026-09-22) — `private_key_jwt` with NO client secret: the key
+   is issued by the realm's CA on first use and kept, sealed, on the entry
+   (`oauth-oidc/CLAUDE.md` 3av). It was `client_secret_basic` with a secret
+   minted per start. **Deleting one takes its surface offline
    until a restart**, with a refusal that names the entry — which is the seeding
    rule finally having an observable consequence. — *THERE ARE THREE OF THEM
    SINCE 2026-09-06* under `applications.js`, above

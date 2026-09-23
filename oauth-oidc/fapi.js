@@ -76,10 +76,10 @@ const MIN_EC_BITS = 160;
 const MAX_UNBOUND_ACCESS_TOKEN_S = 600;
 
 // ---------------------------------------------------------------------------
-// WHAT FAPI 1.0 BASELINE ASKS OF THE AUTHORIZATION SERVER, row by row. `enforced`
-// is 'yes', 'inherited' (RFC 9700 mode enforces it, and this profile turns
-// that mode on), 'already' (true of this service whatever the setting) or
-// 'no' with the reason in `note`.
+// WHAT FAPI 1.0 BASELINE ASKS OF THE AUTHORIZATION SERVER, row by row.
+// `enforced` is 'yes', 'inherited' (RFC 9700 mode enforces it, and this
+// profile turns that mode on), 'already' (true of this service whatever the
+// setting) or 'no' with the reason in `note`.
 // ---------------------------------------------------------------------------
 const REQUIREMENTS = [
   { id: 'implies-rfc9700', section: '5.2.2', level: 'SHALL',
