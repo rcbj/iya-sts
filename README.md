@@ -744,7 +744,8 @@ Four things about these settings do not fit in a cell and have cost real time:
   doing what the first did; and the second answer cannot be given on the port
   every other protocol arrives at, so it is not given at all. A certificate that
   does not verify is refused where it is USED: RFC 8705 client authentication,
-  `/xacml`, `/scim/v2` and `GET /tls/sign-in`. Neither setting was replaced, so
+  `/xacml`, `/scim/v2`, `GET /tls/sign-in` and a GNAP key proved by mutual TLS
+  under `gnap.mtlsTrust=pki`. Neither setting was replaced, so
   a deployment that still sets one gets an "unknown setting" warning at startup.
 
 
@@ -802,6 +803,7 @@ trust realm. [docs/gnap.md](docs/gnap.md) says what each one changes on the wire
 | `gnap.interactionStartModes` | `STS_GNAP_INTERACTION_START_MODES` | `redirect,app,user_code,user_code_uri` | yes | Section 9's interaction_start_modes_supported. |
 | `gnap.finishMethods` | `STS_GNAP_FINISH_METHODS` | `redirect,push` | yes | Section 9's interaction_finish_methods_supported. |
 | `gnap.keyProofs` | `STS_GNAP_KEY_PROOFS` | `httpsig,mtls,jwsd,jws` | yes | Section 9's key_proofs_supported. |
+| `gnap.mtlsTrust` | `STS_GNAP_MTLS_TRUST` | `auto` | yes | How a key proved by mutual TLS is trusted (RFC 9635 sections 7.3.2 and 11.4): `pki` — a chain to the client truststore, the revocation check, and a certificate bound to the client's entry (issued to it here, or matching its one `oauthTlsClientAuth*` subject) — or `pinned` — the certificate the key names, self-signed allowed. A revoked certificate is refused in both. `auto` is `pki` in product and `pinned` in development. **Warning:** `pinned` gives up chain validation and rotation at the certificate authority. An application's `gnapMtlsTrust` may be stricter, never weaker. |
 | `gnap.subIdFormats` | `STS_GNAP_SUB_ID_FORMATS` | `opaque,iss_sub,email,account,uri,phone_number,aliases` | yes | Section 9's sub_id_formats_supported, in RFC 9493's own spellings. |
 | `gnap.assertionFormats` | `STS_GNAP_ASSERTION_FORMATS` | `id_token,saml2` | yes | Section 9's assertion_formats_supported: an OpenID Connect ID Token and a SAML 2.0 assertion, built by the same code the OIDC and SAML families use. |
 | `gnap.assertionMaxAgeS` | `STS_GNAP_ASSERTION_MAX_AGE_S` | `300` | yes | Section 2.4 lets an AS "accept a recently expired assertion in order to help bootstrap a new session". |
@@ -1009,7 +1011,7 @@ unedited service behaves exactly as it did.
 | `pki.intermediateLifetimeYears` | `STS_PKI_INTERMEDIATE_LIFETIME_YEARS` | `0` | yes | The same for an Intermediate CA — at startup, for a realm created at runtime, and for a branch rebuilt under a replaced Root. Zero is the profile's ten. |
 | `pki.issuingLifetimeYears` | `STS_PKI_ISSUING_LIFETIME_YEARS` | `0` | yes | The same for each Issuing CA. Zero is the profile's five. |
 | `pki.maxStoredObjects` | `STS_PKI_MAX_STORED_OBJECTS` | `200` | yes | How many objects the Certificate & Key Configuration pane keeps per realm. **A full store refuses the next one** rather than discarding the oldest, which may carry a private key somebody kept. |
-| `pki.revocationCheck` | `STS_PKI_REVOCATION_CHECK` | `auto` | yes | Whether a certificate PRESENTED to this service — on the main port (XACML, SCIM, RFC 8705 client authentication and `GET /tls/sign-in`), at the SPIRE Server API or in an assertion's `x5c` — is checked for revocation: `off`, `soft-fail` (refuse a revoked one), `hard-fail` (refuse one whose status could not be established too). One this service issued is looked up in its own register; one from another authority against the CRL it names. **`auto` is hard-fail in product mode and soft-fail in development.** |
+| `pki.revocationCheck` | `STS_PKI_REVOCATION_CHECK` | `auto` | yes | Whether a certificate PRESENTED to this service — on the main port (XACML, SCIM, RFC 8705 client authentication, a GNAP key proved by mutual TLS and `GET /tls/sign-in`), at the SPIRE Server API or in an assertion's `x5c` — is checked for revocation: `off`, `soft-fail` (refuse a revoked one), `hard-fail` (refuse one whose status could not be established too). One this service issued is looked up in its own register; one from another authority against the CRL it names. **`auto` is hard-fail in product mode and soft-fail in development.** |
 | `pki.revocationRequireDistributionPoint` | `STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT` | `auto` | yes | Under hard-fail, whether a CA-issued foreign certificate naming no CRL and no OCSP responder (and no RFC 9608 `noRevAvail`) is refused. `auto` is `mode.refusesUnrevocableCertificates()`: refused in product (`STS-PKI-0190`), accepted in development; `on` refuses in both. **`off` accepts certificates nobody can ever revoke** — a stolen key under such an authority is good until it expires. |
 | `pki.revocationFetchTimeoutMs` | `STS_PKI_REVOCATION_FETCH_TIMEOUT_MS` | `3000` | yes | How long fetching a foreign CRL may take. |
 | `pki.revocationMaxCrlBytes` | `STS_PKI_REVOCATION_MAX_CRL_BYTES` | `1048576` | yes | The largest CRL fetched; a bigger answer is refused as unreachable. |

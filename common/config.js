@@ -1025,6 +1025,33 @@ const SETTINGS = [
     description: 'Section 9\'s key_proofs_supported. mtls needs the main ' +
                  'port to be HTTPS (global.https) so that a client ' +
                  'certificate can arrive at all.' },
+  // WHAT A CERTIFICATE PROVED BY MUTUAL TLS IS TRUSTED FOR (#107,
+  // 2026-09-23). RFC 9635 section 7.3.2 allows a pinned certificate and
+  // section 11.4 a PKI; `auto` asks `mode.requiresPkiForGnapMtls()`.
+  // `gnap/gnap_proof.ts` argues both models and why revocation is consulted
+  // in each.
+  { key: 'gnap.mtlsTrust', group: 'GNAP',
+    label: 'Mutual TLS key proof trust',
+    path: 'gnap.mtlsTrust', env: 'STS_GNAP_MTLS_TRUST', type: 'enum',
+    enumValues: ['auto', 'pki', 'pinned'], dflt: 'auto', runtime: true,
+    description: 'How a GNAP key proved by mutual TLS (RFC 9635 section ' +
+                 '7.3.2) is trusted. `pki` (section 11.4) requires the TLS ' +
+                 'client certificate to chain to the client truststore — ' +
+                 'this realm\'s TLS client authority, or an anchor installed ' +
+                 'at /tls/trust — and to be bound to the client\'s ' +
+                 'application entry: issued to it by this realm, or carrying ' +
+                 'the one RFC 8705 subject parameter the entry registers ' +
+                 '(oauthTlsClientAuthSubjectDn or an oauthTlsClientAuthSan* ' +
+                 'attribute). A certificate re-issued by the authority is ' +
+                 'then accepted with no new registration. `pinned` accepts ' +
+                 'the certificate the key names, self-signed included, with ' +
+                 'no chain. A revoked certificate is refused in both ' +
+                 '(pki.revocationCheck). **`auto` is pki in product mode and ' +
+                 'pinned in development.** WARNING: `pinned` gives up chain ' +
+                 'validation and rotation at the certificate authority — a ' +
+                 'stolen self-signed key stays good until the entry that ' +
+                 'pins it is edited. An application may make this stricter ' +
+                 'for itself (gnapMtlsTrust=pki), never weaker.' },
   { key: 'gnap.subIdFormats', group: 'GNAP',
     label: 'Subject identifier formats',
     path: 'gnap.subIdFormats', env: 'STS_GNAP_SUB_ID_FORMATS', type: 'csv',
@@ -4520,7 +4547,8 @@ const SETTINGS = [
     dflt: 'auto', runtime: true,
     description: 'Whether a certificate PRESENTED to this service — on the ' +
                  'main port (XACML, SCIM, RFC 8705 client authentication, ' +
-                 'GET /tls/sign-in), at the SPIRE Server API or in an ' +
+                 'a GNAP key proved by mutual TLS, GET /tls/sign-in), at the ' +
+                 'SPIRE Server API or in an ' +
                  'assertion\'s x5c — is checked for revocation. One this ' +
                  'service issued is looked up in its own register; one from ' +
                  'another authority against the CRL it names. `off` consults ' +

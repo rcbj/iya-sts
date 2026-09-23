@@ -817,28 +817,10 @@ function registeredCertificatesOf(jwksText) {
   return out;
 }
 
-// The two identity questions `tls_client_certificates.js` answers, off this
-// request's socket. Required lazily, for `mtls.peerVerified()`'s reason: it
-// reaches the certificate authority, and a process with none answers
-// "not issued here".
-function issuedIdentityOf(request) {
-  log.debug("Entering issuedIdentityOf().");
-  let identity = { issuedHere: false, accepted: false };
-  let held = false;
-  try {
-    const tlsClient = require('../common/tls_client_certificates');
-    const status = require('../common/revocation_status');
-    identity = tlsClient.identityOf(status.fromSocket(request.socket));
-    held = identity.accepted ? tlsClient.stillHeld(identity) : false;
-  } catch (e) {
-    log.debug("Caught in issuedIdentityOf(): " + ((e && e.message) || e));
-    identity = { issuedHere: false, accepted: false };
-    held = false;
-  }
-  log.debug("Leaving issuedIdentityOf(). issuedHere=" + identity.issuedHere);
-  return { identity: identity, held: held };
-}
-
+// The two identity questions `tls_client_certificates.js` answers — who a
+// certificate was issued to, and whether that holder's record still lists it
+// — are `mtls.issuedIdentityOf()` since #107 (2026-09-23), because GNAP's PKI
+// trust model asks them of the same socket.
 function verifyCertificate(opts) {
   log.debug("Entering verifyCertificate(). method=" + opts.method);
   const cert = mtls.peerCertificate(opts.request);
@@ -954,7 +936,7 @@ function verifyCertificate(opts) {
                           'uses exactly one, so there is no single subject ' +
                           'to expect. Clear all but one.' };
   }
-  const issued = issuedIdentityOf(opts.request);
+  const issued = mtls.issuedIdentityOf(opts.request);
   const identity = issued.identity;
   if (identity.issuedHere && identity.accepted) {
     const mine = identity.kind === 'application' &&
