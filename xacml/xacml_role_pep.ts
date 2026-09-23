@@ -137,6 +137,9 @@ interface IssuanceQuestion {
   // there are risk facts. A Deny that is not about risk is then not a
   // refusal. See `common/issuance_gate.js`.
   rolesWaived?: boolean;
+  // THE AUTHENTICATION A SESSION STANDS ON (#64): `{ amr, acr, kinds }`,
+  // named by `authn.startSession()` and by nothing else.
+  authentication?: { amr?: string[]; acr?: string; kinds?: string[] } | null;
   // THE DELEGATION QUESTION (#108): action-id `delegate`, asked by
   // `issuance_gate.checkDelegation()` after the delegation attributes allowed
   // an act. DENY-ONLY — see `decideDenyOnly()`.
@@ -210,6 +213,8 @@ const DELEGATION_ATTRIBUTE = {
   PROTOCOL: 'urn:sts:xacml:delegation-protocol'
 };
 const RISK = templates.RISK_ATTRIBUTE;
+// #64: the authentication a session stands on.
+const AUTHN = templates.AUTHN_ATTRIBUTE;
 
 // Said once per process rather than once per issuance. A service running
 // without its issuance policy would otherwise write a line per token, which
@@ -448,7 +453,8 @@ class XacmlRolePep {
           attributes: [this.attribute(model.ATTRIBUTE.ACTION_ID,
                                       [asked.kind])] },
         { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-          attributes: this.riskAttributes(asked.risk) }
+          attributes: this.riskAttributes(asked.risk)
+            .concat(this.authenticationAttributes(asked.authentication)) }
       ]
     };
     log.debug('Leaving XacmlRolePep.buildRequest().');
@@ -477,6 +483,31 @@ class XacmlRolePep {
       out.push(this.attribute(RISK.SCORE, [risk.score], model.TYPE.DOUBLE));
     }
     log.debug("Leaving XacmlRolePep.riskAttributes().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE AUTHENTICATION A SESSION STANDS ON (#64), as environment attributes:
+  // `amr`, `acr` and the credential kinds. Sent only by a caller that names
+  // them — the session's start — and none otherwise, so a rule about them is
+  // inapplicable to every other issuance.
+  // -------------------------------------------------------------------------
+  private authenticationAttributes(facts: any): any[] {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.authenticationAttributes().");
+    if (!facts) {
+      log.debug("Leaving XacmlRolePep.authenticationAttributes(). None.");
+      return [];
+    }
+    const out = [
+      this.attribute(AUTHN.AMR, (facts.amr || []).map(String)),
+      this.attribute(AUTHN.CREDENTIAL_KIND,
+                     (facts.kinds || []).filter(Boolean).map(String))
+    ];
+    if (facts.acr) {
+      out.push(this.attribute(AUTHN.ACR, [String(facts.acr)]));
+    }
+    log.debug("Leaving XacmlRolePep.authenticationAttributes().");
     return out;
   }
 
@@ -699,7 +730,13 @@ class XacmlRolePep {
                           answer);
     }
 
-    if (asked.rolesWaived) {
+    // A DENY ABOUT THE AUTHENTICATION (#64) refuses even where the role
+    // question was waived: it is not about roles.
+    const aboutAuthentication = answer.decision === model.DECISION.DENY &&
+      (answer.obligations || []).some(function (o) {
+        return o && o.id === AUTHN.OBLIGATION;
+      });
+    if (asked.rolesWaived && !aboutAuthentication) {
       log.debug('Leaving XacmlRolePep.decideNow(). Not about risk, and the ' +
                 'role question was waived.');
       return this.allowed('The role question was waived and the issuance ' +

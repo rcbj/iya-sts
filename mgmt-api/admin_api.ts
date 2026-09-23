@@ -4029,6 +4029,57 @@ class AdminApi {
             },
             responseDescription: 'Whose set was cleared.' },
 
+          // THE EMAILED SECOND FACTOR AND THE ADDRESS (#64).
+          { action: 'clear-email-factor', operationId: 'clearUserEmailFactor',
+            summary: 'Turn off somebody\'s emailed second factor',
+            description: 'Clears `stsMailFactor` — the emailed code or link ' +
+                         'the person opted into on `/portal/mfa`. It cannot ' +
+                         'lock anybody out: it is a second factor. There is ' +
+                         'no operation that turns it ON: the opt-in is the ' +
+                         'person\'s. `removed: false` means they had none.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether a factor was turned off.' },
+
+          { action: 'set-mail', operationId: 'setUserMail',
+            summary: 'Set somebody\'s email address',
+            description: 'Writes `mail` on the person\'s entry and marks it ' +
+                         'VERIFIED (`stsMailVerified`): an administrator is ' +
+                         'one of the trusted sources #64 names, with SCIM, an ' +
+                         'administrator\'s LDAP write and a federation ' +
+                         'partner. The FORMER address, if there was one, is ' +
+                         'told it changed. Refused unless it is an address ' +
+                         'this service could send to.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                mail: { type: 'string', maxLength: 254,
+                        description: 'The address.' }
+              },
+              required: ['user', 'mail'],
+              examples: [{ user: 'alice', mail: 'alice@example.com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The address now on the entry, verified.' },
+
           // -----------------------------------------------------------------
           // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS (2026-09-13),
           // mirroring the Password and second-factor controls on a person's
@@ -6180,7 +6231,28 @@ class AdminApi {
               examples: [{ username: 'alice', credentialId: 'q1w2e3r4' }],
               additionalProperties: false
             },
-            responseDescription: 'How many keys are left.' }
+            responseDescription: 'How many keys are left.' },
+
+          { action: 'clear-email-factor', operationId: 'clearEmailFactor',
+            summary: 'Turn off somebody\'s emailed second factor',
+            description: 'The same switch as `POST /admin-api/users/' +
+                         'clear-email-factor` (#64): clears the emailed code ' +
+                         'or link the person opted into. It cannot lock ' +
+                         'anybody out.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                username: { type: 'string',
+                            description: 'The name they sign in as.' },
+                user: { type: 'string',
+                        description: 'Accepted for `username`.' }
+              },
+              required: ['username'],
+              examples: [{ username: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether a factor was turned off.' }
         ] },
 
       { method: 'GET', path: BASE + '/tokens', tag: 'Tokens',

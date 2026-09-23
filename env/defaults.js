@@ -1146,6 +1146,7 @@ var config = {
     dedupWindowS: 600,                   // Duplicate suppression window (seconds)
     selfServiceReset: true,              // Self-service password reset
     resetRequiresVerifiedAddress: true,  // Self-service reset needs a verified address
+    resetRequiresBackupCode: true,       // Self-service reset needs a recovery code
     verificationTtlMinutes: 1440,        // Address verification link lifetime (minutes)
     securityNotices: true,               // Security notices
     notifyAdministrators: true           // Tell administrators of system acts

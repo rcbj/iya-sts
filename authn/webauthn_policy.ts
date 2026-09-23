@@ -90,6 +90,9 @@ import errorCodes = require('../common/error_codes');
 // default, and `off` refused in product. A leaf: it requires `config` and
 // `error_codes`, both already here.
 import mode = require('../common/mode');
+// THE AUTHENTICATION POLICY (#64): its passkey and security-key rows are
+// asked in `roleAllowed()`. A LEAF, so no cycle.
+import authnPolicy = require('../common/authn_policy');
 
 // JOSE spelling -> COSE identifier, INVERTED from the verifier's own table
 // rather than written out. That table is what decides whether a signature can
@@ -431,7 +434,30 @@ class WebauthnPolicy {
       return errorCodes.mark({ ok: false,
                why: 'A security key cannot be a second factor in this realm ' +
                     '(webauthn.mfaAllowed). An authenticator app is the ' +
-                    'other one, where the authentication policy allows it.' }, 'STS-AUTHN-0046');
+                    'other one, where the authentication policy allows ' +
+                    'it.' }, 'STS-AUTHN-0046');
+    }
+    // THE AUTHENTICATION POLICY'S TWO ROWS (#64), asked after this module's
+    // own settings and with the same contract: a key already enrolled goes
+    // on being asked for as a second factor, and what the row stops is a
+    // NEW one, or — as a first factor — signing in with one at all.
+    const policyRow: { mechanism: string;
+                       as: 'primary' | 'second-factor';
+                       code: string } = String(role) === 'primary'
+      ? { mechanism: 'passkey', as: 'primary', code: 'STS-AUTHN-0253' }
+      : { mechanism: 'securityKey', as: 'second-factor',
+          code: 'STS-AUTHN-0254' };
+    if (!authnPolicy.allows(policyRow.mechanism, policyRow.as)) {
+      log.debug('Leaving WebauthnPolicy.roleAllowed(). The authentication ' +
+                'policy does not accept it.');
+      return errorCodes.mark({ ok: false,
+               why: String(role) === 'primary'
+                 ? 'This realm\'s authentication policy does not accept a ' +
+                   'security key or passkey as a first factor. Sign in with ' +
+                   'what it does accept.'
+                 : 'This realm\'s authentication policy does not accept a ' +
+                   'NEW security key as a second factor. A key already ' +
+                   'enrolled goes on working.' }, policyRow.code);
     }
     log.debug('Leaving WebauthnPolicy.roleAllowed(). Allowed.');
     return { ok: true };

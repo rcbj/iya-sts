@@ -323,6 +323,9 @@ const USER_FIELD_PREFIX = 'field.';
 // one turns the parity check off for that action.
 const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'clear-totp', 'clear-key', 'clear-backup-codes',
+                       // The emailed second factor, and the address
+                       // (#64, 2026-09-23).
+                       'clear-email-factor', 'set-mail',
                        // What an administrator does to somebody's
                        // credentials from their page (2026-09-13).
                        'reset-password', 'issue-password-reset',
@@ -554,7 +557,7 @@ const SAML11_RP_KIND = saml11.RP_KIND;
 // So the repertoire is stated here and the WORK is not duplicated: an action
 // outside these two is refused in this resource's own words, and the two that
 // belong to it are handed to the one switch that performs them.
-const MFA_ACTIONS = ['clear-totp', 'clear-key'];
+const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor'];
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
 // PERMISSION_ACTIONS gives at its own site: this repository's own
@@ -2802,6 +2805,82 @@ class AdminActions {
       return this.refusedBy('STS-ADMIN-0521', result);
     }
 
+    // ---------------------------------------------------------------------
+    // THE EMAILED SECOND FACTOR, TURNED OFF (#64). The fourth removal, and
+    // like clearing an authenticator app it cannot lock anybody out: an
+    // emailed factor is a second factor, and the account keeps its first.
+    // There is no Turn On beside it: the opt-in is the person's (D8).
+    // ---------------------------------------------------------------------
+    if (action === 'clear-email-factor') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+                                     'the person whose emailed second ' +
+                                     'factor is being turned off.'] });
+      }
+      const result = require('../common/mail_factor').clear(who, ctx.actor,
+        ctx.via, 'turned off by an administrator');
+      log.info('admin: the emailed second factor of "' + who + '" was ' +
+               (result.removed ? 'turned off' : 'already off') + ' by ' +
+               (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + ').');
+      log.debug("Leaving AdminActions.usersAction(). clear-email-factor.");
+      return result.ok
+        ? { ok: true, removed: !!result.removed,
+            message: result.removed
+              ? 'The emailed second factor of ' + who + ' is off. They ' +
+                'turn it on again at /portal/mfa.'
+              : who + ' had no emailed second factor.' }
+        : this.refused('STS-ADMIN-0814', { ok: false, errors: ['The ' +
+            'emailed second factor of ' + who + ' could not be turned ' +
+            'off.'] });
+    }
+
+    // ---------------------------------------------------------------------
+    // A PERSON'S ADDRESS, SET BY AN ADMINISTRATOR (#64). It is VERIFIED — an
+    // administrator is one of the trusted sources the ticket names — and the
+    // directory tells the former address it changed. Checked here for being
+    // an address this service could send to; the directory writes it.
+    // ---------------------------------------------------------------------
+    if (action === 'set-mail') {
+      const who = String(body.user || body.username || '').trim();
+      const address = String(body.mail || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+                                     'the person whose address is being ' +
+                                     'set.'] });
+      }
+      const bad = address
+        ? require('../common/mail_transports').addressProblem(address)
+        : 'is empty';
+      if (bad) {
+        log.debug("Leaving AdminActions.usersAction(). Not an address.");
+        return this.refused('STS-ADMIN-0815', { ok: false, errors: ['"' +
+          address.slice(0, 80) + '" is not an address this service can ' +
+          'send to: it ' + bad + '.'] });
+      }
+      const dir = require('../common/mail').directory();
+      const written = !!(dir && typeof dir.writeAddress === 'function' &&
+                         dir.writeAddress(who, address, 'admin'));
+      auditLog.record({
+        category: 'admin', action: 'admin.mail.set',
+        actor: ctx.actor, target: who, outcome: written ? 'success'
+                                                        : 'failure',
+        summary: (written ? 'set' : 'could not set') + ' the address of ' +
+                 who,
+        detail: { username: who, via: ctx.via } });
+      log.debug("Leaving AdminActions.usersAction(). set-mail " +
+                (written ? "ok." : "refused."));
+      return written
+        ? { ok: true, mail: address, verified: true,
+            message: 'The address of ' + who + ' is ' + address + ', and ' +
+                     'it is verified: an administrator set it.' }
+        : this.refused('STS-ADMIN-0816', { ok: false, errors: ['There is ' +
+            'no person called "' + who + '" in this realm, or the directory ' +
+            'would not write the address.'] });
+    }
+
     if (action === 'clear-key') {
       const who = String(body.user || body.username || '').trim();
       if (!who) {
@@ -4062,10 +4141,10 @@ class AdminActions {
                      { ok: false, errors: ['Unknown action "' + action + '". ' +
           'There are ' +
                                         MFA_ACTIONS.length + ': ' +
-                                   MFA_ACTIONS.join(' and ') + '. The rest ' +
+                                   MFA_ACTIONS.join(', ') + '. The rest ' +
                                         'of what can be done to a person is ' +
                                    'on /admin-api/users, which is also where ' +
-                                        'these two answer.'] });
+                                        'these answer.'] });
     }
     log.debug("Leaving AdminActions.mfaAction(). Handing " + action +
               " to usersAction().");

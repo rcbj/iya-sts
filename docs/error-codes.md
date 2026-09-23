@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3309** of them, in **37** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3344** of them, in **37** subsystems.
 
 ## Where a code appears
 
@@ -62,7 +62,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 220
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 246
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 541
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
@@ -76,13 +76,13 @@ is an ordinary outcome.
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 94
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 27
-* [Mail (`STS-MAIL`)](#sts-mail) — 34
+* [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 192
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 195
 * [Management API (`STS-API`)](#sts-api) — 73
-* [User portal (`STS-PORTAL`)](#sts-portal) — 69
+* [User portal (`STS-PORTAL`)](#sts-portal) — 70
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 130
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -966,7 +966,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0071` | Reading a person's authenticator-app enrolment from the credential store threw; it was reported as none. | — |
 | `STS-AUTHN-0072` | An authenticator-app shared secret could not be sealed under the key-encryption key, so it was not stored. | action result with the reason |
 | `STS-AUTHN-0073` | Writing or clearing an authenticator-app enrolment in the credential store threw. | action result with the reason |
-| `STS-AUTHN-0074` | An authenticator-app enrolment was refused because authenticator apps are switched off (totp.enabled). | action result with the reason |
+| `STS-AUTHN-0074` | An authenticator-app enrolment was refused because authenticator apps are switched off (the authentication policy). | action result with the reason |
 | `STS-AUTHN-0075` | A pending authenticator-app or security-key enrolment was not found to confirm: it expired or was never begun. | action result with the reason |
 | `STS-AUTHN-0076` | No authenticator app is enrolled for the person a one-time code step, verification or removal named. | invalid_request (HTTP 400) at the sign-in screen; action result elsewhere |
 | `STS-AUTHN-0077` | The person's authenticator-app enrolment cannot be read (not JSON, or sealed under a different key-encryption key), so the second factor is refused rather than skipped. | HTTP 200 one-time code page with the reason |
@@ -974,7 +974,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0079` | Listing this realm's people for the second-factor roster threw; the roster lists only people otherwise known. | — |
 | `STS-AUTHN-0080` | Reading a person's recovery codes from the credential store threw; they were reported as none. | — |
 | `STS-AUTHN-0081` | Writing or clearing a person's recovery codes in the credential store threw. | action result with the reason |
-| `STS-AUTHN-0082` | Generating recovery codes was refused because they are switched off (backupCodes.enabled). | action result with the reason |
+| `STS-AUTHN-0082` | Generating recovery codes was refused because they are switched off (the authentication policy). | action result with the reason |
 | `STS-AUTHN-0083` | A set of distinct recovery codes could not be generated at the configured count and length. | action result with the reason |
 | `STS-AUTHN-0084` | No pending set of recovery codes was found to confirm: it expired, or the handle is not this person's. | action result with the reason |
 | `STS-AUTHN-0085` | A confirmed set of recovery codes could not be stored; the set is still pending and confirming again retries. | action result with the reason |
@@ -1050,7 +1050,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0168` | A password reset link was presented with no username or no token. | the reset page's one refusal sentence, HTTP 400 |
 | `STS-AUTHN-0169` | The password could not be removed from somebody's entry while a password reset link was being issued, so the link was withdrawn. | HTTP 400 (API) or a 303 with error= |
 | `STS-AUTHN-0170` | The per-account second-factor requirement (stsMfaRequired) could not be written. | HTTP 400 (API) or a 303 with error= |
-| `STS-AUTHN-0171` | A passwordless security-key sign-in was refused because a second factor is required of the person (their account or the realm's authn.mfaRequired). | the sign-in screen again with the reason |
+| `STS-AUTHN-0171` | A passwordless security-key sign-in was refused because a second factor is required of the person (their account or the realm's authentication policy). | the sign-in screen again with the reason |
 | `STS-AUTHN-0172` | A sign-in was refused: a second factor is required of the person, they hold none, and neither an authenticator app nor a security key can be enrolled in the realm. | the sign-in screen again with the reason |
 | `STS-AUTHN-0173` | The second-factor set-up step named by the request is expired, unknown, or not a set-up step. | OAuth-style invalid_request page, HTTP 400 |
 | `STS-AUTHN-0174` | A request to the second-factor set-up step was malformed, or asked to confirm a code before an authenticator app was chosen. | HTTP 400 page |
@@ -1113,6 +1113,32 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0239` | A WebAuthn registration was refused: a certificate in the attestation chain is revoked, or its status could not be established under pki.revocationCheck (#105). | W3C WebAuthn Level 3 section 7.1; RFC 5280 section 6.3 |
 | `STS-AUTHN-0240` | A WebAuthn registration was refused: the authenticator sent no attestation or a self attestation, and the realm requires a trusted one (#105). | W3C WebAuthn Level 3 section 7.1 step 24 |
 | `STS-AUTHN-0241` | A WebAuthn registration was refused because its attestation statement could not be checked: the verifier threw. The line names the format and the stack (#105). | — |
+| `STS-AUTHN-0242` | An authentication policy save or reset named a profile other than 'default' (#64). | action result with the reason |
+| `STS-AUTHN-0243` | An authentication policy save was refused because a field is missing, out of range or unreadable, or because it would leave no first factor, or require a second factor with none allowed (#64). | action result with the reason |
+| `STS-AUTHN-0244` | An authentication policy save would turn an email mechanism on in a realm that cannot send mail (#64). | action result with the reason |
+| `STS-AUTHN-0245` | An authentication policy save found no embedded directory to keep the profile in (#64). | action result with the reason |
+| `STS-AUTHN-0246` | The directory would not store an authentication policy profile: it is at its maximum number of entries (#64). | action result with the reason |
+| `STS-AUTHN-0247` | An emailed second factor was asked for that is neither `code` nor `link` (#64). | action result with the reason |
+| `STS-AUTHN-0248` | A person opted in to an emailed second factor that this realm's authentication policy does not accept as one (#64). | portal page with the reason |
+| `STS-AUTHN-0249` | A person opted in to an emailed second factor while this realm cannot send mail (#64). | portal page with the reason |
+| `STS-AUTHN-0250` | A person opted in to an emailed second factor while their address is not verified (#64). | portal page with the reason |
+| `STS-AUTHN-0251` | A person's emailed second factor could not be written to their entry (#64). | portal page with the reason |
+| `STS-AUTHN-0252` | A person reached the authentication policy's limit of consecutive failed emailed codes or links, and their emailed factor was turned off (NIST SP 800-63B-4 section 3.2.2, #64). | — |
+| `STS-AUTHN-0253` | A security key or passkey was refused as a first factor: this realm's authentication policy does not accept one (#64). | sign-in screen with the reason |
+| `STS-AUTHN-0254` | A new security key was refused as a second factor: this realm's authentication policy does not accept one (#64). | sign-in screen or portal page with the reason |
+| `STS-AUTHN-0255` | A password was refused as a first factor: this realm's authentication policy does not accept one (#64). | sign-in screen with the reason |
+| `STS-AUTHN-0256` | A second factor was needed after a first and none this realm accepts was available: the person holds none, and the policy does not accept a password as one (#64). | sign-in refused with the reason |
+| `STS-AUTHN-0257` | No more emailed codes or links may be sent for one sign-in step (#64). | the page, with the reason |
+| `STS-AUTHN-0258` | Another emailed code or link was asked for sooner than the policy's resend interval (#64). | the page, with the reason |
+| `STS-AUTHN-0259` | An emailed code or link could not be queued by the mail channel; the line names the channel's refusal (#64). | the page offers the other factors |
+| `STS-AUTHN-0260` | An emailed code or link was asked for as a first factor where this realm does not offer one, or where a key or a password is demanded (#64). | sign-in screen with the reason |
+| `STS-AUTHN-0261` | An emailed first factor was asked for an account that has no verified address, is disabled, or does not exist; nothing was mailed and the page does not say so (#64). | the same page as a sent one |
+| `STS-AUTHN-0262` | An emailed code or link was presented after it had already been used (#64). | the page, with the reason |
+| `STS-AUTHN-0263` | Whether an emailed code or link had been used could not be asked of the store, so it was not accepted (#64). | the page, with the reason |
+| `STS-AUTHN-0264` | A wrong emailed code or link was presented (#64). | the page, with the attempts left |
+| `STS-AUTHN-0265` | An emailed code or link was presented after it expired (#64). | the page, with the reason |
+| `STS-AUTHN-0266` | An emailed sign-in link was opened in a browser other than the one that started the sign-in (#64, D3). | the page, with the reason |
+| `STS-AUTHN-0267` | The emailed code or link door failed unexpectedly; the line carries the stack (#64). | an error page |
 
 ## STS-OAUTH
 
@@ -2777,6 +2803,11 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0032` | An address verification was asked for where no mail transport is available. | HTTP 400 |
 | `STS-MAIL-0033` | A self-service password reset page was asked for where it is not offered (mail.selfServiceReset off, no transport, or passwords are not verified). | HTTP 404 |
 | `STS-MAIL-0034` | A person tried to decline a mail category that cannot be declined (security notices, requested links). | HTTP 400 |
+| `STS-MAIL-0035` | A self-service reset named the account and its address and gave a recovery code that is not one of the person's; nothing was mailed but a notice of the attempt (#64, D4). | the same sentence as a sent link |
+| `STS-MAIL-0036` | A self-service reset gave an address that is not the account's (#64, D4). | the same sentence as a sent link |
+| `STS-MAIL-0037` | A self-service reset was asked for an account that holds no unused recovery code, while one is required (#64, D4). | the same sentence as a sent link |
+| `STS-MAIL-0038` | A followed verification link for a NEW address could not write it to the entry (#64, D5). | HTTP 400 page |
+| `STS-MAIL-0039` | A person asked to change their address to something that is not an address this service can send to (#64, D5). | HTTP 400 page |
 
 ## STS-GNAP
 
@@ -3393,6 +3424,9 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0811` | remove-device named a device that is not the person's, or the directory did not remove it (#130). | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0812` | answer-ciba-request, a development test control, was refused in product mode (#131). | HTTP 400 (API) |
 | `STS-ADMIN-0813` | answer-ciba-request named no CIBA request waiting for the person (#131). | HTTP 400 (API) |
+| `STS-ADMIN-0814` | clear-email-factor could not write the person's entry (#64). | HTTP 400 (API) |
+| `STS-ADMIN-0815` | set-mail was given something that is not an address this service can send to (#64). | HTTP 400 (API) |
+| `STS-ADMIN-0816` | set-mail named nobody in this realm, or the directory would not write the address (#64). | HTTP 400 (API) |
 
 ## STS-API
 
@@ -3553,6 +3587,7 @@ Raised from: portal/.
 | `STS-PORTAL-0089` | A POST to /portal/ciba answered a CIBA request that is not waiting for the signed-in person (#131). | HTTP 400 page |
 | `STS-PORTAL-0090` | A CIBA user code set on /portal/ciba was refused — the wrong length, or not stored (#131). | HTTP 400 page |
 | `STS-PORTAL-0091` | An approval on /portal/ciba asked for more (acr_values) than the sign-on session proved; the person is offered a stronger sign-in (#131). | HTTP 403 page |
+| `STS-PORTAL-0092` | Turning an emailed second factor on or off on /portal/mfa was refused; the page names why (#64). | HTTP 400 page |
 
 ## STS-LOGOUT
 

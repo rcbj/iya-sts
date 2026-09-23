@@ -264,6 +264,16 @@ class ProtocolStack {
     this.build('common/websecurity', require('./websecurity'), 'WebSecurity');
     this.build('authn/authn', require('../authn/authn'), 'Authn');
     this.register(app, require('../authn/authn'), 'authn/authn');
+    // THE EMAILED CODE AND LINK (#64): its six routes under `/authn/*`, the
+    // paths `authn` declares and draws the buttons for. Right after `authn`,
+    // whose pending steps it reads through that module's exports, and — like
+    // `vc_signin` and `spnego_authn` — required by nothing that `authn`
+    // requires, so it moves nothing and closes nothing.
+    this.build('common/mail_factor', require('./mail_factor'), 'MailFactor');
+    require('../authn/email_factor');
+    this.build('authn/email_factor', require('../authn/email_factor'),
+               'EmailFactor');
+    this.register(app, require('../authn/email_factor'), 'authn/email_factor');
     // WS-Trust 1.0-1.4. **IT MOVED BELOW authn.js ON 2026-09-05 AND THE ORDER
     // IS NOW A DEPENDENCY** where it had been no constraint at all. Issuing a
     // token or an assertion here starts a tracked sign-on session — see

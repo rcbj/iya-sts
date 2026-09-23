@@ -11658,6 +11658,67 @@ class AdminConsole {
   // refuses to remove the last way in. An operator must not be able to do what
   // the person themselves is stopped from doing.
   // ===========================================================================
+  // THE EMAILED SECOND FACTOR (#64) on a person's page: whether they opted
+  // in, whether it is being used and why not, and the one control an operator
+  // has over it — clearing it. There is no Turn On: the opt-in is the
+  // person's (D8), and an operator who wanted them asked for a second factor
+  // requires one, which the sign-in screen then asks them to set up.
+  //
+  // Beside it, the ADDRESS (#64 P2): what `mail` holds, whether it is
+  // verified and by whom, and — for Admin Write — a form to set it, which
+  // marks it verified because an administrator is a trusted source.
+  emailFactorBlock(key, mech, state, carryBack) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.emailFactorBlock().");
+    const mf = mech.mailFactor || { held: '', optedIn: '', why: '' };
+    const mailFactor = require('../common/mail_factor');
+    const status = mailFactor.status(key);
+    const mailUsable = require('../common/authn_policy').mailUsable();
+    const out = '<h3>Email address, and email as a second factor</h3>' +
+      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      '<tr><th>Address</th><td>' + (status.address
+        ? '<code>' + this.esc(status.address) + '</code> — ' +
+          (status.verified ? '<span class="state-valid">verified</span>'
+                           : '<span class="state-none">not verified</span>')
+        : '<span class="state-none">none</span>') + '</td></tr>' +
+      '<tr><th>Emailed second factor</th><td>' + (mf.optedIn
+        ? (mf.held ? '<span class="state-valid">on</span> — an emailed ' +
+                     this.esc(mf.held) + ' after their first factor'
+                   : 'chosen (an emailed ' + this.esc(mf.optedIn) + ') and ' +
+                     '<strong>not used</strong>: ' + this.esc(mf.why))
+        : '<span class="state-none">off</span> — they turn it on at ' +
+          '<code>/portal/mfa</code>, where the <a ' +
+          'href="/admin/policies#authn">authentication policy</a> allows ' +
+          'it.') + '</td></tr>' +
+      (status.failures
+        ? '<tr><th>Consecutive failures</th><td>' +
+          this.esc(String(status.failures)) + '</td></tr>' : '') +
+      '</table>' +
+      (state.write && mf.optedIn
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="clear-email-factor">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          carryBack + '<div class="formrow"><button class="danger">Turn off ' +
+          'their emailed second factor</button></div></form>'
+        : '') +
+      (state.write
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="set-mail">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          carryBack + '<div class="formrow"><label>Address <input ' +
+          'type="email" name="mail" size="40" maxlength="254" required ' +
+          'value="' + this.esc(status.address) + '"></label> ' +
+          '<button type="submit">Set the address</button></div></form>' +
+          this.note('An address set here is <strong>verified</strong> — an ' +
+          'administrator is a trusted source (#64) — and the old one, if ' +
+          'there was one' + (mailUsable ? ', is told it changed.'
+            : '. <strong>This realm cannot send mail</strong>, so nobody is ' +
+              'told.'))
+        : this.note('Setting the address needs <strong>Admin Write</strong>.'));
+    log.debug("Leaving AdminConsole.emailFactorBlock().");
+    return out;
+  }
+
   mfaSection(row, key, state, back) {
     const { log, credentials, totp, webauthnPolicy, backupCodes,
             adminViews, mode } = this.deps;
@@ -11721,7 +11782,11 @@ class AdminConsole {
                 ? ', with the authenticator app offered as the alternative ' +
                   'for somebody at a machine the key is not plugged into'
                 : '')
-            : 'a CODE from their authenticator app') +
+            : (mech.secondFactor === 'totp'
+                ? 'a CODE from their authenticator app'
+                : 'an EMAILED ' + (mech.secondFactor === 'email-link'
+                    ? 'SIGN-IN LINK' : 'CODE') + ', the one second factor ' +
+                  'they hold')) +
           '. A password alone will not sign them in.'
         : '<span class="state-none">no</span> — nothing here is configured ' +
           'as a second factor, so a password alone signs them in.') +
@@ -12317,7 +12382,9 @@ class AdminConsole {
       'href="/admin/totp">TOTP MFA</a> and <a ' +
       'href="/admin/webauthn">WebAuthn</a> under Protocols; this is who ' +
       'holds what.') +
-      wayIn + totpBlock + keysBlock + recoveryBlock + appPasswordsBlock +
+      wayIn + totpBlock + this.emailFactorBlock(key, mech, state,
+                                                carryBack) +
+      keysBlock + recoveryBlock + appPasswordsBlock +
       devicesBlock + selfIssuedBlock + verificationsBlock;
 
     log.debug("Leaving AdminConsole.mfaSection(). totp=" + mech.totp + ", " +

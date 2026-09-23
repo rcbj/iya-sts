@@ -13474,6 +13474,23 @@ const SETTINGS = [
                  'proved, is not somewhere to send it. **Turning it off is a ' +
                  'weaker setting**, for a directory whose addresses are ' +
                  'trusted as written; docs/mail.md carries the warning.' },
+  // #64: THE RECOVERY CODE A SELF-SERVICE RESET ASKS FOR, beside the
+  // username and the address. On by default (rcbj's D4).
+  { key: 'mail.resetRequiresBackupCode', group: 'Mail',
+    label: 'Self-service reset needs a recovery code',
+    env: 'STS_MAIL_RESET_REQUIRES_BACKUP_CODE', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'The forgot-password form asks for the USERNAME, the ' +
+                 'verified ADDRESS on the account and one of the person\'s ' +
+                 'RECOVERY CODES, and mails a reset link only when all three ' +
+                 'are right — the code is spent then. Every combination is ' +
+                 'answered with the same sentence. **Turning it off is a ' +
+                 'weaker setting**: the form goes back to one field (a ' +
+                 'username or the address), and a reset is then as strong ' +
+                 'as the mailbox it goes to — which NIST SP 800-63B-4 allows ' +
+                 'for recovery, and which docs/mail.md warns about. A person ' +
+                 'who holds no recovery codes cannot reset their password ' +
+                 'themselves while it is on; an administrator can.' },
   { key: 'mail.verificationTtlMinutes', group: 'Mail',
     label: 'Address verification link lifetime (minutes)',
     env: 'STS_MAIL_VERIFICATION_TTL_MINUTES', type: 'int', dflt: 1440,

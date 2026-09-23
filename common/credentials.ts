@@ -4748,6 +4748,27 @@ class Credentials {
   // authenticator is what makes a password alone stop being enough — the whole
   // meaning of *a user configured to use it*.
   // ---------------------------------------------------------------------------
+  // THE EMAILED FACTOR'S STATUS (#64), or an empty one where the module is
+  // not loaded — a test of this module alone, which holds no mail channel.
+  private mailFactorOf(name) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.mailFactorOf().");
+    let out = { held: '', optedIn: '', why: 'unavailable', verified: false };
+    try {
+      const status = require('./mail_factor').status(name);
+      out = { held: status.usable ? status.kind : '',
+              optedIn: status.optedIn, why: status.why,
+              verified: status.verified };
+    } catch (e) {
+      log.debug("Caught in Credentials.mailFactorOf(): " +
+                ((e && e.message) || e));
+      // Not held, which is the direction that asks for nothing that cannot
+      // arrive.
+    }
+    log.debug("Leaving Credentials.mailFactorOf().");
+    return out;
+  }
+
   mechanismsFor(username) {
     const { log, totp, backupCodes } = this.deps;
     log.debug("Entering Credentials.mechanismsFor().");
@@ -4762,6 +4783,11 @@ class Credentials {
     // it still means this person configured two factors, and reporting it as
     // absent would sign them in with one. `verifyTotp()` refuses it by name.
     const totpEnrolled = !!authenticator;
+    // THE EMAILED SECOND FACTOR (#64), HELD only while it is usable: opted
+    // in, allowed by the realm's authentication policy, mail working and the
+    // address verified (`common/mail_factor.ts` argues why). Asked lazily —
+    // that module reaches the mail channel, which requires the directory.
+    const mailFactor = this.mailFactorOf(name);
     log.debug("Leaving Credentials.mechanismsFor().");
     return {
       username: name,
@@ -4811,14 +4837,21 @@ class Credentials {
       // so the sign-in screen demands it as well — which is what makes the flag
       // mean anything. **The recovery codes are deliberately not on this line**
       // — see the field above.
-      mfaRequired: mfaKeys.length > 0 || totpEnrolled,
+      mfaRequired: mfaKeys.length > 0 || totpEnrolled || !!mailFactor.held,
+      // The emailed factor (#64): `held` is `code`, `link` or '', and the
+      // rest says why it is not held where it is opted into.
+      mailFactor: mailFactor,
       // WHICH ONE, since there are two and the screen has to ask for the right
       // thing. A person holding both is asked for the SECURITY KEY, because it
       // is the stronger of the two and the ceremony is the one that is bound to
       // this origin; the code is what they fall back to when they are at a
       // machine with no authenticator attached, and `authn.js` draws that link.
+      // The emailed factor comes LAST (#64): it is the weakest of the three
+      // (NIST SP 800-63B-4 section 3.1.3.1), so a person holding another is
+      // asked for that, and offered the email as a way round it.
       secondFactor: mfaKeys.length > 0 ? 'webauthn' :
-                    (totpEnrolled ? 'totp' : ''),
+                    (totpEnrolled ? 'totp' :
+                     (mailFactor.held ? 'email-' + mailFactor.held : '')),
       // Has this person finished setting themselves up? What product mode asks
       // before it will let an activation link be spent, and what the sign-in
       // screen asks before it refuses somebody with nothing. **An authenticator

@@ -200,6 +200,9 @@ interface Directory {
   personByMail: (address: string) => string;
   writeMailFlag: (username: string, name: string, value: unknown) => boolean;
   personExists?: (username: string) => boolean;
+  // #64: `mail` itself, by an administrator or a completed change.
+  writeAddress?: (username: string, address: string,
+                  source: string) => boolean;
 }
 
 interface MailDeps {
@@ -893,6 +896,70 @@ class Mail {
   // as it was a moment ago — handed in by `ldap/ldap_server.js`'s account
   // observer, never by a request — and nothing but that template may use it.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // THE SECOND MESSAGE NOT SENT TO `mail` AS IT IS (#64): the verification
+  // link of an address CHANGE, to the new address a person asked for (rcbj's
+  // D5). The address is the ENTRY'S — `stsMailVerifyAddress`, written by the
+  // person's own signed-in form a moment ago — and never a request's, so the
+  // rule that a recipient is a directory entry holds: this is the entry's
+  // pending address, as `sendToFormerAddress()` sends to its former one.
+  // One template only, `address-verification`.
+  // -------------------------------------------------------------------------
+  sendToPendingAddress(req: Json): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Mail.sendToPendingAddress().");
+    const out: Json = { ok: false, queued: [], refused: [], duplicates: [] };
+    const spec = MailTemplates.builtIn('address-verification');
+    if (!req || req.template !== 'address-verification' ||
+        !this.available()) {
+      out.error = 'no mail transport is configured';
+      log.debug("Leaving Mail.sendToPendingAddress(). Not this template, or " +
+                "no transport.");
+      return out;
+    }
+    const base = this.linkBase();
+    if (!base) {
+      out.error = 'global.publicBaseUrl is not set';
+      log.debug("Leaving Mail.sendToPendingAddress(). No link base.");
+      return out;
+    }
+    const entry = directory && req.username
+      ? directory.personEntry(String(req.username)) : null;
+    const pending = entry
+      ? String(((entry.attributes || {}).stsmailverifyaddress || [])[0] || '')
+      : '';
+    if (!pending) {
+      out.error = 'no address change is pending';
+      log.debug("Leaving Mail.sendToPendingAddress(). Nothing pending.");
+      return out;
+    }
+    try {
+      const one = this.queueOne(req, spec, String(req.username || ''), base,
+                                pending);
+      if (one.refused) {
+        out.refused.push(one.refused);
+        out.error = one.refused.why;
+      } else if (one.duplicate) {
+        out.duplicates.push(one.duplicate);
+      } else {
+        out.queued.push(one.queued);
+      }
+      out.ok = out.queued.length + out.duplicates.length > 0;
+      Object.defineProperty(out, 'delivered',
+                            { value: this.dispatch(out.queued),
+                              enumerable: false });
+    } catch (e) {
+      log.debug("Caught in Mail.sendToPendingAddress(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-MAIL-0031') + 'mail: an address ' +
+               'verification could not be queued: ' +
+               ((e && e.message) || e));
+      out.error = String((e && e.message) || e);
+    }
+    log.debug("Leaving Mail.sendToPendingAddress().");
+    return out;
+  }
+
   sendToFormerAddress(req: Json): Json {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Mail.sendToFormerAddress().");
@@ -1722,6 +1789,7 @@ export = {
   resetTemplate: slot.forward('resetTemplate'),
   send: slot.forward('send'),
   sendToFormerAddress: slot.forward('sendToFormerAddress'),
+  sendToPendingAddress: slot.forward('sendToPendingAddress'),
   attempt: slot.forward('attempt'),
   dispatch: slot.forward('dispatch'),
   retry: slot.forward('retry'),

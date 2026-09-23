@@ -110,7 +110,9 @@ class PortalMailPage {
     this.VERIFY = ctx.BASE + '/verify-email';
     this.FORGOT = ctx.BASE + '/forgot-password';
     this.EMAIL_FORM = vz.object({
-      action: vt.opt(vt.oneOf(['verify', 'preferences'])),
+      // `change` (#64, D5): a new address, pending until its link is used.
+      action: vt.opt(vt.oneOf(['verify', 'preferences', 'change'])),
+      address: vz.string().max(254).optional(),
       notification: vt.opt(vt.flag),
       csrf_token: vt.opt(vt.token)
     });
@@ -122,7 +124,11 @@ class PortalMailPage {
       token: vt.opt(vt.token)
     });
     this.FORGOT_FORM = vz.object({
-      account: vz.string().max(256).optional()
+      account: vz.string().max(256).optional(),
+      // #64, D4: the address on the account and one recovery code, asked
+      // for while `mail.resetRequiresBackupCode` is on.
+      address: vz.string().max(254).optional(),
+      code: vz.string().max(64).optional()
     });
     ctx.log.debug("Leaving PortalMailPage.constructor().");
   }
@@ -139,13 +145,24 @@ class PortalMailPage {
     const csrf = websecurity.field(session.id);
     const cards: string[] = [];
     const available = mail.available();
+    // THE PENDING CHANGE (#64, D5), if one is waiting for its link.
+    const entry = mail.directory() ? mail.directory().personEntry(who) : null;
+    const pending = entry
+      ? String(((entry.attributes || {}).stsmailverifyaddress || [])[0] || '')
+      : '';
+    const changing = pending && person.address &&
+                     pending.toLowerCase() !== person.address.toLowerCase()
+      ? pending : (pending && !person.address ? pending : '');
     cards.push('<div class="card"><h2>Your address</h2><table>' +
       '<tr><th>Email address</th><td>' + (person.address
         ? '<code>' + esc(person.address) + '</code>'
-        : 'none — ask whoever manages your account to add one') +
+        : 'none') +
       '</td></tr><tr><th>Verified</th><td>' + (person.verified
-        ? '<strong>yes</strong> — you followed a link sent to it'
-        : 'no') + '</td></tr></table>' +
+        ? '<strong>yes</strong>'
+        : 'no') + '</td></tr>' +
+      (changing ? '<tr><th>Changing to</th><td><code>' + esc(changing) +
+                  '</code> — follow the link sent there</td></tr>' : '') +
+      '</table>' +
       (person.address && !person.verified && available
         ? '<form method="post" action="' + this.EMAIL + '">' + csrf +
           '<input type="hidden" name="action" value="verify">' +
@@ -155,7 +172,21 @@ class PortalMailPage {
           'unverifies it.</p>'
         : '') +
       (!available ? '<p class="note">This service has no way to send mail ' +
-                    'here at the moment.</p>' : '') + '</div>');
+                    'here at the moment.</p>' : '') +
+      // CHANGING IT (#64, D5). Drawn disabled, with the reason, where mail
+      // cannot be sent: the change is only ever made by following a link.
+      '<h3>Change it</h3><form method="post" action="' + this.EMAIL + '">' +
+      csrf + '<input type="hidden" name="action" value="change">' +
+      '<label for="address">New address</label><input type="email" ' +
+      'id="address" name="address" maxlength="254" autocomplete="email"' +
+      (available ? ' required' : ' disabled') + '>' +
+      '<p><button type="submit" id="email-change"' +
+      (available ? '' : ' disabled') + '>Send a link to the new ' +
+      'address</button></p></form><p class="note">Your address changes when ' +
+      'you follow the link sent to the NEW address. Until then everything ' +
+      'still goes to the address above, and it is told when the change is ' +
+      'made.' + (available ? '' : ' <strong>Not available: this service ' +
+      'cannot send mail at the moment.</strong>') + '</p></div>');
     const declined = mail.declined(who);
     const rows = mail.CATEGORIES.map(function (cat: Json) {
       return '<tr><td>' + esc(cat.label) + '</td><td>' + esc(cat.what) +
@@ -244,6 +275,20 @@ class PortalMailPage {
       }
       result = mail.available()
         ? mailUses.startVerification(who, 'the portal', who)
+        : ctx.errorCodes.mark({ ok: false, errors: ['This service has no ' +
+            'way to send mail here at the moment.'] }, 'STS-MAIL-0032');
+    } else if (body.action === 'change') {
+      const allowed = await ctx.websecurity.attemptShared('mail-verify', req,
+                                                          who);
+      if (!allowed.ok) {
+        ctx.errorCodes.mark(res, ctx.innerCode(allowed) || 'STS-HTTP-0017');
+        log.debug('Leaving POST ' + this.EMAIL + '. Rate limited.');
+        return ctx.send(res, 429, this.emailPage(session, null,
+                                                 allowed.detail));
+      }
+      result = mail.available()
+        ? mailUses.startAddressChange(who, String(body.address || ''),
+                                      'the portal', who)
         : ctx.errorCodes.mark({ ok: false, errors: ['This service has no ' +
             'way to send mail here at the moment.'] }, 'STS-MAIL-0032');
     } else if (body.action === 'preferences') {
@@ -337,6 +382,32 @@ class PortalMailPage {
   private forgotForm(note: string): string {
     const { log, esc, bare } = this.ctx;
     log.debug("Entering PortalMailPage.forgotForm().");
+    // THREE FIELDS WHERE A RECOVERY CODE IS ASKED FOR (#64, D4).
+    if (this.deps.mailUses.resetNeedsRecoveryCode()) {
+      log.debug("Leaving PortalMailPage.forgotForm(). Three fields.");
+      return bare('Forgot your password?',
+        '<div class="card"><h1>Forgot your password?</h1>' +
+        (note ? '<div class="ok">' + esc(note) + '</div>' : '') +
+        '<p class="sub">Give your username, the email address on your ' +
+        'account and one of your recovery codes. When all three are right, ' +
+        'a link to choose a new password is sent to that address, and the ' +
+        'recovery code is used up. Your current password keeps working ' +
+        'until the link is used.</p>' +
+        '<form method="post" action="' + this.FORGOT + '">' +
+        '<label for="account">Username</label>' +
+        '<input type="text" id="account" name="account" maxlength="256" ' +
+        'autocomplete="username" required>' +
+        '<label for="address">Email address</label>' +
+        '<input type="email" id="address" name="address" maxlength="254" ' +
+        'autocomplete="email" required>' +
+        '<label for="code">A recovery code</label>' +
+        '<input type="text" id="code" name="code" maxlength="64" ' +
+        'autocomplete="one-time-code" autocapitalize="characters" ' +
+        'spellcheck="false" required placeholder="XXXXX-XXXXX">' +
+        '<button type="submit">Send me a link</button></form>' +
+        '<p class="note">No recovery codes? Ask whoever manages your ' +
+        'account to reset your password.</p></div>');
+    }
     log.debug("Leaving PortalMailPage.forgotForm().");
     return bare('Forgot your password?',
       '<div class="card"><h1>Forgot your password?</h1>' +
@@ -407,7 +478,9 @@ class PortalMailPage {
     const realm = realms.current();
     setImmediate(function (): void {
       realms.run(realm, function (): unknown {
-        return mailUses.requestReset(account, 'the forgot-password form')
+        return mailUses.requestReset(account, 'the forgot-password form',
+          { address: String(posted.value.address || ''),
+            code: String(posted.value.code || '') })
           .catch(function (e: Json) {
             log.debug('Caught in POST forgot-password: ' +
                       ((e && e.message) || e));

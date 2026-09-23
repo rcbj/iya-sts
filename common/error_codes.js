@@ -4237,6 +4237,113 @@ const CODES = [
       'statement could not be checked: the verifier threw. The line names ' +
       'the format and the stack (#105).',
     spec: '' },
+  { code: 'STS-AUTHN-0242',
+    summary: 'An authentication policy save or reset named a profile other ' +
+      'than \'default\' (#64).',
+    spec: 'action result with the reason' },
+  { code: 'STS-AUTHN-0243',
+    summary: 'An authentication policy save was refused because a field is ' +
+      'missing, out of range or unreadable, or because it would leave no ' +
+      'first factor, or require a second factor with none allowed (#64).',
+    spec: 'action result with the reason' },
+  { code: 'STS-AUTHN-0244',
+    summary: 'An authentication policy save would turn an email mechanism on ' +
+      'in a realm that cannot send mail (#64).',
+    spec: 'action result with the reason' },
+  { code: 'STS-AUTHN-0245',
+    summary: 'An authentication policy save found no embedded directory to ' +
+      'keep the profile in (#64).',
+    spec: 'action result with the reason' },
+  { code: 'STS-AUTHN-0246',
+    summary: 'The directory would not store an authentication policy ' +
+      'profile: it is at its maximum number of entries (#64).',
+    spec: 'action result with the reason' },
+  { code: 'STS-AUTHN-0247',
+    summary: 'An emailed second factor was asked for that is neither `code` ' +
+      'nor `link` (#64).',
+    spec: 'action result with the reason' },
+  { code: 'STS-AUTHN-0248',
+    summary: 'A person opted in to an emailed second factor that this ' +
+      'realm\'s authentication policy does not accept as one (#64).',
+    spec: 'portal page with the reason' },
+  { code: 'STS-AUTHN-0249',
+    summary: 'A person opted in to an emailed second factor while this realm ' +
+      'cannot send mail (#64).',
+    spec: 'portal page with the reason' },
+  { code: 'STS-AUTHN-0250',
+    summary: 'A person opted in to an emailed second factor while their ' +
+      'address is not verified (#64).',
+    spec: 'portal page with the reason' },
+  { code: 'STS-AUTHN-0251',
+    summary: 'A person\'s emailed second factor could not be written to ' +
+      'their entry (#64).',
+    spec: 'portal page with the reason' },
+  { code: 'STS-AUTHN-0252',
+    summary: 'A person reached the authentication policy\'s limit of ' +
+      'consecutive failed emailed codes or links, and their emailed ' +
+      'factor was turned off (NIST SP 800-63B-4 section 3.2.2, #64).',
+    spec: '' },
+  { code: 'STS-AUTHN-0253',
+    summary: 'A security key or passkey was refused as a first factor: this ' +
+      'realm\'s authentication policy does not accept one (#64).',
+    spec: 'sign-in screen with the reason' },
+  { code: 'STS-AUTHN-0254',
+    summary: 'A new security key was refused as a second factor: this ' +
+      'realm\'s authentication policy does not accept one (#64).',
+    spec: 'sign-in screen or portal page with the reason' },
+  { code: 'STS-AUTHN-0255',
+    summary: 'A password was refused as a first factor: this realm\'s ' +
+      'authentication policy does not accept one (#64).',
+    spec: 'sign-in screen with the reason' },
+  { code: 'STS-AUTHN-0256',
+    summary: 'A second factor was needed after a first and none this realm ' +
+      'accepts was available: the person holds none, and the policy ' +
+      'does not accept a password as one (#64).',
+    spec: 'sign-in refused with the reason' },
+  { code: 'STS-AUTHN-0257',
+    summary: 'No more emailed codes or links may be sent for one sign-in ' +
+      'step (#64).',
+    spec: 'the page, with the reason' },
+  { code: 'STS-AUTHN-0258',
+    summary: 'Another emailed code or link was asked for sooner than the ' +
+      'policy\'s resend interval (#64).',
+    spec: 'the page, with the reason' },
+  { code: 'STS-AUTHN-0259',
+    summary: 'An emailed code or link could not be queued by the mail ' +
+      'channel; the line names the channel\'s refusal (#64).',
+    spec: 'the page offers the other factors' },
+  { code: 'STS-AUTHN-0260',
+    summary: 'An emailed code or link was asked for as a first factor where ' +
+      'this realm does not offer one, or where a key or a password is ' +
+      'demanded (#64).',
+    spec: 'sign-in screen with the reason' },
+  { code: 'STS-AUTHN-0261',
+    summary: 'An emailed first factor was asked for an account that has no ' +
+      'verified address, is disabled, or does not exist; nothing was ' +
+      'mailed and the page does not say so (#64).',
+    spec: 'the same page as a sent one' },
+  { code: 'STS-AUTHN-0262',
+    summary: 'An emailed code or link was presented after it had already ' +
+      'been used (#64).',
+    spec: 'the page, with the reason' },
+  { code: 'STS-AUTHN-0263',
+    summary: 'Whether an emailed code or link had been used could not be ' +
+      'asked of the store, so it was not accepted (#64).',
+    spec: 'the page, with the reason' },
+  { code: 'STS-AUTHN-0264',
+    summary: 'A wrong emailed code or link was presented (#64).',
+    spec: 'the page, with the attempts left' },
+  { code: 'STS-AUTHN-0265',
+    summary: 'An emailed code or link was presented after it expired (#64).',
+    spec: 'the page, with the reason' },
+  { code: 'STS-AUTHN-0266',
+    summary: 'An emailed sign-in link was opened in a browser other than the ' +
+      'one that started the sign-in (#64, D3).',
+    spec: 'the page, with the reason' },
+  { code: 'STS-AUTHN-0267',
+    summary: 'The emailed code or link door failed unexpectedly; the line ' +
+      'carries the stack (#64).',
+    spec: 'an error page' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -11179,6 +11286,27 @@ const CODES = [
     summary: 'A person tried to decline a mail category that cannot be ' +
       'declined (security notices, requested links).',
     spec: 'HTTP 400' },
+  { code: 'STS-MAIL-0035',
+    summary: 'A self-service reset named the account and its address and ' +
+      'gave a recovery code that is not one of the person\'s; nothing was ' +
+      'mailed but a notice of the attempt (#64, D4).',
+    spec: 'the same sentence as a sent link' },
+  { code: 'STS-MAIL-0036',
+    summary: 'A self-service reset gave an address that is not the ' +
+      'account\'s (#64, D4).',
+    spec: 'the same sentence as a sent link' },
+  { code: 'STS-MAIL-0037',
+    summary: 'A self-service reset was asked for an account that holds no ' +
+      'unused recovery code, while one is required (#64, D4).',
+    spec: 'the same sentence as a sent link' },
+  { code: 'STS-MAIL-0038',
+    summary: 'A followed verification link for a NEW address could not ' +
+      'write it to the entry (#64, D5).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-MAIL-0039',
+    summary: 'A person asked to change their address to something that is ' +
+      'not an address this service can send to (#64, D5).',
+    spec: 'HTTP 400 page' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -13744,6 +13872,17 @@ const CODES = [
     summary: 'answer-ciba-request named no CIBA request waiting for the ' +
       'person (#131).',
     spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0814',
+    summary: 'clear-email-factor could not write the person\'s entry (#64).',
+    spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0815',
+    summary: 'set-mail was given something that is not an address this ' +
+      'service can send to (#64).',
+    spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0816',
+    summary: 'set-mail named nobody in this realm, or the directory would ' +
+      'not write the address (#64).',
+    spec: 'HTTP 400 (API)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -14379,6 +14518,10 @@ const CODES = [
       'the sign-on session proved; the person is offered a stronger sign-in ' +
       '(#131).',
     spec: 'HTTP 403 page' },
+  { code: 'STS-PORTAL-0092',
+    summary: 'Turning an emailed second factor on or off on /portal/mfa was ' +
+      'refused; the page names why (#64).',
+    spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +

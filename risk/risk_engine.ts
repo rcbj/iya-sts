@@ -312,13 +312,24 @@ class RiskEngine {
   // somebody who just used one for a code as well would be the weaker
   // factor demanded after the stronger.
   // -------------------------------------------------------------------------
-  static satisfiedBy(amr: unknown, acr: unknown): string[] {
+  //
+  // **AN EMAILED CODE OR LINK MEETS NONE (#64, rcbj's D1)**: NIST SP
+  // 800-63B-4 section 3.1.3.1 does not count email as an authenticator, and
+  // a step-up is asked for exactly when something about the sign-in is
+  // doubted — the password, most often, which is the credential a mailbox
+  // is so often opened with. `kinds` are the credential kinds the
+  // authentication used; a key still meets the key step-up beside one.
+  static satisfiedBy(amr: unknown, acr: unknown, kinds?: unknown): string[] {
     log.debug("Entering RiskEngine.satisfiedBy().");
     const list = Array.isArray(amr) ? amr.map(String) : [];
+    const byEmail = (Array.isArray(kinds) ? kinds.map(String) : [])
+      .some(function (kind) {
+        return kind.indexOf('email-') === 0;
+      });
     const out: string[] = [];
     if (list.indexOf('hwk') >= 0) {
       out.push('security-key', 'second-factor');
-    } else if (String(acr || '') === 'mfa') {
+    } else if (String(acr || '') === 'mfa' && !byEmail) {
       out.push('second-factor');
     }
     log.debug("Leaving RiskEngine.satisfiedBy(). " + out.join(','));
@@ -398,7 +409,8 @@ class RiskEngine {
   // is enforced. Null — no risk attribute in the request — when there is
   // nothing assessed, or when `risk.assessSignIns` is off.
   // -------------------------------------------------------------------------
-  factsOf(risk: Json, amr: unknown, acr: unknown): Json | null {
+  factsOf(risk: Json, amr: unknown, acr: unknown,
+          kinds?: unknown): Json | null {
     const { log, config } = this.deps;
     log.debug("Entering RiskEngine.factsOf().");
     if (!risk || !risk.level ||
@@ -412,7 +424,7 @@ class RiskEngine {
       score: risk.score === null || risk.score === undefined ? null
         : Number(risk.score),
       signals: (risk.signals || []).map(String),
-      satisfied: RiskEngine.satisfiedBy(amr, acr),
+      satisfied: RiskEngine.satisfiedBy(amr, acr, kinds),
       enforced: this.enforced(),
       assessmentId: String(risk.assessmentId || '')
     };
@@ -433,7 +445,14 @@ class RiskEngine {
     const session = q.session;
     if (session && session.risk) {
       log.debug("Leaving RiskEngine.factsForIssuance(). The session's.");
-      return this.factsOf(session.risk, session.amr, session.acr);
+      // The credential kinds of the events it stands on (#64): an emailed
+      // one meets no step-up.
+      const kinds = (Array.isArray(session.events) ? session.events : [])
+        .map(function (event: Json) {
+          return String((event && event.context && event.context.credential &&
+                         event.context.credential.kind) || '');
+        }).filter(Boolean);
+      return this.factsOf(session.risk, session.amr, session.acr, kinds);
     }
     const subject = q.subject || {};
     if (subject.kind !== 'user' || !subject.name ||

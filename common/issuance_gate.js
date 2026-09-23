@@ -195,13 +195,17 @@ function check(request) {
   // question is waived, and only a Deny about risk refuses.
   // -------------------------------------------------------------------------
   const risk = riskFactsOf(asked);
+  // THE AUTHENTICATION A SESSION STANDS ON (#64) keeps the policy asked for
+  // the same reason risk facts do: a rule about it must not be skipped
+  // because the role question was.
+  const authentication = asked.authentication || null;
   const enforceRoles = config.value('roles.enforceIssuance') !== false;
-  if (!enforceRoles && !risk) {
+  if (!enforceRoles && !risk && !authentication) {
     log.debug('Leaving check(). Enforcement is switched off.');
     return allow('roles.enforceIssuance is off, so the decision was not ' +
                  'asked for.');
   }
-  if (!asked.application && !risk) {
+  if (!asked.application && !risk && !authentication) {
     log.debug('Leaving check(). No application to decide about.');
     return allow('Nothing named an application, so there is no requirement ' +
                  'to check.');
