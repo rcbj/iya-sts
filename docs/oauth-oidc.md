@@ -456,7 +456,29 @@ Both are recorded on `/admin/delegation`. `audience` and `resource` may be used
 together. A refresh token comes back when the client asks with
 `requested_token_type=urn:ietf:params:oauth:token-type:refresh_token`, or as
 `oauth2.tokenExchangeRefreshToken` says; `issued_token_type` is always
-`access_token`. `may_act` is neither issued nor read.
+`access_token`.
+
+**Who may act for whom** is decided by the delegation policy (#108): the client
+must be allowed to reach every `audience` and `resource` — by
+`appAllowedToDelegateTo` on its own entry or `appAllowedToActOnBehalfOf` on the
+target's — an exchange with no `actor_token` needs `appTrustedToImpersonate`,
+the subject must be in one of the client's `appDelegationSubjectGroup` groups
+where it names any, and a person carrying `stsNotDelegated` or on the console
+roster is never delegated. In **product** mode a refusal is `invalid_request`,
+or `invalid_target` for a target (RFC 8693 section 2.2.2), and a requested
+`scope` wider than the subject_token's is `invalid_scope`; in **development**
+the exchange is issued and `/admin/delegation` says what would have been
+refused. A client exchanging its own token needs nothing. The same attributes
+are edited on the application's page, through `POST
+/admin-api/applications/update`, and listed at `GET
+/admin-api/delegation/policy`.
+
+**`may_act`** (section 4.4) is read in every mode: a subject_token whose
+`may_act` names somebody other than the actor (or the client, with no
+`actor_token`) is refused `invalid_request`. It is issued in every access token
+about a person who has named a delegate — `stsMayAct`, set on
+`/portal/delegate` or with `POST /admin-api/users/set-may-act`. **`act` nests**:
+a prior actor stays beneath the new one (section 4.1).
 
 ### Pushed authorization requests (RFC 9126)
 
@@ -665,8 +687,7 @@ what it reaches.
   for `acr`.
 * Encrypted access tokens, and the RFC 9068 `roles` and `entitlements` claims.
 * An initial access token for registration.
-* `may_act` in token exchange, and a foreign `subject_token` issuer in product
-  mode.
+* A foreign `subject_token` issuer in product mode.
 * Enrichment of declared `authorization_details` types (RFC 9396 section 7).
 
 ## Development and product mode

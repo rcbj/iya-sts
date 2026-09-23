@@ -140,7 +140,8 @@ cover:
 * **Identities.** People and groups in the directory, second factors (TOTP,
   WebAuthn, recovery codes), password policies, sessions and sign-out.
 * **Applications and what they are issued.** The application register,
-  consent, permissions, roles, delegation, issued tokens, the claim and SAML
+  consent, permissions, roles, delegation and who may delegate (`GET
+  /admin-api/delegation/policy`), issued tokens, the claim and SAML
   attribute sets, and signing keys.
 * **Each protocol family's settings and state.** OAuth 2.0 / OIDC and
   authorization servers, SAML 2.0 and 1.1, WS-Trust, WS-Federation, federation

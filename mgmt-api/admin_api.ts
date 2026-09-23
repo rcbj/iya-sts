@@ -3797,6 +3797,73 @@ class AdminApi {
             },
             responseDescription: 'The requirement as it now stands.' },
 
+          // WHO MAY ACT FOR A PERSON (#108, 2026-09-23) — the person's half
+          // of the delegation policy (`common/delegation_policy.ts`), drawn
+          // on their /admin/users page. Rule 7.
+          { action: 'set-not-delegated', operationId: 'setUserNotDelegated',
+            summary: 'Mark somebody as one who cannot be delegated',
+            description: 'Sets (`value` true, the default) or clears ' +
+                         '`stsNotDelegated` on the person\'s entry — ' +
+                         'Kerberos\'s NOT_DELEGATED, "sensitive and cannot ' +
+                         'be delegated". While it is set nobody may act for ' +
+                         'them at WS-Trust OnBehalfOf / ActAs or the RFC ' +
+                         '8693 ' +
+                         'token exchange, whatever any application\'s ' +
+                         'delegation attributes say. Enforced in product ' +
+                         'mode; development records what would have been ' +
+                         'refused on /admin/delegation. Members of the ' +
+                         'console\'s Admin Read and Admin Write rosters are ' +
+                         'protected the same way without it.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                value: { type: 'boolean',
+                         description: 'true sets the flag (the default), ' +
+                                      'false clears it.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice', value: true }],
+              additionalProperties: false
+            },
+            responseDescription: 'The flag as it now stands.' },
+
+          { action: 'set-may-act', operationId: 'setUserMayAct',
+            summary: 'Name the one party who may act for somebody',
+            description: 'Sets or clears `stsMayAct` on the person\'s entry: ' +
+                         'the DN of a person or an application in this ' +
+                         'realm. Access tokens issued about the person then ' +
+                         'carry RFC 8693 section 4.4\'s `may_act` naming ' +
+                         'that party (a person by their `urn:uuid:` subject, ' +
+                         'an application by its client_id), and a token ' +
+                         'exchange of such a token by anybody else is ' +
+                         'refused invalid_request in every mode. The person ' +
+                         'sets the same thing themselves on /portal/delegate.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                delegate: { type: 'string',
+                            description: 'The DN of the person or ' +
+                                         'application; empty clears it.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice',
+                           delegate: 'uid=bob,ou=users,dc=example,dc=com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The delegate as it now stands.' },
+
           { action: 'disable', operationId: 'disableUserAccount',
             summary: 'Disable somebody\'s account, and end everything ' +
                      'they hold',
@@ -14555,10 +14622,13 @@ class AdminApi {
                      'refused delegation appears in NO other resource here: ' +
                      'nothing was accepted, so /admin-api/audit and ' +
                      '/admin-api/users have nothing to say about ' +
-                     'it.\n\n**Nothing checks who may delegate except the ' +
-                     'KDC.** WS-Trust and token exchange are unpoliced here, ' +
-                     'and each act says so in the field that names an ' +
-                     'attribute for a Kerberos one.\n\nBesides the paged ' +
+                     'it.\n\n**Every family is policed now (#108).** The ' +
+                     'KDC decides Kerberos; WS-Trust and token exchange are ' +
+                     'decided by the delegation policy (GET ' +
+                     '/admin-api/delegation/policy), enforced in product ' +
+                     'mode, and each act names what allowed it in ' +
+                     '`authorizedBy` — or, in development, what WOULD have ' +
+                     'refused it.\n\nBesides the paged ' +
                      'acts the reply carries `chains` — the distinct ' +
                      '(mechanism, initial, intermediary, target) tuples ' +
                      'among what MATCHED, one per edge of the picture — ' +
@@ -14622,6 +14692,66 @@ class AdminApi {
           log.debug("Entering the management API delegation endpoint.");
           self.sendJson(res, 200, adminViews.delegationView(req.query).json);
           log.debug("Leaving the management API delegation endpoint.");
+        } },
+
+      // THE WS-TRUST AND TOKEN-EXCHANGE DELEGATION POLICY (#108, 2026-09-23)
+      // — the configured half of those two families, as the Kerberos one is
+      // `policy` on the acts above. READ ONLY here, like the console section
+      // it mirrors: the attributes are EDITED through POST
+      // /admin-api/applications/update and the two person flags through POST
+      // /admin-api/users/set-not-delegated and /set-may-act, which is where
+      // every application and person attribute is edited (rule 7 by
+      // construction). Paged, three lists on three parameters.
+      { method: 'GET', path: BASE + '/delegation/policy', tag: 'Delegation',
+        operationId: 'getDelegationPolicy',
+        summary: 'Who may act for whom at WS-Trust and the token exchange',
+        description: 'The delegation policy `OnBehalfOf` / `ActAs` and the ' +
+                     'RFC 8693 token exchange are decided by — Kerberos\'s ' +
+                     'model on application entries:\n\n* ' +
+                     '`appAllowedToDelegateTo` on the INTERMEDIARY names ' +
+                     'the targets it may reach as somebody else;\n* ' +
+                     '`appAllowedToActOnBehalfOf` on the TARGET names the ' +
+                     'intermediaries it accepts;\n* ' +
+                     '`appDelegationSubjectGroup` on the intermediary names ' +
+                     'the groups of people it may act for (empty: anybody ' +
+                     'unprotected);\n* `appTrustedToImpersonate` TRUE lets ' +
+                     'it IMPERSONATE (OnBehalfOf, an exchange with no ' +
+                     'actor_token) as well as delegate.\n\n`pairs` has one ' +
+                     'row per (intermediary, target, attribute); ' +
+                     '`intermediaries` the applications carrying the flag ' +
+                     'or a subject group; `people` those carrying ' +
+                     '`stsNotDelegated` or `stsMayAct`; `protectedGroups` ' +
+                     'the console rosters, whose members are never ' +
+                     'delegated. `enforced` is true in product mode; in ' +
+                     'development the policy is asked and what it would ' +
+                     'have refused is recorded on the act. Each list is ' +
+                     'paged: `?policyPairsPage=`, `?intermediariesPage=`, ' +
+                     '`?peoplePage=`, and `?per=` for all three.',
+        mirrors: 'GET /admin/delegation',
+        parameters: [
+          { name: 'policyPairsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'The page of `pairs`.' },
+          { name: 'intermediariesPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'The page of `intermediaries`.' },
+          { name: 'peoplePage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'The page of `people`.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Rows per page, for all three lists (default ' +
+                         '10).' }
+        ],
+        responseDescription: 'The three lists, each with its paging, and ' +
+                             'whether the policy is enforced.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation policy " +
+                    "endpoint.");
+          self.sendJson(res, 200,
+                        adminViews.delegationPolicyView(req.query).json);
+          log.debug("Leaving the management API delegation policy " +
+                    "endpoint.");
         } },
 
       // -----------------------------------------------------------------------

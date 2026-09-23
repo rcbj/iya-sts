@@ -2361,6 +2361,59 @@ const SCHEMA = {
             'xacml.issuancePolicy, not by an if in an issuance site, so the ' +
             'reason for a refusal is a policy somebody can read.' },
 
+    // ---------------------------------------------------------------------
+    // THE DELEGATION POLICY (#108, 2026-09-23): WHO MAY ACT FOR WHOM AT THE
+    // TWO DOORS THAT HAD NO POLICY — WS-Trust `OnBehalfOf` / `ActAs` and the
+    // RFC 8693 token exchange.
+    //
+    // KERBEROS'S MODEL, DELIBERATELY AND BY NAME, and on the same kind of
+    // entry: a KDC decides S4U2Proxy from `msDS-AllowedToDelegateTo` on the
+    // front end and `msDS-AllowedToActOnBehalfOfOtherIdentity` on the back
+    // end, protocol transition from TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION,
+    // and nothing at all for an account flagged NOT_DELEGATED. These four are
+    // those, on `ou=applications`, so there is no new store and no new object
+    // class — an `ldapmodify` IS a policy change, exactly as it is for a
+    // redirect URI. `common/delegation_policy.ts` reads them; the person's
+    // half (`stsNotDelegated`, `stsMayAct`) is on the person's own entry.
+    //
+    // A TARGET IS AN APPLICATION IDENTIFIER. An RFC 8693 `audience` or
+    // `resource` and a WS-Trust `AppliesTo` are resolved to the application
+    // that registered them first (forAudience(), forAppliesTo()), and a value
+    // here may also be the raw string, so an unregistered audience can be
+    // allowed without inventing an entry for it.
+    // ---------------------------------------------------------------------
+    { name: 'appAllowedToDelegateTo', kind: 'multi', from: 'by hand',
+      what: 'THE TARGETS THIS APPLICATION MAY OBTAIN A TOKEN FOR ON SOMEBODY ' +
+            'ELSE\'S BEHALF, when it is the INTERMEDIARY of a WS-Trust ' +
+            'OnBehalfOf / ActAs request or an RFC 8693 token exchange — the ' +
+            'analogue of Kerberos\'s msDS-AllowedToDelegateTo, on the front ' +
+            'end. One application identifier (or the literal audience / ' +
+            'AppliesTo) per value. Enforced in product mode; development ' +
+            'records what would have been refused on /admin/delegation. ' +
+            'appAllowedToActOnBehalfOf on the TARGET is the other way to ' +
+            'allow the same pair.' },
+    { name: 'appAllowedToActOnBehalfOf', kind: 'multi', from: 'by hand',
+      what: 'THE INTERMEDIARIES THIS APPLICATION ACCEPTS as acting for ' +
+            'somebody else when it is the TARGET of a delegation — the ' +
+            'resource-based analogue of Kerberos\'s ' +
+            'msDS-AllowedToActOnBehalfOfOtherIdentity, set on the back end. ' +
+            'One intermediary application identifier per value.' },
+    { name: 'appDelegationSubjectGroup', kind: 'multi', from: 'by hand',
+      what: 'THE PEOPLE THIS INTERMEDIARY MAY ACT FOR, as group DNs: a ' +
+            'subject must be a member of one of them. EMPTY MEANS ANYBODY ' +
+            'who is not protected — a person carrying stsNotDelegated, or a ' +
+            'member of the console\'s Admin Read or Admin Write roster, is ' +
+            'never delegated whatever this says.' },
+    { name: 'appTrustedToImpersonate', kind: 'single', from: 'by hand',
+      what: 'TRUE or FALSE, default FALSE: may this intermediary ' +
+            'IMPERSONATE — WS-Trust OnBehalfOf, or a token exchange with no ' +
+            'actor_token, whose result names the subject and nothing about ' +
+            'the intermediary — as well as DELEGATE (ActAs, or an exchange ' +
+            'with an actor_token, whose result carries `act`)? The analogue ' +
+            'of Kerberos\'s TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION. A ' +
+            'subject_token whose may_act names this party is the one ' +
+            'exception: the subject asked for it.' },
+
     { name: 'appGroupsClaim', kind: 'single', from: 'by hand',
       overrides: 'groups.claim',
       what: 'TRUE or FALSE: does anything issued to this application carry a ' +
@@ -3112,6 +3165,12 @@ const EDITABLE = {
   // having been deliberately withdrawn — which, on the one attribute here
   // that REFUSES people, is the failure worth designing against.
   appRequiredRole: 'multi',
+  // THE DELEGATION POLICY (#108): three lists and a flag. See their SCHEMA
+  // rows and `common/delegation_policy.ts`.
+  appAllowedToDelegateTo: 'multi',
+  appAllowedToActOnBehalfOf: 'multi',
+  appDelegationSubjectGroup: 'multi',
+  appTrustedToImpersonate: 'set',
   // THE IDENTIFIER ATTRIBUTES, one per protocol family (see the PROTOCOLS
   // table). Every one of them is `multi` bar oauthTlsClientAuthSubjectDn below,
   // whose own row says why — an application answering to two client_ids or two
@@ -5546,6 +5605,36 @@ function pushedAuthorizationAttributeProblem(attribute, value) {
 }
 
 // ---------------------------------------------------------------------------
+// THE DELEGATION POLICY'S TWO GRAMMARS (#108): the flag is TRUE or FALSE, and
+// a subject group is a DN. The two lists of identifiers take any string — an
+// audience or an AppliesTo nobody registered is an ordinary target — so they
+// are not checked here. STS-REG-0194. A CLEAR is never refused.
+// ---------------------------------------------------------------------------
+function delegationAttributeProblem(attribute, value) {
+  log.debug("Entering delegationAttributeProblem(). attribute=" + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (!text) {
+    log.debug("Leaving delegationAttributeProblem(). A clear.");
+    return '';
+  }
+  if (attribute === 'appTrustedToImpersonate' &&
+      ['TRUE', 'FALSE'].indexOf(text.toUpperCase()) < 0) {
+    log.debug("Leaving delegationAttributeProblem(). Not a boolean.");
+    return attribute + ': "' + text + '" is not TRUE or FALSE.';
+  }
+  if (attribute === 'appDelegationSubjectGroup' &&
+      !/^[A-Za-z][A-Za-z0-9-]*=[^,]+(,\s*[A-Za-z][A-Za-z0-9-]*=[^,]+)*$/
+        .test(text)) {
+    log.debug("Leaving delegationAttributeProblem(). Not a DN.");
+    return attribute + ': "' + text + '" is not a DN. Name the group by ' +
+           'its distinguished name, as /admin/groups shows it.';
+  }
+  log.debug("Leaving delegationAttributeProblem(). Nothing refused.");
+  return '';
+}
+
+// ---------------------------------------------------------------------------
 // RFC 8705: WHAT A CLIENT MAY REGISTER ABOUT ITS CERTIFICATE (2026-09-13).
 //
 // Section 2.1.2's five subject parameters, of which a `tls_client_auth` client
@@ -6268,6 +6357,17 @@ function normaliseFields(value) {
     if (requestObjectProblems.length) {
       requestObjectProblems.forEach(function (one) { errors.push(one); });
       code = code || 'STS-REG-0101';
+      return;
+    }
+    // The delegation policy's two grammars (#108), every value.
+    const delegationProblems = values.map(function (one) {
+      return delegationAttributeProblem(name, one);
+    }).filter(function (one) {
+      return !!one;
+    });
+    if (delegationProblems.length) {
+      delegationProblems.forEach(function (one) { errors.push(one); });
+      code = code || 'STS-REG-0194';
       return;
     }
     // RFC 9126's one.
@@ -8503,6 +8603,15 @@ function updateApplication(identifier, change) {
       log.debug("Leaving updateApplication(). Not a usable request object " +
                 "setting.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0101');
+    }
+  }
+  // The delegation policy's two grammars (#108), on an ADD or a SET.
+  if ((mode === 'set' || mode === 'add') && value) {
+    const problem = delegationAttributeProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable delegation " +
+                "policy value.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0194');
     }
   }
   // RFC 9126's one, on a SET that carries a value.
@@ -11373,6 +11482,7 @@ module.exports = {
   OIDC_SUBJECT_ATTRIBUTES: OIDC_SUBJECT_ATTRIBUTES,
   pushedAuthorizationMetadataProblem: pushedAuthorizationMetadataProblem,
   pushedAuthorizationAttributeProblem: pushedAuthorizationAttributeProblem,
+  delegationAttributeProblem: delegationAttributeProblem,
   mtlsMetadataProblem: mtlsMetadataProblem,
   mtlsAttributeProblem: mtlsAttributeProblem,
   TLS_SUBJECT_ATTRIBUTES: TLS_SUBJECT_ATTRIBUTES,

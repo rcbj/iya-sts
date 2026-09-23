@@ -2565,9 +2565,42 @@ about the request and must not be lost to a resolution. **Nothing is refused:**
 an audience nobody has registered resolves to null and is recorded verbatim,
 exactly as it was before this existed.
 
-**Nothing authorizes either of them here**, and the row says so where a Kerberos
-row names an attribute. `may_act` is the claim a real deployment would use for
-it; this service neither issues nor reads one.
+**WHO MAY ACT FOR WHOM IS DECIDED SINCE #108 (2026-09-23)** — it read *nothing
+authorizes either of them here* until then. `../common/delegation_policy.ts`
+(rule 3az, `../common/CLAUDE.md`) is asked after the actor is verified and the
+audiences are known, and before `issue()`: the client is the intermediary, its
+`appAllowedToDelegateTo` or the target's `appAllowedToActOnBehalfOf` must
+allow every audience, an exchange with no `actor_token` needs
+`appTrustedToImpersonate`, the subject must pass `appDelegationSubjectGroup`
+and not be protected, and then the issuance policy may Deny action-id
+`delegate`. A client exchanging ITS OWN token acts for nobody and needs
+nothing (the self case — a client_credentials token's `sub` is the client_id,
+or `urn:sts:client:<id>` in RFC 9700 mode). **Product refuses** —
+`invalid_request` (`STS-OAUTH-0618`, `0622` for the XACML Deny) or, for a
+target, `invalid_target` (`0619`), RFC 8693 section 2.2.2 — and the refusal is a
+refused act; **development issues** and the act's `authorizedBy` says what would
+have refused it (`mode.authorizesDelegation()`). The act row names what allowed
+it, the way a Kerberos row names an attribute.
+
+**`may_act` IS READ IN EVERY MODE** (section 4.4), off a VERIFIED subject_token
+only: when it names a party other than the actor — the `actor_token`'s `sub`
+(and `iss` if the claim has one), or the client when there is no actor — the
+exchange is `invalid_request` (`STS-OAUTH-0620`), because the token itself says
+no. A match stands in for `appTrustedToImpersonate` and the subject groups,
+never for the target. **It is ISSUED by `accessToken()`**, the one place an
+access token's claims are assembled, from the person's own `stsMayAct` and
+nothing else (`delegationPolicy.mayActClaimFor()`, looked up by the
+`urn:uuid:` subject where the token has one).
+
+**`act` NESTS** (section 4.1): the subject_token's own `act` goes beneath the new
+actor, and an impersonation of a token that already carried `act` keeps it —
+dropping it would launder a delegated token into an ordinary one. **AND THE
+SCOPE MAY NOT WIDEN**: `body.scope || subject.scope` was never compared with
+what the subject granted, and #110's `scopeRefusal()` and `tokenSet()`'s
+narrowing hold a scope to the CLIENT's declaration, not to the subject's grant.
+In product a requested scope outside a verified subject_token's `scope` claim is
+`invalid_scope` (`STS-OAUTH-0621`); a subject_token with no `scope` claim (an ID
+Token, a WS-Trust JWT) has no grant to compare against.
 
 **IN PRODUCT MODE BOTH TOKENS MUST VERIFY (2026-09-21), AND UNTIL THEN NEITHER
 HAD TO.** The branch tried `verifyJws()` on the `subject_token` and, on failure,
