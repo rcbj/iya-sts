@@ -8736,6 +8736,13 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Registers a client, which may then use ANY authorization server ' +
           'here — nothing restricts a client to the one it registered at, ' +
           'and /admin/applications records which ones it has actually used.' },
+  { path: '/:as/oauth2/register/:client_id', group: 'OAuth 2.0 / OIDC',
+    name: 'Registered client management (a named authorization server)',
+    specs: ['rfc7592', 'rfc6750'],
+    what: 'The RFC 7592 read, update and delete at the address a ' +
+          'registration made here returns as registration_client_uri ' +
+          '(#120). The registry is one, so this is the same client as at ' +
+          '/oauth2/register/{client_id}.' },
   { path: '/:as/oauth2/logout', group: 'OAuth 2.0 / OIDC',
     name: 'Session end (a named authorization server)',
     specs: ['oidc', 'oidc-logout'],
@@ -8924,7 +8931,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'registration access token. An update applies a software ' +
           'statement as registration does, and a client admitted by a ' +
           'trusted statement at an otherwise closed endpoint must present a ' +
-          'trusted statement from the same issuer with every update.' },
+          'trusted statement from the same issuer with every update. An ' +
+          'update names its own client_id and any client_secret it was ' +
+          'issued; a token for a client that no longer exists is revoked ' +
+          'and answered 401 (section 3, #120).' },
 
   // --- OID4VCI ---
   { path: '/.well-known/openid-credential-issuer', group: 'VC Issuance ' +
