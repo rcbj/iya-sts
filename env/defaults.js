@@ -381,43 +381,43 @@ var config = {
 
   // --- PKI -------------------------------------------------------------
   pki: {
-    crlLifetimeMinutes: 60,                    // How long a CRL claims to be fresh
-    httpPort: 8082,                            // Plain-HTTP revocation listener port; restart to apply
-    distributionBaseUrl: "",                   // Base URL published in CRL and OCSP addresses
-    distributionPort: 0,                       // Port published in HTTP CRL and OCSP addresses
-    distributionLdapHost: "",                  // Host published in ldap:// CRL addresses
-    distributionLdapPort: 0,                   // Port published in ldap:// CRL addresses
-    publishCrlToDirectory: true,               // Publish every CRL into the embedded directory
-    autoBuild: true,                           // Build the certificate authority at startup; restart to apply
-    keyAlgorithm: "rsa-2048",                  // Default CA key algorithm
-    signatureAlgorithm: "",                    // Default CA signature algorithm
-    organisation: "sts",                       // Default organisation name (O=)
-    personSelfService: true,                   // Let a person issue their own signing key pair
-    leafLifetimeDays: 365,                     // Default lifetime of an issued key pair (days)
-    rootLifetimeYears: 0,                      // Root CA lifetime (years, 0 = the profile's)
-    intermediateLifetimeYears: 0,              // Intermediate CA lifetime (years, 0 = the profile's)
-    issuingLifetimeYears: 0,                   // Issuing CA lifetime (years, 0 = the profile's)
-    maxStoredObjects: 200,                     // Certificates and keys the workbench store keeps, per realm
-    personSelfServicePerIdentity: 5,           // Self-issued key pairs one person may ask for per window
-    personSelfServicePerAddress: 5,            // Self-issued key pairs one address may ask for per window
-    personTlsClientCertificateMax: 5,          // TLS client certificates one person may hold
-    applicationTlsClientCertificateMax: 5,     // TLS client certificates one application may hold
-    revocationCheck: "auto",                   // Revocation check on a presented certificate
-    revocationRequireDistributionPoint: false, // Hard-fail refuses a certificate whose issuer names no CRL
-    revocationFetchTimeoutMs: 3000,            // CRL fetch timeout (milliseconds)
-    revocationMaxCrlBytes: 1048576,            // Largest CRL fetched (bytes)
-    revocationCrlCacheEntries: 256,            // Foreign CRLs kept in memory
-    revocationCrlMaxAgeS: 3600,                // Longest a fetched CRL is believed (seconds)
-    revocationFailureRetryS: 60,               // Wait before retrying a CRL that failed (seconds)
-    revocationOcsp: "first",                   // OCSP for a foreign certificate
-    revocationOcspMaxAgeS: 3600,               // Longest an OCSP response is believed (seconds)
-    revocationOcspRequireNonce: false,         // Refuse an OCSP response that does not echo the nonce
-    revocationClockSkewS: 300,                 // Clock skew allowed on CRL and OCSP freshness (seconds)
-    revocationCrlIssuersFile: "",              // Certificates that may sign an indirect CRL
-    revocationLdap: "ldaps",                   // LDAP revocation addresses
-    revocationLdapCaFile: "",                  // CA certificates for ldaps revocation directories
-    revocationLdapDirectory: "",               // Directory for CRL names relative to their issuer
-    enrollmentMaxCertificatesPerEntry: 20      // Enrolled certificates one entry may hold
+    crlLifetimeMinutes: 60,                     // How long a CRL claims to be fresh
+    httpPort: 8082,                             // Plain-HTTP revocation listener port; restart to apply
+    distributionBaseUrl: "",                    // Base URL published in CRL and OCSP addresses
+    distributionPort: 0,                        // Port published in HTTP CRL and OCSP addresses
+    distributionLdapHost: "",                   // Host published in ldap:// CRL addresses
+    distributionLdapPort: 0,                    // Port published in ldap:// CRL addresses
+    publishCrlToDirectory: true,                // Publish every CRL into the embedded directory
+    autoBuild: true,                            // Build the certificate authority at startup; restart to apply
+    keyAlgorithm: "rsa-2048",                   // Default CA key algorithm
+    signatureAlgorithm: "",                     // Default CA signature algorithm
+    organisation: "sts",                        // Default organisation name (O=)
+    personSelfService: true,                    // Let a person issue their own signing key pair
+    leafLifetimeDays: 365,                      // Default lifetime of an issued key pair (days)
+    rootLifetimeYears: 0,                       // Root CA lifetime (years, 0 = the profile's)
+    intermediateLifetimeYears: 0,               // Intermediate CA lifetime (years, 0 = the profile's)
+    issuingLifetimeYears: 0,                    // Issuing CA lifetime (years, 0 = the profile's)
+    maxStoredObjects: 200,                      // Certificates and keys the workbench store keeps, per realm
+    personSelfServicePerIdentity: 5,            // Self-issued key pairs one person may ask for per window
+    personSelfServicePerAddress: 5,             // Self-issued key pairs one address may ask for per window
+    personTlsClientCertificateMax: 5,           // TLS client certificates one person may hold
+    applicationTlsClientCertificateMax: 5,      // TLS client certificates one application may hold
+    revocationCheck: "auto",                    // Revocation check on a presented certificate
+    revocationRequireDistributionPoint: "auto", // Refuse a certificate whose issuer names no CRL and no OCSP responder
+    revocationFetchTimeoutMs: 3000,             // CRL fetch timeout (milliseconds)
+    revocationMaxCrlBytes: 1048576,             // Largest CRL fetched (bytes)
+    revocationCrlCacheEntries: 256,             // Foreign CRLs kept in memory
+    revocationCrlMaxAgeS: 3600,                 // Longest a fetched CRL is believed (seconds)
+    revocationFailureRetryS: 60,                // Wait before retrying a CRL that failed (seconds)
+    revocationOcsp: "first",                    // OCSP for a foreign certificate
+    revocationOcspMaxAgeS: 3600,                // Longest an OCSP response is believed (seconds)
+    revocationOcspRequireNonce: false,          // Refuse an OCSP response that does not echo the nonce
+    revocationClockSkewS: 300,                  // Clock skew allowed on CRL and OCSP freshness (seconds)
+    revocationCrlIssuersFile: "",               // Certificates that may sign an indirect CRL
+    revocationLdap: "ldaps",                    // LDAP revocation addresses
+    revocationLdapCaFile: "",                   // CA certificates for ldaps revocation directories
+    revocationLdapDirectory: "",                // Directory for CRL names relative to their issuer
+    enrollmentMaxCertificatesPerEntry: 20       // Enrolled certificates one entry may hold
   },
 
   // --- ACME ------------------------------------------------------------

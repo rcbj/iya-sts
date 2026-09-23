@@ -1063,6 +1063,14 @@ const SPECS: Spec[] = [
               'service issued is checked against its own register, and ' +
               'anybody else\'s against the OCSP responder and CRL it names ' +
               '(common/revocation_status.js, policy pki.revocationCheck). ' +
+              'Section 6.3\'s undetermined status includes a list at an ' +
+              'address this service is configured not to dial (plain ' +
+              'ldap: under pki.revocationLdap=ldaps, a relative name ' +
+              'without a directory), refused under hard-fail; a foreign ' +
+              'CA-issued certificate naming no list and no responder is ' +
+              'refused in product (pki.revocationRequireDistributionPoint' +
+              '=auto); and RFC 9608 noRevAvail is honoured — section 4 ' +
+              'skips the check, section 3\'s contradictions are invalid. ' +
               'Name constraints, policies and path ' +
               'length are enforced only to the extent OpenSSL enforces them, ' +
               'which is to say properly, and by nothing written here.' },

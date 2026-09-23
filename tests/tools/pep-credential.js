@@ -76,6 +76,9 @@
 //                    used by the PEP; written so that a person debugging the
 //                    stack can check what the mock was asked to trust.
 //   <out>/chain.txt  a one-line summary per certificate, for the same reader.
+//   <out>/crl/       with --crl-base only: root.crl and issuing.crl, the two
+//                    lists the certificates name (#174). Signed documents,
+//                    not key material; the PEP container serves them.
 //
 // ---------------------------------------------------------------------------
 // USAGE
@@ -93,6 +96,12 @@
 //   --subject   the leaf's DN in RFC 4514 order. Defaults to the CN below.
 //   --years     the leaf's life. Default 1.
 //   --quiet     only the DN on stdout, for a launcher to capture.
+//   --crl-base  where the Issuing CA's and the leaf's CRLs will be served
+//               (#174): the certificates name <crl-base>/root.crl and
+//               <crl-base>/issuing.crl, and both lists are written to
+//               <out>/crl/ for that server. Without it no certificate names
+//               a list, and a product-mode service refuses the chain
+//               (STS-PKI-0190) — which is what the launchers pass it for.
 //
 // It prints the leaf's DN as its LAST line, so `$(... --quiet)` is the DN and a
 // launcher needs no parsing.
@@ -142,7 +151,7 @@ const DEFAULT_SUBJECT = 'CN=remote-pep-1,OU=remote-peps,O=mock-sts';
 function parseArgs(argv) {
   log.debug("Entering parseArgs().");
   const opts = { url: '', out: '', subject: DEFAULT_SUBJECT, years: 1,
-                 quiet: false };
+                 quiet: false, crlBase: '' };
   argv.forEach(function (arg) {
     const eq = arg.indexOf('=');
     const name = eq > 0 ? arg.slice(0, eq) : arg;
@@ -152,6 +161,9 @@ function parseArgs(argv) {
     else if (name === '--subject') { opts.subject = value; }
     else if (name === '--years') { opts.years = parseInt(value, 10) || 1; }
     else if (name === '--quiet') { opts.quiet = true; }
+    else if (name === '--crl-base') {
+      opts.crlBase = value.replace(/\/+$/, '');
+    }
     else if (name === '--help' || name === '-h') { opts.help = true; }
     else { opts.unknown = (opts.unknown || []).concat(arg); }
   });
@@ -281,6 +293,13 @@ async function issue(spec) {
     subjectKeyIdentifier: { present: true },
     authorityKeyIdentifier: { present: true }
   };
+  if (spec.crl) {
+    // THE LIST OF THE CA THAT SIGNED THIS ONE (#174): a product-mode service
+    // refuses, under hard-fail, a certificate from an authority it does not
+    // hold that names none — nobody could ever revoke it.
+    extensions.cRLDistributionPoints = { present: true, critical: false,
+                                         urls: [spec.crl] };
+  }
   if (!spec.ca) {
     // clientAuth AND NOTHING ELSE. A certificate that also claimed serverAuth
     // would work here and would be a lie about what it is for — and this one is
@@ -315,9 +334,32 @@ async function issue(spec) {
 // they are gated, and a second implementation of this in that file would be a
 // second reading of how a chain is built.
 // ---------------------------------------------------------------------------
+//
+// **EVERY CERTIFICATE BELOW THE ROOT NAMES ITS ISSUER'S CRL (#174).** Since
+// then a product-mode service refuses a CA-issued foreign certificate that
+// names no CRL and no OCSP responder, so the Issuing CA names the Root's list
+// and the leaf the Issuing CA's. Where those lists are served is the caller's
+// choice, by `options.crlBase`:
+//
+//   * absent — the default, for a test: `tests/vendored/test_crl_host.js`
+//     serves them from THIS process, which is alive while its certificate is
+//     presented;
+//   * a URL — the lists are named `<crlBase>/root.crl` and
+//     `<crlBase>/issuing.crl` and returned in `crls` for the caller to put
+//     there (the launcher writes them beside the credential, and the PEP
+//     container serves them, because this process exits first);
+//   * `false` — no distribution point at all, for a credential nothing will
+//     present to a product-mode service.
+// ---------------------------------------------------------------------------
 async function mint(opts) {
   log.debug("Entering mint().");
   const options = opts || {};
+  const host = options.crlBase === undefined
+    ? require('../vendored/test_crl_host.js') : null;
+  const rootList = host ? await host.reserve('root')
+    : (options.crlBase ? { url: options.crlBase + '/root.crl' } : null);
+  const issuingList = host ? await host.reserve('issuing')
+    : (options.crlBase ? { url: options.crlBase + '/issuing.crl' } : null);
   const root = await issue({
     subject: options.rootSubject || 'CN=mock-sts test Root CA,O=mock-sts tests',
     ca: true, pathLen: 1, years: 10
@@ -326,15 +368,29 @@ async function mint(opts) {
     subject: options.issuingSubject ||
              'CN=mock-sts test Issuing CA,O=mock-sts tests',
     ca: true, pathLen: 0, years: 5,
+    crl: rootList ? rootList.url : '',
     issuer: { certificatePem: root.pem, privateKeyPem: root.privateKeyPem,
               keyAlg: 'rsa-2048' }
   });
   const leaf = await issue({
     subject: options.subject || DEFAULT_SUBJECT,
     years: options.years || 1,
+    crl: issuingList ? issuingList.url : '',
     issuer: { certificatePem: issuing.pem,
               privateKeyPem: issuing.privateKeyPem, keyAlg: 'rsa-2048' }
   });
+  let crls = null;
+  if (host) {
+    await rootList.publish(root);
+    await issuingList.publish(issuing);
+  } else if (options.crlBase) {
+    // Fresh for as long as the leaf lives, because nothing re-signs them: the
+    // container serving them has no key.
+    const days = (options.years || 1) * 366;
+    const lists = require('../vendored/test_crl_host.js');
+    crls = { 'root.crl': await lists.crlFor(root, { days: days }),
+             'issuing.crl': await lists.crlFor(issuing, { days: days }) };
+  }
   log.debug("Leaving mint().");
   return {
     root: root, issuing: issuing, leaf: leaf,
@@ -344,7 +400,8 @@ async function mint(opts) {
     certPem: leaf.pem + issuing.pem,
     keyPem: leaf.privateKeyPem,
     anchorPem: root.pem,
-    subject: leaf.subject
+    subject: leaf.subject,
+    crls: crls
   };
 }
 
@@ -376,7 +433,10 @@ async function main() {
             '/common/vendored/x509.js ' +
             '— the same engine spiffe/spiffe_ca.ts issues X509-SVIDs with.');
 
-  const minted = await mint({ subject: opts.subject, years: opts.years });
+  // THE LISTS GO WHERE --crl-base SAYS, OR NOWHERE (#174): this process exits
+  // as soon as it has written the credential, so it cannot serve them itself.
+  const minted = await mint({ subject: opts.subject, years: opts.years,
+                              crlBase: opts.crlBase || false });
   const root = minted.root;
   const issuing = minted.issuing;
   const leaf = minted.leaf;
@@ -389,6 +449,18 @@ async function main() {
   fs.writeFileSync(path.join(opts.out, 'pep.crt'), minted.certPem);
   fs.writeFileSync(path.join(opts.out, 'pep.key'), leaf.privateKeyPem);
   fs.writeFileSync(path.join(opts.out, 'ca.crt'), root.pem);
+  if (minted.crls) {
+    // PUBLIC, SIGNED DOCUMENTS — no key material — for whoever serves
+    // --crl-base: the PEP container answers GET /crl/<name> from this
+    // directory (`xacml-pep/pep.js`).
+    fs.mkdirSync(path.join(opts.out, 'crl'), { recursive: true });
+    Object.keys(minted.crls).forEach(function (name) {
+      fs.writeFileSync(path.join(opts.out, 'crl', name), minted.crls[name]);
+    });
+    say(opts, 'Wrote the Root\'s and the Issuing CA\'s CRLs to ' +
+              path.join(opts.out, 'crl') + ', named by the certificates at ' +
+              opts.crlBase + '.');
+  }
   fs.writeFileSync(path.join(opts.out, 'chain.txt'),
     ['These three were generated by tests/tools/pep-credential.js.',
      '',

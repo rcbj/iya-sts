@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3122** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3125** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 69
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 174
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 177
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
@@ -643,6 +643,9 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0185` | A CRL was not signed because its CRL number could not be advanced in the store shared by this service's nodes. | HTTP 500 from the CRL distribution point |
 | `STS-PKI-0186` | A certificate was not recorded because the Issuing CA that signed it was replaced, repeatedly, while it was being signed. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-PKI-0187` | The public crypto metadata document (/crypto/metadata) could not be built. | HTTP 500 server_error from /crypto/metadata |
+| `STS-PKI-0188` | A presented certificate chain was refused under pki.revocationCheck=hard-fail because a certificate in it names revocation addresses this service is configured NOT TO DIAL and no other it could use — a plain ldap: CRL under pki.revocationLdap=ldaps, any ldap with it off, a name relative to the CRL issuer without pki.revocationLdapDirectory, a scheme that is never dialled, or an OCSP responder that is not http(s) — so its status could not be established. Distinct from STS-PKI-0119 so that a policy refusal is not read as an unreachable server; also logged, once per address per process, naming the setting that would dial it. | The same refusals as STS-PKI-0118, per door |
+| `STS-PKI-0189` | A presented certificate carries RFC 9608 noRevAvail beside something section 3 forbids with it — cA TRUE, cRLDistributionPoints, freshestCRL, or an OCSP responder in its Authority Information Access — and is refused as INVALID under every policy but off. | The same refusals as STS-PKI-0118, per door |
+| `STS-PKI-0190` | A presented certificate chain was refused under pki.revocationCheck=hard-fail because a certificate in it, issued by an authority this service does not hold, names no CRL distribution point and no OCSP responder, carries no RFC 9608 noRevAvail, and pki.revocationRequireDistributionPoint (auto, in product mode, or on) refuses a certificate nobody can revoke. | The same refusals as STS-PKI-0118, per door |
 
 ## STS-ENROLL
 

@@ -1054,7 +1054,13 @@ class CryptoMetadata {
                    'over http, https or ldaps (plain ldap only when ' +
                    'pki.revocationLdap allows it); an ldaps directory\'s ' +
                    'certificate must chain to node\'s store or ' +
-                   'pki.revocationLdapCaFile.' },
+                   'pki.revocationLdapCaFile. A list at an address that is ' +
+                   'not dialled is a status that could not be established, ' +
+                   'refused under hard-fail (STS-PKI-0188); a certificate ' +
+                   'naming no list and no responder is refused in product ' +
+                   '(pki.revocationRequireDistributionPoint=auto, ' +
+                   'STS-PKI-0190), and one carrying RFC 9608 noRevAvail is ' +
+                   'not checked.' },
             { what: 'Revocation check — how a foreign OCSP response is trusted',
               how: 'The request carries a SHA-1 CertID (the RFC 5019 ' +
                    'profile\'s identifier, not a signature) and a 32-octet ' +
