@@ -6,11 +6,20 @@
 // ===========================================================================
 // THE FAPI PROFILES, AS A MODE (#138, 2026-09-22).
 //
-// FAPI 1.0 Part 1: Baseline (final, 2021-03-12) first; #139 adds FAPI 1.0
-// Part 2 (Advanced), #140 the FAPI 2.0 Security Profile and #141 FAPI 2.0
-// Message Signing, each as another value of the ONE switch:
+// FAPI 1.0 Part 1: Baseline (final, 2021-03-12) came first (#138), FAPI 1.0
+// Part 2: Advanced (final) second (#139); #140 adds the FAPI 2.0 Security
+// Profile and #141 FAPI 2.0 Message Signing, each as another value of the ONE
+// switch:
 //
-//   oauth2.fapi = 'off' | '1-baseline'
+//   oauth2.fapi = 'off' | '1-baseline' | '1-advanced'
+//
+// ADVANCED IS BASELINE AND MORE. Part 2 section 5.2.2 opens "the authorization
+// server shall support the provisions specified in clause 5.2.2 of Financial-
+// grade API Security Profile 1.0 - Part 1: Baseline, except that Section
+// 5.2.2-7 (enforcement of RFC7636) is not required" — so every Baseline check
+// below asks `enabled()`, the Advanced ones ask `advanced()`, and PKCE is the
+// one Baseline rule Advanced relaxes: it is required only of a PUSHED request
+// (item 18).
 //
 // a realm-runtime setting (a trust realm may carry it while the process does
 // not), and a NAMED AUTHORIZATION SERVER may carry its own value in its
@@ -51,7 +60,8 @@ const config = require('../common/config');
 
 // The profiles this service implements, in the order the specifications were
 // published. #139–#141 add theirs here.
-const PROFILES = ['1-baseline'];
+const PROFILES = ['1-baseline', '1-advanced'];
+const ADVANCED = '1-advanced';
 
 // The switch's own "no profile", and what a named authorization server may
 // say to be NOT a FAPI server even though its realm is.
@@ -60,11 +70,57 @@ const NONE = 'off';
 const BASELINE = 'FAPI 1.0 Part 1: Baseline Security Profile (final)';
 const BASELINE_URL =
   'https://openid.net/specs/openid-financial-api-part-1-1_0.html';
+const ADVANCED_NAME = 'FAPI 1.0 Part 2: Advanced Security Profile (final)';
+const ADVANCED_URL =
+  'https://openid.net/specs/openid-financial-api-part-2-1_0.html';
 
 // The confidential client authentication methods Baseline section 5.2.2
 // item 4 allows: RFC 8705's two, and OIDC Core section 9's two JWT ones.
 const BASELINE_METHODS = ['tls_client_auth', 'self_signed_tls_client_auth',
                           'private_key_jwt', 'client_secret_jwt'];
+
+// Part 2 section 5.2.2 item 14: no client_secret_jwt, and (item 16) no public
+// client.
+const ADVANCED_METHODS = ['tls_client_auth', 'self_signed_tls_client_auth',
+                          'private_key_jwt'];
+
+// Part 2 section 5.2.2 item 2: `code id_token`, or `code` with JARM.
+const ADVANCED_RESPONSE_TYPES = ['code id_token', 'code'];
+
+// Part 2 section 8.6: "shall use PS256 or ES256" for every JWS, both ends; and
+// 8.6.1: never RSA1_5.
+const ADVANCED_SIGNING_ALGS = ['PS256', 'ES256'];
+const ADVANCED_DEFAULT_SIGNING_ALG = 'PS256';
+const FORBIDDEN_ENCRYPTION_ALGS = ['RSA1_5'];
+
+// The registration members that name a JWS algorithm this server or the client
+// signs with, all of which section 8.6 holds to ADVANCED_SIGNING_ALGS.
+const SIGNING_ALG_MEMBERS = ['id_token_signed_response_alg',
+  'userinfo_signed_response_alg', 'request_object_signing_alg',
+  'token_endpoint_auth_signing_alg', 'authorization_signed_response_alg',
+  'introspection_signed_response_alg'];
+const ENCRYPTION_ALG_MEMBERS = ['id_token_encrypted_response_alg',
+  'userinfo_encrypted_response_alg', 'request_object_encryption_alg',
+  'authorization_encrypted_response_alg',
+  'introspection_encrypted_response_alg'];
+// The metadata lists section 8.6 narrows.
+const SIGNING_ALG_LISTS = ['id_token_signing_alg_values_supported',
+  'userinfo_signing_alg_values_supported',
+  'request_object_signing_alg_values_supported',
+  'token_endpoint_auth_signing_alg_values_supported',
+  'authorization_signing_alg_values_supported',
+  'introspection_signing_alg_values_supported',
+  'revocation_endpoint_auth_signing_alg_values_supported',
+  'introspection_endpoint_auth_signing_alg_values_supported'];
+const ENCRYPTION_ALG_LISTS = ['id_token_encryption_alg_values_supported',
+  'userinfo_encryption_alg_values_supported',
+  'request_object_encryption_alg_values_supported',
+  'authorization_encryption_alg_values_supported',
+  'introspection_encryption_alg_values_supported'];
+
+// Part 2 section 5.2.2 items 13 and 17: a request object's lifetime and age.
+const MAX_REQUEST_OBJECT_LIFETIME_S = 3600;
+const MAX_REQUEST_OBJECT_AGE_S = 3600;
 
 // Section 5.2.2 items 5 and 6.
 const MIN_RSA_BITS = 2048;
@@ -169,6 +225,69 @@ const REQUIREMENTS = [
     note: '/portal/applications and the global sign-out.' }
 ];
 
+// ---------------------------------------------------------------------------
+// WHAT FAPI 1.0 ADVANCED ASKS BEYOND BASELINE, row by row (Part 2 section
+// 5.2.2 and 8.6). Under `1-advanced` GET /oauth2/fapi lists both tables, and
+// the Baseline row `pkce-s256` reads as relaxed to pushed requests.
+// ---------------------------------------------------------------------------
+const ADVANCED_REQUIREMENTS = [
+  { id: 'signed-request-object', section: '5.2.2 item 1', level: 'SHALL',
+    enforced: 'yes',
+    title: 'A JWS-signed request object, by value or by reference',
+    note: 'An unsigned or absent request object is refused (RFC 9101, ' +
+          'STS-OAUTH-0340 / 0357); a push must carry `request` ' +
+          '(STS-OAUTH-0415).' },
+  { id: 'response-type', section: '5.2.2 item 2', level: 'SHALL',
+    enforced: 'yes',
+    title: 'code id_token, or code with response_mode=jwt (JARM)',
+    note: 'STS-OAUTH-0582. JARM is implemented for every response mode ' +
+          '(query.jwt, fragment.jwt, form_post.jwt, jwt), in every profile.' },
+  { id: 'detached-signature', section: '5.2.2.1', level: 'SHALL',
+    enforced: 'yes',
+    title: 'The ID Token is a detached signature carrying s_hash',
+    note: 'c_hash and, where the client sent state, s_hash — both with the ' +
+          'hash of the ID Token\'s own alg. s_hash is added in every mode.' },
+  { id: 'sender-constrained', section: '5.2.2 items 5-6', level: 'SHALL',
+    enforced: 'yes',
+    title: 'Only sender-constrained access tokens; mTLS supported',
+    note: 'A token request that would mint an unconstrained access token is ' +
+          'refused (STS-OAUTH-0583). DPoP counts unless ' +
+          'oauth2.fapiRequireMtls is on (rcbj\'s decision on #139); ' +
+          'mtls_endpoint_aliases is published where the port is TLS.' },
+  { id: 'parameters-from-object', section: '5.2.2 item 10', level: 'SHALL',
+    enforced: 'already',
+    title: 'Only parameters inside the signed request object are used',
+    note: 'RFC 9101 section 6.3: the object replaces the query.' },
+  { id: 'request-object-lifetime', section: '5.2.2 items 13, 17',
+    level: 'SHALL', enforced: 'yes',
+    title: 'exp and nbf required; exp at most 60 minutes after nbf; nbf at ' +
+           'most 60 minutes old',
+    note: 'STS-OAUTH-0584.' },
+  { id: 'client-auth', section: '5.2.2 item 14', level: 'SHALL',
+    enforced: 'yes',
+    title: 'tls_client_auth, self_signed_tls_client_auth or private_key_jwt',
+    note: 'client_secret_jwt is refused too (STS-OAUTH-0580, STS-REG-0174).' },
+  { id: 'request-object-aud', section: '5.2.2 item 15', level: 'SHALL',
+    enforced: 'yes',
+    title: 'The request object\'s aud is the issuer',
+    note: 'STS-OAUTH-0585.' },
+  { id: 'no-public-clients', section: '5.2.2 item 16', level: 'SHALL',
+    enforced: 'yes',
+    title: 'Public clients are not supported',
+    note: 'token_endpoint_auth_method none is refused at registration and ' +
+          'at the token and PAR endpoints.' },
+  { id: 'par-pkce', section: '5.2.2 item 18', level: 'SHALL',
+    enforced: 'yes',
+    title: 'A pushed request uses PKCE with S256',
+    note: 'STS-OAUTH-0573, for pushed requests only.' },
+  { id: 'algorithms', section: '8.6, 8.6.1', level: 'SHALL', enforced: 'yes',
+    title: 'PS256 or ES256 for every JWS; never RSA1_5',
+    note: 'This server signs with PS256 by default under the profile (ID ' +
+          'Token, access token, UserInfo, JARM, introspection); a client ' +
+          'algorithm outside the two is refused (STS-OAUTH-0586, ' +
+          'STS-REG-0177), and the metadata lists are narrowed to match.' }
+];
+
 // The ambient profile of the request being answered: the named
 // authorization server's own value, when `oauth2.ts` set one.
 const ambient = new AsyncLocalStorage();
@@ -211,12 +330,27 @@ function enabled() {
   return on;
 }
 
+// Whether FAPI 1.0 Advanced is in force.
+function advanced() {
+  log.debug("Entering advanced().");
+  const on = profile() === ADVANCED;
+  log.debug("Leaving advanced(). " + on);
+  return on;
+}
+
+// The name of the profile in force, for a refusal's sentence.
+function profileName() {
+  log.debug("Entering profileName().");
+  log.debug("Leaving profileName().");
+  return advanced() ? ADVANCED_NAME : BASELINE;
+}
+
 function refusal(errorCode, error, requirement, description) {
   log.debug("Entering refusal(). " + requirement);
   log.debug("Leaving refusal().");
   return { ok: false, errorCode: errorCode, error: error,
            requirement: requirement,
-           description: description + ' (' + BASELINE + ', ' +
+           description: description + ' (' + profileName() + ', ' +
              'oauth2.fapi=' + profile() + ').' };
 }
 
@@ -238,16 +372,17 @@ function httpsUri(uri) {
 
 // ---------------------------------------------------------------------------
 // THE AUTHORIZATION REQUEST (and a pushed one, which the same vetting reads).
-// `query` is the request's parameters; `confidential` whether the client's
-// entry declares a credential.
+// `query` is the request's parameters; `context.pushed` whether it arrived by
+// PAR — the one thing Advanced's PKCE rule turns on.
 // ---------------------------------------------------------------------------
-function authorizationRefusal(query) {
+function authorizationRefusal(query, context) {
   log.debug("Entering authorizationRefusal().");
   if (!enabled()) {
     log.debug("Leaving authorizationRefusal(). Off.");
     return null;
   }
   const q = query || {};
+  const ctx = context || {};
   const scopes = String(q.scope || '').split(/\s+/);
   if (!q.redirect_uri) {
     log.debug("Leaving authorizationRefusal(). No redirect_uri.");
@@ -261,11 +396,36 @@ function authorizationRefusal(query) {
                    'redirect_uri must use the https scheme (section 5.2.2 ' +
                    'item 20)');
   }
-  if (!q.code_challenge || q.code_challenge_method !== 'S256') {
+  // Baseline item 7 for every client; Advanced relaxes it to a pushed request
+  // (Part 2 section 5.2.2's exception, and item 18). A challenge that IS sent
+  // is still held to S256 under both.
+  const pkceAsked = !advanced() || !!ctx.pushed;
+  const challenged = !!q.code_challenge;
+  if ((pkceAsked && !challenged) ||
+      (challenged && q.code_challenge_method !== 'S256')) {
     log.debug("Leaving authorizationRefusal(). No S256 challenge.");
     return refusal('STS-OAUTH-0573', 'invalid_request', 'pkce-s256',
                    'a code_challenge with code_challenge_method=S256 is ' +
-                   'required of every client (section 5.2.2 item 7)');
+                   'required ' + (advanced() ? 'of a pushed request ' +
+                   '(Part 2 section 5.2.2 item 18)'
+                                            : 'of every client (section ' +
+                   '5.2.2 item 7)'));
+  }
+  if (advanced()) {
+    const type = responseTypeOf(q.response_type);
+    const jarm = JARM_MODES.indexOf(String(q.response_mode || '')) >= 0;
+    if (!(type === 'code id_token' || (type === 'code' && jarm))) {
+      log.debug("Leaving authorizationRefusal(). A response type Advanced " +
+                "does not allow.");
+      return refusal('STS-OAUTH-0582', 'unsupported_response_type',
+                     'response-type',
+                     'response_type "' + String(q.response_type || '') +
+                     '"' + (q.response_mode ? ' with response_mode "' +
+                     q.response_mode + '"' : '') + ' is not one this ' +
+                     'profile allows: it is `code id_token`, or `code` ' +
+                     'with response_mode=jwt (JARM) (Part 2 section 5.2.2 ' +
+                     'item 2)');
+    }
   }
   if (scopes.indexOf('openid') >= 0 && !q.nonce) {
     log.debug("Leaving authorizationRefusal(). No nonce.");
@@ -283,6 +443,19 @@ function authorizationRefusal(query) {
   log.debug("Leaving authorizationRefusal(). Allowed.");
   return null;
 }
+
+// A response_type with its values in a fixed order, so that `id_token code`
+// is `code id_token`.
+function responseTypeOf(value) {
+  log.debug("Entering responseTypeOf().");
+  const words = String(value || '').split(/\s+/).filter(Boolean).sort();
+  log.debug("Leaving responseTypeOf().");
+  return words.join(' ');
+}
+
+// JARM's response modes (JARM section 2.3). Kept here as well as in
+// `jarm.ts` because this file is a leaf that may require nothing.
+const JARM_MODES = ['jwt', 'query.jwt', 'fragment.jwt', 'form_post.jwt'];
 
 // ---------------------------------------------------------------------------
 // SECTION 5.2.2 ITEM 19: every client identifier one request carries — the
@@ -318,17 +491,30 @@ function clientIdentifierRefusal(ids) {
 function clientAuthenticationRefusal(method) {
   log.debug("Entering clientAuthenticationRefusal(). " + method);
   const used = String(method || '');
-  if (!enabled() || !used || used === 'none' ||
-      BASELINE_METHODS.indexOf(used) >= 0) {
+  if (!enabled() || !used) {
+    log.debug("Leaving clientAuthenticationRefusal(). Nothing to judge.");
+    return null;
+  }
+  const allowed = advanced() ? ADVANCED_METHODS
+                             : BASELINE_METHODS.concat(['none']);
+  if (allowed.indexOf(used) >= 0) {
     log.debug("Leaving clientAuthenticationRefusal(). Allowed.");
     return null;
   }
   log.debug("Leaving clientAuthenticationRefusal(). Refused.");
   return refusal('STS-OAUTH-0580', 'invalid_client',
-                 'confidential-client-auth',
-                 'this client authenticates with ' + used + ', and a ' +
-                 'confidential client must use ' +
-                 BASELINE_METHODS.join(', ') + ' (section 5.2.2 item 4)');
+                 used === 'none' ? 'no-public-clients'
+                                 : 'confidential-client-auth',
+                 used === 'none'
+                   ? 'this client is a public client, and this profile ' +
+                     'supports none (Part 2 section 5.2.2 item 16)'
+                   : 'this client authenticates with ' + used + ', and a ' +
+                     'confidential client must use ' +
+                     allowed.filter(function (one) {
+                       return one !== 'none';
+                     }).join(', ') + ' (' + (advanced()
+                       ? 'Part 2 section 5.2.2 item 14'
+                       : 'section 5.2.2 item 4') + ')');
 }
 
 // The size of one JWK's key in bits, or 0 when it is not RSA or EC.
@@ -365,14 +551,24 @@ function registrationRefusal(metadata) {
   }
   const meta = metadata || {};
   const method = String(meta.token_endpoint_auth_method || '');
-  if (method && method !== 'none' && BASELINE_METHODS.indexOf(method) < 0) {
+  const methods = advanced() ? ADVANCED_METHODS
+                             : BASELINE_METHODS.concat(['none']);
+  if (method && methods.indexOf(method) < 0) {
     log.debug("Leaving registrationRefusal(). A method FAPI refuses.");
     return refusal('STS-REG-0174', 'invalid_client_metadata',
                    'confidential-client-auth',
                    'token_endpoint_auth_method "' + method + '" is not one ' +
-                   'a FAPI client may use; it is one of ' +
-                   BASELINE_METHODS.join(', ') + ', or none for a public ' +
-                   'client (section 5.2.2 item 4)');
+                   'a client of this profile may use; it is one of ' +
+                   methods.join(', ') + ' (' + (advanced()
+                     ? 'Part 2 section 5.2.2 items 14 and 16'
+                     : 'section 5.2.2 item 4') + ')');
+  }
+  if (advanced()) {
+    const problem = advancedRegistrationProblem(meta);
+    if (problem) {
+      log.debug("Leaving registrationRefusal(). Advanced refuses it.");
+      return problem;
+    }
   }
   const uris = Array.isArray(meta.redirect_uris) ? meta.redirect_uris : [];
   const plain = uris.filter(function (uri) {
@@ -403,6 +599,188 @@ function registrationRefusal(metadata) {
   }
   log.debug("Leaving registrationRefusal(). Allowed.");
   return null;
+}
+
+// What Advanced asks of a registration beyond Baseline: the response types
+// (item 2), the signing algorithms (8.6) and no RSA1_5 (8.6.1).
+function advancedRegistrationProblem(meta) {
+  log.debug("Entering advancedRegistrationProblem().");
+  const types = Array.isArray(meta.response_types) ? meta.response_types
+                                                   : [];
+  const badType = types.map(responseTypeOf).filter(function (one) {
+    return ADVANCED_RESPONSE_TYPES.indexOf(one) < 0;
+  });
+  if (badType.length) {
+    log.debug("Leaving advancedRegistrationProblem(). A response type.");
+    return refusal('STS-REG-0178', 'invalid_client_metadata',
+                   'response-type',
+                   'response_types ' + JSON.stringify(badType) + ' is not ' +
+                   'one this profile allows; it allows ' +
+                   ADVANCED_RESPONSE_TYPES.join(' and ') + ' (Part 2 ' +
+                   'section 5.2.2 item 2)');
+  }
+  for (let i = 0; i < SIGNING_ALG_MEMBERS.length; i++) {
+    const value = meta[SIGNING_ALG_MEMBERS[i]];
+    if (value !== undefined && value !== null && value !== '' &&
+        ADVANCED_SIGNING_ALGS.indexOf(String(value)) < 0) {
+      log.debug("Leaving advancedRegistrationProblem(). A signing alg.");
+      return refusal('STS-REG-0177', 'invalid_client_metadata',
+                     'algorithms',
+                     SIGNING_ALG_MEMBERS[i] + ' "' + value + '" is not ' +
+                     ADVANCED_SIGNING_ALGS.join(' or ') + ' (Part 2 section ' +
+                     '8.6)');
+    }
+  }
+  for (let i = 0; i < ENCRYPTION_ALG_MEMBERS.length; i++) {
+    const value = String(meta[ENCRYPTION_ALG_MEMBERS[i]] || '');
+    if (FORBIDDEN_ENCRYPTION_ALGS.indexOf(value) >= 0) {
+      log.debug("Leaving advancedRegistrationProblem(). RSA1_5.");
+      return refusal('STS-REG-0177', 'invalid_client_metadata',
+                     'algorithms',
+                     ENCRYPTION_ALG_MEMBERS[i] + ' "' + value + '" may not ' +
+                     'be used (Part 2 section 8.6.1)');
+    }
+  }
+  log.debug("Leaving advancedRegistrationProblem(). None.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// SECTION 8.6 AT A SIGNATURE: this server's DEFAULT algorithm for what it
+// signs when the client registered none ('' leaves the caller's own default),
+// and whether an algorithm — the client's or this server's — may be used.
+// ---------------------------------------------------------------------------
+function defaultSigningAlg() {
+  log.debug("Entering defaultSigningAlg().");
+  log.debug("Leaving defaultSigningAlg().");
+  return advanced() ? ADVANCED_DEFAULT_SIGNING_ALG : '';
+}
+
+function signingAlgAllowed(alg) {
+  log.debug("Entering signingAlgAllowed(). " + alg);
+  log.debug("Leaving signingAlgAllowed().");
+  return !advanced() || ADVANCED_SIGNING_ALGS.indexOf(String(alg)) >= 0;
+}
+
+function encryptionAlgAllowed(alg) {
+  log.debug("Entering encryptionAlgAllowed(). " + alg);
+  log.debug("Leaving encryptionAlgAllowed().");
+  return !advanced() || FORBIDDEN_ENCRYPTION_ALGS.indexOf(String(alg)) < 0;
+}
+
+// A JWS a client presented (a client assertion, a request object) signed with
+// an algorithm section 8.6 does not allow. `what` names it in the sentence.
+function signingAlgRefusal(alg, what) {
+  log.debug("Entering signingAlgRefusal(). " + alg);
+  if (signingAlgAllowed(alg)) {
+    log.debug("Leaving signingAlgRefusal(). Allowed.");
+    return null;
+  }
+  log.debug("Leaving signingAlgRefusal(). Refused.");
+  return refusal('STS-OAUTH-0586', 'invalid_request', 'algorithms',
+                 what + ' is signed ' + alg + ', and this profile allows ' +
+                 ADVANCED_SIGNING_ALGS.join(' or ') + ' (Part 2 section 8.6)');
+}
+
+// Part 2 section 5.2.2 item 1: a signed request object is required.
+function requiresSignedRequestObject() {
+  log.debug("Entering requiresSignedRequestObject().");
+  log.debug("Leaving requiresSignedRequestObject().");
+  return advanced();
+}
+
+// ---------------------------------------------------------------------------
+// PART 2 SECTION 5.2.2 ITEMS 13, 15 AND 17 — a verified request object's
+// claims. `issuer` is this authorization server's; `now` seconds.
+// ---------------------------------------------------------------------------
+function requestObjectRefusal(claims, issuer, now) {
+  log.debug("Entering requestObjectRefusal().");
+  if (!advanced()) {
+    log.debug("Leaving requestObjectRefusal(). Not Advanced.");
+    return null;
+  }
+  const c = claims || {};
+  const at = Number(now) || Math.floor(Date.now() / 1000);
+  const exp = Number(c.exp);
+  const nbf = Number(c.nbf);
+  if (!isFinite(exp) || !isFinite(nbf) || c.exp === undefined ||
+      c.nbf === undefined) {
+    log.debug("Leaving requestObjectRefusal(). exp or nbf missing.");
+    return refusal('STS-OAUTH-0584', 'invalid_request_object',
+                   'request-object-lifetime',
+                   'the request object carries no ' + [c.exp === undefined
+                     ? 'exp' : '', c.nbf === undefined ? 'nbf' : '']
+                     .filter(Boolean).join(' and no ') + ', and both are ' +
+                   'required (Part 2 section 5.2.2 items 13 and 17)');
+  }
+  if (exp - nbf > MAX_REQUEST_OBJECT_LIFETIME_S) {
+    log.debug("Leaving requestObjectRefusal(). Too long a lifetime.");
+    return refusal('STS-OAUTH-0584', 'invalid_request_object',
+                   'request-object-lifetime',
+                   'the request object\'s exp is ' + (exp - nbf) + ' ' +
+                   'seconds after its nbf, and the limit is ' +
+                   MAX_REQUEST_OBJECT_LIFETIME_S + ' (Part 2 section 5.2.2 ' +
+                   'item 13)');
+  }
+  if (at - nbf > MAX_REQUEST_OBJECT_AGE_S) {
+    log.debug("Leaving requestObjectRefusal(). Too old.");
+    return refusal('STS-OAUTH-0584', 'invalid_request_object',
+                   'request-object-lifetime',
+                   'the request object\'s nbf is ' + (at - nbf) + ' ' +
+                   'seconds in the past, and the limit is ' +
+                   MAX_REQUEST_OBJECT_AGE_S + ' (Part 2 section 5.2.2 item ' +
+                   '17)');
+  }
+  const audiences = (Array.isArray(c.aud) ? c.aud : [c.aud])
+    .filter(function (one) {
+      return one !== undefined && one !== null;
+    }).map(String);
+  if (audiences.indexOf(String(issuer || '')) < 0) {
+    log.debug("Leaving requestObjectRefusal(). aud is not the issuer.");
+    return refusal('STS-OAUTH-0585', 'invalid_request_object',
+                   'request-object-aud',
+                   'the request object\'s aud is ' + JSON.stringify(c.aud) +
+                   ', and it must be this server\'s issuer "' + issuer +
+                   '" (Part 2 section 5.2.2 item 15)');
+  }
+  log.debug("Leaving requestObjectRefusal(). Allowed.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// PART 2 SECTION 5.2.2 ITEMS 5 AND 6 — whether an access token about to be
+// issued is sender-constrained enough. `dpop` and `mtls` say what binds it.
+// DPoP counts unless `oauth2.fapiRequireMtls` is on (rcbj's decision on
+// #139): FAPI 1.0 names mutual TLS, and the flag is strict compliance.
+// ---------------------------------------------------------------------------
+function requiresMtls() {
+  log.debug("Entering requiresMtls().");
+  log.debug("Leaving requiresMtls().");
+  return advanced() && !!config.value('oauth2.fapiRequireMtls');
+}
+
+function senderConstraintRefusal(binding) {
+  log.debug("Entering senderConstraintRefusal().");
+  if (!advanced()) {
+    log.debug("Leaving senderConstraintRefusal(). Not Advanced.");
+    return null;
+  }
+  const b = binding || {};
+  if (b.mtls || (b.dpop && !requiresMtls())) {
+    log.debug("Leaving senderConstraintRefusal(). Bound.");
+    return null;
+  }
+  log.debug("Leaving senderConstraintRefusal(). Unbound.");
+  return refusal('STS-OAUTH-0583', 'invalid_request', 'sender-constrained',
+                 requiresMtls()
+                   ? 'this request presented no TLS client certificate, and ' +
+                     'every access token here is bound to one — ' +
+                     'oauth2.fapiRequireMtls is on (Part 2 section 5.2.2 ' +
+                     'items 5 and 6)'
+                   : 'this request neither presented a TLS client ' +
+                     'certificate nor carried a DPoP proof, and every access ' +
+                     'token here is sender-constrained (Part 2 section 5.2.2 ' +
+                     'item 5)');
 }
 
 // Section 5.2.2 item 21: the lifetime an access token may have. `bound` is
@@ -442,12 +820,37 @@ function applyToMetadata(metadata) {
     return metadata;
   }
   metadata.code_challenge_methods_supported = ['S256'];
+  const allowedMethods = advanced() ? ADVANCED_METHODS
+                                    : BASELINE_METHODS.concat(['none']);
   const methods = metadata.token_endpoint_auth_methods_supported;
   if (Array.isArray(methods)) {
     metadata.token_endpoint_auth_methods_supported =
       methods.filter(function (one) {
-        return one === 'none' || BASELINE_METHODS.indexOf(one) >= 0;
+        return allowedMethods.indexOf(one) >= 0;
       });
+  }
+  if (advanced()) {
+    if (Array.isArray(metadata.response_types_supported)) {
+      metadata.response_types_supported = metadata.response_types_supported
+        .filter(function (one) {
+          return ADVANCED_RESPONSE_TYPES.indexOf(responseTypeOf(one)) >= 0;
+        });
+    }
+    SIGNING_ALG_LISTS.forEach(function (name) {
+      if (Array.isArray(metadata[name])) {
+        metadata[name] = metadata[name].filter(function (one) {
+          return ADVANCED_SIGNING_ALGS.indexOf(one) >= 0;
+        });
+      }
+    });
+    ENCRYPTION_ALG_LISTS.forEach(function (name) {
+      if (Array.isArray(metadata[name])) {
+        metadata[name] = metadata[name].filter(function (one) {
+          return FORBIDDEN_ENCRYPTION_ALGS.indexOf(one) < 0;
+        });
+      }
+    });
+    metadata.require_signed_request_object = true;
   }
   log.debug("Leaving applyToMetadata().");
   return metadata;
@@ -461,8 +864,10 @@ function state() {
     profile: on || null,
     enabled: !!on,
     profiles_supported: PROFILES.slice(),
-    specification: BASELINE,
-    url: BASELINE_URL,
+    specification: on === ADVANCED ? ADVANCED_NAME + ', over ' + BASELINE
+                                   : BASELINE,
+    url: on === ADVANCED ? ADVANCED_URL : BASELINE_URL,
+    require_mtls: requiresMtls(),
     implies: 'oauth2.rfc9700 — GET /oauth2/rfc9700 lists what that mode ' +
              'enforces, and every FAPI profile turns it on',
     what_it_means: on
@@ -473,13 +878,23 @@ function state() {
         'to turn a profile on.',
     settings: {
       'oauth2.fapi': String(config.value('oauth2.fapi') || '') || null,
+      'oauth2.fapiRequireMtls': !!config.value('oauth2.fapiRequireMtls'),
       'oauth2.rfc9700': !!config.value('oauth2.rfc9700')
     },
     requirements: REQUIREMENTS.map(function (row) {
+      const relaxed = on === ADVANCED && row.id === 'pkce-s256';
       return { id: row.id, section: 'FAPI 1.0 Part 1 ' + row.section,
+               level: row.level,
+               enforced: relaxed ? 'relaxed' : row.enforced,
+               title: row.title,
+               note: relaxed ? 'Part 2 section 5.2.2 exempts item 7 except ' +
+                 'for a pushed request (item 18): a challenge that is sent ' +
+                 'is still held to S256.' : row.note };
+    }).concat(on === ADVANCED ? ADVANCED_REQUIREMENTS.map(function (row) {
+      return { id: row.id, section: 'FAPI 1.0 Part 2 ' + row.section,
                level: row.level, enforced: row.enforced, title: row.title,
                note: row.note };
-    })
+    }) : [])
   };
   log.debug("Leaving state().");
   return view;
@@ -487,7 +902,13 @@ function state() {
 
 module.exports = {
   PROFILES: PROFILES,
+  ADVANCED: ADVANCED,
   NONE: NONE,
+  ADVANCED_METHODS: ADVANCED_METHODS,
+  ADVANCED_SIGNING_ALGS: ADVANCED_SIGNING_ALGS,
+  ADVANCED_REQUIREMENTS: ADVANCED_REQUIREMENTS,
+  JARM_MODES: JARM_MODES,
+  MAX_REQUEST_OBJECT_LIFETIME_S: MAX_REQUEST_OBJECT_LIFETIME_S,
   BASELINE_METHODS: BASELINE_METHODS,
   MIN_RSA_BITS: MIN_RSA_BITS,
   MIN_EC_BITS: MIN_EC_BITS,
@@ -497,6 +918,16 @@ module.exports = {
   withProfile: withProfile,
   profile: profile,
   enabled: enabled,
+  advanced: advanced,
+  responseTypeOf: responseTypeOf,
+  defaultSigningAlg: defaultSigningAlg,
+  signingAlgAllowed: signingAlgAllowed,
+  encryptionAlgAllowed: encryptionAlgAllowed,
+  signingAlgRefusal: signingAlgRefusal,
+  requiresSignedRequestObject: requiresSignedRequestObject,
+  requestObjectRefusal: requestObjectRefusal,
+  requiresMtls: requiresMtls,
+  senderConstraintRefusal: senderConstraintRefusal,
   authorizationRefusal: authorizationRefusal,
   clientAuthenticationRefusal: clientAuthenticationRefusal,
   clientIdentifierRefusal: clientIdentifierRefusal,

@@ -260,6 +260,9 @@ var config = {
     rfc9700: false,                              // RFC 9700 mode; restart to apply
     oauth21: false,                              // OAuth 2.1 mode; restart to apply
     fapi: "off",                                 // FAPI profile; restart to apply
+    fapiRequireMtls: false,                      // FAPI Advanced: require mutual TLS
+    accessTokenSigningAlg: "default",            // Access token signing algorithm
+    jarmResponseLifetimeS: 600,                  // JARM response lifetime (s)
     consentRequired: true,                       // Ask for consent
     delegatedPermissionsEnforced: false,         // Enforce delegated permissions
     tokenExchangeRefreshToken: "when-requested", // Refresh token from a token exchange

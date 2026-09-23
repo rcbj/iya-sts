@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2920** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2934** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -62,8 +62,8 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 188
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 461
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 190
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 468
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -78,11 +78,11 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 275
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 175
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 176
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 54
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 109
+* [Registries (`STS-REG`)](#sts-reg) — 113
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -1065,6 +1065,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0207` | A hosted surface (the console, the portal or the embedded debugger) could not get the key it signs its private_key_jwt client assertion with: this realm has no certificate authority to issue one, the issue failed, or the key could not be written onto the surface's application entry. The surface cannot authenticate at the token endpoint, so the sign-in or renewal stops (#138). | RFC 7523 section 2.2; OIDC Core section 9 |
 | `STS-AUTHN-0208` | A hosted surface's key was being issued by another process, and neither the key nor an answer from the claim store arrived in time; the sign-in or renewal stops rather than issuing a second key (#138). | none — a refusal of this service's own |
 | `STS-AUTHN-0209` | A hosted surface's application entry declares a token endpoint authentication method the surface does not implement. It implements private_key_jwt, and client_secret_basic or client_secret_post for an entry an operator set so (#138). | RFC 7591 section 2 |
+| `STS-AUTHN-0210` | A hosted surface refused the JWT-secured authorization response (JARM) it was sent back with: not a signed JWT, a key the realm's JWKS does not hold, a signature that does not verify, or the wrong issuer, audience or expiry (#139). | the console's, portal's or debugger's sign-in refusal page |
+| `STS-AUTHN-0211` | Under FAPI 1.0 Advanced, a hosted surface could not push its signed authorization request to /oauth2/par, so its sign-in could not start (#139). | the console's, portal's or debugger's sign-in refusal page |
 
 ## STS-OAUTH
 
@@ -1535,6 +1537,13 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0579` | A grant carrying its scope from earlier (a refresh, a token exchange, an assertion grant) named a scope the client may no longer be issued; it was taken off the tokens and recorded. | none — the token response's scope says what was issued (RFC 6749 section 5.1) |
 | `STS-OAUTH-0580` | Under a FAPI profile, a confidential client authenticated with client_secret_basic or client_secret_post (FAPI 1.0 Part 1 section 5.2.2 item 4). | HTTP 401 {error: invalid_client} |
 | `STS-OAUTH-0581` | Under a FAPI profile, a token or PAR request identified its client in two different ways — the Basic header, the body's client_id, a client assertion's sub (FAPI 1.0 Part 1 section 5.2.2 item 19). | HTTP 401 {error: invalid_client} |
+| `STS-OAUTH-0582` | Under FAPI 1.0 Advanced, an authorization request asked for a response type the profile does not allow: it allows code id_token, or code with a JARM response mode (Part 2 section 5.2.2 item 2). | redirect: error=unsupported_response_type |
+| `STS-OAUTH-0583` | Under FAPI 1.0 Advanced, a token request would have minted an access token bound to nothing — no TLS client certificate, and no DPoP proof (or oauth2.fapiRequireMtls is on and there was no certificate) (Part 2 section 5.2.2 items 5 and 6). | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0584` | Under FAPI 1.0 Advanced, a request object lacked exp or nbf, lived more than 60 minutes after its nbf, or had an nbf more than 60 minutes old (Part 2 section 5.2.2 items 13 and 17). | HTTP 400 {error: invalid_request_object} |
+| `STS-OAUTH-0585` | Under FAPI 1.0 Advanced, a request object's aud was not this authorization server's issuer (Part 2 section 5.2.2 item 15). | HTTP 400 {error: invalid_request_object} |
+| `STS-OAUTH-0586` | Under FAPI 1.0 Advanced, a client assertion or request object was signed with an algorithm other than PS256 or ES256 (Part 2 section 8.6). | HTTP 401 {error: invalid_client}, or HTTP 400 {error: invalid_request_object} |
+| `STS-OAUTH-0587` | response_mode=query.jwt was asked for with a response type carrying token or id_token, and the client registered no encryption for its authorization responses (JARM section 2.3.1). | redirect: error=invalid_request |
+| `STS-OAUTH-0588` | A JWT-secured authorization response (JARM) could not be made: the client's registered algorithm cannot be honoured, or it named encryption and its jwks holds no key for it. Answered on this server rather than sent unsecured. | HTTP 400 {error: invalid_request} |
 
 ## STS-SAML
 
@@ -3019,6 +3028,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0796` | Product mode: the bootstrap administrator reached the console before claiming it, signed in by something other than a password verified in its own realm (a federation partner, a certificate, a wallet, a Kerberos ticket). Its roles are not honoured and the window stays unclaimed. | HTTP 403 bootstrap_password_required |
 | `STS-ADMIN-0797` | Product mode: a signed-in person holding no console role reached the console while its bootstrap administrator had not yet claimed it. Development would have opened the console to them; product does not. Logged once per console session. | HTTP 403 insufficient_role |
 | `STS-ADMIN-0798` | Product mode, at startup or at a realm's creation: a realm has no bootstrap administrator and nobody on its console roster, so its console is closed to everybody. POST /admin-api/rbac/grant with an admin:write access token is the way in. | none (a log line) |
+| `STS-ADMIN-0799` | An authorization server profile's access_token_signing_alg was set to an algorithm this service does not sign access tokens with (#139). | HTTP 400 |
 
 ## STS-API
 
@@ -3298,6 +3308,10 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0174` | Under a FAPI profile, a registration declared a token_endpoint_auth_method FAPI does not allow (FAPI 1.0 Part 1 section 5.2.2 item 4). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0175` | Under a FAPI profile, a registration's jwks held an RSA key under 2048 bits or an EC key under 160 (FAPI 1.0 Part 1 section 5.2.2 items 5 and 6). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0176` | Under a FAPI profile, a registration named a redirect URI that is not https (FAPI 1.0 Part 1 section 5.2.2 item 20). | HTTP 400 {error: invalid_redirect_uri} |
+| `STS-REG-0177` | Under FAPI 1.0 Advanced, a registration named a signing algorithm other than PS256 or ES256, or the RSA1_5 encryption algorithm (Part 2 sections 8.6 and 8.6.1). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0178` | Under FAPI 1.0 Advanced, a registration named a response type other than code id_token or code (Part 2 section 5.2.2 item 2). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0179` | A registration's JARM members were malformed: authorization_signed_response_alg not an algorithm this service signs with (none included), an encryption alg that is not one of the asymmetric families, or an enc without an alg (JARM section 3). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0180` | A registration named authorization_encrypted_response_alg and its jwks holds no key to encrypt its authorization responses to (JARM section 3). | HTTP 400 {error: invalid_client_metadata} |
 
 ## STS-DBG
 

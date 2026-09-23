@@ -4713,6 +4713,76 @@ function idTokenEncryptionMetadataProblem(values) {
 }
 
 // ---------------------------------------------------------------------------
+// JARM SECTION 3: WHAT A CLIENT MAY REGISTER ABOUT ITS JWT-SECURED
+// AUTHORIZATION RESPONSES (#139, #143).
+//
+// `authorization_signed_response_alg` (RS256 by default — JARM's own default;
+// PS256 under FAPI 1.0 Advanced, which `oauth-oidc/jarm.ts` decides), and
+// `authorization_encrypted_response_alg` / `_enc` (no encryption by default,
+// A128CBC-HS256 when only the alg is named). Like the ID Token's, they have no
+// attribute: they live in `appRegistrationJson`. The grammar is here for the
+// ID Token members' reason; whether the client's `jwks` holds a key to encrypt
+// to is `jarm.ts`'s.
+//
+// `none` is refused (JARM section 3: "The algorithm none is not allowed"); an
+// HMAC algorithm is allowed and keyed by the client secret, as the ID Token's
+// is; the encryption list is the asymmetric one, as for every response this
+// service encrypts to a client.
+// ---------------------------------------------------------------------------
+function jarmMetadataProblem(values) {
+  log.debug("Entering jarmMetadataProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0179', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  const names = ['authorization_signed_response_alg',
+                 'authorization_encrypted_response_alg',
+                 'authorization_encrypted_response_enc'];
+  for (let i = 0; i < names.length; i++) {
+    const value = asked[names[i]];
+    if (value !== undefined && value !== null && typeof value !== 'string') {
+      log.debug("Leaving jarmMetadataProblem(). Not a string.");
+      return refusal(names[i], 'must be a string naming one algorithm.');
+    }
+  }
+  const signAlg = String(asked.authorization_signed_response_alg || '').trim();
+  if (signAlg && stsCrypto.JWS_SIGNING_ALGS.indexOf(signAlg) < 0) {
+    log.debug("Leaving jarmMetadataProblem(). Signing alg.");
+    return refusal(names[0], '"' + signAlg + '" is not an algorithm this ' +
+      'service signs an authorization response with' + (signAlg === 'none'
+        ? ' — JARM section 3 does not allow none' : '') + '. It signs with ' +
+      stsCrypto.JWS_SIGNING_ALGS.join(', ') + ' (see ' +
+      'authorization_signing_alg_values_supported).');
+  }
+  const alg = String(asked.authorization_encrypted_response_alg || '').trim();
+  const enc = String(asked.authorization_encrypted_response_enc || '').trim();
+  if (alg && ID_TOKEN_ENCRYPTION_ALGS.indexOf(alg) < 0) {
+    log.debug("Leaving jarmMetadataProblem(). Encryption alg.");
+    return refusal(names[1], '"' + alg + '" is not an algorithm this ' +
+      'service encrypts an authorization response with. It encrypts with ' +
+      ID_TOKEN_ENCRYPTION_ALGS.join(', ') + ', to the key registered in ' +
+      '"jwks".');
+  }
+  if (enc && !alg) {
+    log.debug("Leaving jarmMetadataProblem(). enc without alg.");
+    return refusal(names[2], 'JARM section 3 says ' +
+      'authorization_encrypted_response_alg MUST also be provided, and none ' +
+      'is.');
+  }
+  if (enc && ID_TOKEN_ENCRYPTION_ENCS.indexOf(enc) < 0) {
+    log.debug("Leaving jarmMetadataProblem(). Content encryption.");
+    return refusal(names[2], '"' + enc + '" is not a content encryption ' +
+      'algorithm this service has. It has ' +
+      ID_TOKEN_ENCRYPTION_ENCS.join(', ') + '.');
+  }
+  log.debug("Leaving jarmMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // RFC 9101 AND OPENID CONNECT REGISTRATION: WHAT A CLIENT MAY REGISTER ABOUT
 // ITS REQUEST OBJECTS (2026-09-13).
 //
@@ -10710,6 +10780,7 @@ module.exports = {
   // registration endpoint read them; nothing else should keep a copy.
   introspectionResponseProblem: introspectionResponseProblem,
   idTokenEncryptionMetadataProblem: idTokenEncryptionMetadataProblem,
+  jarmMetadataProblem: jarmMetadataProblem,
   ID_TOKEN_DEFAULT_ENC: ID_TOKEN_DEFAULT_ENC,
   ID_TOKEN_ENCRYPTION_ALGS: ID_TOKEN_ENCRYPTION_ALGS,
   ID_TOKEN_ENCRYPTION_ENCS: ID_TOKEN_ENCRYPTION_ENCS,

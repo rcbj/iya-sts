@@ -1821,7 +1821,42 @@ const SPECS: Spec[] = [
               'response, discovery, token entropy, acr honoured. GET ' +
               '/oauth2/fapi lists every requirement. NOT covered: the OpenID ' +
               'Foundation conformance suite has not been run (#176); FAPI ' +
-              '1.0 Advanced and FAPI 2.0 are #139-#141.' },
+              '2.0 is #140 and #141.' },
+  { id: 'fapi1-advanced', name: 'FAPI 1.0 Part 2: Advanced Security ' +
+                               'Profile (final)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-financial-api-part-2-1_0.html',
+    coverage: 'full for the authorization server, AND OFF BY DEFAULT — the ' +
+              'PROFILE oauth2.fapi=1-advanced (per realm, or a named ' +
+              'authorization server\'s fapi member), which is Baseline and ' +
+              'more (#139): a JWS-signed request object by value or by ' +
+              'reference (item 1) with exp and nbf within 60 minutes and aud ' +
+              'the issuer (items 13, 15, 17); response_type code id_token, ' +
+              'or code with JARM (item 2); the ID Token as a detached ' +
+              'signature with s_hash (5.2.2.1); sender-constrained access ' +
+              'tokens only — mTLS, or DPoP unless oauth2.fapiRequireMtls — ' +
+              'with mtls_endpoint_aliases published (items 5, 6); ' +
+              'tls_client_auth, self_signed_tls_client_auth or ' +
+              'private_key_jwt and no public client (items 14, 16); PKCE ' +
+              'S256 for pushed requests (item 18, and Baseline item 7 ' +
+              'relaxed as the section says); PS256 or ES256 for every ' +
+              'signature both ways and never RSA1_5 (8.6), this server ' +
+              'signing PS256 by default. The console, portal and debugger ' +
+              'conform: a signed request object pushed to PAR, JARM, and a ' +
+              'bound token. NOT covered: the conformance suite (#176).' },
+  { id: 'jarm', name: 'JWT Secured Authorization Response Mode for OAuth ' +
+                     '2.0 (JARM)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/oauth-v2-jarm.html',
+    coverage: 'full, in every mode (#143, built in #139): response_mode ' +
+              'query.jwt, fragment.jwt, form_post.jwt and jwt (query for ' +
+              'code, fragment otherwise); the response parameters with iss, ' +
+              'aud and exp (oauth2.jarmResponseLifetimeS) signed with the ' +
+              'client\'s authorization_signed_response_alg (RS256, or PS256 ' +
+              'under FAPI 1.0 Advanced) and encrypted where it registered ' +
+              'authorization_encrypted_response_alg; errors answered the ' +
+              'same way; query.jwt refused with a token in clear (2.3.1); ' +
+              'the metadata and registration members of sections 3 and 4.' },
   { id: 'webauthn', name: 'Web Authentication (WebAuthn) Level 3',
     where: 'W3C',
     url: 'https://www.w3.org/TR/webauthn-3/',
@@ -8001,7 +8036,8 @@ const ENDPOINTS: EndpointEntry[] = [
       'endpoint',
     specs: ['rfc6749', 'oidc', 'rfc7636', 'rfc9396', 'rfc9207',
             'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470',
-            'oauth-multiple-response-types'], effect: 'needs ' +
+            'oauth-multiple-response-types', 'jarm', 'fapi1-advanced'],
+    effect: 'needs ' +
         'client_id and redirect_uri — answers 400 when followed bare, then ' +
         'redirects to the sign-in screen once they are supplied',
     what: 'GET, or POST with the request form-serialized (OIDC Core ' +
@@ -8581,7 +8617,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'through POST /admin-api/config like everything else configurable.' },
   { path: '/oauth2/fapi', group: 'OAuth 2.0 / OIDC',
     name: 'FAPI profile report (not a spec endpoint)',
-    specs: ['fapi1-baseline'],
+    specs: ['fapi1-baseline', 'fapi1-advanced'],
     what: 'NON-SPEC: FAPI defines no document saying which profile a server ' +
           'follows. The profile in force (oauth2.fapi, off by default), ' +
           'every requirement of FAPI 1.0 Part 1 section 5.2.2 by item, and ' +

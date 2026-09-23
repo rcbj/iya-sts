@@ -3053,7 +3053,8 @@ const SETTINGS = [
   // binds no socket, so the reason does not reach it. It is an ENUM rather
   // than a flag because #139-#141 add three more profiles to the same switch.
   { key: 'oauth2.fapi', group: 'OAuth 2.0 / OIDC', label: 'FAPI profile',
-    env: 'STS_OAUTH2_FAPI', type: 'enum', enumValues: ['off', '1-baseline'],
+    env: 'STS_OAUTH2_FAPI', type: 'enum',
+    enumValues: ['off', '1-baseline', '1-advanced'],
     dflt: 'off', runtime: false, realmRuntime: true,
     restartReason: 'a profile turns RFC 9700 mode on, which decides whether ' +
                    'the main port is bound as HTTPS (global.https), and a ' +
@@ -3072,8 +3073,58 @@ const SETTINGS = [
                  'unless ' +
                  'sender-constrained. A named authorization server may carry ' +
                  'its own value (the fapi member on ' +
-                 '/admin/authorization-servers). OFF by default. GET ' +
+                 '/admin/authorization-servers). 1-advanced is FAPI 1.0 ' +
+                 'Part 2 (final) over all of that: a signed request object ' +
+                 '(exp and nbf within 60 minutes, aud the issuer), ' +
+                 'response_type code id_token or code with JARM, ' +
+                 'sender-constrained access tokens only, tls_client_auth, ' +
+                 'self_signed_tls_client_auth or private_key_jwt and no ' +
+                 'public client, PS256 or ES256 for every signature, and ' +
+                 'PKCE only for pushed requests. OFF by default. GET ' +
                  '/oauth2/fapi lists every requirement.' },
+
+  // FAPI 1.0 Advanced's strict reading of section 5.2.2 item 5 (#139, rcbj's
+  // decision): off, a DPoP-bound access token satisfies "sender-constrained"
+  // as an mTLS-bound one does; on, only mutual TLS does, which is what FAPI
+  // 1.0 names. Runtime and per realm: it moves no socket (the main port asks
+  // every connection for a certificate already).
+  { key: 'oauth2.fapiRequireMtls', group: 'OAuth 2.0 / OIDC',
+    label: 'FAPI Advanced: require mutual TLS',
+    env: 'STS_OAUTH2_FAPI_REQUIRE_MTLS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Under oauth2.fapi=1-advanced, require every access token ' +
+                 'to be bound to a TLS client certificate (RFC 8705), as ' +
+                 'FAPI 1.0 names. Off, a DPoP-bound token is accepted as ' +
+                 'sender-constrained too. No effect under any other profile.' },
+
+  // THE ACCESS TOKEN'S SIGNING ALGORITHM (#139). It was RS256, hard-coded in
+  // `helpers.signJwt()`. `default` keeps that, and signs PS256 under FAPI 1.0
+  // Advanced (section 8.6); a named authorization server may carry its own
+  // (`access_token_signing_alg`). The list is the classical half of the JWS
+  // table: a post-quantum access token would need `accessToken()` to become
+  // asynchronous, which is rcbj's stated direction and not done here.
+  { key: 'oauth2.accessTokenSigningAlg', group: 'OAuth 2.0 / OIDC',
+    label: 'Access token signing algorithm',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_SIGNING_ALG', type: 'enum',
+    enumValues: ['default', 'RS256', 'RS384', 'RS512', 'PS256', 'PS384',
+                 'PS512', 'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA'],
+    dflt: 'default', runtime: true,
+    description: 'The JWS algorithm access tokens (and refresh tokens) are ' +
+                 'signed with, by this realm\'s key for it — every one is ' +
+                 'published in the JWKS. default is RS256, and PS256 under ' +
+                 'FAPI 1.0 Advanced, which also refuses anything but PS256 ' +
+                 'or ES256. A named authorization server may carry its own ' +
+                 '(access_token_signing_alg).' },
+
+  // JARM (#139, #143): how long a JWT-secured authorization response is good
+  // for. JARM section 2.1 recommends a short-lived `exp`, ten minutes at most.
+  { key: 'oauth2.jarmResponseLifetimeS', group: 'OAuth 2.0 / OIDC',
+    label: 'JARM response lifetime (s)',
+    env: 'STS_OAUTH2_JARM_RESPONSE_LIFETIME_S', type: 'int', dflt: 600,
+    min: 10, max: 600, runtime: true,
+    description: 'The exp of a JWT-secured authorization response (JARM), ' +
+                 'in seconds after it is signed. At most ten minutes, JARM ' +
+                 'section 2.1\'s recommendation.' },
 
   // ---------------------------------------------------------------------------
   // A POLICY THAT DEFAULTS TO ON, AND THE ARGUMENT IS NOT THE USUAL ONE.

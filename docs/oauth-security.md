@@ -11,7 +11,9 @@ Best Current Practice) and
 [OAuth 2.1](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)
 (draft-ietf-oauth-v2-1-16). A security profile,
 [FAPI 1.0 Baseline](https://openid.net/specs/openid-financial-api-part-1-1_0.html),
-builds on the first. There are two sender constraints:
+builds on the first, and [FAPI 1.0
+Advanced](https://openid.net/specs/openid-financial-api-part-2-1_0.html) on
+that. There are two sender constraints:
 [DPoP](https://www.rfc-editor.org/rfc/rfc9449) (RFC 9449) and
 [mutual TLS](https://www.rfc-editor.org/rfc/rfc8705) (RFC 8705). Five settings
 ask for more than either mode does, and
@@ -136,8 +138,38 @@ kept (private half sealed) on its application entry, and replaced before it
 expires. No client secret is created for them, and nothing about their client
 authentication reaches a browser.
 
-Not covered yet: FAPI 1.0 Advanced (#139), FAPI 2.0 (#140, #141), and running
-the OpenID Foundation's conformance suite against this service.
+### FAPI 1.0 Advanced
+
+`oauth2.fapi=1-advanced` enforces FAPI 1.0 Part 2: Advanced (final). It is
+**Baseline and more**, with one relaxation Part 2 makes itself: PKCE is
+required only of a request pushed to `/oauth2/par`. On top of Baseline:
+
+* **A signed request object** (by value or pushed), with `exp` and `nbf`
+  within 60 minutes of each other, `nbf` at most 60 minutes old, and `aud`
+  this authorization server's issuer. Only its parameters are used.
+* **`response_type=code id_token`**, or **`code` with `response_mode=jwt`**
+  ([JARM](oauth-oidc.md#flows-and-response-types)). The ID Token returned
+  from the authorization endpoint carries `c_hash` and `s_hash`.
+* **Sender-constrained access tokens only.** A token request that presents
+  neither a TLS client certificate nor a DPoP proof is refused.
+  `oauth2.fapiRequireMtls` makes it mutual TLS only, as FAPI 1.0 names.
+  `mtls_endpoint_aliases` is published where the main port is TLS.
+* **Client authentication** by `tls_client_auth`,
+  `self_signed_tls_client_auth` or `private_key_jwt`. `client_secret_jwt` and
+  public clients are refused.
+* **PS256 or ES256 for every signature**, in both directions, and never
+  `RSA1_5`. This server signs ID Tokens, access tokens, JARM responses and
+  introspection responses with PS256 by default, and the discovery lists are
+  narrowed to the two.
+
+The console, portal and embedded debugger **conform** in an Advanced realm.
+Each sends a signed request object through PAR, asks for a JARM response and
+verifies it, and binds its tokens with DPoP. With `oauth2.fapiRequireMtls`
+on, each also presents the client certificate the realm's CA issued with its
+signing key.
+
+Not covered yet: FAPI 2.0 (#140, #141), and running the OpenID Foundation's
+conformance suite against this service (#176).
 
 ### DPoP (RFC 9449)
 
@@ -298,7 +330,8 @@ headers) are described on [Configuration](configuration.md) and
 |---|---|---|---|---|
 | `oauth2.rfc9700` | `STS_OAUTH2_RFC9700` | `false` | restart (a realm may carry it) | RFC 9700 mode: enforce the OAuth 2.0 Security BCP on the authorization flow, and bind the main port as HTTPS. |
 | `oauth2.oauth21` | `STS_OAUTH2_OAUTH21` | `false` | restart (a realm may carry it) | OAuth 2.1 mode (draft-ietf-oauth-v2-1-16): turns RFC 9700 mode on and adds the draft's own requirements. |
-| `oauth2.fapi` | `STS_OAUTH2_FAPI` | `off` | restart (a realm, or a named authorization server, may carry it) | A FAPI security profile: `off` or `1-baseline` (FAPI 1.0 Part 1). Turns RFC 9700 mode on and adds the profile's requirements. |
+| `oauth2.fapi` | `STS_OAUTH2_FAPI` | `off` | restart (a realm, or a named authorization server, may carry it) | A FAPI security profile: `off`, `1-baseline` (FAPI 1.0 Part 1) or `1-advanced` (Part 2). Turns RFC 9700 mode on and adds the profile's requirements. |
+| `oauth2.fapiRequireMtls` | `STS_OAUTH2_FAPI_REQUIRE_MTLS` | `false` | yes | Under FAPI 1.0 Advanced, accept only mutual TLS as the sender constraint; off, a DPoP-bound token counts too. |
 | `oauth2.redirectUris` | `STS_OAUTH2_REDIRECT_URIS` | *(empty)* | yes | The redirect URIs RFC 9700 mode compares against, by exact string, for a client that registered none of its own. |
 | `oauth2.loopbackPortWildcard` | `STS_OAUTH2_LOOPBACK_PORT_WILDCARD` | `true` | yes | In RFC 9700 mode, let a registered loopback redirect URI match on any port (RFC 8252 section 7.3). |
 | `oauth2.refreshIdleSeconds` | `STS_OAUTH2_REFRESH_IDLE_SECONDS` | `86400` | yes | In RFC 9700 mode, how long a refresh chain may go unused before it stops working; 0 is off. |

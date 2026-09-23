@@ -3959,6 +3959,17 @@ const CODES = [
       'implements private_key_jwt, and client_secret_basic or ' +
       'client_secret_post for an entry an operator set so (#138).',
     spec: 'RFC 7591 section 2' },
+  { code: 'STS-AUTHN-0210',
+    summary: 'A hosted surface refused the JWT-secured authorization ' +
+      'response (JARM) it was sent back with: not a signed JWT, a key the ' +
+      'realm\'s JWKS does not hold, a signature that does not verify, or ' +
+      'the wrong issuer, audience or expiry (#139).',
+    spec: 'the console\'s, portal\'s or debugger\'s sign-in refusal page' },
+  { code: 'STS-AUTHN-0211',
+    summary: 'Under FAPI 1.0 Advanced, a hosted surface could not push its ' +
+      'signed authorization request to /oauth2/par, so its sign-in could ' +
+      'not start (#139).',
+    spec: 'the console\'s, portal\'s or debugger\'s sign-in refusal page' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -6025,6 +6036,43 @@ const CODES = [
       'client_id, a client assertion\'s sub (FAPI 1.0 Part 1 section 5.2.2 ' +
       'item 19).',
     spec: 'HTTP 401 {error: invalid_client}' },
+  { code: 'STS-OAUTH-0582',
+    summary: 'Under FAPI 1.0 Advanced, an authorization request asked for a ' +
+      'response type the profile does not allow: it allows code id_token, ' +
+      'or code with a JARM response mode (Part 2 section 5.2.2 item 2).',
+    spec: 'redirect: error=unsupported_response_type' },
+  { code: 'STS-OAUTH-0583',
+    summary: 'Under FAPI 1.0 Advanced, a token request would have minted an ' +
+      'access token bound to nothing — no TLS client certificate, and no ' +
+      'DPoP proof (or oauth2.fapiRequireMtls is on and there was no ' +
+      'certificate) (Part 2 section 5.2.2 items 5 and 6).',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0584',
+    summary: 'Under FAPI 1.0 Advanced, a request object lacked exp or nbf, ' +
+      'lived more than 60 minutes after its nbf, or had an nbf more than 60 ' +
+      'minutes old (Part 2 section 5.2.2 items 13 and 17).',
+    spec: 'HTTP 400 {error: invalid_request_object}' },
+  { code: 'STS-OAUTH-0585',
+    summary: 'Under FAPI 1.0 Advanced, a request object\'s aud was not this ' +
+      'authorization server\'s issuer (Part 2 section 5.2.2 item 15).',
+    spec: 'HTTP 400 {error: invalid_request_object}' },
+  { code: 'STS-OAUTH-0586',
+    summary: 'Under FAPI 1.0 Advanced, a client assertion or request object ' +
+      'was signed with an algorithm other than PS256 or ES256 (Part 2 ' +
+      'section 8.6).',
+    spec: 'HTTP 401 {error: invalid_client}, or HTTP 400 ' +
+      '{error: invalid_request_object}' },
+  { code: 'STS-OAUTH-0587',
+    summary: 'response_mode=query.jwt was asked for with a response type ' +
+      'carrying token or id_token, and the client registered no encryption ' +
+      'for its authorization responses (JARM section 2.3.1).',
+    spec: 'redirect: error=invalid_request' },
+  { code: 'STS-OAUTH-0588',
+    summary: 'A JWT-secured authorization response (JARM) could not be made: ' +
+      'the client\'s registered algorithm cannot be honoured, or it named ' +
+      'encryption and its jwks holds no key for it. Answered on this ' +
+      'server rather than sent unsecured.',
+    spec: 'HTTP 400 {error: invalid_request}' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -11915,6 +11963,11 @@ const CODES = [
       'its console is closed to everybody. POST /admin-api/rbac/grant with ' +
       'an admin:write access token is the way in.',
     spec: 'none (a log line)' },
+  { code: 'STS-ADMIN-0799',
+    summary: 'An authorization server profile\'s access_token_signing_alg ' +
+      'was set to an algorithm this service does not sign access tokens ' +
+      'with (#139).',
+    spec: 'HTTP 400' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -13002,6 +13055,26 @@ const CODES = [
     summary: 'Under a FAPI profile, a registration named a redirect URI that ' +
       'is not https (FAPI 1.0 Part 1 section 5.2.2 item 20).',
     spec: 'HTTP 400 {error: invalid_redirect_uri}' },
+  { code: 'STS-REG-0177',
+    summary: 'Under FAPI 1.0 Advanced, a registration named a signing ' +
+      'algorithm other than PS256 or ES256, or the RSA1_5 encryption ' +
+      'algorithm (Part 2 sections 8.6 and 8.6.1).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0178',
+    summary: 'Under FAPI 1.0 Advanced, a registration named a response type ' +
+      'other than code id_token or code (Part 2 section 5.2.2 item 2).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0179',
+    summary: 'A registration\'s JARM members were malformed: ' +
+      'authorization_signed_response_alg not an algorithm this service ' +
+      'signs with (none included), an encryption alg that is not one of the ' +
+      'asymmetric families, or an enc without an alg (JARM section 3).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0180',
+    summary: 'A registration named authorization_encrypted_response_alg and ' +
+      'its jwks holds no key to encrypt its authorization responses to ' +
+      '(JARM section 3).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +
