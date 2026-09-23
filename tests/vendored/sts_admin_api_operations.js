@@ -4127,7 +4127,36 @@ async function theKerberosPrincipalsRoundTrip() {
     assert.strictEqual(cleared.cleared, false,
       keyPerson + "'s keys were cleared above, so a second clear finds " +
       "nothing: " + JSON.stringify(cleared));
-    await kerberosPrincipalsHeld(true);
+
+    // A PERSON'S KEYTAB (#59, 2026-09-22): a password RESET that answers the
+    // keytab derived from it. Refused whole for neither a password nor
+    // `random`; with `random` the generated password is never in the reply.
+    // Last, because it re-derives the keys the two clears above emptied.
+    // `sts_kerberos_keytab.js` signs in with such a keytab through MIT kinit.
+    await refused("/kerberos/principals/reset-person-keytab",
+      { username: keyPerson }, /Either give the new password/,
+      "a keytab reset with neither a password nor random", true);
+    const keytabbed = await ok("/kerberos/principals/reset-person-keytab",
+      { username: keyPerson, random: true },
+      "reset the person's password and answered their keytab", true);
+    const keytabBytes = Buffer.from(String(keytabbed.keytab || ""), "base64");
+    assert.ok(keytabBytes[0] === 0x05 && keytabBytes[1] === 0x02 &&
+              keytabbed.generated === true &&
+              !Object.prototype.hasOwnProperty.call(keytabbed, "password") &&
+              JSON.stringify(keytabbed.keytabKvnos) ===
+                JSON.stringify([keytabbed.kvno]),
+      "reset-person-keytab must answer an MIT 0x0502 keytab at one kvno and " +
+      "no generated password: " + JSON.stringify(Object.assign({}, keytabbed,
+        { keytab: "(" + keytabBytes.length + " bytes)" })));
+    const afterKeytab = await kerberosPrincipalsHeld(true);
+    const keytabRow = afterKeytab.body.people.filter(function (one) {
+      return one.username === keyPerson;
+    })[0];
+    assert.ok(afterKeytab.raw.indexOf(keytabbed.keytab.slice(0, 48)) < 0 &&
+              (!product || (keytabRow && keytabRow.kvno === keytabbed.kvno)),
+      "READ BACK AFTER THE KEYTAB, the person is listed at the keytab's kvno " +
+      "in product mode, and the read carries no part of the keytab: " +
+      JSON.stringify(keytabRow || null));
   } finally {
     if (created) {
       await post("/kerberos/principals/delete-service", { spn: spn }, true);
@@ -4140,7 +4169,8 @@ async function theKerberosPrincipalsRoundTrip() {
            "the previous version kept in the keytab and the list, that " +
            "version dropped and read back gone, deleted and read back " +
            "absent; krbtgt, a one-component name and two drops with nothing " +
-           "stored were refused, and a person's clear answered.");
+           "stored were refused, a person's clear answered, and a person's " +
+           "password reset for a keytab read back at its kvno.");
   log.debug("Leaving theKerberosPrincipalsRoundTrip().");
 }
 

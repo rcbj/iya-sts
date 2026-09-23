@@ -198,7 +198,13 @@ const AUTO_ACTS: Record<string, string> = {
   // changed. `claimsChangeFor()` below reads the write; `ssf.ts` checks the
   // live issuance and sends it. GNAP's grant modification sends the same type
   // through `gnap/gnap_signals.ts`, unchanged.
-  claims: 'token-claims-change'
+  claims: 'token-claims-change',
+  // THE SEVENTH (#62 P4, 2026-09-22): a person's risk level CHANGED — the
+  // risk engine assessed a sign-in, a live session or a re-check of one, and
+  // the `risk-response` policy permitted announcing it. Its subject names the
+  // PERSON (`principal` USER): the standing moved, not one session. `ssf.ts`'s
+  // `riskAutoEmit()` sends it.
+  risk: 'risk-level-change'
 };
 
 // THE SCALE THIS SERVICE'S OWN LEVELS ARE ON, and it is deliberately not

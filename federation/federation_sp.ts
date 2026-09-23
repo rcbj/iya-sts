@@ -1785,16 +1785,51 @@ class FederationSp {
     // the directory through the identity funnel and by no other route.
     // `request` so a federated sign-in REPLACES whatever session this browser
     // was on rather than leaving the previous one alive beside it.
+    // THE RISK OF THIS SIGN-IN (#62 P3), assessed before the session and
+    // decided with the roles. This door cannot ask for a second factor — the
+    // person authenticated at the partner — so a step-up the policy names
+    // refuses here like HIGH, unless the partner's assertion already claims
+    // two (acr `mfa`). The session is started once the assessment answers;
+    // an assessment that cannot be made decides nothing.
+    const self = this;
+    const assessing = authn.assessSignIn(req, username, via,
+      { application: record.fedApplication || '',
+        credential: { kind: 'federation' } });
+    log.debug("Leaving FederationSp.finishSignIn(). Assessing.");
+    return assessing.then(function (assessed: any): any {
+      return self.startFederatedSession(req, res, record, result, mapped,
+                                        decision, amr, via, detail,
+                                        protocolLabel, assessed);
+    }, function (e: any): any {
+      log.debug("Caught in FederationSp.finishSignIn(): " +
+                ((e && e.message) || e));
+      // assessSignIn() never rejects; this is its belt and braces, and a
+      // sign-in with no assessment is decided on roles.
+      return self.startFederatedSession(req, res, record, result, mapped,
+                                        decision, amr, via, detail,
+                                        protocolLabel, null);
+    });
+  }
+
+  // The session, once the sign-in has been assessed — the end of
+  // finishSignIn(), moved here so it can wait for the assessment (#62 P3).
+  private startFederatedSession(req, res, record, result, mapped, decision,
+                                amr, via, detail, protocolLabel, assessed) {
+    const {
+      authn, federation, errorCodes, log, subjectForName, hasSubjectResolver
+    } = this.deps;
+    log.debug("Entering FederationSp.startFederatedSession().");
+    const username = decision.username;
+    // Held, because a refusal says why on it (`refusedWith`, #62 P0).
+    const said: any = Object.assign({
+      request: req,
+      // Which credential answered (#62): a partner's assertion.
+      credential: { kind: 'federation' },
+      application: record.fedApplication || '',
+      risk: assessed || undefined
+    }, detail);
     const session = authn.startSession(res, username, amr,
-                                       result.acr || '', via,
-                                       Object.assign({
-                                         request: req,
-                                         // Which credential answered (#62):
-                                         // a partner's assertion.
-                                         credential: { kind: 'federation' },
-                                         application:
-                                           record.fedApplication || ''
-                                       }, detail));
+                                       result.acr || '', via, said);
     // -------------------------------------------------------------------------
     // THE ISSUANCE POLICY CAN REFUSE THE SESSION (2026-09-06), and a null is
     // how `startSession()` says so — it never throws, because two of its
@@ -1824,7 +1859,7 @@ class FederationSp {
                  ? 'on but the directory declined to create one.'
                  : 'off on this relationship.'));
       errorCodes.mark(res, 'STS-FED-0090');
-      log.debug("Leaving FederationSp.finishSignIn().");
+      log.debug("Leaving FederationSp.startFederatedSession().");
       return this.refuse(res, record, 403, 'This person has not been ' +
                                            'provisioned',
         'The assertion verified and the partner is configured, but this ' +
@@ -1837,11 +1872,22 @@ class FederationSp {
             'through SCIM, /admin/users/new or the management API — and ' +
             'linked to the partner\'s subject.'));
     }
+    if (!session && String(said.refusedWith || '').indexOf('STS-RISK-') ===
+        0) {
+      log.info('federation: a session for ' + username + ' arriving ' +
+               'through ' + record.fedId + ' was refused on risk.');
+      errorCodes.mark(res, said.refusedWith === 'STS-RISK-0017'
+        ? 'STS-RISK-0017' : 'STS-RISK-0016');
+      log.debug("Leaving FederationSp.startFederatedSession(). Risk.");
+      return this.refuse(res, record, 403, 'Authentication failed',
+        'The assertion verified, and this service will not start a session ' +
+        'from it.');
+    }
     if (!session) {
       log.info('federation: the issuance policy refused a session for ' +
                username + ' arriving through ' + record.fedId + '.');
       errorCodes.mark(res, 'STS-FED-0044');
-      log.debug("Leaving FederationSp.finishSignIn().");
+      log.debug("Leaving FederationSp.startFederatedSession().");
       return this.refuse(res, record, 403, 'The issuance policy refused the ' +
                                            'session',
         'The assertion verified and the partner is configured — this service ' +
@@ -1865,7 +1911,7 @@ class FederationSp {
       // may follow a POST carrying an assertion, and 302's behaviour after a
       // POST is historically ambiguous where 303's is defined.
       res.redirect(303, returnTo);
-      log.debug("Leaving FederationSp.finishSignIn(). Sent them on to " +
+      log.debug("Leaving FederationSp.startFederatedSession(). Sent them on to " +
                 returnTo + '.');
       return;
     }
@@ -1875,7 +1921,7 @@ class FederationSp {
                                   Object.assign({}, mapped,
                                                 { username: username }),
                                   result, session)));
-    log.debug("Leaving FederationSp.finishSignIn(). Drew the result page.");
+    log.debug("Leaving FederationSp.startFederatedSession(). Drew the result page.");
   }
 
   private samlFieldsFor(record) {

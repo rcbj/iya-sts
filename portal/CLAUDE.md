@@ -1166,6 +1166,36 @@ this is where they make what those clients send instead.
   `/admin-api/users/{create,revoke}-app-password` and `GET
   /admin-api/users/app-passwords` are the API (rule 7).
 
+## `/portal/kerberos`: A KEYTAB FROM THE PERSON'S OWN PASSWORD (2026-09-22, #59)
+
+`portal_kerberos.ts`, registered after `/portal/app-passwords` through the same
+`register(context)` and for its reason. It draws the person's Kerberos principal
+in this realm and the public half of their keys, and makes them an MIT keytab.
+`kerberos/CLAUDE.md` (*A PERSON'S KEYTAB*) argues the design; four things are
+this page's:
+
+* **The form asks for the CURRENT PASSWORD, and that is the design, not a
+  formality.** The keytab is DERIVED from it — a stored key is never read back
+  out — and asking is also the re-authentication a password-equivalent export
+  needs. It is `credentials.verifyAsync()` with `secondFactor: 'session-held'`
+  (`/portal/password`'s declaration: this session already met the second
+  factor), counted against the SAME `password-change` budget, so the page is no
+  second set of guesses for whoever finds the browser open. A wrong password is
+  `STS-PORTAL-0080` and a register refusal `STS-PORTAL-0081`, both audited.
+* **Nothing on the account changes**: same password, same kvno. The console's
+  twin is a password RESET and says so; this page is not one.
+* **The keytab is shown on the 200 and never on a redirect**, `no-store`, as a
+  `data:` link with a `download` attribute beside the base64 — the console's
+  keytab page's arrangement, and no script.
+* **The register is required LAZILY** (`defaultDeps()`'s `personKeys`): the
+  portal is built at 8a in the require order, and requiring
+  `kerberos/krb5_person_keys` there would load the principal database and the
+  keytab writer ahead of the Kerberos modules for a page nobody has asked for.
+
+In development the keytab holds the development KDC's key
+(`krb5.userPassword`), the password is not checked (nothing is), and the page
+says both.
+
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 
 **Send a reset link** on a person's `/admin/users` page stores a hash of a

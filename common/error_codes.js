@@ -7716,6 +7716,31 @@ const CODES = [
     summary: 'An AS-REQ, or an S4U2Self naming a person, was refused ' +
       'because that person\'s account is disabled.',
     spec: 'KDC_ERR_CLIENT_REVOKED (18)' },
+  // A person's keytab (#59, 2026-09-22), kerberos/krb5_person_keys.ts.
+  { code: 'STS-KRB-0130',
+    summary: 'A keytab was asked for a name that is not a person in this ' +
+      'trust realm\'s directory (no directory, no usable single-component ' +
+      'name, or no entry).',
+    spec: 'HTTP 400 { ok: false, errors } / a 400 portal page' },
+  { code: 'STS-KRB-0131',
+    summary: 'A keytab was refused because the product KDC holds no current ' +
+      'keys for the person — none derived yet, derived from an older ' +
+      'password, unreadable, or krb5.personKeys off.',
+    spec: 'HTTP 400 { ok: false, errors } / a 400 portal page' },
+  { code: 'STS-KRB-0132',
+    summary: 'A keytab was refused because the password given does not ' +
+      'derive the key the product KDC holds for the person, or none was ' +
+      'given.',
+    spec: 'HTTP 400 { ok: false, errors } / a 400 portal page' },
+  { code: 'STS-KRB-0133',
+    summary: 'A development-mode keytab was refused because the ' +
+      'development KDC has no principal for the person and will not make ' +
+      'one (a name krb5.unknownUsers reserves), or it offers no enctype.',
+    spec: 'HTTP 400 { ok: false, errors } / a 400 portal page' },
+  { code: 'STS-KRB-0134',
+    summary: 'A keytab was refused because the person\'s account is ' +
+      'disabled, which the KDC refuses whatever key is presented.',
+    spec: 'HTTP 400 { ok: false, errors } / a 400 portal page' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
@@ -9874,6 +9899,41 @@ const CODES = [
     summary: 'The install-time loader fetched a provider\'s terms page ' +
       '(--check-terms) and it differs from the page seen at the last ' +
       'acceptance: read it before relying on the acceptance.',
+    spec: '' },
+  { code: 'STS-RISK-0016',
+    summary: 'An issuance was REFUSED on risk: the issuance policy denied ' +
+      'it with the risk obligation\'s `refuse` — by default, an ' +
+      'authentication whose risk is HIGH. The client is told only that ' +
+      'authentication failed.',
+    spec: '' },
+  { code: 'STS-RISK-0017',
+    summary: 'An issuance was refused UNTIL A STEP-UP: the issuance policy ' +
+      'denied it with the risk obligation\'s `step-up` (a second factor or ' +
+      'a security key) and the door could not ask for it — a token ' +
+      'endpoint, WS-Trust, the KDC, a federated or certificate sign-in, or ' +
+      'a screen whose person holds no such factor.',
+    spec: '' },
+  { code: 'STS-RISK-0018',
+    summary: 'A step-up on risk was asked of a person who holds no factor ' +
+      'that answers it. Refused rather than offered enrolment: enrolling a ' +
+      'new factor under an elevated risk is how an attacker holding the ' +
+      'password would get one.',
+    spec: '' },
+  { code: 'STS-RISK-0019',
+    summary: 'In development mode (observe only) the issuance policy would ' +
+      'have refused on risk, and did not: the decision is recorded on the ' +
+      'assessment and the issuance went ahead. risk.enforceInDevelopment ' +
+      'turns enforcement on.',
+    spec: '' },
+  { code: 'STS-RISK-0020',
+    summary: 'A person\'s risk level changed and no reaction could be ' +
+      'decided: the risk-response policy is disabled or does not load. The ' +
+      'change is recorded; nothing is announced, ended or disabled.',
+    spec: '' },
+  { code: 'STS-RISK-0021',
+    summary: 'A reaction the risk-response policy permitted (announce, end ' +
+      'sessions, RISC credential-compromise, disable) failed part-way. The ' +
+      'others were still taken; the change of risk is recorded.',
     spec: '' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
@@ -12339,6 +12399,17 @@ const CODES = [
     summary: 'Revoking somebody\'s app password was refused; the credential ' +
       'store\'s own code is on the audit row.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  // "Reset password and download keytab" (#59, 2026-09-22).
+  { code: 'STS-ADMIN-0802',
+    summary: 'A password reset for a Kerberos keytab gave neither or both of ' +
+      'a password and random, or the new password was refused (the password ' +
+      'policy\'s own code wins where it gave one). Nothing was changed.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0803',
+    summary: 'A password reset for a Kerberos keytab SET the password and ' +
+      'then no keytab could be made, or a Kerberos principals action threw ' +
+      'inside the console.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -12920,6 +12991,20 @@ const CODES = [
   { code: 'STS-PORTAL-0079',
     summary: 'A POST to /portal/app-passwords named an action the page does ' +
       'not have.',
+    spec: 'HTTP 400 page' },
+  // /portal/kerberos (#59, 2026-09-22).
+  { code: 'STS-PORTAL-0080',
+    summary: 'A keytab download on /portal/kerberos was refused because the ' +
+      'password typed is not the person\'s current one.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0081',
+    summary: 'A keytab download on /portal/kerberos was refused by the ' +
+      'Kerberos register after the password verified; its own STS-KRB code ' +
+      'is on the audit row.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0082',
+    summary: 'A POST to /portal/kerberos named an action the page does not ' +
+      'have.',
     spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
