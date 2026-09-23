@@ -4246,11 +4246,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'and no protocol endpoint reads them. THE BOOTSTRAP ADMINISTRATOR ' +
           '(2026-09-13): startup makes admin.bootstrapUsername in the default ' +
           'realm a member of both groups, forces a password change at its ' +
-          'first sign-in, and refuses its deletion; until that account first ' +
-          'signs in to /admin, anybody who signs in holds both roles and ' +
-          'every page says so (admin.openWhenEmpty, which can be turned off). ' +
-          'A process that never seeded it keeps the older rule: an empty ' +
-          'roster opens. /admin-api, gated by its own access token, is the ' +
+          'first sign-in, and refuses its deletion; in development mode, ' +
+          'until that account first signs in to /admin, anybody who signs in ' +
+          'holds both roles and every page says so (admin.openWhenEmpty, ' +
+          'which can be turned off), and a process that never seeded it ' +
+          'keeps the older rule: an empty roster opens. PRODUCT MODE NEVER ' +
+          'OPENS IT (#103): only the roster decides, and until the bootstrap ' +
+          'administrator has claimed the console its roles are honoured only ' +
+          'from a password sign-in, the only sign-in that claims it. ' +
+          '/admin-api, gated by its own access token, is the ' +
           'way back in if the console is ever closed to everybody. The gate ' +
           'itself is unconditional — admin.authRequired was removed on ' +
           '2026-09-06. Add ?format=json.' },

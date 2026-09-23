@@ -189,8 +189,9 @@ would teach you something false about every real server you will ever meet.
 with no setting that opens it — and the roles are two ordinary groups in the
 embedded directory. In development mode it is a turnstile and not a lock: no
 password is checked, so anybody who can reach this port can sign in as anybody.
-In both modes, until the bootstrap administrator `admin` first signs in, anybody
-who signs in holds both roles. The console can revoke tokens, add claims to every
+In development mode, until the bootstrap administrator `admin` first signs in,
+anybody who signs in holds both roles; product mode never opens it that way, and
+`admin` claims it only by signing in with its password. The console can revoke tokens, add claims to every
 future token and assertion, and create people in the directory. Do not put a
 development-mode instance on a public address.
 

@@ -736,8 +736,12 @@ async function test() {
   // 7. RFC 7521 SECTION 4.1 — THE SCOPE IS NARROWED AND NEVER WIDENED.
   // -------------------------------------------------------------------------
   log.info("=== 7. the requested scope ===");
+  // The extra scope is `profile` — one every client may ask for — and not a
+  // word of the job's own: in product mode an undeclared scope is refused
+  // invalid_scope before the grant is read (#110), and what this section is
+  // about is the ASSERTION narrowing a request, not the client's list.
   const scoped = await tokenRequest({ grant_type: GRANT,
-    scope: "openid email admin",
+    scope: "openid email profile",
     assertion: assertionFor({ person: person,
       build: { attributes: { scope: "openid email" } } }) });
   check("a request asking for MORE than the assertion's <Attribute " +

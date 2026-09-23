@@ -132,10 +132,12 @@ var config = {
   // onto one membership. Write implies read. openWhenEmpty decides whether
   // every signed-in person may use the console until the bootstrap
   // administrator (admin.bootstrapUsername) first signs in (on), or only role
-  // members may from the start (off); config.js's row carries the older rule
-  // for a process with no bootstrap administrator. /admin-api takes an access
-  // token carrying admin:read / admin:write (adminApi.authRequired), and it is
-  // the way back in if the console locks everybody out.
+  // members may from the start (off) — in development mode only: product
+  // never opens the console to whoever signs in (#103). config.js's row
+  // carries the older rule for a process with no bootstrap administrator.
+  // /admin-api takes an access token carrying admin:read / admin:write
+  // (adminApi.authRequired), and it is the way back in if the console locks
+  // everybody out.
   admin: {
     readGroup: "admin-read",
     writeGroup: "admin-write",

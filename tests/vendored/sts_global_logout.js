@@ -1026,6 +1026,10 @@ async function createApplication(identifier, protocols) {
     fields.oauthClientId = [identifier];
     fields.oauthClientSecret = CLIENT_SECRET;
     fields.oauthTokenEndpointAuthMethod = "client_secret_post";
+    // What each client may be issued (#110): in product a scope must be on
+    // the client's declared list, and the plain OAuth 2.0 flow above asks
+    // for `api`, which is nobody's default.
+    fields.oauthAllowedScope = ["openid", "profile", "api"];
   }
   if (declares("saml2") || declares("saml11")) {
     fields.samlEntityId = [identifier];
