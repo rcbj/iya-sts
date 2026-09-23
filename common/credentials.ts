@@ -144,6 +144,10 @@ import webauthnPolicy = require('../authn/webauthn_policy');
 // one-time code; verifying the registration ceremony that produces a key is
 // the same act on the third mechanism.
 import webauthnVerifier = require('../authn/webauthn');
+// The attestation statement's verifier (#105): a library that requires
+// `webauthn_policy`, `crypto`, `pki` and `error_codes`, and the FIDO metadata
+// and revocation lazily — none of which requires this file.
+import webauthnAttestation = require('../authn/webauthn_attestation');
 // THE ERROR CODES (2026-09-12). A LEAF that requires nothing, so it cannot
 // close a cycle from here — which is why it is this and not `audit.js`, which
 // this file must not reach. Every refusal below RETURNS a verdict to a caller
@@ -185,6 +189,7 @@ interface CredentialsDeps {
   passwordPolicy: typeof passwordPolicy;
   webauthnPolicy: typeof webauthnPolicy;
   webauthnVerifier: typeof webauthnVerifier;
+  webauthnAttestation: typeof webauthnAttestation;
   errorCodes: typeof errorCodes;
   claims: typeof claims;
   counters: typeof counters;
@@ -303,6 +308,7 @@ class Credentials {
       passwordPolicy: passwordPolicy,
       webauthnPolicy: webauthnPolicy,
       webauthnVerifier: webauthnVerifier,
+      webauthnAttestation: webauthnAttestation,
       errorCodes: errorCodes,
       claims: claims,
       counters: counters,
@@ -1878,7 +1884,15 @@ class Credentials {
       // this function and dropped until then; a key enrolled before has
       // neither, and is reported as it always was.
       attachment: String(credential.attachment || ''),
-      aaguid: Credentials.aaguidString(credential.aaguid)
+      aaguid: Credentials.aaguidString(credential.aaguid),
+      // WHAT THE ATTESTATION STATEMENT PROVED (#105): the format, the
+      // attestation type, whether it was verified and whether it chained to
+      // an anchor (the realm's or the FIDO Metadata Service's), the model MDS
+      // names and its certification — `authn/webauthn_attestation.ts`'s
+      // record, drawn beside the key on `/portal/keys`, `/admin/users` and
+      // `GET /admin-api/users`. A key written by a door that verified nothing
+      // (an operator's import, a test) has none, and is shown as claimed.
+      attestation: credential.attestation || null
     };
     let written = false;
     try {
@@ -4969,7 +4983,10 @@ class Credentials {
         expectedChallenge: held.challenge,
         expectedOrigin: String(options.origin || ''),
         expectedRpId: String(options.rpId || ''),
-        requireUserVerification: webauthnPolicy.requireUserVerification()
+        requireUserVerification: webauthnPolicy.requireUserVerification(),
+        // WebAuthn Level 3 section 7.1: the credential's alg must be one of
+        // the pubKeyCredParams this realm offered (#105).
+        expectedAlgorithms: webauthnPolicy.algorithmIds()
       });
     } catch (e) {
       log.debug('Leaving Credentials.checkKeyEnrolment(). Verification threw.');
@@ -5003,21 +5020,35 @@ class Credentials {
                         'with the original.'] });
     }
 
-    // THROUGH THE CLAIM (2026-09-14), which is why this function answers a
-    // promise now — see `addKeyClaimed()`.
-    log.debug('Leaving Credentials.checkKeyEnrolment(). Writing through ' +
-              'the claim.');
-    return this.addKeyClaimed(name, {
-      credentialId: verdict.credentialId,
-      publicKeyJwk: verdict.publicKeyJwk,
-      signCount: verdict.signCount,
-      label: held.label || undefined,
-      attachment: credential.authenticatorAttachment || null,
-      userVerified: !!(verdict.flags && verdict.flags.uv),
-      aaguid: verdict.aaguid || null,
-      algorithm: verdict.algorithm || null
-    }, held.role).then((stored) => {
-      return this.keyEnrolmentWritten(name, held, stored);
+    // THE ATTESTATION STATEMENT (#105), the same library the sign-in screen
+    // asks, and then THROUGH THE CLAIM (2026-09-14), which is why this
+    // function answers a promise now — see `addKeyClaimed()`. A refused
+    // statement is refused like a ceremony that did not verify, and the
+    // pending enrolment is kept, as for a refused write below.
+    log.debug('Leaving Credentials.checkKeyEnrolment(). Verifying the ' +
+              'attestation, then writing through the claim.');
+    return this.deps.webauthnAttestation.assess(verdict).then((attested) => {
+      if (!attested.ok) {
+        log.info('credentials: a security key enrolment for ' + name +
+                 ' was refused on its attestation — ' + attested.why);
+        return coded(this.deps.errorCodes.codeOf(attested) ||
+                     'STS-AUTHN-0241',
+                     { ok: false, reason: 'attestation',
+                       errors: [attested.why] });
+      }
+      return this.addKeyClaimed(name, {
+        credentialId: verdict.credentialId,
+        publicKeyJwk: verdict.publicKeyJwk,
+        signCount: verdict.signCount,
+        label: held.label || undefined,
+        attachment: credential.authenticatorAttachment || null,
+        userVerified: !!(verdict.flags && verdict.flags.uv),
+        aaguid: verdict.aaguid || null,
+        algorithm: verdict.algorithm || null,
+        attestation: attested.attestation
+      }, held.role).then((stored) => {
+        return this.keyEnrolmentWritten(name, held, stored);
+      });
     });
   }
 

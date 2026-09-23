@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3161** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3176** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -62,7 +62,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 206
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 220
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 502
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 89
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 103
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 26
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 27
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
@@ -1093,6 +1093,20 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0225` | The browser fingerprint script was asked for while risk.fingerprinting is off in the realm; nothing draws a page that uses it, so it is not served (#62 P6). | HTTP 404 |
 | `STS-AUTHN-0226` | A delegation flag on a person (stsNotDelegated or stsMayAct) could not be written onto their entry, or the credential store is not installed (#108). | none — the caller's refusal |
 | `STS-AUTHN-0227` | A person's delegate (stsMayAct) was refused: it names no person or application entry in this realm, or names the person themselves (#108). | none — the caller's refusal |
+| `STS-AUTHN-0228` | A WebAuthn registration was refused: the credential's algorithm is not one of the pubKeyCredParams this realm offered (webauthn.algorithms) (#105). | W3C WebAuthn Level 3 section 7.1 |
+| `STS-AUTHN-0229` | A WebAuthn registration was refused: the credential id is longer than 1023 bytes (#105). | W3C WebAuthn Level 3 section 7.1 |
+| `STS-AUTHN-0230` | A WebAuthn registration was refused: the authenticator data says the credential is backed up (BS) and not backup eligible (BE) (#105). | W3C WebAuthn Level 3 section 7.1 |
+| `STS-AUTHN-0231` | A WebAuthn registration was refused: its attestation statement format is not one of section 8's eight (#105). | W3C WebAuthn Level 3 sections 7.1 and 8 |
+| `STS-AUTHN-0232` | A WebAuthn registration was refused: its attestation statement does not conform to its format's syntax — a member missing, of the wrong type, or not defined by the format (#105). | W3C WebAuthn Level 3 section 8 |
+| `STS-AUTHN-0233` | A WebAuthn registration was refused: the attestation signature does not verify (#105). | W3C WebAuthn Level 3 section 8 |
+| `STS-AUTHN-0234` | A WebAuthn registration was refused: a requirement of its attestation format failed — the certificate's fields, the key it certifies, the TPM certInfo, the Android challenge or authorization list, the SafetyNet or Apple nonce (#105). | W3C WebAuthn Level 3 section 8 |
+| `STS-AUTHN-0235` | A WebAuthn registration was refused: its attestation does not chain to a trust anchor — to the roots the FIDO Metadata Service lists for a model it lists, or to any anchor where the realm requires a trusted statement (#105). | W3C WebAuthn Level 3 section 7.1 steps 23-25 |
+| `STS-AUTHN-0236` | A WebAuthn registration was refused: the authenticator model's AAGUID is not in webauthn.attestationAllowedAaguids (#105). | — |
+| `STS-AUTHN-0237` | A WebAuthn registration was refused: the FIDO Metadata Service reports the authenticator model REVOKED, USER_VERIFICATION_BYPASS or one of the KEY_COMPROMISE statuses (#105). | FIDO Metadata Service section 3.1.4 |
+| `STS-AUTHN-0238` | A WebAuthn registration was refused: the authenticator model does not hold the certification level, or the FIPS 140 certification, the realm requires — or the FIDO Metadata Service does not list it (#105). | FIDO Metadata Service section 3.1.4.1 |
+| `STS-AUTHN-0239` | A WebAuthn registration was refused: a certificate in the attestation chain is revoked, or its status could not be established under pki.revocationCheck (#105). | W3C WebAuthn Level 3 section 7.1; RFC 5280 section 6.3 |
+| `STS-AUTHN-0240` | A WebAuthn registration was refused: the authenticator sent no attestation or a self attestation, and the realm requires a trusted one (#105). | W3C WebAuthn Level 3 section 7.1 step 24 |
+| `STS-AUTHN-0241` | A WebAuthn registration was refused because its attestation statement could not be checked: the verifier threw. The line names the format and the stack (#105). | — |
 
 ## STS-OAUTH
 
@@ -2633,6 +2647,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0024` | A FIDO MDS3 BLOB was refused because its serial number (no) is not greater than one already processed — a rollback. Nothing was loaded. | FIDO Metadata Service v3.0, section 3.1.8 |
 | `STS-RISK-0025` | Monitoring → Risk Scoring, or GET /admin-api/risk/metrics, could not be answered: the risk store failed to count the window's assessments. | — |
 | `STS-RISK-0026` | An entry of risk.signalFactors was ignored: it names no known signal, or its factor is not a positive number. The signal keeps its built-in factor; logged once for each value the setting is given. | — |
+| `STS-RISK-0027` | The risk.mds-refresh job could not download the FIDO MDS3 BLOB from risk.mdsUrl: outbound is off, the address is refused, the server did not answer 200, or the BLOB is larger than risk.mdsMaxBytes (#105). The active BLOB stays in force. | FIDO Metadata Service section 3.2 |
 
 ## STS-GNAP
 

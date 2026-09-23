@@ -530,8 +530,10 @@ const STANDARDS = [
   { key: 'webauthn', name: 'WebAuthn Level 3',
     specs: ['W3C WebAuthn Level 3', 'FIDO CTAP2'],
     coverage: 'partial: the relying party\'s half. Registration and ' +
-              'assertion signatures are really verified; attestation ' +
-              'STATEMENTS are parsed and not chased.',
+              'assertion signatures are really verified, and so are ' +
+              'attestation STATEMENTS (#105) — all eight formats, their ' +
+              'chains and the FIDO Metadata Service — under ' +
+              'webauthn.attestationPolicy.',
     what: 'The signature covers `authenticatorData || ' +
           'SHA-256(clientDataJSON)` and the RP ID hash inside that ' +
           'authenticator data is compared byte for byte against SHA-256 of ' +
@@ -1924,7 +1926,11 @@ class CryptoMetadata {
       { name: 'WebAuthn / CTAP',
         signs: 'Nothing. The AUTHENTICATOR signs; this service is the ' +
                'relying party, which is the half that only ever checks.',
-        verifies: 'The registration attestation and every assertion: the ' +
+        verifies: 'The registration, its attestation statement (packed, ' +
+                  'tpm, android-key, android-safetynet, fido-u2f, apple and ' +
+                  'compound signatures, COSE ES256/384/512, RS256/384/512, ' +
+                  'PS256/384/512, EdDSA and ML-DSA-44/65/87), and every ' +
+                  'assertion: the ' +
                   'signature over `authenticatorData || ' +
                   'SHA-256(clientDataJSON)`, against the COSE public key the ' +
                   'credential registered.',
@@ -1934,11 +1940,12 @@ class CryptoMetadata {
                 'covers, and the RP ID hash inside the authenticator data ' +
                 'that is compared byte for byte against SHA-256 of the ' +
                 'origin\'s domain.',
-        whatItDoesNot: 'It validates no attestation STATEMENT whatever ' +
-                       '`webauthn.attestation` asks for — the certificate ' +
-                       'chain a packed or TPM attestation carries is parsed ' +
-                       'and not chased, and there is no metadata service, no ' +
-                       'vendor trust anchor and no model allow-list here. ' +
+        whatItDoesNot: 'Since #105 it VERIFIES the attestation statement ' +
+                       '— all eight WebAuthn Level 3 section 8 formats, the ' +
+                       'chain against configured anchors and the FIDO ' +
+                       'Metadata Service\'s roots, revocation, and MDS ' +
+                       'status reports — under `webauthn.attestationPolicy`, ' +
+                       'which is off by default in development only. ' +
                        'The registration offers fewer algorithms than the ' +
                        'verifier ACCEPTS, which is deliberate: what a ' +
                        'platform authenticator actually produces is what a ' +

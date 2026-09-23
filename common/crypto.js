@@ -5373,6 +5373,538 @@ function sessionStateHash(clientId, origin, browserState, salt) {
   return digest + '.' + chosen;
 }
 
+// ===========================================================================
+// SECTION 10 — WEBAUTHN: COSE SIGNATURES AND THE ATTESTATION STRUCTURES
+// (#105, 2026-09-23).
+//
+// `authn/webauthn_attestation.ts` verifies the eight attestation statement
+// formats of WebAuthn Level 3 section 8, and four of them carry structures
+// that are nobody's JWS and nobody's X.509: a TPM's TPMT_PUBLIC, TPMS_ATTEST
+// and TPMT_SIGNATURE (section 8.3, TPM 2.0 Library Part 2), Android's
+// KeyDescription (section 8.4, the extension 1.3.6.1.4.1.11129.2.1.17),
+// Apple's nonce extension (section 8.8) and FIDO's AAGUID extension (section
+// 8.2.1). They are HERE and not beside the verifier for rcbj's rule of
+// 2026-09-21: every signature, and every codec a signature is checked over,
+// is in this file or in `pki.js` — the certificate half (which extension a
+// certificate carries, and its subject) is `pki.js`'s.
+//
+// **`spiffe/spiffe_tpm.ts` HAS A TPM CODEC OF ITS OWN AND IT IS NOT THIS
+// ONE.** That one reads the two structures SPIRE's tpm_devid sends (a
+// TPMT_PUBLIC and TPM2_Certify's name) and refuses everything else; a
+// WebAuthn TPM statement needs the whole TPMS_ATTEST (magic, type,
+// extraData) and ECDAA's extra scheme field. Merging them is a refactor of
+// an attestor that has its own tests, and is left for when one of them
+// changes.
+//
+// **ONE COSE TABLE FOR THE SIGNATURES.** `verifyCoseSignature()` checks a
+// signature made with a COSE algorithm (RFC 9053, RFC 8230, RFC 8812 and RFC
+// 9964) — what an attestation statement's `alg` and a credential's key both
+// name. ECDSA arrives as DER, which is what WebAuthn section 6.5.5 says an
+// authenticator produces; RSASSA-PSS uses a salt as long as the hash (RFC
+// 8230 section 2); ML-DSA is RFC 9964's (published May 2026 from
+// draft-ietf-cose-dilithium-11): kty AKP (7), `pub` at -1, and the three
+// algorithm identifiers -48, -49 and -50, verified by `pq_jose.js`, which
+// holds the one ML-DSA implementation this process uses for JOSE as well.
+// SHA-1 (RS1, -65535) is not in the table: product never uses a broken
+// algorithm (`mode.usesBrokenAlgorithms()`), and no current authenticator
+// needs it.
+//
+// It stays a LEAF: node's crypto, asn1js and `pq_jose.js`, all required
+// above.
+// ===========================================================================
+
+const COSE_SIGNATURE_ALGS = {
+  '-7': { name: 'ES256', family: 'ecdsa', hash: 'sha256', kty: 'EC' },
+  '-35': { name: 'ES384', family: 'ecdsa', hash: 'sha384', kty: 'EC' },
+  '-36': { name: 'ES512', family: 'ecdsa', hash: 'sha512', kty: 'EC' },
+  '-8': { name: 'EdDSA', family: 'eddsa', hash: null, kty: 'OKP' },
+  '-257': { name: 'RS256', family: 'rsa-pkcs1', hash: 'sha256', kty: 'RSA' },
+  '-258': { name: 'RS384', family: 'rsa-pkcs1', hash: 'sha384', kty: 'RSA' },
+  '-259': { name: 'RS512', family: 'rsa-pkcs1', hash: 'sha512', kty: 'RSA' },
+  '-37': { name: 'PS256', family: 'rsa-pss', hash: 'sha256', kty: 'RSA',
+           saltLength: 32 },
+  '-38': { name: 'PS384', family: 'rsa-pss', hash: 'sha384', kty: 'RSA',
+           saltLength: 48 },
+  '-39': { name: 'PS512', family: 'rsa-pss', hash: 'sha512', kty: 'RSA',
+           saltLength: 64 },
+  '-48': { name: 'ML-DSA-44', family: 'pq', hash: null, kty: 'AKP' },
+  '-49': { name: 'ML-DSA-65', family: 'pq', hash: null, kty: 'AKP' },
+  '-50': { name: 'ML-DSA-87', family: 'pq', hash: null, kty: 'AKP' }
+};
+
+// The COSE entry for an identifier, or null.
+function coseSignatureAlg(coseAlg) {
+  log.debug("Entering coseSignatureAlg(). alg=" + coseAlg);
+  log.debug("Leaving coseSignatureAlg().");
+  return COSE_SIGNATURE_ALGS[String(coseAlg)] || null;
+}
+
+// A public key as node holds one, from a KeyObject, a JWK, a PEM or a DER
+// SubjectPublicKeyInfo; null when it is none of them.
+function nodePublicKeyOf(key) {
+  log.debug("Entering nodePublicKeyOf().");
+  try {
+    if (key && key.type === 'public' && key.asymmetricKeyType) {
+      log.debug("Leaving nodePublicKeyOf(). A KeyObject.");
+      return key;
+    }
+    if (key && key.kty) {
+      const jwk = Object.assign({}, key);
+      // node refuses a JWK carrying an `alg` it does not use for import, on
+      // some versions; the algorithm is decided by the caller, not the key.
+      delete jwk.alg;
+      log.debug("Leaving nodePublicKeyOf(). A JWK.");
+      return nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' });
+    }
+    if (Buffer.isBuffer(key)) {
+      log.debug("Leaving nodePublicKeyOf(). DER.");
+      return nodeCrypto.createPublicKey({ key: key, format: 'der',
+                                          type: 'spki' });
+    }
+    log.debug("Leaving nodePublicKeyOf(). PEM.");
+    return nodeCrypto.createPublicKey(key);
+  } catch (e) {
+    log.debug("Caught in nodePublicKeyOf(): " + ((e && e.message) || e));
+    log.debug("Leaving nodePublicKeyOf(). Unreadable.");
+    return null;
+  }
+}
+
+// Does `signature` verify over `data` under `key` with COSE algorithm
+// `coseAlg`? SYNCHRONOUS — the WebAuthn assertion is checked inside a
+// synchronous block of `authn.ts`, and every algorithm here is microseconds
+// except ML-DSA, whose verification is a few hundred. `key` is anything
+// `nodePublicKeyOf()` reads, or for ML-DSA an AKP JWK (`{ kty: 'AKP', pub }`)
+// or the raw public key bytes. A key of the wrong kind for the algorithm is
+// false, never a throw: an RSA key under ES256 is a signature that does not
+// verify, and the caller says so.
+function verifyCoseSignature(coseAlg, key, data, signature) {
+  log.debug("Entering verifyCoseSignature(). alg=" + coseAlg);
+  const spec = coseSignatureAlg(coseAlg);
+  if (!spec) {
+    log.debug("Leaving verifyCoseSignature(). Unknown algorithm.");
+    return false;
+  }
+  const message = Buffer.from(data || []);
+  const sig = Buffer.from(signature || []);
+  try {
+    // A `publicKeyFromSpki()` answer — what a certificate's key is read as,
+    // and the one form that carries an ML-DSA key out of a certificate node
+    // may not be able to read.
+    if (key && key.spki !== undefined && key.kind !== undefined) {
+      if (spec.family === 'pq') {
+        const read = key.kind === 'pq'
+          ? pqcX509.decodeSpki(new Uint8Array(key.spki)) : null;
+        const ok = !!read && String(read.alg) === spec.name &&
+          !!pqJose.verify(spec.name, Buffer.from(read.pub), message, sig);
+        log.debug("Leaving verifyCoseSignature(). " + spec.name +
+                  " from a certificate " + ok);
+        return ok;
+      }
+      key = key.key;
+    }
+    if (spec.family === 'pq') {
+      const pub = key && key.pub !== undefined
+        ? Buffer.from(key.pub, typeof key.pub === 'string' ? 'base64url'
+                                                           : undefined)
+        : Buffer.from(key || []);
+      const ok = !!pqJose.verify(spec.name, pub, message, sig);
+      log.debug("Leaving verifyCoseSignature(). " + spec.name + " " + ok);
+      return ok;
+    }
+    const publicKey = nodePublicKeyOf(key);
+    if (!publicKey) {
+      log.debug("Leaving verifyCoseSignature(). No key.");
+      return false;
+    }
+    const type = String(publicKey.asymmetricKeyType || '');
+    let ok = false;
+    if (spec.family === 'ecdsa' && type === 'ec') {
+      ok = nodeCrypto.verify(spec.hash, message,
+                             { key: publicKey, dsaEncoding: 'der' }, sig);
+    } else if (spec.family === 'eddsa' &&
+               (type === 'ed25519' || type === 'ed448')) {
+      ok = nodeCrypto.verify(null, message, publicKey, sig);
+    } else if (spec.family === 'rsa-pkcs1' && type === 'rsa') {
+      ok = nodeCrypto.verify(spec.hash, message, { key: publicKey,
+        padding: nodeCrypto.constants.RSA_PKCS1_PADDING }, sig);
+    } else if (spec.family === 'rsa-pss' &&
+               (type === 'rsa' || type === 'rsa-pss')) {
+      ok = nodeCrypto.verify(spec.hash, message, { key: publicKey,
+        padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: spec.saltLength }, sig);
+    }
+    log.debug("Leaving verifyCoseSignature(). " + spec.name + " " + ok);
+    return !!ok;
+  } catch (e) {
+    log.debug("Caught in verifyCoseSignature(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyCoseSignature(). Threw, so false.");
+    return false;
+  }
+}
+
+// ----- TPM 2.0 (Library Part 2) --------------------------------------------
+
+// TPM_ALG_ID (Part 2, table 9) — the values the structures below name.
+const TPM_ALG = {
+  RSA: 0x0001, SHA1: 0x0004, HMAC: 0x0005, AES: 0x0006, KEYEDHASH: 0x0008,
+  SHA256: 0x000b, SHA384: 0x000c, SHA512: 0x000d, NULL: 0x0010,
+  RSASSA: 0x0014, RSAES: 0x0015, RSAPSS: 0x0016, OAEP: 0x0017,
+  ECDSA: 0x0018, ECDH: 0x0019, ECDAA: 0x001a, SM2: 0x001b,
+  ECSCHNORR: 0x001c, ECC: 0x0023, SYMCIPHER: 0x0025
+};
+const TPM_HASHES = { 0x0004: 'sha1', 0x000b: 'sha256', 0x000c: 'sha384',
+                     0x000d: 'sha512' };
+// TPM_ECC_CURVE (Part 2, table 10), as a JWK curve and its coordinate size.
+const TPM_CURVES = { 0x0003: { crv: 'P-256', bytes: 32 },
+                     0x0004: { crv: 'P-384', bytes: 48 },
+                     0x0005: { crv: 'P-521', bytes: 66 } };
+// TPM_GENERATED_VALUE and TPM_ST_ATTEST_CERTIFY (Part 2, tables 7 and 19).
+const TPM_GENERATED_VALUE = 0xff544347;
+const TPM_ST_ATTEST_CERTIFY = 0x8017;
+
+// A reader over a TPM structure. Every read throws on a short buffer, and the
+// parser's caller turns that into its refusal.
+function tpmReader(bytes) {
+  log.debug("Entering tpmReader().");
+  const buf = Buffer.from(bytes || []);
+  let at = 0;
+  // A HOT PATH: the reader's methods carry no Entering/Leaving pair, for
+  // `pki.js`'s sshReader()'s reason — once per field of every structure.
+  const reader = {
+    take: function (n) {
+      if (n < 0 || at + n > buf.length) {
+        // error-code: none — a parse failure, refused by the caller under
+        // its own code
+        throw new Error('the TPM structure is truncated');
+      }
+      const out = buf.subarray(at, at + n);
+      at += n;
+      return out;
+    },
+    u8: function () {
+      return reader.take(1)[0];
+    },
+    u16: function () {
+      return reader.take(2).readUInt16BE(0);
+    },
+    u32: function () {
+      return reader.take(4).readUInt32BE(0);
+    },
+    u64: function () {
+      return reader.take(8).readBigUInt64BE(0);
+    },
+    sized: function () {
+      return Buffer.from(reader.take(reader.u16()));
+    },
+    left: function () {
+      return buf.length - at;
+    }
+  };
+  log.debug("Leaving tpmReader().");
+  return reader;
+}
+
+// The node digest name of a TPM hash algorithm; throws for one not here.
+function tpmHashName(algId) {
+  log.debug("Entering tpmHashName(). alg=" + algId);
+  const name = TPM_HASHES[Number(algId)];
+  if (!name) {
+    log.debug("Leaving tpmHashName(). Unknown.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the TPM hash algorithm 0x' + Number(algId).toString(16) +
+                    ' is not supported');
+  }
+  log.debug("Leaving tpmHashName().");
+  return name;
+}
+
+// TPMT_PUBLIC (Part 2, section 12.2.4), for an RSA or ECC object — what a
+// WebAuthn TPM statement's `pubArea` is. Answers `{ type, nameAlg,
+// attributes, authPolicy, symmetric, scheme, keyBits, exponent, curveId,
+// kdf, modulus, x, y, raw, jwk }`, `raw` being the bytes a Name hashes and
+// `jwk` the public key. A TPM2B_PUBLIC's size prefix is NOT accepted:
+// section 8.3 says the two bytes must be removed. Throws a sentence.
+function tpmParsePublic(bytes) {
+  log.debug("Entering tpmParsePublic().");
+  const raw = Buffer.from(bytes || []);
+  const r = tpmReader(raw);
+  const out = { type: r.u16(), nameAlg: r.u16(), attributes: r.u32(),
+                authPolicy: r.sized(), symmetric: 0, scheme: 0,
+                schemeHash: 0, keyBits: 0, exponent: 0, curveId: 0, kdf: 0,
+                modulus: null, x: null, y: null, raw: raw, jwk: null };
+  const symmetric = function () {
+    log.debug("Entering symmetric().");
+    const alg = r.u16();
+    if (alg !== TPM_ALG.NULL) {
+      r.u16();
+      r.u16();
+    }
+    log.debug("Leaving symmetric().");
+    return alg;
+  };
+  if (out.type === TPM_ALG.RSA) {
+    out.symmetric = symmetric();
+    out.scheme = r.u16();
+    if (out.scheme !== TPM_ALG.NULL) {
+      out.schemeHash = r.u16();
+    }
+    out.keyBits = r.u16();
+    out.exponent = r.u32();
+    out.modulus = r.sized();
+    // An exponent of 0 is the TPM's way of saying the default, 2^16 + 1.
+    const exponent = Buffer.alloc(4);
+    exponent.writeUInt32BE(out.exponent || 65537, 0);
+    let start = 0;
+    while (start < 3 && exponent[start] === 0) {
+      start++;
+    }
+    out.jwk = { kty: 'RSA', n: out.modulus.toString('base64url'),
+                e: exponent.subarray(start).toString('base64url') };
+  } else if (out.type === TPM_ALG.ECC) {
+    out.symmetric = symmetric();
+    out.scheme = r.u16();
+    if (out.scheme !== TPM_ALG.NULL) {
+      out.schemeHash = r.u16();
+      if (out.scheme === TPM_ALG.ECDAA) {
+        // TPMS_SCHEME_ECDAA carries a count beside the hash.
+        r.u16();
+      }
+    }
+    out.curveId = r.u16();
+    out.kdf = r.u16();
+    if (out.kdf !== TPM_ALG.NULL) {
+      r.u16();
+    }
+    out.x = r.sized();
+    out.y = r.sized();
+    const curve = TPM_CURVES[out.curveId];
+    if (!curve) {
+      log.debug("Leaving tpmParsePublic(). Unsupported curve.");
+      // error-code: none — a parse failure, refused by the caller
+      throw new Error('the TPM curve 0x' + out.curveId.toString(16) +
+                      ' is not supported');
+    }
+    const pad = Buffer.alloc(curve.bytes);
+    out.jwk = { kty: 'EC', crv: curve.crv,
+                x: Buffer.concat([pad, out.x]).subarray(-curve.bytes)
+                  .toString('base64url'),
+                y: Buffer.concat([pad, out.y]).subarray(-curve.bytes)
+                  .toString('base64url') };
+  } else {
+    log.debug("Leaving tpmParsePublic(). Unsupported type.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the TPM object type 0x' + out.type.toString(16) +
+                    ' is not an RSA or ECC key');
+  }
+  if (r.left()) {
+    log.debug("Leaving tpmParsePublic(). Trailing bytes.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error(r.left() + ' byte(s) follow the TPMT_PUBLIC');
+  }
+  log.debug("Leaving tpmParsePublic().");
+  return out;
+}
+
+// TPMS_ATTEST (Part 2, section 10.12.8), of which WebAuthn reads the
+// certify form. Answers `{ magic, type, qualifiedSigner, extraData, clock,
+// resetCount, restartCount, safe, firmwareVersion, name, qualifiedName }`;
+// `name` and `qualifiedName` only for TPM_ST_ATTEST_CERTIFY. Throws a
+// sentence; the caller checks the values.
+function tpmParseAttest(bytes) {
+  log.debug("Entering tpmParseAttest().");
+  const r = tpmReader(bytes);
+  const out = {
+    magic: r.u32(), type: r.u16(), qualifiedSigner: r.sized(),
+    extraData: r.sized(), clock: r.u64(), resetCount: r.u32(),
+    restartCount: r.u32(), safe: r.u8(), firmwareVersion: r.u64(),
+    name: null, qualifiedName: null
+  };
+  if (out.type === TPM_ST_ATTEST_CERTIFY) {
+    out.name = r.sized();
+    out.qualifiedName = r.sized();
+    if (r.left()) {
+      log.debug("Leaving tpmParseAttest(). Trailing bytes.");
+      // error-code: none — a parse failure, refused by the caller
+      throw new Error(r.left() + ' byte(s) follow the TPMS_CERTIFY_INFO');
+    }
+  }
+  log.debug("Leaving tpmParseAttest().");
+  return out;
+}
+
+// TPMT_SIGNATURE (Part 2, section 11.3.4): `{ sigAlg, hash, signature }`,
+// the signature as a verifier takes it — RSA's bytes, or an ECDSA
+// signature as DER. null when `bytes` is not exactly one such structure,
+// which is how the verifier tells it from a bare signature (see
+// `webauthn_attestation.ts`).
+function tpmParseSignature(bytes) {
+  log.debug("Entering tpmParseSignature().");
+  try {
+    const r = tpmReader(bytes);
+    const sigAlg = r.u16();
+    let out = null;
+    if (sigAlg === TPM_ALG.RSASSA || sigAlg === TPM_ALG.RSAPSS) {
+      out = { sigAlg: sigAlg, hash: r.u16(), signature: r.sized() };
+    } else if (sigAlg === TPM_ALG.ECDSA) {
+      const hash = r.u16();
+      const rr = r.sized();
+      const ss = r.sized();
+      const integer = function (b) {
+        log.debug("Entering integer().");
+        log.debug("Leaving integer().");
+        return new asn1js.Integer({ valueHex: new Uint8Array(
+          Buffer.concat([Buffer.from([0]), b])) });
+      };
+      const der = new asn1js.Sequence({ value: [integer(rr), integer(ss)] })
+        .toBER(false);
+      out = { sigAlg: sigAlg, hash: hash, signature: Buffer.from(der) };
+    }
+    if (!out || r.left()) {
+      log.debug("Leaving tpmParseSignature(). Not one TPMT_SIGNATURE.");
+      return null;
+    }
+    log.debug("Leaving tpmParseSignature().");
+    return out;
+  } catch (e) {
+    log.debug("Caught in tpmParseSignature(): " + ((e && e.message) || e));
+    log.debug("Leaving tpmParseSignature(). Unreadable.");
+    return null;
+  }
+}
+
+// TPM2B_NAME's contents for an object (Part 1, section 16): nameAlg ‖
+// H_nameAlg(TPMT_PUBLIC).
+function tpmName(parsedPublic) {
+  log.debug("Entering tpmName().");
+  const alg = Buffer.alloc(2);
+  alg.writeUInt16BE(parsedPublic.nameAlg, 0);
+  log.debug("Leaving tpmName().");
+  return Buffer.concat([alg, nodeCrypto.createHash(
+    tpmHashName(parsedPublic.nameAlg)).update(parsedPublic.raw).digest()]);
+}
+
+// ----- the certificate extensions WebAuthn defines --------------------------
+
+// The ASN.1 of an extension's value, or null. Typed loosely: its callers
+// walk constructed values asn1js's union of value blocks does not narrow.
+/** @returns {any} */
+function berOf(bytes) {
+  log.debug("Entering berOf().");
+  const parsed = asn1js.fromBER(new Uint8Array(Buffer.from(bytes || [])));
+  log.debug("Leaving berOf().");
+  return parsed.offset === -1 ? null : parsed.result;
+}
+
+// id-fido-gen-ce-aaguid (1.3.6.1.4.1.45724.1.1.4, section 8.2.1): the
+// extension's value is an OCTET STRING of the 16-byte AAGUID. Answers the
+// AAGUID or null.
+function fidoAaguidExtension(extnValue) {
+  log.debug("Entering fidoAaguidExtension().");
+  const read = berOf(extnValue);
+  if (!read || !(read instanceof asn1js.OctetString)) {
+    log.debug("Leaving fidoAaguidExtension(). Not an OCTET STRING.");
+    return null;
+  }
+  const value = Buffer.from(read.valueBlock.valueHexView);
+  log.debug("Leaving fidoAaguidExtension(). " + value.length + " bytes.");
+  return value.length === 16 ? value : null;
+}
+
+// Apple's anonymous attestation nonce (1.2.840.113635.100.8.2, section
+// 8.8): SEQUENCE { [1] EXPLICIT OCTET STRING }. Answers the nonce or null.
+function appleAttestationNonce(extnValue) {
+  log.debug("Entering appleAttestationNonce().");
+  const read = berOf(extnValue);
+  const tagged = read && read.valueBlock && Array.isArray(read.valueBlock.value)
+    ? read.valueBlock.value.filter(function (one) {
+      return one.idBlock.tagClass === 3 && one.idBlock.tagNumber === 1;
+    })[0] : null;
+  const inner = tagged && tagged.valueBlock &&
+    Array.isArray(tagged.valueBlock.value) ? tagged.valueBlock.value[0] : null;
+  if (!inner || !(inner instanceof asn1js.OctetString)) {
+    log.debug("Leaving appleAttestationNonce(). Not the structure.");
+    return null;
+  }
+  log.debug("Leaving appleAttestationNonce().");
+  return Buffer.from(inner.valueBlock.valueHexView);
+}
+
+// Android's KeyDescription (1.3.6.1.4.1.11129.2.1.17, section 8.4.1, the
+// schema in Android's key attestation documentation):
+//
+//   KeyDescription ::= SEQUENCE {
+//     attestationVersion INTEGER, attestationSecurityLevel ENUMERATED,
+//     keyMintVersion INTEGER, keyMintSecurityLevel ENUMERATED,
+//     attestationChallenge OCTET STRING, uniqueId OCTET STRING,
+//     softwareEnforced AuthorizationList,
+//     hardwareEnforced AuthorizationList }   -- "teeEnforced" before v100
+//
+// Of an AuthorizationList, the three fields section 8.4 reads: `purpose`
+// ([1] EXPLICIT SET OF INTEGER), `allApplications` ([600] EXPLICIT NULL)
+// and `origin` ([702] EXPLICIT INTEGER). Answers `{ attestationVersion,
+// attestationSecurityLevel, attestationChallenge, softwareEnforced,
+// teeEnforced }` with each list as `{ purpose: [], allApplications,
+// origin }`, or throws a sentence.
+function androidKeyDescription(extnValue) {
+  log.debug("Entering androidKeyDescription().");
+  const read = berOf(extnValue);
+  const items = read && read.valueBlock && Array.isArray(read.valueBlock.value)
+    ? read.valueBlock.value : [];
+  if (items.length < 8) {
+    log.debug("Leaving androidKeyDescription(). Not a KeyDescription.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the Android key attestation extension is not a ' +
+                    'KeyDescription (it has ' + items.length + ' field(s), ' +
+                    'not 8)');
+  }
+  const integer = function (one) {
+    log.debug("Entering integer().");
+    log.debug("Leaving integer().");
+    return one && one.valueBlock && one.valueBlock.valueDec !== undefined
+      ? Number(one.valueBlock.valueDec) : NaN;
+  };
+  const list = function (one) {
+    log.debug("Entering list().");
+    const out = { purpose: [], allApplications: false, origin: null };
+    const fields = one && one.valueBlock && Array.isArray(one.valueBlock.value)
+      ? one.valueBlock.value : [];
+    fields.forEach(function (field) {
+      if (field.idBlock.tagClass !== 3) {
+        return;
+      }
+      const inner = field.valueBlock && Array.isArray(field.valueBlock.value)
+        ? field.valueBlock.value[0] : null;
+      if (field.idBlock.tagNumber === 1 && inner &&
+          Array.isArray(inner.valueBlock.value)) {
+        out.purpose = inner.valueBlock.value.map(integer);
+      } else if (field.idBlock.tagNumber === 600) {
+        out.allApplications = true;
+      } else if (field.idBlock.tagNumber === 702) {
+        out.origin = integer(inner);
+      }
+    });
+    log.debug("Leaving list().");
+    return out;
+  };
+  if (!(items[4] instanceof asn1js.OctetString)) {
+    log.debug("Leaving androidKeyDescription(). No challenge.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the KeyDescription\'s attestationChallenge is not an ' +
+                    'OCTET STRING');
+  }
+  const out = {
+    attestationVersion: integer(items[0]),
+    attestationSecurityLevel: integer(items[1]),
+    attestationChallenge: Buffer.from(items[4].valueBlock.valueHexView),
+    softwareEnforced: list(items[6]),
+    teeEnforced: list(items[7])
+  };
+  log.debug("Leaving androidKeyDescription(). version " +
+            out.attestationVersion);
+  return out;
+}
+
 module.exports = {
   sessionStateHash: sessionStateHash,
   userAgentFingerprint: userAgentFingerprint,
@@ -5501,6 +6033,22 @@ module.exports = {
   krb5Prf: krb5Prf,
   krb5PrfPlus: krb5PrfPlus,
   krbFxCf2: krbFxCf2,
+  // --- section 10: WebAuthn's COSE signatures and attestation structures
+  //     (#105) ---
+  COSE_SIGNATURE_ALGS: COSE_SIGNATURE_ALGS,
+  coseSignatureAlg: coseSignatureAlg,
+  verifyCoseSignature: verifyCoseSignature,
+  TPM_ALG: TPM_ALG,
+  TPM_GENERATED_VALUE: TPM_GENERATED_VALUE,
+  TPM_ST_ATTEST_CERTIFY: TPM_ST_ATTEST_CERTIFY,
+  tpmHashName: tpmHashName,
+  tpmParsePublic: tpmParsePublic,
+  tpmParseAttest: tpmParseAttest,
+  tpmParseSignature: tpmParseSignature,
+  tpmName: tpmName,
+  fidoAaguidExtension: fidoAaguidExtension,
+  appleAttestationNonce: appleAttestationNonce,
+  androidKeyDescription: androidKeyDescription,
   // --- the algorithm URIs, so that there is one spelling of each in the
   //     process. Taken from the vendored module rather than re-declared.
   DS_NS: xmldsig.DS_NS,
