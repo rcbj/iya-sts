@@ -85,6 +85,8 @@ The gRPC service `SpiffeWorkloadAPI`, on:
   `/tmp/spire-agent/public/api.sock`, so `SPIFFE_ENDPOINT_SOCKET` needs no
   change for a client that was pointed at a SPIRE agent;
 * **TCP** at `spiffe.workloadPort` (8092), for a caller in another container.
+  **In product mode only where the network authenticates source addresses**:
+  see *A caller over TCP* below.
 
 Five of the specification's seven methods are implemented:
 
@@ -136,10 +138,44 @@ attestor that fails refuses every call on the connection with `UNAVAILABLE`. A
 peer in a pid namespace this service cannot see is attested on its kernel uid
 and gid alone.
 
+### A caller over TCP
+
 **A caller over TCP is not attested**, because there is no peer process to ask.
 It is identified by the selectors `transport:`, `endpoint:` and `peer:`. These
 are deliberately spelt unlike any attestor's, so they cannot be mistaken for
 attested facts.
+
+The Workload Endpoint specification allows TCP only where "the underlying
+network allows the Workload Endpoint server to strongly authenticate the
+workload based on source IP address" (section 3), and forbids the other fixes:
+TLS must not be required and a client must not be asked to authenticate. The
+source address is therefore the only identity a TCP caller carries, and whether
+the network guarantees it is something this service cannot see. So, in
+**product mode** (#166):
+
+* **The TCP port is not bound** (`STS-SPIFFE-0120`) unless
+  `spiffe.workloadTcpSourceAuthenticated` is on. Turning it on declares the
+  section 3 condition: a pod network with anti-spoofing, a host-only bridge.
+  **Warning**: every host that reaches the port from an address an entry
+  selects is issued that entry's SVIDs, so an address that can be spoofed,
+  shared behind a NAT or reassigned hands the identity to whoever holds it.
+* **With it on, a wildcard `spiffe.grpcHost`** (`0.0.0.0`, `::`) **is still
+  refused** (`STS-SPIFFE-0121`). Name the address on the network you vouch for.
+* **A realm switched to product** with the port already bound keeps the socket
+  and refuses every call on it (`UNAVAILABLE`).
+* **An entry must select something that identifies its workload**: never only
+  `transport:` and `endpoint:`, which every caller of the port carries, and
+  never nothing (`STS-SPIFFE-0122`). The console, `/admin-api` and the SPIRE
+  Server API (`INVALID_ARGUMENT` per item) all refuse it. For a TCP caller that
+  is `peer:<address>`, matched **exactly**: `peer:10.0.0.0/24` is a selector no
+  caller carries, as in SPIRE. An entry written in development answers nobody
+  once the realm is in product (`STS-SPIFFE-0123`).
+
+`GET /spiffe`, `/admin/spiffe` and `GET /admin-api/spiffe` report the realm's
+state under `workloadAttestation.tcp`: `served (development, not attested)`,
+`not served (product, source not declared authenticated)`, `not served
+(product, wildcard bind address)` or `served (product, source declared
+authenticated)`, with whether the port is listening.
 
 ### The SPIRE Server API
 
@@ -255,8 +291,10 @@ domain that any realm of this service serves, and every JWK in one must carry a
   two Workload API WIT methods.
 * Revocation of an SVID. The answer is a short lifetime and rotation, and the
   bundle's `crl` field stays empty.
-* Workload attestation of a TCP caller; SPIRE's `systemd` attestor, the docker
-  attestor's sigstore checks and Podman sockets, and the Kubernetes broker.
+* Workload attestation of a TCP caller, which has no process to attest (so
+  product mode serves TCP only on a declared network); SPIRE's `systemd`
+  attestor, the docker attestor's sigstore checks and Podman sockets, and the
+  Kubernetes broker.
 
 ## Development and product mode
 
@@ -267,6 +305,8 @@ domain that any realm of this service serves, and every JWK in one must carry a
 | `spiffe.attestWorkloads` off | Ignored (logged once, `STS-CORE-0106`): a caller gets only the entries its selectors match. Turning it off is refused (`STS-CORE-0103`) | Every caller is answered with every entry |
 | A caller on the SPIRE Server API's Unix socket | `local` only when the socket was made 0600 in a directory with no group or other bits (`STS-SPIFFE-0117`) and `SO_PEERCRED` says it runs as the service's own uid (`STS-SPIFFE-0118`; `STS-SPIFFE-0119` without the native module). Anybody else needs an administrator's X509-SVID on the TCP port | `local` on the socket's existence, while `spiffe.trustLocalSocket` is on |
 | Workload API Unix socket without the native module | **Not bound** (`STS-SPIFFE-0113`) | Served unattested, and `GET /spiffe` says so |
+| Workload API over TCP | **Not bound** (`STS-SPIFFE-0120`) unless `spiffe.workloadTcpSourceAuthenticated` declares the network authenticates source addresses, and never on a wildcard `spiffe.grpcHost` (`STS-SPIFFE-0121`) | Served on `spiffe.grpcHost`, the wildcard included |
+| A registration entry selecting only `transport:` and `endpoint:`, or nothing | Refused at every door (`STS-SPIFFE-0122`); one already stored answers nobody (`STS-SPIFFE-0123`) | Accepted, and issued to every caller of that transport |
 | Sample registration entries | None | Three, one of them selecting `unix:uid:1000` |
 | `http_challenge` host | Internal addresses refused, and the resolved address pinned | Any address the allowed patterns admit |
 
@@ -313,7 +353,8 @@ are reconciled, which happens whenever one of the realm's settings changes.
 |---|---|---|---|---|
 | `spiffe.workloadSocketEnabled` | `STS_SPIFFE_WORKLOAD_SOCKET_ENABLED` | `true` | restart | Whether the Workload API is served on a Unix socket. |
 | `spiffe.workloadSocket` | `STS_SPIFFE_WORKLOAD_SOCKET` | `/tmp/spire-agent/public/api.sock` | restart | The Workload API's socket path, SPIRE's own default. |
-| `spiffe.workloadPort` | `STS_SPIFFE_WORKLOAD_PORT` | `8092` | restart | The Workload API over TCP; 0 turns it off. A new realm is seeded with 0. |
+| `spiffe.workloadPort` | `STS_SPIFFE_WORKLOAD_PORT` | `8092` | restart | The Workload API over TCP; 0 turns it off. A new realm is seeded with 0. Not bound in product mode without the next row. |
+| `spiffe.workloadTcpSourceAuthenticated` | `STS_SPIFFE_WORKLOAD_TCP_SOURCE_AUTHENTICATED` | `false` | restart | Product mode only: declares that the network authenticates source addresses, so the Workload API is served over TCP, on a named `spiffe.grpcHost`. **Warning**: whoever holds an address an entry selects is issued its SVIDs. |
 | `spiffe.serverPort` | `STS_SPIFFE_SERVER_PORT` | `8181` | restart | The SPIRE Server API over TCP (mutual TLS); 0 turns it off. A new realm is seeded with 0. |
 | `spiffe.serverSocketEnabled` | `STS_SPIFFE_SERVER_SOCKET_ENABLED` | `false` | restart | Whether the SPIRE Server API is also served on a Unix socket. |
 | `spiffe.serverSocket` | `STS_SPIFFE_SERVER_SOCKET` | `/tmp/spire-server/private/api.sock` | restart | That socket's path, SPIRE's own default. |

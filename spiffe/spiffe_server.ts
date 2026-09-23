@@ -400,7 +400,13 @@ class SpiffeServer {
         'workload attestors turn it into SPIRE\'s selectors, and every call ' +
         'checks the process is still the one attested. A TCP connection has ' +
         'no peer process to ask, so its caller is identified only by the ' +
-        'transport, the endpoint and its address. A peer in a pid namespace ' +
+        'transport, the endpoint and its address — which is why a product ' +
+        'realm does not serve TCP at all unless ' +
+        'spiffe.workloadTcpSourceAuthenticated declares that the network ' +
+        'authenticates source addresses (Workload Endpoint section 3), on a ' +
+        'named address, and refuses a registration entry that selects ' +
+        'nothing but the transport and endpoint (#166); ' +
+        'workloadAttestation.tcp says which. A peer in a pid namespace ' +
         'this service cannot see is attested on its uid and gid alone. In ' +
         'development without the native module the socket is served ' +
         'unattested and workloadAttestation below says so; a product does ' +
@@ -640,10 +646,18 @@ class SpiffeServer {
           'obtains an identity in this trust domain. Product mode does not ' +
           'serve it at all.') +
       ' <strong>A caller over TCP is not attested</strong> — there is no ' +
-      'peer process to ask — so anybody who can reach that port obtains an ' +
-      'identity in this trust domain. It matters more here than anywhere ' +
-      'else in this service, because what comes out is a credential another ' +
-      'service will believe.</p>' +
+      'peer process to ask — so its source address is the only identity it ' +
+      'carries. Here the TCP port is <strong>' +
+      this.esc(String((document.workloadAttestation &&
+                       document.workloadAttestation.tcp &&
+                       document.workloadAttestation.tcp.state) || 'unknown')) +
+      '</strong>: product mode serves it only where ' +
+      '<code>spiffe.workloadTcpSourceAuthenticated</code> declares that the ' +
+      'network authenticates source addresses, on a named address, and ' +
+      'refuses an entry that selects nothing but the transport and ' +
+      'endpoint; development serves it to anybody who can reach it. It ' +
+      'matters more here than anywhere else in this service, because what ' +
+      'comes out is a credential another service will believe.</p>' +
       '<p class="' + (document.authentication.enforced ? 'note' : 'warn') +
       '">' +
       (document.authentication.enforced
@@ -1032,6 +1046,35 @@ class SpiffeServer {
                        authentication: 'Nothing is listening here.' });
         continue;
       }
+      // THE WORKLOAD API'S TCP PORT IS SERVED ONLY WHERE THE NETWORK
+      // AUTHENTICATES THE SOURCE ADDRESS (#166): in product, not without
+      // `spiffe.workloadTcpSourceAuthenticated`, and never on a wildcard
+      // address. `spiffe_auth.ts`'s `workloadTcpPosture()` decides, IN THE
+      // REALM, because the mode and both settings are the realm's. Recorded
+      // and reported like 0113, never thrown: the Unix socket beside it and
+      // the SPIRE Server API are unaffected.
+      if (surface === 'workload' && !entry.socketPath) {
+        const posture = this.inRealm(realmId, function () {
+          return auth.workloadTcpPosture();
+        });
+        if (!posture.served) {
+          // STS-SPIFFE-0120 (not declared) or STS-SPIFFE-0121 (a wildcard).
+          log.error(errorCodes.tag(posture.errorCode) + 'spiffe: the "' +
+                    (realmId || 'default') + '" realm\'s Workload API TCP ' +
+                    'port (' + entry.address + ') was NOT bound: ' +
+                    posture.why + '.');
+          // The code rides as errorCodes' non-enumerable mark: this row is
+          // drawn on GET /spiffe and returned by /admin-api, and a code is
+          // recorded, never sent.
+          results.push(errorCodes.mark({ address: entry.address,
+                         listening: false, error: posture.why,
+                         port: 0, tls: false, socket: false,
+                         realm: realmId || '',
+                         authentication: 'Nothing is listening here.' },
+                       posture.errorCode));
+          continue;
+        }
+      }
       // The SPIRE Server API's socket is PRIVATE — it is the trusted `local`
       // entity — and the Workload API's is not. See spiffe_grpc.ts.
       if (entry.socketPath) {
@@ -1106,8 +1149,19 @@ class SpiffeServer {
                 ? 'None — authentication is off, so this port is plain ' +
                   'gRPC and every method is open to everybody.'
                 : 'None, and there must be none: the Workload Endpoint ' +
-                  'specification forbids requiring one. The deployment ' +
-                  'secures this port by other means or does not expose it.'));
+                  'specification forbids requiring one. ' +
+                  (this.inRealm(realmId, function () {
+                    return auth.workloadTcpPosture().declared;
+                  }) && !this.inRealm(realmId, function () {
+                    return self.deps.mode.servesUnattestedWorkloadTcp();
+                  })
+                    ? 'The network is DECLARED to authenticate source ' +
+                      'addresses (spiffe.workloadTcpSourceAuthenticated), ' +
+                      'so a caller is answered with the entries its ' +
+                      'peer: address selects.'
+                    : 'Nothing attests a caller here (development): the ' +
+                      'deployment secures this port by other means or does ' +
+                      'not expose it.')));
       bound.realm = realmId || '';
       results.push(bound);
     }
@@ -1373,12 +1427,30 @@ class SpiffeServer {
   // What GET /spiffe, the console and /admin-api draw about workload
   // attestation.
   workloadAttestationState() {
-    const { log, peer, mode } = this.deps;
+    const { log, peer, mode, auth, realms } = this.deps;
     log.debug('Entering SpiffeServer.workloadAttestationState().');
     const kernel = peer.state();
     const attestors = this.workloadAttestation().state();
+    // THE TCP PORT (#166), in the realm asking: what the posture says NOW,
+    // and whether this realm's port is actually listening — two facts, since
+    // a realm switched to product after its port was bound keeps the socket
+    // and refuses every call on it.
+    // Without its `errorCode`: this is drawn and returned, and a code is
+    // recorded, never sent.
+    const posture: Record<string, any> =
+      Object.assign({}, auth.workloadTcpPosture());
+    delete posture.errorCode;
+    const realmId = realms.current().id === realms.DEFAULT_ID
+      ? '' : realms.current().id;
+    const held = listeners.get(realmId);
+    const tcpBinding = held ? held.workload.filter(function (b) {
+      return !b.socket;
+    })[0] : null;
+    posture.listening = !!(tcpBinding && tcpBinding.listening);
+    posture.attested = false;
     log.debug('Leaving SpiffeServer.workloadAttestationState().');
     return {
+      tcp: posture,
       nativeModule: kernel.nativeModule,
       problem: kernel.problem,
       unattestedSocketServed: !kernel.nativeModule &&

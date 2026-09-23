@@ -342,6 +342,15 @@ services:
       # two places: `spiffe_server.js` recognises the wildcard and names
       # the realm holding it, and this line stops it happening.
       - STS_SPIFFE_GRPC_HOST=${STS_SPIFFE_GRPC_HOST:-172.30.0.10}
+      # THE STACK'S BRIDGE IS DECLARED TO AUTHENTICATE SOURCE ADDRESSES (#166).
+      # A product node serves the Workload API over TCP only on such a
+      # network (SPIFFE Workload Endpoint section 3), and this one is a
+      # network the launcher created with only its own containers on it, the
+      # service bound to its own address above rather than the wildcard. So
+      # the product modes run sts_spiffe_grpc.js's declared path;
+      # STS_SPIFFE_WORKLOAD_TCP_SOURCE_AUTHENTICATED=false runs the refused
+      # one instead. Development ignores it.
+      - STS_SPIFFE_WORKLOAD_TCP_SOURCE_AUTHENTICATED=${STS_SPIFFE_WORKLOAD_TCP_SOURCE_AUTHENTICATED:-true}
       - STS_EXTRA_IPS=${STS_EXTRA_IPS:-172.30.0.11/24 172.30.0.12/24 172.30.0.13/24}
       # THE BARE FORM IS LOAD-BEARING and the obvious alternative breaks the
       # container. With no `=`, compose passes this through ONLY if the shell

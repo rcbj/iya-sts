@@ -24527,7 +24527,19 @@ class AdminConsole {
           this.esc(state.problem)
         : '<strong>The native module is not loaded, so the Unix socket is ' +
           'NOT SERVED</strong> (product): ' + this.esc(state.problem));
+    // THE TCP PORT (#166): what the realm's posture is and whether its port
+    // is listening. A product realm serves it only where the network is
+    // declared to authenticate source addresses, on a named address.
+    const tcp = state.tcp || null;
+    const tcpLine = tcp
+      ? ' The Workload API TCP port is <strong>' + this.esc(tcp.state) +
+        '</strong>' + (tcp.port
+          ? ' (' + this.esc(tcp.host + ':' + tcp.port) + ', ' +
+            (tcp.listening ? 'listening' : 'not listening') + ')'
+          : '') + ': ' + this.esc(tcp.why) + '.'
+      : '';
     const out = '<h2>Workload attestation</h2>' + this.note(kernel +
+      tcpLine +
       ' A TCP caller is never attested. Which attestors run is ' +
       '<code>spiffe.workloadAttestors</code>' +
       (state.unknownConfigured.length

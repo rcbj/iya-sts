@@ -11309,6 +11309,33 @@ const SETTINGS = [
                  'cannot share the socket. 0 turns it off and leaves the ' +
                  'Unix socket alone.' },
 
+  // #166 (2026-09-23): the Workload Endpoint specification's section 3
+  // condition, which only the operator can know. See `mode.js`'s
+  // `servesUnattestedWorkloadTcp()`.
+  { key: 'spiffe.workloadTcpSourceAuthenticated', group: 'SPIFFE',
+    label: 'Workload API TCP: the network authenticates source addresses',
+    env: 'STS_SPIFFE_WORKLOAD_TCP_SOURCE_AUTHENTICATED', type: 'bool',
+    dflt: false, runtime: false, realmRuntime: true,
+    restartReason: 'it decides whether the Workload API TCP port is bound, ' +
+                   'which happens when the process starts; a REALM\'s ' +
+                   'decision is taken when its SPIFFE is turned on',
+    description: 'In PRODUCT mode the Workload API is not served over TCP ' +
+                 'at all unless this is on. Turning it on DECLARES what the ' +
+                 'SPIFFE Workload Endpoint specification (section 3) makes ' +
+                 'the condition for TCP: that the network lets this server ' +
+                 'strongly authenticate a workload by its source IP address ' +
+                 '— a pod network with anti-spoofing, a host-only bridge — ' +
+                 'because a TCP caller has no peer process to attest and its ' +
+                 'address is the only identity it carries. This service ' +
+                 'cannot check the claim. WARNING: every host that can reach ' +
+                 'the port from an address a registration entry selects ' +
+                 '(peer:<address>) is issued that entry\'s X509-SVIDs and ' +
+                 'JWT-SVIDs, so an address that can be spoofed, shared ' +
+                 'behind a NAT or reassigned hands the identity to whoever ' +
+                 'holds it. Product also refuses a wildcard spiffe.grpcHost ' +
+                 'with this on: name the address whose source authentication ' +
+                 'you vouch for. Development serves TCP whatever this says.' },
+
   { key: 'spiffe.serverPort', group: 'SPIFFE', label: 'SPIRE Server API TCP ' +
                                                       'port',
     env: 'STS_SPIFFE_SERVER_PORT', type: 'port', dflt: 8181, runtime: false,

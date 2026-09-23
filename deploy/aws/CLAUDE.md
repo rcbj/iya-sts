@@ -428,6 +428,17 @@ role cannot create.
 **No PROXY protocol on these target groups**, unlike every other port:
 SPIFFE's gRPC listeners do not read the header, and a header in front of gRPC
 or TLS breaks the connection. The node sees the load balancer as the caller.
+
+**THE WORKLOAD API PORT IS NOT SERVED HERE, AND THAT IS #166 WORKING.** The
+nodes run in product mode, where the Workload API is bound over TCP only when
+`spiffe.workloadTcpSourceAuthenticated` declares that the network
+authenticates source addresses (SPIFFE Workload Endpoint section 3), and even
+then never on a wildcard `spiffe.grpcHost` — and a Fargate realm binds
+`0.0.0.0`, behind a load balancer whose address is every caller's `peer:`.
+Neither condition can be met honestly on this network, so the workload
+target group stays unhealthy and `sts_spiffe_grpc.js` asserts the refusal
+instead (`GET /spiffe`'s `workloadAttestation.tcp` says `not served`). The
+SPIRE Server API port, which is mutual TLS, is unaffected.
 **Who may connect is copied from the environment's 443 rules**, so these
 ports are exactly as open as the main port; a new `allowed_ip` on the
 environment reaches them at this stack's next apply. Target groups are named

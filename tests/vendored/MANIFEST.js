@@ -642,6 +642,10 @@ const JOBS = [
   // SIGNED IN WITH by MIT `kinit -k -t` and by `krb5_wire.js` using the
   // keytab's key — against the KDC at the published address, in both modes.
   { file: 'sts_kerberos_keytab.js',      browser: false, local: true },
+  // Both gRPC surfaces over the network. Since #166 (2026-09-23) also the
+  // Workload API's TCP port in product: refused where the network is not
+  // declared to authenticate source addresses, and entries selecting this
+  // job's own peer: address where it is.
   { file: 'sts_spiffe_grpc.js',          browser: false, local: true },
   { file: 'sts_oid4vp_wallet.js',        browser: false, local: true },
   { file: 'sts_federation_realms.js',    browser: false, local: true },
