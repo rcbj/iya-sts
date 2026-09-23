@@ -1585,8 +1585,10 @@ function encryptElement(xml, certPem, opts) {
   // provider turned into an assertion sent IN CLEAR (STS-SAML-0012).
   const recipient = new nodeCrypto.X509Certificate(certPem).publicKey;
   const ec = recipient.asymmetricKeyType === 'ec';
-  const key = forge.random.getBytesSync(cipher.keyBytes);
-  const iv = forge.random.getBytesSync(cipher.ivBytes);
+  // Node's generator in forge's binary-string shape: forge.random was a
+  // second DRBG, and fifty times slower (#65, section 13).
+  const key = randomBytes(cipher.keyBytes).toString('binary');
+  const iv = randomBytes(cipher.ivBytes).toString('binary');
   const c = forge.cipher.createCipher(cipher.mode, key);
   // The tag length matters only to GCM; forge ignores it for CBC, and passing
   // it unconditionally keeps this one call rather than two.
@@ -6821,7 +6823,119 @@ function dkimVerify(raw, publicKeyPem) {
   return { ok: ok, why: ok ? '' : 'the signature does not verify' };
 }
 
+// ===========================================================================
+// SECTION 13 — RANDOM VALUES (#65, 2026-09-23).
+//
+// **THE GENERATOR IS NODE'S AND THIS SECTION ADDS NONE.** `crypto.randomBytes`,
+// `randomInt`, `randomUUID` and `getRandomValues` are all OpenSSL's DRBG,
+// seeded from the operating system on every platform node runs on (getrandom
+// on Linux, BCryptGenRandom on Windows, the kernel source on macOS), and
+// under OpenSSL's FIPS provider they become the FIPS DRBG with no change
+// here. That is the "platform-independent secure random number generator" the
+// ticket asked for, and it was already in use at almost every site.
+//
+// **THE COMMUNITY MODULES WERE REVIEWED AND NONE IS ADOPTED.** The good ones —
+// nanoid's `customAlphabet`, crypto-random-string, otp-generator — end at
+// exactly these calls and rejection-sample exactly as `randomString()` does;
+// they would be a dependency on the path of every secret for ten lines, and
+// both of the first two are ESM-only. Several popular ones are worse than
+// nothing: randomstring falls back to `Math.random()` when its source throws,
+// rand-token takes `x % chars.length`, random-js's default engine IS
+// `Math.random()`. `randomString()` is nanoid's design, rejection sampling,
+// and its test (a chi-square over many draws) is nanoid's test.
+//
+// **WHAT THE SECTION IS FOR is the three mistakes it makes impossible,** each
+// of which this tree had on the day it was written:
+//
+//   1. **A MODULO OVER AN ALPHABET.** `ALPHABET[byte % ALPHABET.length]` is
+//      biased whenever the length does not divide 256: GNAP's 31-character
+//      user-code alphabet drew its first eight characters 9/256 of the time
+//      and the rest 8/256 — a code a person types, which is the one kind of
+//      value short enough for the bias to matter. SPIFFE's Azure challenge
+//      nonce did the same over 62 characters (harmless at 190 bits, the same
+//      bug). `randomString()` draws each index with `randomInt()`, which
+//      rejection-samples inside node, so no alphabet size can reintroduce
+//      it — `backup_codes.ts` argued this per module; it is now said once.
+//   2. **A SECOND GENERATOR.** `forge.random` is a Fortuna DRBG in
+//      JavaScript, seeded from node's but with its own state on the heap,
+//      outside FIPS mode, and fifty times slower (about 91 µs for 32 bytes
+//      against 1.7 µs). It drew the content key and IV of every encrypted
+//      SAML assertion and the ID of every SAML and WS-Federation document.
+//   3. **A SHORT SECRET.** `randomToken()` refuses fewer than 128 bits, so a
+//      bearer value cannot be made guessable by a length typed in a hurry.
+//
+// `tests/random_values.js` holds all three: the distribution, and a reading of
+// the service's source that fails on `Math.random`, `forge.random` or a
+// random byte taken modulo an alphabet's length.
+//
+// No Entering/Leaving pair on the four below: they are called several times
+// in a single request (every ID, every nonce, every code), and a pair per
+// draw would drown the log — the hot-path exception of the root CLAUDE.md's
+// style rules. `randomString()`'s refusal is the one exit worth a line.
+// ===========================================================================
+
+// The fewest bits `randomToken()` will make. NIST SP 800-63B-4 asks 64 of a
+// look-up secret and RFC 6749 section 10.10 128 of a token an attacker could
+// guess at; this section takes the larger for everything it makes.
+const RANDOM_TOKEN_MIN_BITS = 128;
+
+// `n` bytes from node's CSPRNG. The one spelling, so the source test has one
+// thing to allow.
+function randomBytes(n) {
+  return nodeCrypto.randomBytes(n);
+}
+
+// An integer in [min, max), uniform — node's `randomInt`, rejection-sampled.
+function randomInt(min, max) {
+  return nodeCrypto.randomInt(min, max);
+}
+
+// A random v4 UUID (RFC 9562 section 5.4).
+function randomUuid() {
+  return nodeCrypto.randomUUID();
+}
+
+// At least `bits` of randomness (rounded up to whole bytes), base64url.
+function randomToken(bits) {
+  const want = bits === undefined ? 256 : Number(bits);
+  if (!Number.isInteger(want) || want < RANDOM_TOKEN_MIN_BITS) {
+    // error-code: none — a programming error; every caller passes a constant
+    throw new Error('crypto: randomToken() makes at least ' +
+                    RANDOM_TOKEN_MIN_BITS + ' bits, not ' + bits);
+  }
+  return nodeCrypto.randomBytes(Math.ceil(want / 8)).toString('base64url');
+}
+
+// `length` characters, each drawn UNIFORMLY from `alphabet` (reason 1 above).
+// An alphabet with a repeated character is refused, because a repeat is a
+// bias of its own that no sampling can undo — the character is simply twice
+// as likely.
+function randomString(alphabet, length) {
+  const chars = Array.from(String(alphabet || ''));
+  const n = Number(length);
+  if (chars.length < 2 || new Set(chars).size !== chars.length ||
+      !Number.isInteger(n) || n < 0) {
+    log.debug('Leaving randomString(). Refused: an alphabet of ' +
+              chars.length + ', length ' + length + '.');
+    // error-code: none — a programming error; every alphabet is a constant
+    throw new Error('crypto: randomString() needs two or more distinct ' +
+                    'characters and a whole length');
+  }
+  let out = '';
+  for (let i = 0; i < n; i++) {
+    out += chars[nodeCrypto.randomInt(0, chars.length)];
+  }
+  return out;
+}
+
 module.exports = {
+  // --- section 13: random values (#65) ---
+  RANDOM_TOKEN_MIN_BITS: RANDOM_TOKEN_MIN_BITS,
+  randomBytes: randomBytes,
+  randomInt: randomInt,
+  randomUuid: randomUuid,
+  randomToken: randomToken,
+  randomString: randomString,
   // --- section 12: DKIM (#63) ---
   DKIM_ALGORITHMS: DKIM_ALGORITHMS,
   dkimSign: dkimSign,

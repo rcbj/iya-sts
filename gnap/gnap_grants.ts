@@ -81,6 +81,8 @@
 import nodeCrypto = require('crypto');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+// The one random-value section (#65): user codes, drawn uniformly.
+import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import mode = require('../common/mode');
@@ -1228,11 +1230,9 @@ class GnapGrants {
                                      Number(config.value(
                                          'gnap.userCodeLength')) || 8));
     for (let attempt = 0; attempt < 20; attempt++) {
-      let code = '';
-      const bytes = nodeCrypto.randomBytes(length);
-      for (let i = 0; i < length; i++) {
-        code += USER_CODE_ALPHABET[bytes[i] % USER_CODE_ALPHABET.length];
-      }
+      // UNIFORM over the alphabet (#65): a byte modulo 31 drew the first
+      // eight characters 9/256 of the time and the rest 8/256.
+      const code = stsCrypto.randomString(USER_CODE_ALPHABET, length);
       if (!store.userCodeTaken(code)) {
         log.debug("Leaving GnapGrants.newUserCode().");
         return code;

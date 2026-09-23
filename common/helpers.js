@@ -3364,10 +3364,13 @@ function xmlEscape(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
+// An XML ID: `_` and 128 random bits in hex — the NCName an `ID` attribute
+// needs cannot start with a digit. Node's generator since #65; it was
+// forge.random, a second DRBG (common/crypto.js, section 13).
 function genId() {
   log.debug("Entering genId().");
   log.debug("Leaving genId().");
-  return '_' + forge.util.bytesToHex(forge.random.getBytesSync(16));
+  return '_' + stsCrypto.randomBytes(16).toString('hex');
 }
 
 // --- reading XML somebody else wrote ---------------------------------------

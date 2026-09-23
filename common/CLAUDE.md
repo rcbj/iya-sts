@@ -356,6 +356,33 @@ is there for `tests/crypto_module.js`, which is the only independent reading of
 XMLDSIG in this repository — the thing that makes "our signature verifies"
 mean something. Removing it saves a package and costs that.
 
+### Random values: node's generator, drawn uniformly (#65, 2026-09-23)
+
+**Section 13 adds no generator.** Node's `crypto` is OpenSSL's DRBG seeded
+from the operating system on every platform, and the FIPS DRBG under the FIPS
+provider; that was already the answer to "a platform-independent secure random
+number generator". What the section adds is `randomBytes`, `randomInt`,
+`randomUuid`, `randomToken(bits)` (refuses fewer than 128) and
+`randomString(alphabet, length)` (a `randomInt` per character, and an
+alphabet with a repeated character refused), so that three mistakes cannot be
+written again. Each was in the tree that day:
+
+* **A random byte modulo an alphabet's length** — biased unless the length
+  divides 256. GNAP's 31-character user code drew its first eight characters
+  9/256 of the time; SPIFFE's Azure challenge nonce did the same over 62.
+* **`forge.random`**, a second DRBG in JavaScript with its state on the heap,
+  outside FIPS mode and fifty times slower — the content key and IV of every
+  encrypted SAML assertion, and `helpers.genId()`.
+* **A short bearer value**, which `randomToken()` refuses.
+
+**No community module was adopted** — the header of section 13 records the
+review: nanoid and crypto-random-string end at these same calls, and
+randomstring, rand-token and random-js each have a `Math.random` path or a
+modulo. The other 190-odd call sites still call node's `crypto` directly and
+are correct; they move to section 13 when their files are next touched, not
+in a sweep. `tests/random_values.js` holds the distribution and reads the
+source for all three shapes.
+
 ## `applications.js` GREW A FOURTH ATTRIBUTE ROLE, AND THE NAME IS THE ARGUMENT
 
 `declarationAttributes()` walks the `PROTOCOLS` table for an `identifier`, a
