@@ -13,16 +13,15 @@
 // configured sources and `http_challenge` (#40) — each argue their own case;
 // the root CLAUDE.md's non-goal index lists them):
 //
-//   * `oauthJwksUri` on an application entry is RECORDED AND NEVER FETCHED.
-//     `applications.js`'s schema row says why: following it would mean this
-//     service making an outbound request to a URL somebody registered in order
-//     to verify a credential, "which is a server-side request forgery with a
-//     specification citation attached".
-//   * WS-Federation's `wreqptr` gets the same refusal in `wsfed.ts`, and
-//     `client_auth.js` says holding that position in one file and not the other
-//     would be no position at all.
+//   * `oauthJwksUri` on an application entry was RECORDED AND NEVER FETCHED
+//     until #120 (2026-09-22). It is fetched now, through this module's
+//     `fetchPublished()` — the policy above is what answers the SSRF argument
+//     that refused it — by `oauth-oidc/client_jwks.js`.
+//   * WS-Federation's `wreqptr` gets the refusal in `wsfed.ts`.
 //
-// BOTH OF THOSE STAND, UNCHANGED, AND THIS FILE DOES NOT CONTRADICT THEM. The
+// THE SECOND STANDS, UNCHANGED, AND THIS FILE DOES NOT CONTRADICT IT. (The
+// first fell to a different argument: a `jwks_uri` is REGISTERED once, and
+// RFC 7591 expects it honoured, where `wreqptr` arrives on each request.) The
 // distinction is not "this feature needs it" — that is the argument every
 // SSRF ever shipped was made with. It is:
 //

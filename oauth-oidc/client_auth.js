@@ -56,17 +56,16 @@
 // have either, both or neither.
 //
 // ---------------------------------------------------------------------------
-// `jwks_uri` IS DELIBERATELY NOT DEREFERENCED, and it is the same refusal
-// WS-Federation's `wreqptr` gets.
-//
-// RFC 7591 lets a client register its keys by value (`jwks`) or by reference
-// (`jwks_uri`). Following the reference means this service making an outbound
-// HTTP request to a URL somebody registered, which is a server-side request
-// forgery with a specification citation attached — the identical shape
-// `wsfed.js` refuses, and refusing it there while doing it here would be a
-// position held in one file and not the other. A client that registers
-// `jwks_uri` is told to register `jwks` instead, by name, at the moment it
-// authenticates rather than as a silent failure to verify.
+// ~~`jwks_uri` IS DELIBERATELY NOT DEREFERENCED, and it is the same refusal
+// WS-Federation's `wreqptr` gets.~~ — REVERSED BY #120 (2026-09-22, rcbj's
+// decision). RFC 7591 lets a client register its keys by value (`jwks`) or
+// by reference (`jwks_uri`), and OpenID Connect Registration expects the
+// reference to be honoured. The SSRF argument that refused it is answered by
+// the outbound policy it is fetched under (`federation_http.ts`: https, no
+// redirect, a size cap, internal addresses refused in product mode) rather
+// than by a refusal, and what `wreqptr` still gets is different: that URL is
+// chosen by the REQUEST, this one was REGISTERED. `client_jwks.js` holds the
+// fetch and its cache.
 //
 // ---------------------------------------------------------------------------
 // It is a LIBRARY (rule 3): it registers no route and requires `common/`
@@ -401,19 +400,26 @@ async function verifyAssertion(opts) {
       return { ok: false, errorCode: fromChain.errorCode,
                description: fromChain.error };
     }
+    // A REGISTERED `jwks_uri`, FETCHED (#120) — only where nothing was
+    // registered by value, under `federation_http.ts`'s outbound policy, and
+    // cached by `client_jwks.js`; the header's `kid` fetches again when the
+    // cached set lacks it (a client that rotated its keys).
+    let fetchedWhy = '';
+    if (!opts.jwks && opts.jwksUri) {
+      const fetched = await assertionGrant.ensurePartyKeys(
+        { oauthJwksUri: opts.jwksUri }, 'application', header && header.kid);
+      fetchedWhy = (fetched && fetched.why) || '';
+      assertionGrant.keysForParty({ oauthJwksUri: opts.jwksUri },
+                                  'application')
+        .keys.forEach(function (one) { found.push(one); });
+    }
     if (!found.length && opts.jwksUri) {
-      log.debug("Leaving verifyAssertion(). Only a jwks_uri is registered.");
+      log.debug("Leaving verifyAssertion(). The jwks_uri gave no key.");
       return { ok: false, errorCode: 'STS-OAUTH-0005', description: 'this ' +
-                                       'client registered jwks_uri and no ' +
-                                       'jwks. This service will NOT fetch a ' +
-                                       'URL somebody registered in order to ' +
-                                       'verify a credential — that is a ' +
-                                       'server-side request forgery with a ' +
-                                       'specification citation attached, and ' +
-                                       'it is the same refusal ' +
-                                       'WS-Federation\'s wreqptr gets here. ' +
-                                       'Register the keys by value, as ' +
-                                       '`jwks`.' };
+                                       'client registered a jwks_uri and its ' +
+                                       'keys could not be fetched' +
+                                       (fetchedWhy ? ': ' + fetchedWhy : '') +
+                                       '.' };
     }
     if (!found.length && readingProblem) {
       log.debug("Leaving verifyAssertion().");

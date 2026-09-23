@@ -1314,13 +1314,13 @@ const SCHEMA = {
             'it, which is the whole point of preferring it to a shared ' +
             'secret.' },
     { name: 'oauthJwksUri', kind: 'single', from: 'POST /oauth2/register',
-      what: 'RFC 7591 `jwks_uri`. RECORDED AND NEVER FETCHED: following it ' +
-            'would mean this service making an outbound request to a URL ' +
-            'somebody registered in order to verify a credential, which is a ' +
-            'server-side request forgery with a specification citation ' +
-            'attached — the same refusal WS-Federation\'s wreqptr gets. A ' +
-            'client that registers only this is told to register `jwks` ' +
-            'instead, by name, when it tries to authenticate.' },
+      what: 'RFC 7591 `jwks_uri`, https. FETCHED since #120, when a key ' +
+            'is needed, under federation/federation_http.ts\'s outbound ' +
+            'policy (https, no redirect, a size cap, internal addresses ' +
+            'refused in product mode), cached for ' +
+            'oauth2.clientJwksCacheS and fetched again for an unknown kid at ' +
+            'most every oauth2.clientJwksRefetchS. Never beside `oauthJwks`: ' +
+            'RFC 7591 section 2 allows one or the other.' },
     // -------------------------------------------------------------------
     // RFC 9701 (2026-09-13). THE THREE CLIENT METADATA MEMBERS OF SECTION 6,
     // each an attribute of its own, and they are READ: `/oauth2/introspect`
@@ -1365,9 +1365,9 @@ const SCHEMA = {
             'EMPTY MEANS NOT ENCRYPTED. One of the asymmetric algorithms ' +
             '(RSA-OAEP, RSA-OAEP-256, ECDH-ES and its key-wrap variants), ' +
             'and ' +
-            'the key is taken from this entry\'s `oauthJwks` — a `jwks_uri` ' +
-            'is never fetched. The symmetric families are refused: they are ' +
-            'for a document encrypted TO this service.' },
+            'the key is taken from this entry\'s `oauthJwks`, or the set its ' +
+            '`oauthJwksUri` answers (#120). The symmetric families are ' +
+            'refused: they are for a document encrypted TO this service.' },
     { name: 'oauthIntrospectionEncryptedResponseEnc', kind: 'single',
       from: 'POST /oauth2/register, the console, the management API, or by ' +
             'hand',
@@ -2730,11 +2730,10 @@ const SCHEMA = {
             'delivery endpoint. It is a DECLARATION and nothing reads it: a ' +
             'push goes to the endpoint on the STREAM, which the receiver ' +
             'named when it created one, and this service will not take a URL ' +
-            'to dial from an application entry. That is the same position ' +
-            'federation/federation_http.ts takes about oauthJwksUri, one ' +
-            'family along: a URL recorded here is a note about what a ' +
-            'receiver is, and a URL on a stream is a URL this service opens ' +
-            'a connection to. The two are deliberately not the same store.' },
+            'to dial from an application entry: a URL recorded here is a ' +
+            'note about what a receiver is, and a URL on a stream is a URL ' +
+            'this service opens a connection to. The two are deliberately ' +
+            'not the same store.' },
     // ---------------------------------------------------------------------
     // THE ONE ATTRIBUTE ON THIS ENTRY THAT LIMITS SHARED SIGNALS (2026-09-12).
     //
@@ -3836,6 +3835,41 @@ function homePageOf(source) {
   }
   log.debug("Leaving homePageOf().");
   return text;
+}
+
+// ---------------------------------------------------------------------------
+// OPENID CONNECT CORE SECTION 4, `initiate_login_uri` (#120): where a third
+// party — the user portal — may start a sign-in AT the relying party. It is a
+// registration member (OpenID Connect Registration section 2) and lives in
+// `appRegistrationJson` only; `oidcRegistrationProblem()` held it to https
+// when it was written, and it is held to that again here because
+// `ldapmodify` reaches the attribute unchecked. '' where there is none.
+// ---------------------------------------------------------------------------
+function initiateLoginUriOf(source) {
+  log.debug("Entering initiateLoginUriOf().");
+  const holder = source || {};
+  const fields = holder.fields || holder;
+  let document = null;
+  try {
+    document = fields.appRegistrationJson
+      ? JSON.parse(String(fields.appRegistrationJson)) : null;
+  } catch (e) {
+    log.debug("Caught in initiateLoginUriOf(): " + ((e && e.message) || e));
+    // registrationOf() reports an unparseable document; here it names none.
+    document = null;
+  }
+  const text = String((document && document.initiate_login_uri) || '').trim();
+  let usable = '';
+  try {
+    const parsed = new URL(text);
+    usable = parsed.protocol === 'https:' && !parsed.hash ? text : '';
+  } catch (e) {
+    log.debug("Caught in initiateLoginUriOf(): " + ((e && e.message) || e));
+    // Not a URL: no sign-in link.
+    usable = '';
+  }
+  log.debug("Leaving initiateLoginUriOf().");
+  return usable;
 }
 
 // ---------------------------------------------------------------------------
@@ -4994,6 +5028,214 @@ function requestObjectAttributeProblem(attribute, value, fields) {
     ? problem.description.replace(problem.member,
                                   REQUEST_OBJECT_ATTRIBUTES[problem.member])
     : '';
+}
+
+// ---------------------------------------------------------------------------
+// OPENID CONNECT DYNAMIC CLIENT REGISTRATION SECTION 2, AND RFC 7591 SECTION 2
+// — WHAT THE REST OF A REGISTRATION MAY SAY (#120, 2026-09-22).
+//
+// The members nothing checked until this date, each refused
+// `invalid_client_metadata` (or `invalid_redirect_uri`) at the registration
+// and RFC 7592 update that names it, in every mode, because a registration is
+// a document the client keeps and acts on:
+//
+//   * `application_type` — `web` (the default) or `native`. A native client's
+//     redirect URIs are a private-use scheme or http on a loopback address; a
+//     web client using the implicit grant registers https only, and never
+//     localhost. (`STS-REG-0181`, `0182`)
+//   * `grant_types` against `response_types` — RFC 7591 section 2.1's table: a
+//     response type with `code` needs `authorization_code`, one with `token`
+//     or `id_token` needs `implicit`, and each of those two grants needs a
+//     response type that uses it. (`0183`)
+//   * `redirect_uris` — required of a client that uses either redirect-based
+//     grant. (`0184`)
+//   * `id_token_signed_response_alg` and `userinfo_signed_response_alg` —
+//     algorithms this service signs with (an ID Token is never `none`).
+//     They failed at issuance as a 500 until this. (`0185`)
+//   * `jwks` and `jwks_uri` — never both (RFC 7591 section 2), and a
+//     `jwks_uri` is https: it is FETCHED since #120
+//     (`oauth-oidc/client_jwks.js`).
+//     (`0186`)
+//   * `default_max_age` (a non-negative integer), `require_auth_time` (a
+//     boolean) and `default_acr_values` (acr values). (`0187`)
+//   * `initiate_login_uri` — https (Core section 4). (`0188`)
+//
+// `grantsAndResponseTypesOf()` is the same reading with RFC 7591's defaults
+// applied — `authorization_code` and `code` — which the registration response
+// returns and the endpoints enforce.
+// ---------------------------------------------------------------------------
+const APPLICATION_TYPES = ['web', 'native'];
+const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+const ACR_VALUE_SHAPE = /^[\x21\x23-\x5B\x5D-\x7E]{1,256}$/;
+
+// The registration's grant and response types with RFC 7591 section 2's
+// defaults applied, each response type in a fixed word order. `code` is the
+// response_types default only where the grants include one that redirects:
+// a client registering `client_credentials` alone and omitting
+// response_types would otherwise be refused as inconsistent (section 2.1)
+// for a member it never sent, and every back-channel client does exactly
+// that. It gets no response type, which is what it can use.
+function grantsAndResponseTypesOf(values) {
+  log.debug("Entering grantsAndResponseTypesOf().");
+  const asked = values || {};
+  const grants = Array.isArray(asked.grant_types) && asked.grant_types.length
+    ? asked.grant_types.map(String) : ['authorization_code'];
+  const redirects = grants.indexOf('authorization_code') >= 0 ||
+                    grants.indexOf('implicit') >= 0;
+  const types = (Array.isArray(asked.response_types)
+    ? asked.response_types.map(String) : (redirects ? ['code'] : []))
+    .map(function (one) {
+      return one.split(/\s+/).filter(Boolean).sort().join(' ');
+    });
+  log.debug("Leaving grantsAndResponseTypesOf().");
+  return { grant_types: grants, response_types: types };
+}
+
+function oidcRegistrationProblem(values) {
+  log.debug("Entering oidcRegistrationProblem().");
+  const asked = values || {};
+  const refusal = function (code, member, description, error) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: code, error: error || 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  const type = asked.application_type === undefined ? 'web'
+    : asked.application_type;
+  if (APPLICATION_TYPES.indexOf(type) < 0) {
+    log.debug("Leaving oidcRegistrationProblem(). application_type.");
+    return refusal('STS-REG-0181', 'application_type', JSON.stringify(type) +
+      ' is not web or native (OpenID Connect Registration section 2).');
+  }
+  const lists = grantsAndResponseTypesOf(asked);
+  const uris = Array.isArray(asked.redirect_uris) ? asked.redirect_uris : [];
+  const implicit = lists.grant_types.indexOf('implicit') >= 0;
+  for (let i = 0; i < uris.length; i++) {
+    let url = null;
+    try {
+      url = new URL(String(uris[i]));
+    } catch (e) {
+      log.debug("Caught in oidcRegistrationProblem(): " +
+                ((e && e.message) || e));
+      // Refused for its shape by registrationUriProblem(), asked first.
+      url = null;
+    }
+    if (!url) {
+      continue;
+    }
+    const loopback = LOOPBACK_HOSTS.indexOf(url.hostname) >= 0;
+    if (type === 'native' && (url.protocol === 'https:' ||
+        (url.protocol === 'http:' && !loopback))) {
+      log.debug("Leaving oidcRegistrationProblem(). A native redirect URI.");
+      return refusal('STS-REG-0182', 'redirect_uris', '"' + uris[i] + '" ' +
+        'is not a private-use scheme or an http loopback address, which is ' +
+        'what a native client registers (OpenID Connect Registration ' +
+        'section 2).', 'invalid_redirect_uri');
+    }
+    if (type === 'web' && implicit &&
+        (url.protocol !== 'https:' || url.hostname === 'localhost')) {
+      log.debug("Leaving oidcRegistrationProblem(). An implicit web URI.");
+      return refusal('STS-REG-0182', 'redirect_uris', '"' + uris[i] + '" ' +
+        'is not an https URL off localhost, which a web client using the ' +
+        'implicit grant must register (OpenID Connect Registration section ' +
+        '2).', 'invalid_redirect_uri');
+    }
+  }
+  const usesCode = lists.response_types.some(function (one) {
+    return one.split(' ').indexOf('code') >= 0;
+  });
+  // `token` is what makes a response type the implicit GRANT: an access token
+  // from the authorization endpoint. RFC 7591's table also files `id_token`
+  // under implicit, but RFC 9700 mode refuses the implicit grant at
+  // registration and allows `code id_token` — the hybrid response FAPI 1.0
+  // Advanced asks for — so holding an ID Token to that row would make the
+  // one registration FAPI requires impossible. Section 2.1 lets a server
+  // decide how strict it is about the table; this is the one leniency.
+  const usesToken = lists.response_types.some(function (one) {
+    return one.split(' ').indexOf('token') >= 0;
+  });
+  const usesImplicit = usesToken || lists.response_types.some(function (one) {
+    return one.split(' ').indexOf('id_token') >= 0;
+  });
+  const has = function (grant) {
+    return lists.grant_types.indexOf(grant) >= 0;
+  };
+  const clash = usesCode && !has('authorization_code')
+    ? 'a response type with code needs the authorization_code grant'
+    : usesToken && !has('implicit')
+      ? 'a response type with token needs the implicit grant'
+      : has('authorization_code') && !usesCode
+        ? 'the authorization_code grant needs a response type with code'
+        : has('implicit') && !usesImplicit
+          ? 'the implicit grant needs a response type with token or id_token'
+          : '';
+  if (clash) {
+    log.debug("Leaving oidcRegistrationProblem(). The lists disagree.");
+    return refusal('STS-REG-0183', 'grant_types', clash + ' (RFC 7591 ' +
+      'section 2.1); this registration says grant_types ' +
+      JSON.stringify(lists.grant_types) + ' and response_types ' +
+      JSON.stringify(lists.response_types) + '.');
+  }
+  if ((has('authorization_code') || has('implicit')) && !uris.length) {
+    log.debug("Leaving oidcRegistrationProblem(). No redirect URI.");
+    return refusal('STS-REG-0184', 'redirect_uris', 'a client using the ' +
+      'authorization_code or implicit grant must register at least one ' +
+      '(RFC 7591 section 2).', 'invalid_redirect_uri');
+  }
+  /** @type {Array<{ member: string, algs: string[] }>} */
+  const algs = [{ member: 'id_token_signed_response_alg',
+                  algs: stsCrypto.JWS_SIGNING_ALGS },
+                { member: 'userinfo_signed_response_alg',
+                  algs: stsCrypto.JWS_SIGNING_ALGS.concat(['none']) }];
+  for (let i = 0; i < algs.length; i++) {
+    const value = asked[algs[i].member];
+    if (value !== undefined && value !== null &&
+        algs[i].algs.indexOf(String(value)) < 0) {
+      log.debug("Leaving oidcRegistrationProblem(). " + algs[i].member + ".");
+      return refusal('STS-REG-0185', algs[i].member, JSON.stringify(value) +
+        ' is not an algorithm this service signs with; it signs with ' +
+        algs[i].algs.join(', ') + '.');
+    }
+  }
+  if (asked.jwks !== undefined && asked.jwks_uri !== undefined) {
+    log.debug("Leaving oidcRegistrationProblem(). jwks and jwks_uri.");
+    return refusal('STS-REG-0186', 'jwks_uri', 'a registration carries ' +
+      'jwks or jwks_uri, never both (RFC 7591 section 2).');
+  }
+  if (asked.jwks_uri !== undefined && !/^https:\/\/[^\s]+$/i.test(
+      String(asked.jwks_uri))) {
+    log.debug("Leaving oidcRegistrationProblem(). jwks_uri is not https.");
+    return refusal('STS-REG-0186', 'jwks_uri', 'must be an https URL.');
+  }
+  if (asked.default_max_age !== undefined &&
+      !(Number.isInteger(asked.default_max_age) &&
+        asked.default_max_age >= 0)) {
+    log.debug("Leaving oidcRegistrationProblem(). default_max_age.");
+    return refusal('STS-REG-0187', 'default_max_age', 'must be a ' +
+      'non-negative whole number of seconds.');
+  }
+  if (asked.require_auth_time !== undefined &&
+      typeof asked.require_auth_time !== 'boolean') {
+    log.debug("Leaving oidcRegistrationProblem(). require_auth_time.");
+    return refusal('STS-REG-0187', 'require_auth_time', 'must be a boolean.');
+  }
+  if (asked.default_acr_values !== undefined &&
+      !(Array.isArray(asked.default_acr_values) &&
+        asked.default_acr_values.every(function (one) {
+          return typeof one === 'string' && ACR_VALUE_SHAPE.test(one);
+        }))) {
+    log.debug("Leaving oidcRegistrationProblem(). default_acr_values.");
+    return refusal('STS-REG-0187', 'default_acr_values', 'must be an array ' +
+      'of acr values.');
+  }
+  if (asked.initiate_login_uri !== undefined && !/^https:\/\/[^\s]+$/i.test(
+      String(asked.initiate_login_uri))) {
+    log.debug("Leaving oidcRegistrationProblem(). initiate_login_uri.");
+    return refusal('STS-REG-0188', 'initiate_login_uri', 'must be an https ' +
+      'URL (OpenID Connect Registration section 2).');
+  }
+  log.debug("Leaving oidcRegistrationProblem(). Nothing refused.");
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -6839,8 +7081,8 @@ function applyRegistrationFields(record, registration, statement) {
   setField(record, 'oauthClientId', record.identifier);
   setField(record, 'oauthClientSecret', meta.client_secret);
   // RFC 7591's key members. `jwks` is stored as text because that is what the
-  // verifier parses and what an operator edits; `jwks_uri` is recorded and
-  // never followed (see its schema row).
+  // verifier parses and what an operator edits; `jwks_uri` is recorded and,
+  // since #120, fetched when a key is needed (see its schema row).
   if (meta.jwks) {
     setField(record, 'oauthJwks',
              typeof meta.jwks === 'string' ? meta.jwks :
@@ -9391,6 +9633,78 @@ function view(record, entry) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// WHAT A CLIENT REGISTERED IT WOULD USE (#120): the `grant_types` and
+// `response_types` of its REGISTRATION DOCUMENT, which the token and
+// authorization endpoints hold it to in every mode (rcbj's decision). Read
+// from `appRegistrationJson` and NOT from `oauthGrantType` /
+// `oauthResponseType`, because those two also record what was OBSERVED — a
+// list that grows with use is no restriction. A client with no registration
+// document, or one that names neither list (registered before #120 applied
+// RFC 7591's defaults), answers null and is held to nothing, as a client_id
+// nobody registered is.
+// ---------------------------------------------------------------------------
+function registeredFlowsOf(clientId) {
+  log.debug("Entering registeredFlowsOf().");
+  const loaded = load(String(clientId || ''));
+  if (!loaded.known || !loaded.record.registered) {
+    log.debug("Leaving registeredFlowsOf(). Not registered.");
+    return null;
+  }
+  let document = null;
+  try {
+    document = JSON.parse(loaded.record.fields.appRegistrationJson || 'null');
+  } catch (e) {
+    log.debug("Caught in registeredFlowsOf(): " + ((e && e.message) || e));
+    // Unreadable: registrationOf() reports it; nothing to hold the client to.
+    document = null;
+  }
+  if (!document || (!Array.isArray(document.grant_types) &&
+                    !Array.isArray(document.response_types))) {
+    log.debug("Leaving registeredFlowsOf(). Nothing registered.");
+    return null;
+  }
+  log.debug("Leaving registeredFlowsOf().");
+  return {
+    grant_types: Array.isArray(document.grant_types)
+      ? document.grant_types.map(String) : null,
+    response_types: Array.isArray(document.response_types)
+      ? document.response_types.map(function (one) {
+        return String(one).split(/\s+/).filter(Boolean).sort().join(' ');
+      }) : null
+  };
+}
+
+// RFC 7592 SECTION 2 (#120): a registration access token presented for a
+// client that does not exist "SHOULD be immediately revoked" — it is some
+// OTHER client's, being tried where it does not belong. This finds the client
+// holding it (compared in constant time) and takes the token off its entry.
+// Answers the client_id it was revoked from, or ''.
+function revokeRegistrationAccessToken(token) {
+  log.debug("Entering revokeRegistrationAccessToken().");
+  const presented = String(token || '');
+  if (!presented) {
+    log.debug("Leaving revokeRegistrationAccessToken(). No token.");
+    return '';
+  }
+  const holder = list().filter(function (row) {
+    const held = String(((row && row.fields) || {})
+      .appRegistrationAccessToken || '');
+    return held !== '' && stsCrypto.constantTimeEquals(presented, held);
+  })[0];
+  if (!holder) {
+    log.debug("Leaving revokeRegistrationAccessToken(). Nobody holds it.");
+    return '';
+  }
+  updateApplication(holder.identifier, { attribute:
+    'appRegistrationAccessToken', mode: 'remove', value: presented });
+  log.warn(errorCodes.tag('STS-OAUTH-0596') + 'applications: a registration ' +
+           'access token of "' + holder.identifier + '" was presented for ' +
+           'another client, and is revoked (RFC 7592 section 2).');
+  log.debug("Leaving revokeRegistrationAccessToken(). Revoked.");
+  return holder.identifier;
+}
+
 function list() {
   log.debug("Entering list().");
   const backing = store();
@@ -10745,6 +11059,7 @@ module.exports = {
   // second spelling of "http or https" in the page would be the second opinion
   // this module exists to prevent.
   homePageOf: homePageOf,
+  initiateLoginUriOf: initiateLoginUriOf,
   homePageProblem: homePageProblem,
   // THE CORS ORIGINS (2026-09-13): the one entry's list, the entry a request
   // named, and the realm's union — the three questions `common/cors.js` asks.
@@ -10794,6 +11109,10 @@ module.exports = {
   // `oauth-oidc/request_object.ts` and the registration endpoint read them.
   requestObjectMetadataProblem: requestObjectMetadataProblem,
   oidcSubjectMetadataProblem: oidcSubjectMetadataProblem,
+  oidcRegistrationProblem: oidcRegistrationProblem,
+  revokeRegistrationAccessToken: revokeRegistrationAccessToken,
+  registeredFlowsOf: registeredFlowsOf,
+  grantsAndResponseTypesOf: grantsAndResponseTypesOf,
   OIDC_SUBJECT_ATTRIBUTES: OIDC_SUBJECT_ATTRIBUTES,
   pushedAuthorizationMetadataProblem: pushedAuthorizationMetadataProblem,
   pushedAuthorizationAttributeProblem: pushedAuthorizationAttributeProblem,

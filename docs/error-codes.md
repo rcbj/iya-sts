@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2977** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2991** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 191
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 474
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 480
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 54
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 113
+* [Registries (`STS-REG`)](#sts-reg) — 121
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -1121,7 +1121,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0041` | An RFC 7523 authorization-grant assertion is signed with an algorithm this service does not verify. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0042` | An RFC 7523 authorization-grant assertion carries no iss (section 3 claim 1). | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0043` | An RFC 7523 authorization-grant assertion names an issuer nobody in the realm has declared, and no x5c chain vouches for it. | invalid_grant (HTTP 400) |
-| `STS-OAUTH-0044` | The application declared as an RFC 7523 assertion issuer registered only a jwks_uri, which this service will not fetch. | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0044` | The application declared as an RFC 7523 assertion issuer registered only a jwks_uri, and its keys could not be fetched (#120; STS-OAUTH-0599 logs why). | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0045` | The keys registered for an RFC 7523 assertion issuer could not be read. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0046` | No key is registered or issued for an RFC 7523 assertion issuer, so its assertion could not be verified. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0047` | An RFC 7523 authorization-grant assertion did not verify: wrong key, wrong audience or expired. | invalid_grant (HTTP 400) |
@@ -1312,7 +1312,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0232` | A dynamic client registration document was refused by the input validator. | invalid_client_metadata (HTTP 400) |
 | `STS-OAUTH-0233` | A dynamic client registration's redirect_uris is not an array. | invalid_redirect_uri (HTTP 400) |
 | `STS-OAUTH-0234` | A client configuration endpoint path names a malformed client_id. | invalid_request (HTTP 400) |
-| `STS-OAUTH-0235` | The client configuration endpoint was asked about a client that was never dynamically registered. | invalid_client (HTTP 404) |
+| `STS-OAUTH-0235` | The client configuration endpoint was asked about a client that does not exist; since #120 the registration access token is revoked and the answer is RFC 7592 section 3's. | HTTP 401 {error: invalid_token} |
 | `STS-OAUTH-0236` | The registration access token presented at the client configuration endpoint does not match. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
 | `STS-OAUTH-0237` | A refresh token was presented unencrypted. Every refresh token this service issues is a signed JWT encrypted to its realm, so a plain signed one is refused (or reported inactive at introspection). | invalid_grant (HTTP 400); active: false at introspection |
 | `STS-OAUTH-0238` | A refresh token could not be decrypted: it is not a compact JWE, names a key this realm does not hold (another realm, or keys since rotated), or its authentication tag did not verify. | invalid_grant (HTTP 400); active: false at introspection |
@@ -1552,6 +1552,12 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0592` | A WebFinger request carried no single resource parameter, or one that is not an acct: URI, an e-mail address, an https URL or a host (RFC 7033 section 4.2, OIDC Discovery section 2.1). | HTTP 400 |
 | `STS-OAUTH-0593` | A WebFinger resource named a domain no realm has, or a path on this service that names no realm (RFC 7033 section 4.2). | HTTP 404 |
 | `STS-OAUTH-0594` | A discovery path named no issuer: not [realm/<id>][/<server>], an unknown realm, or more than one server segment. Answered with Express's 404 and no authorization server created (#119). | HTTP 404 |
+| `STS-OAUTH-0595` | An RFC 7592 update named a client_id other than the one it updates, or a client_secret other than the one this server issued (section 2.2) (#120). | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0596` | A registration access token was presented for a client that no longer exists; the token was revoked and refused (RFC 7592 section 3) (#120). Logged at warn. | HTTP 401 {error: invalid_token} |
+| `STS-OAUTH-0597` | An authorization request asked for a response_type the client did not register in response_types (OpenID Connect Registration section 2) (#120). | redirect {error: unauthorized_client} |
+| `STS-OAUTH-0598` | A token request used a grant_type the client did not register in grant_types (RFC 7591 section 2) (#120). | HTTP 400 {error: unauthorized_client} |
+| `STS-OAUTH-0599` | A client's registered jwks_uri could not be read: the outbound policy refused it, it did not answer 200, or it did not answer a JSON Web Key Set (#120). Logged at warn; the verification or encryption that needed the key is refused with its own code. | none (log only) |
+| `STS-OAUTH-0600` | A client that registered grant_types without refresh_token was answered with no refresh token (RFC 7591 section 2) (#120). Recorded, not refused. | none (the token response omits refresh_token) |
 
 ## STS-SAML
 
@@ -3365,6 +3371,14 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0178` | Under FAPI 1.0 Advanced, a registration named a response type other than code id_token or code (Part 2 section 5.2.2 item 2). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0179` | A registration's JARM members were malformed: authorization_signed_response_alg not an algorithm this service signs with (none included), an encryption alg that is not one of the asymmetric families, or an enc without an alg (JARM section 3). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0180` | A registration named authorization_encrypted_response_alg and its jwks holds no key to encrypt its authorization responses to (JARM section 3). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0181` | A registration named an application_type other than web or native (OpenID Connect Registration section 2) (#120). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0182` | A redirect URI does not suit the application_type: a native client's must be a loopback http URL or a private-use scheme, a web client using the implicit grant's must be https and not localhost (OpenID Connect Registration section 2) (#120). | HTTP 400 {error: invalid_redirect_uri} |
+| `STS-REG-0183` | grant_types and response_types disagree (RFC 7591 section 2.1): a response type needs the grant that redeems it (#120). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0184` | A client registered for authorization_code or implicit named no redirect_uris (#120). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0185` | id_token_signed_response_alg or userinfo_signed_response_alg names an algorithm this service does not sign with (#120). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0186` | A registration carried jwks together with jwks_uri, or a jwks_uri that is not https (RFC 7591 section 2) (#120). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0187` | default_max_age, require_auth_time or default_acr_values is not of its type (OpenID Connect Registration section 2) (#120). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0188` | initiate_login_uri is not an https URL (OpenID Connect Registration section 2) (#120). | HTTP 400 {error: invalid_client_metadata} |
 
 ## STS-DBG
 

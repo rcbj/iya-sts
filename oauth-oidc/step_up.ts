@@ -238,12 +238,25 @@ class StepUp {
 
   // What an authorization request asks for. `present` is false when it asks
   // for neither, which is every request that does not step up.
-  requirementOf(query: Json): Requirement {
+  // `registered` (#120) is the client's registration: OpenID Connect
+  // Registration section 2's `default_max_age` and `default_acr_values` apply
+  // when the request names neither `max_age` nor `acr_values` (or, for the
+  // acr, an essential acr claim), which override them.
+  requirementOf(query: Json, registered?: Json): Requirement {
     const { log } = this.deps;
     log.debug("Entering StepUp.requirementOf().");
     const q = query || {};
-    const acr = this.parseAcrValues(q.acr_values);
-    const maxAge = this.parseMaxAge(q.max_age);
+    const doc = registered || {};
+    const askedAcr = (q.acr_values !== undefined && q.acr_values !== '') ||
+                     this.essentialAcrValuesOf(q.claims).length > 0;
+    const acr = this.parseAcrValues(askedAcr || !Array.isArray(
+      doc.default_acr_values) ? q.acr_values
+                              : doc.default_acr_values.join(' '));
+    const maxAge = this.parseMaxAge(q.max_age !== undefined &&
+                                    q.max_age !== ''
+      ? q.max_age
+      : (doc.default_max_age !== undefined ? String(doc.default_max_age)
+                                           : undefined));
     // OIDC CORE SECTION 5.5.1.1 (#118, 2026-09-22): an `acr` asked for
     // through the claims parameter with `"essential": true` and a `value` or
     // `values` is a requirement — "the Authorization Server MUST return an acr

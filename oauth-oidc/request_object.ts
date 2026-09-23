@@ -820,17 +820,22 @@ class RequestObject {
               'keyed by the client secret, and this client has none';
       }
     } else {
-      const read = assertionGrant.keysForParty({
-        oauthJwks: client.jwks, oauthAssertionJwks: client.assertion_jwks
-      }, 'application');
+      const party = {
+        oauthJwks: client.jwks, oauthAssertionJwks: client.assertion_jwks,
+        oauthJwksUri: client.jwks_uri
+      };
+      // A registered `jwks_uri` is fetched (#120), `client_jwks.js`'s cache.
+      const fetched = await assertionGrant.ensurePartyKeys(party,
+        'application', header && header.kid);
+      const read = assertionGrant.keysForParty(party, 'application');
       candidates = read.keys;
       if (!candidates.length) {
         why = 'this client holds no key a request object could be verified ' +
               'with' + (read.problems.length
                 ? ' (' + read.problems.join('; ') + ')' : '') +
               (client.jwks_uri
-                ? ' — it registered a jwks_uri, which this service does not ' +
-                  'fetch; register the keys by value as `jwks`'
+                ? ' — the keys at its jwks_uri could not be fetched' +
+                  (fetched && fetched.why ? ': ' + fetched.why : '')
                 : '. Register its public keys as `jwks`, or issue it a key ' +
                   'pair from /admin/pki');
       }

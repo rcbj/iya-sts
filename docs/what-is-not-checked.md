@@ -314,10 +314,9 @@ something to run against:
 - **A SAML artifact resolves exactly once**, across the cluster. A refused caller
   does not spend it.
 - **A URL a caller hands over to fetch a credential from is never followed**:
-  WS-Federation's `wreqptr`, a client's registered `jwks_uri`, and a foreign
-  SPIFFE bundle URL. The addresses this service does dial are ones an
-  administrator wrote down, one a client registered in advance (an RFC 9101
-  `request_uri`), or ones inside something that has already verified — a status
+  WS-Federation's `wreqptr` and a foreign SPIFFE bundle URL. The addresses this
+  service does dial are ones an administrator wrote down, ones a client
+  registered in advance (an RFC 9101 `request_uri`, a `jwks_uri`), or ones inside something that has already verified — a status
   list named in a credential signed by a trusted issuer, and the CRL and OCSP
   addresses in a certificate whose chain verified.
 
@@ -396,7 +395,8 @@ the ISSUER has to be configured before anything is believed:
   that arrives WITH the signature is not evidence on its own;
 * the certificate behind that key has its **whole chain validated** every time
   it verifies an assertion, and is checked for revocation;
-* `jwks_uri` is **never followed**;
+* a registered `jwks_uri` is **fetched under the outbound policy** (https, no
+  redirect, internal addresses refused in product mode) and cached;
 * a **person** as issuer may assert only about themselves.
 
 **The gate is on the SIGNER.** In product the `sub` must be somebody this realm

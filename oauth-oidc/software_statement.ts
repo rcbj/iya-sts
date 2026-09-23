@@ -75,10 +75,8 @@
 //     and a MAC needs a key shared between this service and the publisher —
 //     which does not exist here, and a client secret is not it (the client
 //     presenting a statement has no secret yet; it is registering to get one).
-//   * **`jwks_uri` on the publisher is not fetched**, for
-//     `assertion_grant.js`'s reason: following a URL to find the key that
-//     verifies a credential is a server-side request forgery with a citation
-//     attached.
+//   * **`jwks_uri` on the publisher is fetched since #120**, as a client's
+//     is (`client_jwks.js`, under `federation_http.ts`'s outbound policy).
 //
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3). It registers no route. It requires `assertion_grant.js`
@@ -466,6 +464,9 @@ class SoftwareStatement {
       if (party) {
         issuerKind = 'application';
         publisher = party.identifier;
+        // A publisher's registered `jwks_uri` is fetched (#120).
+        await assertionGrant.ensurePartyKeys(party.fields, 'application',
+                                             header && header.kid);
         const read = assertionGrant.keysForParty(party.fields, 'application');
         read.keys.forEach(function (one) {
           candidates.push(one);
@@ -510,9 +511,8 @@ class SoftwareStatement {
                               (read.problems.length
                                 ? ' (' + read.problems.join('; ') + ')' : '') +
                               (read.jwksUriOnly
-                                ? ' — it has a jwks_uri, which this service ' +
-                                  'does ' +
-                                  'not fetch' : '') +
+                                ? ' — the keys at its jwks_uri could not be ' +
+                                  'fetched' : '') +
                               '. Register its public keys by value as ' +
                               '`jwks`, or issue it a key pair from ' +
                               '/admin/pki.');
