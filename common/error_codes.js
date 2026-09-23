@@ -7773,6 +7773,101 @@ const CODES = [
     summary: 'A keytab was refused because the person\'s account is ' +
       'disabled, which the KDC refuses whatever key is presented.',
     spec: 'HTTP 400 { ok: false, errors } / a 400 portal page' },
+  { code: 'STS-KRB-0135',
+    summary: 'An AS-REQ pre-authenticated with a password alone ' +
+      '(PA-ENC-TIMESTAMP, or FAST\'s PA-ENCRYPTED-CHALLENGE) was refused, in ' +
+      'product mode, because the person holds or is required to ' +
+      'hold a second factor. Refused only after the password ' +
+      'verified.',
+    spec: 'KDC_ERR_POLICY (12)' },
+  { code: 'STS-KRB-0136',
+    summary: 'A FAST-armored AS-REQ (PA-FX-FAST) did not decode, carried ' +
+      'no armor, named an armor type other than ' +
+      'FX_FAST_ARMOR_AP_REQUEST, or its armor was not an AP-REQ.',
+    spec: 'RFC 6113 section 5.4.1: KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0137',
+    summary: 'A FAST armor ticket was refused: not a TGT for the ' +
+      'ticket-granting service of the realm asked, sealed under another ' +
+      'key, expired or not yet valid.',
+    spec: 'RFC 6113 section 5.4.1.1: KDC_ERR_PREAUTH_FAILED (24), ' +
+      'KRB_AP_ERR_BAD_INTEGRITY (31), KRB_AP_ERR_TKT_EXPIRED (32), ' +
+      'KRB_AP_ERR_TKT_NYV (33)' },
+  { code: 'STS-KRB-0138',
+    summary: 'A FAST armor AP-REQ\'s Authenticator was refused: it did not ' +
+      'decrypt, named another client, was outside the clock ' +
+      'tolerance, or carried no subkey.',
+    spec: 'RFC 6113 section 5.4.1.1: KRB_AP_ERR_BAD_INTEGRITY (31), ' +
+      'KRB_AP_ERR_BADMATCH (36), KRB_AP_ERR_SKEW (37), ' +
+      'KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0139',
+    summary: 'A FAST req-checksum did not cover the outer request body ' +
+      'under the armor key.',
+    spec: 'RFC 6113 section 5.4.2: KRB_AP_ERR_MODIFIED (41)' },
+  { code: 'STS-KRB-0140',
+    summary: 'A FAST enc-fast-req did not open under the armor key, or the ' +
+      'KrbFastReq inside it did not decode.',
+    spec: 'RFC 6113 section 5.4.2: KRB_AP_ERR_BAD_INTEGRITY (31)' },
+  { code: 'STS-KRB-0141',
+    summary: 'A FAST request set a critical FAST option this KDC does not ' +
+      'implement (hide-client-names).',
+    spec: 'RFC 6113 section 5.4.2: ' +
+      'KDC_ERR_UNKNOWN_CRITICAL_FAST_OPTIONS (93)' },
+  { code: 'STS-KRB-0142',
+    summary: 'A PA-ENCRYPTED-CHALLENGE did not decode or did not decrypt ' +
+      'under the challenge key: a wrong password inside FAST.',
+    spec: 'RFC 6113 section 5.4.6: KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0143',
+    summary: 'A PA-ENCRYPTED-CHALLENGE\'s timestamp was outside the clock ' +
+      'tolerance.',
+    spec: 'RFC 6113 section 5.4.6: KRB_AP_ERR_SKEW (37)' },
+  { code: 'STS-KRB-0144',
+    summary: 'A PA-ENCRYPTED-CHALLENGE was presented a second time (the ' +
+      'same ciphertext).',
+    spec: 'RFC 6113 section 5.4.6: KRB_AP_ERR_REPEAT (34)' },
+  { code: 'STS-KRB-0145',
+    summary: 'A PA-ENCRYPTED-CHALLENGE could not be proved unused because ' +
+      'the claim store could not be asked.',
+    spec: 'KRB_ERR_GENERIC (60)' },
+  { code: 'STS-KRB-0146',
+    summary: 'A PA-OTP-REQUEST did not decode, its encData was not under ' +
+      'the armor key or did not open, or it answered no ' +
+      'PA-OTP-CHALLENGE this KDC issued (or its timestamp was outside the ' +
+      'tolerance).',
+    spec: 'RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24), ' +
+      'KDC_ERR_ETYPE_NOSUPP (14), KRB_AP_ERR_SKEW (37)' },
+  { code: 'STS-KRB-0147',
+    summary: 'A PA-OTP-REQUEST carried no otp-pin, and this KDC requires ' +
+      'the password as the PIN.',
+    spec: 'RFC 6560 section 3.4: KDC_ERR_PIN_REQUIRED (97)' },
+  { code: 'STS-KRB-0148',
+    summary: 'A PA-OTP-REQUEST\'s otp-pin was not the person\'s password (it ' +
+      'does not derive the Kerberos key the KDC holds; an app ' +
+      'password never does).',
+    spec: 'RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0149',
+    summary: 'A PA-OTP-REQUEST\'s code was refused by the authenticator ' +
+      'verifier: wrong, or no authenticator app enrolled.',
+    spec: 'RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0150',
+    summary: 'A PA-OTP-REQUEST\'s code had already been used, at the KDC or ' +
+      'at the sign-in screen (one step counter for both).',
+    spec: 'RFC 6238 section 5.2: KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0151',
+    summary: 'A PA-OTP-REQUEST\'s code could not be proved unspent because ' +
+      'the step store could not be asked.',
+    spec: 'KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0152',
+    summary: 'A PA-OTP-REQUEST carried no otp-value (a hashed OTP or one ' +
+      'used as key material), which this KDC did not ask for.',
+    spec: 'RFC 6560 section 3.6: KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0153',
+    summary: 'A ticket\'s AD-CAMMAC did not verify under the key the ticket ' +
+      'is sealed with, so its authentication indicators were ' +
+      'ignored.',
+    spec: 'RFC 7751 section 7, RFC 8129 section 5' },
+  { code: 'STS-KRB-0154',
+    summary: 'Asking whether a person holds a second factor failed, so the ' +
+      'KDC treated a password alone as not enough.' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +

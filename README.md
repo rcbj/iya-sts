@@ -886,7 +886,7 @@ unedited service behaves exactly as it did.
 | `authn.sessionIdleTimeoutS` | `STS_AUTHN_SESSION_IDLE_TIMEOUT_S` | `0` | yes — applies to sessions that already exist | How long a session may go unused before it ends, on top of the lifetime. **Zero means no idle timeout**, which is what this service has always done. A request to the console or the portal counts as use of the sign-on session behind it. |
 | `authn.pendingTtlS` | `STS_AUTHN_PENDING_TTL_S` | `600` | yes | How long a sign-in waits at the screen — and the console's and portal's own authorization code flows, and an arrival session's inactivity window, which are the same clock on purpose. |
 | `authn.mfaStepTtlS` | `STS_AUTHN_MFA_STEP_TTL_S` | `300` | yes | How long somebody past the password step has to present a security key, a one-time code or a recovery code. |
-| `authn.mfaRequired` | `STS_AUTHN_MFA_REQUIRED` | `false` | yes | Require a second factor — an authenticator app or a security key in the `mfa` role — of everybody who signs in at this realm's sign-in screen. Somebody who holds neither is shown `/authn/mfa-setup` after their password is accepted and gets no session until one is enrolled; a passwordless security-key sign-in is refused. The same requirement can be placed on one person from their `/admin/users` page. In product mode it also refuses the person's own password at the five password-only doors — an LDAP bind, a WS-Trust UsernameToken, SCIM, SSF and EST Basic — answered as a wrong password; an app password scoped to the door is what they use there (#101). **What it does not reach**: a federated assertion, a SPNEGO ticket or a Kerberos AS-REQ, a TLS client certificate. |
+| `authn.mfaRequired` | `STS_AUTHN_MFA_REQUIRED` | `false` | yes | Require a second factor — an authenticator app or a security key in the `mfa` role — of everybody who signs in at this realm's sign-in screen. Somebody who holds neither is shown `/authn/mfa-setup` after their password is accepted and gets no session until one is enrolled; a passwordless security-key sign-in is refused. The same requirement can be placed on one person from their `/admin/users` page. In product mode it also refuses the person's own password at the five password-only doors — an LDAP bind, a WS-Trust UsernameToken, SCIM, SSF and EST Basic — answered as a wrong password; an app password scoped to the door is what they use there (#101). In product it also refuses a Kerberos AS-REQ proving the password alone (`KDC_ERR_POLICY`, after the password verified); FAST with OTP pre-authentication — the password and an authenticator code — gets them a ticket (#173). **What it does not reach**: a federated assertion, a TLS client certificate, and a SPNEGO ticket from a KDC other than this one. |
 | `authn.passwordAloneDoors` | `STS_AUTHN_PASSWORD_ALONE_DOORS` | *(empty)* | yes | Product mode only. The password-only doors — any of `ldap`, `wstrust`, `scim`, `ssf`, `est` — at which a person who holds or must hold a second factor is STILL accepted with their own password. Empty refuses it at all five and accepts only an app password there. **Warning: every door listed lowers every such person to ONE factor at that door** (NIST SP 800-63B section 4.2), so a stolen password opens it without the second factor. |
 | `appPasswords.enabled` | `STS_APP_PASSWORDS_ENABLED` | `true` | yes | Whether a person may make an app password on `/portal/app-passwords`, and an administrator one for them on their `/admin/users` page or `POST /admin-api/users/create-app-password`. Generated, shown once, stored as a scrypt hash, named and scoped to password-only doors; never accepted at the sign-in screen. Turning it off does not invalidate one already made. |
 | `appPasswords.maxPerPerson` | `STS_APP_PASSWORDS_MAX` | `10` | yes | How many app passwords one person may hold at once (1–50). |
@@ -6505,11 +6505,19 @@ aes128/256-cts-hmac-sha1-96 (17, 18 — the AD workhorses), aes128/256-cts-hmac-
 only story about RC4 is "that is deprecated" cannot help anybody still running it. DES
 decodes and is never produced: Windows Server 2025 removed it and it is not coming back.
 
-**Not implemented, and each for a reason worth knowing:** FAST (RFC 6113), PKINIT,
-kpasswd, SPNEGO (`krb5_gss.js` recognises the SPNEGO OID and says it is not implemented
-rather than failing opaquely — the GSS layer is separate from the AP-REQ precisely so
-that this is a wrapper to add and not a rewrite), request signatures, and the SID
-filtering noted above. The **AP exchange** is not missing from the KDC — it belongs to a
+**FAST, OTP pre-authentication and authentication indicators (2026-09-22, #173).** RFC
+6113 FAST in the AS exchange, armored by a TGT the client host got with its own keytab;
+the encrypted challenge; RFC 6560 OTP pre-authentication with the person's authenticator
+app, the password as the PIN, verified by the sign-in screen's verifier and once-only
+step; and the RFC 8129 indicator `otp` in an AD-CAMMAC, carried into service tickets and
+counted as a second factor at `/authn/spnego`. In product a person who holds or must hold
+a second factor gets `KDC_ERR_POLICY` for a password alone — after the password verified,
+so a wrong one is still `KDC_ERR_PREAUTH_FAILED`. MIT `kinit -T` completes it end to end.
+The KRB-FX-CF2 and the Kerberos PRF are `common/crypto.js`'s section 9, held to RFC 3961's
+and MIT's vectors.
+
+**Not implemented, and each for a reason worth knowing:** PKINIT (#179), FAST in the TGS
+exchange, kpasswd, request signatures, and the SID filtering noted above. The **AP exchange** is not missing from the KDC — it belongs to a
 service rather than to a KDC, and it lives in `krb5_service.js`.
 
 ### LDAP v3 — the other protocol here that is not HTTP
