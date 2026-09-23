@@ -3068,6 +3068,11 @@ class AdminApi {
           log.debug("Entering the management API users action endpoint.");
           const body = parseBody(req);
           const request = self.withAction(req, body);
+          // A PASSWORD IN THE REQUEST IS SCREENED AGAINST PWNED PASSWORDS
+          // FIRST (#62 P6), for the console route's reason: the action is
+          // synchronous and reads the verdict this leaves.
+          return require('../common/breached_passwords')
+            .screenAll([request.password]).then(function () {
           // A CREATE CLAIMS ITS NAME FIRST — see `claimForCreate()`.
           return self.runClaimed(res, request.action === 'create'
             ? { username: String(request.username || request.user || '') }
@@ -3089,6 +3094,7 @@ class AdminApi {
             self.sendJson(res, result.ok ? 200 : 400, result);
             log.debug("Leaving the management API users action endpoint.");
           });
+            });
         },
         actions: [
           { action: 'issue-activation', operationId: 'issueActivationLink',
@@ -4354,14 +4360,17 @@ class AdminApi {
             responseDescription: 'Whether it had been revoked.' },
           { action: 'restore-kerberos', operationId: 'clearKerberosSignOut',
             summary: 'NON-SPEC: clear the Kerberos sign-out instant',
-            description: 'Removes the instant a logout stamped on the ' +
+            description: 'Clears the instant a logout stamped on the ' +
                          'principal, so a ticket-granting ticket ' +
-                         'authenticated before it is accepted again.\n\n**A ' +
-                         'real KDC has no such operation**, and it does not ' +
-                         'need one: a fresh AS-REQ is the supported way back ' +
-                         'and clears the instant itself. This exists so a ' +
-                         'test can put a signed-out ticket back into service ' +
-                         'without re-running the AS exchange.',
+                         'authenticated before it is accepted again.\n\n' +
+                         '**DEVELOPMENT MODE ONLY**: product mode refuses it ' +
+                         '(HTTP 400). **A real KDC has no such operation.** ' +
+                         'A fresh AS-REQ gets a ticket newer than the ' +
+                         'instant but does NOT clear it — tickets from ' +
+                         'before it stay refused, renewals included, until ' +
+                         'the latest one of them could still be valid. This ' +
+                         'exists so a test can put a signed-out ticket back ' +
+                         'into service without restarting the service.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',

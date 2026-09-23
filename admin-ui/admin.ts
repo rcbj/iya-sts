@@ -7832,15 +7832,25 @@ class AdminConsole {
           'restore button is: having to restart this service to get back to ' +
           'a working credential turns a two-second test into a two-minute ' +
           'one.') +
-          '<form method="post" action="/admin/logout">' +
-          '<input type="hidden" name="action" value="restore-kerberos">' +
-          '<input type="hidden" name="user" value="' + this.esc(wantedUser) +
-          '">' +
-          this.logoutBackField(back) +
-          '<p><button type="submit">Clear the Kerberos sign-out ' +
-          'instant</button> <span class="sub">Tickets issued before it are ' +
-          'accepted again. A fresh AS-REQ does this too, and is the ' +
-          'supported way back.</span></p></form><form method="post" ' +
+          // DEVELOPMENT ONLY (#111): refused in product by the action, and
+          // so not offered there — a note says why in its place.
+          (mode.opensTestControls()
+            ? '<form method="post" action="/admin/logout">' +
+              '<input type="hidden" name="action" ' +
+              'value="restore-kerberos">' +
+              '<input type="hidden" name="user" value="' +
+              this.esc(wantedUser) + '">' +
+              this.logoutBackField(back) +
+              '<p><button type="submit">Clear the Kerberos sign-out ' +
+              'instant</button> <span class="sub">Tickets issued before it ' +
+              'are accepted again. Development mode only. A fresh AS-REQ ' +
+              'does NOT do this: it gets a newer ticket and the older ones ' +
+              'stay refused.</span></p></form>'
+            : this.note('Clearing a Kerberos sign-out instant is a ' +
+              'development-only test control and is not offered in product ' +
+              'mode: the instant stands until the latest a ticket from ' +
+              'before it could still be valid.')) +
+          '<form method="post" ' +
           'action="/admin/logout"><input type="hidden" name="action" ' +
           'value="restore-token"><input type="hidden" name="user" ' +
           'value="' + this.esc(wantedUser) + '">' +
@@ -31672,14 +31682,20 @@ class AdminConsole {
       // runs the body below synchronously, exactly as before.
       const creating = String(body.action || '') === 'create'
         ? { username: String(body.username || body.user || '') } : null;
-      createClaims.runClaimed(creating, function (held) {
-        self.usersPost(req, res, body, held);
-      }, function (held) {
-        errorCodes.mark(res, held.code);
-        self.respondToAction(req, res, '/admin/users' +
-          queryWith(self.listViewFromBack('/admin/users', body.back), {}),
-          { ok: false, errors: [createClaims.refusalMessage(held)] });
-      }, next);
+      // A PASSWORD IN THE BODY IS SCREENED AGAINST PWNED PASSWORDS FIRST
+      // (#62 P6): the action below is synchronous, and the password rules
+      // read the verdict this leaves.
+      require('../common/breached_passwords').screenAll([body.password])
+        .then(function () {
+        createClaims.runClaimed(creating, function (held) {
+          self.usersPost(req, res, body, held);
+        }, function (held) {
+          errorCodes.mark(res, held.code);
+          self.respondToAction(req, res, '/admin/users' +
+            queryWith(self.listViewFromBack('/admin/users', body.back), {}),
+            { ok: false, errors: [createClaims.refusalMessage(held)] });
+        }, next);
+        });
       log.debug("Leaving the admin users action endpoint.");
     });
 
@@ -31817,25 +31833,29 @@ class AdminConsole {
       // administrator, and a value taken from the form would be whatever the
       // poster typed. The same way `/admin/delegation` and `/admin/sessions`
       // name their actor.
-      createClaims.runClaimed({ username: posted.username }, function (held) {
-        self.newUserCreate(req, res, body, posted, wantsJson, held);
-      }, function (held) {
-        errorCodes.mark(res, held.code);
-        const refusal = { ok: false,
-                          errors: [createClaims.refusalMessage(held)] };
-        if (wantsJson) {
-          self.respondToAction(req, res, '/admin/users/new', refusal);
-          return;
-        }
-        const view = self.newUserPage(req, posted);
-        self.respond(req, res, Object.assign({ created: false,
-                                               errors: refusal.errors },
-                                               view.json),
-                     'New user', '/admin/users',
-                     self.warn('<strong>Nobody was created.</strong> ' +
-                               self.esc(refusal.errors[0])) + view.inner,
-                               self.newUserUp());
-      }, next);
+      // Screened against Pwned Passwords first (#62 P6), as above.
+      require('../common/breached_passwords').screenAll([body.password])
+        .then(function () {
+        createClaims.runClaimed({ username: posted.username }, function (held) {
+          self.newUserCreate(req, res, body, posted, wantsJson, held);
+        }, function (held) {
+          errorCodes.mark(res, held.code);
+          const refusal = { ok: false,
+                            errors: [createClaims.refusalMessage(held)] };
+          if (wantsJson) {
+            self.respondToAction(req, res, '/admin/users/new', refusal);
+            return;
+          }
+          const view = self.newUserPage(req, posted);
+          self.respond(req, res, Object.assign({ created: false,
+                                                 errors: refusal.errors },
+                                                 view.json),
+                       'New user', '/admin/users',
+                       self.warn('<strong>Nobody was created.</strong> ' +
+                                 self.esc(refusal.errors[0])) + view.inner,
+                                 self.newUserUp());
+        }, next);
+        });
       log.debug("Leaving the admin new-user action endpoint. Create.");
     });
 

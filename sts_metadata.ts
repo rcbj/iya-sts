@@ -4092,8 +4092,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'cookie, filtered by family and paged, with a global logout button ' +
           'and per-row controls. It also carries the two UNDOs /logout has ' +
           'not — restoring a revoked token and clearing a Kerberos sign-out ' +
-          'instant, both labelled NON-SPEC because no real deployment could ' +
-          'offer either. What it cannot do is deliver the front-channel ' +
+          'instant (development mode only), both labelled NON-SPEC because ' +
+          'no real deployment could offer either. What it cannot do is deliver the front-channel ' +
           'notifications: those are iframes in the signed-out person\'s own ' +
           'browser. Add ?format=json.' },
   { path: '/admin/metrics', group: 'Admin', name: 'Metrics',
@@ -5031,6 +5031,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'so the keytab holds that key and the page says so. The identity ' +
           'is the session\'s; nothing on the form names a person. A real ' +
           'submit button and no script.' },
+  { path: '/portal/sign-ins', group: 'User portal',
+    name: 'Your recent sign-ins, and whether each was you',
+    specs: [],
+    effect: 'records "this was me" or "this wasn\'t me" on one of the ' +
+            'signed-in person\'s own assessed sign-ins; "not me" puts their ' +
+            'risk at HIGH, which ends everything they hold',
+    what: 'NON-SPEC page (#62 P6). The signed-in person\'s own risk ' +
+          'assessments of the last thirty days — when, from where (the city, ' +
+          'country and network the datasets named), with what browser and ' +
+          'system, through which door, at what level — each with two ' +
+          'buttons until answered. "This was me" is recorded for ' +
+          'calibration and lowers the person\'s standing to LOW only when ' +
+          'said from another, low-risk session. "This wasn\'t me" puts the ' +
+          'standing at HIGH (reported-not-me), which the risk-response ' +
+          'policy answers — every session ended, RISC told the credential is ' +
+          'compromised. The identity is the session\'s; the assessment ' +
+          'named must be the person\'s own. Real submit buttons and no ' +
+          'script.' },
   { path: '/portal/signing-key', group: 'User portal',
     name: 'Your own RFC 7523 signing key',
     specs: ['rfc7521', 'rfc7523', 'rfc5280'],
@@ -6272,7 +6290,8 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['openapi'],
     what: 'What this service is still holding for one identity across every ' +
           'protocol family, and the four operations that act on it — global, ' +
-          'end, restore-token and restore-kerberos. It mirrors /admin/logout ' +
+          'end, restore-token and restore-kerberos (the last refused in ' +
+          'product mode). It mirrors /admin/logout ' +
           'and calls the same two functions, so the console and this API ' +
           'cannot come to disagree about what a live session is. The rows ' +
           'that CANNOT be ended are in the reply with a `why`, which is the ' +
@@ -8678,6 +8697,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'page has NO SCRIPT and is served under the service-wide ' +
           'script-src \'none\' — a person reads digits and types them, so ' +
           'the exception the security-key page needs does not apply here.' },
+  { path: '/authn/fingerprint.js', group: 'Authentication',
+    name: 'Browser fingerprint script (optional)',
+    specs: [],
+    what: 'NON-SPEC (#62 P6). Served only while risk.fingerprinting is on in ' +
+          'the realm — 404 otherwise — and then the sign-in screen is the ' +
+          'ninth scripted page: FingerprintJS (MIT, v5; it runs in the ' +
+          'browser and sends nothing, its usage ping turned off) puts a ' +
+          'visitorId in a hidden field, and the service keeps only a keyed ' +
+          'digest of it, scored as a device this person never used. The ' +
+          'form works without it. Off by default: it is personal data, and ' +
+          'turning it on is the operator\'s decision, after the privacy ' +
+          'impact assessment the risk-scoring page describes.' },
   { path: '/authn/webauthn.js', group: 'Authentication', name: 'WebAuthn ' +
       'ceremony script',
     specs: ['webauthn'],

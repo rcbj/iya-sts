@@ -1347,11 +1347,26 @@ class AdminActions {
   // POST /admin-api/logout/{action}. Four of them, and the two NON-SPEC ones
   // are labelled as such wherever they appear — see the header.
   logoutAction(body) {
-    const { log, stats, krb5Principals } = this.deps;
+    const { log, stats, krb5Principals, mode } = this.deps;
     log.debug("Entering AdminActions.logoutAction(). action=" + (body.action ||
                                                                  '(none)'));
     const action = String(body.action || '');
     const user = String(body.user || body.username || '').trim();
+    // RESTORE-KERBEROS IS A DEVELOPMENT TEST CONTROL (#111, 2026-09-23), and
+    // refused here — the one function the console form and `POST
+    // /admin-api/logout/restore-kerberos` both reach (rule 7) — before the
+    // person is even looked up. It re-admits every ticket-granting ticket
+    // authenticated before a sign-out; a product deployment has no use for
+    // that, and a real KDC has no such operation.
+    if (action === 'restore-kerberos' && !mode.opensTestControls()) {
+      log.debug("Leaving AdminActions.logoutAction(). restore-kerberos is " +
+                "development-only.");
+      return this.refused('STS-ADMIN-0804', { ok: false, errors: [
+        'restore-kerberos is a development-only test control and is refused ' +
+        'in product mode. A sign-out instant stands until its horizon — the ' +
+        'latest a ticket from before it could still be valid; authenticate ' +
+        'again (a fresh AS-REQ) for a ticket newer than it.'] });
+    }
     // RETRY A DEAD BACK-CHANNEL DELIVERY (2026-09-17, #36 follow-up). It names
     // a delivery rather than a person — the list it is pressed from is every
     // delivery in the realm — so it is answered before the person is asked
@@ -1470,7 +1485,7 @@ class AdminActions {
     if (action === 'restore-kerberos') {
       // NON-SPEC in the same sense and for the same reason: it is what makes a
       // sign-out something a person can experiment with rather than restart out
-      // of.
+      // of. DEVELOPMENT ONLY — refused at the top of this function in product.
       const was = krb5Principals.clearSignOut([key], krb5Principals.REALM);
       log.debug("Leaving AdminActions.logoutAction().");
       return { ok: true,
@@ -1479,8 +1494,10 @@ class AdminActions {
                (was ? ' (' + was.toISOString() + ') is cleared, so tickets ' +
                       'issued before it are accepted again.'
                     : ' was not set, so nothing changed.') +
-               ' A real KDC has no such operation; a fresh AS-REQ is the ' +
-               'supported way back and clears it too.' };
+               ' A real KDC has no such operation, and this one refuses it ' +
+               'in product mode. A fresh AS-REQ gets a ticket newer than the ' +
+               'instant but does NOT clear it: tickets from before it stay ' +
+               'refused.' };
     }
 
     log.debug("Leaving AdminActions.logoutAction(). Unknown action.");
@@ -5772,6 +5789,10 @@ class AdminActions {
       return refused;
     }
     const password = random ? credentials.generatePassword(who) : typed;
+    // A typed password is screened against Pwned Passwords first (#62 P6).
+    if (!random) {
+      await require('../common/breached_passwords').screen(password);
+    }
     const set = credentials.setPassword(who, password,
                                         random ? { generated: true } : {});
     if (!set.ok) {

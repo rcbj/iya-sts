@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3081** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3089** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -62,13 +62,13 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 200
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 204
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 494
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 97
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 154
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 155
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 123
@@ -79,9 +79,9 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 276
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 180
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 181
 * [Management API (`STS-API`)](#sts-api) — 73
-* [User portal (`STS-PORTAL`)](#sts-portal) — 60
+* [User portal (`STS-PORTAL`)](#sts-portal) — 62
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 123
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -1082,6 +1082,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0219` | An app password was not revoked: the person holds none with that id. | HTTP 400 (API), or 404 on the portal, where somebody else's is answered as one that does not exist |
 | `STS-AUTHN-0220` | The app passwords on a person's entry could not be read or written: the directory threw, refused the write, or holds a value this service did not write. A value it cannot read is refused rather than compared. | HTTP 400 (API), the page redrawn, or the door's wrong-password answer |
 | `STS-AUTHN-0221` | An app password was not made: the name is not a person in this realm's directory. An application authenticates with its own client credentials, and an app password is a person's. | HTTP 400 (API) |
+| `STS-AUTHN-0222` | A password being set was refused because it has appeared in a data breach: Pwned Passwords lists it (#62 P6, product mode). | NIST SP 800-63B section 3.1.1.2 |
+| `STS-AUTHN-0223` | A password was set in product mode by a door that did not screen it against Pwned Passwords first, so no breach verdict was there to read. The door is named in the line; it needs a screen(). | — |
+| `STS-AUTHN-0224` | The Pwned Passwords range API did not answer (off, unreachable, refused by the outbound rules, or too slow); a password was set unscreened. | — |
+| `STS-AUTHN-0225` | The browser fingerprint script was asked for while risk.fingerprinting is off in the realm; nothing draws a page that uses it, so it is not served (#62 P6). | HTTP 404 |
 
 ## STS-OAUTH
 
@@ -1872,7 +1876,7 @@ Raised from: kerberos/.
 | `STS-KRB-0031` | A TGS-REQ's Authenticator and ticket name different clients. | KRB_AP_ERR_BADMATCH (36) |
 | `STS-KRB-0032` | A TGS-REQ presented an expired ticket. | KRB_AP_ERR_TKT_EXPIRED (32) |
 | `STS-KRB-0033` | A TGS-REQ presented a ticket that is not yet valid. | KRB_AP_ERR_TKT_NYV (33) |
-| `STS-KRB-0034` | A TGS-REQ was refused because the ticket was authenticated before its client signed out (logout.kerberosSignOut). | KDC_ERR_TGT_REVOKED (20) |
+| `STS-KRB-0034` | A TGS-REQ (a renewal included) was refused because the ticket was authenticated before its client signed out (logout.kerberosSignOut); a later AS exchange does not lift it. | KDC_ERR_TGT_REVOKED (20) |
 | `STS-KRB-0035` | A TGS-REQ's Authenticator clock was outside the KDC's clock-skew tolerance. | KRB_AP_ERR_SKEW (37) |
 | `STS-KRB-0036` | A TGS-REQ's Authenticator carried no checksum over the request body. | KRB_AP_ERR_INAPP_CKSUM (50) |
 | `STS-KRB-0037` | A TGS-REQ's Authenticator checksum did not match the request body. | KRB_AP_ERR_INAPP_CKSUM (50) |
@@ -1993,6 +1997,7 @@ Raised from: kerberos/.
 | `STS-KRB-0152` | A PA-OTP-REQUEST carried no otp-value (a hashed OTP or one used as key material), which this KDC did not ask for. | RFC 6560 section 3.6: KDC_ERR_PREAUTH_FAILED (24) |
 | `STS-KRB-0153` | A ticket's AD-CAMMAC did not verify under the key the ticket is sealed with, so its authentication indicators were ignored. | RFC 7751 section 7, RFC 8129 section 5 |
 | `STS-KRB-0154` | Asking whether a person holds a second factor failed, so the KDC treated a password alone as not enough. | — |
+| `STS-KRB-0155` | An AS exchange waited (at most a second) for its client's sign-out second to pass before taking authtime, so the new ticket is newer than the sign-out. Logged at debug; not a failure. | — |
 
 ## STS-LDAP
 
@@ -3170,6 +3175,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0801` | Revoking somebody's app password was refused; the credential store's own code is on the audit row. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0802` | A password reset for a Kerberos keytab gave neither or both of a password and random, or the new password was refused (the password policy's own code wins where it gave one). Nothing was changed. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0803` | A password reset for a Kerberos keytab SET the password and then no keytab could be made, or a Kerberos principals action threw inside the console. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0804` | restore-kerberos (clearing a Kerberos sign-out instant) was refused because it is a development-only test control. | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 
@@ -3321,6 +3327,8 @@ Raised from: portal/.
 | `STS-PORTAL-0080` | A keytab download on /portal/kerberos was refused because the password typed is not the person's current one. | HTTP 400 page |
 | `STS-PORTAL-0081` | A keytab download on /portal/kerberos was refused by the Kerberos register after the password verified; its own STS-KRB code is on the audit row. | HTTP 400 page |
 | `STS-PORTAL-0082` | A POST to /portal/kerberos named an action the page does not have. | HTTP 400 page |
+| `STS-PORTAL-0083` | A POST to /portal/sign-ins was refused: its CSRF token did not match the session. | HTTP 403 page |
+| `STS-PORTAL-0084` | A POST to /portal/sign-ins named a sign-in that is not the person's own, is too old, or has already been answered (#62 P6). | HTTP 400 page |
 
 ## STS-LOGOUT
 

@@ -50,6 +50,15 @@
 // `common/compiled_tree.js`. The in-process suite runs in an image
 // (`./docker-npm-test.sh`) since #50.
 require('../common/compiled_tree').refuseUncompiledTree('npm test');
+// THE PWNED PASSWORDS SCREEN IS OFF FOR THE WHOLE IN-PROCESS RUN (#62 P6),
+// before any module reads a setting: a test that drives a password door in
+// product mode would otherwise send a real prefix to the internet, and a
+// fixture password that happens to be breached would be refused. It is set
+// here as an environment variable so that it is the layer under a test's own
+// override — `tests/breached_passwords.js` turns it on, with the range API
+// stubbed. Child processes the tests spawn inherit it.
+process.env.STS_RISK_BREACH_CHECK = process.env.STS_RISK_BREACH_CHECK || 'off';
+
 const fs = require('fs');
 const path = require('path');
 const bunyan = require('bunyan');

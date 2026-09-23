@@ -468,7 +468,7 @@ no list of them in this process and there could not be one on a real KDC either.
 What a KDC *does* see is the next TGS-REQ, so an instant is the whole of what is
 available.
 
-**FIVE things about it are load-bearing, and four of them are ways to get it
+**SIX things about it are load-bearing, and most of them are ways to get it
 wrong:**
 
 * **It is checked on `authtime` and NOT on the ticket's issue time**, because a
@@ -478,12 +478,31 @@ wrong:**
   a renewal launder a signed-out ticket into a live one, which is the single most
   obvious way to break this.
 * **It is in `handleTgsReq()` and NOT in `handleAsReq()`.** Signing out is not
-  disabling an account. The next AS exchange must succeed — and it **CLEARS the
-  instant**, which is not tidiness: Kerberos timestamps are second-granular and
-  `Date.now()` is not, so a fresh ticket's `authtime` can land *before* an
-  instant stamped moments earlier, and without the clear the TGS-REQ that
-  immediately follows a sign-in would be refused. That case was reached in
-  testing, not reasoned about.
+  disabling an account. The next AS exchange must succeed — and **it does NOT
+  clear the instant (#111, 2026-09-23)**. It did until then, and that was the
+  hole: the moment a signed-out person ran `kinit` again, every TGT from before
+  the sign-out — a renewal of one included — was accepted again, for up to its
+  renew-till. The clear had two reasons and both are answered where they arise.
+  **Whole seconds**: `authtime` is a KerberosTime with none, the stamp has
+  milliseconds, so a ticket minted in the sign-out's own second would carry an
+  `authtime` earlier than the stamp (that case was reached in testing, not
+  reasoned about). The TGS compares `authtime` with the stamp rounded UP to a
+  whole second (`signOutBoundary()`), and `handleAsReq()` WAITS for that
+  boundary before taking `authtime` (`awaitSignOutSecond()`, at most a second,
+  `STS-KRB-0155` at debug) — every ticket from before is refused and every one
+  after accepted, no hole either way. (Since `authtime` arrives truncated, the
+  ceiling is equivalent to comparing with the raw stamp; it is written out so
+  the rule reads as what it is.) **One clock**: `signOut()` stamps
+  `Date.now() + krb5.clockOffset`, the clock `now()` takes `authtime` on;
+  changing the offset between a sign-out and a TGS-REQ moves one side of the
+  comparison, which is what the offset is for.
+* **It is BOUNDED by a horizon, not kept for ever.** No ticket from before the
+  sign-out can outlive `signedOutAt + max(krb5.ticketLifetimeSeconds,
+  krb5.renewLifetimeSeconds) + krb5.clockSkew` — it was issued before the
+  stamp, and every renewal after it is refused. `signOut()` stores that as
+  `signOutHorizon` (the later of the stored one and today's), and past it the
+  stamp answers as none. Nothing is swept, so no scheduler job is owed: an
+  expired stamp is inert until the next sign-out overwrites it.
 * **It is `revoked`'s neighbour and not `revoked`.** That flag is a disabled
   account and refuses the AS exchange too. Conflating them would mean a person
   could log out and never log back in.
@@ -497,7 +516,21 @@ wrong:**
 
 `logout.kerberosSignOut` turns the whole thing off, and then this KDC behaves
 exactly as it did before the feature existed — the same switchability most
-refusals in this service have, for the reason RFC 9700 mode's have it.
+refusals in this service have, for the reason RFC 9700 mode's have it. **The
+same in both modes** (#111's decision 3): a development client sees the same
+sign-out semantics, so there is no mode predicate on the KDC. What differs is
+the undo: the console's and `/admin-api`'s `restore-kerberos` (`clearSignOut()`)
+is a development test control, refused in product through
+`mode.opensTestControls()` (`STS-ADMIN-0804`). It does not null the stamp — a
+null could not win the merge below — but writes `signOutClearedAt`, an instant
+that beats every stamp not later than itself.
+
+**#111 ADDED NO REQUIRE** to `krb5_kdc.js` or `krb5_principals.js` — the wait, the
+boundary, the horizon and the merge are functions in files the parent's four
+in-process jobs already load — so the `sts/` COPY set is unchanged. Its tests are
+`tests/kerberos_signout_instant.js` (in process: the arithmetic, the merge, and
+the exchanges in one second and under a clock offset, with its mutants) and
+`tests/vendored/sts_kerberos_signout.js` (over TCP 88, both modes).
 
 `signOut()` **creates nothing**: a name nobody has authenticated as has no
 principal here, and stamping one into existence would put an account in the
@@ -753,9 +786,12 @@ does. `krb5_principals.js`'s `reconcileRestored()` / `reconcileRemoved()` are th
 
 * **A CONFIGURED principal** (`CONFIGURED_KEYS`, filled by `registerConfigured()` in
   `buildDatabase()`) keeps every field its settings built and takes only `RUNTIME_FIELDS`
-  from the row. **That list is ONE field, `signedOutAt`, and it is a finding**: every write
+  from the row. **That list is the sign-out's three fields — `signedOutAt`,
+  `signOutHorizon` and `signOutClearedAt` (#111) — and it is a finding**: every write
   to a configured principal after startup is `signOut()` or `clearSignOut()`; `revoked` is
-  set only by the `locked` fixture's definition. A difference in anything else is logged as
+  set only by the `locked` fixture's definition. **Each is MERGED as the later of the held
+  and the incoming instant**, never replaced, for a configured principal and for a
+  runtime-made one restored whole alike. A difference in anything else is logged as
   `STS-KRB-0111`, by field NAME and never by value. **A field that becomes runtime state
   later is a row in `RUNTIME_FIELDS` in the same commit as its first writer**, or a restart
   silently undoes that writer's work.
@@ -1058,13 +1094,17 @@ until the stamp commits; a TGS-REQ that follows it on any node sees it. MS-KKDCP
 goes through the same dispatcher and is already behind the HTTP barrier; the
 second shared read costs nothing.
 
-**What is left is a race, not a window**: an AS-REQ CLEARS the stamp by writing
-the whole principal back, and one that caught up just before a concurrent
-sign-out on another node committed can land its clear after that stamp — last
-writer wins on the row, which is issue section 3's. **`signedOutAt` survives
-`reconcileRestored()`**, which the issue left unverified: it is the one member
-of `RUNTIME_FIELDS`, so a configured principal takes it from the incoming row
-and a runtime-made one is restored whole.
+**The race that was left is gone (#111, 2026-09-23).** It read: *an AS-REQ
+CLEARS the stamp by writing the whole principal back, and one that caught up
+just before a concurrent sign-out on another node committed can land its clear
+after that stamp — last writer wins on the row.* The AS exchange writes nothing
+to the principal any more, and `reconcileRestored()` MERGES each of the three
+sign-out fields as the later of the held and the incoming instant — for a
+configured principal and for a runtime-made one restored whole — so no write of
+the row from an older copy, on any node, can unstamp a sign-out. The one
+operation that moves a stamp backwards, the development-only
+`restore-kerberos`, does it with an instant of its own that merges the same
+way.
 
 The two requires are LAZY and guarded. `cluster/cluster_barrier.js` is already
 in the parent project's COPY closure through `common/app.js`, and

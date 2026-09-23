@@ -425,6 +425,13 @@ services:
       - STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-0}
       - STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-}
       - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-false}
+      # THE PWNED PASSWORDS SCREEN IS OFF IN EVERY SUITE STACK (#62 P6): on,
+      # a product-mode stack would send the prefix of every password the
+      # suite sets to api.pwnedpasswords.com — a run that depends on the
+      # internet, and a fixture password that happens to be breached would be
+      # refused. The screen is held in process with the API stubbed
+      # (tests/breached_passwords.js).
+      - STS_RISK_BREACH_CHECK=${STS_RISK_BREACH_CHECK:-off}
       # WHERE THE TWO PERSISTING MODES DIAL, and it is `sts_app` rather than
       # the owner: postgres/schema.sql builds a role with SELECT, INSERT,
       # UPDATE and DELETE on the rows and no CREATE anywhere, so this service

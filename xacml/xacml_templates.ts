@@ -656,7 +656,8 @@ const TEMPLATES: TemplateRow[] = [
     parameters: [
       { name: 'credentialSignals',
         label: 'Signals that are evidence about a CREDENTIAL',
-        dflt: 'account-failures, authenticator-compromised', type: 'string',
+        dflt: 'account-failures, authenticator-compromised, reported-not-me',
+        type: 'string',
         help: 'Comma separated. Crossing into HIGH with one of them sends ' +
               'RISC credential-compromise: the password is being guessed or ' +
               'has been, or the security key\'s model is reported ' +
