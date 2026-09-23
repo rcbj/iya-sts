@@ -269,6 +269,57 @@ every live generation of the BBS key. Both documents are served
 `Cache-Control: no-store`, because in development the keys behind them are new
 on every start. `did:key` is not generated here.
 
+### Self-issued ID Tokens (SIOPv2)
+
+This service is also a **relying party of a Self-Issued OpenID Provider**
+(SIOPv2): a wallet answers with an ID Token it signs with its own key. It is
+never the Self-Issued OP itself.
+
+* **Signing in.** With `oid4vp.signInSelfIssued` on (off by default), the
+  sign-in screen offers *Sign in with a self-issued ID*. It starts a signed
+  request with `response_type=id_token` and `scope=openid`, carrying
+  `subject_syntax_types_supported` (the JWK Thumbprint syntax, `did:jwk`,
+  `did:key`, `did:web`) in `client_metadata`, answered by `direct_post` at
+  `/oid4vp/response`. A QR code uses the `siopv2://` scheme.
+* **Only an enrolled key signs anybody in, in both modes.** Nobody vouches
+  for a self-issued key, so it signs in only the person who enrolled it:
+  * **the person**, on `/portal/self-issued`, by answering a SIOPv2 request
+    from the session they already hold — the key is proved, never typed;
+  * **an administrator**, on the person's page under Directory → Users, or
+    with `POST /admin-api/users/enrol-self-issued-subject` (and
+    `remove-self-issued-subject`, `GET /admin-api/users/self-issued-subjects`).
+
+  A subject belongs to one person per realm, and a person may hold ten.
+* **What is checked** (SIOPv2 section 11.1): `iss` equals `sub`; a JWK
+  Thumbprint subject is the thumbprint of `sub_jwk` (a private key there is
+  refused); a DID subject's `kid` is one of its authentication methods; the
+  signature (never `none`); `aud` is this Verifier's Client Identifier;
+  `nonce`; `exp`; and `iat` no older than `oid4vp.siopIdTokenMaxAgeS`. A
+  `did:web` is fetched only once it is enrolled, through the outbound policy
+  every fetch here obeys.
+* **With a presentation** (`response_type=vp_token id_token`), the ID Token
+  must be signed by the presentation's holder key.
+* **The bar door** takes `?response_type=id_token` (or `vp_token id_token`)
+  and `?response_mode=form_post` on `/oid4vp/start`, to exercise a Self-Issued
+  OP without signing anybody in.
+
+Not offered: the `fragment` response mode (a Verifier chooses its response
+mode, and reading a fragment would need a script on a page here), and dynamic
+discovery of a Self-Issued OP's metadata — the static `siopv2:` configuration
+is assumed.
+
+### How a signed request names its Verifier
+
+`oid4vp.clientIdPrefix` chooses the Client Identifier of a signed request
+(OpenID4VP section 5.9). An unsigned request always uses `redirect_uri:`.
+
+| Value | Client Identifier | How the wallet finds the key |
+|---|---|---|
+| `pre-registered` (default) | `oid4vp.clientId` | out of band |
+| `decentralized_identifier` | `decentralized_identifier:` + the realm's `did:web` | the `kid` is a DID URL into the realm's DID document |
+| `verifier_attestation` | `verifier_attestation:` + the attestation's `sub` | the Verifier Attestation JWT in the request's `jwt` header, whose `cnf` is the signing key. `oid4vp.verifierAttestation` holds one an attestation issuer signed; empty, this realm attests itself, which only a wallet that already trusts this realm accepts |
+| `openid_federation` | `openid_federation:` + the realm's base URL | the realm's Entity Configuration at `/.well-known/openid-federation`, with the `authority_hints` in `oid4vp.federationAuthorityHints` |
+
 ### Not implemented
 
 * The unsigned and multi-signed request forms of the Digital Credentials API
@@ -313,6 +364,11 @@ check are the same in both modes. See
 | `oid4vp.signInCrossDevice` | `OID4VP_SIGN_IN_CROSS_DEVICE` | `false` | yes | Offer a plain, relayable QR code for a wallet on another device. |
 | `oid4vp.signInFormats` | `OID4VP_SIGN_IN_FORMATS` | `dc+sd-jwt,jwt_vc_json,ldp_vc` | yes | The formats a sign-in asks for, in order of preference. |
 | `oid4vp.signInDcApiResponseMode` | `OID4VP_SIGN_IN_DC_API_RESPONSE_MODE` | `dc_api.jwt` | yes | Whether a Digital Credentials API answer is encrypted (`dc_api.jwt`) or in the clear (`dc_api`). |
+| `oid4vp.signInSelfIssued` | `OID4VP_SIGN_IN_SELF_ISSUED` | `false` | yes | Offer *Sign in with a self-issued ID* (SIOPv2) and the enrolment on `/portal/self-issued`. |
+| `oid4vp.siopIdTokenMaxAgeS` | `OID4VP_SIOP_ID_TOKEN_MAX_AGE_S` | `300` | yes | How old a self-issued ID Token's `iat` may be. |
+| `oid4vp.clientIdPrefix` | `OID4VP_CLIENT_ID_PREFIX` | `pre-registered` | yes | How a signed request names this Verifier: `pre-registered`, `decentralized_identifier`, `verifier_attestation` or `openid_federation`. |
+| `oid4vp.verifierAttestation` | `OID4VP_VERIFIER_ATTESTATION` | *(empty)* | yes | A Verifier Attestation JWT for the `verifier_attestation` prefix. **Warning:** empty, this realm attests itself. |
+| `oid4vp.federationAuthorityHints` | `OID4VP_FEDERATION_AUTHORITY_HINTS` | *(empty)* | yes | The `authority_hints` of the realm's Entity Configuration. |
 | `oid4vp.signInRegisterMaxEntries` | `OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES` | `100000` | yes | Rows the sign-in register keeps per realm; past it the oldest is dropped, which fails closed. |
 
 The DID documents' lifetimes and signing algorithm are `oid4vci.*` settings;

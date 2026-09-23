@@ -241,6 +241,8 @@ const DID_TYPE = /^application\/did\+json\b/;
 const SAML_TYPE = /^application\/samlmetadata\+xml\b/;
 const XML_TYPE = /^application\/xml\b/;
 const TEXT_TYPE = /^text\/plain\b/;
+// OpenID Federation 1.0 section 9: an Entity Configuration's media type.
+const ENTITY_STATEMENT_TYPE = /^application\/entity-statement\+jwt\b/;
 
 // ---------------------------------------------------------------------------
 // A JWK THAT IS A PUBLIC KEY, and the members that would say otherwise.
@@ -424,6 +426,50 @@ const DOCUMENTS = [
           bad.push("verificationMethod " + i + " carries " + secret.join(", "));
         }
       });
+      log.debug("Leaving must().");
+      return bad;
+    } },
+  { family: "Verifiable Credentials (OID4VCI / OID4VP)",
+    spec: "OpenID Federation 1.0 (#129)",
+    path: "/.well-known/openid-federation",
+    type: ENTITY_STATEMENT_TYPE, json: false, badCredential: "ignored",
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      const parts = String(text || "").trim().split(".");
+      let header = null;
+      let claims = null;
+      try {
+        header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
+        claims = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+      } catch (e) {
+        log.debug("Caught in must(): " + e.message);
+      }
+      if (!header || !claims || parts.length !== 3) {
+        bad.push("not a compact JWT");
+        log.debug("Leaving must().");
+        return bad;
+      }
+      if (header.typ !== "entity-statement+jwt") {
+        bad.push("typ is " + header.typ);
+      }
+      if (!claims.iss || claims.iss !== claims.sub) {
+        bad.push("an Entity Configuration is self-issued: iss " + claims.iss +
+                 ", sub " + claims.sub);
+      }
+      const keys = (claims.jwks && claims.jwks.keys) || [];
+      if (!keys.length) {
+        bad.push("no jwks");
+      }
+      keys.forEach(function (k, i) {
+        const secret = privateMembersIn(k || {});
+        if (secret.length) {
+          bad.push("key " + i + " carries " + secret.join(", "));
+        }
+      });
+      if (!claims.metadata || !claims.metadata.openid_credential_verifier) {
+        bad.push("no openid_credential_verifier metadata");
+      }
       log.debug("Leaving must().");
       return bad;
     } },

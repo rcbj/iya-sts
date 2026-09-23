@@ -10231,6 +10231,34 @@ const CODES = [
       'entry, though the request asked for it and ' +
       'oid4vp.requireStatusReference requires one.',
     spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-VC-0090',
+    summary: 'A self-issued ID Token (SIOPv2, #129) was refused: it did not ' +
+      'verify (iss not sub, a subject key that did not resolve or match, a ' +
+      'bad signature, the wrong aud or nonce, expired or too old), or with ' +
+      'vp_token id_token its subject was not the presentation\'s holder.',
+    spec: 'invalid_request (HTTP 400), or a 303 for form_post' },
+  { code: 'STS-VC-0091',
+    summary: 'A self-issued ID Token verified and its subject is enrolled ' +
+      'for nobody in the realm, so it signed nobody in — in both modes ' +
+      '(#129).',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0092',
+    summary: 'oid4vp.verifierAttestation cannot be used — unreadable, not ' +
+      'typ verifier-attestation+jwt, no sub, expired, or its cnf is not ' +
+      'this realm\'s request-signing key — so no signed request with the ' +
+      'verifier_attestation prefix was built (#129).',
+    spec: 'HTTP 500' },
+  { code: 'STS-VC-0093',
+    summary: 'A SIOPv2 enrolment was started or collected by a browser ' +
+      'holding no sign-on session, or for a person other than the one now ' +
+      'signed in; or a self-issued ID was asked for as a second factor, ' +
+      'which it is not offered as (#129).',
+    spec: 'HTTP 403 / 400 page' },
+  { code: 'STS-VC-0094',
+    summary: 'A key proved by a SIOPv2 enrolment was not enrolled: it is ' +
+      'already enrolled for somebody, or the person holds the most they may ' +
+      '(#129).',
+    spec: 'HTTP 400 page' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -13537,6 +13565,15 @@ const CODES = [
     summary: 'remove-verification named a verification not recorded for ' +
       'the person, or the directory did not store the change (#127).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0809',
+    summary: 'enrol-self-issued-subject was refused: not a DID, thumbprint ' +
+      'or public JWK, already enrolled for somebody, the person\'s limit ' +
+      'reached, or no entry (#129).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0810',
+    summary: 'remove-self-issued-subject named a subject not enrolled for ' +
+      'the person, or the directory did not store the change (#129).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -14149,6 +14186,11 @@ const CODES = [
   { code: 'STS-PORTAL-0086',
     summary: 'A POST to /portal/delegate could not set or clear the ' +
       'signed-in person\'s delegate (stsMayAct) (#108).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0087',
+    summary: 'A POST to /portal/self-issued named a self-issued subject the ' +
+      'signed-in person has not enrolled, or the directory did not store ' +
+      'the removal (#129).',
     spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +

@@ -6039,7 +6039,15 @@ class Authn {
         : '') + '</p>' +
       '<a class="fedbtn" id="wallet-signin" href="' + WALLET_PATH +
       '?authn=' + encodeURIComponent(record.id) + '">Sign in with a wallet' +
-      '<span>OpenID4VP &middot; Digital Credentials API</span></a></div>';
+      '<span>OpenID4VP &middot; Digital Credentials API</span></a>' +
+      // SIOPv2 (#129): the wallet's own key, enrolled on the person's
+      // portal. Its own switch, off by default.
+      (config.value('oid4vp.signInSelfIssued')
+        ? '<a class="fedbtn" id="siop-signin" href="' + WALLET_PATH +
+          '?authn=' + encodeURIComponent(record.id) + '&amp;siop=1">Sign in ' +
+          'with a self-issued ID<span>SIOPv2 &middot; a wallet key you ' +
+          'enrolled</span></a>'
+        : '') + '</div>';
     log.debug("Leaving Authn.walletOptionHtml(). Offered.");
     return html;
   }

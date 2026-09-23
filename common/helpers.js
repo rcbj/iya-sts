@@ -4436,7 +4436,11 @@ function signJwt(payload, context, opts) {
   const certificateHeaderMembers = withCertificateHeader(
     (opts && opts.header) || undefined,
     opts && opts.certificateHeader, alg, signer.kid);
-  const kid = publishedKidFor(signer.kid);
+  // `opts.kidDid` (#129): a request object whose Client Identifier is a DID
+  // names its key as a DID URL — the DID, `#`, and the key id its did:web
+  // document lists the key under (`vc_did.ts`).
+  const kid = (opts && opts.kidDid) ? opts.kidDid + '#' + signer.kid :
+    publishedKidFor(signer.kid);
   logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'before ' +
       'signing',
               { header: Object.assign({ alg: alg, kid: kid },

@@ -332,6 +332,10 @@ class ProtocolStack {
     this.build('portal/portal_delegate',
                require('../portal/portal_delegate'),
                'PortalDelegate');
+    // #129: /portal/self-issued, the SIOPv2 keys a person enrols.
+    this.build('portal/portal_self_issued',
+               require('../portal/portal_self_issued'),
+               'PortalSelfIssued');
     // THE MAIL CHANNEL (#63, 2026-09-22): two LIBRARIES (rule 3) that
     // register no route — the channel and its uses — built here, before the
     // portal whose `/portal/email`, `/portal/verify-email` and
@@ -531,6 +535,10 @@ class ProtocolStack {
                'VcStatusCodec');
     this.build('oid4vc/vc_data_integrity',
                require('../oid4vc/vc_data_integrity'), 'VcDataIntegrity');
+    // #129: SIOPv2's relying-party half — the self-issued ID Token's check
+    // and the enrolled subjects. A library the verifier, the sign-in, the
+    // portal and the console ask; it registers nothing.
+    this.build('oid4vc/siop', require('../oid4vc/siop'), 'Siop');
     this.build('oid4vc/vc_status', require('../oid4vc/vc_status'), 'VcStatus');
     this.register(app, require('../oid4vc/vc_status'), 'oid4vc/vc_status');
     // The register of credentials issued for a directory entry (#38): a

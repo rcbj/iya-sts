@@ -2031,8 +2031,15 @@ const OWN_NAMES = [
   // verification's trust framework, time and evidence. Evidence carries
   // document numbers and a voucher's name, so it is withheld from every read
   // like the credentials beside it (SECRET_ATTRIBUTES).
-  // `common/identity_assurance.js` keeps them.
-  'stsIdaVerification'
+  // `common/identity_assurance.ts` keeps them.
+  'stsIdaVerification',
+
+  // AND AN ELEVENTH (#129, 2026-09-23): the SELF-ISSUED SUBJECTS a person has
+  // enrolled for SIOPv2 — a DID or an RFC 9278 JWK thumbprint URI each, one
+  // JSON value per subject with its label and who enrolled it. Whoever holds
+  // the key signs in as this person, so it is a credential's identifier and
+  // withheld from every read (SECRET_ATTRIBUTES). `oid4vc/siop.ts` keeps them.
+  'stsSelfIssuedSubject'
 ];
 
 // The table itself, built from the two lists. `learnName()` is the ONE way in,
@@ -7807,6 +7814,9 @@ const SECRET_ATTRIBUTES = [
   // A person's identity verifications (#127): evidence with document
   // numbers, personal data no directory read should hand out.
   'stsidaverification',
+  // A person's enrolled self-issued subjects (#129): whoever holds one of
+  // these keys signs in as them.
+  'stsselfissuedsubject',
   // A password reset link's hash (2026-09-13), for the activation token's
   // reason beside it.
   'stspasswordresettoken',
@@ -8544,6 +8554,67 @@ function writeIdaVerifications(key, value) {
   return true;
 }
 
+// A PERSON'S ENROLLED SELF-ISSUED SUBJECTS (#129): every value, as stored.
+// `oid4vc/siop.ts` reads and writes the JSON; this only carries it.
+function readSelfIssuedSubjects(key) {
+  log.debug('Entering readSelfIssuedSubjects(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readSelfIssuedSubjects(). No entry.');
+    return null;
+  }
+  const values = (stored.attributes.stsselfissuedsubject || []).map(String);
+  log.debug('Leaving readSelfIssuedSubjects(). ' + values.length + '.');
+  return values;
+}
+
+function writeSelfIssuedSubjects(key, values) {
+  log.debug('Entering writeSelfIssuedSubjects(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no ' +
+             'self-issued subject was enrolled.');
+    log.debug('Leaving writeSelfIssuedSubjects(). No entry.');
+    return false;
+  }
+  const list = (Array.isArray(values) ? values : []).map(String);
+  if (!list.length) {
+    delete stored.attributes.stsselfissuedsubject;
+  } else {
+    stored.attributes.stsselfissuedsubject = list;
+  }
+  touchDirectory();
+  log.debug('Leaving writeSelfIssuedSubjects(). ' + list.length +
+            ' on ' + stored.dn + '.');
+  return true;
+}
+
+// WHO IN THIS REALM HAS ENROLLED A SELF-ISSUED SUBJECT (#129): the username,
+// or '' for nobody. A walk over the realm's people, asked once per SIOPv2
+// sign-in — a sign-in is rare beside the searches the indexes exist for, and
+// an index would be one more thing a replicated write has to keep right.
+// `matches(value)` is the caller's, which owns the JSON.
+function selfIssuedSubjectOwner(matches) {
+  log.debug('Entering selfIssuedSubjectOwner().');
+  let owner = '';
+  eachEntryInRealm(function (stored) {
+    if (owner || !isPersonEntry(stored)) {
+      return;
+    }
+    const values = stored.attributes.stsselfissuedsubject || [];
+    if (values.some(function (value) {
+      return matches(String(value));
+    })) {
+      owner = String((stored.attributes.uid || [])[0] || '');
+    }
+  });
+  log.debug('Leaving selfIssuedSubjectOwner(). ' + (owner || 'nobody'));
+  return owner;
+}
+
 // THE ACTIVATION TOKEN, hashed. It is the one credential in this service that
 // completes an account setup on its own, so a leaked one is an account
 // takeover — which is why it is stored the way a password is and never in the
@@ -8624,6 +8695,9 @@ if (typeof credentials.setDirectory === 'function') {
     // Identity verifications (#127), checked where they are used for the
     // reason the pair above is.
     readIdaVerifications: readIdaVerifications,
+    readSelfIssuedSubjects: readSelfIssuedSubjects,
+    writeSelfIssuedSubjects: writeSelfIssuedSubjects,
+    selfIssuedSubjectOwner: selfIssuedSubjectOwner,
     writeIdaVerifications: writeIdaVerifications,
     // IS THIS ENTRY A PERSON (#101)? By placement, `isPersonEntry()`'s rule —
     // never by name. The second-factor refusal at the password-only doors is

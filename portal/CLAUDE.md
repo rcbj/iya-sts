@@ -1255,6 +1255,21 @@ nobody and the person themselves (`STS-AUTHN-0227`); the page answers 400 with
 the person names moot. An administrator sets the same attribute from the
 person's `/admin/users` page and `POST /admin-api/users/set-may-act`.
 
+## `/portal/self-issued`: THE WALLET KEYS THAT SIGN YOU IN (2026-09-23, #129)
+
+The SIOPv2 subjects enrolled on the person's own entry, each with a Remove,
+and — while `oid4vp.signInSelfIssued` is on — **Enrol a wallet**, a link to
+`/authn/wallet?siop=1&enrol=1`. **It enrols only a key the person PROVES**:
+the wallet answers a SIOPv2 request started from the sign-on session this
+browser already holds, and `oid4vc/vc_signin.ts` enrols the verified subject
+for that session's person and sends them back here with `?enrolled=1`.
+Nothing is typed, because a DID pasted into a box could be somebody else's —
+the one person it would then let in. The removal form names the SUBJECT,
+never whose it is (`STS-PORTAL-0087` when it is not theirs).
+`portal_self_issued.ts` draws it the way `portal_delegate.ts` does. An
+administrator enrols by value from `/admin/users` and `/admin-api`
+(`oid4vc/CLAUDE.md`, 3ba).
+
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 
 **Send a reset link** on a person's `/admin/users` page stores a hash of a

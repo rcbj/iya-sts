@@ -4270,6 +4270,53 @@ class Credentials {
     return written;
   }
 
+  // A person's enrolled SIOPv2 subjects (#129), for `oid4vc/siop.ts`: the
+  // values as stored (null where there is no store or no entry), the whole
+  // list written back, and the owner of one — each a hook the directory
+  // passes in, as the identity verifications' are.
+  readSelfIssuedSubjects(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.readSelfIssuedSubjects().');
+    if (!directory ||
+        typeof directory.readSelfIssuedSubjects !== 'function') {
+      log.debug('Leaving Credentials.readSelfIssuedSubjects(). No store.');
+      return null;
+    }
+    const values = directory.readSelfIssuedSubjects(String(username || ''));
+    log.debug('Leaving Credentials.readSelfIssuedSubjects().');
+    return values;
+  }
+
+  writeSelfIssuedSubjects(username, values) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.writeSelfIssuedSubjects().');
+    if (!directory ||
+        typeof directory.writeSelfIssuedSubjects !== 'function') {
+      log.debug('Leaving Credentials.writeSelfIssuedSubjects(). No store.');
+      return false;
+    }
+    const written = !!directory.writeSelfIssuedSubjects(
+      String(username || ''), values);
+    log.debug('Leaving Credentials.writeSelfIssuedSubjects(). ' + written);
+    return written;
+  }
+
+  selfIssuedSubjectOwner(matches) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.selfIssuedSubjectOwner().');
+    if (!directory ||
+        typeof directory.selfIssuedSubjectOwner !== 'function') {
+      log.debug('Leaving Credentials.selfIssuedSubjectOwner(). No store.');
+      return '';
+    }
+    const owner = String(directory.selfIssuedSubjectOwner(matches) || '');
+    log.debug('Leaving Credentials.selfIssuedSubjectOwner().');
+    return owner;
+  }
+
   static readonly APP_PASSWORDS_ATTRIBUTE = 'stsAppPassword';
   static readonly APP_PASSWORD_USE_WRITE_MS = 60 * 1000;
 
@@ -6171,6 +6218,9 @@ export = {
   // --- identity verifications, passed through (#127) ---
   readIdaVerifications: slot.forward('readIdaVerifications'),
   writeIdaVerifications: slot.forward('writeIdaVerifications'),
+  readSelfIssuedSubjects: slot.forward('readSelfIssuedSubjects'),
+  writeSelfIssuedSubjects: slot.forward('writeSelfIssuedSubjects'),
+  selfIssuedSubjectOwner: slot.forward('selfIssuedSubjectOwner'),
   installInstance: (instance: Credentials): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   // --- the authenticator app (RFC 6238) ---

@@ -652,6 +652,11 @@ var config = {
     clientId: "sts-verifier",                          // Verifier client ID
     requestObjectCertificateHeader: "x5u",             // Request Object certificate header
     kbMaxAgeS: 600,                                    // Key Binding max age (s)
+    signInSelfIssued: false,                           // Sign in with a self-issued ID (SIOPv2)
+    siopIdTokenMaxAgeS: 300,                           // Self-issued ID Token max age (s)
+    clientIdPrefix: "pre-registered",                  // Client Identifier prefix of a signed request
+    verifierAttestation: "",                           // Verifier Attestation JWT
+    federationAuthorityHints: "",                      // OpenID Federation authority hints
     claims: "given_name,family_name",                  // Requested claims
     presentationRequestTtlS: 600,                      // Presentation request lifetime (s)
     maxTransactions: 5000,                             // Presentation requests waiting (per realm)
