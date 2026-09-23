@@ -613,6 +613,54 @@ async function sectionD(t, db) {
           'and the store ends up holding both', JSON.stringify(
             carolStored.attrs));
 
+  // THE ENABLE ITSELF IN FLIGHT (2026-09-23). Carol is disabled and that
+  // flush COMMITS; she is enabled and that flush is held open; a change
+  // notification for her entry arrives meanwhile, and the store — read
+  // before the held COMMIT — still answers the committed, locked row. With
+  // nothing changed here since the send, the apply put that row over the
+  // enable, and the next flush wrote the lock back: the worker that enabled
+  // her refused her as disabled 100ms later (`sts_second_factor_doors`).
+  const carol2Key = 'uid=lwwcarol2,dc=lwwa';
+  const carol2 = function (attributes) {
+    dirs.get('lwwa').set(carol2Key, entry(carol2Key, attributes));
+    persistence.directoryChanged();
+  };
+  const PERSON2 = { uid: ['lwwcarol2'], entryuuid: ['lc-2'] };
+  carol2(Object.assign({ pwdaccountlockedtime: LOCK }, PERSON2));
+  await persistence.flush();
+  const lockedRow = JSON.parse(JSON.stringify(
+    db.entries.get('lwwa\n' + carol2Key)));
+  let release2 = null;
+  db.hold = new Promise(function (resolve) {
+    release2 = resolve;
+  });
+  carol2(Object.assign({}, PERSON2));
+  const heldEnable = persistence.flush();
+  await tick(20);
+  const enabledRow = db.entries.get('lwwa\n' + carol2Key);
+  db.entries.set('lwwa\n' + carol2Key, lockedRow);
+  db.log.push({ seq: db.log.length + 1, origin: 'node-b', kind: 'directory',
+                realm: 'lwwa', key: carol2Key });
+  const synced2 = persistence.syncNow();
+  await tick(20);
+  db.entries.set('lwwa\n' + carol2Key, enabledRow);
+  db.hold = null;
+  release2();
+  await heldEnable;
+  await synced2;
+  await persistence.flush();
+  await tick(20);
+  await persistence.flush();
+  const carol2Live = dirs.get('lwwa').get(carol2Key) || { attributes: {} };
+  t.check(!carol2Live.attributes.pwdaccountlockedtime,
+          'AN ENABLE WHOSE OWN FLUSH IS OUT IS NOT UNDONE BY THE COMMITTED ' +
+          'ROW A CHANGE NOTIFICATION READS MEANWHILE',
+          JSON.stringify(carol2Live.attributes));
+  const carol2Stored = db.entries.get('lwwa\n' + carol2Key) || { attrs: {} };
+  t.check(!carol2Stored.attrs.pwdaccountlockedtime,
+          'and the store is not given the lock back',
+          JSON.stringify(carol2Stored.attrs));
+
   realms.remove('lwwa');
   await persistence.flush();
   t.check(!db.realms.has('lwwa') && db.realms.has('lwwb'),

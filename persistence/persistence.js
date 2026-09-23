@@ -383,13 +383,14 @@ let flushing = null;
 let flushQueued = null;
 // WHAT THE RUNNING FLUSH HAS SENT, realm \n key -> the JSON of each upsert,
 // from the moment it is handed to the driver until the flush settles
-// (2026-09-23). `applyDirectoryChange()` merges a row another process wrote
-// against it rather than against the shadow, which the flush has not advanced
-// yet. Without it a change made here WHILE a flush was out, and undoing the
-// flush's own change, was lost: a person disabled (the flush) and enabled again
-// a moment later looked, beside the shadow, as though this process had
-// changed nothing, so a replicated row still holding the lock won and the
-// enable was never written anywhere (`sts_second_factor_doors`, single-node).
+// (2026-09-23). `applyDirectoryChange()` WAITS for the flush when the entry
+// it is about to apply is in here, and merges once it has settled — against a
+// shadow that then says what the store holds. It merged against the sent JSON
+// at first, which fixed a change undone while its flush was out (a person
+// disabled, the flush, and enabled again) but not a change that WAS the flush
+// (the enable itself out, the committed row still locked): with live equal to
+// the sent JSON nothing looked pending and the locked row was applied over the
+// enable (`sts_second_factor_doors`, single-node, both times).
 const inFlightDirectory = new Map();
 
 // True while start() is loading. Every changed() call is a no-op then: restore
@@ -2222,6 +2223,30 @@ function applyDirectoryChange(change) {
   // the DN as written and this has to normalise nothing itself. Normalising a
   // DN is ldap_server.js's job and a second implementation here would be one
   // whose disagreement is invisible.
+  // -------------------------------------------------------------------------
+  // A FLUSH OF THIS ENTRY IS OUT: WAIT FOR IT, THEN LOOK (2026-09-23).
+  //
+  // The row read below is what the store has COMMITTED, and while this
+  // process's own write of the entry is in flight that is OLDER than what this
+  // process holds. With nothing changed here since the send, live equals the
+  // sent JSON, nothing reads as pending, and the committed row was applied
+  // wholesale: a person enabled here (the flush in flight) and disabled a
+  // moment before (committed) had the lock put back by a change notification
+  // for their entry, and once the flush settled the shadow said "enabled"
+  // while live said "disabled", so the next flush wrote the lock back for good
+  // — `sts_second_factor_doors`, carol refused as disabled 100ms after
+  // /users/enable, on the worker that enabled her. After the flush the shadow
+  // is what was sent and the store holds it (or the driver's merge of it), so
+  // the three-way merge below has a true base. The flush never waits on an
+  // apply, so this cannot deadlock.
+  // -------------------------------------------------------------------------
+  if (flushing && inFlightDirectory.has(change.realm + '\n' + change.key)) {
+    log.debug('applyDirectoryChange(): a flush of ' + change.key + ' is ' +
+              'out; applying the change once it settles.');
+    return flushing.then(function () {
+      return applyDirectoryChange(change);
+    });
+  }
   return driver.readEntry(change.realm, change.key).then(function (row) {
     const rows = shadow.get(change.realm) || new Map();
     // -----------------------------------------------------------------------
@@ -2237,13 +2262,23 @@ function applyDirectoryChange(change) {
     // writes it against the row it has now seen.
     // -----------------------------------------------------------------------
     const key = row ? row.key : change.key;
+    // AND ASKED AGAIN NOW THE ROW HAS BEEN READ: a flush that started during
+    // the read (a queued one, taking the change this process made meanwhile)
+    // has sent the entry, and the row read before it is older than what it
+    // sent — applied here it would undo the send, exactly as above. Measured
+    // in `tests/cluster_lww_stores.js` section D: the queued flush listed the
+    // entry between the check above and the read settling.
+    if (flushing && inFlightDirectory.has(change.realm + '\n' + key)) {
+      log.debug('applyDirectoryChange(): a flush of ' + key + ' started ' +
+                'during the read; applying the change once it settles.');
+      return flushing.then(function () {
+        return applyDirectoryChange(change);
+      });
+    }
     const live = entryAt(change.realm, key);
-    // THE BASE IS WHAT THIS PROCESS LAST SENT for this key when a flush of it
-    // is still out — see `inFlightDirectory` — and the shadow otherwise.
-    const flightKey = change.realm + '\n' + key;
-    const base = inFlightDirectory.has(flightKey)
-      ? inFlightDirectory.get(flightKey)
-      : (rows.has(key) ? rows.get(key) : null);
+    // THE BASE IS THE SHADOW: no flush of this key is out (both checks
+    // above), so the shadow is what the store last held from this process.
+    const base = rows.has(key) ? rows.get(key) : null;
     const pending = live ? JSON.stringify(live) !== base : base !== null;
     let keep = null;
     if (pending) {
