@@ -439,7 +439,7 @@ specifically to avoid) or a first-start script for a demonstration container.
 Mount a pair to see the authenticated path. **Either way it enforces.**
 
 **And the compose service's nudge is refused by default**: its notify URL is
-plain `http` on the bridge and `xacml.pepNotifyAllowInsecure` is off. That is
+plain `http` on the bridge and `xacml.pepNotifyAllowHttp` is off. That is
 the design demonstrating itself — no nudge is delivered, the PDP says why on the
 PEP's row, and the PEP converges on its fifteen-second poll anyway.
 
@@ -447,7 +447,9 @@ PEP's row, and the PEP converges on its fifteen-second poll anyway.
 to do it. `sts_xacml_remote_pep.js` runs its sections 1–5 in exactly this
 configuration — an http notify URL the PDP refuses to dial — so every
 convergence there is the poll and the registration reply is checked for the
-refusal. Then it turns `xacml.pepNotifyAllowInsecure` on in its own realm and
+refusal. Then it turns `xacml.pepNotifyAllowHttp` on in its own realm — and,
+when that realm is in product mode, asserts that plain http is STILL refused
+(#171) and puts the realm in development mode for the rest — and
 measures the other half: the PDP dials this container's `/notify` across the
 bridge, the row records `The PEP answered 204.`, and a change lands in tens of
 milliseconds against a five-second poll. **That outbound request is one of three

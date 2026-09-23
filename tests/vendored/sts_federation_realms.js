@@ -46,8 +46,8 @@
 //     https://test-idp.iyasec.io times out. A local stack cannot dial itself
 //     either — its certificate is issued under a Root generated at start that
 //     the service's own outbound client does not trust, and
-//     `federation.outboundAllowInsecure` is a setting this job may not turn
-//     on.
+//     `federation.outboundSkipTlsVerification` is a setting this job may not
+//     turn on (and product mode refuses it since #171).
 //   * THE AUTHORIZATION CODE RELATIONSHIP IS STILL DRIVEN (section 5), because
 //     everything up to the back channel is assertable anywhere — PKCE, the
 //     state, the nonce, the code arriving at the ACS — and a back channel that

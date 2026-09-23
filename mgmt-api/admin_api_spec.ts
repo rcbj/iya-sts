@@ -3770,7 +3770,15 @@ const SCHEMAS = {
         on: { type: 'boolean' },
         allowedHosts: { type: 'array', items: { type: 'string' },
           description: 'EMPTY MEANS ANY, which is the default.' },
-        allowInsecure: { type: 'boolean' },
+        transport: openObject('The transport policy IN FORCE in this ' +
+            'realm (#171): plain http allowed, certificate verification ' +
+            'skipped (never in product mode, whatever is stored), and the CA ' +
+            'file a PEP\'s certificate may chain to beside node\'s store.', {
+          allowHttp: { type: 'boolean' },
+          skipTlsVerification: { type: 'boolean' },
+          skipTlsVerificationSet: { type: 'boolean' },
+          caFile: { type: 'string' }
+        }),
         timeoutMs: { type: 'integer' }
       }),
       peps: { type: 'array', items: openObject('One registered PEP.', {

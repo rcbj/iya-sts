@@ -17079,7 +17079,8 @@ class AdminConsole {
         ? 'this development-mode service reports and does not refuse'
         : 'this product-mode service refuses') + '. The fetch follows the ' +
       'federation outbound policy: no redirects, a size cap, a timeout, ' +
-      'https unless <code>federation.outboundAllowInsecure</code> is on' +
+      'https with the certificate verified (plain http and a skipped ' +
+      'check only in development mode)' +
       (mode.dialsInternalAddresses()
         ? '.'
         : ', and never to a loopback, private or link-local address.')) +

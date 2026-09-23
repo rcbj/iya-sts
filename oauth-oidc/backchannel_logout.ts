@@ -99,8 +99,8 @@
 // new row.
 //
 // **5. IT GOES OUT THROUGH THE OUTBOUND POLICY, NOT A SECOND ONE.**
-// `federation_http.deliverForm()` — `federation.outbound`, https unless
-// `federation.outboundAllowInsecure`, no redirect followed, the body drained
+// `federation_http.deliverForm()` — `federation.outbound`, https with the
+// certificate verified (#171), no redirect followed, the body drained
 // and discarded, and in product mode no internal address (the name resolved
 // once and the connection pinned to the address that was checked).
 //

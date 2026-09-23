@@ -162,8 +162,11 @@ covers nobody until a subject is added.
 Push is the one place in SSF where this service makes a request to an address
 that a caller chose. Four settings limit it: `ssf.pushDelivery` turns it off,
 `ssf.pushAllowedHosts` is a host allowlist (empty by default, meaning any
-host), only `https` is used unless `ssf.pushAllowInsecure` is on, and every
-push has a timeout, a cap on the response size and **no redirects**. With push
+host), only `https` with the receiver's certificate verified is used — plain
+http only with `ssf.pushAllowHttp` and verification off only with
+`ssf.pushSkipTlsVerification`, **both in development mode only** (#171);
+product reaches a privately certified receiver through `ssf.pushCaFile` — and
+every push has a timeout, a cap on the response size and **no redirects**. With push
 turned off, SSF still works in full over poll, and `delivery_methods_supported`
 lists only poll.
 
@@ -380,7 +383,9 @@ types from what a stream may ask for.
 | `ssf.eventsSupported` | `STS_SSF_EVENTS_SUPPORTED` | verification, stream-updated | yes | Which of SSF's own two event types are offered. |
 | `ssf.pushDelivery` | `STS_SSF_PUSH_DELIVERY` | `true` | yes | Whether the service may push SETs at all. When off, only poll is offered. |
 | `ssf.pushAllowedHosts` | `STS_SSF_PUSH_ALLOWED_HOSTS` | *(empty)* | yes | Hosts the service may push to. Empty means any host. |
-| `ssf.pushAllowInsecure` | `STS_SSF_PUSH_ALLOW_INSECURE` | `false` | yes | Allows `http://` endpoints and certificates that nothing here trusts. |
+| `ssf.pushAllowHttp` | `STS_SSF_PUSH_ALLOW_HTTP` | `false` | yes | Allows `http://` endpoints, in development mode only. This service's own receivers are exempt in both modes. |
+| `ssf.pushSkipTlsVerification` | `STS_SSF_PUSH_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only — a warning.** Pushes to a receiver whose certificate nothing here trusts. Ignored in product, and refused on write there. |
+| `ssf.pushCaFile` | `STS_SSF_PUSH_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates a receiver may chain to, beside node's own store. |
 | `ssf.pushTimeoutMs` | `STS_SSF_PUSH_TIMEOUT_MS` | `10000` | yes | How long to wait for a receiver to answer a push. |
 | `ssf.pushMaxResponseBytes` | `STS_SSF_PUSH_MAX_RESPONSE_BYTES` | `65536` | yes | How much of a receiver's answer is read before the push counts as failed. |
 | `ssf.pushRetries` | `STS_SSF_PUSH_RETRIES` | `0` | yes | How many times a failed push is retried. Only failures that could go differently are retried. |

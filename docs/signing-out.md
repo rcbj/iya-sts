@@ -201,8 +201,10 @@ What to expect:
   times with a growing pause — see `oauth2.backchannelLogoutAttempts`,
   `...TimeoutMs`, `...BackoffMs` and `...TokenTtlS` in
   [configuration](configuration.md).
-* **The address has to be reachable under the outbound rules**: https, unless
-  `federation.outboundAllowInsecure` is on (the ordinary case on localhost),
+* **The address has to be reachable under the outbound rules**: https with the
+  certificate verified, unless `federation.outboundAllowHttp` or
+  `federation.outboundSkipTlsVerification` is on — the ordinary case on
+  localhost, and development mode only (#171) —
   nothing at all with `federation.outbound` off, and — in product mode — never
   a loopback, private or link-local address.
 * **A session that simply EXPIRES sends one too**, while

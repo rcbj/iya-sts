@@ -15,10 +15,11 @@
 // `jwks_uri` could not authenticate at all. So it is fetched now — under
 // `federation/federation_http.ts`'s outbound policy, which is what answers the
 // SSRF argument rather than a refusal: https only (unless
-// `federation.outboundAllowInsecure`), no redirect, the body cap and the
-// timeout, the kill switch, and in product mode an internal address refused
-// with the connection pinned. It is the EIGHTH outbound fetch the root
-// CLAUDE.md lists.
+// `federation.outboundAllowHttp`, in development only — #171), verified
+// against node's store and `federation.outboundCaFile`, no redirect, the
+// body cap and the timeout, the kill switch, and in product mode an internal
+// address refused with the connection pinned. It is the EIGHTH outbound fetch
+// the root CLAUDE.md lists.
 //
 // THE READERS ARE SYNCHRONOUS, SO THE FETCH IS A PREFETCH. `assertion_grant`'s
 // `keysForParty()` and `introspection_jwt`'s `recipientKey()` read keys off a

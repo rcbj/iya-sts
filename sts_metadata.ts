@@ -2076,8 +2076,8 @@ const SPECS: Spec[] = [
               'section 2.8), taken over when the node sending it dies, and ' +
               'dead-lettered on a final failure — listed, paged and retried ' +
               'from /admin/logout and /admin-api/logout. Through the ' +
-              'outbound policy (https unless ' +
-              'federation.outboundAllowInsecure, no internal address in ' +
+              'outbound policy (https with the certificate verified, no ' +
+              'internal address in ' +
               'product mode); one audit row per outcome and a periodic ' +
               'summary line. Front-channel logout cannot follow an expiry: ' +
               'it needs the browser. oauth2.backchannelLogout turns the ' +
@@ -9519,8 +9519,11 @@ const PROTOCOLS: Protocol[] = [
              'the push finish method: the interaction reference is POSTed to ' +
              'a finish URI registered on the client\'s application entry. ' +
              'gnap.pushFinish turns it off, gnap.pushAllowedHosts narrows ' +
-             'it, and plain http is refused unless gnap.pushAllowInsecure is ' +
-             'set.' },
+             'it, and plain http is refused unless gnap.pushAllowHttp is ' +
+             'set (and in product mode is allowed to loopback only). The ' +
+             'client\'s certificate is verified — against node\'s store and ' +
+             'gnap.pushCaFile — and gnap.pushSkipTlsVerification turns that ' +
+             'off in development mode only (#171).' },
   { name: 'XACML', groups: ['XACML'],
     specs: ['xacml30', 'xacmljson'],
     what: 'A Policy Decision Point, a policy repository that IS ' +

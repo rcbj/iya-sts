@@ -1045,8 +1045,8 @@ const SCHEMA = {
             'backchannel_logout_uri. Every sign-out of a session this client ' +
             'was issued an authorization response on sends one, ' +
             'server-to-server, after the sign-out has answered, through the ' +
-            'outbound policy (https unless ' +
-            'federation.outboundAllowInsecure; no internal address in ' +
+            'outbound policy (https with the certificate verified; no ' +
+            'internal address in ' +
             'product mode). SINGLE-valued, like the front-channel URI: the ' +
             'specification defines one per client. http or https with no ' +
             'fragment.' },
