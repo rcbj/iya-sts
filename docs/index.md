@@ -53,6 +53,8 @@ console control reachable by a machine with an OAuth 2.0 access token.
 
 **Operating it** —
 [Persistence](persistence.md) ·
+[PostgreSQL schema](postgres-schema.md) ·
+[LDAP schema](ldap-schema.md) ·
 [Encryption at rest](encryption-at-rest.md) ·
 [Caches](caches.md) ·
 [A cluster in AWS](aws-cluster.md)

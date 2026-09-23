@@ -52,6 +52,7 @@
 - section: Directory and provisioning
   items:
     - { title: LDAP, url: /ldap.html }
+    - { title: LDAP schema, url: /ldap-schema.html }
     - { title: SCIM 2.0, url: /scim.html }
 
 - section: Authorization policy
@@ -80,6 +81,7 @@
 - section: Operating it
   items:
     - { title: Persistence, url: /persistence.html }
+    - { title: PostgreSQL schema, url: /postgres-schema.html }
     - { title: Encryption at rest, url: /encryption-at-rest.html }
     - { title: Caches, url: /caches.html }
     - { title: A cluster in AWS, url: /aws-cluster.html }
