@@ -739,11 +739,16 @@ verifies a signature and some `Conditions`; a Kerberos service decrypts with its
 own key; an SVID verifies against a bundle. A real identity provider cannot
 recall any of them either.
 
-What the KDC does do is refuse the next `TGS-REQ` presenting a ticket-granting
+What the KDC does do is refuse every `TGS-REQ` presenting a ticket-granting
 ticket authenticated before the sign-out, with `KDC_ERR_TGT_REVOKED` (20), while
-`logout.kerberosSignOut` is on (the default). **The person's next AS-REQ clears
-that mark**, after which an older ticket-granting ticket is accepted again. A
-service ticket already issued is untouched.
+`logout.kerberosSignOut` is on (the default), in both modes. **The person's
+next AS-REQ succeeds and does not lift that**: its new ticket is accepted, and
+every ticket from before the sign-out — a renewal of one included, since a
+renewal keeps `authtime` — stays refused until the latest one could still be
+valid (the sign-out plus the longer of `krb5.ticketLifetimeSeconds` and
+`krb5.renewLifetimeSeconds`, plus `krb5.clockSkew`), on every node. The
+console's undo, `restore-kerberos`, is refused in product mode. A service
+ticket already issued is untouched.
 
 ## The Workload API is the opposite case
 
@@ -864,9 +869,6 @@ These are true in a product deployment today, and are tracked as issues:
 * **A Workload API caller over TCP is not attested** — only one on the Unix
   socket is, since #40 made node attestation verified or refused
   ([#40](https://github.com/rcbj/iya-sts/issues/40)).
-* **The KDC's sign-out mark is cleared by the person's next AS-REQ**, after
-  which a ticket-granting ticket from before the sign-out is accepted again
-  ([#111](https://github.com/rcbj/iya-sts/issues/111)).
 * **`GET /saml2/metadata/{sp}`** answers for any `{sp}`, and an MDQ lookup
   started by an anonymous request can register an unknown service provider
   ([#112](https://github.com/rcbj/iya-sts/issues/112)).

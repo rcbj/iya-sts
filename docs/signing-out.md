@@ -99,8 +99,10 @@ Two more things it does not reach, and both are honest rather than missing:
 
 * **A Kerberos service ticket keeps working against the service that accepts
   it.** The sign-out instant is checked at the *KDC*, and accepting a service
-  ticket never contacts the KDC. A fresh `AS-REQ` also succeeds and clears the
-  instant — signing out is not being locked out.
+  ticket never contacts the KDC. A fresh `AS-REQ` also succeeds — signing out
+  is not being locked out — but does not lift the instant: its new ticket is
+  accepted, and every ticket-granting ticket from before the sign-out, renewed
+  or not, stays refused until the latest one could still be valid.
 
   Worth being plain about: **Kerberos itself has no logout, no session and no
   revocation.** There is no CRL, no status query and no list of issued tickets —
@@ -258,8 +260,8 @@ the portal draws a button for it at the foot of its **Overview** page.
 | | Who it is for | Difference |
 |---|---|---|
 | `/logout` | a person, about themselves | no console role needed; it is the browser that loads the notifications |
-| `/admin/logout` | an operator, about somebody else | behind the console's two roles; filtered and paged; has two **NON-SPEC** undos — restoring a revoked token, and clearing a Kerberos sign-out instant |
-| `GET|POST /admin-api/logout` | a test | four operations: `global`, `end`, `restore-token`, `restore-kerberos` |
+| `/admin/logout` | an operator, about somebody else | behind the console's two roles; filtered and paged; has two **NON-SPEC** undos — restoring a revoked token, and clearing a Kerberos sign-out instant (development mode only) |
+| `GET|POST /admin-api/logout` | a test | four operations: `global`, `end`, `restore-token`, `restore-kerberos` (refused in product mode) |
 
 All three call one pair of functions, which is what stops them coming to
 disagree about what a live session is.

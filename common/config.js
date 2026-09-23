@@ -10293,8 +10293,11 @@ const SETTINGS = [
                  'nothing contacts the KDC on that exchange — which is a ' +
                  'fact about Kerberos rather than a gap here, and /logout ' +
                  'says so on the row. An AS-REQ still succeeds: signing out ' +
-                 'is not disabling an account, and the next authentication ' +
-                 'clears the instant. Turning it OFF leaves the KDC behaving ' +
+                 'is not disabling an account. It does NOT lift the instant ' +
+                 '(#111): its new ticket is accepted, while every ticket ' +
+                 'from before the sign-out, a renewal included, stays ' +
+                 'refused until the latest one could still be valid. ' +
+                 'Turning it OFF leaves the KDC behaving ' +
                  'exactly as it did before this feature existed.' },
 
   { key: 'logout.ldapDisconnect', group: 'Logout',

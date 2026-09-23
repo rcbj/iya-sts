@@ -666,6 +666,9 @@ everything, and it is named.
 KDC has no clear-the-instant; both exist for the reason
 `POST /admin-api/tokens/restore` does, which is that restarting this service to
 get back to a working credential turns a two-second test into a two-minute one.
+**`restore-kerberos` is development-only since #111 (2026-09-23)**: product mode
+refuses it (`STS-ADMIN-0804`, `mode.opensTestControls()`) on this door and the
+console's alike, in `admin_actions.ts`'s `logoutAction()` which both reach.
 
 **What this API cannot do is in the reply rather than absent from it.** A
 front-channel logout notification is an iframe in the signed-out person's own

@@ -7352,8 +7352,9 @@ const CODES = [
     summary: 'A TGS-REQ presented a ticket that is not yet valid.',
     spec: 'KRB_AP_ERR_TKT_NYV (33)' },
   { code: 'STS-KRB-0034',
-    summary: 'A TGS-REQ was refused because the ticket was authenticated ' +
-      'before its client signed out (logout.kerberosSignOut).',
+    summary: 'A TGS-REQ (a renewal included) was refused because the ticket ' +
+      'was authenticated before its client signed out ' +
+      '(logout.kerberosSignOut); a later AS exchange does not lift it.',
     spec: 'KDC_ERR_TGT_REVOKED (20)' },
   { code: 'STS-KRB-0035',
     summary: 'A TGS-REQ\'s Authenticator clock was outside the KDC\'s ' +
@@ -7879,6 +7880,10 @@ const CODES = [
   { code: 'STS-KRB-0154',
     summary: 'Asking whether a person holds a second factor failed, so the ' +
       'KDC treated a password alone as not enough.' },
+  { code: 'STS-KRB-0155',
+    summary: 'An AS exchange waited (at most a second) for its client\'s ' +
+      'sign-out second to pass before taking authtime, so the new ticket is ' +
+      'newer than the sign-out. Logged at debug; not a failure.' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
@@ -12584,6 +12589,10 @@ const CODES = [
     summary: 'A password reset for a Kerberos keytab SET the password and ' +
       'then no keytab could be made, or a Kerberos principals action threw ' +
       'inside the console.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0804',
+    summary: 'restore-kerberos (clearing a Kerberos sign-out instant) was ' +
+      'refused because it is a development-only test control.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
