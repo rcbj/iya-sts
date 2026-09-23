@@ -60,6 +60,12 @@ const log = require('bunyan').createLogger({ name: 'readme_ports',
 
 const README = path.join(__dirname, '..', 'README.md');
 
+// Ports on OTHER hosts that this service connects to, named by a setting
+// whose key happens to end in `Port`. Listed by name, each with its reason
+// where it is read, because a rule on the shape of the key cannot tell a
+// listener from a destination.
+const DIALLED = ['mail.smtpPort'];
+
 // The settings that name something this service BINDS. A port or a socket
 // path, and nothing else — `spiffe.trustLocalSocket` is a policy about the
 // socket rather than the socket, so the filter is on the shape of the VALUE as
@@ -71,6 +77,11 @@ function bindingSettings() {
     // A port whose DEFAULT is 0 is not a binding: `pki.distributionPort` and
     // `pki.distributionLdapPort` are ports this service WRITES into a
     // certificate, and 0 is how they say "the listener's own".
+    // A port this service DIALS is not a binding either: `mail.smtpPort`
+    // (#63) is the RELAY's port, the address of somebody else's listener.
+    if (DIALLED.indexOf(s.key) >= 0) {
+      return false;
+    }
     if (/[Pp]ort$/.test(s.key)) {
       return typeof s.dflt === 'number' && s.dflt > 0;
     }

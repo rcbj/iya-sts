@@ -1171,6 +1171,124 @@ async function realmsSeparate(t) {
   log.debug('Leaving realmsSeparate().');
 }
 
+// ---------------------------------------------------------------------------
+// 13. THE CONSOLE PAGES DRAW — the real handlers, a stub console shell
+// ---------------------------------------------------------------------------
+async function consolePages(t) {
+  log.debug('Entering consolePages().');
+  const realms = require('../common/realms');
+  const mailModule = require('../common/mail');
+  const mailAdminModule = require('../admin-ui/mail_admin');
+  mailModule.setDirectory(stubDirectory({
+    '<b>x</b>': { mail: ['x@example.com'] } }));
+  await withRealm(t, realms, realmId('mail-pages'), {}, async function () {
+    const r = mailModule.send({ username: '<b>x</b>',
+                                template: 'test-message',
+                                values: { username: '<script>1</script>' } });
+    await r.delivered;
+    const drawn = [];
+    const esc = function (v) {
+      return String(v == null ? '' : v).replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    };
+    const shell = {
+      esc: esc,
+      mayWrite: function () {
+        return true;
+      },
+      tile: function (n, label) {
+        return '<div>' + n + ' ' + label + '</div>';
+      },
+      note: function (html) {
+        return '<p>' + html + '</p>';
+      },
+      warn: function (html) {
+        return '<p class="warn">' + html + '</p>';
+      },
+      messagesOf: function () {
+        return '';
+      },
+      configFormsFor: function () {
+        return '<form id="settings"></form>';
+      },
+      configSettingsJson: function () {
+        return [];
+      },
+      pageNavPair: function () {
+        return { head: '', foot: '' };
+      },
+      upTo: function (path, leaf) {
+        return { path: path, leaf: leaf };
+      },
+      respond: function (req, res, json, title, active, html, up) {
+        drawn.push({ json: json, title: title, active: active, html: html,
+                     up: up });
+      },
+      respondToAction: function () {
+        return undefined;
+      }
+    };
+    const views = {
+      gateStateFor: function () {
+        return { username: 'admin' };
+      },
+      pagedRows: function (q, rows) {
+        return { shown: rows, paging: { page: 1, pages: 1, total:
+                                        rows.length } };
+      },
+      pagingJson: function (p) {
+        return p;
+      },
+      pageParamsOf: function () {
+        return {};
+      }
+    };
+    const page = new mailAdminModule.MailAdmin(Object.assign(
+      mailAdminModule.MailAdmin.defaultDeps(), { admin: shell,
+                                                 adminViews: views }));
+    const routes = {};
+    page.registerRoutes({
+      get: function (path, fn) {
+        routes['GET ' + path] = fn;
+      },
+      post: function (path, fn) {
+        routes['POST ' + path] = fn;
+      }
+    });
+    const get = function (path, query) {
+      routes['GET ' + path]({ query: query || {}, headers: {} }, {});
+      return drawn[drawn.length - 1];
+    };
+    const settings = get('/admin/mail');
+    t.check(settings && /capture/.test(settings.html) &&
+            /Send a test message/.test(settings.html) &&
+            /id="settings"/.test(settings.html) &&
+            settings.html.indexOf('password-reset') >= 0,
+            '13a. /admin/mail draws the transport, the test form, the ' +
+            'messages and the settings', settings && settings.html.slice(0, 300));
+    const tpl = get('/admin/mail', { template: 'password-reset', lang: 'en' });
+    t.check(tpl && tpl.up && /name="subject"/.test(tpl.html) &&
+            /\{\{link\}\}/.test(tpl.html),
+            '13b. a message\'s drill-down draws its wording under a ' +
+            'breadcrumb');
+    const outbox = get('/admin/mail/outbox');
+    t.check(outbox && outbox.html.indexOf('&lt;b&gt;x&lt;/b&gt;') >= 0 &&
+            outbox.html.indexOf('<b>x</b>') < 0,
+            '13c. the outbox draws a hostile username escaped',
+            outbox && outbox.html.slice(0, 400));
+    const one = get('/admin/mail/outbox', { message: r.queued[0].id });
+    t.check(one && one.up && /The captured message/.test(one.html) &&
+            one.html.indexOf('<script>1</script>') < 0 &&
+            one.html.indexOf('&lt;script&gt;') >= 0,
+            '13d. a captured message\'s body is drawn as escaped source',
+            one && one.html.slice(0, 300));
+    const missing = get('/admin/mail', { template: 'no-such' });
+    t.check(missing && /no such message/.test(missing.html),
+            '13e. an unknown message is said so, not thrown');
+  });
+  log.debug('Leaving consolePages().');
+}
+
 module.exports = {
   name: 'mail',
   describe: 'The mail channel (#63): templates, directory-only recipients, ' +
@@ -1179,7 +1297,6 @@ module.exports = {
             'real server with DKIM, the uses, and realms',
   run: async function (t) {
     log.debug('Entering run().');
-    process.env.STS_LOG_LEVEL = process.env.STS_LOG_LEVEL || 'fatal';
     templates(t);
     await recipients(t);
     await ceilings(t);
@@ -1191,6 +1308,7 @@ module.exports = {
     await dkim(t);
     await uses(t);
     await realmsSeparate(t);
+    await consolePages(t);
     log.debug('Leaving run().');
   }
 };

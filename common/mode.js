@@ -1465,7 +1465,9 @@ const REQUIREMENTS = [
                  'at sts.example with email_verified true — a credential ' +
                  'fills an absent attribute with a generated value, and a ' +
                  'security event names an @example.com subject.',
-    product: 'A value comes from the person\'s directory entry or is omitted.',
+    product: 'A value comes from the person\'s directory entry or is ' +
+             'omitted; email_verified is true only for an address the ' +
+             'person verified through a mailed link (#63).',
     where: 'common/helpers.js, oauth-oidc/oauth2.ts, oid4vc/vc_claims.ts, ' +
            'ssf/ssf_subjects.js, ssf/risc.ts' },
   { id: 'saml-request-signatures',

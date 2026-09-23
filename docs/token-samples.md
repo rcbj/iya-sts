@@ -217,7 +217,9 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0cy1mNzA0NTI0MWU2YjAiLCJ4NXUiOiJo
 * `name`, `given_name`, `family_name`, `email` and `email_verified` are
   invented in development mode (`mode.inventsClaimValues()`), which is why the
   family name is `Mock`. Product mode fills them only from the directory
-  entry, and never sets `email_verified`.
+  entry, and `email_verified` is `true` only when the person verified that
+  address by following a link sent to it ([mail](mail.md)), `false`
+  otherwise.
 * `email` is here although the request asked only for `openid profile`.
   That was a bug, [#155](https://github.com/rcbj/iya-sts/issues/155), fixed by
   #118: none of these claims are in a code-flow ID Token now.
