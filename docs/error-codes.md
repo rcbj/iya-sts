@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2920** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2942** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -62,12 +62,12 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 188
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 189
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 461
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 74
+* [Federation (`STS-FED`)](#sts-fed) — 95
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
@@ -1065,6 +1065,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0207` | A hosted surface (the console, the portal or the embedded debugger) could not get the key it signs its private_key_jwt client assertion with: this realm has no certificate authority to issue one, the issue failed, or the key could not be written onto the surface's application entry. The surface cannot authenticate at the token endpoint, so the sign-in or renewal stops (#138). | RFC 7523 section 2.2; OIDC Core section 9 |
 | `STS-AUTHN-0208` | A hosted surface's key was being issued by another process, and neither the key nor an answer from the claim store arrived in time; the sign-in or renewal stops rather than issuing a second key (#138). | none — a refusal of this service's own |
 | `STS-AUTHN-0209` | A hosted surface's application entry declares a token endpoint authentication method the surface does not implement. It implements private_key_jwt, and client_secret_basic or client_secret_post for an entry an operator set so (#138). | RFC 7591 section 2 |
+| `STS-AUTHN-0212` | A passwordless security-key sign-in was asked for at the sign-in screen federation's link-at-first-sign-in draws, which signs in with the password (#109). | HTTP 200 sign-in screen with an error |
 
 ## STS-OAUTH
 
@@ -1757,6 +1758,27 @@ Raised from: federation/.
 | `STS-FED-0072` | The directory refused the write for an update to a federation relationship. | action result ok:false (console redirect or /admin-api HTTP 400) |
 | `STS-FED-0073` | The directory would not delete a federation relationship. | action result ok:false (console redirect or /admin-api HTTP 400) |
 | `STS-FED-0090` | A federated sign-in verified, but the directory holds no entry for the person and none was created (dynamic provisioning off on the relationship, or the directory declined), so no session was started. | HTTP 403 page |
+| `STS-FED-0091` | A federated sign-in verified, but the relationship's fedSubjectPolicy is pre-linked and no entry carries a federationLink for the partner's subject. | HTTP 403 page |
+| `STS-FED-0092` | A federated sign-in verified, but the person it would sign in is outside the relationship's subject rules (fedSubjectGroup, fedSubjectDomain or fedSubjectPattern). | HTTP 403 page |
+| `STS-FED-0093` | A federated sign-in named a console administrator (Admin Read or Admin Write) or a holder of REMOTE_PEPS, and the relationship does not set fedMayAssertAdministrators. | HTTP 403 page |
+| `STS-FED-0094` | A federated sign-in arrived at a relationship whose fedSubjectPolicy is any-existing, which product mode refuses (mode.matchesFederatedNames()). | HTTP 403 page |
+| `STS-FED-0095` | An update asked for fedSubjectPolicy any-existing in product mode. | action result ok:false (console redirect or /admin-api HTTP 400) |
+| `STS-FED-0096` | A federated sign-in carried no stable subject to link: an empty subject, a SAML 2.0 transient NameID, or an issuer that cannot be part of a federationLink. | HTTP 403 page |
+| `STS-FED-0097` | A federated sign-in's federationLink is carried by more than one directory entry, so which person it names is ambiguous. | HTTP 403 page |
+| `STS-FED-0098` | A federated sign-in would create a namespaced entry, and an entry of that name already exists without a link to this subject. | HTTP 403 page |
+| `STS-FED-0099` | First-sign-in linking ended without a local sign-in: the person cancelled at the sign-in screen, or it refused them. | HTTP 403 page |
+| `STS-FED-0100` | The linking step named a handle this service did not mint, one already spent, or one that expired. | HTTP 400 page |
+| `STS-FED-0101` | The linking step was reached without a fresh local sign-in, through that step, as the person being linked. | HTTP 403 page |
+| `STS-FED-0102` | An update set fedSubjectPolicy to a value that is not one of the four. | action result ok:false (console redirect or /admin-api HTTP 400) |
+| `STS-FED-0103` | An update set fedSubjectPattern to a pattern that does not compile, is longer than 256 characters, or nests a quantifier or uses a backreference. | action result ok:false (console redirect or /admin-api HTTP 400) |
+| `STS-FED-0104` | A federation link or unlink named no person, or a person the directory holds no entry for. | action result ok:false (console redirect, /admin-api HTTP 400, or SCIM 400 invalidValue) |
+| `STS-FED-0105` | A federation link named no relationship, or one that is not a service-provider-side relationship in this realm. | action result ok:false (console redirect, /admin-api HTTP 400, or SCIM 400 invalidValue) |
+| `STS-FED-0106` | A federation link carried no subject, or an issuer or subject that cannot be written as a federationLink value. | action result ok:false (console redirect, /admin-api HTTP 400, or SCIM 400 invalidValue) |
+| `STS-FED-0107` | A federation link is already carried by a different person. | action result ok:false (console redirect, /admin-api HTTP 400, or SCIM 409 uniqueness) |
+| `STS-FED-0108` | A federation unlink named a link the person does not carry. | action result ok:false (console redirect or /admin-api HTTP 400) |
+| `STS-FED-0109` | The directory would not write a federation link or unlink. | action result ok:false (console redirect or /admin-api HTTP 400) |
+| `STS-FED-0110` | A federation link was removed and ending the sessions that partner had signed the person in to failed; the unlink stands. | — |
+| `STS-FED-0111` | The linking step was reached in a browser that did not start it: the cookie binding it to the browser the partner's response arrived in was absent or different. | HTTP 403 page |
 
 ## STS-KRB
 

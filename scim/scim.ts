@@ -246,6 +246,12 @@ import scimAuth = require('./scim_auth');
 // loads ./admin long before ./scim, so node already has it in hand.
 import adminConsole = require('../admin-ui/admin');
 import scimMap = require('./scim_map');
+// A person's federation links (#109), carried in this service's own User
+// extension: the register says whether each names a relationship this realm
+// holds, and the link's format is `federation_links.ts`'s. Two libraries that
+// register nothing; the second is a static utility class.
+import federation = require('../federation/federation');
+import fedLinks = require('../federation/federation_links');
 // Every SCIM error this module sends carries an STS-SCIM-* code on the
 // response — see common/error_codes.js. A leaf.
 import errorCodes = require('../common/error_codes');
@@ -285,7 +291,10 @@ interface ScimDeps {
             { REFUSED_PASSWORD: string };
   scimMap: Record<'toScimUser' | 'prune' | 'fromScimUser' | 'toScimGroup' |
                   'fromScimGroup' | 'describeMapping', Fn> &
-           { ENTERPRISE_SCHEMA: string };
+           { ENTERPRISE_SCHEMA: string; IYA_STS_USER_SCHEMA: string };
+  federation: { peopleLinkedBy: Fn };
+  fedLinks: { resolveRequest: Fn; parse: Fn };
+  parseBody: Fn;
   errorCodes: {
     mark: Fn;
     tag(code: string): string;
@@ -390,6 +399,9 @@ class Scim {
       createClaims: createClaims,
       scimAuth: scimAuth,
       scimMap: scimMap,
+      federation: federation,
+      fedLinks: fedLinks,
+      parseBody: helpers.parseBody,
       errorCodes: errorCodes,
       adminConsole: adminConsole
     };
@@ -1022,6 +1034,118 @@ class Scim {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // THIS SERVICE'S USER EXTENSION (#109, 2026-09-22):
+  // `urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User`, whose one
+  // member is `federationLinks` — a multi-valued complex attribute of
+  // `relationship`, `issuer` and `subject`. Built once, when the resources are
+  // declared.
+  // ---------------------------------------------------------------------------
+  private iyaStsUserExtension(): any {
+    const { log, SCIMMY, scimMap } = this.deps;
+    log.debug("Entering Scim.iyaStsUserExtension().");
+    const Attribute = SCIMMY.Types.Attribute;
+    const definition = new SCIMMY.Types.SchemaDefinition('IyaStsUser',
+      scimMap.IYA_STS_USER_SCHEMA,
+      'This service\'s own User extension: which federation partners\' ' +
+      'subjects are linked to the person.',
+      [new Attribute('complex', 'federationLinks', {
+        multiValued: true,
+        description: 'Each a federation partner\'s identifier for the ' +
+          'person, through one service-provider-side relationship. Not ' +
+          'sent: unchanged. Sent: replaced; a link removed ends the ' +
+          'sessions that partner signed the person in to.' }, [
+        new Attribute('string', 'relationship', { required: true,
+          caseExact: true,
+          description: 'The service-provider-side relationship.' }),
+        new Attribute('string', 'issuer', { caseExact: true,
+          description: 'The partner\'s entity ID or iss; the ' +
+            'relationship\'s fedPeer when omitted.' }),
+        new Attribute('string', 'subject', { required: true,
+          caseExact: true,
+          description: 'The partner\'s stable identifier for the person ' +
+            '(an OpenID Connect sub, a SAML persistent NameID).' })
+      ])]);
+    log.debug("Leaving Scim.iyaStsUserExtension().");
+    return definition;
+  }
+
+  // The link values a resource asks for, checked, or null where it does not
+  // say `federationLinks`. Each goes through the one check the console and
+  // /admin-api use (`federation_links.ts`'s resolveRequest()), and a link
+  // another person carries is refused 409 — a partner's subject names one
+  // person here.
+  //
+  // WHAT "NOT SAID" MEANS DEPENDS ON THE METHOD, because scimmy hands this
+  // handler a coerced resource that has already lost an EMPTY array:
+  //   POST   absent is no links;
+  //   PUT    absent is "unchanged" — `active`'s rule, so a client that never
+  //          heard of this extension cannot unlink anybody — unless the raw
+  //          body names the member, which is how `federationLinks: []` says
+  //          "none";
+  //   PATCH  scimmy applied the operations to the resource as egress drew
+  //          it, links included, so absent means a remove took them all.
+  private federationLinksFrom(data: any, existing: any,
+                              req: any): string[] | null {
+    const { log, SCIMMY, scimMap, federation, fedLinks, directory,
+            parseBody } = this.deps;
+    const { coded } = this;
+    log.debug("Entering Scim.federationLinksFrom().");
+    const urn = scimMap.IYA_STS_USER_SCHEMA;
+    const extension = data && data[urn];
+    let asked = extension && extension.federationLinks;
+    if (asked === undefined || asked === null) {
+      const method = String((req && req.method) || '').toUpperCase();
+      let raw: any = null;
+      if (method === 'PUT') {
+        try {
+          raw = parseBody(req);
+        } catch (e) {
+          log.debug("Caught in Scim.federationLinksFrom(): " +
+                    ((e && e.message) || e));
+          raw = null;
+        }
+      }
+      const saidEmpty = !!(raw && raw[urn] &&
+                           Array.isArray(raw[urn].federationLinks) &&
+                           !raw[urn].federationLinks.length);
+      if (method === 'PATCH' || (method === 'PUT' && saidEmpty)) {
+        asked = [];
+      } else {
+        log.debug("Leaving Scim.federationLinksFrom(). Not said.");
+        return method === 'POST' || !existing ? [] : null;
+      }
+    }
+    const values: string[] = [];
+    [].concat(asked).forEach(function (one: any) {
+      const resolved = fedLinks.resolveRequest({
+        relationship: one && one.relationship, issuer: one && one.issuer,
+        subject: one && one.subject });
+      if (!resolved.ok) {
+        // error-code: none — resolveRequest() names and marks the code
+        throw coded(resolved.code, new SCIMMY.Types.Error(400,
+          'invalidValue', resolved.why));
+      }
+      const others = federation.peopleLinkedBy(resolved.value)
+        .filter(function (holder: any) {
+          return !existing || directory.normalizeDn(holder.dn) !==
+                              directory.normalizeDn(existing.dn);
+        });
+      if (others.length) {
+        throw coded('STS-FED-0107', new SCIMMY.Types.Error(409, 'uniqueness',
+          'The federation link ' + resolved.value + ' is already carried ' +
+          'by ' + others.map(function (holder: any) {
+            return holder.username;
+          }).join(', ') + '; a partner\'s subject names one person here.'));
+      }
+      if (values.indexOf(resolved.value) < 0) {
+        values.push(resolved.value);
+      }
+    });
+    log.debug("Leaving Scim.federationLinksFrom(). " + values.length);
+    return values;
+  }
+
   private userResourceFor(entry: any, req: ScimRequest): any {
     const { log, directory, scimMap } = this.deps;
     log.debug("Entering Scim.userResourceFor().");
@@ -1038,6 +1162,27 @@ class Scim {
       // and the whole of it is in toScimUser().
       rdnName: directory.usernameOfEntry(entry)
     });
+    // THE PERSON'S FEDERATION LINKS (#109), and only where there are any: an
+    // absent member is how RFC 7643 says "none". In the OBJECT form, not the
+    // namespaced one scim_map.ts's egressPath() writes for the enterprise
+    // members: scimmy's coercion of a multi-valued COMPLEX member keeps it
+    // only there, and nothing here filters on it.
+    // The entry object carries canonical attribute names, so the member is
+    // found case-insensitively rather than by one spelling.
+    const attributes = entry.attributes || {};
+    const linkKey = Object.keys(attributes).filter(function (name) {
+      return name.toLowerCase() === 'federationlink';
+    })[0];
+    const links = [].concat(linkKey ? attributes[linkKey] : [])
+      .map((value) => { return this.deps.fedLinks.parse(value); })
+      .filter(Boolean)
+      .map(function (one) {
+        return { relationship: one.relationship, issuer: one.issuer,
+                 subject: one.subject };
+      });
+    if (links.length) {
+      resource[scimMap.IYA_STS_USER_SCHEMA] = { federationLinks: links };
+    }
     // The manager as a SCIM id, where the directory holds the DN (2026-09-14).
     const extension = resource[scimMap.ENTERPRISE_SCHEMA];
     if (extension && extension.manager && extension.manager.value) {
@@ -1149,6 +1294,10 @@ class Scim {
     // one.
     SCIMMY.Resources.declare(SCIMMY.Resources.User)
       .extend(SCIMMY.Schemas.EnterpriseUser)
+      // AND THIS SERVICE'S OWN (#109), declared for the enterprise
+      // extension's reason: an attribute scimmy's definition does not know is
+      // dropped by its coercion. One member, `federationLinks`.
+      .extend(this.iyaStsUserExtension())
       .egress((resource, ctx) => {
         log.debug("Entering the SCIM User egress handler. id=" +
                   (resource.id || '(a list)'));
@@ -1216,6 +1365,12 @@ class Scim {
             'There is no entry at ' + resource.id + ' under ' +
             directory.usersDn() + '.'));
         }
+
+        // THE FEDERATION LINKS, CHECKED BEFORE ANYTHING IS WRITTEN (#109): a
+        // create refused for a bad link must not leave a person behind. null
+        // where the resource does not say `federationLinks`, which leaves the
+        // entry's links as they are.
+        const linkValues = this.federationLinksFrom(data, existing, req);
 
         // ---------------------------------------------------------------------
         // A CREATE GOES THROUGH `createUser()`, WHICH IS THE DIRECTORY'S OWN
@@ -1328,6 +1483,19 @@ class Scim {
             .map((value) => {
               return directory.dnForResourceId(value);
             });
+        }
+        // The links, where the resource said them: REPLACED, whatever the
+        // entry carried — a removal among them ends that partner's sessions
+        // through the directory's own write hook.
+        if (linkValues) {
+          Object.keys(converted.attributes).forEach(function (name) {
+            if (name.toLowerCase() === 'federationlink') {
+              delete converted.attributes[name];
+            }
+          });
+          if (linkValues.length) {
+            converted.attributes.federationLink = linkValues;
+          }
         }
         const written = directory.writePerson(dn, converted.attributes);
         if (!written.ok) {

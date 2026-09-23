@@ -595,6 +595,10 @@ const JOBS = [
   { file: 'sts_spiffe_grpc.js',          browser: false, local: true },
   { file: 'sts_oid4vp_wallet.js',        browser: false, local: true },
   { file: 'sts_federation_realms.js',    browser: false, local: true },
+  // WHICH PEOPLE A PARTNER MAY ASSERT (#109, 2026-09-22): the subject
+  // policies, the linking sign-in, the administrator refusal, the links set
+  // and removed through /admin-api and SCIM — over HTTP, in either mode.
+  { file: 'sts_federation_subject_policy.js', browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE

@@ -1867,3 +1867,32 @@ for each is `common/CLAUDE.md`'s *Several nodes* section; what is this file's is
 that **a refusal after a verification that passed is still a refusal of the
 step, not an error page**, and that a catch sits on each promise because
 Express 4 does not look at what a handler returns (`STS-AUTHN-0182`).
+
+## A SIGN-IN AS ONE NAMED PERSON: FEDERATION'S LINKING STEP (#109, 2026-09-22)
+
+`beginAuthentication({ lockedUsername })` mints a pending record whose NAME is
+fixed: `federation_sp.ts`'s `link-at-first-sign-in` sends a person here when a
+partner named an existing account its subject is not linked to yet, and the
+account holder must prove they are that person before the link is made
+(`../federation/CLAUDE.md`, *WHICH PEOPLE A PARTNER MAY ASSERT*). Four things
+follow, and each is the record deciding rather than the markup:
+
+* **the POST reads the name off the record**, and a typed name is not read at
+  all — the screen draws it `readonly` for the person, which is a suggestion to
+  a browser and nothing more;
+* **no passwordless key** (`STS-AUTHN-0212`) and **no anonymous session**: the
+  linking rests on the password, and a key a person could enrol at this very
+  screen in development is no proof of anything;
+* **a second factor is asked exactly as for anybody** — held, required by the
+  account or the realm, enrolled where required and held by none — because
+  `finishPasswordSignIn()` is not told this is a linking sign-in; that is the
+  point;
+* **none of the other doors** (the partner buttons, SPNEGO, the wallet) is drawn.
+
+What comes back is an ordinary local session and a 303 to the pending record's
+`returnTo`, `/federation/link/{handle}`, which reads the session's LATEST
+authentication event — its `via` is the record's `protocol`, `Federation link` —
+to know the sign-in it is shown was made through this screen, as that person,
+just now. Development checks no password here any more than anywhere (the
+reserved `invalid` is refused); product verifies it.
+

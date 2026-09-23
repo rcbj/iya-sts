@@ -253,6 +253,26 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    the top level. Adding them to one projection would have left the other still
    unusable and a reader unable to say which endpoint was right.
 
+   **THIS SERVICE'S OWN USER EXTENSION (#109, 2026-09-22)**,
+   `urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User`, declared to
+   scimmy beside the enterprise one (an undeclared member is dropped by its
+   coercion), carries one member: `federationLinks`, a list of
+   `{ relationship, issuer, subject }` — the person's federation links
+   (`../federation/CLAUDE.md`, *WHICH PEOPLE A PARTNER MAY ASSERT*). Its row
+   in `scim_map.ts` is kind `links`, which every converter there steps over:
+   `scim.ts` converts it, because each link has to be asked of the federation
+   register (`federation_links.ts`'s `resolveRequest()`, the check the console
+   and `/admin-api` use) and a link another person carries is refused 409
+   `uniqueness` (`STS-FED-0107`). It is checked BEFORE a create, so a refused
+   link leaves nobody behind. **NOT SENT on a PUT is "unchanged"** — `active`'s
+   rule, so a provisioning client that never heard of the extension cannot
+   unlink anybody — and a PUT that sends `federationLinks: []` removes them all
+   (scimmy's coercion drops an empty array, so the raw body is read for it); a
+   PATCH is applied to the resource as egress drew it, links included, so what
+   it leaves is what is written. Egress writes the OBJECT form: scimmy keeps a
+   multi-valued complex member only there. A removal ends the sessions that
+   partner signed the person in to, through the directory's write hook.
+
    `describeRow()` and `describeMapping()` are now the one projection, here
    beside the table, and both endpoints call them. **`type` and `parent` are
    `null` rather than absent** where a row has none, so a client can tell "this

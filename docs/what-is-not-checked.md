@@ -85,7 +85,7 @@ any of them would be a broken implementation rather than a lenient one:
 | Count a wallet as more than one factor | A presentation proves possession of one key: `amr ["pop"]`, `acr "1"`. A verified key attestation for hardware storage adds `hwk`; `acr "mfa"` needs the attestation to say the key is guarded by the person's own authentication as well. A second factor after the presentation — an authenticator app, a security key or the person's password — is asked when the request, the realm or the account demands two | The same, except that the password offered as that second factor is not checked, so a wallet and any password make `acr "mfa"` |
 | Verify anything in an issued credential's values | Nothing is invented: the values come from the access token and then the directory entry, and an attribute neither holds is absent — from the credential, a claims request, and the ID Token and UserInfo profile claims. `email_verified` is never asserted | What the entry lacks is invented from the username |
 | ~~Deactivate anybody on SCIM `active: false`~~ — reversed 2026-09-17 | `active: false` writes `pwdAccountLockedTime`, the same state **Disable** on `/admin/users` writes. Every door then refuses the person — a password anywhere (an LDAP bind included), any sign-in, a session they already hold, a Kerberos AS-REQ or S4U2Self, every token grant and refresh, the issuance of any SAML, WS-Federation, WS-Trust or GNAP artifact, and the management API — and everything they hold is ended and their wallet credentials disowned. `active: true` enables them again | The same |
-| Restrict which people a federation partner may assert | A person must already exist; one who does not is refused (`STS-FED-0090`), and the partner's attributes are written onto the one who does. **Any existing person may be asserted** by any enabled partner — nothing ties a partner to a set of subjects | An entry is created for a name nobody provisioned, unless the relationship's `fedAutocreateUsers` is off. `fedUpdateUserAttributes` decides whether a returning person's attributes are overwritten |
+| ~~Restrict which people a federation partner may assert~~ — reversed 2026-09-22 ([#109](https://github.com/rcbj/iya-sts/issues/109)) | A partner signs in only the person its subject is **linked** to — a `federationLink` of the relationship, the partner's issuer and its `sub` or persistent NameID. An unlinked subject naming an existing person must first sign in here as that person, password and second factor, before the link is made (`fedSubjectPolicy` `link-at-first-sign-in`, the default); `pre-linked` refuses it (`STS-FED-0091`); `jit-namespaced` never reaches an existing person; **`any-existing`, the old name match, is refused** (`STS-FED-0094`, `STS-FED-0095`). Nothing is written onto an entry before that. Group, domain and DN-pattern rules narrow it further (`STS-FED-0092`), and a console administrator is refused even with a link unless `fedMayAssertAdministrators` is on (`STS-FED-0093`). Nothing is created for a subject naming nobody (`STS-FED-0090`) | The same, except that `any-existing` may be set and matches the name, and a subject naming nobody gets an entry named `<relationship>~<name>`, linked at creation, unless `fedAutocreateUsers` is off. No password is checked at the linking sign-in (the reserved `invalid` is refused) |
 | ~~Verify a SAML `AuthnRequest`'s signature, or consume a service provider's metadata~~ — reversed 2026-09-17 | A signed `AuthnRequest`, `LogoutRequest`, `LogoutResponse` or `ArtifactResolve` is verified against the service provider's **registered** certificates — never the one the request carries — and refused if it does not verify. An **unsigned** request is refused (`saml2.requireSignedAuthnRequests`, `auto`). `WantAssertionsSigned` is honoured. SHA-1 needs `saml.allowSha1Signatures`; MD5, a MAC and a stateful hash-based signature are refused as not checkable. Consumed metadata registers the provider's endpoints, certificates and `NameIDFormat`s; its `validUntil` is enforced, it is refreshed after `cacheDuration`, and it must verify against `saml2.metadataTrustAnchors` when any is set. A metadata or MDQ fetch to an internal address is refused. An artifact is resolved only for the provider it was issued to | A present signature is verified in both modes. An unsigned request is accepted unless the provider's metadata says `AuthnRequestsSigned="true"`. `WantAssertionsSigned` is warned about rather than honoured. Internal addresses may be fetched |
 | Check which entityID a SAML service provider claims | An unknown entityID is not registered by its request: the request is refused, having no registered return address and no signature. **An MDQ responder can register it** — with `saml2.mdqBaseUrl` set, a request from an unknown provider queues a lookup, and a document the responder publishes creates the application, so a later request succeeds. `GET /saml2/metadata/{sp}` still answers for any `{sp}` | Any entityID is accepted, and the first `AuthnRequest` from one creates its application entry |
 | Check where a SAML response or WS-Federation token is delivered | The `AssertionConsumerServiceURL`, SAML 1.1 `shire` or `wreply` must be **registered** on the application (`samlAssertionConsumerService`, `wsfedReplyUrl`) and match exactly, with no mock fallback. An address development recorded is marked *observed* (`appReturnAddressObserved`) and refused until an administrator confirms it — **Confirm** and **Discard** under Applications, or `POST /admin-api/applications/confirm-address` and `/discard-address`. A provider whose metadata was consumed is answered only at an endpoint that metadata registered | The address a request names is used as it stands; with none, the registered one or a built-in mock. A consumed-metadata provider is held to its endpoints here too |
@@ -350,10 +350,21 @@ the one feature here that **has to be configured before it will do anything**:
   restriction is refused. `fedLocalEntityId` says what this service is called to
   a partner that knows it by another name.
 
-**The gate is on the SIGNER, not on the subject.** In product the person must
-already exist; in development an entry is created for them unless the
-relationship says otherwise. In neither is the partner limited to a set of
-people.
+**The gate is on the signer AND on the subject (#109).** A verified
+assertion signs in only the person its partner's subject is linked to: a
+`federationLink` value of the relationship, the partner's issuer and its
+stable identifier for the person — OpenID Connect's `iss` and `sub` (Core
+section 5.7 makes that pair the only identifier a relying party may rely on),
+a SAML persistent NameID qualified by the partner's entity ID (SAML 2.0 Core
+section 8.3.7). A name alone never signs anybody in. What happens to a subject
+nobody linked is the relationship's `fedSubjectPolicy`: the person it names
+signs in here first and is then linked (`link-at-first-sign-in`, the
+default), it is refused (`pre-linked`), or it gets a new entry of its own
+(`jit-namespaced`); the old name match (`any-existing`) is development only.
+Group, domain and DN-pattern rules apply on top of every policy, and a console
+administrator is refused unless the relationship allows it. Nothing is written
+onto an entry until all of that has passed. In product a subject naming nobody
+is refused; in development it gets an entry `<relationship>~<name>`.
 
 **Federation dials out, and it is not the only thing that does.** The OpenID
 Connect and OAuth 2.0 relationships call the partner's token endpoint, UserInfo
@@ -763,9 +774,8 @@ These are true in a product deployment today, and are tracked as issues:
   ([#106](https://github.com/rcbj/iya-sts/issues/106)).
 * **A GNAP client's self-signed certificate** is matched by thumbprint with no
   chain or revocation check ([#107](https://github.com/rcbj/iya-sts/issues/107)).
-* **No rule decides who may act for whom** in WS-Trust or RFC 8693, and nothing
-  ties a federation partner to the people it may assert ([#108](https://github.com/rcbj/iya-sts/issues/108),
-  [#109](https://github.com/rcbj/iya-sts/issues/109)).
+* **No rule decides who may act for whom** in WS-Trust or RFC 8693
+  ([#108](https://github.com/rcbj/iya-sts/issues/108)).
 * **A Workload API caller over TCP is not attested** — only one on the Unix
   socket is, since #40 made node attestation verified or refused
   ([#40](https://github.com/rcbj/iya-sts/issues/40)).

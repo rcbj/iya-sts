@@ -1393,9 +1393,10 @@ class CryptoMetadata {
                 'vendored table below.',
         whatItDoesNot: 'It does not decrypt an assertion a partner ' +
                        'encrypted, and it does not consume a federated ' +
-                       'sign-out. THE GATE IS ON THE SIGNER AND NOT ON THE ' +
-                       'SUBJECT: past a verified signature any username is ' +
-                       'accepted. This is the one surface here where a ' +
+                       'sign-out. THE GATE IS ON THE SIGNER AND ON THE ' +
+                       'SUBJECT (#109): past a verified signature only the ' +
+                       'person the partner\'s subject is linked to is ' +
+                       'signed in. This is the one surface here where a ' +
                        'missing check is an authentication bypass for every ' +
                        'protocol in the process — see federation/CLAUDE.md.',
         envelopes: ['xmldsig', 'c14n', 'jws'],

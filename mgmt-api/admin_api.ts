@@ -2765,7 +2765,11 @@ class AdminApi {
             description: 'Tokens issued with no browser session at all: the ' +
                          'grants that never involve one.' },
           { name: 'artifacts',
-            description: 'SAML assertions, Kerberos tickets and credentials.' }
+            description: 'SAML assertions, Kerberos tickets and credentials.' },
+          { name: 'federationLinks',
+            description: 'The federation partners\' subjects linked to ' +
+                         'this person (#109), each `{ link, relationship, ' +
+                         'issuer, subject, relationshipExists }`.' }
         ])),
         responseDescription: 'The list, or one identity.',
         responseSchema: { oneOf: [
@@ -3540,6 +3544,104 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'Whether anything changed.' },
+
+          // #109 (2026-09-22): which partners' subjects sign a person in.
+          { action: 'federation-link', operationId: 'linkUserFederation',
+            summary: 'Link a federation partner\'s subject to a person',
+            description: 'Adds a `federationLink` — `<relationship> ' +
+                         '<issuer> <subject>` — to the person\'s entry, so ' +
+                         'that the partner of that service-provider-side ' +
+                         'relationship signs them in when it asserts that ' +
+                         'subject. The subject is the partner\'s STABLE ' +
+                         'identifier for them (OpenID Connect `sub`, a SAML ' +
+                         'persistent NameID), never a name or an address, ' +
+                         'and the issuer is the relationship\'s `fedPeer` ' +
+                         'when omitted. Refused when another person already ' +
+                         'carries the link (a subject names one person), ' +
+                         'for a relationship that is not service-provider ' +
+                         'side, or for a subject that cannot be written. ' +
+                         'A console administrator is still refused at the ' +
+                         'sign-in unless the relationship sets ' +
+                         '`fedMayAssertAdministrators`. The person\'s ' +
+                         'links are `federationLinks` (paged by ' +
+                         '`federationLinksPage`) on `GET /admin-api/users?' +
+                         'user=`, and a relationship\'s are `links` on `GET ' +
+                         '/admin-api/federation?relationship=`. SCIM sets ' +
+                         'the same values through the ' +
+                         '`urn:ietf:params:scim:schemas:extension:iya-sts:' +
+                         '2.0:User` extension.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                relationship: { type: 'string',
+                                description: 'The service-provider-side ' +
+                                  'relationship the link is through.' },
+                subject: { type: 'string',
+                           description: 'The partner\'s identifier for ' +
+                             'the person.' },
+                issuer: { type: 'string',
+                          description: 'The partner\'s entity ID or ' +
+                            '`iss`; the relationship\'s fedPeer when ' +
+                            'omitted, and refused if it differs from it.' }
+              },
+              required: ['user', 'relationship', 'subject'],
+              examples: [{ user: 'alice', relationship: 'partner-oidc',
+                           subject: '248289761001' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The link, whether it was added, and the ' +
+                                 'person\'s links now.' },
+
+          { action: 'federation-unlink', operationId: 'unlinkUserFederation',
+            summary: 'Remove a federation partner\'s link from a person, ' +
+                     'and end the sessions it made',
+            description: 'Removes one `federationLink` value, named either ' +
+                         'whole as `link` (as `federationLinks` lists it) or ' +
+                         'as `relationship` and `subject` (and `issuer`). ' +
+                         'The next sign-in through that relationship ' +
+                         'no longer finds the person, and **every live ' +
+                         'sign-on session that partner signed them in to ' +
+                         'is ended** — each with its CAEP ' +
+                         '`session-revoked` and back-channel Logout Tokens — ' +
+                         'after the write is answered. Sessions they made ' +
+                         'any other way are untouched. Removing a link ' +
+                         'through SCIM or an `ldapmodify` has the same ' +
+                         'consequence.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                link: { type: 'string',
+                        description: 'The whole value, as ' +
+                          '`federationLinks[].link` shows it.' },
+                relationship: { type: 'string',
+                                description: 'Instead of `link`.' },
+                subject: { type: 'string',
+                           description: 'Instead of `link`.' },
+                issuer: { type: 'string',
+                          description: 'Instead of `link`; the ' +
+                            'relationship\'s fedPeer when omitted.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice',
+                           link: 'partner-oidc https://idp.example ' +
+                                 '248289761001' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The link removed and the person\'s links ' +
+                                 'now; the sessions are ended after the ' +
+                                 'answer.' },
 
           { action: 'clear-key', operationId: 'clearUserSecurityKey',
             summary: 'Remove one of somebody\'s security keys',
@@ -6719,13 +6821,21 @@ class AdminApi {
                      '`/saml2` and the admin console all read. So a ' +
                      'relationship is created DISABLED, and an assertion is ' +
                      'refused unless it verifies against the certificate ' +
-                     'configured on it.\n\n**The gate is on the SIGNER, not ' +
-                     'on the subject.** Once a relationship is enabled and ' +
-                     'configured, everything downstream is as permissive as ' +
-                     'the rest of this service: any username in the ' +
-                     'assertion is accepted, any attribute is mapped, and a ' +
-                     'directory entry is created for the ' +
-                     'person.\n\n`?relationship=<id>` returns one of them, ' +
+                     'configured on it.\n\n**And the gate is on the ' +
+                     'SUBJECT too (#109).** A partner signs in only the ' +
+                     'person its (issuer, subject) is linked to — a ' +
+                     '`federationLink` on the entry — and what happens to ' +
+                     'a subject nobody linked is the relationship\'s ' +
+                     '`fedSubjectPolicy`: a local sign-in as the person it ' +
+                     'names before linking (`link-at-first-sign-in`, the ' +
+                     'default), a refusal (`pre-linked`), a new namespaced ' +
+                     'entry (`jit-namespaced`), or, in development only, ' +
+                     'the old name match (`any-existing`). ' +
+                     '`fedSubjectGroup`, `fedSubjectDomain` and ' +
+                     '`fedSubjectPattern` narrow it further, and a console ' +
+                     'administrator is refused unless ' +
+                     '`fedMayAssertAdministrators` is on.\n\n' +
+                     '`?relationship=<id>` returns one of them, ' +
                      'with everything it holds and the URLs to configure at ' +
                      'the partner. It answers 200 with `found: false` for an ' +
                      'id that is not registered.\n\nThis resource holds ' +
@@ -6745,7 +6855,12 @@ class AdminApi {
             description: 'Only the relationships in which this service takes ' +
                          'that role. `service-provider` is the direction ' +
                          'that CONSUMES somebody else\'s assertions.' }
-        ].concat(this.pagingParameters()),
+        ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
+          { name: 'links',
+            description: 'With `relationship`: the people whose ' +
+                         'federationLink is through it (#109), each ' +
+                         '`{ username, dn, link, issuer, subject }`.' }
+        ])),
         responseDescription: 'The relationships with the paging that found ' +
                              'them, or one of them with its endpoints, its ' +
                              'fields and what has crossed it.',
