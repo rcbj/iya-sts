@@ -40651,7 +40651,14 @@ const PROTOCOL_SETTINGS_PAGES = [
            'Credential status</a>; one a trusted foreign issuer signed has ' +
            'its status list fetched, kept for its ttl and at most <code>' +
            'oid4vp.statusListMaxCacheS</code>, and a credential whose status ' +
-           'cannot be read is refused.'],
+           'cannot be read is refused. <strong>So is one that names no ' +
+           'status</strong> (<code>oid4vp.requireStatusReference</code>, ' +
+           '<code>all</code> by default in both modes), and an ldp_vc whose ' +
+           'presentation withheld its <code>credentialStatus</code>, which ' +
+           'the request asks for; a trusted issuer that publishes no status ' +
+           'is exempted by its certificate\'s thumbprint in <code>' +
+           'oid4vp.statusOptionalIssuers</code>. The result page names the ' +
+           'rule that refused.'],
     links: [['/oid4vp/verifier', 'the verifier, for a person'],
             ['/admin/vc-verifier-config', 'what it asks for']] },
 
