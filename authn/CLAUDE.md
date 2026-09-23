@@ -1596,6 +1596,21 @@ it stands in for and there is no vocabulary here in which to say so** —
 downgrading to `1` would claim ONE factor when two were checked — so the audit
 row and `/admin/sessions` are where which mechanism it was is recorded.
 
+## A FEDERATION PARTNER'S SESSION RIDES ON THE SESSION, AND CAN ONLY SHORTEN IT (#167)
+
+`startSession()` and `reauthenticateSession()` hand `detail.fedPartnerSession`
+and `detail.sessionNotOnOrAfter` to `bindPartnerSession()`: the first is kept
+on the session as it came (the relationship, the partner's NameID and
+SessionIndex or `sub` and `sid`), so a partner's sign-out can find the one
+session it names on any node; the second — the partner's SAML
+`SessionNotOnOrAfter`, as epoch ms — becomes `expires` where it is earlier,
+with `expiresBoundBy` saying so. It is the absolute expiry `sessionEnded()`
+already reads, so the sweep and both lazy lookups honour it with no path of
+their own. A later federated sign-in on the session replaces the partner
+session; a local re-authentication leaves it, because the partner's session did
+not end. Both fields are kept off the authentication's statistics row. See
+`../federation/CLAUDE.md`, *A PARTNER'S SIGN-OUT*.
+
 ## THE SESSION CLOCKS ARE SETTINGS, AND ONE FUNCTION SAYS WHETHER A SESSION HAS ENDED (2026-09-12)
 
 `SESSION_TTL_MS` (an hour), `AUTHN_TTL_MS` (ten minutes) and `MFA_TTL_MS` (five)

@@ -73,6 +73,7 @@ history.
 | OpenID Connect relying parties | its `frontchannel_logout_uri` loads in a hidden iframe, with `iss` and `sid` where it asked for them, and its `backchannel_logout_uri` is POSTed a signed Logout Token |
 | WS-Federation realms | `wa=wsignoutcleanup1.0` as a one-pixel image, with the URL printed beside it |
 | SAML 2.0 service providers | the signed `LogoutRequest`, offered as a link |
+| Federation partners (#167) | the identity provider a session was signed in **through**: its own sign-out — a signed `LogoutRequest`, RP-Initiated Logout with the partner's ID Token as `id_token_hint`, or `wsignout1.0` — offered as a link or a form, from `/logout` in the person's own browser only. SAML 1.1 and OAuth 2.0 partners define no sign-out and are not told. See [Federation](federation.md#a-partners-sign-out) |
 | Tokens | the `jti` joins the same revocation set `/oauth2/revoke` writes to, so `/oauth2/introspect` reports it inactive immediately |
 | Authorization codes | discarded, so no more tokens come from that sign-on |
 | Credential Offer pre-authorized codes | the same |
@@ -289,6 +290,16 @@ and its refresh tokens revoked; an LDAP row closes a socket; a Kerberos row
 stamps a sign-out instant on the **principal**, refusing every ticket that
 principal authenticated before now, and still reaches no service ticket already
 in a cache.
+
+## A partner ending the session
+
+A federation partner's own sign-out — a SAML `LogoutRequest`, an OpenID
+Connect Back-Channel or Front-Channel logout, a WS-Federation cleanup the
+person confirms — ends the session that partner started, and only that one,
+through this same model: the session and the relying parties riding on it,
+each told as above, with `federation.signout` on the audit log. A partner's
+SAML `SessionNotOnOrAfter` ends the session when it passes, as an expiry. See
+[Federation](federation.md#a-partners-sign-out).
 
 ## A session that simply runs out
 

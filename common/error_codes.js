@@ -6985,9 +6985,10 @@ const CODES = [
       'AuthnRequest from the one this sign-in sent.',
     spec: 'HTTP 401 page' },
   { code: 'STS-FED-0024',
-    summary: 'A WS-Federation message at the federation assertion consumer ' +
-      'service is not wa=wsignin1.0 (a federated sign-out is not ' +
-      'consumed).',
+    summary: 'A sign-out arrived at the federation assertion consumer ' +
+      'service — a WS-Federation wa other than wsignin1.0, or a SAML ' +
+      'LogoutRequest — where it is not consumed: a partner\'s sign-out goes ' +
+      'to /federation/slo/{id} (#167).',
     spec: 'HTTP 400 page' },
   { code: 'STS-FED-0025',
     summary: 'An OAuth 2.0 / OpenID Connect partner redirected back with an ' +
@@ -7319,6 +7320,119 @@ const CODES = [
       'an outbound request verifies the certificate of whoever answers ' +
       'whatever it says. Logged once per process (#171).',
     spec: 'none — a warning in the log' },
+  // --- A PARTNER'S SIGN-OUT (#167) -----------------------------------------
+  { code: 'STS-FED-0114',
+    summary: 'A SAML message at a federation single logout endpoint could ' +
+      'not be decoded, or is not a well-formed LogoutRequest or ' +
+      'LogoutResponse.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0115',
+    summary: 'A partner\'s SAML LogoutRequest or LogoutResponse is unsigned, ' +
+      'and the relationship requires a signed one (saml-profiles-2.0-os ' +
+      'section 4.4.4.1; fedRequireSignedLogout).',
+    spec: 'HTTP 403 page; no session was ended' },
+  { code: 'STS-FED-0116',
+    summary: 'A partner\'s SAML logout message carries a signature that does ' +
+      'not verify against the relationship\'s fedSigningCertificate, or that ' +
+      'cannot be checked (an algorithm with no verifier, SHA-1 while it is ' +
+      'off, incomplete Redirect-binding octets).',
+    spec: 'HTTP 403 page; no session was ended' },
+  { code: 'STS-FED-0117',
+    summary: 'A partner\'s sign-out (a SAML logout message or a Logout ' +
+      'Token) names an issuer other than the relationship\'s fedPeer.',
+    spec: 'HTTP 403 page, or HTTP 400 invalid_request on the back channel' },
+  { code: 'STS-FED-0118',
+    summary: 'A partner\'s signed SAML logout message names no Destination, ' +
+      'or one that is not this relationship\'s single logout endpoint ' +
+      '(saml-bindings-2.0-os section 3.4.5.2).',
+    spec: 'HTTP 403 page; no session was ended' },
+  { code: 'STS-FED-0119',
+    summary: 'A partner\'s sign-out is outside its validity window: a ' +
+      'LogoutRequest past its NotOnOrAfter, or a LogoutRequest or Logout ' +
+      'Token issued in the future or longer ago than federation.requestTtlMin.',
+    spec: 'HTTP 403 page, or HTTP 400 invalid_request on the back channel' },
+  { code: 'STS-FED-0120',
+    summary: 'A partner\'s sign-out was replayed: its LogoutRequest ID or ' +
+      'Logout Token jti has already been accepted (the used-assertion ' +
+      'history, rule 3ae).',
+    spec: 'HTTP 403 page, or HTTP 400 invalid_request on the back channel' },
+  { code: 'STS-FED-0121',
+    summary: 'The used-assertion history could not be asked, or is full, so ' +
+      'a partner\'s sign-out could not be proved unused and was refused ' +
+      '(fail closed).',
+    spec: 'HTTP 503 page, or HTTP 503 on the back channel (the partner ' +
+      'retries)' },
+  { code: 'STS-FED-0122',
+    summary: 'A verified partner sign-out matched no session held here: no ' +
+      'federated session carries that NameID and SessionIndex, sid or sub ' +
+      'through this relationship.',
+    spec: 'SAML LogoutResponse Requester/UnknownPrincipal; HTTP 200 on the ' +
+      'back and front channels (there is nothing left to end)' },
+  { code: 'STS-FED-0123',
+    summary: 'A partner\'s sign-out was refused because fedAcceptSignout is ' +
+      'off on the relationship.',
+    spec: 'SAML LogoutResponse Responder/RequestDenied; HTTP 400 on the back ' +
+      'channel; HTTP 403 page' },
+  { code: 'STS-FED-0124',
+    summary: 'A LogoutResponse at a federation single logout endpoint ' +
+      'answers no LogoutRequest this service sent: InResponseTo is absent, ' +
+      'unknown, spent or expired.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0125',
+    summary: 'A partner answered this service\'s LogoutRequest with a status ' +
+      'other than Success, so the sign-out there did not complete.',
+    spec: 'HTTP 200 page saying so; the local session had already ended' },
+  { code: 'STS-FED-0126',
+    summary: 'A WS-Federation cleanup confirmation was posted with a handle ' +
+      'this service did not draw, one already spent or expired, or in a ' +
+      'browser whose session is not the one it was drawn for.',
+    spec: 'HTTP 403 page; no session was ended' },
+  { code: 'STS-FED-0127',
+    summary: 'A back-channel logout request carried no logout_token, or one ' +
+      'that is not a signed JWT (an encrypted Logout Token is refused: this ' +
+      'relying party registers no encryption with a partner).',
+    spec: 'HTTP 400 invalid_request (Back-Channel Logout 1.0 section 2.8)' },
+  { code: 'STS-FED-0128',
+    summary: 'A Logout Token did not verify against the relationship\'s ' +
+      'partner keys: its signature, algorithm, kid, audience or expiry.',
+    spec: 'HTTP 400 invalid_request (Back-Channel Logout 1.0 section 2.8)' },
+  { code: 'STS-FED-0129',
+    summary: 'A Logout Token failed Back-Channel Logout 1.0 section 2.6: a ' +
+      'typ other than logout+jwt, no events member naming the back-channel ' +
+      'logout event, a nonce, no jti, or neither sub nor sid.',
+    spec: 'HTTP 400 invalid_request (Back-Channel Logout 1.0 section 2.8)' },
+  { code: 'STS-FED-0130',
+    summary: 'A front-channel logout request carried no iss or no sid, or an ' +
+      'iss that is not the relationship\'s partner.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0131',
+    summary: 'A partner\'s assertion carries an AuthnStatement ' +
+      'SessionNotOnOrAfter that has already passed, so no session was ' +
+      'started from it.',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0132',
+    summary: 'fedRequireSignedLogout was set off in product mode, where an ' +
+      'unsigned SAML logout message is never accepted.',
+    spec: 'action result ok:false (console redirect or /admin-api HTTP 400)' },
+  { code: 'STS-FED-0133',
+    summary: 'fedSloBinding was set to something other than HTTP-Redirect or ' +
+      'HTTP-POST.',
+    spec: 'action result ok:false (console redirect or /admin-api HTTP 400)' },
+  { code: 'STS-FED-0134',
+    summary: 'A browser returned from a partner\'s end_session_endpoint with ' +
+      'a state this service did not mint, or one already spent or expired.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0135',
+    summary: 'A federation single logout endpoint was sent something its ' +
+      'relationship\'s protocol does not define — any sign-out for SAML 1.1 ' +
+      'or OAuth 2.0, which define none, another protocol\'s message, or ' +
+      'nothing at all.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0136',
+    summary: 'A partner\'s verified sign-out matched a session and ending it ' +
+      'failed.',
+    spec: 'HTTP 500 page, or HTTP 500 on the back channel (the partner ' +
+      'retries)' },
   // ===== KRB ===============================================================
   { code: 'STS-KRB-0001',
     summary: 'A cross-realm referral could not be issued because the trust ' +

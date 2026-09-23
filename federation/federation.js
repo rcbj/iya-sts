@@ -229,7 +229,18 @@ const PATHS = {
   acs: '/federation/acs',
   metadata: '/federation/metadata',
   // Where the local sign-in of `link-at-first-sign-in` returns to (#109).
-  link: '/federation/link'
+  link: '/federation/link',
+  // A PARTNER'S SIGN-OUT (#167). `slo` is the one path every browser-borne
+  // sign-out arrives at — a SAML LogoutRequest or LogoutResponse, a
+  // WS-Federation wsignoutcleanup1.0, and the browser coming back from an
+  // OpenID Provider's end_session_endpoint — for the ACS's reason (decision 2
+  // in federation_sp.ts): one URL to configure at the partner rather than
+  // four. The two OpenID Connect paths are separate because each is a
+  // registration member of its own at the partner and each is answered in a
+  // shape of its own (a JSON-free 200/400 to a server; a page in an iframe).
+  slo: '/federation/slo',
+  backchannelLogout: '/federation/backchannel-logout',
+  frontchannelLogout: '/federation/frontchannel-logout'
 };
 
 const ROLES = [
@@ -926,6 +937,56 @@ const SCHEMA = {
             'else is true, a valid link included (STS-FED-0093). Turning it ' +
             'on makes this partner\'s signing key a key to the console for ' +
             'every administrator linked to it.' },
+    // --- A PARTNER'S SIGN-OUT (#167) ---------------------------------------
+    // federation/federation_slo.ts is what reads these, in both directions:
+    // the partner telling this service a session ended, and this service
+    // telling the partner. federation/CLAUDE.md, *A PARTNER'S SIGN-OUT*.
+    { name: 'fedSloUrl', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'THE PARTNER\'S SAML 2.0 SingleLogoutService — where this ' +
+            'service sends a signed <LogoutRequest> when a person signs out ' +
+            'HERE (/logout), and where the <LogoutResponse> to the ' +
+            'partner\'s own LogoutRequest goes. From the partner\'s ' +
+            'metadata. Empty: the partner is never told of a sign-out here, ' +
+            'and a LogoutRequest from it is still honoured but answered with ' +
+            'nothing, because there is nowhere to send the answer. SAML 2.0 ' +
+            'only: SAML 1.1 defines no logout at all.' },
+    { name: 'fedSloBinding', kind: 'single', role: 'service-provider',
+      from: 'this register', enum: ['HTTP-Redirect', 'HTTP-POST'],
+      what: 'Which binding a LogoutRequest or LogoutResponse this service ' +
+            'sends the partner goes on: HTTP-Redirect (the default; the ' +
+            'signature is over the query string) or HTTP-POST (an enveloped ' +
+            'signature, on a real form with a real button — no script). A ' +
+            'message FROM the partner is accepted on either.' },
+    { name: 'fedEndSessionUrl', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'THE PARTNER\'S OpenID Connect end_session_endpoint ' +
+            '(RP-Initiated Logout 1.0), from its discovery document. When a ' +
+            'person signs out HERE, the sign-out page offers to send them ' +
+            'there with the partner\'s own ID Token as id_token_hint, this ' +
+            'relationship\'s client_id, and this relationship\'s single ' +
+            'logout endpoint as post_logout_redirect_uri — which the partner ' +
+            'must have registered. The ID Token is kept on the session only ' +
+            'while this is set. Empty: the partner is not told.' },
+    { name: 'fedAcceptSignout', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'HONOUR THE PARTNER\'S SIGN-OUT: a SAML LogoutRequest, an ' +
+            'OpenID Connect Back-Channel or Front-Channel logout, a ' +
+            'WS-Federation cleanup. ON by default — the partner is the ' +
+            'authority on the person\'s sign-on, and when it ends a session ' +
+            'or disables an account there, this is the only signal that ' +
+            'reaches here. Off, every one of them is refused ' +
+            '(STS-FED-0123) and the session here lives its whole lifetime.' },
+    { name: 'fedRequireSignedLogout', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      what: 'REQUIRE THE PARTNER\'S SAML LogoutRequest AND LogoutResponse TO ' +
+            'BE SIGNED, as saml-profiles-2.0-os section 4.4.4.1 says they ' +
+            'MUST be. ON by default and ALWAYS on in product mode, where ' +
+            'turning it off is refused (STS-FED-0132). Off — development ' +
+            'only — accepts an UNSIGNED logout message, which lets anybody ' +
+            'who can name a person\'s partner session end it: a partner ' +
+            'under test that cannot sign yet is the only reason to. A ' +
+            'signature that IS present is verified either way.' },
     { name: 'fedAllowUnsolicited', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'Accept a response this service did not ask for — SAML 2.0\'s ' +
@@ -1089,6 +1150,11 @@ const EDITABLE = {
   fedSubjectPattern: 'set',
   fedMayAssertAdministrators: 'set',
   fedAllowUnsolicited: 'set',
+  fedSloUrl: 'set',
+  fedSloBinding: 'set',
+  fedEndSessionUrl: 'set',
+  fedAcceptSignout: 'set',
+  fedRequireSignedLogout: 'set',
   fedApplication: 'set',
   fedAuthnMechanism: 'set',
   fedAuthnRelationship: 'set',
@@ -2159,6 +2225,13 @@ function create(spec) {
     record.fedSubjectPolicy = DEFAULT_SUBJECT_POLICY;
     record.fedMayAssertAdministrators = boolText(false);
     record.fedSignRequest = boolText(false);
+    // A PARTNER'S SIGN-OUT (#167): honoured, and signed — the most secure
+    // default, and the one a partner that follows its specification meets.
+    record.fedAcceptSignout = boolText(true);
+    record.fedRequireSignedLogout = boolText(true);
+    if (protocol === 'saml2') {
+      record.fedSloBinding = 'HTTP-Redirect';
+    }
     if (protocol === 'saml2' || protocol === 'saml11') {
       record.fedBinding = 'HTTP-Redirect';
       // SAML 1.1 has no request, so there is nothing for a response to be in
@@ -2221,8 +2294,9 @@ function create(spec) {
 // promises a list, and the console and an `ldapmodify` then disagree about what
 // the attribute holds.
 // ---------------------------------------------------------------------------
-// The three subject fields a value can be WRONG for (#109). Answers null, or
-// the code, the audit sentence and the message for the caller.
+// The fields a value can be WRONG for: the three subject fields (#109), and
+// the sign-out binding and signature switch (#167). Answers null, or the code,
+// the audit sentence and the message for the caller.
 function subjectFieldProblem(field, value) {
   log.debug("Entering subjectFieldProblem(). field=" + field);
   if (field === 'fedSubjectPolicy' && value !== '') {
@@ -2255,6 +2329,28 @@ function subjectFieldProblem(field, value) {
                message: 'fedSubjectPattern was not changed: ' + problem +
                         '.' };
     }
+  }
+  // A PARTNER'S SIGN-OUT (#167): the binding is one of two, and product
+  // mode never accepts an unsigned logout message — so it refuses the switch
+  // that would, rather than holding a value it will ignore.
+  if (field === 'fedSloBinding' && value !== '' &&
+      ['HTTP-Redirect', 'HTTP-POST'].indexOf(value) < 0) {
+    log.debug("Leaving subjectFieldProblem(). Not a binding.");
+    return { code: 'STS-FED-0133',
+             why: '"' + value + '" is not a single logout binding',
+             message: '"' + value + '" is not a fedSloBinding. It is ' +
+                      'HTTP-Redirect or HTTP-POST, or empty for ' +
+                      'HTTP-Redirect.' };
+  }
+  if (field === 'fedRequireSignedLogout' && !boolOf(value, true) &&
+      !mode.acceptsUnsignedFederatedLogout()) {
+    log.debug("Leaving subjectFieldProblem(). Unsigned logout in product.");
+    return { code: 'STS-FED-0132',
+             why: 'fedRequireSignedLogout off is refused in product mode',
+             message: 'fedRequireSignedLogout cannot be turned off in ' +
+                      'product mode: saml-profiles-2.0-os section 4.4.4.1 ' +
+                      'says a logout message MUST be signed, and an ' +
+                      'unsigned one is anybody signing anybody out.' };
   }
   log.debug("Leaving subjectFieldProblem(). Nothing wrong.");
   return null;
@@ -2384,6 +2480,11 @@ function update(id, change) {
       row.name === 'fedMayAssertAdministrators' ||
       row.name === 'fedSignRequest' || row.name === 'fedAllowUnsolicited') {
     record[field] = boolText(boolOf(record[field], false));
+  }
+  // The two sign-out switches default ON (#167), so an empty value is TRUE.
+  if (row.name === 'fedAcceptSignout' ||
+      row.name === 'fedRequireSignedLogout') {
+    record[field] = boolText(boolOf(record[field], true));
   }
   if (!persist(record)) {
     log.debug('Leaving update(). The directory refused the write.');
