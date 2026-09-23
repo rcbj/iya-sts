@@ -106,6 +106,7 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 | `stsKrb5Keys`, `stsKrb5KeyInfo` | Kerberos long-term keys for every enctype, derived from the password, and their public half (kvno, enctypes, when) | keys **sealed and withheld**, including the ciphertext |
 | `hobaPublicKey` | RFC 7486 HOBA keys, `<kid> <base64 DER>` | public |
 | `stsSelfIssuedSubject` | SIOPv2 subjects the person enrolled (a DID or a JWK thumbprint URI), as JSON (#129) | withheld |
+| `stsCibaUserCode` | the CIBA user code the person set on `/portal/ciba` (#131) | scrypt-hashed, withheld |
 
 ### Assertion key pairs (RFC 7523 and RFC 7522)
 
@@ -203,7 +204,8 @@ draws it with a description of every field.
 | JWT assertion key pair (RFC 7523) | `oauthAssertionIssuer`, `oauthAssertionJwks`, `oauthAssertionKid`, `oauthAssertionCertificate`, `oauthAssertionCertificateChain`, `oauthAssertionPrivateKey` (**withheld**), `oauthAssertionExpiresAt`, `oauthAssertionKeySource` |
 | SAML assertion key pair (RFC 7522) | `oauthSamlAssertionIssuer`, `oauthSamlAssertionSigningCertificate`, `oauthSamlAssertionCertificate`, `oauthSamlAssertionCertificateChain`, `oauthSamlAssertionPrivateKey`, `oauthSamlAssertionThumbprint`, `oauthSamlAssertionExpiresAt`, `oauthSamlAssertionKeySource` |
 | Software statements (RFC 7591) | `oauthSoftwareStatementIssuer`, `oauthIssuedSoftwareStatement`, `appSoftwareStatementIssuer`, `appSoftwareStatementTrusted`, `appSoftwareStatementPublisher` |
-| Native SSO (#130, in progress) | `oauthNativeSso` (TRUE lets the client ask for `device_sso`), `oauthNativeSsoGroup` (the apps that may share one device session). Settable by a registration only through a trusted software statement |
+| CIBA (#131) | `oauthBackchannelTokenDeliveryMode` (`poll`, `ping` or `push`), `oauthBackchannelClientNotificationEndpoint` (https, for ping and push), `oauthBackchannelAuthenticationRequestSigningAlg` (an asymmetric alg: every request signed), `oauthBackchannelUserCodeParameter` (TRUE: every request carries the person's user code) |
+| Native SSO (#130) | `oauthNativeSso` (TRUE lets the client ask for `device_sso`), `oauthNativeSsoGroup` (the apps that may share one device session). Settable by a registration only through a trusted software statement |
 | SAML service provider | `samlEntityId`, `samlAssertionConsumerService`, `samlSingleLogoutService`, `samlNameIdFormat`, `samlResponseBinding`, `samlSigningCertificate`, `samlObservedSigningCertificate`, `samlEncryptionCertificate`, `samlAuthnRequestVerification`, `samlAuthnRequestSigned`, and from consumed metadata: `samlSpMetadataUrl`, `samlSpMetadata`, `samlAcsEndpoint`, `samlSloEndpoint`, `samlSpNameIdFormat`, `samlSpAuthnRequestsSigned`, `samlSpWantAssertionsSigned`, `samlSpWantAssertionsEncrypted`, `samlSpMetadataValidUntil`, `samlSpMetadataCacheDuration`, `samlSpMetadataConsumedAt`, `samlSpMetadataSignature`, `samlSpMetadataSigningCertificate` |
 | SAML per-profile | `saml2AssertionLifetimeMin`, `saml2SignAssertion`, `saml2SignResponse`, `saml2NameIdFormat`, `saml2ArtifactTtlS`, `saml2EncryptAssertion`, `saml2EncryptionAlgorithm`, `saml2KeyTransportAlgorithm`, `saml2EncryptLogoutNameId`, `saml11AssertionLifetimeMin`, `saml11SignAssertion`, `saml11SignResponse`, `saml11NameIdFormat`, `saml11ArtifactTtlS` |
 | WS-* | `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wsfedAssertionLifetimeMin`, `wstrustAppliesTo` |
@@ -336,7 +338,7 @@ included (`SECRET_ATTRIBUTES` in `ldap/ldap_server.js`):
 * passwords: `userPassword`, `pwdHistory`, `stsAppPassword`,
   `stsActivationToken`, `stsPasswordResetToken`, `stsMailVerifyToken`
 * second factors and subjects: `stsTotpCredential`, `stsBackupCodes`,
-  `stsSelfIssuedSubject`, `stsIdaVerification`
+  `stsSelfIssuedSubject`, `stsIdaVerification`, `stsCibaUserCode`
 * devices: `stsDeviceSecretHash`
 * client secrets: `oauthClientSecret`, `appRegistrationAccessToken`,
   `fedClientSecret`

@@ -1280,6 +1280,22 @@ because the portal is loaded before the authorization server whose
 `sessionIsLive()` says the same. `portal_devices.ts`, drawn the way
 `portal_self_issued.ts` is.
 
+## `/portal/ciba`: SIGN-IN REQUESTS (2026-09-23, #131)
+
+CIBA's authentication device, by rcbj's decision: the backchannel
+authentication requests waiting for the person — the client, the scopes and
+the `binding_message` the client also shows, so the person can tell the
+request is the one they started — with Approve and Deny, and the person's
+CIBA user code, set (4 to 64 characters, hashed as a password is) or
+cleared. A form names a REQUEST, never a person, and one not waiting for the
+person looking is refused (`STS-PORTAL-0089`–`0091`). **An approval is as
+strong as the request asks**: a request whose `acr_values` the session does
+not meet is not approved; the page offers the portal's own sign-in again
+with those `acr_values` and `prompt=login` (`oidc_rp.ts`'s `acrValues`
+option), returning to `?stepup=<id>`, and Approve takes after that.
+`portal_ciba.ts`, registered through `register(context)` as
+`portal_devices.ts` is. `oauth-oidc/CLAUDE.md` (3bc) carries the protocol.
+
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 
 **Send a reset link** on a person's `/admin/users` page stores a hash of a

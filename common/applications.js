@@ -1309,6 +1309,38 @@ const SCHEMA = {
             'refused unless the app that received the ID Token and the app ' +
             'asking share it. 1 to 64 of letters, digits and . _ : -; an ' +
             'empty or malformed value takes the client out of Native SSO.' },
+    // OPENID CONNECT CIBA CORE 1.0 SECTION 4 (#131, 2026-09-23): the four
+    // registration members, from a registration, the console or the API.
+    { name: 'oauthBackchannelTokenDeliveryMode', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API',
+      families: ['oidc'],
+      familyWhy: 'CIBA is an OpenID Connect flow: it issues an ID Token.',
+      what: 'CIBA `backchannel_token_delivery_mode`: poll, ping or push. A ' +
+            'client with none may not use the Backchannel Authentication ' +
+            'Endpoint at all.' },
+    { name: 'oauthBackchannelClientNotificationEndpoint', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API',
+      families: ['oidc'],
+      familyWhy: 'The same flow as oauthBackchannelTokenDeliveryMode.',
+      what: 'CIBA `backchannel_client_notification_endpoint`: the https ' +
+            'URL a ping or a push is POSTed to, under the outbound policy. ' +
+            'Required for ping and push.' },
+    { name: 'oauthBackchannelAuthenticationRequestSigningAlg',
+      kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API',
+      families: ['oidc'],
+      familyWhy: 'The same flow as oauthBackchannelTokenDeliveryMode.',
+      what: 'CIBA `backchannel_authentication_request_signing_alg`: when ' +
+            'set, every authentication request from this client must be a ' +
+            'signed request object with this algorithm (section 7.1.1).' },
+    { name: 'oauthBackchannelUserCodeParameter', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API',
+      families: ['oidc'],
+      familyWhy: 'The same flow as oauthBackchannelTokenDeliveryMode.',
+      what: 'TRUE: every authentication request from this client carries ' +
+            'the person\'s `user_code` (CIBA section 7.1), a secret the ' +
+            'person set on /portal/ciba, which stops a client that knows ' +
+            'only a name from sending them requests.' },
     // OPENID CONNECT CORE SECTION 8 AND SECTION 9 (#118, 2026-09-22).
     { name: 'oauthSubjectType', kind: 'single',
       from: 'POST /oauth2/register, the console, the management API, or by ' +
@@ -3229,6 +3261,11 @@ const EDITABLE = {
   // Native SSO (#130). One answer each.
   oauthNativeSso: 'set',
   oauthNativeSsoGroup: 'set',
+  // CIBA (#131). One answer each.
+  oauthBackchannelTokenDeliveryMode: 'set',
+  oauthBackchannelClientNotificationEndpoint: 'set',
+  oauthBackchannelAuthenticationRequestSigningAlg: 'set',
+  oauthBackchannelUserCodeParameter: 'set',
   // OIDC Core sections 8 and 9 (#118). One answer each.
   oauthSubjectType: 'set',
   oauthSectorIdentifierUri: 'set',
@@ -5469,6 +5506,87 @@ function oidcRegistrationProblem(values) {
 // endpoint. Registration answers STS-REG-0167; a console or API write
 // STS-REG-0168.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// OPENID CONNECT CIBA CORE 1.0 SECTION 4 (#131): the four registration
+// members, their attributes, and what a registration may say. A mode of
+// poll, ping or push; ping and push need an https notification endpoint
+// (section 4 says https, whatever the outbound policy would dial); a signing
+// algorithm is asymmetric; the user code is a boolean. STS-REG-0197.
+// ---------------------------------------------------------------------------
+const CIBA_ATTRIBUTES = {
+  backchannel_token_delivery_mode: 'oauthBackchannelTokenDeliveryMode',
+  backchannel_client_notification_endpoint:
+    'oauthBackchannelClientNotificationEndpoint',
+  backchannel_authentication_request_signing_alg:
+    'oauthBackchannelAuthenticationRequestSigningAlg'
+};
+
+function cibaMetadataProblem(values) {
+  log.debug("Entering cibaMetadataProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0197', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  const mode = asked.backchannel_token_delivery_mode;
+  if (mode !== undefined &&
+      ['poll', 'ping', 'push'].indexOf(String(mode)) < 0) {
+    log.debug("Leaving cibaMetadataProblem(). An unknown mode.");
+    return refusal('backchannel_token_delivery_mode', 'must be poll, ping ' +
+                   'or push (CIBA Core section 4).');
+  }
+  const endpoint = asked.backchannel_client_notification_endpoint;
+  if ((mode === 'ping' || mode === 'push') && !endpoint) {
+    log.debug("Leaving cibaMetadataProblem(). No endpoint.");
+    return refusal('backchannel_client_notification_endpoint', 'is ' +
+                   'required for the ' + mode + ' mode (CIBA Core section 4).');
+  }
+  if (endpoint !== undefined &&
+      !/^https:\/\/[^\s#]+$/i.test(String(endpoint))) {
+    log.debug("Leaving cibaMetadataProblem(). Not https.");
+    return refusal('backchannel_client_notification_endpoint', 'must be an ' +
+                   'https URL with no fragment (CIBA Core section 4).');
+  }
+  const alg = asked.backchannel_authentication_request_signing_alg;
+  if (alg !== undefined && (stsCrypto.JWS_ASYMMETRIC_ALGS || [])
+        .indexOf(String(alg)) < 0) {
+    log.debug("Leaving cibaMetadataProblem(). The algorithm.");
+    return refusal('backchannel_authentication_request_signing_alg', '"' +
+                   alg + '" is not an asymmetric JWS algorithm this service ' +
+                   'verifies (CIBA Core section 4 forbids none).');
+  }
+  const userCode = asked.backchannel_user_code_parameter;
+  if (userCode !== undefined && typeof userCode !== 'boolean') {
+    log.debug("Leaving cibaMetadataProblem(). Not a boolean.");
+    return refusal('backchannel_user_code_parameter', 'must be a boolean.');
+  }
+  log.debug("Leaving cibaMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// What a client registered for CIBA: `{ mode, endpoint, signingAlg,
+// userCode }`, with mode '' for a client that registered none.
+function cibaOf(clientId) {
+  log.debug("Entering cibaOf().");
+  const who = String(clientId == null ? '' : clientId).trim();
+  const found = who ? (forClientId(who) || get(who)) : null;
+  const fields = (found && found.fields) || {};
+  const one = function (name) {
+    return String(valuesOf(fields[name])[0] || '').trim();
+  };
+  const mode = one('oauthBackchannelTokenDeliveryMode');
+  log.debug("Leaving cibaOf(). " + (mode || 'none'));
+  return {
+    mode: ['poll', 'ping', 'push'].indexOf(mode) >= 0 ? mode : '',
+    endpoint: one('oauthBackchannelClientNotificationEndpoint'),
+    signingAlg: one('oauthBackchannelAuthenticationRequestSigningAlg'),
+    userCode: one('oauthBackchannelUserCodeParameter').toUpperCase() ===
+      'TRUE'
+  };
+}
+
 const OIDC_SUBJECT_ATTRIBUTES = {
   subject_type: 'oauthSubjectType',
   sector_identifier_uri: 'oauthSectorIdentifierUri',
@@ -7529,6 +7647,21 @@ function applyRegistrationFields(record, registration, statement) {
       delete record.fields.oauthNativeSsoGroup;
     }
   }
+  // CIBA section 4 (#131), the same way: an update that omits one clears it.
+  Object.keys(CIBA_ATTRIBUTES).forEach(function (member) {
+    const value = String(meta[member] || '').trim();
+    if (value) {
+      setField(record, CIBA_ATTRIBUTES[member], value);
+    } else {
+      delete record.fields[CIBA_ATTRIBUTES[member]];
+    }
+  });
+  if (typeof meta.backchannel_user_code_parameter === 'boolean') {
+    setField(record, 'oauthBackchannelUserCodeParameter',
+             meta.backchannel_user_code_parameter ? 'TRUE' : 'FALSE');
+  } else {
+    delete record.fields.oauthBackchannelUserCodeParameter;
+  }
   // RFC 9396 section 10, the same way: an update that omits it clears it.
   delete record.fields.oauthAuthorizationDetailsTypes;
   if (Array.isArray(meta.authorization_details_types) &&
@@ -7613,6 +7746,7 @@ function register(clientId, registration, options) {
                      requestObjectMetadataProblem(registration) ||
                      pushedAuthorizationMetadataProblem(registration) ||
                      oidcSubjectMetadataProblem(registration) ||
+                     cibaMetadataProblem(registration) ||
                      mtlsMetadataProblem(registration) ||
                      authorizationDetailsMetadataProblem(registration);
   if (uriProblem) {
@@ -11639,6 +11773,8 @@ module.exports = {
   // `oauth-oidc/request_object.ts` and the registration endpoint read them.
   requestObjectMetadataProblem: requestObjectMetadataProblem,
   oidcSubjectMetadataProblem: oidcSubjectMetadataProblem,
+  cibaMetadataProblem: cibaMetadataProblem,
+  cibaOf: cibaOf,
   oidcRegistrationProblem: oidcRegistrationProblem,
   revokeRegistrationAccessToken: revokeRegistrationAccessToken,
   registeredFlowsOf: registeredFlowsOf,

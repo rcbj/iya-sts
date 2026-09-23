@@ -731,6 +731,10 @@ const JOBS = [
   // its refusals, RFC 8693's token types, a session ending, revocation.
   // `local: true`: this repository's authorization server and API.
   { file: 'sts_native_sso.js',           browser: false, local: true },
+  // OPENID CONNECT CIBA (#131, 2026-09-23): the endpoint's refusals, poll
+  // with an approval on /portal/ciba, deny, the user code, and ping and
+  // push in development. `local: true`: this repository's own endpoint.
+  { file: 'sts_ciba.js',                 browser: false, local: true },
   // A STATUS REFERENCE ON EVERY PRESENTED CREDENTIAL (#165, 2026-09-23): a
   // foreign credential naming none refused unless its issuer is exempted by
   // certificate thumbprint or the rule is own-only, the ldp_vc query asking

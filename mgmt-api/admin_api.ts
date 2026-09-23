@@ -4219,6 +4219,41 @@ class AdminApi {
             },
             responseDescription: 'The delegate as it now stands.' },
 
+          { action: 'answer-ciba-request',
+            operationId: 'answerUserCibaRequest',
+            summary: 'Approve or deny a CIBA request waiting for somebody ' +
+                     '(development test control)',
+            description: 'Answers an OpenID Connect CIBA backchannel ' +
+                         'authentication request waiting for the person, as ' +
+                         'they would on /portal/ciba: `approve` true or ' +
+                         'false, and an optional `acr` recorded as the ' +
+                         'level the approval reached. A ping or push client ' +
+                         'is notified as it would be. DEVELOPMENT ONLY: ' +
+                         'refused in product mode, where only the person ' +
+                         'answers.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                id: { type: 'string',
+                      description: 'The request\'s auth_req_id.' },
+                approve: { type: 'boolean',
+                           description: 'true approves, false denies.' },
+                acr: { type: 'string',
+                       description: 'The level the approval is recorded as ' +
+                                    'reaching.' }
+              },
+              required: ['user', 'id', 'approve'],
+              examples: [{ user: 'alice', id: 'auth-req-id', approve: true }],
+              additionalProperties: false
+            },
+            responseDescription: 'The request\'s state.' },
+
           { action: 'remove-device', operationId: 'removeUserDevice',
             summary: 'Remove one of somebody\'s devices',
             description: 'Deletes the device entry from ou=devices, and its ' +

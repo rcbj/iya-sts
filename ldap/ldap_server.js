@@ -2061,7 +2061,13 @@ const OWN_NAMES = [
   // the sign-on session the secret is good for, and when it was last used.
   // `common/devices.ts` keeps them.
   'stsDevice', 'stsDeviceApplication', 'stsDeviceSecretHash',
-  'stsDeviceSession', 'stsDeviceLastUsed'
+  'stsDeviceSession', 'stsDeviceLastUsed',
+
+  // AND A PERSON'S CIBA USER CODE (#131, 2026-09-23): a secret they set on
+  // /portal/ciba that a backchannel authentication request must carry when
+  // its client registered backchannel_user_code_parameter. Hashed like a
+  // password, and withheld like one (SECRET_ATTRIBUTES).
+  'stsCibaUserCode'
 ];
 
 // The table itself, built from the two lists. `learnName()` is the ONE way in,
@@ -7850,6 +7856,8 @@ const SECRET_ATTRIBUTES = [
   'stsselfissuedsubject',
   // A device's Native SSO secret, hashed (#130): a credential's verifier.
   'stsdevicesecrethash',
+  // A person's CIBA user code, hashed (#131).
+  'stscibausercode',
   // A password reset link's hash (2026-09-13), for the activation token's
   // reason beside it.
   'stspasswordresettoken',
@@ -8734,6 +8742,35 @@ function applicationDnOf(clientId) {
   return found;
 }
 
+// A PERSON'S CIBA USER CODE (#131): the hash as stored, or ''; written
+// whole, '' removing it. `oauth-oidc/ciba.ts` hashes and checks it.
+function readCibaUserCode(key) {
+  log.debug('Entering readCibaUserCode().');
+  const stored = locateEntry(String(key || '')).stored;
+  log.debug('Leaving readCibaUserCode().');
+  return stored ? String((stored.attributes.stscibausercode || [])[0] || '')
+                : '';
+}
+
+function writeCibaUserCode(key, value) {
+  log.debug('Entering writeCibaUserCode().');
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-LDAP-0040') + 'ldap: "' + key + '" has no ' +
+             'entry in this realm, so no CIBA user code was written.');
+    log.debug('Leaving writeCibaUserCode(). No entry.');
+    return false;
+  }
+  if (value) {
+    stored.attributes.stscibausercode = [String(value)];
+  } else {
+    delete stored.attributes.stscibausercode;
+  }
+  touchDirectory();
+  log.debug('Leaving writeCibaUserCode().');
+  return true;
+}
+
 // THE ACTIVATION TOKEN, hashed. It is the one credential in this service that
 // completes an account setup on its own, so a leaked one is an account
 // takeover — which is why it is stored the way a password is and never in the
@@ -8815,6 +8852,9 @@ if (typeof credentials.setDirectory === 'function') {
     // reason the pair above is.
     readIdaVerifications: readIdaVerifications,
     readSelfIssuedSubjects: readSelfIssuedSubjects,
+    // The CIBA user code (#131), checked where it is used.
+    readCibaUserCode: readCibaUserCode,
+    writeCibaUserCode: writeCibaUserCode,
     // The device register (#130), checked where it is used.
     listDeviceEntries: listDeviceEntries,
     writeDeviceEntry: writeDeviceEntry,

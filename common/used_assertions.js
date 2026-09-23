@@ -158,6 +158,10 @@ const USES = {
   // is what RFC 7519 section 4.1.7 asks of a `jti` in the first place: one
   // identifier, one document. `oauth-oidc/request_object.ts` argues the rest.
   'request-object': 'request object (RFC 9101)',
+  // CIBA (#131): a signed authentication request (CIBA Core section
+  // 7.1.1), keyed like a request object — its client as issuer, its `jti` —
+  // because it is one, sent to another endpoint.
+  'ciba-request': 'signed CIBA authentication request (CIBA Core 7.1.1)',
   // A FEDERATION PARTNER'S SIGN-OUT (#167): an OpenID Connect Logout Token
   // (keyed by `jti`, Back-Channel Logout 1.0 section 2.6 step 8) or a SAML
   // <LogoutRequest> (by `ID`). A captured one replayed later would end a

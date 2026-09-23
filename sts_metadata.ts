@@ -1688,6 +1688,28 @@ const SPECS: Spec[] = [
               'Missing: requested_token_type other than access and refresh ' +
               'tokens is answered with an access token, and SAML ' +
               'assertions are not exchanged.' },
+  { id: 'oidc-ciba', name: 'OpenID Connect Client-Initiated Backchannel ' +
+                           'Authentication Flow — Core 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-client-initiated-backchannel-' +
+         'authentication-core-1_0.html',
+    coverage: 'full (#131, 2026-09-23), where oauth2.ciba is on (off by ' +
+              'default): the Backchannel Authentication Endpoint with ' +
+              'client authentication in every mode, signed requests ' +
+              '(section 7.1.1, jti spent once), exactly one of login_hint, ' +
+              'id_token_hint or login_hint_token resolved to a person — ' +
+              'unknown_user_id in both modes — binding_message, user_code ' +
+              '(set by the person on /portal/ciba), requested_expiry and ' +
+              'the section 13 errors; the authentication device is the ' +
+              'person\'s /portal/ciba page, an approval as strong as ' +
+              'acr_values asks; poll, ping and push, with the section 11 ' +
+              'errors, slow_down growing the interval, one token response ' +
+              'per approval, and ping and push delivered through the ' +
+              'outbound policy with retries and dead letters (the ' +
+              'oauth2.ciba-sweep job); the push ID Token carries ' +
+              'urn:openid:params:jwt:claim:auth_req_id and rt_hash; the ' +
+              'section 4 metadata in discovery and registration. A push to ' +
+              'a device is #164\'s.' },
   { id: 'oidc-native-sso', name: 'OpenID Connect Native SSO for Mobile ' +
                                   'Apps 1.0',
     where: 'OpenID Foundation',
@@ -5365,6 +5387,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'that party, and a token exchange of one by anybody else is ' +
           'refused invalid_request in every mode. The identity is the ' +
           'session\'s; the form names only the delegate.' },
+  { path: '/portal/ciba', group: 'User portal',
+    name: 'Sign-in requests — answering OpenID Connect CIBA',
+    specs: ['oidc-ciba'],
+    effect: 'lists the CIBA requests waiting for the signed-in person, ' +
+            'approves or denies one, and sets their user code',
+    what: 'NON-SPEC page (#131): CIBA\'s authentication device. Each ' +
+          'request shows its client, scopes and binding_message; an ' +
+          'approval that asks for more than the session proved offers a ' +
+          'stronger sign-in first.' },
   { path: '/portal/devices', group: 'User portal',
     name: 'Your devices — ou=devices, and Native SSO',
     specs: ['oidc-native-sso'],
@@ -8952,7 +8983,7 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/.well-known/openid-configuration', group: 'OAuth 2.0 / OIDC',
     name: 'OpenID Provider Configuration',
     specs: ['oidc-discovery', 'oidc', 'oidc-logout', 'oidc-bclogout',
-            'oidc-ida', 'oidc-native-sso', 'rfc8414',
+            'oidc-ida', 'oidc-native-sso', 'oidc-ciba', 'rfc8414',
                                                    'rfc9207', 'rfc9449'],
     what: 'What an OIDC client looks for first. The RFC 8414 document ' +
           'extended with what OpenID Connect Discovery adds — ' +
@@ -9404,7 +9435,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'state goes back with it. Refusals are pages, not JSON.' },
   { path: '/oauth2/token', group: 'OAuth 2.0 / OIDC', name: 'Token endpoint',
     specs: ['rfc6749', 'oidc', 'rfc8693', 'rfc9396', 'oid4vci', 'rfc9449',
-            'rfc7800', 'rfc9700', 'oidc-native-sso',
+            'rfc7800', 'rfc9700', 'oidc-native-sso', 'oidc-ciba',
             'rfc8705', 'rfc8707', 'rfc7523', 'rfc7522', 'rfc9068'],
     what: 'authorization_code, refresh_token, client_credentials, password, ' +
           'token-exchange, and OID4VCI\'s pre-authorized_code with tx_code ' +
@@ -9725,6 +9756,14 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'delete-pushed-request: a request_uri removed from the realm\'s ' +
           'store and refused invalid_request_uri at the authorization ' +
           'endpoint afterwards, through the same function as the console.' },
+  { path: '/oauth2/bc-authorize', group: 'OAuth 2.0 / OIDC',
+    name: 'Backchannel Authentication Endpoint (CIBA)',
+    specs: ['oidc-ciba'],
+    what: 'OpenID Connect CIBA section 7 (#131): a client that cannot show ' +
+          'the person a browser asks to authenticate them elsewhere; the ' +
+          'person approves on /portal/ciba. Answers the acknowledgement ' +
+          '(auth_req_id, expires_in, interval). 404 where oauth2.ciba is ' +
+          'off.' },
   { path: '/oauth2/revoke', group: 'OAuth 2.0 / OIDC', name: 'Revocation ' +
       'endpoint',
     specs: ['rfc7009', 'oidc-native-sso'],
@@ -10274,7 +10313,8 @@ SPECS.forEach(function (s) {
 const PROTOCOLS: Protocol[] = [
   { name: 'OAuth2 / OIDC', groups: ['OAuth 2.0 / OIDC'],
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
-            'oidc-session', 'oidc-ida-claims', 'oidc-ida', 'oidc-native-sso'],
+            'oidc-session', 'oidc-ida-claims', 'oidc-ida', 'oidc-native-sso',
+            'oidc-ciba'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +

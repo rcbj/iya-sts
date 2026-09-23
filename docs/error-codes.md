@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3276** of them, in **37** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3309** of them, in **37** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 220
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 514
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 541
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -80,11 +80,11 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 190
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 192
 * [Management API (`STS-API`)](#sts-api) — 73
-* [User portal (`STS-PORTAL`)](#sts-portal) — 66
+* [User portal (`STS-PORTAL`)](#sts-portal) — 69
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 129
+* [Registries (`STS-REG`)](#sts-reg) — 130
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -1636,6 +1636,33 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0632` | A Native SSO exchange's actor_token names no device, or is not the device secret the ID Token's ds_hash was made from (#130). | invalid_request (HTTP 400) |
 | `STS-OAUTH-0633` | A Native SSO exchange's device secret is bound to a sign-on session that has ended, that is not the ID Token's sid, or that is no longer the device owner's (#130). | invalid_request (HTTP 400) |
 | `STS-OAUTH-0634` | A client not enabled for Native SSO asked the revocation endpoint to revoke a device secret (#130). Nothing was revoked. | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0635` | A CIBA request was refused because the person already has oauth2.cibaMaxPendingPerPerson requests waiting (#131, section 14). | access_denied (HTTP 403) |
+| `STS-OAUTH-0636` | A CIBA ping or push to a client notification endpoint was given up after its attempts, or could not be sent at all (#131). | none — the client polls, or never learns |
+| `STS-OAUTH-0637` | The CIBA Backchannel Authentication Endpoint failed unexpectedly (#131). | server_error (HTTP 500) |
+| `STS-OAUTH-0638` | A CIBA request or token request arrived in a realm where oauth2.ciba is off (#131). | invalid_request (HTTP 404) or unsupported_grant_type |
+| `STS-OAUTH-0639` | A CIBA authentication request was malformed (#131). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0640` | A CIBA client declared a client authentication method the authorization server does not advertise (#131). | invalid_client (HTTP 401) |
+| `STS-OAUTH-0641` | A CIBA client did not authenticate at the Backchannel Authentication Endpoint, which asks it in every mode (#131, section 7.1). | invalid_client (HTTP 401) |
+| `STS-OAUTH-0642` | A client that registered no backchannel_token_delivery_mode asked to use CIBA (#131). | unauthorized_client (HTTP 400) |
+| `STS-OAUTH-0643` | A CIBA signed request was missing where required, or did not verify, carried the wrong alg, iss, aud or lifetime, or was used before (#131, section 7.1.1). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0644` | A CIBA request's scope did not contain openid (#131, section 7.1). | invalid_scope (HTTP 400) |
+| `STS-OAUTH-0645` | A CIBA request carried no hint, or more than one of login_hint_token, id_token_hint and login_hint (#131). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0646` | A CIBA hint named nobody this realm holds — in both modes (#131). | unknown_user_id (HTTP 400) |
+| `STS-OAUTH-0647` | A CIBA id_token_hint or login_hint_token is not a token this realm issued and still stands by (#131). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0648` | A CIBA login_hint_token has expired (#131). | expired_login_hint_token (HTTP 400) |
+| `STS-OAUTH-0649` | A CIBA binding_message was longer than 200 characters or carried control characters (#131). | invalid_binding_message (HTTP 400) |
+| `STS-OAUTH-0650` | A CIBA request from a client that registered backchannel_user_code_parameter carried no user_code (#131). | missing_user_code (HTTP 400) |
+| `STS-OAUTH-0651` | A CIBA request's user_code is not the one the person set (#131). | invalid_user_code (HTTP 400) |
+| `STS-OAUTH-0652` | A CIBA request's requested_expiry was not a positive whole number (#131). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0653` | A CIBA ping or push client sent no client_notification_token (#131). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0654` | A CIBA token request came from a client registered for push, or for no CIBA mode (#131, section 10). | unauthorized_client (HTTP 400) |
+| `STS-OAUTH-0655` | A CIBA token request named an auth_req_id that is no request of this client (#131). | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0656` | A CIBA token request found the request still waiting for the person (#131, section 11). | authorization_pending (HTTP 400) |
+| `STS-OAUTH-0657` | A CIBA token request came sooner than the interval; the interval grows by five seconds (#131, section 11). | slow_down (HTTP 400) |
+| `STS-OAUTH-0658` | A CIBA request expired before the person answered (#131). | expired_token (HTTP 400) |
+| `STS-OAUTH-0659` | The person denied the CIBA request (#131). | access_denied (HTTP 400) |
+| `STS-OAUTH-0660` | A CIBA request's tokens had already been issued (#131). | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0661` | The tokens for an approved CIBA push could not be minted — the issuance policy refused, or the person is gone — and the client is sent transaction_failed (#131). | none — pushed as transaction_failed |
 
 ## STS-SAML
 
@@ -3364,6 +3391,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0809` | enrol-self-issued-subject was refused: not a DID, thumbprint or public JWK, already enrolled for somebody, the person's limit reached, or no entry (#129). | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0810` | remove-self-issued-subject named a subject not enrolled for the person, or the directory did not store the change (#129). | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0811` | remove-device named a device that is not the person's, or the directory did not remove it (#130). | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0812` | answer-ciba-request, a development test control, was refused in product mode (#131). | HTTP 400 (API) |
+| `STS-ADMIN-0813` | answer-ciba-request named no CIBA request waiting for the person (#131). | HTTP 400 (API) |
 
 ## STS-API
 
@@ -3521,6 +3550,9 @@ Raised from: portal/.
 | `STS-PORTAL-0086` | A POST to /portal/delegate could not set or clear the signed-in person's delegate (stsMayAct) (#108). | HTTP 400 page |
 | `STS-PORTAL-0087` | A POST to /portal/self-issued named a self-issued subject the signed-in person has not enrolled, or the directory did not store the removal (#129). | HTTP 400 page |
 | `STS-PORTAL-0088` | A POST to /portal/devices named a device the signed-in person does not own, or the directory did not remove it (#130). | HTTP 400 page |
+| `STS-PORTAL-0089` | A POST to /portal/ciba answered a CIBA request that is not waiting for the signed-in person (#131). | HTTP 400 page |
+| `STS-PORTAL-0090` | A CIBA user code set on /portal/ciba was refused — the wrong length, or not stored (#131). | HTTP 400 page |
+| `STS-PORTAL-0091` | An approval on /portal/ciba asked for more (acr_values) than the sign-on session proved; the person is offered a stronger sign-in (#131). | HTTP 403 page |
 
 ## STS-LOGOUT
 
@@ -3675,6 +3707,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0194` | A write of a delegation policy attribute was refused (#108): appTrustedToImpersonate that is not TRUE or FALSE, or an appDelegationSubjectGroup value that is not a DN. | console: the page's error list; /admin-api: HTTP 400 |
 | `STS-REG-0195` | A write of gnapMtlsTrust on an application was refused: the value is neither pki nor pinned (#107). | console: the page's error list; /admin-api: HTTP 400 |
 | `STS-REG-0196` | A write of gnapMtlsTrust=pinned on an application was refused because the realm holds GNAP mutual TLS to a PKI (gnap.mtlsTrust resolves to pki); an entry may be stricter than the realm, never weaker (#107). | console: the page's error list; /admin-api: HTTP 400 |
+| `STS-REG-0197` | A registration's CIBA metadata was refused: an unknown backchannel_token_delivery_mode, no https notification endpoint for ping or push, a signing algorithm that is not asymmetric, or a user code parameter that is not a boolean (#131). | invalid_client_metadata (HTTP 400) |
 
 ## STS-DBG
 

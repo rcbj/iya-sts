@@ -545,6 +545,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `krb5.krbtgt-rotate` | cluster, realm; hourly, deciding per realm from the krbtgt key's own age (`krb5.krbtgtRotationIntervalDays`, 180) and never while the version the last rotation kept is inside its window; off in development and with `krb5.retainedKeyVersions` 0; makes a product realm's first key | `kerberos/krb5_krbtgt_rotation.ts` (#169), `kerberos/CLAUDE.md` |
 | `krb5.krbtgt-rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/kerberos/principals` and `POST /admin-api/kerberos/principals/{rotate-krbtgt,rotate-krbtgt-invalidate}` queue; `params.invalidate` keeps nothing | `kerberos/krb5_krbtgt_rotation.ts` (#169) |
 | `oauth2.backchannel-logout-sweep` | cluster, service; `oauth2.backchannelLogoutSweepS` | `oauth-oidc/backchannel_logout.ts` (P5) |
+| `oauth2.ciba-sweep` | cluster, service; `oauth2.cibaSweepS` | `oauth-oidc/ciba.ts` (#131): CIBA pings and pushes due, requests nobody answered expired |
 | `mail.deliver` | cluster, service; `mail.deliverS` — every realm's outbox: the messages due, dead-lettering past `mail.retentionS`, removing finished rows (#63) | `common/mail.ts` |
 | `ssf.dead-letter-sweep` | per-process; `ssf.deadLetterSweepS` — its summary and history are the process's own | `ssf/ssf.ts` (P5) |
 | `ssf.stream-maintenance` | cluster, realm; `ssf.streamMaintenanceSweepS`, off while `ssf.inactivityTimeoutS` and `ssf.verificationEveryS` are both 0 — SSF 1.0's inactivity timeout and transmitter-initiated verification | `ssf/ssf.ts` (#144) |

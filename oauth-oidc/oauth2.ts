@@ -304,6 +304,11 @@ import identityAssurance = require('../common/identity_assurance');
 // against `ou=devices`. A library over `credentials.ts`; it requires nothing
 // that requires this file.
 import devices = require('../common/devices');
+// OPENID CONNECT CIBA (#131): the requests, their approval and the
+// notifications — a library over `common/` and `federation_http`; it reaches
+// this file back only lazily, for a push.
+import ciba = require('./ciba');
+import usedAssertions = require('../common/used_assertions');
 // THE ROLE GATE. A LEAF (rule 3): it registers nothing, requires `helpers`,
 // `config` and `error_codes` and nothing else here, and answers "allowed" in
 // any process that never loaded the XACML family — so this require cannot move
@@ -459,6 +464,8 @@ interface OAuth2ServerDeps {
   claimAttributes: typeof claimAttributes;
   identityAssurance: typeof identityAssurance;
   devices: typeof devices;
+  ciba: typeof ciba;
+  usedAssertions: typeof usedAssertions;
   gate: typeof gate;
   debuggerAccess: typeof debuggerAccess;
   scopePolicy: typeof scopePolicy;
@@ -1338,6 +1345,8 @@ const TOKEN_FORM = vz.looseObject({
   // holds, presented with its authorization code so the same device is
   // bound to the new session (section 3.3).
   device_secret: vz.string().max(512).optional(),
+  // OpenID Connect CIBA (#131): the grant's one parameter.
+  auth_req_id: vz.string().max(256).optional(),
 
   // RFC 8707, and OpenID4VCI's pre-authorized code transaction code.
   resource: vz.string().max(validation.CAP.URI).optional(),
@@ -1374,6 +1383,24 @@ const TOKEN_QUERY_FORM = vz.looseObject({
 // introspection's form did. And `token` stays optional to the validator so
 // that its absence is answered by name (`STS-OAUTH-0608`) rather than as a
 // schema failure. Introspection keeps its own form, unchanged.
+// OPENID CONNECT CIBA CORE 1.0 SECTION 7.1 (#131): the Backchannel
+// Authentication Endpoint's form. A `request` carries every other member
+// signed instead (section 7.1.1).
+const CIBA_FORM = vz.looseObject({
+  scope: vt.opt(vt.scope),
+  client_notification_token: vz.string().max(1024).optional(),
+  acr_values: vz.string().max(1024).optional(),
+  login_hint_token: vz.string().max(validation.CAP.TEXT).optional(),
+  id_token_hint: vz.string().max(validation.CAP.TEXT).optional(),
+  login_hint: vz.string().max(256).optional(),
+  binding_message: vz.string().max(1024).optional(),
+  user_code: vz.string().max(256).optional(),
+  requested_expiry: vz.string().max(16).optional(),
+  request: vz.string().max(validation.CAP.TEXT).optional(),
+  client_id: vt.opt(vt.identifier),
+  client_secret: vz.string().max(1024).optional()
+});
+
 const REVOCATION_FORM = vz.looseObject({
   token: vz.string().max(validation.CAP.TEXT).optional(),
   token_type_hint: vz.string().max(256).optional(),
@@ -1559,6 +1586,8 @@ class OAuth2Server {
       claimAttributes: claimAttributes,
       identityAssurance: identityAssurance,
       devices: devices,
+      ciba: ciba,
+      usedAssertions: usedAssertions,
       gate: gate,
       debuggerAccess: debuggerAccess,
       scopePolicy: scopePolicy,
@@ -1808,7 +1837,11 @@ class OAuth2Server {
         // single switch would make "turn the JWT grant off" also turn off a
         // grant a SAML deployment depends on.
         .concat(samlAssertionGrant.enabled()
-          ? [samlAssertionGrant.GRANT_TYPE] : []),
+          ? [samlAssertionGrant.GRANT_TYPE] : [])
+        // OpenID Connect CIBA (#131), conditional for the same reason: only
+        // where oauth2.ciba is on in the realm.
+        .concat(this.deps.ciba.enabled()
+          ? ['urn:openid:params:grant-type:ciba'] : []),
       // RFC 7521 section 4.1 and OpenID Connect Core section 9's spelling of
       // the same thing: what a client_assertion_type may say. It is published
       // for the GRANT as well as for client authentication, because the one
@@ -2866,6 +2899,17 @@ class OAuth2Server {
                   this.deps.identityAssurance.discoveryMetadata());
     // OPENID CONNECT NATIVE SSO section 5 (#130).
     metadata.native_sso_supported = true;
+    // OPENID CONNECT CIBA section 4 (#131), where it is on: a
+    // grant_types_supported member is a promise.
+    if (this.deps.ciba.enabled()) {
+      metadata.backchannel_authentication_endpoint = base +
+        '/oauth2/bc-authorize';
+      metadata.backchannel_token_delivery_modes_supported =
+        ['poll', 'ping', 'push'];
+      metadata.backchannel_authentication_request_signing_alg_values_supported =
+        this.deps.stsCrypto.JWS_ASYMMETRIC_ALGS.slice(0);
+      metadata.backchannel_user_code_parameter_supported = true;
+    }
     // THE PROFILE, AGAIN, and it has to be applied twice.
     //
     // asMetadata() applied it already — and then the Object.assign above
@@ -3942,6 +3986,16 @@ class OAuth2Server {
       payload.at_hash = self.halfHash(opts.access_token, idAlg);
     }
     if (opts.code) payload.c_hash = self.halfHash(opts.code, idAlg);
+    // CIBA's push (#131, section 10.3.1): the ID Token names the request it
+    // answers, and hashes the refresh token beside it as it hashes the
+    // access token.
+    if (opts.ciba_auth_req_id) {
+      payload['urn:openid:params:jwt:claim:auth_req_id'] =
+        opts.ciba_auth_req_id;
+      if (opts.refresh_token) {
+        payload.rt_hash = self.halfHash(opts.refresh_token, idAlg);
+      }
+    }
     if (opts.state !== undefined && opts.state !== null &&
         String(opts.state) !== '') {
       payload.s_hash = self.halfHash(String(opts.state), idAlg);
@@ -4417,7 +4471,8 @@ class OAuth2Server {
       // Token.
       body.id_token = await self.idToken(base,
         Object.assign({}, opts, { access_token: access,
-                                  device_secret: deviceSecret || undefined }));
+                                  device_secret: deviceSecret || undefined,
+                                  refresh_token: body.refresh_token }));
     }
     log.debug("Leaving OAuth2Server.tokenSet(). Issued: " +
               Object.keys(body).join(', '));
@@ -12542,6 +12597,77 @@ class OAuth2Server {
       return respond(issued);
     }
 
+    // -----------------------------------------------------------------------
+    // OPENID CONNECT CIBA's TOKEN REQUEST (#131, section 10.1): a poll or a
+    // ping client's `auth_req_id`, answered by the request's state — the
+    // section 11 errors while it waits (`authorization_pending`, and
+    // `slow_down` for a client polling faster than its interval), then the
+    // tokens ONCE (`ciba.redeem()` is a cluster claim). A push client never
+    // comes here: its tokens were sent to it.
+    // -----------------------------------------------------------------------
+    if (grant === 'urn:openid:params:grant-type:ciba') {
+      const { ciba } = this.deps;
+      const cibaRefuse = function (code: string, error: string,
+                                   description: string): Json {
+        log.debug("Entering cibaRefuse(). " + code);
+        errorCodes.mark(res, code);
+        log.debug("Leaving cibaRefuse().");
+        // error-code: none — marked on the line above, by the caller's code.
+        return self.oauthError(res, 400, error, description);
+      };
+      if (!ciba.enabled()) {
+        log.debug("Leaving OAuth2Server.tokenGrant(). CIBA is off.");
+        return cibaRefuse('STS-OAUTH-0638', 'unsupported_grant_type',
+                          'OpenID Connect CIBA is not enabled in this realm.');
+      }
+      const mode = applications.cibaOf(client.client_id).mode;
+      if (mode !== 'poll' && mode !== 'ping') {
+        log.debug("Leaving OAuth2Server.tokenGrant(). Not a poll or ping " +
+                  "client.");
+        return cibaRefuse('STS-OAUTH-0654', 'unauthorized_client',
+                          'this client is registered for ' + (mode ||
+                          'no CIBA delivery mode') + '; only a poll or ' +
+                          'ping client asks the token endpoint (section ' +
+                          '10).');
+      }
+      const polled = ciba.poll(body.auth_req_id, client.client_id);
+      const stateErrors: Json = {
+        unknown: ['STS-OAUTH-0655', 'invalid_grant', 'auth_req_id names no ' +
+                  'request of this client.'],
+        pending: ['STS-OAUTH-0656', 'authorization_pending', 'The person ' +
+                  'has not answered yet.'],
+        slow_down: ['STS-OAUTH-0657', 'slow_down', 'Polled sooner than the ' +
+                    'interval; wait ' + (polled.record &&
+                    polled.record.interval) + ' seconds between requests.'],
+        expired: ['STS-OAUTH-0658', 'expired_token', 'The request expired ' +
+                  'before the person answered.'],
+        denied: ['STS-OAUTH-0659', 'access_denied', 'The person denied the ' +
+                 'request.'],
+        redeemed: ['STS-OAUTH-0660', 'invalid_grant', 'The tokens for this ' +
+                   'request have already been issued.']
+      };
+      if (polled.state !== 'approved') {
+        const answer = stateErrors[polled.state] || stateErrors.unknown;
+        log.debug("Leaving OAuth2Server.tokenGrant(). CIBA " + polled.state);
+        return cibaRefuse(answer[0], answer[1], answer[2]);
+      }
+      const record = polled.record;
+      const person = self.provisionedPerson(record.username);
+      if (!person || !(await ciba.redeem(record))) {
+        log.debug("Leaving OAuth2Server.tokenGrant(). CIBA: redeemed " +
+                  "elsewhere, or nobody.");
+        return cibaRefuse('STS-OAUTH-0660', 'invalid_grant', 'The tokens ' +
+                          'for this request have already been issued.');
+      }
+      const cibaIssued = await issue({
+        jkt: dpopJkt, user: person, client_id: client.client_id,
+        scope: record.scope, auth_time: record.approval.authTime,
+        amr: record.approval.amr, acr: record.approval.acr || undefined,
+        grant: 'ciba'
+      });
+      log.debug("Leaving OAuth2Server.tokenGrant(). CIBA tokens issued.");
+      return respond(cibaIssued);
+    }
     if (grant === 'urn:ietf:params:oauth:grant-type:token-exchange') {
       const subjectToken = String(body.subject_token || '');
       if (!subjectToken) {
@@ -14427,6 +14553,372 @@ class OAuth2Server {
   // `introspectEndpoint()`'s reason: both routes call this, so the catch is
   // here once.
   // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // OPENID CONNECT CIBA CORE 1.0 (#131): THE BACKCHANNEL AUTHENTICATION
+  // ENDPOINT (section 7) — `POST /oauth2/bc-authorize`.
+  //
+  // In order, each refusal a section 13 error with its code: the endpoint
+  // is on in the realm; the form is well formed; the client AUTHENTICATES,
+  // as at the token endpoint, in every mode (`authenticateEndpointCaller()`,
+  // no public client — section 7.1); it registered a delivery mode; a
+  // signed request is verified and spent once where one came or its client
+  // registered an algorithm (section 7.1.1); `openid` is in the scope and
+  // the scope is one the client may have; exactly one hint, resolved to a
+  // person this realm holds (`unknown_user_id` in BOTH modes, rcbj); the
+  // binding message, the user code and the requested expiry; and the
+  // notification token a ping or push client must send. Then the request is
+  // a row (`ciba.ts`) and the acknowledgement (section 7.3) is answered.
+  // `oauth-oidc/ciba.ts` argues the rest.
+  // ===========================================================================
+  private backchannelAuthenticationEndpoint(req: Req, res: Res): Json {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.backchannelAuthenticationEndpoint().");
+    self.backchannelAuthentication(req, res).catch(function (e) {
+      log.error(errorCodes.tag('STS-OAUTH-0637') + 'the backchannel ' +
+                'authentication endpoint failed: ' +
+                (e && e.stack ? e.stack : e));
+      if (!res.headersSent) {
+        errorCodes.mark(res, 'STS-OAUTH-0637');
+        self.oauthError(res, 500, 'server_error',
+                        String((e && e.message) || e));
+      }
+    });
+    log.debug("Leaving OAuth2Server.backchannelAuthenticationEndpoint().");
+  }
+
+  private async backchannelAuthentication(req: Req, res: Res): Promise<Json> {
+    const { log, parseBody, validation, errorCodes, applications, ciba,
+            stepUp } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.backchannelAuthentication().");
+    res.set('Cache-Control', 'no-store');
+    // Every refusal below: its code, then section 13's error.
+    const refuse = function (code: string, status: number, error: string,
+                             description: string): Json {
+      log.debug("Entering refuse(). " + code);
+      errorCodes.mark(res, code);
+      log.debug("Leaving refuse().");
+      // error-code: none — marked on the line above, by the caller's code.
+      return self.oauthError(res, status, error, description);
+    };
+    if (!ciba.enabled()) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). Off.");
+      return refuse('STS-OAUTH-0638', 404, 'invalid_request', 'OpenID ' +
+                    'Connect CIBA is not enabled in this realm ' +
+                    '(oauth2.ciba).');
+    }
+    const posted = validation.checkParsed(parseBody(req), 'body', CIBA_FORM);
+    if (!posted.ok) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). " +
+                "Malformed.");
+      return refuse('STS-OAUTH-0639', 400, 'invalid_request', posted.detail);
+    }
+    const body = posted.value;
+    const caller = await self.authenticateEndpointCaller(req, res, body, {
+      endpoint: 'backchannel authentication',
+      path: '/oauth2/bc-authorize',
+      capability: 'token_endpoint_auth_methods_supported',
+      advertisedCode: 'STS-OAUTH-0640',
+      advertisedStatus: 401,
+      allowPublic: false,
+      lenient: false,
+      refusal: function (observed: Json, why: string): Json {
+        return { code: 'STS-OAUTH-0641', status: 401, challenge: true,
+                 description: 'CIBA Core section 7.1: the client ' +
+                   'authenticates to this endpoint as it does to the token ' +
+                   'endpoint, in every mode — and ' + why };
+      }
+    });
+    if (!caller.ok) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). The " +
+                "client was refused.");
+      return undefined;
+    }
+    const clientId = String(caller.clientId);
+    const registered = applications.cibaOf(clientId);
+    if (!registered.mode) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). Not a " +
+                "CIBA client.");
+      return refuse('STS-OAUTH-0642', 400, 'unauthorized_client', 'client "' +
+                    clientId + '" registered no backchannel_token_delivery_' +
+                    'mode, so it may not use CIBA (section 4).');
+    }
+    const base = self.asBaseOf(req);
+    const issuer = self.issuerOf(base);
+    // THE SIGNED REQUEST (section 7.1.1).
+    let params: Json = body;
+    if (body.request || registered.signingAlg) {
+      const signed = await self.cibaSignedRequest(req, body, clientId,
+                                                  registered, base, issuer);
+      if (!signed.ok) {
+        log.debug("Leaving OAuth2Server.backchannelAuthentication(). The " +
+                  "signed request.");
+        return refuse(signed.code, 400, 'invalid_request', signed.why);
+      }
+      params = signed.params;
+    }
+    const scope = String(params.scope || '').trim();
+    if (scope.split(/\s+/).indexOf('openid') < 0) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). No " +
+                "openid.");
+      return refuse('STS-OAUTH-0644', 400, 'invalid_scope', 'a CIBA request ' +
+                    'is an OpenID Connect authentication request: its scope ' +
+                    'must contain openid (section 7.1).');
+    }
+    const scopeProblem = self.scopeRefusal(scope, clientId);
+    if (scopeProblem) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). The " +
+                "scope.");
+      return refuse(scopeProblem.code, 400, 'invalid_scope',
+                    scopeProblem.description);
+    }
+    const hints = ['login_hint_token', 'id_token_hint', 'login_hint']
+      .filter(function (name) {
+        return params[name] !== undefined && String(params[name]) !== '';
+      });
+    if (hints.length !== 1) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). " +
+                hints.length + " hint(s).");
+      return refuse('STS-OAUTH-0645', 400, 'invalid_request', 'exactly one ' +
+                    'of login_hint_token, id_token_hint and login_hint is ' +
+                    'required (section 7.1); this request has ' +
+                    (hints.length ? hints.join(', ') : 'none') + '.');
+    }
+    const hinted = self.cibaHintPerson(hints[0], String(params[hints[0]]),
+                                       issuer);
+    if (!hinted.ok) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). The " +
+                "hint.");
+      return refuse(hinted.code, 400, hinted.error, hinted.why);
+    }
+    const binding = String(params.binding_message || '');
+    if (binding.length > 200 || /[\u0000-\u001f\u007f]/.test(binding)) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). The " +
+                "binding message.");
+      return refuse('STS-OAUTH-0649', 400, 'invalid_binding_message',
+                    'binding_message must be at most 200 printable ' +
+                    'characters: it is shown to the person as it is.');
+    }
+    if (registered.userCode) {
+      if (!params.user_code) {
+        log.debug("Leaving OAuth2Server.backchannelAuthentication(). No " +
+                  "user code.");
+        return refuse('STS-OAUTH-0650', 400, 'missing_user_code', 'this ' +
+                      'client registered backchannel_user_code_parameter, ' +
+                      'so every request carries the person\'s user_code.');
+      }
+      if (!ciba.userCodeMatches(hinted.username, params.user_code)) {
+        log.debug("Leaving OAuth2Server.backchannelAuthentication(). The " +
+                  "user code.");
+        return refuse('STS-OAUTH-0651', 400, 'invalid_user_code',
+                      'the user_code is not the one this person set.');
+      }
+    }
+    const expiry = params.requested_expiry;
+    if (expiry !== undefined && expiry !== '' &&
+        !/^[1-9][0-9]{0,8}$/.test(String(expiry))) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). " +
+                "requested_expiry.");
+      return refuse('STS-OAUTH-0652', 400, 'invalid_request',
+                    'requested_expiry must be a positive whole number of ' +
+                    'seconds.');
+    }
+    const notification = String(params.client_notification_token || '');
+    if ((registered.mode === 'ping' || registered.mode === 'push') &&
+        !notification) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). No " +
+                "notification token.");
+      return refuse('STS-OAUTH-0653', 400, 'invalid_request',
+                    'client_notification_token is required of a ' +
+                    registered.mode + ' client (section 7.1).');
+    }
+    const acrValues = params.acr_values
+      ? (stepUp.parseAcrValues(String(params.acr_values)).values || []) : [];
+    const made = ciba.create({
+      clientId: clientId,
+      clientName: ((applications.registrationOf(clientId) || {}) as Json)
+        .client_name,
+      username: hinted.username, scope: scope, acrValues: acrValues,
+      bindingMessage: binding, mode: registered.mode,
+      notificationToken: notification,
+      notificationEndpoint: registered.endpoint,
+      requestedExpiry: expiry, base: base
+    });
+    if (!made.ok) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). " +
+                made.code);
+      return refuse(made.code, 403, made.error, made.description);
+    }
+    const acknowledgement: Json = { auth_req_id: made.record.id,
+                                    expires_in: made.expiresIn };
+    if (registered.mode !== 'push') {
+      acknowledgement.interval = made.record.interval;
+    }
+    res.status(200).type('application/json')
+       .send(JSON.stringify(acknowledgement));
+    log.debug("Leaving OAuth2Server.backchannelAuthentication(). " +
+              "Acknowledged.");
+    return undefined;
+  }
+
+  // THE SIGNED REQUEST (CIBA section 7.1.1): a request object signed by the
+  // client — `requestObject.verifyObject()`, with its keys and algorithms —
+  // with `aud` this issuer, `iss` the client, and `exp`, `iat`, `nbf` and
+  // `jti` all present, a lifetime of at most an hour, and the `jti` spent
+  // once ever (`used_assertions.js`). { ok, params } or { ok: false, code,
+  // why }.
+  private async cibaSignedRequest(req: Req, body: Json, clientId: string,
+                                  registered: Json, base: string,
+                                  issuer: string): Promise<Json> {
+    const { log, applications, requestObject, usedAssertions,
+            nowSec } = this.deps;
+    log.debug("Entering OAuth2Server.cibaSignedRequest().");
+    const refuse = function (why: string): Json {
+      log.debug("Leaving OAuth2Server.cibaSignedRequest(). " + why);
+      return { ok: false, code: 'STS-OAUTH-0643', why: why };
+    };
+    if (!body.request) {
+      return refuse('this client registered ' +
+                    'backchannel_authentication_request_signing_alg, so its ' +
+                    'requests must be signed (section 7.1.1).');
+    }
+    const compact = String(body.request);
+    let header: Json = {};
+    try {
+      header = JSON.parse(Buffer.from(compact.split('.')[0], 'base64url')
+        .toString('utf8'));
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.cibaSignedRequest(): " +
+                ((e && e.message) || e));
+      header = {};
+    }
+    if (registered.signingAlg && header.alg !== registered.signingAlg) {
+      return refuse('the request is signed with "' + header.alg + '" and ' +
+                    'this client registered "' + registered.signingAlg +
+                    '".');
+    }
+    const verified = await requestObject.verifyObject({
+      client: applications.clientConfigOf(clientId) || {}, profile: {},
+      clientId: clientId, jwt: compact, issuer: issuer, asBase: base,
+      query: {} });
+    if (!verified.ok) {
+      return refuse('the signed request did not verify: ' +
+                    (verified.description || verified.error || 'refused') +
+                    '.');
+    }
+    const claims = verified.claims || {};
+    const now = nowSec();
+    const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+    const missing = ['iss', 'aud', 'exp', 'iat', 'nbf', 'jti']
+      .filter(function (name) {
+        return claims[name] === undefined;
+      });
+    if (missing.length) {
+      return refuse('the signed request carries no ' + missing.join(', ') +
+                    ' (section 7.1.1 requires them).');
+    }
+    if (String(claims.iss) !== clientId || audiences.indexOf(issuer) < 0) {
+      return refuse('the signed request\'s iss must be the client and its ' +
+                    'aud this issuer, "' + issuer + '".');
+    }
+    if (Number(claims.exp) <= now || Number(claims.nbf) > now + 60 ||
+        Number(claims.exp) - Number(claims.nbf) > 3600) {
+      return refuse('the signed request is expired, not yet valid, or ' +
+                    'valid for more than an hour.');
+    }
+    const spent: Json = await usedAssertions.claim({
+      format: 'jwt', use: 'ciba-request', issuer: clientId,
+      identifier: String(claims.jti), clientId: clientId,
+      expiresAt: Number(claims.exp) * 1000, request: req });
+    if (!spent.ok) {
+      return refuse(spent.reason === 'replay'
+        ? 'this signed request (jti "' + claims.jti + '") was used before.'
+        : 'whether this signed request was used before could not be ' +
+          'asked, so it is refused.');
+    }
+    log.debug("Leaving OAuth2Server.cibaSignedRequest(). Verified.");
+    return { ok: true, params: claims };
+  }
+
+  // THE HINT (section 7.1), to a person this realm holds, in both modes.
+  // A `login_hint` is a username; an `id_token_hint` an ID Token this realm
+  // issued (an expired one included — it names somebody, it grants
+  // nothing); a `login_hint_token` a token this realm signed, still valid,
+  // whose `sub` names the person. { ok, username } or { ok: false, code,
+  // error, why }.
+  private cibaHintPerson(kind: string, value: string, issuer: string): Json {
+    const { log, nameForSubject, stats, stsCrypto } = this.deps;
+    log.debug("Entering OAuth2Server.cibaHintPerson(). " + kind);
+    const unknown = { ok: false, code: 'STS-OAUTH-0646',
+      error: 'unknown_user_id', why: 'the ' + kind + ' names nobody this ' +
+      'realm holds (section 13).' };
+    let username = '';
+    if (kind === 'login_hint') {
+      username = value.trim();
+    } else {
+      let claims: Json = null;
+      try {
+        claims = kind === 'id_token_hint'
+          ? helpers.verifyOwnCompactJws(value,
+              { algorithms: stsCrypto.JWS_ASYMMETRIC_ALGS }).claims
+          : helpers.verifyOwnJws(value);
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.cibaHintPerson(): " +
+                  ((e && e.message) || e));
+        claims = null;
+        if (kind === 'login_hint_token' &&
+            /expired/i.test(String((e && e.message) || e))) {
+          log.debug("Leaving OAuth2Server.cibaHintPerson(). Expired.");
+          return { ok: false, code: 'STS-OAUTH-0648',
+                   error: 'expired_login_hint_token',
+                   why: 'the login_hint_token has expired.' };
+        }
+      }
+      if (!claims || claims.iss !== issuer ||
+          (claims.jti && stats.isRevoked(claims.jti)) ||
+          (kind === 'id_token_hint' &&
+           this.ownTokenKind(value, claims) !== 'id_token')) {
+        log.debug("Leaving OAuth2Server.cibaHintPerson(). Not ours.");
+        return { ok: false, code: 'STS-OAUTH-0647', error: 'invalid_request',
+                 why: 'the ' + kind + ' is not a token this authorization ' +
+                      'server issued and still stands by.' };
+      }
+      username = String(nameForSubject(String(claims.sub || '')) || '');
+    }
+    const person = username ? this.provisionedPerson(username) : null;
+    if (!person || !person.sub) {
+      log.debug("Leaving OAuth2Server.cibaHintPerson(). Nobody.");
+      return unknown;
+    }
+    log.debug("Leaving OAuth2Server.cibaHintPerson(). " + person.username);
+    return { ok: true, username: String(person.username || username) };
+  }
+
+  // A PUSH's TOKENS (section 10.3.1), minted when the person approves: the
+  // issuance policy asked as for every grant, then the one token funnel, with
+  // the ID Token naming the request. For `ciba.ts`, which reaches this file
+  // lazily.
+  async cibaPushTokens(record: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.cibaPushTokens().");
+    const user = this.provisionedPerson(record.username);
+    if (!user) {
+      log.debug("Leaving OAuth2Server.cibaPushTokens(). Nobody.");
+      throw new Error('the person approving is no longer in the directory');
+    }
+    const opts: Json = {
+      user: user, client_id: record.clientId, scope: record.scope,
+      auth_time: record.approval.authTime, amr: record.approval.amr,
+      acr: record.approval.acr || undefined, grant: 'ciba',
+      ciba_auth_req_id: record.id
+    };
+    this.checkIssuance(opts);
+    const body = await this.tokenSet(record.base, opts);
+    log.debug("Leaving OAuth2Server.cibaPushTokens().");
+    return body;
+  }
+
   private revokeEndpoint(req: Req, res: Res): Json {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -15092,6 +15584,7 @@ class OAuth2Server {
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.oidcSubjectMetadataProblem(metadata) ||
+      applications.cibaMetadataProblem(metadata) ||
       applications.oidcRegistrationProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||
@@ -15306,6 +15799,7 @@ class OAuth2Server {
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.oidcSubjectMetadataProblem(metadata) ||
+      applications.cibaMetadataProblem(metadata) ||
       applications.oidcRegistrationProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||
@@ -15871,6 +16365,9 @@ class OAuth2Server {
     app.post('/oauth2/introspect', self.introspectEndpoint.bind(self));
 
     app.post('/oauth2/revoke', self.revokeEndpoint.bind(self));
+    // OpenID Connect CIBA's Backchannel Authentication Endpoint (#131).
+    app.post('/oauth2/bc-authorize',
+             self.backchannelAuthenticationEndpoint.bind(self));
 
     app.post('/oauth2/register', self.registerEndpoint.bind(self));
 
@@ -16008,6 +16505,8 @@ export = {
   // Native SSO (#130): whether a device secret's session still lives, for
   // the console and the portal's device lists.
   sessionIsLive: slot.forward('sessionIsLive'),
+  // CIBA (#131): a push's tokens, for `ciba.ts`.
+  cibaPushTokens: slot.forward('cibaPushTokens'),
   ownTokenKind: slot.forward('ownTokenKind'),
   exchangeTypeProblem: slot.forward('exchangeTypeProblem'),
   requestedClaimNames: slot.forward('requestedClaimNames'),

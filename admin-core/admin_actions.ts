@@ -188,6 +188,7 @@ import accountState = require('../common/account_state');
 import identityAssurance = require('../common/identity_assurance');
 import siop = require('../oid4vc/siop');
 import devices = require('../common/devices');
+import ciba = require('../oauth-oidc/ciba');
 import backchannel = require('../oauth-oidc/backchannel_logout');
 import oauth2 = require('../oauth-oidc/oauth2');
 import appPermissions = require('../common/app_permissions');
@@ -339,7 +340,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'enrol-self-issued-subject',
                        'remove-self-issued-subject',
                        // Devices (#130, 2026-09-23).
-                       'remove-device'];
+                       'remove-device',
+                       // CIBA's test control (#131, 2026-09-23).
+                       'answer-ciba-request'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -403,7 +406,13 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // A DEVICE (#130, 2026-09-23): `remove-device` deletes one of the person's
   // device entries (`id`), and its Native SSO secret with it — the apps on
   // it are asked to sign in again. `common/devices.ts` keeps them.
-  'remove-device'];
+  'remove-device',
+  // CIBA'S TEST CONTROL (#131, 2026-09-23): `answer-ciba-request` approves
+  // (`approve` true) or denies a backchannel authentication request (`id`,
+  // its auth_req_id) waiting for the person, as they would on /portal/ciba —
+  // DEVELOPMENT ONLY (`mode.opensTestControls()`): in product only the
+  // person answers.
+  'answer-ciba-request'];
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the actions in APPLICATION_ACTIONS below.
@@ -808,6 +817,7 @@ interface AdminActionsDeps {
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
   devices: typeof devices;
+  ciba: typeof ciba;
   backchannel: typeof backchannel;
   oauth2: typeof oauth2;
   appPermissions: typeof appPermissions;
@@ -870,6 +880,7 @@ class AdminActions {
       identityAssurance: identityAssurance,
       siop: siop,
       devices: devices,
+      ciba: ciba,
       backchannel: backchannel,
       oauth2: oauth2,
       appPermissions: appPermissions,
@@ -2323,6 +2334,41 @@ class AdminActions {
                message: 'Identity verification ' + id + ' of ' + who +
                         ' is removed; nothing is released from it any ' +
                         'more.' };
+    }
+
+    if (action === 'answer-ciba-request') {
+      const { ciba, mode } = this.deps;
+      if (!mode.opensTestControls()) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). CIBA's " +
+                  "test control is development-only.");
+        return this.refused('STS-ADMIN-0812', { ok: false, errors: [
+          'answer-ciba-request is a development-only test control and is ' +
+          'refused in product mode: only the person answers a sign-in ' +
+          'request, on /portal/ciba.'] });
+      }
+      const approve = body.approve === true || String(body.approve) === 'true';
+      const answered = ciba.answer(String(body.id || ''), who, approve,
+        { acr: String(body.acr || ''), amr: ['user'],
+          authTime: Math.floor(Date.now() / 1000) });
+      audited('admin.ciba.answered', (answered.ok ? '' : 'could not ') +
+              (approve ? 'approve' : 'deny') + ' a CIBA request for ' + who +
+              ' (test control)', { errors: answered.ok ? undefined :
+                                   [answered.why] },
+              answered.ok ? 'success' : 'failure');
+      if (!answered.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "answer-ciba-request was refused.");
+        return this.refusedBy('STS-ADMIN-0813',
+                              { ok: false, errors: [answered.why] });
+      }
+      ciba.notifyAnswered(answered.record).catch(function (e) {
+        log.debug("Caught in AdminActions.credentialAdminAction(): " +
+                  ((e && e.message) || e));
+      });
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "answer-ciba-request.");
+      return { ok: true, username: who, state: answered.record.state,
+               message: 'The request is ' + answered.record.state + '.' };
     }
 
     if (action === 'remove-device') {

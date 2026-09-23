@@ -184,7 +184,11 @@ const DIALLABLE = ['fedTokenUrl', 'fedUserinfoUrl', 'fedJwksUri'];
 // list of their own for the header's reason: an address something is SENT to
 // is a different argument from one something is fetched from, and neither
 // list may borrow the other's names.
-const SENDABLE = ['oauthBackchannelLogoutUri'];
+const SENDABLE = ['oauthBackchannelLogoutUri',
+  // OpenID Connect CIBA's ping and push (#131): the client's registered
+  // `backchannel_client_notification_endpoint`, sent the ping body or the
+  // token response, with its own `client_notification_token` as the Bearer.
+  'oauthBackchannelClientNotificationEndpoint'];
 
 // ---------------------------------------------------------------------------
 // WHICH ADDRESSES ARE INTERNAL. Moved from
@@ -552,11 +556,35 @@ class FederationHttp {
   // -------------------------------------------------------------------------
   deliverForm(record: any, attribute: string, form: Record<string, string>,
               options?: { timeoutMs?: number }): Promise<DeliveryResult> {
+    this.deps.log.debug("Entering FederationHttp.deliverForm().");
+    this.deps.log.debug("Leaving FederationHttp.deliverForm().");
+    return this.deliver(record, attribute,
+                        'application/x-www-form-urlencoded',
+                        new URLSearchParams(form).toString(), {}, options);
+  }
+
+  // THE SAME, AS JSON AND WITH HEADERS OF THE CALLER'S (#131): CIBA's ping
+  // and push are JSON bodies with the client's `client_notification_token` as
+  // a Bearer. Everything above applies unchanged — the attribute list, the
+  // kill switch, the transport policy, the internal-address refusal with the
+  // connection pinned, no redirect, the cap.
+  deliverJson(record: any, attribute: string, payload: any,
+              headers: Record<string, string>,
+              options?: { timeoutMs?: number }): Promise<DeliveryResult> {
+    this.deps.log.debug("Entering FederationHttp.deliverJson().");
+    this.deps.log.debug("Leaving FederationHttp.deliverJson().");
+    return this.deliver(record, attribute, 'application/json',
+                        JSON.stringify(payload), headers || {}, options);
+  }
+
+  private deliver(record: any, attribute: string, contentType: string,
+                  body: string, extraHeaders: Record<string, string>,
+                  options?: { timeoutMs?: number }): Promise<DeliveryResult> {
     const { log, errorCodes } = this.deps;
     const self = this;
     const opts = options || {};
     const id = (record && (record.id || record.fedId)) || '?';
-    log.debug("Entering FederationHttp.deliverForm(). id=" + id +
+    log.debug("Entering FederationHttp.deliver(). id=" + id +
               ', attribute=' + attribute);
     const refused = function (kind: string, why: string,
                               raw?: string): Promise<DeliveryResult> {
@@ -572,19 +600,19 @@ class FederationHttp {
                 'is not one of the attributes this service will deliver to (' +
                 SENDABLE.join(', ') + '). Refused. This is a bug in the ' +
                 'caller — see the header of federation_http.ts.');
-      log.debug("Leaving FederationHttp.deliverForm(). Not sendable.");
+      log.debug("Leaving FederationHttp.deliver(). Not sendable.");
       return refused('attribute', 'this service will not send to a URL ' +
                      'from "' + attribute + '"');
     }
     if (!this.outboundAllowed()) {
-      log.debug("Leaving FederationHttp.deliverForm(). Outbound is off.");
+      log.debug("Leaving FederationHttp.deliver(). Outbound is off.");
       return refused('outbound-off', 'federation.outbound is off, so this ' +
                      'service makes no outbound request at all');
     }
     const raw = String((record && record[attribute]) || '');
     const problem = this.urlVerdict(raw);
     if (problem.why) {
-      log.debug("Leaving FederationHttp.deliverForm(). " + problem.why);
+      log.debug("Leaving FederationHttp.deliver(). " + problem.why);
       return refused('url', attribute + ' cannot be dialled: ' + problem.why,
                      raw);
     }
@@ -597,15 +625,14 @@ class FederationHttp {
     }
     const policy = this.tlsFor(target.origin);
     if (secure && !policy.ok) {
-      log.debug("Leaving FederationHttp.deliverForm(). " + policy.why);
+      log.debug("Leaving FederationHttp.deliver(). " + policy.why);
       return refused('ca-file', policy.why, raw);
     }
-    const body = new URLSearchParams(form).toString();
     const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs)
                                                  : this.timeoutMs();
     const cap = this.maxBodyBytes();
     const transport = secure ? this.deps.https : this.deps.http;
-    log.debug("Leaving FederationHttp.deliverForm(). Vetting the host.");
+    log.debug("Leaving FederationHttp.deliver(). Vetting the host.");
     return this.vetHost(target.hostname).then(function (vetted) {
       if (!vetted.ok) {
         return { ok: false, status: 0, kind: vetted.kind || 'internal',
@@ -628,11 +655,11 @@ class FederationHttp {
           port: target.port || (secure ? 443 : 80),
           path: target.pathname + target.search,
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
+          headers: Object.assign({}, extraHeaders, {
+            'Content-Type': contentType,
             'Content-Length': Buffer.byteLength(body),
             'User-Agent': self.deps.userAgent
-          },
+          }),
           rejectUnauthorized: secure
         };
         if (secure) {
@@ -693,13 +720,13 @@ class FederationHttp {
             response.on('end', finish);
             response.on('close', finish);
             response.on('error', function (e) {
-              log.debug("Caught in a callback in deliverForm(): " +
+              log.debug("Caught in a callback in deliver(): " +
                         ((e && e.message) || e));
               finish();
             });
           });
         } catch (e) {
-          log.debug("Caught in FederationHttp.deliverForm(): " +
+          log.debug("Caught in FederationHttp.deliver(): " +
                     ((e && e.message) || e));
           done({ ok: false, status: 0, kind: 'build',
                  why: 'the request could not be built: ' + e.message });
@@ -711,7 +738,7 @@ class FederationHttp {
                  why: 'it did not answer within ' + timeoutMs + 'ms' });
         });
         request.on('error', function (e) {
-          log.debug("Caught in a request callback in deliverForm(): " +
+          log.debug("Caught in a request callback in deliver(): " +
                     ((e && e.message) || e));
           done({ ok: false, status: 0, kind: 'network',
                  why: 'the request failed: ' +
@@ -1524,6 +1551,7 @@ export = {
   internalAddressProblem: slot.forward('internalAddressProblem'),
   vetHost: slot.forward('vetHost'),
   deliverForm: slot.forward('deliverForm'),
+  deliverJson: slot.forward('deliverJson'),
   fetchPublished: slot.forward('fetchPublished'),
   requestConfigured: slot.forward('requestConfigured'),
   fetchHttpChallenge: slot.forward('fetchHttpChallenge'),
