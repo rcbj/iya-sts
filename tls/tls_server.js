@@ -3449,8 +3449,32 @@ app.get('/tls/sign-in', function (req, res) {
             'own doing — send one and this route will sign its holder in.'
       };
       res.set('Cache-Control', 'no-store');
-      res.status(200).type('application/json').send(JSON.stringify(answer));
-      log.debug('Leaving GET /tls/sign-in. signedIn=' + answer.signedIn);
+      // COMMITTED BEFORE IT IS ANSWERED, WHERE A SESSION WAS STARTED
+      // (2026-09-23). This route is never dispatched, so the session is written
+      // by the FRONT process, and the read barrier learns about a front-process
+      // write only once it has COMMITTED (`request_pool.js`'s
+      // noteLocalWrites()). Answered before that, the browser's next request —
+      // the console's code flow, straight to /oauth2/authorize on a request
+      // worker — could reach a worker that had not caught up and was sent to
+      // the sign-in screen with a session in its cookie
+      // (`sts_console_bootstrap_product` in single-node). With nothing started
+      // there is nothing to wait for.
+      const send = function () {
+        res.status(200).type('application/json').send(JSON.stringify(answer));
+        log.debug('Leaving GET /tls/sign-in. signedIn=' + answer.signedIn);
+      };
+      if (!session.started) {
+        send();
+        return;
+      }
+      const persistence = require('../persistence/persistence');
+      Promise.all([persistence.flush(), persistence.flushMinted()])
+        .then(send, function (e) {
+          // The store's own failure is reported by persistence.js; the answer
+          // goes out, and a worker catches up on the change log's own clock.
+          log.debug('Caught in GET /tls/sign-in: ' + ((e && e.message) || e));
+          send();
+        });
     });
   });
 });
