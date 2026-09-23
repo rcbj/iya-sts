@@ -1929,10 +1929,55 @@ function purposeFor(id) {
          null;
 }
 
+// ---------------------------------------------------------------------------
+// AN ENCRYPTION KEY PAIR (#168): the same leaf, the same Issuing CA, the same
+// revocation register — for a KEY THIS SERVICE DECRYPTS WITH rather than one
+// it or somebody else signs with. A federation relationship's service-provider
+// key is the first, published in its metadata (`KeyDescriptor
+// use="encryption"`) and its relying-party JWKS (`use: enc`).
+//
+// It differs from a signing leaf in exactly four places, and each is RFC
+// 5280's or RFC 7517's rather than a preference: KeyUsage says
+// `keyEncipherment` for an RSA key (it transports a content key) and
+// `keyAgreement` for an EC one (it agrees one), and never `digitalSignature`
+// — a decryption key that also signs is the XML Encryption 1.1 section 6.1.3
+// hazard; the JWK says `use: enc`; the subjectAltName URN names a federation
+// relationship; and the kid is prefixed `fedenc-`.
+//
+// It goes through `issueSigningKeyPair()` rather than beside it, with a
+// marker only this module can make, because the other ninety lines — the
+// chain, the lifetime clamp, the issuer's algorithm, the revocation
+// extensions, the serial the OCSP responder answers for — are the SAME and a
+// second copy is the one that drifts. The marker is a Symbol, so no request
+// body passed through to that function can ask for it.
+// ---------------------------------------------------------------------------
+const ENCRYPTION_LEAF = Symbol('encryption-leaf');
+const ENCRYPTION_KEY_ALGS = ['rsa-3072', 'ec-p256'];
+
+async function issueEncryptionKeyPair(realmId, opts) {
+  log.debug('Entering issueEncryptionKeyPair().');
+  const options = opts || {};
+  const keyAlg = String(options.keyAlg || 'rsa-3072');
+  if (ENCRYPTION_KEY_ALGS.indexOf(keyAlg) < 0) {
+    log.debug('Leaving issueEncryptionKeyPair(). Unknown key type.');
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + keyAlg + '" is not a key type this service ' +
+                      'issues an encryption key pair of. It issues ' +
+                      ENCRYPTION_KEY_ALGS.join(' and ') + '.'] },
+                           'STS-PKI-0192');
+  }
+  const out = await issueSigningKeyPair(realmId, Object.assign({}, options,
+    { keyAlg: keyAlg, [ENCRYPTION_LEAF]: true }));
+  log.debug('Leaving issueEncryptionKeyPair(). ' + (out.ok ? 'Issued.' :
+                                                    'Refused.'));
+  return out;
+}
+
 async function issueSigningKeyPair(realmId, opts) {
   log.debug('Entering issueSigningKeyPair().');
   const id = realmIdOf(realmId);
   const options = opts || {};
+  const encryption = options[ENCRYPTION_LEAF] === true;
   const chain = rawChainFor(id);
   if (!chain) {
     log.debug('Leaving issueSigningKeyPair(). No hierarchy.');
@@ -1955,7 +2000,9 @@ async function issueSigningKeyPair(realmId, opts) {
   // named and unknown: a caller that asked for a purpose this service does not
   // have wants a certificate for something, and silently handing back a JWT
   // one would put a key pair on the wrong attribute set with nothing saying so.
-  const purpose = purposeFor(options.purpose);
+  const purpose = encryption
+    ? { id: 'encryption', label: 'an encryption key', profileUri: '' }
+    : purposeFor(options.purpose);
   if (!purpose) {
     log.debug('Leaving issueSigningKeyPair(). Unknown purpose.');
     return errorCodes.mark({ ok: false,
@@ -1968,7 +2015,10 @@ async function issueSigningKeyPair(realmId, opts) {
   // subject kind this service does not have wants a certificate that says
   // something, and handing back an `application` one would put the wrong URN
   // in the subjectAltName with nothing saying so.
-  const subjectKind = subjectKindFor(options.subjectKind);
+  const subjectKind = encryption
+    ? { id: 'federation', label: 'a federation relationship',
+        urnPrefix: 'urn:sts:federation:', kidPrefix: 'fedenc-' }
+    : subjectKindFor(options.subjectKind);
   if (!subjectKind) {
     log.debug('Leaving issueSigningKeyPair(). Unknown subject kind.');
     return errorCodes.mark({ ok: false,
@@ -2061,7 +2111,7 @@ async function issueSigningKeyPair(realmId, opts) {
       subject: subject,
       subjectPublicKey: pair.publicPem,
       signatureAlg: sigAlgId,
-      profile: 'digital-signature',
+      profile: encryption ? 'key-encipherment' : 'digital-signature',
       notBefore: notBefore.toISOString(),
       notAfter: notAfter.toISOString(),
       issuer: { certificatePem: issuing.certificatePem,
@@ -2070,7 +2120,10 @@ async function issueSigningKeyPair(realmId, opts) {
       extensions: Object.assign({
         basicConstraints: { present: true, critical: true, ca: false },
         keyUsage: { present: true, critical: true,
-                    usages: ['digitalSignature', 'nonRepudiation'] },
+                    usages: !encryption
+                      ? ['digitalSignature', 'nonRepudiation']
+                      : (keyDesc.kind === 'ec' ? ['keyAgreement']
+                                               : ['keyEncipherment']) },
         subjectKeyIdentifier: { present: true },
         authorityKeyIdentifier: { present: true },
         // The subject's own identifier as a URI subjectAltName, so that a
@@ -2122,8 +2175,8 @@ async function issueSigningKeyPair(realmId, opts) {
   const jwsAlg = jwsAlgFor(keyDesc, sigAlgId);
   publicJwk.kid = subjectKind.kidPrefix +
                   stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
-  publicJwk.use = 'sig';
-  if (jwsAlg) {
+  publicJwk.use = encryption ? 'enc' : 'sig';
+  if (jwsAlg && !encryption) {
     publicJwk.alg = jwsAlg;
   }
   // `x5c` is the certificate chain in the JWK itself (RFC 7517 section 4.7):
@@ -8059,6 +8112,8 @@ module.exports = {
   chainPemFor: chainPemFor,
   trustAnchorsFor: trustAnchorsFor,
   issueSigningKeyPair: issueSigningKeyPair,
+  issueEncryptionKeyPair: issueEncryptionKeyPair,
+  ENCRYPTION_KEY_ALGS: ENCRYPTION_KEY_ALGS,
   registerCertificate: registerCertificate,
   verifyLeaf: verifyLeaf,
   // The signer certificate's chain, validated wherever an RFC 7523 or RFC 7522

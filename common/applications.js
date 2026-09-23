@@ -2195,7 +2195,8 @@ const SCHEMA = {
     { name: 'saml2KeyTransportAlgorithm', kind: 'single', from: 'by hand',
       overrides: 'saml2.keyTransportAlgorithm',
       what: 'How the content key is wrapped for this service provider — ' +
-            'rsa-oaep-mgf1p or rsa-1_5 — overriding ' +
+            'rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256; #168) or ' +
+            'rsa-1_5 — overriding ' +
             'saml2.keyTransportAlgorithm. An appliance that accepts only ' +
             'rsa-1_5 is the reason this is per application rather than a ' +
             'decision made once for the whole service.' },

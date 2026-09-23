@@ -1398,9 +1398,18 @@ const SPECS: Spec[] = [
               'canonicalization, RSA-SHA256 by default and RSA-SHA384/512 or ' +
               'the broken RSA-SHA1 by saml.signatureAlgorithm (2026-09-12; ' +
               'development mode only since #181); AES-GCM or AES-CBC ' +
-              'content encryption with an RSA-OAEP or, in development mode ' +
+              'content encryption with an RSA-OAEP (rsa-oaep-mgf1p, or ' +
+              'XML Encryption 1.1\'s rsa-oaep with SHA-256 and MGF1-SHA-256, ' +
+              '#168) or, in development mode ' +
               'only, an RSA-1_5 wrapped key — product neither wraps nor ' +
-              'unwraps RSA-1_5 (XML Encryption 1.1 section 6.1.2). ' +
+              'unwraps RSA-1_5 (XML Encryption 1.1 section 6.1.2) — and, to ' +
+              'an EC recipient, ECDH-ES key agreement with ConcatKDF and an ' +
+              'AES key wrap (section 5.6.4; #168). A federation ' +
+              'relationship DECRYPTS a partner\'s EncryptedAssertion, ' +
+              'EncryptedID and EncryptedAttribute under exactly the ' +
+              'algorithms it publishes, and refuses AES-CBC and rsa-1_5 in ' +
+              'every mode. No ML-KEM method is registered for XML ' +
+              'Encryption. ' +
               'VERIFIES (since 2026-09-17) every ' +
               'SignatureMethod of RFC 9231 and XMLDSig 1.1 node\'s OpenSSL ' +
               'implements — RSA PKCS#1 v1.5 and RSASSA-PSS (with and without ' +
@@ -2285,8 +2294,10 @@ const SPECS: Spec[] = [
               'runs section 2.6 whole — signature, iss, aud, iat, the events ' +
               'member, no nonce, sub or sid, and the jti once ever — ends ' +
               'the matched session by sid or by sub (section 2.7) and ' +
-              'answers section 2.8. An encrypted Logout Token is refused: ' +
-              'this relying party registers no encryption.' },
+              'answers section 2.8. An ENCRYPTED Logout Token (#168) is ' +
+              'decrypted with the relationship\'s own key under the alg and ' +
+              'enc it publishes, and what is inside must be the signed ' +
+              'token.' },
   { id: 'oidc-discovery', name: 'OpenID Connect Discovery 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-discovery-1_0.html',
@@ -8502,7 +8513,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'fedLastError on the relationship — it never redirects, because ' +
           'the person\'s sign-in already succeeded at the partner and the ' +
           'only interesting question is what this service disliked about the ' +
-          'answer.' },
+          'answer. An ENCRYPTED assertion, identifier or attribute, or a JWE ' +
+          'ID Token, is decrypted with the relationship\'s own key under ' +
+          'exactly the algorithms it publishes and its signature checked on ' +
+          'what was inside (#168); every decryption failure is one code, so ' +
+          'the answer is no oracle; AES-CBC and rsa-1_5 are refused in ' +
+          'every mode, and a PLAINTEXT assertion is refused in product mode ' +
+          'unless the relationship sets fedAllowUnencrypted.' },
   { path: '/federation/link/:handle', group: 'Federation',
     name: 'Link a partner\'s subject at first sign-in',
     specs: ['oidc', 'saml2', 'saml2-profiles', 'ws-federation', 'rfc6749'],
@@ -8579,7 +8596,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'path.' },
   { path: '/federation/metadata/:id', group: 'Federation',
     name: 'This service\'s OWN SAML metadata, per partner',
-    specs: ['saml2-metadata', 'saml2', 'saml11'],
+    specs: ['saml2-metadata', 'saml2', 'saml11', 'ws-federation',
+            'xmldsig'],
     what: 'An SPSSODescriptor rather than an IDPSSODescriptor — this is the ' +
           'half of this service that is a service provider. Per ' +
           'relationship, because this service calls itself something ' +
@@ -8591,7 +8609,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'would be made with. It 404s for a relationship that is not SAML, ' +
           'where /saml2/metadata 404s for nothing — because that one mints a ' +
           'document for any entityID asked for and this one describes an ' +
-          'arrangement that either exists or does not.' },
+          'arrangement that either exists or does not. Since #168 a SAML ' +
+          '2.0 relationship\'s carries KeyDescriptor use="encryption" with ' +
+          'the EncryptionMethods it accepts, and a WS-Federation ' +
+          'relationship gets one too: an EntityDescriptor with a ' +
+          'fed:ApplicationServiceType RoleDescriptor (WS-Federation 1.2 ' +
+          'section 3.1), its PassiveRequestorEndpoint and its encryption ' +
+          'key.' },
+  { path: '/federation/jwks/:id', group: 'Federation',
+    name: 'An OpenID Connect relationship\'s encryption key (#168)',
+    specs: ['oidc-registration', 'rfc7515', 'rfc7516', 'oidc'],
+    what: 'The relationship\'s CURRENT encryption key as a JWKS, use: enc, ' +
+          'with the alg it accepts — what the partner registers as this ' +
+          'relying party\'s jwks_uri (or its jwks) to encrypt the ID Token ' +
+          'to (OpenID Connect Registration section 2, Core section 10.2). ' +
+          'A key a rotation replaced still decrypts through ' +
+          'federation.encryptionKeyGraceS and is never published. ' +
+          'Cache-Control: no-store. 404 for anything but an OpenID Connect ' +
+          'service-provider-side relationship.' },
 
   // --- OAuth 2.0 / OIDC ---
   { path: '/.well-known/oauth-authorization-server', group: 'OAuth 2.0 / OIDC',
@@ -10024,7 +10059,12 @@ const PROTOCOLS: Protocol[] = [
           'a sign-in is and end only the session they name; a sign-out here ' +
           'offers the partner its own; and the partner\'s ' +
           'SessionNotOnOrAfter bounds the session. SAML 1.1 and OAuth 2.0 ' +
-          'define no sign-out.' },
+          'define no sign-out.\n\n**A PARTNER MAY ENCRYPT (#168)**: every ' +
+          'SAML 2.0, WS-Federation and OpenID Connect relationship holds an ' +
+          'encryption key of its own under the realm\'s Intermediate, ' +
+          'published in its metadata or at /federation/jwks/{id}, rotated ' +
+          'with a grace period; product mode requires the partner to use ' +
+          'it.' },
   { name: 'Shared Signals', groups: ['Shared Signals'],
     specs: ['ssf', 'rfc8417', 'rfc9493', 'rfc8935', 'rfc8936'],
     what: 'A Shared Signals TRANSMITTER (OpenID SSF 1.0, final September ' +

@@ -5012,6 +5012,12 @@ const NOT_DRIVEN_HERE = {
     "did",
   "POST /keys/emergency": "sts_key_rotation.js drives it in a throwaway " +
     "realm; an emergency ends every session of the realm it runs in",
+  // A FEDERATION RELATIONSHIP'S ENCRYPTION KEY (#168). Driven by
+  // `sts_federation_encryption.js`, which checks what a rotation did: the
+  // metadata publishes the new key, the replaced one decrypts through its
+  // grace period and not after it, and the retirement job removes it.
+  "POST /federation/rotate-key": "sts_federation_encryption.js drives it, " +
+    "and checks the grace period and the retirement",
   // THE KRBTGT KEY (#169). Driven by `sts_kerberos_krbtgt_rotation.js`, in a
   // throwaway realm with a KDC of its own: a rotation is checked by a TGT
   // from before it still buying a service ticket, which a walk asking for a

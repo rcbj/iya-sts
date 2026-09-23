@@ -1007,6 +1007,22 @@ function acceptsUnsignedFederatedLogout() {
   return !isProduct();
 }
 
+// May a federation partner send an assertion or an ID Token IN CLEAR through
+// the browser (#168)? A SAML 2.0 Response, a WS-Federation wresult and an
+// OpenID Connect `id_token` by form_post all cross the user agent, its history
+// and every TLS-terminating proxy on the way, and what they carry — a NameID,
+// mail, groups — is personal data. Since #168 every relationship publishes an
+// encryption key a partner can encrypt to. Development accepts plaintext, so a
+// partner under test needs no key set up; product refuses it (STS-FED-0140)
+// unless the relationship says `fedAllowUnencrypted`, whose documentation
+// carries the warning. An ID Token redeemed over the back channel never
+// crosses the browser and is not asked about.
+function acceptsUnencryptedFederatedAssertions() {
+  log.debug("Entering acceptsUnencryptedFederatedAssertions().");
+  log.debug("Leaving acceptsUnencryptedFederatedAssertions().");
+  return !isProduct();
+}
+
 // May a request object be UNSIGNED — `alg: none` — at the authorization
 // endpoint (2026-09-13)? RFC 9101 section 4 says a request object is signed, or
 // signed and then encrypted, and nothing else; OpenID Connect Core section 6.1
@@ -1455,6 +1471,19 @@ const REQUIREMENTS = [
              'refused (STS-FED-0115) whatever fedRequireSignedLogout says, ' +
              'and turning the setting off is refused (STS-FED-0132).',
     where: 'federation/federation_slo.ts, federation/federation.js' },
+  { id: 'federated-assertion-encryption',
+    what: 'A federation partner\'s assertion or front-channel ID Token is ' +
+          'encrypted to the relationship\'s own key',
+    development: 'A SAML 2.0 or WS-Federation assertion, or an OpenID ' +
+                 'Connect id_token by form_post, is accepted in clear. One ' +
+                 'that IS encrypted is decrypted and held to the same ' +
+                 'algorithm list as in product.',
+    product: 'A plaintext assertion or front-channel ID Token is refused ' +
+             '(STS-FED-0140) unless the relationship sets ' +
+             'fedAllowUnencrypted, which is documented with a warning. ' +
+             'AES-CBC, rsa-1_5 and RSA1_5 are refused in both modes ' +
+             '(STS-FED-0139).',
+    where: 'federation/federation_encryption.ts, federation/federation_sp.ts' },
   { id: 'passkey-first-use',
     what: 'The sign-in screen does not enrol a security key for somebody ' +
           'who has not proved who they are',
@@ -2752,6 +2781,7 @@ module.exports = {
   issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,
   matchesFederatedNames: matchesFederatedNames,
   acceptsUnsignedFederatedLogout: acceptsUnsignedFederatedLogout,
+  acceptsUnencryptedFederatedAssertions: acceptsUnencryptedFederatedAssertions,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
   acceptsLooseRequestUris: acceptsLooseRequestUris,
   acceptsUnsignedSamlRequests: acceptsUnsignedSamlRequests,

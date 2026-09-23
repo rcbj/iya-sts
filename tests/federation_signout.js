@@ -323,6 +323,11 @@ function childMain() {
          '0e. both refusals are recorded under their codes (0133' +
          (MODE === 'product' ? ', 0132' : '') + ')');
     setRel(SAML, 'fedRequireSignedLogout', 'TRUE');
+    // THE PARTNER HERE SIGNS AND DOES NOT ENCRYPT (#168): product refuses a
+    // plaintext assertion unless the relationship allows it, and what this
+    // file is about is the sign-out, not the encryption
+    // (tests/federation_encryption.js is).
+    setRel(SAML, 'fedAllowUnencrypted', 'TRUE');
 
     // =======================================================================
     // 1. OPENID CONNECT, REALM TO REALM
@@ -484,8 +489,10 @@ function childMain() {
       Buffer.from(forgedInput), rogue.privateKey).toString('base64url');
     const cases = [
       ['2a. no logout_token (0127)', {}, 'STS-FED-0127'],
-      ['2b. an encrypted (five-part) token (0127)',
-       { logout_token: 'a.b.c.d.e' }, 'STS-FED-0127'],
+      // Since #168 a five-part token is DECRYPTED rather than refused on
+      // its shape, and one that does not is the one decryption code.
+      ['2b. an encrypted (five-part) token that does not decrypt (0138)',
+       { logout_token: 'a.b.c.d.e' }, 'STS-FED-0138'],
       ['2c. a token signed by a key that is not the partner\'s, under its ' +
        'kid (0128)', { logout_token: forged }, 'STS-FED-0128'],
       ['2d. a token with a nonce (0129)',

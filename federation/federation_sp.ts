@@ -195,8 +195,12 @@ import mode = require('./../common/mode');
 import links = require('./federation_links');
 import rbac = require('./../admin-ui/admin_rbac');
 import roles = require('./../common/roles');
+// A PARTNER'S ENCRYPTED ASSERTION OR ID TOKEN (#168): the key it is encrypted
+// to and the policy it is decrypted under. A static utility class that
+// registers no route and requires nothing here back.
+import fedEncryption = require('./federation_encryption');
 
-const { DOMParser } = xmldom;
+const { DOMParser, XMLSerializer } = xmldom;
 
 type Helpers = typeof helpers;
 
@@ -232,6 +236,7 @@ interface FederationSpDeps {
   links: typeof links;
   rbac: typeof rbac;
   roles: typeof roles;
+  fedEncryption: typeof fedEncryption;
 }
 
 // The express app's registration methods, as `registerRoutes()` uses them.
@@ -401,7 +406,8 @@ class FederationSp {
       mode: mode,
       links: links,
       rbac: rbac,
-      roles: roles
+      roles: roles,
+      fedEncryption: fedEncryption
     };
   }
 
@@ -430,6 +436,11 @@ class FederationSp {
     // GET /federation/metadata/{id}
     app.get(METADATA_PATH + '/:id', (req, res) => {
       return this.metadataEndpoint(req, res);
+    });
+    // GET /federation/jwks/{id} — an OpenID Connect relationship's
+    // encryption key (#168).
+    app.get(federation.PATHS.jwks + '/:id', (req, res) => {
+      return this.jwksEndpoint(req, res);
     });
     // GET /federation
     app.get(BASE_PATH, (req, res) => {
@@ -2520,6 +2531,211 @@ class FederationSp {
   }
 
   // ---------------------------------------------------------------------------
+  // A PARTNER'S ENCRYPTED ASSERTION (#168): the token a SAML Response or a
+  // WS-Federation RequestedSecurityToken carries, opened.
+  //
+  // `container` is the element whose CHILDREN are the token — the Response,
+  // or the RequestedSecurityToken — and what may be there is ONE of a plain
+  // `<Assertion>`, a `<saml:EncryptedAssertion>` (SAML 2.0 core section
+  // 2.3.4) or, inside an RSTR, a bare `<xenc:EncryptedData>`. Two of them is
+  // refused (STS-FED-0147): which one the signature was over and which one
+  // was read would otherwise be a choice, and that choice is how a wrapping
+  // attack begins.
+  //
+  // Answers `{ assertion, assertionXml, encrypted }` — `assertionXml` is the
+  // document the ASSERTION's signature is verified in, which for an encrypted
+  // one is its own plaintext: signed first, then encrypted, so the signature
+  // is inside the ciphertext and is checked on what was decrypted. A
+  // Response's own signature is checked on the document as it arrived, and
+  // covers the ciphertext. Or `{ refused: true }` once a page is drawn.
+  // ---------------------------------------------------------------------------
+  private openToken(res, record, container, whole, what) {
+    const { federation, errorCodes, fedEncryption, log } = this.deps;
+    log.debug("Entering FederationSp.openToken(). " + what);
+    const children = [];
+    const kids = container ? container.childNodes : [];
+    for (let i = 0; kids && i < kids.length; i++) {
+      const name = kids[i].nodeType === 1 ? kids[i].localName : '';
+      if (name === 'Assertion' || name === 'EncryptedAssertion' ||
+          name === 'EncryptedData') {
+        children.push(kids[i]);
+      }
+    }
+    const plain = children.filter(function (el) {
+      return el.localName === 'Assertion';
+    });
+    const sealed = children.filter(function (el) {
+      return el.localName !== 'Assertion';
+    });
+    if (!children.length) {
+      errorCodes.mark(res, 'STS-FED-0011');
+      log.debug("Leaving FederationSp.openToken(). No assertion.");
+      this.refuse(res, record, 400, 'There is no assertion in it',
+        'The ' + what + ' carried no <Assertion> and no ' +
+        '<EncryptedAssertion>. That is a partner answering success with ' +
+        'nothing in it.');
+      return { refused: true };
+    }
+    if (sealed.length && (children.length > 1)) {
+      errorCodes.mark(res, 'STS-FED-0147');
+      log.debug("Leaving FederationSp.openToken(). More than one token.");
+      this.refuse(res, record, 400, 'It carries more than one assertion',
+        'The ' + what + ' carries ' + children.length + ' assertions, at ' +
+        'least one of them encrypted. Which one a signature covered and ' +
+        'which one was read must not be a choice, so a response carrying ' +
+        'an encrypted assertion must carry exactly one.');
+      return { refused: true };
+    }
+    if (!sealed.length) {
+      // PLAINTEXT, which product refuses unless the relationship says
+      // otherwise (`mode.acceptsUnencryptedFederatedAssertions()`).
+      if (federation.encryptionRequired(record)) {
+        errorCodes.mark(res, 'STS-FED-0140');
+        log.debug("Leaving FederationSp.openToken(). Plaintext, refused.");
+        this.refuse(res, record, 401, 'The assertion is not encrypted',
+          'This relationship requires the partner to ENCRYPT the assertion ' +
+          'to its key, and this one arrived in clear — so the person\'s ' +
+          'identifier and attributes crossed their browser readable. ' +
+          'Configure the partner with the encryption certificate in this ' +
+          'relationship\'s metadata. (Product mode requires encryption; ' +
+          'fedAllowUnencrypted on the relationship accepts plaintext, and ' +
+          'its warning says what that costs.)');
+        return { refused: true };
+      }
+      log.debug("Leaving FederationSp.openToken(). A plaintext assertion.");
+      return { assertion: plain[0], assertionXml: whole, encrypted: false };
+    }
+    if (!federation.encrypts(record)) {
+      errorCodes.mark(res, 'STS-FED-0011');
+      log.debug("Leaving FederationSp.openToken(). Encrypted, SAML 1.1.");
+      this.refuse(res, record, 400, 'There is no assertion in it',
+        'The ' + what + ' carries an encrypted assertion, and a SAML 1.1 ' +
+        'relationship has no encryption construct to decrypt one with — ' +
+        'SAML 1.1 defines none.');
+      return { refused: true };
+    }
+    const opened = fedEncryption.decryptXml(record,
+      new XMLSerializer().serializeToString(sealed[0]));
+    if (!opened.ok) {
+      errorCodes.mark(res, opened.code);
+      log.debug("Leaving FederationSp.openToken(). " + opened.code);
+      this.refuse(res, record, opened.code === 'STS-FED-0137' ? 500 : 401,
+        opened.code === 'STS-FED-0139'
+          ? 'It is encrypted with an algorithm this relationship refuses'
+          : (opened.code === 'STS-FED-0137'
+              ? 'There is no key to decrypt it with'
+              : 'The assertion could not be decrypted'),
+        opened.why);
+      return { refused: true };
+    }
+    let doc = null;
+    try {
+      doc = new DOMParser().parseFromString(opened.xml, 'text/xml');
+    } catch (e) {
+      log.debug("Caught in FederationSp.openToken(): " +
+                ((e && e.message) || e));
+      doc = null;
+    }
+    const assertion = doc && doc.documentElement;
+    if (!assertion || assertion.localName !== 'Assertion') {
+      errorCodes.mark(res, 'STS-FED-0011');
+      log.debug("Leaving FederationSp.openToken(). No assertion inside.");
+      this.refuse(res, record, 400, 'There is no assertion in it',
+        'The encrypted element decrypted, and what was inside it is not a ' +
+        'self-contained <Assertion>.');
+      return { refused: true };
+    }
+    log.info('federation: ' + record.fedId + ': the ' + what + '\'s ' +
+             'assertion was decrypted (' + opened.algorithm + ', key ' +
+             opened.kid + ').');
+    log.debug("Leaving FederationSp.openToken(). Decrypted.");
+    return { assertion: assertion, assertionXml: opened.xml, encrypted: true };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ENCRYPTED PARTS OF AN ASSERTION (#168): an `<EncryptedID>` where the
+  // NameID would be (SAML 2.0 core section 2.2.4) and an
+  // `<EncryptedAttribute>` beside the attributes (section 2.7.3.2), each
+  // decrypted and put in the place of the element that carried it — ONLY
+  // AFTER the signature has verified, because the signature is over the
+  // ciphertext and replacing it first would verify nothing. Answers true, or
+  // false once a page is drawn.
+  // ---------------------------------------------------------------------------
+  private openEncryptedParts(res, record, assertion) {
+    const { errorCodes, fedEncryption, log } = this.deps;
+    log.debug("Entering FederationSp.openEncryptedParts().");
+    const found = [];
+    const all = assertion.getElementsByTagName('*');
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].localName === 'EncryptedID' ||
+          all[i].localName === 'EncryptedAttribute') {
+        found.push(all[i]);
+      }
+    }
+    for (let i = 0; i < found.length; i++) {
+      const el = found[i];
+      const wanted = el.localName === 'EncryptedID' ? ['NameID', 'BaseID']
+                                                    : ['Attribute'];
+      const opened = fedEncryption.decryptXml(record,
+        new XMLSerializer().serializeToString(el));
+      let inner = null;
+      if (opened.ok) {
+        inner = this.fragmentOf(opened.xml);
+      }
+      if (!opened.ok || !inner || wanted.indexOf(inner.localName) < 0) {
+        const code = opened.ok ? 'STS-FED-0138' : opened.code;
+        errorCodes.mark(res, code);
+        log.debug("Leaving FederationSp.openEncryptedParts(). " + code);
+        this.refuse(res, record, code === 'STS-FED-0137' ? 500 : 401,
+          'An encrypted ' + (el.localName === 'EncryptedID'
+            ? 'identifier' : 'attribute') + ' could not be read',
+          opened.ok ? 'It decrypted to something that is not a ' +
+                      wanted.join(' or ') + '.'
+                    : opened.why);
+        return false;
+      }
+      const imported = assertion.ownerDocument.importNode(inner, true);
+      el.parentNode.replaceChild(imported, el);
+    }
+    log.debug("Leaving FederationSp.openEncryptedParts(). " + found.length +
+              " opened.");
+    return true;
+  }
+
+  // A decrypted fragment as an element: parsed as it stands, and otherwise
+  // inside a container declaring the prefixes a SAML fragment may inherit —
+  // `common/crypto.js`'s parsesAsFragment() makes the same allowance, for the
+  // same NamespaceError.
+  private fragmentOf(xml) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.fragmentOf().");
+    const attempts = [xml, '<x xmlns:saml="' + NS_SAML + '" xmlns:samlp="' +
+                            NS_SAMLP + '">' + xml + '</x>'];
+    for (let i = 0; i < attempts.length; i++) {
+      try {
+        const doc = new DOMParser().parseFromString(attempts[i], 'text/xml');
+        const root = doc && doc.documentElement;
+        if (root && i === 0) {
+          log.debug("Leaving FederationSp.fragmentOf(). As it stands.");
+          return root;
+        }
+        const kids = root ? root.childNodes : [];
+        for (let k = 0; kids && k < kids.length; k++) {
+          if (kids[k].nodeType === 1) {
+            log.debug("Leaving FederationSp.fragmentOf(). Wrapped.");
+            return kids[k];
+          }
+        }
+      } catch (e) {
+        log.debug("Caught in FederationSp.fragmentOf(): " +
+                  ((e && e.message) || e));
+      }
+    }
+    log.debug("Leaving FederationSp.fragmentOf(). Not XML.");
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
   // A SAML RESPONSE, 2.0 or 1.1, verified check by check.
   //
   // Every check is made and the FIRST failure refuses. That is deliberately not
@@ -2616,23 +2832,23 @@ class FederationSp {
         'was asked to accept or refuse anything.');
     }
 
-    const assertion = firstByLocal(root, 'Assertion');
-    if (!assertion) {
-      errorCodes.mark(res, 'STS-FED-0011');
-      log.debug("Leaving FederationSp.consumeSamlResponse().");
-      return this.refuse(res, record, 400, 'There is no assertion in it',
-        'The Response reported success and carried no <Assertion>. If the ' +
-        'partner is configured to ENCRYPT the assertion, that is the cause: ' +
-        'this service does not decrypt one — see federation/CLAUDE.md, where ' +
-        'that is listed as a deliberate gap rather than left to be ' +
-        'discovered here.');
+    // THE ASSERTION, decrypted where the partner encrypted it (#168) — and
+    // refused in clear where this relationship requires encryption.
+    const token: any = this.openToken(res, record, root, xml, 'Response');
+    if (token.refused) {
+      log.debug("Leaving FederationSp.consumeSamlResponse(). The token.");
+      return undefined;
     }
+    const assertion = token.assertion;
 
     // THE SIGNATURE. Either the Response or the Assertion may carry it and
     // either is enough — which is what every real service provider accepts,
     // because AD FS signs the assertion, Keycloak signs both and Shibboleth
-    // signs the response. What is NOT enough is neither.
-    const assertionSig = this.verifyXmlSignature(xml, record, 'Assertion');
+    // signs the response. What is NOT enough is neither. An ENCRYPTED
+    // assertion's own signature is inside the ciphertext and is verified on
+    // the plaintext; the Response's covers the ciphertext as it arrived.
+    const assertionSig = this.verifyXmlSignature(token.assertionXml, record,
+                                                 'Assertion');
     const responseSig = this.verifyXmlSignature(xml, record, 'Response');
     if (!assertionSig.ok && !responseSig.ok) {
       log.debug("Leaving FederationSp.consumeSamlResponse(). The signature " +
@@ -2675,6 +2891,7 @@ class FederationSp {
     // usable and never reaches here — and this refuses anyway rather than
     // relying on that, because the two checks are in two files.
     const issuer = textByLocal(root, 'Issuer') ||
+                   textByLocal(assertion, 'Issuer') ||
                    (assertion.getAttribute('Issuer') || '');
     const expectedIssuer = String(record.fedPeer || '').trim();
     if (!expectedIssuer || issuer !== expectedIssuer) {
@@ -2719,6 +2936,13 @@ class FederationSp {
                     audience.why);
     }
 
+    // THE ENCRYPTED IDENTIFIER AND ATTRIBUTES (#168), now that the signature
+    // over their ciphertext has verified.
+    if (!this.openEncryptedParts(res, record, assertion)) {
+      log.debug("Leaving FederationSp.consumeSamlResponse(). An encrypted " +
+                "part.");
+      return undefined;
+    }
     const contents = this.assertionContents(assertion);
 
     // InResponseTo. SAML 2.0 only — 1.1 has no request for anything to be in
@@ -2893,21 +3117,26 @@ class FederationSp {
       return this.refuse(res, record, 400, 'The wresult is not XML', e.message);
     }
     const root = doc && doc.documentElement;
-    const assertion = root ? firstByLocal(root, 'Assertion') : null;
-    if (!assertion) {
-      errorCodes.mark(res, 'STS-FED-0011');
-      log.debug("Leaving FederationSp.consumeWsFedResponse().");
-      return this.refuse(res, record, 400, 'There is no assertion in the ' +
-                                           'wresult',
-        'The RequestSecurityTokenResponse carried no <Assertion>. An ' +
-        'ENCRYPTED token looks exactly like this from here; this service ' +
-        'does not decrypt one.');
+    // THE TOKEN, in the RequestedSecurityToken — an assertion, or one
+    // ENCRYPTED to this relationship's key (#168): WS-Federation 1.2 carries
+    // whatever token the RSTR holds, and XML Encryption is how that token is
+    // sealed. A wresult with no RequestedSecurityToken is read where its
+    // assertion is, as it always was.
+    const container = root ? (firstByLocal(root, 'RequestedSecurityToken') ||
+      ((firstByLocal(root, 'Assertion') || {}).parentNode) || root) : null;
+    const token: any = this.openToken(res, record, container, wresult,
+                                      'wresult');
+    if (token.refused) {
+      log.debug("Leaving FederationSp.consumeWsFedResponse(). The token.");
+      return undefined;
     }
+    const assertion = token.assertion;
     const version = assertion.namespaceURI === NS_SAML ? '2.0' : '1.1';
     log.debug('consumeWsFedResponse(): the token is a SAML ' + version + ' ' +
-        'assertion.');
+        'assertion' + (token.encrypted ? ', decrypted.' : '.'));
 
-    const sig = this.verifyXmlSignature(wresult, record, 'Assertion');
+    const sig = this.verifyXmlSignature(token.assertionXml, record,
+                                        'Assertion');
     if (!sig.ok) {
       log.debug("Leaving FederationSp.consumeWsFedResponse(). The signature " +
                 'did not verify.');
@@ -2957,6 +3186,11 @@ class FederationSp {
       log.debug("Leaving FederationSp.consumeWsFedResponse().");
       return this.refuse(res, record, 401, 'It was issued for somebody else',
                     audience.why);
+    }
+    if (!this.openEncryptedParts(res, record, assertion)) {
+      log.debug("Leaving FederationSp.consumeWsFedResponse(). An encrypted " +
+                "part.");
+      return undefined;
     }
     const contents = this.assertionContents(assertion);
     const context = this.takeContext(String(params.wctx || ''));
@@ -3318,9 +3552,78 @@ class FederationSp {
     });
   }
 
-  private finishOidc(req, res, record, context, idToken, accessToken) {
+  // ---------------------------------------------------------------------------
+  // AN ENCRYPTED ID TOKEN (#168), OpenID Connect Core section 10.2: "signed
+  // and then encrypted", a Nested JWT. A five-part JWE is decrypted with the
+  // relationship's key under exactly the alg and enc it published, and what
+  // is inside must be the signed ID Token, which is then verified exactly as
+  // an unencrypted one is — a JWE alone, with nothing signed inside, is not
+  // an ID Token (Core section 2: "ID Tokens MUST be signed"). A three-part
+  // token on a front-channel relationship that requires encryption is
+  // refused as plaintext. Answers `{ token }` or `{ refused: true }`.
+  // ---------------------------------------------------------------------------
+  private openIdToken(res, record, idToken) {
+    const { federation, errorCodes, fedEncryption, log } = this.deps;
+    log.debug("Entering FederationSp.openIdToken().");
+    const parts = String(idToken).split('.').length;
+    if (parts !== 5) {
+      if (federation.encryptionRequired(record)) {
+        errorCodes.mark(res, 'STS-FED-0140');
+        log.debug("Leaving FederationSp.openIdToken(). Plaintext, refused.");
+        this.refuse(res, record, 401, 'The ID Token is not encrypted',
+          'This relationship requires the partner to ENCRYPT the ID Token ' +
+          'it sends through the browser (response_type=id_token) to the key ' +
+          'in this relationship\'s JWKS, and this one arrived signed only. ' +
+          'Register id_token_encrypted_response_alg and _enc at the partner ' +
+          '— the values are on the relationship\'s page. (Product mode ' +
+          'requires encryption; fedAllowUnencrypted accepts plaintext, and ' +
+          'its warning says what that costs.)');
+        return { refused: true };
+      }
+      log.debug("Leaving FederationSp.openIdToken(). Signed only.");
+      return { token: idToken, encrypted: false };
+    }
+    const opened = fedEncryption.decryptJwe(record, idToken);
+    if (!opened.ok) {
+      errorCodes.mark(res, opened.code);
+      log.debug("Leaving FederationSp.openIdToken(). " + opened.code);
+      this.refuse(res, record, opened.code === 'STS-FED-0137' ? 500 : 401,
+        opened.code === 'STS-FED-0139'
+          ? 'The ID Token is encrypted with an algorithm this relationship ' +
+            'refuses'
+          : (opened.code === 'STS-FED-0137'
+              ? 'There is no key to decrypt the ID Token with'
+              : 'The ID Token could not be decrypted'),
+        opened.why);
+      return { refused: true };
+    }
+    const inner = String(opened.plaintext || '').trim();
+    if (inner.split('.').length !== 3) {
+      errorCodes.mark(res, 'STS-FED-0141');
+      log.debug("Leaving FederationSp.openIdToken(). Nothing signed inside.");
+      this.refuse(res, record, 401, 'The encrypted ID Token is not signed',
+        'It decrypted, and what was inside is not a signed JWT. OpenID ' +
+        'Connect Core section 10.2 makes an encrypted ID Token a NESTED ' +
+        'JWT — signed, then encrypted — and an ID Token that is only ' +
+        'encrypted proves nothing about who made it: anybody holding this ' +
+        'relationship\'s PUBLIC key can make one.');
+      return { refused: true };
+    }
+    log.info('federation: ' + record.fedId + ': the ID Token was decrypted (' +
+             opened.algorithm + ', key ' + opened.kid + ').');
+    log.debug("Leaving FederationSp.openIdToken(). Decrypted.");
+    return { token: inner, encrypted: true };
+  }
+
+  private finishOidc(req, res, record, context, sentToken, accessToken) {
     const { fedHttp, errorCodes, audit, log, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.finishOidc().");
+    const opened: any = this.openIdToken(res, record, sentToken);
+    if (opened.refused) {
+      log.debug("Leaving FederationSp.finishOidc(). The ID Token.");
+      return undefined;
+    }
+    const idToken = opened.token;
     log.debug("Leaving FederationSp.finishOidc().");
     return this.keysFor(record).then((keySet) => {
       if (!keySet.ok) {
@@ -3508,6 +3811,19 @@ class FederationSp {
              'authorized, not that this person signed in just now — see ' +
              'federation/CLAUDE.md. It is supported because real deployments ' +
              'do it.');
+    // A JWE ACCESS TOKEN (#168) is refused by name rather than taken for an
+    // opaque one: a plain OAuth 2.0 relationship holds no decryption key, and
+    // sending an encrypted token to the userinfo endpoint instead would hide
+    // that the partner is configured for something this relationship is not.
+    if (accessToken.split('.').length === 5) {
+      errorCodes.mark(res, 'STS-FED-0141');
+      log.debug("Leaving FederationSp.finishOauth2(). A JWE access token.");
+      return this.refuse(res, record, 401, 'The access token is encrypted',
+        'The partner returned a JWE where a plain OAuth 2.0 relationship ' +
+        'reads a signed JWT or an opaque token. This relationship holds no ' +
+        'decryption key — an OpenID Connect relationship does, for its ' +
+        'ID Token.');
+    }
     const looksLikeJwt = accessToken.split('.').length === 3;
     const useUserinfo = !looksLikeJwt ||
       !String(record.fedJwks || record.fedJwksUri || '').trim();
@@ -3703,20 +4019,31 @@ class FederationSp {
     const id = String(req.params.id || '');
     const record = federation.get(id);
     if (!record || record.fedRole !== 'service-provider' ||
-        (record.fedProtocol !== 'saml2' && record.fedProtocol !== 'saml11')) {
+        (record.fedProtocol !== 'saml2' && record.fedProtocol !== 'saml11' &&
+         record.fedProtocol !== 'wsfed')) {
       errorCodes.mark(res, 'STS-FED-0003');
       res.status(404).type('html').send(this.page('No such metadata',
-        '<h1>No metadata here</h1><p>There is no SAML service-provider-side ' +
-        'relationship called ' +
-        '<code>' + xmlEscape(id) + '</code>. Metadata is a SAML thing, ' +
-        'so an OIDC, OAuth 2.0 or WS-Federation relationship has none — what ' +
-        'a partner needs for those is on <a ' +
+        '<h1>No metadata here</h1><p>There is no SAML or WS-Federation ' +
+        'service-provider-side relationship called ' +
+        '<code>' + xmlEscape(id) + '</code>. An OpenID Connect ' +
+        'relationship publishes its encryption key at ' +
+        federation.PATHS.jwks + '/{id} instead, and a plain OAuth 2.0 one ' +
+        'publishes nothing — what a partner needs for those is on <a ' +
         'href="' + BASE_PATH + '">' + BASE_PATH + '</a>.</p>'));
       log.debug("Leaving the federation metadata endpoint. Not a SAML " +
-                'relationship.');
+                'or WS-Federation relationship.');
       return;
     }
     const base = baseUrlOf(req);
+    // THE KEY A PARTNER ENCRYPTS TO (#168): saml-metadata-2.0-os section
+    // 2.4.1.1's KeyDescriptor use="encryption", with the EncryptionMethods
+    // this relationship accepts and nothing else. SAML 1.1 has no encryption
+    // construct and publishes none.
+    const encryption = record.fedProtocol === 'saml11' ? ''
+      : this.deps.fedEncryption.keyDescriptorOf(record);
+    if (record.fedProtocol === 'wsfed') {
+      return this.wsfedMetadata(req, res, record, base, encryption);
+    }
     // The XML signing key (#42, D2): what this service signs its outbound
     // AuthnRequests with.
     const der = STS.xml.certPem.replace(/-----[^-]+-----/g, '')
@@ -3734,6 +4061,7 @@ class FederationSp {
       'use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>' +
         der +
       '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>' +
+      encryption +
       // `federation.spNameIdFormat` since 2026-09-12; the literal before it is
       // the setting's default. THE SINGLE LOGOUT SERVICE (#167), on the
       // two bindings a partner's LogoutRequest and LogoutResponse are
@@ -3760,6 +4088,72 @@ class FederationSp {
        .set('Cache-Control', 'no-store')
        .send(xml);
     log.debug("Leaving the federation metadata endpoint.");
+  }
+
+  // ---------------------------------------------------------------------------
+  // A WS-FEDERATION RELYING PARTY'S METADATA (#168): WS-Federation 1.2
+  // section 3.1's document — an EntityDescriptor holding a RoleDescriptor of
+  // type fed:ApplicationServiceType, with the PassiveRequestorEndpoint the
+  // partner sends a wresult to and, since #168, the key it encrypts the
+  // token to. It is what AD FS imports a relying party from. Unsigned, for
+  // the SAML document's reason above.
+  // ---------------------------------------------------------------------------
+  private wsfedMetadata(req, res, record, base, encryption) {
+    const { log, logArtifact, xmlEscape } = this.deps;
+    log.debug("Entering FederationSp.wsfedMetadata().");
+    const fed = 'http://docs.oasis-open.org/wsfed/federation/200706';
+    const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<md:EntityDescriptor xmlns:md="' + NS_MD + '" ' +
+        'xmlns:ds="http://www.w3.org/2000/09/xmldsig#" ' +
+        'entityID="' + xmlEscape(this.ourEntityId(base, record)) + '">' +
+      '<md:RoleDescriptor ' +
+        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' +
+        'xmlns:fed="' + fed + '" xsi:type="fed:ApplicationServiceType" ' +
+        'protocolSupportEnumeration="' + fed + '">' + encryption +
+      '<fed:PassiveRequestorEndpoint><wsa:EndpointReference ' +
+        'xmlns:wsa="http://www.w3.org/2005/08/addressing"><wsa:Address>' +
+        xmlEscape(this.acsUrl(base, record)) +
+      '</wsa:Address></wsa:EndpointReference></fed:PassiveRequestorEndpoint>' +
+      '</md:RoleDescriptor></md:EntityDescriptor>';
+    logArtifact('federation WS-Federation relying party metadata', 'as served',
+                xml);
+    res.type('application/samlmetadata+xml')
+       .set('Cache-Control', 'no-store')
+       .send(xml);
+    log.debug("Leaving FederationSp.wsfedMetadata().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // GET /federation/jwks/{id} — AN OPENID CONNECT RELATIONSHIP'S KEY (#168),
+  // `use: enc`, what the partner registers as this relying party's `jwks` or
+  // `jwks_uri` to encrypt its ID Token to (OpenID Connect Registration section
+  // 2). The current key only: a rotated-out key still decrypts through its
+  // grace period, and a partner is never TOLD to encrypt to it. `no-store`,
+  // as every document carrying a key is.
+  // ---------------------------------------------------------------------------
+  private jwksEndpoint(req, res) {
+    const { federation, errorCodes, fedEncryption, log, xmlEscape } =
+      this.deps;
+    log.debug("Entering the federation JWKS endpoint. id=" + req.params.id);
+    const id = String(req.params.id || '');
+    const record = federation.get(id);
+    if (!record || record.fedRole !== 'service-provider' ||
+        record.fedProtocol !== 'oidc') {
+      errorCodes.mark(res, 'STS-FED-0146');
+      res.status(404).type('html').send(this.page('No such key set',
+        '<h1>No key set here</h1><p>There is no OpenID Connect ' +
+        'service-provider-side relationship called <code>' + xmlEscape(id) +
+        '</code>. A SAML 2.0 or WS-Federation relationship publishes its ' +
+        'encryption key in its metadata at ' + METADATA_PATH + '/{id}.</p>'));
+      log.debug("Leaving the federation JWKS endpoint. Not OIDC.");
+      return;
+    }
+    const jwk = fedEncryption.publicJwkOf(record);
+    res.status(200).type('application/jwk-set+json')
+       .set('Cache-Control', 'no-store')
+       .send(JSON.stringify({ keys: jwk ? [jwk] : [] }));
+    log.debug("Leaving the federation JWKS endpoint. " + (jwk ? jwk.kid :
+                                                          'No key.'));
   }
 
   // ---------------------------------------------------------------------------

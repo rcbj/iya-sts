@@ -214,6 +214,20 @@ const DATA_CLASSES = [
          'private key on every visit was the alternative.'
   },
   {
+    label: 'federation-encryption-key',
+    what: 'A federation relationship’s encryption private key (#168) — ' +
+          'what a partner’s encrypted assertion or ID Token is ' +
+          'decrypted with, one row per key in `fedEncryptionKey`',
+    where: 'the relationship’s own entry under `ou=federations`',
+    sealed: true,
+    why: 'Whoever holds it reads every assertion that partner encrypted to ' +
+         'this service — the person’s identifier and attributes, the ' +
+         'very thing the encryption keeps out of the browser. Sealed at rest ' +
+         'wherever keys persist, and withheld — ciphertext included — from ' +
+         'every LDAP search, page and `/admin-api` reply, which carry the ' +
+         'certificate and the public key only.'
+  },
+  {
     label: 'kerberos-keys',
     what: 'Stored Kerberos long-term keys — a directory person\'s, derived ' +
           'from their own password (`stsKrb5Keys`), and a service ' +
