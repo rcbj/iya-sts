@@ -46,7 +46,10 @@ any of them would be a broken implementation rather than a lenient one:
 
 * a **Kerberos** key and ticket (see [Kerberos](#kerberos-is-the-exception-and-cannot-not-be));
 * an **RFC 6238 one-time code** and a **recovery code**;
-* a **WebAuthn** ceremony — challenge, origin, RP ID, flags, signature and counter;
+* a **WebAuthn** ceremony — challenge, origin, RP ID, flags, the credential's
+  algorithm against the offer, the credential id's length, signature and
+  counter — and, where `webauthn.attestationPolicy` says (product by default),
+  its **attestation statement**;
 * a **TLS client certificate** at `GET /tls/sign-in`, revocation included;
 * a **federation partner's** signature, issuer and audience;
 * an **RFC 7523 or RFC 7522 assertion's** signer, which must be declared;
@@ -361,23 +364,37 @@ the way in is FAST with OTP pre-authentication (see
 [Kerberos](#kerberos-is-the-exception-and-cannot-not-be), #173); an app
 password is not accepted by the KDC.
 
-## A WebAuthn ceremony is verified, and the authenticator behind it is not
+## A WebAuthn ceremony is verified, and so is the authenticator's attestation
 
 The registration and every assertion are checked, in both modes — the
-challenge, the origin, the RP ID hash, the flags, the signature over
+challenge, the origin, the RP ID hash, the flags (BS only where BE), the
+credential's algorithm against the `pubKeyCredParams` offered, a credential id
+of at most 1023 bytes, the signature over
 `authenticatorData || SHA-256(clientDataJSON)` against the COSE public key the
-credential registered, and the signature counter, which only ever goes up.
+credential registered (ES256/384/512, RS256/384/512, PS256/384/512, EdDSA and
+ML-DSA-44/65/87), and the signature counter, which only ever goes up.
 
-**What is NOT checked is the attestation statement.** Whatever
-`webauthn.attestation` asks the browser for, the object that comes back is
-parsed, reported and believed. There is no FIDO metadata service, no trust
-anchor for an authenticator vendor and no model allow-list, so this service can
-tell you what an authenticator *claimed to be* and never what it *is*.
+**The attestation statement is verified since #105** (2026-09-23), under
+`webauthn.attestationPolicy`:
+
+| | In product mode | In development mode |
+|---|---|---|
+| `by-mode` (the default) | `verify-if-present`: every statement is verified by its WebAuthn Level 3 section 8 procedure — packed, tpm, android-key, android-safetynet, fido-u2f, none, apple and compound — and refused if it does not verify. A chain is checked against `webauthn.attestationTrustAnchors` and the roots the FIDO Metadata Service lists for the model; a model MDS lists must chain to its roots, a model MDS reports REVOKED, USER_VERIFICATION_BYPASS or KEY_COMPROMISE is refused, and the chain's revocation is consulted. `none`, self attestation and a chain no anchor knows are accepted and recorded as **untrusted** — synced passkeys send `none` | `off`: the format is recorded and nothing in the statement is checked |
+| `off` | Refused on write (`STS-CORE-0103`) and read as `by-mode` | Nothing is checked |
+| `require-trusted` | Only a statement that chains to an anchor is accepted — no `none`, no self attestation, and so no synced passkey | The same |
+
+An AAGUID allow-list (`webauthn.attestationAllowedAaguids`), a least FIDO
+certification level and FIPS each require a trusted statement whatever the
+policy says. The FIDO MDS3 BLOB is #62's dataset: uploaded on Monitoring →
+Risk, imported by the loader or the dataset directory, or downloaded daily from
+`risk.mdsUrl` by the `risk.mds-refresh` job. What each key's statement proved
+is on its row on `/portal/keys`, `/admin/users` and `GET /admin-api/users`; a
+key whose statement was not verified is shown as *claimed*.
 
 **`webauthn.userVerification: required` is enforced** — the UV flag in the
-signed authenticator data is checked — and it is the only ceremony option that
-could be, because nothing signed says what the browser was asked about
-attestation, the resident key or the attachment.
+signed authenticator data is checked — and it is the only ceremony OPTION that
+could be, because nothing signed says what the browser was asked about the
+attestation conveyance, the resident key or the attachment.
 
 **Where a key can be enrolled depends on the mode.** In product a security key
 that signs in on its own is added only where the person has already proved who
@@ -963,7 +980,5 @@ These are true in a product deployment today, and are tracked as issues:
   [#179](https://github.com/rcbj/iya-sts/issues/179). FAST in the TGS exchange
   (implicit armor) is not implemented either: a TGS-REQ that carries it is
   answered unarmored, which MIT's client accepts.
-* **A WebAuthn attestation statement is not verified**: there is no FIDO
-  metadata service ([#105](https://github.com/rcbj/iya-sts/issues/105)).
 * **A GNAP client's self-signed certificate** is matched by thumbprint with no
   chain or revocation check ([#107](https://github.com/rcbj/iya-sts/issues/107)).

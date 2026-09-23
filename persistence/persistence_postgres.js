@@ -4178,7 +4178,8 @@ function create(options) {
       return pool.query(
         'SELECT key_kind, authenticator_key, description, protocol_family, ' +
         'certification_level, latest_status, latest_status_at, compromised, ' +
-        'status_reports FROM sts_risk_fido_authenticators WHERE dataset = ' +
+        'status_reports, metadata_statement FROM ' +
+        'sts_risk_fido_authenticators WHERE dataset = ' +
         '$1 AND version = $2 AND key_kind = $3 AND authenticator_key = $4',
         [dataset, version, keyKind, String(key || '').toLowerCase()]
       ).then(function (r) {
@@ -4190,7 +4191,13 @@ function create(options) {
                        latestStatus: row.latest_status,
                        latestStatusAt: Number(row.latest_status_at) || 0,
                        compromised: !!row.compromised,
-                       statusReports: row.status_reports || [] } : null;
+                       statusReports: row.status_reports || [],
+                       // The model's metadata statement (#105): WebAuthn's
+                       // attestation verifier reads its
+                       // attestationRootCertificates. The memory store
+                       // keeps the whole row, so it answered this already.
+                       metadataStatement: row.metadata_statement || {} }
+                   : null;
       });
     },
 

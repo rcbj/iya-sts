@@ -138,7 +138,11 @@ cover:
   persistence, the database, encryption at rest, secrets, caches, the
   scheduler, the cluster, the error-code table and the audit log.
 * **Identities.** People and groups in the directory, second factors (TOTP,
-  WebAuthn, recovery codes), password policies, sessions and sign-out.
+  WebAuthn, recovery codes), password policies, sessions and sign-out. Each
+  security key on `GET /admin-api/users?user=` carries `attestation` — what
+  its attestation statement proved (format, type, verified, trusted, the
+  anchor, the model the FIDO metadata names) — and `GET /admin-api/webauthn`
+  reports the attestation policy in force and the FIDO MDS BLOB (#105).
 * **Applications and what they are issued.** The application register,
   consent, permissions, roles, delegation and who may delegate (`GET
   /admin-api/delegation/policy`), issued tokens, the claim and SAML

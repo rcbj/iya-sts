@@ -423,6 +423,17 @@ optional second argument in the same change, which adds no require.
 `krb5_service.js`'s replay cache is DESCRIBED from outside and not counted,
 because that file is not edited here.
 
+**AND OWED AGAIN AS OF 2026-09-23: `authn/webauthn_attestation.js`** (#105),
+compiled from its `.ts`. `common/credentials.ts` requires it at load, and
+credentials is in the closure through `common/issuance_gate.js`'s lazy require
+of `account_state.ts` (reached when the KDC asks whether a principal is
+disabled), so the commit that bumps the `sts/` pin across it needs `COPY
+sts/authn/webauthn_attestation.js ./sts/authn/` wherever the parent's set
+carries `common/credentials.js`. It requires `helpers`, `instance_slot`,
+`crypto`, `pki`, `error_codes` and `./webauthn_policy` at load — all already
+there with credentials — and `risk/risk_datasets` and
+`common/revocation_status.js` only lazily, inside a registration.
+
 `MOCK_STS_DIR=/path/to/iya-sts` still points those tests at a working copy,
 unchanged; below it there is now a sibling-checkout candidate that resolves and
 says loudly that the run reflects an unpushed working copy.

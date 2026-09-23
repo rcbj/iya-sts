@@ -870,6 +870,22 @@ function enrolsKeysOnFirstUse() {
   return !isProduct();
 }
 
+// May a WebAuthn registration's ATTESTATION STATEMENT go unverified (#105,
+// 2026-09-23)? `webauthn.attestationPolicy`'s default, `by-mode`, asks it:
+// development records the statement's format and verifies nothing, as it
+// always did — a client under test is entitled to send a statement nobody
+// could verify and watch what the relying party does with it. Product
+// verifies every statement that arrives (`verify-if-present`) and refuses
+// one that does not verify. `off` is the setting that says "verify nothing",
+// and only development honours it: product reads it as `by-mode`
+// (`valueInForce()`, STS-CORE-0106) and refuses to write it (the `onlyWhile`
+// marker, STS-CORE-0103). `authn/webauthn_attestation.ts` asks it.
+function acceptsUnverifiedAttestation() {
+  log.debug("Entering acceptsUnverifiedAttestation().");
+  log.debug("Leaving acceptsUnverifiedAttestation().");
+  return !isProduct();
+}
+
 // May a password alone open a PASSWORD-ONLY DOOR for a person who holds, or
 // is required to hold, a second factor (#101, 2026-09-22)? An LDAP simple
 // bind, a WS-Security UsernameToken, SCIM and SSF HTTP Basic and EST Basic
@@ -1394,6 +1410,23 @@ const REQUIREMENTS = [
     product: 'It is refused. A primary key is added on /portal/keys behind ' +
              'a session, by an activation link, or by an operator.',
     where: 'authn/authn.ts' },
+  // #105 (2026-09-23).
+  { id: 'webauthn-attestation',
+    what: 'A security key\'s attestation statement is verified before the ' +
+          'key is registered',
+    development: 'webauthn.attestationPolicy is by-mode, which here is ' +
+                 'off: the statement\'s format is recorded and nothing in ' +
+                 'it is checked. verify-if-present and require-trusted are ' +
+                 'there to set.',
+    product: 'by-mode is verify-if-present: every statement is verified by ' +
+             'its WebAuthn Level 3 section 8 procedure (all eight formats), ' +
+             'its chain checked against the realm\'s anchors and the FIDO ' +
+             'Metadata Service\'s roots, its revocation consulted, and a ' +
+             'model MDS reports compromised refused. none and self ' +
+             'attestation are accepted and recorded as untrusted. off is ' +
+             'refused on write and read as by-mode.',
+    where: 'authn/webauthn_attestation.ts, common/credentials.ts, ' +
+           'authn/authn.ts' },
   // #101 (2026-09-22).
   { id: 'second-factor-doors',
     what: 'A person who holds or must hold a second factor is refused their ' +
@@ -2505,6 +2538,10 @@ const WRITE_REFUSALS = {
     '(saml-profiles-2.0-os 4.1.4.5, oasis-sstc-saml-bindings-1.1 4.1.2.4). ' +
     'Exercise a relying party against an unsigned one in a development ' +
     'realm.',
+  acceptsUnverifiedAttestation:
+    'every WebAuthn attestation statement that arrives is verified there, ' +
+    'and a forged one is refused rather than recorded. verify-if-present ' +
+    'and require-trusted are allowed.',
   servesWithoutSecurityHeader:
     'the SPIFFE Workload Endpoint specification (section 3) says a call ' +
     'without the workload.spiffe.io header MUST be refused.'
@@ -2607,6 +2644,7 @@ module.exports = {
   grantsUndeclaredScopes: grantsUndeclaredScopes,
   honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
+  acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,
   acceptsPasswordAloneFromSecondFactorAccounts:
     acceptsPasswordAloneFromSecondFactorAccounts,
   issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,

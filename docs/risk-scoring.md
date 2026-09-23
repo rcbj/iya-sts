@@ -391,8 +391,18 @@ names:
 As FIDO's terms require, **only the latest BLOB is kept**: when a new one
 becomes active, the older one's rows are deleted at once. It stops answering
 `risk.mdsStaleGraceDays` after the date the BLOB says the next one is due; run
-the loader again before then. An authenticator the metadata does not list,
-including one that attests nothing (the all-zero AAGUID), is simply unknown.
+the loader again before then, or set `risk.mdsUrl` and let the
+`risk.mds-refresh` scheduler job download it daily (MDS3 section 3.2 — hourly
+once the active BLOB is overdue), under the same acceptance and the same
+checks. An authenticator the metadata does not list, including one that
+attests nothing (the all-zero AAGUID), is simply unknown.
+
+**The same BLOB serves WebAuthn attestation (#105).** A security key's
+registration is checked against it: the model's attestation root
+certificates anchor its attestation chain, and a model a status report calls
+REVOKED, USER_VERIFICATION_BYPASS or a KEY_COMPROMISE is refused outright
+(`STS-AUTHN-0237`) rather than scored. See
+[Authentication](authentication.md).
 
 ### Each version is checked before it becomes active
 
@@ -506,6 +516,9 @@ kept in step with `common/config.js`.
 | `risk.breachTimeoutMs` | `STS_RISK_BREACH_TIMEOUT_MS` | `3000` | How long a password being set waits for the API. |
 | `risk.mdsTrustAnchors` | `STS_RISK_MDS_TRUST_ANCHORS` | *(empty)* | The certificates a FIDO MDS3 BLOB's chain must end at; empty uses GlobalSign Root CA - R3 from the Node.js root store. |
 | `risk.mdsStaleGraceDays` | `STS_RISK_MDS_STALE_GRACE_DAYS` | `7` | How long past its `nextUpdate` the active BLOB still answers. |
+| `risk.mdsUrl` | `STS_RISK_MDS_URL` | *(empty)* | Where `risk.mds-refresh` downloads the BLOB from; empty dials nobody. |
+| `risk.mdsRefreshS` | `STS_RISK_MDS_REFRESH_S` | `86400` | How often it does, hourly once the BLOB is overdue. |
+| `risk.mdsMaxBytes` | `STS_RISK_MDS_MAX_BYTES` | `33554432` | The most it reads of a BLOB. |
 | `risk.rescoreEveryS` | `STS_RISK_RESCORE_EVERY_S` | `300` | How often the `risk.rescore` job re-checks every live session. |
 | `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | The policy asked what happens when a person's risk changes. |
 | `risk.standingValidMinutes` | `STS_RISK_STANDING_VALID_MINUTES` | `720` | How long a person's last assessed risk stands in for an issuance with no session. |

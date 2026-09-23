@@ -6909,6 +6909,20 @@ async function extensionsOf(one) {
   return (described && described.extensions) || [];
 }
 
+// A certificate's subject as one line, for a reason. A certificate with an
+// EMPTY subject — a TPM attestation key's (WebAuthn Level 3 section 8.3.1,
+// #105), whose name is in its subjectAltName — has none at all as far as
+// node's X509Certificate is concerned, so it is named by its SAN instead.
+function subjectText(one) {
+  log.debug("Entering subjectText().");
+  const subject = String((one && one.x509 && one.x509.subject) || '');
+  log.debug("Leaving subjectText().");
+  return subject ? subject.replace(/\n/g, ', ')
+    : 'the certificate with an empty subject' +
+      (one && one.x509 && one.x509.subjectAltName
+        ? ' (' + String(one.x509.subjectAltName) + ')' : '');
+}
+
 // A critical extension nothing here evaluates, or a CA's nameConstraints,
 // as a sentence; '' when neither.
 async function foreignCriticalProblem(one, isCa, allowed) {
@@ -6917,7 +6931,7 @@ async function foreignCriticalProblem(one, isCa, allowed) {
                       'subjectAltName', 'authorityKeyIdentifier',
                       'subjectKeyIdentifier'];
   const extensions = await extensionsOf(one);
-  const name = '"' + one.x509.subject.replace(/\n/g, ', ') + '"';
+  const name = '"' + subjectText(one) + '"';
   for (let i = 0; i < extensions.length; i++) {
     const ext = extensions[i];
     if (isCa && ext.name === 'nameConstraints') {
@@ -6940,7 +6954,7 @@ async function foreignCriticalProblem(one, isCa, allowed) {
 // or ''.
 async function foreignCaProblem(one, below) {
   log.debug("Entering foreignCaProblem().");
-  const name = '"' + one.x509.subject.replace(/\n/g, ', ') + '"';
+  const name = '"' + subjectText(one) + '"';
   if (!one.x509.ca) {
     log.debug("Leaving foreignCaProblem(). Not a CA.");
     return name + ' issued a certificate and is not a CA ' +
@@ -7022,7 +7036,7 @@ async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
     if (next < 0) {
       log.debug("Leaving verifyPathToAnchors(). No path.");
       return { ok: false, reason: 'no path from "' +
-               top.x509.subject.replace(/\n/g, ', ') +
+               subjectText(top) +
                '" to a configured trust anchor' };
     }
     used[next] = true;
@@ -7043,7 +7057,7 @@ async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
   const at = options.now === undefined ? Date.now() : options.now;
   for (let i = 0; i < path.length; i++) {
     const one = path[i];
-    const name = '"' + one.x509.subject.replace(/\n/g, ', ') + '"';
+    const name = '"' + subjectText(one) + '"';
     if (Date.parse(one.x509.validFrom) > at ||
         Date.parse(one.x509.validTo) < at) {
       log.debug("Leaving verifyPathToAnchors(). Outside validity.");
@@ -7074,6 +7088,125 @@ async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
   log.debug("Leaving verifyPathToAnchors(). " + path.length +
             " certificate(s).");
   return { ok: true, chain: path };
+}
+
+
+// ----- WebAuthn attestation certificates (#105) -----------------------------
+//
+// What `authn/webauthn_attestation.ts` asks of an attestation certificate —
+// sections 8.2.1 (packed), 8.3.1 (tpm), 8.4.1 (android-key), 8.6
+// (fido-u2f) and 8.8 (apple) of WebAuthn Level 3 — read here with pkijs
+// because every certificate question this service asks is answered in this
+// module (rcbj, 2026-09-21). The EXTENSION VALUES WebAuthn defines are
+// decoded by `crypto.js`'s section 10; this answers only the certificate's
+// own fields and hands the raw values over.
+
+// Subject attribute types by OID, for the four section 8.2.1 names.
+const SUBJECT_TYPES = { '2.5.4.6': 'C', '2.5.4.10': 'O', '2.5.4.11': 'OU',
+                        '2.5.4.3': 'CN' };
+
+// `{ version, subject: { C, O, OU, CN }, subjectEmpty, ca, eku: [oids],
+// extensions: { oid: { critical, value } }, sanDirectoryTypes: [oids],
+// publicKeyJwk, keyType, curve }` for a DER certificate, or null when it is
+// not one. `version` is X.509's (3 for v3). `ca` is null when there is no
+// basicConstraints. `sanDirectoryTypes` are the attribute types inside the
+// directoryName entries of subjectAltName, which is where a TPM AIK
+// certificate names its TPM (TCG EK Credential Profile section 3.2.9).
+function attestationCertificateFacts(der) {
+  log.debug("Entering attestationCertificateFacts().");
+  let cert = null;
+  let node = null;
+  try {
+    cert = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(der || [])));
+    node = new nodeCrypto.X509Certificate(Buffer.from(der || []));
+  } catch (e) {
+    log.debug("Caught in attestationCertificateFacts(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving attestationCertificateFacts(). Not a certificate.");
+    return null;
+  }
+  const subject = {};
+  (cert.subject.typesAndValues || []).forEach(function (tv) {
+    const name = SUBJECT_TYPES[tv.type];
+    if (name) {
+      subject[name] = String(tv.value.valueBlock.value);
+    }
+  });
+  const extensions = {};
+  let ca = null;
+  let eku = [];
+  let sanDirectoryTypes = [];
+  (cert.extensions || []).forEach(function (ext) {
+    extensions[ext.extnID] = {
+      critical: !!ext.critical,
+      value: Buffer.from(ext.extnValue.valueBlock.valueHexView) };
+    try {
+      if (ext.extnID === '2.5.29.19') {
+        ca = !!(ext.parsedValue && ext.parsedValue.cA);
+      } else if (ext.extnID === '2.5.29.37') {
+        eku = ((ext.parsedValue && ext.parsedValue.keyPurposes) || [])
+          .map(String);
+      } else if (ext.extnID === '2.5.29.17') {
+        ((ext.parsedValue && ext.parsedValue.altNames) || [])
+          .forEach(function (name) {
+            if (name.type === 4 && name.value &&
+                Array.isArray(name.value.typesAndValues)) {
+              name.value.typesAndValues.forEach(function (tv) {
+                sanDirectoryTypes.push(String(tv.type));
+              });
+            }
+          });
+      }
+    } catch (e) {
+      log.debug("Caught in attestationCertificateFacts(): " +
+                ((e && e.message) || e));
+      // An extension pkijs could not parse is reported as present, with no
+      // parsed meaning; the caller's check then fails on what it needed.
+    }
+  });
+  let publicKeyJwk = null;
+  let keyType = '';
+  let curve = '';
+  try {
+    keyType = String(node.publicKey.asymmetricKeyType || '');
+    curve = String((node.publicKey.asymmetricKeyDetails || {}).namedCurve ||
+                   '');
+    publicKeyJwk = node.publicKey.export({ format: 'jwk' });
+  } catch (e) {
+    log.debug("Caught in attestationCertificateFacts(): " +
+              ((e && e.message) || e));
+    // A key node cannot export (a post-quantum one): no JWK, and a caller
+    // comparing it with a credential's key finds no match.
+  }
+  log.debug("Leaving attestationCertificateFacts().");
+  return { version: Number(cert.version) + 1, subject: subject,
+           subjectEmpty: !(cert.subject.typesAndValues || []).length,
+           ca: ca, eku: eku, extensions: extensions,
+           sanDirectoryTypes: sanDirectoryTypes, publicKeyJwk: publicKeyJwk,
+           keyType: keyType, curve: curve, pem: node.toString(),
+           subjectText: String(node.subject || ''),
+           subjectAltName: String(node.subjectAltName || '') };
+}
+
+// An attestation certificate's key identifier as the FIDO Metadata Service
+// lists it (`attestationCertificateKeyIdentifiers`, FIDO Metadata Statement
+// section 4): the hex SHA-1 of the subjectPublicKey BIT STRING's value,
+// RFC 5280 section 4.2.1.2 method (1). How a fido-u2f authenticator, which
+// has no AAGUID, is found in MDS. '' when the certificate cannot be read.
+function attestationKeyIdentifier(der) {
+  log.debug("Entering attestationKeyIdentifier().");
+  try {
+    const cert = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(der)));
+    const bits = Buffer.from(cert.subjectPublicKeyInfo.subjectPublicKey
+      .valueBlock.valueHexView);
+    log.debug("Leaving attestationKeyIdentifier().");
+    return nodeCrypto.createHash('sha1').update(bits).digest('hex');
+  } catch (e) {
+    log.debug("Caught in attestationKeyIdentifier(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving attestationKeyIdentifier(). Unreadable.");
+    return '';
+  }
 }
 
 // ----- OpenSSH --------------------------------------------------------------
@@ -7579,6 +7712,9 @@ module.exports = {
   spkiOf: spkiOf,
   keyUsageOf: keyUsageOf,
   verifyPathToAnchors: verifyPathToAnchors,
+  // --- WebAuthn attestation certificates (#105) ---
+  attestationCertificateFacts: attestationCertificateFacts,
+  attestationKeyIdentifier: attestationKeyIdentifier,
   // --- the FIDO MDS3 BLOB (#62 P5) ---
   fidoMdsRoots: fidoMdsRoots,
   verifyFidoMdsBlob: verifyFidoMdsBlob,

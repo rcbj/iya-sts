@@ -751,7 +751,8 @@ class FederationHttp {
   // contentType, kind, why, url }`.
   // -------------------------------------------------------------------------
   fetchPublished(raw: string, options?: { accept?: string;
-                                          timeoutMs?: number }):
+                                          timeoutMs?: number;
+                                          maxBytes?: number }):
       Promise<{ ok: boolean; status: number; body: Buffer;
                 contentType: string; kind: string; why: string;
                 url: string }> {
@@ -790,7 +791,11 @@ class FederationHttp {
     }
     const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs)
                                                  : this.timeoutMs();
-    const cap = this.maxBodyBytes();
+    // A CALLER'S OWN CAP (#105): the FIDO MDS3 BLOB is megabytes, and
+    // `federation.maxResponseBytes` is sized for a token response. The
+    // caller's is a setting of its own, never unbounded.
+    const cap = Number(opts.maxBytes) > 0 ? Number(opts.maxBytes)
+                                          : this.maxBodyBytes();
     const transport = secure ? this.deps.https : this.deps.http;
     log.debug("Leaving FederationHttp.fetchPublished(). Vetting the host.");
     return this.vetHost(target.hostname).then(function (vetted) {

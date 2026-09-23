@@ -229,6 +229,12 @@ class ProtocolStack {
                'PasswordPolicy');
     this.build('authn/webauthn_policy', require('../authn/webauthn_policy'),
                'WebauthnPolicy');
+    // #105: a registration's attestation statement, verified. A library
+    // (rule 3), asked by both ceremony doors — the sign-in screen and
+    // `credentials.confirmKeyEnrolment()` — after `webauthn.js`'s own checks.
+    this.build('authn/webauthn_attestation',
+               require('../authn/webauthn_attestation'),
+               'WebauthnAttestation');
     this.build('common/credentials', require('./credentials'), 'Credentials');
     this.build('common/account_state', require('./account_state'),
                'AccountState');

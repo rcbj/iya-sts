@@ -577,6 +577,16 @@ const JOBS = [
   // would otherwise be asserting against a store the other job is still
   // filling.
   { file: 'sts_portal_backup_keys.js',   browser: false, local: true },
+  // A SECURITY KEY'S ATTESTATION, VERIFIED (#105): keys enrolled at
+  // /portal/keys in a throwaway realm with statements this job makes — an
+  // x5c packed statement under a root minted at run time and configured as
+  // the realm's anchor, a self attestation, a forged one, none — under
+  // require-trusted, an AAGUID allow-list and verify-if-present, and what
+  // each proved read back from /portal/keys, /admin-api/users and the
+  // console. `local: true` on the first question: the portal, the API and
+  // the console are this repository's. After the backup-keys job, for the
+  // same reason that one follows the sign-in job.
+  { file: 'sts_webauthn_attestation.js', browser: false, local: true },
   // THE FIVE PASSWORD-ONLY DOORS AND APP PASSWORDS (#101, 2026-09-22): a
   // second-factor person's own password refused at an LDAPS bind, a WS-Trust
   // UsernameToken, SCIM, SSF and EST Basic in product — with a wrong

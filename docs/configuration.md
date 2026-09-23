@@ -874,11 +874,22 @@ value for *the authenticator verified the user* that this service could honestly
 assert, and claiming `mfa` because the ceremony was phishing-resistant would be
 exactly the kind of fake this service refuses everywhere else.
 
-**No attestation statement is verified whatever `webauthn.attestation` asks
-for.** There is no metadata service here, no vendor trust anchor and no model
-allow-list, so the statement is parsed, reported and believed. `direct` is the
-default because this is a debugging service and the object is worth looking at;
-a real deployment with no attestation policy sends `none`.
+**What is done with the attestation statement is `webauthn.attestationPolicy`
+(#105).** `by-mode`, the default, verifies every statement in product mode
+(`verify-if-present`: all eight WebAuthn Level 3 section 8 formats, the chain
+against `webauthn.attestationTrustAnchors` and the FIDO Metadata Service's
+roots, revocation, and MDS status reports) and nothing in development (`off`,
+which product refuses to hold). `require-trusted` accepts only a statement that
+chains to an anchor, which refuses every synced passkey. An AAGUID allow-list
+(`webauthn.attestationAllowedAaguids`), a least certification level
+(`webauthn.attestationMinCertificationLevel`) and FIPS
+(`webauthn.attestationRequireFips`) each demand a trusted statement; a realm
+that demands one asks the browser for `direct` whatever `webauthn.attestation`
+says. `webauthn.attestationAllowSafetynet` and
+`webauthn.attestationAndroidSoftwareKeys` are weaker options, off, each with a
+warning in its description. `direct` is the conveyance default because this is
+a debugging service and the object is worth looking at; a deployment with no
+use for the authenticator's model sends `none`.
 
 **`webauthn.rpId` may only WIDEN the RP ID**, to a registrable domain suffix of
 the host this service was reached on — `example.com` at `sts.example.com`. That

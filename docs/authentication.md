@@ -114,13 +114,28 @@ script (`/authn/webauthn.js`), because a WebAuthn ceremony is a browser API
 call. **Registration and every assertion are verified in both modes**: the
 challenge, the origin, the RP ID hash, the flags, the signature over
 `authenticatorData ‖ SHA-256(clientDataJSON)` against the registered COSE key
-(ES256, ES384, ES512, EdDSA, RS256, RS384, RS512), and a signature counter that
-must go up. Across a cluster, each assertion's challenge is claimed once and
+(ES256, ES384, ES512, EdDSA, RS256, RS384, RS512, PS256, PS384, PS512, and
+ML-DSA-44/65/87 from RFC 9964), and a signature counter that must go up. A
+registration is also held to section 7.1's remaining checks: the credential's
+algorithm must be one that was offered, its id at most 1023 bytes, and the
+backup state flag set only where the credential is backup eligible. Across a cluster, each assertion's challenge is claimed once and
 each credential id can be registered once.
 
-**The attestation statement is parsed, reported and not verified**, whatever
-`webauthn.attestation` asks for: there is no FIDO metadata service and no
-vendor trust anchor. **`webauthn.userVerification` is the one ceremony option
+**The attestation statement is verified under `webauthn.attestationPolicy`**
+(#105): in product mode by default (`verify-if-present`), in development when
+the realm asks. All eight formats of WebAuthn Level 3 section 8 — `packed`,
+`tpm`, `android-key`, `android-safetynet`, `fido-u2f`, `none`, `apple` and
+`compound` — are verified by their own procedures; the certificate chain is
+checked against `webauthn.attestationTrustAnchors` and the attestation roots
+the FIDO Metadata Service lists for the model (the MDS3 BLOB is uploaded on
+Monitoring → Risk or downloaded from `risk.mdsUrl`), revocation is consulted,
+and a model MDS reports REVOKED, USER_VERIFICATION_BYPASS or KEY_COMPROMISE is
+refused. `none` and self attestation are accepted and recorded as untrusted —
+synced passkeys send `none` — unless the realm is `require-trusted` or names an
+AAGUID allow-list, a certification level or FIPS, each of which demands a
+trusted statement. What each key's statement proved is shown beside it on
+`/portal/keys`, on its `/admin/users` row and in `GET /admin-api/users`.
+**`webauthn.userVerification` is the one ceremony option
 that is enforced**, because the UV flag sits inside the bytes the authenticator
 signed. The others are requests to the browser, and what came back is recorded
 (the attachment, and whether the credential is discoverable, from `credProps`).

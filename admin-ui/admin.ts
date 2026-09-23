@@ -1426,7 +1426,8 @@ const SECTIONS = [
       { path: '/admin/webauthn', label: 'WebAuthn',
         blurb: 'Security keys &mdash; W3C WebAuthn Level 3 over FIDO CTAP2 ' +
                '&mdash; as a second factor OR as the only credential on an ' +
-               'account, and the thirteen settings behind the ceremony. ' +
+               'account, the settings behind the ceremony, and what is done ' +
+               'with an authenticator\'s attestation statement. ' +
                '<strong>There were none of these until 2026-09-10</strong>: ' +
                'the RP name, the algorithms offered, the user verification ' +
                'requirement, the attestation conveyance and the timeout were ' +
@@ -11794,6 +11795,7 @@ class AdminConsole {
         // both, and the cell rendered the literal characters `<code title=…>`.
         '<td>' + self.shortened(one.credentialId || '', 24) + '</td>' +
         '<td class="num">' + self.esc(String(one.signCount || 0)) + '</td>' +
+        '<td>' + self.attestationCell(one.attestation, one.aaguid) + '</td>' +
         '<td>' +
         self.esc(one.enrolledAt ? self.whenText(one.enrolledAt) : '—') +
         '</td><td>' + (state.write
@@ -11814,7 +11816,8 @@ class AdminConsole {
     const keysBlock = '<h3>Security keys (WebAuthn)</h3>' +
       (allKeys.length
         ? '<table><tr><th>Label</th><th>Role</th><th>Credential id</th>' +
-          '<th class="num">Sign count</th><th>Enrolled</th><th></th></tr>' +
+          '<th class="num">Sign count</th><th>Attestation</th>' +
+          '<th>Enrolled</th><th></th></tr>' +
           allKeys.map(keyRow).join('') + '</table>' +
           this.note('<strong>The sign count is WebAuthn\'s replay ' +
           'defence</strong>: an authenticator\'s counter only ever goes up, ' +
@@ -24315,6 +24318,137 @@ class AdminConsole {
     return { html: html, json: info };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE ATTESTATION POLICY (#105): what `authn/webauthn_attestation.ts` does
+  // with a registration's statement, and where its trust anchors come from —
+  // this realm's `webauthn.attestationTrustAnchors` and the FIDO Metadata
+  // Service BLOB, whose state is read from what this process holds
+  // (`risk_datasets.mdsSnapshot()`, since a status block is drawn
+  // synchronously). The BLOB is uploaded on Monitoring → Risk and its
+  // `/admin-api/risk` twin, where #62 P5 put it; it is not uploaded twice.
+  // ---------------------------------------------------------------------------
+  private attestationPolicyBlock(info) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.attestationPolicyBlock().");
+    let mds = null;
+    try {
+      mds = require('../risk/risk_datasets').mdsSnapshot();
+    } catch (e) {
+      log.debug("Caught in AdminConsole.attestationPolicyBlock(): " +
+                ((e && e.message) || e));
+      // Drawn as "not read": the policy rows above do not depend on it.
+      mds = null;
+    }
+    info.mds = mds;
+    const policyText = {
+      off: 'nothing is verified — the format is recorded and the ' +
+           'statement believed. Development only.',
+      'verify-if-present': 'every statement that arrives is VERIFIED by ' +
+           'its format\'s procedure and refused if it does not verify; a ' +
+           'chain is checked against the anchors below, and a model the ' +
+           'FIDO Metadata Service lists must chain to the roots it lists ' +
+           'and is refused when MDS reports it compromised. ' +
+           '<code>none</code> and self attestation are accepted as ' +
+           'untrusted — which is what a synced passkey sends.',
+      'require-trusted': 'only a statement that CHAINS TO AN ANCHOR is ' +
+           'accepted: no <code>none</code>, no self attestation, and so no ' +
+           'synced passkey.'
+    };
+    const html = '<h3>The attestation statement</h3>' +
+      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      '<tr><th>Policy</th><td><code>' + this.esc(info.attestationPolicy) +
+        '</code>' + (info.attestationPolicyConfigured === 'by-mode'
+          ? ' (<code>by-mode</code>)' : '') + ' — ' +
+        (policyText[info.attestationPolicy] || '') +
+        (info.attestationDemandsTrust &&
+         info.attestationPolicy !== 'require-trusted'
+          ? ' <strong>A trusted statement is required anyway</strong>, by ' +
+            'the allow-list, certification level or FIPS rows below.'
+          : '') + '</td></tr>' +
+      '<tr><th>Formats verified</th><td>' +
+        info.attestationFormats.map((f) => {
+          return '<code>' + this.esc(f) + '</code>';
+        }).join(', ') + ' — all eight of WebAuthn Level 3 section 8.' +
+        '</td></tr>' +
+      '<tr><th>Trust anchors</th><td>' +
+        this.esc(String(info.attestationTrustAnchors)) + ' configured ' +
+        '(<code>webauthn.attestationTrustAnchors</code>), and the roots ' +
+        'the FIDO Metadata Service lists for each model.</td></tr>' +
+      '<tr><th>FIDO Metadata Service</th><td>' +
+        (!mds || !mds.known
+          ? 'not read in this process yet — the next draw has it.'
+          : (mds.active
+              ? 'BLOB <code>' + this.esc(String(mds.serial)) + '</code> (' +
+                this.esc(String(mds.rows)) + ' key(s)), next due ' +
+                this.esc(mds.nextUpdateAt
+                  ? new Date(mds.nextUpdateAt).toISOString().slice(0, 10)
+                  : 'unstated') +
+                (mds.stale ? ' — <strong>STALE</strong>, so no model is ' +
+                             'known from it' : '')
+              : 'no BLOB is active, so no model\'s roots or status are ' +
+                'known.') +
+            ' ' + (mds.url
+              ? 'Downloaded from <code>' + this.esc(mds.url) + '</code> by ' +
+                'the <code>' + this.esc(mds.job) + '</code> job.'
+              : 'Uploaded on <a href="/admin/risk">Monitoring → Risk</a> ' +
+                '(<code>risk.mdsUrl</code> is empty).')) +
+        '</td></tr>' +
+      '<tr><th>Allowed models</th><td>' +
+        (info.attestationAllowedAaguids.length
+          ? info.attestationAllowedAaguids.map((a) => {
+            return '<code>' + this.esc(a) + '</code>';
+          }).join(', ')
+          : 'any the policy accepts') + '</td></tr>' +
+      '<tr><th>Certification</th><td>at least <code>' +
+        this.esc(info.attestationMinCertificationLevel) + '</code>' +
+        (info.attestationRequireFips ? ', and FIPS 140 certified' : '') +
+        '</td></tr>' +
+      '<tr><th>android-safetynet</th><td>' +
+        (info.attestationAllowSafetynet
+          ? '<strong>trusted</strong> — deprecated, and Google no longer ' +
+            'runs the service'
+          : 'verified and recorded as untrusted (deprecated)') + '</td></tr>' +
+      '<tr><th>android-key</th><td>' +
+        (info.attestationAndroidSoftwareKeys
+          ? 'the software- and hardware-enforced lists'
+          : 'the hardware-enforced (TEE) list only') + '</td></tr>' +
+      '</table>' +
+      this.note('What a key\'s statement proved is on its row under <a ' +
+      'href="/admin/users">Users</a> and on <code>/portal/keys</code>: ' +
+      'the format, whether it was verified and trusted, and the model the ' +
+      'metadata names.');
+    log.debug("Leaving AdminConsole.attestationPolicyBlock().");
+    return html;
+  }
+
+  // A key's attestation, for its row (#105): what the statement proved, or
+  // "claimed" where nothing was verified — the AAGUID then is only what the
+  // authenticator data said.
+  attestationCell(att, aaguid) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.attestationCell().");
+    if (!att || !att.verified) {
+      log.debug("Leaving AdminConsole.attestationCell(). Not verified.");
+      return '<span class="state-none" title="' +
+        this.esc('Nothing about the authenticator was verified' +
+                 (att && att.format ? ' (format ' + att.format + ', policy ' +
+                  att.policy + ')' : '') + '. The AAGUID, where there is ' +
+                 'one, is what the authenticator claimed.') + '">claimed' +
+        (aaguid ? ' <code>' + this.esc(aaguid) + '</code>' : '') + '</span>';
+    }
+    log.debug("Leaving AdminConsole.attestationCell().");
+    return '<span class="' + (att.trusted ? 'state-valid' : 'state-none') +
+      '" title="' + this.esc('Format ' + att.format + ', type ' + att.type +
+      (att.trusted ? ', chained to ' + (att.anchor === 'mds'
+        ? 'a FIDO Metadata Service root' : 'a configured anchor')
+        : ', not chained to an anchor') +
+      (att.certificationLevel ? ', ' + att.certificationLevel : '') +
+      '.') + '">' + (att.trusted ? 'verified, trusted' : 'verified, ' +
+      'untrusted') + '</span>' +
+      (att.model ? ' — ' + this.esc(att.model) : '') +
+      ' <code>' + this.esc(att.format) + '</code>';
+  }
+
   webauthnMechanismBlock() {
     const { log, webauthnPolicy } = this.deps;
     const self = this;
@@ -24364,12 +24498,14 @@ class AdminConsole {
             'says anything about.'
           : 'requested only. Nothing is refused on it.') + '</td></tr>' +
       '<tr><th>Attestation</th><td><code>' + this.esc(info.attestation) +
-      '</code>, ' +
-        'conveyance requested. <strong>NO ATTESTATION STATEMENT IS VERIFIED ' +
-        'HERE whatever is asked for</strong> — there is no metadata service, ' +
-        'no vendor trust anchor and no model allow-list — so the statement ' +
-        'is parsed, reported and believed. Formats recognised: ' +
-        this.esc(info.attestationFormats.join(', ')) + '.</td></tr>' +
+      '</code>, conveyance requested' +
+        (info.attestationDemandsTrust && info.attestation !== 'enterprise' &&
+         info.attestation !== 'direct'
+          ? ' — and <strong>sent as <code>direct</code></strong>, because ' +
+            'this realm requires a trusted statement and a browser asked ' +
+            'for less may strip it'
+          : '') +
+        '. What is done with the statement is the next section.</td></tr>' +
       '<tr><th>Timeout</th><td>' + this.esc(String(info.timeoutMs)) + 'ms, ' +
         'and it is a HINT: the specification lets a client clamp it and ' +
         'browsers do. The pending step this service holds expires on its own ' +
@@ -24377,6 +24513,7 @@ class AdminConsole {
         'counter</th><td>' + this.esc(info.signatureCounter) +
         '</td></tr>' +
       '</table>' +
+      this.attestationPolicyBlock(info) +
       '<h3>CTAP</h3>' +
       this.note('These three are what a browser translates into what it asks ' +
       'the AUTHENTICATOR for. <strong>They are requests and not ' +
@@ -38650,8 +38787,9 @@ const SETTING_HOMES = [
   // /admin/users now; these two rows are the mechanisms.
   //
   // The old comment also said WebAuthn "has no settings at all and so has no
-  // row here". It has thirteen since 2026-09-10 — every parameter of the
-  // ceremony, which had been literals in a string in `authn/authn.ts`.
+  // row here". It has had settings since 2026-09-10 — every parameter of the
+  // ceremony, which had been literals in a string in `authn/authn.ts` — and
+  // the attestation policy's seven since #105.
   { group: 'TOTP MFA', pages: ['/admin/totp'] },
   { group: 'GNAP', pages: ['/admin/gnap'] },
   // ===== certificate enrollment setting homes (2026-09-13) =====
@@ -40801,10 +40939,18 @@ const PROTOCOL_SETTINGS_PAGES = [
            'sent to the browser AND checked against the UV flag when the ' +
            'ceremony returns, because that flag is inside the bytes the ' +
            'authenticator signed. Nothing signed says what the browser was ' +
-           'asked about attestation, the resident key or the attachment — so ' +
-           'a check on those would be a comparison against a value this ' +
-           'service itself supplied. What it does instead is RECORD what ' +
-           'came back.',
+           'asked about the attestation conveyance, the resident key or the ' +
+           'attachment — so a check on those would be a comparison against ' +
+           'a value this service itself supplied. What it does instead is ' +
+           'RECORD what came back.',
+           '<strong>THE ATTESTATION STATEMENT IS VERIFIED (SINCE ' +
+           '#105)</strong> ' +
+           'under <code>webauthn.attestationPolicy</code> — in product mode ' +
+           'by default, all eight formats of WebAuthn Level 3 section 8, the ' +
+           'chain against this realm\'s anchors and the FIDO Metadata ' +
+           'Service\'s roots, revocation, and MDS status reports. What each ' +
+           'key\'s statement proved is on its row under <a ' +
+           'href="/admin/users">Users</a>.',
            '<strong>Raising user verification does not change what a session ' +
            'CLAIMS.</strong> A passwordless sign-in still records <code>amr ' +
            '["hwk"]</code> and <code>acr "1"</code> — one factor — even ' +

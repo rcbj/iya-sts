@@ -4135,6 +4135,76 @@ const CODES = [
       'person or application entry in this realm, or names the person ' +
       'themselves (#108).',
     spec: 'none — the caller\'s refusal' },
+  { code: 'STS-AUTHN-0228',
+    summary: 'A WebAuthn registration was refused: the credential\'s ' +
+      'algorithm is not one of the pubKeyCredParams this realm offered ' +
+      '(webauthn.algorithms) (#105).',
+    spec: 'W3C WebAuthn Level 3 section 7.1' },
+  { code: 'STS-AUTHN-0229',
+    summary: 'A WebAuthn registration was refused: the credential id is ' +
+      'longer than 1023 bytes (#105).',
+    spec: 'W3C WebAuthn Level 3 section 7.1' },
+  { code: 'STS-AUTHN-0230',
+    summary: 'A WebAuthn registration was refused: the authenticator data ' +
+      'says the credential is backed up (BS) and not backup eligible (BE) ' +
+      '(#105).',
+    spec: 'W3C WebAuthn Level 3 section 7.1' },
+  { code: 'STS-AUTHN-0231',
+    summary: 'A WebAuthn registration was refused: its attestation ' +
+      'statement format is not one of section 8\'s eight (#105).',
+    spec: 'W3C WebAuthn Level 3 sections 7.1 and 8' },
+  { code: 'STS-AUTHN-0232',
+    summary: 'A WebAuthn registration was refused: its attestation ' +
+      'statement does not conform to its format\'s syntax — a member ' +
+      'missing, of the wrong type, or not defined by the format (#105).',
+    spec: 'W3C WebAuthn Level 3 section 8' },
+  { code: 'STS-AUTHN-0233',
+    summary: 'A WebAuthn registration was refused: the attestation ' +
+      'signature does not verify (#105).',
+    spec: 'W3C WebAuthn Level 3 section 8' },
+  { code: 'STS-AUTHN-0234',
+    summary: 'A WebAuthn registration was refused: a requirement of its ' +
+      'attestation format failed — the certificate\'s fields, the key it ' +
+      'certifies, the TPM certInfo, the Android challenge or authorization ' +
+      'list, the SafetyNet or Apple nonce (#105).',
+    spec: 'W3C WebAuthn Level 3 section 8' },
+  { code: 'STS-AUTHN-0235',
+    summary: 'A WebAuthn registration was refused: its attestation does not ' +
+      'chain to a trust anchor — to the roots the FIDO Metadata Service ' +
+      'lists for a model it lists, or to any anchor where the realm ' +
+      'requires a trusted statement (#105).',
+    spec: 'W3C WebAuthn Level 3 section 7.1 steps 23-25' },
+  { code: 'STS-AUTHN-0236',
+    summary: 'A WebAuthn registration was refused: the authenticator ' +
+      'model\'s AAGUID is not in webauthn.attestationAllowedAaguids (#105).',
+    spec: '' },
+  { code: 'STS-AUTHN-0237',
+    summary: 'A WebAuthn registration was refused: the FIDO Metadata ' +
+      'Service reports the authenticator model REVOKED, ' +
+      'USER_VERIFICATION_BYPASS or one of the KEY_COMPROMISE statuses ' +
+      '(#105).',
+    spec: 'FIDO Metadata Service section 3.1.4' },
+  { code: 'STS-AUTHN-0238',
+    summary: 'A WebAuthn registration was refused: the authenticator model ' +
+      'does not hold the certification level, or the FIPS 140 ' +
+      'certification, the realm requires — or the FIDO Metadata Service ' +
+      'does not list it (#105).',
+    spec: 'FIDO Metadata Service section 3.1.4.1' },
+  { code: 'STS-AUTHN-0239',
+    summary: 'A WebAuthn registration was refused: a certificate in the ' +
+      'attestation chain is revoked, or its status could not be ' +
+      'established under pki.revocationCheck (#105).',
+    spec: 'W3C WebAuthn Level 3 section 7.1; RFC 5280 section 6.3' },
+  { code: 'STS-AUTHN-0240',
+    summary: 'A WebAuthn registration was refused: the authenticator sent ' +
+      'no attestation or a self attestation, and the realm requires a ' +
+      'trusted one (#105).',
+    spec: 'W3C WebAuthn Level 3 section 7.1 step 24' },
+  { code: 'STS-AUTHN-0241',
+    summary: 'A WebAuthn registration was refused because its attestation ' +
+      'statement could not be checked: the verifier threw. The line names ' +
+      'the format and the stack (#105).',
+    spec: '' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -10530,6 +10600,12 @@ const CODES = [
       'signal, or its factor is not a positive number. The signal keeps its ' +
       'built-in factor; logged once for each value the setting is given.',
     spec: '' },
+  { code: 'STS-RISK-0027',
+    summary: 'The risk.mds-refresh job could not download the FIDO MDS3 ' +
+      'BLOB from risk.mdsUrl: outbound is off, the address is refused, the ' +
+      'server did not answer 200, or the BLOB is larger than ' +
+      'risk.mdsMaxBytes (#105). The active BLOB stays in force.',
+    spec: 'FIDO Metadata Service section 3.2' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

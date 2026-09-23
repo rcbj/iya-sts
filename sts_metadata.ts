@@ -2063,15 +2063,23 @@ const SPECS: Spec[] = [
     url: 'https://www.w3.org/TR/webauthn-3/',
     coverage: 'partial, relying-party side: registration (section 7.1) and ' +
               'assertion (section 7.2) are verified — challenge, origin, RP ' +
-              'ID hash, user presence and verification flags, the signature ' +
-              'counter, and the signature over authenticatorData || ' +
-              'SHA-256(clientDataJSON), for ES256, RS256 and EdDSA keys. ' +
-              'Attestation statements are decoded but NOT validated and no ' +
-              'metadata service is consulted: this is a mock, and attesting ' +
-              'to an authenticator\'s provenance is the one thing it must ' +
-              'not pretend to do. Written independently of the debugger\'s ' +
-              'own decoder so the two can be checked against each other ' +
-              '(tests/webauthn_cross_impl.js).' },
+              'ID hash, user presence and verification flags, BE/BS, the ' +
+              'credential\'s alg against pubKeyCredParams, the 1023-byte ' +
+              'credential id, the signature counter, and the signature over ' +
+              'authenticatorData || SHA-256(clientDataJSON), for ES256/384/' +
+              '512, RS256/384/512, PS256/384/512, EdDSA and ML-DSA-44/65/87 ' +
+              '(RFC 9964) keys. Since #105 the ATTESTATION STATEMENT is ' +
+              'verified in all eight section 8 formats (packed, tpm, ' +
+              'android-key, android-safetynet, fido-u2f, none, apple, ' +
+              'compound) under webauthn.attestationPolicy — by-mode is ' +
+              'verify-if-present in product and off in development — its ' +
+              'chain against configured anchors and the FIDO Metadata ' +
+              'Service\'s roots, its revocation consulted, and a model MDS ' +
+              'reports compromised refused. Missing: enterprise attestation ' +
+              '(section 5.4.7) has no RP ID allow-list, and the ' +
+              'authentication extensions are not processed. Written ' +
+              'independently of the debugger\'s own decoder so the two can ' +
+              'be checked against each other (tests/webauthn_cross_impl.js).' },
   { id: 'rfc4226', name: 'RFC 4226 — HOTP: An HMAC-Based One-Time Password ' +
                          'Algorithm',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc4226',
@@ -4480,7 +4488,7 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin/webauthn', group: 'Admin', name: 'WebAuthn',
     specs: ['webauthn'],
     what: 'NON-SPEC. THE SECURITY-KEY CEREMONY AND WHAT A KEY MAY BE HERE — ' +
-          'thirteen settings in three kinds. THE CEREMONY: the RP name, the ' +
+          'twenty-one settings in four kinds. THE CEREMONY: the RP name, the ' +
           'RP ID override, the algorithms offered, the user verification ' +
           'requirement, the attestation conveyance, the timeout. CTAP2: the ' +
           'authenticator attachment, whether the credential is discoverable ' +
@@ -4493,9 +4501,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'REST ARE REQUESTS** — userVerification is checked against the UV ' +
           'flag inside the bytes the authenticator signed, and nothing ' +
           'signed says what the browser was asked about attestation, the ' +
-          'resident key or the attachment. **NO ATTESTATION STATEMENT IS ' +
-          'VERIFIED** whatever is asked for: no metadata service, no vendor ' +
-          'trust anchor, no model allow-list. The COSE table is read from ' +
+          'resident key or the attachment. **THE ATTESTATION STATEMENT IS ' +
+          'VERIFIED** (#105) under webauthn.attestationPolicy, with trust ' +
+          'anchors, the FIDO Metadata Service\'s roots and status reports, ' +
+          'an AAGUID allow-list and a certification level; the page shows ' +
+          'the policy and the MDS BLOB in force. The COSE table is read from ' +
           'authn/webauthn.js, the module that checks the signature. WHO ' +
           'HOLDS A KEY is /admin/users. Add ?format=json.' },
   { path: '/admin/rbac', group: 'Admin', name: 'Admin roles',
@@ -6807,7 +6817,7 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/webauthn', group: 'Management API',
     name: 'WebAuthn settings',
     specs: ['webauthn'],
-    what: 'NON-SPEC. The thirteen `webauthn.*` settings in three kinds — the ' +
+    what: 'NON-SPEC. The twenty-one `webauthn.*` settings in four kinds — the ' +
           'CEREMONY (RP name, RP ID override, algorithms, user verification, ' +
           'attestation conveyance, timeout), CTAP2 (authenticator ' +
           'attachment, resident key, credProps) and POLICY (whether a key ' +
@@ -6815,8 +6825,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'person) — with the COSE algorithm table beside them, read from ' +
           'authn/webauthn.js, the module that checks the signature. **ONE IS ' +
           'ENFORCED AND THE REST ARE REQUESTS**: userVerification is checked ' +
-          'against the UV flag inside the bytes the authenticator signed. NO ' +
-          'ATTESTATION STATEMENT IS VERIFIED whatever is asked for. There is ' +
+          'against the UV flag inside the bytes the authenticator signed. ' +
+          'The attestation policy (#105) and the FIDO metadata in force are ' +
+          'reported beside them. There is ' +
           'no POST beside this one: the forms post set-many to ' +
           '/admin/config. Mirrors GET /admin/webauthn.' },
   { path: '/admin-api/mfa', group: 'Management API',
