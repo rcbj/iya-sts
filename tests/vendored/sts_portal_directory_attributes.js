@@ -443,9 +443,12 @@ async function itDrawsTheDirectory() {
   const classes = classesOn(before.text);
   check("THE THREE OBJECT CLASSES ARE THE HEADINGS, in inheritance order — " +
         "'the inetOrgPerson attributes' IS the union of three classes, and a " +
-        "reader who does not know that learns it from the page", function () {
+        "reader who does not know that learns it from the page — and the " +
+        "Identity Assurance claims (#128) follow them as a group of their " +
+        "own, which no object class defines", function () {
     assert.deepStrictEqual(classes,
-      ["person", "organizationalPerson", "inetOrgPerson"],
+      ["person", "organizationalPerson", "inetOrgPerson",
+       "Identity Assurance claims"],
       "the page drew: " + JSON.stringify(classes));
   });
 
