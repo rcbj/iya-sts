@@ -6707,6 +6707,38 @@ const CODES = [
       'a loopback, private, link-local or reserved address, or did not ' +
       'resolve, in product mode (federation_http.ts vetHost()).',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0080',
+    summary: 'A Metadata Query (MDQ) lookup started by a request from an ' +
+      'entityID nobody registered was not made: the realm is in product ' +
+      'mode (mode.registersFromMetadataQuery()) and has no ' +
+      'saml2.metadataTrustAnchors, so no answer could be verified. Nothing ' +
+      'is fetched or created; the entityID is listed as refused on the SAML ' +
+      '2.0 page.',
+    spec: '' },
+  { code: 'STS-SAML-0081',
+    summary: 'A Metadata Query (MDQ) answer for an entityID nobody ' +
+      'registered, fetched for a lookup a request started, did not verify ' +
+      'against any of the realm\'s saml2.metadataTrustAnchors (product ' +
+      'mode). Nothing is created; the entityID is listed as refused on the ' +
+      'SAML 2.0 page.',
+    spec: '' },
+  { code: 'STS-SAML-0082',
+    summary: 'A SAML 2.0 per-service-provider path (/saml2/metadata/{sp}, ' +
+      '/saml2/sso/{sp}, /saml2/slo/{sp} or /saml2/ars/{sp}) named something ' +
+      'that is not a registered SAML 2.0 service provider, in product mode ' +
+      '(mode.publishesMetadataForUnregisteredProviders()).',
+    spec: 'an HTTP 404, text/plain' },
+  { code: 'STS-SAML-0083',
+    summary: 'A SAML 1.1 per-relying-party path (/saml11/metadata/{rp}, ' +
+      '/saml11/sso/{rp} or /saml11/responder/{rp}) named something that is ' +
+      'not a registered SAML 1.1 relying party, in product mode ' +
+      '(mode.publishesMetadataForUnregisteredProviders()).',
+    spec: 'an HTTP 404, text/plain' },
+  { code: 'STS-SAML-0084',
+    summary: 'An administrator\'s Import from MDQ was refused: the realm is ' +
+      'in product mode and has no saml2.metadataTrustAnchors, so the answer ' +
+      'could not be verified, and saml2.mdqImportWithoutAnchors is off.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +

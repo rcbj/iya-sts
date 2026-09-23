@@ -44,14 +44,23 @@
 // ---------------------------------------------------------------------------
 // SIX DECISIONS HERE ARE NOT OBVIOUS FROM THE SPECIFICATIONS.
 //
-// 1. **THE METADATA IS UNIQUE PER SERVICE PROVIDER, and it is minted for any
-//    entityID that is asked for.** `/saml2/metadata/{sp}` names an identity
-//    provider of its own — `urn:sts:idp:{sp}` — with its own SSO, SLO and
-//    artifact endpoints under that same `{sp}` segment, which is what Okta and
-//    Ping do and what a service provider integrating with one of them expects.
-//    It 404s for nothing: an entityID nobody has registered is registered BY
-//    THE ASK, so a service provider can be pointed at this service before
-//    anything at all has been provisioned. `saml2.perApplicationEntityId` turns
+// 1. **THE METADATA IS UNIQUE PER SERVICE PROVIDER, and in DEVELOPMENT it is
+//    minted for any entityID that is asked for.** `/saml2/metadata/{sp}` names
+//    an identity provider of its own — `urn:sts:idp:{sp}` — with its own SSO,
+//    SLO and artifact endpoints under that same `{sp}` segment, which is what
+//    Okta and Ping do and what a service provider integrating with one of them
+//    expects. In development it 404s for nothing: an entityID nobody has
+//    registered is registered BY THE ASK, so a service provider can be pointed
+//    at this service before anything at all has been provisioned. **IN
+//    PRODUCT (#112, 2026-09-23) EVERY `{sp}` PATH IS A 404 FOR A NAME THAT IS
+//    NOT A REGISTERED SAML 2.0 SERVICE PROVIDER** — the metadata, the SSO, the
+//    SLO and the artifact resolution service alike (`STS-SAML-0082`,
+//    `mode.publishesMetadataForUnregisteredProviders()`), because a signed
+//    document naming an identity provider for a party nobody agreed to serve
+//    is this service vouching for something an operator never decided. A
+//    per-SP document is this service's own extension (SAML Metadata 2.0
+//    section 4.1 defines one document per entity), so the 404 breaks no
+//    specification. `saml2.perApplicationEntityId` turns
 //    the per-application entityID off for a service provider library that keys
 //    its trust store off the entityID and is surprised to find a new one per
 //    application; the ENDPOINTS stay per-application either way, because that
@@ -809,9 +818,10 @@ class Saml2Sso {
   }
 
   // The entityID a path segment names, and whether this service had heard of
-  // it. It NEVER answers "no such service provider" — see decision 1. A segment
-  // that matches nothing is taken to BE an entityID, which is what makes the
-  // metadata endpoint answer for anything asked of it.
+  // it. It never answers "no such service provider" itself: a segment that
+  // matches nothing is taken to BE an entityID, which is what makes the
+  // metadata endpoint answer for anything asked of it in development — and
+  // what `refusedUnregistered()` turns into a 404 in product (decision 1).
   private entityIdFromSegment(segment) {
     const { applications } = this.deps;
     const { log } = this.deps.helpers;
@@ -845,6 +855,51 @@ class Saml2Sso {
     log.debug("Leaving Saml2Sso.entityIdFromSegment(). Nothing here knows " +
               "it; it IS the entityID.");
     return { entityId: text, known: false, unscoped: false };
+  }
+
+  // IS THE SEGMENT A REGISTERED SAML 2.0 SERVICE PROVIDER (#112)? An entry
+  // of the kind, or one DECLARED for the SAML 2.0 family
+  // (`appAllowedProtocol`) — not merely any application whose slug matches,
+  // because an OAuth client's name is not a service provider this identity
+  // provider has agreed to publish itself to.
+  private isRegisteredServiceProvider(entityId): boolean {
+    const { applications } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.isRegisteredServiceProvider().");
+    const record: any = entityId ? applications.get(entityId) : null;
+    const answer = !!record &&
+      ((record.kinds || []).indexOf('saml2-service-provider') >= 0 ||
+       applications.declaredFamiliesOf(record).indexOf('saml2') >= 0);
+    log.debug("Leaving Saml2Sso.isRegisteredServiceProvider(). " + answer);
+    return answer;
+  }
+
+  // THE PER-SERVICE-PROVIDER PATHS ANSWER ONLY FOR A REGISTERED ONE, IN
+  // PRODUCT (#112, `mode.publishesMetadataForUnregisteredProviders()`):
+  // `/saml2/metadata/{sp}`, `/saml2/sso/{sp}`, `/saml2/slo/{sp}` and
+  // `/saml2/ars/{sp}`. A 404 sent HERE, text/plain and `no-store`, with
+  // `STS-SAML-0082` — not Express's own 404 body, which is what tells an
+  // unrouted path apart (the root CLAUDE.md), and this path IS routed.
+  // Development answers for anything, decision 1. True when it answered.
+  private refusedUnregistered(res, scoped, path): boolean {
+    const { errorCodes, mode } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.refusedUnregistered(). " + path);
+    if (!scoped.entityId || mode.publishesMetadataForUnregisteredProviders() ||
+        this.isRegisteredServiceProvider(scoped.entityId)) {
+      log.debug("Leaving Saml2Sso.refusedUnregistered(). Answered for.");
+      return false;
+    }
+    errorCodes.mark(res, 'STS-SAML-0082');
+    res.status(404)
+       .type('text/plain')
+       .set('Cache-Control', 'no-store')
+       .send('There is no SAML 2.0 service provider registered here as "' +
+             scoped.entityId + '", so ' + path + ' has nothing to answer ' +
+             'for it. This identity provider publishes itself only to a ' +
+             'service provider an operator registered (product mode).\n');
+    log.debug("Leaving Saml2Sso.refusedUnregistered(). 404.");
+    return true;
   }
 
   // This identity provider's own entityID, for a given service provider. See
@@ -1004,7 +1059,9 @@ class Saml2Sso {
     // so its messages are refused, in every mode, before the signature is
     // looked at. A stale document still works; the refresher replaces it.
     // A service provider with NO consumed metadata starts an MDQ lookup the
-    // request never waits on (`sp_metadata.ts`).
+    // request never waits on (`sp_metadata.ts`) — which, for an entityID
+    // nobody registered, in product is made only with a realm trust anchor
+    // and registers only an answer that verifies against one (#112).
     const fresh = spMetadata.freshness(fields);
     if (fresh.state === 'none' && opts.spEntityId &&
         !fields.samlSpMetadataUrl &&
@@ -2402,6 +2459,10 @@ class Saml2Sso {
     const base = baseUrlOf(req);
     const params: any = this.paramsOf(req);
     const scoped = this.entityIdFromSegment(req.params.sp);
+    if (this.refusedUnregistered(res, scoped, SSO_PATH + '/{sp}')) {
+      log.debug("Leaving Saml2Sso.singleSignOn(). Not registered.");
+      return;
+    }
 
     // --- step 2, first, because it decides whether there is anything to read
     // --- A held request being resumed: either the browser has come back from
@@ -3227,6 +3288,10 @@ class Saml2Sso {
     const self = this;
     log.debug("Entering Saml2Sso.resolveArtifact().");
     const scoped = this.entityIdFromSegment(req.params.sp);
+    if (this.refusedUnregistered(res, scoped, ARS_PATH + '/{sp}')) {
+      log.debug("Leaving Saml2Sso.resolveArtifact(). Not registered.");
+      return;
+    }
     const raw = typeof req.body === 'string' ? req.body : '';
     logArtifact('SAML 2.0 ArtifactResolve', 'as received over SOAP', raw);
     const answer = function (status, message, payload, inResponseTo) {
@@ -3706,6 +3771,10 @@ class Saml2Sso {
     const base = baseUrlOf(req);
     const params: any = this.paramsOf(req);
     const scoped = this.entityIdFromSegment(req.params.sp);
+    if (this.refusedUnregistered(res, scoped, SLO_PATH + '/{sp}')) {
+      log.debug("Leaving Saml2Sso.singleLogout(). Not registered.");
+      return;
+    }
 
     // A LogoutResponse arriving HERE is another identity provider's answer to a
     // LogoutRequest this one sent, and this service is not a federation gateway
@@ -4212,6 +4281,10 @@ class Saml2Sso {
     log.debug("Entering the SAML 2.0 metadata endpoint.");
     const base = baseUrlOf(req);
     const scoped = this.entityIdFromSegment(req.params.sp);
+    if (this.refusedUnregistered(res, scoped, METADATA_PATH + '/{sp}')) {
+      log.debug("Leaving the SAML 2.0 metadata endpoint. Not registered.");
+      return;
+    }
     // A document with entityID="" is one no service provider can be configured
     // from; say why instead. See idpEntityIdFor().
     const issuerProblem = this.idpEntityIdProblem();

@@ -458,6 +458,14 @@ const JOBS = [
   // unreachable, a metadata member that promises what the endpoint refuses, or
   // a console control that issues for the wrong profile.
   { file: 'sts_saml2_bearer_grant.js',   browser: false, local: true },
+  // WHAT A SAML PROVIDER NOBODY REGISTERED CAN CAUSE (#112, 2026-09-23): the
+  // per-provider paths of both profiles are 404 in a product realm and minted
+  // in a development one, and a Metadata Query lookup an anonymous
+  // AuthnRequest starts — against this job's own responder — registers the
+  // entity in development and asks nothing in product with no trust anchor.
+  // `local: true`: this repository's own identity provider and /admin-api,
+  // in two throwaway realms.
+  { file: 'sts_saml_unregistered.js',    browser: false, local: true },
   // THE CRL AND OCSP ENDPOINTS, AND THE REVOCATION PANE (2026-09-11).
   // `local: true` on the FIRST of `tests/CLAUDE.md`'s two questions: most of
   // what it drives is `/admin-api/pki` and a pane on `/admin/pki`, and the

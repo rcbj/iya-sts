@@ -9,7 +9,7 @@ provider for each of them**.
 | `saml11.ts` | The same for SAML 1.1, whose profile splits a claim URI into a namespace and a name. Registers nothing. |
 | `saml2_sso.ts` | **The SAML 2.0 Web Browser SSO profile**: the Single Sign-On service over both request bindings, the Response over all three, the SOAP Artifact Resolution Service, Single Logout, the per-service-provider metadata, and a mock service provider. **This one registers routes.** |
 | `saml11_sso.ts` | **The SAML 1.1 browser profiles**: the inter-site transfer service, Browser/POST and Browser/Artifact, the SOAP SAML responder behind the second (which is also an attribute authority), the per-relying-party metadata, and a mock relying party. **This one registers routes.** |
-| `sp_metadata.ts` | A service provider's metadata: parsing it (an EntitiesDescriptor aggregate included), fetching it — through `../federation/federation_http.ts`'s outbound policy, product-mode address check included — by an explicit refresh, the Metadata Query Protocol or the BACKGROUND REFRESHER, CONSUMING it (`consume()`, against the realm's trust anchors), and saying how current it is (`freshness()`: fresh, stale, expired). Registers nothing; its timer is started from `server.js`'s `announce()`. |
+| `sp_metadata.ts` | A service provider's metadata: parsing it (an EntitiesDescriptor aggregate included), fetching it — through `../federation/federation_http.ts`'s outbound policy, product-mode address check included — by an explicit refresh, the Metadata Query Protocol or the BACKGROUND REFRESHER, CONSUMING it (`consume()`, against the realm's trust anchors), and saying how current it is (`freshness()`: fresh, stale, expired). Registers nothing; the refresher is the scheduler job `saml2.sp-metadata-refresh` (#49), which `startRefresher()` registers. What a Metadata Query answer may REGISTER is decided by who started the lookup (#112). |
 | `request_signature.ts` | **Whether a service provider's request is signed by that service provider** (2026-09-17, #37): the verification policy for an AuthnRequest, LogoutRequest or LogoutResponse on the Redirect, POST and POST-SimpleSign bindings, whether a signature may be absent, and who is calling a SOAP responder that hands out an artifact (`authenticateSoapCaller()`). Registers nothing. |
 | `authn_context.ts` | **How a session authenticated, in both SAML vocabularies, once** (2026-09-12). Read by both SSO profiles, WS-Federation and WS-Trust. Registers nothing. |
 | `document_settings.ts` | **The signature algorithm, the canonicalization and `<md:Organization>`** every signed document here asks the configuration for (2026-09-12). Registers nothing. |
@@ -150,11 +150,14 @@ ceremony available at the screen, and one fewer place asking for a username.
 (`wsfed.ts` says why), so the asymmetry is gone the right way round. Do not give
 this profile a screen of its own.
 
-**2. THE METADATA IS PER SERVICE PROVIDER AND IS MINTED FOR ANYTHING ASKED FOR.**
-`/saml2/metadata/{sp}` names an identity provider of its own —
-`urn:sts:idp:{slug}` — with endpoints under that same segment, which is what
-Okta and Ping do. It **404s for nothing**: an entityID nobody registered is
-registered by the ask. `saml2.perApplicationEntityId` turns the separate entityID
+**2. THE METADATA IS PER SERVICE PROVIDER AND, IN DEVELOPMENT, IS MINTED FOR
+ANYTHING ASKED FOR.** `/saml2/metadata/{sp}` names an identity provider of its
+own — `urn:sts:idp:{slug}` — with endpoints under that same segment, which is
+what Okta and Ping do. In development it **404s for nothing**: an entityID
+nobody registered is registered by the ask. **In product (#112) every `{sp}`
+path of both profiles is a 404 for a name that is not a registered provider of
+that profile** — see *AN UNREGISTERED SERVICE PROVIDER IN PRODUCT* at the end
+of this file. `saml2.perApplicationEntityId` turns the separate entityID
 off for a service provider library that keys its trust store off the entityID;
 the ENDPOINTS stay per-application either way, because that is what makes the
 documents worth having separately.
@@ -1023,11 +1026,14 @@ consumption; with none, halfway to validUntil), or **fresh**.
   Requester status) that says the metadata expired. The console and
   `GET /admin-api/saml2?sp=` show `state`.
 * **Stale is refreshed in the background** where it can be — a
-  `samlSpMetadataUrl`, or an entry imported by MDQ — by a timer
-  `server.js`'s `announce()` starts (`saml2.spMetadataRefresh`,
-  `saml2.spMetadataRefreshIntervalS`); one process per cluster refreshes a
-  given document, through a `cluster_claims` claim keyed by realm, entity and
-  the consumption it replaces. **A failed refresh changes nothing**, so the old
+  `samlSpMetadataUrl`, or an entry imported by MDQ — by the CLUSTER scheduler
+  job `saml2.sp-metadata-refresh` (#49 P5; `cluster/CLAUDE.md`, *The
+  scheduler*), every `saml2.spMetadataRefreshIntervalS` on the leader, switched
+  by `saml2.spMetadataRefresh`. It was a timer `server.js`'s `announce()`
+  started in every process until #49; `server.js` still calls
+  `startRefresher()`, which now only registers the job. The `cluster_claims`
+  claim keyed by realm, entity and the consumption it replaces stays, as the
+  guard against a refresh asked for by hand at the same moment. **A failed refresh changes nothing**, so the old
   document works until it expires; the failure is a STATE
   (`refreshStatus()`, drawn on the page), logged on the change and summarised
   hourly (`STS-SAML-0076`) — never a line per attempt. An UPLOADED stale
@@ -1050,7 +1056,8 @@ consumption; with none, halfway to validUntil), or **fresh**.
   `<base>/entities/<percent-encoded entityID>`; the `mdq-import` action on the
   console and `/admin-api/saml2/mdq-import` creates the entry only when the
   answer describes that entity, and removes it again if consuming fails; an
-  entry with no URL refreshes from MDQ.
+  entry with no URL refreshes from MDQ. **In product what an answer may
+  REGISTER depends on who started the lookup** (#112) — see the last section.
 * **The address rule now applies here too**: every fetch asks
   `federation_http.ts`'s `vetHost()`, so product mode refuses a host that
   resolves to an internal address (`STS-SAML-0079`) and pins the connection to
@@ -1120,3 +1127,67 @@ verifier's table, and the route plumbing):
 SigAlg swapped onto an RSA signature is now a WRONG signature (0061), RSA-MD5 is
 the not-checkable case, SHA-1 is refused unless the setting is on, and an
 inclusive-c14n signature verifies.
+
+---
+
+## AN UNREGISTERED SERVICE PROVIDER IN PRODUCT (2026-09-23, #112)
+
+Two things answered for any name in product until #112: the per-provider
+paths of both profiles, and an MDQ lookup an anonymous AuthnRequest started,
+whose answer created the application entry signed or not. Two predicates,
+because they answer different questions — one about CREATING something, one
+about PUBLISHING something:
+
+| Predicate | Development | Product |
+|---|---|---|
+| `registersFromMetadataQuery()` | an MDQ answer registers an unknown entity (held to `saml2.metadataTrustAnchors` only when set) | see below |
+| `publishesMetadataForUnregisteredProviders()` | `/saml2/{metadata,sso,slo,ars}/{sp}` and `/saml11/{metadata,sso,responder}/{rp}` answer for any name | 404, text/plain, `no-store`, for a name that is not a registered provider OF THAT PROFILE (`STS-SAML-0082`, `0083`) |
+
+**What an MDQ answer may do in product**, decided in `sp_metadata.ts`'s
+`mdqImport()` by `options.origin` — `'request'` (the default, the stricter)
+from `queueMdqLookup()`, `'operator'` from the console and the API:
+
+* a REQUEST's lookup for an unknown entity with no realm anchor is **not
+  made** (`STS-SAML-0080`) — an unverifiable answer could only be refused;
+* with anchors, the answer is **verified against a realm anchor before the
+  entry exists** (`STS-SAML-0081` otherwise) — create-then-delete would be a
+  registration an anonymous request made, however briefly;
+* an OPERATOR's import with no realm anchor is **refused** (`STS-SAML-0084`)
+  unless `saml2.mdqImportWithoutAnchors` is on — the most-secure default rcbj's
+  decision on #112 chose over the plan's "allow with a warning". With it on,
+  the reply carries `warnings` and the log says so every time;
+* an entry that EXISTS is refreshed from MDQ as before, in both modes.
+
+The spec basis is thin and stated as such: draft-young-md-query-25 section
+6.1 RECOMMENDS integrity checking and draft-young-md-query-saml-25 section 4.1
+RECOMMENDS a signature embedded in the document; neither asks a requester to
+trust an unsigned answer to a lookup nobody authenticated.
+
+**The refused entityIDs are STATE, not log lines** (the standing rule against
+a line per event, since the requests are anybody's): a bounded map per process
+(`MDQ_REFUSALS_MAX`, the oldest dropped at the insert), one row per realm and
+entityID with a count, drawn on `/admin/saml2` (*Metadata Query lookups
+refused*) and as `mdqRefused` / `mdqRefusedPaging` in `GET /admin-api/saml2`
+(`mdqRefusedPage`). A realm is logged once when it starts refusing, an audit
+row is written the first time an entityID is refused, and a summary is logged
+at most hourly (on the next refusal, or from the refresher's sweep). Like the
+refresher's state it is this process's: another node or a request worker keeps
+its own.
+
+**"Registered" means a provider of that profile** — an entry of the kind, or
+one declared for the family in `appAllowedProtocol` — not any application whose
+slug matches: an OAuth client's name is not somebody this identity provider
+has agreed to publish itself to, and a SAML 2.0 service provider is not a SAML
+1.1 relying party.
+
+**The parent project's paired SAML jobs** (decision 2 above) run against a
+development service, where nothing changed. `tests/vendored/sts_saml11.js` (a
+parent copy) asserts a document is minted for an identifier nobody registered;
+in product that is now a 404, which is owed to the parent.
+
+Tests: `tests/saml_metadata_lifecycle.js` section F (both modes, every
+refusal, the positive product case against a realm anchor — its transport
+stubbed, because product refuses the loopback responder before any
+connection) and `tests/vendored/sts_saml_unregistered.js` over HTTP, in a
+product realm and a development realm of one service, with an MDQ responder
+the job serves itself.

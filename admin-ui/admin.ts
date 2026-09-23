@@ -18226,7 +18226,22 @@ class AdminConsole {
     const paging = view.paging;
     const filterParams = view.filterParams;
     const nav = this.pageNavPair('/admin/saml2', filterParams, paging);
+    // The refused-lookup list's own pager (#112), carrying every other
+    // parameter so the service-provider table stays where it was.
+    const refused = view.refused;
+    const refusedNav = this.pageNavPair('/admin/saml2',
+                                        adminViews.pageParamsOf(req.query),
+                                        refused.paging);
     const listView = this.listViewOf('/admin/saml2', req.query);
+    const refusedRows = refused.shown.map(function (row) {
+      return '<tr><td><code>' + self.esc(row.entityId) + '</code></td><td>' +
+             self.esc(row.why) + '</td><td>' + self.esc(String(row.count)) +
+             '</td><td>' + self.esc(row.firstAt.replace('T', ' ')
+                                      .slice(0, 19)) +
+             '</td><td>' + self.esc(row.lastAt.replace('T', ' ')
+                                      .slice(0, 19)) +
+             '</td></tr>';
+    }).join('');
     const rows = paged.shown.map(function (row) {
       const facts = saml2Facts(base, row.identifier);
       const href = '/admin/saml2' + queryWith(listView, { sp: row.identifier });
@@ -18261,10 +18276,12 @@ class AdminConsole {
       this.note('<strong>Every service provider gets its own metadata ' +
       'document.</strong> The identity provider names itself differently to ' +
       'each one and publishes endpoints scoped to it, which is what Okta and ' +
-      'Ping do. <strong>And it is minted for anything asked for</strong> — a ' +
-      'service provider does not have to appear here before it can be ' +
-      'pointed at this service, because asking for its metadata is what ' +
-      'creates it. The unscoped document at <a ' +
+      'Ping do. <strong>In development it is minted for anything asked ' +
+      'for</strong> — a service provider does not have to appear here before ' +
+      'it can be pointed at this service, because asking for its metadata is ' +
+      'what creates it. <strong>In product it is not</strong>: a name that ' +
+      'is not registered below is a 404 at every per-service-provider ' +
+      'path. The unscoped document at <a ' +
       'href="/saml2/metadata">/saml2/metadata</a> works too and names one ' +
       'identity provider for everybody.') +
       '<p class="sub"><a href="/saml2">what the profile is</a> &middot; <a ' +
@@ -18295,10 +18312,12 @@ class AdminConsole {
           (needle ? ' under that filter' : '') + '. Start one at <a ' +
           'href="/saml2/sp">the mock service provider</a>, or register an ' +
           'entityID below.')) +
-      '<h2>Register a service provider</h2><p class="sub">Optional, and it ' +
-      'changes nothing about whether a request is accepted — an entityID is ' +
-      'accepted whether or not it is here. What it buys is a metadata ' +
-      'document to hand somebody before they have sent anything.</p><form ' +
+      '<h2>Register a service provider</h2><p class="sub">Optional in ' +
+      'development, where an entityID is accepted whether or not it is here ' +
+      'and what this buys is a metadata document to hand somebody before ' +
+      'they have sent anything. In product it is how a service provider ' +
+      'comes to exist: its metadata and endpoints answer only once it is ' +
+      'registered.</p><form ' +
       'method="post" action="/admin/saml2"><div class="formrow"><input ' +
       'type="hidden" name="action" value="register"><label ' +
       'for="new_sp">entityID</label><input type="text" id="new_sp" name="sp" ' +
@@ -18311,12 +18330,29 @@ class AdminConsole {
       'the entry if the answer describes it, and consumes the document — ' +
       'held to the realm\'s metadata trust anchors when it has any. A ' +
       'request from a service provider with no metadata starts the same ' +
-      'lookup in the background.</p><form method="post" ' +
+      'lookup in the background. <strong>In product mode the answer must ' +
+      'verify against a trust anchor</strong> ' +
+      '(<code>saml2.metadataTrustAnchors</code>): with none, this import is ' +
+      'refused unless <code>saml2.mdqImportWithoutAnchors</code> is on — ' +
+      'and then the document is consumed with no signature check — and a ' +
+      'lookup a request starts for an unknown entityID is not made at ' +
+      'all.</p><form method="post" ' +
       'action="/admin/saml2"><div class="formrow"><input type="hidden" ' +
       'name="action" value="mdq-import"><label for="mdq_sp">entityID</label>' +
       '<input type="text" id="mdq_sp" name="sp" ' +
       'placeholder="https://sp.example.com/saml"><button>Import</button>' +
       '</div></form>' +
+      '<h2>Metadata Query lookups refused</h2><p ' +
+      'class="sub">EntityIDs a request asked to be registered through the ' +
+      'responder and was not (product mode): no trust anchor, so nothing ' +
+      'was fetched, or an answer that did not verify against one. Newest ' +
+      'first; this process\'s record, since it started. To register one, ' +
+      'import it above or register it by hand.</p>' +
+      (refusedRows
+        ? refusedNav.head + '<table><thead><tr><th>entityID</th><th>Why' +
+          '</th><th>Times</th><th>First</th><th>Last</th></tr></thead>' +
+          '<tbody>' + refusedRows + '</tbody></table>' + refusedNav.foot
+        : '<p class="sub">None.</p>') +
       this.configFormsFor('/admin/saml2') +
       this.note('These decide the SHAPE of an assertion — who issued it, how ' +
       'long it is good for, what is signed. <a ' +

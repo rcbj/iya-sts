@@ -66,10 +66,14 @@ entityID where it is safe in a URL path, otherwise `app-` and twelve hex
 characters of its SHA-256. A slug is not reversible, so `/admin/saml2` lists the
 metadata URL for every service provider rather than leaving you to derive it.
 
-**The metadata is minted for any entityID asked for** and never 404s. In
-development, with `saml2.autocreateApplications` on (the default), asking for
-it — or a valid AuthnRequest — creates the application entry; in product mode
-nothing is created because something named it. The document publishes a
+**In development the metadata is minted for any entityID asked for** and
+never 404s: with `saml2.autocreateApplications` on (the default), asking for
+it — or a valid AuthnRequest — creates the application entry. **In product
+mode nothing is created because something named it, and every `{sp}` path —
+`/saml2/metadata/{sp}`, `/saml2/sso/{sp}`, `/saml2/slo/{sp}` and
+`/saml2/ars/{sp}` — answers 404 (`text/plain`) for a name that is not a
+registered SAML 2.0 service provider.** Register it on `/admin/saml2`, or with
+`POST /admin-api/applications/create`, first. The document publishes a
 `use="encryption"` key, the NameID formats this identity provider advertises,
 `WantAuthnRequestsSigned` according to the signing policy below, the
 bindings it speaks, and an `<md:Organization>` from `saml.organization*`.
@@ -237,6 +241,27 @@ an entry with no URL refreshes from MDQ; and a request from a service provider
 with no consumed metadata **starts** a lookup without waiting for it, so that
 request is answered as unknown and the next one finds the registration.
 
+**In product mode an MDQ answer registers a service provider only when a trust
+anchor vouches for it**, because a lookup a request starts names whatever
+entityID the request carried — anybody's:
+
+| | Development | Product |
+|---|---|---|
+| A request from an unknown entityID, no `saml2.metadataTrustAnchors` | looked up; the answer creates the entry | **not looked up at all** (`STS-SAML-0080`) |
+| The same, with trust anchors | looked up; the answer must verify | looked up; the entry is created only if the answer **verifies against a realm anchor** (`STS-SAML-0081` otherwise) |
+| An administrator's Import from MDQ, no trust anchors | imported | **refused** (`STS-SAML-0084`) unless `saml2.mdqImportWithoutAnchors` is on |
+| An entry that already exists | refreshed from MDQ | refreshed from MDQ |
+
+> **Warning**: with `saml2.mdqImportWithoutAnchors` on, an imported document
+> is consumed with **no signature check**: its signing keys and endpoints are
+> whatever the responder answered. Prefer a trust anchor.
+
+The entityIDs a request's lookup was refused for are listed, newest first,
+under *Metadata Query lookups refused* on `/admin/saml2` and as `mdqRefused`
+in `GET /admin-api/saml2` (paged by `mdqRefusedPage`). MDQ itself
+(draft-young-md-query-25 section 6.1, and its SAML profile's section 4.1)
+recommends a signature the requester checks as the integrity mechanism.
+
 ### Encryption
 
 This service encrypts the assertion (`<saml:EncryptedAssertion>`) and, in a
@@ -398,6 +423,7 @@ one-shot artifact are enforced in **both** modes. See
 | `saml2.spMetadataRefreshIntervalS` | `STS_SAML2_SP_METADATA_REFRESH_INTERVAL_S` | `300` | yes | How often the refresher looks, and how long a failed MDQ lookup is remembered. |
 | `saml2.metadataTrustAnchors` | `STS_SAML2_METADATA_TRUST_ANCHORS` | *(empty)* | yes | Base64 DER certificates, comma-separated, that consumed metadata must be signed with. |
 | `saml2.mdqBaseUrl` | `STS_SAML2_MDQ_BASE_URL` | *(empty)* | yes | The base URL of a Metadata Query Protocol responder. |
+| `saml2.mdqImportWithoutAnchors` | `STS_SAML2_MDQ_IMPORT_WITHOUT_ANCHORS` | `false` | yes | Product mode only: allow an administrator's MDQ import with no trust anchor. **Warning**: the document is consumed with no signature check. |
 
 The per-application attributes are listed in
 [the assertion settings](#the-assertion-settings-every-application-inherits).
@@ -416,10 +442,11 @@ changed on those pages or with `POST /admin-api/config/set`.
 * **No sign-in screen of its own.** A POST-binding request is held and turned
   into a GET so the `SameSite=Lax` session cookie is visible; the person meets
   the one sign-in screen, and single sign-on works across every protocol.
-* **Metadata is per service provider and minted on request.** Each service
-  provider gets its own identity provider entityID and endpoints, the way
-  commercial identity providers do, and nothing has to be provisioned before a
-  service provider can be pointed here.
+* **Metadata is per service provider and, in development, minted on
+  request.** Each service provider gets its own identity provider entityID and
+  endpoints, the way commercial identity providers do, and in development
+  nothing has to be provisioned before a service provider can be pointed here.
+  In product mode a name nobody registered is a 404.
 * **A request's own certificate is never a trust anchor.** Verifying a
   signature against the key the message brought proves nothing; an observed
   certificate waits for an operator, the way an observed return address does.

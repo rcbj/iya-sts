@@ -4324,7 +4324,7 @@ class AdminViews {
   // document a client fetches are one pass over the registry.
   // ---------------------------------------------------------------------------
   saml2ListJson(req) {
-    const { log, baseUrlOf, saml2 } = this.deps;
+    const { log, baseUrlOf, saml2, spMetadata } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.saml2ListJson().");
     log.debug("Entering saml2ListPage().");
@@ -4342,6 +4342,14 @@ class AdminViews {
     const paging = paged.paging;
     const filterParams = { q: String(req.query.q || '') || '',
                            per: req.query.per ? paging.perPage : '' };
+    // THE ENTITYIDS A REQUEST-STARTED METADATA QUERY WAS REFUSED FOR (#112):
+    // product mode's record of who asked to be registered by the responder
+    // and was not. A list of its own with a pager of its own
+    // (`mdqRefusedPage`), named after the array as the API's rule for a reply
+    // holding several lists asks.
+    const refused = this.pagedRows(req.query, spMetadata.mdqRefusalList(),
+                                   { name: 'mdqRefused',
+                                     noun: 'refused entityIDs' });
 
     log.debug("Leaving AdminViews.saml2ListJson(). " + filtered.length +
               " of " +
@@ -4349,6 +4357,7 @@ class AdminViews {
     return {
       base: base, all: all, needle: needle, filtered: filtered,
       paged: paged, paging: paging, filterParams: filterParams,
+      refused: refused,
       json: (function () {
       return {
           serviceProviders: paged.shown.map(function (row) {
@@ -4384,7 +4393,9 @@ class AdminViews {
           // while a browser is at the sign-in screen. A count that never falls
           // is a leak.
           artifactsAwaitingResolution: saml2.artifactCount(),
-          requestsHeldForSignIn: saml2.pendingRequestCount()
+          requestsHeldForSignIn: saml2.pendingRequestCount(),
+          mdqRefused: refused.shown,
+          mdqRefusedPaging: refused.paging
       };
       }())
     };

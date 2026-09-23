@@ -6685,7 +6685,15 @@ const SETTINGS = [
                  'default: only an entry with its own certificate is held ' +
                  'to one. Any key an XML signature is verified with here ' +
                  'will do — RSA, EC, EdDSA, ML-DSA, SLH-DSA; a value that is ' +
-                 'not one is named on the SAML 2.0 page and ignored.' },
+                 'not one is named on the SAML 2.0 page and ignored. IN ' +
+                 'PRODUCT MODE these are also what lets the Metadata Query ' +
+                 'responder register a service provider at all: with none, ' +
+                 'a lookup a request starts is not made for an unknown ' +
+                 'entityID (STS-SAML-0080) and an operator\'s import is ' +
+                 'refused (STS-SAML-0084, see ' +
+                 'saml2.mdqImportWithoutAnchors); with some, an answer for ' +
+                 'an unknown entityID registers it only when its signature ' +
+                 'verifies against one of these (STS-SAML-0081).' },
 
   { key: 'saml2.mdqBaseUrl', group: 'SAML 2.0',
     label: 'Metadata Query (MDQ) responder',
@@ -6702,7 +6710,37 @@ const SETTINGS = [
                  'is answered as unknown NOW; the next one finds the ' +
                  'registration). Through the federation outbound policy: ' +
                  'https, federation.outbound, the timeout. EMPTY, the ' +
-                 'default: no responder.' },
+                 'default: no responder. IN PRODUCT MODE a responder alone ' +
+                 'registers nobody: a lookup a request starts for an ' +
+                 'unknown entityID is made only when ' +
+                 'saml2.metadataTrustAnchors is set, and registers the ' +
+                 'entity only when the answer verifies against one of them; ' +
+                 'the Import from MDQ action needs an anchor too unless ' +
+                 'saml2.mdqImportWithoutAnchors is on. An entry that already ' +
+                 'exists is refreshed from the responder in either mode.' },
+
+  { key: 'saml2.mdqImportWithoutAnchors', group: 'SAML 2.0',
+    label: 'Allow an MDQ import with no trust anchor (product mode)',
+    env: 'STS_SAML2_MDQ_IMPORT_WITHOUT_ANCHORS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'PRODUCT MODE ONLY: whether an administrator\'s Import ' +
+                 'from MDQ (the SAML 2.0 page, POST ' +
+                 '/admin-api/saml2/mdq-import) may register a service ' +
+                 'provider when the realm has no saml2.metadataTrustAnchors. ' +
+                 'OFF, the default: it is refused (STS-SAML-0084). ' +
+                 'WARNING: ON, the document the responder answers with is ' +
+                 'consumed WITHOUT ANY SIGNATURE CHECK — its signing ' +
+                 'certificates become what that service provider\'s ' +
+                 'requests are verified against and its endpoints become ' +
+                 'where assertions are sent — so anybody who can answer for ' +
+                 'the responder\'s host (its operator, or whoever sits on ' +
+                 'the path to it) chooses them. Only the administrator\'s ' +
+                 'choice of entityID and of responder stands in for the ' +
+                 'signature. ' +
+                 'Prefer setting a trust anchor. A lookup a REQUEST starts ' +
+                 'is never covered by this: it needs an anchor whatever this ' +
+                 'says. Development imports without an anchor whatever this ' +
+                 'says.' },
 
   // --- SAML 1.1 browser profiles -------------------------------------------
   // A group of its own, for the reason the SAML 2.0 rows above have one and for
