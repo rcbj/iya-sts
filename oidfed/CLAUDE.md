@@ -29,6 +29,8 @@ rcbj's eight answers are on #132–#137 and in the memory file
 | `oidfed.ts` | The entity: its identity, topology, Entity Configuration, Subordinate Statements, resolution and cache, Trust Marks, the routes, and the acts behind the console and the API. |
 | `oidfed_admin.ts` | Protocols → OpenID Federation (`/admin/oidfed`). |
 | `oidfed_api.ts` | `GET /admin-api/oidfed` and `POST /admin-api/oidfed/:action`. |
+| `oidfed_registration.ts` | #134, the OP side of Connect 1.1 section 12: AUTOMATIC registration, called from `oauth2.ts`'s authorization and PAR endpoints before anything reads the client, and EXPLICIT registration at `POST /oidfed/register`. Both verify the RP's chain to one of the realm's anchors and hold its resolved metadata to `oauth2.registerFederatedClient()`, the same checks as RFC 7591. A registration expires with its chain (12.3): `clientConfigOf()` answers "unknown" past it, and the `oidfed.registrations-expire` job removes it. **It is not a mode exception** (rcbj's answer 5): product mode refuses a client NOBODY registered, and this one was registered, through a Trust Anchor the administrator configured, by a request proving the RP's key. The header argues it. |
+| `oidfed_rp.ts` | #134, this service as a federated RP. An `oidc` relationship with `fedTrustAnchor` set has its OP resolved through its chain. It registers automatically under the realm's Entity Identifier, with a request object and `private_key_jwt` signed by the realm's ES256 protocol key, which the Entity Configuration's `openid_relying_party` metadata publishes by value. |
 
 **Where it loads** (`common/protocol_stack.ts`):
 
@@ -140,8 +142,12 @@ the second thing.
 - **Client authentication at federation endpoints** (8.8). "none" is the
   default and the only method.
 - **`signed_jwks_uri`** is not published.
-- **OpenID Connect registration through the federation, and the RP side**:
-  #134.
+- **The RP side registers only automatically**, and sends no `trust_chain`
+  header (a URL carrying a chain is longer than many servers accept, and PAR
+  would be a fourth address `federation_http.ts` dials). An OP offering only
+  explicit registration is refused by name (STS-FED-0149).
+- **OID4VP trusting a credential issuer through the federation** (#134's
+  optional follow-on) is not built.
 - **Extended listing, entity collection and subordinate events**: #135–#137.
   `oidfed_store.ts` keeps created and updated times on every subordinate,
   which #135's `updated_after` needs.

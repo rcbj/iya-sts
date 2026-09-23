@@ -589,13 +589,16 @@ class ProtocolStack {
     // Client registration through the federation (#134) is a library that
     // registers no route — `oidfed` serves /oidfed/register and `oauth2`'s
     // authorization and PAR endpoints call it, both lazily — and whose wire
-    // step registers the `oidfed.registrations-expire` job.
+    // step registers the `oidfed.registrations-expire` job; this realm as a
+    // federated relying party (`oidfed_rp`) is a library `federation_sp`
+    // and the Entity Configuration reach lazily.
     // -------------------------------------------------------------------------
     this.build('oidfed/federation_keys', require('../oidfed/federation_keys'),
                'FederationKeys');
     this.build('oidfed/oidfed', require('../oidfed/oidfed'), 'Oidfed');
     this.build('oidfed/oidfed_registration',
                require('../oidfed/oidfed_registration'), 'OidfedRegistration');
+    this.build('oidfed/oidfed_rp', require('../oidfed/oidfed_rp'), 'OidfedRp');
     this.register(app, require('../oidfed/oidfed'), 'oidfed/oidfed');
     // The Kerberos KDC. Requiring it registers /KdcProxy and /krb5/principals
     // — it is one of the parent project's locked JavaScript files, which still

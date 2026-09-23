@@ -2553,13 +2553,23 @@ const SPECS: Spec[] = [
                                            'Connect 1.1',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-federation-connect-1_1.html',
-    coverage: 'partial (#132, 2026-09-23): the openid_provider and ' +
+    coverage: 'partial (#132, #134, 2026-09-23): the openid_provider and ' +
               'oauth_authorization_server entity types in every realm\'s ' +
               'Entity Configuration, whose issuer is the realm\'s Entity ' +
-              'Identifier, and openid_credential_verifier beside them. ' +
-              'MISSING: automatic and explicit client registration, the ' +
-              'federation_registration_endpoint, and this service as a ' +
-              'federated relying party (#134).' },
+              'Identifier, with client_registration_types_supported, ' +
+              'federation_registration_endpoint and ' +
+              'request_authentication_methods_supported; AUTOMATIC ' +
+              'registration (12.1) at the authorization and PAR endpoints ' +
+              '(request object or private_key_jwt, the trust_chain header ' +
+              'honoured), EXPLICIT registration (12.2) with a signed ' +
+              'explicit-registration-response+jwt, registrations ending ' +
+              'with their chain (12.3); and this service as a federated RP — ' +
+              'an oidc federation relationship with fedTrustAnchor ' +
+              'discovers its OP through its chain and registers ' +
+              'automatically, publishing openid_relying_party metadata. ' +
+              'MISSING: the RP side registers only automatically (never ' +
+              'explicitly) and sends no trust_chain header; OID4VP\'s ' +
+              'trust of a credential issuer through the federation.' },
   { id: 'sd-jwt', name: 'RFC 9901 — Selective Disclosure for JWTs (SD-JWT)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9901',
     coverage: 'full for issuance and verification: _sd digests with a decoy, ' +

@@ -36,6 +36,14 @@
 //      Identifier with no proof is refused with a 400 and not redirected;
 //      a third registers EXPLICITLY at /oidfed/register and is answered
 //      with a signed explicit-registration-response+jwt.
+//   8. THIS SERVICE AS A FEDERATED RELYING PARTY (#134): an `oidc`
+//      relationship in the throwaway realm names only the default realm's
+//      OP and a Trust Anchor; the realm's Entity Configuration then
+//      publishes openid_relying_party metadata; its sign-in sends a request
+//      object signed by the key published there, under its own Entity
+//      Identifier; the OP registers it automatically and returns a code to
+//      its ACS; and the code is redeemed with a private_key_jwt (or, where
+//      the stack cannot reach its own token endpoint, the refusal says so).
 //
 // OWNED HERE (local: true): this repository's federation endpoints and its
 // management API.
@@ -254,6 +262,121 @@ async function federatedRp(tag, anchor, fetchAt) {
   };
   log.debug("Leaving federatedRp().");
   return rp;
+}
+
+// A COOKIE JAR and a browser up to the ACS door, for section 8: redirects
+// followed, the sign-in and consent screens answered, stopped at the first
+// request addressed to /federation/acs/.
+function jar() {
+  log.debug("Entering jar().");
+  const store = {};
+  log.debug("Leaving jar().");
+  return {
+    header: function () {
+      log.debug("Entering header().");
+      log.debug("Leaving header().");
+      return Object.keys(store).map(function (k) {
+        return k + "=" + store[k];
+      }).join("; ");
+    },
+    take: function (res) {
+      log.debug("Entering take().");
+      (res.headers.getSetCookie ? res.headers.getSetCookie() : []).forEach(
+        function (line) {
+          const pair = line.split(";")[0];
+          const i = pair.indexOf("=");
+          store[pair.slice(0, i).trim()] = pair.slice(i + 1).trim();
+        });
+      log.debug("Leaving take().");
+    }
+  };
+}
+
+async function browse(cookies, url, form) {
+  log.debug("Entering browse(). " + url);
+  const o = { redirect: "manual", headers: { cookie: cookies.header() } };
+  if (form) {
+    o.method = "POST";
+    o.body = new URLSearchParams(form).toString();
+    o.headers["content-type"] = "application/x-www-form-urlencoded";
+  }
+  const r = await fetch(url, o);
+  cookies.take(r);
+  const body = r.status >= 300 && r.status < 400 ? "" : await r.text();
+  log.debug("Leaving browse(). " + r.status);
+  return { status: r.status, body: body, url: url,
+           location: r.headers.get("location") || "" };
+}
+
+function hiddenForms(html) {
+  log.debug("Entering hiddenForms().");
+  const decode = function (t) {
+    log.debug("Entering decode().");
+    log.debug("Leaving decode().");
+    return String(t).replace(/&quot;/g, "\"").replace(/&#39;/g, "'")
+      .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  };
+  const out = [];
+  const re = /<form([^>]*)>([\s\S]*?)<\/form>/gi;
+  let m = re.exec(String(html || ""));
+  while (m) {
+    const fields = {};
+    [...m[2].matchAll(/<input[^>]*type="hidden"[^>]*>/gi)].forEach(
+      function (one) {
+        const n = /name="([^"]+)"/.exec(one[0]);
+        const v = /value="([^"]*)"/.exec(one[0]);
+        if (n) {
+          fields[decode(n[1])] = v ? decode(v[1]) : "";
+        }
+      });
+    out.push({ action: decode((/action="([^"]*)"/i.exec(m[1]) || [])[1] ||
+                              ""), fields: fields });
+    m = re.exec(String(html || ""));
+  }
+  log.debug("Leaving hiddenForms(). " + out.length);
+  return out;
+}
+
+async function toTheAcs(cookies, startUrl, username, password) {
+  log.debug("Entering toTheAcs(). " + startUrl);
+  const first = await browse(cookies, startUrl);
+  let r = first;
+  const hops = [];
+  for (let step = 0; step < 24; step += 1) {
+    hops.push(r.status + " " + r.url);
+    if (r.status >= 300 && r.status < 400 && r.location) {
+      const next = new URL(r.location, r.url).toString();
+      if (/\/federation\/acs\//.test(next)) {
+        log.debug("Leaving toTheAcs(). At the ACS.");
+        return { first: first, url: next, hops: hops };
+      }
+      r = await browse(cookies, next);
+      continue;
+    }
+    if (r.status !== 200) {
+      break;
+    }
+    const forms = hiddenForms(r.body);
+    const signIn = forms.find(function (f) {
+      return "authn_id" in f.fields;
+    });
+    const consent = forms.find(function (f) {
+      return /consent/.test(f.action) || "consent_id" in f.fields;
+    });
+    const form = signIn || consent;
+    if (!form) {
+      break;
+    }
+    r = await browse(cookies, new URL(form.action || r.url, r.url).toString(),
+      Object.assign({}, form.fields, signIn
+        ? { username: username, password: password, action: "login" }
+        : { action: "allow", decision: "allow" }));
+  }
+  log.debug("Leaving toTheAcs(). Never reached it.");
+  throw new Error("never reached the ACS: HTTP " + r.status + " at " + r.url +
+                  " — " + String(r.body).replace(/<[^>]+>/g, " ")
+                    .replace(/\s+/g, " ").slice(0, 400) + " (" +
+                  hops.join(" → ") + ")");
 }
 
 async function test() {
@@ -550,7 +673,87 @@ async function test() {
     assert.strictEqual(wrongType.json.error, "invalid_request");
   });
 
-  assert.ok(checks >= 19, "only " + checks + " checks ran");
+  log.info("=== 8. this service as a federated relying party (#134) ===");
+  const REL = "oidfed-rp";
+  const PERSON = "oidfedrp-" + STAMP.toLowerCase();
+  const PASSWORD = "Oidfed-Passw0rd!-" + String(Date.now()).slice(-6);
+  await ok(root + "/admin-api/users/create", {
+    username: PERSON, invent: false, credential: "password",
+    password: PASSWORD,
+    attributes: { cn: "Oidfed " + PERSON, givenName: "Oidfed", sn: PERSON,
+                  displayName: "Oidfed " + PERSON,
+                  mail: PERSON + "@oidfed.example.net" } },
+    "created a person at the OP");
+  await ok(base + "/admin-api/federation/create", { id: REL,
+    role: "service-provider", protocol: "oidc", peer: anchorId },
+    "created the relationship");
+  await ok(base + "/admin-api/federation/set", { id: REL,
+    field: "fedTrustAnchor", value: anchorId }, "named the Trust Anchor");
+  await ok(base + "/admin-api/federation/enable", { id: REL },
+           "enabled the relationship");
+  const asRp = await configurationOf(base);
+  const rpMd = asRp.parts.claims.metadata.openid_relying_party;
+  check("the realm's Entity Configuration now publishes openid_relying_party " +
+        "metadata: its ACS, private_key_jwt and its key by value",
+        function () {
+    assert.ok(rpMd, JSON.stringify(Object.keys(asRp.parts.claims.metadata)));
+    assert.ok(rpMd.redirect_uris.some(function (u) {
+      return /\/federation\/acs\/oidfed-rp$/.test(u);
+    }), JSON.stringify(rpMd.redirect_uris));
+    assert.strictEqual(rpMd.token_endpoint_auth_method, "private_key_jwt");
+    assert.deepStrictEqual(rpMd.client_registration_types, ["automatic"]);
+    assert.strictEqual(rpMd.jwks.keys.length, 1);
+  });
+  const cookies = jar();
+  const door = await toTheAcs(cookies, base + "/federation/login/" + REL,
+                              PERSON, PASSWORD);
+  const asked = new URL(door.first.location);
+  const ro = asked.searchParams.get("request");
+  check("its sign-in sends a request object signed by that key, under its " +
+        "own Entity Identifier, audienced to the OP alone, with no sub",
+        function () {
+    assert.strictEqual(door.first.status, 302);
+    assert.strictEqual(asked.origin + asked.pathname,
+                       anchor.parts.claims.metadata.openid_provider
+                         .authorization_endpoint);
+    assert.strictEqual(asked.searchParams.get("client_id"), opId);
+    const p = partsOf(ro);
+    assert.strictEqual(p.header.typ, "oauth-authz-req+jwt");
+    assert.ok(verified(ro, rpMd.jwks), "the request object does not verify");
+    assert.strictEqual(p.claims.iss, opId);
+    assert.strictEqual(p.claims.client_id, opId);
+    assert.strictEqual(p.claims.aud, anchorId);
+    assert.ok(!("sub" in p.claims));
+    assert.ok(p.claims.jti && p.claims.exp && p.claims.code_challenge);
+  });
+  const answer = new URL(door.url);
+  check("the OP registered it automatically and returned a code to its ACS",
+        function () {
+    assert.ok(answer.searchParams.get("code"), door.url);
+    assert.strictEqual(answer.searchParams.get("iss"), anchorId);
+  });
+  const finished = await browse(cookies, door.url);
+  if (finished.status === 200) {
+    check("the code is redeemed with a private_key_jwt and the person is " +
+          "signed in", function () {
+      assert.ok(/Signed in through/.test(finished.body),
+                finished.body.replace(/<[^>]+>/g, " ").slice(0, 400));
+    });
+  } else {
+    // A local stack does not trust its own certificate, so it cannot reach
+    // its own token endpoint (sts_federation_realms.js says the same). What
+    // must hold is that the failure is the back channel's, not the trust's.
+    log.warn("  the back channel did not complete (HTTP " + finished.status +
+             "); asserting the refusal is the token request's.");
+    check("the code could not be redeemed from here, and says so",
+          function () {
+      assert.strictEqual(finished.status, 502);
+      assert.ok(/could not be redeemed/i.test(finished.body),
+                finished.body.replace(/<[^>]+>/g, " ").slice(0, 400));
+    });
+  }
+
+  assert.ok(checks >= 23, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");

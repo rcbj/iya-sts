@@ -136,6 +136,7 @@ interface OidfedDeps {
   // Client registration through the federation (#134), which reads this
   // module back.
   registration: () => Json;
+  relyingParty: () => Json;
   now: () => number;
 }
 
@@ -180,6 +181,9 @@ class Oidfed {
       },
       registration: function (): Json {
         return require('./oidfed_registration');
+      },
+      relyingParty: function (): Json {
+        return require('./oidfed_rp');
       },
       now: function (): number {
         return Date.now();
@@ -508,6 +512,25 @@ class Oidfed {
         out.openid_provider.federation_registration_endpoint =
           this.deps.baseUrlOf(req) + PATHS.register;
       }
+      // How an automatic registration proves the RP holds its key (Connect
+      // 1.1, 5.1.2, 12.1.1): a request object at either endpoint, or a
+      // private_key_jwt at PAR — what oidfed_registration.ts accepts.
+      if (types.indexOf('automatic') >= 0) {
+        out.openid_provider.request_authentication_methods_supported = {
+          authorization_endpoint: ['request_object'],
+          pushed_authorization_request_endpoint: ['request_object',
+                                                  'private_key_jwt']
+        };
+        out.openid_provider
+          .request_authentication_signing_alg_values_supported =
+          EntityStatement.acceptedAlgorithms();
+      }
+    }
+    // THIS REALM AS A RELYING PARTY (#134): published only where a
+    // federation relationship discovers its OP through a Trust Chain.
+    const rp = this.deps.relyingParty().relyingPartyMetadata(req);
+    if (rp) {
+      out.openid_relying_party = rp;
     }
     const v = verifier();
     if (v && typeof v.federationVerifierMetadata === 'function') {

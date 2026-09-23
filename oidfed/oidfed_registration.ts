@@ -210,9 +210,16 @@ class OidfedRegistration {
         { configuration: configuration, audience: audience });
     }
     if (!resolved.ok) {
+      // Connect 1.1's two trust errors: no chain reaches a Trust Anchor this
+      // OP is configured with — `missing_trust_anchor` — or one that does is
+      // not valid — `invalid_trust_chain`.
+      const code = String(resolved.code || 'STS-OIDFED-0027');
+      const noAnchor = code === 'STS-OIDFED-0022' ||
+                       code === 'STS-OIDFED-0027' ||
+                       code === 'STS-OIDFED-0028';
       log.debug("Leaving OidfedRegistration.resolveRp(). " + resolved.why);
-      return this.refuse(String(resolved.code || 'STS-OIDFED-0027'),
-                         String(resolved.error || 'invalid_trust_chain'),
+      return this.refuse(code, noAnchor ? 'missing_trust_anchor'
+                         : String(resolved.error || 'invalid_trust_chain'),
                          String(resolved.why));
     }
     const rp = (resolved.metadata || {}).openid_relying_party;

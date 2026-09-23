@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3365** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3367** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -67,7 +67,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 131
+* [Federation (`STS-FED`)](#sts-fed) — 133
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 56
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 74
@@ -1951,6 +1951,8 @@ Raised from: federation/.
 | `STS-FED-0145` | The scheduler job federation.encryption-key-retire could not remove a retired key from a relationship; the key already decrypts nothing, and the next run tries again. | none — logged |
 | `STS-FED-0146` | /federation/jwks/{id} named no OpenID Connect service-provider-side relationship. | HTTP 404 page |
 | `STS-FED-0147` | A partner's SAML Response or wresult carried an encrypted assertion beside another assertion; which one a signature covered and which one was read must not be a choice. | HTTP 400 page |
+| `STS-FED-0148` | A relationship whose OpenID Provider is discovered through an OpenID Federation could not resolve it to its fedTrustAnchor (#134). | HTTP 502 page |
+| `STS-FED-0149` | An OpenID Provider resolved through an OpenID Federation cannot be used: no openid_provider metadata, an issuer that is not its Entity Identifier, no https endpoints, no automatic registration, or no keys (#134). | HTTP 502 page |
 
 ## STS-OIDFED
 

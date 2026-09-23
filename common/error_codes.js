@@ -7879,6 +7879,16 @@ const CODES = [
       'assertion beside another assertion; which one a signature covered ' +
       'and which one was read must not be a choice.',
     spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0148',
+    summary: 'A relationship whose OpenID Provider is discovered through an ' +
+      'OpenID Federation could not resolve it to its fedTrustAnchor (#134).',
+    spec: 'HTTP 502 page' },
+  { code: 'STS-FED-0149',
+    summary: 'An OpenID Provider resolved through an OpenID Federation ' +
+      'cannot be used: no openid_provider metadata, an issuer that is not ' +
+      'its Entity Identifier, no https endpoints, no automatic ' +
+      'registration, or no keys (#134).',
+    spec: 'HTTP 502 page' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
