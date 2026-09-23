@@ -1326,7 +1326,7 @@ const TOKEN_QUERY_FORM = vz.looseObject({
 // a REGISTRY of hint values that grows — so an unknown one is ignored here
 // rather than refused as a malformed request, which is what sharing
 // introspection's form did. And `token` stays optional to the validator so
-// that its absence is answered by name (`STS-OAUTH-0606`) rather than as a
+// that its absence is answered by name (`STS-OAUTH-0608`) rather than as a
 // schema failure. Introspection keeps its own form, unchanged.
 const REVOCATION_FORM = vz.looseObject({
   token: vz.string().max(validation.CAP.TEXT).optional(),
@@ -1666,10 +1666,13 @@ class OAuth2Server {
       // id_token, so `id_token token` belongs here too — OpenID Connect Dynamic
       // Registration names it as one an OP should support, and leaving it out
       // of the list while honouring it is the same drift as the reverse.
+      // `none` since #125: Multiple Response Type Encoding Practices section
+      // 4, a response carrying `state` and nothing issued.
       response_types_supported: ['code', 'token', 'id_token', 'code token',
                                  'code ' +
           'id_token',
-                                 'id_token token', 'code id_token token'],
+                                 'id_token token', 'code id_token token',
+                                 'none'],
       // --- RECOMMENDED / OPTIONAL ---
       jwks_uri: at + '/oauth2/jwks',
       // NON-SPEC (#42, D8): the realm's public crypto metadata document —
@@ -6309,8 +6312,11 @@ class OAuth2Server {
   // fragment-reading code never saw it. An explicit `fragment` is honoured
   // for any type; an explicit `query` only where nothing in the response can
   // be a token (section 2.1 of that document: "MUST NOT use the query
-  // encoding" for those) — so it is ignored for the rest rather than obeyed.
-  // `form_post` is redirectBack()'s own branch and never reaches here.
+  // encoding" for those) — and since #125 such a request is REFUSED in
+  // `vetAuthorizationRequest()` (STS-OAUTH-0607), so the refusal is the one
+  // place that decides this for a token-bearing type; `none` (section 4) is
+  // the query. `form_post` is redirectBack()'s own branch and never reaches
+  // here.
   // -------------------------------------------------------------------------
   usesFragment(types: Json, responseMode?: Json): boolean {
     const { log } = this.deps;
@@ -6963,7 +6969,21 @@ class OAuth2Server {
                           'client_id is required.');
     }
     const types = String(q.response_type || '').split(/\s+/).filter(Boolean);
-    const known = ['code', 'token', 'id_token'];
+    const known = ['code', 'token', 'id_token', 'none'];
+    // OAuth 2.0 Multiple Response Type Encoding Practices section 4 (#125):
+    // `none` asks for NOTHING to be issued — the response carries `state`
+    // (and RFC 9207's `iss`) alone — so it is not combined with any other
+    // value.
+    if (types.length > 1 && types.indexOf('none') >= 0) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). none " +
+                "combined.");
+      return redirectable('STS-OAUTH-0606', 'unsupported_response_type',
+        'response_type "none" asks for no credential at all (Multiple ' +
+        'Response Type Encoding Practices section 4), so it cannot be ' +
+        'combined with "' + types.filter(function (t) {
+          return t !== 'none';
+        }).join(' ') + '".');
+    }
     if (!types.length ||
         types.some(function (t) { return known.indexOf(t) < 0; })) {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). " +
@@ -7045,6 +7065,23 @@ class OAuth2Server {
               'posts a message, receives one, or frames anything.'
             : ''));
       }
+    }
+
+    // MULTIPLE RESPONSE TYPE ENCODING PRACTICES section 2.1 (#125): a
+    // response type that returns a token or an ID Token "MUST NOT use the
+    // query encoding" — so an explicit `response_mode=query` for one is
+    // refused, in every mode. It was quietly overridden to the fragment since
+    // #118, which answered a request the client did not make. The refusal
+    // itself goes in the fragment, where the success would have gone.
+    if (String(q.response_mode || '') === 'query' &&
+        types.some(function (t) { return t === 'token' || t === 'id_token'; })) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). query for " +
+                "a token-bearing response type.");
+      return redirectable('STS-OAUTH-0607', 'invalid_request',
+        'response_mode=query cannot carry response_type "' +
+        String(q.response_type) + '": a response returning a token or an ID ' +
+        'Token MUST NOT use the query encoding (OAuth 2.0 Multiple Response ' +
+        'Type Encoding Practices section 2.1). Use fragment or form_post.');
     }
 
     // JARM section 2.3.1 (#139, #143): `query.jwt` carries no token in clear.
@@ -13561,14 +13598,14 @@ class OAuth2Server {
   // rest of a refresh token's grant alive. RFC 7009, section by section:
   //
   //   * **SECTION 2.1's `token` IS REQUIRED**: a request without one is 400
-  //     `invalid_request` (`STS-OAUTH-0606`), in both modes.
+  //     `invalid_request` (`STS-OAUTH-0608`), in both modes.
   //   * **THE CLIENT FIRST.** "The authorization server first validates the
   //     client credentials (in case of a confidential client) and then
   //     verifies whether the token was issued to the client making the
   //     revocation request." In product (`mode.opensRevocation()`) every
   //     request is asked: a confidential client presents a credential that
-  //     verifies (`STS-OAUTH-0607`), a public one names its registered
-  //     client_id (`STS-OAUTH-0608` when it names nothing registered).
+  //     verifies (`STS-OAUTH-0609`), a public one names its registered
+  //     client_id (`STS-OAUTH-0610` when it names nothing registered).
   //     Development asks only a caller that PRESENTED a credential — and holds
   //     that one to the same refusals, so a client under test that
   //     authenticates meets them. `authenticateEndpointCaller()` is shared
@@ -13577,7 +13614,7 @@ class OAuth2Server {
   //     not open or verify, or a refresh token that is not the JWE this realm
   //     issues, is answered 200 with nothing revoked.
   //   * **SECTION 2.2.1's `unsupported_token_type` FOR ANYTHING THAT IS NOT AN
-  //     ACCESS OR A REFRESH TOKEN** (`STS-OAUTH-0609`) — an ID Token, a
+  //     ACCESS OR A REFRESH TOKEN** (`STS-OAUTH-0611`) — an ID Token, a
   //     logout token, a SET: valid tokens this realm signed, of a type this
   //     server does not revoke. Chosen over section 2.2's quiet 200, which is
   //     for an INVALID token "since the client cannot handle such an error in
@@ -13614,11 +13651,11 @@ class OAuth2Server {
     const self = this;
     log.debug("Entering OAuth2Server.revokeEndpoint().");
     self.revokeRequest(req, res).catch(function (e) {
-      log.error(errorCodes.tag('STS-OAUTH-0612') +
+      log.error(errorCodes.tag('STS-OAUTH-0614') +
                 'the revocation endpoint failed: ' +
                 (e && e.stack ? e.stack : e));
       if (!res.headersSent) {
-        errorCodes.mark(res, 'STS-OAUTH-0612');
+        errorCodes.mark(res, 'STS-OAUTH-0614');
         self.oauthError(res, 500, 'server_error',
                         String((e && e.message) || e));
       }
@@ -13671,7 +13708,7 @@ class OAuth2Server {
     const token = String(body.token || '');
     if (!token) {
       log.debug("Leaving OAuth2Server.revokeRequest(). No token.");
-      errorCodes.mark(res, 'STS-OAUTH-0606');
+      errorCodes.mark(res, 'STS-OAUTH-0608');
       return self.oauthError(res, 400, 'invalid_request',
         'RFC 7009 section 2.1: the token parameter is REQUIRED — the ' +
         'request names nothing to revoke.');
@@ -13701,13 +13738,13 @@ class OAuth2Server {
         endpoint: 'revocation',
         path: '/oauth2/revoke',
         capability: 'revocation_endpoint_auth_methods_supported',
-        advertisedCode: 'STS-OAUTH-0611',
+        advertisedCode: 'STS-OAUTH-0613',
         advertisedStatus: 401,
         allowPublic: true,
         lenient: mode.opensRevocation(),
         refusal: function (observed: Json, why: string): Json {
           const unknown = observed.errorCode === 'STS-OAUTH-0193';
-          return { code: unknown ? 'STS-OAUTH-0608' : 'STS-OAUTH-0607',
+          return { code: unknown ? 'STS-OAUTH-0610' : 'STS-OAUTH-0609',
                    status: 401, challenge: true,
                    description: 'RFC 7009 section 2.1: the revocation ' +
                      'endpoint validates the client before the token' +
@@ -13750,7 +13787,7 @@ class OAuth2Server {
     if (kind === 'other') {
       log.debug("Leaving OAuth2Server.revokeRequest(). Not an access or a " +
                 "refresh token (typ " + (claims.typ || '(none)') + ").");
-      errorCodes.mark(res, 'STS-OAUTH-0609');
+      errorCodes.mark(res, 'STS-OAUTH-0611');
       return self.oauthError(res, 400, 'unsupported_token_type',
         'RFC 7009 section 2.2.1: this authorization server revokes access ' +
         'tokens and refresh tokens, and the token presented is neither' +
@@ -13762,18 +13799,18 @@ class OAuth2Server {
       audit.record({
         action: 'oauth.token.revoke', actor: caller.clientId,
         target: owner || '(no client)', protocol: 'OAuth 2.0 / OIDC',
-        channel: 'http', outcome: 'refused', errorCode: 'STS-OAUTH-0610',
+        channel: 'http', outcome: 'refused', errorCode: 'STS-OAUTH-0612',
         detail: 'client "' + caller.clientId + '" asked to revoke a ' + kind +
                 ' token issued to "' + (owner || '(no client)') + '", jti ' +
                 (claims.jti || '(none)')
       });
-      log.info(errorCodes.tag('STS-OAUTH-0610') + 'revocation: client "' +
+      log.info(errorCodes.tag('STS-OAUTH-0612') + 'revocation: client "' +
                caller.clientId + '" asked to revoke a ' + kind + ' token ' +
                'issued to "' + (owner || '(no client)') + '". Refused; ' +
                'nothing was revoked.');
       log.debug("Leaving OAuth2Server.revokeRequest(). Another client's " +
                 "token.");
-      errorCodes.mark(res, 'STS-OAUTH-0610');
+      errorCodes.mark(res, 'STS-OAUTH-0612');
       return self.oauthError(res, 400, 'invalid_grant',
         'RFC 7009 section 2.1: this token was issued to another client, and ' +
         'a client may revoke only its own. Nothing was revoked.');

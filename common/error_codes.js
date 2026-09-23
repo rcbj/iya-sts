@@ -6253,39 +6253,50 @@ const CODES = [
       '(#124).',
     spec: 'HTTP 500 (an HTML page)' },
   { code: 'STS-OAUTH-0606',
+    summary: 'response_type none was combined with another response type; ' +
+      'it asks for nothing to be issued (Multiple Response Type Encoding ' +
+      'Practices section 4, #125).',
+    spec: 'redirect {error: unsupported_response_type}' },
+  { code: 'STS-OAUTH-0607',
+    summary: 'response_mode=query was asked for a response type that ' +
+      'returns a token or an ID Token, which section 2.1 of Multiple ' +
+      'Response Type Encoding Practices forbids (#125). The refusal goes in ' +
+      'the fragment.',
+    spec: 'redirect {error: invalid_request}' },
+  { code: 'STS-OAUTH-0608',
     summary: 'An RFC 7009 revocation request named no token: section 2.1 ' +
       'makes the token parameter REQUIRED (#102). In both modes.',
     spec: 'invalid_request (HTTP 400)' },
-  { code: 'STS-OAUTH-0607',
+  { code: 'STS-OAUTH-0609',
     summary: 'An RFC 7009 revocation request from a registered client did ' +
       'not authenticate: in product mode a confidential client presented no ' +
       'credential, or (in either mode) a credential that did not verify, ' +
       'or an entry that declares no method presented none (#102).',
     spec: 'invalid_client (HTTP 401, RFC 7009 section 2.1)' },
-  { code: 'STS-OAUTH-0608',
+  { code: 'STS-OAUTH-0610',
     summary: 'Product mode: an RFC 7009 revocation request named no client ' +
       'this realm has registered — no client_id at all, or one with no ' +
       'entry — so there is no client to validate (#102).',
     spec: 'invalid_client (HTTP 401, RFC 7009 section 2.1)' },
-  { code: 'STS-OAUTH-0609',
+  { code: 'STS-OAUTH-0611',
     summary: 'An RFC 7009 revocation request presented a token this realm ' +
       'signed that is neither an access token nor a refresh token — an ID ' +
       'Token, a logout token, a SET — which this server does not revoke ' +
       '(#102).',
     spec: 'unsupported_token_type (HTTP 400, RFC 7009 section 2.2.1)' },
-  { code: 'STS-OAUTH-0610',
+  { code: 'STS-OAUTH-0612',
     summary: 'An RFC 7009 revocation request from an authenticated or ' +
       'identified client presented a token issued to another client. ' +
       'Refused and nothing revoked; the audit row names both clients ' +
       '(#102).',
     spec: 'invalid_grant (HTTP 400, RFC 7009 section 2.1 and RFC 6749 ' +
       'section 5.2)' },
-  { code: 'STS-OAUTH-0611',
+  { code: 'STS-OAUTH-0613',
     summary: 'A client authenticating at the revocation endpoint declares a ' +
       'token_endpoint_auth_method the selected authorization server does ' +
       'not list in revocation_endpoint_auth_methods_supported (#102).',
     spec: 'invalid_client (HTTP 401)' },
-  { code: 'STS-OAUTH-0612',
+  { code: 'STS-OAUTH-0614',
     summary: 'The revocation endpoint failed with an unexpected error ' +
       'outside every refusal it makes (#102).',
     spec: 'server_error (HTTP 500)' },

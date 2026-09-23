@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3073** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3075** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 200
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 492
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 494
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1576,13 +1576,15 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0603` | In product mode, an RP-Initiated Logout post_logout_redirect_uri named no client that registered it (#124): not followed. Development still follows one. | none (the sign-out page says so) |
 | `STS-OAUTH-0604` | An RP-Initiated Logout request sent with POST was not a form (application/x-www-form-urlencoded, section 2) (#124). | HTTP 400 (an HTML page) |
 | `STS-OAUTH-0605` | The RP-Initiated Logout endpoint failed while answering (#124). | HTTP 500 (an HTML page) |
-| `STS-OAUTH-0606` | An RFC 7009 revocation request named no token: section 2.1 makes the token parameter REQUIRED (#102). In both modes. | invalid_request (HTTP 400) |
-| `STS-OAUTH-0607` | An RFC 7009 revocation request from a registered client did not authenticate: in product mode a confidential client presented no credential, or (in either mode) a credential that did not verify, or an entry that declares no method presented none (#102). | invalid_client (HTTP 401, RFC 7009 section 2.1) |
-| `STS-OAUTH-0608` | Product mode: an RFC 7009 revocation request named no client this realm has registered — no client_id at all, or one with no entry — so there is no client to validate (#102). | invalid_client (HTTP 401, RFC 7009 section 2.1) |
-| `STS-OAUTH-0609` | An RFC 7009 revocation request presented a token this realm signed that is neither an access token nor a refresh token — an ID Token, a logout token, a SET — which this server does not revoke (#102). | unsupported_token_type (HTTP 400, RFC 7009 section 2.2.1) |
-| `STS-OAUTH-0610` | An RFC 7009 revocation request from an authenticated or identified client presented a token issued to another client. Refused and nothing revoked; the audit row names both clients (#102). | invalid_grant (HTTP 400, RFC 7009 section 2.1 and RFC 6749 section 5.2) |
-| `STS-OAUTH-0611` | A client authenticating at the revocation endpoint declares a token_endpoint_auth_method the selected authorization server does not list in revocation_endpoint_auth_methods_supported (#102). | invalid_client (HTTP 401) |
-| `STS-OAUTH-0612` | The revocation endpoint failed with an unexpected error outside every refusal it makes (#102). | server_error (HTTP 500) |
+| `STS-OAUTH-0606` | response_type none was combined with another response type; it asks for nothing to be issued (Multiple Response Type Encoding Practices section 4, #125). | redirect {error: unsupported_response_type} |
+| `STS-OAUTH-0607` | response_mode=query was asked for a response type that returns a token or an ID Token, which section 2.1 of Multiple Response Type Encoding Practices forbids (#125). The refusal goes in the fragment. | redirect {error: invalid_request} |
+| `STS-OAUTH-0608` | An RFC 7009 revocation request named no token: section 2.1 makes the token parameter REQUIRED (#102). In both modes. | invalid_request (HTTP 400) |
+| `STS-OAUTH-0609` | An RFC 7009 revocation request from a registered client did not authenticate: in product mode a confidential client presented no credential, or (in either mode) a credential that did not verify, or an entry that declares no method presented none (#102). | invalid_client (HTTP 401, RFC 7009 section 2.1) |
+| `STS-OAUTH-0610` | Product mode: an RFC 7009 revocation request named no client this realm has registered — no client_id at all, or one with no entry — so there is no client to validate (#102). | invalid_client (HTTP 401, RFC 7009 section 2.1) |
+| `STS-OAUTH-0611` | An RFC 7009 revocation request presented a token this realm signed that is neither an access token nor a refresh token — an ID Token, a logout token, a SET — which this server does not revoke (#102). | unsupported_token_type (HTTP 400, RFC 7009 section 2.2.1) |
+| `STS-OAUTH-0612` | An RFC 7009 revocation request from an authenticated or identified client presented a token issued to another client. Refused and nothing revoked; the audit row names both clients (#102). | invalid_grant (HTTP 400, RFC 7009 section 2.1 and RFC 6749 section 5.2) |
+| `STS-OAUTH-0613` | A client authenticating at the revocation endpoint declares a token_endpoint_auth_method the selected authorization server does not list in revocation_endpoint_auth_methods_supported (#102). | invalid_client (HTTP 401) |
+| `STS-OAUTH-0614` | The revocation endpoint failed with an unexpected error outside every refusal it makes (#102). | server_error (HTTP 500) |
 
 ## STS-SAML
 
