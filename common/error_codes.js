@@ -6150,6 +6150,20 @@ const CODES = [
       'not ask for a JWT-secured response (JARM), which the profile ' +
       'requires (section 5.4.2 item 1).',
     spec: 'redirect or HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0592',
+    summary: 'A WebFinger request carried no single resource parameter, or ' +
+      'one that is not an acct: URI, an e-mail address, an https URL or a ' +
+      'host (RFC 7033 section 4.2, OIDC Discovery section 2.1).',
+    spec: 'HTTP 400' },
+  { code: 'STS-OAUTH-0593',
+    summary: 'A WebFinger resource named a domain no realm has, or a path on ' +
+      'this service that names no realm (RFC 7033 section 4.2).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OAUTH-0594',
+    summary: 'A discovery path named no issuer: not [realm/<id>][/<server>], ' +
+      'an unknown realm, or more than one server segment. Answered with ' +
+      'Express\'s 404 and no authorization server created (#119).',
+    spec: 'HTTP 404' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

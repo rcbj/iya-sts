@@ -293,6 +293,7 @@ const JOBS = [
   // `local: true`: this repository's own authorization server, in a throwaway
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
+  { file: 'sts_discovery_realms.js',     browser: false, local: true },
   { file: 'sts_fapi_baseline.js',        browser: false, local: true },
   { file: 'sts_fapi_advanced.js',        browser: false, local: true },
   { file: 'sts_fapi2.js',                browser: false, local: true },
