@@ -1190,15 +1190,19 @@ RECOMMENDS a signature embedded in the document; neither asks a requester to
 trust an unsigned answer to a lookup nobody authenticated.
 
 **The refused entityIDs are STATE, not log lines** (the standing rule against
-a line per event, since the requests are anybody's): a bounded map per process
-(`MDQ_REFUSALS_MAX`, the oldest dropped at the insert), one row per realm and
-entityID with a count, drawn on `/admin/saml2` (*Metadata Query lookups
+a line per event, since the requests are anybody's): a bounded per-realm store
+(`MDQ_REFUSALS_MAX`, the oldest dropped at the insert), one row per entityID
+with a count, drawn on `/admin/saml2` (*Metadata Query lookups
 refused*) and as `mdqRefused` / `mdqRefusedPaging` in `GET /admin-api/saml2`
 (`mdqRefusedPage`). A realm is logged once when it starts refusing, an audit
 row is written the first time an entityID is refused, and a summary is logged
-at most hourly (on the next refusal, or from the refresher's sweep). Like the
-refresher's state it is this process's: another node or a request worker keeps
-its own.
+at most hourly (on the next refusal, or from the refresher's sweep). **Unlike
+the refresher's state the list is a persisted `realms.map()`
+(`saml2.mdqRefusals`, 2026-09-23)**: a refusal is recorded by the request worker
+that answered the AuthnRequest and read by whichever answers `GET
+/admin-api/saml2`, and as a map per process it was empty on the others
+(`sts_saml_unregistered`, single-node). The log-once and hourly-summary state
+stays per process.
 
 **"Registered" means a provider of that profile** — an entry of the kind, or
 one declared for the family in `appAllowedProtocol` — not any application whose

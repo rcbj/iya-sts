@@ -1582,8 +1582,9 @@ class SpMetadata {
 
   // ---------------------------------------------------------------------------
   // THE ENTITYIDS A REQUEST-STARTED LOOKUP WAS REFUSED FOR (#112), per realm
-  // and per process — the same kind of state as `refreshStatus()`, and drawn
-  // on the SAML 2.0 page and `GET /admin-api/saml2` (`mdqRefused`). A row per
+  // and shared by every process (a replicated store since 2026-09-23 — see
+  // its declaration at the foot of this file), drawn on the SAML 2.0 page
+  // and `GET /admin-api/saml2` (`mdqRefused`). A row per
   // entityID, newest first, with how often and when; bounded by
   // MDQ_REFUSALS_MAX (the oldest is dropped at the insert, which is the cap
   // rather than housekeeping, so it is no scheduler job). Logged when a realm
@@ -1597,7 +1598,7 @@ class SpMetadata {
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.recordMdqRefusal(). " + code);
     const realmId = realms.currentId();
-    const key = realmId + '\u0000' + String(entityId);
+    const key = String(entityId);
     const now = new Date().toISOString();
     const before = mdqRefusals.get(key);
     if (before) {
@@ -1662,13 +1663,17 @@ class SpMetadata {
     const realmId = realms.currentId();
     const out = [];
     mdqRefusals.forEach(function (row) {
-      if (row.realm === realmId) {
+      if (row && row.realm === realmId) {
         out.push({ entityId: row.entityId, errorCode: row.errorCode,
                    why: row.why, firstAt: row.firstAt, lastAt: row.lastAt,
                    count: row.count });
       }
     });
-    out.reverse();
+    // By time rather than by insertion order: a row another process wrote
+    // arrives in the order replication applied it.
+    out.sort(function (a, b) {
+      return String(b.lastAt).localeCompare(String(a.lastAt));
+    });
     log.debug("Leaving SpMetadata.mdqRefusalList(). " + out.length);
     return out;
   }
@@ -2023,11 +2028,18 @@ const REFRESH_JOB = 'saml2.sp-metadata-refresh';
 const refresher: { summaryAt: number } = { summaryAt: 0 };
 const refreshStates = new Map<string, any>();
 const mdqLookups = new Map<string, any>();
-// The entityIDs a request-started lookup was refused for (#112): realm \0
-// entity, in the order last refused, at most MDQ_REFUSALS_MAX; which realms
-// have been logged as refusing; and the hourly summary's count.
+// The entityIDs a request-started lookup was refused for (#112), per realm
+// and keyed by entityID, at most MDQ_REFUSALS_MAX each. A STORE, persisted
+// and replicated, unlike the refresher's state above: the refusal is
+// recorded by whichever request worker answered the AuthnRequest and read
+// by whichever answers `GET /admin-api/saml2`, and as a per-process Map the
+// list was empty on every other worker (`sts_saml_unregistered`, single-node,
+// 2026-09-23). A row is replaced whole on every refusal, never edited in
+// place, so the journal sees each change. Which realms have been logged as
+// refusing, and the hourly summary's count, stay per process: they decide
+// log lines, and each process logs its own.
 const MDQ_REFUSALS_MAX = 500;
-const mdqRefusals = new Map<string, any>();
+const mdqRefusals = realms.map({ persist: 'saml2.mdqRefusals' });
 const refusingRealms = new Set<string>();
 const refusalSummary: { at: number, since: number } = { at: 0, since: 0 };
 
