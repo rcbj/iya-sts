@@ -1664,7 +1664,12 @@ const SPECS: Spec[] = [
               'blocked the button is the whole mechanism. It was ADVERTISED ' +
               'AND MISSING for a long time — every request got a 302 ' +
               'whatever it asked for — which is why the member was removed ' +
-              'from the metadata until this existed.' },
+              'from the metadata until this existed. Where RFC 9700 section ' +
+              '4.11.2 shows an error instead of redirecting it (nobody ' +
+              'signed in), the way on for a form_post request is a FORM ' +
+              'POSTing the same fields — and form_post.jwt\'s one response ' +
+              'field — with a button and no script, never a GET link ' +
+              'carrying them in the URL (#126).' },
   { id: 'rfc7521', name: 'RFC 7521 — Assertion Framework for OAuth 2.0 ' +
                         'Client Authentication and Authorization Grants',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7521',

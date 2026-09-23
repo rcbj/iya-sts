@@ -300,6 +300,12 @@ const JOBS = [
   // foreign hint refused. `local: true`: this repository's own OP, in a
   // throwaway realm it leaves behind.
   { file: 'sts_rp_initiated_logout.js',  browser: false, local: true },
+  // FORM POST RESPONSE MODE's INTERSTITIAL (#126, 2026-09-23): with nobody
+  // signed in, an error for a form_post request offers a FORM POSTing the
+  // fields — and form_post.jwt the one `response` field — never a GET link.
+  // `local: true`: this repository's own authorization server, in a
+  // throwaway realm with RFC 9700 mode on.
+  { file: 'sts_form_post.js',            browser: false, local: true },
   // OPENID CONNECT SESSION MANAGEMENT OVER THE WIRE (#121, 2026-09-23): off
   // by default, then the discovery member, the OP iframe's narrowed
   // frame-ancestors and its script, and prompt=none's session_state checked
