@@ -2838,6 +2838,23 @@ produced is one good for a day and renewable.
    and resent unchanged; a token that would expire before a retry is signed
    again with the SAME `jti`, so the relying party's deduplication still holds.
 
+   **#123 (2026-09-23) CLOSED THE REVIEW'S TWO GAPS.** Section 2.7: a refresh
+   token issued on the ending session WITHOUT `offline_access` is revoked in
+   EVERY mode — `bcp.revokeRefreshOnLogout()` answered false for everything
+   while RFC 9700 mode was off, so a development install signed a person out
+   and left their refresh token introspecting active. The `offline_access`
+   distinction was #118's; `oauthRevokeRefreshOnLogout: FALSE` on an entry
+   still reproduces the client that refreshes its way back. Section 2.2: an
+   http `backchannel_logout_uri` is refused for a PUBLIC client
+   (`STS-REG-0189`) and for anybody whose address the outbound policy would
+   not dial (`STS-REG-0190` — `federation.outboundAllowHttp` off, or product
+   mode), at registration, a create and an attribute write:
+   `applications.backchannelSchemeProblem()`, which asks
+   `federation_http.urlProblem()` so the refusal and the delivery are one
+   decision. `backchannel_logout_session_required` is stored and always met,
+   since every Logout Token carries `sid`. The sweep was already a scheduler
+   job (#49 P5). `tests/backchannel_logout_gaps.js` holds both.
+
    **`oauth2.backchannelLogout`** (ON) turns the two discovery members, the
    fan-out and this feature's half of the `sid` claim off together — the same
    one-switch argument as `oauth2.frontchannelLogout`.

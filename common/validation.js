@@ -1084,7 +1084,8 @@ function frontchannelUriProblem(value) {
 
 // OpenID Connect Back-Channel Logout 1.0's `backchannel_logout_uri`
 // (2026-09-17, #36). Section 2.2: an absolute URI, http or https, with no
-// fragment. It is not framed — this service POSTs to it — so the reason
+// fragment — and http only for a confidential client, which needs the
+// client's type and so is `applications.backchannelSchemeProblem()`'s (#123). It is not framed — this service POSTs to it — so the reason
 // http(s) is required is a different one from the front-channel URI's: the
 // outbound policy dials nothing else. `redirectUriProblem()` already refuses a
 // fragment, which is the other half of section 2.2.

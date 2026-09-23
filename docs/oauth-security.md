@@ -45,9 +45,10 @@ runs. On, the authorization flow is held to the whole of RFC 9700 section 2:
 * **Authorization codes**: a repeated redemption is refused, and everything the
   code bought is revoked (section 4.5).
 * **Refresh tokens rotate** with replay detection. A replay revokes the whole
-  family. An idle chain stops working after `oauth2.refreshIdleSeconds`, and a
-  browser sign-out revokes the refresh tokens issued on that session
-  (`oauth2.revokeRefreshOnLogout`).
+  family. An idle chain stops working after `oauth2.refreshIdleSeconds`. A
+  browser sign-out revokes the refresh tokens issued on that session without
+  `offline_access` in every mode, not only this one (Back-Channel Logout
+  section 2.7, `oauth2.revokeRefreshOnLogout`).
 * **No password grant** (section 2.4), and **no CORS at the authorization
   endpoint**.
 * A **registered confidential client must authenticate** at the token endpoint.
@@ -422,7 +423,7 @@ headers) are described on [Configuration](configuration.md) and
 | `oauth2.redirectUris` | `STS_OAUTH2_REDIRECT_URIS` | *(empty)* | yes | The redirect URIs RFC 9700 mode compares against, by exact string, for a client that registered none of its own. |
 | `oauth2.loopbackPortWildcard` | `STS_OAUTH2_LOOPBACK_PORT_WILDCARD` | `true` | yes | In RFC 9700 mode, let a registered loopback redirect URI match on any port (RFC 8252 section 7.3). |
 | `oauth2.refreshIdleSeconds` | `STS_OAUTH2_REFRESH_IDLE_SECONDS` | `86400` | yes | In RFC 9700 mode, how long a refresh chain may go unused before it stops working; 0 is off. |
-| `oauth2.revokeRefreshOnLogout` | `STS_OAUTH2_REVOKE_REFRESH_ON_LOGOUT` | `true` | yes | In RFC 9700 mode, revoke every refresh token issued on a browser session when that session ends. |
+| `oauth2.revokeRefreshOnLogout` | `STS_OAUTH2_REVOKE_REFRESH_ON_LOGOUT` | `true` | yes | In every mode, revoke the refresh tokens issued on a browser session without `offline_access` when that session ends (Back-Channel Logout section 2.7). |
 | `oauth2.maxPendingTransactions` | `STS_OAUTH2_MAX_PENDING_TRANSACTIONS` | `500` | yes | How many authorization transactions RFC 9700 mode remembers to refuse a reused PKCE challenge or nonce. |
 | `oauth2.maxRefreshTokenFamilies` | `STS_OAUTH2_MAX_REFRESH_TOKEN_FAMILIES` | `2000` | yes | How many refresh tokens are tracked for rotation and replay detection. |
 | `oauth2.breakIdTokenNonce` | `STS_OAUTH2_BREAK_ID_TOKEN_NONCE` | `false` | yes | Put a deliberately wrong `nonce` in every ID Token, to find out whether a client checks it. Development mode only. |
