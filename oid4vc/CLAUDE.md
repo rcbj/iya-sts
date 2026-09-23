@@ -61,6 +61,24 @@ consumers of that definition, not co-owners of it.
    time. `buildLdpVc()` filters against the context it actually loaded rather than
    trusting the hand-kept list.
 
+   **THE IDENTITY ASSURANCE CLAIMS REGISTRATION (#128, 2026-09-23)** lives in
+   the catalogue, and brought two new kinds of row. rcbj's answers: the JOB
+   title is `job_title` and `title` is the registration's honorific
+   (`schacPersonalTitle`); `nationality` was REPLACED by `nationalities`; the
+   birth names, `also_known_as`, `salutation` and the three `place_of_birth`
+   members are this service's own attribute types. `mobile_phone_number`
+   became the registered `msisdn` (E.164 digits). **`multi`** makes a claim
+   an ARRAY of every value the attribute holds (`nationalities`, each an ICAO
+   Doc 9303 code — `common/country_codes.js`, where Germany is `D` rather
+   than ISO's `DEU`). **`also`** makes one attribute a SECOND claim — `c` is
+   `address.country` as it always was and `address.country_code` (ISO 3166-1
+   Alpha-3) — because the catalogue is keyed by attribute and a second row
+   for `c` would be a second selection of one fact.
+   `common/claim_attributes.ts` resolves a request for the second claim
+   through `ALSO_PATH`; `federation/federation_map.ts` maps `place_of_birth`
+   by DOTTED member, so its `country` and `locality` are not taken from the
+   address's. `tests/ida_claims_registration.js`.
+
 3a-ii. **`vc_verifier_config.ts` is the same kind of library, and it holds the
    OTHER end of that catalogue.** `vc_claims.ts` says what an issued credential
    CARRIES; this says what the mock Verifier — the bar door at `/oid4vp/verifier` —

@@ -350,6 +350,18 @@ Connect Core section 12.2). An ID Token issued on a browser session carries
    **`claims` request**, read from the person's directory entry,
 4. `sub`, which is always set last.
 
+**The Identity Assurance Claims Registration's claims** can be asked for by
+name in a `claims` request, and are listed in `claims_supported`:
+
+* `place_of_birth`: `country` (ISO 3166-1 alpha-3), `region` and `locality`.
+* `nationalities`: an array of ICAO three-letter codes.
+* `birth_family_name`, `birth_given_name`, `birth_middle_name` and
+  `also_known_as`.
+* `salutation`, and `title`, which is the **honorific** ("Dr"). The job title
+  is `job_title`.
+* `msisdn`, the mobile number as E.164 digits.
+* `address.country_code`, the ISO 3166-1 alpha-3 code beside `country`.
+
 A `claims` request is parsed at the authorization endpoint (a malformed one is
 refused `invalid_request` there), carried **inside the access token** and
 honoured in the ID Token (`id_token` member) and at UserInfo (`userinfo`

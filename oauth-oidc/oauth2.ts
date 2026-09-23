@@ -1105,6 +1105,15 @@ const AUTHORIZE_QUERY = vz.looseObject({
 // claims a CLIENT named in section 5.5's request, which is what this client
 // asked about this person this time. A reader who takes this table for the
 // response has the picture this service had before either existed.
+// The Identity Assurance Claims Registration's section 4.1 claims (#128), each
+// a row of `oid4vc/vc_claims.ts`'s catalogue, requestable through OIDC Core
+// 5.5's claims parameter. `address.country_code` (section 4.2) is a member of
+// `address`, which is already listed.
+const IDA_REGISTERED_CLAIMS = ['place_of_birth', 'nationalities',
+                               'birth_family_name', 'birth_given_name',
+                               'birth_middle_name', 'salutation', 'title',
+                               'msisdn', 'also_known_as'];
+
 const USERINFO_SCOPE_CLAIMS = {
   profile: ['name', 'family_name', 'given_name', 'middle_name', 'nickname',
             'preferred_username', 'profile', 'picture', 'website', 'gender',
@@ -2698,7 +2707,11 @@ class OAuth2Server {
                            USERINFO_SCOPE_CLAIMS.profile,
                            USERINFO_SCOPE_CLAIMS.email,
                            USERINFO_SCOPE_CLAIMS.address,
-                           USERINFO_SCOPE_CLAIMS.phone),
+                           USERINFO_SCOPE_CLAIMS.phone,
+                           // OpenID Connect for Identity Assurance Claims
+                           // Registration 1.0 section 4 (#128): answered
+                           // from the directory through the claims request.
+                           IDA_REGISTERED_CLAIMS),
       claim_types_supported: ['normal'],
       // Three parameters this server reads and two it does not, stated as the
       // booleans the specification defines rather than left to a client to

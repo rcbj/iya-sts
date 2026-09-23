@@ -2156,6 +2156,26 @@ const SPECS: Spec[] = [
               'account on; and there is no resynchronisation protocol, ' +
               'because the window is the whole of what this offers for a ' +
               'drifting clock.' },
+  { id: 'oidc-ida-claims',
+    name: 'OpenID Connect for Identity Assurance Claims Registration 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-4-ida-claims-1_0.html',
+    coverage: 'full (#128, 2026-09-23): every section 4.1 claim is a row of ' +
+              'the claim catalogue, answered from the directory through the ' +
+              'claims request, the claim sets and credentials, and listed in ' +
+              'claims_supported — place_of_birth {country (ISO 3166-1 ' +
+              'Alpha-3), region, locality}, nationalities (ICAO Doc 9303 ' +
+              'three-letter codes, every citizenship the entry holds), ' +
+              'birth_family_name, birth_given_name, birth_middle_name, ' +
+              'salutation, title (the HONORIFIC — the job title is ' +
+              'job_title), msisdn (E.164 digits) and also_known_as; section ' +
+              '4.2\'s address.country_code beside country. The attributes ' +
+              'behind them are SCHAC\'s (schacPersonalTitle, ' +
+              'schacCountryOfCitizenship) and this service\'s own, carried ' +
+              'by SCIM (name.honorificPrefix and this service\'s extension), ' +
+              'mapped from a federation partner\'s claims, and drawn on the ' +
+              'portal account page. Development invents values; product ' +
+              'releases what the entry holds.' },
   { id: 'oidc', name: 'OpenID Connect Core 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-core-1_0.html',
@@ -9326,7 +9346,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'the mode is the oauth2.oauth21 setting.' },
   { path: '/oauth2/userinfo', group: 'OAuth 2.0 / OIDC', name: 'UserInfo ' +
       'endpoint',
-    specs: ['oidc', 'rfc6750', 'rfc9449', 'rfc7591', 'rfc8705', 'rfc8707',
+    specs: ['oidc', 'oidc-ida-claims', 'rfc6750', 'rfc9449', 'rfc7591',
+            'rfc8705', 'rfc8707',
             'rfc9068', 'rfc9470'],
     effect: 'answers 401 with a WWW-Authenticate challenge when followed ' +
             'bare — it is a protected resource and needs the access token ' +
@@ -9961,7 +9982,7 @@ SPECS.forEach(function (s) {
 const PROTOCOLS: Protocol[] = [
   { name: 'OAuth2 / OIDC', groups: ['OAuth 2.0 / OIDC'],
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
-            'oidc-session'],
+            'oidc-session', 'oidc-ida-claims'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +

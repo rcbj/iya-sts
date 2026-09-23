@@ -1048,8 +1048,27 @@ class Scim {
     const definition = new SCIMMY.Types.SchemaDefinition('IyaStsUser',
       scimMap.IYA_STS_USER_SCHEMA,
       'This service\'s own User extension: which federation partners\' ' +
-      'subjects are linked to the person.',
-      [new Attribute('complex', 'federationLinks', {
+      'subjects are linked to the person, and the Identity Assurance ' +
+      'claims no standard schema carries (#128).',
+      [new Attribute('string', 'salutation', {
+        description: 'A formal salutation, e.g. "Ms" (the Claims ' +
+          'Registration\'s salutation).' }),
+      new Attribute('string', 'birthFamilyName', {
+        description: 'The family name at birth.' }),
+      new Attribute('string', 'birthGivenName', {
+        description: 'The given name at birth.' }),
+      new Attribute('string', 'birthMiddleName', {
+        description: 'The middle name at birth.' }),
+      new Attribute('string', 'alsoKnownAs', {
+        description: 'Another name the person is known by, e.g. a stage ' +
+          'name.' }),
+      new Attribute('string', 'placeOfBirthCountry', {
+        description: 'The country of birth, ISO 3166-1 alpha-2.' }),
+      new Attribute('string', 'placeOfBirthRegion', {
+        description: 'The region of birth.' }),
+      new Attribute('string', 'placeOfBirthLocality', {
+        description: 'The locality of birth.' }),
+      new Attribute('complex', 'federationLinks', {
         multiValued: true,
         description: 'Each a federation partner\'s identifier for the ' +
           'person, through one service-provider-side relationship. Not ' +
@@ -1181,7 +1200,11 @@ class Scim {
                  subject: one.subject };
       });
     if (links.length) {
-      resource[scimMap.IYA_STS_USER_SCHEMA] = { federationLinks: links };
+      // MERGED into the extension, which since #128 may already hold the
+      // identity-assurance members the mapping wrote.
+      resource[scimMap.IYA_STS_USER_SCHEMA] = Object.assign(
+        resource[scimMap.IYA_STS_USER_SCHEMA] || {},
+        { federationLinks: links });
     }
     // The manager as a SCIM id, where the directory holds the DN (2026-09-14).
     const extension = resource[scimMap.ENTERPRISE_SCHEMA];

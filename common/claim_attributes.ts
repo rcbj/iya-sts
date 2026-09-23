@@ -138,6 +138,9 @@ interface ResolvedClaim {
   tag: string;
   rows: CatalogueRow[];
   grouped: boolean;
+  // #128: the claim path answered, where it is a row's SECOND claim
+  // (`address.country_code`) rather than its own.
+  path?: string[];
 }
 
 // The two kinds of context the resolver halves are handed.
@@ -219,7 +222,15 @@ CATALOGUE.forEach(function (row) {
 // The catalogue's own spelling is what goes back on the wire.
 // ---------------------------------------------------------------------------
 const BY_CLAIM = new Map<string, CatalogueRow[]>();
+// A row's SECOND claim (#128): flat name -> its path, the row being in
+// BY_CLAIM under that name too.
+const ALSO_PATH = new Map<string, string[]>();
 CATALOGUE.forEach(function (row) {
+  if (row.also) {
+    const also = row.also.claim.join('.').toLowerCase();
+    BY_CLAIM.set(also, [row]);
+    ALSO_PATH.set(also, row.also.claim);
+  }
   const flat = row.claim.join('.');
   if (!BY_CLAIM.has(flat.toLowerCase())) {
     BY_CLAIM.set(flat.toLowerCase(), [row]);
@@ -739,11 +750,12 @@ class ClaimAttributes {
     // resolves to every row beneath it; anything else is one row. `grouped` is
     // what tells the caller which of the two it has, because the answer is
     // shaped differently — an object with members, or one value.
-    const grouped = rows.length > 1 ||
-                    (rows[0].claim.length > 1 && base.indexOf('.') < 0);
+    const alsoPath = ALSO_PATH.get(base.toLowerCase());
+    const grouped = !alsoPath && (rows.length > 1 ||
+                    (rows[0].claim.length > 1 && base.indexOf('.') < 0));
     log.debug("Leaving ClaimAttributes.rowsForClaim().");
     return { requested: raw, base: base, tag: tag, rows: rows,
-             grouped: grouped };
+             grouped: grouped, path: alsoPath };
   }
 
   // Put a value at a dotted path, creating the objects on the way down.
@@ -837,7 +849,8 @@ class ClaimAttributes {
         return;
       }
       const row = entry.rows[0];
-      const item = byFlat[row.claim.join('.')];
+      const path = entry.path || row.claim;
+      const item = byFlat[path.join('.')];
       if (!item) {
         unknown.push(entry.requested);
         return;
@@ -850,10 +863,10 @@ class ClaimAttributes {
         // that would be this service making up a section of the
         // specification.
         claims[entry.requested] = item.value;
-      } else if (row.claim.length > 1) {
-        ClaimAttributes.setPath(log, claims, row.claim, item.value);
+      } else if (path.length > 1) {
+        ClaimAttributes.setPath(log, claims, path, item.value);
       } else {
-        claims[row.claim[0]] = item.value;
+        claims[path[0]] = item.value;
       }
       report.push({ requested: entry.requested, claim: item.claim,
                     ldap: item.ldap,
@@ -896,6 +909,12 @@ class ClaimAttributes {
       if (!seen.has(flat)) {
         seen.add(flat);
         out.push({ claim: flat, ldap: row.ldap, label: row.label,
+                   grouped: false });
+      }
+      if (row.also && !seen.has(row.also.claim.join('.'))) {
+        seen.add(row.also.claim.join('.'));
+        out.push({ claim: row.also.claim.join('.'), ldap: row.ldap,
+                   label: row.label + ' (ISO 3166-1 Alpha-3)',
                    grouped: false });
       }
     });
