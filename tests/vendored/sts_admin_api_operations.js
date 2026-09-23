@@ -5017,7 +5017,17 @@ const NOT_DRIVEN_HERE = {
   // metadata publishes the new key, the replaced one decrypts through its
   // grace period and not after it, and the retirement job removes it.
   "POST /federation/rotate-key": "sts_federation_encryption.js drives it, " +
-    "and checks the grace period and the retirement"
+    "and checks the grace period and the retirement",
+  // THE KRBTGT KEY (#169). Driven by `sts_kerberos_krbtgt_rotation.js`, in a
+  // throwaway realm with a KDC of its own: a rotation is checked by a TGT
+  // from before it still buying a service ticket, which a walk asking for a
+  // 2xx cannot do — and an invalidation ends every TGT of the realm it runs
+  // in, which in the default realm is every other Kerberos job's.
+  "POST /kerberos/principals/rotate-krbtgt": "sts_kerberos_krbtgt_rotation" +
+    ".js drives it in a throwaway realm, with a TGT across it",
+  "POST /kerberos/principals/rotate-krbtgt-invalidate":
+    "sts_kerberos_krbtgt_rotation.js drives it in a throwaway realm; it ends " +
+    "every TGT of the realm it runs in"
 };
 
 function everyDocumentedOperationWasDriven(doc) {

@@ -3265,6 +3265,57 @@ class SharedSignals {
   }
 
   // ---------------------------------------------------------------------------
+  // A REALM'S KERBEROS TICKETS WERE INVALIDATED (#169, rcbj's decision 4) —
+  // this service's own event, from `kerberos/krb5_krbtgt_rotation.ts` after a
+  // "rotate and invalidate" of the krbtgt key: every TGT in the realm is
+  // refused from now on. No subject, so every stream that asked for the type
+  // gets it. Never throws, for `signingKeyRotated()`'s reason.
+  // ---------------------------------------------------------------------------
+  kerberosTicketsInvalidated(notice?: Json): Promise<EmitResult> {
+    const { log, events, streams, errorCodes } = this.deps;
+    log.debug('Entering SharedSignals.kerberosTicketsInvalidated().');
+    if (!this.enabled()) {
+      log.debug('Leaving SharedSignals.kerberosTicketsInvalidated(). SSF is ' +
+                'off.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    const n = notice || {};
+    const uri = events.KERBEROS_TICKETS_INVALIDATED;
+    const payload = events.EVENT_BY_URI[uri].generate({
+      realm: n.realm, kerberos_realm: n.kerberos_realm, kvno: n.kvno });
+    const candidates = streams.listStreams().filter((record: Json) => {
+      return streams.deliversEvent(record, uri);
+    });
+    if (!candidates.length) {
+      log.debug('Leaving SharedSignals.kerberosTicketsInvalidated(). No ' +
+                'stream takes it.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    log.debug('Leaving SharedSignals.kerberosTicketsInvalidated().');
+    // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
+    const txn = this.newTxn();
+    return Promise.all(candidates.map((record: Json) => {
+      return this.transmit(record, { txn: txn, uri: uri, payload: payload,
+        toe: payload.event_timestamp });
+    })).then((reports) => {
+      const sent = reports.filter((one) => {
+        return one.ok;
+      }).length;
+      log.info('ssf: kerberos-tickets-invalidated for the "' + payload.realm +
+               '" realm went to ' + sent + ' of ' + candidates.length +
+               ' stream(s).');
+      return { sent: sent, streams: candidates.length, reports: reports };
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.kerberosTicketsInvalidated(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-SSF-0112') + 'ssf: the ' +
+                'kerberos-tickets-invalidated event could not be sent: ' +
+                e.message);
+      return { sent: 0, streams: candidates.length, why: e.message };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // A CAEP EVENT A PROTOCOL FAMILY OBSERVED ABOUT SOMETHING THAT IS NOT A
   // SIGN-ON SESSION.
   //
@@ -4840,6 +4891,7 @@ export = {
   CONSOLE_ACTIONS: SharedSignals.CONSOLE_ACTIONS,
   caepAutoEmit: slot.forward('caepAutoEmit'),
   signingKeyRotated: slot.forward('signingKeyRotated'),
+  kerberosTicketsInvalidated: slot.forward('kerberosTicketsInvalidated'),
   emitProtocolEvent: slot.forward('emitProtocolEvent'),
   caepReport: slot.forward('caepReport'),
   caepAction: slot.forward('caepAction'),

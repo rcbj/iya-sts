@@ -726,11 +726,20 @@ const SPIFFE_ACTIONS = ['rotate', 'federation-set', 'federation-remove'];
 // is a password reset in every respect but one: the person is NOT made to
 // change it at their next sign-in, because a forced change would strand the
 // keytab it was set to produce. `resetPersonKeytab()` below argues the order.
+//
+// **AND AN EIGHTH AND NINTH (#169, 2026-09-23): `rotate-krbtgt` and
+// `rotate-krbtgt-invalidate`**, the realm's krbtgt key. Neither rotates in the
+// request: each QUEUES a run of `krb5.krbtgt-rotate-now` on the scheduler
+// (`kerberos/krb5_krbtgt_rotation.ts`), which runs once, on the leader, and
+// answers with the run's id. The second keeps nothing — every TGT in the
+// realm is refused afterwards — and needs `confirm: "invalidate"`.
+// `drop-previous-service-keys` takes the krbtgt's own name as well.
 const KERBEROS_PRINCIPAL_ACTIONS = ['create-service', 'rotate-service',
                                     'delete-service', 'clear-person-keys',
                                     'drop-previous-service-keys',
                                     'drop-previous-person-keys',
-                                    'reset-person-keytab'];
+                                    'reset-person-keytab', 'rotate-krbtgt',
+                                    'rotate-krbtgt-invalidate'];
 
 interface AdminActionsDeps {
   log: typeof helpers.log;
@@ -773,6 +782,11 @@ interface AdminActionsDeps {
   errorCodes: typeof errorCodes;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
+  // THE KRBTGT ROTATION (#169), LAZILY: it is built by the composition root at
+  // 23b-iii, long after this file is required, and requiring it here would
+  // build a default instance in a process that loads the console without the
+  // root.
+  krbtgtRotation: () => any;
 }
 
 class AdminActions {
@@ -825,7 +839,10 @@ class AdminActions {
       passwordPolicy: passwordPolicy,
       errorCodes: errorCodes,
       krb5Principals: krb5Principals,
-      krb5PersonKeys: krb5PersonKeys
+      krb5PersonKeys: krb5PersonKeys,
+      krbtgtRotation: function () {
+        return require('../kerberos/krb5_krbtgt_rotation');
+      }
     };
   }
 
@@ -6027,6 +6044,12 @@ class AdminActions {
       result = krb5PersonKeys.dropPreviousServiceKeys(asked.spn, ctx);
     } else if (action === 'drop-previous-person-keys') {
       result = krb5PersonKeys.dropPreviousPersonKeys(asked.username, ctx);
+    } else if (action === 'rotate-krbtgt' ||
+               action === 'rotate-krbtgt-invalidate') {
+      result = this.deps.krbtgtRotation().requestRotation(realms.currentId(),
+        { invalidate: action === 'rotate-krbtgt-invalidate',
+          confirm: asked.confirm, requestedBy: ctx.actor, via: ctx.via,
+          channel: ctx.via === 'api' ? 'api' : 'console' });
     } else if (action === 'reset-person-keytab') {
       // A PROMISE, and the one action here that answers one: both callers
       // resolve whatever this returns.

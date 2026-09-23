@@ -237,9 +237,12 @@ cannot guess.
 **In product mode** none of the fixture accounts exist, nobody is created on
 first sight, no password is published, and no rc4-hmac key exists (#182). Each trust realm with
 `krb5.enabled` has a KDC, a Kerberos realm and keys of its own, on the shared
-port 88, told apart by the realm name in the request. Its `krbtgt` and the
-account `krb5.servicePrincipal` names are created only when their password
-setting is not the default this repository publishes (`STS-KRB-0062`).
+port 88, told apart by the realm name in the request. **Its `krbtgt` key is
+random** (#169) — made once per realm, sealed on the directory entry
+`krbtgt/<REALM>@<REALM>`, never shown and never derived from
+`krb5.krbtgtPassword`, which product ignores — and the account
+`krb5.servicePrincipal` names is created only when its password setting is not
+the default this repository publishes.
 **People in the directory authenticate with their own passwords**: a person's
 keys are derived when their password is set or a sign-in verifies it, stored
 sealed on their entry, and checked — a wrong password is
@@ -252,8 +255,15 @@ administrator sets with **Reset password and download keytab** — and holds the
 current kvno only. A password change
 or rotation keeps the previous key version for a bounded window
 (`krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS`) so a ticket issued under it
-is still accepted; the old *password* is not. The `krbtgt` key is not rotated
-and keeps no previous version.
+is still accepted; the old *password* is not. **The `krbtgt` key rotates**
+(#169): the `krb5.krbtgt-rotate` job replaces it every
+`krb5.krbtgtRotationIntervalDays` (180 by default) and keeps the version it
+replaced for the longest a TGT under it can live, renewals included, so every
+TGT goes on working until it expires; it never rotates while that window is
+open. An administrator rotates it by hand, or with **rotate and invalidate**
+keeps nothing — every TGT in the realm is refused `KRB_AP_ERR_BADKEYVER` and a
+Shared Signals event says so. The inter-realm trust key (`krbtgt/<partner>`)
+is a secret shared with the partner and is not rotated.
 
 **A person who holds or must hold a second factor gets no ticket on a password
 alone** (#173). An authenticator app, a security key in the `mfa` role,

@@ -1080,7 +1080,7 @@ function servicePrincipalsWork(t, r) {
                                             'refused');
   t.check(r.krbtgtRefused === true, 'krbtgt/* is refused');
   t.check(Array.isArray(r.unknownAction) &&
-          /Unknown action "nope"\. There are seven: create-service, rotate-service, delete-service, clear-person-keys, drop-previous-service-keys, drop-previous-person-keys, reset-person-keytab\./
+          /Unknown action "nope"\. There are nine: create-service, rotate-service, delete-service, clear-person-keys, drop-previous-service-keys, drop-previous-person-keys, reset-person-keytab, rotate-krbtgt, rotate-krbtgt-invalidate\./
             .test(r.unknownAction.join(' ')),
           'an unknown action gets the house sentence',
           JSON.stringify(r.unknownAction));

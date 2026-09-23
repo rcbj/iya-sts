@@ -3715,12 +3715,18 @@ app.get('/krb5/principals', function (req, res) {
                      'this process has no directory'),
                   'OTP pre-authentication (RFC 6560) with an authenticator ' +
                     'app, the password as the PIN',
-                  'authentication indicators (RFC 8129): otp'],
+                  'authentication indicators (RFC 8129): otp',
+                  // #169: where the directory is loaded (the key rides in
+                  // its key source).
+                  'krbtgt key rotation, a previous kvno kept for the TGT ' +
+                    'lifetime (#169)' +
+                    (principals.keySourceInstalled() ? '' : ' - not here: ' +
+                     'this process has no directory')],
     notImplementedYet: ['FAST in the TGS exchange (RFC 6113 implicit armor)',
                         'PKINIT (RFC 4556, #179)',
                         'kpasswd (RFC 3244)', 'user-to-user (ENC-TKT-IN-SKEY)',
                         'SID filtering across a trust',
-                        'key rotation for krbtgt'],
+                        'rotation of an inter-realm trust key'],
     principals: list
   });
 });

@@ -1285,7 +1285,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `krb5.unknownUsers` | `KRB5_UNKNOWN_USERS` | `nosuchuser,nobody` | yes | Usernames this KDC refuses to create on demand, so KDC_ERR_C_PRINCIPAL_UNKNOWN stays reachable. |
 | `krb5.serviceDomains` *(derived)* | `KRB5_SERVICE_DOMAINS` | `example.com,localhost,sts,127.0.0.1` | **restart** — the service accounts are created at startup | The host domains a service principal is created on demand for. Setting it to an empty string creates nothing, which is the behaviour this service had before the setting existed. |
 | `krb5.autoServicePassword` | `KRB5_AUTO_SERVICE_PASSWORD` | `auto-service-password` | **restart** — those accounts' long-term keys are derived from it at startup | One password for every service created on demand, and it is published for the same reason the user password is: it is what lets a reader decrypt a service ticket this mock issued and read the PAC inside it. |
-| `krb5.krbtgtPassword` | `KRB5_KRBTGT_PASSWORD` | `krbtgt-mock-password` | **restart** — the krbtgt keys are derived from it at startup | The key that seals every Ticket-Granting Ticket this realm issues. |
+| `krb5.krbtgtPassword` | `KRB5_KRBTGT_PASSWORD` | `krbtgt-mock-password` | **restart** — the krbtgt keys are derived from it at startup | DEVELOPMENT MODE ONLY: the password the key that seals every Ticket-Granting Ticket is derived from. Product mode keys `krbtgt` at random, keeps it sealed on the directory entry `krbtgt/<REALM>@<REALM>` and ignores this setting (#169). |
 | `krb5.domainSid` | `KRB5_DOMAIN_SID` | `S-1-5-21-1004336348-1177238915-682003330` | **restart** — every principal's PAC identity is built at startup | The domain SID every account's PAC is built under. A Kerberos ticket says who you are; a Windows service authorizes on the SIDs in the PAC. |
 | `krb5.trustedRealm` | `KRB5_TRUSTED_REALM` | `PARTNER.COM` | **restart** — the second realm and the trust between them are built at startup | The second realm, for cross-realm referrals. A trust is not a flag: it is a shared key held by one principal in each realm. |
 | `krb5.trustPassword` | `KRB5_TRUST_PASSWORD` | `inter-realm-trust-password` | **restart** — the inter-realm key is derived from it at startup | The shared secret both realms hold for the cross-realm trust. |
@@ -1297,10 +1297,11 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `krb5.servicePassword` | `KRB5_SERVICE_PASSWORD` | `service-account-password` | **restart** — the service account's long-term keys are derived from it at startup | The password of the account `krb5.servicePrincipal` names — the keytab equivalent. The account is built FROM that setting (it was always `HTTP/web.<realm domain>` before 2026-09-12). **Product mode refuses the published default**: the account is not created, the acceptor and `/authn/spnego` accept no ticket, and `GET /krb5/service` says why. |
 | `krb5.serviceSalt` | `KRB5_SERVICE_SALT` | *(empty)* | **restart** — the service account's long-term keys are derived from it at startup | The string-to-key salt for that account. Empty means this service's convention (`EXAMPLE.COMHTTPweb`); an account in a real Active Directory is salted with its sAMAccountName, so an acceptor for a real KDC's tickets needs it set. |
 | `krb5.enctypes` | `KRB5_ENCTYPES` | `18,17,20,19,23` | **restart** — every principal's supported encryption types are fixed at startup | The encryption types the KDC and acceptor use at all, strongest first. **Warning:** `23` (rc4-hmac) is deprecated by RFC 8429 and is in the default for **development mode only**, so an RC4 client can be exercised; removing it is what a hardened domain does. **In product mode `23` is always removed** (#182): the list is read without it (`STS-CORE-0106`, said once), a write naming it is refused (`STS-CORE-0103`), no RC4 key is derived, stored or put in a keytab, and a request offering only RC4 is refused `KDC_ERR_ETYPE_NOSUPP`. A number the codec does not implement stops the service at startup. |
-| `krb5.kvno` | `KRB5_KVNO` | `3` | **restart** — every principal's key version is fixed at startup | The key version number every account built from a password in the configuration holds (krbtgt, the acceptor, and in development every fixture and on-demand account); for those, rotation is not modelled. It is also the STARTING kvno of a directory person's first stored keys and of a service principal created at `/admin/kerberos/principals` — and those two do rotate: a password change or a Rotate adds one to the stored kvno, which changing this setting later does not move. |
+| `krb5.kvno` | `KRB5_KVNO` | `3` | **restart** — every principal's key version is fixed at startup | The key version number every account built from a password in the configuration holds (the acceptor, and in development krbtgt and every fixture and on-demand account); for those, rotation is not modelled. It is also the STARTING kvno of a directory person's first stored keys and of a service principal created at `/admin/kerberos/principals`, and of a product realm's random krbtgt key (#169) — and those do rotate: a password change or a Rotate adds one to the stored kvno, which changing this setting later does not move. |
 | `krb5.personKeys` | `KRB5_PERSON_KEYS` | `true` | yes | PRODUCT MODE ONLY. Whether a person's Kerberos keys are derived from their password when it is set or verified, and stored sealed on their own directory entry, so the KDC authenticates them with that password. Off, nothing new is derived and the KDC refuses every person naming this setting; keys already stored stay until cleared at `/admin/kerberos/principals`. The keys are password-equivalent, which is why this can be switched off. Development mode never reads it. |
 | `krb5.retainedKeyVersions` | `KRB5_RETAINED_KEY_VERSIONS` | `1` | yes | How many PREVIOUS key versions a stored Kerberos key keeps after a password change or a rotation (0–10). A kept version only opens a ticket already issued under it — the KDC issues under the current kvno and pre-authentication uses the current key only. 0 keeps none: a ticket under the previous kvno is refused `KRB_AP_ERR_BADKEYVER` at once. |
-| `krb5.retainedKeyTtlS` | `KRB5_RETAINED_KEY_TTL_S` | `0` | yes | How long each previous key version is kept after it stops being current. 0 means `krb5.ticketLifetimeSeconds` plus `krb5.clockSkew`, the longest a ticket under it can still be presented. Read at every use, so shortening it ends windows at once; lengthening it never revives a version past the bound it was retired under. |
+| `krb5.retainedKeyTtlS` | `KRB5_RETAINED_KEY_TTL_S` | `0` | yes | How long each previous key version is kept after it stops being current. 0 means `krb5.ticketLifetimeSeconds` plus `krb5.clockSkew`, the longest a ticket under it can still be presented — and for the `krbtgt` key the longer of that and `krb5.renewLifetimeSeconds`, plus the skew. Read at every use, so shortening it ends windows at once; lengthening it never revives a version past the bound it was retired under. |
+| `krb5.krbtgtRotationIntervalDays` | `KRB5_KRBTGT_ROTATION_INTERVAL_DAYS` | `180` | yes | How old a trust realm's `krbtgt` key gets before the `krb5.krbtgt-rotate` scheduler job replaces it with a new random key at the next kvno, keeping the one it replaced for the TGTs already sealed under it — and never while that window is still open. 0 switches the schedule off. Product mode only (`mode.rotatesKerberosKeys()`); a rotation by hand at `/admin/kerberos/principals` works in both. Off too while `krb5.retainedKeyVersions` is 0. |
 | `krb5.ticketLifetimeSeconds` | `KRB5_TICKET_LIFETIME_S` | `36000` | yes | The longest a ticket this KDC issues is valid for. |
 | `krb5.renewLifetimeSeconds` | `KRB5_RENEW_LIFETIME_S` | `604800` | yes | How far renew-till reaches for a renewable ticket. |
 | `krb5.logonServer` | `KRB5_LOGON_SERVER` | `DC01` | yes | The LogonServer name in every PAC. |
@@ -6365,9 +6366,10 @@ that cannot see any of it.
 is DEVELOPMENT MODE.** In product mode (`global.mode=product`) the principal database is
 built without any of it: no alice, no delegation services and their rules, no second realm
 or trust, nothing created because an AS-REQ named it, and no password on
-`GET /krb5/principals`. What remains is `krbtgt/<realm>` and the account
-`krb5.servicePrincipal` names — each only where `krb5.krbtgtPassword` and
-`krb5.servicePassword` are set to something other than their published defaults. Every
+`GET /krb5/principals`. What remains is `krbtgt/<realm>` — a RANDOM key, sealed on the
+directory and rotated (#169, *The krbtgt key* below), never derived from
+`krb5.krbtgtPassword` — and the account `krb5.servicePrincipal` names, only where
+`krb5.servicePassword` is set to something other than its published default. Every
 listener binds `global.host`, RC4 is never offered (`krb5.enctypes` is read without `23`, #182), and the replay
 cache refuses a new Authenticator when full rather than forgetting one still inside its
 window.
@@ -6442,8 +6444,17 @@ expired, and is refused `KRB_AP_ERR_BADKEYVER` after that:
   version (kvno, enctypes, expiry) and never its key; **Drop previous versions**
   (`drop-previous-service-keys`, `drop-previous-person-keys`) ends the window at once — after
   a compromise, say — leaving the current key untouched.
-* The `krbtgt` key has no rotation here, so it has no previous version: a TGT sealed under
-  an older `krb5.krbtgtPassword` is still refused. The KDC issues tickets for that SPN under
+* **The krbtgt key** (#169) is a stored random key in product mode, on the directory entry
+  `krbtgt/<REALM>@<REALM>`, with no keytab ever made for it. It rotates on the scheduler
+  (`krb5.krbtgt-rotate`, every `krb5.krbtgtRotationIntervalDays`) and by hand
+  (`rotate-krbtgt`), keeping the version it replaced for the longer of the ticket and
+  renew lifetimes plus the skew — so every TGT goes on working until it expires — and the
+  schedule never rotates while that window is open. **Rotate and invalidate**
+  (`rotate-krbtgt-invalidate`, `confirm: "invalidate"`) keeps nothing, so every TGT in the
+  realm is refused `KRB_AP_ERR_BADKEYVER`. Development derives it from the published
+  `krb5.krbtgtPassword` until it is rotated by hand. No post-quantum Kerberos enctype is
+  standardised; the AES enctypes it rotates across hold about 128-bit strength against
+  Grover's algorithm. The KDC issues tickets for a service SPN under
 the stored key in both modes, and the acceptor prefers a stored key for its own SPN over
 `krb5.servicePassword` — which is how the acceptor in product mode gets a key without a
 password printed anywhere. **No key is ever shown**: not on any page, not in any

@@ -1291,11 +1291,29 @@ Four things a caller is told, and the descriptions tell them:
   made says the password WAS set (`STS-ADMIN-0803`). The job drives it last in
   its Kerberos round trip, because it re-derives the keys the clears emptied.
 
+* **NINE SINCE 2026-09-23 (#169)**: `rotate-krbtgt` and
+  `rotate-krbtgt-invalidate` (`confirm: "invalidate"`), the realm's krbtgt key.
+  **Neither rotates in the request**: each QUEUES a run of
+  `krb5.krbtgt-rotate-now` (`kerberos/krb5_krbtgt_rotation.ts`), which runs
+  once on the scheduler's leader, and answers `queued` and the `runId` — the
+  shape `POST /admin-api/keys/rotate` has for #48's reason. Neither answer, nor
+  the GET's new `krbtgt` block (source, kvno, enctypes, created, last rotated,
+  kept versions, `scheduled`, `offReason`, `nextDueAt`), carries a key.
+  Refused: the invalidate form without the word (`STS-ADMIN-0610`), a
+  scheduler that will not queue it (`STS-ADMIN-0611`), a realm with no KDC
+  (`STS-KRB-0128`). `drop-previous-service-keys` takes `krbtgt/<REALM>` too.
+  `GET /admin-api/kerberos`'s `status` carries the same `krbtgt` block as the
+  console's settings page (rule 7). `admin-core/` reaches the rotation module
+  LAZILY: it is built at 23b-iii, long after the console.
+
 **`sts_admin_api_operations.js` HOLDS ALL SEVEN OUT OF ITS EXAMPLE REPLAY**
 (`REPLAY_HELD_BACK`) — for the same reason as the truststore's: the replay runs
 in a throwaway realm and these write in the default one. Its
 `theKerberosPrincipalsRoundTrip()` drives them at the root instead, with a read
-back after every write.
+back after every write. **The two krbtgt actions are in its `NOT_DRIVEN_HERE`**
+(#169): `sts_kerberos_krbtgt_rotation.js` drives them in a throwaway realm with
+a KDC of its own, because an invalidation ends every TGT of the realm it runs
+in, and a rotation is checked by a TGT across it, which a 2xx cannot show.
 
 
 ## `/admin-api/pki` — FOUR OPERATIONS, AND A MODULE REQUIRED IN THE ORDINARY DIRECTION (2026-09-10)

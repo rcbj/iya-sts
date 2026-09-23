@@ -480,6 +480,36 @@ function rotatesSigningKeys() {
   return isProduct();
 }
 
+// Is each trust realm's krbtgt key ROTATED on a schedule? (2026-09-23, #169.)
+// Product keeps a random krbtgt key sealed on the directory entry
+// `krbtgt/<REALM>@<REALM>`, and a key that is never replaced is a golden
+// ticket whose compromise never ends; `krb5.krbtgt-rotate` replaces it every
+// `krb5.krbtgtRotationIntervalDays`, keeping the version it replaced for the
+// longest a TGT under it can live. Development derives its krbtgt from the
+// published `krb5.krbtgtPassword` so a reader can open a TGT, and a scheduled
+// rotation there would take that away behind their back — a rotation BY HAND
+// (`/admin/kerberos/principals`) is allowed in both modes.
+function rotatesKerberosKeys() {
+  log.debug("Entering rotatesKerberosKeys().");
+  log.debug("Leaving rotatesKerberosKeys().");
+  return isProduct();
+}
+
+// Is a realm's krbtgt key DERIVED FROM `krb5.krbtgtPassword`? (2026-09-23,
+// #169.) Development: yes, from the published default, which is what lets
+// the fixtures and a reader decrypt every TGT this KDC issues. Product: no —
+// the key is RANDOM (RFC 3961 random-to-key for every enctype), made once
+// per realm and kept sealed on the directory, because a key derived from a
+// password somebody chose is a weaker key than the KDC can make, and Active
+// Directory has never let an operator choose it either. The setting carries
+// the `onlyWhile` marker on this predicate, so a value set in product is
+// ignored where it is read.
+function derivesKrbtgtFromPassword() {
+  log.debug("Entering derivesKrbtgtFromPassword().");
+  log.debug("Leaving derivesKrbtgtFromPassword().");
+  return !isProduct();
+}
+
 // Is an EXPIRED client secret refused? (2026-09-22, #49 P5.) Product refuses
 // it at the token endpoint wherever a secret is checked; development accepts
 // it and says so, because a test fixture registered with a short
@@ -2262,7 +2292,29 @@ const REQUIREMENTS = [
              'it replaces goes on verifying for signing.retiredKeyGraceDays ' +
              'or the longest token lifetime, whichever is longer.',
     where: 'common/helpers.js, common/keystore.js, common/pki.js, ' +
-           'pki/crypto_metadata_document.ts' }
+           'pki/crypto_metadata_document.ts' },
+  // 2026-09-23 (#169). It was the last sentence of NOT_YET's `kerberos-keys`
+  // — "the krbtgt key has no rotation and so no previous version".
+  { id: 'krbtgt-key',
+    what: 'Each trust realm\'s krbtgt key: where it comes from, and its ' +
+          'rotation',
+    development: 'DERIVED from krb5.krbtgtPassword (the published default), ' +
+                 'so a reader can decrypt every TGT, and NOT rotated on a ' +
+                 'schedule. A rotation by hand on /admin/kerberos/principals ' +
+                 'works here too: it replaces the derived key with a random ' +
+                 'stored one for as long as the directory holds it.',
+    product: 'RANDOM — RFC 3961 random-to-key for every enctype in ' +
+             'krb5.enctypes — made once per realm, sealed on the directory ' +
+             'entry krbtgt/<REALM>@<REALM> and never shown; ' +
+             'krb5.krbtgtPassword is ignored. The krb5.krbtgt-rotate job ' +
+             'replaces it every krb5.krbtgtRotationIntervalDays, keeping the ' +
+             'version it replaced for the longest a TGT under it can live ' +
+             '(renewals included), and never rotates while that window is ' +
+             'still open. "Rotate and invalidate" is Active Directory\'s ' +
+             'double reset in one act: nothing is kept and every TGT in the ' +
+             'realm is refused KRB_AP_ERR_BADKEYVER.',
+    where: 'kerberos/krb5_person_keys.ts, kerberos/krb5_krbtgt_rotation.ts, ' +
+           'kerberos/krb5_principals.js' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be
@@ -2371,8 +2423,8 @@ const NOT_YET = [
   // and what that exposed is the larger gap, which is this row now.
   { id: 'kerberos-keys',
     what: 'Product mode creates no fixture principals, no trusted realm and ' +
-          'nothing on demand, and refuses the published krbtgt and service ' +
-          'passwords. Directory people authenticate to the product KDC with ' +
+          'nothing on demand, and refuses the published service password. ' +
+          'Directory people authenticate to the product KDC with ' +
           'keys derived from their own password when it is set or verified, ' +
           'sealed on their entry (`stsKrb5Keys`); service principals get ' +
           'random keys and a keytab shown once at ' +
@@ -2385,9 +2437,9 @@ const NOT_YET = [
           'for krb5.retainedKeyTtlS — so a ticket issued under it is still ' +
           'accepted until it could have expired, while pre-authentication ' +
           'and issuance use the current key only; "Drop previous versions" ' +
-          'ends that window. Not yet: the krbtgt key has no rotation and so ' +
-          'no previous version (a TGT under an older krb5.krbtgtPassword is ' +
-          'refused). Since 2026-09-15 each trust realm whose krb5.enabled ' +
+          'ends that window. The krbtgt key is random, stored and rotated ' +
+          'since 2026-09-23 (the krbtgt-key requirement above). Since ' +
+          '2026-09-15 each trust realm whose krb5.enabled ' +
           'is on has a KDC, a Kerberos realm and keys of its own, on the ' +
           'shared port.' },
   // `vci-request-encryption-key` WAS HERE AND WAS PAID ON 2026-09-12. The
@@ -2617,7 +2669,10 @@ const WRITE_REFUSALS = {
     'and require-trusted are allowed.',
   servesWithoutSecurityHeader:
     'the SPIFFE Workload Endpoint specification (section 3) says a call ' +
-    'without the workload.spiffe.io header MUST be refused.'
+    'without the workload.spiffe.io header MUST be refused.',
+  derivesKrbtgtFromPassword:
+    'the krbtgt key is random there, made once per realm and kept sealed ' +
+    'on the directory, so no password is read for it.'
 };
 
 function writeRefusalReason(predicate) {
@@ -2692,6 +2747,8 @@ module.exports = {
   gatesManagementApi: gatesManagementApi,
   seedsDemoData: seedsDemoData,
   rotatesSigningKeys: rotatesSigningKeys,
+  rotatesKerberosKeys: rotatesKerberosKeys,
+  derivesKrbtgtFromPassword: derivesKrbtgtFromPassword,
   refusesExpiredClientSecrets: refusesExpiredClientSecrets,
   listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
