@@ -11372,6 +11372,45 @@ const CODES = [
     summary: 'In a GNAP httpsig key rotation, the new key\'s signature ' +
       'does not cover the old key\'s Signature and Signature-Input.',
     spec: 'HTTP 401 GNAP invalid_rotation' },
+  { code: 'STS-GNAP-0287',
+    summary: 'Under the PKI trust model (gnap.mtlsTrust or the entry\'s ' +
+      'gnapMtlsTrust is pki), the TLS client certificate proving a GNAP ' +
+      'key did not verify: no chain to the client truststore, or a ' +
+      'certificate this service issued that is not a TLS client identity ' +
+      'in this realm (#107).',
+    spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
+      'the RS-facing endpoints)' },
+  { code: 'STS-GNAP-0288',
+    summary: 'Under the PKI trust model, a GNAP client\'s TLS client ' +
+      'certificate verified but was not issued to its application entry ' +
+      'by this realm, and the entry registers no RFC 8705 certificate ' +
+      'subject to bind it by (or no entry holds the key at all) (#107).',
+    spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
+      'the RS-facing endpoints)' },
+  { code: 'STS-GNAP-0289',
+    summary: 'Under the PKI trust model, a GNAP client\'s application entry ' +
+      'registers more than one RFC 8705 certificate subject parameter, so ' +
+      'there is no single subject to bind the certificate by (#107).',
+    spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
+      'the RS-facing endpoints)' },
+  { code: 'STS-GNAP-0290',
+    summary: 'Under the PKI trust model, a GNAP client\'s TLS client ' +
+      'certificate does not carry the RFC 8705 certificate subject its ' +
+      'application entry registers (#107).',
+    spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
+      'the RS-facing endpoints)' },
+  { code: 'STS-GNAP-0291',
+    summary: 'Under the PKI trust model, a GNAP client presented a TLS ' +
+      'client certificate this realm issued to a different person or ' +
+      'application (#107).',
+    spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
+      'the RS-facing endpoints)' },
+  { code: 'STS-GNAP-0292',
+    summary: 'Under the PKI trust model, a GNAP client presented a TLS ' +
+      'client certificate this realm issued to its entry that the entry\'s ' +
+      'record no longer lists (#107).',
+    spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
+      'the RS-facing endpoints)' },
   { code: 'STS-GNAP-0300',
     summary: 'A GNAP token model\'s access is not a non-empty array of ' +
       'access rights.',
@@ -14316,6 +14355,16 @@ const CODES = [
     summary: 'A write of a delegation policy attribute was refused (#108): ' +
       'appTrustedToImpersonate that is not TRUE or FALSE, or an ' +
       'appDelegationSubjectGroup value that is not a DN.',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400' },
+  { code: 'STS-REG-0195',
+    summary: 'A write of gnapMtlsTrust on an application was refused: the ' +
+      'value is neither pki nor pinned (#107).',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400' },
+  { code: 'STS-REG-0196',
+    summary: 'A write of gnapMtlsTrust=pinned on an application was ' +
+      'refused because the realm holds GNAP mutual TLS to a PKI ' +
+      '(gnap.mtlsTrust resolves to pki); an entry may be stricter than ' +
+      'the realm, never weaker (#107).',
     spec: 'console: the page\'s error list; /admin-api: HTTP 400' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +

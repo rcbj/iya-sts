@@ -37,14 +37,73 @@
 //            within `gnap.signatureMaxAgeS`; a `nonce`, when present, unique;
 //            no `alg` parameter; keyid = the JWK's kid.
 //   mtls     the TLS client certificate IS the key; the connection covers the
-//            message (section 7.3.2). No chain validation — section 7.3.2
-//            says a verifier often does none, and the key was presented in the
-//            request, which is the trust.
+//            message (section 7.3.2). Revocation is consulted, and a chain is
+//            built or not by the trust model — MUTUAL TLS, TWO TRUST MODELS,
+//            below.
 //   jwsd     typ `gnap-binding-jwsd`, alg = the key's, kid = the JWK's, `htm`,
 //            `uri`, `created`; `ath` when bound; payload = SHA-256 of content.
 //   jws      the same header with typ `gnap-binding-jws`; the payload IS the
 //            request content, which is why the body is read through here.
 //
+// ---------------------------------------------------------------------------
+// MUTUAL TLS, TWO TRUST MODELS (#107, 2026-09-23).
+//
+// RFC 9635 section 7.3.2: "The verifier compares the TLS client certificate
+// presented during MTLS negotiation to the expected key of the signer ... in
+// many instances, the verifier will not do a full certificate chain validation
+// ... trust ... could be ... a static registration or trust-on-first-use."
+// Section 11.4 names the other model and what it buys: "An AS using PKI to
+// validate the MTLS connection would need to ensure that the presented
+// certificate was issued by a trusted certificate authority", and "PKI-based
+// certificates would allow a key to be revoked and rotated through management
+// at the certificate authority without requiring additional registration or
+// management at the AS." Both are compliant, so both are here, as
+// `gnap.mtlsTrust` — and an application's `gnapMtlsTrust`, which may only
+// make it stricter (`common/applications.js`'s `gnapMtlsTrustFor()` combines
+// them, and is the one place that does):
+//
+//   pinned  the certificate the key names — by `x5t#S256`, or the same public
+//           key as a JWK proved over mutual TLS. No chain. A self-signed
+//           certificate is the ordinary case. Development's `auto`.
+//   pki     `mtls.peerVerified()` must say VERIFIED — a chain to the client
+//           truststore, `pki.revocationCheck`, and the gate that stops a
+//           certificate this service issued for something else being an
+//           identity (STS-GNAP-0287) — and the certificate must be BOUND to
+//           the client's application entry (`certificateBinding()`, below,
+//           called by `gnap_grants.ts` once it knows the entry). Product's
+//           `auto`.
+//
+// **REVOCATION IS CONSULTED IN BOTH MODELS, AND WAS IN NEITHER.** Until #107
+// this verifier read neither `mtls.peerVerified()` nor the request's
+// revocation verdict, so a certificate this realm had revoked went on proving
+// a GNAP key — where RFC 8705's `self_signed_tls_client_auth` in
+// `oauth-oidc/client_auth.js` already refused it. The verdict
+// (`req.certificateRevocation`, computed by `common/app.js` before any route)
+// looks an UNVERIFIED certificate up in this service's own register too, and
+// dials nothing for one, so a pinned self-signed certificate nobody issued is
+// unaffected and a pinned certificate this realm issued and revoked is
+// refused, with the verdict's own code (STS-PKI-0118 revoked, 0119 unknown
+// under hard-fail, and #174's three).
+//
+// **THE BINDING IS RFC 8705'S, READ AGAIN FOR A GNAP CLIENT.** Section 11.3
+// makes the verifier "ensure that the key used to sign the request is the key
+// the client is identified by"; under a PKI the client is identified by its
+// application entry, and a certificate is that entry's when this realm issued
+// it TO the entry (its `urn:sts:application:` name, and the entry's record
+// still lists it — `mtls.issuedIdentityOf()`, shared with `client_auth.js`),
+// or when it carries the ONE subject parameter the entry registers for RFC
+// 8705 (`oauthTlsClientAuthSubjectDn` or an `oauthTlsClientAuthSan*`
+// attribute, compared by `common/certificate_subject.js`). One attribute set,
+// not a GNAP twin: an application that speaks both protocols registers its
+// certificate's subject once. A certificate this realm issued to somebody ELSE
+// binds to nobody here whatever subject the entry registered (RFC 8705 section
+// 7.4's argument).
+//
+// **POST-QUANTUM**: nothing here signs or verifies a signature of its own. The
+// chain is node's TLS stack and the revocation walk's, and a certificate with
+// a key node's TLS does not negotiate never arrives here at all.
+// ---------------------------------------------------------------------------
+
 // ---------------------------------------------------------------------------
 // ONE READING OF SECTION 7.3.3 THAT HAD TO BE CHOSEN.
 //
@@ -79,6 +138,9 @@ import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 import mtls = require('../oauth-oidc/mtls');
+import applications = require('../common/applications');
+import certificateSubject = require('../common/certificate_subject');
+import revocationStatus = require('../common/revocation_status');
 import httpsig = require('./gnap_httpsig');
 import store = require('./gnap_store');
 
@@ -106,6 +168,13 @@ interface GnapProofDeps {
   mtls: typeof mtls;
   httpsig: typeof httpsig;
   store: typeof store;
+  // The trust model in force (#107): `gnapMtlsTrustFor()` only.
+  applications: {
+    gnapMtlsTrustFor(fields: any): { trust: string; realm: string;
+                                     entry: string };
+  };
+  certificateSubject: typeof certificateSubject;
+  revocationStatus: { codeOf(verdict: any): string };
 }
 
 class GnapProof {
@@ -614,10 +683,13 @@ class GnapProof {
   }
 
   // ---------------------------------------------------------------------------
-  // MUTUAL TLS (section 7.3.2).
+  // MUTUAL TLS (section 7.3.2) — see MUTUAL TLS, TWO TRUST MODELS, above.
+  // `trust` is the model in force for this caller: `pki` or `pinned`, or
+  // null for the realm's own (a caller that has not named an entry).
   // ---------------------------------------------------------------------------
-  private verifyMtls(req, descriptor) {
-    const { nodeCrypto, log, stsCrypto, mtls } = this.deps;
+  private verifyMtls(req, descriptor, trust) {
+    const { nodeCrypto, log, stsCrypto, mtls, applications,
+            revocationStatus } = this.deps;
     log.debug("Entering GnapProof.verifyMtls().");
     const certificate = mtls.peerCertificate(req);
     if (!certificate) {
@@ -626,6 +698,31 @@ class GnapProof {
                           'the key is proved by mutual TLS and this ' +
                           'connection presented no client certificate (RFC ' +
                           '9635 section 7.3.2).');
+    }
+    // REVOCATION, IN BOTH MODELS. The verdict's own code, as RFC 8705's two
+    // methods mark it: whoever revoked the certificate withdrew the key.
+    const revocation = req && req.certificateRevocation;
+    if (revocation && revocation.refused) {
+      log.debug("Leaving GnapProof.verifyMtls(). Refused on revocation.");
+      return this.refusal(revocationStatus.codeOf(revocation),
+                          'the TLS client certificate that proves this key ' +
+                          'was refused on revocation (pki.revocationCheck ' +
+                          'is ' + revocation.policy + '): ' + revocation.why);
+    }
+    const model = trust || applications.gnapMtlsTrustFor(null).trust;
+    if (model === 'pki') {
+      const peer = mtls.peerVerified(req);
+      if (!peer.verified) {
+        log.debug("Leaving GnapProof.verifyMtls(). The chain is refused: " +
+                  (peer.error || ''));
+        return this.refusal('STS-GNAP-0287',
+                            'this key is proved by mutual TLS under a PKI ' +
+                            '(gnap.mtlsTrust is pki; RFC 9635 section ' +
+                            '11.4), and the TLS client certificate is not ' +
+                            'one a trusted authority vouches for' +
+                            (peer.error ? ' (' + peer.error + ')' : '') +
+                            ': ' + peer.why);
+      }
     }
     const thumbprint = stsCrypto.certificateThumbprint(certificate.raw);
     if (descriptor.format === 'cert' || descriptor.format === 'cert#S256') {
@@ -636,7 +733,7 @@ class GnapProof {
                             'certificate the key names.');
       }
       log.debug("Leaving GnapProof.verifyMtls(). Certificate matches.");
-      return { ok: true, thumbprint: thumbprint };
+      return { ok: true, thumbprint: thumbprint, trust: model };
     }
     if (descriptor.publicKey) {
       // A JWK proved over MTLS: the same PUBLIC KEY, compared as
@@ -649,7 +746,7 @@ class GnapProof {
       if (Buffer.compare(presented, expected) === 0) {
         log.debug("Leaving GnapProof.verifyMtls(). JWK matches the " +
                   "certificate's key.");
-        return { ok: true, thumbprint: thumbprint };
+        return { ok: true, thumbprint: thumbprint, trust: model };
       }
     }
     log.debug("Leaving GnapProof.verifyMtls(). Key does not match.");
@@ -659,12 +756,115 @@ class GnapProof {
   }
 
   // ---------------------------------------------------------------------------
+  // IS THIS CONNECTION'S CERTIFICATE BOUND TO THIS APPLICATION ENTRY (#107) —
+  // the PKI model's second half, asked by `gnap_grants.ts` once it knows the
+  // entry and after `verifyRequest()` has proved the key. `app` is an
+  // `applications.get()` view, or null for a key no entry holds. Answers
+  // `{ ok, mapping }` — `issued` or `subject` — or a refusal.
+  // ---------------------------------------------------------------------------
+  certificateBinding(req, app) {
+    const { log, mtls, certificateSubject } = this.deps;
+    log.debug("Entering GnapProof.certificateBinding().");
+    const certificate = mtls.peerCertificate(req);
+    if (!certificate) {
+      log.debug("Leaving GnapProof.certificateBinding(). No certificate.");
+      return this.refusal('STS-GNAP-0277',
+                          'the key is proved by mutual TLS and this ' +
+                          'connection presented no client certificate (RFC ' +
+                          '9635 section 7.3.2).');
+    }
+    const identifier = app ? String(app.identifier) : '';
+    const issued = mtls.issuedIdentityOf(req);
+    const identity: any = issued.identity || {};
+    if (identity.issuedHere && identity.accepted) {
+      if (identity.kind !== 'application' || identity.username !== identifier) {
+        log.debug("Leaving GnapProof.certificateBinding(). Somebody else's.");
+        return this.refusal('STS-GNAP-0291',
+                            'the TLS client certificate was issued by this ' +
+                            'realm to the ' + identity.kind + ' "' +
+                            identity.username + '", and a certificate this ' +
+                            'service issued as somebody\'s identity proves ' +
+                            'that holder and nobody else' +
+                            (identifier ? ' — not the application "' +
+                                          identifier + '"' : '') +
+                            ' (RFC 9635 section 11.3).');
+      }
+      if (!issued.held) {
+        log.debug("Leaving GnapProof.certificateBinding(). Not held.");
+        return this.refusal('STS-GNAP-0292',
+                            'the TLS client certificate was issued to "' +
+                            identifier + '" (serial ' + identity.serialHex +
+                            '), and its record no longer lists it — it was ' +
+                            'taken off or replaced.');
+      }
+      log.debug("Leaving GnapProof.certificateBinding(). Issued here.");
+      return { ok: true, mapping: 'issued', serialHex: identity.serialHex };
+    }
+    // THE ENTRY'S RFC 8705 SUBJECT PARAMETER, keyed by member name for
+    // `registeredOf()`.
+    const fields = (app && app.fields) || {};
+    const byMember = {};
+    Object.keys(certificateSubject.MEMBERS).forEach(function (member) {
+      const value = fields[certificateSubject.MEMBERS[member].attribute];
+      byMember[member] = Array.isArray(value) ? value[0] : value;
+    });
+    const subjects = certificateSubject.registeredOf(byMember);
+    if (subjects.members.length > 1) {
+      log.debug("Leaving GnapProof.certificateBinding(). Two parameters.");
+      return this.refusal('STS-GNAP-0289',
+                          'the application "' + identifier + '" registers ' +
+                          subjects.members.length + ' certificate subject ' +
+                          'parameters (' + subjects.members.join(', ') +
+                          ') where it uses exactly one (RFC 8705 section ' +
+                          '2.1.2), so there is no single subject to expect.');
+    }
+    if (!subjects.member) {
+      log.debug("Leaving GnapProof.certificateBinding(). Nothing registered.");
+      return this.refusal('STS-GNAP-0288',
+                          'the TLS client certificate verified and was not ' +
+                          'issued by this realm to ' +
+                          (identifier ? 'the application "' + identifier +
+                                        '"'
+                                      : 'any application entry') +
+                          ', and ' + (identifier ? 'it registers no'
+                                                 : 'no entry holds this ' +
+                                                   'key or registers a') +
+                          ' certificate subject to bind it by — ' +
+                          'oauthTlsClientAuthSubjectDn or one of the ' +
+                          'oauthTlsClientAuthSan* attributes (gnap.mtlsTrust ' +
+                          'is pki; RFC 9635 section 11.4).');
+    }
+    const matched = certificateSubject.matches(subjects.member,
+                                               subjects.value,
+                                               certificate.raw);
+    if (!matched.ok) {
+      log.debug("Leaving GnapProof.certificateBinding(). No match.");
+      return this.refusal('STS-GNAP-0290',
+                          'the application "' + identifier + '" registers ' +
+                          subjects.member + ' "' + subjects.value + '", and ' +
+                          'the TLS client certificate carries ' +
+                          (matched.presented.length
+                            ? certificateSubject.MEMBERS[subjects.member]
+                                .label + ' ' + matched.presented.map(
+                                  function (one) {
+                                    return '"' + one + '"';
+                                  }).join(', ')
+                            : 'no ' + certificateSubject.MEMBERS[
+                                subjects.member].label) + '.');
+    }
+    log.debug("Leaving GnapProof.certificateBinding(). Subject matches.");
+    return { ok: true, mapping: 'subject', member: subjects.member };
+  }
+
+  // ---------------------------------------------------------------------------
   // THE ENTRY POINT.
   //
   // `options.accessToken` — the token this request is bound to, if any.
   // `options.rotation` — the new key's descriptor for a key rotation (section
   // 6.1.1); both keys are proved, in the order and with the coverage section
   // 7.3 requires.
+  // `options.mtlsTrust` — `pki` or `pinned`, the model in force for the
+  // caller's application entry (#107); the realm's own when absent.
   // ---------------------------------------------------------------------------
   verifyRequest(req, body, descriptor, options) {
     const { log, mtls, httpsig } = this.deps;
@@ -712,7 +912,7 @@ class GnapProof {
                             '9635 section ' +
                             '7.3.2.1).', 'key_rotation_not_supported');
       }
-      outcome = this.verifyMtls(req, descriptor);
+      outcome = this.verifyMtls(req, descriptor, opts.mtlsTrust || null);
     } else if (method === 'httpsig') {
       outcome = rotation
         ? this.verifyHttpsigRotation(req, descriptor, rotation, ctx)
@@ -999,7 +1199,10 @@ class GnapProof {
       errorCodes: errorCodes,
       mtls: mtls,
       httpsig: httpsig,
-      store: store
+      store: store,
+      applications: applications,
+      certificateSubject: certificateSubject,
+      revocationStatus: revocationStatus
     };
   }
 }
@@ -1032,5 +1235,6 @@ export = {
   presentedToken: slot.forward('presentedToken'),
   targetUriOf: slot.forward('targetUriOf'),
   athOf: slot.forward('athOf'),
-  verifyJwsBytes: slot.forward('verifyJwsBytes')
+  verifyJwsBytes: slot.forward('verifyJwsBytes'),
+  certificateBinding: slot.forward('certificateBinding')
 };

@@ -104,6 +104,9 @@ import accessRights = require('./gnap_access');
 // WHICH CLIENTS MAY HOLD THIS SERVICE'S PROTECTED SCOPES (#110), the same
 // question the OAuth token endpoint asks. A library.
 import scopePolicy = require('../common/scope_policy');
+// The TLS client certificate on a connection, and who this realm issued it to
+// (#107). A library.
+import mtls = require('../oauth-oidc/mtls');
 
 const PROTOCOL = 'GNAP';
 const STATE = store.STATE;
@@ -173,6 +176,7 @@ interface GnapGrantsDeps {
   signals: typeof signals;
   accessRights: typeof accessRights;
   scopePolicy: typeof scopePolicy;
+  mtls: typeof mtls;
   // oauth2.js, required when it is needed and not before (it registers
   // routes, and was a lazy require before the conversion).
   loadOauth2(): typeof import('../oauth-oidc/oauth2');
@@ -470,6 +474,134 @@ class GnapGrants {
   }
 
   // ---------------------------------------------------------------------------
+  // MUTUAL TLS UNDER A PKI: WHICH ENTRY A CERTIFICATE IS, AND WHICH KEY IT
+  // PROVES (#107, 2026-09-23). `gnap_proof.ts` argues the two trust models;
+  // what is decided here is only what the engine knows and the proof does not
+  // — the application entry.
+  //
+  // The model in force for an entry (or for none): `applications.js`'s
+  // `gnapMtlsTrustFor()`, the one combination of the realm's setting and the
+  // entry's stricter-only override.
+  // ---------------------------------------------------------------------------
+  mtlsTrustOf(app) {
+    const { log, applications } = this.deps;
+    log.debug("Entering GnapGrants.mtlsTrustOf().");
+    const trust = applications.gnapMtlsTrustFor(app ? app.fields : null).trust;
+    log.debug("Leaving GnapGrants.mtlsTrustOf(). " + trust);
+    return trust;
+  }
+
+  // The same, for a caller named by the identifier a grant or token records.
+  mtlsTrustOfIdentifier(identifier) {
+    const { log, applications } = this.deps;
+    log.debug("Entering GnapGrants.mtlsTrustOfIdentifier().");
+    const app = identifier ? applications.get(String(identifier)) : null;
+    log.debug("Leaving GnapGrants.mtlsTrustOfIdentifier().");
+    return this.mtlsTrustOf(app);
+  }
+
+  // A key by value whose thumbprint no entry holds is found, UNDER A PKI
+  // ONLY, by what the certificate AUTHORITY says: the application a
+  // certificate this realm issued names, or the one GNAP entry whose RFC 8705
+  // subject parameter the certificate carries. That is section 11.4's
+  // rotation — a new certificate from the authority, no new registration —
+  // and it is never done by thumbprint, which is exactly what is unknown.
+  // Whatever it finds is then held to `proof.certificateBinding()`, so a
+  // lookup that found the wrong entry refuses rather than binds. Two entries
+  // registering the same subject find nobody.
+  private appByCertificate(req) {
+    const { log, applications, proof } = this.deps;
+    log.debug("Entering GnapGrants.appByCertificate().");
+    const issued = this.deps.mtls.issuedIdentityOf(req);
+    const identity: any = issued.identity || {};
+    if (identity.issuedHere) {
+      const app = identity.accepted && identity.kind === 'application'
+        ? applications.get(String(identity.username)) : null;
+      log.debug("Leaving GnapGrants.appByCertificate(). Issued here: " +
+                (app ? app.identifier : 'no entry'));
+      return app || null;
+    }
+    const matching = this.gnapApplications().filter((one) => {
+      return proof.certificateBinding(req, one).ok;
+    });
+    log.debug("Leaving GnapGrants.appByCertificate(). " + matching.length +
+              " entry(ies) by subject.");
+    return matching.length === 1 ? matching[0] : null;
+  }
+
+  // Before the proof of an mtls key: the entry it belongs to, as far as
+  // anything before the proof can say, the model in force for it, and — under
+  // a PKI, for a caller named by instance identifier or key reference — the
+  // key the proof should compare, which is the certificate on THIS
+  // connection: the entry names the client, the authority vouches for the
+  // certificate, and `certificateBinding()` ties the two after the proof. A
+  // key presented BY VALUE is never replaced: section 11.3 makes the TLS key
+  // the request's key, and a different one is STS-GNAP-0278.
+  private placeMtlsCaller(req, descriptor, app, byReference) {
+    const { log, keys, mtls: mtlsLib } = this.deps;
+    log.debug("Entering GnapGrants.placeMtlsCaller().");
+    let found = app;
+    if (!found && descriptor.reference) {
+      const resolved = this.resolveKeyReference(descriptor.reference);
+      found = resolved ? resolved.app : null;
+    }
+    if (!found) {
+      found = this.appByKeyIdentity(descriptor.identity);
+    }
+    const trust = this.mtlsTrustOf(found);
+    if (trust !== 'pki') {
+      log.debug("Leaving GnapGrants.placeMtlsCaller(). Pinned.");
+      return { app: found, descriptor: descriptor, trust: trust };
+    }
+    if (!found) {
+      found = this.appByCertificate(req);
+    }
+    let chosen = descriptor;
+    const certificate = mtlsLib.peerCertificate(req);
+    if (byReference && certificate &&
+        descriptor.thumbprint !== mtlsLib.thumbprintOf(certificate)) {
+      const presented = keys.describe({ proof: 'mtls',
+                                        cert: Buffer.from(certificate.raw)
+                                          .toString('base64') }, {});
+      if (presented.ok) {
+        chosen = presented;
+      }
+    }
+    log.debug("Leaving GnapGrants.placeMtlsCaller(). PKI, app=" +
+              (found ? found.identifier : '(none)'));
+    return { app: found, descriptor: chosen, trust: trust };
+  }
+
+  // After the proof, under a PKI: the certificate must be bound to the entry,
+  // and a thumbprint the entry does not yet hold is recorded on it, so the
+  // next request by value finds it (section 11.4's rotation at the
+  // authority). Answers null, or the refusal.
+  private bindMtlsCaller(req, app, descriptor) {
+    const { log, applications, proof } = this.deps;
+    log.debug("Entering GnapGrants.bindMtlsCaller().");
+    const bound = proof.certificateBinding(req, app);
+    if (!bound.ok) {
+      log.debug("Leaving GnapGrants.bindMtlsCaller(). Not bound: " +
+                bound.why);
+      return bound;
+    }
+    if (app && descriptor.identity &&
+        this.registeredKeyIdentity(app) !== descriptor.identity &&
+        this.field(app, 'gnapKeyIdentity') !== descriptor.identity) {
+      applications.seen({ identifier: app.identifier, protocol: PROTOCOL,
+                          counts: false,
+                          fields: { gnapKeyIdentity: descriptor.identity } });
+      log.info('gnap: the application "' + app.identifier + '" proved a ' +
+               'certificate its authority issued it (' + bound.mapping +
+               ') that it had not presented before; its thumbprint ' +
+               descriptor.identity + ' is recorded on the entry (RFC 9635 ' +
+               'section 11.4).');
+    }
+    log.debug("Leaving GnapGrants.bindMtlsCaller(). " + bound.mapping);
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
   // WHO IS CALLING: the client (or RS) member, its key, the entry, and the
   // proof.
   //
@@ -521,10 +653,21 @@ class GnapGrants {
       log.debug("Leaving GnapGrants.identifyCaller().");
       return descriptor;
     }
+    // MUTUAL TLS (#107): the entry, the trust model and the key to compare,
+    // decided before the proof, which needs the model.
+    let mtlsTrust = null;
+    if (descriptor.proof && descriptor.proof.method === 'mtls') {
+      const placed = this.placeMtlsCaller(req, descriptor, app,
+                                          !!member.reference ||
+                                          !!descriptor.reference);
+      app = placed.app;
+      descriptor = placed.descriptor;
+      mtlsTrust = placed.trust;
+    }
     // ONCE ACROSS THE CLUSTER (#46): the proof's replay keys are spent before
     // anything is done for this caller — gnap_proof.ts's verifyRequestOnce().
     const verified = await proof.verifyRequestOnce(req, body, descriptor, {
-        accessToken: opts.accessToken || null });
+        accessToken: opts.accessToken || null, mtlsTrust: mtlsTrust });
     if (!verified.ok) {
       log.debug("Leaving GnapGrants.identifyCaller(). Proof refused: " +
                 verified.why);
@@ -542,6 +685,21 @@ class GnapGrants {
     }
     if (!app) {
       app = this.appByKeyIdentity(descriptor.identity);
+    }
+    if (mtlsTrust === 'pki') {
+      const unbound = this.bindMtlsCaller(req, app, descriptor);
+      if (unbound) {
+        monitor.record(app ? app.identifier : '(unidentified)',
+                       'proof.failed',
+                       { gnapError: kind === KIND_RS ?
+                                    'invalid_resource_server' :
+                                    'invalid_client' });
+        log.debug("Leaving GnapGrants.identifyCaller(). The certificate is " +
+                  "not bound to the entry.");
+        return Object.assign(unbound, { gnapError: kind === KIND_RS ?
+                                        'invalid_resource_server' :
+                                        'invalid_client', status: 401 });
+      }
     }
     let created = false;
     if (!app) {
@@ -1681,8 +1839,10 @@ class GnapGrants {
       return Object.assign(descriptor,
                            { status: 401, gnapError: 'invalid_client' });
     }
+    const mtlsTrust = this.mtlsTrustOfIdentifier(grant.client.identifier);
     const verified = await proof.verifyRequestOnce(req, body, descriptor,
-                                                   { accessToken: token });
+                                                   { accessToken: token,
+                                                     mtlsTrust: mtlsTrust });
     if (!verified.ok) {
       monitor.record(grant.client.identifier, 'proof.failed',
                      { gnapError: 'invalid_client' });
@@ -2139,7 +2299,10 @@ class GnapGrants {
     }
     if (req.method === 'DELETE') {
       const verified = await proof.verifyRequestOnce(req, body, descriptor, {
-          accessToken: presented });
+          accessToken: presented,
+          mtlsTrust: this.mtlsTrustOfIdentifier(grant ?
+                                                grant.client.identifier :
+                                                null) });
       if (!verified.ok) {
         monitor.record(record.instanceId, 'proof.failed',
                        { gnapError: 'invalid_client' });
@@ -2201,9 +2364,13 @@ class GnapGrants {
         return Object.assign(newDescriptor, { gnapError: 'invalid_rotation' });
       }
     }
+    const rotationTrust = this.mtlsTrustOfIdentifier(
+        grant ? grant.client.identifier : null);
     const verified = await proof.verifyRequestOnce(req, body, descriptor,
                                                    { accessToken: presented,
-                                                     rotation: newDescriptor });
+                                                     rotation: newDescriptor,
+                                                     mtlsTrust:
+                                                       rotationTrust });
     if (!verified.ok) {
       monitor.record(record.instanceId, 'proof.failed',
                      { gnapError: verified.gnapError });
@@ -2347,6 +2514,7 @@ class GnapGrants {
       signals: signals,
       accessRights: accessRights,
       scopePolicy: scopePolicy,
+      mtls: mtls,
       loadOauth2: function loadOauth2() {
         helpers.log.debug("Entering loadOauth2().");
         helpers.log.debug("Leaving loadOauth2().");

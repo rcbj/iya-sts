@@ -237,8 +237,10 @@ failure patterns.
 | `tests/realm_isolation.js` | the GNAP stores are per realm and purged with it, and no module-scope Map |
 | `tests/vendored/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code. Its section 6 push listener presents a certificate from a CA the job makes at run time and sets `gnap.pushCaFile` to it (#171; skipped with no directory shared with the service), so the push is VERIFIED in both modes |
 | `tests/outbound_tls.js`, `tests/vendored/sts_outbound_tls.js` | the push finish's transport policy beside SSF's, federation's and XACML's (#171) |
-| `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the demonstration RS; introspection, registration, derivation, mutual TLS |
+| `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the demonstration RS; introspection, registration, derivation, mutual TLS (in a realm set to `gnap.mtlsTrust=pinned`, since its certificate is self-signed) |
 | `tests/vendored/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream |
+| `tests/gnap_mtls_trust.js` | #107 in process over real handshakes: both trust models, revocation in both, 0277/0278, every binding refusal (0287–0292), rotation, the override and the product default |
+| `tests/vendored/sts_gnap_mtls.js` | #107 against a running service: the same, with the realm's own certificates from the Credentials door and a foreign authority whose leaf names a CRL the job serves |
 
 The three jobs share `tests/vendored/gnap_client.js` (an independent client
 written from the RFCs) and `gnap_flow.js` (the resource owner and harness).
@@ -250,6 +252,48 @@ the published key. The default suite is now `eddsa-jcs-2022` and the job checks
 the proof itself: RFC 8785, two SHA-256 hashes, node's Ed25519. The
 compatibility suite is still checked only by the service, which is one of the
 reasons it is not the default.
+
+## Mutual TLS: pinned or a PKI, and revocation in both (#107, 2026-09-23)
+
+`verifyMtls()` compared the certificate on the connection with the key and did
+nothing else: no chain, and not even this service's own revocation register,
+which RFC 8705's `self_signed_tls_client_auth` already consulted. In product the
+key was a pin on the entry (`gnapKey`), which RFC 9635 section 7.3.2 allows, and
+which can be neither revoked nor rotated at an authority. `gnap_proof.ts`'s
+header (*MUTUAL TLS, TWO TRUST MODELS*) argues the design; what a reader needs
+here:
+
+* **Revocation is consulted in both models**, from `req.certificateRevocation`,
+  with the verdict's own code (STS-PKI-0118 revoked, 0119 unknown under
+  hard-fail, #174's three). An unverified certificate is looked up in the
+  register too, so a pinned certificate this realm issued and revoked is
+  refused, and a self-signed one nobody issued is unaffected.
+* **`gnap.mtlsTrust`** — `pki`, `pinned`, or `auto`, which is
+  `mode.requiresPkiForGnapMtls()`: pki in product, pinned in development. An
+  entry's `gnapMtlsTrust` may make it STRICTER and never weaker
+  (`applications.gnapMtlsTrustFor()` combines them; a weaker write is
+  STS-REG-0196, a stored one is ignored). Continuation, management and
+  rotation ask the model of the grant's client.
+* **Under pki** `mtls.peerVerified()` must say verified (STS-GNAP-0287), and
+  after the proof `proof.certificateBinding()` ties the certificate to the
+  entry: issued TO it by this realm (`mtls.issuedIdentityOf()`, moved out of
+  `client_auth.js` so both callers share it; another holder's is 0291, one no
+  longer on the record 0292), or carrying the ONE RFC 8705 subject parameter
+  the entry registers — the `oauthTlsClientAuth*` attributes, reused rather
+  than twinned (none 0288, two 0289, a mismatch 0290).
+* **Rotation at the authority.** Under pki a key by value whose thumbprint no
+  entry holds is placed by what the authority says — the application a
+  realm-issued certificate names, or the ONE GNAP entry whose subject it
+  carries — never by the thumbprint; an instance identifier or key reference
+  proves the certificate on the connection rather than the one pinned. The new
+  thumbprint is then written to `gnapKeyIdentity` (`gnap_grants.ts`,
+  `placeMtlsCaller()` / `bindMtlsCaller()`). A key presented BY VALUE is never
+  swapped: section 11.3 makes the TLS key the request's key (0278).
+* **No auto-creation under pki**: an unknown key with no entry to bind to is
+  0288, in development too.
+* **Not done**: RFC 9440's `Client-Cert` header from a TLS-terminating proxy —
+  this service reads only its own socket. Nothing is added to discovery,
+  because section 9 has no member for a trust model.
 
 ## The push finish verifies the client's certificate (#171, 2026-09-23)
 
