@@ -143,7 +143,7 @@ of foreign issuers.
 | | Development | Product |
 |---|---|---|
 | A request with no credential | a token for the literal subject `anonymous` (a Renew for whoever its `RenewTarget` names) | refused, with a SOAP Fault naming what to present |
-| A UsernameToken password | any password but `invalid` | verified against the person's stored `userPassword` |
+| A UsernameToken password | any password but `invalid` | verified against the person's stored `userPassword`; a person who holds or must hold a second factor is refused their own password with the same fault a wrong one gets, and presents an [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `wstrust` |
 | A SAML assertion as the credential | believed | must verify against this realm's own signing certificate (`/sts/cert`) and be inside its `Conditions` |
 | `OnBehalfOf` / `ActAs` | needs no requester credential | needs the requester's own credential, and the inner token must be an assertion this STS signed |
 | An assertion with no NameID | subjects such as `saml-subject` are invented | refused |

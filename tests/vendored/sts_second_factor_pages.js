@@ -263,7 +263,16 @@ async function theSettingsAreOnTheirPages() {
   // two SAML pages. So "every row is the mechanism's own" became "every row is
   // the mechanism's own or that policy", and the policy's PRESENCE on both is
   // asserted, because a reader of either page must see it is in force.
+  //
+  // THE GROUP GREW THREE ROWS ON 2026-09-22 (#101): what the requirement does
+  // at the five password-only doors (`authn.passwordAloneDoors`) and the app
+  // passwords a person uses there instead (`appPasswords.*`). They are the
+  // same policy's, so they are drawn on both pages with it; each is a named
+  // member of the group rather than a pattern, so a row that wandered into
+  // the group by accident still fails here.
   const SHARED_POLICY = "authn.mfaRequired";
+  const SHARED_GROUP = [SHARED_POLICY, "authn.passwordAloneDoors",
+                        "appPasswords.enabled", "appPasswords.maxPerPerson"];
 
   const totp = await get("/totp");
   check("GET /admin-api/totp carries the eight totp.* settings and the " +
@@ -275,10 +284,10 @@ async function theSettingsAreOnTheirPages() {
     assert.ok(own.length >= 8,
       "it drew " + own.length + " totp.* setting(s): " + keys.join(", "));
     assert.ok(keys.every(function (k) {
-      return /^totp\./.test(k) || k === SHARED_POLICY;
+      return /^totp\./.test(k) || SHARED_GROUP.indexOf(k) !== -1;
     }),
-      "and a setting that is neither a totp.* row nor " + SHARED_POLICY +
-      " is drawn on it: " + keys.join(", "));
+      "and a setting that is neither a totp.* row nor one of the " +
+      "second-factor requirement's is drawn on it: " + keys.join(", "));
     assert.ok(keys.indexOf(SHARED_POLICY) !== -1,
       SHARED_POLICY + " is not drawn on it: " + keys.join(", "));
   });
@@ -294,10 +303,10 @@ async function theSettingsAreOnTheirPages() {
     assert.ok(own.length >= 13,
       "it drew " + own.length + " webauthn.* setting(s): " + keys.join(", "));
     assert.ok(keys.every(function (k) {
-      return /^webauthn\./.test(k) || k === SHARED_POLICY;
+      return /^webauthn\./.test(k) || SHARED_GROUP.indexOf(k) !== -1;
     }),
-      "and a setting that is neither a webauthn.* row nor " + SHARED_POLICY +
-      " is drawn on it: " + keys.join(", "));
+      "and a setting that is neither a webauthn.* row nor one of the " +
+      "second-factor requirement's is drawn on it: " + keys.join(", "));
     assert.ok(keys.indexOf(SHARED_POLICY) !== -1,
       SHARED_POLICY + " is not drawn on it: " + keys.join(", "));
   });

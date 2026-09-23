@@ -512,7 +512,14 @@ const NAV = [
       // password are credentials on this person's own entry, and so are the
       // certificates they obtain. Drawn by `portal_certificates.ts`.
       { path: BASE + '/certificates', label: 'Certificates',
-        heading: 'Your certificates' }
+        heading: 'Your certificates' },
+      // APP PASSWORDS (#101, 2026-09-22), in this section for the signing
+      // keys' reason: a credential on this person's own entry. The doors
+      // that take only a password refuse a second-factor person's own
+      // password in product mode, and this is what they use there. Drawn by
+      // `portal_app_passwords.ts`.
+      { path: BASE + '/app-passwords', label: 'App passwords',
+        heading: 'Your app passwords' }
     ] }
 ];
 
@@ -2580,6 +2587,19 @@ class Portal {
                   'An administrator has to clear it before you can set one ' +
                   'up again.'))
         : self.esc('No authenticator app is set up.')) + '</p>' +
+      // THE PASSWORD-ONLY DOORS (#101): where a second factor cannot be
+      // asked for, their own password is refused, and this says where to get
+      // what those clients take instead.
+      (function () {
+        const doors = credentials.passwordOnlyDoors(username);
+        return doors.applies && doors.refused.length
+          ? '<p class="note">' + self.esc('While you use a second factor, ' +
+              'your password alone is refused at the doors that cannot ask ' +
+              'for one (' + doors.refused.join(', ') + '). ') +
+            '<a href="' + BASE + '/app-passwords">Make an app password</a>' +
+            self.esc(' for a client that uses one of them.') + '</p>'
+          : '';
+      })() +
       (mechanisms.totp && mechanisms.totpDetail
         ? '<table class="grid">' +
           '<tr><th>Set up</th><td>' +
@@ -5585,8 +5605,12 @@ class Portal {
       // there — which is correct: development checks no password anywhere, and
       // a portal that was the one exception would be a surprise rather than a
       // control.
+      // `session-held` (#101): this session already met whatever second
+      // factor the account asks for, so re-proving the password here is not
+      // a password alone. No `door`, so no app password.
       const checked = credentials.verify(username, current,
-                                         { via: 'the portal password change' });
+                                         { via: 'the portal password change',
+                                           secondFactor: 'session-held' });
       if (!checked.ok) {
         log.info('portal: a password change for ' + username +
                  ' was refused (' + checked.reason + ').');
@@ -6028,7 +6052,8 @@ const slot = new InstanceSlot<Portal>(
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
-// Here that is the portal's pages, then /portal/certificates.
+// Here that is the portal's pages, then /portal/certificates, then
+// /portal/app-passwords.
 
 helpers.log.info('The User Portal is at ' + BASE + ': a person\'s own ' +
                  'account, in ' + NAV_PAGES.length + ' pages behind a ' +
@@ -6051,6 +6076,8 @@ helpers.log.info('The User Portal is at ' + BASE + ': a person\'s own ' +
 // `register()` rather than a require that registers at its top level.
 // ---------------------------------------------------------------------------
 const portalCertificates = require('./portal_certificates');
+// /portal/app-passwords (#101), the same arrangement, registered after it.
+const portalAppPasswords = require('./portal_app_passwords');
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
@@ -6059,6 +6086,19 @@ export = {
   registerRoutes: (target: any): void => {
     slot.get().registerRoutes(target);
     portalCertificates.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalAppPasswords.register({
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),

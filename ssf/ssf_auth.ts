@@ -705,8 +705,9 @@ class SsfAuth {
         'any username with any password except "' + REFUSED_PASSWORD + '".',
         { 'WWW-Authenticate': this.challenges() });
     }
+    // `door: 'ssf'` (#101): a password-only door — see credentials.ts.
     const checked = credentials.verify(user, password,
-                                       { via: 'SSF HTTP Basic' });
+                                       { via: 'SSF HTTP Basic', door: 'ssf' });
     if (!checked.ok) {
       log.debug("Leaving SsfAuth.attemptBasic(). Refused: " + checked.reason);
       return this.refusal(checked.reason === 'reserved-refusal'
@@ -730,7 +731,11 @@ class SsfAuth {
       scopes: this.scopeRead() + ' ' + this.scopeWrite(), err: '',
       description: '',
       headers: {},
-      note: mode.verifiesCredentials()
+      // An app password is said so (#101).
+      note: checked.reason === 'app-password' && checked.appPassword
+        ? 'HTTP Basic (an app password, "' + checked.appPassword.name +
+          '", was verified)'
+        : mode.verifiesCredentials()
         ? 'HTTP Basic (the password was verified)'
         : 'HTTP Basic (no password was checked)' };
   }

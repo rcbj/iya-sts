@@ -1560,16 +1560,72 @@ const SETTINGS = [
                  'sign-in is REFUSED while it is on, because a key on its ' +
                  'own is one factor (amr ["hwk"]). The same requirement ' +
                  'can be placed on one person from their /admin/users ' +
-                 'page. **What ' +
-                 'it does not reach**: a sign-in that never meets this ' +
-                 'screen — a federated assertion, a SPNEGO ticket, a TLS ' +
-                 'client certificate, the OAuth password grant, an LDAP ' +
-                 'bind, WS-Trust and SCIM Basic — and a session that already ' +
-                 'exists. Nothing is enrolled if both mechanisms are ' +
+                 'page. In product mode it also refuses the person\'s own ' +
+                 'password at the five password-only doors — an LDAP bind, ' +
+                 'a WS-Trust UsernameToken, SCIM, SSF and EST Basic — where ' +
+                 'an app password is used instead (#101; see ' +
+                 'authn.passwordAloneDoors). **What it does not reach**: a ' +
+                 'sign-in that never meets this screen and is not one of ' +
+                 'those doors — a federated assertion, a SPNEGO ticket or ' +
+                 'a Kerberos AS-REQ, a TLS client certificate — and a ' +
+                 'session that already exists. Nothing is enrolled if both ' +
+                 'mechanisms are ' +
                  'switched off (totp.enabled, webauthn.enabled or ' +
                  'webauthn.mfaAllowed), and then the screen refuses the ' +
                  'sign-in and names those settings rather than letting a ' +
                  'required second factor quietly not be asked for.' },
+
+  // ---------------------------------------------------------------------
+  // THE PASSWORD-ONLY DOORS AND APP PASSWORDS (#101, 2026-09-22).
+  //
+  // In product mode a person who holds a second factor, or of whom one is
+  // required, is refused their own password at the five doors that cannot
+  // ask for one — `common/credentials.ts`, `secondFactorRefusal()` — and
+  // uses an APP PASSWORD there, scoped to the door (`common/app_passwords.ts`).
+  // All three are in this group because they are the rest of the same policy:
+  // what the requirement above does at the doors the sign-in screen is not.
+  // ---------------------------------------------------------------------
+  { key: 'authn.passwordAloneDoors', group: 'Second-factor requirement',
+    label: 'Password-only doors that accept a password alone',
+    path: 'authn.passwordAloneDoors', env: 'STS_AUTHN_PASSWORD_ALONE_DOORS',
+    type: 'csv', dflt: '', runtime: true,
+    description: 'Product mode only. A comma-separated list of the ' +
+                 'password-only doors — ldap, wstrust, scim, ssf, est — at ' +
+                 'which a person who holds or must hold a second factor is ' +
+                 'STILL accepted with their own password. Empty, the ' +
+                 'default, refuses that password at all five (answered as ' +
+                 'a wrong password) and accepts only an app password there. ' +
+                 '**WARNING: every door listed lowers every such person to ' +
+                 'ONE factor at that door** (NIST SP 800-63B section 4.2: ' +
+                 'AAL2 becomes AAL1), so a stolen password opens it without ' +
+                 'the second factor. Prefer app passwords; list a door only ' +
+                 'for a client that cannot be given one. Development checks ' +
+                 'no password anywhere and ignores this.' },
+
+  { key: 'appPasswords.enabled', group: 'Second-factor requirement',
+    label: 'Let people make app passwords',
+    path: 'appPasswords.enabled', env: 'STS_APP_PASSWORDS_ENABLED',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Whether a person may make an app password on ' +
+                 '/portal/app-passwords, and an administrator one for them ' +
+                 'on their /admin/users page or POST ' +
+                 '/admin-api/users/create-app-password. An app password is ' +
+                 'generated here, shown once, stored as a scrypt hash on the ' +
+                 'entry, named, and accepted ONLY at the password-only doors ' +
+                 'it is scoped to — never at the sign-in screen. **Turning ' +
+                 'it off does not invalidate one already made**, the ' +
+                 'contract backupCodes.enabled keeps: it stops new ones. ' +
+                 'Revoke one on the same pages.' },
+
+  { key: 'appPasswords.maxPerPerson', group: 'Second-factor requirement',
+    label: 'App passwords per person',
+    path: 'appPasswords.maxPerPerson', env: 'STS_APP_PASSWORDS_MAX',
+    type: 'int', dflt: 10, runtime: true, min: 1, max: 50,
+    description: 'How many app passwords one person may hold at once. A ' +
+                 'make past it is refused; revoking one makes room. Each is ' +
+                 'looked up by a public four-character id before its hash is ' +
+                 'checked, so the number held does not change what a ' +
+                 'presented password costs to verify.' },
 
   // ---------------------------------------------------------------------
   // TOTP MFA (2026-09-10). RFC 6238's eight parameters.

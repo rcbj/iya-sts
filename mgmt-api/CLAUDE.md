@@ -1597,6 +1597,21 @@ and `links` / `linksPaging` on `GET /admin-api/federation?relationship=`. An
 unlink ends the sessions the partner made after the answer, so the reply says
 they are "being ended" rather than counting them.
 
+## APP PASSWORDS (2026-09-22, #101)
+
+Two more users actions — `create-app-password` (`name`, `doors` as an array or
+the console's `door_<id>` checkboxes; the password answered ONCE in
+`appPassword`) and `revoke-app-password` (`id`) — through
+`admin-core/admin_actions.ts`'s `credentialAdminAction()`, each audited and a
+CAEP `credential-change`; and `GET /admin-api/users/app-passwords?user=`,
+PAGED (`page`, `per`), mirroring the App passwords block on the person's
+`/admin/users` page and, for the person, `/portal/app-passwords`. It carries
+no hash and no password, and `passwordOnlyDoors` says which doors refuse the
+person's own password. `GET /admin-api/users?user=` carries the same list
+unpaged in `factors.appPasswords` (bounded by `appPasswords.maxPerPerson`,
+at most fifty), the precedent `admin_views.ts` sets for a list that cannot
+grow past fifty.
+
 ## A REALM'S OWN TOKEN (2026-09-14, #32)
 
 A trust realm has administrators of its own (`admin-ui/CLAUDE.md` 8d), and rule 7
