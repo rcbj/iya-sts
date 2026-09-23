@@ -1963,8 +1963,9 @@ const SETTINGS = [
   // so `required` really does refuse an authenticator that did not verify the
   // person. `attestation`, `residentKey` and `authenticatorAttachment` are
   // REQUESTS — this service records what came back and refuses nothing on
-  // them, which is the position the row below states rather than implying a
-  // check that is not there.
+  // them. What is done with the attestation STATEMENT that comes back is the
+  // fourth kind, below the policy rows: `webauthn.attestationPolicy` and the
+  // six settings beside it (#105), which do refuse.
   // ---------------------------------------------------------------------
   { key: 'webauthn.enabled', group: 'WebAuthn',
     label: 'Offer security keys (WebAuthn)',
@@ -2042,7 +2043,11 @@ const SETTINGS = [
                  'identifiers by `authn/webauthn.js`\'s own table, which is ' +
                  'the module that verifies the signature: `ES256` (-7), ' +
                  '`ES384` (-35), `ES512` (-36), `EdDSA` (-8), `RS256` ' +
-                 '(-257), `RS384` (-258), `RS512` (-259). A name outside ' +
+                 '(-257), `RS384` (-258), `RS512` (-259), `PS256` (-37), ' +
+                 '`PS384` (-38), `PS512` (-39), and RFC 9964\'s `ML-DSA-44` ' +
+                 '(-48), `ML-DSA-65` (-49) and `ML-DSA-87` (-50). A ' +
+                 'credential whose algorithm is not on this list is refused ' +
+                 '(WebAuthn Level 3 section 7.1). A name outside ' +
                  'that table is dropped with a warning rather than sent, ' +
                  'because offering an algorithm this service cannot verify ' +
                  'produces a credential that enrols and then never works. ' +
@@ -2079,16 +2084,138 @@ const SETTINGS = [
                  'the authenticator that made the credential. `direct` is ' +
                  'the default here because this is a DEBUGGING service and ' +
                  'the attestation object is one of the things worth looking ' +
-                 'at; a real deployment with no attestation policy should ' +
-                 'send `none`, which is what the specification recommends ' +
-                 'and what avoids a browser consent prompt about the ' +
-                 'authenticator model. **THIS SERVICE VERIFIES NO ' +
-                 'ATTESTATION STATEMENT WHATEVER IT ASKS FOR** — there is no ' +
-                 'metadata service here, no trust anchor for an ' +
-                 'authenticator vendor, and no model allow-list — so the ' +
-                 'statement is parsed, reported and believed. Asking for ' +
-                 '`enterprise` and getting nothing back is the browser ' +
-                 'refusing, not this service.' },
+                 'at; a deployment that has no use for the authenticator\'s ' +
+                 'model should send `none`, which is what the specification ' +
+                 'recommends and what avoids a browser consent prompt about ' +
+                 'it. **What is DONE with what comes back is ' +
+                 '`webauthn.attestationPolicy`** (#105): every statement ' +
+                 'that arrives is verified in product mode. A realm whose ' +
+                 'policy is `require-trusted`, or that lists AAGUIDs in ' +
+                 '`webauthn.attestationAllowedAaguids`, asks for `direct` ' +
+                 'whatever this says — a policy that needs a statement ' +
+                 'cannot be met by asking for none. Asking for `enterprise` ' +
+                 'and getting nothing back is the browser refusing, not ' +
+                 'this service.' },
+
+  // -------------------------------------------------------------------
+  // THE ATTESTATION POLICY (#105, 2026-09-23). What this service does with
+  // the attestation statement a registration carries — WebAuthn Level 3
+  // section 7.1 steps 21-25 and section 8's eight formats, verified by
+  // `authn/webauthn_attestation.ts`, with the FIDO Metadata Service BLOB
+  // #62 P5 imports as a source of trust anchors and status reports.
+  // -------------------------------------------------------------------
+  { key: 'webauthn.attestationPolicy', group: 'WebAuthn',
+    label: 'Attestation policy', path: 'webauthn.attestationPolicy',
+    env: 'STS_WEBAUTHN_ATTESTATION_POLICY', type: 'enum',
+    enumValues: ['by-mode', 'off', 'verify-if-present', 'require-trusted'],
+    dflt: 'by-mode', runtime: true,
+    onlyWhile: 'acceptsUnverifiedAttestation', onlyWhileValues: ['off'],
+    description: 'What a registration\'s attestation statement must be. ' +
+                 '`verify-if-present` verifies every statement by its ' +
+                 'format\'s procedure (WebAuthn Level 3 section 8: packed, ' +
+                 'tpm, android-key, android-safetynet, fido-u2f, none, ' +
+                 'apple and compound) and refuses one that does not ' +
+                 'verify; a certificate path is checked against the ' +
+                 'anchors this realm configures and those the FIDO ' +
+                 'Metadata Service lists for the model, and a model MDS ' +
+                 'lists is refused when its chain does not reach MDS\'s ' +
+                 'roots, when a status report says it is compromised ' +
+                 '(REVOKED, USER_VERIFICATION_BYPASS, a KEY_COMPROMISE) or ' +
+                 'when a certificate in the chain is revoked. `none` and ' +
+                 'self attestation are accepted and recorded as such, and ' +
+                 'so is a chain no anchor knows — section 7.1 lets a relying ' +
+                 'party treat it as self attestation — because synced ' +
+                 'passkeys (Apple, Google) send `none` as the specification ' +
+                 'allows. `require-trusted` refuses anything that does not ' +
+                 'chain to an anchor: no `none`, no self attestation, and ' +
+                 'so no synced passkey. `by-mode`, the default, is ' +
+                 '`verify-if-present` in product mode and `off` in ' +
+                 'development. `off` verifies nothing and records the ' +
+                 'format — WARNING: a forged statement is then recorded as ' +
+                 'if it were the authenticator\'s, and it is DEVELOPMENT ' +
+                 'MODE ONLY: product refuses to write it and reads it as ' +
+                 '`by-mode`.' },
+
+  { key: 'webauthn.attestationTrustAnchors', group: 'WebAuthn',
+    label: 'Attestation trust anchors (PEM)',
+    path: 'webauthn.attestationTrustAnchors',
+    env: 'STS_WEBAUTHN_ATTESTATION_TRUST_ANCHORS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'Root certificates an attestation certificate may chain ' +
+                 'to, as a PEM bundle, BESIDE those the FIDO Metadata ' +
+                 'Service lists for each model — a corporate TPM ' +
+                 'endorsement CA, a vendor\'s root, the Android or Apple ' +
+                 'attestation root, or a test root. A chain that reaches ' +
+                 'one is TRUSTED. Nothing is shipped: empty trusts only ' +
+                 'what the active MDS BLOB lists.' },
+
+  { key: 'webauthn.attestationAllowedAaguids', group: 'WebAuthn',
+    label: 'Allowed authenticator models (AAGUIDs)',
+    path: 'webauthn.attestationAllowedAaguids',
+    env: 'STS_WEBAUTHN_ATTESTATION_ALLOWED_AAGUIDS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The authenticator models a key may be registered from, ' +
+                 'as AAGUIDs (with or without hyphens), comma-separated. ' +
+                 'Empty — the default — allows any model the policy ' +
+                 'accepts. **Set, it REQUIRES a trusted attestation** ' +
+                 'whatever `webauthn.attestationPolicy` says: an AAGUID is ' +
+                 'a claim in the authenticator data until a statement ' +
+                 'chaining to an anchor vouches for it, so a list honoured ' +
+                 'on an unverified AAGUID would admit anybody who typed one ' +
+                 'in. That means no synced passkey, which sends none.' },
+
+  { key: 'webauthn.attestationMinCertificationLevel', group: 'WebAuthn',
+    label: 'Least FIDO certification level',
+    path: 'webauthn.attestationMinCertificationLevel',
+    env: 'STS_WEBAUTHN_ATTESTATION_MIN_CERTIFICATION', type: 'enum',
+    enumValues: ['none', 'L1', 'L1plus', 'L2', 'L2plus', 'L3', 'L3plus'],
+    dflt: 'none', runtime: true,
+    description: 'The least FIDO Authenticator Certification level (MDS3 ' +
+                 'section 3.1.4.1) a model must hold, read from the FIDO ' +
+                 'Metadata Service\'s status reports; the retired ' +
+                 '`FIDO_CERTIFIED` counts as L1. Anything but `none` ' +
+                 'REQUIRES a trusted attestation from a model the active ' +
+                 'MDS BLOB lists.' },
+
+  { key: 'webauthn.attestationRequireFips', group: 'WebAuthn',
+    label: 'Require a FIPS 140 certified model',
+    path: 'webauthn.attestationRequireFips',
+    env: 'STS_WEBAUTHN_ATTESTATION_REQUIRE_FIPS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Refuse a model the FIDO Metadata Service does not report ' +
+                 'as FIPS 140 certified (a FIPS140_CERTIFIED_L* status ' +
+                 'report, MDS3 section 3.1.4.1). On, it REQUIRES a trusted ' +
+                 'attestation from a model the active MDS BLOB lists.' },
+
+  { key: 'webauthn.attestationAllowSafetynet', group: 'WebAuthn',
+    label: 'Trust android-safetynet attestation',
+    path: 'webauthn.attestationAllowSafetynet',
+    env: 'STS_WEBAUTHN_ATTESTATION_ALLOW_SAFETYNET', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Whether an `android-safetynet` statement (WebAuthn Level ' +
+                 '3 section 8.5) may count as TRUSTED. It is verified ' +
+                 'either way — the JWS, its chain to `attest.android.com`, ' +
+                 'the nonce and `ctsProfileMatch` — but Google shut the ' +
+                 'SafetyNet Attestation API down and the specification ' +
+                 'marks the format deprecated, so off (the default) ' +
+                 'records it as untrusted and `require-trusted` refuses it. ' +
+                 'WARNING: on, a platform the service no longer vouches ' +
+                 'for is trusted on a response nobody can check is current.' },
+
+  { key: 'webauthn.attestationAndroidSoftwareKeys', group: 'WebAuthn',
+    label: 'Accept Android keys not enforced in the TEE',
+    path: 'webauthn.attestationAndroidSoftwareKeys',
+    env: 'STS_WEBAUTHN_ATTESTATION_ANDROID_SOFTWARE', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'An `android-key` statement\'s `origin` and `purpose` ' +
+                 '(WebAuthn Level 3 section 8.4) are read from the ' +
+                 'hardware-enforced (TEE or StrongBox) authorization list ' +
+                 'only — the specification\'s choice for a relying party ' +
+                 'that accepts only keys from a trusted execution ' +
+                 'environment, and the default here. On reads the union of ' +
+                 'the software- and hardware-enforced lists. WARNING: a key ' +
+                 'whose properties only Android\'s software enforces is ' +
+                 'one malware on the device may have made.' },
 
   { key: 'webauthn.timeoutMs', group: 'WebAuthn',
     label: 'Ceremony timeout (ms)', path: 'webauthn.timeoutMs',
@@ -10009,6 +10136,41 @@ const SETTINGS = [
                  'found in node\'s own root store: nothing FIDO-specific is ' +
                  'shipped with this service. Set it only to pin a different ' +
                  'root, or for a test BLOB.' },
+
+  { key: 'risk.mdsUrl', group: 'Risk',
+    label: 'FIDO metadata BLOB address',
+    env: 'STS_RISK_MDS_URL', type: 'string', dflt: '', runtime: true,
+    description: 'Where the `risk.mds-refresh` job downloads the FIDO MDS3 ' +
+                 'BLOB from (#105) — https://mds3.fidoalliance.org/ is ' +
+                 'FIDO\'s. MDS3 section 3.2 says a FIDO server MUST be able ' +
+                 'to download it. Empty — the default — dials nobody, and ' +
+                 'the BLOB arrives by upload, the dataset directory or the ' +
+                 'install-time loader as before. Fetched through the ' +
+                 'outbound rules every published document is ' +
+                 '(`federation.outbound`, https, internal addresses refused ' +
+                 'in product), with no redirect, and imported only under a ' +
+                 'recorded acceptance of `fido-mds3`\'s terms and after the ' +
+                 'full MDS3 verification; an older or equal serial is a ' +
+                 'rollback and is refused.' },
+
+  { key: 'risk.mdsRefreshS', group: 'Risk',
+    label: 'Download the FIDO metadata every (seconds)',
+    env: 'STS_RISK_MDS_REFRESH_S', type: 'int', dflt: 86400, min: 3600,
+    max: 604800, runtime: true,
+    description: 'How often `risk.mds-refresh` downloads the BLOB from ' +
+                 '`risk.mdsUrl`: daily by default, which MDS3 section 4 ' +
+                 'recommends. Once the active BLOB is past its own ' +
+                 'nextUpdate it is tried every hour until a newer one is ' +
+                 'imported.' },
+
+  { key: 'risk.mdsMaxBytes', group: 'Risk',
+    label: 'Largest FIDO metadata BLOB (bytes)',
+    env: 'STS_RISK_MDS_MAX_BYTES', type: 'int', dflt: 33554432, min: 65536,
+    max: 268435456, runtime: true,
+    description: 'The most `risk.mds-refresh` reads of a BLOB before it ' +
+                 'stops: FIDO\'s is several megabytes and grows, so it has ' +
+                 'a cap of its own rather than `federation.maxResponseBytes`, ' +
+                 'which is sized for a token response.' },
 
   { key: 'risk.mdsStaleGraceDays', group: 'Risk',
     label: 'FIDO metadata grace after its nextUpdate (days)',

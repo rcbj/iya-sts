@@ -6710,7 +6710,15 @@ class AdminViews {
       keys: (mech.keys || []).map(function (one) {
         return { credentialId: one.credentialId, role: one.role,
                  label: one.label || null, signCount: one.signCount || 0,
-                 enrolledAt: one.enrolledAt || 0 };
+                 enrolledAt: one.enrolledAt || 0,
+                 // WHAT THE ATTESTATION PROVED (#105), the record
+                 // `authn/webauthn_attestation.ts` wrote: format, type,
+                 // verified, trusted, anchor, the model the FIDO metadata
+                 // names and its certification. null for a key written by
+                 // a door that verified nothing; the AAGUID is then only the
+                 // authenticator's claim, which is why it is beside it.
+                 aaguid: one.aaguid || null,
+                 attestation: one.attestation || null };
       }),
       primaryKeys: mech.primaryKeys,
       mfaKeys: mech.mfaKeys,

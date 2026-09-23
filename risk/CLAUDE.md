@@ -87,9 +87,11 @@ dbip-lite,tor-project` with `STS_DATABASE_URL` set. A dataset whose provider
 is not named in `--accept-terms` is refused and its terms printed; a URL is
 fetched over HTTPS only (`.gz` gunzipped) and imported exactly as the console
 imports one. It is an operator's tool, run by an init container or a deploy
-step — **the running service still dials nobody**, so the root `CLAUDE.md`'s
-table of the addresses the service dials has no new row, and P5's in-service
-fetching may not be needed at all. It imports the service's datasets and the
+step — **for the datasets it loads, the running service dials nobody**. The
+one exception is the FIDO MDS3 BLOB since #105: MDS3 section 3.2 says a FIDO
+server MUST be able to download it, so `risk.mdsUrl` (empty by default) is
+fetched by the `risk.mds-refresh` scheduler job — see *The FIDO metadata*,
+below, and the root `CLAUDE.md`'s row of addresses the service dials. It imports the service's datasets and the
 default realm's lists; another realm's list goes through the console or the
 API, where the realm is known to exist.
 
@@ -397,6 +399,28 @@ more than its sign-in did. The device and the model cannot move without a
 request, which is continuous evaluation's business.
 
 ## THE FIDO METADATA (P5, 2026-09-22)
+
+**Since #105 (2026-09-23) it is also WebAuthn's trust source**, and two things
+here changed for it rather than a second MDS client being written:
+
+* **`lookupAuthenticatorBy(kind, key)`** finds a model by AAGUID, AAID or
+  attestation key identifier (`acki`, how a fido-u2f authenticator is found),
+  and the row's `metadataStatement` — kept whole but for its icon since P5 —
+  carries the `attestationRootCertificates` the attestation chain must reach.
+  The postgres driver's `riskLookupFido()` returns the statement too; the
+  memory store always did.
+* **`risk.mds-refresh`**, a cluster scheduler job, downloads the BLOB from
+  `risk.mdsUrl` through `federation_http.fetchPublished()` (with `maxBytes`,
+  `risk.mdsMaxBytes`: a BLOB is megabytes) daily, hourly once the active one is
+  past its nextUpdate, and hands it to `importVersion()` — the recorded
+  acceptance and every check below apply unchanged. A published serial not
+  above the active one is not imported (the ordinary day, and not a rollback
+  worth an audit row); a download that fails is `STS-RISK-0027`.
+  `mdsState()` / `mdsSnapshot()` report the active BLOB to `/admin/webauthn`.
+
+`authn/webauthn_attestation.ts` refuses a registration from a model this data
+calls compromised (`STS-AUTHN-0237`) — the same `compromised` flag the scorer
+reads.
 
 `fido.mds3` is a dataset like the others — imported by `importVersion()`
 from the loader, the directory or an upload, under a recorded acceptance of

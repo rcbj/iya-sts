@@ -76,8 +76,10 @@ const log = bunyan.createLogger({ name: 'run',
 // `wallet_kit.js` (#38's follow-ups) is the five wallet sign-in tests' shared
 // wallet and stack, required from their child processes. `scheduler_kit.js`
 // (#49) is the simulated cluster the two scheduler tests drive.
+// `webauthn_attestation_kit.js` (#105) is the software authenticator that
+// attests in all eight formats for `webauthn_attestation.js`.
 const NOT_A_TEST = ['run.js', 'harness.js', 'wallet_kit.js',
-                    'scheduler_kit.js'];
+                    'scheduler_kit.js', 'webauthn_attestation_kit.js'];
 
 // `patterns` is the `--only` filter: a file is kept when its name contains any
 // one of them. Empty means every file, which is what `npm test` asks for.

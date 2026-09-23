@@ -2290,6 +2290,26 @@ class Portal {
   // own keys — see the file header, where that is argued as the case that looks
   // like the rule's exception and is not.
   // ---------------------------------------------------------------------------
+  // WHAT THE ATTESTATION PROVED ABOUT ONE OF THE PERSON'S OWN KEYS (#105),
+  // in their words: the model the FIDO metadata names where the statement
+  // chained to an anchor, "verified" where it was checked and anchored
+  // nowhere, and "claimed" where nothing was checked — `/admin/users` draws
+  // the same record for an operator.
+  private attestationText(att) {
+    const { log } = this.deps;
+    log.debug('Entering Portal.attestationText().');
+    let text = 'not verified (the authenticator\'s own claim)';
+    if (att && att.verified && att.trusted) {
+      text = (att.model ? att.model + ' — ' : '') + 'verified and trusted';
+    } else if (att && att.verified) {
+      text = att.type === 'none' || att.type === 'self'
+        ? 'no attestation sent (' + att.type + ')'
+        : 'verified, from an authenticator no trusted root vouches for';
+    }
+    log.debug('Leaving Portal.attestationText().');
+    return this.esc(text);
+  }
+
   private keysPage(session, message, error, base) {
     const self = this;
     const { credentials, log, websecurity } = this.deps;
@@ -2308,12 +2328,13 @@ class Portal {
             : 'None of them is marked as a second factor.')
         : 'You have no security keys enrolled.') + '</p>' +
       (keys.length
-        ? '<table class="grid"><tr><th>Key</th><th>Role</th><th>Enrolled</th>' +
-          '<th></th></tr>' +
+        ? '<table class="grid"><tr><th>Key</th><th>Role</th>' +
+          '<th>Authenticator</th><th>Enrolled</th><th></th></tr>' +
           keys.map(function (one) {
             return '<tr><td>' +
               self.esc(one.label || 'security key') + '</td>' +
               '<td>' + self.esc(one.role) + '</td>' +
+              '<td>' + self.attestationText(one.attestation) + '</td>' +
               '<td>' +
               self.esc(new Date(one.enrolledAt || 0).toISOString()
                 .slice(0, 10)) +

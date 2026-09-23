@@ -287,6 +287,9 @@ async function apiPost(path, payload) {
 // for it.
 // ---------------------------------------------------------------------------
 var PASSWORD = "portal-directory-Passw0rd!-" + String(Date.now()).slice(-6);
+// What section 3 sets through the management API, and what the owner signs
+// in with after it.
+const PROBE_PASSWORD = "A-probe-Passw0rd!-" + String(Date.now()).slice(-6);
 var MAIL_DOMAIN = "portal-directory.test";
 
 function personAttributes(who) {
@@ -321,7 +324,7 @@ async function ensurePerson(who) {
 // SIGN IN AT `/portal`, which is an OpenID Connect relying party of this
 // service's own authorization server — so this is a code flow.
 // ---------------------------------------------------------------------------
-async function signIn(who) {
+async function signIn(who, password) {
   log.debug("Entering signIn(). who=" + who);
   await ensurePerson(who);
   const b = browser(who);
@@ -339,7 +342,7 @@ async function signIn(who) {
   assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
   r = await b.go("POST", "/authn/login",
                  form({ authn_id: authnId, username: who,
-                        password: PASSWORD, action: "login",
+                        password: password || PASSWORD, action: "login",
                         csrf_token: csrfOf(r.text) }));
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in should end in a redirect; got " + r.status + " " +
@@ -558,7 +561,7 @@ async function theRefusalsHold(b) {
   // `userPassword` to refuse to print.
   const set = await fetch(api + "/users/set-password", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user: OWNER, password: "A-probe-Passw0rd!" })
+    body: JSON.stringify({ user: OWNER, password: PROBE_PASSWORD })
   });
   assert.ok(set.status === 200,
     "setting a password answered " + set.status);
@@ -582,7 +585,7 @@ async function theRefusalsHold(b) {
   });
 
   check("and the password itself is nowhere in the HTML", function () {
-    assert.ok(String(page.text).indexOf("A-probe-Passw0rd!") < 0,
+    assert.ok(String(page.text).indexOf(PROBE_PASSWORD) < 0,
       "the page carries the password that was just set.");
   });
 
@@ -774,7 +777,12 @@ async function test() {
   const b = await itDrawsTheDirectory();
   await itReadsTheEntryAndNotTheSession(b);
   await theRefusalsHold(b);
-  await theCredentialsAreNotOnIt(b);
+  // The password section 3 sets is an ADMINISTRATOR'S credential change, and
+  // in product the portal's signal-response ends the person's portal sessions
+  // on one (#62). So the owner signs in again, with the password it set,
+  // before section 5 drives the portal.
+  const again = await signIn(OWNER, PROBE_PASSWORD);
+  await theCredentialsAreNotOnIt(again);
   await oneUserCannotReadAnother();
   log.info(checks + " assertion(s).");
   log.info("Test completed successfully.");

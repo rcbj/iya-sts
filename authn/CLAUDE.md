@@ -8,7 +8,8 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 |---|---|
 | `authn.ts` | The sign-in screen, the session store, and the pending-authentication record. |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
-| `webauthn_policy.ts` | The ceremony's options and the four policy settings that refuse, kept out of `webauthn.js` so that file stays loadable on its own. |
+| `webauthn_policy.ts` | The ceremony's options, the four policy settings that refuse, and the attestation policy's settings (#105), kept out of `webauthn.js` so that file stays loadable on its own. |
+| `webauthn_attestation.ts` | **A registration's attestation statement, verified (#105)**: WebAuthn Level 3 section 7.1 steps 21-25 and all eight section 8 formats, the trust anchors (the realm's and the FIDO Metadata Service's), MDS status reports, revocation, and the record a key carries. A library (rule 3). See *The attestation statement*, below. |
 
 **A THIRD ENDPOINT LIVES IN `/authn/*` AND IS NOT IN THIS DIRECTORY.**
 `/authn/spnego` — sign in with a Kerberos ticket — is
@@ -1675,6 +1676,52 @@ arrived at:
 
 **`/portal/keys` asks both functions**, so the two ceremonies cannot accept
 different origins. `tests/webauthn_addresses.js` pins it.
+
+## THE ATTESTATION STATEMENT (#105, 2026-09-23)
+
+Until #105 `webauthn.js` never read `attStmt`: the statement was "parsed,
+reported and believed" and the AAGUID on a key was the authenticator's say-so.
+`webauthn_attestation.ts` now verifies it, and the design decisions are in its
+header; what a maintainer of THIS directory needs is where it sits:
+
+* **`webauthn.js` still verifies nothing about the statement.** It returns
+  `attStmt` (as plain data), the raw authenticator data, the client data hash,
+  the COSE key and its algorithm, and adds three section 7.1 checks by name —
+  `credential algorithm was offered` (only when the caller passes
+  `expectedAlgorithms`), `credential ID is at most 1023 bytes` and `backup state
+  only where backup eligible` — mapped to `STS-AUTHN-0228`–`0230` in
+  `webauthn_policy.ts`'s table. It stays loadable on its own for the parent
+  project's cross-implementation test; the six new COSE algorithms (PS256/384/
+  512, ML-DSA-44/65/87 from RFC 9964) go through `crypto.verifyCoseSignature()`
+  and a standalone copy refuses them rather than misreading them. **The stored
+  JWK now carries `alg`**, so an assertion is checked with the credential's own
+  hash and padding; a key stored before has none and is read by key type — which
+  fixed ES384 and ES512 keys, checked with SHA-256 until then.
+* **Both ceremony doors ask it, AFTER the ceremony's checks and BEFORE the
+  credential id is claimed**: the sign-in screen (`authn.ts`, in the async
+  registration tail) and `credentials.checkKeyEnrolment()` (`/portal/keys`). A
+  refusal is a refused ceremony with its code; nothing is written.
+* **The policy is `webauthn_policy.attestationSettings()`**: `by-mode` resolves
+  through `mode.acceptsUnverifiedAttestation()` (development `off`, product
+  `verify-if-present`), and `off` carries the `onlyWhile` marker. A demand for a
+  trusted statement (require-trusted, an AAGUID list, a level, FIPS) makes
+  `creationOptions()` ask for `direct`.
+* **The FIDO metadata is #62 P5's dataset, not a second client**:
+  `risk_datasets.lookupAuthenticatorBy()` finds a model by AAGUID or attestation
+  key identifier, and its metadata statement's `attestationRootCertificates`
+  are the model's anchors (the postgres lookup returns the statement since
+  #105). The console's MDS block reads `mdsSnapshot()` because a status block is
+  drawn synchronously.
+* **The record** (`attestation` on the key: policy, format, type, verified,
+  trusted, anchor, aaguid, model, certificationLevel, mdsStatus, mdsVersion,
+  checkedAt) is drawn on `/portal/keys`, the `/admin/users` key rows and `GET
+  /admin-api/users`. A key without one is "claimed".
+
+`tests/webauthn_attestation.js` (with `tests/webauthn_attestation_kit.js`, a
+software authenticator in all eight formats) and
+`tests/vendored/sts_webauthn_attestation.js` are the tests. Not done:
+enterprise attestation (section 5.4.7) has no RP ID allow-list, which the plan
+deferred.
 
 ## `/authn/password-change`: A FORCED PASSWORD CHANGE AT THE SIGN-IN SCREEN (2026-09-13)
 

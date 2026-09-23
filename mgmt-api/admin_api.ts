@@ -1193,7 +1193,7 @@ class AdminApi {
         operationId: 'getWebauthnSettings',
         summary:
           'The security-key ceremony\'s settings, and what a key may be here',
-        description: 'The thirteen `webauthn.*` settings, in three kinds. ' +
+        description: 'The twenty-one `webauthn.*` settings, in four kinds. ' +
                      '**THE CEREMONY**: the RP name, the RP ID override, the ' +
                      'algorithms offered, the user verification requirement, ' +
                      'the attestation conveyance and the timeout — handed to ' +
@@ -1218,10 +1218,16 @@ class AdminApi {
                      'resident key or the attachment, so a check on those ' +
                      'would compare against a value this service itself ' +
                      'supplied — what it does instead is RECORD what came ' +
-                     'back.\n\n**NO ATTESTATION STATEMENT IS VERIFIED** ' +
-                     'whatever is asked for: there is no metadata service ' +
-                     'here, no vendor trust anchor and no model allow-list. ' +
-                     '`status` carries the COSE algorithm table, read from ' +
+                     'back.\n\n**THE ATTESTATION STATEMENT** (#105): ' +
+                     '`webauthn.attestationPolicy` and the six settings ' +
+                     'beside it — trust anchors, an AAGUID allow-list, a ' +
+                     'certification level, FIPS, SafetyNet and Android ' +
+                     'software keys. `status` reports the policy in force, ' +
+                     'the eight formats verified and the FIDO Metadata ' +
+                     'Service BLOB (`status.mds`); the BLOB itself is ' +
+                     'uploaded through `POST /risk/import`, where #62 put ' +
+                     'it. What each key\'s statement proved is on `GET ' +
+                     '/users`, per key.\n\n`status` carries the COSE algorithm table, read from ' +
                      '`authn/webauthn.js` — the module that checks the ' +
                      'signature — with the offered ones marked.\n\nWho holds ' +
                      'a key is `GET /users`, and removing one is `POST ' +

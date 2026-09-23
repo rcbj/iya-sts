@@ -339,6 +339,19 @@ a backup that is lost with the original, which is the exact failure the feature
 is against. **This service checks again at the write**, because the list is a
 request to the browser like every other ceremony option.
 
+### The attestation is verified, and each key says what it proved (#105)
+
+`confirmKeyEnrolment()` hands the verified ceremony to
+`authn/webauthn_attestation.ts` before the credential id is claimed, so a
+statement the realm's `webauthn.attestationPolicy` refuses is a refused
+enrolment (400, the sentence on the page, the pending enrolment kept for another
+try) and nothing is written. What an accepted statement proved is on the key
+row — `attestation` — and this page draws it in the person's words
+(`attestationText()`): the model the FIDO metadata names and "verified and
+trusted", "verified" with no trusted root, "no attestation sent", or "not
+verified" where the policy verified nothing. `authn/CLAUDE.md`, *The
+attestation statement*, has the rest.
+
 ### It is the SEVENTH scripted page in this service and the first in this portal
 
 It arrived 2026-09-10, in a directory whose own file said every page of it was

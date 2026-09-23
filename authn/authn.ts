@@ -414,6 +414,10 @@ import webauthnVerifier = require('./webauthn');
 // cross-implementation test, and a `require('../common/config')` in there would
 // end that silently. See `authn/webauthn_policy.ts`'s header.
 import webauthnPolicy = require('./webauthn_policy');
+// THE ATTESTATION STATEMENT, VERIFIED (#105). Rule 3 as well: a library that
+// requires the policy above, `crypto`, `pki` and `error_codes`, and reaches
+// the FIDO metadata and revocation lazily — nothing that reaches back here.
+import webauthnAttestation = require('./webauthn_attestation');
 // THE AUTHENTICATOR APP'S MECHANISM (2026-09-13), for the enrolment a required
 // second factor asks for: the otpauth URI, the QR code and the grouped secret.
 // A LEAF requiring `config`, `crypto`, `helpers` and `realms`, none of which
@@ -1047,6 +1051,7 @@ interface AuthnDeps {
   accountState: typeof accountState;
   webauthnVerifier: typeof webauthnVerifier;
   webauthnPolicy: typeof webauthnPolicy;
+  webauthnAttestation: typeof webauthnAttestation;
   totp: typeof totp;
 }
 
@@ -1094,6 +1099,7 @@ class Authn {
       accountState: accountState,
       webauthnVerifier: webauthnVerifier,
       webauthnPolicy: webauthnPolicy,
+      webauthnAttestation: webauthnAttestation,
       totp: totp
     };
   }
@@ -9210,7 +9216,10 @@ class Authn {
             // attachment, which nothing signed says anything about. It was the
             // literal `false` until 2026-09-10, which made `required` a request
             // a browser could decline with nothing here noticing.
-            requireUserVerification: webauthnPolicy.requireUserVerification()
+            requireUserVerification: webauthnPolicy.requireUserVerification(),
+            // WebAuthn Level 3 section 7.1: the credential's alg must be one
+            // of the pubKeyCredParams this realm offered (#105).
+            expectedAlgorithms: webauthnPolicy.algorithmIds()
           });
           if (verdict.ok) {
             // ---------------------------------------------------------------
@@ -9319,7 +9328,7 @@ class Authn {
                 userVerified: !!(verdict.flags && verdict.flags.uv),
                 aaguid: verdict.aaguid || null,
                 algorithm: verdict.algorithm || null
-              } };
+              }, registration: verdict };
             }
           }
         } else {
@@ -9405,8 +9414,33 @@ class Authn {
       }
 
       if (toRegister) {
-        credentials.addKeyClaimed(toRegister.username, toRegister.record,
-                                  toRegister.role).then(function (stored) {
+        // THE ATTESTATION STATEMENT FIRST (#105): section 7.1 steps 21-25,
+        // asynchronous because a certificate path and its revocation are, and
+        // BEFORE the credential id is claimed, so a refused statement leaves
+        // nothing behind. What it answers is recorded on the key row.
+        self.deps.webauthnAttestation.assess(toRegister.registration)
+          .then(function (attested) {
+            if (!attested.ok) {
+              log.info('authn: the security key "' + step.username + '" ' +
+                       'presented was NOT registered: ' + attested.why);
+              verdict = errorCodes.mark({ ok: false,
+                                          checks: verdict.checks,
+                                          failed: [attested.why],
+                                          why: attested.why },
+                                        errorCodes.codeOf(attested) ||
+                                        'STS-AUTHN-0241');
+              return null;
+            }
+            toRegister.record.attestation = attested.attestation;
+            return credentials.addKeyClaimed(toRegister.username,
+                                             toRegister.record,
+                                             toRegister.role);
+          }).then(function (stored) {
+          if (stored === null) {
+            // The attestation refused it, above; the verdict says why.
+            self.finishWebauthn(req, res, base, body, step, verdict);
+            return;
+          }
           if (!stored.ok) {
             // **A REFUSED WRITE IS A REFUSED CEREMONY.** The old code could not
             // fail here — a map takes anything — so there was no branch for it,
