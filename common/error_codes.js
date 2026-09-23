@@ -6583,6 +6583,112 @@ const CODES = [
     summary: 'A client not enabled for Native SSO asked the revocation ' +
       'endpoint to revoke a device secret (#130). Nothing was revoked.',
     spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0635',
+    summary: 'A CIBA request was refused because the person already has ' +
+      'oauth2.cibaMaxPendingPerPerson requests waiting (#131, section 14).',
+    spec: 'access_denied (HTTP 403)' },
+  { code: 'STS-OAUTH-0636',
+    summary: 'A CIBA ping or push to a client notification endpoint was ' +
+      'given up after its attempts, or could not be sent at all (#131).',
+    spec: 'none — the client polls, or never learns' },
+  { code: 'STS-OAUTH-0637',
+    summary: 'The CIBA Backchannel Authentication Endpoint failed ' +
+      'unexpectedly (#131).',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-OAUTH-0638',
+    summary: 'A CIBA request or token request arrived in a realm where ' +
+      'oauth2.ciba is off (#131).',
+    spec: 'invalid_request (HTTP 404) or unsupported_grant_type' },
+  { code: 'STS-OAUTH-0639',
+    summary: 'A CIBA authentication request was malformed (#131).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0640',
+    summary: 'A CIBA client declared a client authentication method the ' +
+      'authorization server does not advertise (#131).',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0641',
+    summary: 'A CIBA client did not authenticate at the Backchannel ' +
+      'Authentication Endpoint, which asks it in every mode (#131, section ' +
+      '7.1).',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0642',
+    summary: 'A client that registered no backchannel_token_delivery_mode ' +
+      'asked to use CIBA (#131).',
+    spec: 'unauthorized_client (HTTP 400)' },
+  { code: 'STS-OAUTH-0643',
+    summary: 'A CIBA signed request was missing where required, or did not ' +
+      'verify, carried the wrong alg, iss, aud or lifetime, or was used ' +
+      'before (#131, section 7.1.1).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0644',
+    summary: 'A CIBA request\'s scope did not contain openid (#131, section ' +
+      '7.1).',
+    spec: 'invalid_scope (HTTP 400)' },
+  { code: 'STS-OAUTH-0645',
+    summary: 'A CIBA request carried no hint, or more than one of ' +
+      'login_hint_token, id_token_hint and login_hint (#131).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0646',
+    summary: 'A CIBA hint named nobody this realm holds — in both modes ' +
+      '(#131).',
+    spec: 'unknown_user_id (HTTP 400)' },
+  { code: 'STS-OAUTH-0647',
+    summary: 'A CIBA id_token_hint or login_hint_token is not a token this ' +
+      'realm issued and still stands by (#131).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0648',
+    summary: 'A CIBA login_hint_token has expired (#131).',
+    spec: 'expired_login_hint_token (HTTP 400)' },
+  { code: 'STS-OAUTH-0649',
+    summary: 'A CIBA binding_message was longer than 200 characters or ' +
+      'carried control characters (#131).',
+    spec: 'invalid_binding_message (HTTP 400)' },
+  { code: 'STS-OAUTH-0650',
+    summary: 'A CIBA request from a client that registered ' +
+      'backchannel_user_code_parameter carried no user_code (#131).',
+    spec: 'missing_user_code (HTTP 400)' },
+  { code: 'STS-OAUTH-0651',
+    summary: 'A CIBA request\'s user_code is not the one the person set ' +
+      '(#131).',
+    spec: 'invalid_user_code (HTTP 400)' },
+  { code: 'STS-OAUTH-0652',
+    summary: 'A CIBA request\'s requested_expiry was not a positive whole ' +
+      'number (#131).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0653',
+    summary: 'A CIBA ping or push client sent no client_notification_token ' +
+      '(#131).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0654',
+    summary: 'A CIBA token request came from a client registered for push, ' +
+      'or for no CIBA mode (#131, section 10).',
+    spec: 'unauthorized_client (HTTP 400)' },
+  { code: 'STS-OAUTH-0655',
+    summary: 'A CIBA token request named an auth_req_id that is no request ' +
+      'of this client (#131).',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0656',
+    summary: 'A CIBA token request found the request still waiting for the ' +
+      'person (#131, section 11).',
+    spec: 'authorization_pending (HTTP 400)' },
+  { code: 'STS-OAUTH-0657',
+    summary: 'A CIBA token request came sooner than the interval; the ' +
+      'interval grows by five seconds (#131, section 11).',
+    spec: 'slow_down (HTTP 400)' },
+  { code: 'STS-OAUTH-0658',
+    summary: 'A CIBA request expired before the person answered (#131).',
+    spec: 'expired_token (HTTP 400)' },
+  { code: 'STS-OAUTH-0659',
+    summary: 'The person denied the CIBA request (#131).',
+    spec: 'access_denied (HTTP 400)' },
+  { code: 'STS-OAUTH-0660',
+    summary: 'A CIBA request\'s tokens had already been issued (#131).',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0661',
+    summary: 'The tokens for an approved CIBA push could not be minted — the ' +
+      'issuance policy refused, or the person is gone — and the client is ' +
+      'sent transaction_failed (#131).',
+    spec: 'none — pushed as transaction_failed' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -13630,6 +13736,14 @@ const CODES = [
     summary: 'remove-device named a device that is not the person\'s, or the ' +
       'directory did not remove it (#130).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0812',
+    summary: 'answer-ciba-request, a development test control, was refused ' +
+      'in product mode (#131).',
+    spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0813',
+    summary: 'answer-ciba-request named no CIBA request waiting for the ' +
+      'person (#131).',
+    spec: 'HTTP 400 (API)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -14252,6 +14366,19 @@ const CODES = [
     summary: 'A POST to /portal/devices named a device the signed-in person ' +
       'does not own, or the directory did not remove it (#130).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0089',
+    summary: 'A POST to /portal/ciba answered a CIBA request that is not ' +
+      'waiting for the signed-in person (#131).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0090',
+    summary: 'A CIBA user code set on /portal/ciba was refused — the wrong ' +
+      'length, or not stored (#131).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0091',
+    summary: 'An approval on /portal/ciba asked for more (acr_values) than ' +
+      'the sign-on session proved; the person is offered a stronger sign-in ' +
+      '(#131).',
+    spec: 'HTTP 403 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
@@ -14873,6 +15000,12 @@ const CODES = [
       '(gnap.mtlsTrust resolves to pki); an entry may be stricter than ' +
       'the realm, never weaker (#107).',
     spec: 'console: the page\'s error list; /admin-api: HTTP 400' },
+  { code: 'STS-REG-0197',
+    summary: 'A registration\'s CIBA metadata was refused: an unknown ' +
+      'backchannel_token_delivery_mode, no https notification endpoint for ' +
+      'ping or push, a signing algorithm that is not asymmetric, or a user ' +
+      'code parameter that is not a boolean (#131).',
+    spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

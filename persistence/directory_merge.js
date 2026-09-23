@@ -68,7 +68,7 @@ const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
                 'stsactivationexpires', 'appregistrationjson',
                 'stsapppassword', 'stsidaverification',
                 'stsselfissuedsubject', 'stsdevicesecrethash',
-                'stsdevicesession'];
+                'stsdevicesession', 'stscibausercode'];
 
 // Always merged by value: lists this service appends to itself.
 const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',

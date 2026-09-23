@@ -412,6 +412,46 @@ must be `access_token`, `refresh_token`, `id_token` or `jwt`; and a token this
 service issued must be the type it is declared as. Anything else is refused
 `invalid_request`.
 
+### Backchannel sign-in (OpenID Connect CIBA Core 1.0)
+
+A client that cannot show the person a browser — a call centre, a point of
+sale — can ask this service to sign them in **on a device of their own**.
+It is **off by default**; turn on `oauth2.ciba` in the realm.
+
+1. **Register the client** with `backchannel_token_delivery_mode` — `poll`,
+   `ping` or `push` — and, for ping and push,
+   `backchannel_client_notification_endpoint` (https). Optionally
+   `backchannel_authentication_request_signing_alg` (every request must then
+   be a signed `request`) and `backchannel_user_code_parameter`.
+2. **The client asks** at `POST /oauth2/bc-authorize`, authenticating as it
+   would at the token endpoint, with `scope` including `openid` and exactly
+   one of `login_hint` (a username), `id_token_hint` or `login_hint_token`.
+   It may add `binding_message` (shown to the person), `acr_values`,
+   `requested_expiry`, `user_code`, and — for ping and push —
+   `client_notification_token`. The answer is an `auth_req_id`,
+   `expires_in` and, except for push, `interval`.
+3. **The person approves or denies** on `/portal/ciba`, their own sign-in
+   requests page. If the request's `acr_values` ask for more than their
+   sign-in proved, they sign in again with it first.
+4. **The client collects its tokens**:
+   * **poll** — `grant_type=urn:openid:params:grant-type:ciba` with the
+     `auth_req_id` at the token endpoint; `authorization_pending` until the
+     person answers, `slow_down` (and a longer interval) when asked too soon;
+   * **ping** — this service POSTs `{"auth_req_id": …}` to the notification
+     endpoint with the `client_notification_token` as a Bearer, and the
+     client then makes that token request;
+   * **push** — this service POSTs the tokens themselves (or the error) to
+     the notification endpoint. A push client may not poll.
+
+The ID Token carries `urn:openid:params:jwt:claim:auth_req_id`, and `rt_hash`
+beside a refresh token. A ping or push that fails is retried with a growing
+back-off and given up after `oauth2.cibaNotifyAttempts` tries.
+
+**An unknown person is `unknown_user_id` in every mode**, and at most
+`oauth2.cibaMaxPendingPerPerson` (5) requests may wait for one person. A
+person's **user code** is set on the same portal page; a client registered
+with `backchannel_user_code_parameter` must send it with every request.
+
 ### Verified claims (OpenID Connect for Identity Assurance 1.0)
 
 A `claims` request may ask for **`verified_claims`** in its `id_token` or

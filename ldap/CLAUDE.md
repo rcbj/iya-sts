@@ -727,6 +727,16 @@ container is seeded like the others; `listDeviceEntries()`,
 `credentials.deviceStore()`, and `common/devices.ts` decides what an entry
 means. #164 adds the rest of what a device is to these same entries.
 
+## `stsCibaUserCode`: THE PERSON'S CIBA USER CODE (2026-09-23, #131)
+
+The secret a CIBA client that registered `backchannel_user_code_parameter`
+must send with every request for this person (CIBA section 7.1), set or
+cleared by the person on `/portal/ciba`. Scrypt-hashed like `userPassword`
+(`stsCrypto.hashSecret()`), in `SECRET_ATTRIBUTES` and merged whole
+(`directory_merge.js`'s SINGLE); read and written only through the
+`readCibaUserCode` / `writeCibaUserCode` hooks `credentials.ts` forwards, and
+matched by `oauth-oidc/ciba.ts`. `oauth-oidc/CLAUDE.md` (3bc).
+
 ## THE FIVE FEDERATION ATTRIBUTES ON A PERSON'S ENTRY
 
 `applyFederatedAttributes()` runs on an entry created because somebody signed in

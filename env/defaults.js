@@ -337,6 +337,15 @@ var config = {
     basicAuthRealm: "sts",                       // Token endpoint Basic realm
     maxAuthorizationServerProfiles: 200,         // Named authorization servers (per realm)
     maxDevicesPerPerson: 20,                     // Devices one person may hold
+    ciba: false,                                 // CIBA (backchannel authentication)
+    cibaDefaultExpiryS: 120,                     // CIBA request lifetime (s)
+    cibaMaxExpiryS: 600,                         // CIBA request longest lifetime (s)
+    cibaIntervalS: 5,                            // CIBA poll interval (s)
+    cibaMaxPendingPerPerson: 5,                  // CIBA requests waiting per person
+    cibaNotifyTimeoutMs: 5000,                   // CIBA notification timeout (ms)
+    cibaNotifyAttempts: 5,                       // CIBA notification attempts
+    cibaNotifyBackoffMs: 2000,                   // CIBA notification backoff (ms)
+    cibaSweepS: 30,                              // CIBA sweep interval (s)
     maxRequestedClaims: 64,                      // Claims one claims request may name
     idaTrustFrameworks: "urn:sts:local",         // Identity Assurance trust frameworks
     idaAutomaticVerifications: true,             // Sign-ins record an identity verification

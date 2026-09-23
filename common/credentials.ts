@@ -4336,6 +4336,30 @@ class Credentials {
     return answer;
   }
 
+  // A PERSON'S CIBA USER CODE (#131), for `oauth-oidc/ciba.ts`: the stored
+  // hash ('' for none or no store), and the hash written ('' removes it).
+  readCibaUserCode(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.readCibaUserCode().');
+    const value = directory && typeof directory.readCibaUserCode ===
+      'function' ? String(directory.readCibaUserCode(String(username || '')) ||
+                          '') : '';
+    log.debug('Leaving Credentials.readCibaUserCode().');
+    return value;
+  }
+
+  writeCibaUserCode(username, value) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.writeCibaUserCode().');
+    const written = !!(directory && typeof directory.writeCibaUserCode ===
+      'function' && directory.writeCibaUserCode(String(username || ''),
+                                                String(value || '')));
+    log.debug('Leaving Credentials.writeCibaUserCode(). ' + written);
+    return written;
+  }
+
   static readonly APP_PASSWORDS_ATTRIBUTE = 'stsAppPassword';
   static readonly APP_PASSWORD_USE_WRITE_MS = 60 * 1000;
 
@@ -6241,6 +6265,8 @@ export = {
   writeSelfIssuedSubjects: slot.forward('writeSelfIssuedSubjects'),
   selfIssuedSubjectOwner: slot.forward('selfIssuedSubjectOwner'),
   deviceStore: slot.forward('deviceStore'),
+  readCibaUserCode: slot.forward('readCibaUserCode'),
+  writeCibaUserCode: slot.forward('writeCibaUserCode'),
   installInstance: (instance: Credentials): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   // --- the authenticator app (RFC 6238) ---

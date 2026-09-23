@@ -3719,6 +3719,87 @@ directory entries (`common/devices.ts`, `ldap/CLAUDE.md`).
 
 `tests/native_sso.js` and `tests/vendored/sts_native_sso.js` (local) hold it.
 
+## 3bc. OPENID CONNECT CIBA CORE 1.0 (2026-09-23, #131)
+
+rcbj's answers: the person approves on a PORTAL page (`/portal/ciba`) —
+nothing is mailed or pushed to a device, which waits for #164; ALL THREE
+delivery modes; an approval as strong as `acr_values` asks and no stronger;
+and development relaxes NOTHING — an unknown hint is `unknown_user_id` in
+both modes, with an `/admin-api` test control that product closes.
+
+* **Off by default** (`oauth2.ciba`, per realm): a new way in is something a
+  realm turns on. Off, the endpoint answers 404 and the grant is
+  `unsupported_grant_type` (STS-OAUTH-0638), and discovery publishes neither.
+  On, the OIDC and RFC 8414 documents carry
+  `backchannel_authentication_endpoint`, the three modes,
+  `backchannel_user_code_parameter_supported`, the signing algorithms, and
+  `urn:openid:params:grant-type:ciba` in `grant_types_supported` — the token
+  endpoint refuses any grant that list omits, which is why the grant is added
+  there rather than beside the endpoint.
+* **The endpoint** (`POST /oauth2/bc-authorize`, `backchannelAuthentication()`)
+  authenticates the client in EVERY mode (section 7.1, 0641) — the request is
+  an instruction to go and bother somebody — through the token endpoint's
+  own client authentication. The client must have registered a delivery mode
+  (0642). A client that registered
+  `backchannel_authentication_request_signing_alg` must send a signed
+  `request` (section 7.1.1, `cibaSignedRequest()`): verified by
+  `requestObject`, `aud` the issuer, `iss` the client, `exp`/`iat`/`nbf`/`jti`
+  present, at most an hour, and the `jti` spent ONCE EVER through
+  `used_assertions.js` (use `ciba-request`) — 0643. Then `openid` in the scope
+  (0644), exactly one hint (0645), `binding_message` at most 200 characters
+  without control characters (0649), the user code where registered (0650,
+  0651), a positive `requested_expiry` cut to `oauth2.cibaMaxExpiryS` (0652),
+  and a `client_notification_token` for ping and push (0653).
+* **The hint** (`cibaHintPerson()`): a `login_hint` is a username; an
+  `id_token_hint` an ID Token this realm signed, EXPIRED ONES INCLUDED —
+  it names somebody and grants nothing; a `login_hint_token` a token this
+  realm signed and still valid (0647, 0648). A person nobody holds is
+  `unknown_user_id` in BOTH modes (0646), and at most
+  `oauth2.cibaMaxPendingPerPerson` requests may wait for one person (0635,
+  section 14): a client cannot fill somebody's page.
+* **The request is a row** (`ciba.ts`, `oauth2.cibaRequests`, per realm,
+  persisted where minted rows are), keyed by a 256-bit `auth_req_id` — the
+  only credential the token request needs beside the client's. `pending` →
+  `approved` / `denied` → `redeemed`, and `expired`. Only the hinted person
+  sees or answers it, and once.
+* **Poll** (section 10.1, the grant): `authorization_pending` (0656), and
+  `slow_down` sooner than the interval, which then grows by five seconds
+  (0657); `expired_token`, `access_denied`, a spent request `invalid_grant`
+  (0658–0660). Redemption is a cluster claim (`oauth.ciba`), so one approval
+  is one token response however many nodes are polled. A PUSH client may not
+  poll (0654). The ID Token carries
+  `urn:openid:params:jwt:claim:auth_req_id`, and `rt_hash` beside a refresh
+  token (section 10.3.1).
+* **Ping and push** (sections 10.2, 10.3): each is a DELIVERY —
+  `oauth2.cibaDeliveries`, a persisted row sent once for the cluster under a
+  claimed lease (`oauth.ciba-notify`), with the client's
+  `client_notification_token` as a Bearer, through
+  `federation_http.deliverJson()` so the outbound policy applies to the
+  registered endpoint (`oauthBackchannelClientNotificationEndpoint`, https —
+  development dials an internal address, product refuses one). A failure
+  worth retrying waits `cibaNotifyBackoffMs`, doubling; a 4xx, or
+  `cibaNotifyAttempts` failures, is DEAD (0636). A push is minted at the
+  moment of approval (`cibaPushTokens()`, reached lazily); a denial, an
+  expiry or a push whose tokens the issuance policy refuses sends
+  `access_denied`, `expired_token` or `transaction_failed` (0661).
+  Back-channel logout's arrangement, argued at 3aq.
+* **The sweep** is the `oauth2.ciba-sweep` scheduler job (a cluster job,
+  every `oauth2.cibaSweepS`): it retries due deliveries and expires what
+  nobody answered, sending a push client `expired_token`. No timer.
+* **The approval's strength** (`portal/CLAUDE.md`): a live session approves a
+  request with no `acr_values`; one whose `acr_values` the session does not
+  meet (`stepUp.assessSession()`) sends the person to sign in again with
+  them first. The approval records the session's `acr`, `amr` and
+  `auth_time`, which the tokens carry.
+* **Registration** (`applications.js`, `cibaMetadataProblem()`, REG-0197):
+  section 4's four members, through DCR and on the console — a known mode, an
+  https endpoint for ping and push, an asymmetric algorithm, a boolean.
+* **The test control** `POST /admin-api/users/answer-ciba-request` approves or
+  denies as the person would, open in development and refused in product
+  (`mode.opensTestControls()`, ADMIN-0812/0813).
+
+`tests/ciba.js` and `tests/vendored/sts_ciba.js` (local) hold it.
+
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 
 The review on #45 found Core bugs that no test had asked about. What changed, and

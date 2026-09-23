@@ -342,6 +342,9 @@ class ProtocolStack {
     // #130: /portal/devices, the person's own ou=devices entries.
     this.build('portal/portal_devices', require('../portal/portal_devices'),
                'PortalDevices');
+    // #131: /portal/ciba, where a person answers a backchannel sign-in.
+    this.build('portal/portal_ciba', require('../portal/portal_ciba'),
+               'PortalCiba');
     // THE MAIL CHANNEL (#63, 2026-09-22): two LIBRARIES (rule 3) that
     // register no route — the channel and its uses — built here, before the
     // portal whose `/portal/email`, `/portal/verify-email` and
@@ -399,6 +402,9 @@ class ProtocolStack {
     this.build('oauth-oidc/backchannel_logout',
                require('../oauth-oidc/backchannel_logout'),
                'BackchannelLogout');
+    // #131: OpenID Connect CIBA's requests, approvals and notifications — a
+    // library whose wire step registers the `oauth2.ciba-sweep` job.
+    this.build('oauth-oidc/ciba', require('../oauth-oidc/ciba'), 'Ciba');
     this.build('oauth-oidc/refresh_token_crypto',
                require('../oauth-oidc/refresh_token_crypto'),
                'RefreshTokenCrypto');

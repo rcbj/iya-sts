@@ -225,6 +225,9 @@ interface SignInOptions {
   returnTo?: string;
   fallback?: string;
   prompt?: string;
+  // RFC 9470 levels the sign-in must reach (#131: a CIBA approval that asks
+  // for more than the portal's session holds).
+  acrValues?: string[];
   callbackBase?: string;
   authorizationBase?: string;
   poolPin?: unknown;
@@ -2123,6 +2126,12 @@ class OidcRelyingParty {
       // real thing to want.
       if (opts.prompt) {
         query.set('prompt', String(opts.prompt));
+      }
+      // And `acr_values` where the caller needs a stronger sign-in (#131):
+      // a CIBA request on /portal/ciba that asks for more than this session
+      // proved.
+      if (opts.acrValues && opts.acrValues.length) {
+        query.set('acr_values', opts.acrValues.join(' '));
       }
       // FAPI 1.0 ADVANCED (#139): signed, pushed and answered with JARM —
       // `advancedRedirect()`. A promise, which the three callers settle.

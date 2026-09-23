@@ -4322,6 +4322,75 @@ const SETTINGS = [
                  'device whose sign-on session has ended — or, failing that, ' +
                  'their least recently used one.' },
 
+  // OPENID CONNECT CIBA (#131). `oauth-oidc/ciba.ts` argues them.
+  { key: 'oauth2.ciba', group: 'OAuth 2.0 / OIDC',
+    label: 'CIBA (backchannel authentication)',
+    env: 'STS_OAUTH2_CIBA', type: 'bool', dflt: false, runtime: true,
+    description: 'Answer OpenID Connect Client-Initiated Backchannel ' +
+                 'Authentication (CIBA Core 1.0) at /oauth2/bc-authorize: a ' +
+                 'client names a person by a hint, the person approves on ' +
+                 '/portal/ciba, and the client polls, is pinged or is pushed ' +
+                 'its tokens. OFF by default: a new way in is something a ' +
+                 'realm turns on.' },
+
+  { key: 'oauth2.cibaDefaultExpiryS', group: 'OAuth 2.0 / OIDC',
+    label: 'CIBA request lifetime (s)',
+    env: 'STS_OAUTH2_CIBA_DEFAULT_EXPIRY_S', type: 'int', dflt: 120,
+    min: 10, max: 3600, runtime: true,
+    description: 'How long a backchannel authentication request waits for ' +
+                 'the person when the client sends no requested_expiry.' },
+
+  { key: 'oauth2.cibaMaxExpiryS', group: 'OAuth 2.0 / OIDC',
+    label: 'CIBA request longest lifetime (s)',
+    env: 'STS_OAUTH2_CIBA_MAX_EXPIRY_S', type: 'int', dflt: 600,
+    min: 10, max: 86400, runtime: true,
+    description: 'The longest a client\'s requested_expiry may make a ' +
+                 'request wait; a longer one is cut to this.' },
+
+  { key: 'oauth2.cibaIntervalS', group: 'OAuth 2.0 / OIDC',
+    label: 'CIBA poll interval (s)',
+    env: 'STS_OAUTH2_CIBA_INTERVAL_S', type: 'int', dflt: 5,
+    min: 1, max: 60, runtime: true,
+    description: 'The interval a poll-mode or ping-mode client is told to ' +
+                 'wait between token requests. Polling sooner is answered ' +
+                 'slow_down, and the interval grows by five seconds.' },
+
+  { key: 'oauth2.cibaMaxPendingPerPerson', group: 'OAuth 2.0 / OIDC',
+    label: 'CIBA requests waiting per person',
+    env: 'STS_OAUTH2_CIBA_MAX_PENDING_PER_PERSON', type: 'int', dflt: 5,
+    min: 1, max: 100, runtime: true,
+    description: 'How many backchannel authentication requests may wait for ' +
+                 'one person at once; more are refused access_denied, so no ' +
+                 'client can flood somebody\'s sign-in requests page.' },
+
+  { key: 'oauth2.cibaNotifyTimeoutMs', group: 'OAuth 2.0 / OIDC',
+    label: 'CIBA notification timeout (ms)',
+    env: 'STS_OAUTH2_CIBA_NOTIFY_TIMEOUT_MS', type: 'int', dflt: 5000,
+    min: 100, max: 60000, runtime: true,
+    description: 'How long one ping or push to a client\'s notification ' +
+                 'endpoint may take.' },
+
+  { key: 'oauth2.cibaNotifyAttempts', group: 'OAuth 2.0 / OIDC',
+    label: 'CIBA notification attempts',
+    env: 'STS_OAUTH2_CIBA_NOTIFY_ATTEMPTS', type: 'int', dflt: 5,
+    min: 1, max: 20, runtime: true,
+    description: 'How many times a ping or push is tried before it is given ' +
+                 'up (dead-lettered).' },
+
+  { key: 'oauth2.cibaNotifyBackoffMs', group: 'OAuth 2.0 / OIDC',
+    label: 'CIBA notification backoff (ms)',
+    env: 'STS_OAUTH2_CIBA_NOTIFY_BACKOFF_MS', type: 'int', dflt: 2000,
+    min: 0, max: 600000, runtime: true,
+    description: 'The wait before a failed ping or push is tried again, ' +
+                 'doubling each time.' },
+
+  { key: 'oauth2.cibaSweepS', group: 'OAuth 2.0 / OIDC',
+    label: 'CIBA sweep interval (s)',
+    env: 'STS_OAUTH2_CIBA_SWEEP_S', type: 'int', dflt: 30,
+    min: 5, max: 3600, runtime: true,
+    description: 'How often the oauth2.ciba-sweep scheduler job retries due ' +
+                 'notifications and expires unanswered requests.' },
+
   { key: 'oauth2.maxRequestedClaims', group: 'OAuth 2.0 / OIDC',
     label: 'Claims one claims request may name',
     env: 'STS_OAUTH2_MAX_REQUESTED_CLAIMS', type: 'int', dflt: 64,
