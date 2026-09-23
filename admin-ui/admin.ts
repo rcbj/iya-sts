@@ -26049,6 +26049,8 @@ class AdminConsole {
         ? ['fedAutocreateUsers', 'fedUpdateUserAttributes',
            'fedMayAssertAdministrators', 'fedAllowUnsolicited',
            'fedSignRequest', 'fedAcceptSignout', 'fedRequireSignedLogout']
+            .concat(federation.encrypts(record) ? ['fedAllowUnencrypted']
+                                                : [])
         : []).map(function (name) {
       const field = federation.SCHEMA.attributes.filter(
           function (f) { return f.name === name; })[0];
@@ -26179,8 +26181,11 @@ class AdminConsole {
             'name for this service per partner, so a partner keying its ' +
             'trust store off an entityID gets one that is only ' +
             'ours-with-them</span></td></tr>' +
-          ((row.protocol === 'saml2' || row.protocol === 'saml11')
-            ? '<tr><td>Our SAML metadata</td><td class="who"><a href="' +
+          ((row.protocol === 'saml2' || row.protocol === 'saml11' ||
+            row.protocol === 'wsfed')
+            ? '<tr><td>Our ' + (row.protocol === 'wsfed' ? 'WS-Federation'
+                                                         : 'SAML') +
+              ' metadata</td><td class="who"><a href="' +
               this.esc(federation.PATHS.metadata + '/' +
                        encodeURIComponent(row.id)) +
               '"><code>' +
@@ -26217,7 +26222,34 @@ class AdminConsole {
               ' defines no sign-out, so the partner cannot end a session ' +
               'here and is not told of one ending</span></td></tr>'
             : '') +
+          // THE KEY THE PARTNER ENCRYPTS TO (#168): the certificate, or
+          // for OpenID Connect the JWKS and the two registration members.
+          (view.encryption
+            ? '<tr><td>Encryption certificate (<code>' +
+              this.esc(view.encryption.policy.keyType) + '</code>)</td>' +
+              '<td class="who">' + (view.encryption.certificatePem
+                ? '<pre>' + this.esc(view.encryption.certificatePem) +
+                  '</pre>'
+                : '<span class="warn">none — rotate the key below to ' +
+                  'issue one</span>') + '</td></tr>' +
+              (view.jwks
+                ? '<tr><td><code>jwks_uri</code> (or its contents as ' +
+                  '<code>jwks</code>)</td><td class="who"><code>' +
+                  this.esc(view.jwks) + '</code></td></tr>' +
+                  '<tr><td><code>id_token_encrypted_response_alg</code> / ' +
+                  '<code>_enc</code></td><td><code>' +
+                  this.esc(view.encryption.policy.management) +
+                  '</code> / <code>' +
+                  this.esc(view.encryption.policy.content) + '</code></td>' +
+                  '</tr>'
+                : '<tr><td>Encryption algorithms</td><td><code>' +
+                  this.esc(view.encryption.policy.content) + '</code> under ' +
+                  '<code>' + this.esc(view.encryption.policy.management) +
+                  '</code>, published in the metadata</td></tr>')
+            : '') +
           '</table>' +
+          (view.encryption ? this.federationEncryptionSection(row,
+                               view.encryption, carryBack) : '') +
           this.note('<a class="btn" href="' + this.esc(login) +
                     '">Start a federated ' +
           'sign-in through this ' +
@@ -26278,6 +26310,52 @@ class AdminConsole {
 
     log.debug("Leaving AdminConsole.federationDetailPage(). " + row.id + ".");
     return { inner: inner, json: view.json };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A RELATIONSHIP'S ENCRYPTION KEY (#168): whether plaintext is refused, the
+  // key table — never a private key — and the Rotate button, whose API twin
+  // is `POST /admin-api/federation/rotate-key` (rule 7).
+  // ---------------------------------------------------------------------------
+  federationEncryptionSection(row, encryption, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.federationEncryptionSection().");
+    const rows = encryption.keys.map(function (key) {
+      return '<tr><td><code>' + self.esc(key.kid) + '</code></td><td>' +
+        self.esc(key.keyType) + '</td><td class="' +
+        (key.decrypts ? 'ok' : 'off') + '">' + self.esc(key.state) +
+        (key.retiresAt ? ' — decrypts until ' +
+          self.esc(new Date(key.retiresAt).toISOString()) : '') +
+        '</td><td>' + self.esc(key.notAfter || '') + '</td><td>' +
+        (key.sealed ? 'sealed' : 'in clear (keys do not persist)') +
+        '</td></tr>';
+    }).join('');
+    log.debug("Leaving AdminConsole.federationEncryptionSection().");
+    return '<h2 id="encryption">Encryption</h2>' +
+      this.note(encryption.required
+        ? '<strong>A plaintext assertion is refused.</strong> The partner ' +
+          'must encrypt to the key above, with the algorithms above.'
+        : (encryption.allowUnencrypted
+            ? '<strong class="warn">fedAllowUnencrypted is on: a plaintext ' +
+              'assertion is ACCEPTED</strong>, and the person\'s ' +
+              'identifier and attributes may cross their browser in clear.'
+            : 'A plaintext assertion is accepted in development mode; ' +
+              'product mode refuses it. An encrypted one is decrypted and ' +
+              'held to the algorithms above in both.')) +
+      (rows
+        ? '<table><tr><th>kid</th><th>Type</th><th>State</th><th>Expires' +
+          '</th><th>At rest</th></tr>' + rows + '</table>'
+        : this.note('No key is held.')) +
+      '<form method="post" action="/admin/federation"><div class="formrow">' +
+      carryBack +
+      '<input type="hidden" name="action" value="rotate-key">' +
+      '<input type="hidden" name="id" value="' + this.esc(row.id) + '">' +
+      '<button type="submit">Rotate the encryption key</button>' +
+      '<span class="sub">A new key is issued under this realm\'s ' +
+      'Intermediate and published at once; the one it replaces still ' +
+      'decrypts for ' + this.esc(String(encryption.graceS)) + ' seconds ' +
+      '(federation.encryptionKeyGraceS).</span></div></form>';
   }
 
   federationView(req) {
@@ -38402,24 +38480,32 @@ class AdminConsole {
     app.post('/admin/federation', function (req, res) {
       log.debug("Entering the admin federation action endpoint.");
       const body = parseBody(req);
-      const result = federationAction(body);
-      const id = String(body.id || body.relationship || '').trim();
-      // The list state the form carried, REBUILT rather than echoed — see
-      // listViewFromBack(), and the note in admin-ui/CLAUDE.md about a new form
-      // on a drill-down needing `carryBack` in it. Every form on the drill-down
-      // above has it.
-      const listView = self.listViewFromBack('/admin/federation', body.back);
-      // A DELETE goes back to the LIST and everything else stays on the
-      // drill-down, which is the one place this differs from the SAML 2.0
-      // page's handler: landing on the detail page of something that no longer
-      // exists would answer with "there is no relationship called…", which
-      // reads as the delete having failed.
-      const back = (id && result.ok !== false &&
-                    String(body.action || '') !== 'delete')
-        ? '/admin/federation' + queryWith(listView, { relationship: id })
-        : '/admin/federation' + queryWith(listView, {});
-      self.respondToAction(req, res, back, result);
-      log.debug("Leaving the admin federation action endpoint.");
+      // A PROMISE SINCE #168: a create and a key rotation issue a key.
+      federationAction(body).then(function (result) {
+        const id = String(body.id || body.relationship || '').trim();
+        // The list state the form carried, REBUILT rather than echoed — see
+        // listViewFromBack(), and the note in admin-ui/CLAUDE.md about a new
+        // form on a drill-down needing `carryBack` in it. Every form on the
+        // drill-down above has it.
+        const listView = self.listViewFromBack('/admin/federation', body.back);
+        // A DELETE goes back to the LIST and everything else stays on the
+        // drill-down, which is the one place this differs from the SAML 2.0
+        // page's handler: landing on the detail page of something that no
+        // longer exists would answer with "there is no relationship
+        // called…", which reads as the delete having failed.
+        const back = (id && result.ok !== false &&
+                      String(body.action || '') !== 'delete')
+          ? '/admin/federation' + queryWith(listView, { relationship: id })
+          : '/admin/federation' + queryWith(listView, {});
+        self.respondToAction(req, res, back, result);
+        log.debug("Leaving the admin federation action endpoint.");
+      }, function (e) {
+        log.error(errorCodes.tag('STS-ADMIN-0575') + 'the federation action ' +
+                  'threw: ' + ((e && e.stack) || e));
+        self.respondToAction(req, res, '/admin/federation',
+          { ok: false, errors: ['The federation action failed: ' +
+                                ((e && e.message) || e)] });
+      });
     });
 
     app.get('/admin/federation/map', function (req, res) {

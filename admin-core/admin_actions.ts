@@ -165,6 +165,10 @@ import federation = require('../federation/federation');
 // the one place a requested link is checked, shared with SCIM. A static
 // utility class; it registers nothing.
 import fedLinks = require('../federation/federation_links');
+// A relationship's encryption key (#168): issued at create, rotated on
+// request or when its key type changes. A static utility class; it registers
+// nothing.
+import fedEncryption = require('../federation/federation_encryption');
 import spiffeCa = require('../spiffe/spiffe_ca');
 import spiffeRegistry = require('../spiffe/spiffe_registry');
 import spiffeIdLib = require('../spiffe/spiffe_id');
@@ -762,6 +766,7 @@ interface AdminActionsDeps {
   tlsClientCertificates: typeof tlsClientCertificates;
   federation: typeof federation;
   fedLinks: typeof fedLinks;
+  fedEncryption: typeof fedEncryption;
   spiffeCa: typeof spiffeCa;
   spiffeRegistry: typeof spiffeRegistry;
   spiffeIdLib: typeof spiffeIdLib;
@@ -819,6 +824,7 @@ class AdminActions {
       tlsClientCertificates: tlsClientCertificates,
       federation: federation,
       fedLinks: fedLinks,
+      fedEncryption: fedEncryption,
       spiffeCa: spiffeCa,
       spiffeRegistry: spiffeRegistry,
       spiffeIdLib: spiffeIdLib,
@@ -5681,8 +5687,13 @@ class AdminActions {
   // here would be a second opinion about what a relationship may hold, and the
   // one an `ldapmodify` never saw.
   // ---------------------------------------------------------------------------
-  federationAction(body) {
-    const { log, federation } = this.deps;
+  //
+  // **ASYNCHRONOUS SINCE #168**, for the three branches that issue a key: a
+  // create (the relationship's encryption key is issued with it), `set` of
+  // `fedEncryptionKeyType` (a key of the new type), and `rotate-key`.
+  // Issuing is `pki.js`'s, and it awaits. Both callers take the promise.
+  async federationAction(body) {
+    const { log, federation, fedEncryption } = this.deps;
     log.debug("Entering AdminActions.federationAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
@@ -5703,9 +5714,26 @@ class AdminActions {
         log.debug("Leaving AdminActions.federationAction().");
         return this.refusedBy('STS-ADMIN-0575', result);
       }
+      // THE ENCRYPTION KEY A PARTNER ENCRYPTS TO (#168), for the three
+      // protocols that have one. A key that could not be issued leaves the
+      // relationship registered and says so; `rotate-key` issues one later.
+      let keyNote = '';
+      if (federation.encrypts(result.relationship)) {
+        const keyed = await fedEncryption.rotate(id,
+          'the encryption key was issued with the relationship');
+        keyNote = keyed.ok
+          ? ' Its encryption key, ' + keyed.kid + ', is issued: give the ' +
+            'partner the certificate or JWKS on its page.'
+          : ' ITS ENCRYPTION KEY WAS NOT ISSUED: ' +
+            (keyed.errors || []).join(' ') + ' Use rotate-key once the ' +
+            'cause is fixed.';
+        result.relationship = federation.get(id) || result.relationship;
+        result.readiness = federation.readinessOf(result.relationship);
+      }
       log.debug("Leaving AdminActions.federationAction().");
       return Object.assign({}, result, {
-        message: 'Registered, and DISABLED. Set what it needs — ' +
+        message: 'Registered, and DISABLED.' + keyNote + ' Set what it ' +
+          'needs — ' +
           (result.readiness.missing.length
             ? result.readiness.missing.join(', ')
             : 'nothing is missing') +
@@ -5730,7 +5758,40 @@ class AdminActions {
       });
       log.debug("Leaving AdminActions.federationAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
+      // A NEW KEY TYPE IS A NEW KEY (#168): the one held is of the old type
+      // and decrypts nothing under the new policy, so it is rotated out now
+      // and keeps its grace period like any other.
+      if (result.ok && String(body.field || '') === 'fedEncryptionKeyType' &&
+          federation.encrypts(result.relationship)) {
+        const current = federation.currentEncryptionKeyOf(
+          result.relationship);
+        const policy = federation.encryptionPolicyOf(result.relationship);
+        if (!current || current.keyType !== policy.keyType) {
+          const keyed = await fedEncryption.rotate(id,
+            'a key of the new type ' + policy.keyType + ' was issued');
+          return this.refusedBy('STS-ADMIN-0575', keyed.ok
+            ? Object.assign({}, result, {
+                relationship: federation.get(id),
+                readiness: federation.readinessOf(federation.get(id)),
+                message: result.message + ' ' + keyed.message })
+            : keyed);
+        }
+      }
       return this.refusedBy('STS-ADMIN-0575', result);
+    }
+
+    // ROTATE THE ENCRYPTION KEY (#168) — the console's Rotate button and
+    // `POST /admin-api/federation/rotate-key` (rule 7).
+    if (action === 'rotate-key') {
+      const result = await fedEncryption.rotate(id,
+        'the encryption key was rotated by an administrator');
+      log.debug("Leaving AdminActions.federationAction(). rotate-key " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0575', result.ok
+        ? Object.assign({}, result, {
+            relationship: federation.get(id),
+            readiness: federation.readinessOf(federation.get(id)) })
+        : result);
     }
 
     if (action === 'enable' || action === 'disable') {
@@ -5751,9 +5812,9 @@ class AdminActions {
 
     log.debug("Leaving AdminActions.federationAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500', { ok: false,
-             errors: ['Unknown action "' + action + '". The seven are: ' +
+             errors: ['Unknown action "' + action + '". The eight are: ' +
                            'create, set, add-value, remove-value, enable, ' +
-                           'disable, delete.'] });
+                           'disable, rotate-key, delete.'] });
   }
 
   async spiffeAction(body) {

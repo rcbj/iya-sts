@@ -240,7 +240,10 @@ const PATHS = {
   // shape of its own (a JSON-free 200/400 to a server; a page in an iframe).
   slo: '/federation/slo',
   backchannelLogout: '/federation/backchannel-logout',
-  frontchannelLogout: '/federation/frontchannel-logout'
+  frontchannelLogout: '/federation/frontchannel-logout',
+  // An OpenID Connect relationship's encryption key as a JWKS (#168), what
+  // the partner registers to encrypt its ID Token to.
+  jwks: '/federation/jwks'
 };
 
 const ROLES = [
@@ -696,6 +699,34 @@ function familyOf(protocolId) {
 // is the one issuing the token, and it is read by `fieldsForRole()` rather
 // than by any form directly.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ENCRYPTION TO THIS SERVICE AS A SERVICE PROVIDER (#168): the vocabulary of
+// the four relationship fields below, owned here because the register owns
+// the schema. `federation_encryption.ts` owns what is DONE with them.
+//
+// Two families, because a SAML 2.0 or WS-Federation assertion is XML
+// Encryption and an OpenID Connect ID Token is JWE, and they name the same
+// ideas differently. Refused in every mode, by name: AES-CBC in either
+// (XML's is the Jager-Somorovsky padding oracle; JOSE's composite is
+// authenticated but there is no partner that has CBC and not GCM), and
+// RSAES-PKCS1-v1_5 in either (Bleichenbacher).
+// ---------------------------------------------------------------------------
+const ENCRYPTING_PROTOCOLS = ['saml2', 'wsfed', 'oidc'];
+const ENCRYPTION_KEY_TYPES = ['rsa-3072', 'ec-p256'];
+const XML_KEY_MANAGEMENT = ['rsa-oaep', 'ecdh-es'];
+const JOSE_KEY_MANAGEMENT = ['RSA-OAEP-256', 'RSA-OAEP', 'ECDH-ES',
+                             'ECDH-ES+A128KW', 'ECDH-ES+A256KW'];
+const XML_CONTENT_ENCRYPTION = ['aes256-gcm', 'aes128-gcm'];
+const JOSE_CONTENT_ENCRYPTION = ['A256GCM', 'A128GCM'];
+const REFUSED_ALGORITHMS = ['aes128-cbc', 'aes192-cbc', 'aes256-cbc',
+                            'rsa-1_5', 'RSA1_5', 'A128CBC-HS256',
+                            'A192CBC-HS384', 'A256CBC-HS512'];
+// Which management algorithms a key of each type can do.
+const MANAGEMENT_FOR_KEY = {
+  'rsa-3072': ['rsa-oaep', 'RSA-OAEP-256', 'RSA-OAEP'],
+  'ec-p256': ['ecdh-es', 'ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A256KW']
+};
+
 const SCHEMA = {
   objectClasses: [
     { name: 'top', where: 'RFC 4512', standard: true,
@@ -987,6 +1018,69 @@ const SCHEMA = {
             'who can name a person\'s partner session end it: a partner ' +
             'under test that cannot sign yet is the only reason to. A ' +
             'signature that IS present is verified either way.' },
+    // --- WHAT A PARTNER ENCRYPTS TO (#168) ------------------------------
+    // federation/federation_encryption.ts issues, rotates, publishes and
+    // decrypts with the key; federation/CLAUDE.md, *A PARTNER'S ENCRYPTED
+    // ASSERTION*. SAML 2.0, WS-Federation and OpenID Connect only: SAML 1.1
+    // has no encryption construct and a plain OAuth 2.0 relationship reads
+    // no ID Token.
+    { name: 'fedEncryptionKeyType', kind: 'single', role: 'service-provider',
+      from: 'this register', enum: ENCRYPTION_KEY_TYPES,
+      what: 'THE KIND OF KEY A PARTNER ENCRYPTS TO: rsa-3072 (the default ' +
+            'for SAML 2.0 and WS-Federation) or ec-p256 (the default for ' +
+            'OpenID Connect). Changing it issues a new key of that kind at ' +
+            'once and keeps the old one for federation.encryptionKeyGraceS, ' +
+            'as a rotation does.' },
+    { name: 'fedKeyManagementAlgorithm', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      enum: XML_KEY_MANAGEMENT.concat(JOSE_KEY_MANAGEMENT),
+      what: 'HOW THE PARTNER WRAPS OR AGREES THE CONTENT KEY, and the only ' +
+            'one accepted. XML (SAML 2.0, WS-Federation): rsa-oaep — XML ' +
+            'Encryption 1.1\'s RSA-OAEP with SHA-256 and MGF1-SHA-256 — for ' +
+            'an RSA key, ecdh-es (ConcatKDF, kw-aes256) for an EC one. JOSE ' +
+            '(an OpenID Connect ID Token): RSA-OAEP-256 or RSA-OAEP for an ' +
+            'RSA key, ECDH-ES, ECDH-ES+A128KW or ECDH-ES+A256KW for an EC ' +
+            'one. WARNING: RSA-OAEP is OAEP over SHA-1, offered for a ' +
+            'partner that has nothing newer; RSA-OAEP-256 is the one to ' +
+            'use. rsa-1_5 and ' +
+            'RSA1_5 are refused in every mode (Bleichenbacher). Empty means ' +
+            'the default for the key type.' },
+    { name: 'fedContentEncryptionAlgorithm', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      enum: XML_CONTENT_ENCRYPTION.concat(JOSE_CONTENT_ENCRYPTION),
+      what: 'THE CIPHER OVER THE ASSERTION OR THE ID TOKEN, and the only one ' +
+            'accepted: aes256-gcm (the default) or aes128-gcm for XML, ' +
+            'A256GCM (the default) or A128GCM for JOSE. AES-CBC — XML ' +
+            'Encryption\'s aes*-cbc and JOSE\'s A*CBC-HS* — is refused in ' +
+            'every mode: the XML form is the padding oracle of Jager and ' +
+            'Somorovsky (2011), and a partner that can do GCM in one can in ' +
+            'the other.' },
+    { name: 'fedAllowUnencrypted', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'ACCEPT A PLAINTEXT ASSERTION IN PRODUCT MODE. OFF by default, ' +
+            'and off means a SAML 2.0 or WS-Federation assertion, or an ' +
+            'OpenID Connect id_token by form_post, that is NOT encrypted to ' +
+            'this relationship\'s key is refused (STS-FED-0140). WARNING: ' +
+            'turning it on lets the partner send the person\'s NameID, mail, ' +
+            'groups and every other attribute IN CLEAR through their ' +
+            'browser — its history, its extensions and every TLS-terminating ' +
+            'proxy on the way. Turn it on only for a partner that cannot ' +
+            'encrypt, and prefer asking it to. Development mode accepts ' +
+            'plaintext whatever this says.' },
+    { name: 'fedEncryptionKey', kind: 'multi', role: 'service-provider',
+      from: 'this register', sensitive: true,
+      what: 'THE KEY TABLE: one JSON row per key this relationship decrypts ' +
+            'with — its kid, its key type, `current` or `previous`, its ' +
+            'certificate and chain under this realm\'s Intermediate, and the ' +
+            'private key, SEALED under the key-encryption key wherever keys ' +
+            'persist. A `previous` row is kept until its retiresAt and then ' +
+            'removed by the scheduler job federation.encryption-key-retire. ' +
+            'Written only by create, rotate and that job; WITHHELD from ' +
+            'every LDAP search in product and from every page and ' +
+            '/admin-api reply, which publish the public half. The key type ' +
+            'is a column so a ' +
+            'hybrid post-quantum key can be a row beside the classical one ' +
+            'once one is registered.' },
     { name: 'fedAllowUnsolicited', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'Accept a response this service did not ask for — SAML 2.0\'s ' +
@@ -1150,6 +1244,10 @@ const EDITABLE = {
   fedSubjectPattern: 'set',
   fedMayAssertAdministrators: 'set',
   fedAllowUnsolicited: 'set',
+  fedEncryptionKeyType: 'set',
+  fedKeyManagementAlgorithm: 'set',
+  fedContentEncryptionAlgorithm: 'set',
+  fedAllowUnencrypted: 'set',
   fedSloUrl: 'set',
   fedSloBinding: 'set',
   fedEndSessionUrl: 'set',
@@ -1573,6 +1671,12 @@ function readinessOf(record) {
                    'token is a JWT)');
     }
   }
+  // THE KEY A PARTNER HAS TO ENCRYPT TO (#168), where plaintext would be
+  // refused: without one nothing could be accepted, which is a relationship
+  // that half-works — refused by name like any other missing field.
+  if (encryptionRequired(record) && !currentEncryptionKeyOf(record)) {
+    missing.push('fedEncryptionKey (rotate the encryption key to issue one)');
+  }
   if (record.fedRole === 'identity-provider') {
     if (!String(record.fedApplication || '').trim()) {
       missing.push('fedApplication');
@@ -1596,6 +1700,223 @@ function readinessOf(record) {
       'field(s) missing.'
                                                         : 'Ready.'));
   return { ready: missing.length === 0, missing: missing };
+}
+
+// ---------------------------------------------------------------------------
+// ENCRYPTION (#168): what a relationship's four fields MEAN, read in one
+// place so that the console, the metadata, the decryption and the readiness
+// check cannot disagree about the default.
+// ---------------------------------------------------------------------------
+function encrypts(record) {
+  log.debug("Entering encrypts().");
+  log.debug("Leaving encrypts().");
+  return !!record && record.fedRole === 'service-provider' &&
+         ENCRYPTING_PROTOCOLS.indexOf(record.fedProtocol) >= 0;
+}
+
+// `xml` for SAML 2.0 and WS-Federation, `jose` for OpenID Connect.
+function encryptionFamilyOf(record) {
+  log.debug("Entering encryptionFamilyOf().");
+  log.debug("Leaving encryptionFamilyOf().");
+  return record && record.fedProtocol === 'oidc' ? 'jose' : 'xml';
+}
+
+function defaultKeyTypeFor(protocol) {
+  log.debug("Entering defaultKeyTypeFor().");
+  log.debug("Leaving defaultKeyTypeFor().");
+  return protocol === 'oidc' ? 'ec-p256' : 'rsa-3072';
+}
+
+function defaultManagementFor(family, keyType) {
+  log.debug("Entering defaultManagementFor().");
+  const ec = keyType === 'ec-p256';
+  log.debug("Leaving defaultManagementFor().");
+  return family === 'jose' ? (ec ? 'ECDH-ES' : 'RSA-OAEP-256')
+                           : (ec ? 'ecdh-es' : 'rsa-oaep');
+}
+
+// `{ family, keyType, management, content }`, each the field or its default.
+// A stored value the vocabulary no longer holds (only an ldapmodify writes
+// one) reads as the DEFAULT — the strictest reading there is, since every
+// default is also the strongest choice.
+function encryptionPolicyOf(record) {
+  log.debug("Entering encryptionPolicyOf().");
+  const family = encryptionFamilyOf(record);
+  const typed = String((record && record.fedEncryptionKeyType) || '').trim();
+  const keyType = ENCRYPTION_KEY_TYPES.indexOf(typed) >= 0 ? typed
+    : defaultKeyTypeFor(record && record.fedProtocol);
+  const managed = String((record && record.fedKeyManagementAlgorithm) || '')
+    .trim();
+  const managementList = family === 'jose' ? JOSE_KEY_MANAGEMENT
+                                           : XML_KEY_MANAGEMENT;
+  const management = managementList.indexOf(managed) >= 0 &&
+      MANAGEMENT_FOR_KEY[keyType].indexOf(managed) >= 0
+    ? managed : defaultManagementFor(family, keyType);
+  const contentList = family === 'jose' ? JOSE_CONTENT_ENCRYPTION
+                                        : XML_CONTENT_ENCRYPTION;
+  const contentTyped = String((record &&
+                               record.fedContentEncryptionAlgorithm) || '')
+    .trim();
+  const content = contentList.indexOf(contentTyped) >= 0 ? contentTyped
+                                                         : contentList[0];
+  log.debug("Leaving encryptionPolicyOf(). " + family + " " + keyType + " " +
+            management + " " + content);
+  return { family: family, keyType: keyType, management: management,
+           content: content };
+}
+
+// THE KEY TABLE, parsed. A row that does not parse is dropped with a line in
+// the log: it decrypts nothing and publishes nothing either way.
+function encryptionKeysOf(record) {
+  log.debug("Entering encryptionKeysOf().");
+  const rows = [];
+  ((record && record.fedEncryptionKey) || []).forEach(function (value) {
+    try {
+      const row = JSON.parse(String(value));
+      if (row && row.kid && row.certificate) {
+        rows.push(row);
+      }
+    } catch (e) {
+      log.warn('federation: ' + ((record && record.fedId) || '') + ' holds ' +
+               'a fedEncryptionKey value that is not JSON, and it is ' +
+               'ignored: ' + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving encryptionKeysOf(). " + rows.length + " row(s).");
+  return rows;
+}
+
+// The same rows WITHOUT the private key — what any page, API reply or log may
+// carry.
+function encryptionKeyView(record) {
+  log.debug("Entering encryptionKeyView().");
+  const out = encryptionKeysOf(record).map(function (row) {
+    const view = Object.assign({}, row);
+    delete view.privateKey;
+    return view;
+  });
+  log.debug("Leaving encryptionKeyView().");
+  return out;
+}
+
+function currentEncryptionKeyOf(record) {
+  log.debug("Entering currentEncryptionKeyOf().");
+  log.debug("Leaving currentEncryptionKeyOf().");
+  return encryptionKeysOf(record).filter(function (row) {
+    return row.state === 'current';
+  })[0] || null;
+}
+
+// Does THIS response have to be encrypted? Only where it crosses the browser
+// — a SAML 2.0 Response, a WS-Federation wresult, an id_token by form_post —
+// and only in product, where `fedAllowUnencrypted` is the one way out. An ID
+// Token redeemed at the partner's token endpoint comes over TLS from the
+// partner and is not the exposure this closes. See mode.js.
+function encryptionRequired(record) {
+  log.debug("Entering encryptionRequired().");
+  if (!encrypts(record)) {
+    log.debug("Leaving encryptionRequired(). Not an encrypting protocol.");
+    return false;
+  }
+  const frontChannel = record.fedProtocol !== 'oidc' ||
+    String(record.fedResponseType || 'code') !== 'code';
+  log.debug("Leaving encryptionRequired().");
+  return frontChannel && !mode.acceptsUnencryptedFederatedAssertions() &&
+         !boolOf(record.fedAllowUnencrypted, false);
+}
+
+// The four fields' values a write may NOT hold, or null.
+function encryptionFieldProblem(record, field, value) {
+  log.debug("Entering encryptionFieldProblem(). field=" + field);
+  const fields = ['fedEncryptionKeyType', 'fedKeyManagementAlgorithm',
+                  'fedContentEncryptionAlgorithm', 'fedAllowUnencrypted'];
+  if (fields.indexOf(field) < 0) {
+    log.debug("Leaving encryptionFieldProblem(). Not an encryption field.");
+    return null;
+  }
+  if (!encrypts(record)) {
+    log.debug("Leaving encryptionFieldProblem(). Not an encrypting protocol.");
+    return { code: 'STS-FED-0143',
+             why: field + ' applies to SAML 2.0, WS-Federation and OpenID ' +
+                  'Connect only',
+             message: field + ' applies to a SAML 2.0, WS-Federation or ' +
+                      'OpenID Connect relationship. SAML 1.1 has no ' +
+                      'encryption construct and a plain OAuth 2.0 ' +
+                      'relationship reads no ID Token.' };
+  }
+  if (value === '' || field === 'fedAllowUnencrypted') {
+    log.debug("Leaving encryptionFieldProblem(). Empty or a switch.");
+    return null;
+  }
+  if (REFUSED_ALGORITHMS.indexOf(value) >= 0) {
+    log.debug("Leaving encryptionFieldProblem(). A refused algorithm.");
+    return { code: 'STS-FED-0139',
+             why: value + ' is refused in every mode',
+             message: value + ' is refused in every mode: ' +
+                      (/cbc/i.test(value)
+                        ? 'AES-CBC in XML Encryption is a padding oracle ' +
+                          '(Jager and Somorovsky, 2011), and every partner ' +
+                          'that has it has GCM'
+                        : 'RSAES-PKCS1-v1_5 is Bleichenbacher\'s ' +
+                          'decryption oracle (XML Encryption 1.1 section ' +
+                          '6.1.2, RFC 8017)') + '.' };
+  }
+  const family = encryptionFamilyOf(record);
+  const allowed = field === 'fedEncryptionKeyType' ? ENCRYPTION_KEY_TYPES
+    : field === 'fedKeyManagementAlgorithm'
+      ? (family === 'jose' ? JOSE_KEY_MANAGEMENT : XML_KEY_MANAGEMENT)
+      : (family === 'jose' ? JOSE_CONTENT_ENCRYPTION
+                           : XML_CONTENT_ENCRYPTION);
+  if (allowed.indexOf(value) < 0) {
+    log.debug("Leaving encryptionFieldProblem(). Not in the vocabulary.");
+    return { code: 'STS-FED-0143',
+             why: '"' + value + '" is not a ' + field + ' for this protocol',
+             message: '"' + value + '" is not a ' + field + ' for ' +
+                      (family === 'jose' ? 'an OpenID Connect' :
+                       'a SAML 2.0 or WS-Federation') + ' relationship. It ' +
+                      'is one of ' + allowed.join(', ') + '.' };
+  }
+  if (field === 'fedKeyManagementAlgorithm' &&
+      MANAGEMENT_FOR_KEY[encryptionPolicyOf(record).keyType]
+        .indexOf(value) < 0) {
+    log.debug("Leaving encryptionFieldProblem(). The wrong key type.");
+    return { code: 'STS-FED-0143',
+             why: value + ' does not fit a ' +
+                  encryptionPolicyOf(record).keyType + ' key',
+             message: value + ' cannot be done with this relationship\'s ' +
+                      encryptionPolicyOf(record).keyType + ' key. Set ' +
+                      'fedEncryptionKeyType first; it is one of ' +
+                      MANAGEMENT_FOR_KEY[encryptionPolicyOf(record).keyType]
+                        .join(', ') + ' for this key.' };
+  }
+  log.debug("Leaving encryptionFieldProblem(). Nothing wrong.");
+  return null;
+}
+
+// THE ONE WRITER OF THE KEY TABLE, for `federation_encryption.ts`: rotate,
+// issue and retire. `rows` are whole rows, private keys included, as they are
+// to be stored; `why` is the audit sentence.
+function writeEncryptionKeys(id, rows, why) {
+  log.debug("Entering writeEncryptionKeys(). id=" + id);
+  const record = get(id);
+  if (!record) {
+    log.debug("Leaving writeEncryptionKeys(). No such relationship.");
+    return false;
+  }
+  record.fedEncryptionKey = rows.map(function (row) {
+    return JSON.stringify(row);
+  });
+  if (!persist(record)) {
+    log.debug("Leaving writeEncryptionKeys(). The directory refused it.");
+    return false;
+  }
+  recordChange('federation.encryption-key', record,
+               why + ' on the federation relationship ' + id,
+               { keys: rows.map(function (row) {
+                   return row.kid + ':' + row.state;
+                 }).join(', ') });
+  log.debug("Leaving writeEncryptionKeys().");
+  return true;
 }
 
 function isEnabled(record) {
@@ -2247,6 +2568,19 @@ function create(spec) {
     if (protocol === 'oauth2') {
       record.fedResponseType = 'code';
     }
+    // WHAT A PARTNER ENCRYPTS TO (#168), the defaults written down. The key
+    // itself is issued by `federation_encryption.ts` right after this, which
+    // the console and /admin-api both do; this function is synchronous and
+    // issuing is not.
+    if (ENCRYPTING_PROTOCOLS.indexOf(protocol) >= 0) {
+      const family = protocol === 'oidc' ? 'jose' : 'xml';
+      record.fedEncryptionKeyType = defaultKeyTypeFor(protocol);
+      record.fedKeyManagementAlgorithm =
+        defaultManagementFor(family, record.fedEncryptionKeyType);
+      record.fedContentEncryptionAlgorithm = family === 'jose'
+        ? JOSE_CONTENT_ENCRYPTION[0] : XML_CONTENT_ENCRYPTION[0];
+      record.fedAllowUnencrypted = boolText(false);
+    }
   }
   if (role === 'identity-provider') {
     record.fedApplication = String(info.fedApplication || info.application ||
@@ -2415,7 +2749,8 @@ function update(id, change) {
   if (field === 'fedSubjectDomain') {
     value = value.trim().replace(/^@+/, '').toLowerCase();
   }
-  const refusal = subjectFieldProblem(field, value);
+  const refusal = subjectFieldProblem(field, value) ||
+                  encryptionFieldProblem(record, field, value);
   if (refusal) {
     log.debug('Leaving update(). ' + refusal.code);
     // error-code: none — subjectFieldProblem() names the code at each return
@@ -2478,8 +2813,18 @@ function update(id, change) {
   if (row.name === 'fedEnabled' || row.name === 'fedAutocreateUsers' ||
       row.name === 'fedUpdateUserAttributes' ||
       row.name === 'fedMayAssertAdministrators' ||
-      row.name === 'fedSignRequest' || row.name === 'fedAllowUnsolicited') {
+      row.name === 'fedSignRequest' || row.name === 'fedAllowUnsolicited' ||
+      row.name === 'fedAllowUnencrypted') {
     record[field] = boolText(boolOf(record[field], false));
+  }
+  // A NEW KEY TYPE TAKES ITS OWN DEFAULT KEY MANAGEMENT (#168): the old
+  // value may be one the new key cannot do, and a relationship whose
+  // algorithm and key disagree accepts nothing. The key itself is issued by
+  // the action that called this — see admin-core's federationAction().
+  if (row.name === 'fedEncryptionKeyType' && value !== '' &&
+      value !== before) {
+    record.fedKeyManagementAlgorithm =
+      defaultManagementFor(encryptionFamilyOf(record), value);
   }
   // The two sign-out switches default ON (#167), so an empty value is TRUE.
   if (row.name === 'fedAcceptSignout' ||
@@ -3041,6 +3386,23 @@ module.exports = {
   releaseFilterFor: releaseFilterFor,
   create: create,
   update: update,
+  // ENCRYPTION TO THIS SERVICE (#168): the vocabulary, the policy a record's
+  // four fields mean, and the key table's one writer.
+  ENCRYPTING_PROTOCOLS: ENCRYPTING_PROTOCOLS,
+  ENCRYPTION_KEY_TYPES: ENCRYPTION_KEY_TYPES,
+  XML_KEY_MANAGEMENT: XML_KEY_MANAGEMENT,
+  JOSE_KEY_MANAGEMENT: JOSE_KEY_MANAGEMENT,
+  XML_CONTENT_ENCRYPTION: XML_CONTENT_ENCRYPTION,
+  JOSE_CONTENT_ENCRYPTION: JOSE_CONTENT_ENCRYPTION,
+  REFUSED_ALGORITHMS: REFUSED_ALGORITHMS,
+  encrypts: encrypts,
+  encryptionFamilyOf: encryptionFamilyOf,
+  encryptionPolicyOf: encryptionPolicyOf,
+  encryptionKeysOf: encryptionKeysOf,
+  encryptionKeyView: encryptionKeyView,
+  currentEncryptionKeyOf: currentEncryptionKeyOf,
+  encryptionRequired: encryptionRequired,
+  writeEncryptionKeys: writeEncryptionKeys,
   remove: remove,
   recordUse: recordUse,
   recordFailure: recordFailure,

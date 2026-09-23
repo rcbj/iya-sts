@@ -7367,13 +7367,23 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API federation action endpoint.");
           const body = parseBody(req);
-          const result = adminActions.federationAction(self.withAction(req,
-              body));
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0046');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
-          log.debug("Leaving the management API federation action endpoint.");
+          adminActions.federationAction(self.withAction(req, body))
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0046');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API federation action " +
+                        "endpoint.");
+            }, function (e) {
+              log.error(errorCodes.tag('STS-API-0046') + 'the federation ' +
+                        'action threw: ' + ((e && e.stack) || e));
+              errorCodes.mark(res, 'STS-API-0046');
+              self.sendJson(res, 500, { ok: false,
+                errors: ['The federation action failed: ' +
+                         ((e && e.message) || e)] });
+            });
         },
         actions: [
           { action: 'create', operationId: 'createFederationRelationship',
@@ -7596,6 +7606,34 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The relationship, now disabled.' },
+
+          { action: 'rotate-key', operationId: 'rotateFederationKey',
+            summary: 'Rotate a relationship\'s encryption key',
+            description: 'SAML 2.0, WS-Federation and OpenID Connect ' +
+                         'service-provider-side relationships only (#168). ' +
+                         'A new key of the relationship\'s ' +
+                         '`fedEncryptionKeyType` is issued under this ' +
+                         'realm\'s Intermediate and becomes CURRENT — what ' +
+                         '`/federation/metadata/{id}` and ' +
+                         '`/federation/jwks/{id}` publish. The key it ' +
+                         'replaces still DECRYPTS for ' +
+                         '`federation.encryptionKeyGraceS`, so a partner ' +
+                         'still holding the old certificate is not refused ' +
+                         'mid-change, and then decrypts nothing; the ' +
+                         'scheduler job `federation.encryption-key-retire` ' +
+                         'removes it. A second rotation inside that window ' +
+                         'drops the older key at once. Also the way to issue ' +
+                         'a key for a relationship that has none.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { id: { type: 'string',
+                                  description: 'The relationship.' } },
+              required: ['id'],
+              additionalProperties: false
+            },
+            responseDescription: 'The new key\'s kid, and the relationship ' +
+                                 'as it now stands.' },
 
           { action: 'delete', operationId: 'deleteFederationRelationship',
             summary: 'Delete a relationship',

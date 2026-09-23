@@ -518,7 +518,8 @@ var config = {
     releaseIndexTtlMs: 5000,                                                 // Release-policy index lifetime (ms)
     maxResponseBytes: 262144,                                                // Largest back-channel response (bytes)
     jwtAlgorithms: "RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512",  // Algorithms accepted on a partner's JWT
-    spNameIdFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified"  // NameIDFormat in this service's SP metadata
+    spNameIdFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified", // NameIDFormat in this service's SP metadata
+    encryptionKeyGraceS: 86400                                               // Previous encryption key kept for (seconds)
   },
 
   // --- SAML ------------------------------------------------------------

@@ -44,7 +44,8 @@ an `ldapmodify`.
 | `GET /federation/login/{id}` | **start**: sends the browser to the partner — an `<AuthnRequest>`, a SAML 1.1 inter-site transfer URL, `wa=wsignin1.0`, or an OAuth 2.0 authorization request. Takes `?returnTo=` (a path on this service) and `?application=` (a hint naming what the person is signing in to) |
 | `GET\|POST /federation/acs/{id}` | **finish**: the assertion consumer service, the WS-Federation `wreply` and the OAuth 2.0 `redirect_uri`, all one path. **This is the URL to configure at the partner** |
 | `GET /federation/link/{handle}` | where the linking sign-in of `link-at-first-sign-in` returns: after the person has signed in here as the account the partner named, this records the link and finishes the federated sign-in (#109) |
-| `GET /federation/metadata/{id}` | this service's own SAML metadata (an `SPSSODescriptor`) for one SAML partner, unsigned — with its `SingleLogoutService` on the Redirect and POST bindings |
+| `GET /federation/metadata/{id}` | this service's own SAML metadata (an `SPSSODescriptor`) for one SAML partner, unsigned — with its `SingleLogoutService` on the Redirect and POST bindings and, for SAML 2.0, its encryption key (`KeyDescriptor use="encryption"`, #168). For a WS-Federation partner, an `EntityDescriptor` with a `fed:ApplicationServiceType` role, its passive requestor endpoint and its encryption key |
+| `GET /federation/jwks/{id}` | an OpenID Connect relationship's encryption key as a JWKS (`use: enc`), what the partner registers to encrypt its ID Token to (#168) |
 | `GET\|POST /federation/slo/{id}` | **a partner's sign-out, in a browser** (#167): a SAML 2.0 `<LogoutRequest>` or `<LogoutResponse>`, a WS-Federation `wsignoutcleanup1.0` or `wsignout1.0`, and the browser coming back from an OpenID Provider's `end_session_endpoint`. The SAML `SingleLogoutService`, the WS-Federation sign-out URL and the OpenID Connect `post_logout_redirect_uri` to configure at the partner |
 | `POST /federation/backchannel-logout/{id}` | the OpenID Connect `backchannel_logout_uri` to register at the partner |
 | `GET /federation/frontchannel-logout/{id}` | the OpenID Connect `frontchannel_logout_uri` to register at the partner, with `frontchannel_logout_session_required` |
@@ -330,13 +331,45 @@ partner's `check_session_iframe` needs a script running in this service's page,
 this service admits a script only where a page cannot work without one, and
 Back-Channel Logout already tells it what that script would find out.
 
+### A partner's encrypted assertion (#168)
+
+Every SAML 2.0, WS-Federation and OpenID Connect relationship holds an
+encryption key pair of its own, issued under the realm's Intermediate when the
+relationship is created and published where the partner reads it: the
+metadata's `KeyDescriptor use="encryption"` or `/federation/jwks/{id}`. The
+relationship's page shows the certificate, the JWKS URL and, for OpenID
+Connect, the `id_token_encrypted_response_alg` and `_enc` to register.
+
+What arrives encrypted is decrypted with that key, under exactly the
+algorithms the relationship publishes:
+
+* a SAML `<EncryptedAssertion>` — its own signature is checked on what was
+  inside it, a Response's on the ciphertext — and an `<EncryptedID>` or
+  `<EncryptedAttribute>` inside the assertion, after that signature;
+* a WS-Federation token encrypted in the `RequestedSecurityToken`;
+* an OpenID Connect ID Token or Logout Token as a JWE, which must hold a
+  **signed** token (signed, then encrypted — OpenID Connect Core section 10.2);
+* an `<EncryptedID>` in a partner's `<LogoutRequest>`.
+
+The defaults are RSA 3072 with XML Encryption 1.1's RSA-OAEP (SHA-256, MGF1
+SHA-256) and AES-256-GCM for SAML 2.0 and WS-Federation, and P-256 with ECDH-ES
+and A256GCM for OpenID Connect; EC key agreement for XML and RSA-OAEP-256 for
+JOSE may be chosen instead. **AES-CBC, `rsa-1_5` and `RSA1_5` are refused in
+every mode.** Every decryption failure is one code, `STS-FED-0138`, with one
+sentence: which step failed is in the log, not on a page anybody can submit a
+ciphertext to.
+
+**Rotate the encryption key** on the relationship's page or with `POST
+/admin-api/federation/rotate-key`: the new key is published at once, and the
+key it replaced still decrypts for `federation.encryptionKeyGraceS` and then
+nothing — the scheduler job `federation.encryption-key-retire` removes it.
+
+There is no post-quantum key encapsulation: XML Encryption has no registered
+ML-KEM method and JOSE's is a draft. The key table records a key type per key,
+so a hybrid key can be added beside the classical one when one is registered.
+
 ### Not implemented
 
-* Decrypting an `<EncryptedAssertion>` a partner sends — refused, naming the
-  cause (`STS-FED-0011`).
-* An encrypted Logout Token or `<EncryptedID>` in a `<LogoutRequest>`: this
-  service registers no encryption with a partner and its metadata publishes no
-  encryption key.
 * Refreshing a partner's tokens, or re-checking a federated person with the
   partner while the session lasts — beyond the partner's own sign-out and its
   `SessionNotOnOrAfter`, above.
@@ -356,6 +389,7 @@ development. What the mode changes:
 | The password at the linking sign-in | not checked (the reserved `invalid` is refused) | verified, with the second factor |
 | Revocation of the partner's signing certificate (`pki.revocationCheck=auto`) | soft-fail: a status that cannot be fetched is accepted | hard-fail: a status that cannot be established is refused |
 | `fedRequireSignedLogout` off | an **unsigned** SAML logout message from the partner is accepted — a warning: anybody who can name a partner session can then end it | refused on the relationship (`STS-FED-0132`), and an unsigned logout message is refused whatever it says |
+| A plaintext SAML 2.0 or WS-Federation assertion, or a signed-only `id_token` by form_post | accepted | **refused** (`STS-FED-0140`) unless the relationship sets `fedAllowUnencrypted` — a warning: the person's identifier and attributes then cross their browser in clear. An ID Token redeemed at the partner's token endpoint crosses no browser and is not asked about |
 
 See [What is not checked](what-is-not-checked.md), *Federation inverts all of
 this*.
@@ -381,6 +415,7 @@ this*.
 | `federation.maxResponseBytes` | `STS_FEDERATION_MAX_RESPONSE_BYTES` | `262144` | yes | The cap on a partner's token response, UserInfo document or JWKS. |
 | `federation.jwtAlgorithms` | `STS_FEDERATION_JWT_ALGORITHMS` | `RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512` | yes | The JWS algorithms a partner's ID Token or JWT access token may use; it only narrows, never admitting `none` or an HMAC. |
 | `federation.spNameIdFormat` | `STS_FEDERATION_SP_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified` | yes | The `<md:NameIDFormat>` published in `/federation/metadata/{id}`. |
+| `federation.encryptionKeyGraceS` | `STS_FEDERATION_ENCRYPTION_KEY_GRACE_S` | `86400` | yes | How long a relationship's encryption key still decrypts after a rotation replaced it; `0` ends it at the rotation (#168). |
 
 What this service calls itself to a partner is derived from the URL the browser
 reached it at; `global.publicBaseUrl` pins it for everything, and
@@ -419,6 +454,9 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 | `fedSubjectPolicy` | SP | what an unlinked subject may become: `link-at-first-sign-in` (default), `pre-linked`, `jit-namespaced`, `any-existing` (development only — see the warning above) |
 | `fedSubjectGroup`, `fedSubjectDomain`, `fedSubjectPattern` | SP | the rules on top of the policy |
 | `fedMayAssertAdministrators` | SP | let the partner sign in a console administrator; `FALSE` by default — see the warning above |
+| `fedEncryptionKeyType`, `fedKeyManagementAlgorithm`, `fedContentEncryptionAlgorithm` | SP (SAML 2.0, WS-Federation, OIDC) | what a partner encrypts to: `rsa-3072` or `ec-p256`; `rsa-oaep`/`ecdh-es` (XML) or `RSA-OAEP-256`, `RSA-OAEP` (**a warning: SHA-1**), `ECDH-ES`, `ECDH-ES+A128KW`, `ECDH-ES+A256KW` (JOSE); `aes256-gcm`/`aes128-gcm` or `A256GCM`/`A128GCM`. A new key type issues a key of that type at once |
+| `fedAllowUnencrypted` | SP (SAML 2.0, WS-Federation, OIDC) | accept a plaintext assertion in product; `FALSE` by default — **a warning**: the partner then sends the person's identifier and attributes in clear through the browser |
+| `fedEncryptionKey` | SP | the key table: never editable, never shown with its private key |
 | `fedApplication` | IdP | the partner's entry under `ou=applications` |
 | `fedAuthnMechanism`, `fedAuthnRelationship` | IdP | how this service authenticates for the partner |
 | `fedRelease` | IdP | the attributes released to the partner |

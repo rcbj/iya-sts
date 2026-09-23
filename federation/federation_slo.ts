@@ -128,6 +128,10 @@ import federation = require('./federation');
 import fedSp = require('./federation_sp');
 import requestSignature = require('../saml/request_signature');
 import documentSettings = require('../saml/document_settings');
+// A PARTNER'S ENCRYPTED NameID OR LOGOUT TOKEN (#168): decrypted with the
+// relationship's own key, as a sign-in's assertion is.
+import fedEncryption = require('./federation_encryption');
+import xmldom = require('@xmldom/xmldom');
 
 type Helpers = typeof helpers;
 
@@ -141,6 +145,7 @@ interface FederationSloDeps {
   authn: typeof authn;
   federation: typeof federation;
   fedSp: typeof fedSp;
+  fedEncryption: typeof fedEncryption;
   requestSignature: typeof requestSignature;
   documentSettings: typeof documentSettings;
   stsCrypto: typeof stsCrypto;
@@ -238,6 +243,7 @@ class FederationSlo {
       authn: authn,
       federation: federation,
       fedSp: fedSp,
+      fedEncryption: fedEncryption,
       requestSignature: requestSignature,
       documentSettings: documentSettings,
       stsCrypto: stsCrypto,
@@ -849,19 +855,33 @@ class FederationSlo {
                   : 'The LogoutRequest carries no ID, so nothing could stop ' +
                     'it being replayed.');
     }
-    // THE PRINCIPAL. Our SP metadata publishes no encryption key, so a
-    // partner has nothing to encrypt a NameID to; an <EncryptedID> is named
-    // rather than half-read.
-    const nameEl = firstByLocal(root, 'NameID');
+    // THE PRINCIPAL: a <NameID>, or an <EncryptedID> (saml-core-2.0-os
+    // section 3.7.1) encrypted to the key this relationship's metadata
+    // publishes (#168) and decrypted with it — after the signature over the
+    // ciphertext has verified, which it has by here.
+    let nameEl = firstByLocal(root, 'NameID');
+    const encryptedId = nameEl ? null : firstByLocal(root, 'EncryptedID');
+    if (encryptedId) {
+      const opened = this.deps.fedEncryption.decryptXml(record,
+        new xmldom.XMLSerializer().serializeToString(encryptedId));
+      nameEl = opened.ok ? this.nameIdOf(opened.xml) : null;
+      if (!nameEl) {
+        const code = opened.ok ? 'STS-FED-0138' : opened.code;
+        errorCodes.mark(res, code);
+        log.debug("Leaving FederationSlo.samlLogoutRequest(). The " +
+                  "EncryptedID.");
+        return this.refuse(res, record, 400, 'The LogoutRequest\'s ' +
+                                             'EncryptedID could not be read',
+          opened.ok ? 'It decrypted to something that is not a <NameID>.'
+                    : opened.why);
+      }
+    }
     if (!nameEl) {
       errorCodes.mark(res, 'STS-FED-0114');
       log.debug("Leaving FederationSlo.samlLogoutRequest(). No NameID.");
       return this.refuse(res, record, 400, 'The LogoutRequest names nobody',
-        firstByLocal(root, 'EncryptedID')
-          ? 'It carries an <EncryptedID>, and this relationship\'s metadata ' +
-            'publishes no encryption key for a partner to encrypt one to.'
-          : 'It carries no <NameID>, which saml-core-2.0-os section 3.7.1 ' +
-            'requires.');
+        'It carries no <NameID> and no <EncryptedID>, one of which ' +
+        'saml-core-2.0-os section 3.7.1 requires.');
     }
     const named = {
       value: String(nameEl.textContent || '').trim(),
@@ -1313,6 +1333,37 @@ class FederationSlo {
     return undefined;
   }
 
+  // A decrypted EncryptedID's NameID, which may lean on its parent for the
+  // `saml:` prefix — parsed as it stands, and otherwise inside a container
+  // declaring it. Null when it is not a NameID.
+  private nameIdOf(xml) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSlo.nameIdOf().");
+    const attempts = [xml, '<x xmlns:saml="' + NS_SAML + '">' + xml + '</x>'];
+    for (let i = 0; i < attempts.length; i++) {
+      try {
+        const doc = new xmldom.DOMParser().parseFromString(attempts[i],
+                                                           'text/xml');
+        let el: any = doc && doc.documentElement;
+        if (el && i === 1) {
+          el = el.firstChild;
+          while (el && el.nodeType !== 1) {
+            el = el.nextSibling;
+          }
+        }
+        if (el && el.localName === 'NameID') {
+          log.debug("Leaving FederationSlo.nameIdOf(). Found.");
+          return el;
+        }
+      } catch (e) {
+        log.debug("Caught in FederationSlo.nameIdOf(): " +
+                  ((e && e.message) || e));
+      }
+    }
+    log.debug("Leaving FederationSlo.nameIdOf(). Not a NameID.");
+    return null;
+  }
+
   // =========================================================================
   // OPENID CONNECT BACK-CHANNEL LOGOUT 1.0, AS THE RELYING PARTY.
   // Section 2.5 (the request), 2.6 (validation), 2.7 (what the RP does),
@@ -1334,18 +1385,39 @@ class FederationSlo {
         ', and a Logout Token belongs to an OpenID Connect relationship');
     }
     const body = parseBody(req);
-    const token = typeof body.logout_token === 'string' ? body.logout_token
-                                                         : '';
+    let token = typeof body.logout_token === 'string' ? body.logout_token
+                                                       : '';
+    // AN ENCRYPTED LOGOUT TOKEN (#168): section 2.4 encrypts one "the same
+    // way as ID Tokens", so it is decrypted with this relationship's key
+    // under the alg and enc it published, and what is inside must be the
+    // signed token — verified below exactly as an unencrypted one is.
+    if (token.split('.').length === 5) {
+      const opened = this.deps.fedEncryption.decryptJwe(record, token);
+      if (!opened.ok) {
+        errorCodes.mark(res, opened.code);
+        log.debug("Leaving FederationSlo.backchannelEndpoint(). " +
+                  opened.code);
+        return this.refuseJson(res, record, 400, 'the encrypted ' +
+                               'logout_token could not be read: ' +
+                               opened.why);
+      }
+      token = String(opened.plaintext || '').trim();
+      if (token.split('.').length !== 3) {
+        errorCodes.mark(res, 'STS-FED-0141');
+        log.debug("Leaving FederationSlo.backchannelEndpoint(). Nothing " +
+                  "signed inside.");
+        return this.refuseJson(res, record, 400, 'the encrypted ' +
+                               'logout_token holds no signed JWT; a Logout ' +
+                               'Token is signed, and then encrypted');
+      }
+    }
     const parts = token.split('.');
     if (!token || parts.length !== 3) {
       errorCodes.mark(res, 'STS-FED-0127');
       log.debug("Leaving FederationSlo.backchannelEndpoint(). No token.");
       return this.refuseJson(res, record, 400, !token
         ? 'the request carries no logout_token (section 2.5)'
-        : (parts.length === 5
-          ? 'the logout_token is encrypted, and this relying party ' +
-            'registered no encryption with the partner'
-          : 'the logout_token is not a signed JWT'));
+        : 'the logout_token is not a signed JWT');
     }
     let header: any = null;
     try {

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3183** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3199** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -56,8 +56,8 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 70
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 178
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 74
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 179
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
@@ -67,7 +67,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 120
+* [Federation (`STS-FED`)](#sts-fed) — 131
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 74
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
@@ -461,6 +461,10 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0068` | The signing-key history was asked for a unit this realm has no record of. | HTTP 400 from GET /admin-api/keys/history; a refusal on /admin/keys/history |
 | `STS-KEYS-0069` | A certificate authority row listed a certificate it still publishes as revoked; the revocation was dropped rather than written. | none — logged. A row may not publish a certificate its own CRL calls revoked; the drop is evidence of a tier write that was lost |
 | `STS-KEYS-0070` | An XML element encrypted to this realm wrapped its key with rsa-1_5 (RSAES-PKCS1-v1_5), and the realm is in product mode, where that key transport is never unwrapped — XML Encryption 1.1 section 6.1.2 (#181). | the caller's refusal: a LogoutRequest's EncryptedID that cannot be read is answered as the SAML binding says |
+| `STS-KEYS-0071` | An XML element's block cipher, key management or OAEP digest is one the caller's allow-list excludes; refused before any key operation (#168). | the caller's refusal — federation answers STS-FED-0139 |
+| `STS-KEYS-0072` | An rsa-oaep EncryptedKey named a digest and mask generation function this service cannot unwrap with: an unknown one, or two that differ (node derives MGF1 from the OAEP digest). | the caller's refusal |
+| `STS-KEYS-0073` | An XML element's key is agreed by an AgreementMethod other than ECDH-ES. | the caller's refusal |
+| `STS-KEYS-0074` | An XML element encrypted by ECDH-ES key agreement was handed to a recipient whose private key is not an EC key. | the caller's refusal |
 
 ## STS-PKI
 
@@ -648,6 +652,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0189` | A presented certificate carries RFC 9608 noRevAvail beside something section 3 forbids with it — cA TRUE, cRLDistributionPoints, freshestCRL, or an OCSP responder in its Authority Information Access — and is refused as INVALID under every policy but off. | The same refusals as STS-PKI-0118, per door |
 | `STS-PKI-0190` | A presented certificate chain was refused under pki.revocationCheck=hard-fail because a certificate in it, issued by an authority this service does not hold, names no CRL distribution point and no OCSP responder, carries no RFC 9608 noRevAvail, and pki.revocationRequireDistributionPoint (auto, in product mode, or on) refuses a certificate nobody can revoke. | The same refusals as STS-PKI-0118, per door |
 | `STS-PKI-0191` | A certificate authority build, or a key pair issued under one, named a SHA-1 signature algorithm (sha1-rsa or sha1-ecdsa) in a realm that is in product mode, where SHA-1 is never used (#181). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-PKI-0192` | An encryption key pair was asked for in a key type this service does not issue one of (rsa-3072 and ec-p256, #168). | the caller's refusal |
 
 ## STS-ENROLL
 
@@ -1784,7 +1789,7 @@ Raised from: federation/.
 | `STS-FED-0008` | A partner's SAMLResponse could not be base64-decoded. | HTTP 400 page |
 | `STS-FED-0009` | A partner's SAMLResponse or WS-Federation wresult is not well-formed XML, or has no document element. | HTTP 400 page |
 | `STS-FED-0010` | A federation partner answered with a SAML status other than Success: it declined to authenticate the person. | HTTP 400 page |
-| `STS-FED-0011` | A partner's SAML Response or WS-Federation token carried no <Assertion> (an encrypted assertion looks like this; it is not decrypted). | HTTP 400 page |
+| `STS-FED-0011` | A partner's SAML Response or WS-Federation token carried no <Assertion> and no <EncryptedAssertion>, an encrypted one reached a SAML 1.1 relationship (which has no encryption construct), or what one decrypted to is not an assertion. | HTTP 400 page |
 | `STS-FED-0012` | A partner's SAML assertion or response carries no XML signature at all, so it is refused as unauthenticated. | HTTP 401 page |
 | `STS-FED-0013` | A partner's XML signature did not verify against the fedSigningCertificate configured on the relationship (a certificate inside the document is never used). | HTTP 401 page |
 | `STS-FED-0014` | A partner's assertion arrived for a relationship with no fedSigningCertificate, so nothing can be verified and nothing is accepted. | HTTP 401 page |
@@ -1894,6 +1899,17 @@ Raised from: federation/.
 | `STS-FED-0134` | A browser returned from a partner's end_session_endpoint with a state this service did not mint, or one already spent or expired. | HTTP 400 page |
 | `STS-FED-0135` | A federation single logout endpoint was sent something its relationship's protocol does not define — any sign-out for SAML 1.1 or OAuth 2.0, which define none, another protocol's message, or nothing at all. | HTTP 400 page |
 | `STS-FED-0136` | A partner's verified sign-out matched a session and ending it failed. | HTTP 500 page, or HTTP 500 on the back channel (the partner retries) |
+| `STS-FED-0137` | A partner's encrypted assertion, identifier, attribute, ID Token or Logout Token arrived and the relationship holds no usable encryption key for it — none issued, one of the other key type, a previous key past its grace period, a kid naming no key held, or a sealed key that will not open. | HTTP 500 page (400 JSON on the back channel) |
+| `STS-FED-0138` | A partner's encrypted element or JWE did not decrypt under the relationship's key. ONE code for every cause — a wrong key, an altered ciphertext, a tag, an unwrap — so the answer is no oracle; which step failed is in the log line. | HTTP 401 page (400 JSON on the back channel) |
+| `STS-FED-0139` | A partner encrypted with an algorithm the relationship does not accept — not the key management or content encryption it publishes, or AES-CBC, rsa-1_5 or RSA1_5, which are refused in every mode — or a write tried to configure one of those three. | HTTP 401 page; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-FED-0140` | A partner sent a plaintext SAML 2.0 or WS-Federation assertion, or a signed-only id_token by form_post, to a relationship that requires encryption (product mode, fedAllowUnencrypted off). | HTTP 401 page |
+| `STS-FED-0141` | A JWE arrived where a JWS was expected: an encrypted ID Token or Logout Token whose plaintext is not a signed JWT (OpenID Connect Core section 10.2 is sign-then-encrypt), or an encrypted access token at a plain OAuth 2.0 relationship, which holds no decryption key. | HTTP 401 page (400 JSON on the back channel) |
+| `STS-FED-0142` | A federation relationship's encryption key could not be issued, sealed or written — at create, at a rotation, or when its key type changed. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-FED-0143` | A write to a relationship's encryption fields named a value outside the vocabulary for its protocol, a key management its key type cannot do, or an encryption field on a SAML 1.1 or OAuth 2.0 relationship. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-FED-0144` | An encryption key rotation named no relationship, or one that holds no key — identity-provider-side, SAML 1.1 or OAuth 2.0. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-FED-0145` | The scheduler job federation.encryption-key-retire could not remove a retired key from a relationship; the key already decrypts nothing, and the next run tries again. | none — logged |
+| `STS-FED-0146` | /federation/jwks/{id} named no OpenID Connect service-provider-side relationship. | HTTP 404 page |
+| `STS-FED-0147` | A partner's SAML Response or wresult carried an encrypted assertion beside another assertion; which one a signature covered and which one was read must not be a choice. | HTTP 400 page |
 
 ## STS-KRB
 

@@ -346,7 +346,7 @@ section 3.7.1 allows in a LogoutRequest. Both directions:
 
 | | Outbound | Inbound |
 |---|---|---|
-| Response | `<saml:EncryptedAssertion>`, per application | — (this service issues, it does not consume) |
+| Response | `<saml:EncryptedAssertion>`, per application | as a federation SERVICE PROVIDER only (#168): `federation/CLAUDE.md`, *A PARTNER'S ENCRYPTED ASSERTION* |
 | LogoutRequest | `<saml:EncryptedID>`, per application | `<saml:EncryptedID>`, **always** decrypted |
 
 **THE INBOUND HALF HAS NO SETTING AND THAT IS DELIBERATE.** Every switch here
@@ -385,8 +385,16 @@ request, and the key is how the interoperability profiles read it.
 ### The algorithms are a choice, and one of them is broken on purpose
 
 Four block ciphers (`aes256-gcm`, `aes128-gcm`, `aes256-cbc`, `aes128-cbc`) and
-two key transports (`rsa-oaep-mgf1p`, `rsa-1_5`), service-wide with
-per-application overrides. The defaults are the modern pair.
+three key transports (`rsa-oaep-mgf1p`, `rsa-oaep`, `rsa-1_5`), service-wide
+with per-application overrides. `rsa-oaep` (#168) is XML Encryption 1.1's with
+SHA-256 and MGF1-SHA-256 — what a federation relationship of this service
+publishes and requires — performed by node rather than forge, which has no
+named-digest OAEP. **A service provider whose encryption certificate is EC is
+encrypted to by ECDH-ES key agreement** (ConcatKDF, `kw-aes256`; XML Encryption
+1.1 section 5.6.4) whatever the key transport says; until #168 that certificate
+made the encryption throw and the assertion went out in clear
+(`STS-SAML-0012`). The default key transport is still `rsa-oaep-mgf1p`, which
+is what most deployed service providers read.
 
 **`rsa-1_5` IS BLEICHENBACHER-BROKEN AND IS OFFERED ANYWAY — IN DEVELOPMENT
 MODE**, because a great many deployed service providers accept nothing else and
