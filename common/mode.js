@@ -1541,7 +1541,11 @@ const NOT_YET = [
           'keys derived from their own password when it is set or verified, ' +
           'sealed on their entry (`stsKrb5Keys`); service principals get ' +
           'random keys and a keytab shown once at ' +
-          '/admin/kerberos/principals. A password change or a rotation keeps ' +
+          '/admin/kerberos/principals. A person\'s keytab (#59) is derived ' +
+          'from a password in hand — their own on /portal/kerberos, or one ' +
+          'an administrator sets with "Reset password and download keytab" ' +
+          '— and never read out of storage. A password change or a ' +
+          'rotation keeps ' +
           'the version it replaced — at most krb5.retainedKeyVersions, each ' +
           'for krb5.retainedKeyTtlS — so a ticket issued under it is still ' +
           'accepted until it could have expired, while pre-authentication ' +

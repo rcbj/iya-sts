@@ -179,7 +179,23 @@ it on is refused until it has a `krb5.realm` no other realm answers to
   issuance use the current key only: an old password never signs in. A
   rotation's keytab carries every kept version. **Drop previous versions** ends
   the window early.
-* No page, API reply, directory search or audit row ever shows a key.
+* **A person's keytab** (#59) is always derived from a password in hand, never
+  read out of storage, and holds the current kvno only:
+  * **on `/portal/kerberos`** the person types their current password and gets
+    a keytab for their own principal; nothing on the account changes, and the
+    keytab stops working when the password next changes;
+  * **on their page under Directory → Users** an administrator uses **Reset
+    password and download keytab** — a typed password, or a generated one that
+    nobody is shown. **This changes their password**: the old one stops
+    working everywhere, they are signed out, and the kvno moves up by one.
+    They are not asked to change it at their next sign-in, because that would
+    end the keytab. The same act over the API is
+    `POST /admin-api/kerberos/principals/reset-person-keytab`.
+
+  Use it with `kinit -k -t <file> <user>@<REALM>`. In development mode every
+  user is keyed from `krb5.userPassword`, so the keytab holds that key.
+* No page, API reply, directory search or audit row ever shows a key — except
+  the keytab a create, rotate or keytab download hands over, once.
 
 ### Not implemented
 
@@ -324,7 +340,10 @@ appconfig file.
   `GET /admin-api/kerberos/principals` and
   `POST /admin-api/kerberos/principals/{create-service, rotate-service,
   delete-service, clear-person-keys, drop-previous-service-keys,
-  drop-previous-person-keys}` — see `/admin-api/openapi.json`.
+  drop-previous-person-keys, reset-person-keytab}` — see
+  `/admin-api/openapi.json`.
+* **User portal**: `/portal/kerberos` — the signed-in person's principal, and a
+  keytab made from their own password.
 * The raw sockets register no HTTP route, so `/admin/sts-metadata` lists them by
   hand. Failures are recorded under `STS-KRB-NNNN` codes — see
   [Error codes](error-codes.md).

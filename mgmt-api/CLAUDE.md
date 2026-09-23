@@ -1256,9 +1256,11 @@ forwarded collaborator, so `tests/admin_actions_layer.js` did not change).
 
 Four things a caller is told, and the descriptions tell them:
 
-* **CREATE AND ROTATE ARE THE ONLY REPLIES CARRYING KEY MATERIAL**, as an MIT
-  keytab in base64 under `keytab`, handed over once: nothing can read a stored
-  key back afterwards, the GET included. A lost keytab is a rotation, not a read.
+* **CREATE, ROTATE AND `reset-person-keytab` ARE THE ONLY REPLIES CARRYING KEY
+  MATERIAL**, as an MIT keytab in base64 under `keytab`, handed over once and
+  `no-store`: nothing can read a stored key back afterwards, the GET included. A
+  lost service keytab is a rotation, not a read; a person's is another reset
+  (or their own on `/portal/kerberos`).
 * **NEITHER LIST CARRIES A KEY** — people and services are enctypes, kvno, salt
   and when, which is the public half (`stsKrb5KeyInfo`, `krb5ServiceKeyInfo`).
 * **IT IS THE REALM THE CALL IS IN (2026-09-15)**, and every reply says which as
@@ -1275,8 +1277,18 @@ Four things a caller is told, and the descriptions tell them:
   enctypes, expiry — never a key), with `retention` at the top saying the bounds
   in force. A drop with nothing kept answers `dropped: 0`; one for a principal
   holding no stored key is refused. `kerberos/CLAUDE.md` argues the design.
+* **SEVEN SINCE 2026-09-22 (#59)**: `reset-person-keytab` (`username`, and
+  `password` or `random: true`) SETS the person's password and answers the
+  keytab derived from it — the console's "Reset password and download keytab"
+  on their `/admin/users` page. It is the one ASYNCHRONOUS action, so the
+  handler resolves every answer. A generated password is never in the reply.
+  Refused before anything changes for neither or both of `password` and
+  `random` (`STS-ADMIN-0802`) and for what the register refuses (no KDC,
+  nobody, disabled); after the password was set, a keytab that could not be
+  made says the password WAS set (`STS-ADMIN-0803`). The job drives it last in
+  its Kerberos round trip, because it re-derives the keys the clears emptied.
 
-**`sts_admin_api_operations.js` HOLDS ALL SIX OUT OF ITS EXAMPLE REPLAY**
+**`sts_admin_api_operations.js` HOLDS ALL SEVEN OUT OF ITS EXAMPLE REPLAY**
 (`REPLAY_HELD_BACK`) — for the same reason as the truststore's: the replay runs
 in a throwaway realm and these write in the default one. Its
 `theKerberosPrincipalsRoundTrip()` drives them at the root instead, with a read
