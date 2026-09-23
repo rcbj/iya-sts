@@ -6073,6 +6073,16 @@ const CODES = [
       'encryption and its jwks holds no key for it. Answered on this ' +
       'server rather than sent unsecured.',
     spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0589',
+    summary: 'Under the FAPI 2.0 Security Profile, a pushed authorization ' +
+      'request did not authenticate its client (section 5.3.2.2 item 4).',
+    spec: 'HTTP 401 {error: invalid_client}' },
+  { code: 'STS-OAUTH-0590',
+    summary: 'Under the FAPI 2.0 Security Profile, a client assertion, a ' +
+      'request object or a DPoP proof carried an iat or nbf more than 60 ' +
+      'seconds in the future (section 5.3.2.1 item 13).',
+    spec: 'HTTP 400 {error: invalid_request}, invalid_request_object, or ' +
+      'invalid_dpop_proof' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

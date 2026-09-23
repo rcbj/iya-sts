@@ -1626,7 +1626,9 @@ class OidcRelyingParty {
     query.forEach(function (value, name) {
       claims[name] = value;
     });
-    claims.response_mode = 'jwt';
+    if (this.deps.fapi.advanced()) {
+      claims.response_mode = 'jwt';
+    }
     claims.iss = surface.clientId;
     claims.aud = this.assertionAudience(host);
     claims.iat = now;
@@ -2054,7 +2056,10 @@ class OidcRelyingParty {
       }
       // FAPI 1.0 ADVANCED (#139): signed, pushed and answered with JARM —
       // `advancedRedirect()`. A promise, which the three callers settle.
-      if (self.deps.fapi.advanced()) {
+      // FAPI 2.0 (#140) takes the same path without JARM: its section
+      // 5.3.2.2 requires the push and `code`, and a signed object inside the
+      // push is allowed.
+      if (self.deps.fapi.advanced() || self.deps.fapi.fapi2()) {
         log.debug('Leaving OidcRelyingParty.beginSignIn(). FAPI Advanced.');
         return self.advancedRedirect(req, res, surface, found.client, query,
                                      opts.authorizationBase || publicBase,

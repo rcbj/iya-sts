@@ -11,7 +11,19 @@
 // Profile and #141 FAPI 2.0 Message Signing, each as another value of the ONE
 // switch:
 //
-//   oauth2.fapi = 'off' | '1-baseline' | '1-advanced'
+//   oauth2.fapi = 'off' | '1-baseline' | '1-advanced' | '2-security'
+//
+// THE FAPI 2.0 SECURITY PROFILE (final, #140) IS NOT BUILT ON 1.0. It is a
+// profile of its own — confidential clients only, PAR always, `code` only,
+// PKCE S256 always, sender-constrained tokens (mTLS or DPoP), mTLS or
+// private_key_jwt, the issuer as the assertion's sole `aud`, codes of at most
+// 60 seconds, no refresh token rotation, PS256/ES256/EdDSA — so the FAPI 1.0
+// rows ask `v1()` and the 2.0 rows `fapi2()`, and the few that both ask
+// `enabled()`. rcbj's answers on #140: rotation off unless
+// `oauth2.refreshTokenRotation` forces it; the ordinary consent rules (the
+// person's-own-consent rule is FAPI 1.0 item 12's, not 2.0's); DPoP nonces
+// left to their setting; and BCP 195's TLS suites for every listener, which
+// is `tls/tls_server.js`'s and not this file's.
 //
 // ADVANCED IS BASELINE AND MORE. Part 2 section 5.2.2 opens "the authorization
 // server shall support the provisions specified in clause 5.2.2 of Financial-
@@ -60,8 +72,9 @@ const config = require('../common/config');
 
 // The profiles this service implements, in the order the specifications were
 // published. #139–#141 add theirs here.
-const PROFILES = ['1-baseline', '1-advanced'];
+const PROFILES = ['1-baseline', '1-advanced', '2-security'];
 const ADVANCED = '1-advanced';
+const FAPI2 = '2-security';
 
 // The switch's own "no profile", and what a named authorization server may
 // say to be NOT a FAPI server even though its realm is.
@@ -71,6 +84,9 @@ const BASELINE = 'FAPI 1.0 Part 1: Baseline Security Profile (final)';
 const BASELINE_URL =
   'https://openid.net/specs/openid-financial-api-part-1-1_0.html';
 const ADVANCED_NAME = 'FAPI 1.0 Part 2: Advanced Security Profile (final)';
+const FAPI2_NAME = 'FAPI 2.0 Security Profile (final)';
+const FAPI2_URL =
+  'https://openid.net/specs/fapi-security-profile-2_0-final.html';
 const ADVANCED_URL =
   'https://openid.net/specs/openid-financial-api-part-2-1_0.html';
 
@@ -90,6 +106,19 @@ const ADVANCED_RESPONSE_TYPES = ['code id_token', 'code'];
 // Part 2 section 8.6: "shall use PS256 or ES256" for every JWS, both ends; and
 // 8.6.1: never RSA1_5.
 const ADVANCED_SIGNING_ALGS = ['PS256', 'ES256'];
+// FAPI 2.0 section 5.4.1 item 2: PS256, ES256 or EdDSA (Ed25519).
+const FAPI2_SIGNING_ALGS = ['PS256', 'ES256', 'EdDSA'];
+// FAPI 2.0 section 5.3.2.2 item 1.
+const FAPI2_RESPONSE_TYPES = ['code'];
+// FAPI 2.0 section 5.4.1 item 5: an elliptic curve key of 224 bits or more.
+const FAPI2_MIN_EC_BITS = 224;
+// FAPI 2.0 section 5.3.2.1 item 11 and 5.3.2.2 item 12.
+const FAPI2_MAX_CODE_LIFETIME_S = 60;
+const FAPI2_MAX_REQUEST_URI_LIFETIME_S = 599;
+// FAPI 2.0 section 5.3.2.1 item 13: an iat or nbf more than 60 seconds in the
+// future is rejected (and one up to 10 seconds ahead accepted, which every
+// skew setting here already allows).
+const FAPI2_MAX_FUTURE_S = 60;
 const ADVANCED_DEFAULT_SIGNING_ALG = 'PS256';
 const FORBIDDEN_ENCRYPTION_ALGS = ['RSA1_5'];
 
@@ -288,6 +317,87 @@ const ADVANCED_REQUIREMENTS = [
           'STS-REG-0177), and the metadata lists are narrowed to match.' }
 ];
 
+// ---------------------------------------------------------------------------
+// WHAT THE FAPI 2.0 SECURITY PROFILE ASKS OF THE AUTHORIZATION SERVER, row by
+// row (sections 5.3.2.1, 5.3.2.2, 5.4). Its own table: 2.0 is not 1.0 plus
+// something, and the FAPI 1.0 rows are not listed under it.
+// ---------------------------------------------------------------------------
+const FAPI2_REQUIREMENTS = [
+  { id: 'implies-rfc9700', section: '5.3.2.1 items 2, 7', level: 'SHALL',
+    enforced: 'inherited',
+    title: 'No password grant, no open redirector — RFC 9700 mode is on',
+    note: 'GET /oauth2/rfc9700 lists what that mode enforces.' },
+  { id: 'confidential-only', section: '5.3.2.1 item 3', level: 'SHALL',
+    enforced: 'yes', title: 'Confidential clients only',
+    note: 'A public client is refused at registration and at the token and ' +
+          'PAR endpoints (STS-OAUTH-0580, STS-REG-0174).' },
+  { id: 'sender-constrained', section: '5.3.2.1 items 4-5', level: 'SHALL',
+    enforced: 'yes',
+    title: 'Only sender-constrained access tokens, by mTLS or DPoP',
+    note: 'A token request presenting neither is refused (STS-OAUTH-0583). ' +
+          'DPoP server nonces stay with oauth2.dpopNonceRequired (item 10, ' +
+          'a MAY; rcbj\'s decision on #140).' },
+  { id: 'client-auth', section: '5.3.2.1 item 6', level: 'SHALL',
+    enforced: 'yes', title: 'mTLS or private_key_jwt',
+    note: 'STS-OAUTH-0580, STS-REG-0174.' },
+  { id: 'assertion-aud', section: '5.3.2.1 item 8', level: 'SHALL',
+    enforced: 'yes',
+    title: 'A client assertion\'s aud is the issuer, as a string, alone',
+    note: 'OAuth 2.1 mode\'s rfc7523bis rule, turned on by this profile.' },
+  { id: 'no-rotation', section: '5.3.2.1 item 9', level: 'SHALL',
+    enforced: 'yes', title: 'No refresh token rotation',
+    note: 'Unless oauth2.refreshTokenRotation is set — the "extraordinary ' +
+          'circumstance" the item allows, and rcbj\'s decision on #140.' },
+  { id: 'code-lifetime', section: '5.3.2.1 item 11', level: 'SHALL',
+    enforced: 'yes', title: 'Authorization codes live 60 seconds at most',
+    note: 'oauth2.authorizationCodeTtlS is capped at 60 under the profile.' },
+  { id: 'dpop-code-binding', section: '5.3.2.1 item 12', level: 'SHALL',
+    enforced: 'already', title: 'Authorization code binding to a DPoP key',
+    note: 'dpop_jkt at the authorization and PAR endpoints (RFC 9449 ' +
+          'section 10).' },
+  { id: 'jwt-timestamps', section: '5.3.2.1 item 13', level: 'SHALL',
+    enforced: 'yes',
+    title: 'An iat or nbf more than 60 seconds in the future is rejected',
+    note: 'Client assertions, request objects and DPoP proofs ' +
+          '(STS-OAUTH-0590).' },
+  { id: 'response-type', section: '5.3.2.2 item 1', level: 'SHALL',
+    enforced: 'yes', title: 'response_type code only',
+    note: 'STS-OAUTH-0582, STS-REG-0178.' },
+  { id: 'par-required', section: '5.3.2.2 items 2-4', level: 'SHALL',
+    enforced: 'yes',
+    title: 'Pushed authorization requests, client-authenticated, required',
+    note: 'An authorization request not pushed is refused (STS-OAUTH-0419); ' +
+          'an unauthenticated push is refused (STS-OAUTH-0589).' },
+  { id: 'pkce-s256', section: '5.3.2.2 item 5', level: 'SHALL',
+    enforced: 'yes', title: 'PKCE with S256 for every request',
+    note: 'STS-OAUTH-0573.' },
+  { id: 'par-redirect-uri', section: '5.3.2.2 item 6', level: 'SHALL',
+    enforced: 'yes', title: 'redirect_uri in the pushed request',
+    note: 'OAuth 2.1 mode\'s default to the registered one does not apply ' +
+          '(STS-OAUTH-0574).' },
+  { id: 'iss-parameter', section: '5.3.2.2 item 7', level: 'SHALL',
+    enforced: 'already', title: 'The RFC 9207 iss on every response',
+    note: 'In every mode.' },
+  { id: 'code-single-use', section: '5.3.2.2 item 9', level: 'SHALL',
+    enforced: 'inherited', title: 'A used authorization code is rejected',
+    note: 'RFC 9700 mode\'s code-single-use.' },
+  { id: 'request-uri-lifetime', section: '5.3.2.2 item 12', level: 'SHALL',
+    enforced: 'yes', title: 'A request_uri expires in under 600 seconds',
+    note: 'oauth2.parRequestUriLifetimeS is capped at 599 under the profile.' },
+  { id: 'algorithms', section: '5.4.1 items 2-5', level: 'SHALL',
+    enforced: 'yes',
+    title: 'PS256, ES256 or EdDSA; RSA keys of 2048 bits, EC of 224',
+    note: 'This server signs PS256 by default under the profile; a client ' +
+          'algorithm or key outside these is refused (STS-OAUTH-0586, ' +
+          'STS-REG-0177, STS-REG-0175). EdDSA is Ed25519 while ' +
+          'oauth2.eddsaCurve is.' },
+  { id: 'tls', section: '5.2.1, 5.2.2', level: 'SHALL', enforced: 'deployment',
+    title: 'TLS 1.2 or later, BCP 195\'s TLS 1.2 cipher suites',
+    note: 'Every listener\'s default since #140 (tls.ciphers, ' +
+          'tls.minVersion), TLS 1.3 preferred; a property of the process, ' +
+          'not of a realm.' }
+];
+
 // The ambient profile of the request being answered: the named
 // authorization server's own value, when `oauth2.ts` set one.
 const ambient = new AsyncLocalStorage();
@@ -330,6 +440,30 @@ function enabled() {
   return on;
 }
 
+// Whether the FAPI 2.0 Security Profile is in force.
+function fapi2() {
+  log.debug("Entering fapi2().");
+  const on = profile() === FAPI2;
+  log.debug("Leaving fapi2(). " + on);
+  return on;
+}
+
+// Whether a FAPI 1.0 profile (Baseline or Advanced) is in force.
+function v1() {
+  log.debug("Entering v1().");
+  const on = enabled() && !fapi2();
+  log.debug("Leaving v1(). " + on);
+  return on;
+}
+
+// The JWS algorithms the profile in force allows, or null for no limit.
+function profileSigningAlgs() {
+  log.debug("Entering profileSigningAlgs().");
+  log.debug("Leaving profileSigningAlgs().");
+  return advanced() ? ADVANCED_SIGNING_ALGS
+    : (fapi2() ? FAPI2_SIGNING_ALGS : null);
+}
+
 // Whether FAPI 1.0 Advanced is in force.
 function advanced() {
   log.debug("Entering advanced().");
@@ -342,7 +476,7 @@ function advanced() {
 function profileName() {
   log.debug("Entering profileName().");
   log.debug("Leaving profileName().");
-  return advanced() ? ADVANCED_NAME : BASELINE;
+  return advanced() ? ADVANCED_NAME : (fapi2() ? FAPI2_NAME : BASELINE);
 }
 
 function refusal(errorCode, error, requirement, description) {
@@ -370,6 +504,29 @@ function httpsUri(uri) {
   return ok;
 }
 
+// Whether a redirect URI is acceptable to the profile in force: https, and —
+// under FAPI 2.0 only — http to a loopback address, which section 5.3.2.2
+// item 8 excepts for native clients.
+function redirectUriAllowed(uri) {
+  log.debug("Entering redirectUriAllowed().");
+  if (httpsUri(uri)) {
+    log.debug("Leaving redirectUriAllowed(). https.");
+    return true;
+  }
+  let loopback = false;
+  try {
+    const url = new URL(String(uri));
+    loopback = url.protocol === 'http:' &&
+      ['localhost', '127.0.0.1', '[::1]'].indexOf(url.hostname) >= 0;
+  } catch (e) {
+    log.debug("Caught in redirectUriAllowed(): " + ((e && e.message) || e));
+    // Not a URL: not a loopback one.
+    loopback = false;
+  }
+  log.debug("Leaving redirectUriAllowed(). loopback=" + loopback);
+  return fapi2() && loopback;
+}
+
 // ---------------------------------------------------------------------------
 // THE AUTHORIZATION REQUEST (and a pushed one, which the same vetting reads).
 // `query` is the request's parameters; `context.pushed` whether it arrived by
@@ -390,16 +547,18 @@ function authorizationRefusal(query, context) {
                    'redirect_uri is required in the authorization request ' +
                    '(section 5.2.2 item 9)');
   }
-  if (!httpsUri(q.redirect_uri)) {
+  if (!redirectUriAllowed(q.redirect_uri)) {
     log.debug("Leaving authorizationRefusal(). Not https.");
     return refusal('STS-OAUTH-0574', 'invalid_request', 'redirect-uri',
-                   'redirect_uri must use the https scheme (section 5.2.2 ' +
-                   'item 20)');
+                   'redirect_uri must use the https scheme (' + (fapi2()
+                     ? 'FAPI 2.0 section 5.3.2.2 item 8; http is allowed ' +
+                       'only to a loopback address'
+                     : 'section 5.2.2 item 20') + ')');
   }
   // Baseline item 7 for every client; Advanced relaxes it to a pushed request
   // (Part 2 section 5.2.2's exception, and item 18). A challenge that IS sent
   // is still held to S256 under both.
-  const pkceAsked = !advanced() || !!ctx.pushed;
+  const pkceAsked = fapi2() || !advanced() || !!ctx.pushed;
   const challenged = !!q.code_challenge;
   if ((pkceAsked && !challenged) ||
       (challenged && q.code_challenge_method !== 'S256')) {
@@ -410,6 +569,14 @@ function authorizationRefusal(query, context) {
                    '(Part 2 section 5.2.2 item 18)'
                                             : 'of every client (section ' +
                    '5.2.2 item 7)'));
+  }
+  if (fapi2() && responseTypeOf(q.response_type) !== 'code') {
+    log.debug("Leaving authorizationRefusal(). Not code.");
+    return refusal('STS-OAUTH-0582', 'unsupported_response_type',
+                   'response-type',
+                   'response_type "' + String(q.response_type || '') +
+                   '" is not code, the only one this profile allows (FAPI ' +
+                   '2.0 section 5.3.2.2 item 1)');
   }
   if (advanced()) {
     const type = responseTypeOf(q.response_type);
@@ -426,6 +593,11 @@ function authorizationRefusal(query, context) {
                      'with response_mode=jwt (JARM) (Part 2 section 5.2.2 ' +
                      'item 2)');
     }
+  }
+  // FAPI 1.0's two parameter rules; FAPI 2.0 leans on PKCE instead.
+  if (fapi2()) {
+    log.debug("Leaving authorizationRefusal(). Allowed (FAPI 2.0).");
+    return null;
   }
   if (scopes.indexOf('openid') >= 0 && !q.nonce) {
     log.debug("Leaving authorizationRefusal(). No nonce.");
@@ -495,8 +667,8 @@ function clientAuthenticationRefusal(method) {
     log.debug("Leaving clientAuthenticationRefusal(). Nothing to judge.");
     return null;
   }
-  const allowed = advanced() ? ADVANCED_METHODS
-                             : BASELINE_METHODS.concat(['none']);
+  const allowed = (advanced() || fapi2()) ? ADVANCED_METHODS
+                                          : BASELINE_METHODS.concat(['none']);
   if (allowed.indexOf(used) >= 0) {
     log.debug("Leaving clientAuthenticationRefusal(). Allowed.");
     return null;
@@ -507,14 +679,16 @@ function clientAuthenticationRefusal(method) {
                                  : 'confidential-client-auth',
                  used === 'none'
                    ? 'this client is a public client, and this profile ' +
-                     'supports none (Part 2 section 5.2.2 item 16)'
+                     'supports none (' + (fapi2() ? 'FAPI 2.0 section ' +
+                     '5.3.2.1 item 3' : 'Part 2 section 5.2.2 item 16') + ')'
                    : 'this client authenticates with ' + used + ', and a ' +
                      'confidential client must use ' +
                      allowed.filter(function (one) {
                        return one !== 'none';
-                     }).join(', ') + ' (' + (advanced()
-                       ? 'Part 2 section 5.2.2 item 14'
-                       : 'section 5.2.2 item 4') + ')');
+                     }).join(', ') + ' (' + (fapi2()
+                       ? 'FAPI 2.0 section 5.3.2.1 item 6'
+                       : (advanced() ? 'Part 2 section 5.2.2 item 14'
+                                     : 'section 5.2.2 item 4')) + ')');
 }
 
 // The size of one JWK's key in bits, or 0 when it is not RSA or EC.
@@ -551,8 +725,8 @@ function registrationRefusal(metadata) {
   }
   const meta = metadata || {};
   const method = String(meta.token_endpoint_auth_method || '');
-  const methods = advanced() ? ADVANCED_METHODS
-                             : BASELINE_METHODS.concat(['none']);
+  const methods = (advanced() || fapi2()) ? ADVANCED_METHODS
+                                          : BASELINE_METHODS.concat(['none']);
   if (method && methods.indexOf(method) < 0) {
     log.debug("Leaving registrationRefusal(). A method FAPI refuses.");
     return refusal('STS-REG-0174', 'invalid_client_metadata',
@@ -563,7 +737,7 @@ function registrationRefusal(metadata) {
                      ? 'Part 2 section 5.2.2 items 14 and 16'
                      : 'section 5.2.2 item 4') + ')');
   }
-  if (advanced()) {
+  if (advanced() || fapi2()) {
     const problem = advancedRegistrationProblem(meta);
     if (problem) {
       log.debug("Leaving registrationRefusal(). Advanced refuses it.");
@@ -572,7 +746,7 @@ function registrationRefusal(metadata) {
   }
   const uris = Array.isArray(meta.redirect_uris) ? meta.redirect_uris : [];
   const plain = uris.filter(function (uri) {
-    return !httpsUri(uri);
+    return !redirectUriAllowed(uri);
   });
   if (plain.length) {
     log.debug("Leaving registrationRefusal(). A redirect URI is not https.");
@@ -585,8 +759,9 @@ function registrationRefusal(metadata) {
                                                           : [];
   for (let i = 0; i < keys.length; i++) {
     const bits = keyBits(keys[i]);
+    const minEc = fapi2() ? FAPI2_MIN_EC_BITS : MIN_EC_BITS;
     const small = (keys[i] && keys[i].kty === 'RSA' && bits < MIN_RSA_BITS) ||
-                  (keys[i] && keys[i].kty === 'EC' && bits < MIN_EC_BITS);
+                  (keys[i] && keys[i].kty === 'EC' && bits < minEc);
     if (small) {
       log.debug("Leaving registrationRefusal(). A key is too small.");
       return refusal('STS-REG-0175', 'invalid_client_metadata', 'key-sizes',
@@ -594,7 +769,8 @@ function registrationRefusal(metadata) {
                                                 : '') +
                      'is ' + keys[i].kty + ' of ' + bits + ' bits; RSA keys ' +
                      'must be ' + MIN_RSA_BITS + ' bits or more and EC keys ' +
-                     MIN_EC_BITS + ' or more (section 5.2.2 items 5-6)');
+                     minEc + ' or more (' + (fapi2() ? 'FAPI 2.0 section ' +
+                     '5.4.1 items 4-5' : 'section 5.2.2 items 5-6') + ')');
     }
   }
   log.debug("Leaving registrationRefusal(). Allowed.");
@@ -607,8 +783,11 @@ function advancedRegistrationProblem(meta) {
   log.debug("Entering advancedRegistrationProblem().");
   const types = Array.isArray(meta.response_types) ? meta.response_types
                                                    : [];
+  const allowedTypes = fapi2() ? FAPI2_RESPONSE_TYPES
+                               : ADVANCED_RESPONSE_TYPES;
+  const allowedAlgs = profileSigningAlgs() || ADVANCED_SIGNING_ALGS;
   const badType = types.map(responseTypeOf).filter(function (one) {
-    return ADVANCED_RESPONSE_TYPES.indexOf(one) < 0;
+    return allowedTypes.indexOf(one) < 0;
   });
   if (badType.length) {
     log.debug("Leaving advancedRegistrationProblem(). A response type.");
@@ -616,19 +795,21 @@ function advancedRegistrationProblem(meta) {
                    'response-type',
                    'response_types ' + JSON.stringify(badType) + ' is not ' +
                    'one this profile allows; it allows ' +
-                   ADVANCED_RESPONSE_TYPES.join(' and ') + ' (Part 2 ' +
-                   'section 5.2.2 item 2)');
+                   allowedTypes.join(' and ') + ' (' + (fapi2()
+                     ? 'FAPI 2.0 section 5.3.2.2 item 1'
+                     : 'Part 2 section 5.2.2 item 2') + ')');
   }
   for (let i = 0; i < SIGNING_ALG_MEMBERS.length; i++) {
     const value = meta[SIGNING_ALG_MEMBERS[i]];
     if (value !== undefined && value !== null && value !== '' &&
-        ADVANCED_SIGNING_ALGS.indexOf(String(value)) < 0) {
+        allowedAlgs.indexOf(String(value)) < 0) {
       log.debug("Leaving advancedRegistrationProblem(). A signing alg.");
       return refusal('STS-REG-0177', 'invalid_client_metadata',
                      'algorithms',
                      SIGNING_ALG_MEMBERS[i] + ' "' + value + '" is not ' +
-                     ADVANCED_SIGNING_ALGS.join(' or ') + ' (Part 2 section ' +
-                     '8.6)');
+                     allowedAlgs.join(' or ') + ' (' + (fapi2()
+                       ? 'FAPI 2.0 section 5.4.1' : 'Part 2 section 8.6') +
+                     ')');
     }
   }
   for (let i = 0; i < ENCRYPTION_ALG_MEMBERS.length; i++) {
@@ -653,19 +834,103 @@ function advancedRegistrationProblem(meta) {
 function defaultSigningAlg() {
   log.debug("Entering defaultSigningAlg().");
   log.debug("Leaving defaultSigningAlg().");
-  return advanced() ? ADVANCED_DEFAULT_SIGNING_ALG : '';
+  return (advanced() || fapi2()) ? ADVANCED_DEFAULT_SIGNING_ALG : '';
 }
 
 function signingAlgAllowed(alg) {
   log.debug("Entering signingAlgAllowed(). " + alg);
+  const list = profileSigningAlgs();
   log.debug("Leaving signingAlgAllowed().");
-  return !advanced() || ADVANCED_SIGNING_ALGS.indexOf(String(alg)) >= 0;
+  return !list || list.indexOf(String(alg)) >= 0;
 }
 
+// RSA1_5 is refused under FAPI 1.0 Advanced (section 8.6.1) and under 2.0,
+// whose section 5.4.1 item 1 holds every JWT to RFC 8725, and RFC 8725
+// section 3.2 is the one that retires RSA1_5.
 function encryptionAlgAllowed(alg) {
   log.debug("Entering encryptionAlgAllowed(). " + alg);
   log.debug("Leaving encryptionAlgAllowed().");
-  return !advanced() || FORBIDDEN_ENCRYPTION_ALGS.indexOf(String(alg)) < 0;
+  return !(advanced() || fapi2()) ||
+         FORBIDDEN_ENCRYPTION_ALGS.indexOf(String(alg)) < 0;
+}
+
+// FAPI 2.0 section 5.3.2.1 item 13: a JWT's `iat` or `nbf` more than 60
+// seconds in the future. `what` names the JWT in the sentence.
+function futureTimestampRefusal(claims, what, now) {
+  log.debug("Entering futureTimestampRefusal().");
+  if (!fapi2()) {
+    log.debug("Leaving futureTimestampRefusal(). Not FAPI 2.0.");
+    return null;
+  }
+  const c = claims || {};
+  const at = Number(now) || Math.floor(Date.now() / 1000);
+  const ahead = ['iat', 'nbf'].filter(function (name) {
+    return c[name] !== undefined && Number(c[name]) - at > FAPI2_MAX_FUTURE_S;
+  });
+  if (!ahead.length) {
+    log.debug("Leaving futureTimestampRefusal(). In time.");
+    return null;
+  }
+  log.debug("Leaving futureTimestampRefusal(). Ahead.");
+  return refusal('STS-OAUTH-0590', 'invalid_request', 'jwt-timestamps',
+                 what + '\'s ' + ahead.join(' and ') + ' is more than ' +
+                 FAPI2_MAX_FUTURE_S + ' seconds in the future (FAPI 2.0 ' +
+                 'section 5.3.2.1 item 13)');
+}
+
+// FAPI 2.0 section 5.3.2.2 items 2-4: every authorization request is pushed,
+// and a push is client-authenticated.
+function requiresPar() {
+  log.debug("Entering requiresPar().");
+  log.debug("Leaving requiresPar().");
+  return fapi2();
+}
+
+function parAuthenticationRefusal(authenticated) {
+  log.debug("Entering parAuthenticationRefusal().");
+  if (!fapi2() || authenticated) {
+    log.debug("Leaving parAuthenticationRefusal(). Allowed.");
+    return null;
+  }
+  log.debug("Leaving parAuthenticationRefusal(). Unauthenticated.");
+  return refusal('STS-OAUTH-0589', 'invalid_client', 'par-required',
+                 'a pushed authorization request must authenticate its ' +
+                 'client (FAPI 2.0 section 5.3.2.2 item 4)');
+}
+
+// FAPI 2.0 section 5.3.2.1 item 8: a client assertion's `aud` is the issuer,
+// as a string. OAuth 2.1 mode's rule, asked for by this profile too.
+function strictAssertionAudience() {
+  log.debug("Entering strictAssertionAudience().");
+  log.debug("Leaving strictAssertionAudience().");
+  return fapi2();
+}
+
+// FAPI 2.0 section 5.3.2.1 item 9: no refresh token rotation — true when the
+// profile turns it off, which `sender_constraints.js`'s `rotationRequired()`
+// asks before any mode. `oauth2.refreshTokenRotation` still forces it.
+function forbidsRotation() {
+  log.debug("Entering forbidsRotation().");
+  log.debug("Leaving forbidsRotation().");
+  return fapi2();
+}
+
+// FAPI 2.0 section 5.3.2.1 item 11 and 5.3.2.2 item 12: the lifetimes a code
+// and a pushed request_uri may have, given what the settings ask for.
+function codeLifetimeMs(asked) {
+  log.debug("Entering codeLifetimeMs().");
+  const wanted = Number(asked) || 0;
+  log.debug("Leaving codeLifetimeMs().");
+  return fapi2() ? Math.min(wanted, FAPI2_MAX_CODE_LIFETIME_S * 1000)
+                 : wanted;
+}
+
+function requestUriLifetimeS(asked) {
+  log.debug("Entering requestUriLifetimeS().");
+  const wanted = Number(asked) || 0;
+  log.debug("Leaving requestUriLifetimeS().");
+  return fapi2() ? Math.min(wanted, FAPI2_MAX_REQUEST_URI_LIFETIME_S)
+                 : wanted;
 }
 
 // A JWS a client presented (a client assertion, a request object) signed with
@@ -679,7 +944,8 @@ function signingAlgRefusal(alg, what) {
   log.debug("Leaving signingAlgRefusal(). Refused.");
   return refusal('STS-OAUTH-0586', 'invalid_request', 'algorithms',
                  what + ' is signed ' + alg + ', and this profile allows ' +
-                 ADVANCED_SIGNING_ALGS.join(' or ') + ' (Part 2 section 8.6)');
+                 (profileSigningAlgs() || []).join(' or ') + ' (' + (fapi2()
+                   ? 'FAPI 2.0 section 5.4.1' : 'Part 2 section 8.6') + ')');
 }
 
 // Part 2 section 5.2.2 item 1: a signed request object is required.
@@ -761,7 +1027,7 @@ function requiresMtls() {
 
 function senderConstraintRefusal(binding) {
   log.debug("Entering senderConstraintRefusal().");
-  if (!advanced()) {
+  if (!advanced() && !fapi2()) {
     log.debug("Leaving senderConstraintRefusal(). Not Advanced.");
     return null;
   }
@@ -779,8 +1045,9 @@ function senderConstraintRefusal(binding) {
                      'items 5 and 6)'
                    : 'this request neither presented a TLS client ' +
                      'certificate nor carried a DPoP proof, and every access ' +
-                     'token here is sender-constrained (Part 2 section 5.2.2 ' +
-                     'item 5)');
+                     'token here is sender-constrained (' + (fapi2()
+                       ? 'FAPI 2.0 section 5.3.2.1 item 4'
+                       : 'Part 2 section 5.2.2 item 5') + ')');
 }
 
 // Section 5.2.2 item 21: the lifetime an access token may have. `bound` is
@@ -788,7 +1055,7 @@ function senderConstraintRefusal(binding) {
 function accessTokenLifetime(asked, bound) {
   log.debug("Entering accessTokenLifetime().");
   const wanted = Number(asked) || 0;
-  if (!enabled() || bound || wanted <= MAX_UNBOUND_ACCESS_TOKEN_S) {
+  if (!v1() || bound || wanted <= MAX_UNBOUND_ACCESS_TOKEN_S) {
     log.debug("Leaving accessTokenLifetime(). As asked.");
     return wanted;
   }
@@ -808,7 +1075,15 @@ function alwaysReturnsScope() {
 function honoursGlobalConsent() {
   log.debug("Entering honoursGlobalConsent().");
   log.debug("Leaving honoursGlobalConsent().");
-  return !enabled();
+  return !v1();
+}
+
+// Whether the profile makes the consent screen compulsory — FAPI 1.0 item
+// 12. FAPI 2.0 leaves consent to the ordinary rules (rcbj, #140).
+function requiresConsent() {
+  log.debug("Entering requiresConsent().");
+  log.debug("Leaving requiresConsent().");
+  return v1();
 }
 
 // What this profile does to the metadata an authorization server publishes.
@@ -820,7 +1095,7 @@ function applyToMetadata(metadata) {
     return metadata;
   }
   metadata.code_challenge_methods_supported = ['S256'];
-  const allowedMethods = advanced() ? ADVANCED_METHODS
+  const allowedMethods = (advanced() || fapi2()) ? ADVANCED_METHODS
                                     : BASELINE_METHODS.concat(['none']);
   const methods = metadata.token_endpoint_auth_methods_supported;
   if (Array.isArray(methods)) {
@@ -829,17 +1104,20 @@ function applyToMetadata(metadata) {
         return allowedMethods.indexOf(one) >= 0;
       });
   }
-  if (advanced()) {
+  if (advanced() || fapi2()) {
+    const types = fapi2() ? FAPI2_RESPONSE_TYPES : ADVANCED_RESPONSE_TYPES;
+    const algs = profileSigningAlgs() || [];
     if (Array.isArray(metadata.response_types_supported)) {
       metadata.response_types_supported = metadata.response_types_supported
         .filter(function (one) {
-          return ADVANCED_RESPONSE_TYPES.indexOf(responseTypeOf(one)) >= 0;
+          return types.indexOf(responseTypeOf(one)) >= 0;
         });
     }
-    SIGNING_ALG_LISTS.forEach(function (name) {
+    SIGNING_ALG_LISTS.concat(fapi2() ? ['dpop_signing_alg_values_supported']
+                                     : []).forEach(function (name) {
       if (Array.isArray(metadata[name])) {
         metadata[name] = metadata[name].filter(function (one) {
-          return ADVANCED_SIGNING_ALGS.indexOf(one) >= 0;
+          return algs.indexOf(one) >= 0;
         });
       }
     });
@@ -850,7 +1128,12 @@ function applyToMetadata(metadata) {
         });
       }
     });
-    metadata.require_signed_request_object = true;
+    if (advanced()) {
+      metadata.require_signed_request_object = true;
+    }
+    if (fapi2()) {
+      metadata.require_pushed_authorization_requests = true;
+    }
   }
   log.debug("Leaving applyToMetadata().");
   return metadata;
@@ -864,9 +1147,10 @@ function state() {
     profile: on || null,
     enabled: !!on,
     profiles_supported: PROFILES.slice(),
-    specification: on === ADVANCED ? ADVANCED_NAME + ', over ' + BASELINE
-                                   : BASELINE,
-    url: on === ADVANCED ? ADVANCED_URL : BASELINE_URL,
+    specification: on === FAPI2 ? FAPI2_NAME
+      : (on === ADVANCED ? ADVANCED_NAME + ', over ' + BASELINE : BASELINE),
+    url: on === FAPI2 ? FAPI2_URL
+      : (on === ADVANCED ? ADVANCED_URL : BASELINE_URL),
     require_mtls: requiresMtls(),
     implies: 'oauth2.rfc9700 — GET /oauth2/rfc9700 lists what that mode ' +
              'enforces, and every FAPI profile turns it on',
@@ -881,7 +1165,11 @@ function state() {
       'oauth2.fapiRequireMtls': !!config.value('oauth2.fapiRequireMtls'),
       'oauth2.rfc9700': !!config.value('oauth2.rfc9700')
     },
-    requirements: REQUIREMENTS.map(function (row) {
+    requirements: on === FAPI2 ? FAPI2_REQUIREMENTS.map(function (row) {
+      return { id: row.id, section: 'FAPI 2.0 ' + row.section,
+               level: row.level, enforced: row.enforced, title: row.title,
+               note: row.note };
+    }) : REQUIREMENTS.map(function (row) {
       const relaxed = on === ADVANCED && row.id === 'pkce-s256';
       return { id: row.id, section: 'FAPI 1.0 Part 1 ' + row.section,
                level: row.level,
@@ -903,6 +1191,9 @@ function state() {
 module.exports = {
   PROFILES: PROFILES,
   ADVANCED: ADVANCED,
+  FAPI2: FAPI2,
+  FAPI2_SIGNING_ALGS: FAPI2_SIGNING_ALGS,
+  FAPI2_REQUIREMENTS: FAPI2_REQUIREMENTS,
   NONE: NONE,
   ADVANCED_METHODS: ADVANCED_METHODS,
   ADVANCED_SIGNING_ALGS: ADVANCED_SIGNING_ALGS,
@@ -919,6 +1210,18 @@ module.exports = {
   profile: profile,
   enabled: enabled,
   advanced: advanced,
+  fapi2: fapi2,
+  v1: v1,
+  profileSigningAlgs: profileSigningAlgs,
+  redirectUriAllowed: redirectUriAllowed,
+  futureTimestampRefusal: futureTimestampRefusal,
+  requiresPar: requiresPar,
+  parAuthenticationRefusal: parAuthenticationRefusal,
+  strictAssertionAudience: strictAssertionAudience,
+  forbidsRotation: forbidsRotation,
+  codeLifetimeMs: codeLifetimeMs,
+  requestUriLifetimeS: requestUriLifetimeS,
+  requiresConsent: requiresConsent,
   responseTypeOf: responseTypeOf,
   defaultSigningAlg: defaultSigningAlg,
   signingAlgAllowed: signingAlgAllowed,

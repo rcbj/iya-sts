@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2934** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2936** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 190
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 468
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 470
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1544,6 +1544,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0586` | Under FAPI 1.0 Advanced, a client assertion or request object was signed with an algorithm other than PS256 or ES256 (Part 2 section 8.6). | HTTP 401 {error: invalid_client}, or HTTP 400 {error: invalid_request_object} |
 | `STS-OAUTH-0587` | response_mode=query.jwt was asked for with a response type carrying token or id_token, and the client registered no encryption for its authorization responses (JARM section 2.3.1). | redirect: error=invalid_request |
 | `STS-OAUTH-0588` | A JWT-secured authorization response (JARM) could not be made: the client's registered algorithm cannot be honoured, or it named encryption and its jwks holds no key for it. Answered on this server rather than sent unsecured. | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0589` | Under the FAPI 2.0 Security Profile, a pushed authorization request did not authenticate its client (section 5.3.2.2 item 4). | HTTP 401 {error: invalid_client} |
+| `STS-OAUTH-0590` | Under the FAPI 2.0 Security Profile, a client assertion, a request object or a DPoP proof carried an iat or nbf more than 60 seconds in the future (section 5.3.2.1 item 13). | HTTP 400 {error: invalid_request}, invalid_request_object, or invalid_dpop_proof |
 
 ## STS-SAML
 

@@ -100,7 +100,7 @@ function childMain() {
     eq(fapi.withProfile('', function () {
       return fapi.enabled();
     }), false, 'A. a server with no value of its own follows its realm');
-    eq(fapi.withProfile('2-security', function () {
+    eq(fapi.withProfile('3-imaginary', function () {
       return fapi.enabled();
     }), false, 'A. a value that is not a profile is no profile');
     note(fapi.known('1-baseline') && fapi.known('off') &&

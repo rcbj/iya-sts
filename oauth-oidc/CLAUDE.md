@@ -566,6 +566,54 @@ so must `admin-ui/admin.ts`.
    `tests/fapi_advanced_units.js` and `tests/vendored/sts_fapi_advanced.js`
    hold it.
 
+   **THE FAPI 2.0 SECURITY PROFILE (#140, 2026-09-22) IS THE THIRD VALUE,
+   `2-security`, AND IT IS NOT BUILT ON 1.0.** Its own requirement table
+   (`FAPI2_REQUIREMENTS`), and the rows split: `v1()` for FAPI 1.0's (the
+   nonce and state rules, the 600-second cap on unbound tokens — 2.0 binds
+   every token — and item 12's consent), `fapi2()` for 2.0's, `enabled()` for
+   the few both ask. rcbj's answers:
+
+   | Asked | Chosen |
+   |---|---|
+   | Refresh rotation (5.3.2.1 item 9) | Off; `oauth2.refreshTokenRotation` forces it, as the "extraordinary circumstance" |
+   | TLS (5.2.2) | BCP 195 for EVERY listener by default, TLS 1.3 strongly preferred — `tls/CLAUDE.md` |
+   | DPoP nonces (item 10, a MAY) | Left to `oauth2.dpopNonceRequired` |
+   | Consent | The ordinary rules; the own-consent rule is FAPI 1.0's |
+
+   **WHERE EACH RULE IS ASKED**: confidential clients by mTLS or
+   `private_key_jwt` (`clientAuthenticationRefusal()`, registration);
+   sender-constrained tokens by mTLS or DPoP, never the mTLS-only flag
+   (`senderConstraintRefusal()`); the assertion's `aud` as a STRING —
+   `strictAssertionAudience()` turns on OAuth 2.1's sole-issuer rule at the
+   three sites that compute `strictAudience`, and `client_auth.js` refuses a
+   one-element array under the profile; PAR required (`requiresPar()`, one
+   more source in `pushedRequestPolicyRefusal()`, `STS-OAUTH-0419`) and
+   client-authenticated (`parAuthenticationRefusal()`, `0589` — a backstop:
+   RFC 9700 mode's own check refuses first for a declared confidential
+   client); `redirect_uri` sent, which stops OAuth 2.1 mode's default to the
+   registered one under ANY FAPI profile; code only (`0582`) and PKCE always;
+   http only to a loopback redirect (`redirectUriAllowed()`, section 5.3.2.2
+   item 8); codes of 60 seconds (`codeLifetimeMs()` in `authCodeTtlMs()`) and
+   request_uris under 600 (`requestUriLifetimeS()` in `par.ts`); an `iat` or
+   `nbf` more than 60 seconds ahead (`futureTimestampRefusal()`, `0590`) on a
+   client assertion — read UNVERIFIED, only to refuse — a request object and a
+   DPoP proof, because `jsonwebtoken` does not look at a future `iat` at all;
+   PS256, ES256 or EdDSA (`profileSigningAlgs()`), EC keys of 224 bits, DPoP's
+   own algorithm list narrowed too; RSA1_5 refused under both 1.0 Advanced
+   and 2.0 (RFC 8725 section 3.2, which 5.4.1 item 1 adopts).
+
+   **ROTATION HAD A GAP UNDER FAPI 1.0 TOO, CLOSED HERE.**
+   `sender_constraints.js`'s `rotationRequired()` reads its sources directly
+   and did not list `fapi.enabled()`, so a FAPI 1.0 realm implied RFC 9700
+   mode everywhere but rotation. It lists it now, and asks
+   `forbidsRotation()` before any mode for 2.0.
+
+   **THE SURFACES under 2.0 take `advancedRedirect()` without JARM** — the
+   push, `code`, `private_key_jwt`, DPoP — and, with the ordinary consent
+   rules, their seeded global consent counts again.
+   `tests/fapi2_units.js` and `tests/vendored/sts_fapi2.js` hold it; the
+   Attacker Model's mapping is in `docs/oauth-security.md`.
+
 3aw. **`jarm.ts` IS JARM, THE JWT-SECURED AUTHORIZATION RESPONSE (#143, BUILT
    IN #139, 2026-09-22), IN EVERY MODE.** FAPI 1.0 Advanced needs it, and it
    is a final specification of its own that any client may ask for, so it is
