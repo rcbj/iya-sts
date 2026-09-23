@@ -102,6 +102,9 @@ const realms = require('./realms');
 // with no caller to hand it to is `tag()`ged onto its log line instead: this
 // module does not require `audit.js`, for the leaf rule above.
 const errorCodes = require('./error_codes');
+// THE MODE, for SHA-1 certificate signatures, which are development's (#181).
+// A LEAF (`config` and `error_codes` only), so no cycle.
+const mode = require('./mode');
 // The debugger's own PKI code, byte-identical. DO NOT EDIT THEM HERE — see
 // `common/vendored/CLAUDE.md`.
 const x509 = require('./vendored/x509');
@@ -623,12 +626,19 @@ function realmIdOf(realmId) {
 // the preference stands; under a parent it is the parent's, and a preference
 // its key cannot produce is REPLACED rather than refused — the caller asked
 // for an EC *hierarchy*, and the tier they asked for is EC whatever signed it.
+// A SHA-1 value (`weak` in the vendored table) is passed over the same way in
+// PRODUCT (#181, `mode.usesBrokenAlgorithms()`): a tier or a leaf under an
+// authority a development realm built with SHA-1 is signed with the key's
+// default once the realm is switched, rather than refused — the refusal is
+// for somebody NAMING SHA-1, which `algorithmsFrom()` and
+// `issueSigningKeyPair()` make.
 function signatureForIssuer(parent, preferred, subjectKeyAlg) {
   log.debug("Entering signatureForIssuer().");
   const issuerKeyAlg = parent ? parent.keyAlg : subjectKeyAlg;
   const issuerDesc = keyMaterial.keyAlg(issuerKeyAlg);
   const wanted = x509.sigAlg(preferred);
-  if (issuerDesc && wanted && wanted.kind === issuerDesc.kind) {
+  if (issuerDesc && wanted && wanted.kind === issuerDesc.kind &&
+      (!wanted.weak || mode.usesBrokenAlgorithms())) {
     log.debug("Leaving signatureForIssuer().");
     return preferred;
   }
@@ -1199,7 +1209,13 @@ function algorithmsFrom(options) {
   // CALLER that names a mismatched pair is still refused below, because that is
   // somebody asking for the impossible rather than a default not fitting.
   // -------------------------------------------------------------------------
-  const configuredSig = String(config.value('pki.signatureAlgorithm') ||
+  //
+  // **SHA-1 IS DEVELOPMENT'S (#181).** The setting is read AS IN FORCE, so
+  // `sha1-rsa` or `sha1-ecdsa` stored in a product realm reads as empty (the
+  // key's own default), said once; and a CALLER naming either is refused
+  // below, because a build form is a second door onto the same choice.
+  // -------------------------------------------------------------------------
+  const configuredSig = String(mode.valueInForce('pki.signatureAlgorithm') ||
                                '').trim();
   const configuredFits = !!configuredSig && !!x509.sigAlg(configuredSig) &&
                          x509.sigAlg(configuredSig).kind === keyDesc.kind;
@@ -1212,6 +1228,18 @@ function algorithmsFrom(options) {
     return errorCodes.mark({ ok: false,
              errors: ['"' + sigAlgId + '" is not a signature algorithm this ' +
                       'service can produce.'] }, 'STS-PKI-0003');
+  }
+  if (sig.weak && !mode.usesBrokenAlgorithms()) {
+    log.debug("Leaving algorithmsFrom(). SHA-1, in product.");
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + sigAlgId + '" signs with SHA-1, which this ' +
+                      'realm does not use in product mode ' +
+                      '(global.mode=product). Choose ' +
+                      signatureAlgorithms(keyAlgId).filter(function (one) {
+                        return !one.weak;
+                      }).map(function (one) {
+                        return one.id;
+                      }).join(', ') + '.'] }, 'STS-PKI-0191');
   }
   if (sig.kind !== keyDesc.kind) {
     log.debug("Leaving algorithmsFrom().");
@@ -1314,17 +1342,20 @@ async function buildScopeNow(scopeId, opts) {
   const id = String(scopeId);
   const kind = scopeKindOf(id);
   const options = opts || {};
+  // The algorithms are decided BEFORE the Root is made, so that a build
+  // refused for its algorithm (a SHA-1 one in product, #181, or an
+  // impossible pair) creates nothing on its way to the refusal.
+  const chosen = algorithmsFrom(options);
+  if (!chosen.ok) {
+    log.debug('Leaving buildScope(). ' + chosen.errors.join(' '));
+    return chosen;
+  }
   const rooted = await ensureRoot(options);
   if (!rooted.ok) {
     log.debug('Leaving buildScope(). No Root.');
     return rooted;
   }
   const root = serviceRoot();
-  const chosen = algorithmsFrom(options);
-  if (!chosen.ok) {
-    log.debug('Leaving buildScope(). ' + chosen.errors.join(' '));
-    return chosen;
-  }
   const organisation = String(options.organisation ||
                               (serviceRow() || {}).organisation ||
                               DEFAULT_ORGANISATION);
@@ -1961,7 +1992,22 @@ async function issueSigningKeyPair(realmId, opts) {
   // the wrong way round produces a certificate whose declared algorithm and
   // actual signature disagree, which `openssl verify` reports as a bad
   // signature naming neither — the vendored module's header says so at length.
-  const sigAlgId = String(options.signatureAlg || chain.signatureAlg);
+  if (options.signatureAlg &&
+      (x509.sigAlg(String(options.signatureAlg)) || {}).weak &&
+      !mode.usesBrokenAlgorithms()) {
+    log.debug("Leaving issueSigningKeyPair(). SHA-1, in product.");
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + options.signatureAlg + '" signs with SHA-1, ' +
+                      'which this realm does not use in product mode ' +
+                      '(global.mode=product).'] }, 'STS-PKI-0191');
+  }
+  // An algorithm INHERITED from the branch is passed over in product when it
+  // is SHA-1 (#181), as `signatureForIssuer()` does for the tiers.
+  const inherited = x509.sigAlg(String(chain.signatureAlg || '')) || {};
+  const sigAlgId = String(options.signatureAlg ||
+                          (inherited.weak && !mode.usesBrokenAlgorithms()
+                            ? defaultSignatureAlgorithmFor(issuing.keyAlg)
+                            : chain.signatureAlg));
   const sig = x509.sigAlg(sigAlgId);
   const issuerDesc = keyMaterial.keyAlg(issuing.keyAlg);
   if (!sig || !issuerDesc || sig.kind !== issuerDesc.kind) {
@@ -7628,6 +7674,10 @@ module.exports = {
   keyAlgorithms: keyAlgorithms,
   signatureAlgorithms: signatureAlgorithms,
   defaultSignatureAlgorithmFor: defaultSignatureAlgorithmFor,
+  // What a build would sign with, decided before any key is made — exported
+  // for `tests/mode_weak_settings.js` (#181), which asks it about SHA-1 in
+  // each mode without building a hierarchy to find out.
+  algorithmsFrom: algorithmsFrom,
   buildChain: buildChain,
   hasChain: hasChain,
   describe: describe,

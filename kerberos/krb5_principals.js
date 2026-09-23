@@ -2048,7 +2048,9 @@ buildContext(realms.DEFAULT_REALM);
 // runtime. No Entering/Leaving pair: it is on the hot path, under every
 // reader of a stamp, beside asDate().
 function kdcNowMs() {
-  return Date.now() + (Number(config.value('krb5.clockOffset')) || 0) * 1000;
+  // As IN FORCE (#181): the offset is development's, 0 in a product realm.
+  return Date.now() +
+    (Number(mode.valueInForce('krb5.clockOffset')) || 0) * 1000;
 }
 
 // The first whole second at or after a stamp — the smallest `authtime` a

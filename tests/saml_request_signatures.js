@@ -926,9 +926,13 @@ function run(t) {
       return direct.signsAssertionFor(spM);
     }), true, 'WantAssertionsSigned in PRODUCT: the assertion is signed ' +
               'anyway');
+    // It read *a service provider that did not ask gets the setting* until
+    // #181 made `saml2.signAssertion` off development's: a product realm
+    // signs every assertion, asked or not.
     t.equal(withSettings(config, { 'global.mode': 'product' }, function () {
       return direct.signsAssertionFor(spU);
-    }), false, 'and a service provider that did not ask gets the setting');
+    }), true, 'and since #181 a service provider that did not ask is ' +
+              'signed for too: off is ignored in product');
   });
 
   // -------------------------------------------------------------------------

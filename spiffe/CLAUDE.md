@@ -813,7 +813,10 @@ different claims and merging them back into one gets both wrong.
   is not a revocation either; see rule 3k.
   What IS refused: a Workload API call with no `workload.spiffe.io: true` header
   (every conforming implementation refuses it, and a client that omits it has a
-  bug nothing else will report), a JWT-SVID with no audience, a
+  bug nothing else will report — always in product, since #181:
+  `spiffe.requireSecurityHeader` off is development's,
+  `mode.servesWithoutSecurityHeader()`, read by `spiffe_grpc.ts` and GET
+  /spiffe through `mode.valueInForce()`), a JWT-SVID with no audience, a
   `ValidateJWTSVID` that does not really verify, an entry in another trust
   domain or under `/spire`, a banned agent, an attestation type nothing here
   verifies, a join token this server did not

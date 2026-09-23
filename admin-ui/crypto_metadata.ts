@@ -177,6 +177,9 @@
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 import config = require('../common/config');
+// A LEAF, for the key transport AS IN FORCE: `rsa-1_5` is development's
+// (#181), so a product realm's page must not report it in use.
+import mode = require('../common/mode');
 // THE ERROR CODES (common/error_codes.js, a leaf). The key export marks its
 // refusals on the RESULT under the non-enumerable Symbol `mark()` uses, so
 // `/admin-api/keys/export` sends the same JSON and this page reads the code
@@ -1448,7 +1451,10 @@ class CryptoMetadata {
                 'RSA-OAEP-MGF1P, because that is what the URI MEANS rather ' +
                 'than a choice this service made.',
         whatItDoesNot: 'It does not accept a SHA-1 signature unless ' +
-                       'saml.allowSha1Signatures is on, nor MD5, a MAC or ' +
+                       'saml.allowSha1Signatures is on — never in product ' +
+                       'mode, which also never signs with rsa-sha1, wraps ' +
+                       'a key with rsa-1_5 or unwraps one — nor MD5, a MAC ' +
+                       'or ' +
                        'a stateful hash-based signature at all. A service ' +
                        'provider it holds no certificate for, with ' +
                        'encryption turned on, gets the assertion IN CLEAR, ' +
@@ -1470,7 +1476,7 @@ class CryptoMetadata {
             ['Block cipher (saml2.encryptionAlgorithm)',
              [String(config.value('saml2.encryptionAlgorithm'))]],
             ['Key transport (saml2.keyTransportAlgorithm)',
-             [String(config.value('saml2.keyTransportAlgorithm'))]],
+             [String(mode.valueInForce('saml2.keyTransportAlgorithm'))]],
             ['Block ciphers offered', Object.keys(stsCrypto.BLOCK_CIPHERS)],
             ['Key transports offered', Object.keys(stsCrypto.KEY_TRANSPORTS)]
           ];
@@ -2919,7 +2925,8 @@ class CryptoMetadata {
         }),
         configured: {
           blockCipher: String(config.value('saml2.encryptionAlgorithm')),
-          keyTransport: String(config.value('saml2.keyTransportAlgorithm')),
+          keyTransport:
+            String(mode.valueInForce('saml2.keyTransportAlgorithm')),
           encryptAssertion: !!config.value('saml2.encryptAssertion'),
           encryptLogoutNameId: !!config.value('saml2.encryptLogoutNameId')
         }

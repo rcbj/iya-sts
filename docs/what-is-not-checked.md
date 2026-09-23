@@ -28,8 +28,10 @@ Every row below says what **product** mode does first and what **development**
 mode does after it. [What product mode still does not check](#what-product-mode-still-does-not-check)
 lists what neither mode checks and a deployment should know about.
 
-The service publishes the same split about itself, live: `GET /admin/mode` (and
-`GET /admin-api/mode`) lists every requirement with the answer in force, and
+The service publishes the same split about itself, live: `GET /admin/mode`
+(Server configuration → Mode) and `GET /admin-api/mode` list every requirement
+with the answer in force, and every development-only setting with the value
+stored and the value in force (#181), and
 `GET /oauth2/rfc9700` and `GET /oauth2/oauth21` list each OAuth requirement with
 whether it is enforced. Read those for the running instance; read this page for
 the reasons.
@@ -87,7 +89,7 @@ any of them would be a broken implementation rather than a lenient one:
 | Verify anything in an issued credential's values | Nothing is invented: the values come from the access token and then the directory entry, and an attribute neither holds is absent — from the credential, a claims request, and the ID Token and UserInfo profile claims. `email_verified` is never asserted | What the entry lacks is invented from the username |
 | ~~Deactivate anybody on SCIM `active: false`~~ — reversed 2026-09-17 | `active: false` writes `pwdAccountLockedTime`, the same state **Disable** on `/admin/users` writes. Every door then refuses the person — a password anywhere (an LDAP bind included), any sign-in, a session they already hold, a Kerberos AS-REQ or S4U2Self, every token grant and refresh, the issuance of any SAML, WS-Federation, WS-Trust or GNAP artifact, and the management API — and everything they hold is ended and their wallet credentials disowned. `active: true` enables them again | The same |
 | ~~Restrict which people a federation partner may assert~~ — reversed 2026-09-22 ([#109](https://github.com/rcbj/iya-sts/issues/109)) | A partner signs in only the person its subject is **linked** to — a `federationLink` of the relationship, the partner's issuer and its `sub` or persistent NameID. An unlinked subject naming an existing person must first sign in here as that person, password and second factor, before the link is made (`fedSubjectPolicy` `link-at-first-sign-in`, the default); `pre-linked` refuses it (`STS-FED-0091`); `jit-namespaced` never reaches an existing person; **`any-existing`, the old name match, is refused** (`STS-FED-0094`, `STS-FED-0095`). Nothing is written onto an entry before that. Group, domain and DN-pattern rules narrow it further (`STS-FED-0092`), and a console administrator is refused even with a link unless `fedMayAssertAdministrators` is on (`STS-FED-0093`). Nothing is created for a subject naming nobody (`STS-FED-0090`) | The same, except that `any-existing` may be set and matches the name, and a subject naming nobody gets an entry named `<relationship>~<name>`, linked at creation, unless `fedAutocreateUsers` is off. No password is checked at the linking sign-in (the reserved `invalid` is refused) |
-| ~~Verify a SAML `AuthnRequest`'s signature, or consume a service provider's metadata~~ — reversed 2026-09-17 | A signed `AuthnRequest`, `LogoutRequest`, `LogoutResponse` or `ArtifactResolve` is verified against the service provider's **registered** certificates — never the one the request carries — and refused if it does not verify. An **unsigned** request is refused (`saml2.requireSignedAuthnRequests`, `auto`). `WantAssertionsSigned` is honoured. SHA-1 needs `saml.allowSha1Signatures`; MD5, a MAC and a stateful hash-based signature are refused as not checkable. Consumed metadata registers the provider's endpoints, certificates and `NameIDFormat`s; its `validUntil` is enforced, it is refreshed after `cacheDuration`, and it must verify against `saml2.metadataTrustAnchors` when any is set. A metadata or MDQ fetch to an internal address is refused. An artifact is resolved only for the provider it was issued to | A present signature is verified in both modes. An unsigned request is accepted unless the provider's metadata says `AuthnRequestsSigned="true"`. `WantAssertionsSigned` is warned about rather than honoured. Internal addresses may be fetched |
+| ~~Verify a SAML `AuthnRequest`'s signature, or consume a service provider's metadata~~ — reversed 2026-09-17 | A signed `AuthnRequest`, `LogoutRequest`, `LogoutResponse` or `ArtifactResolve` is verified against the service provider's **registered** certificates — never the one the request carries — and refused if it does not verify. An **unsigned** request is refused (`saml2.requireSignedAuthnRequests`, `auto`). Every assertion is signed, so `WantAssertionsSigned` is always met. SHA-1 is refused, whatever `saml.allowSha1Signatures` says (#181); MD5, a MAC and a stateful hash-based signature are refused as not checkable. Consumed metadata registers the provider's endpoints, certificates and `NameIDFormat`s; its `validUntil` is enforced, it is refreshed after `cacheDuration`, and it must verify against `saml2.metadataTrustAnchors` when any is set. A metadata or MDQ fetch to an internal address is refused. An artifact is resolved only for the provider it was issued to | A present signature is verified in both modes. An unsigned request is accepted unless the provider's metadata says `AuthnRequestsSigned="true"`. `WantAssertionsSigned` is warned about rather than honoured when `saml2.signAssertion` is off. SHA-1 verifies with `saml.allowSha1Signatures` on. Internal addresses may be fetched |
 | Check which entityID a SAML service provider claims | An unknown entityID is not registered by its request: the request is refused, having no registered return address and no signature. **An MDQ responder can register it** — with `saml2.mdqBaseUrl` set, a request from an unknown provider queues a lookup, and a document the responder publishes creates the application, so a later request succeeds. `GET /saml2/metadata/{sp}` still answers for any `{sp}` | Any entityID is accepted, and the first `AuthnRequest` from one creates its application entry |
 | Check where a SAML response or WS-Federation token is delivered | The `AssertionConsumerServiceURL`, SAML 1.1 `shire` or `wreply` must be **registered** on the application (`samlAssertionConsumerService`, `wsfedReplyUrl`) and match exactly, with no mock fallback. An address development recorded is marked *observed* (`appReturnAddressObserved`) and refused until an administrator confirms it — **Confirm** and **Discard** under Applications, or `POST /admin-api/applications/confirm-address` and `/discard-address`. A provider whose metadata was consumed is answered only at an endpoint that metadata registered | The address a request names is used as it stands; with none, the registered one or a built-in mock. A consumed-metadata provider is held to its endpoints here too |
 | Authenticate a caller at the SAML 1.1 attribute authority | Both query types are refused | Anybody may send an `AttributeQuery` about anybody. In both modes an `AuthenticationQuery` is answered only from a live session, and an attribute answer carries no invented `AuthenticationStatement` |
@@ -382,7 +384,22 @@ something to run against:
   Token is built — even with it still stored from before the realm was
   switched, which is logged once (`STS-CORE-0106`) — and refuses turning it on
   (`STS-CORE-0103`). The same is true of SSF's two deliberate defects,
-  `ssf.breakSetSignature` and `ssf.legacySubClaim`.
+  `ssf.breakSetSignature` and `ssf.legacySubClaim`, and since #181 of RISC's,
+  `risc.googleSubjectType`, and the KDC's `krb5.clockOffset`.
+- **Broken algorithms and unsigned SAML are development's** (#181). A product
+  realm signs XML with RSA-SHA256 whatever `saml.signatureAlgorithm` says
+  (`rsa-sha1` is ignored), wraps an encrypted assertion's key with
+  RSA-OAEP whatever `saml2.keyTransportAlgorithm` or an application's
+  `saml2KeyTransportAlgorithm` says (`rsa-1_5` is ignored), refuses to unwrap
+  an `rsa-1_5` key sent to it (`STS-KEYS-0070`), refuses a SHA-1 signature
+  whatever `saml.allowSha1Signatures` says, never signs a certificate with
+  SHA-1 (`STS-PKI-0191` when a build names it), and signs every SAML 2.0
+  assertion and every SAML 1.1 Response and assertion whatever
+  `saml2.signAssertion`, `saml11.signAssertion`, `saml11.signResponse` or an
+  application's override of them says. `spiffe.requireSecurityHeader` off is
+  ignored too. Each is refused on write (`STS-CORE-0103`, `STS-REG-0193` on an
+  application) and logged once when a stored one is ignored (`STS-CORE-0106`);
+  the stronger values of every setting stay available.
 - **WS-Federation's `wauth`** is never faked. A relying party demanding
   multi-factor or a hardware token against a session that does not have it
   sends the person back through the sign-in with that factor required — a

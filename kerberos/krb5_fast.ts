@@ -208,13 +208,15 @@ class Krb5Fast {
   }
 
   // The KDC's own idea of now, which `krb5.clockOffset` moves on purpose
-  // (krb5_kdc.js's kdcTime()).
+  // (krb5_kdc.js's kdcTime()) — in development only (#181), so it is read as
+  // in force, the way that function reads it.
   private now(): Date {
-    const { log, config } = this.deps;
+    const { log, mode } = this.deps;
     log.debug('Entering Krb5Fast.now().');
     log.debug('Leaving Krb5Fast.now().');
     return new Date(Date.now() +
-                    Number(config.value('krb5.clockOffset') || 0) * 1000);
+                    (Number(mode.valueInForce('krb5.clockOffset')) || 0) *
+                    1000);
   }
 
   private skewMs(): number {

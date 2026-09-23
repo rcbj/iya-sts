@@ -874,6 +874,16 @@ class ProtocolStack {
                'RiskAdmin');
     this.register(app, require('../admin-ui/risk_admin'),
                   'admin-ui/risk_admin');
+    // 18k. THE MODE'S PAGE (#181, 2026-09-23). `/admin/mode` — what
+    // `global.mode` changes and what is in force in the realm, drawn from
+    // `common/mode.js`'s `report()`. 18a's placement and 18a's reason: the
+    // console's shell and `mode.js` (a leaf every module above loaded) are
+    // here, and `mgmt-api/admin_api` requires it in the ordinary direction.
+    require('../admin-ui/mode_admin');
+    this.build('admin-ui/mode_admin', require('../admin-ui/mode_admin'),
+               'ModeAdmin');
+    this.register(app, require('../admin-ui/mode_admin'),
+                  'admin-ui/mode_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module

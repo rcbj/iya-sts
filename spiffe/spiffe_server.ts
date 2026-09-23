@@ -260,7 +260,7 @@ class SpiffeServer {
   // ---------------------------------------------------------------------------
   description(req) {
     const { log, baseUrlOf, ca, config, rpc, workload, serverApi, registry,
-            auth } = this.deps;
+            auth, mode } = this.deps;
     const self = this;
     log.debug('Entering SpiffeServer.description().');
     const base = baseUrlOf(req);
@@ -356,7 +356,9 @@ class SpiffeServer {
         service: 'SpiffeWorkloadAPI',
         listeners: this.bindingsNow().workload,
         securityHeader: rpc.SECURITY_HEADER + ': true',
-        securityHeaderRequired: !!config.value('spiffe.requireSecurityHeader'),
+        // As IN FORCE (#181): true in a product realm whatever is stored.
+        securityHeaderRequired:
+          !!mode.valueInForce('spiffe.requireSecurityHeader'),
         methods: rpc.methodsOf('workload').map(function (method) {
           const note = workload.METHOD_NOTES[self.protoNameOf(method.path)] ||
                        {};

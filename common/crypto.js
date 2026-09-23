@@ -112,6 +112,11 @@ const xmldom = require('@xmldom/xmldom');
 // puts it under a Symbol — so no member a caller compares or serialises moves;
 // a caller that wants the condition's name reads it with `codeOf()`.
 const errorCodes = require('./error_codes');
+// THE MODE, for the two broken algorithms this file can be asked to accept
+// (#181): SHA-1 in a verified signature and an rsa-1_5 key transport on an
+// unwrap. A LEAF too — it requires `config` and `error_codes` and nothing
+// else — so this file stays one.
+const mode = require('./mode');
 
 const log = bunyan.createLogger({
   name: 'crypto',
@@ -563,10 +568,13 @@ Object.keys(XML_DIGEST_METHODS).forEach(function (uri) {
   };
 });
 
-// Whether SHA-1 signatures are accepted. Read on every call: runtime.
+// Whether SHA-1 signatures are accepted. Read on every call: runtime. As IN
+// FORCE since #181: `saml.allowSha1Signatures` on is development's, so a
+// product realm refuses SHA-1 whatever is stored and says so once
+// (`mode.valueInForce()`, STS-CORE-0106).
 function sha1Allowed() {
   log.debug("Entering sha1Allowed().");
-  const on = config.value('saml.allowSha1Signatures') === true;
+  const on = mode.valueInForce('saml.allowSha1Signatures') === true;
   log.debug("Leaving sha1Allowed(). " + on);
   return on;
 }
@@ -610,7 +618,8 @@ function xmlAlgorithmVerdict(signatureMethod, digestMethods) {
       (digests.some(function (d) {
         return (XML_DIGEST_METHODS[String(d)] || {}).sha1;
       }) ? ', or a SHA-1 DigestMethod' : '') + '), which is weak and ' +
-      'refused while saml.allowSha1Signatures is off';
+      'refused while saml.allowSha1Signatures is off — and always in ' +
+      'product mode';
     out.code = 'STS-KEYS-0062';
     log.debug("Leaving xmlAlgorithmVerdict(). SHA-1 refused.");
     return out;
@@ -1610,6 +1619,21 @@ function decryptElement(xml, privateKeyPem, opts) {
              ', and this service unwraps only ' +
              Object.keys(KEY_TRANSPORTS).join(', ') },
                            'STS-KEYS-0019');
+  }
+  // AN rsa-1_5 UNWRAP IS THE DECRYPTION ORACLE, and product never performs
+  // one (#181, `mode.usesBrokenAlgorithms()`). XML Encryption 1.1 section
+  // 6.1.2 is Bleichenbacher's attack on exactly this, and section 6.1.3 adds
+  // the worse half for this service: a server that decrypts PKCS#1 v1.5 under
+  // a key it also SIGNS with can be made to forge signatures, and this
+  // realm's XML key does both. So the refusal comes before any RSA operation
+  // and says nothing about the ciphertext. Development unwraps it, because a
+  // service provider that only speaks rsa-1_5 is what it is for.
+  if (transport.name === 'rsa-1_5' && !mode.usesBrokenAlgorithms()) {
+    log.debug("Leaving decryptElement(). rsa-1_5, in product.");
+    return errorCodes.mark({ ok: false, why: 'the key is wrapped with ' +
+             'rsa-1_5 (RSAES-PKCS1-v1_5), which this realm does not unwrap ' +
+             'in product mode — XML Encryption 1.1 section 6.1.2. Encrypt ' +
+             'to it with rsa-oaep-mgf1p' }, 'STS-KEYS-0070');
   }
   // Two CipherValues: the wrapped key inside EncryptedKey, and the data. Read
   // the key's from the EncryptedKey subtree rather than from the document, or a
