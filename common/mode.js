@@ -577,6 +577,24 @@ function authorizesDirectoryWrites() {
   return isProduct();
 }
 
+// Is a READ over the directory's own socket authorized against the identity
+// that bound (#106, 2026-09-23)? Product mode: an administrator (Admin Read or
+// Admin Write — the default realm's roster over every realm, a realm's own
+// over that realm) reads everything in scope; anybody else reads their OWN
+// entry, the attributes `ldap.directoryReadableAttributes` names of other
+// people (none by default), the groups they are a member of, and the
+// containers; applications, federations, policies and the rest are invisible,
+// and an invisible entry answers noSuchObject as a missing one does. A DN that
+// does not name a person cannot bind at all. Development binds any DN with any
+// password, so the bound DN proves nothing and a check keyed on it would hide
+// the directory from the suite while protecting nothing — the write half's
+// reason. `ldap/directory_read_policy.ts` is the rule table.
+function authorizesDirectoryReads() {
+  log.debug("Entering authorizesDirectoryReads().");
+  log.debug("Leaving authorizesDirectoryReads().");
+  return isProduct();
+}
+
 // ---------------------------------------------------------------------------
 // THE DIRECTORY'S OWN SOCKET, READ SIDE AND BIND SIDE (2026-09-12).
 //
@@ -1899,7 +1917,8 @@ const REQUIREMENTS = [
              'and only the attributes ldap.selfWritableAttributes names; a ' +
              'userPassword among them still meets the password policy. The ' +
              'refusal is LDAP result code 50, insufficientAccessRights. What ' +
-             'this does not cover is READING: see directory-reads.',
+             'this does not cover is READING: see directory-reads and ' +
+             'directory-read-authorization.',
     where: 'ldap/ldap_server.js' },
   { id: 'directory-reads',
     what: 'A read of the directory over LDAP requires a bind, and never ' +
@@ -1921,6 +1940,37 @@ const REQUIREMENTS = [
              'cannot be written by anybody, with result code 19, ' +
              'constraintViolation.',
     where: 'ldap/ldap_server.js' },
+  // PAID 2026-09-23 (#106): it was NOT_YET's row of the same id, *any
+  // connection that has bound as somebody may search and compare every entry
+  // in the realm its base names*.
+  { id: 'directory-read-authorization',
+    what: 'A read of the directory over LDAP is authorized against the ' +
+          'identity that bound',
+    development: 'Any connection sees every entry and every attribute but a ' +
+                 'Kerberos key, and any DN binds — an application\'s ' +
+                 'included — which is what lets a test drive the raw socket ' +
+                 'with no setup.',
+    product: 'Somebody holding Admin Read or Admin Write — on the default ' +
+             'realm\'s roster, which reaches every realm, or on a realm\'s ' +
+             'own, which reaches that realm — reads every entry in scope. ' +
+             'Anybody else reads their OWN entry whole; of another person, ' +
+             'only the attributes ldap.directoryReadableAttributes names ' +
+             '(none by default, so another person is not there at all); a ' +
+             'group only if they are a member of it, and then its cn, ' +
+             'description and objectClass (its members too with ' +
+             'ldap.groupMembersReadable); and the containers, by name. ' +
+             'Applications, federations, policies, roles, trust anchors and ' +
+             'SPIFFE registrations are invisible to them. An entry the ' +
+             'reader ' +
+             'may not see answers noSuchObject (32) exactly as a missing one ' +
+             'does, an attribute they may not read is absent from the result ' +
+             'AND to a search filter, and a compare against one is refused ' +
+             'with 50. A bind DN that does not name a person — an ' +
+             'application\'s, a federation\'s — is refused with 49 before ' +
+             'its ' +
+             'password is read. The root DSE and a base read of a CRL entry ' +
+             'stay open, and credentials stay withheld from everybody.',
+    where: 'ldap/ldap_server.js, ldap/directory_read_policy.ts' },
   { id: 'directory-binds',
     what: 'An LDAP bind is confidential, authenticated and rate limited',
     development: 'Every bind succeeds but one with the password "invalid", ' +
@@ -2247,28 +2297,16 @@ const NOT_YET = [
   // default realm's directory, restored before any listener binds, and
   // re-applied when another process changes the container. What is left is
   // narrower and is the directory's: any LDAP client allowed to write
-  // ou=trustAnchors can add an anchor, which the directory authorization gap
-  // below covers.
+  // ou=trustAnchors can add an anchor — which is Admin Write since the
+  // `directory-writes` requirement, and nobody else can read the container
+  // since `directory-read-authorization` (2026-09-23, #106).
   // `directory-authorization` WAS HERE AND ITS WRITE HALF WAS PAID ON
-  // 2026-09-12 — see the `directory-writes` requirement above. It read *a bound
-  // LDAP client may add, modify or delete any entry*. What it did not say, and
-  // what is left, is that the same client may READ any entry.
-  // NARROWED 2026-09-12, when `directory-reads` landed. It read *any
-  // connection — anonymous included — may search and compare every entry in
-  // every realm and read every attribute, including oauthClientSecret and
-  // fedClientSecret in the clear*. An anonymous connection now reads nothing
-  // and no connection reads a credential; what is left is the part that is a
-  // design question rather than a hole.
-  { id: 'directory-read-authorization',
-    what: 'The embedded directory has no PER-IDENTITY read authorization. In ' +
-          'product mode a read requires a bind and credential attributes are ' +
-          'withheld from everybody, but any connection that has bound as ' +
-          'somebody may search and compare every entry in the realm its base ' +
-          'names and read every other attribute on it — every person\'s ' +
-          'mail, telephone number and group memberships, every ' +
-          'application\'s redirect URIs. Deciding what a person, an ' +
-          'administrator and an application may each read is the outstanding ' +
-          'design.' },
+  // 2026-09-12 — see the `directory-writes` requirement above — and it was
+  // narrowed the same day when `directory-reads` landed, to
+  // `directory-read-authorization`: *any connection that has bound as somebody
+  // may search and compare every entry in the realm its base names and read
+  // every other attribute on it*. THAT WAS PAID ON 2026-09-23 (#106) — see the
+  // `directory-read-authorization` requirement above.
 ];
 
 // ---------------------------------------------------------------------------
@@ -2551,6 +2589,7 @@ module.exports = {
   opensTestControls: opensTestControls,
   opensConsoleToAnyone: opensConsoleToAnyone,
   authorizesDirectoryWrites: authorizesDirectoryWrites,
+  authorizesDirectoryReads: authorizesDirectoryReads,
   requiresDirectoryBind: requiresDirectoryBind,
   withholdsDirectorySecrets: withholdsDirectorySecrets,
   protectsOperationalAttributes: protectsOperationalAttributes,
