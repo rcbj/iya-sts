@@ -103,9 +103,17 @@ const SIGNALS: Record<string, Json> = {
           'the FIDO metadata' }
 };
 
-// How many refused passwords in the last hour make a signal of each kind.
-const ACCOUNT_FAILURES = 5;
-const NETWORK_FAILURES = 20;
+// How many refused passwords in the last hour make a signal of each kind:
+// `risk.accountFailureThreshold` (5) and `risk.networkFailureThreshold`
+// (20), read per assessment. They were constants until 2026-09-23, when the
+// suite's own deliberate wrong passwords — every job from one /24 — put
+// `network-failures` on every first sign-in in the default realm.
+const accountFailureThreshold = function (): number {
+  return Number(config.value('risk.accountFailureThreshold'));
+};
+const networkFailureThreshold = function (): number {
+  return Number(config.value('risk.networkFailureThreshold'));
+};
 const HOUR_MS = 3600 * 1000;
 
 // The population's subject in `sts_risk_feature_counts`.
@@ -754,23 +762,26 @@ class RiskEngine {
         add('new-device', String(context.device).slice(0, 12));
       }
     }
-    if (context.ja4 && user.n > 0) {
+    // THE TLS STACK, not the raw JA4: a resumed session adds two extensions,
+    // so one client has two JA4s (`tls/client_hello.ts`'s `stack()`).
+    const tlsStack = String(context.tlsStack || context.ja4 || '');
+    if (tlsStack && user.n > 0) {
       const seen = await store.featureCounts(realm, subject,
-        [{ feature: 'ja4', value: String(context.ja4) }], sealing);
+        [{ feature: 'ja4', value: tlsStack }], sealing);
       if (!seen.length) {
-        add('new-tls-stack', String(context.ja4));
+        add('new-tls-stack', tlsStack);
       }
     }
     const since = at - HOUR_MS;
     const mine = await store.listFailures(realm, { since: since,
       subject: subject, limit: 1 }, sealing);
-    if (mine.total >= ACCOUNT_FAILURES) {
+    if (mine.total >= accountFailureThreshold()) {
       add('account-failures', String(mine.total));
     }
     if (found.prefix) {
       const theirs = await store.listFailures(realm, { since: since,
         prefix: found.prefix, limit: 1 }, sealing);
-      if (theirs.total >= NETWORK_FAILURES) {
+      if (theirs.total >= networkFailureThreshold()) {
         add('network-failures', String(theirs.total));
       }
     }
@@ -860,8 +871,8 @@ class RiskEngine {
       });
     });
     move(POPULATION, 'user', subject);
-    if (context.ja4) {
-      move(subject, 'ja4', String(context.ja4));
+    if (context.tlsStack || context.ja4) {
+      move(subject, 'ja4', String(context.tlsStack || context.ja4));
     }
     if (context.device) {
       move(subject, 'device', String(context.device));
@@ -1133,13 +1144,13 @@ class RiskEngine {
     const since = now() - HOUR_MS;
     const mine = await store.listFailures(realm, { since: since,
       subject: String(session.user.sub), limit: 1 }, sealing);
-    if (mine.total >= ACCOUNT_FAILURES) {
+    if (mine.total >= accountFailureThreshold()) {
       signals.push('account-failures');
     }
     if (found.prefix) {
       const theirs = await store.listFailures(realm, { since: since,
         prefix: found.prefix, limit: 1 }, sealing);
-      if (theirs.total >= NETWORK_FAILURES) {
+      if (theirs.total >= networkFailureThreshold()) {
         signals.push('network-failures');
       }
     }

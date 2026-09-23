@@ -226,13 +226,44 @@ This service's own console, portal and embedded debugger ask for
 `offline_access`, and their seeded consent grants it. That is what lets a
 console stay signed in after the sign-on session times out (up to the refresh
 token's lifetime). Signing out still ends them and revokes their refresh
-tokens. Remove `offline_access` from an application's global consent on
-`/admin/applications` to turn this off.
+tokens. Withdraw `offline_access` from an application's global consent on
+`/admin/consent` to turn this off: every session of that surface standing on it
+ends at its next token renewal, and the person is asked at their next sign-in.
 
 Consent is **on by default** (`oauth2.consentRequired`). Turning it off means
 nothing is asked and nothing is recorded; it does not mean everybody consented.
-The token endpoint never asks anything, so a grant that was already issued is
-not judged again. `/admin/consent` is the register.
+`/admin/consent` is the register.
+
+#### Withdrawing consent
+
+A consent is withdrawn at `/admin/consent` or through
+`POST /admin-api/consent/{action}` by an administrator, or by the person
+themselves on `/portal/consents`, the user portal's list of what they have
+agreed each application may ask for. Whichever door is used:
+
+* **Every token issued under it is revoked at once.** That is every access and
+  refresh token the application holds for that person carrying the scope, and a
+  refresh token's whole grant with it (RFC 7009 section 2.1). The revocation
+  goes on the register every node reads, so the tokens introspect inactive
+  everywhere. Withdrawing one scope revokes the whole refresh token.
+* **The instant is recorded**: `oauthConsentWithdrawn` on the person's entry,
+  and `oauthGlobalConsentWithdrawn` on the application's entry for a global
+  consent. A refresh token carries the instant its grant was made, and the
+  refresh grant refuses it (`invalid_grant`) when a consent it stood on was
+  withdrawn at or after that instant. Consenting again does not revive it.
+* **The refresh grant re-checks consent at every refresh**, in both modes,
+  against the directory. That makes it hold on every node, including for a
+  token the withdrawal's revocation never saw.
+* **`oauth2.refreshRequiresConsent`** (on by default) also refuses a refresh
+  token from the authorization endpoint whose scopes no recorded consent covers
+  while consent is required. That is a token obtained while consent was off.
+  **Turning it off renews grants nobody agreed to**, including `offline_access`
+  ones that run while the person is away.
+
+Withdrawing a global consent revokes the tokens of everybody it covered, except
+people who agreed to the scope themselves. It is the only way to take a global
+consent away: removing `oauthGlobalConsent` through the generic application
+edit is refused.
 
 ### Scopes a client may be issued
 
@@ -848,10 +879,13 @@ be set per [trust realm](trust-realms.md).
   authorization server shows a consent screen at first sign-in, and a client
   that has never met one has never run the code that handles it. The screen adds
   a test case rather than removing one.
-* **A grant already issued is never judged again.** The token endpoint asks
-  nobody anything. Turning on consent or delegated-permission enforcement does
-  not break a refresh of an earlier grant, and revoking a consent does not
-  recall a token.
+* **A withdrawn consent ends the grant it covered** (#172). Withdrawing a
+  consent revokes every token issued under it, and the refresh grant re-checks
+  consent at every refresh: a refresh token granted before a withdrawal is
+  refused even after consent is given again. With
+  `oauth2.refreshRequiresConsent` on (the default), turning consent on also
+  refuses a refresh of a grant nobody consented to. Delegated-permission
+  enforcement still does not re-judge an earlier grant.
 * **A token for an API is for that API alone.** RFC 9068 section 2.2.3 says
   every scope on a token must mean something to its audience, so the OpenID
   Connect scopes are left off a token addressed to an API. They stay granted.

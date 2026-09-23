@@ -229,6 +229,22 @@ function partB() {
   t.check(clientHello.isGrease(0x0a0a) && clientHello.isGrease(0xfafa) &&
           !clientHello.isGrease(0x0a1a) && !clientHello.isGrease(0x1301),
           'B9. GREASE is the sixteen 0x?a?a values and nothing else');
+  const plain = clientHello.parse(helloBytes({ ciphers: SPEC_CIPHERS,
+                                              extensions: specExtensions() }));
+  const resumedExtensions = specExtensions();
+  resumedExtensions.push(extension(0x002a, Buffer.alloc(0)));
+  resumedExtensions.push(extension(0x0029, Buffer.alloc(8)));
+  const resumed = clientHello.parse(helloBytes({ ciphers: SPEC_CIPHERS,
+                                                extensions:
+                                                  resumedExtensions }));
+  const plainJa4 = clientHello.ja4(plain.hello, 't');
+  t.check(clientHello.ja4(resumed.hello, 't') !== plainJa4 &&
+          clientHello.stack(resumed.hello, 't') === plainJa4 &&
+          clientHello.stack(plain.hello, 't') === plainJa4,
+          'B10. pre_shared_key and early_data change the JA4 and not the ' +
+          'stack, which is the JA4 of the same hello without them',
+          clientHello.ja4(resumed.hello, 't') + ' / ' +
+          clientHello.stack(resumed.hello, 't') + ' / ' + plainJa4);
   log.debug("Leaving partB().");
 }
 
@@ -274,6 +290,31 @@ async function partC() {
   };
   const first = await ask();
   const second = await ask();
+  // A client that RESUMES: one agent, so its second connection presents
+  // the session ticket the first was given — which is what node's fetch()
+  // and Chrome do, and what made one client look like two TLS stacks.
+  const agent = new https.Agent({ keepAlive: false, maxCachedSessions: 10 });
+  const askResuming = function () {
+    return new Promise(function (resolve) {
+      https.get({ host: '127.0.0.1', port: port, servername: 'localhost',
+                  rejectUnauthorized: false, agent: agent,
+                  ALPNProtocols: ['http/1.1'] }, function (res) {
+        res.resume();
+        res.on('end', function () {
+          resolve(res.socket ? res.socket.isSessionReused() : null);
+        });
+      }).on('error', function (e) {
+        resolve('error: ' + e.message);
+      });
+    });
+  };
+  await askResuming();
+  // A TLS 1.3 ticket arrives after the handshake; give it a moment.
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 100);
+  });
+  const reused = await askResuming();
+  agent.destroy();
   server.close();
   fs.rmSync(dir, { recursive: true, force: true });
   t.check(first === 'answered' && second === 'answered',
@@ -290,6 +331,16 @@ async function partC() {
           clientHello.report().waiting === 0,
           'C4. both were counted, and nothing is left waiting for its TLS ' +
           'socket', JSON.stringify(clientHello.report()));
+  const fresh = seen[2] || {};
+  const again = seen[3] || {};
+  t.check(reused === true,
+          'C5. the resuming client really did resume its session',
+          String(reused));
+  t.check(fresh.stack && again.stack === fresh.stack &&
+          fresh.stack === fresh.ja4,
+          'C6. a resumed connection has the same stack as the first (its ' +
+          'JA4 may differ: ' + fresh.ja4 + ' then ' + again.ja4 + ')',
+          JSON.stringify([fresh, again]));
   log.debug("Leaving partC().");
 }
 
@@ -317,6 +368,9 @@ function partD() {
   clientHello.adoptForwarded(garbage);
   t.check(!clientHello.of(garbage),
           'D3. one that does not decode is ignored');
+  t.check(clientHello.of(req).stack === good.ja4,
+          'D5. a forwarded fingerprint with no stack (an older front ' +
+          'process) stands in for the stack');
   t.check(clientHello.encodeForward(req) !== '' &&
           clientHello.encodeForward({ socket: {} }) === '',
           'D4. the front process forwards what it read, and nothing when it ' +

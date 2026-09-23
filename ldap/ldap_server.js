@@ -1887,6 +1887,11 @@ const OWN_NAMES = [
   // which is on an APPLICATION's entry and is in the applications schema rather
   // than in this list.
   'oauthConsent',
+  // WHEN THIS PERSON WITHDREW ONE (#172), `<when> <scope> <client_id>` with
+  // the instant to the millisecond, one value per (application, scope). It
+  // is what stops a RE-CONSENT reviving a refresh token issued before the
+  // withdrawal; `common/consent.ts` argues it.
+  'oauthConsentWithdrawn',
 
   // ---------------------------------------------------------------------
   // THE CREDENTIALS ON A PERSON'S OWN ENTRY THAT ARE NOT `userPassword`.
@@ -7206,11 +7211,29 @@ function reloadTrustAnchorsQuietly() {
 // opinion about who somebody is.
 // ---------------------------------------------------------------------------
 
+// THE TWO ATTRIBUTES THESE FUNCTIONS WRITE, and no third: `oauthConsent`, and
+// since #172 `oauthConsentWithdrawn` — the instant a person withdrew one,
+// which `common/consent.ts` reads so that a re-consent revives no token
+// issued before it. One set of functions for both, told which by name, and a
+// name that is neither is the consent attribute: a caller cannot use this
+// slot to write anything else onto somebody's entry.
+const CONSENT_ATTRIBUTES = { oauthconsent: 'oauthConsent',
+                             oauthconsentwithdrawn: 'oauthConsentWithdrawn' };
+
+function consentAttributeOf(attribute) {
+  log.debug('Entering consentAttributeOf().');
+  const lower = String(attribute || 'oauthConsent').toLowerCase();
+  log.debug('Leaving consentAttributeOf().');
+  return Object.prototype.hasOwnProperty.call(CONSENT_ATTRIBUTES, lower)
+    ? lower : 'oauthconsent';
+}
+
 // Everything one person's entry holds. `found: false` for an identity with no
 // entry, which is not an error — it is what a person who has never
 // authenticated in this realm looks like.
-function consentValuesOf(key) {
+function consentValuesOf(key, attribute) {
   log.debug('Entering consentValuesOf(). key=' + key);
+  const lower = consentAttributeOf(attribute);
   const located = locateEntry(String(key || ''));
   const stored = located.stored;
   if (!stored) {
@@ -7218,7 +7241,7 @@ function consentValuesOf(key) {
               '.');
     return { dn: located.dn, found: false, values: [] };
   }
-  const values = (stored.attributes.oauthconsent || []).slice(0);
+  const values = (stored.attributes[lower] || []).slice(0);
   log.debug('Leaving consentValuesOf(). ' + values.length + ' value(s) on ' +
             stored.dn + '.');
   return { dn: stored.dn, found: true, values: values };
@@ -7227,8 +7250,9 @@ function consentValuesOf(key) {
 // ADD values, through addValues() so that a value already there is not written
 // twice — two identical consents would be two rows on /admin/consent for one
 // answer, and revoking would remove one of them.
-function addConsentValues(key, values) {
+function addConsentValues(key, values, attribute) {
   log.debug('Entering addConsentValues(). key=' + key);
+  const lower = consentAttributeOf(attribute);
   const located = locateEntry(String(key || ''));
   const stored = located.stored;
   if (!stored) {
@@ -7240,7 +7264,7 @@ function addConsentValues(key, values) {
     log.debug('Leaving addConsentValues(). Nothing to write to.');
     return { ok: false, dn: located.dn, reason: 'noEntry' };
   }
-  const changed = addValues(stored, 'oauthConsent', values);
+  const changed = addValues(stored, CONSENT_ATTRIBUTES[lower], values);
   if (changed) {
     stored.attributes.modifytimestamp = [generalizedTime()];
     touchDirectory();
@@ -7256,8 +7280,9 @@ function addConsentValues(key, values) {
 // scope agreed at different times are two values and removing one leaves the
 // other — which is the honest reading of an attribute somebody may have edited
 // by hand.
-function removeConsentValues(key, values) {
+function removeConsentValues(key, values, attribute) {
   log.debug('Entering removeConsentValues(). key=' + key);
+  const lower = consentAttributeOf(attribute);
   const located = locateEntry(String(key || ''));
   const stored = located.stored;
   if (!stored) {
@@ -7265,7 +7290,7 @@ function removeConsentValues(key, values) {
     return { ok: false, dn: located.dn, reason: 'noEntry' };
   }
   const wanted = valuesOf(values);
-  const have = stored.attributes.oauthconsent || [];
+  const have = stored.attributes[lower] || [];
   const left = have.filter(function (one) {
     return wanted.indexOf(one) < 0;
   });
@@ -7274,14 +7299,14 @@ function removeConsentValues(key, values) {
     return { ok: false, dn: stored.dn, reason: 'notHeld' };
   }
   if (left.length) {
-    stored.attributes.oauthconsent = left;
+    stored.attributes[lower] = left;
   } else {
     // THE ATTRIBUTE GOES RATHER THAN BECOMING EMPTY. LDAP has no empty
     // attribute — RFC 4511's modify with no values is a delete — so leaving
     // `oauthconsent: []` behind would put a value on the wire that no client
     // can read as anything and would show on /admin/ldap/directory as an
     // attribute with nothing in it.
-    delete stored.attributes.oauthconsent;
+    delete stored.attributes[lower];
   }
   stored.attributes.modifytimestamp = [generalizedTime()];
   touchDirectory();
@@ -8715,10 +8740,38 @@ if (typeof certEnrollment.setDirectory === 'function') {
 // because nothing it recorded could be read back.
 if (typeof consent.setDirectory === 'function') {
   consent.setDirectory({
-    consentsOf: consentValuesOf,
-    addConsent: addConsentValues,
-    removeConsent: removeConsentValues,
-    listConsents: listConsentValues
+    consentsOf: function consentsOf(key) {
+      log.debug('Entering consentsOf().');
+      log.debug('Leaving consentsOf().');
+      return consentValuesOf(key, 'oauthConsent');
+    },
+    addConsent: function addConsent(key, values) {
+      log.debug('Entering addConsent().');
+      log.debug('Leaving addConsent().');
+      return addConsentValues(key, values, 'oauthConsent');
+    },
+    removeConsent: function removeConsent(key, values) {
+      log.debug('Entering removeConsent().');
+      log.debug('Leaving removeConsent().');
+      return removeConsentValues(key, values, 'oauthConsent');
+    },
+    listConsents: listConsentValues,
+    // THE WITHDRAWALS (#172), on the same entry through the same functions.
+    withdrawalsOf: function withdrawalsOf(key) {
+      log.debug('Entering withdrawalsOf().');
+      log.debug('Leaving withdrawalsOf().');
+      return consentValuesOf(key, 'oauthConsentWithdrawn');
+    },
+    addWithdrawal: function addWithdrawal(key, values) {
+      log.debug('Entering addWithdrawal().');
+      log.debug('Leaving addWithdrawal().');
+      return addConsentValues(key, values, 'oauthConsentWithdrawn');
+    },
+    removeWithdrawal: function removeWithdrawal(key, values) {
+      log.debug('Entering removeWithdrawal().');
+      log.debug('Leaving removeWithdrawal().');
+      return removeConsentValues(key, values, 'oauthConsentWithdrawn');
+    }
   });
 } else {
   log.warn('ldap: common/consent.ts offers no setDirectory(), so nothing a ' +

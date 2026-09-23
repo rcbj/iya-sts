@@ -311,6 +311,9 @@ class ProtocolStack {
     this.build('portal/portal_sign_ins',
                require('../portal/portal_sign_ins'),
                'PortalSignIns');
+    this.build('portal/portal_consents',
+               require('../portal/portal_consents'),
+               'PortalConsents');
     this.build('portal/portal', require('../portal/portal'), 'Portal');
     this.register(app, require('../portal/portal'), 'portal/portal');
     // The consent screen. It must come AFTER authn.js and BEFORE oauth2.js, and
@@ -1160,6 +1163,10 @@ class ProtocolStack {
     // lazily when a person's risk changes. Built here, with its siblings.
     this.build('xacml/xacml_risk_pep', require('../xacml/xacml_risk_pep'),
                'XacmlRiskPep');
+    // The signal-response PEP (#62): a library this service's own receivers
+    // reach lazily when a verified event arrives. Built with its siblings.
+    this.build('xacml/xacml_signal_pep',
+               require('../xacml/xacml_signal_pep'), 'XacmlSignalPep');
     this.build('xacml/xacml', require('../xacml/xacml'), 'XacmlSurface');
     this.register(app, require('../xacml/xacml_admin'), 'xacml/xacml_admin');
     this.register(app, require('../xacml/xacml'), 'xacml/xacml');

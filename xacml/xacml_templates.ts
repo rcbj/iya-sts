@@ -243,6 +243,35 @@ const RISK_RESPONSE = {
 };
 
 // ---------------------------------------------------------------------------
+// WHAT A RECEIVED SIGNAL IS, TO A POLICY (#62, 2026-09-22) — the environment
+// the `signal-response` policy is asked about when this service's own console
+// or portal RECEIVES a Security Event Token on its stream and it verified.
+// ---------------------------------------------------------------------------
+const SIGNAL_ATTRIBUTE = {
+  // The event's short name — `session-revoked`, `account-disabled`,
+  // `risk-level-change` — which is how CAEP and RISC name them after their
+  // namespace, and which is unambiguous across the two.
+  EVENT: 'urn:sts:xacml:signal-event',
+  // `caep`, `risc` or `ssf`: the namespace the event's URI is in.
+  FAMILY: 'urn:sts:xacml:signal-family',
+  // Which of this service's surfaces received it: `admin-console` or
+  // `user-portal` (`ssf/ssf_receivers.ts`'s SURFACES).
+  SURFACE: 'urn:sts:xacml:signal-surface',
+  // A risk or assurance event's `current_level`, where it carries one.
+  LEVEL: 'urn:sts:xacml:signal-current-level'
+};
+
+// What a received signal can lead to, one question per reaction as
+// RISK_RESPONSE's header argues.
+const SIGNAL_RESPONSE = {
+  // End the receiving surface's OWN sessions for the person the event names:
+  // the console's or the portal's relying-party sessions. Never the
+  // provider's — a receiver acts on what it holds, and what the provider
+  // holds is the transmitter's to end.
+  END_SESSIONS: 'signal-end-sessions'
+};
+
+// ---------------------------------------------------------------------------
 // SMALL MODEL BUILDERS.
 //
 // Named for what they produce rather than for the element they emit, because
@@ -771,6 +800,125 @@ const TEMPLATES: TemplateRow[] = [
                         ? ', and disables the account from a score of ' +
                           disableFrom
                         : ', and never disables the account') +
+                     '. Anything no rule permits does not happen.',
+        combiningAlgId: model.RULE_ALG.DENY_UNLESS_PERMIT,
+        target: null,
+        variables: {},
+        rules: rules,
+        obligations: [], advice: []
+      };
+    }
+  },
+  {
+    // -----------------------------------------------------------------------
+    // THE SIGNAL RESPONSE POLICY (#62, 2026-09-22; rcbj: "surfaces act on
+    // signals"). The console and the portal are registered receivers of this
+    // service's own transmitter (`ssf/ssf_receivers.ts`), and until now they
+    // only RECORDED what arrived. This decides what they DO with it: whether
+    // a received event ends the receiving surface's own sessions for the
+    // person it names. rcbj's directive — every authorization decision is
+    // policy — covers ending access, so it is a rule an operator edits.
+    //
+    // `xacml/xacml_signal_pep.ts` asks it once per reaction per event type,
+    // and only for a SET that passed every receiver check AND VERIFIED —
+    // issue #117's rule, that nothing acts on a received SET unless it
+    // verified, is enforced in the PEP's caller and is not the policy's to
+    // relax.
+    // -----------------------------------------------------------------------
+    id: 'signal-response',
+    label: 'Signal response (this service\'s own receivers)',
+    blurb: 'What this service\'s own console and portal do with a CAEP or ' +
+           'RISC event they receive: end their own sessions for the person ' +
+           'it names when the event says their sessions, credentials or ' +
+           'account can no longer be trusted, or their risk went HIGH.',
+    what: 'Produces Permit rules for the action-id signal-end-sessions ' +
+          'under deny-unless-permit: one for the listed event types, one ' +
+          'for a risk-level-change at the listed levels. The embedded PEP ' +
+          'asks with the received event\'s short name, namespace, receiving ' +
+          'surface and current_level as the environment.',
+    parameters: [
+      { name: 'endSessionEvents',
+        label: 'Events that end the receiving surface\'s sessions',
+        dflt: 'session-revoked, credential-change, account-disabled, ' +
+              'account-purged, account-credential-change-required, ' +
+              'sessions-revoked, credential-compromise',
+        type: 'string',
+        help: 'Comma separated short names. CAEP session-revoked and ' +
+              'credential-change; RISC account-disabled, account-purged, ' +
+              'account-credential-change-required, sessions-revoked and ' +
+              'credential-compromise.' },
+      { name: 'endSessionsOnRiskLevels',
+        label: 'risk-level-change levels that end them',
+        dflt: 'HIGH', type: 'string',
+        help: 'Comma separated current_level values of CAEP ' +
+              'risk-level-change. Empty builds no such rule.' }
+    ],
+    build: function (answers, options) {
+      log.debug('Entering buildSignalResponse().');
+      const given = answers || {};
+      const endOn = B.listOf(given.endSessionEvents === undefined
+        ? 'session-revoked, credential-change, account-disabled, ' +
+          'account-purged, account-credential-change-required, ' +
+          'sessions-revoked, credential-compromise'
+        : given.endSessionEvents);
+      const riskLevels = B.listOf(given.endSessionsOnRiskLevels ===
+                                  undefined ? 'HIGH'
+                                            : given.endSessionsOnRiskLevels);
+      const env = model.CATEGORY.ENVIRONMENT;
+      const bagOf = function (values: string[]): any {
+        log.debug("Entering bagOf().");
+        log.debug("Leaving bagOf().");
+        return B.apply(F1 + 'string-bag', values.map(function (one) {
+          return B.value(TYPE.STRING, one);
+        }));
+      };
+      const anyIn = function (id: string, values: string[]): any {
+        log.debug("Entering anyIn().");
+        log.debug("Leaving anyIn().");
+        return B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(env, id, TYPE.STRING), bagOf(values)]);
+      };
+      const endSessions = B.apply(F1 + 'string-is-in', [
+        B.value(TYPE.STRING, SIGNAL_RESPONSE.END_SESSIONS),
+        B.designator(model.CATEGORY.ACTION, model.ATTRIBUTE.ACTION_ID,
+                     TYPE.STRING)]);
+      const rule = function (slug: string, description: string,
+                             conjuncts: any[]): any {
+        log.debug("Entering rule().");
+        log.debug("Leaving rule().");
+        return { id: options.idBase + ':rule:' + slug,
+                 effect: model.EFFECT.PERMIT, description: description,
+                 target: null,
+                 condition: B.apply(F1 + 'and', conjuncts),
+                 obligations: [], advice: [] };
+      };
+      const rules: any[] = [];
+      if (endOn.length) {
+        rules.push(rule('end-sessions', 'End the receiving surface\'s own ' +
+          'sessions for the person on ' + endOn.join(', ') + '.',
+          [endSessions, anyIn(SIGNAL_ATTRIBUTE.EVENT, endOn)]));
+      }
+      if (riskLevels.length) {
+        rules.push(rule('end-sessions-on-risk', 'End them on a ' +
+          'risk-level-change to ' + riskLevels.join(', ') + '.',
+          [endSessions, anyIn(SIGNAL_ATTRIBUTE.EVENT, ['risk-level-change']),
+           anyIn(SIGNAL_ATTRIBUTE.LEVEL, riskLevels)]));
+      }
+      log.debug('Leaving buildSignalResponse(). ' + rules.length +
+                ' rule(s).');
+      return {
+        kind: 'Policy',
+        id: options.idBase,
+        version: '1.0',
+        description: 'THE SIGNAL RESPONSE POLICY. The embedded PEP asks it ' +
+                     'when this service\'s own console or portal receives ' +
+                     'a verified CAEP or RISC event. It ends the receiving ' +
+                     'surface\'s own sessions for the person named' +
+                     (endOn.length ? ' on ' + endOn.join(', ') : '') +
+                     (riskLevels.length ? (endOn.length ? ', and' : '') +
+                      ' on a risk-level-change to ' + riskLevels.join(', ')
+                      : '') +
                      '. Anything no rule permits does not happen.',
         combiningAlgId: model.RULE_ALG.DENY_UNLESS_PERMIT,
         target: null,
@@ -1352,6 +1500,8 @@ class XacmlTemplates {
   static readonly ISSUANCE_ATTRIBUTE = ISSUANCE_ATTRIBUTE;
   static readonly RISK_ATTRIBUTE = RISK_ATTRIBUTE;
   static readonly RISK_RESPONSE = RISK_RESPONSE;
+  static readonly SIGNAL_ATTRIBUTE = SIGNAL_ATTRIBUTE;
+  static readonly SIGNAL_RESPONSE = SIGNAL_RESPONSE;
   static readonly TEMPLATES = TEMPLATES;
 
   constructor(private readonly deps: XacmlTemplatesDeps) {
@@ -1465,6 +1615,8 @@ export = {
   ISSUANCE_ATTRIBUTE: XacmlTemplates.ISSUANCE_ATTRIBUTE,
   RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
   RISK_RESPONSE: XacmlTemplates.RISK_RESPONSE,
+  SIGNAL_ATTRIBUTE: XacmlTemplates.SIGNAL_ATTRIBUTE,
+  SIGNAL_RESPONSE: XacmlTemplates.SIGNAL_RESPONSE,
   TEMPLATES: XacmlTemplates.TEMPLATES,
   lookup: slot.forward('lookup'),
   build: slot.forward('build'),

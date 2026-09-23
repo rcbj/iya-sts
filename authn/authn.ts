@@ -2920,6 +2920,10 @@ class Authn {
       uaFingerprint: stsCrypto.userAgentFingerprint(
         headers['user-agent'] || ''),
       ja4: hello ? hello.ja4 : '',
+      // What risk compares: the JA4 with the resumption extensions left out
+      // (`tls/client_hello.ts`'s `stack()`), or a resumed connection reads
+      // as a new TLS client.
+      tlsStack: hello ? (hello.stack || hello.ja4) : '',
       device: fp ? stsCrypto.credentialFingerprint('device:' + fp) : '',
       credential: credential
     };
@@ -3243,7 +3247,8 @@ class Authn {
     }
     const now = this.eventContext({ request: req });
     const keyOf = function (c: any): string {
-      return [String(c.uaFingerprint || ''), String(c.ja4 || ''),
+      return [String(c.uaFingerprint || ''),
+              String(c.tlsStack || c.ja4 || ''),
               c.address ? prefixOf(String(c.address)) : ''].join('|');
     };
     const is = keyOf(now);
@@ -3266,7 +3271,8 @@ class Authn {
         moved.push('device');
       }
     }
-    if (String(now.ja4 || '') !== String(last.context.ja4 || '')) {
+    if (String(now.tlsStack || now.ja4 || '') !==
+        String(last.context.tlsStack || last.context.ja4 || '')) {
       moved.push('TLS client');
     }
     if (is.split('|')[2] !== keyOf(last.context).split('|')[2]) {
@@ -3346,6 +3352,45 @@ class Authn {
     });
     log.debug("Leaving Authn.sessionsForRisk(). " + out.length + ".");
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SURFACE'S OWN SESSIONS FOR ONE PERSON, ENDED (#62, 2026-09-22) — what
+  // the console or the portal does with a received signal the
+  // `signal-response` policy permits (`ssf/ssf_receivers.ts`). Only the
+  // relying-party sessions `surfaceId` holds (`admin` or `portal`,
+  // `common/oidc_rp.ts`'s ids), only those that came from `fromRealm` — the
+  // realm the event arrived in; the console keeps every realm's sessions in
+  // the default realm's partition, and `alice` in one realm is not `alice`
+  // in another — and only those whose person `about(user)` says the event
+  // names. Each ends through dropSession(), so it is audited and announced as
+  // any sign-out is. Answers how many ended.
+  // ---------------------------------------------------------------------------
+  endRelyingPartySessions(surfaceId: string, fromRealm: string,
+                          about: (user: any) => boolean, via: string): number {
+    const { log, realms } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.endRelyingPartySessions(). " + surfaceId);
+    const partition = surfaceId === 'admin' ? realms.DEFAULT_ID : fromRealm;
+    const store = sessions.realmMap(partition);
+    const doomed: string[] = [];
+    if (store) {
+      store.forEach(function (session, id) {
+        if (session && session.rpSurface === surfaceId &&
+            String(session.derivedFromRealm || partition) === fromRealm &&
+            session.user && about(session.user)) {
+          doomed.push(id);
+        }
+      });
+    }
+    doomed.forEach(function (id: string): void {
+      realms.run(realms.get(partition), function () {
+        self.dropSession(id, via, false);
+      });
+    });
+    log.debug("Leaving Authn.endRelyingPartySessions(). " + doomed.length +
+              " ended.");
+    return doomed.length;
   }
 
   // Whether this realm fingerprints the browser at the sign-in screen (#62
@@ -9920,6 +9965,7 @@ export = {
   renewRelyingPartySession: slot.forward('renewRelyingPartySession'),
   tokensExpireAt: slot.forward('tokensExpireAt'),
   relyingPartySessionOf: slot.forward('relyingPartySessionOf'),
+  endRelyingPartySessions: slot.forward('endRelyingPartySessions'),
   // Exported for `logout/logout.ts`, which lists what is live and has to be
   // able to say which rows hang off which. It is a walk rather than an index;
   // see its header.

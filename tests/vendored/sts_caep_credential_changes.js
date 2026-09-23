@@ -66,7 +66,14 @@ const PASSWORD = "Caep-145-Passw0rd!-" + String(Date.now()).slice(-6);
 const ALICE = names.usernameFor("c145-alice");
 const BOB = names.usernameFor("c145-bob");
 const GROUP = "c145-group-" + STAMP.toLowerCase();
-const AGENT = "sts_caep_credential_changes/1.0 (" + STAMP + ")";
+// A desktop Chrome string, with this job's own name on the end so the
+// fingerprint it hashes is still its own: isbot reads the bare name as
+// an automated client, and product mode refuses a first sign-in from
+// one on risk (#62).
+const AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
+  "(KHTML, like " +
+  "Gecko) Chrome/140.0.0.0 Safari/537.36 sts_caep_credential_changes/1.0 (" +
+  STAMP + ")";
 
 let checks = 0;
 function check(what, fn) {

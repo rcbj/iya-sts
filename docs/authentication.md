@@ -438,7 +438,9 @@ be changed with `POST /admin-api/config/set`.
   `/portal/keys` (security keys), `/portal/app-passwords` (app passwords for
   the password-only doors), `/portal/kerberos` (a Kerberos keytab from your own
   password), `/portal/password`, `/portal/activate` and
-  `/portal/reset-password`.
+  `/portal/reset-password`; and `/portal/consents`, where a person withdraws
+  what they agreed an application may ask for, revoking what it was issued
+  under it (see [OAuth 2.0 and OpenID Connect](oauth-oidc.md#withdrawing-consent)).
 * Failures are recorded under `STS-AUTHN-NNNN` codes; see
   [Error codes](error-codes.md).
 

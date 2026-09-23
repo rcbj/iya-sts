@@ -1264,6 +1264,21 @@ const SCHEMA = {
             'match one scope; an `ldapmodify` reaches this attribute like ' +
             'every other and is not checked, and /admin/consent shows what ' +
             'it put there.' },
+    // WHEN AN OVERRIDE ABOVE WAS WITHDRAWN (#172), one value per scope. NOT
+    // editable, and that is the point of it: it is what stops a RE-ADDED
+    // override reviving the refresh tokens issued under the one that was
+    // taken away, so a form that could remove it would be a form that could
+    // bring a withdrawn grant back. `common/consent.ts` writes it, through
+    // `noteGlobalConsentWithdrawn()` below, and nothing else does.
+    { name: 'oauthGlobalConsentWithdrawn', kind: 'multi',
+      from: 'the consent register, when a global consent is withdrawn',
+      what: 'WHEN A GLOBAL CONSENT WAS WITHDRAWN, as `<when> <scope>` with ' +
+            'the instant to the millisecond. The refresh grant refuses a ' +
+            'refresh token granted before it that stood on that override, ' +
+            'even after the override is added back — a withdrawn grant is ' +
+            'not revived by the next one. One value per scope; a later ' +
+            'withdrawal replaces the earlier. Written by the consent ' +
+            'register and never by a form.' },
     { name: 'oauthTokenEndpointAuthMethod', kind: 'single', from: 'POST ' +
         '/oauth2/register',
       what: 'How it authenticates. RFC 7591 section 2 makes ' +
@@ -8676,6 +8691,26 @@ function updateApplication(identifier, change) {
   // ONLY AN ADD IS CHECKED, the same asymmetry the two rules above have and for
   // their reason: a remove names a value already on the entry, and an
   // `ldapmodify` reaches this attribute like every other.
+  // A GLOBAL CONSENT IS TAKEN AWAY ONLY BY THE CONSENT REGISTER (#172).
+  // `consent.revokeGlobal()` records WHEN and revokes every token issued
+  // under the override; a remove through this generic door did neither, so
+  // it left every refresh token standing on it renewable for its whole life.
+  // The register passes `consentRegister`, and it is the one caller that
+  // does. Refused rather than routed, because this module cannot require
+  // the register (it requires this one), and a door that silently did half a
+  // withdrawal would be worse than one that says where the whole one is.
+  if (attribute === 'oauthGlobalConsent' && mode === 'remove' &&
+      asked.consentRegister !== true) {
+    log.debug("Leaving updateApplication(). A global consent is withdrawn " +
+              "through the consent register.");
+    return errorCodes.mark({ ok: false, errors: ['A global consent is ' +
+      'withdrawn through the consent register — the ' +
+      '`revoke-global-consent` action at /admin/consent or `POST ' +
+      '/admin-api/consent/revoke-global-consent` — and not by removing the ' +
+      'value here: withdrawing it also revokes every token issued under it ' +
+      'and records when, so that adding it back revives nothing. Nothing ' +
+      'was changed.'] }, 'STS-REG-0191');
+  }
   if (attribute === 'oauthGlobalConsent' && mode === 'add') {
     const problem = scopeTokenProblem(value);
     if (problem) {
@@ -9970,6 +10005,35 @@ function overridableSettings() {
   return Object.keys(OVERRIDE_ATTRIBUTES).map(function (key) {
     return { setting: key, attribute: OVERRIDE_ATTRIBUTES[key] };
   });
+}
+
+// ---------------------------------------------------------------------------
+// THE INSTANT A GLOBAL CONSENT WAS WITHDRAWN (#172), written by
+// `common/consent.ts`'s `revokeGlobal()` and by nothing else — the schema row
+// above says why it is not editable. `stamp` is the register's, so this
+// module knows nothing about its grammar beyond "a value per scope, the scope
+// after the first space". Returns whether it was written.
+// ---------------------------------------------------------------------------
+function noteGlobalConsentWithdrawn(identifier, scope, stamp) {
+  log.debug("Entering noteGlobalConsentWithdrawn(). identifier=" +
+            identifier);
+  const loaded = load(String(identifier || ''));
+  const leaf = String(scope || '').trim();
+  if (!loaded.known || !leaf || !stamp) {
+    log.debug("Leaving noteGlobalConsentWithdrawn(). No entry or no scope.");
+    return false;
+  }
+  const record = loaded.record;
+  const name = 'oauthGlobalConsentWithdrawn';
+  const kept = (record.fields[name] || []).filter(function (one) {
+    const text = String(one);
+    return text.slice(text.indexOf(' ') + 1) !== leaf;
+  });
+  record.fields[name] = kept;
+  setField(record, name, String(stamp) + ' ' + leaf);
+  const saved = save(record);
+  log.debug("Leaving noteGlobalConsentWithdrawn(). saved=" + saved);
+  return saved;
 }
 
 function get(identifier) {
@@ -11289,6 +11353,7 @@ module.exports = {
   createApplication: createApplication,
   seedInternalApplications: seedInternalApplications,
   updateApplication: updateApplication,
+  noteGlobalConsentWithdrawn: noteGlobalConsentWithdrawn,
   regenerateClientSecret: regenerateClientSecret,
   rotateClientSecret: rotateClientSecret,
   sweepClientSecrets: sweepClientSecrets,

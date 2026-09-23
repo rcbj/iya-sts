@@ -116,26 +116,27 @@ var config = {
 
   // --- XACML -----------------------------------------------------------
   xacml: {
-    enforceAccess: true,                 // Decide access with policy
-    accessPolicy: "access-control",      // Access policy name
-    enabled: true,                       // XACML enabled
-    maxPolicies: 200,                    // Policies the repository may hold
-    pepBias: "deny-biased",              // What the embedded PEP does with a non-Permit
-    returnPolicyIdList: false,           // Always return the applicable policy identifiers
-    remotePeps: true,                    // Remote Policy Enforcement Points may register
-    pepRequireCertificate: true,         // A registering PEP must present a client certificate
-    pipMaxPerWindow: 600,                // PIP queries one caller may make per rate-limit window
-    pipMaxDesignators: 50,               // Attributes one PIP query may ask about
-    maxPeps: 50,                         // Remote PEPs the register may hold
-    pepStaleAfterS: 300,                 // Seconds before a registered PEP is reported stale
-    pepNotify: true,                     // Nudge a registered PEP when the repository changes
-    pepNotifyAllowedHosts: "",           // Notify endpoint allowlist
-    pepNotifyAllowHttp: false,           // Allow http:// for a nudge (development only)
-    pepNotifySkipTlsVerification: false, // Skip TLS verification for a nudge (development only)
-    pepNotifyCaFile: "",                 // CA certificates for a nudge
-    pepNotifyTimeoutMs: 2000,            // Nudge timeout (ms)
-    riskResponsePolicy: "risk-response", // The policy a change of risk is answered with
-    issuancePolicy: "role-issuance"      // The policy issuance decisions are made with
+    enforceAccess: true,                     // Decide access with policy
+    accessPolicy: "access-control",          // Access policy name
+    enabled: true,                           // XACML enabled
+    maxPolicies: 200,                        // Policies the repository may hold
+    pepBias: "deny-biased",                  // What the embedded PEP does with a non-Permit
+    returnPolicyIdList: false,               // Always return the applicable policy identifiers
+    remotePeps: true,                        // Remote Policy Enforcement Points may register
+    pepRequireCertificate: true,             // A registering PEP must present a client certificate
+    pipMaxPerWindow: 600,                    // PIP queries one caller may make per rate-limit window
+    pipMaxDesignators: 50,                   // Attributes one PIP query may ask about
+    maxPeps: 50,                             // Remote PEPs the register may hold
+    pepStaleAfterS: 300,                     // Seconds before a registered PEP is reported stale
+    pepNotify: true,                         // Nudge a registered PEP when the repository changes
+    pepNotifyAllowedHosts: "",               // Notify endpoint allowlist
+    pepNotifyAllowHttp: false,               // Allow http:// for a nudge (development only)
+    pepNotifySkipTlsVerification: false,     // Skip TLS verification for a nudge (development only)
+    pepNotifyCaFile: "",                     // CA certificates for a nudge
+    pepNotifyTimeoutMs: 2000,                // Nudge timeout (ms)
+    signalResponsePolicy: "signal-response", // The policy a received signal is answered with
+    riskResponsePolicy: "risk-response",     // The policy a change of risk is answered with
+    issuancePolicy: "role-issuance"          // The policy issuance decisions are made with
   },
 
   // --- Web security ----------------------------------------------------
@@ -276,6 +277,7 @@ var config = {
     accessTokenSigningAlg: "default",            // Access token signing algorithm
     jarmResponseLifetimeS: 600,                  // JARM response lifetime (s)
     consentRequired: true,                       // Ask for consent
+    refreshRequiresConsent: true,                // Refresh requires recorded consent
     delegatedPermissionsEnforced: false,         // Enforce delegated permissions
     tokenExchangeRefreshToken: "when-requested", // Refresh token from a token exchange
     breakIdTokenNonce: false,                    // Break the ID Token nonce (development only)
@@ -779,6 +781,7 @@ var config = {
     receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
     receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
+    actOnSignalsInDevelopment: false,                                                                                                                     // The console and portal act on received signals in development
     legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim (development only)
     breakSetSignature: false                                                                                                                              // Sign every SET badly (development only)
   },
@@ -825,6 +828,8 @@ var config = {
     standingCacheSize: 20000,                              // People whose standing each process holds
     mediumScorePercent: 100,                               // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,                                // HIGH from (percent of a score of 1)
+    accountFailureThreshold: 5,                            // Refused passwords for one person that are a signal
+    networkFailureThreshold: 20,                           // Refused passwords from one network that are a signal
     signalFactors: "",                                     // Signal factors
     calibrationMediumPercent: 5,                           // Calibration: MEDIUM or worse (percent of sign-ins)
     calibrationHighPercent: 1,                             // Calibration: HIGH (percent of sign-ins)

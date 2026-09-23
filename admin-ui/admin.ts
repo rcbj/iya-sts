@@ -32344,7 +32344,12 @@ class AdminConsole {
         'written about anybody</strong> &mdash; so removing a row here asks ' +
         'everybody again, including the people who would have said yes. That ' +
         'is the whole difference from the table below it, where removing a ' +
-        'row asks one person.<br><br>It is keyed on the PAIR and not on the ' +
+        'row asks one person. Removing a row also revokes every token of ' +
+        'that application carrying the scope, except for people who agreed ' +
+        'to it themselves, and this is the only door that removes one ' +
+        '&mdash; on this service\'s own console, portal or debugger too, ' +
+        'whose sessions standing on it then end at their next renewal.' +
+        '<br><br>It is keyed on the PAIR and not on the ' +
         'scope alone: consenting <code>read</code> here consents it for this ' +
         'application, and an application registered five minutes from now ' +
         'that spells the same word is still asked. It is an ordinary ' +
@@ -32392,12 +32397,17 @@ class AdminConsole {
         'sixth alone &mdash; which is what the screen shows and what these ' +
         'rows have to be able to express. The timestamp is when they pressed ' +
         'Allow.<br><br>Revoking a row asks that one person again the next ' +
-        'time that one application requests that one scope. It does NOT ' +
-        'touch anything already issued: an access token minted before the ' +
-        'revoke is still valid, exactly as taking a delegated permission ' +
-        'away does not re-judge a grant already made. <a ' +
-        'href="/admin/tokens">Tokens</a> is where something already issued ' +
-        'is revoked.') +
+        'time that one application requests that one scope, and it ' +
+        '<strong>WITHDRAWS</strong> it: every access and refresh token that ' +
+        'application holds for them carrying the scope is revoked on every ' +
+        'node, and the instant is written onto their entry as <code>' +
+        self.esc(consent.WITHDRAWN_ATTRIBUTE) + '</code>, so a refresh ' +
+        'token granted before it is refused at the token endpoint even after ' +
+        'they agree again. Withdrawing one scope revokes the whole refresh ' +
+        'token. Removing a global consent above does the same for everybody ' +
+        'it covered, and <code>oauth2.refreshRequiresConsent</code> refuses ' +
+        'a refresh token from the authorization endpoint that no recorded ' +
+        'consent covers.') +
         self.sectionSearchForm({
           path: '/admin/consent', query: req.query, param: 'q',
           // The list this search narrows, so that a new search starts at page 1
@@ -32424,6 +32434,27 @@ class AdminConsole {
                 'asked for is under global consent above, because an ' +
                 'override writes nothing down.')) +
         consentsNav.foot +
+
+        '<h4>Withdraw everything one person agreed to for one ' +
+        'application</h4>' +
+        self.note('Every recorded consent between one person and one ' +
+        'application, in one act &mdash; what the person can do themselves ' +
+        'from <code>/portal/consents</code>. Every token that application ' +
+        'holds for them under those scopes is revoked.') +
+        '<form method="post" action="/admin/consent">' +
+        self.consentBack(listView) +
+          '<input type="hidden" name="from" value="recorded">' +
+          '<div class="formrow">' +
+          '<input type="hidden" name="action" ' +
+            'value="revoke-application-consent">' +
+          '<label for="ac-username">Person</label>' +
+          '<input type="text" id="ac-username" name="username" size="24" ' +
+            'placeholder="alice">' +
+          '<label for="ac-client">Application</label>' +
+          '<select id="ac-client" name="client">' + applicationOptions +
+          '</select>' +
+          '<button type="submit" class="danger">Withdraw</button>' +
+        '</div></form>' +
 
         '<h4>Forget everything one person agreed to</h4>' +
         self.note('Every recorded consent for one person, in one act, so ' +
@@ -35042,6 +35073,17 @@ class AdminConsole {
                        'the transmitter\'s pedantry — and it is said out ' +
                        'loud rather than passed over.') +
                        '">media type</div>') +
+          // WHAT THIS CONSOLE DID WITH IT (#62): the signal-response
+          // policy's reactions, taken, observed or failed.
+          (row.reactions || []).map(function (r) {
+            return '<div class="signal-reaction ' +
+              (r.failed ? 'state-invalid' : 'sub') + '">' + (r.failed
+                ? 'could not end its sessions'
+                : (r.observed ? 'would end this console\'s sessions ' +
+                                '(development observes)'
+                              : 'ended ' + self.esc(String(r.ended)) +
+                                ' console session(s)')) + '</div>';
+          }).join('') +
           '</td>' +
           '<td class="sub"><code>' + self.esc(row.jti) + '</code>' +
           '<div><code>' + self.esc(row.stream || '') + '</code></div></td>' +
