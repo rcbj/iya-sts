@@ -61,7 +61,7 @@ one of the two mandatory; see *Require DPoP or mutual TLS* in
 | `POST /oauth2/token`, token exchange (RFC 8693) | `subject_token`, `actor_token` | **Read without verifying** if they do not verify, so a client under test can exchange a token from anywhere | Verified and not revoked, or refused with `invalid_request`. **The token's `typ` is not compared with the declared `subject_token_type`** — [#116](https://github.com/rcbj/iya-sts/issues/116) |
 | `POST /oauth2/token`, JWT or SAML bearer grant; JWT client authentication | `assertion`, `client_assertion` | Verified against a key registered for a declared issuer, accepted once ever. See [JWT assertions](jwt-assertions.md) and [SAML 2.0 assertions](saml-assertions.md) | The same |
 | `GET`/`PUT`/`DELETE /oauth2/register/{client_id}` (RFC 7592) | The registration access token | Compared with the one issued at registration, in constant time; an empty one never matches | The same |
-| `GET`/`POST /oauth2/logout` (RP-Initiated Logout) | `id_token_hint` | **Accepted and never read** — [#115](https://github.com/rcbj/iya-sts/issues/115) | **Accepted and never read.** `post_logout_redirect_uri` is held to the registration of the client `client_id` names |
+| `GET`/`POST /oauth2/logout` (RP-Initiated Logout) | `id_token_hint` | Verified as an ID Token this authorization server issued (an expired one still counts); its audience is the client, and a `client_id` it was not issued to is refused. A hint for the current session signs out at once; otherwise the person confirms (#124, #115) | The same |
 
 ## Other tokens
 
@@ -71,10 +71,9 @@ one of the two mandatory; see *Require DPoP or mutual TLS* in
 | `POST /ssf/receive` | A Security Event Token | **Recorded whether or not it verifies**, and shown as unverified. Nothing acts on it | The same unless `ssf.receiveRequireSignature` is on — [#117](https://github.com/rcbj/iya-sts/issues/117) |
 | The console's and portal's own SSF receivers | A Security Event Token | The stream's own authorization secret, and this receiver in `aud`. An unverified one is recorded unless `ssf.receiveRequireSignature` is on. Nothing acts on it | The same |
 
-## Where the three open issues are
+## Where the two open issues are
 
 | Issue | What |
 |---|---|
-| [#115](https://github.com/rcbj/iya-sts/issues/115) | `id_token_hint` is never read, so a logout request is tied to no session or client, and nothing asks the person to confirm |
 | [#116](https://github.com/rcbj/iya-sts/issues/116) | Token exchange in product mode accepts an ID Token as a `subject_token` declared to be an access token |
 | [#117](https://github.com/rcbj/iya-sts/issues/117) | `/ssf/receive` stores Security Event Tokens it cannot verify in product mode as well as development |

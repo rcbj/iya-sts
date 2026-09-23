@@ -10,7 +10,7 @@ own, and each one signs them out of itself:
 
 | Endpoint | What it is |
 |---|---|
-| `GET /oauth2/logout` | OpenID Connect RP-Initiated Logout |
+| `GET|POST /oauth2/logout` | OpenID Connect RP-Initiated Logout — asks the person to confirm unless a verified `id_token_hint` names the session |
 | `GET|POST /wsfed?wa=wsignout1.0` | WS-Federation 1.2 section 13.2.4 |
 | `GET|POST /saml2/slo` | SAML 2.0 Single Logout |
 

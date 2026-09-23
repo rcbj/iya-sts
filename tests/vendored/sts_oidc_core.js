@@ -141,6 +141,31 @@ async function ok(url, payload, what) {
 }
 
 // One browser, with a cookie jar.
+// RP-Initiated Logout asks the person to confirm a sign-out that carries no
+// hint for this session (#124): GET the sign-out, and where the answer is that
+// page, submit its own form — what the person would press.
+async function signOut(b, url) {
+  log.debug("Entering signOut().");
+  const first = await b.go("GET", url);
+  if (!/name="confirm_for"/.test(first.text || "")) {
+    log.debug("Leaving signOut(). No confirmation asked.");
+    return first;
+  }
+  const fields = {};
+  (first.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
+    function (tag) {
+      const name = /name="([^"]+)"/.exec(tag);
+      const value = /value="([^"]*)"/.exec(tag);
+      if (name) {
+        fields[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
+      }
+    });
+  fields.confirm = "yes";
+  log.debug("Leaving signOut(). Confirmed.");
+  return b.go("POST", String(url).split("?")[0],
+              new URLSearchParams(fields).toString());
+}
+
 function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
@@ -710,7 +735,7 @@ async function test() {
   // RP-Initiated Logout's end_session_endpoint: the session ends. (The
   // global `/logout` would disown every token the person holds, offline ones
   // included, which is a different promise.)
-  const out = await alice.go("GET", R + "/oauth2/logout");
+  const out = await signOut(alice, R + "/oauth2/logout");
   assert.ok(out.status < 500, "sign-out: " + out.status);
   t = await token(plain, { grant_type: "refresh_token",
                            refresh_token: onlineAgain });

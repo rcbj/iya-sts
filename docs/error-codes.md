@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3058** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3062** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 200
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 481
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 485
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1212,7 +1212,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0120` | In RFC 9700 mode, the redirect_uri uses http on a host that is not a loopback address (section 2.6). | invalid_request (HTTP 400, not redirected) |
 | `STS-OAUTH-0121` | In RFC 9700 mode, no redirect URIs are registered for the client, so the redirect_uri cannot be exact-matched. | invalid_request (HTTP 400, not redirected) |
 | `STS-OAUTH-0122` | In RFC 9700 mode, the redirect_uri matches none of the URIs registered for the client (section 2.1). | invalid_request (HTTP 400, not redirected) |
-| `STS-OAUTH-0123` | In RFC 9700 mode, an RP-Initiated Logout post_logout_redirect_uri is not registered (no open redirector). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0123` | An RP-Initiated Logout post_logout_redirect_uri is not among the ones the client registered — in every mode since #124 — so it is not followed; the person is signed out and told on the page. | none (the sign-out page says so) |
 | `STS-OAUTH-0124` | In RFC 9700 mode, a state, code_challenge or nonce value already used by another client was presented (section 2.1.1). | invalid_request (redirected error) |
 | `STS-OAUTH-0125` | In RFC 9700 mode, a state, code_challenge or nonce value was reused after its authorization code was redeemed. | invalid_request (redirected error) |
 | `STS-OAUTH-0126` | In RFC 9700 mode, the authorization request asked for a response type that issues an access token from the authorization endpoint (section 2.1.2). | unsupported_response_type (redirected error) |
@@ -1260,7 +1260,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0168` | Consent is outstanding and the request carried prompt=none, which forbids showing the consent screen. | consent_required (redirected error) |
 | `STS-OAUTH-0169` | The authorization response could not be issued because of an unexpected failure while minting it. | server_error (redirected error, or HTTP 400 page) |
 | `STS-OAUTH-0170` | The request carried prompt=none and there is no sign-on session. | login_required (redirected error, or HTTP 400 page) |
-| `STS-OAUTH-0171` | An RP-Initiated Logout request is malformed (the input validator refused it). | invalid_request (HTTP 400) |
+| `STS-OAUTH-0171` | An RP-Initiated Logout request is malformed (the input validator refused it). Since #124 the session is NOT ended, and the answer is a page for the person. | HTTP 400 (an HTML page) |
 | `STS-OAUTH-0172` | An access token presented at UserInfo did not verify: expired, not yet valid, or not issued by this service. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
 | `STS-OAUTH-0173` | The token presented at UserInfo is not an access token (its typ is not Bearer). | invalid_token (HTTP 401, WWW-Authenticate challenge) |
 | `STS-OAUTH-0174` | The access token presented at UserInfo has been revoked. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
@@ -1358,7 +1358,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0287` | OAuth 2.1 mode: a client registration asked for token_endpoint_auth_method=saml2_bearer. | invalid_client_metadata (HTTP 400) |
 | `STS-OAUTH-0288` | A stored frontchannel_logout_uri is not an http or https URL, so the client was not notified and the value was not framed. | none — the client is listed as not notified |
 | `STS-OAUTH-0289` | OAuth 2.1 mode: a client registration asked for the client credentials grant with token_endpoint_auth_method=none. | invalid_client_metadata (HTTP 400) |
-| `STS-OAUTH-0290` | RFC 9700 or OAuth 2.1 mode: a private-use post_logout_redirect_uri was given and the client the request names has not registered it. | invalid_request (HTTP 400) |
+| `STS-OAUTH-0290` | A private-use post_logout_redirect_uri was given and the client the request names has not registered it (every mode since #124): not followed. | none (the sign-out page says so) |
 | `STS-OAUTH-0291` | An RFC 9701 JWT introspection request (Accept: application/token-introspection+jwt) did not authenticate the resource server: no credential, an unknown or public client, nothing on file to verify, or a credential that did not verify. Refused in every mode, because the response is addressed to the caller. | invalid_client (HTTP 400, RFC 9701 section 5) |
 | `STS-OAUTH-0292` | Product mode: an RFC 7662 introspection request did not authenticate the caller as a client with a credential that verified. | invalid_client (HTTP 401, RFC 7662 section 2.3) |
 | `STS-OAUTH-0293` | The JWT introspection response a client registered could not be produced: an algorithm this service does not have (set by ldapmodify), an enc with no alg, no usable key in its jwks, or the signature failed. | server_error (HTTP 500) |
@@ -1571,6 +1571,10 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0599` | A client's registered jwks_uri could not be read: the outbound policy refused it, it did not answer 200, or it did not answer a JSON Web Key Set (#120). Logged at warn; the verification or encryption that needed the key is refused with its own code. | none (log only) |
 | `STS-OAUTH-0600` | A client that registered grant_types without refresh_token was answered with no refresh token (RFC 7591 section 2) (#120). Recorded, not refused. | none (the token response omits refresh_token) |
 | `STS-OAUTH-0601` | The OP iframe or its script was asked for while oauth2.sessionManagement is off in the realm (#121): a 404 naming the setting. | HTTP 404 |
+| `STS-OAUTH-0602` | An RP-Initiated Logout id_token_hint did not verify as an ID Token this authorization server issued to the client the request names — or a client_id it was not issued to was given beside it (section 2's MUST, #124, #115). Refused in every mode; the session is not ended. | HTTP 400 (an HTML page) |
+| `STS-OAUTH-0603` | In product mode, an RP-Initiated Logout post_logout_redirect_uri named no client that registered it (#124): not followed. Development still follows one. | none (the sign-out page says so) |
+| `STS-OAUTH-0604` | An RP-Initiated Logout request sent with POST was not a form (application/x-www-form-urlencoded, section 2) (#124). | HTTP 400 (an HTML page) |
+| `STS-OAUTH-0605` | The RP-Initiated Logout endpoint failed while answering (#124). | HTTP 500 (an HTML page) |
 
 ## STS-SAML
 

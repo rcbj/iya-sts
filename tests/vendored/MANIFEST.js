@@ -294,6 +294,12 @@ const JOBS = [
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
   { file: 'sts_discovery_realms.js',     browser: false, local: true },
+  // OPENID CONNECT RP-INITIATED LOGOUT OVER THE WIRE (#124 with #115,
+  // 2026-09-23): refusals as pages, the registered return with state by GET
+  // and POST, each mode's answer for a client that registered none, and a
+  // foreign hint refused. `local: true`: this repository's own OP, in a
+  // throwaway realm it leaves behind.
+  { file: 'sts_rp_initiated_logout.js',  browser: false, local: true },
   // OPENID CONNECT SESSION MANAGEMENT OVER THE WIRE (#121, 2026-09-23): off
   // by default, then the discovery member, the OP iframe's narrowed
   // frame-ancestors and its script, and prompt=none's session_state checked
