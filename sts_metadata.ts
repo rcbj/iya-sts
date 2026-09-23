@@ -939,7 +939,16 @@ const SPECS: Spec[] = [
               'a negative test has something to fail on. That is development ' +
               'mode: in product mode a named simple bind is verified against ' +
               'the entry\'s userPassword, the directory holds no seeded ' +
-              'people, and ldap.plainListener can leave 389 unbound. It is ' +
+              'people, and ldap.plainListener can leave 389 unbound. ' +
+              'Sections 4.5.1 and 4.10 leave access control to the server, ' +
+              'and in product mode a read IS authorized per identity ' +
+              '(#106): an administrator reads their scope, a person their ' +
+              'own entry, other people\'s ldap.directoryReadableAttributes ' +
+              '(none by default), the groups they are in and the ' +
+              'containers; an entry they may not see answers noSuchObject ' +
+              'as a missing one does, a filter cannot match what they may ' +
+              'not read, a compare of it is insufficientAccessRights (50), ' +
+              'and only a person binds. It is ' +
               'the ldapjs 3.0.7 library, pinned as a submodule and used ' +
               'unmodified; what is written here is the handlers.' },
   { id: 'rfc4512', name: 'LDAP v3: directory information models (RFC 4512)',
@@ -982,7 +991,10 @@ const SPECS: Spec[] = [
               'worth checking here. In PRODUCT mode a simple bind IS ' +
               'verified, which makes 389 a password in the clear: ' +
               'ldap.plainListener turns that listener off and the service ' +
-              'warns at startup while it is on.' },
+              'warns at startup while it is on. Section 6.1: "Access ' +
+              'control should always be applied when reading sensitive ' +
+              'information" — product mode does, per bound identity ' +
+              '(ldap/directory_read_policy.ts).' },
   { id: 'rfc4514', name: 'LDAP v3: string representation of distinguished ' +
                          'names (RFC 4514)',
     where: 'IETF',

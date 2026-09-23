@@ -3654,7 +3654,7 @@ suite nearly always has realms — the doors are named constants in each job.
 
 The API explorer mints only the SERVICE token, so it is a service page. The LDAP
 socket's write authorization recognises a realm administrator in their realm
-(`ldap_server.js`'s `boundDnIsRealmAdministrator()`), and certificate
+(`ldap_server.js`'s `boundDnHoldsRealmRole()`), and certificate
 enrollment (`common/cert_enrollment.ts`'s `adminFor()` and `sessionIsAdmin()`)
 asks the ambient realm's roster after the service's; no other protocol door was
 widened, and SCIM changed only the wording of the bootstrap account's delete

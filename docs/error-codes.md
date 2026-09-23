@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3159** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3161** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -69,7 +69,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 120
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 159
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 74
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 123
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
@@ -2129,6 +2129,8 @@ Raised from: ldap/.
 | `STS-LDAP-0096` | Another node signed an identity out and this node could not close the directory connections bound as it; they may still be open. | none — logged |
 | `STS-LDAP-0097` | An account lock (pwdAccountLockedTime) changed through a directory write and handing the change to account_state.ts failed, so what the person held may not have been ended. | none — logged; the write stands and every door refuses the person |
 | `STS-LDAP-0098` | The node-ldapjs in use does not support the routeAnonymousBinds server option, so an anonymous bind is answered by the library and never reaches the bind handler; product mode cannot refuse it (reads on that connection are still refused). | none — logged at startup |
+| `STS-LDAP-0099` | In product mode, a compare named an attribute the bound identity may not read on that entry (ldap/directory_read_policy.ts); answered whether or not the entry holds it, so the refusal says nothing about the value. | LDAP result code 50, insufficientAccessRights |
+| `STS-LDAP-0100` | In product mode, a bind named a DN that is not a person's — an application, a federation, a container — and was refused before its password was read; only people bind to the directory. | LDAP result code 49, invalidCredentials (RFC 4513 section 5.1.3) |
 
 ## STS-SCIM
 

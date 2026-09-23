@@ -8480,6 +8480,55 @@ const SETTINGS = [
                  'anything on their own entry. Development authorizes no ' +
                  'LDAP write at all.' },
 
+  // WHAT A PERSON MAY READ OF ANYBODY ELSE OVER THE SOCKET, in product mode
+  // (#106, 2026-09-23). The read half of the row above, and an allowlist for
+  // its reason. EMPTY BY DEFAULT — the owner's decision 2 on #106, stricter
+  // than the plan's address-book list — so a person bound over LDAPS reads
+  // their own entry and nobody else's. `ldap/directory_read_policy.ts` is the
+  // rule table; per realm, since it is read in the realm being searched.
+  { key: 'ldap.directoryReadableAttributes', group: 'LDAP',
+    label: 'Attributes a person may read of other people',
+    env: 'LDAP_DIRECTORY_READABLE_ATTRIBUTES', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'In PRODUCT mode, the attributes a connection bound as a ' +
+                 'person may read on OTHER people\'s entries, ' +
+                 'comma-separated ' +
+                 'and matched case-insensitively; a search filter can see ' +
+                 'these and nothing else of theirs. Empty (the default) ' +
+                 'means ' +
+                 'self-only: another person is not in the directory at all ' +
+                 'as far as that connection can tell, and a base search of ' +
+                 'their DN answers noSuchObject. WARNING — widening this ' +
+                 'exposes every person in the realm to every other: ' +
+                 '"objectClass,cn,displayName,uid,mail" is an address book ' +
+                 'and hands anybody with a password the full list of ' +
+                 'usernames and addresses to phish or to guess passwords ' +
+                 'against; telephoneNumber, title and the rest are personal ' +
+                 'data; memberOf and employeeType tell them who the ' +
+                 'administrators are. Credentials are never readable ' +
+                 'whatever this says. Administrators (Admin Read or Admin ' +
+                 'Write) read everything in scope. Development authorizes no ' +
+                 'LDAP read.' },
+
+  // A GROUP'S MEMBER LIST, to a member of it (#106). Off by default: being in
+  // a group is not a reason to learn who else is, and on the console role
+  // groups the list is the list of administrators.
+  { key: 'ldap.groupMembersReadable', group: 'LDAP',
+    label: 'Members may read their group\'s member list',
+    env: 'LDAP_GROUP_MEMBERS_READABLE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'In PRODUCT mode, whether a person bound over LDAP may read ' +
+                 'member, uniqueMember and memberUid on a group they are a ' +
+                 'member of. A person sees a group only if they are in it, ' +
+                 'and then only its cn, description and objectClass; on ' +
+                 'turns the member list on too. WARNING — on the console ' +
+                 'role groups (admin.readGroup, admin.writeGroup) that list ' +
+                 'names every administrator, and on any group it names ' +
+                 'people ldap.directoryReadableAttributes may otherwise ' +
+                 'hide. ' +
+                 'Administrators read every group whole. Development ' +
+                 'authorizes no LDAP read.' },
+
   // --- SCIM ----------------------------------------------------------------
   //
   // SCIM 2.0 provisions into the SAME directory the four settings above

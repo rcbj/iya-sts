@@ -709,7 +709,9 @@ var config = {
     maxEntries: 2000,                                                                                                                           // Maximum entries
     sizeLimit: 500,                                                                                                                             // Search size limit
     plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply
-    selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword"  // Attributes a person may change on their own entry
+    selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword", // Attributes a person may change on their own entry
+    directoryReadableAttributes: "",                                                                                                            // Attributes a person may read of other people
+    groupMembersReadable: false                                                                                                                 // Members may read their group's member list
   },
 
   // --- SCIM ------------------------------------------------------------

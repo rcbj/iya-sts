@@ -229,8 +229,9 @@ closed.
 
 | | Product | Development |
 |---|---|---|
-| Bind | An anonymous bind is `inappropriateAuthentication` (48). **Any bind on 389** is `confidentialityRequired` (13). A DN with an empty password is `unwillingToPerform` (53). A DN or address past its failed-bind limit is 53, even with the right password. After those checks the password is verified against the entry's `userPassword`, and a wrong one is 49. A person who holds or must hold a second factor is refused their own password with the same 49 (a bind cannot ask for the second factor) and binds with an [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `ldap` | Every bind succeeds: any DN, any password, anonymous, on 389 and 636 alike. The exceptions are the password `invalid` and a disabled account, which get 49 |
-| Read | A read needs a bind (`insufficientAccessRights`, 50). The root DSE can be read first | No restriction |
+| Bind | An anonymous bind is `inappropriateAuthentication` (48). **Any bind on 389** is `confidentialityRequired` (13). A DN with an empty password is `unwillingToPerform` (53). **Only a person binds**: a DN that is not under `ou=users` — an application's, a federation's — is 49 before its password is read; an application reads the directory through [SCIM](scim.md) instead. A DN or address past its failed-bind limit is 53, even with the right password. After those checks the password is verified against the entry's `userPassword`, and a wrong one is 49. A person who holds or must hold a second factor is refused their own password with the same 49 (a bind cannot ask for the second factor) and binds with an [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `ldap` | Every bind succeeds: any DN, any password, anonymous, on 389 and 636 alike. The exceptions are the password `invalid` and a disabled account, which get 49 |
+| Read | A read needs a bind (`insufficientAccessRights`, 50). The root DSE and a base read of a CRL entry can be read first. What a bound identity may then read is below | No restriction |
+| Who reads what | Admin Read or Admin Write reads everything in scope (the default realm's roster: every realm; a realm's own: that realm). Anybody else reads **their own entry**; of **other people**, only `ldap.directoryReadableAttributes` (**none by default**); a **group** only if they are in it, and then `cn`, `description` and `objectClass` (members too with `ldap.groupMembersReadable`); and the containers by name. Applications, federations, policies, roles, trust anchors and SPIFFE registrations are invisible. An entry they may not see answers `noSuchObject` (32), exactly as a missing one; an attribute they may not read is absent from the result and **cannot be matched by a filter**; a compare of one is 50 | Everything |
 | Credentials on the wire | A search never returns a secret attribute (`userPassword`, client secrets, reset tokens, private keys). A filter cannot match on one, and a compare against one is refused. Administrators are included | Returned like any attribute |
 | Write | Anonymous writes nothing. Admin Write in the default realm writes anything, and a realm's own administrator writes that realm. Anybody else may modify only the attributes in `ldap.selfWritableAttributes`, on their own entry. Refusals are 50 | Any connection may add, modify, rename or delete any entry in any realm |
 | `userPassword` | Held to the password policy (19). A pre-hashed `$scrypt$` value is refused, and so is a change to `pwdHistory` or `pwdChangedTime` | Hashed. A pre-hashed value is kept as given, which is how a directory moves between two instances |
@@ -246,9 +247,29 @@ Product mode logs a warning at startup while `ldap.plainListener` is on. A
 verified bind on 389 is a real password sent in the clear, so turn 389 off in
 production. With 389 on, product mode answers only the root DSE there.
 
-**What product mode still does not decide** is what each bound identity may
-read. Anybody who has bound reads every non-credential attribute of every entry
-in the realm. See [what is not checked](what-is-not-checked.md).
+### What a bound identity may read (product mode)
+
+A person bound over LDAPS reads their own entry and, by default, **nobody
+else's** — another person's DN answers `noSuchObject` exactly as a DN that does
+not exist, so the directory cannot be walked for usernames. To publish an
+address book, list the attributes in `ldap.directoryReadableAttributes`, for
+example `objectClass,cn,displayName,uid,mail`.
+
+> **Warning.** Widening `ldap.directoryReadableAttributes` shows every person
+> in the realm to every other person who has a password: a list of usernames
+> and addresses to phish or to guess passwords against. `telephoneNumber` and
+> the like are personal data, and `memberOf` or `employeeType` say who the
+> administrators are. `ldap.groupMembersReadable` has the same effect for the
+> groups a person is in — on the console role groups, it names every
+> administrator.
+
+A filter is evaluated against only what the reader may read, so
+`(telephoneNumber=555*)` cannot find another person's number a digit at a time,
+and a compare of an attribute the reader may not read is refused with 50
+whether or not the entry holds it. The console, `/admin-api` and SCIM read the
+directory through the service itself, never through this socket, and have
+gates of their own; a SCIM client with `scim:read` reads the whole realm, as a
+provisioning client must.
 
 ## Configuration
 
@@ -261,6 +282,8 @@ in the realm. See [what is not checked](what-is-not-checked.md).
 | `ldap.maxEntries` | `LDAP_MAX_ENTRIES` | `2000` | yes | How large the directory may grow, across every realm in the process. |
 | `ldap.sizeLimit` | `LDAP_SIZE_LIMIT` | `500` | yes | The server-side search size limit, past which a search ends with `sizeLimitExceeded`. |
 | `ldap.selfWritableAttributes` | `LDAP_SELF_WRITABLE_ATTRIBUTES` | `telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword` | yes | In product mode, the attributes a person bound as themselves may modify on their own entry; empty allows none. |
+| `ldap.directoryReadableAttributes` | `LDAP_DIRECTORY_READABLE_ATTRIBUTES` | empty | yes | In product mode, the attributes a person may read on **other** people's entries; empty (the default) means they read only their own. See the warning above before widening it. |
+| `ldap.groupMembersReadable` | `LDAP_GROUP_MEMBERS_READABLE` | `false` | yes | In product mode, whether a person may read the member list of a group they are in. See the warning above. |
 | `groups.claim` | `STS_GROUPS_CLAIM` | `true` | yes | Puts the person's directory groups in every access token, ID Token and SAML assertion, omitted for somebody in no group. |
 | `groups.claimName` | `STS_GROUPS_CLAIM_NAME` | `groups` | yes | The claim or SAML attribute name the groups are carried under. |
 | `groups.claimValue` | `STS_GROUPS_CLAIM_VALUE` | `cn` | yes | Whether each group is named by its common name or its whole DN. |
