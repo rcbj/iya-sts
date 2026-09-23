@@ -2701,11 +2701,22 @@ function writePki(rowKey, payload) {
                                    'pki-hierarchy');
     });
   }).then(function (result) {
-    pkiBase.set(id, result.material);
+    const newer = pkiLocalGen.get(id) !== payload.gen;
+    // THE BASE IS THE ROW THE NEXT PAYLOAD DESCENDS FROM (2026-09-23). A
+    // merged row this process does NOT adopt — because it attached again
+    // while this write ran, from its pre-merge copy — is not that row, and
+    // making it the base turned the waiting write into "unchanged
+    // underneath", written VERBATIM over the other writer's new tier: a
+    // realm's rebuilt Intermediate went back to the one the Root's CRL had
+    // just superseded (`sts_pki_distribution_points`, single-node and
+    // cluster; `tests/cluster_key_pki_agreement.js` 6c). Keeping the old base
+    // makes that write a real three-way merge instead.
+    if (!(decided && decided.merged && newer)) {
+      pkiBase.set(id, result.material);
+    }
     if (!decided) {
       return { ok: true, merged: false, lost: [] };
     }
-    const newer = pkiLocalGen.get(id) !== payload.gen;
     if (decided.merged && !newer) {
       // WHAT THE STORE NOW HOLDS IS WHAT THIS PROCESS HOLDS — held, shared
       // with the rest of this container, and reconciled with the listener
