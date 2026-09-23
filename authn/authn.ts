@@ -3751,8 +3751,10 @@ class Authn {
       });
     }
     // RFC 9700 section 2.2.2: an authorization server MAY revoke refresh tokens
-    // after a security event, and the section names LOGOUT as one. In RFC 9700
-    // mode it does — every refresh token issued ON this session, through the
+    // after a security event, and the section names LOGOUT as one; OpenID
+    // Connect Back-Channel Logout 1.0 section 2.7 makes it a SHOULD for a
+    // token without `offline_access`. IN EVERY MODE since #123 (it was RFC
+    // 9700 mode only): every refresh token issued ON this session, through the
     // same revocation set /oauth2/revoke and the console write to, so
     // introspection reports them inactive immediately.
     //
@@ -3771,9 +3773,8 @@ class Authn {
     // the BCP's. ASKED PER TOKEN, not once for the sign-out:
     // `oauth2.revokeRefreshOnLogout` is per client since 2026-08-27, and this
     // session may hold refresh tokens for several clients that answer
-    // differently. bcp.revokeRefreshOnLogout() still returns false for
-    // everything when RFC 9700 mode is off, so the shape of this is unchanged
-    // when the mode is.
+    // differently. `oauthRevokeRefreshOnLogout: FALSE` on one entry is how a
+    // client that refreshes its way back after a sign-out is reproduced.
     //
     // EXCEPT A REFRESH TOKEN GRANTED `offline_access` (#118). OIDC Core
     // section 11 defines that scope as access "even when the End-User is not
@@ -3795,9 +3796,11 @@ class Authn {
                 applications.HOSTED_SURFACE_CLIENT_IDS
                   .indexOf(clientId) >= 0) &&
                bcp.revokeRefreshOnLogout(clientId);
-      }, 'RFC 9700 section 2.2.2: the sign-on session it was issued on ended');
+      }, 'Back-Channel Logout section 2.7: the sign-on session it was ' +
+         'issued on ended');
       if (revoked) {
-        log.info('RFC 9700 section 2.2.2: signing out of session ' + id + ' ' +
+        log.info('Back-Channel Logout section 2.7: signing out of session ' +
+                 id + ' ' +
             'revoked ' + revoked +
                  ' refresh token(s) issued on it. Without that, a sign-out ' +
                  'drops a cookie and leaves a thirty-day credential in the ' +

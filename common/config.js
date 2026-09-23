@@ -3456,17 +3456,19 @@ const SETTINGS = [
     label: 'Revoke refresh tokens on sign-out',
     env: 'STS_OAUTH2_REVOKE_REFRESH_ON_LOGOUT', type: 'bool', dflt: true,
     runtime: true,
-    description: 'In RFC 9700 mode, end a browser sign-on session and every ' +
-                 'refresh token issued ON that session is revoked — the ' +
-                 'section MAY that names logout and a password change as the ' +
-                 'examples. It is what makes /oauth2/logout and ' +
+    description: 'In every mode (#123), end a browser sign-on session and ' +
+                 'every refresh token issued ON that session without ' +
+                 'offline_access is revoked — OpenID Connect Back-Channel ' +
+                 'Logout 1.0 section 2.7\'s SHOULD, and RFC 9700 section ' +
+                 '2.2.2\'s MAY. A token granted offline_access is kept: ' +
+                 'outliving the session is what that scope is for (OIDC Core ' +
+                 'section 11). It is what makes /oauth2/logout and ' +
                  'WS-Federation\'s wsignout1.0 mean something to the back ' +
                  'channel: without it, signing out ends the cookie and ' +
                  'leaves a long-lived credential in the client\'s hands. ON ' +
-                 'by default WITHIN that mode, which is off by default — so ' +
-                 'nothing changes until the mode is turned on. A token is ' +
-                 'found by the session it was ISSUED on, which is recorded ' +
-                 'beside it rather than carried as a claim.' },
+                 'by default; off, or FALSE on one client\'s entry, ' +
+                 'reproduces the client that refreshes its way back. A ' +
+                 'token is found by the session it was ISSUED on.' },
 
   { key: 'oauth2.eddsaCurve', group: 'OAuth 2.0 / OIDC',
     label: 'EdDSA curve', env: 'STS_OAUTH2_EDDSA_CURVE', type: 'string',

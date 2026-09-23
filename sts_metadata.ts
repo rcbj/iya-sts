@@ -2056,9 +2056,17 @@ const SPECS: Spec[] = [
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-backchannel-1_0.html',
     coverage: 'full for the provider (2026-09-17): the two discovery ' +
-              'members, the two per-client registration members (http or ' +
-              'https, no fragment, at registration, the console, /admin-api ' +
-              'and again when read), the sid claim, and a Logout Token — ' +
+              'members, the two per-client registration members (https, no ' +
+              'fragment; http only for a confidential client and only where ' +
+              'the outbound policy sends over http — ' +
+              'federation.outboundAllowHttp, development mode — section 2.2, ' +
+              '#123; ' +
+              'at registration, the console, /admin-api and again when ' +
+              'read; backchannel_logout_session_required is stored and ' +
+              'always met, since every token carries sid), the sid claim, ' +
+              'section 2.7\'s revocation at sign-out in every mode of the ' +
+              'refresh tokens issued on the session without offline_access ' +
+              '(oauth2.revokeRefreshOnLogout, #123), and a Logout Token — ' +
               'typ logout+jwt, iss, aud, iat, exp two minutes on, jti, the ' +
               'events member, sub and sid, no nonce, signed like the ' +
               'client\'s ID Token (any algorithm of the table, post-quantum ' +

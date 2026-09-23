@@ -3309,7 +3309,9 @@ function checkRefreshRequest(opts) {
 // refresh tokens after a security event, and the examples the section gives are
 // a password change and a LOGOUT.
 //
-// Logout is the one this service has. `authn.js` owns the single session store
+// Logout is the one this service has — and Back-Channel Logout section 2.7
+// makes it a SHOULD for every refresh token without `offline_access` (#123).
+// `authn.js` owns the single session store
 // both protocols end a session through, so it asks this whether to act — the
 // policy is here with the rest of the mode, and the finding and revoking is
 // there, where the session and the token registry are.
@@ -3327,14 +3329,20 @@ function checkRefreshRequest(opts) {
 // whoever the token was issued to — a session may hold refresh tokens for three
 // clients, and two of them agreeing to be revoked says nothing about the third.
 //
-// `enabled()` still gates it, so with RFC 9700 mode off this answers false for
-// every client whatever their entry says, exactly as it did.
+// ~~`enabled()` still gates it, so with RFC 9700 mode off this answers false
+// for every client whatever their entry says.~~ — IN EVERY MODE SINCE #123
+// (2026-09-23): OpenID Connect Back-Channel Logout 1.0 section 2.7 says a
+// refresh token issued without `offline_access` SHOULD be revoked when the
+// session it was issued on ends, and that is not a BCP refinement but the
+// logout specification's own rule — a development install signing a person
+// out and leaving their refresh token introspecting active was a gap, not a
+// permissive default (the refresh grant already refused it since #118). The
+// `offline_access` distinction is `authn.ts`'s, where the records are.
 function revokeRefreshOnLogout(clientId) {
   log.debug("Entering revokeRefreshOnLogout().");
   log.debug("Leaving revokeRefreshOnLogout().");
-  return enabled() &&
-    !!applications.settingFor(clientId || '', 'oauth2.revokeRefreshOnLogout',
-                              config);
+  return !!applications.settingFor(clientId || '',
+                                   'oauth2.revokeRefreshOnLogout', config);
 }
 
 // Section 2.2 / 2.2.1, and it refuses nothing: whether an access token is
