@@ -3410,9 +3410,10 @@ the first of them anyway.
 Not this mode's: **Pushed Authorization Requests** (RFC 9126), a feature in every mode
 (see *Pushed authorization requests* below), and **RFC 8705** — both halves are
 features in every mode (see *Mutual TLS (RFC 8705)* below). Client authentication at
-`/oauth2/revoke` is likewise not enforced by this mode, and at `/oauth2/introspect` it
-is not this mode's to decide: an RFC 9701 JWT request authenticates in every mode and a
-JSON request in product mode — see *Introspection as a JWT* below. And
+`/oauth2/revoke` and `/oauth2/introspect` is not this mode's to decide either: an RFC
+9701 JWT request authenticates in every mode and a JSON request in product mode — see
+*Introspection as a JWT* below — and a revocation request authenticates in product
+mode, and in development whenever it presents a credential (RFC 7009, #102). And
 the requirements RFC 9700 places on the *client* stay the client's: this service can
 detect several and fix none.
 

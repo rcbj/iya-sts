@@ -219,6 +219,18 @@ const MEMBERS: MemberRow[] = [
           'JWT request in every mode, a JSON one in product mode. A client ' +
           'whose entry declares a method not listed here is refused before ' +
           'its credential is read.' },
+  // RFC 7009 (#102, 2026-09-22): the same contract for `/oauth2/revoke`,
+  // which authenticates its caller through the same function introspection
+  // does.
+  { name: 'revocation_endpoint_auth_methods_supported', group: 'Security ' +
+      'capabilities',
+    kind: 'list', enforces: 'which client authentication methods the ' +
+                            'revocation endpoint accepts',
+    what: 'The token endpoint\'s list and `none`, asked of a client calling ' +
+          '/oauth2/revoke wherever it must authenticate — every request in ' +
+          'product mode, one presenting a credential in development. A ' +
+          'client whose entry declares a method not listed here is refused ' +
+          'before its credential is read.' },
   { name: 'introspection_signing_alg_values_supported', group: 'Security ' +
       'capabilities',
     kind: 'list', enforces: 'which algorithms an RFC 9701 JWT introspection ' +

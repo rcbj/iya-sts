@@ -1342,8 +1342,15 @@ const SPECS: Spec[] = [
               'server.' },
   { id: 'rfc7009', name: 'RFC 7009 — Token Revocation',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7009',
-    coverage: 'full: revocation takes effect — a revoked token is reported ' +
-              'inactive by introspection.' },
+    coverage: 'full: section 2.1 in product mode — a confidential client ' +
+              'authenticates, a public one names its registered client_id, ' +
+              'and a client revokes only its own tokens (invalid_grant ' +
+              'otherwise); development authenticates only a caller that ' +
+              'presents a credential. Access and refresh tokens are ' +
+              'revocable, anything else is unsupported_token_type; an ' +
+              'unknown token_type_hint is ignored; a refresh token takes ' +
+              'its whole grant, access tokens included; a revoked token is ' +
+              'reported inactive by introspection (#102).' },
   { id: 'rfc7515', name: 'RFC 7515/7516/7517/7518 — JWS, JWE, JWK, JWA',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7515',
     coverage: 'partial: RS256 signatures throughout; RSA-OAEP-256 with ' +
@@ -1870,7 +1877,8 @@ const SPECS: Spec[] = [
               'token keeping its scope are true in every mode. NOT covered: ' +
               'the OpenID4VCI pre-authorized code grant and the assertion ' +
               'grants are exempt from the registered-client rule, and ' +
-              'introspection and revocation still authenticate no client. ' +
+              'introspection (JSON) and revocation authenticate their ' +
+              'caller by global.mode, not by this mode (#102). ' +
               'GET /oauth2/oauth21 lists every requirement.' },
   { id: 'fapi1-baseline', name: 'FAPI 1.0 Part 1: Baseline Security ' +
                                'Profile (final)',
@@ -9055,7 +9063,11 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oauth2/revoke', group: 'OAuth 2.0 / OIDC', name: 'Revocation ' +
       'endpoint',
     specs: ['rfc7009'], what: 'Revocation that takes effect: introspection ' +
-                              'then reports inactive.' },
+                              'then reports inactive. The client ' +
+                              'authenticates (in development only when it ' +
+                              'presents a credential), revokes only its ' +
+                              'own tokens, and a refresh token takes its ' +
+                              'grant with it.' },
   { path: '/oauth2/register', group: 'OAuth 2.0 / OIDC', name: 'Dynamic ' +
       'client registration',
     specs: ['rfc7591', 'rfc9700', 'oidc-registration'],
