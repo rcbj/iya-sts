@@ -546,14 +546,22 @@ class SpnegoAuthn {
                     : ' Nothing was interrupted; this door was used directly.'),
       summary: username + ' was signed in with a Kerberos ticket over SPNEGO'
     };
+    // THE RISK OF THIS SIGN-IN (#62 P3), assessed before the session and
+    // decided in the same question as the roles. This door cannot ask for a
+    // second factor, so a step-up the policy names refuses here like HIGH;
+    // a ticket whose flags already claim two factors (acr `mfa`) meets a
+    // second-factor step-up as it stands.
+    const application = record ? (record.application || '') : '';
+    const assessed = await authn.assessSignIn(req, username, VIA,
+      { application: application, credential: { kind: 'kerberos' } });
     const session = authn.startSession(res, username, factors.amr, factors.acr,
                                        VIA,
                                        Object.assign({
                                          request: req,
                                          // Which credential answered (#62).
                                          credential: { kind: 'kerberos' },
-                                         application: record ?
-                                           (record.application || '') : ''
+                                         application: application,
+                                         risk: assessed || undefined
                                        }, detail));
     // THE ISSUANCE POLICY CAN REFUSE THE SESSION (2026-09-06). A null is how
     // `startSession()` says so; it never throws, because two of its callers

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3036** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3043** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 200
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 480
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 481
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 101
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 15
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 21
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 276
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
@@ -1570,6 +1570,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0598` | A token request used a grant_type the client did not register in grant_types (RFC 7591 section 2) (#120). | HTTP 400 {error: unauthorized_client} |
 | `STS-OAUTH-0599` | A client's registered jwks_uri could not be read: the outbound policy refused it, it did not answer 200, or it did not answer a JSON Web Key Set (#120). Logged at warn; the verification or encryption that needed the key is refused with its own code. | none (log only) |
 | `STS-OAUTH-0600` | A client that registered grant_types without refresh_token was answered with no refresh token (RFC 7591 section 2) (#120). Recorded, not refused. | none (the token response omits refresh_token) |
+| `STS-OAUTH-0601` | The OP iframe or its script was asked for while oauth2.sessionManagement is off in the realm (#121): a 404 naming the setting. | HTTP 404 |
 
 ## STS-SAML
 
@@ -2534,6 +2535,12 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0013` | A sign-in could not be assessed for risk (the store or a dataset lookup failed part-way). The sign-in stands; only its assessment is missing. | — |
 | `STS-RISK-0014` | A dataset import was refused because nobody has accepted its provider's current terms (or the terms changed since they were accepted), or an acceptance was asked for a provider with none to accept. | — |
 | `STS-RISK-0015` | The install-time loader fetched a provider's terms page (--check-terms) and it differs from the page seen at the last acceptance: read it before relying on the acceptance. | — |
+| `STS-RISK-0016` | An issuance was REFUSED on risk: the issuance policy denied it with the risk obligation's `refuse` — by default, an authentication whose risk is HIGH. The client is told only that authentication failed. | — |
+| `STS-RISK-0017` | An issuance was refused UNTIL A STEP-UP: the issuance policy denied it with the risk obligation's `step-up` (a second factor or a security key) and the door could not ask for it — a token endpoint, WS-Trust, the KDC, a federated or certificate sign-in, or a screen whose person holds no such factor. | — |
+| `STS-RISK-0018` | A step-up on risk was asked of a person who holds no factor that answers it. Refused rather than offered enrolment: enrolling a new factor under an elevated risk is how an attacker holding the password would get one. | — |
+| `STS-RISK-0019` | In development mode (observe only) the issuance policy would have refused on risk, and did not: the decision is recorded on the assessment and the issuance went ahead. risk.enforceInDevelopment turns enforcement on. | — |
+| `STS-RISK-0020` | A person's risk level changed and no reaction could be decided: the risk-response policy is disabled or does not load. The change is recorded; nothing is announced, ended or disabled. | — |
+| `STS-RISK-0021` | A reaction the risk-response policy permitted (announce, end sessions, RISC credential-compromise, disable) failed part-way. The others were still taken; the change of risk is recorded. | — |
 
 ## STS-GNAP
 

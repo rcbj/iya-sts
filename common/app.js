@@ -529,6 +529,40 @@ function contentSecurityPolicy(overrides) {
 
 const CONTENT_SECURITY_POLICY = contentSecurityPolicy({});
 
+// ---------------------------------------------------------------------------
+// THE ONE PAGE THAT MAY BE FRAMED, AND ONLY BY NAMED ORIGINS (#121).
+//
+// OpenID Connect Session Management 1.0's OP iframe exists to be loaded in a
+// hidden iframe by a relying party, so `frame-ancestors 'none'` would make it
+// unusable by definition. The clause is NARROWED here, never dropped: it names
+// the origins given — the registered relying parties' redirect-URI origins,
+// rcbj's decision — and a list that is empty, or holds anything that is not
+// an http or https origin (`*`, a scheme source, a path), is `'none'`. A
+// caller cannot reach `*` through this function. `base-uri` stays `'none'`.
+// `contentSecurityPolicy()` above keeps its rule unchanged: this is a second,
+// named door, so that a relaxation cannot grow into a framing permission by
+// accident.
+// ---------------------------------------------------------------------------
+function framedContentSecurityPolicy(origins, overrides) {
+  log.debug("Entering framedContentSecurityPolicy().");
+  const allowed = (Array.isArray(origins) ? origins : [])
+    .map(String)
+    .filter(function (one) {
+      return /^https?:\/\/[A-Za-z0-9.\-\[\]:]+$/.test(one);
+    });
+  const merged = Object.assign({}, CSP_DIRECTIVES, overrides || {});
+  merged['base-uri'] = CSP_DIRECTIVES['base-uri'];
+  merged['frame-ancestors'] = allowed.length ? allowed.join(' ')
+                                             : CSP_DIRECTIVES['frame-ancestors'];
+  log.debug("Leaving framedContentSecurityPolicy(). " + allowed.length +
+            " origin(s).");
+  return Object.keys(merged).filter(function (name) {
+    return merged[name] !== null && merged[name] !== undefined;
+  }).map(function (name) {
+    return name + ' ' + merged[name];
+  }).join('; ');
+}
+
 app.use(function (req, res, next) {
   log.debug("Entering the security-headers middleware.");
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -956,6 +990,7 @@ module.exports = Object.assign(app, {
   // requires this file — and because a relaxation belongs beside the policy
   // it relaxes, where the next reader will find both.
   contentSecurityPolicy: contentSecurityPolicy,
+  framedContentSecurityPolicy: framedContentSecurityPolicy,
   CONTENT_SECURITY_POLICY: CONTENT_SECURITY_POLICY,
   // For the one page that builds URLs in a script and therefore cannot have
   // its markup rewritten. See the comment on res.send above.

@@ -652,8 +652,16 @@ class AlfaLanguage {
       return byEffect[effect].length;
     }).map(function (effect) {
       const body = byEffect[effect].map(function (holder) {
+        // AN ASSIGNMENT'S ATTRIBUTE IS NAMED AS WRITTEN, QUOTED WHERE IT IS
+        // NOT A PLAIN WORD (#62 P3). It was always written bare, which read
+        // back only while every assignment in every template happened to be
+        // one — the issuance policy's risk obligation assigns
+        // `urn:sts:xacml:risk-action`, whose colons the reader took for
+        // punctuation. The reader has always accepted either spelling.
         const assignments = (holder.assignments || []).map(function (one) {
-          return indent + '        ' + one.attributeId + ' = ' +
+          const name = /^[A-Za-z_][A-Za-z0-9_]*$/.test(String(one.attributeId))
+            ? String(one.attributeId) : self.quote(one.attributeId);
+          return indent + '        ' + name + ' = ' +
             self.emitExpression(one.expression, attributes);
         }).join('\n');
         return indent + '    ' + keyword + ' ' + self.quote(holder.id) +

@@ -131,7 +131,15 @@ function deciderInstalled() {
 //     claims        the claims of a token the caller presented, if any, so
 //                   that a roles claim in it can be read back.
 //     realm         for the log line only; the decision runs in the ambient
-//                   realm like everything else. }
+//                   realm like everything else.
+//     risk          (#62 P3) the RISK of the authentication this issuance
+//                   rests on, as `risk/risk_engine.ts`'s `factsOf()` states
+//                   it — or null for "none". A caller that names none has
+//                   it found (`riskFactsOf()` below).
+//     session       (#62 P3) the session the issuance rests on, where the
+//                   caller holds it: its `risk` and its `amr`/`acr` are the
+//                   facts, so every token on a session is decided on the
+//                   risk its sign-in established. }
 //
 // The answer is `{ allowed, decision, why, roles, required, policy }` — the
 // XACML decision and the reason, kept apart on purpose: `allowed` is what an
@@ -177,19 +185,34 @@ function check(request) {
     return allow('The XACML role subsystem is not loaded in this process, ' +
                  'so issuance is not gated.');
   }
-  if (config.value('roles.enforceIssuance') === false) {
+  // -------------------------------------------------------------------------
+  // THE TWO SHORTCUTS WAIVE THE ROLE QUESTION AND NOTHING ELSE (#62 P3,
+  // 2026-09-22). `roles.enforceIssuance` off and a call that names no
+  // application both used to answer "allowed" without asking — which was
+  // right while the policy asked only about roles, and would be a way round
+  // every RISK decision now that the same policy asks about both. So the
+  // policy is still asked whenever there are risk facts, told the role
+  // question is waived, and only a Deny about risk refuses.
+  // -------------------------------------------------------------------------
+  const risk = riskFactsOf(asked);
+  const enforceRoles = config.value('roles.enforceIssuance') !== false;
+  if (!enforceRoles && !risk) {
     log.debug('Leaving check(). Enforcement is switched off.');
     return allow('roles.enforceIssuance is off, so the decision was not ' +
                  'asked for.');
   }
-  if (!asked.application) {
+  if (!asked.application && !risk) {
     log.debug('Leaving check(). No application to decide about.');
     return allow('Nothing named an application, so there is no requirement ' +
                  'to check.');
   }
+  const question = Object.assign({}, asked, {
+    risk: risk,
+    rolesWaived: !enforceRoles || !asked.application
+  });
   let answer;
   try {
-    answer = decider(asked);
+    answer = decider(question);
   } catch (error) {
     // THE ONE PLACE THIS FAILS OPEN ON AN ERROR, and it is deliberate and
     // narrow. A THROW here is a defect in the PEP or the engine — not a Deny,
@@ -215,6 +238,35 @@ function check(request) {
 // Whether a subject name is a disabled account. Never throws: a reader that
 // cannot be loaded disables nobody, which is what a process without the
 // directory has always meant.
+// ---------------------------------------------------------------------------
+// THE RISK FACTS OF AN ISSUANCE (#62 P3). The caller's own, where it named
+// them — `startSession()` does, from the assessment it was handed, and an
+// explicit null means none. Otherwise `risk/risk_engine.ts` finds them: the
+// session's, where the caller passed it, or the person's standing held in
+// this process. Required LAZILY: the risk modules are built by the
+// composition root (18j) long after this leaf, and a process without them —
+// a test that loads the gate alone — has no facts, which decides on roles
+// alone. Synchronous, as `check()` must be.
+// ---------------------------------------------------------------------------
+function riskFactsOf(asked) {
+  log.debug("Entering riskFactsOf().");
+  if (Object.prototype.hasOwnProperty.call(asked, 'risk')) {
+    log.debug("Leaving riskFactsOf(). The caller's.");
+    return asked.risk || null;
+  }
+  let facts = null;
+  try {
+    facts = require('../risk/risk_engine').factsForIssuance(Object.assign({
+      realm: require('./realms').currentId() }, asked));
+  } catch (e) {
+    log.debug("Caught in riskFactsOf(): " + ((e && e.message) || e));
+    // No risk engine in this process: no facts, and the roles decide.
+    facts = null;
+  }
+  log.debug("Leaving riskFactsOf(). " + (facts ? facts.level : 'None.'));
+  return facts;
+}
+
 function disabledSubject(name) {
   log.debug("Entering disabledSubject().");
   let disabled = false;

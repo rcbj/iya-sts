@@ -938,9 +938,26 @@ class VcSignin {
       return;
     }
 
+    // THE RISK OF THIS SIGN-IN (#62 P3), assessed before any session and
+    // handed on: the issuance policy decides on it with the roles, and a
+    // step-up it names is asked for after the wallet, as a demanded second
+    // factor is.
+    const assessed = await authn.assessSignIn(req, username, VIA,
+      { application: record.application || '',
+        credential: { kind: 'wallet' } });
+
     // A SECOND FACTOR AFTER THE WALLET, where one is needed.
     const second = authn.beginSecondFactorAfterWallet(req, res, record,
-                                                      username, outcome);
+                                                      username, outcome,
+                                                      assessed);
+    if (second.refused && second.onRisk) {
+      errorCodes.mark(res, second.errorCode || 'STS-RISK-0016');
+      this.page(res, 403, 'Not signed in',
+        '<h1>Nobody was signed in</h1><div class="err" id="wallet-reason">' +
+        'Authentication failed.</div>' + this.fallbackHtml(record));
+      log.debug("Leaving VcSignin.finish(). Refused on risk.");
+      return;
+    }
     if (second.refused) {
       errorCodes.mark(res, 'STS-VC-0064');
       this.page(res, 403, 'Not permitted',
@@ -962,6 +979,8 @@ class VcSignin {
         request: req,
         // Which credential answered (#62 P0): a wallet presentation.
         credential: { kind: 'wallet' },
+        // The sign-in's assessment (#62 P3).
+        risk: assessed || undefined,
         application: record.application || '',
         protocol: 'OpenID4VP',
         method: 'a wallet: a ' + (outcome.format || 'dc+sd-jwt') +

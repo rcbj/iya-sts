@@ -612,9 +612,9 @@ function run(t) {
   t.log.info('I. status(), which is what an empty page has to say');
   // -----------------------------------------------------------------------
   const healthy = receivers.status(receivers.ADMIN);
-  t.equal(healthy.why.length, 0,
+  t.check(healthy.why.length === 0,
           'with everything on and a stream in place there is nothing to ' +
-          'explain');
+          'explain', JSON.stringify(healthy.why));
   config.setOverride('ssf.pushDelivery', 'false');
   const quiet = receivers.status(receivers.ADMIN);
   t.check(quiet.why.join(' ').indexOf('ssf.pushDelivery') >= 0,

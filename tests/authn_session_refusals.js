@@ -249,10 +249,11 @@ function childMain() {
         await new Promise(function (r) { setTimeout(r, 50); });
       }
     }
-    note(assessed && assessed.decision === 'observe' &&
+    note(assessed && /^(permit|observe)/.test(String(assessed.decision)) &&
          assessed.door && assessed.credentialKind === 'password',
-         'C7. the sign-in was assessed for risk — observed, with its door ' +
-         'and its credential — and decided nothing',
+         'C7. the sign-in was assessed for risk — with its door and its ' +
+         'credential — before its session, and the decision recorded on it ' +
+         '(#62 P3)',
          JSON.stringify(assessed && { level: assessed.level,
                                       door: assessed.door }));
 

@@ -11,13 +11,14 @@ what is not here yet.
 | `risk_datasets.ts` | The external datasets: the catalogue, the formats, import, verification, activation, rollback, deletion, retention, the dataset directory, lookups, and the two scheduler jobs. |
 | `risk_failures.ts` | Every refused password, attributed to a person or a name's digest and a network. |
 | `risk_model.ts` | **The Freeman et al. score, ported** from das-group's notebook (MIT; the notice is at its head and in `LICENSE.md`). Pure: it reads counts and answers a number. |
-| `risk_engine.ts` | **Assessing one sign-in**: enrichment, the device, the history read before it is moved, the model, the evaluators, the level, and every row it writes. Observe only. |
+| `risk_engine.ts` | **Assessing one sign-in**: enrichment, the device, the history read before it is moved, the model, the evaluators, the level, and every row it writes. Since P3 also the FACTS the issuance policy decides on (`factsOf()`, `factsForIssuance()`), the step-ups an authentication meets (`satisfiedBy()`), whether a risk Deny is enforced, each person's standing per process, and the decision written back onto the assessment (`settle()`). **It decides nothing itself**: the issuance policy does. |
 | `risk_terms.ts` | **Whose data, on what terms, and who accepted them**: the provider table, each provider's credit as its licence asks (`attributionOf()`), and the recorded acceptance without which no provider's data is imported. |
 | `risk_install.ts` | **The install-time loader**: an operator's CLI, not part of the running service, that pulls each dataset into the database under the provider terms the operator accepts by name. |
 
 `admin-ui/risk_admin.ts` is Monitoring → Risk; `/admin-api/risk` and
-`/admin-api/risk/:action` are its rule 7 twins. **Since P2 every sign-in is
-scored and recorded, and nothing is decided by a score**: that is P3.
+`/admin-api/risk/:action` are its rule 7 twins. **Since P3 (2026-09-22) the
+issuance policy decides on the score**: see *Risk is decided by the issuance
+policy*, below.
 
 ## Phases, and where this directory is
 
@@ -26,7 +27,9 @@ scored and recorded, and nothing is decided by a score**: that is P3.
 | P0 | **Done** (2026-09-22): every refused session answered (`authn/CLAUDE.md`), authentication events with context, JA4 on the main port (`tls/CLAUDE.md`). |
 | P1 | **Done**: schema version 7, the datasets, the failure history, the page. |
 | P2 | **Done** (2026-09-23): the model (a port of Freeman et al. from `das-group/rba-algorithm`, MIT), `sts_risk_assessments`, `sts_risk_feature_counts`, `sts_risk_subjects`, `sts_risk_session_context`, device signals (`bowser`, `isbot`). Observe only. |
-| P3–P6 | The decision through XACML, continuous evaluation, fetching, MDS3, fingerprinting — the plan comment. |
+| P3 | **Done** (2026-09-22): the risk facts in every issuance request, three risk rules in the built-in `role-issuance` policy, step-up at the doors that can ask, enforced in product and observed in development. The design change is on #62 (comment 5787912263). |
+| P4 | **Done** (2026-09-22): the `risk-response` policy and the reactions it permits, taken once per assessment; continuous evaluation of a live session's device, TLS client and network; the `risk.rescore` job; CAEP risk-level-change emitted on its own. |
+| P5–P6 | MDS3, fingerprinting and the breached-password filter — the plan comment. |
 
 ## THE LICENCE BOUNDARY: NOTHING THIRD-PARTY IS SHIPPED (2026-09-22)
 
@@ -260,6 +263,138 @@ row that shows a location), the dataset versions that answered, and the
 signals. `risk.assessmentRetentionDays` and `risk.historyRetentionDays` bound
 it, through the `risk.retention` job.
 
+## RISK IS DECIDED BY THE ISSUANCE POLICY (P3, 2026-09-22)
+
+**rcbj's directive: every authorization decision is XACML policy**, so the
+rules can be changed in `ou=policies` without a rebuild. So nothing in this
+directory decides anything. `risk_engine.ts` states FACTS, the embedded PEP
+(`xacml/xacml_role_pep.ts`) puts them in the ENVIRONMENT category of the
+issuance request every door already asks (`common/issuance_gate.js`), and the
+built-in `role-issuance` policy decides roles and risk in ONE evaluation. A
+separate `risk-decision` policy asked only at `startSession()` was the first
+design and was dropped the same day: one policy is what every session AND
+every token passes through.
+
+| Attribute (`xacml_templates.ts`'s `RISK_ATTRIBUTE`) | What |
+|---|---|
+| `urn:sts:xacml:risk-level` | LOW, MEDIUM, HIGH, UNSCORED |
+| `urn:sts:xacml:risk-score` | the score (absent for a first sign-in) |
+| `urn:sts:xacml:risk-signal` | a bag of `SIGNALS` keys that fired |
+| `urn:sts:xacml:risk-satisfied` | a bag: `second-factor` (acr `mfa`), `security-key` and `second-factor` (amr `hwk`) |
+
+**THE THREE RULES** are Deny rules ahead of the role rule, under
+ordered-deny-overrides, each carrying the obligation
+`urn:sts:xacml:obligation:risk` (`risk-action` refuse or step-up,
+`risk-step-up-factor`): HIGH refuses; MEDIUM with a key signal (template
+parameter `keySignals`, default `automated-client, new-tls-stack`) asks for a
+security key; any other MEDIUM asks for a second factor. **The obligation is
+how the PEP tells a risk Deny from a role Deny**, which matters twice: the
+risk one is only OBSERVED in development (`mode.observesRiskOnly()`,
+`risk.enforceInDevelopment`) — the PEP asks again without the facts and the
+roles decide — and only a risk Deny can be answered by a step-up.
+
+**UNKNOWN NEVER DENIES.** No assessment puts no attribute in the request, and
+every risk rule is then inapplicable: the datasets' rule carried into the
+decision.
+
+**WHERE THE FACTS COME FROM**, in the gate's order: the caller's own
+(`startSession()` hands in the assessment its door made BEFORE the session
+existed); the session the caller hands the gate (`session.risk`, what the
+sign-in established, with the session's own `amr`/`acr` — the authorization
+endpoint, the token endpoint by the grant's `sid`, SAML 2.0 and 1.1,
+WS-Federation, GNAP); otherwise the person's STANDING held in this process
+(`risk.standingValidMinutes`, `/admin/caches`' `risk.standings`) — which is
+all a Kerberos service ticket has, because the KDC is the parent's locked code
+and asks synchronously, and what WS-Trust reads from the store before it asks.
+**A standing held per process is a known gap**: a node that did not see the
+sign-in or read the store holds none, and decides that ticket on roles.
+
+**THE GATE'S TWO SHORTCUTS WAIVE THE ROLE QUESTION ONLY.** No application
+named, or `roles.enforceIssuance` off, used to answer "allowed" without
+asking; with risk facts the policy is asked with `rolesWaived`, and only a
+Deny about risk refuses. Either shortcut would otherwise be a way round every
+risk decision.
+
+**THE DOORS.** Each door that authenticates a person calls
+`authn.assessSignIn()` after the credential verifies and before
+`startSession()`:
+
+| Door | A step-up |
+|---|---|
+| the sign-in screen (`finishPasswordSignIn()`) | asked for there, as a configured second factor is; the assessment rides on the step and the finisher's session is decided on it again with both factors |
+| the wallet door (`beginSecondFactorAfterWallet()`) | asked for after the presentation |
+| `/oauth2/authorize` on an existing session | sends the person to re-authenticate with the factor demanded, RFC 9470's road |
+| SPNEGO, federation's ACS, WS-Trust, the token endpoint, the KDC | cannot ask: refused, unless the event already meets it (a ticket or an assertion claiming `mfa`) |
+| `GET /tls/sign-in` | not assessed before its session — it runs inside a realm switch an await could lose — so it is decided on the person's standing and assessed after, as in P2 |
+
+**A STEP-UP NEVER ENROLS.** A person holding nothing that answers the demand
+is refused (STS-RISK-0018), because an elevated risk suspects exactly the
+password-holder who would enrol their own authenticator.
+
+**A CLIENT IS TOLD NOTHING.** The PEP's refusal sentence is "Authentication
+failed." or "A stronger authentication is required." — issuance sites put
+`why` in an error_description, a SOAP fault or a SAML status — and the level,
+the signals and the assessment are on the audit row (STS-RISK-0016, -0017).
+
+**WHAT WAS DECIDED is written back onto the assessment** (`settle()`): the
+decision (`permit`, `step-up`, `refuse`, `observe:<action>`), the policy, the
+refusal's code and the session it became. An assessment made after the
+session (a door that assessed nothing) keeps `observe`.
+
+**A REALM OVERRIDE WRITTEN BEFORE P3 READS NO RISK ATTRIBUTE** and decides
+nothing on risk; `issuancePolicyState()` says so on the console rather than
+rewriting the operator's document.
+
+## A CHANGE OF RISK IS ANSWERED BY POLICY TOO (P4, 2026-09-22)
+
+**The reactions are rules**, for P3's reason: ending somebody's access is an
+authorization decision. When an assessment moves a person's standing
+(`sts_risk_subjects`) to a new level, `risk_engine.ts`'s `noteChange()` asks
+the built-in **`risk-response`** policy (`xacml/xacml_risk_pep.ts`,
+`xacml.riskResponsePolicy`) — ONCE PER REACTION, the action-id naming it
+(`RISK_RESPONSE` in `xacml_templates.ts`) and a Permit meaning do it:
+`risk-announce` (CAEP risk-level-change, `ssf.ts`'s `riskAutoEmit()`),
+`risk-end-sessions` (`account_state.endEverything()`),
+`risk-credential-compromise` (RISC, `account_signals.ts`) and `risk-disable`
+(`account_state.setDisabled()`, RISC reason `hijacking`). **Not one question
+with a list of obligations**: a combining algorithm that stops at its first
+Permit returns that rule's obligations only, and a reaction dropped by the
+combining is the worst way for this to fail.
+
+**The built-in document** announces every change but a person's first LOW
+(every new person's second sign-in), ends everything on crossing into HIGH,
+tells RISC on crossing into HIGH with a credential signal
+(`credentialSignals`, default `account-failures`), and **builds no disable
+rule** unless `disableFromScore` is given: a reaction an attacker can aim at
+somebody else is the operator's decision.
+
+**ONCE PER ASSESSMENT**: `claimAction()` records, per reaction, the
+assessment it was last taken for (`sts_risk_subjects.actions`; a
+conditional UPDATE on postgres), so a retry or a second node answering the
+same change takes nothing. **Development announces and observes the rest**
+(`enforced()`), one `risk.response` audit row either way.
+
+**A reaction happens only where somebody proved the password**: a sign-in is
+assessed after its credential verified, so an attacker who knows a name and
+not the password cannot end its owner's sessions by signing in badly.
+
+**CONTINUOUS EVALUATION.** `authn.ts`'s `sessionOf()` compares every
+presented session with the authentication it rests on — the device FAMILY
+(`familyOf()`: browser and OS without versions, carried on `session.risk`),
+the JA4 and the /24 or /48 — and on a change assesses it again in the
+background, `phase: 'session'`: scored against the history and NOT counted
+into it, since a replayed cookie's context is not where the person signs
+in. The answer becomes `session.risk` (`adoptSessionRisk()`). A context is
+assessed once (`riskDriftKey`). A browser updating itself is not a new
+device; that was the first false positive the test found.
+
+**THE `risk.rescore` JOB** (`risk.rescoreEveryS`, a cluster job) re-checks
+every live session against the lists and the failure history and RAISES one
+that gained a signal (`rescoreSession()`, `phase: 'rescore'`) — never lowers
+it: a list that rotated an address out is not a reason to trust a session
+more than its sign-in did. The device and the model cannot move without a
+request, which is continuous evaluation's business.
+
 ## THE REQUIRE ORDER, AND THE TRAP IT HIT
 
 The four libraries and the page are built at **18j** in
@@ -288,6 +423,18 @@ hit the same trap through `request_pool.js` in P0.
   HIGH, nothing kept in the clear, the standing and the session context, and
   never a rejection. `tests/authn_session_refusals.js` C7: a real sign-in is
   assessed.
+* `tests/risk_decisions.js` (P3) — the built-in policy and its XML round trip,
+  every decision through the gate, the two shortcuts, facts from the session
+  and from the standing, development observing, and over HTTP: a step-up
+  refused for a person with no factor, answered with a code by one who has
+  one, a session at HIGH issued no code, a MEDIUM session with a device
+  signal sent back for a key, an operator deny list refused — and observed
+  in development.
+* `tests/risk_response.js` (P4) — the `risk-response` policy in both shapes
+  and its round trips, its decisions, sessions ended once per assessment,
+  development observing, a realm override that disables, CAEP's new act, a
+  browser update not assessed and a replayed cookie assessed and ended, and
+  the rescore job raising a session whose address became a Tor exit.
 
 **Not tested yet**: a real DB-IP or IPinfo release at full size — and it will
 not be tested with one in this repository, because none may be committed; a

@@ -171,6 +171,78 @@ const ISSUANCE_ATTRIBUTE = {
 };
 
 // ---------------------------------------------------------------------------
+// THE ATTRIBUTE VOCABULARY OF A RISK DECISION (#62 P3, 2026-09-22).
+//
+// rcbj's directive that day: EVERY AUTHORIZATION DECISION IS POLICY, so the
+// rules can be changed in `ou=policies` without a rebuild. `risk/` supplies
+// FACTS about the authentication an issuance rests on; the issuance policy
+// below DECIDES on them, in the same evaluation that decides the roles. The
+// facts are on the ENVIRONMENT category because they are about the
+// circumstances of this request — where it came from, over what, after how
+// many refused passwords — and neither the subject's standing attributes nor
+// the resource's. URI-shaped for `ISSUANCE_ATTRIBUTE`'s reason: a bare name
+// would send the PIP to the directory.
+//
+// **AN ABSENT LEVEL IS NOT A LEVEL.** No assessment — a first sign-in's
+// UNSCORED is still sent, but a door that could not score, a stale dataset or
+// the engine switched off sends nothing — makes every risk rule below
+// inapplicable, so unknown never denies. That is the datasets' rule
+// (`risk/CLAUDE.md`) carried into the decision.
+// ---------------------------------------------------------------------------
+const RISK_ATTRIBUTE = {
+  // LOW, MEDIUM, HIGH or UNSCORED — CAEP's own words, plus the one for a
+  // first sign-in with nothing to compare it to.
+  LEVEL: 'urn:sts:xacml:risk-level',
+  // The score the level was read from: the model's times every evaluator's
+  // factor. A double, for a policy that wants a threshold of its own.
+  SCORE: 'urn:sts:xacml:risk-score',
+  // A BAG: every evaluator that fired (`risk_engine.ts`'s SIGNALS keys —
+  // tor-exit, reputation, operator-deny, operator-allow, automated-client,
+  // new-tls-stack, account-failures, network-failures).
+  SIGNAL: 'urn:sts:xacml:risk-signal',
+  // A BAG: the step-ups the authentication ALREADY meets — `second-factor`
+  // when it carried two (acr `mfa`), `security-key` when one of them was a
+  // WebAuthn key (amr `hwk`). Computed from the session's events at each
+  // decision, so a re-authentication with a key moves it at once.
+  SATISFIED: 'urn:sts:xacml:risk-satisfied',
+  // The obligation every risk rule carries, and its two assignments. It is
+  // how the PEP tells a Deny about RISK from a Deny about ROLES — they are
+  // enforced differently (a step-up, and observe-only in development) — and
+  // what it reads to know which factor to ask for.
+  OBLIGATION: 'urn:sts:xacml:obligation:risk',
+  ACTION: 'urn:sts:xacml:risk-action',
+  FACTOR: 'urn:sts:xacml:risk-step-up-factor',
+  // The level the person's standing moved FROM (#62 P4) — the
+  // `risk-response` policy's question is about a CHANGE, and a level with
+  // nothing to compare it to is the person's first. Absent then.
+  PREVIOUS_LEVEL: 'urn:sts:xacml:risk-previous-level'
+};
+
+// ---------------------------------------------------------------------------
+// WHAT A CHANGE OF RISK CAN LEAD TO (#62 P4, 2026-09-22) — the action-ids the
+// `risk-response` policy is asked about, one question per reaction. A Permit
+// means DO IT. Asked one at a time rather than as one question whose Permit
+// carries a list of obligations, because a combining algorithm that stops at
+// its first Permit returns that rule's obligations and no other's, and a
+// reaction silently dropped by the combining is the worst way for this to
+// fail. One question per reaction also reads in the policy as what it is: a
+// rule per thing that happens.
+// ---------------------------------------------------------------------------
+const RISK_RESPONSE = {
+  // CAEP risk-level-change, to every stream that takes it — this service's
+  // own console and portal among them (their signal inboxes).
+  ANNOUNCE: 'risk-announce',
+  // End everything the person holds: every session, every token, the
+  // back-channel Logout Tokens.
+  END_SESSIONS: 'risk-end-sessions',
+  // RISC credential-compromise: the evidence is about a CREDENTIAL, so the
+  // relying parties are told it is no longer to be trusted.
+  CREDENTIAL_COMPROMISE: 'risk-credential-compromise',
+  // Disable the account (pwdAccountLockedTime), RISC reason `hijacking`.
+  DISABLE: 'risk-disable'
+};
+
+// ---------------------------------------------------------------------------
 // SMALL MODEL BUILDERS.
 //
 // Named for what they produce rather than for the element they emit, because
@@ -303,14 +375,20 @@ const TEMPLATES: TemplateRow[] = [
     label: 'Role-based issuance (this service\'s own)',
     blurb: 'The policy the embedded PEP asks before this service issues ' +
            'anything: the party being authenticated must hold one of the ' +
-           'roles the application requires.',
+           'roles the application requires, and the authentication must not ' +
+           'be too risky (#62).',
     what: 'Produces ONE Permit rule whose condition is an intersection test ' +
           'between the roles the subject holds and the roles the resource ' +
           'requires — plus the same test against the roles found in a ' +
           'PRESENTED TOKEN\'s claim, and a permit for an application that ' +
-          'requires nothing at all. The combining algorithm is ' +
-          'deny-unless-permit, so anything the rule does not permit is ' +
-          'refused rather than left to the PEP\'s bias. Because the ' +
+          'requires nothing at all — and, with `decideRisk`, three Deny ' +
+          'rules on the risk of the authentication (HIGH refused, MEDIUM ' +
+          'refused until a step-up), each carrying an obligation that says ' +
+          'what to ask for. The combining algorithm is ' +
+          'ordered-deny-overrides with the risk rules and ' +
+          'deny-unless-permit without, so either way anything the role rule ' +
+          'does not permit is refused rather than left to the PEP\'s bias, ' +
+          'and a risk Deny wins over a role Permit. Because the ' +
           'requirement travels in the REQUEST rather than being written into ' +
           'the policy, this one document decides for every application, and ' +
           'narrowing an application is editing its entry rather than editing ' +
@@ -333,13 +411,32 @@ const TEMPLATES: TemplateRow[] = [
               'given EVERYBODY by the registry, so this arm is a belt-and- ' +
               'braces answer for a request that carries no requirement at ' +
               'all — a PEP written by somebody else, or this one after a ' +
-              'future change. Saying no makes such a request a Deny.' }
+              'future change. Saying no makes such a request a Deny.' },
+      { name: 'decideRisk',
+        label: 'Decide on the risk of the authentication (#62)',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, the three risk rules are in the ' +
+              'document: HIGH is refused, and MEDIUM is refused until the ' +
+              'authentication carries the step-up the obligation names. ' +
+              'Saying no builds the roles-only policy this was before risk ' +
+              'scoring decided anything — assessments are still recorded.' },
+      { name: 'keySignals',
+        label: 'Signals that demand a SECURITY KEY at MEDIUM',
+        dflt: 'automated-client, new-tls-stack', type: 'string',
+        help: 'The risk signals, comma separated, that are about the DEVICE ' +
+              'or the TLS client rather than the network. At MEDIUM with ' +
+              'one of them, a second factor is not enough: an attacker ' +
+              'relaying a person\'s one-time code from another machine ' +
+              'passes a code, and cannot pass a WebAuthn ceremony bound to ' +
+              'this origin. Empty makes every MEDIUM a second-factor step-up.' }
     ],
     build: function (answers, options) {
       log.debug('Entering buildRoleIssuance().');
       const given = answers || {};
       const useTokenRoles = B.yes(given.allowTokenRoles, true);
       const permitEmpty = B.yes(given.permitWhenNothingRequired, true);
+      const decideRisk = B.yes(given.decideRisk, true);
+      const keySignals = B.listOf(given.keySignals);
 
       // THE INTERSECTION TEST, and it is a HIGHER-ORDER function because that
       // is the only way XACML expresses "do these two bags share a member".
@@ -379,7 +476,93 @@ const TEMPLATES: TemplateRow[] = [
       const condition = arms.length === 1 ? arms[0]
         : B.apply(F1 + 'or', arms);
 
-      log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s).');
+      // -------------------------------------------------------------------
+      // THE RISK RULES (#62 P3, 2026-09-22). Deny rules, each carrying the
+      // `RISK_ATTRIBUTE.OBLIGATION` that says refuse or step up and with
+      // what, and MUTUALLY EXCLUSIVE by construction — HIGH, MEDIUM with a
+      // key signal, MEDIUM without one — so a Deny carries exactly one
+      // instruction. Under ordered-deny-overrides a risk Deny beats the role
+      // Permit, and a request no rule speaks to is still refused, as it was
+      // under deny-unless-permit: NotApplicable is not a Permit to the PEP.
+      // -------------------------------------------------------------------
+      const env = model.CATEGORY.ENVIRONMENT;
+      const levelIs = function (level: string): any {
+        log.debug("Entering levelIs().");
+        log.debug("Leaving levelIs().");
+        return B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, level),
+          B.designator(env, RISK_ATTRIBUTE.LEVEL, TYPE.STRING)]);
+      };
+      const satisfied = function (factor: string): any {
+        log.debug("Entering satisfied().");
+        log.debug("Leaving satisfied().");
+        return B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, factor),
+          B.designator(env, RISK_ATTRIBUTE.SATISFIED, TYPE.STRING)]);
+      };
+      const obligation = function (action: string, factor: string): any {
+        log.debug("Entering obligation().");
+        const assignments = [{ attributeId: RISK_ATTRIBUTE.ACTION,
+          category: null, issuer: null,
+          expression: B.value(TYPE.STRING, action) }];
+        if (factor) {
+          assignments.push({ attributeId: RISK_ATTRIBUTE.FACTOR,
+            category: null, issuer: null,
+            expression: B.value(TYPE.STRING, factor) });
+        }
+        log.debug("Leaving obligation().");
+        return [{ id: RISK_ATTRIBUTE.OBLIGATION, on: model.EFFECT.DENY,
+                  assignments: assignments }];
+      };
+      const keySignal = keySignals.length
+        ? B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(env, RISK_ATTRIBUTE.SIGNAL, TYPE.STRING),
+          B.apply(F1 + 'string-bag', keySignals.map(function (one) {
+            return B.value(TYPE.STRING, one);
+          }))])
+        : null;
+      const riskRules: any[] = [];
+      if (decideRisk) {
+        riskRules.push({
+          id: options.idBase + ':rule:risk-high',
+          effect: model.EFFECT.DENY,
+          description: 'Refuse an authentication whose risk is HIGH, ' +
+                       'whatever roles the subject holds and however many ' +
+                       'factors it presented.',
+          target: null, condition: levelIs('HIGH'),
+          obligations: obligation('refuse', ''), advice: []
+        });
+        if (keySignal) {
+          riskRules.push({
+            id: options.idBase + ':rule:risk-medium-key',
+            effect: model.EFFECT.DENY,
+            description: 'At MEDIUM, with a signal about the device or the ' +
+                         'TLS client, refuse until the authentication used ' +
+                         'a SECURITY KEY — the obligation asks for one.',
+            target: null,
+            condition: B.apply(F1 + 'and', [levelIs('MEDIUM'), keySignal,
+              B.apply(F1 + 'not', [satisfied('security-key')])]),
+            obligations: obligation('step-up', 'security-key'), advice: []
+          });
+        }
+        const secondFactor = [levelIs('MEDIUM'),
+          B.apply(F1 + 'not', [satisfied('second-factor')])];
+        if (keySignal) {
+          secondFactor.push(B.apply(F1 + 'not', [keySignal]));
+        }
+        riskRules.push({
+          id: options.idBase + ':rule:risk-medium-second-factor',
+          effect: model.EFFECT.DENY,
+          description: 'At MEDIUM, refuse until the authentication carried ' +
+                       'a SECOND FACTOR — the obligation asks for one.',
+          target: null, condition: B.apply(F1 + 'and', secondFactor),
+          obligations: obligation('step-up', 'second-factor'), advice: []
+        });
+      }
+
+      log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s), ' +
+                riskRules.length + ' risk rule(s).');
       return {
         kind: 'Policy',
         id: options.idBase,
@@ -397,10 +580,22 @@ const TEMPLATES: TemplateRow[] = [
                      (permitEmpty
                         ? ', or when the application requires nothing at all'
                         : '') +
-                     '. Everything else is denied, because the combining ' +
-                     'algorithm is deny-unless-permit and an issuance ' +
-                     'decision must not depend on a PEP\'s bias.',
-        combiningAlgId: model.RULE_ALG.DENY_UNLESS_PERMIT,
+                     '. Everything else is denied: an issuance decision ' +
+                     'must not depend on a PEP\'s bias.' +
+                     (decideRisk
+                        ? ' AND IT DECIDES ON RISK (#62): an authentication ' +
+                          'whose risk is HIGH is refused, and one at MEDIUM ' +
+                          'is refused until it carries the step-up the risk ' +
+                          'obligation names' + (keySignals.length
+                            ? ' — a security key where a signal is about the ' +
+                              'device or TLS client (' + keySignals.join(', ') +
+                              '), a second factor otherwise'
+                            : ' — a second factor') + '. The risk rules deny ' +
+                          'and override the role rule; an authentication ' +
+                          'with no assessment is decided on roles alone.'
+                        : '') ,
+        combiningAlgId: decideRisk ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
+                                   : model.RULE_ALG.DENY_UNLESS_PERMIT,
         // NO TARGET, and that is deliberate rather than an omission: this
         // document is evaluated by ONE caller that only ever asks about an
         // issuance, so a target restating that could only ever refuse a
@@ -409,7 +604,7 @@ const TEMPLATES: TemplateRow[] = [
         // explain.
         target: null,
         variables: {},
-        rules: [{
+        rules: riskRules.concat([{
           id: options.idBase + ':rule:holds-a-required-role',
           effect: model.EFFECT.PERMIT,
           description: 'Permit when the roles the subject holds and the ' +
@@ -417,7 +612,167 @@ const TEMPLATES: TemplateRow[] = [
           target: null,
           condition: condition,
           obligations: [], advice: []
-        }],
+        }]),
+        obligations: [], advice: []
+      };
+    }
+  },
+  {
+    // -----------------------------------------------------------------------
+    // THE RISK RESPONSE POLICY (#62 P4, 2026-09-22) — the third of this
+    // service's own, and like the other two built in rather than seeded.
+    //
+    // `role-issuance` decides what is ISSUED on an authentication's risk.
+    // This decides what HAPPENS when a person's risk CHANGES: whether the
+    // change is announced (CAEP risk-level-change), whether everything they
+    // hold is ended, whether RISC is told a credential is compromised, and
+    // whether the account is disabled. rcbj's directive is that every
+    // authorization decision is policy, and ending someone's access is one.
+    //
+    // `xacml/xacml_risk_pep.ts` asks it once per reaction (`RISK_RESPONSE`'s
+    // action-ids) with the person as the subject and the change as the
+    // environment; a Permit means do it. deny-unless-permit, so a reaction no
+    // rule speaks to does not happen.
+    //
+    // **DISABLING IS OFF UNTIL SOMEBODY BUILDS IT IN.** The rule exists only
+    // when `disableFromScore` is given: locking a person out on a score is the
+    // one reaction an attacker can aim at somebody else (sign in as them from
+    // a Tor exit, repeatedly), so it is the operator's decision, made in the
+    // policy, with the threshold written where it is read.
+    // -----------------------------------------------------------------------
+    id: 'risk-response',
+    label: 'Risk response (this service\'s own)',
+    blurb: 'What happens when a person\'s risk level changes: announced ' +
+           'over CAEP, everything they hold ended at HIGH, RISC told when ' +
+           'the evidence is about a credential, and — only if you set a ' +
+           'score — the account disabled.',
+    what: 'Produces one Permit rule per reaction, each for its own ' +
+          'action-id (risk-announce, risk-end-sessions, ' +
+          'risk-credential-compromise, risk-disable), under ' +
+          'deny-unless-permit. The embedded PEP asks one question per ' +
+          'reaction with the person as the subject and the change — the ' +
+          'level, the level before, the score and the signals — as the ' +
+          'environment.',
+    parameters: [
+      { name: 'credentialSignals',
+        label: 'Signals that are evidence about a CREDENTIAL',
+        dflt: 'account-failures', type: 'string',
+        help: 'Comma separated. Crossing into HIGH with one of them sends ' +
+              'RISC credential-compromise: the password is being guessed or ' +
+              'has been, and relying parties should stop trusting it.' },
+      { name: 'disableFromScore',
+        label: 'Disable the account from this score (empty: never)',
+        dflt: '', type: 'string',
+        help: 'A number. Empty builds no disable rule at all, which is the ' +
+              'default: an attacker who can make somebody\'s sign-ins look ' +
+              'risky could otherwise lock them out. With a value, crossing ' +
+              'into HIGH at that score or above disables the account, with ' +
+              'RISC reason hijacking.' }
+    ],
+    build: function (answers, options) {
+      log.debug('Entering buildRiskResponse().');
+      const given = answers || {};
+      const credentialSignals = B.listOf(given.credentialSignals);
+      const disableFrom = String(given.disableFromScore || '').trim();
+      const env = model.CATEGORY.ENVIRONMENT;
+      const actionIs = function (action: string): any {
+        log.debug("Entering actionIs().");
+        log.debug("Leaving actionIs().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, action),
+          B.designator(model.CATEGORY.ACTION, model.ATTRIBUTE.ACTION_ID,
+                       TYPE.STRING)]);
+      };
+      const levelIs = function (id: string, level: string): any {
+        log.debug("Entering levelIs().");
+        log.debug("Leaving levelIs().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, level),
+          B.designator(env, id, TYPE.STRING)]);
+      };
+      const crossedIntoHigh = [levelIs(RISK_ATTRIBUTE.LEVEL, 'HIGH'),
+        B.apply(F1 + 'not', [levelIs(RISK_ATTRIBUTE.PREVIOUS_LEVEL, 'HIGH')])];
+      const rule = function (slug: string, description: string,
+                             conjuncts: any[]): any {
+        log.debug("Entering rule().");
+        log.debug("Leaving rule().");
+        return { id: options.idBase + ':rule:' + slug,
+                 effect: model.EFFECT.PERMIT, description: description,
+                 target: null,
+                 condition: B.apply(F1 + 'and', conjuncts),
+                 obligations: [], advice: [] };
+      };
+      const rules = [
+        rule('announce', 'Announce every change of level over CAEP ' +
+             '(risk-level-change): a level is known, it is not the level ' +
+             'before, and it is not a person\'s FIRST level being LOW — ' +
+             'every new person\'s second sign-in is that, and announcing ' +
+             'it would be noise a receiver learns to ignore.', [
+          actionIs(RISK_RESPONSE.ANNOUNCE),
+          B.apply(F1 + 'or', [
+            B.apply(F1 + 'integer-equal', [
+              B.apply(F1 + 'string-bag-size', [
+                B.designator(env, RISK_ATTRIBUTE.PREVIOUS_LEVEL,
+                             TYPE.STRING)]),
+              B.value(TYPE.INTEGER, '1')]),
+            B.apply(F1 + 'not', [levelIs(RISK_ATTRIBUTE.LEVEL, 'LOW')])]),
+          B.apply(F1 + 'integer-equal', [
+            B.apply(F1 + 'string-bag-size', [
+              B.designator(env, RISK_ATTRIBUTE.LEVEL, TYPE.STRING)]),
+            B.value(TYPE.INTEGER, '1')]),
+          B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(env, RISK_ATTRIBUTE.LEVEL, TYPE.STRING),
+            B.designator(env, RISK_ATTRIBUTE.PREVIOUS_LEVEL, TYPE.STRING)])])
+        ]),
+        rule('end-sessions', 'On crossing into HIGH, end everything the ' +
+             'person holds.',
+             [actionIs(RISK_RESPONSE.END_SESSIONS)].concat(crossedIntoHigh))
+      ];
+      if (credentialSignals.length) {
+        rules.push(rule('credential-compromise', 'On crossing into HIGH on ' +
+          'evidence about a credential (' + credentialSignals.join(', ') +
+          '), tell RISC the credential is compromised.',
+          [actionIs(RISK_RESPONSE.CREDENTIAL_COMPROMISE)]
+            .concat(crossedIntoHigh).concat([
+              B.apply(F3 + 'any-of-any', [
+                { kind: 'function', functionId: F1 + 'string-equal' },
+                B.designator(env, RISK_ATTRIBUTE.SIGNAL, TYPE.STRING),
+                B.apply(F1 + 'string-bag',
+                        credentialSignals.map(function (one) {
+                          return B.value(TYPE.STRING, one);
+                        }))])])));
+      }
+      if (disableFrom && isFinite(Number(disableFrom))) {
+        rules.push(rule('disable', 'On crossing into HIGH at a score of ' +
+          disableFrom + ' or more, disable the account.',
+          [actionIs(RISK_RESPONSE.DISABLE)].concat(crossedIntoHigh).concat([
+            B.apply(F1 + 'double-greater-than-or-equal', [
+              B.apply(F1 + 'double-one-and-only', [
+                B.designator(env, RISK_ATTRIBUTE.SCORE, TYPE.DOUBLE)]),
+              B.value(TYPE.DOUBLE, String(Number(disableFrom)))])])));
+      }
+      log.debug('Leaving buildRiskResponse(). ' + rules.length + ' rule(s).');
+      return {
+        kind: 'Policy',
+        id: options.idBase,
+        version: '1.0',
+        description: 'THE RISK RESPONSE POLICY. The embedded PEP asks it, ' +
+                     'once per reaction, when a person\'s risk level ' +
+                     'changes. It announces every change over CAEP, ends ' +
+                     'everything the person holds on crossing into HIGH' +
+                     (credentialSignals.length
+                        ? ', tells RISC a credential is compromised when the ' +
+                          'evidence is about one (' +
+                          credentialSignals.join(', ') + ')'
+                        : '') +
+                     (disableFrom
+                        ? ', and disables the account from a score of ' +
+                          disableFrom
+                        : ', and never disables the account') +
+                     '. Anything no rule permits does not happen.',
+        combiningAlgId: model.RULE_ALG.DENY_UNLESS_PERMIT,
+        target: null,
+        variables: {},
+        rules: rules,
         obligations: [], advice: []
       };
     }
@@ -992,6 +1347,8 @@ const TEMPLATES: TemplateRow[] = [
 
 class XacmlTemplates {
   static readonly ISSUANCE_ATTRIBUTE = ISSUANCE_ATTRIBUTE;
+  static readonly RISK_ATTRIBUTE = RISK_ATTRIBUTE;
+  static readonly RISK_RESPONSE = RISK_RESPONSE;
   static readonly TEMPLATES = TEMPLATES;
 
   constructor(private readonly deps: XacmlTemplatesDeps) {
@@ -1103,6 +1460,8 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   PolicyBuilders: PolicyBuilders,
   ISSUANCE_ATTRIBUTE: XacmlTemplates.ISSUANCE_ATTRIBUTE,
+  RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
+  RISK_RESPONSE: XacmlTemplates.RISK_RESPONSE,
   TEMPLATES: XacmlTemplates.TEMPLATES,
   lookup: slot.forward('lookup'),
   build: slot.forward('build'),
