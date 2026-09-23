@@ -9900,6 +9900,41 @@ const CODES = [
       '(--check-terms) and it differs from the page seen at the last ' +
       'acceptance: read it before relying on the acceptance.',
     spec: '' },
+  { code: 'STS-RISK-0016',
+    summary: 'An issuance was REFUSED on risk: the issuance policy denied ' +
+      'it with the risk obligation\'s `refuse` — by default, an ' +
+      'authentication whose risk is HIGH. The client is told only that ' +
+      'authentication failed.',
+    spec: '' },
+  { code: 'STS-RISK-0017',
+    summary: 'An issuance was refused UNTIL A STEP-UP: the issuance policy ' +
+      'denied it with the risk obligation\'s `step-up` (a second factor or ' +
+      'a security key) and the door could not ask for it — a token ' +
+      'endpoint, WS-Trust, the KDC, a federated or certificate sign-in, or ' +
+      'a screen whose person holds no such factor.',
+    spec: '' },
+  { code: 'STS-RISK-0018',
+    summary: 'A step-up on risk was asked of a person who holds no factor ' +
+      'that answers it. Refused rather than offered enrolment: enrolling a ' +
+      'new factor under an elevated risk is how an attacker holding the ' +
+      'password would get one.',
+    spec: '' },
+  { code: 'STS-RISK-0019',
+    summary: 'In development mode (observe only) the issuance policy would ' +
+      'have refused on risk, and did not: the decision is recorded on the ' +
+      'assessment and the issuance went ahead. risk.enforceInDevelopment ' +
+      'turns enforcement on.',
+    spec: '' },
+  { code: 'STS-RISK-0020',
+    summary: 'A person\'s risk level changed and no reaction could be ' +
+      'decided: the risk-response policy is disabled or does not load. The ' +
+      'change is recorded; nothing is announced, ended or disabled.',
+    spec: '' },
+  { code: 'STS-RISK-0021',
+    summary: 'A reaction the risk-response policy permitted (announce, end ' +
+      'sessions, RISC credential-compromise, disable) failed part-way. The ' +
+      'others were still taken; the change of risk is recorded.',
+    spec: '' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

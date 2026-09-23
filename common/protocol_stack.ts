@@ -1149,6 +1149,10 @@ class ProtocolStack {
                'XacmlRolePep');
     this.build('xacml/xacml_access_pep', require('../xacml/xacml_access_pep'),
                'XacmlAccessPep');
+    // The risk-response PEP (#62 P4): a library the risk engine reaches
+    // lazily when a person's risk changes. Built here, with its siblings.
+    this.build('xacml/xacml_risk_pep', require('../xacml/xacml_risk_pep'),
+               'XacmlRiskPep');
     this.build('xacml/xacml', require('../xacml/xacml'), 'XacmlSurface');
     this.register(app, require('../xacml/xacml_admin'), 'xacml/xacml_admin');
     this.register(app, require('../xacml/xacml'), 'xacml/xacml');

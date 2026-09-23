@@ -3980,14 +3980,22 @@ class OAuth2Server {
   }
 
   private checkIssuance(opts: Json): Json {
-    const { log, gate } = this.deps;
+    const { log, gate, authn } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.checkIssuance(). client_id=" +
               opts.client_id);
     const subject = self.issuanceSubjectOf(opts);
     const kinds = self.issuanceKindsOf(opts);
+    // THE SESSION THESE TOKENS REST ON (#62 P3), where they name one: its
+    // risk and its factors are what the issuance policy decides the risk
+    // question on, so a code redeemed or a token refreshed on a session its
+    // sign-in left at HIGH is refused here as the session itself would be.
+    // Without one — client credentials, a grant with nobody behind it — the
+    // gate finds the person's standing, or nothing.
+    const held = opts.session_id ? authn.sessionById(String(opts.session_id))
+                                 : null;
     for (let i = 0; i < kinds.length; i += 1) {
-      const answer = gate.check({
+      const answer = gate.check(Object.assign({
         application: String(opts.client_id || ''),
         kind: kinds[i],
         subject: subject,
@@ -3995,7 +4003,7 @@ class OAuth2Server {
         // on one. A refresh and a token exchange both are, and the roles claim
         // in either is what the issuance policy's second arm reads.
         claims: opts.presentedClaims || null
-      });
+      }, held ? { session: held } : {}));
       if (!answer.allowed) {
         log.debug("Leaving OAuth2Server.checkIssuance(). Refused: " + kinds[i]);
         throw new IssuanceRefused(log, answer, kinds[i]);
@@ -5739,8 +5747,40 @@ class OAuth2Server {
       // the field existed meaning what it meant.
       subject: { kind: 'user', name: String(user.username || ''),
                  authenticated: (authInfo || {}).authenticated !== false },
-      claims: null
+      claims: null,
+      // The session this response is issued on, whose risk the policy reads
+      // (#62 P3).
+      session: authInfo || null
     });
+    // -----------------------------------------------------------------------
+    // A STEP-UP ON RISK IS A SIGN-IN, NOT AN ERROR (#62 P3). The policy
+    // denied on the risk of the session this response would rest on and
+    // named a factor; the person is here, in a browser, so they are sent to
+    // re-authenticate with that factor demanded — the same road RFC 9470's
+    // step-up takes, back to this same request — rather than handed an
+    // access_denied the client can do nothing about. A person holding no
+    // such factor is refused at the screen (STS-RISK-0018), and a session
+    // the re-authentication met is permitted when the request comes round.
+    // -----------------------------------------------------------------------
+    if (!roleAnswer.allowed && roleAnswer.risk &&
+        roleAnswer.risk.action === 'step-up' && !roleAnswer.risk.observed &&
+        (authInfo || {}).authenticated !== false) {
+      errorCodes.mark(res, 'STS-RISK-0017');
+      log.info('oauth2: the issuance policy asks for a ' +
+               roleAnswer.risk.factor + ' on the risk of the session of "' +
+               String(user.username || '') + '"; sent to re-authenticate.');
+      log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). A " +
+                "step-up on risk.");
+      return res.redirect(302, this.deps.authn.beginAuthentication({
+        returnTo: self.asPathOf(req) + '/oauth2/authorize?' +
+                  self.authorizationReturnQuery(req, query),
+        hint: String(user.username || ''),
+        forceMfa: roleAnswer.risk.factor === 'second-factor',
+        forceKey: roleAnswer.risk.factor === 'security-key',
+        protocol: 'OAuth 2.0 / OIDC',
+        application: String(query.client_id || '')
+      }));
+    }
     if (!roleAnswer.allowed) {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). The " +
                 "issuance policy refused it.");

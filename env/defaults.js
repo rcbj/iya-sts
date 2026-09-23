@@ -134,6 +134,7 @@ var config = {
     pepNotifySkipTlsVerification: false, // Skip TLS verification for a nudge (development only)
     pepNotifyCaFile: "",                 // CA certificates for a nudge
     pepNotifyTimeoutMs: 2000,            // Nudge timeout (ms)
+    riskResponsePolicy: "risk-response", // The policy a change of risk is answered with
     issuancePolicy: "role-issuance"      // The policy issuance decisions are made with
   },
 
@@ -784,7 +785,7 @@ var config = {
   caep: {
     enabled: true,                                                                                                                                                                    // CAEP enabled
     autoEmit: true,                                                                                                                                                                   // Emit events when something really happens
-    autoEmitTypes: "session-established,session-presented,session-revoked,credential-change,assurance-level-change,token-claims-change",                                              // Which acts emit automatically
+    autoEmitTypes: "session-established,session-presented,session-revoked,credential-change,assurance-level-change,token-claims-change,risk-level-change",                            // Which acts emit automatically
     eventsSupported: "session-revoked,session-established,session-presented,token-claims-change,credential-change,assurance-level-change,device-compliance-change,risk-level-change", // CAEP event types offered
     assuranceNamespace: "NIST-AAL",                                                                                                                                                   // Assurance namespace
     defaultRiskLevel: "MEDIUM",                                                                                                                                                       // Default risk level
@@ -807,6 +808,10 @@ var config = {
     recordFailures: true,          // Record attributable failures
     failureRetentionDays: 30,      // Keep failures (days)
     assessSignIns: true,           // Assess every sign-in
+    enforceInDevelopment: false,   // Enforce risk decisions in development mode
+    standingValidMinutes: 720,     // A person's standing answers for (minutes)
+    rescoreEveryS: 300,            // Re-check live sessions every (seconds)
+    standingCacheSize: 20000,      // People whose standing each process holds
     mediumScorePercent: 100,       // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,        // HIGH from (percent of a score of 1)
     assessmentRetentionDays: 90,   // Keep assessments (days)
