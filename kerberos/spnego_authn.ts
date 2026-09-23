@@ -525,6 +525,8 @@ class SpnegoAuthn {
                                        VIA,
                                        Object.assign({
                                          request: req,
+                                         // Which credential answered (#62).
+                                         credential: { kind: 'kerberos' },
                                          application: record ?
                                            (record.application || '') : ''
                                        }, detail));

@@ -270,6 +270,11 @@ const SUBSYSTEMS = [
     where: 'ssf/',
     what: 'Streams, subjects, delivery by push and poll, the receivers this ' +
           'service registers for itself, and the outbound push.' },
+  { id: 'RISK', label: 'Risk scoring',
+    where: 'risk/, admin-ui/risk_admin.ts',
+    what: 'The external datasets a risk score reads — their import, ' +
+          'verification, activation, rollback and retention — and the ' +
+          'attributable failure history (#62).' },
   { id: 'GNAP', label: 'GNAP (RFC 9635 / RFC 9767)',
     where: 'gnap/',
     what: 'The grant request and continuation endpoints; interaction ' +
@@ -3970,9 +3975,14 @@ const CODES = [
       'signed authorization request to /oauth2/par, so its sign-in could ' +
       'not start (#139).',
     spec: 'the console\'s, portal\'s or debugger\'s sign-in refusal page' },
+  { code: 'STS-AUTHN-0212',
+    summary: 'A passwordless security-key sign-in was asked for at the ' +
+      'sign-in screen federation\'s link-at-first-sign-in draws, which ' +
+      'signs in with the password (#109).',
+    spec: 'HTTP 200 sign-in screen with an error' },
   // SECOND FACTORS AT THE PASSWORD-ONLY DOORS, AND APP PASSWORDS (#101,
   // 2026-09-22). `common/credentials.ts` and `common/app_passwords.ts`.
-  { code: 'STS-AUTHN-0212',
+  { code: 'STS-AUTHN-0213',
     summary: 'Product mode: a person who holds a second factor, or of whom ' +
       'one is required, presented their own RIGHT password at a ' +
       'password-only door (an LDAP bind, a WS-Security UsernameToken, SCIM, ' +
@@ -3983,41 +3993,41 @@ const CODES = [
     spec: 'the door\'s own wrong-password answer, unchanged: LDAP ' +
       'invalidCredentials (49), the WS-Trust FailedAuthentication fault, ' +
       'HTTP 401 at SCIM, SSF and EST' },
-  { code: 'STS-AUTHN-0213',
+  { code: 'STS-AUTHN-0214',
     summary: 'An app password was presented where it is not accepted: at a ' +
       'door it is not scoped to, or at a browser sign-in, where no app ' +
       'password is ever accepted.',
     spec: 'the door\'s own wrong-password answer, unchanged' },
-  { code: 'STS-AUTHN-0214',
+  { code: 'STS-AUTHN-0215',
     summary: 'An app password was not made: its name is empty, longer than ' +
       'sixty-four characters or not printable text, or the person already ' +
       'holds one of that name.',
     spec: 'HTTP 400 (API) or the page redrawn with the reason' },
-  { code: 'STS-AUTHN-0215',
+  { code: 'STS-AUTHN-0216',
     summary: 'An app password was not made: it named no door, or a door ' +
       'that is not one of ldap, wstrust, scim, ssf and est.',
     spec: 'HTTP 400 (API) or the page redrawn with the reason' },
-  { code: 'STS-AUTHN-0216',
+  { code: 'STS-AUTHN-0217',
     summary: 'An app password was not made: the person already holds ' +
       'appPasswords.maxPerPerson of them.',
     spec: 'HTTP 400 (API) or the page redrawn with the reason' },
-  { code: 'STS-AUTHN-0217',
+  { code: 'STS-AUTHN-0218',
     summary: 'An app password was not made: app passwords are turned off in ' +
       'this realm (appPasswords.enabled). One already made goes on working.',
     spec: 'HTTP 400 (API) or the page redrawn with the reason' },
-  { code: 'STS-AUTHN-0218',
+  { code: 'STS-AUTHN-0219',
     summary: 'An app password was not revoked: the person holds none with ' +
       'that id.',
     spec: 'HTTP 400 (API), or 404 on the portal, where somebody else\'s is ' +
       'answered as one that does not exist' },
-  { code: 'STS-AUTHN-0219',
+  { code: 'STS-AUTHN-0220',
     summary: 'The app passwords on a person\'s entry could not be read or ' +
       'written: the directory threw, refused the write, or holds a value ' +
       'this service did not write. A value it cannot read is refused rather ' +
       'than compared.',
     spec: 'HTTP 400 (API), the page redrawn, or the door\'s wrong-password ' +
       'answer' },
-  { code: 'STS-AUTHN-0220',
+  { code: 'STS-AUTHN-0221',
     summary: 'An app password was not made: the name is not a person in ' +
       'this realm\'s directory. An application authenticates with its own ' +
       'client credentials, and an app password is a person\'s.',
@@ -6135,6 +6145,11 @@ const CODES = [
       'seconds in the future (section 5.3.2.1 item 13).',
     spec: 'HTTP 400 {error: invalid_request}, invalid_request_object, or ' +
       'invalid_dpop_proof' },
+  { code: 'STS-OAUTH-0591',
+    summary: 'Under FAPI 2.0 Message Signing, an authorization request did ' +
+      'not ask for a JWT-secured response (JARM), which the profile ' +
+      'requires (section 5.4.2 item 1).',
+    spec: 'redirect or HTTP 400 {error: invalid_request}' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -6982,6 +6997,104 @@ const CODES = [
     summary: 'A federated sign-in verified, but the directory holds no entry ' +
       'for the person and none was created (dynamic provisioning off on the ' +
       'relationship, or the directory declined), so no session was started.',
+    spec: 'HTTP 403 page' },
+  // #109 (2026-09-22): which people a partner may assert.
+  { code: 'STS-FED-0091',
+    summary: 'A federated sign-in verified, but the relationship\'s ' +
+      'fedSubjectPolicy is pre-linked and no entry carries a federationLink ' +
+      'for the partner\'s subject.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0092',
+    summary: 'A federated sign-in verified, but the person it would sign in ' +
+      'is outside the relationship\'s subject rules (fedSubjectGroup, ' +
+      'fedSubjectDomain or fedSubjectPattern).',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0093',
+    summary: 'A federated sign-in named a console administrator (Admin Read ' +
+      'or Admin Write) or a holder of REMOTE_PEPS, and the relationship ' +
+      'does not set fedMayAssertAdministrators.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0094',
+    summary: 'A federated sign-in arrived at a relationship whose ' +
+      'fedSubjectPolicy is any-existing, which product mode refuses ' +
+      '(mode.matchesFederatedNames()).',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0095',
+    summary: 'An update asked for fedSubjectPolicy any-existing in product ' +
+      'mode.',
+    spec: 'action result ok:false (console redirect or /admin-api HTTP ' +
+      '400)' },
+  { code: 'STS-FED-0096',
+    summary: 'A federated sign-in carried no stable subject to link: an ' +
+      'empty subject, a SAML 2.0 transient NameID, or an issuer that cannot ' +
+      'be part of a federationLink.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0097',
+    summary: 'A federated sign-in\'s federationLink is carried by more than ' +
+      'one directory entry, so which person it names is ambiguous.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0098',
+    summary: 'A federated sign-in would create a namespaced entry, and an ' +
+      'entry of that name already exists without a link to this subject.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0099',
+    summary: 'First-sign-in linking ended without a local sign-in: the ' +
+      'person cancelled at the sign-in screen, or it refused them.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0100',
+    summary: 'The linking step named a handle this service did not mint, ' +
+      'one already spent, or one that expired.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0101',
+    summary: 'The linking step was reached without a fresh local sign-in, ' +
+      'through that step, as the person being linked.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0102',
+    summary: 'An update set fedSubjectPolicy to a value that is not one of ' +
+      'the four.',
+    spec: 'action result ok:false (console redirect or /admin-api HTTP ' +
+      '400)' },
+  { code: 'STS-FED-0103',
+    summary: 'An update set fedSubjectPattern to a pattern that does not ' +
+      'compile, is longer than 256 characters, or nests a quantifier or ' +
+      'uses a backreference.',
+    spec: 'action result ok:false (console redirect or /admin-api HTTP ' +
+      '400)' },
+  { code: 'STS-FED-0104',
+    summary: 'A federation link or unlink named no person, or a person the ' +
+      'directory holds no entry for.',
+    spec: 'action result ok:false (console redirect, /admin-api HTTP 400, ' +
+      'or SCIM 400 invalidValue)' },
+  { code: 'STS-FED-0105',
+    summary: 'A federation link named no relationship, or one that is not a ' +
+      'service-provider-side relationship in this realm.',
+    spec: 'action result ok:false (console redirect, /admin-api HTTP 400, ' +
+      'or SCIM 400 invalidValue)' },
+  { code: 'STS-FED-0106',
+    summary: 'A federation link carried no subject, or an issuer or subject ' +
+      'that cannot be written as a federationLink value.',
+    spec: 'action result ok:false (console redirect, /admin-api HTTP 400, ' +
+      'or SCIM 400 invalidValue)' },
+  { code: 'STS-FED-0107',
+    summary: 'A federation link is already carried by a different person.',
+    spec: 'action result ok:false (console redirect, /admin-api HTTP 400, ' +
+      'or SCIM 409 uniqueness)' },
+  { code: 'STS-FED-0108',
+    summary: 'A federation unlink named a link the person does not carry.',
+    spec: 'action result ok:false (console redirect or /admin-api HTTP ' +
+      '400)' },
+  { code: 'STS-FED-0109',
+    summary: 'The directory would not write a federation link or unlink.',
+    spec: 'action result ok:false (console redirect or /admin-api HTTP ' +
+      '400)' },
+  { code: 'STS-FED-0110',
+    summary: 'A federation link was removed and ending the sessions that ' +
+      'partner had signed the person in to failed; the unlink stands.',
+    spec: '' },
+  { code: 'STS-FED-0111',
+    summary: 'The linking step was reached in a browser that did not start ' +
+      'it: the cookie binding it to the browser the partner\'s response ' +
+      'arrived in was absent or different.',
     spec: 'HTTP 403 page' },
   // ===== KRB ===============================================================
   { code: 'STS-KRB-0001',
@@ -9591,6 +9704,80 @@ const CODES = [
       'scope an operation needs, and the client it was issued to no longer ' +
       'declares that scope in its oauthAllowedScope.',
     spec: 'HTTP 403 {err: access_denied}' },
+  // ===== RISK ==============================================================
+  { code: 'STS-RISK-0001',
+    summary: 'A dataset import was refused before anything was loaded: the ' +
+      'dataset, the format or the realm is not one this service knows, or ' +
+      'the format is not one that dataset takes.',
+    spec: '' },
+  { code: 'STS-RISK-0002',
+    summary: 'A dataset import was refused: the file\'s SHA-256 is not the ' +
+      'one its manifest or the caller named. Nothing was loaded and the ' +
+      'active version stays.',
+    spec: '' },
+  { code: 'STS-RISK-0003',
+    summary: 'A dataset version was refused because it has fewer rows than ' +
+      'risk.datasetShrinkLimitPercent allows against the active version — ' +
+      'what a truncated download looks like. Its rows were deleted and the ' +
+      'active version stays.',
+    spec: '' },
+  { code: 'STS-RISK-0004',
+    summary: 'A dataset version was refused because no line of the file ' +
+      'was a row of its format.',
+    spec: '' },
+  { code: 'STS-RISK-0005',
+    summary: 'A dataset import failed in the store part-way through; the ' +
+      'version is recorded as refused with the reason, its rows are ' +
+      'deleted, and the active version stays.',
+    spec: '' },
+  { code: 'STS-RISK-0006',
+    summary: 'The store was asked to hold dataset rows of a kind it has no ' +
+      'table for — a defect in the caller.',
+    spec: '' },
+  { code: 'STS-RISK-0007',
+    summary: 'A dataset version could not be activated or rolled back to: ' +
+      'it is not one that loaded (it is loading, refused or deleted).',
+    spec: '' },
+  { code: 'STS-RISK-0008',
+    summary: 'The dataset directory could not be read, or a manifest in it ' +
+      'is not JSON naming a dataset, a format and a file beside it; the ' +
+      'manifest is skipped and the rest of the directory is imported.',
+    spec: '' },
+  { code: 'STS-RISK-0009',
+    summary: 'The risk retention job failed; superseded versions and old ' +
+      'failures stay until its next run.',
+    spec: '' },
+  { code: 'STS-RISK-0010',
+    summary: 'An attributable failure could not be recorded in the store. ' +
+      'The refusal it describes stands; only its record is lost.',
+    spec: '' },
+  { code: 'STS-RISK-0011',
+    summary: 'A Monitoring → Risk action or its /admin-api twin was refused: ' +
+      'a read-only session, an unknown action, or a field it needs is ' +
+      'missing.',
+    spec: '' },
+  { code: 'STS-RISK-0012',
+    summary: 'The install-time dataset loader (risk/risk_install.ts) could ' +
+      'not import an entry: no database was named, the provider\'s terms ' +
+      'were not accepted with --accept-terms, or the download failed. The ' +
+      'other entries are imported and the loader exits non-zero.',
+    spec: '' },
+  { code: 'STS-RISK-0013',
+    summary: 'A sign-in could not be assessed for risk (the store or a ' +
+      'dataset lookup failed part-way). The sign-in stands; only its ' +
+      'assessment is missing.',
+    spec: '' },
+  { code: 'STS-RISK-0014',
+    summary: 'A dataset import was refused because nobody has accepted its ' +
+      'provider\'s current terms (or the terms changed since they were ' +
+      'accepted), or an acceptance was asked for a provider with none to ' +
+      'accept.',
+    spec: '' },
+  { code: 'STS-RISK-0015',
+    summary: 'The install-time loader fetched a provider\'s terms page ' +
+      '(--check-terms) and it differs from the page seen at the last ' +
+      'acceptance: read it before relying on the acceptance.',
+    spec: '' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

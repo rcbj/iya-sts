@@ -1821,7 +1821,7 @@ const SPECS: Spec[] = [
               'response, discovery, token entropy, acr honoured. GET ' +
               '/oauth2/fapi lists every requirement. NOT covered: the OpenID ' +
               'Foundation conformance suite has not been run (#176); FAPI ' +
-              '2.0 Message Signing is #141.' },
+              '2.0 is the fapi2-* cards.' },
   { id: 'fapi1-advanced', name: 'FAPI 1.0 Part 2: Advanced Security ' +
                                'Profile (final)',
     where: 'OpenID Foundation',
@@ -1866,6 +1866,19 @@ const SPECS: Spec[] = [
               'requirements; docs/oauth-security.md maps each attacker ' +
               'class to what stops it. The console, portal and debugger ' +
               'conform. NOT covered: the conformance suite (#176).' },
+  { id: 'fapi2-message-signing', name: 'FAPI 2.0 Message Signing (final)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/fapi-message-signing-2_0.html',
+    coverage: 'full for the authorization server, AND OFF BY DEFAULT — the ' +
+              'PROFILE oauth2.fapi=2-message-signing, the Security Profile ' +
+              'plus all three components (#141, rcbj\'s decision): a ' +
+              'JAR-signed request object required at PAR, with aud the ' +
+              'issuer and exp and nbf within 60 minutes (5.3); JARM ' +
+              'required, iss inside the JWT (5.4); RFC 9701 introspection ' +
+              'responses signed (5.5). Section 5.2\'s non-repudiation is ' +
+              'guidance, answered in docs/oauth-security.md. The console, ' +
+              'portal and debugger conform. RFC 9421 HTTP signatures are NOT ' +
+              'part of the final specification and are #178.' },
   { id: 'jarm', name: 'JWT Secured Authorization Response Mode for OAuth ' +
                      '2.0 (JARM)',
     where: 'OpenID Foundation',
@@ -5440,6 +5453,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'single connection the page borrows. Empty with a sentence saying ' +
           'WHICH of three reasons unless persistence.mode is postgres. Add ' +
           '?format=json, or GET /admin-api/database.' },
+  { path: '/admin/risk', group: 'Admin',
+    name: 'Risk',
+    specs: [],
+    effect: 'imports, activates, rolls back or deletes a risk dataset version',
+    what: 'NON-SPEC (#62). The external datasets a risk score reads — ' +
+          'geolocation, ASN, Tor exits, IP reputation, an operator\'s allow ' +
+          'and deny lists — with each one\'s active version, freshness and ' +
+          'every version loaded or refused; a lookup of one address; and the ' +
+          'realm\'s refused passwords, attributed to a person or a name\'s ' +
+          'digest and a network, never an address. Add ?format=json.' },
   { path: '/admin/vc-status', group: 'Admin',
     name: 'Credential status',
     specs: ['token-status-list', 'bitstring-status-list'],
@@ -6263,6 +6286,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'and `why` says which of three reasons. No connection string is in ' +
           'the reply and nothing here changes anything. Mirrors GET ' +
           '/admin/database.' },
+  { path: '/admin-api/risk', group: 'Management API',
+    name: 'Risk', specs: ['openapi'],
+    what: 'NON-SPEC (#62). GET /admin/risk over JSON: the datasets, a lookup ' +
+          'with ?address=, and a page of the realm\'s refused passwords.' },
+  { path: '/admin-api/risk/:action', group: 'Management API',
+    name: 'Risk actions', specs: ['openapi'],
+    what: 'NON-SPEC (#62). import, activate, rollback, delete and ' +
+          'accept-terms: the console\'s five forms.' },
   { path: '/admin-api/vc-status', group: 'Management API',
     name: 'Credential status', specs: ['token-status-list', 'openapi'],
     what: 'NON-SPEC. GET /admin/vc-status over JSON.' },
@@ -8020,6 +8051,27 @@ const ENDPOINTS: EndpointEntry[] = [
           'the person\'s sign-in already succeeded at the partner and the ' +
           'only interesting question is what this service disliked about the ' +
           'answer.' },
+  { path: '/federation/link/:handle', group: 'Federation',
+    name: 'Link a partner\'s subject at first sign-in',
+    specs: ['oidc', 'saml2', 'saml2-profiles', 'ws-federation', 'rfc6749'],
+    effect: 'records a federationLink on the person\'s entry, writes the ' +
+            'partner\'s attributes and STARTS the federated session — only ' +
+            'after a local sign-in as that person',
+    what: 'Where the local sign-in of fedSubjectPolicy link-at-first-sign-in ' +
+          'returns (#109). A partner named an existing person whose account ' +
+          'is not linked to its subject; a name is not an identifier (OpenID ' +
+          'Connect Core section 5.7; SAML 2.0 Core section 8.3.7 links a ' +
+          'persistent NameID rather than matching it), so the person signs ' +
+          'in HERE as themselves first — password, and a second factor ' +
+          'where one is held or required — and this path records the link. ' +
+          'The handle is single-use and server-side, and bound by a cookie ' +
+          'to the browser the partner\'s response arrived in (STS-FED-0111, ' +
+          'the account-linking CSRF); it refuses a Cancel ' +
+          '(STS-FED-0099), a spent or unknown handle (STS-FED-0100) and any ' +
+          'browser whose latest sign-in is not that local one, as that ' +
+          'person, just now (STS-FED-0101), and asks the subject policy, the ' +
+          'rules and the administrator refusal again before writing ' +
+          'anything.' },
   { path: '/federation/metadata/:id', group: 'Federation',
     name: 'This service\'s OWN SAML metadata, per partner',
     specs: ['saml2-metadata', 'saml2', 'saml11'],
@@ -8665,7 +8717,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'through POST /admin-api/config like everything else configurable.' },
   { path: '/oauth2/fapi', group: 'OAuth 2.0 / OIDC',
     name: 'FAPI profile report (not a spec endpoint)',
-    specs: ['fapi1-baseline', 'fapi1-advanced', 'fapi2-security'],
+    specs: ['fapi1-baseline', 'fapi1-advanced', 'fapi2-security',
+            'fapi2-message-signing'],
     what: 'NON-SPEC: FAPI defines no document saying which profile a server ' +
           'follows. The profile in force (oauth2.fapi, off by default), ' +
           'every requirement of FAPI 1.0 Part 1 section 5.2.2 by item, and ' +

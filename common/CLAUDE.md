@@ -7473,7 +7473,7 @@ What is this directory's is where it is decided and what an app password is.
   authenticator app or `mfaRequirementFor()` says required, and never for a
   caller declaring `secondFactor: 'asked-next'` or `'session-held'`. A `door`
   listed in `authn.passwordAloneDoors` passes, with a WARN per use. The
-  refusal is `STS-AUTHN-0212`, shaped exactly as a wrong password's verdict,
+  refusal is `STS-AUTHN-0213`, shaped exactly as a wrong password's verdict,
   and the Kerberos password observer is not called for it.
 * **`passwordOnlyDoors(username)`** answers the whole table at once for the
   pages that say it — `/portal/app-passwords`, `/portal/mfa`, the person's

@@ -951,6 +951,17 @@ function ambientAddress() {
   return source.resolved;
 }
 
+// The express request of the source this code is running inside, or null
+// (#62 P0, 2026-09-22): for `authn/`'s authentication event, which has to say
+// which browser and which TLS stack a sign-in came from at every door —
+// including the ones that do not hand `startSession()` their request.
+function ambientRequest() {
+  log.debug("Entering ambientRequest().");
+  const source = sources.getStore();
+  log.debug("Leaving ambientRequest().");
+  return (source && source.req) || null;
+}
+
 function setActorResolver(fn) {
   log.debug("Entering setActorResolver().");
   actorResolver = fn;
@@ -1628,6 +1639,7 @@ module.exports = {
   setActorResolver: setActorResolver,
   withSource: withSource,
   currentAddress: ambientAddress,
+  currentRequest: ambientRequest,
   list: list,
   summary: summary
 };

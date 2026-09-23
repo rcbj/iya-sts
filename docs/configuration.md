@@ -161,6 +161,10 @@ sender-constrained tokens by mutual TLS or DPoP, codes of 60 seconds, no
 refresh-token rotation, and PS256, ES256 or EdDSA. See [OAuth
 security](oauth-security.md#fapi-20-security-profile).
 
+`2-message-signing` is FAPI 2.0 Message Signing on top of that: a signed
+request object at PAR, JARM required, and signed introspection responses.
+See [OAuth security](oauth-security.md#fapi-20-message-signing).
+
 ### Sender constraints — five settings that ask for more than either mode
 
 **Neither OAuth 2.1 nor RFC 9700 requires DPoP**, and that is worth saying once

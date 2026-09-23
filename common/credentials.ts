@@ -789,6 +789,41 @@ class Credentials {
               'asks for a new one' });
   }
 
+  // ---------------------------------------------------------------------------
+  // A REFUSED PASSWORD IS RECORDED FOR RISK SCORING (#62 P1, 2026-09-22), from
+  // here because every password door in this service meets here — see
+  // `risk/risk_failures.ts`. Not awaited and never throws: the record is
+  // evidence about the refusal, and must not be the reason it is late.
+  //
+  // Two refusals are NOT a failure of the person's and are left out: the
+  // store could not be asked (`no-store`, `store-error`) — the service
+  // failed, nobody guessed wrong — and `password-reset-required`, where the
+  // password was RIGHT. Required LAZILY, because this file loads long before
+  // the composition root builds the risk modules.
+  // ---------------------------------------------------------------------------
+  private noteRefusal(username, opts, answer) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.noteRefusal().');
+    const reason = String((answer && answer.reason) || '');
+    if (!answer || answer.ok || reason === 'no-store' ||
+        reason === 'store-error' || reason === 'password-reset-required') {
+      log.debug('Leaving Credentials.noteRefusal(). Not a failure to record.');
+      return;
+    }
+    try {
+      require('../risk/risk_failures').recordFailure(
+        String(username == null ? '' : username),
+        (opts && opts.via) || 'unstated',
+        errorCodes.codeOf(answer) || 'STS-AUTHN-0054');
+    } catch (e) {
+      log.debug('Caught in Credentials.noteRefusal(): ' +
+                ((e && e.message) || e));
+      // The risk modules are not loaded in this process (a test that loads
+      // this file alone): nothing to record into, and the refusal stands.
+    }
+    log.debug('Leaving Credentials.noteRefusal().');
+  }
+
   verify(username, password, opts?) {
     const { log, crypto } = this.deps;
     log.debug('Entering Credentials.verify().');
@@ -802,11 +837,13 @@ class Credentials {
                                                          candidate.hash);
       const answered = this.appPasswordAnswer(ready, candidate, matched, opts);
       if (answered) {
+        this.noteRefusal(username, opts, answered);
         log.debug('Leaving Credentials.verify(). An app password.');
         return answered;
       }
     }
     if (ready.done) {
+      this.noteRefusal(username, opts, ready.done);
       log.debug('Leaving Credentials.verify(). Decided without a derivation.');
       return ready.done;
     }
@@ -818,6 +855,7 @@ class Credentials {
       // The plaintext was just CONFIRMED — see the password observer above.
       this.notifyPassword(ready.name, password, 'verified');
     }
+    this.noteRefusal(username, opts, answer);
     log.debug('Leaving Credentials.verify().');
     return answer;
   }
@@ -843,6 +881,7 @@ class Credentials {
     const passwordStep = () => {
       log.debug('Entering Credentials.verifyAsync() password step.');
       if (ready.done) {
+        this.noteRefusal(username, opts, ready.done);
         log.debug('Leaving Credentials.verifyAsync() password step. ' +
                   'Decided without a derivation.');
         return Promise.resolve(ready.done);
@@ -857,6 +896,7 @@ class Credentials {
           if (answer.ok && answer.reason === 'verified') {
             this.notifyPassword(ready.name, password, 'verified');
           }
+          this.noteRefusal(username, opts, answer);
           return answer;
         });
     };
@@ -869,7 +909,11 @@ class Credentials {
       .then((matched) => {
         const answered = this.appPasswordAnswer(ready, candidate, matched,
                                                 opts);
-        return answered || passwordStep();
+        if (answered) {
+          this.noteRefusal(username, opts, answered);
+          return answered;
+        }
+        return passwordStep();
       });
   }
 
@@ -897,7 +941,7 @@ class Credentials {
   // **THE ANSWER IS A WRONG PASSWORD'S.** Every door answers `ok: false` with
   // its own single failure, so "right password, second factor needed" tells
   // the caller nothing — otherwise this would be a password oracle. The code
-  // (STS-AUTHN-0212) rides on the verdict for the audit row and the log, and
+  // (STS-AUTHN-0213) rides on the verdict for the audit row and the log, and
   // every door that rate-limits counts it as the failure it answers as.
   //
   // What such a person uses at those doors is an APP PASSWORD scoped to the
@@ -954,7 +998,7 @@ class Credentials {
              '. Refused as a wrong password is; an app password scoped to ' +
              'this door is what they use here.');
     log.debug('Leaving Credentials.secondFactorRefusal(). Refused.');
-    return coded('STS-AUTHN-0212', { ok: false,
+    return coded('STS-AUTHN-0213', { ok: false,
       reason: 'second-factor-required',
       detail: 'the password is right and ' + why + ', and ' + via + ' ' +
               'cannot ask for one: make an app password for this door on ' +
@@ -4096,7 +4140,7 @@ class Credentials {
     try {
       raw = directory.readAppPasswords(name) || '';
     } catch (e) {
-      log.error(errorCodes.tag('STS-AUTHN-0219') + 'credentials: reading ' +
+      log.error(errorCodes.tag('STS-AUTHN-0220') + 'credentials: reading ' +
                 'the app passwords of ' + name + ' threw: ' +
                 ((e && e.message) || e));
       log.debug('Leaving Credentials.appPasswordRecords(). It threw.');
@@ -4115,7 +4159,7 @@ class Credentials {
       parsed = null;
     }
     if (!parsed || !Array.isArray(parsed.passwords)) {
-      log.warn(errorCodes.tag('STS-AUTHN-0219') + 'credentials: the ' +
+      log.warn(errorCodes.tag('STS-AUTHN-0220') + 'credentials: the ' +
                Credentials.APP_PASSWORDS_ATTRIBUTE + ' value on ' + name +
                ' is not what this service writes, so none of it is ' +
                'accepted and nothing is written over it.');
@@ -4149,14 +4193,14 @@ class Credentials {
       written = !!directory.writeAppPasswords(name, records.length
         ? JSON.stringify({ version: 1, passwords: records }) : null);
     } catch (e) {
-      log.error(errorCodes.tag('STS-AUTHN-0219') + 'credentials: writing ' +
+      log.error(errorCodes.tag('STS-AUTHN-0220') + 'credentials: writing ' +
                 'the app passwords of ' + name + ' threw: ' +
                 ((e && e.message) || e));
       written = false;
     }
     if (!written) {
       log.debug('Leaving Credentials.writeAppPasswordRecords(). Not written.');
-      return coded('STS-AUTHN-0219', { ok: false, errors: ['The app ' +
+      return coded('STS-AUTHN-0220', { ok: false, errors: ['The app ' +
           'passwords could not be written onto ' + name + '\'s entry.'] });
     }
     log.debug('Leaving Credentials.writeAppPasswordRecords(). ' +
@@ -4213,7 +4257,7 @@ class Credentials {
     }
     if (!this.isPersonEntry(name)) {
       log.debug('Leaving Credentials.createAppPassword(). Not a person.');
-      return coded('STS-AUTHN-0220', { ok: false, errors: ['"' + name +
+      return coded('STS-AUTHN-0221', { ok: false, errors: ['"' + name +
           '" is not a person in this realm\'s directory. An app password ' +
           'is a person\'s; an application uses its own client ' +
           'credentials.'] });
@@ -4221,21 +4265,21 @@ class Credentials {
     const live = appPasswords.settings();
     if (!live.enabled) {
       log.debug('Leaving Credentials.createAppPassword(). Turned off.');
-      return coded('STS-AUTHN-0217', { ok: false, errors: ['App passwords ' +
+      return coded('STS-AUTHN-0218', { ok: false, errors: ['App passwords ' +
           'are turned off in this realm (appPasswords.enabled). One ' +
           'already made goes on working.'] });
     }
     const label = appPasswords.nameOf(asked.name);
     if (!label) {
       log.debug('Leaving Credentials.createAppPassword(). Bad name.');
-      return coded('STS-AUTHN-0214', { ok: false, errors: ['Give the app ' +
+      return coded('STS-AUTHN-0215', { ok: false, errors: ['Give the app ' +
           'password a name of at most ' + appPasswords.MAX_NAME +
           ' characters, saying which client it is for.'] });
     }
     const scope = appPasswords.scopeOf(asked.doors);
     if (!scope.ok) {
       log.debug('Leaving Credentials.createAppPassword(). Bad scope.');
-      return coded('STS-AUTHN-0215', { ok: false, errors: [(scope.bad.length
+      return coded('STS-AUTHN-0216', { ok: false, errors: [(scope.bad.length
         ? 'There is no door called ' + scope.bad.join(', ') + '. '
         : 'Choose at least one door. ') + 'An app password is scoped to ' +
         'one or more of: ' + appPasswords.DOOR_IDS.join(', ') + '.'] });
@@ -4243,20 +4287,20 @@ class Credentials {
     const held = this.appPasswordRecords(name);
     if (!held.ok) {
       log.debug('Leaving Credentials.createAppPassword(). Unreadable.');
-      return coded('STS-AUTHN-0219', { ok: false, errors: ['The app ' +
+      return coded('STS-AUTHN-0220', { ok: false, errors: ['The app ' +
           'passwords already on this entry cannot be read, so none is ' +
           'made over them. An administrator can see what is stored on the ' +
           'directory page.'] });
     }
     if (held.records.some((one) => { return one.name === label; })) {
       log.debug('Leaving Credentials.createAppPassword(). Duplicate name.');
-      return coded('STS-AUTHN-0214', { ok: false, errors: ['There is ' +
+      return coded('STS-AUTHN-0215', { ok: false, errors: ['There is ' +
           'already an app password called "' + label + '". Revoke it, or ' +
           'give this one another name.'] });
     }
     if (held.records.length >= live.maxPerPerson) {
       log.debug('Leaving Credentials.createAppPassword(). At the cap.');
-      return coded('STS-AUTHN-0216', { ok: false, errors: [name + ' ' +
+      return coded('STS-AUTHN-0217', { ok: false, errors: [name + ' ' +
           'already holds ' + held.records.length + ' app passwords, which ' +
           'is the most one person may (appPasswords.maxPerPerson). Revoke ' +
           'one first.'] });
@@ -4298,13 +4342,13 @@ class Credentials {
     const held = this.appPasswordRecords(name);
     if (!held.ok) {
       log.debug('Leaving Credentials.revokeAppPassword(). Unreadable.');
-      return coded('STS-AUTHN-0219', { ok: false, errors: ['The app ' +
+      return coded('STS-AUTHN-0220', { ok: false, errors: ['The app ' +
           'passwords on this entry cannot be read.'] });
     }
     const going = held.records.filter((one) => one.id === wanted)[0];
     if (!wanted || !going) {
       log.debug('Leaving Credentials.revokeAppPassword(). No such one.');
-      return coded('STS-AUTHN-0218', { ok: false, errors: [name + ' holds ' +
+      return coded('STS-AUTHN-0219', { ok: false, errors: [name + ' holds ' +
           'no app password with the id "' + wanted + '".'] });
     }
     const written = this.writeAppPasswordRecords(name,
@@ -4403,7 +4447,7 @@ class Credentials {
                      : ', which accepts no app password at all') +
                '. Refused as a wrong password is.');
       log.debug('Leaving Credentials.appPasswordAnswer(). Out of scope.');
-      return coded('STS-AUTHN-0213', { ok: false,
+      return coded('STS-AUTHN-0214', { ok: false,
         reason: 'app-password-out-of-scope',
         detail: 'an app password was presented where it is not accepted' });
     }

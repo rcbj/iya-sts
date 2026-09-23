@@ -207,6 +207,8 @@ import cachesAdmin = require('../admin-ui/caches_admin');
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
 // The scheduler's page (#49): its view and its two actions, rule 7.
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
+// Monitoring → Risk (#62): its view and its four actions, rule 7.
+import riskAdmin = require('../admin-ui/risk_admin');
 // The embedded protocol debugger's report (2026-09-13). A page module required
 // at 18 like the one above, and it reads the listener's status lazily, so this
 // require moves no route.
@@ -1853,6 +1855,183 @@ class AdminApi {
       },
 
       // ---------------------------------------------------------------------
+      // RISK SCORING (#62 P1, 2026-09-22): `riskAdmin.riskView()` and
+      // `riskAdmin.riskAction()`, the two functions `/admin/risk` answers.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/risk', tag: 'Risk',
+        operationId: 'getRisk',
+        summary: 'The risk datasets, a lookup, and the refused passwords',
+        description: 'Which `store` holds the risk data (the database, or ' +
+                     'this process where there is none); every dataset in ' +
+                     '`datasets` with its `state` (active, stale or empty), ' +
+                     'active and previous version, publication date, row ' +
+                     'count, provider attribution and every recorded ' +
+                     '`versions` row (refused ones with their `refusal`); ' +
+                     'the `formats` a file may be in; with `address`, what ' +
+                     'the active datasets say about it in `lookup` (`geo`, ' +
+                     '`asn`, `lists`, the `datasets` versions that answered ' +
+                     'and any `stale` ones left out); and a page of the ' +
+                     'realm\'s refused passwords in `failures` — a subject ' +
+                     'or a name\'s digest, the door, the network prefix, the ' +
+                     'ASN and the code, never an address.',
+        mirrors: 'GET /admin/risk',
+        parameters: [
+          { name: 'realm', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The realm whose failures and operator lists are ' +
+                         'shown; the default realm when absent.' },
+          { name: 'address', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'An IPv4 or IPv6 address to look up.' },
+          { name: 'offset', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 0 },
+            description: 'Where the page of failures starts.' }
+        ],
+        responseDescription: 'The datasets, the lookup and the failures.',
+        responseSchema: { type: 'object',
+          description: '`store`, `datasets`, `formats`, `lookup`, ' +
+                       '`failures`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API risk endpoint.");
+          riskAdmin.riskView(req.query).then(function (view) {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API risk endpoint.");
+          }).catch(function (e) {
+            log.warn(errorCodes.tag('STS-RISK-0011') + 'risk: the view ' +
+                     'failed: ' + ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-RISK-0011');
+            self.sendJson(res, 500, { ok: false,
+                                      errors: [String((e && e.message) ||
+                                                      e)] });
+            log.debug("Leaving the management API risk endpoint. Failed.");
+          });
+        } },
+
+      { method: 'POST', route: BASE + '/risk/:action', tag: 'Risk',
+        mirrors: 'POST /admin/risk',
+        handler: function (req, res) {
+          log.debug("Entering the management API risk action.");
+          riskAdmin.riskAction(self.withAction(req, parseBody(req)),
+                               'the management API at /admin-api/risk')
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-RISK-0011');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API risk action.");
+            }).catch(function (e) {
+              log.warn(errorCodes.tag('STS-RISK-0011') + 'risk: an action ' +
+                       'failed: ' + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-RISK-0011');
+              self.sendJson(res, 500, { ok: false,
+                                        errors: [String((e && e.message) ||
+                                                        e)] });
+              log.debug("Leaving the management API risk action. Threw.");
+            });
+        },
+        actions: [
+          { action: 'import', operationId: 'importRiskDataset',
+            summary: 'Import one version of a risk dataset, and activate it',
+            description: 'Loads `content` as `format` into `dataset` (in ' +
+                         '`realm` for an operator list). Refused, and kept ' +
+                         'as a refused version, when `sha256` is named and ' +
+                         'does not match, when no line is a row, or when it ' +
+                         'has more than risk.datasetShrinkLimitPercent ' +
+                         'fewer rows than the active version. A version ' +
+                         'already recorded is not loaded again ' +
+                         '(`duplicate: true`). The provider\'s current ' +
+                         'terms must have been accepted (accept-terms, or ' +
+                         '`acceptTerms: true` here) unless the list is the ' +
+                         'operator\'s own. `activate: false` loads ' +
+                         'without activating. A file of millions of rows ' +
+                         'belongs in risk.datasetsDirectory instead.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                dataset: { type: 'string' },
+                format: { type: 'string' },
+                content: { type: 'string' },
+                realm: { type: 'string' },
+                version: { type: 'string' },
+                publishedAt: { type: 'string',
+                               description: 'An ISO 8601 date.' },
+                sha256: { type: 'string' },
+                provider: { type: 'string' },
+                licence: { type: 'string' },
+                attribution: { type: 'string' },
+                activate: { type: 'boolean' },
+                acceptTerms: { type: 'boolean',
+                  description: 'Accept the provider\'s current terms as ' +
+                               'part of this import. Without it, an import ' +
+                               'of a provider whose terms nobody has ' +
+                               'accepted is refused.' }
+              },
+              required: ['dataset', 'format', 'content'],
+              examples: [{ dataset: 'iplist.tor-exit', format: 'ip-list',
+                           content: '192.0.2.10\n198.51.100.0/24\n' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The version, its row count and state.' },
+          { action: 'activate', operationId: 'activateRiskDataset',
+            summary: 'Make a loaded version of a dataset the active one',
+            description: 'The version must have loaded (`ready`) or have ' +
+                         'been active before (`superseded`).',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { dataset: { type: 'string' },
+                            version: { type: 'string' },
+                            realm: { type: 'string' } },
+              required: ['dataset', 'version'],
+              examples: [{ dataset: 'asn', version: '2026-09' }],
+              additionalProperties: false },
+            responseDescription: 'The active version and the one it ' +
+                                 'replaced.' },
+          { action: 'rollback', operationId: 'rollbackRiskDataset',
+            summary: 'Make the previous version of a dataset active again',
+            description: 'Refused when there is no previous version.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { dataset: { type: 'string' },
+                            realm: { type: 'string' } },
+              required: ['dataset'],
+              examples: [{ dataset: 'asn' }],
+              additionalProperties: false },
+            responseDescription: 'The version now active.' },
+          { action: 'accept-terms', operationId: 'acceptRiskProviderTerms',
+            summary: 'Accept a dataset provider\'s current terms',
+            description: 'Records that the terms of `provider`, as this ' +
+                         'build states them (GET /admin-api/risk lists ' +
+                         'every provider\'s terms and digest), are ' +
+                         'accepted: through the management API, from this ' +
+                         'deployment, now. No provider\'s data is imported ' +
+                         'without an acceptance of its current terms; a ' +
+                         'change to the terms needs a new one. The audit ' +
+                         'row for the request names the caller.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { provider: { type: 'string' } },
+              required: ['provider'],
+              examples: [{ provider: 'dbip-lite' }],
+              additionalProperties: false },
+            responseDescription: 'The acceptance recorded.' },
+          { action: 'delete', operationId: 'deleteRiskDatasetVersion',
+            summary: 'Delete the rows of a version that is not active',
+            description: 'Its record stays, as `deleted`.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { dataset: { type: 'string' },
+                            version: { type: 'string' },
+                            realm: { type: 'string' } },
+              required: ['dataset', 'version'],
+              examples: [{ dataset: 'asn', version: '2026-08' }],
+              additionalProperties: false },
+            responseDescription: 'How many rows were deleted.' }
+        ]
+      },
+
+      // ---------------------------------------------------------------------
       // THE SCHEDULER (#49, 2026-09-22). `schedulerAdmin.schedulerView()` —
       // the function the page's `?format=json` answers — and
       // `schedulerAdmin.schedulerAction()`, the function its two forms post
@@ -2765,7 +2944,11 @@ class AdminApi {
             description: 'Tokens issued with no browser session at all: the ' +
                          'grants that never involve one.' },
           { name: 'artifacts',
-            description: 'SAML assertions, Kerberos tickets and credentials.' }
+            description: 'SAML assertions, Kerberos tickets and credentials.' },
+          { name: 'federationLinks',
+            description: 'The federation partners\' subjects linked to ' +
+                         'this person (#109), each `{ link, relationship, ' +
+                         'issuer, subject, relationshipExists }`.' }
         ])),
         responseDescription: 'The list, or one identity.',
         responseSchema: { oneOf: [
@@ -3574,6 +3757,104 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'Whether anything changed.' },
+
+          // #109 (2026-09-22): which partners' subjects sign a person in.
+          { action: 'federation-link', operationId: 'linkUserFederation',
+            summary: 'Link a federation partner\'s subject to a person',
+            description: 'Adds a `federationLink` — `<relationship> ' +
+                         '<issuer> <subject>` — to the person\'s entry, so ' +
+                         'that the partner of that service-provider-side ' +
+                         'relationship signs them in when it asserts that ' +
+                         'subject. The subject is the partner\'s STABLE ' +
+                         'identifier for them (OpenID Connect `sub`, a SAML ' +
+                         'persistent NameID), never a name or an address, ' +
+                         'and the issuer is the relationship\'s `fedPeer` ' +
+                         'when omitted. Refused when another person already ' +
+                         'carries the link (a subject names one person), ' +
+                         'for a relationship that is not service-provider ' +
+                         'side, or for a subject that cannot be written. ' +
+                         'A console administrator is still refused at the ' +
+                         'sign-in unless the relationship sets ' +
+                         '`fedMayAssertAdministrators`. The person\'s ' +
+                         'links are `federationLinks` (paged by ' +
+                         '`federationLinksPage`) on `GET /admin-api/users?' +
+                         'user=`, and a relationship\'s are `links` on `GET ' +
+                         '/admin-api/federation?relationship=`. SCIM sets ' +
+                         'the same values through the ' +
+                         '`urn:ietf:params:scim:schemas:extension:iya-sts:' +
+                         '2.0:User` extension.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                relationship: { type: 'string',
+                                description: 'The service-provider-side ' +
+                                  'relationship the link is through.' },
+                subject: { type: 'string',
+                           description: 'The partner\'s identifier for ' +
+                             'the person.' },
+                issuer: { type: 'string',
+                          description: 'The partner\'s entity ID or ' +
+                            '`iss`; the relationship\'s fedPeer when ' +
+                            'omitted, and refused if it differs from it.' }
+              },
+              required: ['user', 'relationship', 'subject'],
+              examples: [{ user: 'alice', relationship: 'partner-oidc',
+                           subject: '248289761001' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The link, whether it was added, and the ' +
+                                 'person\'s links now.' },
+
+          { action: 'federation-unlink', operationId: 'unlinkUserFederation',
+            summary: 'Remove a federation partner\'s link from a person, ' +
+                     'and end the sessions it made',
+            description: 'Removes one `federationLink` value, named either ' +
+                         'whole as `link` (as `federationLinks` lists it) or ' +
+                         'as `relationship` and `subject` (and `issuer`). ' +
+                         'The next sign-in through that relationship ' +
+                         'no longer finds the person, and **every live ' +
+                         'sign-on session that partner signed them in to ' +
+                         'is ended** — each with its CAEP ' +
+                         '`session-revoked` and back-channel Logout Tokens — ' +
+                         'after the write is answered. Sessions they made ' +
+                         'any other way are untouched. Removing a link ' +
+                         'through SCIM or an `ldapmodify` has the same ' +
+                         'consequence.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                link: { type: 'string',
+                        description: 'The whole value, as ' +
+                          '`federationLinks[].link` shows it.' },
+                relationship: { type: 'string',
+                                description: 'Instead of `link`.' },
+                subject: { type: 'string',
+                           description: 'Instead of `link`.' },
+                issuer: { type: 'string',
+                          description: 'Instead of `link`; the ' +
+                            'relationship\'s fedPeer when omitted.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice',
+                           link: 'partner-oidc https://idp.example ' +
+                                 '248289761001' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The link removed and the person\'s links ' +
+                                 'now; the sessions are ended after the ' +
+                                 'answer.' },
 
           // -----------------------------------------------------------------
           // APP PASSWORDS (#101, 2026-09-22), mirroring the App passwords
@@ -6839,13 +7120,21 @@ class AdminApi {
                      '`/saml2` and the admin console all read. So a ' +
                      'relationship is created DISABLED, and an assertion is ' +
                      'refused unless it verifies against the certificate ' +
-                     'configured on it.\n\n**The gate is on the SIGNER, not ' +
-                     'on the subject.** Once a relationship is enabled and ' +
-                     'configured, everything downstream is as permissive as ' +
-                     'the rest of this service: any username in the ' +
-                     'assertion is accepted, any attribute is mapped, and a ' +
-                     'directory entry is created for the ' +
-                     'person.\n\n`?relationship=<id>` returns one of them, ' +
+                     'configured on it.\n\n**And the gate is on the ' +
+                     'SUBJECT too (#109).** A partner signs in only the ' +
+                     'person its (issuer, subject) is linked to — a ' +
+                     '`federationLink` on the entry — and what happens to ' +
+                     'a subject nobody linked is the relationship\'s ' +
+                     '`fedSubjectPolicy`: a local sign-in as the person it ' +
+                     'names before linking (`link-at-first-sign-in`, the ' +
+                     'default), a refusal (`pre-linked`), a new namespaced ' +
+                     'entry (`jit-namespaced`), or, in development only, ' +
+                     'the old name match (`any-existing`). ' +
+                     '`fedSubjectGroup`, `fedSubjectDomain` and ' +
+                     '`fedSubjectPattern` narrow it further, and a console ' +
+                     'administrator is refused unless ' +
+                     '`fedMayAssertAdministrators` is on.\n\n' +
+                     '`?relationship=<id>` returns one of them, ' +
                      'with everything it holds and the URLs to configure at ' +
                      'the partner. It answers 200 with `found: false` for an ' +
                      'id that is not registered.\n\nThis resource holds ' +
@@ -6865,7 +7154,12 @@ class AdminApi {
             description: 'Only the relationships in which this service takes ' +
                          'that role. `service-provider` is the direction ' +
                          'that CONSUMES somebody else\'s assertions.' }
-        ].concat(this.pagingParameters()),
+        ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
+          { name: 'links',
+            description: 'With `relationship`: the people whose ' +
+                         'federationLink is through it (#109), each ' +
+                         '`{ username, dn, link, issuer, subject }`.' }
+        ])),
         responseDescription: 'The relationships with the paging that found ' +
                              'them, or one of them with its endpoints, its ' +
                              'fields and what has crossed it.',

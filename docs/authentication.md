@@ -243,7 +243,7 @@ a password and nothing else, so they cannot ask for a second factor. **In
 product mode they refuse the own password of a person who holds a second factor
 or of whom one is required** (by the realm or on their entry) — answered
 exactly as a wrong password, and counted against the rate limit as one; the
-log and the audit row say `STS-AUTHN-0212`. Development accepts it, as it
+log and the audit row say `STS-AUTHN-0213`. Development accepts it, as it
 accepts every password.
 
 What such a person uses there is an **app password**:
@@ -255,7 +255,7 @@ What such a person uses there is an **app password**:
   shown **once**, and stored as a scrypt hash on the entry;
 * named, and scoped to one or more of `ldap`, `wstrust`, `scim`, `ssf` and
   `est`. It is accepted at those doors only, and **never at `/authn/login`** or
-  any browser sign-in (`STS-AUTHN-0213` where it is presented elsewhere);
+  any browser sign-in (`STS-AUTHN-0214` where it is presented elsewhere);
 * one factor: the door records that an app password was used;
 * revocable one at a time on the same pages or with `POST
   /admin-api/users/revoke-app-password`, with a CAEP `credential-change` for

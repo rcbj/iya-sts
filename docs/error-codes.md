@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2950** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2988** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -62,12 +62,12 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 199
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 470
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 200
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 471
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 74
+* [Federation (`STS-FED`)](#sts-fed) — 95
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
@@ -75,6 +75,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 99
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 275
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
@@ -1067,15 +1068,16 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0209` | A hosted surface's application entry declares a token endpoint authentication method the surface does not implement. It implements private_key_jwt, and client_secret_basic or client_secret_post for an entry an operator set so (#138). | RFC 7591 section 2 |
 | `STS-AUTHN-0210` | A hosted surface refused the JWT-secured authorization response (JARM) it was sent back with: not a signed JWT, a key the realm's JWKS does not hold, a signature that does not verify, or the wrong issuer, audience or expiry (#139). | the console's, portal's or debugger's sign-in refusal page |
 | `STS-AUTHN-0211` | Under FAPI 1.0 Advanced, a hosted surface could not push its signed authorization request to /oauth2/par, so its sign-in could not start (#139). | the console's, portal's or debugger's sign-in refusal page |
-| `STS-AUTHN-0212` | Product mode: a person who holds a second factor, or of whom one is required, presented their own RIGHT password at a password-only door (an LDAP bind, a WS-Security UsernameToken, SCIM, SSF or EST Basic), which cannot ask for the second factor. Refused, and counted as a failed attempt. An app password scoped to the door is what such a person uses there (authn.passwordAloneDoors lists doors that accept the password anyway). | the door's own wrong-password answer, unchanged: LDAP invalidCredentials (49), the WS-Trust FailedAuthentication fault, HTTP 401 at SCIM, SSF and EST |
-| `STS-AUTHN-0213` | An app password was presented where it is not accepted: at a door it is not scoped to, or at a browser sign-in, where no app password is ever accepted. | the door's own wrong-password answer, unchanged |
-| `STS-AUTHN-0214` | An app password was not made: its name is empty, longer than sixty-four characters or not printable text, or the person already holds one of that name. | HTTP 400 (API) or the page redrawn with the reason |
-| `STS-AUTHN-0215` | An app password was not made: it named no door, or a door that is not one of ldap, wstrust, scim, ssf and est. | HTTP 400 (API) or the page redrawn with the reason |
-| `STS-AUTHN-0216` | An app password was not made: the person already holds appPasswords.maxPerPerson of them. | HTTP 400 (API) or the page redrawn with the reason |
-| `STS-AUTHN-0217` | An app password was not made: app passwords are turned off in this realm (appPasswords.enabled). One already made goes on working. | HTTP 400 (API) or the page redrawn with the reason |
-| `STS-AUTHN-0218` | An app password was not revoked: the person holds none with that id. | HTTP 400 (API), or 404 on the portal, where somebody else's is answered as one that does not exist |
-| `STS-AUTHN-0219` | The app passwords on a person's entry could not be read or written: the directory threw, refused the write, or holds a value this service did not write. A value it cannot read is refused rather than compared. | HTTP 400 (API), the page redrawn, or the door's wrong-password answer |
-| `STS-AUTHN-0220` | An app password was not made: the name is not a person in this realm's directory. An application authenticates with its own client credentials, and an app password is a person's. | HTTP 400 (API) |
+| `STS-AUTHN-0212` | A passwordless security-key sign-in was asked for at the sign-in screen federation's link-at-first-sign-in draws, which signs in with the password (#109). | HTTP 200 sign-in screen with an error |
+| `STS-AUTHN-0213` | Product mode: a person who holds a second factor, or of whom one is required, presented their own RIGHT password at a password-only door (an LDAP bind, a WS-Security UsernameToken, SCIM, SSF or EST Basic), which cannot ask for the second factor. Refused, and counted as a failed attempt. An app password scoped to the door is what such a person uses there (authn.passwordAloneDoors lists doors that accept the password anyway). | the door's own wrong-password answer, unchanged: LDAP invalidCredentials (49), the WS-Trust FailedAuthentication fault, HTTP 401 at SCIM, SSF and EST |
+| `STS-AUTHN-0214` | An app password was presented where it is not accepted: at a door it is not scoped to, or at a browser sign-in, where no app password is ever accepted. | the door's own wrong-password answer, unchanged |
+| `STS-AUTHN-0215` | An app password was not made: its name is empty, longer than sixty-four characters or not printable text, or the person already holds one of that name. | HTTP 400 (API) or the page redrawn with the reason |
+| `STS-AUTHN-0216` | An app password was not made: it named no door, or a door that is not one of ldap, wstrust, scim, ssf and est. | HTTP 400 (API) or the page redrawn with the reason |
+| `STS-AUTHN-0217` | An app password was not made: the person already holds appPasswords.maxPerPerson of them. | HTTP 400 (API) or the page redrawn with the reason |
+| `STS-AUTHN-0218` | An app password was not made: app passwords are turned off in this realm (appPasswords.enabled). One already made goes on working. | HTTP 400 (API) or the page redrawn with the reason |
+| `STS-AUTHN-0219` | An app password was not revoked: the person holds none with that id. | HTTP 400 (API), or 404 on the portal, where somebody else's is answered as one that does not exist |
+| `STS-AUTHN-0220` | The app passwords on a person's entry could not be read or written: the directory threw, refused the write, or holds a value this service did not write. A value it cannot read is refused rather than compared. | HTTP 400 (API), the page redrawn, or the door's wrong-password answer |
+| `STS-AUTHN-0221` | An app password was not made: the name is not a person in this realm's directory. An application authenticates with its own client credentials, and an app password is a person's. | HTTP 400 (API) |
 
 ## STS-OAUTH
 
@@ -1555,6 +1557,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0588` | A JWT-secured authorization response (JARM) could not be made: the client's registered algorithm cannot be honoured, or it named encryption and its jwks holds no key for it. Answered on this server rather than sent unsecured. | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0589` | Under the FAPI 2.0 Security Profile, a pushed authorization request did not authenticate its client (section 5.3.2.2 item 4). | HTTP 401 {error: invalid_client} |
 | `STS-OAUTH-0590` | Under the FAPI 2.0 Security Profile, a client assertion, a request object or a DPoP proof carried an iat or nbf more than 60 seconds in the future (section 5.3.2.1 item 13). | HTTP 400 {error: invalid_request}, invalid_request_object, or invalid_dpop_proof |
+| `STS-OAUTH-0591` | Under FAPI 2.0 Message Signing, an authorization request did not ask for a JWT-secured response (JARM), which the profile requires (section 5.4.2 item 1). | redirect or HTTP 400 {error: invalid_request} |
 
 ## STS-SAML
 
@@ -1777,6 +1780,27 @@ Raised from: federation/.
 | `STS-FED-0072` | The directory refused the write for an update to a federation relationship. | action result ok:false (console redirect or /admin-api HTTP 400) |
 | `STS-FED-0073` | The directory would not delete a federation relationship. | action result ok:false (console redirect or /admin-api HTTP 400) |
 | `STS-FED-0090` | A federated sign-in verified, but the directory holds no entry for the person and none was created (dynamic provisioning off on the relationship, or the directory declined), so no session was started. | HTTP 403 page |
+| `STS-FED-0091` | A federated sign-in verified, but the relationship's fedSubjectPolicy is pre-linked and no entry carries a federationLink for the partner's subject. | HTTP 403 page |
+| `STS-FED-0092` | A federated sign-in verified, but the person it would sign in is outside the relationship's subject rules (fedSubjectGroup, fedSubjectDomain or fedSubjectPattern). | HTTP 403 page |
+| `STS-FED-0093` | A federated sign-in named a console administrator (Admin Read or Admin Write) or a holder of REMOTE_PEPS, and the relationship does not set fedMayAssertAdministrators. | HTTP 403 page |
+| `STS-FED-0094` | A federated sign-in arrived at a relationship whose fedSubjectPolicy is any-existing, which product mode refuses (mode.matchesFederatedNames()). | HTTP 403 page |
+| `STS-FED-0095` | An update asked for fedSubjectPolicy any-existing in product mode. | action result ok:false (console redirect or /admin-api HTTP 400) |
+| `STS-FED-0096` | A federated sign-in carried no stable subject to link: an empty subject, a SAML 2.0 transient NameID, or an issuer that cannot be part of a federationLink. | HTTP 403 page |
+| `STS-FED-0097` | A federated sign-in's federationLink is carried by more than one directory entry, so which person it names is ambiguous. | HTTP 403 page |
+| `STS-FED-0098` | A federated sign-in would create a namespaced entry, and an entry of that name already exists without a link to this subject. | HTTP 403 page |
+| `STS-FED-0099` | First-sign-in linking ended without a local sign-in: the person cancelled at the sign-in screen, or it refused them. | HTTP 403 page |
+| `STS-FED-0100` | The linking step named a handle this service did not mint, one already spent, or one that expired. | HTTP 400 page |
+| `STS-FED-0101` | The linking step was reached without a fresh local sign-in, through that step, as the person being linked. | HTTP 403 page |
+| `STS-FED-0102` | An update set fedSubjectPolicy to a value that is not one of the four. | action result ok:false (console redirect or /admin-api HTTP 400) |
+| `STS-FED-0103` | An update set fedSubjectPattern to a pattern that does not compile, is longer than 256 characters, or nests a quantifier or uses a backreference. | action result ok:false (console redirect or /admin-api HTTP 400) |
+| `STS-FED-0104` | A federation link or unlink named no person, or a person the directory holds no entry for. | action result ok:false (console redirect, /admin-api HTTP 400, or SCIM 400 invalidValue) |
+| `STS-FED-0105` | A federation link named no relationship, or one that is not a service-provider-side relationship in this realm. | action result ok:false (console redirect, /admin-api HTTP 400, or SCIM 400 invalidValue) |
+| `STS-FED-0106` | A federation link carried no subject, or an issuer or subject that cannot be written as a federationLink value. | action result ok:false (console redirect, /admin-api HTTP 400, or SCIM 400 invalidValue) |
+| `STS-FED-0107` | A federation link is already carried by a different person. | action result ok:false (console redirect, /admin-api HTTP 400, or SCIM 409 uniqueness) |
+| `STS-FED-0108` | A federation unlink named a link the person does not carry. | action result ok:false (console redirect or /admin-api HTTP 400) |
+| `STS-FED-0109` | The directory would not write a federation link or unlink. | action result ok:false (console redirect or /admin-api HTTP 400) |
+| `STS-FED-0110` | A federation link was removed and ending the sessions that partner had signed the person in to failed; the unlink stands. | — |
+| `STS-FED-0111` | The linking step was reached in a browser that did not start it: the cookie binding it to the browser the partner's response arrived in was absent or different. | HTTP 403 page |
 
 ## STS-KRB
 
@@ -2449,6 +2473,30 @@ Raised from: ssf/.
 | `STS-SSF-0105` | A Security Event Token delivered to one of this service's receivers carries an iss other than its stream's, or one ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was recorded and refused. | HTTP 400 {err: invalid_issuer} |
 | `STS-SSF-0106` | A Security Event Token pushed at POST /ssf/receive is addressed to no audience ssf.receiveAudiences lists; it was recorded and refused. | HTTP 400 {err: invalid_audience} |
 | `STS-SSF-0107` | An access token (OAuth or GNAP) carried the Shared Signals scope an operation needs, and the client it was issued to no longer declares that scope in its oauthAllowedScope. | HTTP 403 {err: access_denied} |
+
+## STS-RISK
+
+**Risk scoring.** The external datasets a risk score reads — their import, verification, activation, rollback and retention — and the attributable failure history (#62).
+
+Raised from: risk/, admin-ui/risk_admin.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-RISK-0001` | A dataset import was refused before anything was loaded: the dataset, the format or the realm is not one this service knows, or the format is not one that dataset takes. | — |
+| `STS-RISK-0002` | A dataset import was refused: the file's SHA-256 is not the one its manifest or the caller named. Nothing was loaded and the active version stays. | — |
+| `STS-RISK-0003` | A dataset version was refused because it has fewer rows than risk.datasetShrinkLimitPercent allows against the active version — what a truncated download looks like. Its rows were deleted and the active version stays. | — |
+| `STS-RISK-0004` | A dataset version was refused because no line of the file was a row of its format. | — |
+| `STS-RISK-0005` | A dataset import failed in the store part-way through; the version is recorded as refused with the reason, its rows are deleted, and the active version stays. | — |
+| `STS-RISK-0006` | The store was asked to hold dataset rows of a kind it has no table for — a defect in the caller. | — |
+| `STS-RISK-0007` | A dataset version could not be activated or rolled back to: it is not one that loaded (it is loading, refused or deleted). | — |
+| `STS-RISK-0008` | The dataset directory could not be read, or a manifest in it is not JSON naming a dataset, a format and a file beside it; the manifest is skipped and the rest of the directory is imported. | — |
+| `STS-RISK-0009` | The risk retention job failed; superseded versions and old failures stay until its next run. | — |
+| `STS-RISK-0010` | An attributable failure could not be recorded in the store. The refusal it describes stands; only its record is lost. | — |
+| `STS-RISK-0011` | A Monitoring → Risk action or its /admin-api twin was refused: a read-only session, an unknown action, or a field it needs is missing. | — |
+| `STS-RISK-0012` | The install-time dataset loader (risk/risk_install.ts) could not import an entry: no database was named, the provider's terms were not accepted with --accept-terms, or the download failed. The other entries are imported and the loader exits non-zero. | — |
+| `STS-RISK-0013` | A sign-in could not be assessed for risk (the store or a dataset lookup failed part-way). The sign-in stands; only its assessment is missing. | — |
+| `STS-RISK-0014` | A dataset import was refused because nobody has accepted its provider's current terms (or the terms changed since they were accepted), or an acceptance was asked for a provider with none to accept. | — |
+| `STS-RISK-0015` | The install-time loader fetched a provider's terms page (--check-terms) and it differs from the page seen at the last acceptance: read it before relying on the acceptance. | — |
 
 ## STS-GNAP
 

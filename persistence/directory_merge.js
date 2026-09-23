@@ -73,7 +73,7 @@ const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',
                'description', 'oauthconsent', 'stswebauthncredential',
                'x509subject', 'didsubject', 'spiffesubject', 'authnmethod',
                'federationattribute', 'federationissuer',
-               'federationrelationship', 'federationsubject'];
+               'federationrelationship', 'federationlink'];
 
 // A HOT PATH, AND EVERY FUNCTION IN THIS FILE IS ON IT: `same()`, `uuidOf()`,
 // `countOf()`, `listOf()`, `mergeValues()`, `mergeAttributes()`,

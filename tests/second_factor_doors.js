@@ -16,7 +16,7 @@
 //   A. `credentials.verify()` and `verifyAsync()` at each of the five doors:
 //      a person holding a security key in the `mfa` role, one required by
 //      their entry (stsMfaRequired), everybody required by the realm
-//      (authn.mfaRequired) — refused STS-AUTHN-0212 with `ok: false`, the
+//      (authn.mfaRequired) — refused STS-AUTHN-0213 with `ok: false`, the
 //      shape a wrong password has; a person with neither is verified; the two
 //      declared exemptions (`asked-next`, `session-held`) pass; and
 //      `authn.passwordAloneDoors` admits exactly the doors it lists;
@@ -138,9 +138,9 @@ function sameAsWrong(t, name, door, what) {
   t.check(right.ok === false && wrong.ok === false,
           what + ' at ' + door + ': the right password is refused, as a ' +
           'wrong one is', JSON.stringify({ right: right, wrong: wrong }));
-  t.equal(errorCodes.codeOf(right), 'STS-AUTHN-0212',
+  t.equal(errorCodes.codeOf(right), 'STS-AUTHN-0213',
           what + ' at ' + door + ': the refusal is recorded as ' +
-          'STS-AUTHN-0212');
+          'STS-AUTHN-0213');
   t.equal(right.reason, 'second-factor-required',
           what + ' at ' + door + ': and its reason says why, for the log');
   log.debug("Leaving sameAsWrong().");
@@ -191,7 +191,7 @@ async function run(t) {
     });
     const unstated = credentials.verify(KEYED, PASSWORD, { via: 'a door ' +
                                                           'added tomorrow' });
-    t.equal(errorCodes.codeOf(unstated), 'STS-AUTHN-0212',
+    t.equal(errorCodes.codeOf(unstated), 'STS-AUTHN-0213',
             'A4. REFUSE BY DEFAULT: a caller that states no door and no ' +
             'exemption is refused too');
     ['asked-next', 'session-held'].forEach(function (declared) {
@@ -229,7 +229,7 @@ async function run(t) {
   await withSettingsAsync({ 'global.mode': 'product' }, async function () {
     const refusedAsync = await credentials.verifyAsync(KEYED, PASSWORD,
                                                        { door: 'est' });
-    t.equal(errorCodes.codeOf(refusedAsync), 'STS-AUTHN-0212',
+    t.equal(errorCodes.codeOf(refusedAsync), 'STS-AUTHN-0213',
             'A9. verifyAsync() refuses it the same way');
     const plainAsync = await credentials.verifyAsync(PLAIN, PASSWORD,
                                                      { door: 'est' });
@@ -327,15 +327,15 @@ async function run(t) {
                                'forgiven');
     ['wstrust', 'ssf', 'est'].forEach(function (door) {
       const out = credentials.verify(APPUSER, made.password, { door: door });
-      t.check(out.ok === false && errorCodes.codeOf(out) === 'STS-AUTHN-0213',
+      t.check(out.ok === false && errorCodes.codeOf(out) === 'STS-AUTHN-0214',
               'E5. refused at ' + door + ', outside its scope (' +
-              'STS-AUTHN-0213)', JSON.stringify(out));
+              'STS-AUTHN-0214)', JSON.stringify(out));
     });
     const signIn = credentials.verify(APPUSER, made.password,
       { via: 'the sign-in screen', allowPasswordReset: true,
         secondFactor: 'asked-next' });
     t.check(signIn.ok === false && errorCodes.codeOf(signIn) ===
-            'STS-AUTHN-0213',
+            'STS-AUTHN-0214',
             'E6. NEVER at the sign-in screen, whose call names no door',
             JSON.stringify(signIn));
     const asyncOk = await credentials.verifyAsync(APPUSER, made.password,
@@ -350,7 +350,7 @@ async function run(t) {
             'E8. one character wrong, with the right id, is a wrong password',
             JSON.stringify(bad));
     const own = credentials.verify(APPUSER, PASSWORD, { door: 'ldap' });
-    t.equal(errorCodes.codeOf(own), 'STS-AUTHN-0212',
+    t.equal(errorCodes.codeOf(own), 'STS-AUTHN-0213',
             'E9. while their own password is refused at the same door');
     const bound = await bind(ldap.objectFor(APPUSER).entry.dn, made.password);
     t.check(bound.ok === true, 'E10. a real LDAP bind with it succeeds',
@@ -386,22 +386,22 @@ async function run(t) {
             JSON.stringify(out));
     log.debug("Leaving refusal().");
   };
-  refusal({ name: '', doors: ['ldap'] }, 'STS-AUTHN-0214', 'no name');
-  refusal({ name: 'x'.repeat(65), doors: ['ldap'] }, 'STS-AUTHN-0214',
+  refusal({ name: '', doors: ['ldap'] }, 'STS-AUTHN-0215', 'no name');
+  refusal({ name: 'x'.repeat(65), doors: ['ldap'] }, 'STS-AUTHN-0215',
           'a name over sixty-four characters');
-  refusal({ name: 'mail client', doors: ['ldap'] }, 'STS-AUTHN-0214',
+  refusal({ name: 'mail client', doors: ['ldap'] }, 'STS-AUTHN-0215',
           'a name already held');
-  refusal({ name: 'nodoor', doors: [] }, 'STS-AUTHN-0215', 'no door');
-  refusal({ name: 'baddoor', doors: ['ldap', 'kerberos'] }, 'STS-AUTHN-0215',
+  refusal({ name: 'nodoor', doors: [] }, 'STS-AUTHN-0216', 'no door');
+  refusal({ name: 'baddoor', doors: ['ldap', 'kerberos'] }, 'STS-AUTHN-0216',
           'a door that is not one of the five');
   refusal({ user: 'sfd-nobody-' + STAMP, name: 'n', doors: ['ldap'] },
           'STS-AUTHN-0061', 'somebody who does not exist');
   withSettings({ 'appPasswords.enabled': 'false' }, function () {
-    refusal({ name: 'off', doors: ['ldap'] }, 'STS-AUTHN-0217',
+    refusal({ name: 'off', doors: ['ldap'] }, 'STS-AUTHN-0218',
             'a make while app passwords are turned off');
   });
   withSettings({ 'appPasswords.maxPerPerson': '1' }, function () {
-    refusal({ name: 'second', doors: ['ldap'] }, 'STS-AUTHN-0216',
+    refusal({ name: 'second', doors: ['ldap'] }, 'STS-AUTHN-0217',
             'a make past appPasswords.maxPerPerson');
   });
 
@@ -415,8 +415,8 @@ async function run(t) {
             JSON.stringify(after));
   });
   const again = credentials.revokeAppPassword(APPUSER, made.id);
-  t.equal(errorCodes.codeOf(again), 'STS-AUTHN-0218',
-          'E16. revoking it again is refused (STS-AUTHN-0218)');
+  t.equal(errorCodes.codeOf(again), 'STS-AUTHN-0219',
+          'E16. revoking it again is refused (STS-AUTHN-0219)');
 
   // -------------------------------------------------------------------------
   t.log.info('=== F. the console and the API ===');
@@ -456,7 +456,7 @@ async function run(t) {
     action: 'revoke-app-password', user: APPUSER, id: 'ZZZZ' },
     { via: 'api', actor: 'sfd-admin' });
   t.check(missing.ok === false && errorCodes.codeOf(missing) ===
-          'STS-AUTHN-0218',
+          'STS-AUTHN-0219',
           'F6. and one they do not hold is refused with the store\'s code',
           JSON.stringify(missing));
 
@@ -474,7 +474,7 @@ async function run(t) {
   const appMade = credentials.createAppPassword(appDn, {
     name: 'x', doors: ['ldap'] });
   t.check(appMade.ok === false &&
-          ['STS-AUTHN-0220', 'STS-AUTHN-0061'].indexOf(
+          ['STS-AUTHN-0221', 'STS-AUTHN-0061'].indexOf(
             errorCodes.codeOf(appMade)) >= 0,
           'G1. an application is not given an app password',
           JSON.stringify(appMade));

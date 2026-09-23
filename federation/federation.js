@@ -48,11 +48,14 @@
 // protocol here.
 //
 // So the shape of the exception is: **a relationship must be configured, and
-// what it configures is a KEY**. Once configured, everything downstream is as
-// permissive as the rest of this service — any username in the assertion is
-// accepted, any attribute is mapped, nothing about the person is checked, and
-// an entry is created for them. The gate is on the SIGNER, not on the SUBJECT,
-// which is exactly the line `spiffe_auth.js` draws and for the same reason.
+// what it configures is a KEY** — AND, SINCE #109 (2026-09-22), WHICH PEOPLE
+// THAT KEY MAY SIGN IN. A verified assertion signs in only the person its
+// subject is LINKED to (`federationLink`, `federation_links.ts`), and what
+// happens to a subject nobody linked is `fedSubjectPolicy`'s: a local sign-in
+// as the person it names before the link is made (the default), a refusal, a
+// new namespaced entry, or — development only — the old name match. The gate
+// was on the SIGNER alone until then, which let any partner whose signature
+// verified sign in any local account it could name, `admin` included.
 //
 // ---------------------------------------------------------------------------
 // ONE RELATIONSHIP IS ONE DIRECTION, AND THAT IS A DECISION.
@@ -191,6 +194,9 @@ const cacheRegistry = require('./../common/cache_registry');
 // of their choosing. See applicationConfiguredFor().
 // ---------------------------------------------------------------------------
 const applications = require('./../common/applications');
+// `any-existing` is refused in product (#109): a relationship may not be SET to
+// it there. A leaf over config.js; it requires nothing here back.
+const mode = require('./../common/mode');
 
 // ---------------------------------------------------------------------------
 // THE TWO ROLES. Which end of the relationship THIS SERVICE is.
@@ -221,7 +227,9 @@ const PATHS = {
   base: '/federation',
   login: '/federation/login',
   acs: '/federation/acs',
-  metadata: '/federation/metadata'
+  metadata: '/federation/metadata',
+  // Where the local sign-in of `link-at-first-sign-in` returns to (#109).
+  link: '/federation/link'
 };
 
 const ROLES = [
@@ -435,6 +443,205 @@ const MECHANISMS = [
 const MECHANISM_IDS = MECHANISMS.map(function (one) {
   return one.mechanism;
 });
+
+// ---------------------------------------------------------------------------
+// WHICH PEOPLE A PARTNER MAY ASSERT (#109, 2026-09-22): `fedSubjectPolicy`'s
+// four values, the order they are offered in, and the two readers of the
+// three rules. The decision itself is `federation_sp.ts`'s
+// `subjectDecision()`; this is the vocabulary it and the console share.
+//
+// **AN EMPTY VALUE IS THE DEFAULT, AND AN UNKNOWN ONE IS THE STRICTEST.**
+// Empty is what every relationship created before the attribute holds and
+// what a console clearing the field writes, so it means
+// `link-at-first-sign-in`. A value that is none of the four can only have
+// arrived by `ldapmodify` (update() refuses it), and reading it as anything
+// but `pre-linked` would let a typo widen who the partner may sign in.
+// ---------------------------------------------------------------------------
+const SUBJECT_POLICIES = [
+  { policy: 'link-at-first-sign-in', label: 'Link at first sign-in (default)',
+    what: 'A linked subject signs in. An unlinked one naming an existing ' +
+          'person signs in HERE as that person first, and is then linked.' },
+  { policy: 'pre-linked', label: 'Pre-linked only',
+    what: 'Only a link made beforehand — on the console, through ' +
+          '/admin-api or SCIM — signs anybody in.' },
+  { policy: 'jit-namespaced', label: 'Just-in-time, namespaced',
+    what: 'An unlinked subject gets a new entry named ' +
+          '<relationship>~<name>, linked at creation, never an existing ' +
+          'person.' },
+  { policy: 'any-existing', label: 'Any existing person, by name ' +
+                                    '(development only)',
+    what: 'The name the partner sends is matched onto a local person. ' +
+          'Refused in product mode.' }
+];
+
+const SUBJECT_POLICY_IDS = SUBJECT_POLICIES.map(function (one) {
+  return one.policy;
+});
+
+const DEFAULT_SUBJECT_POLICY = 'link-at-first-sign-in';
+
+function subjectPolicyRow(id) {
+  log.debug("Entering subjectPolicyRow().");
+  const wanted = String(id || '');
+  const found = SUBJECT_POLICIES.filter(function (one) {
+    return one.policy === wanted;
+  })[0] || null;
+  log.debug("Leaving subjectPolicyRow().");
+  return found;
+}
+
+// The policy a relationship is under. See the header above SUBJECT_POLICIES.
+function subjectPolicyOf(record) {
+  log.debug("Entering subjectPolicyOf().");
+  const text = String((record && record.fedSubjectPolicy) || '').trim();
+  if (!text) {
+    log.debug("Leaving subjectPolicyOf(). The default.");
+    return DEFAULT_SUBJECT_POLICY;
+  }
+  if (SUBJECT_POLICY_IDS.indexOf(text) < 0) {
+    log.warn('federation: the relationship ' + (record && record.fedId) +
+             ' carries fedSubjectPolicy "' + text + '", which is none of ' +
+             SUBJECT_POLICY_IDS.join(', ') + '; it is read as pre-linked, ' +
+             'the strictest.');
+    log.debug("Leaving subjectPolicyOf(). Unknown, so pre-linked.");
+    return 'pre-linked';
+  }
+  log.debug("Leaving subjectPolicyOf(). " + text);
+  return text;
+}
+
+// ---------------------------------------------------------------------------
+// `fedSubjectPattern`: AN ADMINISTRATOR'S REGULAR EXPRESSION, BOUNDED.
+//
+// JavaScript's engine backtracks and node offers no timeout on a match, so
+// the bound is on what may be written rather than on how long a match runs:
+// at most PATTERN_MAX characters, no backreference, and no quantifier on a
+// group that itself contains one — `(a+)+`, `(a|aa)*`, the shapes that make a
+// backtracking engine exponential — and the value tested is cut off at
+// PATTERN_INPUT_MAX characters. It is ANCHORED here (`^(?:…)$`), so an
+// administrator writing `ou=partners` gets a whole-DN match rather than a
+// substring one, which is XACML's regexp-match lesson (xacml_functions.js)
+// read again: an unanchored pattern admits far more than it names.
+// ---------------------------------------------------------------------------
+const PATTERN_MAX = 256;
+const PATTERN_INPUT_MAX = 1024;
+
+// Whether a group that holds a quantifier or an alternation (at any depth) is
+// itself followed by a quantifier. A scan rather than a regex over the
+// pattern, because the groups nest and a regex cannot count them. Escapes and
+// character classes are stepped over: `[+]` is a plus sign, not a quantifier.
+function nestedQuantifier(pattern) {
+  log.debug("Entering nestedQuantifier().");
+  const stack = [];
+  let i = 0;
+  let found = false;
+  // No Entering/Leaving pair in quantifierAt(): it runs for every character
+  // of the pattern, and a pair per character would drown the log.
+  const quantifierAt = function (at, withOptional) {
+    const c = pattern.charAt(at);
+    return c === '+' || c === '*' || c === '{' || (withOptional && c === '?');
+  };
+  while (i < pattern.length && !found) {
+    const c = pattern.charAt(i);
+    if (c === '\\') {
+      i += 2;
+      continue;
+    }
+    if (c === '[') {
+      let j = i + 1;
+      while (j < pattern.length && pattern.charAt(j) !== ']') {
+        j += pattern.charAt(j) === '\\' ? 2 : 1;
+      }
+      i = j + 1;
+      if (quantifierAt(i, false) && stack.length) {
+        stack[stack.length - 1].risky = true;
+      }
+      continue;
+    }
+    if (c === '(') {
+      stack.push({ risky: false });
+      i += 1;
+      continue;
+    }
+    if (c === ')') {
+      const group = stack.pop() || { risky: false };
+      i += 1;
+      const quantified = quantifierAt(i, true);
+      if (group.risky && quantified) {
+        found = true;
+      }
+      if (stack.length && (group.risky || quantifierAt(i, false))) {
+        stack[stack.length - 1].risky = true;
+      }
+      continue;
+    }
+    if (stack.length && (c === '|' || quantifierAt(i, false) ||
+                         (c === '?' && i > 0 &&
+                          pattern.charAt(i - 1) !== '('))) {
+      stack[stack.length - 1].risky = true;
+    }
+    i += 1;
+  }
+  log.debug("Leaving nestedQuantifier(). " + found);
+  return found;
+}
+
+function subjectPatternProblem(text) {
+  log.debug("Entering subjectPatternProblem().");
+  const pattern = String(text == null ? '' : text);
+  if (!pattern) {
+    log.debug("Leaving subjectPatternProblem(). Empty is no pattern.");
+    return '';
+  }
+  if (pattern.length > PATTERN_MAX) {
+    log.debug("Leaving subjectPatternProblem(). Too long.");
+    return 'it is ' + pattern.length + ' characters long, and at most ' +
+           PATTERN_MAX + ' are accepted';
+  }
+  if (/\\[1-9]|\\k</.test(pattern)) {
+    log.debug("Leaving subjectPatternProblem(). A backreference.");
+    return 'it uses a backreference, which a pattern here may not';
+  }
+  // A group whose body carries a quantifier or an alternation, followed by a
+  // quantifier — at any depth. Read on the source text by nestedQuantifier(),
+  // so it errs towards refusing: `([a-z]+)?` is refused too, and `[a-z]+`
+  // does the same job without the group.
+  if (nestedQuantifier(pattern)) {
+    log.debug("Leaving subjectPatternProblem(). A nested quantifier.");
+    return 'it applies a quantifier to a group that is itself quantified ' +
+           'or an alternation, the shape that makes a match take ' +
+           'exponential time; write the repetition once';
+  }
+  try {
+    new RegExp('^(?:' + pattern + ')$');
+  } catch (e) {
+    log.debug("Caught in subjectPatternProblem(): " + ((e && e.message) || e));
+    log.debug("Leaving subjectPatternProblem(). It does not compile.");
+    return 'it does not compile: ' + e.message;
+  }
+  log.debug("Leaving subjectPatternProblem(). Usable.");
+  return '';
+}
+
+// Whether `value` matches the relationship's pattern, WHOLE. A pattern that
+// would be refused today (written by `ldapmodify`) matches NOTHING — a rule
+// that cannot be read must not fall open.
+function subjectPatternMatches(text, value) {
+  log.debug("Entering subjectPatternMatches().");
+  const pattern = String(text == null ? '' : text);
+  if (subjectPatternProblem(pattern)) {
+    log.debug("Leaving subjectPatternMatches(). An unusable pattern.");
+    return false;
+  }
+  const subject = String(value == null ? '' : value);
+  if (subject.length > PATTERN_INPUT_MAX) {
+    log.debug("Leaving subjectPatternMatches(). The value is too long.");
+    return false;
+  }
+  const matched = new RegExp('^(?:' + pattern + ')$', 'i').test(subject);
+  log.debug("Leaving subjectPatternMatches(). " + matched);
+  return matched;
+}
 
 function mechanismRow(id) {
   log.debug("Entering mechanismRow().");
@@ -663,6 +870,62 @@ const SCHEMA = {
             'person — or one somebody has since edited — keeps what the ' +
             'directory says. Which relationship and issuer a person came ' +
             'through is recorded either way.' },
+    // --- WHICH PEOPLE THE PARTNER MAY ASSERT (#109, 2026-09-22) ----------
+    // The gate used to be on the SIGNER only: any person a verified assertion
+    // named was signed in, matched onto a local entry by NAME. These five say
+    // which local person a partner's subject may become — see
+    // federation/CLAUDE.md, *WHICH PEOPLE A PARTNER MAY ASSERT*.
+    { name: 'fedSubjectPolicy', kind: 'single', role: 'service-provider',
+      from: 'this register', enum: SUBJECT_POLICY_IDS,
+      what: 'HOW THE PARTNER\'S SUBJECT BECOMES A LOCAL PERSON. The subject ' +
+            'is the partner\'s own stable identifier — iss + sub, a ' +
+            'persistent NameID and the partner\'s entity ID — and a person ' +
+            'carries it as a federationLink. link-at-first-sign-in (the ' +
+            'default; empty means it): a linked subject signs in; an ' +
+            'unlinked one naming an existing person must first sign in HERE ' +
+            'as that person — password, and a second factor where one is ' +
+            'held or required — and only then is the link recorded and the ' +
+            'partner\'s attributes written; one naming nobody gets a new ' +
+            'entry namespaced to this relationship where provisioning is on. ' +
+            'pre-linked: only a link signs anybody in. jit-namespaced: an ' +
+            'unlinked subject always gets a NEW entry, ' +
+            '<relationship>~<name>, ' +
+            'never an existing person. any-existing: the name the partner ' +
+            'sent is matched straight onto a local person, as this service ' +
+            'did before #109 — DEVELOPMENT ONLY, refused in product, and it ' +
+            'lets this partner sign in any account it can name.' },
+    { name: 'fedSubjectGroup', kind: 'multi', role: 'service-provider',
+      from: 'this register',
+      what: 'A RULE ON TOP OF THE POLICY: the person must be a member of one ' +
+            'of these groups, each a cn or a DN. An entry this sign-in would ' +
+            'CREATE is in no group, so with this set nobody is created. ' +
+            'Empty: no group rule.' },
+    { name: 'fedSubjectDomain', kind: 'multi', role: 'service-provider',
+      from: 'this register',
+      what: 'A RULE ON TOP OF THE POLICY: the mail domain the partner SENT ' +
+            '(the mapped mail, or the mapped username where it is an ' +
+            'address) must be one of these, and so must the local entry\'s ' +
+            'mail where it has one. Compared case-insensitively and ' +
+            'exactly: example.com does not admit sub.example.com. Empty: no ' +
+            'domain rule.' },
+    { name: 'fedSubjectPattern', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'A RULE ON TOP OF THE POLICY: a regular expression the local ' +
+            'entry\'s DN must match WHOLE (it is anchored for you), such as ' +
+            'uid=[^,]+,ou=users,.* — for an entry this sign-in would create, ' +
+            'the DN it would be created at. At most 256 characters, no ' +
+            'backreference and no quantifier applied to a group that is ' +
+            'itself quantified, and it is tested against at most 1024 ' +
+            'characters, so a pattern cannot be made to backtrack for ' +
+            'minutes. Empty: no pattern.' },
+    { name: 'fedMayAssertAdministrators', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      what: 'LET THIS PARTNER SIGN IN A CONSOLE ADMINISTRATOR. OFF by ' +
+            'default, and off means a person in the Admin Read or Admin ' +
+            'Write roster — or holding REMOTE_PEPS — is refused whatever ' +
+            'else is true, a valid link included (STS-FED-0093). Turning it ' +
+            'on makes this partner\'s signing key a key to the console for ' +
+            'every administrator linked to it.' },
     { name: 'fedAllowUnsolicited', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'Accept a response this service did not ask for — SAML 2.0\'s ' +
@@ -822,11 +1085,16 @@ const EDITABLE = {
   fedUsernameSource: 'set',
   fedAutocreateUsers: 'set',
   fedUpdateUserAttributes: 'set',
+  fedSubjectPolicy: 'set',
+  fedSubjectPattern: 'set',
+  fedMayAssertAdministrators: 'set',
   fedAllowUnsolicited: 'set',
   fedApplication: 'set',
   fedAuthnMechanism: 'set',
   fedAuthnRelationship: 'set',
   fedAttributeMap: 'multi',
+  fedSubjectGroup: 'multi',
+  fedSubjectDomain: 'multi',
   fedRelease: 'multi',
   description: 'multi'
 };
@@ -1114,6 +1382,69 @@ function containerDn() {
   log.debug("Entering containerDn().");
   log.debug("Leaving containerDn().");
   return haveDirectory() ? directory.containerDn() : '';
+}
+
+// ---------------------------------------------------------------------------
+// THE PEOPLE A PARTNER'S SUBJECTS ARE LINKED TO (#109), through the same slot.
+//
+// These five are PERSON questions asked of a register that is otherwise about
+// relationships, and they are here rather than behind a slot of their own
+// because the object `ldap_server.js` hands `setDirectory()` already IS this
+// module's door into the directory: a second slot would be a second door for
+// one caller, which is rule 3e's test failed rather than passed. What a link
+// IS lives in `federation_links.ts`; what these answer is where the values are.
+//
+//   federatedPerson(name)      the entry a name finds — its DN, mail, links
+//                              and groups — or null
+//   peopleLinkedBy(value)      every person carrying that federationLink
+//   linkedThrough(fedId)       every link made through one relationship
+//   plannedPersonDn(name)      the DN an entry created for `name` would get
+//   writeFederationLink(...)   add or remove one value on one person
+// ---------------------------------------------------------------------------
+function directoryHas(fn) {
+  log.debug("Entering directoryHas().");
+  log.debug("Leaving directoryHas().");
+  return haveDirectory() && typeof directory[fn] === 'function';
+}
+
+function federatedPerson(name) {
+  log.debug("Entering federatedPerson().");
+  log.debug("Leaving federatedPerson().");
+  return directoryHas('federationPerson')
+    ? directory.federationPerson(String(name || '')) : null;
+}
+
+function peopleLinkedBy(value) {
+  log.debug("Entering peopleLinkedBy().");
+  log.debug("Leaving peopleLinkedBy().");
+  return directoryHas('peopleByFederationLink')
+    ? directory.peopleByFederationLink(String(value || '')) : [];
+}
+
+function linkedThrough(fedId) {
+  log.debug("Entering linkedThrough().");
+  log.debug("Leaving linkedThrough().");
+  return directoryHas('federationLinksThrough')
+    ? directory.federationLinksThrough(String(fedId || '')) : [];
+}
+
+function plannedPersonDn(name) {
+  log.debug("Entering plannedPersonDn().");
+  log.debug("Leaving plannedPersonDn().");
+  return directoryHas('plannedPersonDn')
+    ? directory.plannedPersonDn(String(name || '')) : '';
+}
+
+function writeFederationLink(name, value, add, options) {
+  log.debug("Entering writeFederationLink(). add=" + !!add);
+  if (!directoryHas('writeFederationLink')) {
+    log.debug("Leaving writeFederationLink(). No directory.");
+    return errorCodes.mark({ ok: false, errors: ['There is no embedded ' +
+      'directory loaded, so there is nobody to link.'] }, 'STS-FED-0109');
+  }
+  log.debug("Leaving writeFederationLink().");
+  return directory.writeFederationLink(String(name || ''), String(value || ''),
+                                       !!add, options || {});
 }
 
 function maxRelationships() {
@@ -1822,6 +2153,11 @@ function create(spec) {
   if (role === 'service-provider') {
     record.fedAutocreateUsers = boolText(true);
     record.fedUpdateUserAttributes = boolText(true);
+    // WHICH PEOPLE THE PARTNER MAY ASSERT (#109): the most secure default a
+    // federation still works with, written onto the entry for the reason the
+    // two above are.
+    record.fedSubjectPolicy = DEFAULT_SUBJECT_POLICY;
+    record.fedMayAssertAdministrators = boolText(false);
     record.fedSignRequest = boolText(false);
     if (protocol === 'saml2' || protocol === 'saml11') {
       record.fedBinding = 'HTTP-Redirect';
@@ -1885,6 +2221,45 @@ function create(spec) {
 // promises a list, and the console and an `ldapmodify` then disagree about what
 // the attribute holds.
 // ---------------------------------------------------------------------------
+// The three subject fields a value can be WRONG for (#109). Answers null, or
+// the code, the audit sentence and the message for the caller.
+function subjectFieldProblem(field, value) {
+  log.debug("Entering subjectFieldProblem(). field=" + field);
+  if (field === 'fedSubjectPolicy' && value !== '') {
+    if (SUBJECT_POLICY_IDS.indexOf(value) < 0) {
+      log.debug("Leaving subjectFieldProblem(). Not a policy.");
+      return { code: 'STS-FED-0102',
+               why: '"' + value + '" is not a subject policy',
+               message: '"' + value + '" is not a fedSubjectPolicy. It is ' +
+                        'one of ' + SUBJECT_POLICY_IDS.join(', ') + ', or ' +
+                        'empty for ' + DEFAULT_SUBJECT_POLICY + '.' };
+    }
+    if (value === 'any-existing' && !mode.matchesFederatedNames()) {
+      log.debug("Leaving subjectFieldProblem(). any-existing in product.");
+      return { code: 'STS-FED-0095',
+               why: 'any-existing is refused in product mode',
+               message: 'any-existing is refused in product mode: it ' +
+                        'matches the name a partner sends onto any local ' +
+                        'person, which OpenID Connect Core section 5.7 ' +
+                        'says a relying party must not rely on. Use ' +
+                        'link-at-first-sign-in, pre-linked or ' +
+                        'jit-namespaced.' };
+    }
+  }
+  if (field === 'fedSubjectPattern') {
+    const problem = subjectPatternProblem(value);
+    if (problem) {
+      log.debug("Leaving subjectFieldProblem(). An unusable pattern.");
+      return { code: 'STS-FED-0103',
+               why: 'fedSubjectPattern is unusable: ' + problem,
+               message: 'fedSubjectPattern was not changed: ' + problem +
+                        '.' };
+    }
+  }
+  log.debug("Leaving subjectFieldProblem(). Nothing wrong.");
+  return null;
+}
+
 function update(id, change) {
   log.debug('Entering update(). id=' + id + ', field=' +
             (change && change.field));
@@ -1938,7 +2313,20 @@ function update(id, change) {
                       id + ' is ' + record.fedRole + '-side. Nothing was ' +
                                                      'changed.'] };
   }
-  const value = String(info.value == null ? '' : info.value);
+  let value = String(info.value == null ? '' : info.value);
+  // A DOMAIN IS COMPARED CASE-INSENSITIVELY, so it is stored lower-cased and
+  // without the `@` somebody pasting an address would bring (#109).
+  if (field === 'fedSubjectDomain') {
+    value = value.trim().replace(/^@+/, '').toLowerCase();
+  }
+  const refusal = subjectFieldProblem(field, value);
+  if (refusal) {
+    log.debug('Leaving update(). ' + refusal.code);
+    // error-code: none — subjectFieldProblem() names the code at each return
+    actionRefused(refusal.code, id, refusal.why);
+    log.debug("Leaving update().");
+    return { ok: false, errors: [refusal.message] };
+  }
   const before = row.kind === 'multi' ? (record[field] || []).slice() :
                  record[field];
   if (row.editable === 'multi') {
@@ -1993,6 +2381,7 @@ function update(id, change) {
   // the form posted and `boolOf()` has to guess.
   if (row.name === 'fedEnabled' || row.name === 'fedAutocreateUsers' ||
       row.name === 'fedUpdateUserAttributes' ||
+      row.name === 'fedMayAssertAdministrators' ||
       row.name === 'fedSignRequest' || row.name === 'fedAllowUnsolicited') {
     record[field] = boolText(boolOf(record[field], false));
   }
@@ -2491,12 +2880,26 @@ module.exports = {
   PROTOCOL_IDS: PROTOCOL_IDS,
   MECHANISMS: MECHANISMS,
   MECHANISM_IDS: MECHANISM_IDS,
+  // WHICH PEOPLE A PARTNER MAY ASSERT (#109).
+  SUBJECT_POLICIES: SUBJECT_POLICIES,
+  SUBJECT_POLICY_IDS: SUBJECT_POLICY_IDS,
+  DEFAULT_SUBJECT_POLICY: DEFAULT_SUBJECT_POLICY,
+  subjectPolicyRow: subjectPolicyRow,
+  subjectPolicyOf: subjectPolicyOf,
+  subjectPatternProblem: subjectPatternProblem,
+  subjectPatternMatches: subjectPatternMatches,
   SCHEMA: SCHEMA,
   protocolRow: protocolRow,
   mechanismRow: mechanismRow,
   roleRow: roleRow,
   familyOf: familyOf,
   setDirectory: setDirectory,
+  // The people a partner's subjects are linked to (#109); see their header.
+  federatedPerson: federatedPerson,
+  peopleLinkedBy: peopleLinkedBy,
+  linkedThrough: linkedThrough,
+  plannedPersonDn: plannedPersonDn,
+  writeFederationLink: writeFederationLink,
   attributesFor: attributesFor,
   recordFromAttributes: recordFromAttributes,
   idProblem: idProblem,

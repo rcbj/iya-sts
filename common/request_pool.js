@@ -95,6 +95,10 @@ const errorCodes = require('./error_codes');
 const clientAddress = require('./client_address');
 // A LEAF: the affinity maps below, described to `/admin/caches` (#74).
 const cacheRegistry = require('./cache_registry');
+// THE JA4 READER (#62 P0) IS REQUIRED LAZILY, in `clientHelloModule()`
+// below: this file is loaded by `app.js` before the composition root defers
+// instance building, and a load here would build `tls/client_hello`'s
+// default instance before the root could install its own.
 
 let logLevelProblem = null;
 const log = bunyan.createLogger({
@@ -671,6 +675,13 @@ const PEER_AUTHORIZED_HEADER = 'x-sts-peer-authorized';
 // handler ever sees a value that did not come from the pool.
 // ---------------------------------------------------------------------------
 const PROTOCOL_WORKER_HEADER = 'x-sts-pool-protocol-worker';
+
+// The JA4 reader, loaded on first use — see the note at the requires.
+function clientHelloModule() {
+  log.debug("Entering clientHelloModule().");
+  log.debug("Leaving clientHelloModule().");
+  return require('../tls/client_hello');
+}
 
 // What the front process saw of this connection, in a shape that survives a
 // header. `raw` is a Buffer and is the only field that needs care; everything
@@ -3851,6 +3862,10 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // ---------------------------------------------------------------------
   delete headers[PEER_CERT_HEADER];
   delete headers[PEER_AUTHORIZED_HEADER];
+  // THE CLIENT'S JA4 FINGERPRINT (#62 P0), for the same reason as the
+  // certificate: a client that could set it could claim any TLS stack.
+  const helloModule = clientHelloModule();
+  delete headers[helloModule.FORWARD_HEADER];
   // Nothing a client says about whose directory connections should close may be
   // believed. See LDAP_DROP_HEADER.
   delete headers[LDAP_DROP_HEADER];
@@ -3877,6 +3892,12 @@ function proxy(entry, req, res, atGeneration, ticket) {
   if (peer) {
     headers[PEER_CERT_HEADER] = peer.cert;
     headers[PEER_AUTHORIZED_HEADER] = peer.authorized ? 'yes' : 'no';
+  }
+  // What this process read off the connection's ClientHello, which the
+  // worker's unix socket cannot see — tls/client_hello.ts.
+  const hello = helloModule.encodeForward(req);
+  if (hello) {
+    headers[helloModule.FORWARD_HEADER] = hello;
   }
   delete headers[POOL_TICKET_HEADER];
   if (ticket) {

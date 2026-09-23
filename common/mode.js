@@ -612,6 +612,23 @@ function acceptsPasswordAloneFromSecondFactorAccounts() {
   return !isProduct();
 }
 
+// May a federation partner's asserted NAME be matched straight onto an
+// existing local person, which is `fedSubjectPolicy: any-existing` (#109,
+// 2026-09-22)? Development says yes — it is what this service did before the
+// policy existed, and a client whose partner sends only a name can still be
+// exercised. Product says no, whatever the relationship says: OpenID Connect
+// Core section 5.7 makes `iss` and `sub` the only claims a relying party may
+// rely on as a stable identifier, and a name match lets any partner whose
+// signature verifies sign in any local account it can name — `admin`
+// included. `federation/federation_sp.ts` refuses such a sign-in
+// (STS-FED-0094) and `federation/federation.js` refuses setting the value
+// (STS-FED-0095).
+function matchesFederatedNames() {
+  log.debug("Entering matchesFederatedNames().");
+  log.debug("Leaving matchesFederatedNames().");
+  return !isProduct();
+}
+
 // May a request object be UNSIGNED — `alg: none` — at the authorization
 // endpoint (2026-09-13)? RFC 9101 section 4 says a request object is signed, or
 // signed and then encrypted, and nothing else; OpenID Connect Core section 6.1
@@ -876,6 +893,23 @@ const REQUIREMENTS = [
              'oauth2.delegatedPermissionsEnforced says: the grant is ' +
              '`oauthDelegatedPermission` on the client\'s entry.',
     where: 'oauth-oidc/oauth2.ts, common/app_permissions.ts' },
+  { id: 'federated-name-match',
+    what: 'A federation partner signs in only the person its subject is ' +
+          'linked to',
+    development: 'A relationship may set fedSubjectPolicy to any-existing, ' +
+                 'which matches the name the partner asserted straight onto ' +
+                 'a local person — any person, an administrator included ' +
+                 'unless fedMayAssertAdministrators is off (the default). ' +
+                 'Every other policy behaves as it does in product.',
+    product: 'any-existing is refused, at the relationship (STS-FED-0095) ' +
+             'and at the sign-in (STS-FED-0094). A partner signs in the ' +
+             'entry its (issuer, subject) is linked to; an unlinked subject ' +
+             'naming an existing person must first sign in here as that ' +
+             'person (link-at-first-sign-in, the default), or is refused ' +
+             '(pre-linked). Development and product both keep the rules and ' +
+             'the console-administrator refusal.',
+    where: 'federation/federation_sp.ts, federation/federation_links.ts, ' +
+           'federation/federation.js' },
   { id: 'passkey-first-use',
     what: 'The sign-in screen does not enrol a security key for somebody ' +
           'who has not proved who they are',
@@ -895,7 +929,7 @@ const REQUIREMENTS = [
                  'the second factor.',
     product: 'At those five doors the person\'s own password is refused — ' +
              'answered exactly as a wrong password, and counted against the ' +
-             'rate limit as one (STS-AUTHN-0212 on the audit row and in the ' +
+             'rate limit as one (STS-AUTHN-0213 on the audit row and in the ' +
              'log only) — whenever they hold an authenticator app or a ' +
              'security key in the mfa role, or a second factor is required ' +
              'of them (stsMfaRequired, authn.mfaRequired). An APP PASSWORD ' +
@@ -1555,6 +1589,7 @@ module.exports = {
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsPasswordAloneFromSecondFactorAccounts:
     acceptsPasswordAloneFromSecondFactorAccounts,
+  matchesFederatedNames: matchesFederatedNames,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
   acceptsLooseRequestUris: acceptsLooseRequestUris,
   acceptsUnsignedSamlRequests: acceptsUnsignedSamlRequests,

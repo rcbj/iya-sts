@@ -614,6 +614,24 @@ so must `admin-ui/admin.ts`.
    `tests/fapi2_units.js` and `tests/vendored/sts_fapi2.js` hold it; the
    Attacker Model's mapping is in `docs/oauth-security.md`.
 
+   **FAPI 2.0 MESSAGE SIGNING (#141, 2026-09-22) IS THE FOURTH VALUE,
+   `2-message-signing`: the Security Profile PLUS ALL THREE COMPONENTS** —
+   rcbj's choice over a switch per component, though the specification lets
+   an ecosystem adopt one, two or three. `fapi2()` is true for it, so every
+   2.0 rule holds, and `messageSigning()` adds: a signed request object
+   required (`requiresSignedRequestObject()`, so a push of plain parameters is
+   `STS-OAUTH-0415`) held to Advanced's exp/nbf/aud rule
+   (`requestObjectRefusal()` — section 5.3.2 asks the same three things);
+   JARM required (`STS-OAUTH-0591`, and discovery lists JARM's modes alone);
+   and RFC 9701's signed introspection, which every JWT introspection response
+   here already was. Section 5.2's non-repudiation is guidance, answered in
+   `docs/oauth-security.md` (keep the retired keys and the audit log). **THE
+   FINAL SPECIFICATION HAS NO RFC 9421 SECTIONS**, though the #45 review was
+   written against a draft that did; rcbj split HTTP signatures on the resource
+   servers out to #178. The surfaces ask for JARM under this profile as under
+   Advanced. `tests/fapi2_message_signing_units.js` and
+   `tests/vendored/sts_fapi2_message_signing.js` hold it.
+
 3aw. **`jarm.ts` IS JARM, THE JWT-SECURED AUTHORIZATION RESPONSE (#143, BUILT
    IN #139, 2026-09-22), IN EVERY MODE.** FAPI 1.0 Advanced needs it, and it
    is a final specification of its own that any client may ask for, so it is

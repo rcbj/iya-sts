@@ -161,6 +161,10 @@ import softwareStatement = require('../oauth-oidc/software_statement');
 // that registers no route.
 import tlsClientCertificates = require('../common/tls_client_certificates');
 import federation = require('../federation/federation');
+// The link between a partner's subject and a person (#109): its format and
+// the one place a requested link is checked, shared with SCIM. A static
+// utility class; it registers nothing.
+import fedLinks = require('../federation/federation_links');
 import spiffeCa = require('../spiffe/spiffe_ca');
 import spiffeRegistry = require('../spiffe/spiffe_registry');
 import spiffeIdLib = require('../spiffe/spiffe_id');
@@ -311,6 +315,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'require-mfa', 'stop-requiring-mfa',
                        // A disabled account (2026-09-17).
                        'disable', 'enable',
+                       // A partner's subject linked to, or unlinked from,
+                       // a person (#109, 2026-09-22).
+                       'federation-link', 'federation-unlink',
                        // App passwords (#101, 2026-09-22).
                        'create-app-password', 'revoke-app-password'];
 
@@ -726,6 +733,7 @@ interface AdminActionsDeps {
   softwareStatement: typeof softwareStatement;
   tlsClientCertificates: typeof tlsClientCertificates;
   federation: typeof federation;
+  fedLinks: typeof fedLinks;
   spiffeCa: typeof spiffeCa;
   spiffeRegistry: typeof spiffeRegistry;
   spiffeIdLib: typeof spiffeIdLib;
@@ -777,6 +785,7 @@ class AdminActions {
       softwareStatement: softwareStatement,
       tlsClientCertificates: tlsClientCertificates,
       federation: federation,
+      fedLinks: fedLinks,
       spiffeCa: spiffeCa,
       spiffeRegistry: spiffeRegistry,
       spiffeIdLib: spiffeIdLib,
@@ -2065,6 +2074,86 @@ class AdminActions {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // LINK OR UNLINK A PARTNER'S SUBJECT AND A PERSON (#109, 2026-09-22) — the
+  // console's person page and `POST /admin-api/users/federation-link` and
+  // `/federation-unlink`. What a link may be is
+  // `federation/federation_links.ts`'s `resolveRequest()`, which SCIM asks
+  // too; the refusal of one person's link on another is the directory's. An
+  // UNLINK ends the sessions that partner signed the person in to — through
+  // the directory, which hands every removal on whichever door made it.
+  //
+  // `relationship`, `subject` and optionally `issuer` (the relationship's
+  // fedPeer when omitted) name a link; an unlink may name the stored value
+  // instead, as `link`, which is how the console's Remove button posts.
+  // ---------------------------------------------------------------------------
+  private federationLinkAction(action, body, ctx) {
+    const { log, federation, fedLinks, auditLog, errorCodes } = this.deps;
+    log.debug("Entering AdminActions.federationLinkAction(). " + action);
+    const add = action === 'federation-link';
+    const who = String(body.user || body.username || '').trim();
+    if (!who) {
+      log.debug("Leaving AdminActions.federationLinkAction(). Nobody.");
+      return this.refused('STS-FED-0104', { ok: false, errors: ['Name the ' +
+        'person in `user`.'] });
+    }
+    let value = '';
+    if (!add && String(body.link || '')) {
+      value = String(body.link);
+    } else {
+      const resolved = fedLinks.resolveRequest({
+        relationship: body.relationship, issuer: body.issuer,
+        subject: body.subject });
+      if (!resolved.ok) {
+        log.debug("Leaving AdminActions.federationLinkAction(). " +
+                  resolved.code);
+        return this.refused(resolved.code, { ok: false,
+                                             errors: [resolved.why] });
+      }
+      value = resolved.value;
+    }
+    const written = federation.writeFederationLink(who, value, add,
+                                                   { via: ctx.via });
+    if (!written.ok) {
+      log.debug("Leaving AdminActions.federationLinkAction(). The " +
+                "directory refused.");
+      return this.refused(errorCodes.codeOf(written) || 'STS-FED-0109',
+                          { ok: false, errors: written.errors ||
+                            ['The directory would not write the link.'] });
+    }
+    const parsed = fedLinks.parse(value) || {};
+    auditLog.record({
+      category: 'admin', action: add ? 'federation.link.add' :
+                                       'federation.link.remove',
+      actor: ctx.actor, target: written.username, outcome: 'success',
+      summary: written.username + ' was ' + (add ? 'linked to' :
+                                             'unlinked from') +
+               ' the subject ' + parsed.subject + ' of ' + parsed.issuer +
+               ' through ' + parsed.relationship + ' (' + ctx.via + ')' +
+               (written.changed ? '' : '; it already was'),
+      detail: { username: written.username, via: ctx.via,
+                relationship: String(parsed.relationship || ''),
+                issuer: String(parsed.issuer || ''),
+                subject: String(parsed.subject || ''),
+                changed: written.changed ? 'yes' : 'no' }
+    });
+    log.debug("Leaving AdminActions.federationLinkAction(). " +
+              (written.changed ? 'Changed.' : 'Unchanged.'));
+    return { ok: true, username: written.username, link: value,
+             changed: !!written.changed, links: written.links || [],
+             message: add
+               ? (written.changed
+                   ? written.username + ' is linked to ' + parsed.subject +
+                     ' at ' + parsed.issuer + ': that partner, through ' +
+                     parsed.relationship + ', now signs them in.'
+                   : written.username + ' already carried that link.')
+               : written.username + ' is no longer linked to ' +
+                 parsed.subject + ' at ' + parsed.issuer + '. The next ' +
+                 'sign-in through ' + parsed.relationship + ' does not ' +
+                 'find them, and every session that partner signed them in ' +
+                 'to is being ended.' };
+  }
+
   usersAction(body, context?) {
     const { log, numberWord, credentials, auditLog,
             accountSignals } = this.deps;
@@ -2120,6 +2209,12 @@ class AdminActions {
       return { ok: true, username: who, disabled: answer.disabled,
                changed: answer.changed, ended: answer.ended || null,
                message: answer.message };
+    }
+
+    // A FEDERATION LINK, MADE OR REMOVED BY AN ADMINISTRATOR (#109).
+    if (action === 'federation-link' || action === 'federation-unlink') {
+      log.debug("Leaving AdminActions.usersAction(). A federation link.");
+      return this.federationLinkAction(action, body, ctx);
     }
 
     const credentialAnswer = this.credentialAdminAction(action, body, ctx);
