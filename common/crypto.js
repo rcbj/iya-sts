@@ -3291,6 +3291,21 @@ function credentialFingerprint(identifier) {
 // truncation of a digest this file computes, rather than a digest computed
 // by the caller: the rule is that this service hashes here.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A PASSWORD AS THE PWNED PASSWORDS RANGE API KEYS IT (#62 P6): SHA-1, upper-
+// case hex. **NOT A SECURITY USE OF SHA-1** — nothing is signed, stored or
+// compared with it; it is the key the Have I Been Pwned corpus is indexed
+// by, and only its first five characters leave this process
+// (`common/breached_passwords.ts`, k-anonymity). Here because every digest of
+// a secret this service computes is computed in this file.
+// ---------------------------------------------------------------------------
+function pwnedPasswordDigest(password) {
+  log.debug('Entering pwnedPasswordDigest().');
+  log.debug('Leaving pwnedPasswordDigest().');
+  return nodeCrypto.createHash('sha1').update(String(password || ''), 'utf8')
+    .digest('hex').toUpperCase();
+}
+
 function truncatedSha256Hex(text, chars) {
   log.debug('Entering truncatedSha256Hex().');
   const hex = nodeCrypto.createHash('sha256')
@@ -5339,6 +5354,7 @@ module.exports = {
   userAgentFingerprint: userAgentFingerprint,
   credentialFingerprint: credentialFingerprint,
   truncatedSha256Hex: truncatedSha256Hex,
+  pwnedPasswordDigest: pwnedPasswordDigest,
   certificateIdentifiers: certificateIdentifiers,
   // --- a credential several processes have to derive alike ---
   deriveSharedCredential: deriveSharedCredential,

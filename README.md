@@ -1705,6 +1705,13 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | yes | The score, in hundredths, from which a sign-in is HIGH. |
 | `risk.assessmentRetentionDays` | `STS_RISK_ASSESSMENT_RETENTION_DAYS` | `90` | yes | How long an assessment is kept. |
 | `risk.historyRetentionDays` | `STS_RISK_HISTORY_RETENTION_DAYS` | `180` | yes | How long the model remembers a value nobody has signed in with since — an address, a network, a device. |
+| `risk.fingerprinting` | `STS_RISK_FINGERPRINTING` | `false` | yes | OFF BY DEFAULT (#62 P6). The sign-in screen runs FingerprintJS (MIT; it sends nothing) and the service keeps a keyed digest of the browser's identifier, scoring a browser the person never used as `new-device`. Personal data: complete the privacy impact assessment in `docs/risk-scoring.md` first. |
+| `risk.breachCheck` | `STS_RISK_BREACH_CHECK` | `on` | yes | In product mode, refuse a password known from a data breach: its SHA-1's first five characters go to the Pwned Passwords range API (k-anonymity) and the match is made here (#62 P6). An unreachable API sets the password unchecked. |
+| `risk.breachCheckAtSignIn` | `STS_RISK_BREACH_CHECK_AT_SIGN_IN` | `true` | yes | Also check a correct password at the sign-in screen, and make a breached one be changed before the sign-in finishes. |
+| `risk.breachApiUrl` | `STS_RISK_BREACH_API_URL` | `https://api.pwnedpasswords.com/range/` | yes | Where the prefix is sent — a mirror keeps the check inside your network. Through the outbound rules. |
+| `risk.breachCacheMinutes` | `STS_RISK_BREACH_CACHE_MINUTES` | `60` | yes | How long a prefix's answer is reused. |
+| `risk.breachCacheSize` | `STS_RISK_BREACH_CACHE_SIZE` | `5000` | yes | How many prefix answers each process keeps. |
+| `risk.breachTimeoutMs` | `STS_RISK_BREACH_TIMEOUT_MS` | `3000` | yes | How long a password being set waits for the range API. |
 | `risk.mdsTrustAnchors` | `STS_RISK_MDS_TRUST_ANCHORS` | *(empty)* | yes | The certificates a FIDO MDS3 BLOB's signing chain must end at (#62 P5), as PEM; empty uses the FIDO root, GlobalSign Root CA - R3, from node's own root store — nothing FIDO-specific is shipped. |
 | `risk.mdsStaleGraceDays` | `STS_RISK_MDS_STALE_GRACE_DAYS` | `7` | yes | How long past its own `nextUpdate` the active MDS3 BLOB still answers; after it no authenticator's status is known. |
 | `risk.rescoreEveryS` | `STS_RISK_RESCORE_EVERY_S` | `300` | yes | How often the `risk.rescore` job re-checks every live sign-on session against the datasets and the failure history, raising (never lowering) one that became riskier (#62 P4). |

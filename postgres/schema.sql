@@ -520,7 +520,15 @@ CREATE TABLE IF NOT EXISTS sts_risk_assessments (
   policy_id          text    NOT NULL DEFAULT '',
   error_code         text    NOT NULL DEFAULT '',
   origin             text    NOT NULL DEFAULT '',
+  feedback           text    NOT NULL DEFAULT '',
+  feedback_at        bigint  NOT NULL DEFAULT 0,
   PRIMARY KEY (realm, id));
+
+-- What the PERSON said about a sign-in (#62 P6, schema version 9): "this was
+-- me" (confirmed) or "this wasn't me" (denied), from /portal/sign-ins. Added
+-- separately as well, for sts_realms.domain's reason.
+ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback text NOT NULL DEFAULT '';
+ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback_at bigint NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS sts_risk_assessments_subject ON sts_risk_assessments (realm, subject, at);
 
@@ -616,7 +624,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (8) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (9) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

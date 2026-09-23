@@ -1193,6 +1193,39 @@ class Credentials {
     return false;
   }
 
+  // What the door's Pwned Passwords screen said about this password (#62
+  // P6): 'breached', 'clean', 'unscreened' (logged), or 'off'. Required
+  // LAZILY — `breached_passwords.ts` is built by the root long after this
+  // file — and a process without it screens nothing.
+  private breachVerdictOf(password, via) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Credentials.breachVerdictOf().");
+    let breached = null;
+    try {
+      breached = require('./breached_passwords');
+    } catch (e) {
+      log.debug("Caught in Credentials.breachVerdictOf(): " +
+                ((e && e.message) || e));
+      // Not loaded here: nothing screens.
+      breached = null;
+    }
+    if (!breached || !breached.enabled()) {
+      log.debug("Leaving Credentials.breachVerdictOf(). Off.");
+      return 'off';
+    }
+    const verdict = breached.verdictOf(password);
+    if (!verdict) {
+      log.warn(errorCodes.tag('STS-AUTHN-0223') + 'credentials: a password ' +
+               'was set through ' + String(via || 'a door that did not say ' +
+               'which') + ' without being screened against Pwned Passwords ' +
+               'first.');
+      log.debug("Leaving Credentials.breachVerdictOf(). Unscreened.");
+      return 'unscreened';
+    }
+    log.debug("Leaving Credentials.breachVerdictOf().");
+    return verdict.breached ? 'breached' : 'clean';
+  }
+
   // ---------------------------------------------------------------------------
   // PREPARING ONE: everything setting a password decides, and nothing it
   // writes.
@@ -1239,6 +1272,27 @@ class Credentials {
                   'policy.');
         return coded('STS-AUTHN-0056', { ok: false, reason: 'password-policy',
                                          problems: problems, errors: [said] });
+      }
+    }
+    // -----------------------------------------------------------------------
+    // A PASSWORD KNOWN FROM A DATA BREACH IS REFUSED (#62 P6, NIST SP
+    // 800-63B section 3.1.1.2). The door screened it a moment ago
+    // (`breached_passwords.ts`'s `screen()` is asynchronous, and this is
+    // not), and the verdict is read here, beside the policy it sits with. A
+    // door that did not screen is named in the log (STS-AUTHN-0223) and the
+    // password is set: an unreachable breach service is not a reason nobody
+    // can change their password. A generated password is not asked about.
+    // -----------------------------------------------------------------------
+    if (enforced && !options.generated) {
+      const breach = this.breachVerdictOf(password, options.via);
+      if (breach === 'breached') {
+        log.info('credentials: a password for ' + name + ' was refused: it ' +
+                 'has appeared in a data breach.');
+        log.debug('Leaving Credentials.preparePassword(). Breached.');
+        return coded('STS-AUTHN-0222', { ok: false, reason: 'breached',
+          errors: ['That password has appeared in a data breach, so ' +
+                   'people trying stolen passwords will try it. Choose a ' +
+                   'different one.'] });
       }
     }
     const current = options.current !== undefined

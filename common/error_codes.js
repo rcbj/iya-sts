@@ -4061,6 +4061,25 @@ const CODES = [
       'this realm\'s directory. An application authenticates with its own ' +
       'client credentials, and an app password is a person\'s.',
     spec: 'HTTP 400 (API)' },
+  { code: 'STS-AUTHN-0222',
+    summary: 'A password being set was refused because it has appeared in a ' +
+      'data breach: Pwned Passwords lists it (#62 P6, product mode).',
+    spec: 'NIST SP 800-63B section 3.1.1.2' },
+  { code: 'STS-AUTHN-0223',
+    summary: 'A password was set in product mode by a door that did not ' +
+      'screen it against Pwned Passwords first, so no breach verdict was ' +
+      'there to read. The door is named in the line; it needs a screen().',
+    spec: '' },
+  { code: 'STS-AUTHN-0224',
+    summary: 'The Pwned Passwords range API did not answer (off, ' +
+      'unreachable, refused by the outbound rules, or too slow); a password ' +
+      'was set unscreened.',
+    spec: '' },
+  { code: 'STS-AUTHN-0225',
+    summary: 'The browser fingerprint script was asked for while ' +
+      'risk.fingerprinting is off in the realm; nothing draws a page that ' +
+      'uses it, so it is not served (#62 P6).',
+    spec: 'HTTP 404' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -13245,6 +13264,14 @@ const CODES = [
   { code: 'STS-PORTAL-0082',
     summary: 'A POST to /portal/kerberos named an action the page does not ' +
       'have.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0083',
+    summary: 'A POST to /portal/sign-ins was refused: its CSRF token did not ' +
+      'match the session.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-PORTAL-0084',
+    summary: 'A POST to /portal/sign-ins named a sign-in that is not the ' +
+      'person\'s own, is too old, or has already been answered (#62 P6).',
     spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +

@@ -445,7 +445,11 @@ class RiskAdmin {
         '</small></td><td class="num">' +
         esc(Number(a.score).toPrecision(3)) + '</td><td><strong>' +
         esc(a.level) + '</strong></td><td><small>' + (signals || '—') +
-        '</small></td><td>' + esc(a.decision) + '</td></tr>';
+        '</small></td><td>' + esc(a.decision) +
+        // What the person said about it on /portal/sign-ins (#62 P6).
+        (a.feedback ? '<br><small>' + (a.feedback === 'denied'
+          ? '<strong>not them</strong>' : 'confirmed by them') + '</small>'
+          : '') + '</td></tr>';
     }).join('');
     const people = view.subjects.map(function (p: Json): string {
       return '<tr><td><code>' + esc(p.subject) + '</code></td><td>' +
