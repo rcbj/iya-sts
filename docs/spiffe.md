@@ -132,6 +132,40 @@ by a small native module built into the image). The workload attestors in
 * `k8s`: the pod's `sa:`, `ns:`, `pod-name:`, `pod-label:`, `pod-owner:`,
   `container-name:`, `container-image:` and the rest of SPIRE's list, read from
   the kubelet.
+* `systemd`: the unit's `id:` and `fragment_path:`, asked of systemd over
+  D-Bus. Install the optional package `dbus-next` in the image
+  (`STS_CLOUD_SDKS=dbus-next` at build time); without it, a realm naming
+  `systemd` refuses every connection and says which package is missing.
+
+**Podman.** The `docker` attestor asks Podman's Docker-compatible API instead of
+the Engine when the container's cgroup says `libpod`: the rootful socket
+(`spiffe.dockerPodmanSocketPath`), or a rootless user's socket
+(`spiffe.dockerPodmanSocketPathTemplate`) — the rootless one only with
+`spiffe.dockerUseRootlessPodman` on, because that socket belongs to the caller.
+The selectors are still `docker:`.
+
+**Signed images.** With `spiffe.dockerSigstoreEnabled`, a docker workload's
+image must carry a cosign signature that verifies, and the attestation adds
+SPIRE's `image-signature:verified`, `image-attestations:verified` and
+`image-signature-subject:`, `-issuer:`, `-value:`, `-log-id:`, `-log-index:`,
+`-integrated-time:` and `-signed-entry-timestamp:` selectors. Configure:
+
+1. what a signature may verify under — cosign public key FILES
+   (`spiffe.dockerSigstorePublicKeyFiles`), and for keyless signatures the
+   sigstore trust root: through TUF (`spiffe.dockerSigstoreTufRootFile`, the
+   `root.json` you trust, refreshed by the scheduler job
+   `spiffe.sigstore-tuf-refresh`), or pinned
+   (`spiffe.dockerSigstoreTrustedRootFile`);
+2. for keyless signatures, the signers you accept
+   (`spiffe.dockerSigstoreAllowedIdentities`, `issuer=subject`);
+3. the registries the signatures may be fetched from
+   (`spiffe.dockerSigstoreAllowedRegistries`) — Docker Hub is
+   `index.docker.io`, and list its token host `auth.docker.io` and blob host
+   too.
+
+Every signature must carry its Rekor transparency-log bundle, and a keyless
+certificate an embedded SCT. **A signature that does not verify refuses the
+connection** (`UNAVAILABLE`); it never merely leaves out a selector.
 
 A connection is attested once, when it is accepted. **Every call on it checks
 that the process is still the one attested.** A process that has exited, a
@@ -178,6 +212,41 @@ state under `workloadAttestation.tcp`: `served (development, not attested)`,
 `not served (product, source not declared authenticated)`, `not served
 (product, wildcard bind address)` or `served (product, source declared
 authenticated)`, with whether the port is listening.
+
+### The SPIFFE Broker API
+
+A **broker** — a node proxy, a service mesh's per-node component — can ask for
+the SVIDs of a workload it acts for, by naming the workload rather than being
+it. This is the SPIFFE Broker API (Incubating), on a mutual-TLS listener of its
+own:
+
+1. Set `spiffe.brokerPort` on the realm (and `spiffe.grpcHost` where the realm
+   needs an address of its own), then turn the realm's SPIFFE on.
+2. Authorize the broker on **SPIFFE → Brokers** (`/admin/spiffe/brokers`) or
+   `POST /admin-api/spiffe/brokers/set` with its SPIFFE ID and the references
+   it may use: `pid`, `k8s` or `*`. A broker from another trust domain needs
+   that domain's bundle federated first.
+3. The broker connects with its X509-SVID, verifies this server as
+   `spiffe://<trust domain>/spire/server` against the bundle, and sends
+   `broker.spiffe.io: true` on every call.
+
+It calls `SubscribeToX509SVID`, `SubscribeToX509Bundles`, `FetchJWTSVID` and
+`SubscribeToJWTBundles`, each with a **workload reference**:
+
+* a `WorkloadPIDReference` — a process on this host, attested by the workload
+  attestors exactly as a Workload API caller is. The endpoint is TCP, so allow
+  `pid` only to a broker running on this host;
+* a `KubernetesObjectReference` to a **pod** (`pods`, group `core`), by UID or
+  by namespace and name — found in this node's kubelet pod list and attested
+  by the `k8s` attestor's pod selectors. Other Kubernetes objects are refused.
+
+The workload gets the entries its selectors match, never an admin or downstream
+entry. A refusal follows the specification's table — `INVALID_ARGUMENT` for a
+missing header or a bad reference, `UNAUTHENTICATED` for no SVID,
+`PERMISSION_DENIED` for a caller that is not a broker, a reference type it may
+not use or a workload with no entry, `NOT_FOUND` for a workload that does not
+exist — with a `google.rpc.ErrorInfo` in the `spiffe.io` domain. A stream ends
+`NOT_FOUND` when its workload stops.
 
 ### The SPIRE Server API
 
@@ -294,9 +363,14 @@ domain that any realm of this service serves, and every JWK in one must carry a
 * Revocation of an SVID. The answer is a short lifetime and rotation, and the
   bundle's `crl` field stays empty.
 * Workload attestation of a TCP caller, which has no process to attest (so
-  product mode serves TCP only on a declared network); SPIRE's `systemd`
-  attestor, the docker attestor's sigstore checks and Podman sockets, and the
-  Kubernetes broker.
+  product mode serves TCP only on a declared network).
+* In an image signature: the online Rekor lookup for a signature with no
+  bundle (it is refused), the new sigstore bundle format and RFC 3161
+  timestamps.
+* In the Broker API: references to Kubernetes objects other than pods, SPIRE's
+  cluster pod-reference scope, a Unix socket endpoint and gRPC server
+  reflection.
+* An interop run against a real `spire-agent`.
 
 ## Development and product mode
 
@@ -360,7 +434,9 @@ are reconciled, which happens whenever one of the realm's settings changes.
 | `spiffe.serverPort` | `STS_SPIFFE_SERVER_PORT` | `8181` | restart | The SPIRE Server API over TCP (mutual TLS); 0 turns it off. A new realm is seeded with 0. |
 | `spiffe.serverSocketEnabled` | `STS_SPIFFE_SERVER_SOCKET_ENABLED` | `false` | restart | Whether the SPIRE Server API is also served on a Unix socket. |
 | `spiffe.serverSocket` | `STS_SPIFFE_SERVER_SOCKET` | `/tmp/spire-server/private/api.sock` | restart | That socket's path, SPIRE's own default. |
-| `spiffe.grpcHost` | `STS_SPIFFE_GRPC_HOST` | `0.0.0.0` | restart | The address both TCP gRPC listeners bind; each realm needs an address of its own. |
+| `spiffe.brokerPort` | `STS_SPIFFE_BROKER_PORT` | `0` | restart | The SPIFFE Broker API over TCP (mutual TLS); 0, the default and a new realm's seed, binds nothing. |
+| `spiffe.brokers` | `STS_SPIFFE_BROKERS` | (empty) | yes | The brokers, `<SPIFFE ID>=<types>` separated by spaces, the types from `pid`, `k8s` and `*`; managed on `/admin/spiffe/brokers`. **Warning**: allow `pid` only to a broker on this host. |
+| `spiffe.grpcHost` | `STS_SPIFFE_GRPC_HOST` | `0.0.0.0` | restart | The address every TCP gRPC listener binds; each realm needs an address of its own. |
 
 ### The Workload API
 
@@ -376,12 +452,28 @@ are reconciled, which happens whenever one of the realm's settings changes.
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `spiffe.workloadAttestors` | `STS_SPIFFE_WORKLOAD_ATTESTORS` | `unix` | yes | Which of `unix`, `docker` and `k8s` run for a Unix-socket connection. |
+| `spiffe.workloadAttestors` | `STS_SPIFFE_WORKLOAD_ATTESTORS` | `unix` | yes | Which of `unix`, `docker`, `k8s` and `systemd` run for a Unix-socket connection and a Broker API process reference. `systemd` needs the optional package `dbus-next`. |
 | `spiffe.workloadProcRoot` | `STS_SPIFFE_WORKLOAD_PROC_ROOT` | `/proc` | yes | Where a caller's process is read from. |
 | `spiffe.unixDiscoverWorkloadPath` | `STS_SPIFFE_UNIX_DISCOVER_WORKLOAD_PATH` | `false` | yes | Add `path:` and `sha256:` selectors for the caller's executable. |
 | `spiffe.unixWorkloadSizeLimit` | `STS_SPIFFE_UNIX_WORKLOAD_SIZE_LIMIT` | `0` | yes | 0 hashes any size, a positive value refuses a larger executable, and -1 emits no `sha256:`. |
 | `spiffe.dockerSocketPath` | `STS_SPIFFE_DOCKER_SOCKET_PATH` | `unix:///var/run/docker.sock` | yes | The Docker Engine asked about the caller's container. |
 | `spiffe.dockerApiVersion` | `STS_SPIFFE_DOCKER_API_VERSION` | (empty) | yes | The Engine API version; empty uses the Engine's default. |
+| `spiffe.dockerPodmanSocketPath` | `STS_SPIFFE_DOCKER_PODMAN_SOCKET_PATH` | `unix:///run/podman/podman.sock` | yes | docker: the rootful Podman API socket, asked when a container's cgroup says `libpod` (#170). |
+| `spiffe.dockerPodmanSocketPathTemplate` | `STS_SPIFFE_DOCKER_PODMAN_SOCKET_PATH_TEMPLATE` | `unix:///run/user/%d/podman/podman.sock` | yes | docker: the rootless Podman socket; `%d` is the uid of the container's `user-<uid>.slice`, exactly once. |
+| `spiffe.dockerUseRootlessPodman` | `STS_SPIFFE_DOCKER_USE_ROOTLESS_PODMAN` | `false` | yes | docker: attest rootless Podman containers. **WARNING**: that socket is in the caller's own runtime directory and answers what the caller likes; pair its entries with `unix:uid` or `unix:user`. Off, a rootless container gets no docker selectors. |
+| `spiffe.dockerSigstoreEnabled` | `STS_SPIFFE_DOCKER_SIGSTORE_ENABLED` | `false` | yes | docker: require a cosign image signature that verifies, with its Rekor bundle, and add SPIRE's `image-signature…` selectors. A signature that does not verify refuses the connection (#170). |
+| `spiffe.dockerSigstorePublicKeyFiles` | `STS_SPIFFE_DOCKER_SIGSTORE_PUBLIC_KEY_FILES` | (empty) | yes | docker sigstore: cosign public key FILES (ECDSA, RSA, Ed25519, ML-DSA, SLH-DSA, composite). |
+| `spiffe.dockerSigstoreTrustedRootFile` | `STS_SPIFFE_DOCKER_SIGSTORE_TRUSTED_ROOT_FILE` | (empty) | yes | docker sigstore: a pinned sigstore `trusted_root.json` FILE — Fulcio CAs, Rekor and CT log keys — used while TUF is off. |
+| `spiffe.dockerSigstoreAllowedIdentities` | `STS_SPIFFE_DOCKER_SIGSTORE_ALLOWED_IDENTITIES` | (empty) | yes | docker sigstore: `issuer=subject` pairs a keyless signer must match (regular expressions where they hold one of SPIRE's characters, unanchored as cosign's). Empty admits no keyless signer. |
+| `spiffe.dockerSigstoreSkippedImages` | `STS_SPIFFE_DOCKER_SIGSTORE_SKIPPED_IMAGES` | (empty) | yes | docker sigstore: repository digests attested without verification. |
+| `spiffe.dockerSigstoreAllowedRegistries` | `STS_SPIFFE_DOCKER_SIGSTORE_ALLOWED_REGISTRIES` | (empty) | yes | docker sigstore: the registry hosts (and token realms, and blob redirect hosts) signatures are fetched from; the image names the registry, so none other is dialled. Empty refuses every registry. Docker Hub is `index.docker.io`. |
+| `spiffe.dockerSigstoreRegistryAuthFile` | `STS_SPIFFE_DOCKER_SIGSTORE_REGISTRY_AUTH_FILE` | (empty) | yes | docker sigstore: a Docker `config.json` FILE of registry credentials; empty is anonymous. |
+| `spiffe.dockerSigstoreSkipTlog` | `STS_SPIFFE_DOCKER_SIGSTORE_SKIP_TLOG` | `false` | yes | docker sigstore: skip the Rekor transparency log. **WARNING**: a signature never logged — a stolen key's, or a keyless one past its certificate — then verifies. |
+| `spiffe.dockerSigstoreIgnoreSct` | `STS_SPIFFE_DOCKER_SIGSTORE_IGNORE_SCT` | `false` | yes | docker sigstore: do not require the keyless certificate's embedded SCT. **WARNING**: a Fulcio certificate never logged is then accepted. |
+| `spiffe.dockerSigstoreIgnoreAttestations` | `STS_SPIFFE_DOCKER_SIGSTORE_IGNORE_ATTESTATIONS` | `false` | yes | docker sigstore: do not require in-toto attestations; off (SPIRE's default) refuses an image that has none. |
+| `spiffe.dockerSigstoreTufUrl` | `STS_SPIFFE_DOCKER_SIGSTORE_TUF_URL` | `https://tuf-repo-cdn.sigstore.dev` | yes (per process) | docker sigstore: the TUF repository the trust root is refreshed from. |
+| `spiffe.dockerSigstoreTufRootFile` | `STS_SPIFFE_DOCKER_SIGSTORE_TUF_ROOT_FILE` | (empty) | yes (per process) | docker sigstore: the TUF `root.json` FILE first trusted; empty turns TUF off. A refresh that fails keeps the last verified set. |
+| `spiffe.dockerSigstoreTufRefreshS` | `STS_SPIFFE_DOCKER_SIGSTORE_TUF_REFRESH_S` | `86400` | yes (per process) | docker sigstore: how often the scheduler job `spiffe.sigstore-tuf-refresh` runs; 0 is off. |
 | `spiffe.k8sKubeletReadOnlyPort` | `STS_SPIFFE_K8S_KUBELET_READ_ONLY_PORT` | `0` | yes | Above 0, read the pod list over plain HTTP on loopback instead of the secure port. |
 | `spiffe.k8sKubeletSecurePort` | `STS_SPIFFE_K8S_KUBELET_SECURE_PORT` | `0` | yes | The kubelet's secure port to dial; 0 is 10250. |
 | `spiffe.k8sNodeName` | `STS_SPIFFE_K8S_NODE_NAME` | (empty) | yes | The kubelet host; empty reads the variable named by the next setting. |

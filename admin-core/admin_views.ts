@@ -3860,7 +3860,7 @@ class AdminViews {
     log.debug("Entering AdminViews.spiffeListeners().");
     const read = spiffeReader ? spiffeReader() : null;
     log.debug("Leaving AdminViews.spiffeListeners().");
-    return read || { workload: [], api: [],
+    return read || { workload: [], api: [], broker: [],
                      bundlePath: config.value('spiffe.bundlePath') };
   }
 
@@ -3891,7 +3891,9 @@ class AdminViews {
                      chainSubjects: state.chainSubjects,
                      root: state.root,
                      maxRetained: spiffeCa.MAX_RETAINED_AUTHORITIES },
-      listeners: { workloadApi: bindings.workload, serverApi: bindings.api },
+      listeners: { workloadApi: bindings.workload, serverApi: bindings.api,
+                   // The SPIFFE Broker API's (#170).
+                   brokerApi: (bindings as any).broker || [] },
       // What the Workload API's Unix socket attests (#40 phase four): the
       // native module, the attestors, and each open attested connection.
       workloadAttestation: (bindings as any).workloadAttestation || null,
@@ -3925,7 +3927,9 @@ class AdminViews {
                  'spiffe.workloadPort', 'spiffe.serverPort',
                  'spiffe.serverSocketEnabled', 'spiffe.serverSocket',
                  'spiffe.grpcHost', 'spiffe.workloadAttestors',
-                 'spiffe.workloadProcRoot'].map(function (key) {
+                 'spiffe.workloadProcRoot', 'spiffe.brokerPort',
+                 'spiffe.brokers', 'spiffe.dockerSigstoreEnabled',
+                 'spiffe.dockerUseRootlessPodman'].map(function (key) {
         return { key: key, value: config.text(key) };
       })
     };
@@ -3969,6 +3973,45 @@ class AdminViews {
       entries: rows.slice(pg.offset, pg.offset + pg.perPage)
     };
     log.debug("Leaving AdminViews.spiffeEntriesJson(). " + rows.length +
+              " matched.");
+    return { json: json, paging: pg };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SPIFFE BROKER API'S BROKERS (#170): `spiffe.brokers`, parsed by the
+  // one parser the endpoint uses, filtered and paged, with the listeners the
+  // realm bound and what each broker may reference. An entry that does not
+  // parse is listed WITH its problem — it authorizes nothing, and a list
+  // that hid it would leave an operator wondering why a broker is refused.
+  // ---------------------------------------------------------------------------
+  spiffeBrokersJson(req) {
+    const { log, config, spiffeAuth } = this.deps;
+    log.debug("Entering AdminViews.spiffeBrokersJson().");
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const all = spiffeAuth.brokers();
+    const rows = all.filter(function (one) {
+      return !q || (one.id + ' ' + one.types.join(' ') + ' ' + one.problem)
+        .toLowerCase().indexOf(q) >= 0;
+    });
+    const pg = this.pagingOf(req.query, rows.length, { unit: 'broker' });
+    const bindings = this.spiffeListeners();
+    const json = {
+      total: all.length,
+      matched: rows.length,
+      filter: { q: q },
+      paging: { page: pg.page, pages: pg.pages, perPage: pg.perPage,
+                total: pg.total },
+      setting: 'spiffe.brokers',
+      port: config.text('spiffe.brokerPort'),
+      referenceTypes: ['pid', 'k8s', '*'],
+      listeners: (bindings as any).broker || [],
+      brokers: rows.slice(pg.offset, pg.offset + pg.perPage)
+        .map(function (one) {
+          return { id: one.id, referenceTypes: one.types,
+                   problem: one.problem };
+        })
+    };
+    log.debug("Leaving AdminViews.spiffeBrokersJson(). " + rows.length +
               " matched.");
     return { json: json, paging: pg };
   }
@@ -7232,6 +7275,7 @@ export = {
   spiffeJson: slot.forward('spiffeJson'),
   spiffeEntriesJson: slot.forward('spiffeEntriesJson'),
   spiffeAgentsJson: slot.forward('spiffeAgentsJson'),
+  spiffeBrokersJson: slot.forward('spiffeBrokersJson'),
   setSignalsReporter: slot.forward('setSignalsReporter'),
   setCaepReporter: slot.forward('setCaepReporter'),
   setRiscReporter: slot.forward('setRiscReporter'),

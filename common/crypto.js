@@ -6333,6 +6333,274 @@ function androidKeyDescription(extnValue) {
   return out;
 }
 
+// ===========================================================================
+// SECTION 11 — SIGSTORE AND TUF: CANONICAL JSON, THRESHOLD SIGNATURES, THE
+// REKOR SIGNED ENTRY TIMESTAMP AND DSSE (#170, 2026-09-23)
+//
+// What `spiffe/spiffe_sigstore.ts` and `spiffe/spiffe_sigstore_tuf.ts` need
+// to believe a cosign signature and the sigstore trust root, as primitives:
+//
+//   * TWO CANONICAL JSON FORMS, and they are not the same thing. TUF
+//     metadata is signed over securesystemslib's OLPC canonical form (sorted
+//     keys, no whitespace, only `"` and `\` escaped, integers only); a Rekor
+//     signed entry timestamp over RFC 8785 JCS (`jsoncanonicalizer` in
+//     cosign). Written separately because a string with a control character
+//     canonicalizes differently under the two, and a verifier that used the
+//     wrong one would refuse good metadata or — worse — sign-check a
+//     different byte string from the one that was signed.
+//   * `verifyThresholdSignatures()`: TUF's rule — at least `threshold`
+//     DISTINCT keyids of a role, each a key the role names, each signature
+//     verifying over the canonical bytes. A keyid signing twice counts once.
+//   * `verifyRekorSet()`: cosign's `VerifySET()` — the SET is an ECDSA
+//     (ASN.1) signature over the JCS form of `{body, integratedTime,
+//     logIndex, logID}`, by the log whose key's SHA-256 is `logID`.
+//   * `dssePae()`: DSSE's pre-authentication encoding, which is what an
+//     in-toto attestation's signature covers.
+//   * `verifyWithPublicKey()`: one signature under a key held as an SPKI,
+//     with the scheme cosign uses for the key's kind — ECDSA with SHA-256
+//     (whatever the curve, as cosign's `LoadVerifier(pub, SHA256)`), RSA
+//     PKCS#1 v1.5 with SHA-256, Ed25519, and the post-quantum families,
+//     which cosign does not have and a key file here may hold.
+// ===========================================================================
+
+// securesystemslib's canonical JSON (OLPC): what a TUF signature covers.
+// Throws on a value that has no canonical form (a non-integer number).
+// A HOT PATH: it recurses once per value in a metadata document, so no
+// Entering/Leaving pair — one would drown the log in thousands of lines per
+// refresh.
+function olpcCanonicalJson(value) {
+  if (value === null) {
+    return 'null';
+  }
+  if (value === true || value === false) {
+    return String(value);
+  }
+  if (typeof value === 'number') {
+    if (!Number.isInteger(value)) {
+      // error-code: none — a parse failure; the caller refuses the metadata
+      throw new Error('canonical JSON has no floating-point numbers');
+    }
+    return String(value);
+  }
+  if (typeof value === 'string') {
+    return '"' + value.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  }
+  if (Array.isArray(value)) {
+    return '[' + value.map(olpcCanonicalJson).join(',') + ']';
+  }
+  if (typeof value === 'object') {
+    return '{' + Object.keys(value).sort().map(function (key) {
+      return olpcCanonicalJson(key) + ':' + olpcCanonicalJson(value[key]);
+    }).join(',') + '}';
+  }
+  // error-code: none — a parse failure; the caller refuses the metadata
+  throw new Error('canonical JSON cannot hold a ' + typeof value);
+}
+
+// RFC 8785 (JCS): ES6 serialization of strings and numbers, keys sorted by
+// UTF-16 code units — which is JavaScript's own string comparison. A HOT
+// PATH for the same reason as the function above: no Entering/Leaving pair
+// in a function that recurses per value would drown the log.
+function jcsCanonicalJson(value) {
+  if (value === null || typeof value === 'boolean' ||
+      typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      // error-code: none — a parse failure; the caller refuses the entry
+      throw new Error('JCS has no representation for ' + value);
+    }
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return '[' + value.map(jcsCanonicalJson).join(',') + ']';
+  }
+  if (typeof value === 'object') {
+    return '{' + Object.keys(value).sort().filter(function (key) {
+      return value[key] !== undefined;
+    }).map(function (key) {
+      return JSON.stringify(key) + ':' + jcsCanonicalJson(value[key]);
+    }).join(',') + '}';
+  }
+  // error-code: none — a parse failure; the caller refuses the entry
+  throw new Error('JCS cannot hold a ' + typeof value);
+}
+
+// The DER SubjectPublicKeyInfo of a PEM `PUBLIC KEY` (or a bare base64
+// body), or null. Read as bytes rather than through node, so a post-quantum
+// key node cannot parse is still one.
+function spkiFromPublicKeyPem(pem) {
+  log.debug("Entering spkiFromPublicKeyPem().");
+  const text = String(pem || '');
+  const match = /-----BEGIN PUBLIC KEY-----([\s\S]*?)-----END PUBLIC KEY-----/
+    .exec(text);
+  const body = (match ? match[1] : text).replace(/\s+/g, '');
+  if (!body || /[^A-Za-z0-9+/=]/.test(body)) {
+    log.debug("Leaving spkiFromPublicKeyPem(). Not a key.");
+    return null;
+  }
+  const der = Buffer.from(body, 'base64');
+  const described = publicKeyFromSpki(der);
+  log.debug("Leaving spkiFromPublicKeyPem(). " + (described.kind || 'none'));
+  return described.kind ? der : null;
+}
+
+// The PEM of a DER SubjectPublicKeyInfo, as cosign writes one
+// (`cryptoutils.MarshalPublicKeyToPEM`).
+function publicKeyPemOfSpki(spkiDer) {
+  log.debug("Entering publicKeyPemOfSpki().");
+  const b64 = Buffer.from(spkiDer || []).toString('base64');
+  log.debug("Leaving publicKeyPemOfSpki().");
+  return '-----BEGIN PUBLIC KEY-----\n' +
+         (b64.match(/.{1,64}/g) || []).join('\n') +
+         '\n-----END PUBLIC KEY-----\n';
+}
+
+// ONE SIGNATURE UNDER A KEY HELD AS AN SPKI, with the scheme cosign uses for
+// that kind of key (see the section head). `ecdsaEncoding` is 'der' (cosign,
+// Rekor, TUF, CT) unless a caller says 'p1363'.
+async function verifyWithPublicKey(spkiDer, data, signature, ecdsaEncoding) {
+  log.debug("Entering verifyWithPublicKey().");
+  const described = publicKeyFromSpki(spkiDer);
+  let scheme = null;
+  if (described.kind === 'ec') {
+    scheme = { family: 'ecdsa', hash: 'sha256',
+               encoding: ecdsaEncoding || 'der' };
+  } else if (described.kind === 'rsa') {
+    scheme = { family: 'rsa-pkcs1', hash: 'sha256' };
+  } else if (described.kind === 'ed25519' || described.kind === 'ed448') {
+    scheme = { family: 'eddsa' };
+  } else if (described.kind === 'pq') {
+    scheme = { family: 'pq' };
+  }
+  if (!scheme) {
+    log.debug("Leaving verifyWithPublicKey(). An unusable key.");
+    return false;
+  }
+  const ok = await verifyRawSignature(scheme, described, data, signature);
+  log.debug("Leaving verifyWithPublicKey(). " + ok);
+  return ok;
+}
+
+// A TUF key (`{ keytype, scheme, keyval: { public } }`) as an SPKI, or null.
+// ecdsa and rsa keys carry a PEM; an ed25519 key carries the 32 raw bytes as
+// hex, which is wrapped in the fixed Ed25519 SPKI prefix (RFC 8410).
+function tufKeySpki(key) {
+  log.debug("Entering tufKeySpki().");
+  const type = String((key && key.keytype) || '');
+  const pub = String(((key && key.keyval) || {}).public || '');
+  if (type === 'ed25519' && /^[0-9a-f]{64}$/i.test(pub)) {
+    log.debug("Leaving tufKeySpki(). ed25519.");
+    return Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'),
+                          Buffer.from(pub, 'hex')]);
+  }
+  if (['ecdsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'rsa',
+       'sigstore-oidc'].indexOf(type) >= 0 || /BEGIN PUBLIC KEY/.test(pub)) {
+    log.debug("Leaving tufKeySpki(). PEM.");
+    return spkiFromPublicKeyPem(pub);
+  }
+  log.debug("Leaving tufKeySpki(). Not a key this reads.");
+  return null;
+}
+
+// TUF's threshold rule over one role (see the section head). `role` is
+// `{ keyids, threshold }` and `keys` the root's key table. Resolves
+// `{ ok, valid, threshold }`; `ok` only when at least `threshold` distinct
+// keyids of the role verified.
+async function verifyThresholdSignatures(signed, signatures, keys, role) {
+  log.debug("Entering verifyThresholdSignatures().");
+  const threshold = Number((role && role.threshold) || 0);
+  const allowed = ((role && role.keyids) || []).map(String);
+  if (!Number.isInteger(threshold) || threshold < 1) {
+    log.debug("Leaving verifyThresholdSignatures(). No threshold.");
+    return { ok: false, valid: 0, threshold: threshold };
+  }
+  let bytes = null;
+  try {
+    bytes = Buffer.from(olpcCanonicalJson(signed), 'utf8');
+  } catch (e) {
+    log.debug("Caught in verifyThresholdSignatures(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving verifyThresholdSignatures(). Not canonical.");
+    return { ok: false, valid: 0, threshold: threshold };
+  }
+  const counted = {};
+  const list = Array.isArray(signatures) ? signatures : [];
+  for (let i = 0; i < list.length; i++) {
+    const keyid = String((list[i] && list[i].keyid) || '');
+    if (!keyid || counted[keyid] || allowed.indexOf(keyid) < 0) continue;
+    const spki = tufKeySpki((keys || {})[keyid]);
+    const sigHex = String((list[i] && list[i].sig) || '');
+    if (!spki || !/^[0-9a-f]*$/i.test(sigHex) || !sigHex) continue;
+    if (await verifyWithPublicKey(spki, bytes, Buffer.from(sigHex, 'hex'))) {
+      counted[keyid] = true;
+    }
+  }
+  const valid = Object.keys(counted).length;
+  log.debug("Leaving verifyThresholdSignatures(). " + valid + " of " +
+            threshold);
+  return { ok: valid >= threshold, valid: valid, threshold: threshold };
+}
+
+// cosign's VerifySET(): `payload` is the bundle's `{ body, integratedTime,
+// logIndex, logID }`, `set` the signed entry timestamp's bytes, `logs` the
+// trusted Rekor logs `[{ logIdHex, spki }]`. Resolves '' when it verifies,
+// otherwise why not.
+async function verifyRekorSet(payload, set, logs) {
+  log.debug("Entering verifyRekorSet().");
+  const p = payload || {};
+  const logId = String(p.logID || '').toLowerCase();
+  const trusted = (logs || []).filter(function (one) {
+    return String(one.logIdHex || '').toLowerCase() === logId;
+  })[0];
+  if (!trusted) {
+    log.debug("Leaving verifyRekorSet(). Unknown log.");
+    return 'rekor log public key not found for payload (log ID ' + logId + ')';
+  }
+  let canonical = null;
+  try {
+    canonical = Buffer.from(jcsCanonicalJson({
+      body: p.body, integratedTime: p.integratedTime,
+      logIndex: p.logIndex, logID: p.logID }), 'utf8');
+  } catch (e) {
+    log.debug("Caught in verifyRekorSet(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyRekorSet(). Not canonical.");
+    return 'the bundle payload cannot be canonicalized: ' +
+           ((e && e.message) || e);
+  }
+  const ok = await verifyWithPublicKey(trusted.spki, canonical,
+                                       Buffer.from(set || []));
+  log.debug("Leaving verifyRekorSet(). " + ok);
+  return ok ? '' : 'unable to verify SET';
+}
+
+// DSSE v1 pre-authentication encoding: "DSSEv1" SP LEN(type) SP type SP
+// LEN(body) SP body, the lengths in ASCII decimal bytes.
+function dssePae(payloadType, payload) {
+  log.debug("Entering dssePae().");
+  const type = Buffer.from(String(payloadType || ''), 'utf8');
+  const body = Buffer.from(payload || []);
+  log.debug("Leaving dssePae().");
+  return Buffer.concat([
+    Buffer.from('DSSEv1 ' + type.length + ' ', 'utf8'), type,
+    Buffer.from(' ' + body.length + ' ', 'utf8'), body]);
+}
+
+// Lower-case hex SHA-256 of bytes, and SHA-512 — the two hashes TUF target
+// metadata and Rekor entries name. HOT PATHS: called per blob and per
+// metadata file, one line each, so no Entering/Leaving pair — it would
+// drown the log.
+function sha256Hex(bytes) {
+  return nodeCrypto.createHash('sha256').update(Buffer.from(bytes || []))
+    .digest('hex');
+}
+
+function sha512Hex(bytes) {
+  return nodeCrypto.createHash('sha512').update(Buffer.from(bytes || []))
+    .digest('hex');
+}
+
 module.exports = {
   sessionStateHash: sessionStateHash,
   userAgentFingerprint: userAgentFingerprint,
@@ -6454,6 +6722,17 @@ module.exports = {
   RAW_SIGNATURE_FAMILIES: RAW_SIGNATURE_FAMILIES,
   publicKeyFromSpki: publicKeyFromSpki,
   verifyRawSignature: verifyRawSignature,
+  olpcCanonicalJson: olpcCanonicalJson,
+  jcsCanonicalJson: jcsCanonicalJson,
+  spkiFromPublicKeyPem: spkiFromPublicKeyPem,
+  publicKeyPemOfSpki: publicKeyPemOfSpki,
+  verifyWithPublicKey: verifyWithPublicKey,
+  tufKeySpki: tufKeySpki,
+  verifyThresholdSignatures: verifyThresholdSignatures,
+  verifyRekorSet: verifyRekorSet,
+  dssePae: dssePae,
+  sha256Hex: sha256Hex,
+  sha512Hex: sha512Hex,
   ecdsaIntegersToP1363: ecdsaIntegersToP1363,
   tpmKdfa: tpmKdfa,
   tpmMakeCredential: tpmMakeCredential,

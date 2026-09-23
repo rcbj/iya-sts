@@ -837,6 +837,20 @@ const SEEDED_FOR_REALM = [
     log.debug("Leaving value().");
     return '';
   },
+    keepEmpty: true },
+  // THE SPIFFE BROKER ENDPOINT (#170) for both of the reasons above: its port
+  // is the default realm's to bind, and its brokers name SPIFFE IDs another
+  // trust domain vouched for, which authorize nothing in this one.
+  { key: 'spiffe.brokerPort', value: function () {
+    log.debug("Entering value().");
+    log.debug("Leaving value().");
+    return 0;
+  } },
+  { key: 'spiffe.brokers', value: function () {
+    log.debug("Entering value().");
+    log.debug("Leaving value().");
+    return '';
+  },
     keepEmpty: true }
 ];
 

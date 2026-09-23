@@ -201,7 +201,12 @@ class SpiffeWorkload {
     // which is the honest answer to "what is in here" as opposed to "what would
     // I get".
     const selectors = (caller && caller.selectors) || null;
-    const narrow = !!(selectors && auth.attestWorkloads());
+    // A BROKERED caller (#170) — a SPIFFE Broker API reference this service
+    // attested — is ALWAYS narrowed, whatever development's
+    // `spiffe.attestWorkloads` says: the broker named one workload, and it
+    // is that workload's entries it gets or none.
+    const brokered = !!(caller && caller.brokered);
+    const narrow = !!(selectors && (brokered || auth.attestWorkloads()));
     // An entry that selects nothing identifying answers no caller in a
     // product realm (#166), however it got into the registry — the refusal
     // at the write is `checkRecord()`'s, and this is the read.
@@ -209,11 +214,33 @@ class SpiffeWorkload {
       return registry.selectorsMatch(entry.selectors, selectors);
     }) : live).filter(function (entry) {
       return !caller || registry.answersWorkloads(entry);
+    }).filter(function (entry) {
+      // SPIRE's broker service: "Do not send admin nor downstream SVIDs to
+      // the caller" — a broker acts for a workload, and neither is one.
+      return !brokered || (!entry.admin && !entry.downstream);
     });
     if (narrow) {
       log.debug('entitledEntries(): ' + rows.length + ' of ' + live.length +
                 ' entry/entries match [' +
                 selectors.map(registry.selectorText).join(' ') + '].');
+    }
+    if (brokered) {
+      // A brokered caller is never given an invented entry: the Broker API
+      // answers a workload with no entry PERMISSION_DENIED (section 4.8).
+      // And a hint is unique among what it is given (sections 5.2.1 and
+      // 6.2.1) — the first entry with it, SPIRE's `hintsfilter`, applied
+      // BEFORE anything is minted so nothing is issued that is not sent.
+      const seen = {};
+      const unique = rows.filter(function (entry) {
+        const hint = String(entry.hint || '');
+        if (!hint) return true;
+        if (seen[hint]) return false;
+        seen[hint] = true;
+        return true;
+      });
+      log.debug('Leaving SpiffeWorkload.entitledEntries(). ' + unique.length +
+                ' entry/entries for a broker.');
+      return unique;
     }
     if (rows.length) {
       log.debug('Leaving SpiffeWorkload.entitledEntries(). ' + rows.length +
@@ -371,10 +398,15 @@ class SpiffeWorkload {
         hint: entry.hint || ''
       });
     }
+    const brokered = !!(caller && caller.brokered);
     audit.audit({
-      action: 'spiffe.svid.issue', actor: '', protocol: 'SPIFFE Workload API',
+      action: 'spiffe.svid.issue',
+      actor: brokered ? String(caller.brokerId || '') : '',
+      protocol: brokered ? 'SPIFFE Broker API' : 'SPIFFE Workload API',
       channel: 'grpc', target: svids.length === 1 ? svids[0].spiffe_id : '',
-      summary: svids.length + ' X509-SVID(s) were issued over the Workload API',
+      summary: svids.length + ' X509-SVID(s) were issued over the ' +
+               (brokered ? 'Broker API, for a referenced workload'
+                         : 'Workload API'),
       // The SVIDs themselves are never recorded — an X509-SVID is delivered
       // WITH ITS PRIVATE KEY, which makes this the sharpest case in the service
       // of audit.js's no-credential rule.
@@ -625,8 +657,7 @@ class SpiffeWorkload {
   // such entry" are not distinguishable to a workload and should not be.
   // ---------------------------------------------------------------------------
   buildFetchJwtSvid() {
-    const { log, rpc, ca, errorCodes, spiffeId, registry, stats,
-            audit } = this.deps;
+    const { log, rpc, ca, errorCodes, spiffeId } = this.deps;
     const self = this;
     log.debug("Entering SpiffeWorkload.buildFetchJwtSvid().");
     const fetchJwtSvid = rpc.unary('workload', 'FetchJWTSVID',
@@ -659,36 +690,50 @@ class SpiffeWorkload {
           return entry.spiffeId === parsed.id;
         });
       }
-      const svids = [];
-      for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i];
-        const minted = await ca.mintJwtSvid(entry.spiffeId, audiences,
-                                            { ttl: entry.jwtSvidTtl,
-                                              hint: entry.hint });
-        registry.noteSvidIssued(entry.id);
-        stats.recordSvid('JWT', {
-          subject: entry.spiffeId, entryId: entry.id, audiences: audiences,
-          hint: entry.hint, expiresAt: minted.expiresAt
-        });
-        svids.push({ spiffe_id: entry.spiffeId, svid: minted.token,
-                     hint: entry.hint || '' });
-      }
-      audit.audit({
-        action: 'spiffe.svid.issue', actor: '', protocol: 'SPIFFE Workload API',
-        channel: 'grpc', target: svids.length === 1 ? svids[0].spiffe_id : '',
-        summary: svids.length +
-                 ' JWT-SVID(s) were issued over the Workload API',
-        // The audiences are recorded and the TOKENS are not. A JWT-SVID is a
-        // bearer credential; a row holding one would be a credential on a web
-        // page.
-        detail: { count: svids.length, audience: audiences.join(' '),
-                  selectors: (((call.spiffeCaller || {}).selectors) || [])
-                    .map(registry.selectorText).join(' ') }
-      });
-      return { svids: svids };
+      return { svids: await self.issueJwtSvids(entries, audiences,
+                                               call.spiffeCaller) };
     });
     log.debug("Leaving SpiffeWorkload.buildFetchJwtSvid().");
     return fetchJwtSvid;
+  }
+
+  // THE JWT-SVIDS FOR `entries`, minted, recorded and audited — one copy for
+  // the Workload API's FetchJWTSVID and the Broker API's (#170).
+  async issueJwtSvids(entries, audiences, caller) {
+    const { log, ca, registry, stats, audit } = this.deps;
+    log.debug('Entering SpiffeWorkload.issueJwtSvids(). ' + entries.length);
+    const svids = [];
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const minted = await ca.mintJwtSvid(entry.spiffeId, audiences,
+                                          { ttl: entry.jwtSvidTtl,
+                                            hint: entry.hint });
+      registry.noteSvidIssued(entry.id);
+      stats.recordSvid('JWT', {
+        subject: entry.spiffeId, entryId: entry.id, audiences: audiences,
+        hint: entry.hint, expiresAt: minted.expiresAt
+      });
+      svids.push({ spiffe_id: entry.spiffeId, svid: minted.token,
+                   hint: entry.hint || '' });
+    }
+    const brokered = !!(caller && caller.brokered);
+    audit.audit({
+      action: 'spiffe.svid.issue',
+      actor: brokered ? String(caller.brokerId || '') : '',
+      protocol: brokered ? 'SPIFFE Broker API' : 'SPIFFE Workload API',
+      channel: 'grpc', target: svids.length === 1 ? svids[0].spiffe_id : '',
+      summary: svids.length + ' JWT-SVID(s) were issued over the ' +
+               (brokered ? 'Broker API, for a referenced workload'
+                         : 'Workload API'),
+      // The audiences are recorded and the TOKENS are not. A JWT-SVID is a
+      // bearer credential; a row holding one would be a credential on a web
+      // page.
+      detail: { count: svids.length, audience: audiences.join(' '),
+                selectors: (((caller || {}).selectors) || [])
+                  .map(registry.selectorText).join(' ') }
+    });
+    log.debug('Leaving SpiffeWorkload.issueJwtSvids(). ' + svids.length);
+    return svids;
   }
 
   // ---------------------------------------------------------------------------
@@ -1013,5 +1058,10 @@ export = {
   // For tests/ssf_spiffe_scim_hardening.js, which asserts the rotation period
   // follows the shortest lifetime served rather than the service default.
   rotationPeriod: slot.forward('rotationPeriod'),
-  buildX509Response: slot.forward('buildX509Response')
+  buildX509Response: slot.forward('buildX509Response'),
+  // The Broker API's (#170): the same answers, for a referenced workload.
+  buildX509BundlesResponse: slot.forward('buildX509BundlesResponse'),
+  buildJwtBundlesResponse: slot.forward('buildJwtBundlesResponse'),
+  issueJwtSvids: slot.forward('issueJwtSvids'),
+  pushOnRotation: slot.forward('pushOnRotation')
 };

@@ -9,8 +9,11 @@
 // agent attests the workload that connects to it: the kernel names the
 // process (`spiffe_peer.ts`), and each workload attestor turns the process
 // into selectors — `unix` (who it runs as, what it runs), `docker` (the
-// container it is in) and `k8s` (the pod). rcbj's decision on #40 was those
-// three; `systemd` is a follow-up.
+// container it is in, Docker's or Podman's), `k8s` (the pod) and `systemd`
+// (the unit). rcbj's decision on #40 was the first three; `systemd`, Podman
+// and the docker attestor's sigstore checks came with #170 (2026-09-23),
+// which also made this table the one a SPIFFE Broker API PROCESS reference
+// is attested through (`spiffe_broker.ts`).
 //
 // **WHEN**: once per CONNECTION, at accept, before gRPC sees it — the
 // connection is handed on only when the attestors have answered, so the
@@ -79,6 +82,15 @@ class WorkloadAttestation {
     }
     this.attestors.set(attestor.type, attestor);
     log.debug("Leaving WorkloadAttestation.register().");
+  }
+
+  // One registered attestor by type, or null — the Broker API asks the
+  // `k8s` one about a pod reference (#170).
+  attestor(type: string): any {
+    const { log } = this.deps;
+    log.debug("Entering WorkloadAttestation.attestor(). " + type);
+    log.debug("Leaving WorkloadAttestation.attestor().");
+    return this.attestors.get(type) || null;
   }
 
   configured(): string[] {
@@ -177,6 +189,27 @@ class WorkloadAttestation {
     }
     log.debug("Leaving WorkloadAttestation.containerInfo().");
     return { podUid: podUid, containerId: containerId };
+  }
+
+  // Every cgroup path of a process (the third field of each line of
+  // `/proc/<pid>/cgroup`), or [] when the file cannot be read. The docker
+  // attestor reads them for SPIRE's Podman detection (#170).
+  cgroupPaths(procRoot: string, pid: number): string[] {
+    const { log, fs } = this.deps;
+    log.debug("Entering WorkloadAttestation.cgroupPaths(). pid=" + pid);
+    let text = '';
+    try {
+      text = fs.readFileSync(procRoot + '/' + pid + '/cgroup', 'utf8');
+    } catch (e) {
+      log.debug("Caught in WorkloadAttestation.cgroupPaths(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving WorkloadAttestation.cgroupPaths(). None.");
+      return [];
+    }
+    log.debug("Leaving WorkloadAttestation.cgroupPaths().");
+    return text.split('\n').filter(Boolean).map(function (line) {
+      return line.split(':').slice(2).join(':');
+    });
   }
 
   // One cgroup path: its container ID, and before it the pod UID.

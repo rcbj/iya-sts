@@ -287,6 +287,9 @@ const ENTITY_ORDER = ['local', 'admin', 'agent', 'downstream'];
 // `overlaps()` recognises the same four for the address-collision refusal.
 const WILDCARD_HOSTS = ['0.0.0.0', '::', '[::]', ''];
 
+// The reference types an entry of `spiffe.brokers` may allow (#170).
+const BROKER_REFERENCE_TYPES = ['pid', 'k8s', '*'];
+
 // What `SpiffeAuth` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
@@ -559,6 +562,103 @@ class SpiffeAuth {
     log.debug("Leaving SpiffeAuth.adminIds().");
     return raw.split(/[\s,]+/).map(function (id) { return id.trim(); })
               .filter(Boolean);
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SPIFFE BROKER API'S BROKERS (#170, 2026-09-23).
+  //
+  // The SPIFFE Broker API section 4.1: "Implementations MUST maintain a strict
+  // allow-only policy", and the Broker Endpoint section 5 recommends a static
+  // one keyed on the broker's SPIFFE ID. `spiffe.brokers` is that list, one
+  // entry per broker — `<SPIFFE ID>=<types>` — and the types are SPIRE's
+  // per-broker `allowed_reference_types` (`pkg/agent/broker/endpoints.go`),
+  // spelt `pid` (WorkloadPIDReference), `k8s` (KubernetesObjectReference) and
+  // `*`. SPIRE also says per type whether TCP may carry it; this endpoint is
+  // TCP only, so listing a type IS allowing it over TCP, and an entry that
+  // lists none allows nothing (SPIRE's "must list at least one entry").
+  //
+  // Parsed on every call and never cached, like `adminIds()`: an edit on
+  // /admin/spiffe/brokers takes effect on the broker's next call. An entry
+  // that does not parse is REPORTED with its problem and authorizes nothing.
+  // ---------------------------------------------------------------------------
+  parseBrokers(raw: string): Array<{ id: string; types: string[];
+                                     problem: string; raw: string }> {
+    const { log, spiffeId } = this.deps;
+    log.debug("Entering SpiffeAuth.parseBrokers().");
+    const out = String(raw || '').split(/\s+/).filter(Boolean)
+      .map(function (entry) {
+        const cut = entry.indexOf('=');
+        const idText = cut >= 0 ? entry.slice(0, cut) : entry;
+        const parsed = spiffeId.parse(idText);
+        const types = (cut >= 0 ? entry.slice(cut + 1) : '').split(',')
+          .map(function (one) {
+            return one.trim().toLowerCase();
+          }).filter(Boolean);
+        let problem = '';
+        if (!parsed.ok) {
+          problem = 'not a SPIFFE ID: ' + parsed.reason;
+        } else if (!types.length) {
+          problem = 'no reference type is allowed (list pid, k8s or *)';
+        } else if (types.some(function (one) {
+          return BROKER_REFERENCE_TYPES.indexOf(one) < 0;
+        })) {
+          problem = 'a reference type is not one of pid, k8s and *';
+        }
+        return { id: parsed.ok ? parsed.id : idText,
+                 types: problem ? [] : types, problem: problem, raw: entry };
+      });
+    log.debug("Leaving SpiffeAuth.parseBrokers(). " + out.length);
+    return out;
+  }
+
+  // The list as a setting's value. An entry that did not parse is written
+  // back as it was typed (`raw`), so an edit elsewhere does not rewrite an
+  // operator's typo into a different one.
+  serializeBrokers(list: Array<{ id: string; types: string[];
+                                 problem?: string; raw?: string }>): string {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeAuth.serializeBrokers().");
+    log.debug("Leaving SpiffeAuth.serializeBrokers().");
+    return list.map(function (one) {
+      return one.problem && one.raw ? one.raw
+        : one.id + '=' + one.types.join(',');
+    }).join(' ');
+  }
+
+  brokers(): Array<{ id: string; types: string[]; problem: string;
+                     raw: string }> {
+    const { log, config } = this.deps;
+    log.debug("Entering SpiffeAuth.brokers().");
+    log.debug("Leaving SpiffeAuth.brokers().");
+    return this.parseBrokers(String(config.value('spiffe.brokers') || ''));
+  }
+
+  // The broker an AUTHENTICATED caller is, or a refusal descriptor
+  // (STS-SPIFFE-0133 unauthenticated, STS-SPIFFE-0134 not a broker).
+  brokerOf(caller): { broker?: { id: string; types: string[] };
+                      status?: string; message?: string;
+                      errorCode?: string } {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeAuth.brokerOf().");
+    if (!caller || !caller.authenticated || !caller.spiffeId) {
+      log.debug("Leaving SpiffeAuth.brokerOf(). Unauthenticated.");
+      return { status: 'UNAUTHENTICATED', errorCode: 'STS-SPIFFE-0133',
+               message: 'The SPIFFE Broker Endpoint requires mutual TLS with ' +
+                        'an X509-SVID (SPIFFE Broker Endpoint section 5)' +
+                        (caller && caller.refusal ? ': ' + caller.refusal
+                         : ', and none was presented') + '.' };
+    }
+    const found = this.brokers().filter(function (one) {
+      return !one.problem && one.id === caller.spiffeId;
+    })[0];
+    if (!found) {
+      log.debug("Leaving SpiffeAuth.brokerOf(). Not a broker.");
+      return { status: 'PERMISSION_DENIED', errorCode: 'STS-SPIFFE-0134',
+               message: caller.spiffeId + ' is not an authorized broker ' +
+                        'here (spiffe.brokers).' };
+    }
+    log.debug("Leaving SpiffeAuth.brokerOf(). " + found.id);
+    return { broker: { id: found.id, types: found.types.slice(0) } };
   }
 
   // ---------------------------------------------------------------------------
@@ -1563,6 +1663,10 @@ export = {
   attestWorkloads: slot.forward('attestWorkloads'),
   acceptAssertedSelectors: slot.forward('acceptAssertedSelectors'),
   adminIds: slot.forward('adminIds'),
+  parseBrokers: slot.forward('parseBrokers'),
+  serializeBrokers: slot.forward('serializeBrokers'),
+  brokers: slot.forward('brokers'),
+  brokerOf: slot.forward('brokerOf'),
   transportOf: slot.forward('transportOf'),
   callerOf: slot.forward('callerOf'),
   describeCaller: slot.forward('describeCaller'),

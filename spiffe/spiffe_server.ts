@@ -98,6 +98,14 @@ import workloadAttestation = require('./spiffe_workload_attestation');
 import unixAttestor = require('./spiffe_workload_attestor_unix');
 import dockerAttestor = require('./spiffe_workload_attestor_docker');
 import k8sAttestor = require('./spiffe_workload_attestor_k8s');
+// #170: the systemd attestor, and the docker attestor's sigstore verifier
+// (with its TUF trust root, whose scheduler job registers when it loads).
+// LIBRARIES; they register no route.
+import systemdAttestor = require('./spiffe_workload_attestor_systemd');
+import sigstore = require('./spiffe_sigstore');
+// The SPIFFE Broker API's handlers (#170). A LIBRARY: `handlers()` wraps them
+// for the `broker` surface and binds nothing; the listener is this module's.
+import broker = require('./spiffe_broker');
 import mode = require('../common/mode');
 // The console, for one slot and nothing else. `admin.js` cannot require THIS
 // module — `common/protocol_stack.ts` requires admin.js first, and until
@@ -163,6 +171,11 @@ type RouteApp = typeof app;
 // The workload attestation table, built on first use by any instance.
 const WORKLOAD_ATTESTATION: { table: any } = { table: null };
 
+// The SPIFFE Broker API's handler table, built once (#170): its wrappers are
+// `spiffe_grpc.ts`'s, and a realm's server takes it through
+// `handlersInRealm()` like the other two surfaces.
+const BROKER_HANDLERS: { table: Record<string, any> | null } = { table: null };
+
 class SpiffeServer {
   constructor(private readonly deps: SpiffeServerDeps) {
     deps.log.debug("Entering SpiffeServer.constructor().");
@@ -196,9 +209,15 @@ class SpiffeServer {
         table.register(new unixAttestor.UnixWorkloadAttestor(
           unixAttestor.UnixWorkloadAttestor.defaultDeps()));
         table.register(new dockerAttestor.DockerWorkloadAttestor(
-          dockerAttestor.DockerWorkloadAttestor.defaultDeps(info)));
+          dockerAttestor.DockerWorkloadAttestor.defaultDeps(info,
+            table.cgroupPaths.bind(table), sigstore.shared)));
         table.register(new k8sAttestor.K8sWorkloadAttestor(
           k8sAttestor.K8sWorkloadAttestor.defaultDeps(info)));
+        table.register(new systemdAttestor.SystemdWorkloadAttestor(
+          systemdAttestor.SystemdWorkloadAttestor.defaultDeps(
+            function (facts) {
+              return peer.stillValid(facts);
+            })));
         return table;
       }
     };
@@ -383,6 +402,20 @@ class SpiffeServer {
           };
         })
       },
+      // THE SPIFFE BROKER API (#170).
+      brokerApi: {
+        service: 'spiffe.broker.API',
+        specification: 'SPIFFE Broker API and SPIFFE Broker Endpoint ' +
+                       '(Incubating)',
+        listeners: this.bindingsNow().broker,
+        securityHeader: rpc.BROKER_SECURITY_HEADER + ': true',
+        brokers: auth.brokers(),
+        referenceTypes: [broker.PID_REFERENCE, broker.K8S_REFERENCE],
+        methods: rpc.methodsOf('broker').map(function (method) {
+          return { name: self.protoNameOf(method.path), path: method.path,
+                   streaming: method.responseStream };
+        })
+      },
       registry: {
         entries: registry.entryCount(),
         agents: registry.agentCount(),
@@ -398,8 +431,10 @@ class SpiffeServer {
       notChecked: [
         'A WORKLOAD API CALLER OVER TCP IS NOT ATTESTED. The Unix socket ' +
         'is (#40, 2026-09-21): the kernel names the connecting process ' +
-        '(SO_PEERCRED, and a pidfd that holds it), the unix, docker and k8s ' +
-        'workload attestors turn it into SPIRE\'s selectors, and every call ' +
+        '(SO_PEERCRED, and a pidfd that holds it), the unix, docker ' +
+        '(Docker and Podman, with a cosign image signature where asked), ' +
+        'k8s and systemd workload attestors turn it into SPIRE\'s ' +
+        'selectors (#170), and every call ' +
         'checks the process is still the one attested. A TCP connection has ' +
         'no peer process to ask, so its caller is identified only by the ' +
         'transport, the endpoint and its address — which is why a product ' +
@@ -516,6 +551,7 @@ class SpiffeServer {
         console: base + '/admin/spiffe',
         entries: base + '/admin/spiffe/entries',
         agents: base + '/admin/spiffe/agents',
+        brokers: base + '/admin/spiffe/brokers',
         api: base + '/admin-api/spiffe',
         directory: base + '/admin/ldap/spiffe',
         metadata: base + '/admin/sts-metadata'
@@ -761,6 +797,22 @@ class SpiffeServer {
           self.methodRows(service.methods) + '</table>';
       }).join('') +
 
+      '<h2>The SPIFFE Broker API</h2>' +
+      '<table><tr><th>Realm</th><th>Address</th><th>State</th>' +
+      '<th>What a caller presents</th></tr>' +
+      this.listenerRows(document.brokerApi.listeners) + '</table>' +
+      '<p>A broker authenticates with its X509-SVID over mutual TLS, sends ' +
+      '<code>' + this.esc(document.brokerApi.securityHeader) + '</code>, and ' +
+      'names a workload by reference — a process id or a Kubernetes pod — ' +
+      'which this service attests itself before answering with that ' +
+      'workload\'s SVIDs. Brokers (<code>spiffe.brokers</code>): ' +
+      (document.brokerApi.brokers.length
+        ? document.brokerApi.brokers.map(function (one) {
+            return '<code>' + self.esc(one.id) + '</code> (' +
+              self.esc(one.problem || one.types.join(', ')) + ')';
+          }).join(', ')
+        : 'none, so every call is refused PERMISSION_DENIED') + '.</p>' +
+
       '<h2>Who may call the SPIRE Server API</h2>' +
       '<p>' + this.esc(document.authentication.what) + '</p>' +
       '<p class="note">' + this.esc(document.authentication.bootstrapping) +
@@ -862,7 +914,12 @@ class SpiffeServer {
     const read = function () {
       log.debug("Entering read().");
       const out = [];
-      if (surface === 'workload') {
+      if (surface === 'broker') {
+        const port = config.value('spiffe.brokerPort');
+        if (port) {
+          out.push({ address: config.value('spiffe.grpcHost') + ':' + port });
+        }
+      } else if (surface === 'workload') {
         if (config.value('spiffe.workloadSocketEnabled')) {
           out.push({ address: 'unix://' + config.value('spiffe.workloadSocket'),
                      socketPath: config.value('spiffe.workloadSocket') });
@@ -1329,8 +1386,13 @@ class SpiffeServer {
         return { name: entry.name,
                  handlers: self.handlersInRealm(realmId, entry.handlers) };
       }));
+    const brokerServer = rpc.buildServer([
+      { name: 'broker',
+        handlers: this.handlersInRealm(realmId, this.brokerHandlers()) }
+    ]);
     const entry = { realmId: realmId, workloadServer: workloadServer,
-                    apiServer: apiServer, workload: [], api: [], bindings: [] };
+                    apiServer: apiServer, brokerServer: brokerServer,
+                    workload: [], api: [], broker: [], bindings: [] };
     // REGISTERED BEFORE IT BINDS, so that `claimedBy()` sees this realm while
     // the next one is being started — the bindings are empty until they are
     // not, and an address is only claimed once it is listening.
@@ -1369,6 +1431,8 @@ class SpiffeServer {
     entry.bindings = entry.workload.slice(0);
     entry.api = await this.bindAll(apiServer, 'server', realmId);
     entry.bindings = entry.workload.concat(entry.api);
+    entry.broker = await this.bindBroker(brokerServer, realmId);
+    entry.bindings = entry.workload.concat(entry.api, entry.broker);
     log.info('spiffe: the "' + (realmId || 'default') + '" realm answers on ' +
              entry.bindings.filter(function (b) { return b.listening; })
                .map(function (b) { return b.address; }).join(', ') +
@@ -1474,6 +1538,99 @@ class SpiffeServer {
     return WORKLOAD_ATTESTATION.table;
   }
 
+  // The Broker API's handlers, wrapped once (#170).
+  brokerHandlers(): Record<string, any> {
+    const { log } = this.deps;
+    const self = this;
+    log.debug('Entering SpiffeServer.brokerHandlers().');
+    if (!BROKER_HANDLERS.table) {
+      BROKER_HANDLERS.table = new broker.SpiffeBroker(
+        broker.SpiffeBroker.defaultDeps(function () {
+          return self.workloadAttestation();
+        })).handlers();
+    }
+    log.debug('Leaving SpiffeServer.brokerHandlers().');
+    return BROKER_HANDLERS.table;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SPIFFE BROKER ENDPOINT'S LISTENER (#170): `spiffe.grpcHost` and
+  // `spiffe.brokerPort` in the realm, MUTUAL TLS ONLY. Three rules, each the
+  // family's:
+  //
+  //   * started from `listen()` through `startRealm()`, never at require — a
+  //     bind can fail, and a require that throws takes the service down;
+  //   * a failure is RECORDED on the binding and logged under its code
+  //     (STS-SPIFFE-0140), and GET /spiffe draws it;
+  //   * it is NEVER bound plain. The SPIRE Server API's port falls back to
+  //     plain when it cannot be given a certificate (STS-SPIFFE-0070), in a
+  //     posture that is reported; the Broker Endpoint's specification says
+  //     it "requires transport security in the form of mutual TLS", and a
+  //     port handing any workload's SVIDs to whoever asked would be the whole
+  //     trust domain on a socket. So no certificate is no listener.
+  //
+  // An address another realm holds is refused exactly as `bindAll()` refuses
+  // it, naming the realm.
+  // ---------------------------------------------------------------------------
+  async bindBroker(server, realmId) {
+    const { log, rpc, errorCodes } = this.deps;
+    log.debug('Entering SpiffeServer.bindBroker(). realm=' +
+              (realmId || 'default'));
+    const results = [];
+    const addresses = this.addressesFor('broker', realmId);
+    for (let i = 0; i < addresses.length; i++) {
+      const wanted = addresses[i].address;
+      const row: Record<string, any> = {
+        address: wanted, listening: false, error: '', port: 0, tls: false,
+        socket: false, realm: realmId || '',
+        authentication: 'Nothing is listening here.' };
+      const taken = this.claimedBy(wanted, realmId);
+      if (taken !== null) {
+        row.error = 'the "' + (taken || 'default') + '" realm already ' +
+          'answers on ' + this.addressHeldBy(taken, wanted) + ' in this ' +
+          'process; give this realm spiffe.grpcHost or spiffe.brokerPort of ' +
+          'its own';
+        log.error(errorCodes.tag('STS-SPIFFE-0140') + 'spiffe: the "' +
+                  (realmId || 'default') + '" realm\'s SPIFFE Broker API ' +
+                  'listener was NOT bound: ' + row.error);
+        results.push(errorCodes.mark(row, 'STS-SPIFFE-0140'));
+        continue;
+      }
+      let credentials = null;
+      try {
+        credentials = await this.inRealm(realmId, function () {
+          return rpc.brokerCredentials();
+        });
+      } catch (e) {
+        log.debug("Caught in SpiffeServer.bindBroker(): " +
+                  ((e && e.message) || e));
+        row.error = 'it could not be given a mutual-TLS identity (' +
+                    ((e && e.message) || e) + '), and the Broker Endpoint ' +
+                    'is never served without one';
+        log.error(errorCodes.tag('STS-SPIFFE-0140') + 'spiffe: the "' +
+                  (realmId || 'default') + '" realm\'s SPIFFE Broker API ' +
+                  'listener was NOT bound: ' + row.error);
+        results.push(errorCodes.mark(row, 'STS-SPIFFE-0140'));
+        continue;
+      }
+      const held = listeners.get(String(realmId || ''));
+      if (held) {
+        held.brokerCredentials = credentials;
+      }
+      const bound = await rpc.bindOne(server, wanted, credentials);
+      bound.tls = true;
+      bound.socket = false;
+      bound.realm = realmId || '';
+      bound.authentication = 'Mutual TLS. Verify this server as ' +
+        'spiffe://<trust domain>/spire/server against the trust bundle, ' +
+        'present the X509-SVID of a broker named in spiffe.brokers, and send ' +
+        'broker.spiffe.io: true on every call.';
+      results.push(bound);
+    }
+    log.debug('Leaving SpiffeServer.bindBroker(). ' + results.length);
+    return results;
+  }
+
   stopRealm(realmId) {
     const { log } = this.deps;
     log.debug('Entering SpiffeServer.stopRealm(). realm=' +
@@ -1486,7 +1643,8 @@ class SpiffeServer {
     // The attested socket's accepting listener is this module's, not
     // grpc-js's, and is closed here.
     this.deps.rpc.closeAttested(entry.workloadServer);
-    [entry.workloadServer, entry.apiServer].forEach(function (server) {
+    [entry.workloadServer, entry.apiServer,
+     entry.brokerServer].forEach(function (server) {
       if (!server) return;
       try {
         server.forceShutdown();
@@ -1577,12 +1735,14 @@ class SpiffeServer {
     log.debug("Entering SpiffeServer.bindingsNow().");
     const workloadAll = [];
     const apiAll = [];
+    const brokerAll = [];
     listeners.forEach(function (entry) {
       entry.workload.forEach(function (b) { workloadAll.push(b); });
       entry.api.forEach(function (b) { apiAll.push(b); });
+      (entry.broker || []).forEach(function (b) { brokerAll.push(b); });
     });
     log.debug("Leaving SpiffeServer.bindingsNow().");
-    return { workload: workloadAll, api: apiAll };
+    return { workload: workloadAll, api: apiAll, broker: brokerAll };
   }
 
   close() {
@@ -1720,12 +1880,17 @@ class SpiffeServer {
     const self = this;
     log.debug('Entering SpiffeServer.refreshServerCredentials().');
     listeners.forEach(function (entry, realmId) {
-      if (!entry.apiCredentials) {
+      if (!entry.apiCredentials && !entry.brokerCredentials) {
         return;
       }
       self.awaitRealmBranch(realmId).then(function () {
         return self.inRealm(realmId, function () {
-          return rpc.refreshServerApiCredentials(entry.apiCredentials);
+          // The Broker endpoint presents the same identity (#170), so it is
+          // re-keyed with it.
+          return Promise.all([entry.apiCredentials, entry.brokerCredentials]
+            .filter(Boolean).map(function (credentials) {
+              return rpc.refreshServerApiCredentials(credentials);
+            }));
         });
       }).catch(function (e) {
         log.error(errorCodes.tag('STS-SPIFFE-0114') +
@@ -1818,7 +1983,8 @@ class SpiffeServer {
       const now = instance.bindingsNow();
       // The workload attestation state rides the same reader (#40): it is
       // this module's, and a slot of its own would fail rule 3e's test.
-      return { workload: now.workload, api: now.api, bundlePath: BUNDLE_PATH,
+      return { workload: now.workload, api: now.api, broker: now.broker,
+               bundlePath: BUNDLE_PATH,
                workloadAttestation: instance.workloadAttestationState() };
     });
     helpers.log.debug("Leaving SpiffeServer.wire().");
