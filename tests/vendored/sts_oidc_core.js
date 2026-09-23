@@ -419,9 +419,12 @@ async function test() {
     ["address", "phone"].forEach(function (one) {
       assert.ok(r.body.scopes_supported.indexOf(one) >= 0, one);
     });
-    ["address", "phone_number", "birthdate", "acr"].forEach(function (one) {
-      assert.ok(r.body.claims_supported.indexOf(one) >= 0, one);
-    });
+    // And the Identity Assurance Claims Registration's (#128).
+    ["address", "phone_number", "birthdate", "acr", "nationalities",
+     "place_of_birth", "title", "msisdn", "birth_family_name"]
+      .forEach(function (one) {
+        assert.ok(r.body.claims_supported.indexOf(one) >= 0, one);
+      });
   });
   const issuer = r.body.issuer;
 
