@@ -1757,3 +1757,14 @@ update naming the NEW one. Where no row holds that name, the entry's subject (of
 snapshot) finds the row already recorded under the old name; it is re-keyed, its counts
 and state move with it, and the old name joins `formerIdentifiers` so an event naming it
 still matches. `tests/stable_subject.js` D13.
+
+## A SECOND-FACTOR PERSON'S BASIC PASSWORD, AND APP PASSWORDS OVER CAEP (2026-09-22, #101)
+
+`attemptBasic()` passes `door: 'ssf'`, so in product a person who holds or must
+hold a second factor is refused their own password with the one `STS-SSF-0009`
+401 a wrong password gets, and uses an app password scoped to `ssf`.
+`authn/CLAUDE.md` owns the rule. Making or revoking an app password — on
+`/portal/app-passwords` (`initiating_entity` `user`) or on `/admin/users` and
+`/admin-api` (`admin`) — is a `credential-change` (`password`, `create` or
+`revoke`, the app password's name as `friendly_name`) through
+`account_signals.ts`.

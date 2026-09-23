@@ -1141,6 +1141,31 @@ credential — so its card only lists the labelled addresses.
 the `tls-client` authority, these from `acme`, `est` and `scep` — and this page
 links to that one.
 
+## `/portal/app-passwords`: THE PASSWORDS A PERSON GIVES THE CLIENTS THAT CANNOT DO A SECOND FACTOR (2026-09-22, #101)
+
+`portal_app_passwords.ts`, registered after `/portal/certificates` through the
+same `register(context)` and for its reason. In product the five password-only
+doors refuse a second-factor person's own password (`authn/CLAUDE.md`), and
+this is where they make what those clients send instead.
+
+* **Behind a full sign-in**: the portal's own, so the session already met
+  whatever the account asks for. `manage-own` for both POST actions, CSRF on
+  both, the make rate limited (`portal-app-password`, the shared window).
+* **The identity is the session's.** A revoke names an id; one that is not
+  this person's is a 404 (`STS-PORTAL-0078`), never an oracle.
+* **The password is shown on the 200 and never on a redirect**, `no-store`,
+  `/portal/certificates`' rule; a revoke is a 303 with `done=`.
+* **No script, a real submit button**, and **one checkbox per door with its own
+  name** (`door_ldap`, ...): the portal's form parser keeps the last of a
+  repeated name, so five boxes called `door` would scope a password to one.
+* The page says which doors refuse this person's password
+  (`credentials.passwordOnlyDoors()`), lists each app password with its last
+  use, and each make and revoke is a CAEP `credential-change` with
+  `initiating_entity` `user`. `/portal/mfa` links here while the doors refuse
+  them. The console's twin is on the person's `/admin/users` page, and
+  `/admin-api/users/{create,revoke}-app-password` and `GET
+  /admin-api/users/app-passwords` are the API (rule 7).
+
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 
 **Send a reset link** on a person's `/admin/users` page stores a hash of a

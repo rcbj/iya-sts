@@ -2545,3 +2545,16 @@ the handler), a SCIM create of a User or a Group, and `POST
   subject there; a single process keeps random values.
   `directory_create_claims.ts`'s header has it, and
   `tests/cluster_autocreate_subject.js` holds both halves.
+
+## A SECOND-FACTOR PERSON'S BIND, AND `stsAppPassword` (2026-09-22, #101)
+
+The simple bind passes `door: 'ldap'` to `credentials.verify()`, so in product
+a person who holds or must hold a second factor is refused their own password
+with the same 49 a wrong one gets, counted against the bind limit as one, and
+binds with an app password scoped to `ldap`; both audit rows then say an app
+password was used. `authn/CLAUDE.md` owns the rule. This module adds three
+hooks to `credentials.setDirectory()` — `readAppPasswords`, `writeAppPasswords`
+(one single-valued JSON value, assigned whole, `null` deletes) and `isPerson`
+(`isPersonEntry()` by placement, never a name) — and `stsAppPassword` is on
+`OWN_NAMES`, `SECRET_ATTRIBUTES` (withheld from every read, a verifier like
+`userPassword`) and `persistence/directory_merge.js`'s `SINGLE`.

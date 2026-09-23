@@ -594,6 +594,24 @@ function enrolsKeysOnFirstUse() {
   return !isProduct();
 }
 
+// May a password alone open a PASSWORD-ONLY DOOR for a person who holds, or
+// is required to hold, a second factor (#101, 2026-09-22)? An LDAP simple
+// bind, a WS-Security UsernameToken, SCIM and SSF HTTP Basic and EST Basic
+// each authenticate with a password and have nowhere to ask for anything
+// more (RFC 4513 section 5.1.3, the UsernameToken Profile, RFC 7617, RFC 7030
+// section 3.2.3). So the rule comes from the ACCOUNT: NIST SP 800-63B section
+// 4.2 puts an account bound to two factors at AAL2, and a verifier that takes
+// one of them alone brings it down to AAL1. Development accepts the password
+// there, as it accepts every password. Product refuses the person's own
+// password at those doors — answered exactly as a wrong one — and accepts an
+// APP PASSWORD scoped to the door instead (`common/app_passwords.ts`).
+// `common/credentials.ts` asks it, in `secondFactorRefusal()`.
+function acceptsPasswordAloneFromSecondFactorAccounts() {
+  log.debug("Entering acceptsPasswordAloneFromSecondFactorAccounts().");
+  log.debug("Leaving acceptsPasswordAloneFromSecondFactorAccounts().");
+  return !isProduct();
+}
+
 // May a federation partner's asserted NAME be matched straight onto an
 // existing local person, which is `fedSubjectPolicy: any-existing` (#109,
 // 2026-09-22)? Development says yes — it is what this service did before the
@@ -901,6 +919,25 @@ const REQUIREMENTS = [
     product: 'It is refused. A primary key is added on /portal/keys behind ' +
              'a session, by an activation link, or by an operator.',
     where: 'authn/authn.ts' },
+  // #101 (2026-09-22).
+  { id: 'second-factor-doors',
+    what: 'A person who holds or must hold a second factor is refused their ' +
+          'password alone at the password-only doors',
+    development: 'An LDAP simple bind, a WS-Security UsernameToken, SCIM and ' +
+                 'SSF HTTP Basic and EST Basic accept the password as they ' +
+                 'accept every password; the sign-in screen still asks for ' +
+                 'the second factor.',
+    product: 'At those five doors the person\'s own password is refused — ' +
+             'answered exactly as a wrong password, and counted against the ' +
+             'rate limit as one (STS-AUTHN-0213 on the audit row and in the ' +
+             'log only) — whenever they hold an authenticator app or a ' +
+             'security key in the mfa role, or a second factor is required ' +
+             'of them (stsMfaRequired, authn.mfaRequired). An APP PASSWORD ' +
+             'they made on /portal/app-passwords, scoped to the door, is ' +
+             'accepted instead. authn.passwordAloneDoors names doors that ' +
+             'accept the password anyway, which lowers every such person to ' +
+             'one factor there.',
+    where: 'common/credentials.ts, common/app_passwords.ts' },
   { id: 'resource-metadata-import',
     what: 'An RFC 9728 protected resource metadata import is held to the ' +
           'rules a client of the document follows',
@@ -1550,6 +1587,8 @@ module.exports = {
   grantsUndeclaredScopes: grantsUndeclaredScopes,
   honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
+  acceptsPasswordAloneFromSecondFactorAccounts:
+    acceptsPasswordAloneFromSecondFactorAccounts,
   matchesFederatedNames: matchesFederatedNames,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
   acceptsLooseRequestUris: acceptsLooseRequestUris,

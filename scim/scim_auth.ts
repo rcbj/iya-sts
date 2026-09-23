@@ -1367,7 +1367,8 @@ class ScimAuth {
                      early.digest === crypto.createHash('sha256')
                        .update(password).digest('hex'))
       ? early.checked
-      : credentials.verify(username, password, { via: 'SCIM HTTP Basic' });
+      : credentials.verify(username, password, { via: 'SCIM HTTP Basic',
+                                                 door: 'scim' });
     if (!checked.ok) {
       log.debug("Leaving ScimAuth.attemptBasic(). The credential was " +
                 "refused: " +
@@ -1393,7 +1394,11 @@ class ScimAuth {
     return {
       ok: true, scheme: 'basic', principal: username, isClient: false,
       scopes: '',
-      note: mode.verifiesCredentials()
+      // An app password is said so (#101).
+      note: checked.reason === 'app-password' && checked.appPassword
+        ? 'HTTP Basic (an app password, "' + checked.appPassword.name +
+          '", was verified)'
+        : mode.verifiesCredentials()
         ? 'HTTP Basic (the password was verified)'
         : 'HTTP Basic (no password was checked)'
     };
@@ -2750,8 +2755,9 @@ class ScimAuth {
       return Promise.resolve(null);
     }
     log.debug("Leaving ScimAuth.verifyBasicOffThread(). Handed to the pool.");
+    // `door: 'scim'` (#101), the synchronous path's, so the two agree.
     return credentials.verifyAsync(pair.username, pair.password,
-                                   { via: 'SCIM HTTP Basic' })
+                                   { via: 'SCIM HTTP Basic', door: 'scim' })
       .then((checked) => {
         Object.defineProperty(req, ScimAuth.BASIC_VERDICT, {
           value: { username: pair.username,

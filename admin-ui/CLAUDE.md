@@ -6159,3 +6159,19 @@ so a person with no file can paste; `parseBody()` hands the file part over as
 text under `file`, and `saml2Action()` takes `document` first. The list page
 gained one column, the last request's signature outcome, read off
 `samlAuthnRequestVerification`.
+
+## A PERSON'S APP PASSWORDS ON `/admin/users` (2026-09-22, #101)
+
+`mfaSection()` draws an **App passwords** block after the recovery codes: the
+sentence `adminViews.passwordOnlyDoorsFor()` builds (which password-only doors
+refuse this person's own password), each app password — name, id, doors, when
+made and by whom, last use, never a hash — with a **Revoke** per row, and a
+**Make an app password** form (a name and one checkbox per door, named
+`door_<id>` because the form parser keeps the last of a repeated name). Both
+post `from=user` to `POST /admin/users`, so they return to the person's page;
+Admin Write for either. A make answers with **the one-time page**
+`credentialResetPage()` draws for a reset password — extended rather than
+copied, since an app password is the third secret that exists once and must
+never ride a redirect's query string. The three settings are in the existing
+*Second-factor requirement* group, so `SETTING_HOMES` gained no row.
+`authn/CLAUDE.md` owns the rule; `mgmt-api/CLAUDE.md` has the API twin.

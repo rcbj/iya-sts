@@ -64,7 +64,7 @@ any of them would be a broken implementation rather than a lenient one:
 
 | It does not | In product mode | In development mode |
 |---|---|---|
-| Check an end user's password | **Verified**, against the hashed `userPassword` on the person's entry, at every door that takes one: the sign-in screen, an LDAP bind, a WS-Trust UsernameToken, SCIM, Shared Signals and EST Basic. The sign-in screen rate-limits by name and by address, across the cluster. A person with no stored password cannot sign in (`STS-AUTHN-0052`), and one flagged `pwdReset` must choose a new password first | Any password but `invalid` is accepted, and the name typed at `/authn/login` becomes the identity in every token and assertion |
+| Check an end user's password | **Verified**, against the hashed `userPassword` on the person's entry, at every door that takes one: the sign-in screen, an LDAP bind, a WS-Trust UsernameToken, SCIM, Shared Signals and EST Basic. The sign-in screen rate-limits by name and by address, across the cluster. A person with no stored password cannot sign in (`STS-AUTHN-0052`), and one flagged `pwdReset` must choose a new password first. **A person who holds or must hold a second factor is refused their own password at the five password-only doors** — answered as a wrong password (`STS-AUTHN-0213`, recorded only) — and uses an app password there; `authn.passwordAloneDoors` lists doors that accept the password anyway, at one factor | Any password but `invalid` is accepted, and the name typed at `/authn/login` becomes the identity in every token and assertion |
 | Issue without asking — **this row runs the other way** | Consent is asked: the first time a person signs in to a `client_id` for a scope, `/oauth2/consent` is drawn and nothing is issued until they answer. `oauth2.consentRequired` is ON by default in both modes. See [Consent](#consent-is-asked-in-both-modes) | The same |
 | Hold a new password to a policy | **Enforced**, from the realm's policy (Directory → Policies, `/admin/policies`): a minimum length, a symbol count, an uppercase letter, a number, and none of the current password or the last five. At every door that sets one: the console and `/admin/users/new`, `/admin-api` (including `users/create`), `/portal/password`, `/portal/activate`, the forced change at sign-in, and an LDAP add or modify of `userPassword`. SCIM carries no password. A password already stored is not re-checked | Any password is set. The history is recorded in both modes, and a generated password meets the policy in both |
 | Offer the OAuth 2.0 password grant | **It does not exist**: `unsupported_grant_type` (RFC 9700 section 2.4), because product mode implies RFC 9700 mode | Any password but `invalid` is accepted, as at the sign-in screen — unless `oauth2.rfc9700` or `oauth2.oauth21` is on, which removes the grant here too |
@@ -234,10 +234,13 @@ an authenticator integration to test against.
   enrolment cannot also sign anybody in, and it is refused *as a repeat*, not as
   a wrong code.
 * **A person who has enrolled one cannot sign in at `/authn/login` without it.**
-  **That is the only door that asks for it**: an LDAP bind, a WS-Trust
-  UsernameToken, SCIM, Shared Signals and EST Basic take the password alone,
-  in product too. See
-  [What product mode still does not check](#what-product-mode-still-does-not-check).
+  That is the only door that can ASK for it. The five doors that take a
+  password and nothing else — an LDAP bind, a WS-Trust UsernameToken, SCIM,
+  Shared Signals and EST Basic — cannot, so in product they **refuse that
+  person's own password**, answered exactly as a wrong password and counted
+  against the rate limit as one, and accept an **app password** scoped to the
+  door instead (see [App passwords](#app-passwords-at-the-password-only-doors)).
+  Development accepts the password there as it accepts every password.
 * **A second factor can be required** of a person (`stsMfaRequired`, set from
   `/admin/users`) or of a realm (`authn.mfaRequired`); somebody who holds none is
   then asked to enrol one at `/authn/mfa-setup` before the sign-in completes.
@@ -251,6 +254,42 @@ an authenticator integration to test against.
 
 In development the password in front of the code is not checked, and any name
 may enrol. In product the password is verified first.
+
+## App passwords at the password-only doors
+
+An LDAP simple bind, a WS-Security UsernameToken, SCIM and Shared Signals HTTP
+Basic and EST Basic take a password and have nowhere to ask for anything more
+(RFC 4513 section 5.1.3, the UsernameToken Profile, RFC 7617, RFC 7030 section
+3.2.3). NIST SP 800-63B section 4.2 puts an account bound to two factors at
+AAL2, and a door that accepts one of them alone brings it down to AAL1. So, **in
+product mode**, a person who holds an authenticator app or a security key in
+the `mfa` role, or of whom a second factor is required (`stsMfaRequired`,
+`authn.mfaRequired`), is refused their own password at those five doors:
+
+* **The answer is a wrong password's**, byte for byte — LDAP
+  `invalidCredentials` (49), the WS-Trust fault, SCIM's, Shared Signals' and
+  EST's 401 — and it counts against the rate limit as a wrong password does.
+  Anything else would tell a guesser the password was right.
+* **An app password is accepted instead.** A person makes one on
+  `/portal/app-passwords` after signing in, or an administrator makes one for
+  them on their `/admin/users` page or with `POST
+  /admin-api/users/create-app-password`. It is generated here (twenty-four
+  characters), shown once, stored as a scrypt hash, named, and scoped to one or
+  more of `ldap`, `wstrust`, `scim`, `ssf` and `est`. It is accepted only at
+  those doors and **never at `/authn/login`** or any other browser sign-in. It
+  is one factor, and the door records that an app password was used.
+* **Each one can be revoked**, on the same pages or with `POST
+  /admin-api/users/revoke-app-password`; making or revoking one sends a CAEP
+  `credential-change`. Its last use is recorded. A disabled account refuses it;
+  a password reset leaves it working.
+* **`authn.passwordAloneDoors`** names doors that accept the password alone
+  anyway. Every door listed is ONE factor for every such person, so it is the
+  weaker option and documented as one.
+
+Development mode checks no password at those doors, so it refuses nothing
+there. A Kerberos AS-REQ pre-authenticated with the person's password-derived
+keys is the one password door not covered yet
+([#173](https://github.com/rcbj/iya-sts/issues/173)).
 
 ## A WebAuthn ceremony is verified, and the authenticator behind it is not
 
@@ -755,10 +794,11 @@ grant that names no client is refused.
 
 These are true in a product deployment today, and are tracked as issues:
 
-* **A second factor is asked for only at `/authn/login`.** An LDAP bind, a
-  WS-Trust UsernameToken, SCIM, Shared Signals and EST Basic accept the password
-  alone from somebody who has enrolled a second factor or is required to have
-  one ([#101](https://github.com/rcbj/iya-sts/issues/101)).
+* **A Kerberos AS-REQ asks for no second factor.** Pre-authenticated with the
+  keys derived from a person's password, it signs in somebody who holds or must
+  hold a second factor with the password alone. The five other password-only
+  doors refuse that (see [App passwords](#app-passwords-at-the-password-only-doors));
+  the KDC is [#173](https://github.com/rcbj/iya-sts/issues/173).
 * **`/oauth2/revoke` authenticates no client** and does not check that the token
   belongs to the caller (RFC 7009 section 2.1). Anybody holding a token string
   can revoke it ([#102](https://github.com/rcbj/iya-sts/issues/102)).

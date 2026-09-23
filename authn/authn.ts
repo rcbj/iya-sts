@@ -7991,10 +7991,15 @@ class Authn {
         // `allowPasswordReset`: this is the one door that can ask for a new
         // password, so a password flagged `pwdReset` is accepted HERE and the
         // change step below is drawn instead of a session. See credentials.js.
+        // `secondFactor: 'asked-next'` (#101): this screen asks for the second
+        // factor right after, so the password-only-door refusal does not
+        // apply. It passes no `door`, so an app password is NEVER accepted
+        // here.
         const credential = credentials.verify(username, String(body.password ||
                                                                ''),
                                               { via: 'the sign-in screen',
-                                                allowPasswordReset: true });
+                                                allowPasswordReset: true,
+                                                secondFactor: 'asked-next' });
         if (!credential.ok) {
           log.info('authn: the sign-in for "' + username + '" was refused (' +
                    credential.reason + '): ' + credential.detail);
@@ -8943,9 +8948,12 @@ class Authn {
         return this.sendPasswordFactorPage(res,
           this.passwordFactorPage(mfaId, step.username, allowed.detail));
       }
+      // `asked-next` (#101): here the password IS the second factor, after
+      // the wallet's presentation, so the password-only-door refusal is not
+      // this door's. No `door`, so no app password.
       const credential = credentials.verify(step.username,
         String(posted.value.password || ''),
-        { via: 'the password-factor screen' });
+        { via: 'the password-factor screen', secondFactor: 'asked-next' });
       if (!credential.ok) {
         log.info('authn: the password second factor for "' + step.username +
                  '" was refused (' + credential.reason + ').');

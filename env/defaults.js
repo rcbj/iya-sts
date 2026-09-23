@@ -153,6 +153,7 @@ var config = {
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
     mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
     mfaRequired: false,             // Require a second factor of everybody
+    passwordAloneDoors: "",         // Password-only doors that accept a password alone
     unauthenticatedSessions: false  // Offer "Continue without signing in"
   },
 
@@ -167,6 +168,12 @@ var config = {
   // --- Web security ----------------------------------------------------
   credentials: {
     factorScanLimit: 5000  // People read for the second-factor roster
+  },
+
+  // --- Second-factor requirement ---------------------------------------
+  appPasswords: {
+    enabled: true,    // Let people make app passwords
+    maxPerPerson: 10  // App passwords per person
   },
 
   // --- TOTP MFA --------------------------------------------------------

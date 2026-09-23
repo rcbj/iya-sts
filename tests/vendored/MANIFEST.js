@@ -535,6 +535,17 @@ const JOBS = [
   // would otherwise be asserting against a store the other job is still
   // filling.
   { file: 'sts_portal_backup_keys.js',   browser: false, local: true },
+  // THE FIVE PASSWORD-ONLY DOORS AND APP PASSWORDS (#101, 2026-09-22): a
+  // second-factor person's own password refused at an LDAPS bind, a WS-Trust
+  // UsernameToken, SCIM, SSF and EST Basic in product — with a wrong
+  // password's answer, byte for byte — and accepted in development; an app
+  // password made on /portal/app-passwords and on /admin-api accepted only at
+  // its doors, never at the sign-in screen, revoked with a CAEP
+  // credential-change. `local: true` for the ownership reason: the portal
+  // page, the API operations and the five doors are this repository's. In a
+  // throwaway realm, so the settings it moves (authn.passwordAloneDoors) move
+  // nobody else's; it reaches 636 as `sts_ldaps.js` does.
+  { file: 'sts_second_factor_doors.js',  browser: false, local: true },
   { file: 'sts_pki_workbench.js',        browser: false, local: true },
   // AN APPLICATION'S CREDENTIALS (2026-09-13): its key pair replaced by an
   // issue from this realm's CA or by an uploaded certificate — an external

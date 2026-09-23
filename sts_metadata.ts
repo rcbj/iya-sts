@@ -4867,6 +4867,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'directory entry, shown once on a 200 page — lists the certificates ' +
           'ACME, EST and SCEP issued them, and revokes one. The identity is ' +
           'the session\'s; nothing on the form names a person.' },
+  { path: '/portal/app-passwords', group: 'User portal',
+    name: 'Your app passwords, for the doors that take only a password',
+    specs: ['rfc4513', 'rfc7617', 'rfc7030'],
+    effect: 'makes and revokes the signed-in person\'s own app passwords',
+    what: 'NON-SPEC page (#101). In product mode a person who holds a ' +
+          'second factor, or of whom one is required, is refused their own ' +
+          'password at the five doors that cannot ask for one — an LDAP ' +
+          'bind (RFC 4513), a WS-Security UsernameToken, SCIM and SSF HTTP ' +
+          'Basic (RFC 7617) and EST Basic (RFC 7030 section 3.2.3). Here ' +
+          'they make an APP PASSWORD for such a client instead: generated, ' +
+          'SHOWN ONCE on the 200 that answers the form, stored as a scrypt ' +
+          'hash, named, and scoped to one or more of those doors — accepted ' +
+          'there and NEVER at a browser sign-in. It lists each one with its ' +
+          'last use and revokes one (a CAEP credential-change). The identity ' +
+          'is the session\'s; nothing on the form names a person. A real ' +
+          'submit button and no script.' },
   { path: '/portal/signing-key', group: 'User portal',
     name: 'Your own RFC 7523 signing key',
     specs: ['rfc7521', 'rfc7523', 'rfc5280'],
@@ -6658,6 +6674,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'of what is editable. Note that ?kind= does not partition the ' +
           'list, since a record commonly carries two. Mirrors GET and POST ' +
           '/admin/applications.' },
+  { path: '/admin-api/users/app-passwords', group: 'Management API',
+    name: 'One person\'s app passwords', specs: ['rfc4513', 'rfc7617'],
+    what: 'NON-SPEC (#101). The app passwords a person holds, PAGED (`page`, ' +
+          '`per`): each one\'s public id, name, the password-only doors it ' +
+          'is scoped to, when and by whom it was made, and when and where it ' +
+          'was last used — never the password and never its hash — and ' +
+          'which of the five doors refuse the person\'s own password. POST ' +
+          '/admin-api/users/create-app-password makes one, returned once; ' +
+          '/admin-api/users/revoke-app-password takes one away. Mirrors the ' +
+          'App passwords block on the person\'s /admin/users page.' },
   { path: '/admin-api/users/new', group: 'Management API',
     name: 'New user form', specs: ['rfc4511', 'rfc4519'],
     what: 'NON-SPEC. THE CLOSED ATTRIBUTE CATALOGUE A CREATE TAKES, as JSON: ' +

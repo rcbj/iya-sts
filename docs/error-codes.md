@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2977** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2991** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -62,7 +62,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 191
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 200
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 474
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
@@ -79,9 +79,9 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 275
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 176
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 178
 * [Management API (`STS-API`)](#sts-api) — 73
-* [User portal (`STS-PORTAL`)](#sts-portal) — 54
+* [User portal (`STS-PORTAL`)](#sts-portal) — 57
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 113
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -1069,6 +1069,15 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0210` | A hosted surface refused the JWT-secured authorization response (JARM) it was sent back with: not a signed JWT, a key the realm's JWKS does not hold, a signature that does not verify, or the wrong issuer, audience or expiry (#139). | the console's, portal's or debugger's sign-in refusal page |
 | `STS-AUTHN-0211` | Under FAPI 1.0 Advanced, a hosted surface could not push its signed authorization request to /oauth2/par, so its sign-in could not start (#139). | the console's, portal's or debugger's sign-in refusal page |
 | `STS-AUTHN-0212` | A passwordless security-key sign-in was asked for at the sign-in screen federation's link-at-first-sign-in draws, which signs in with the password (#109). | HTTP 200 sign-in screen with an error |
+| `STS-AUTHN-0213` | Product mode: a person who holds a second factor, or of whom one is required, presented their own RIGHT password at a password-only door (an LDAP bind, a WS-Security UsernameToken, SCIM, SSF or EST Basic), which cannot ask for the second factor. Refused, and counted as a failed attempt. An app password scoped to the door is what such a person uses there (authn.passwordAloneDoors lists doors that accept the password anyway). | the door's own wrong-password answer, unchanged: LDAP invalidCredentials (49), the WS-Trust FailedAuthentication fault, HTTP 401 at SCIM, SSF and EST |
+| `STS-AUTHN-0214` | An app password was presented where it is not accepted: at a door it is not scoped to, or at a browser sign-in, where no app password is ever accepted. | the door's own wrong-password answer, unchanged |
+| `STS-AUTHN-0215` | An app password was not made: its name is empty, longer than sixty-four characters or not printable text, or the person already holds one of that name. | HTTP 400 (API) or the page redrawn with the reason |
+| `STS-AUTHN-0216` | An app password was not made: it named no door, or a door that is not one of ldap, wstrust, scim, ssf and est. | HTTP 400 (API) or the page redrawn with the reason |
+| `STS-AUTHN-0217` | An app password was not made: the person already holds appPasswords.maxPerPerson of them. | HTTP 400 (API) or the page redrawn with the reason |
+| `STS-AUTHN-0218` | An app password was not made: app passwords are turned off in this realm (appPasswords.enabled). One already made goes on working. | HTTP 400 (API) or the page redrawn with the reason |
+| `STS-AUTHN-0219` | An app password was not revoked: the person holds none with that id. | HTTP 400 (API), or 404 on the portal, where somebody else's is answered as one that does not exist |
+| `STS-AUTHN-0220` | The app passwords on a person's entry could not be read or written: the directory threw, refused the write, or holds a value this service did not write. A value it cannot read is refused rather than compared. | HTTP 400 (API), the page redrawn, or the door's wrong-password answer |
+| `STS-AUTHN-0221` | An app password was not made: the name is not a person in this realm's directory. An application authenticates with its own client credentials, and an app password is a person's. | HTTP 400 (API) |
 
 ## STS-OAUTH
 
@@ -3082,6 +3091,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0797` | Product mode: a signed-in person holding no console role reached the console while its bootstrap administrator had not yet claimed it. Development would have opened the console to them; product does not. Logged once per console session. | HTTP 403 insufficient_role |
 | `STS-ADMIN-0798` | Product mode, at startup or at a realm's creation: a realm has no bootstrap administrator and nobody on its console roster, so its console is closed to everybody. POST /admin-api/rbac/grant with an admin:write access token is the way in. | none (a log line) |
 | `STS-ADMIN-0799` | An authorization server profile's access_token_signing_alg was set to an algorithm this service does not sign access tokens with (#139). | HTTP 400 |
+| `STS-ADMIN-0800` | Making an app password for somebody was refused; the credential store's own code is on the audit row. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0801` | Revoking somebody's app password was refused; the credential store's own code is on the audit row. | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 
@@ -3227,6 +3238,9 @@ Raised from: portal/.
 | `STS-PORTAL-0074` | The realm chooser in front of /portal was asked for a realm that is not defined. | HTTP 400 on /portal |
 | `STS-PORTAL-0075` | An account holder asked for a RISC opt-out move the section 2.8 state diagram does not allow from where their account is, or RISC is off. | HTTP 409, the page redrawn saying so |
 | `STS-PORTAL-0076` | An account holder's RISC opt-out move was not recorded: Shared Signals is not running in this process, so there was no register to move. | HTTP 503, the page redrawn saying so |
+| `STS-PORTAL-0077` | A person's own app password was not made on /portal/app-passwords; the credential store's code is on the audit row. | HTTP 400 page |
+| `STS-PORTAL-0078` | A person asked /portal/app-passwords to revoke an app password they do not hold. | HTTP 404 page |
+| `STS-PORTAL-0079` | A POST to /portal/app-passwords named an action the page does not have. | HTTP 400 page |
 
 ## STS-LOGOUT
 

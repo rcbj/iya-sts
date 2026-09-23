@@ -530,7 +530,7 @@ class CertEnrollment {
     try {
       verified = await realms.run(realms.get(realms.DEFAULT_ID), function () {
         return credentials.verifyAsync(name, String(password || ''),
-                                       { via: via });
+                                       { via: via, door: 'est' });
       });
     } catch (e) {
       log.debug("Caught in CertEnrollment.adminFor(): " +
@@ -563,7 +563,7 @@ class CertEnrollment {
     let local = null;
     try {
       local = await credentials.verifyAsync(name, String(password || ''),
-                                            { via: via });
+                                            { via: via, door: 'est' });
     } catch (e) {
       log.debug("Caught in CertEnrollment.adminFor(): " +
                 ((e && e.message) || e));
@@ -631,19 +631,28 @@ class CertEnrollment {
     if (local.ok) {
       try {
         verified = await credentials.verifyAsync(name, String(password || ''),
-                                                 { via: via });
+                                                 { via: via, door: 'est' });
       } catch (e) {
         log.debug("Caught in CertEnrollment.authenticatePerson(): " +
                   ((e && e.message) || e));
         verified = null;
       }
     }
+    // `door: 'est'` on all three verifications (#101): EST Basic is a
+    // password-only door, so in product a person with a second factor is
+    // refused their own password here — an administrator included, whose way
+    // to enroll on somebody's behalf is then a realm-issued client
+    // certificate — and an app password scoped to `est` is accepted instead.
+    // An app password is ONE factor and the principal says it was one.
     const admin = await self.adminFor(name, password, via);
     if (local.ok && verified && verified.ok) {
       log.debug("Leaving CertEnrollment.authenticatePerson(). Verified here.");
       return { ok: true, principal: { kind: 'person', id: name, admin: admin,
                                       via: via, realm: realms.currentId(),
-                                      hasEntry: true } };
+                                      hasEntry: true,
+                                      appPassword: verified.appPassword
+                                        ? verified.appPassword.name
+                                        : undefined } };
     }
     if (admin) {
       // An administrator of the SERVICE with no entry of this name in this

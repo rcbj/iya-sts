@@ -3980,6 +3980,58 @@ const CODES = [
       'sign-in screen federation\'s link-at-first-sign-in draws, which ' +
       'signs in with the password (#109).',
     spec: 'HTTP 200 sign-in screen with an error' },
+  // SECOND FACTORS AT THE PASSWORD-ONLY DOORS, AND APP PASSWORDS (#101,
+  // 2026-09-22). `common/credentials.ts` and `common/app_passwords.ts`.
+  { code: 'STS-AUTHN-0213',
+    summary: 'Product mode: a person who holds a second factor, or of whom ' +
+      'one is required, presented their own RIGHT password at a ' +
+      'password-only door (an LDAP bind, a WS-Security UsernameToken, SCIM, ' +
+      'SSF or EST Basic), which cannot ask for the second factor. Refused, ' +
+      'and counted as a failed attempt. An app password scoped to the door ' +
+      'is what such a person uses there (authn.passwordAloneDoors lists ' +
+      'doors that accept the password anyway).',
+    spec: 'the door\'s own wrong-password answer, unchanged: LDAP ' +
+      'invalidCredentials (49), the WS-Trust FailedAuthentication fault, ' +
+      'HTTP 401 at SCIM, SSF and EST' },
+  { code: 'STS-AUTHN-0214',
+    summary: 'An app password was presented where it is not accepted: at a ' +
+      'door it is not scoped to, or at a browser sign-in, where no app ' +
+      'password is ever accepted.',
+    spec: 'the door\'s own wrong-password answer, unchanged' },
+  { code: 'STS-AUTHN-0215',
+    summary: 'An app password was not made: its name is empty, longer than ' +
+      'sixty-four characters or not printable text, or the person already ' +
+      'holds one of that name.',
+    spec: 'HTTP 400 (API) or the page redrawn with the reason' },
+  { code: 'STS-AUTHN-0216',
+    summary: 'An app password was not made: it named no door, or a door ' +
+      'that is not one of ldap, wstrust, scim, ssf and est.',
+    spec: 'HTTP 400 (API) or the page redrawn with the reason' },
+  { code: 'STS-AUTHN-0217',
+    summary: 'An app password was not made: the person already holds ' +
+      'appPasswords.maxPerPerson of them.',
+    spec: 'HTTP 400 (API) or the page redrawn with the reason' },
+  { code: 'STS-AUTHN-0218',
+    summary: 'An app password was not made: app passwords are turned off in ' +
+      'this realm (appPasswords.enabled). One already made goes on working.',
+    spec: 'HTTP 400 (API) or the page redrawn with the reason' },
+  { code: 'STS-AUTHN-0219',
+    summary: 'An app password was not revoked: the person holds none with ' +
+      'that id.',
+    spec: 'HTTP 400 (API), or 404 on the portal, where somebody else\'s is ' +
+      'answered as one that does not exist' },
+  { code: 'STS-AUTHN-0220',
+    summary: 'The app passwords on a person\'s entry could not be read or ' +
+      'written: the directory threw, refused the write, or holds a value ' +
+      'this service did not write. A value it cannot read is refused rather ' +
+      'than compared.',
+    spec: 'HTTP 400 (API), the page redrawn, or the door\'s wrong-password ' +
+      'answer' },
+  { code: 'STS-AUTHN-0221',
+    summary: 'An app password was not made: the name is not a person in ' +
+      'this realm\'s directory. An application authenticates with its own ' +
+      'client credentials, and an app password is a person\'s.',
+    spec: 'HTTP 400 (API)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -12179,6 +12231,15 @@ const CODES = [
       'was set to an algorithm this service does not sign access tokens ' +
       'with (#139).',
     spec: 'HTTP 400' },
+  // APP PASSWORDS FROM A PERSON'S /admin/users PAGE (#101, 2026-09-22).
+  { code: 'STS-ADMIN-0800',
+    summary: 'Making an app password for somebody was refused; the ' +
+      'credential store\'s own code is on the audit row.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0801',
+    summary: 'Revoking somebody\'s app password was refused; the credential ' +
+      'store\'s own code is on the audit row.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -12747,6 +12808,20 @@ const CODES = [
       'Shared Signals is not running in this process, so there was no ' +
       'register to move.',
     spec: 'HTTP 503, the page redrawn saying so' },
+  // /portal/app-passwords (#101, 2026-09-22).
+  { code: 'STS-PORTAL-0077',
+    summary: 'A person\'s own app password was not made on ' +
+      '/portal/app-passwords; the credential store\'s code is on the ' +
+      'audit row.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0078',
+    summary: 'A person asked /portal/app-passwords to revoke an app password ' +
+      'they do not hold.',
+    spec: 'HTTP 404 page' },
+  { code: 'STS-PORTAL-0079',
+    summary: 'A POST to /portal/app-passwords named an action the page does ' +
+      'not have.',
+    spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
