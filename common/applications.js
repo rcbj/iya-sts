@@ -4713,6 +4713,76 @@ function idTokenEncryptionMetadataProblem(values) {
 }
 
 // ---------------------------------------------------------------------------
+// JARM SECTION 3: WHAT A CLIENT MAY REGISTER ABOUT ITS JWT-SECURED
+// AUTHORIZATION RESPONSES (#139, #143).
+//
+// `authorization_signed_response_alg` (RS256 by default — JARM's own default;
+// PS256 under FAPI 1.0 Advanced, which `oauth-oidc/jarm.ts` decides), and
+// `authorization_encrypted_response_alg` / `_enc` (no encryption by default,
+// A128CBC-HS256 when only the alg is named). Like the ID Token's, they have no
+// attribute: they live in `appRegistrationJson`. The grammar is here for the
+// ID Token members' reason; whether the client's `jwks` holds a key to encrypt
+// to is `jarm.ts`'s.
+//
+// `none` is refused (JARM section 3: "The algorithm none is not allowed"); an
+// HMAC algorithm is allowed and keyed by the client secret, as the ID Token's
+// is; the encryption list is the asymmetric one, as for every response this
+// service encrypts to a client.
+// ---------------------------------------------------------------------------
+function jarmMetadataProblem(values) {
+  log.debug("Entering jarmMetadataProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0179', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  const names = ['authorization_signed_response_alg',
+                 'authorization_encrypted_response_alg',
+                 'authorization_encrypted_response_enc'];
+  for (let i = 0; i < names.length; i++) {
+    const value = asked[names[i]];
+    if (value !== undefined && value !== null && typeof value !== 'string') {
+      log.debug("Leaving jarmMetadataProblem(). Not a string.");
+      return refusal(names[i], 'must be a string naming one algorithm.');
+    }
+  }
+  const signAlg = String(asked.authorization_signed_response_alg || '').trim();
+  if (signAlg && stsCrypto.JWS_SIGNING_ALGS.indexOf(signAlg) < 0) {
+    log.debug("Leaving jarmMetadataProblem(). Signing alg.");
+    return refusal(names[0], '"' + signAlg + '" is not an algorithm this ' +
+      'service signs an authorization response with' + (signAlg === 'none'
+        ? ' — JARM section 3 does not allow none' : '') + '. It signs with ' +
+      stsCrypto.JWS_SIGNING_ALGS.join(', ') + ' (see ' +
+      'authorization_signing_alg_values_supported).');
+  }
+  const alg = String(asked.authorization_encrypted_response_alg || '').trim();
+  const enc = String(asked.authorization_encrypted_response_enc || '').trim();
+  if (alg && ID_TOKEN_ENCRYPTION_ALGS.indexOf(alg) < 0) {
+    log.debug("Leaving jarmMetadataProblem(). Encryption alg.");
+    return refusal(names[1], '"' + alg + '" is not an algorithm this ' +
+      'service encrypts an authorization response with. It encrypts with ' +
+      ID_TOKEN_ENCRYPTION_ALGS.join(', ') + ', to the key registered in ' +
+      '"jwks".');
+  }
+  if (enc && !alg) {
+    log.debug("Leaving jarmMetadataProblem(). enc without alg.");
+    return refusal(names[2], 'JARM section 3 says ' +
+      'authorization_encrypted_response_alg MUST also be provided, and none ' +
+      'is.');
+  }
+  if (enc && ID_TOKEN_ENCRYPTION_ENCS.indexOf(enc) < 0) {
+    log.debug("Leaving jarmMetadataProblem(). Content encryption.");
+    return refusal(names[2], '"' + enc + '" is not a content encryption ' +
+      'algorithm this service has. It has ' +
+      ID_TOKEN_ENCRYPTION_ENCS.join(', ') + '.');
+  }
+  log.debug("Leaving jarmMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // RFC 9101 AND OPENID CONNECT REGISTRATION: WHAT A CLIENT MAY REGISTER ABOUT
 // ITS REQUEST OBJECTS (2026-09-13).
 //
@@ -5990,6 +6060,49 @@ function generalizedTime(when) {
   return d.getUTCFullYear() + pad(d.getUTCMonth() + 1) + pad(d.getUTCDate()) +
          pad(d.getUTCHours()) + pad(d.getUTCMinutes()) +
          pad(d.getUTCSeconds()) + 'Z';
+}
+
+// ---------------------------------------------------------------------------
+// AN ISSUED RFC 7523 KEY PAIR, ONTO ITS APPLICATION'S ENTRY (#138): the seven
+// attributes `/admin/pki` writes, in the order it writes them, as one list so
+// the console and this service's own surfaces (`oidc_rp.ts`, which issues its
+// console, portal and debugger their private_key_jwt keys) cannot disagree
+// about what an issued key pair is. `record` is `pki.issueSigningKeyPair()`'s
+// `issued`.
+// ---------------------------------------------------------------------------
+function issuedJwtKeyPairValues(record) {
+  log.debug("Entering issuedJwtKeyPairValues().");
+  log.debug("Leaving issuedJwtKeyPairValues().");
+  return [
+    ['oauthAssertionJwks', JSON.stringify(record.jwks)],
+    ['oauthAssertionCertificate', record.certificatePem],
+    ['oauthAssertionCertificateChain', (record.chainPem || []).join('')],
+    ['oauthAssertionPrivateKey', record.privateKeyPem],
+    ['oauthAssertionKid', record.kid],
+    ['oauthAssertionExpiresAt', generalizedTime(new Date(record.notAfter))],
+    // `issued` for a key pair generated here; an upload's record says which
+    // kind of upload it was. See KEY_SOURCES.
+    ['oauthAssertionKeySource', record.source || 'issued']
+  ];
+}
+
+// Writes them, all or a report of which failed. A failure loses the private
+// key — common/pki.js keeps no copy — so the caller must issue again.
+function storeIssuedJwtKeyPair(identifier, record) {
+  log.debug("Entering storeIssuedJwtKeyPair(). " + identifier);
+  const writes = issuedJwtKeyPairValues(record);
+  for (let i = 0; i < writes.length; i++) {
+    const done = updateApplication(identifier, {
+      attribute: writes[i][0], mode: 'set', value: writes[i][1] });
+    if (!done || done.ok === false) {
+      log.debug("Leaving storeIssuedJwtKeyPair(). " + writes[i][0] +
+                " failed.");
+      return { ok: false, failed: writes[i][0],
+               errors: (done && done.errors) || [] };
+    }
+  }
+  log.debug("Leaving storeIssuedJwtKeyPair(). Stored.");
+  return { ok: true };
 }
 
 function fromGeneralizedTime(value) {
@@ -10310,8 +10423,6 @@ function debuggerApplications() {
         client_id: 'sts-debugger-ui',
         client_name: 'Protocol debugger',
         client_id_issued_at: issued,
-        client_secret: randomId(24),
-        client_secret_expires_at: 0,
         registration_access_token: randomId(24),
         registration_client_uri: internalBaseUrl() +
                                  '/oauth2/register/sts-debugger-ui',
@@ -10322,7 +10433,7 @@ function debuggerApplications() {
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         scope: 'openid profile email offline_access ' + permission,
-        token_endpoint_auth_method: 'client_secret_basic'
+        token_endpoint_auth_method: 'private_key_jwt'
       } }
   ];
 }
@@ -10339,8 +10450,10 @@ function debuggerApplications() {
 const HOSTED_SURFACE_CLIENT_IDS = Object.freeze(['sts-admin-console',
   'sts-user-portal', 'sts-debugger-ui']);
 
-// The two, built fresh on each call because each carries two credentials that
-// are generated rather than declared.
+// The rows, built fresh on each call because each carries a credential that is
+// generated rather than declared — a registration access token, and a client
+// secret for the management API alone: the three hosted surfaces authenticate
+// by private_key_jwt with a key `oidc_rp.ts` has issued (#138).
 function internalApplications() {
   log.debug("Entering internalApplications().");
   const base = internalBaseUrl();
@@ -10383,8 +10496,6 @@ function internalApplications() {
         client_id: 'sts-admin-console',
         client_name: 'Admin console',
         client_id_issued_at: issued,
-        client_secret: randomId(24),
-        client_secret_expires_at: 0,
         registration_access_token: randomId(24),
         registration_client_uri: base + '/oauth2/register/sts-admin-console',
         client_uri: base + '/admin',
@@ -10397,7 +10508,7 @@ function internalApplications() {
         // a token as this client, carrying the scopes their console roles
         // grant, and /admin-api asks whether the client declared them.
         scope: 'openid profile email offline_access admin:read admin:write',
-        token_endpoint_auth_method: 'client_secret_basic'
+        token_endpoint_auth_method: 'private_key_jwt'
       } },
     // THE USER PORTAL, ADDED 2026-09-06 WITH THE MOVE ONTO THE CODE FLOW. It
     // was the admin console's row with one difference, `realmScope: 'every'`,
@@ -10430,8 +10541,6 @@ function internalApplications() {
         client_id: 'sts-user-portal',
         client_name: 'User portal',
         client_id_issued_at: issued,
-        client_secret: randomId(24),
-        client_secret_expires_at: 0,
         registration_access_token: randomId(24),
         registration_client_uri: base + '/oauth2/register/sts-user-portal',
         client_uri: base + '/portal',
@@ -10441,7 +10550,7 @@ function internalApplications() {
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         scope: 'openid profile email offline_access',
-        token_endpoint_auth_method: 'client_secret_basic'
+        token_endpoint_auth_method: 'private_key_jwt'
       } },
     { identifier: 'sts-management-api',
       name: 'Management API',
@@ -10601,6 +10710,8 @@ function seedInternalApplications(options) {
 
 module.exports = {
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
+  issuedJwtKeyPairValues: issuedJwtKeyPairValues,
+  storeIssuedJwtKeyPair: storeIssuedJwtKeyPair,
   frontchannelOriginProblem: frontchannelOriginProblem,
   requiredRolesOf: requiredRolesOf,
   requiresNarrowedRoles: requiresNarrowedRoles,
@@ -10669,6 +10780,7 @@ module.exports = {
   // registration endpoint read them; nothing else should keep a copy.
   introspectionResponseProblem: introspectionResponseProblem,
   idTokenEncryptionMetadataProblem: idTokenEncryptionMetadataProblem,
+  jarmMetadataProblem: jarmMetadataProblem,
   ID_TOKEN_DEFAULT_ENC: ID_TOKEN_DEFAULT_ENC,
   ID_TOKEN_ENCRYPTION_ALGS: ID_TOKEN_ENCRYPTION_ALGS,
   ID_TOKEN_ENCRYPTION_ENCS: ID_TOKEN_ENCRYPTION_ENCS,

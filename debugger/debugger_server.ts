@@ -1051,11 +1051,22 @@ class DebuggerServer {
             callbackBase: self.debuggerBaseOf(req),
             authorizationBase: self.authorizationBaseOf(req)
           });
-          if (begun && begun.ok === false && !res.headersSent) {
-            errorCodes.mark(res, errorCodes.codeOf(begun) || 'STS-DBG-0017');
-            self.sendPage(res, begun.reason === 'no-client' ? 500 : 403,
-                          'The debugger cannot sign you in',
-                          '<p>' + self.esc(begun.why) + '</p>');
+          // A promise under FAPI 1.0 Advanced (#139); a value otherwise.
+          const refusedIfSo = function (answer: any): void {
+            log.debug("Entering refusedIfSo().");
+            if (answer && answer.ok === false && !res.headersSent) {
+              errorCodes.mark(res, errorCodes.codeOf(answer) ||
+                                   'STS-DBG-0017');
+              self.sendPage(res, answer.reason === 'no-client' ? 500 : 403,
+                            'The debugger cannot sign you in',
+                            '<p>' + self.esc(answer.why) + '</p>');
+            }
+            log.debug("Leaving refusedIfSo().");
+          };
+          if (begun && typeof begun.then === 'function') {
+            begun.then(refusedIfSo);
+          } else {
+            refusedIfSo(begun);
           }
           log.debug("Leaving the debugger gate. Sent to sign in.");
           return;
@@ -1079,7 +1090,8 @@ class DebuggerServer {
         if (verdict.code === 'STS-DBG-0007' ||
             verdict.code === 'STS-DBG-0008' ||
             verdict.code === 'STS-DBG-0009' ||
-            verdict.code === 'STS-DBG-0024') {
+            verdict.code === 'STS-DBG-0024' ||
+            verdict.code === 'STS-DBG-0033') {
           // SIGNED IN AND NOT AN ADMINISTRATOR: the one refusal a person meets
           // here in the ordinary course, drawn as a page that says who they are
           // and how to leave rather than as a token error.
@@ -1110,6 +1122,15 @@ class DebuggerServer {
                               'somebody Admin Read or Admin Write on ' +
                               '<code>/admin/rbac</code>, then sign in ' +
                               'again.</p>'
+                            : '') +
+                          (why.code === 'STS-DBG-0033'
+                            ? '<p><strong>The console has not been claimed ' +
+                              'yet.</strong> This is the bootstrap ' +
+                              'administrator, and in product mode its roles ' +
+                              'open the admin console alone, from a ' +
+                              'password sign-in, until it has signed in to ' +
+                              '<code>/admin</code> with its password once. ' +
+                              'Do that, then sign in here again.</p>'
                             : '') +
                           '<p>You are signed in as <code>' +
                           self.esc(session.user.username) +

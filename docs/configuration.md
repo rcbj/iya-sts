@@ -134,6 +134,27 @@ Restart-only and settable on a trust realm, for exactly the reason above.
 `GET /oauth2/oauth21` lists every requirement it adds, which it inherits, and
 the grants it deliberately exempts.
 
+### `oauth2.fapi` — a FAPI security profile, and it turns RFC 9700 mode on
+
+`off` by default. `1-baseline` enforces FAPI 1.0 Part 1: Baseline (final):
+RFC 9700 mode, plus confidential clients authenticating by mutual TLS,
+`private_key_jwt` or `client_secret_jwt`, key sizes, PKCE with S256 for every
+client, an https `redirect_uri` always sent, `nonce` with `openid` and `state`
+without it, the person's own consent, one client per request, and access
+tokens of at most ten minutes unless sender-constrained.
+
+Restart-only and settable on a trust realm, for the reason above. A **named
+authorization server** may also carry its own value, or `off` to opt out of
+its realm's (the `fapi` member on `/admin/authorization-servers`).
+`GET /oauth2/fapi` lists every requirement. See
+[OAuth security](oauth-security.md#fapi-10-baseline).
+
+`1-advanced` is FAPI 1.0 Part 2: Advanced (final) on top of all of that: a
+signed request object, `code id_token` or `code` with JARM, sender-constrained
+access tokens only (`oauth2.fapiRequireMtls` makes that mutual TLS only),
+`private_key_jwt` or mutual TLS client authentication, and PS256 or ES256 for
+every signature. See [OAuth security](oauth-security.md#fapi-10-advanced).
+
 ### Sender constraints — five settings that ask for more than either mode
 
 **Neither OAuth 2.1 nor RFC 9700 requires DPoP**, and that is worth saying once
@@ -562,15 +583,29 @@ and the account cannot be deleted or renamed. In development any password
 reaches that screen. In product mode the account gets the generated password
 that is logged once.
 
-`admin.openWhenEmpty` is on and keeps the console open to anybody who signs in
-until that account first signs in to `/admin`; every page says so while it
-lasts. Off, only members of the two groups may use the console from the start.
-A process that never seeded the bootstrap administrator keeps the older rule:
-open while *neither* group has a member. If the console is ever closed to
-everybody, `/admin-api` is the way back out: it is gated by a credential of its own
-(`adminApi.authRequired`, an OAuth 2.0 access token rather than a console
-session), so getting back in means holding that token — or turning that one
-setting off, which restores the open API this had until 2026-09-09.
+`admin.openWhenEmpty` is honoured **in development mode only**. There it is on
+and keeps the console open to anybody who signs in until that account first
+signs in to `/admin`; every page says so while it lasts. Off, only members of
+the two groups may use the console from the start. A process that never seeded
+the bootstrap administrator keeps the older rule: open while *neither* group
+has a member.
+
+**Product mode never opens the console to anybody**, whatever this setting
+says (since 2026-09-22): only the roster decides, which at first is the
+bootstrap administrator alone. Until that account has claimed the console, its
+roles are honoured only from a **password** sign-in through its own realm, and
+only such a sign-in claims it — a federation partner asserting `admin`, a
+certificate whose CN is `admin`, a wallet or a Kerberos ticket holds nothing.
+The embedded debugger waits for the claim too. A realm with no bootstrap
+administrator and nobody on its roster is closed, and says so in the log at
+startup (`STS-ADMIN-0798`).
+
+If the console is ever closed to everybody, `/admin-api` is the way back out:
+it is gated by a credential of its own (`adminApi.authRequired`, an OAuth 2.0
+access token rather than a console session), so getting back in means holding
+that token and calling `POST /admin-api/rbac/grant`. In development, turning
+that one setting off restores the open API this had until 2026-09-09; in
+product it gates `/admin-api` by the console's own session and roles instead.
 
 Renaming a role group does not move anybody: the members stay in the old group,
 which stops granting anything the moment the name changes.

@@ -759,6 +759,71 @@ async function publishedNotRevokedSection(t, kek) {
   log.debug("Leaving publishedNotRevokedSection().");
 }
 
+// ---------------------------------------------------------------------------
+// 6c. A MERGE THIS NODE DID NOT ADOPT MUST NOT BECOME ITS BASE (2026-09-23).
+//
+// `sts_pki_distribution_points` in single-node and cluster mode, three runs:
+// the Root's CRL listed a realm's Intermediate as superseded and that realm
+// went on publishing it. The realm was the SECOND of an enrollment job's, so
+// `realms.create()`'s watcher built a branch in one process and was still
+// saving certificates under it when another process's `/pki/build` replaced
+// it. The first process's running write merged correctly and kept the new
+// tier; it did not ADOPT the merged row, because it had attached again while
+// that write ran — but it advanced its base to the merged row anyway. Its
+// waiting write, built from the copy with the OLD tier, then found the row
+// "unchanged underneath" and was written verbatim over the rebuild. The
+// Root's revocation is in another row, so it stayed.
+// ---------------------------------------------------------------------------
+async function unadoptedMergeSection(t, kek) {
+  log.debug("Entering unadoptedMergeSection().");
+  t.log.info('=== 6c. a merge not adopted does not become the base ===');
+  const store = sharedStore(20);
+  const seed = {
+    version: 2, scope: 'acme',
+    intermediate: { serialHex: '01', certificatePem: 'I1' },
+    issuing: { jose: { serialHex: '02', certificatePem: 'J1' } },
+    revoked: {},
+    crlNumbers: {},
+    issuedKeyPairs: []
+  };
+  store.rows.set('pki:acme', crypto.encryptWithKek(kek, JSON.stringify(seed),
+                                                   'pki-hierarchy'));
+  const a = await startNode(store, { adopted: [], published: [] });
+  const b = await startNode(store, { adopted: [], published: [] });
+
+  // B REBUILDS: a new Intermediate and Issuing CA, committed first.
+  const rebuilt = JSON.parse(JSON.stringify(b.pkiFor('acme')));
+  rebuilt.intermediate = { serialHex: '0b', certificatePem: 'I2' };
+  rebuilt.issuing = { jose: { serialHex: '0c', certificatePem: 'J2' } };
+  b.attachPki('acme', rebuilt);
+  await b.settleAll();
+
+  // A, NOT YET TOLD, saves twice from its old copy: the second attach lands
+  // while the first write is inside the row's lock.
+  const future = new Date(Date.now() + 86400000).toISOString();
+  const first = JSON.parse(JSON.stringify(a.pkiFor('acme')));
+  first.certs = { 'jose:RS256': { serialHex: '71', useCase: 'jose',
+                                  notAfter: future } };
+  a.attachPki('acme', first);
+  // INSIDE the lock, not before it: an attach before the first write starts
+  // is coalesced into it (`queueWrite()`), and there is then only one write.
+  await sleep(5);
+  const second = JSON.parse(JSON.stringify(first));
+  second.certs['jose:ES256'] = { serialHex: '72', useCase: 'jose',
+                                 notAfter: future };
+  a.attachPki('acme', second);
+  await a.settleAll();
+
+  const row = opened(kek, store.rows.get('pki:acme'));
+  t.equal(row.intermediate && row.intermediate.certificatePem, 'I2',
+          'THE REBUILT INTERMEDIATE IS STILL THE ROW\'S after the other ' +
+          'node\'s second save from a copy that predates it');
+  t.equal(row.issuing && row.issuing.jose &&
+          row.issuing.jose.certificatePem, 'J2',
+          'and so is the rebuilt Issuing CA');
+  log.debug("Leaving unadoptedMergeSection().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-cluster-keys-'));
@@ -786,6 +851,7 @@ async function run(t) {
     await keysSection(t, kek);
     await mergeSection(t, kek);
     await publishedNotRevokedSection(t, kek);
+    await unadoptedMergeSection(t, kek);
     await buildSection(t);
     await crlSection(t);
     await spiffeSection(t);

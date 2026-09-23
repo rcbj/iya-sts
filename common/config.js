@@ -633,8 +633,11 @@ const SETTINGS = [
     dflt: function () {
       log.debug("Entering dflt().");
       log.debug("Leaving dflt().");
+      // A FAPI profile (#138) implies RFC 9700 mode too, and FAPI requires
+      // TLS of its own accord.
+      const fapiProfile = String(processValue('oauth2.fapi') || 'off');
       return !!(processValue('oauth2.rfc9700') ||
-                processValue('oauth2.oauth21'));
+                processValue('oauth2.oauth21') || fapiProfile !== 'off');
     },
     runtime: false,
     restartReason: 'the listener is bound when the process starts, and its ' +
@@ -3033,6 +3036,95 @@ const SETTINGS = [
                  'may omit redirect_uri, and an authorization request may ' +
                  'omit it when the client registered one. OFF by default. ' +
                  'GET /oauth2/oauth21 lists every requirement.' },
+
+  // ---------------------------------------------------------------------
+  // THE FAPI PROFILES (#138, 2026-09-22), AND EVERY ONE IMPLIES RFC 9700 MODE.
+  //
+  // `realmRuntime` ON A THIRD OAUTH ROW, AND THE ARGUMENT IS MADE AGAIN
+  // rather than borrowed from the two above. The marker's test is that the
+  // restart reason must be something a realm demonstrably does not have. This
+  // row's ONLY consequence before the service is listening is `global.https`'s
+  // default, which derives from it as from the other two (FAPI implies RFC
+  // 9700 mode, and requires TLS itself), so turning it on for the PROCESS
+  // binds the main port as HTTPS. Nothing else is consumed at startup:
+  // `oauth-oidc/fapi.js`'s `profile()` reads the setting per request through
+  // the realm layer (and a named authorization server's own value from the
+  // request's ambient context), and no material is built from it. A realm
+  // binds no socket, so the reason does not reach it. It is an ENUM rather
+  // than a flag because #139-#141 add three more profiles to the same switch.
+  { key: 'oauth2.fapi', group: 'OAuth 2.0 / OIDC', label: 'FAPI profile',
+    env: 'STS_OAUTH2_FAPI', type: 'enum',
+    enumValues: ['off', '1-baseline', '1-advanced'],
+    dflt: 'off', runtime: false, realmRuntime: true,
+    restartReason: 'a profile turns RFC 9700 mode on, which decides whether ' +
+                   'the main port is bound as HTTPS (global.https), and a ' +
+                   'listener is bound when the process starts. A REALM may ' +
+                   'carry it even so — a realm binds no socket, so only the ' +
+                   'profile\'s checks change',
+    description: 'Enforce a FAPI security profile. 1-baseline is FAPI 1.0 ' +
+                 'Part 1 (final): RFC 9700 mode on, and beyond it PKCE S256 ' +
+                 'for every client, redirect_uri sent and https, nonce with ' +
+                 'openid and state without it, confidential clients ' +
+                 'authenticating with mTLS, private_key_jwt or ' +
+                 'client_secret_jwt only, registered keys of RSA 2048 / EC ' +
+                 '160 bits or more, one client named per request, the ' +
+                 'user\'s own consent (an administrator\'s global consent ' +
+                 'does not count), and access tokens under ten minutes ' +
+                 'unless ' +
+                 'sender-constrained. A named authorization server may carry ' +
+                 'its own value (the fapi member on ' +
+                 '/admin/authorization-servers). 1-advanced is FAPI 1.0 ' +
+                 'Part 2 (final) over all of that: a signed request object ' +
+                 '(exp and nbf within 60 minutes, aud the issuer), ' +
+                 'response_type code id_token or code with JARM, ' +
+                 'sender-constrained access tokens only, tls_client_auth, ' +
+                 'self_signed_tls_client_auth or private_key_jwt and no ' +
+                 'public client, PS256 or ES256 for every signature, and ' +
+                 'PKCE only for pushed requests. OFF by default. GET ' +
+                 '/oauth2/fapi lists every requirement.' },
+
+  // FAPI 1.0 Advanced's strict reading of section 5.2.2 item 5 (#139, rcbj's
+  // decision): off, a DPoP-bound access token satisfies "sender-constrained"
+  // as an mTLS-bound one does; on, only mutual TLS does, which is what FAPI
+  // 1.0 names. Runtime and per realm: it moves no socket (the main port asks
+  // every connection for a certificate already).
+  { key: 'oauth2.fapiRequireMtls', group: 'OAuth 2.0 / OIDC',
+    label: 'FAPI Advanced: require mutual TLS',
+    env: 'STS_OAUTH2_FAPI_REQUIRE_MTLS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Under oauth2.fapi=1-advanced, require every access token ' +
+                 'to be bound to a TLS client certificate (RFC 8705), as ' +
+                 'FAPI 1.0 names. Off, a DPoP-bound token is accepted as ' +
+                 'sender-constrained too. No effect under any other profile.' },
+
+  // THE ACCESS TOKEN'S SIGNING ALGORITHM (#139). It was RS256, hard-coded in
+  // `helpers.signJwt()`. `default` keeps that, and signs PS256 under FAPI 1.0
+  // Advanced (section 8.6); a named authorization server may carry its own
+  // (`access_token_signing_alg`). The list is the classical half of the JWS
+  // table: a post-quantum access token would need `accessToken()` to become
+  // asynchronous, which is rcbj's stated direction and not done here.
+  { key: 'oauth2.accessTokenSigningAlg', group: 'OAuth 2.0 / OIDC',
+    label: 'Access token signing algorithm',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_SIGNING_ALG', type: 'enum',
+    enumValues: ['default', 'RS256', 'RS384', 'RS512', 'PS256', 'PS384',
+                 'PS512', 'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA'],
+    dflt: 'default', runtime: true,
+    description: 'The JWS algorithm access tokens (and refresh tokens) are ' +
+                 'signed with, by this realm\'s key for it — every one is ' +
+                 'published in the JWKS. default is RS256, and PS256 under ' +
+                 'FAPI 1.0 Advanced, which also refuses anything but PS256 ' +
+                 'or ES256. A named authorization server may carry its own ' +
+                 '(access_token_signing_alg).' },
+
+  // JARM (#139, #143): how long a JWT-secured authorization response is good
+  // for. JARM section 2.1 recommends a short-lived `exp`, ten minutes at most.
+  { key: 'oauth2.jarmResponseLifetimeS', group: 'OAuth 2.0 / OIDC',
+    label: 'JARM response lifetime (s)',
+    env: 'STS_OAUTH2_JARM_RESPONSE_LIFETIME_S', type: 'int', dflt: 600,
+    min: 10, max: 600, runtime: true,
+    description: 'The exp of a JWT-secured authorization response (JARM), ' +
+                 'in seconds after it is signed. At most ten minutes, JARM ' +
+                 'section 2.1\'s recommendation.' },
 
   // ---------------------------------------------------------------------------
   // A POLICY THAT DEFAULTS TO ON, AND THE ARGUMENT IS NOT THE USUAL ONE.
@@ -5493,7 +5585,13 @@ const SETTINGS = [
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
     // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
-    description: 'SINCE 2026-09-13, on a service that seeded its bootstrap ' +
+    description: 'HONOURED IN DEVELOPMENT MODE ONLY (2026-09-22, #103): ' +
+                 'product mode never opens the console to anybody, whatever ' +
+                 'this says — only the roster decides, and until the ' +
+                 'bootstrap administrator has claimed the console its roles ' +
+                 'are honoured only from a password sign-in. In ' +
+                 'development, since 2026-09-13, on a service that seeded ' +
+                 'its bootstrap ' +
                  'administrator (admin.bootstrapUsername): ON, every ' +
                  'signed-in person may use the whole console UNTIL that ' +
                  'account first signs in to /admin, after which only members ' +
@@ -5511,7 +5609,9 @@ const SETTINGS = [
                  '/admin-api is the way back in: POST /admin-api/rbac/grant ' +
                  'with an access token carrying admin:write, or — if nobody ' +
                  'can get one of those either — adminApi.authRequired=false ' +
-                 'and then that same call.' },
+                 'and then that same call (development only: product then ' +
+                 'gates /admin-api by the console\'s own session and ' +
+                 'roles).' },
 
   // --- Protocol debugger ---------------------------------------------------
   //

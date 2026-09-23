@@ -233,6 +233,13 @@ const JOBS = [
   // realm's roster only when that realm's bootstrap window is closed, and
   // then revokes what it granted.
   { file: 'sts_realm_administrators.js', browser: false, local: true },
+  // THE CONSOLE BEFORE ITS BOOTSTRAP ADMINISTRATOR ARRIVES (#103,
+  // 2026-09-22): development's open window, product's closed one, a
+  // client-certificate sign-in holding no role — and, in product, one naming
+  // `admin` refused and claiming nothing — and the password sign-in that
+  // claims a realm's console. Its realm is left standing; in the default realm
+  // it only signs a certificate holder in, which in product claims nothing.
+  { file: 'sts_console_bootstrap_product.js', browser: false, local: true },
   { file: 'sts_consent.js',              browser: false, local: true },
   { file: 'sts_delegated_permissions_example.js', browser: false, local: true },
   // A SCOPE IS TIED TO THE CLIENT (#110, 2026-09-22): the protected scopes
@@ -286,6 +293,8 @@ const JOBS = [
   // `local: true`: this repository's own authorization server, in a throwaway
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
+  { file: 'sts_fapi_baseline.js',        browser: false, local: true },
+  { file: 'sts_fapi_advanced.js',        browser: false, local: true },
   // OPENID CONNECT FRONT-CHANNEL LOGOUT OVER THE WIRE (#122, 2026-09-22):
   // the discovery member, section 2's origin rule at registration, at
   // /admin-api and when a sign-out reads a stored URI, the iss of a named

@@ -269,9 +269,19 @@ async function aRealmAdministratorIsConfined() {
   const roster = await api("GET", R + "/admin-api/rbac");
   assert.ok(roster.body && roster.body.bootstrap &&
             !roster.body.bootstrap.claimedAt,
-    "precondition: a realm this run created has its bootstrap window open, " +
-    "so whoever signs in through it holds both of its roles; it reads " +
+    "precondition: a realm this run created has its bootstrap window " +
+    "unclaimed; it reads " +
     JSON.stringify(roster.body && roster.body.bootstrap));
+  // IN DEVELOPMENT THE WINDOW MAKES THEM AN ADMINISTRATOR; IN PRODUCT IT NEVER
+  // OPENS (#103, 2026-09-22), so the realm's roster is given them — through
+  // the realm's own API, which is a grant in that realm and nowhere else.
+  if (!roster.body.openToAnyone) {
+    const grant = await api("POST", R + "/admin-api/rbac/grant",
+                            { username: REALM_PERSON, role: "write" });
+    assert.strictEqual(grant.status, 200, "granting " + REALM_PERSON +
+                       " Admin Write in " + REALM + " answered " +
+                       grant.status + " " + grant.text.slice(0, 200));
+  }
   const cookie = await consoleSignIn.signInToTheConsole(base + R,
                                                         REALM_PERSON, log);
   assert.ok(cookie, "the console gate is off, so there is nothing to confine");
@@ -359,9 +369,9 @@ async function theServiceAdministratorIsNot() {
   log.debug("Entering theServiceAdministratorIsNot().");
   log.info("=== the service administrator reaches every realm ===");
   const service = await api("GET", "/admin-api/rbac");
-  const open = !!(service.body && service.body.bootstrap &&
-                  service.body.bootstrap.seeded &&
-                  !service.body.bootstrap.claimedAt);
+  // `openToAnyone` and not "seeded and unclaimed": product never opens the
+  // window (#103), so an unclaimed default realm there admits nobody.
+  const open = !!(service.body && service.body.openToAnyone);
   let granted = false;
   try {
     if (!open) {

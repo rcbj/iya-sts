@@ -146,8 +146,10 @@ const P12_PASSWORD = "changeit";
 // flow authenticates in the realm the console is reached in, so that is where
 // the account is made. Since 2026-09-14 (#32) the roster that decides what it
 // may do is that realm's too (`admin-ui/CLAUDE.md` 8d); the account is on
-// neither of its role groups, and holds both roles because the realm's
-// bootstrap window is open.
+// neither of its role groups until this job grants it Admin Write in that
+// realm. It used to hold both roles because the realm's bootstrap window was
+// open; product mode never opens it (#103, 2026-09-22), so the grant is made
+// in both modes and the job asserts the same thing in each.
 const OPERATOR = "pki-workbench-operator";
 const OPERATOR_PASSWORD = "pki-workbench-Passw0rd!-" + names.runStamp();
 
@@ -401,6 +403,11 @@ async function signIn() {
             "creating the operator " + OPERATOR + " in " + REALM +
             " answered " +
             account.status + " " + String(account.text).slice(0, 300));
+  const granted = await postJson(api("/rbac/grant"),
+                                 { username: OPERATOR, role: "write" });
+  assert.ok(granted.status === 200,
+            "granting the operator Admin Write in " + REALM + " answered " +
+            granted.status + " " + String(granted.text).slice(0, 300));
   const screen = await browse(realmUrl("/admin/pki"));
   assert.ok(/name="authn_id"/.test(screen.text),
             "the console did not send the browser to a sign-in screen; it " +

@@ -3509,6 +3509,22 @@ class AdminConsole {
         'enforced from that moment — including against you, so grant ' +
         'yourself one first.' + elsewhere);
     }
+    // PRODUCT MODE, BEFORE THE CLAIM (2026-09-22, #103): the window does not
+    // open, so a reader drawn a page here is being refused, and the sentence
+    // says what would let them in.
+    if (info.bootstrapPasswordRequired || info.windowWithheld) {
+      const boot = info.bootstrap && info.bootstrap.username
+        ? '<code>' + this.esc(info.bootstrap.username) + '</code>'
+        : 'the bootstrap administrator';
+      log.debug("Leaving AdminConsole.gateBanner(). Product, unclaimed.");
+      return this.warn('<strong>Signed in as ' + who + ', holding no ' +
+        'console role: this console has not been claimed yet.</strong> In ' +
+        'product mode only the bootstrap administrator, ' + boot + ', ' +
+        'signing in with its password, can use this console until it does. ' +
+        'Nobody else holds a role until one is granted, and a sign-in as ' +
+        boot + ' by a federation partner, a certificate, a wallet or a ' +
+        'Kerberos ticket does not count.' + elsewhere);
+    }
     if (info.closed) {
       // Rendered for completeness rather than because a reader will meet it: a
       // request in this state is refused before a page is drawn. It is
@@ -3520,7 +3536,10 @@ class AdminConsole {
         (info.bootstrap && info.bootstrap.seeded && info.bootstrap.claimedAt
           ? 'the bootstrap administrator has already signed in, which closed ' +
             'the open window. '
-          : '<code>admin.openWhenEmpty</code> is off. ') +
+          : (info.windowOpens === false
+              ? 'this is product mode, which never opens the console to ' +
+                'whoever signs in. '
+              : '<code>admin.openWhenEmpty</code> is off. ')) +
         '<code>POST /admin-api/rbac/grant</code> is the way back in — it ' +
         'takes an access token carrying <code>admin:write</code> rather than ' +
         'this console\'s session, which is why it still works when this page ' +
@@ -5329,6 +5348,25 @@ class AdminConsole {
   // goes through page() like everything else, so it carries the nav and the
   // banner: a reader who is refused one page can still see the ones they are
   // allowed, which is the difference between a permission and a wall.
+  // ONE LOG LINE PER CONSOLE SESSION for a refusal of product mode's
+  // unclaimed console (#103): a flag on the session's own row, so a browser
+  // that keeps clicking is one event, and a new sign-in is a new one. The
+  // response itself is marked with the same code by the caller.
+  noteBootstrapRefusal(state, code, what) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminConsole.noteBootstrapRefusal(). " + code);
+    const session = state && state.session;
+    if (session && session.consoleWindowRefusal === code) {
+      log.debug("Leaving AdminConsole.noteBootstrapRefusal(). Already said.");
+      return;
+    }
+    if (session) {
+      session.consoleWindowRefusal = code;
+    }
+    log.warn(errorCodes.tag(code) + 'admin console: ' + what + '.');
+    log.debug("Leaving AdminConsole.noteBootstrapRefusal().");
+  }
+
   // error-code: none — the helper's definition, not a call to it.
   refuse(req, res, status, code, title, message, detail) {
     const { log, gateStateFor } = this.deps;
@@ -5448,13 +5486,31 @@ class AdminConsole {
   // actually reach, and it is the page where that sentence is ACTIONABLE. The
   // two that were context are gone on purpose.
   sendToConsoleSignIn(req, res) {
-    const { log, oidcRp, mode, errorCodes, realms } = this.deps;
+    const { log, oidcRp } = this.deps;
     log.debug("Entering AdminConsole.sendToConsoleSignIn().");
-    const started = oidcRp.beginSignIn(req, res, 'admin', {
+    const begun = oidcRp.beginSignIn(req, res, 'admin', {
       returnTo: String(req.originalUrl || '/admin'),
       fallback: '/admin'
     });
-    if (!started.ok) {
+    // A promise under FAPI 1.0 Advanced (#139), where the request is signed
+    // and pushed before the browser is sent; a value otherwise, answered in
+    // the same tick as it always was.
+    if (begun && typeof begun.then === 'function') {
+      begun.then((started: any) => {
+        this.startedConsoleSignIn(req, res, started);
+      });
+      log.debug("Leaving AdminConsole.sendToConsoleSignIn(). Pushing.");
+      return;
+    }
+    this.startedConsoleSignIn(req, res, begun);
+    log.debug("Leaving AdminConsole.sendToConsoleSignIn().");
+  }
+
+  // What `sendToConsoleSignIn()` does with the answer.
+  startedConsoleSignIn(req, res, started) {
+    const { log, mode, errorCodes, realms } = this.deps;
+    log.debug("Entering AdminConsole.startedConsoleSignIn().");
+    if (!started.ok && !res.headersSent) {
       // THREE REASONS REACH HERE, AND THE SENTENCE A READER NEEDS DIFFERS. The
       // client entry is gone, or has no secret — or, since 2026-09-12, product
       // mode refused to start a flow at an address the entry does not carry,
@@ -5480,7 +5536,7 @@ class AdminConsole {
                   { needed: unregistered ? 'address' : 'client', signIn: '',
                     signInRealm: realms.DEFAULT_ID });
     }
-    log.debug("Leaving AdminConsole.sendToConsoleSignIn(). " +
+    log.debug("Leaving AdminConsole.startedConsoleSignIn(). " +
               (started.ok ? "Sent to the authorization endpoint." :
                "Refused."));
   }
@@ -18790,10 +18846,24 @@ class AdminConsole {
         'gate is on, no role has a member, and ' +
         (info.bootstrap && info.bootstrap.seeded && info.bootstrap.claimedAt
           ? 'the bootstrap administrator has already signed in. '
-          : '<code>admin.openWhenEmpty</code> is off. ') +
+          : (info.windowOpens === false
+              ? 'this is product mode, which never opens the console to ' +
+                'whoever signs in. '
+              : '<code>admin.openWhenEmpty</code> is off. ')) +
         'Anything you are reading ' +
         'here you are reading through <code>/admin-api</code> or with the ' +
         'gate off.</div>'
+      : (info.bootstrapPasswordRequired
+          ? this.warn('<strong>Only <code>' +
+            this.esc(info.bootstrap.username) + '</code>, signing in with ' +
+            'its password, can use this console until it does.</strong> ' +
+            'This is product mode and the console has not been claimed: ' +
+            'the window in which anybody who signs in holds both roles is ' +
+            'a development convenience and never opens here. Its first ' +
+            'password sign-in through this realm claims the console; a ' +
+            'sign-in as that account by any other method holds nothing ' +
+            'until then. Anybody granted a role on this page holds it at ' +
+            'once.')
       : (info.openToAnyone && info.bootstrap && info.bootstrap.seeded
           ? this.warn('<strong><code>' + this.esc(info.bootstrap.username) +
                       '</code> ' +
@@ -18818,7 +18888,7 @@ class AdminConsole {
                 'reach this port and these roles decide nothing. They are ' +
                 'still real directory groups and can be granted now. ' +
                 '(UNREACHABLE since 2026-09-06: the gate is ' +
-                'unconditional.)'))));
+                'unconditional.)')))));
 
     const noDirectory = info.available ? '' :
       '<div class="err">No LDAP directory is loaded in this process, so ' +
@@ -26059,6 +26129,53 @@ class AdminConsole {
         return;
       }
 
+      // ---------------------------------------------------------------------
+      // PRODUCT MODE, BEFORE THE BOOTSTRAP ADMINISTRATOR HAS CLAIMED THE
+      // CONSOLE (2026-09-22, #103). Two refusals the role check below would
+      // make with the wrong reason:
+      //
+      //   * the bootstrap account itself, signed in by something other than a
+      //     password this service verified — a partner asserting its name, a
+      //     certificate whose CN is `admin`, a wallet, a Kerberos ticket. It
+      //     holds both roles by membership and `gateStateFor()` has withheld
+      //     them; the page says to sign in with the password (STS-ADMIN-0796);
+      //   * anybody else, whom development's open window would have let in and
+      //     product does not (STS-ADMIN-0797), recorded once per session.
+      //
+      // Both are logged once per console session rather than per request: a
+      // browser that keeps clicking is one event, not forty.
+      // ---------------------------------------------------------------------
+      if (state.bootstrapPasswordRequired) {
+        self.noteBootstrapRefusal(state, 'STS-ADMIN-0796',
+          'the bootstrap administrator "' + state.username + '" reached the ' +
+          'console before claiming it, signed in by ' +
+          ((state.session && (state.session.amr || []).join(', ')) ||
+           'no recorded method') + ' through ' +
+          ((state.session && state.session.signInAuthority) || 'no') +
+          ' authority rather than by a password verified here; its roles ' +
+          'were not honoured and the console stays unclaimed');
+        errorCodes.mark(res, 'STS-ADMIN-0796');
+        self.refuse(req, res, 403, 'bootstrap_password_required',
+                    'Sign in with the bootstrap administrator\'s password.',
+                    'The bootstrap administrator\'s first console sign-in ' +
+                    'must use its password. ' + state.username + ' has not ' +
+                    'claimed this console yet, and this session was not made ' +
+                    'from a password this service verified — it came from a ' +
+                    'federation partner, a certificate, a wallet or a ' +
+                    'Kerberos ticket, any of which can name this account ' +
+                    'without proving that its holder is the operator who was ' +
+                    'given the generated password. Sign out, and sign in ' +
+                    'again with the password.',
+                    { roles: [],
+                      html: self.note('Once it has signed in with its ' +
+                        'password the console is claimed, and from then on ' +
+                        'this account is an ordinary member of the roster, ' +
+                        'however it signs in.') });
+        log.debug("Leaving the admin console gate. The bootstrap " +
+                  "administrator must claim the console with its password.");
+        return;
+      }
+
       if (needsWrite ? state.write : state.read) {
         // ---------------------------------------------------------------------
         // AND THE CSRF TOKEN, ON THE WAY THROUGH (2026-09-06). OWASP A01/A08.
@@ -26163,7 +26280,21 @@ class AdminConsole {
 
       const group = needsWrite ? state.writeGroup : state.readGroup;
       const role = rbac.roleFor(needsWrite ? 'write' : 'read');
-      errorCodes.mark(res, needsWrite ? 'STS-ADMIN-0008' : 'STS-ADMIN-0007');
+      // PRODUCT'S WITHHELD WINDOW (#103) is this same refusal with its own
+      // code, recorded once per session: the reader is refused exactly as any
+      // holder of no role is, and what an operator needs to know is that the
+      // console has not been claimed yet.
+      if (state.windowWithheld) {
+        self.noteBootstrapRefusal(state, 'STS-ADMIN-0797',
+          state.username + ' holds no console role and reached the console ' +
+          'while its bootstrap administrator' +
+          (state.bootstrap && state.bootstrap.username
+            ? ' "' + state.bootstrap.username + '"' : '') +
+          ' has not claimed it; product mode does not open the console to ' +
+          'whoever signs in');
+      }
+      errorCodes.mark(res, state.windowWithheld ? 'STS-ADMIN-0797'
+        : (needsWrite ? 'STS-ADMIN-0008' : 'STS-ADMIN-0007'));
       self.refuse(req, res, 403, 'insufficient_role',
                   'You are signed in and that is not enough.',
                   'Signed in as ' + state.username + ', holding ' +
@@ -39942,6 +40073,8 @@ const PROTOCOL_SETTINGS_PAGES = [
     links: [['/.well-known/openid-configuration', 'the discovery document'],
             ['/oauth2/rfc9700', 'what RFC 9700 mode enforces'],
             ['/oauth2/oauth21', 'what OAuth 2.1 mode enforces'],
+            ['/oauth2/fapi',
+             'which FAPI profile is in force, and what it enforces'],
             ['/admin/token-lifetimes', 'how long what it issues lasts'],
             ['/admin/tokens', 'what has been issued']] },
 

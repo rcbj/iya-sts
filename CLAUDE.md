@@ -540,6 +540,8 @@ in every file, including the ones in the source comments. This is the index.
 | 3as | `id_token_encryption.ts`, OIDC Core 10.2's encrypted ID Token — and the Logout Token encrypted the same way | `oauth-oidc/CLAUDE.md` |
 | 3at | `account_state.ts`, a DISABLED account: the one place `pwdAccountLockedTime` is written, what ending everything it holds means, and the doors that ask | `common/CLAUDE.md`, `authn/CLAUDE.md` |
 | 3au | `scope_policy.ts` and `scopeRefusal()`, #110: a scope tied to the client that declares it (`oauthAllowedScope`) — this service's protected scopes in both modes, every other scope in product, refused at the endpoints, narrowed in `tokenSet()`, re-checked by `/admin-api`, SCIM and Shared Signals | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
+| 3av | `fapi.js`, the FAPI profiles over RFC 9700 mode — 1.0 Baseline (#138) and Advanced (#139): per realm or per named authorization server (ambient), the checks beyond that mode, the person's own consent, the sender constraint and its mTLS flag, PS256 by default, and the hosted surfaces conforming | `oauth-oidc/CLAUDE.md` |
+| 3aw | `jarm.ts`, JARM (#143) in every mode: one place sends it (`redirectBack()`), the four modes, the signed and optionally encrypted response, never sent unsecured | `oauth-oidc/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
@@ -942,7 +944,7 @@ the file the row names.
 | ~~Ask anybody's permission before it issues something~~ — **reversed 2026-09-01**: `/oauth2/consent`, with `oauth2.consentRequired` ON by default | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | Let a page on another origin read an answer (`Access-Control-Allow-Origin: *` until 2026-09-13) — unless the origin is this service's own or an application lists it in `appCorsOrigin`, per client where the request names one; in both modes, on every path | `common/CLAUDE.md` (`cors.js`) |
 | Check an end user's password, **in development mode** — product verifies every presented password; a Kerberos ticket, a TOTP code and a recovery code are verified in BOTH modes | `authn/CLAUDE.md`, `kerberos/CLAUDE.md`, `common/CLAUDE.md` |
-| Verify a client's credential, **in development mode outside RFC 9700 and OAuth 2.1 mode** — those modes verify whatever method a client declared, and product mode implies RFC 9700 mode, refuses an unknown `client_id` and allows a declared public client. A caller at `/oauth2/introspect` authenticates for an RFC 9701 JWT in every mode and for JSON in product; `/oauth2/revoke` authenticates nobody in any mode | `oauth-oidc/CLAUDE.md` |
+| Verify a client's credential, **in development mode outside RFC 9700, OAuth 2.1 and FAPI mode** — those modes verify whatever method a client declared, and product mode implies RFC 9700 mode, refuses an unknown `client_id` and allows a declared public client. A caller at `/oauth2/introspect` authenticates for an RFC 9701 JWT in every mode and for JSON in product; `/oauth2/revoke` authenticates nobody in any mode | `oauth-oidc/CLAUDE.md` |
 | Refuse an LDAP bind, **in development mode**, except the reserved password `invalid` and a disabled account | `ldap/CLAUDE.md` |
 | Authorize an LDAP write, **in development mode**; reads are authorized in neither mode | `ldap/CLAUDE.md` |
 | Check a Kerberos password, **in development mode** — though it cannot not check the KEY | `kerberos/CLAUDE.md` |

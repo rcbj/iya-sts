@@ -195,8 +195,11 @@ Every realm has two administrator rosters that matter to it:
 - **Its own.** The realm's `cn=admin-read` and `cn=admin-write`, in its own
   `ou=groups`. A new realm is seeded with an `admin` account holding both, which
   must change its password at its first sign-in; in product mode creating the
-  realm shows that password once. Until that account signs in to the realm's
-  console, anybody who signs in through the realm holds both of its roles.
+  realm shows that password once. In development mode, until that account
+  signs in to the realm's console, anybody who signs in through the realm holds
+  both of its roles. Product mode never opens it that way: until that account
+  has signed in there with its password, nobody else may use the realm's
+  console, and a sign-in as `admin` by any other method holds nothing.
 - **The service's.** The default realm's two groups. Their members administer
   every realm, as they always did.
 

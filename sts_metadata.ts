@@ -1798,6 +1798,65 @@ const SPECS: Spec[] = [
               'grants are exempt from the registered-client rule, and ' +
               'introspection and revocation still authenticate no client. ' +
               'GET /oauth2/oauth21 lists every requirement.' },
+  { id: 'fapi1-baseline', name: 'FAPI 1.0 Part 1: Baseline Security ' +
+                               'Profile (final)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-financial-api-part-1-1_0.html',
+    coverage: 'full for the authorization server, AND OFF BY DEFAULT — a ' +
+              'PROFILE (oauth2.fapi=1-baseline, per realm, or the fapi ' +
+              'member of a named authorization server) that turns RFC 9700 ' +
+              'mode on and adds what section 5.2.2 asks beyond it (#138): ' +
+              'confidential clients authenticating with tls_client_auth, ' +
+              'self_signed_tls_client_auth, private_key_jwt or ' +
+              'client_secret_jwt only, at registration and at the token and ' +
+              'PAR endpoints; registered keys of RSA 2048 / EC 160 bits or ' +
+              'more; PKCE S256 of every client; redirect_uri sent and https; ' +
+              'nonce with openid and state without it (5.2.2.2, 5.2.2.3); ' +
+              'one client named per request (item 19); the user\'s own ' +
+              'consent, an administrator\'s global consent not counting ' +
+              '(item 12); and access tokens capped at ten minutes unless ' +
+              'sender-constrained (item 21). Inherited from RFC 9700 mode: ' +
+              'exact redirect matching and a replayed code refused. Already ' +
+              'true in every mode: the granted scope in every token ' +
+              'response, discovery, token entropy, acr honoured. GET ' +
+              '/oauth2/fapi lists every requirement. NOT covered: the OpenID ' +
+              'Foundation conformance suite has not been run (#176); FAPI ' +
+              '2.0 is #140 and #141.' },
+  { id: 'fapi1-advanced', name: 'FAPI 1.0 Part 2: Advanced Security ' +
+                               'Profile (final)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-financial-api-part-2-1_0.html',
+    coverage: 'full for the authorization server, AND OFF BY DEFAULT — the ' +
+              'PROFILE oauth2.fapi=1-advanced (per realm, or a named ' +
+              'authorization server\'s fapi member), which is Baseline and ' +
+              'more (#139): a JWS-signed request object by value or by ' +
+              'reference (item 1) with exp and nbf within 60 minutes and aud ' +
+              'the issuer (items 13, 15, 17); response_type code id_token, ' +
+              'or code with JARM (item 2); the ID Token as a detached ' +
+              'signature with s_hash (5.2.2.1); sender-constrained access ' +
+              'tokens only — mTLS, or DPoP unless oauth2.fapiRequireMtls — ' +
+              'with mtls_endpoint_aliases published (items 5, 6); ' +
+              'tls_client_auth, self_signed_tls_client_auth or ' +
+              'private_key_jwt and no public client (items 14, 16); PKCE ' +
+              'S256 for pushed requests (item 18, and Baseline item 7 ' +
+              'relaxed as the section says); PS256 or ES256 for every ' +
+              'signature both ways and never RSA1_5 (8.6), this server ' +
+              'signing PS256 by default. The console, portal and debugger ' +
+              'conform: a signed request object pushed to PAR, JARM, and a ' +
+              'bound token. NOT covered: the conformance suite (#176).' },
+  { id: 'jarm', name: 'JWT Secured Authorization Response Mode for OAuth ' +
+                     '2.0 (JARM)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/oauth-v2-jarm.html',
+    coverage: 'full, in every mode (#143, built in #139): response_mode ' +
+              'query.jwt, fragment.jwt, form_post.jwt and jwt (query for ' +
+              'code, fragment otherwise); the response parameters with iss, ' +
+              'aud and exp (oauth2.jarmResponseLifetimeS) signed with the ' +
+              'client\'s authorization_signed_response_alg (RS256, or PS256 ' +
+              'under FAPI 1.0 Advanced) and encrypted where it registered ' +
+              'authorization_encrypted_response_alg; errors answered the ' +
+              'same way; query.jwt refused with a token in clear (2.3.1); ' +
+              'the metadata and registration members of sections 3 and 4.' },
   { id: 'webauthn', name: 'Web Authentication (WebAuthn) Level 3',
     where: 'W3C',
     url: 'https://www.w3.org/TR/webauthn-3/',
@@ -4187,11 +4246,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'and no protocol endpoint reads them. THE BOOTSTRAP ADMINISTRATOR ' +
           '(2026-09-13): startup makes admin.bootstrapUsername in the default ' +
           'realm a member of both groups, forces a password change at its ' +
-          'first sign-in, and refuses its deletion; until that account first ' +
-          'signs in to /admin, anybody who signs in holds both roles and ' +
-          'every page says so (admin.openWhenEmpty, which can be turned off). ' +
-          'A process that never seeded it keeps the older rule: an empty ' +
-          'roster opens. /admin-api, gated by its own access token, is the ' +
+          'first sign-in, and refuses its deletion; in development mode, ' +
+          'until that account first signs in to /admin, anybody who signs in ' +
+          'holds both roles and every page says so (admin.openWhenEmpty, ' +
+          'which can be turned off), and a process that never seeded it ' +
+          'keeps the older rule: an empty roster opens. PRODUCT MODE NEVER ' +
+          'OPENS IT (#103): only the roster decides, and until the bootstrap ' +
+          'administrator has claimed the console its roles are honoured only ' +
+          'from a password sign-in, the only sign-in that claims it. ' +
+          '/admin-api, gated by its own access token, is the ' +
           'way back in if the console is ever closed to everybody. The gate ' +
           'itself is unconditional — admin.authRequired was removed on ' +
           '2026-09-06. Add ?format=json.' },
@@ -7991,7 +8054,8 @@ const ENDPOINTS: EndpointEntry[] = [
       'endpoint',
     specs: ['rfc6749', 'oidc', 'rfc7636', 'rfc9396', 'rfc9207',
             'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470',
-            'oauth-multiple-response-types'], effect: 'needs ' +
+            'oauth-multiple-response-types', 'jarm', 'fapi1-advanced'],
+    effect: 'needs ' +
         'client_id and redirect_uri — answers 400 when followed bare, then ' +
         'redirects to the sign-in screen once they are supplied',
     what: 'GET, or POST with the request form-serialized (OIDC Core ' +
@@ -8569,6 +8633,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'enforced with the reason attached. Read-only: the mode is the ' +
           'oauth2.rfc9700 setting, so it is turned on at /admin/oauth2 or ' +
           'through POST /admin-api/config like everything else configurable.' },
+  { path: '/oauth2/fapi', group: 'OAuth 2.0 / OIDC',
+    name: 'FAPI profile report (not a spec endpoint)',
+    specs: ['fapi1-baseline', 'fapi1-advanced'],
+    what: 'NON-SPEC: FAPI defines no document saying which profile a server ' +
+          'follows. The profile in force (oauth2.fapi, off by default), ' +
+          'every requirement of FAPI 1.0 Part 1 section 5.2.2 by item, and ' +
+          'whether it is enforced here, inherited from RFC 9700 mode (which ' +
+          'every profile turns on) or already true. Read-only.' },
+  { path: '/:as/oauth2/fapi', group: 'OAuth 2.0 / OIDC',
+    name: 'FAPI profile report (a named authorization server)',
+    specs: ['fapi1-baseline'],
+    what: 'The same report for one named authorization server, answered ' +
+          'inside that server\'s own profile: its fapi member when it has ' +
+          'one, its realm\'s oauth2.fapi when it does not, and nothing when ' +
+          'it opts out with off.' },
   { path: '/oauth2/oauth21', group: 'OAuth 2.0 / OIDC',
     name: 'OAuth 2.1 mode report (not a spec endpoint)', specs: ['oauth21'],
     what: 'NON-SPEC, for the RFC 9700 report\'s reason beside it: OAuth 2.1 ' +

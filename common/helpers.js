@@ -2563,6 +2563,97 @@ function candidatesForKid(candidates, headerKid) {
 }
 
 // ---------------------------------------------------------------------------
+// THIS REALM'S OWN CLASSICAL KEYS, BY ALGORITHM (#139).
+//
+// `ownSignerFor()` is the key `signJwt()` signs with: the RSA key for every
+// RS* and PS* algorithm, and the curve key of `extraKeys` for the rest. The
+// post-quantum and HMAC families are refused: the first is generated in the
+// pool and cannot be waited for here, and the second is a client's secret.
+// `ownCandidatesFor()` is the other half — the certificates a token this
+// realm signed with `alg` may be verified against, the current key and any
+// live standby (#42), so that a rotation does not strand tokens in flight.
+// ---------------------------------------------------------------------------
+function ownSignerFor(alg) {
+  log.debug("Entering ownSignerFor(). alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (!spec || spec.family === 'hmac' || spec.family === 'pq') {
+    log.debug("Leaving ownSignerFor(). Not a classical asymmetric alg.");
+    throw new Error('this service does not sign its own tokens with "' + alg +
+      '"; it signs them with an RSA or elliptic-curve key of its own.');
+  }
+  if (spec.family === 'rsa') {
+    log.debug("Leaving ownSignerFor(). The RSA key.");
+    return { key: STS.privateKey, kid: STS.kid };
+  }
+  const found = classicalKeysFor(alg)[0];
+  if (!found) {
+    log.debug("Leaving ownSignerFor(). No key.");
+    throw new Error('this realm holds no key for "' + alg + '".');
+  }
+  log.debug("Leaving ownSignerFor(). " + alg + ".");
+  return { key: found.privateKey, kid: found.publicJwk.kid };
+}
+
+// The curve keys of the current key set that sign `alg` — the EdDSA pair
+// narrowed by `oauth2.eddsaCurve`, as `signingKeyFromList()` narrows it.
+function classicalKeysFor(alg) {
+  log.debug("Entering classicalKeysFor(). alg=" + alg);
+  const keys = stsKeysFor();
+  const wanted = String(config.value('oauth2.eddsaCurve') || 'Ed25519');
+  const out = (keys.extraKeys || []).filter(function (one) {
+    return one.alg === alg && (alg !== 'EdDSA' ||
+      (one.publicJwk.crv || 'Ed25519') === wanted);
+  });
+  log.debug("Leaving classicalKeysFor(). " + out.length + ".");
+  return out;
+}
+
+function ownCandidatesFor(alg) {
+  log.debug("Entering ownCandidatesFor(). alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (!spec || spec.family === 'hmac' || spec.family === 'pq') {
+    log.debug("Leaving ownCandidatesFor(). None for this family.");
+    return [];
+  }
+  if (spec.family === 'rsa') {
+    log.debug("Leaving ownCandidatesFor(). The RSA certificates.");
+    return ownRsaCertificates('jose');
+  }
+  const keys = stsKeysFor();
+  const now = Date.now();
+  const out = [];
+  classicalKeysFor(alg).forEach(function (one) {
+    const pem = crypto.createPublicKey({ key: one.publicJwk,
+                                         format: 'jwk' })
+      .export({ type: 'spki', format: 'pem' });
+    out.push({ kid: one.publicJwk.kid, certPem: pem, role: 'current' });
+    standbyOf(keys, 'jose:' + certificateSlotOf(one)).filter(function (sb) {
+      return standbyLive(sb, now) && sb.certPem;
+    }).forEach(function (sb) {
+      out.push({ kid: sb.kid, certPem: sb.certPem, role: sb.role });
+    });
+  });
+  log.debug("Leaving ownCandidatesFor(). " + out.length + ".");
+  return out;
+}
+
+// The options a verification of this realm's own token uses: the caller's,
+// and — where the caller named no algorithms — the token's own, which is safe
+// here and only here because every candidate is a key of the family that
+// algorithm belongs to (RFC 8725 section 3.1's confusion needs a key of
+// another family, an RSA key read as an HMAC secret).
+function ownVerifyOptions(header, opts) {
+  log.debug("Entering ownVerifyOptions().");
+  const out = Object.assign({}, opts || {});
+  if (out.algorithms === undefined && header && header.alg &&
+      ownCandidatesFor(String(header.alg)).length) {
+    out.algorithms = [String(header.alg)];
+  }
+  log.debug("Leaving ownVerifyOptions().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // VERIFY A JWS THIS REALM SIGNED — `stsCrypto.verifyJws()` against each
 // candidate above. The first that verifies answers; if none does, the error
 // from the CURRENT key is thrown, which is the error every caller already
@@ -2573,11 +2664,16 @@ function candidatesForKid(candidates, headerKid) {
 function verifyOwnJws(token, opts) {
   log.debug("Entering verifyOwnJws().");
   const header = peekJoseHeader(token);
-  const candidates = candidatesForKid(ownRsaCertificates('jose'), header.kid);
+  const byAlg = ownCandidatesFor(String((header && header.alg) || ''));
+  const candidates = candidatesForKid(byAlg.length ? byAlg
+                                        : ownRsaCertificates('jose'),
+                                      header.kid);
+  const options = ownVerifyOptions(header, opts);
   let first = null;
   for (let i = 0; i < candidates.length; i++) {
     try {
-      const claims = stsCrypto.verifyJws(token, candidates[i].certPem, opts);
+      const claims = stsCrypto.verifyJws(token, candidates[i].certPem,
+                                         options);
       log.debug("Leaving verifyOwnJws(). The " + candidates[i].role +
                 " key verified it.");
       return claims;
@@ -2598,7 +2694,10 @@ function verifyOwnJws(token, opts) {
 function verifyOwnCompactJws(token, opts) {
   log.debug("Entering verifyOwnCompactJws().");
   const header = peekJoseHeader(token);
-  const candidates = candidatesForKid(ownRsaCertificates('jose'), header.kid);
+  const byAlg = ownCandidatesFor(String((header && header.alg) || ''));
+  const candidates = candidatesForKid(byAlg.length ? byAlg
+                                        : ownRsaCertificates('jose'),
+                                      header.kid);
   let first = null;
   for (let i = 0; i < candidates.length; i++) {
     try {
@@ -4324,19 +4423,27 @@ function signJwtAsAsync(payload, alg, secret, opts) {
 // `typ: "at+jwt"`, and `oauth2.js`'s `accessToken()` is the caller that asks
 // for it (2026-09-13). The refresh token signed here names none and keeps
 // `typ: "JWT"`. `alg` and `kid` stay `crypto.js`'s to set.
+//
+// `opts.algorithm` (#139) is the JWS algorithm, RS256 when absent: FAPI 1.0
+// Advanced signs with PS256, and `oauth2.accessTokenSigningAlg` chooses any
+// classical algorithm this realm holds a key for. The key comes from
+// `ownSignerFor()`, never from the post-quantum list, because this function is
+// synchronous and the one every issued token is counted through.
 function signJwt(payload, context, opts) {
   log.debug("Entering signJwt(). typ=" + (payload.typ || '(none)'));
+  const alg = String((opts && opts.algorithm) || 'RS256');
+  const signer = ownSignerFor(alg);
   const certificateHeaderMembers = withCertificateHeader(
     (opts && opts.header) || undefined,
-    opts && opts.certificateHeader, 'RS256', STS.kid);
-  const kid = publishedKidFor(STS.kid);
+    opts && opts.certificateHeader, alg, signer.kid);
+  const kid = publishedKidFor(signer.kid);
   logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'before ' +
       'signing',
-              { header: Object.assign({ alg: 'RS256', kid: kid },
+              { header: Object.assign({ alg: alg, kid: kid },
                                       certificateHeaderMembers || {}),
                 payload: payload });
-  const signed = stsCrypto.signJws(payload, STS.privateKey,
-                                   { algorithm: 'RS256', keyid: kid,
+  const signed = stsCrypto.signJws(payload, signer.key,
+                                   { algorithm: alg, keyid: kid,
                                      header: certificateHeaderMembers });
   logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'after ' +
       'signing', signed);

@@ -1985,8 +1985,9 @@ build the development-mode second realm at startup.
 **MOVED FROM THE ROOT `CLAUDE.md`'s TRUST-REALM INDEX, AND IT DISAGREES WITH THE
 FIRST-ROW PARAGRAPHS ABOVE** — a realm may be in RFC 9700 mode while the process
 is not: the `realmRuntime` marker, which had one row until 2026-09-12, TWELVE
-from 2026-09-13 and **TWENTY-TWO since 2026-09-15**, and must not get a
-twenty-third by analogy: `oauth2.rfc9700`, `oauth2.oauth21`, the ten SPIFFE rows
+from 2026-09-13, TWENTY-TWO from 2026-09-15 and **TWENTY-THREE since
+2026-09-22**, and must not get a twenty-fourth by analogy: `oauth2.rfc9700`,
+`oauth2.oauth21`, `oauth2.fapi` (#138), the ten SPIFFE rows
 a realm's own listeners and authorities are built from, and
 the ten Kerberos rows a realm's own principal database is built from — each
 group's argument made at the head of its own group in `config.js` rather than
@@ -1999,7 +2000,12 @@ consumed at startup, since `oauth-oidc/oauth21.js` reads it per request. It is i
 `tests/config_realm_layer.js`'s list, whose generic check that a realmRuntime row
 moves no derived row holds for it for that reason. A realm binds no socket, so the reason `oauth2.rfc9700`
 is restart-only service-wide does not reach it; what a realm does NOT get is a
-scheme of its own.
+scheme of its own. **`oauth2.fapi` (#138, 2026-09-22) made it a third time**:
+every FAPI profile turns RFC 9700 mode on and requires TLS, so `global.https`
+reads it through `processValue()` too, and `oauth-oidc/fapi.js` reads it per
+request (and a named authorization server's own value from the request's
+ambient context). It is an enum, `off` by default, because #139–#141 add
+profiles to the same switch.
 
 **A ROW MAY NARROW ITS TYPE, and only the `int` type can so far.** `min`, `max`
 and `step` are OPTIONAL members of a row that `TYPES.int.check()` applies; a row
@@ -6629,6 +6635,14 @@ persona surname, `@sts.example` address or `email_verified: true`;
 1.1 attribute authority and a sign-out naming somebody else are refused.
 Development keeps all of it, which is what the test suite drives.
 
+**NOR, SINCE 2026-09-22 (#103), DOES IT OPEN THE CONSOLE TO WHOEVER SIGNS IN
+FIRST** (`opensConsoleToAnyone()`, the `console-bootstrap-window` row). It is
+asked in the realm whose roster is bound, not the realm being read, because the
+window is that realm's. `admin-ui/CLAUDE.md` 8a has the rest: the bootstrap
+account's claim bound to a password, and the closed console logged at startup.
+The one thing it needed from here is `oidc_rp.ts` recording, beside the ID
+Token's `amr`, the sign-on session's `signInAuthority` on the console session.
+
 ## ALL FIVE GATED SURFACES ASK THE POLICY, AND THEY ALL SIGN IN THROUGH ONE STORE (2026-09-06)
 
 `common/access_gate.ts` declared five resources from the day it was written and
@@ -6731,8 +6745,8 @@ Since 2026-09-06. `/admin` and `/portal` used to authenticate by REDIRECTING
 STRAIGHT TO THE SIGN-IN SCREEN and then reading the session that screen minted.
 They are **OpenID Connect relying parties** now: an unauthenticated request is
 sent to `/oauth2/authorize`, comes back to a registered redirect URI with a
-code, and the code is redeemed at `/oauth2/token` with a client secret and a
-PKCE verifier for an ID Token that establishes a session of that surface's own.
+code, and the code is redeemed at `/oauth2/token` with a `private_key_jwt`
+client assertion (a client secret until #138) and a PKCE verifier for an ID Token that establishes a session of that surface's own.
 
 **WHAT WAS WRONG WITH THE OLD ARRANGEMENT IS THE WHOLE ARGUMENT**: this
 service's own two applications were the only applications in the process that
@@ -6744,9 +6758,12 @@ reach outside it and this is the index of them:
 
 1. **THEY ARE ORDINARY ENTRIES IN THE REGISTRY.** `sts-admin-console` and
    `sts-user-portal` under `ou=applications`, seeded at startup
-   (`applications.seedInternal`), each a confidential client with a secret
-   minted per start, `authorization_code` + `refresh_token`, `response_types:
-   ['code']` and `client_secret_basic`. **Deleting one takes its surface offline
+   (`applications.seedInternal`), each a confidential client,
+   `authorization_code` + `refresh_token`, `response_types: ['code']` and —
+   since #138 (2026-09-22) — `private_key_jwt` with NO client secret: the key
+   is issued by the realm's CA on first use and kept, sealed, on the entry
+   (`oauth-oidc/CLAUDE.md` 3av). It was `client_secret_basic` with a secret
+   minted per start. **Deleting one takes its surface offline
    until a restart**, with a refusal that names the entry — which is the seeding
    rule finally having an observable consequence. — *THERE ARE THREE OF THEM
    SINCE 2026-09-06* under `applications.js`, above

@@ -9,7 +9,11 @@ This page covers what makes iya-sts's [authorization server](oauth-oidc.md)
 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700) (the OAuth 2.0 Security
 Best Current Practice) and
 [OAuth 2.1](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)
-(draft-ietf-oauth-v2-1-16). There are two sender constraints:
+(draft-ietf-oauth-v2-1-16). A security profile,
+[FAPI 1.0 Baseline](https://openid.net/specs/openid-financial-api-part-1-1_0.html),
+builds on the first, and [FAPI 1.0
+Advanced](https://openid.net/specs/openid-financial-api-part-2-1_0.html) on
+that. There are two sender constraints:
 [DPoP](https://www.rfc-editor.org/rfc/rfc9449) (RFC 9449) and
 [mutual TLS](https://www.rfc-editor.org/rfc/rfc8705) (RFC 8705). Five settings
 ask for more than either mode does, and
@@ -93,6 +97,79 @@ every refusal names that revision. **It turns RFC 9700 mode on**, and then:
 `GET /oauth2/oauth21` lists every row. An RFC 7523 or RFC 7522 grant that
 carries no client gets an access token and **no refresh token**, because a
 refresh chain that belongs to nobody cannot be checked.
+
+### FAPI 1.0 Baseline
+
+`oauth2.fapi=1-baseline` enforces FAPI 1.0 Part 1: Baseline (final). **It
+turns RFC 9700 mode on**, as OAuth 2.1 mode does, and adds what the profile
+asks beyond it:
+
+* **Confidential clients authenticate with** `tls_client_auth`,
+  `self_signed_tls_client_auth`, `private_key_jwt` or `client_secret_jwt`.
+  `client_secret_basic` and `client_secret_post` are refused at registration
+  and at the token and PAR endpoints, and are not advertised (item 4).
+* **Keys:** RSA of 2048 bits or more, elliptic curve of 160 or more, checked at
+  registration (items 5 and 6).
+* **PKCE with S256 for every client**, confidential ones included (item 7).
+* **`redirect_uri` is required and must be https** (items 9 and 20); it is
+  matched exactly, as RFC 9700 mode already does.
+* **`nonce` whenever `openid` is asked for, and `state` when it is not**
+  (sections 5.2.2.2 and 5.2.2.3).
+* **Explicit consent** (item 12). The consent screen is shown whatever
+  `oauth2.consentRequired` says, and an administrator's global consent does
+  not count as the person's approval, for this service's own console and
+  portal too.
+* **One client per request** (item 19). A Basic header, the body's
+  `client_id` and a client assertion's `sub` must name the same client, or the
+  request is refused `invalid_client`.
+* **Short unbound access tokens** (item 21): an access token that is not
+  sender-constrained lives 600 seconds at most. One bound by DPoP or mutual
+  TLS keeps the configured lifetime.
+
+A trust realm may carry the setting, and so may a **named authorization
+server**: its `fapi` member on `/admin/authorization-servers` is a profile of
+its own, or `off` to opt out of its realm's. `GET /oauth2/fapi` (and
+`GET /{id}/oauth2/fapi`) lists every requirement with how it is enforced.
+
+**The console, the portal and the embedded debugger authenticate by
+`private_key_jwt`** at the token endpoint in every mode, not only under FAPI.
+Each one's key is issued by the realm's certificate authority on first use,
+kept (private half sealed) on its application entry, and replaced before it
+expires. No client secret is created for them, and nothing about their client
+authentication reaches a browser.
+
+### FAPI 1.0 Advanced
+
+`oauth2.fapi=1-advanced` enforces FAPI 1.0 Part 2: Advanced (final). It is
+**Baseline and more**, with one relaxation Part 2 makes itself: PKCE is
+required only of a request pushed to `/oauth2/par`. On top of Baseline:
+
+* **A signed request object** (by value or pushed), with `exp` and `nbf`
+  within 60 minutes of each other, `nbf` at most 60 minutes old, and `aud`
+  this authorization server's issuer. Only its parameters are used.
+* **`response_type=code id_token`**, or **`code` with `response_mode=jwt`**
+  ([JARM](oauth-oidc.md#flows-and-response-types)). The ID Token returned
+  from the authorization endpoint carries `c_hash` and `s_hash`.
+* **Sender-constrained access tokens only.** A token request that presents
+  neither a TLS client certificate nor a DPoP proof is refused.
+  `oauth2.fapiRequireMtls` makes it mutual TLS only, as FAPI 1.0 names.
+  `mtls_endpoint_aliases` is published where the main port is TLS.
+* **Client authentication** by `tls_client_auth`,
+  `self_signed_tls_client_auth` or `private_key_jwt`. `client_secret_jwt` and
+  public clients are refused.
+* **PS256 or ES256 for every signature**, in both directions, and never
+  `RSA1_5`. This server signs ID Tokens, access tokens, JARM responses and
+  introspection responses with PS256 by default, and the discovery lists are
+  narrowed to the two.
+
+The console, portal and embedded debugger **conform** in an Advanced realm.
+Each sends a signed request object through PAR, asks for a JARM response and
+verifies it, and binds its tokens with DPoP. With `oauth2.fapiRequireMtls`
+on, each also presents the client certificate the realm's CA issued with its
+signing key.
+
+Not covered yet: FAPI 2.0 (#140, #141), and running the OpenID Foundation's
+conformance suite against this service (#176).
 
 ### DPoP (RFC 9449)
 
@@ -230,8 +307,8 @@ default**:
   a realm cannot turn it off. A public client is allowed in return. It is held
   to PKCE with `S256`, an exactly matched registered redirect URI, rotating
   refresh tokens, and the authorization code and refresh grants only.
-* OAuth 2.1 mode and the five sender-constraint settings are **not** implied by
-  product mode. Turn them on explicitly.
+* OAuth 2.1 mode, FAPI and the five sender-constraint settings are **not**
+  implied by product mode. Turn them on explicitly.
 * `POST /dpop/nonce-mode` is a development test control. Product mode refuses
   it, and `oauth2.dpopNonceRequired` is then changed only through
   `/admin/oauth2` or `POST /admin-api/config/set`.
@@ -253,6 +330,8 @@ headers) are described on [Configuration](configuration.md) and
 |---|---|---|---|---|
 | `oauth2.rfc9700` | `STS_OAUTH2_RFC9700` | `false` | restart (a realm may carry it) | RFC 9700 mode: enforce the OAuth 2.0 Security BCP on the authorization flow, and bind the main port as HTTPS. |
 | `oauth2.oauth21` | `STS_OAUTH2_OAUTH21` | `false` | restart (a realm may carry it) | OAuth 2.1 mode (draft-ietf-oauth-v2-1-16): turns RFC 9700 mode on and adds the draft's own requirements. |
+| `oauth2.fapi` | `STS_OAUTH2_FAPI` | `off` | restart (a realm, or a named authorization server, may carry it) | A FAPI security profile: `off`, `1-baseline` (FAPI 1.0 Part 1) or `1-advanced` (Part 2). Turns RFC 9700 mode on and adds the profile's requirements. |
+| `oauth2.fapiRequireMtls` | `STS_OAUTH2_FAPI_REQUIRE_MTLS` | `false` | yes | Under FAPI 1.0 Advanced, accept only mutual TLS as the sender constraint; off, a DPoP-bound token counts too. |
 | `oauth2.redirectUris` | `STS_OAUTH2_REDIRECT_URIS` | *(empty)* | yes | The redirect URIs RFC 9700 mode compares against, by exact string, for a client that registered none of its own. |
 | `oauth2.loopbackPortWildcard` | `STS_OAUTH2_LOOPBACK_PORT_WILDCARD` | `true` | yes | In RFC 9700 mode, let a registered loopback redirect URI match on any port (RFC 8252 section 7.3). |
 | `oauth2.refreshIdleSeconds` | `STS_OAUTH2_REFRESH_IDLE_SECONDS` | `86400` | yes | In RFC 9700 mode, how long a refresh chain may go unused before it stops working; 0 is off. |
@@ -315,6 +394,13 @@ client may override `oauth2.refreshIdleSeconds` and
 * **OAuth 2.1 is a mode of its own.** In two places RFC 9700 mode refuses a
   client that follows OAuth 2.1 to the letter, so 2.1 cannot be RFC 9700 mode
   renamed.
+* **FAPI is a profile over RFC 9700 mode, not a third mode beside it.** FAPI
+  1.0 predates RFC 9700, and most of what it asks is already a row there. The
+  profile holds only the difference, and it can be set per authorization
+  server because a FAPI deployment usually sits beside an ordinary one.
+* **FAPI's consent rule applies to this service's own surfaces too.** A
+  seeded global consent is an administrator's decision, and FAPI asks for the
+  person's.
 * **The idle timeout refuses without revoking.** An idle chain is a client that
   went away. A replayed chain is one that was copied. Treating the two the same
   would make the replay refusal mean nothing.
@@ -343,8 +429,9 @@ client may override `oauth2.refreshIdleSeconds` and
 
 * `/admin/oauth2` holds every setting on this page and reports which mode is in
   force, and why.
-* `GET /oauth2/rfc9700` and `GET /oauth2/oauth21` publish the two requirement
-  tables, with what is enforced and the sender-constraint state.
+* `GET /oauth2/rfc9700`, `GET /oauth2/oauth21` and `GET /oauth2/fapi` publish
+  the requirement tables, with what is enforced and the sender-constraint
+  state.
 * `/admin/applications` holds a client's certificate methods, subject
   parameters, TLS client certificates and step-up requirement.
 * **Monitoring → OAuth 2.0 / OIDC activity** (`/admin/oauth2/monitor`) counts

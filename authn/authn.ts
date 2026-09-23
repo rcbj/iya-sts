@@ -1962,6 +1962,14 @@ class Authn {
     const parentStore = parentRealm === realms.currentId()
       ? store : sessions.realmMap(parentRealm);
     const parent = spec.parent ? parentStore.get(spec.parent) : null;
+    // WHO VOUCHED FOR THE SIGN-IN THIS SESSION CAME FROM (2026-09-22, #103):
+    // the kind of authority on the sign-on session's most recent event —
+    // `local` for this service, `federation` or `kerberos` otherwise. The ID
+    // Token's `amr` says HOW somebody authenticated and not WHO checked it:
+    // SPNEGO puts `pwd` there for a pre-authenticated ticket, and a federation
+    // partner's own `pwd` rides behind `federated`. The console's bootstrap
+    // claim needs both (`admin-ui/admin_rbac.ts`'s `passwordSignIn()`).
+    const signInAuthority = this.latestAuthorityOf(parent);
     // -------------------------------------------------------------------------
     // …UNLESS IT CAN RENEW ITSELF (2026-09-12). A session handed a refresh
     // token is renewed through the refresh token grant when its ID Token and
@@ -1989,6 +1997,9 @@ class Authn {
       amr: Array.isArray(claims.amr) ? claims.amr : (spec.amr || []),
       acr: claims.acr || spec.acr || '',
       via: spec.via || 'OAuth 2.0 / OIDC',
+      // The sign-on session's authority, above; read with `amr` by the
+      // console's bootstrap claim (#103).
+      signInAuthority: signInAuthority,
       // WHAT MAKES IT A DERIVED SESSION. `rpSurface` is what /admin/sessions
       // draws in its Kind column and what `logout.ts` reads; `rpClientId` is
       // the application entry it belongs to, so a row can be followed back to
@@ -2081,6 +2092,21 @@ class Authn {
              'endpoint already counted it.');
     log.debug("Leaving Authn.startRelyingPartySession(). " + sessionId);
     return session;
+  }
+
+  // The kind of authority that vouched for a sign-on session's most recent
+  // authentication (see authenticationEvent()), or '' for no session or a row
+  // older than events, which nothing may read as this service's own check.
+  latestAuthorityOf(session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.latestAuthorityOf().");
+    const events = session && Array.isArray(session.events)
+      ? session.events : [];
+    const last = events.length ? events[events.length - 1] : null;
+    const kind = last && last.authority && last.authority.kind
+      ? String(last.authority.kind) : '';
+    log.debug("Leaving Authn.latestAuthorityOf(). " + (kind || '(none)'));
+    return kind;
   }
 
   // When a relying party's tokens stop saying anything: the EARLIER of the

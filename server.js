@@ -746,6 +746,11 @@ serviceState.start().then(function (both) {
   const bootstrapped = realms.run(realms.DEFAULT_REALM, function () {
     return credentials.bootstrapOnce(realms.DEFAULT_ID, function () {
       adminRbac.seedBootstrapAdministrator();
+      // A CONSOLE NOBODY CAN ENTER IS SAID HERE, ONCE (#103): product mode
+      // never opens it to whoever signs in, so a realm left with no bootstrap
+      // administrator and an empty roster is logged under STS-ADMIN-0798
+      // rather than discovered by being refused.
+      adminRbac.reportClosedConsole();
       return credentials.bootstrap({ username: bootstrapUsername });
     });
   }).then(function () {
@@ -760,6 +765,7 @@ serviceState.start().then(function (both) {
         return realms.run(realm, function () {
           return credentials.bootstrapOnce(realm.id, function () {
             adminRbac.seedBootstrapAdministrator(realm.id);
+            adminRbac.reportClosedConsole(realm.id);
             return credentials.bootstrap({ username: bootstrapUsername });
           });
         });
