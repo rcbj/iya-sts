@@ -101,7 +101,7 @@
 
 const assert = require("assert");
 const { Command, Option } = require("commander");
-const { Builder, By, until } = require("selenium-webdriver");
+const { Builder, By } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const browserFlags = require("./browser_flags.js");
 const names = require("./random_username.js");
@@ -593,9 +593,28 @@ async function submitForm(driver, index, values) {
   // outcome at all" this file failed with twice on 2026-09-21, in memory and
   // single-node, for a refusal the service had made correctly. The pressed
   // button going stale is the old document being replaced.
-  await driver.wait(until.stalenessOf(buttons[0]), 15000,
-                    "form " + index + " was submitted and the page it was " +
-                    "on was never replaced");
+  //
+  // NOT `until.stalenessOf()` (2026-09-23): it counts only a
+  // StaleElementReferenceError as stale, and a probe that lands while Chrome
+  // is tearing the old document down answers "Node with given id does not
+  // belong to the document" instead — which escaped the wait and failed this
+  // job twice in single-node and cluster mode, on a page that had in fact been
+  // replaced. Both errors mean the same thing here.
+  await driver.wait(async function () {
+    try {
+      await buttons[0].isEnabled();
+      return false;
+    } catch (e) {
+      log.debug("Caught in submitForm(): " + ((e && e.message) || e));
+      if ((e && e.name === "StaleElementReferenceError") ||
+          /does not belong to the document|No node with given id/
+            .test(String(e && e.message))) {
+        return true;
+      }
+      throw e;
+    }
+  }, 15000, "form " + index + " was submitted and the page it was on was " +
+            "never replaced");
   await driver.wait(async function () {
     return (await driver.executeScript("return document.readyState;")) ===
            "complete";

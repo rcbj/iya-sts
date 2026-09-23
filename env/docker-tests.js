@@ -265,7 +265,15 @@ var config = {
     // any protocol and the directory stayed empty — which reads as a
     // broken hook and is a setting doing what it was told.
     autocreateUsers: true,
-    maxEntries: 2000,
+    // 10000, not defaults.js's 2000 (2026-09-23). The cap is PROCESS-WIDE —
+    // `totalEntries()` sums every realm's store — and every trust realm a
+    // suite job creates is seeded and LEFT STANDING (tests/CLAUDE.md, *No job
+    // removes a realm*), so the suite's own growth reached 2000 around the
+    // 309th of 313 jobs in the memory mode and the next create anywhere was
+    // refused (`sts_federation_realms`, `vc_did`: "This directory holds its
+    // maximum of 2000 entries"). The bulk-load jobs raise it further for
+    // what they add, and leave it raised.
+    maxEntries: 10000,
     sizeLimit: 500
   },
 
