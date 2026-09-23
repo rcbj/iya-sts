@@ -2028,6 +2028,36 @@ in another. `tests/refresh_token_encryption.js` pins it; the parent project's
 `oauth2_sts_endpoints.js` and `sts_dpop.js` stopped decoding the refresh token
 the same day and read it at introspection instead.
 
+## DISCOVERY ON THE REALM MODEL, AND WEBFINGER (#119, 2026-09-22)
+
+**An issuer here is `https://host[/realm/<id>][/<server>]`, and every
+discovery path is read with that one grammar** (rcbj's decision: discovery
+follows the realm model on the common listener). OIDC Discovery's APPENDED
+form reaches the realm through `app.js`'s prefix and leaves only the server
+segment; RFC 8414's INSERTED form arrives at the host root with the whole
+issuer path after `.well-known/<document>`, so `issuerPathTarget()` parses
+`[realm/<id>][/<server>]` and `discoveryForPath()` answers inside that realm
+(`realms.run()`), where `baseUrlOf()` and `issuerOf()` give the realm's
+issuer. **Until #119 the inserted form was answered from the DEFAULT realm**,
+with an authorization server called `realm` created on the spot, so a realm's
+RFC 8414 document named the wrong issuer and keys. Anything that does not
+parse — an unknown realm, a second server segment, a `realm/` inside a realm —
+goes to Express's 404 (`STS-OAUTH-0594`) and creates no server, which also
+closed the multi-segment mismatch the review found (`/t1/x/...` advertised an
+issuer tokens never carried).
+
+**WEBFINGER** (`webfingerEndpoint()`) is at the host root, as RFC 7033 section
+4 requires. An `acct:`, a bare e-mail address or a host resolves by the realm
+whose DNS domain it is (`realms.domainOf()`; the default realm's is
+`global.domain`) and **never looks the person up**, so it cannot enumerate
+accounts (rcbj's decision); an `https` URL on this service resolves by its
+`/realm/<id>` path. 400 without exactly one readable resource (`0592`), 404 for
+a domain or path no realm has (`0593`), `rel` filtering, a JRD. **It sends
+`Access-Control-Allow-Origin: *` itself**: RFC 7033 section 5 makes CORS a
+MUST, the answer is a public URL, and so this is the one response
+`common/cors.js`'s allowlist does not decide. `tests/vendored/sts_discovery_realms.js`
+holds all of it.
+
 ## `signed_metadata` is signed once a minute, not once a request
 
 `signedMetadata()` in `oauth2.ts` caches, and both discovery documents go

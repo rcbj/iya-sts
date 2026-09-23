@@ -85,6 +85,8 @@ them can drift from what the service does:
 |---|---|
 | `GET /.well-known/openid-configuration` | The OpenID Provider Configuration |
 | `GET /.well-known/oauth-authorization-server` | The RFC 8414 document |
+| `GET /.well-known/{openid-configuration,oauth-authorization-server}/realm/<id>[/<server>]` | Either document for a realm's issuer, or a named server inside it (RFC 8414's inserted form); `/realm/<id>[/<server>]/.well-known/openid-configuration` is the appended form |
+| `GET /.well-known/webfinger?resource=…` | WebFinger (OIDC Discovery section 2): the issuer for an `acct:`, e-mail, host or `https` resource, by realm domain or `/realm/<id>` path |
 | `GET /oauth2/rfc9700` | Every Security BCP requirement, with what is and is not enforced |
 | `GET /oauth2/oauth21` | Every OAuth 2.1 requirement the mode adds, which it inherits from RFC 9700 mode, and what it exempts |
 | `GET /oauth2/fapi` | The FAPI profile in force (`oauth2.fapi`, or a named authorization server's own at `/{id}/oauth2/fapi`) and every FAPI 1.0 Baseline requirement with how it is enforced |

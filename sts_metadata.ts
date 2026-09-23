@@ -1473,6 +1473,17 @@ const SPECS: Spec[] = [
               'this issuer does not verify a token the separate ' +
               'authorization server signed — the check is real only for ' +
               'tokens this service issued.' },
+  { id: 'rfc7033', name: 'RFC 7033 — WebFinger',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc7033',
+    coverage: 'partial, as OpenID Connect Discovery uses it (#119): ' +
+              '/.well-known/webfinger at the host root with the resource ' +
+              'parameter (400 without exactly one, 404 for a resource this ' +
+              'service knows nothing of), rel filtering, a JRD as ' +
+              'application/jrd+json, and Access-Control-Allow-Origin: * ' +
+              '(section 5). The one link relation served is the OpenID ' +
+              'issuer; no other rel is known, and no properties or aliases ' +
+              'are returned.' },
   { id: 'rfc8414', name: 'RFC 8414 — Authorization Server Metadata',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8414',
     coverage: 'full: every member section 2 defines, plus a genuinely signed ' +
@@ -2050,9 +2061,14 @@ const SPECS: Spec[] = [
               'and pairwise, all four prompt values, ' +
               'display_values_supported, ' +
               'claims_locales_supported, the address and phone scopes and ' +
-              'every claim they name. check_session_iframe is absent (#121); ' +
-              'WebFinger issuer discovery (section 2) is not implemented ' +
-              '(#119).' },
+              'every claim they name. WebFinger (section 2, #119) resolves ' +
+              'an acct:, e-mail or host resource by the realm whose DNS ' +
+              'domain it is and an https URL by its /realm/<id> path, never ' +
+              'looking the person up; the inserted and appended discovery ' +
+              'forms both read [realm/<id>][/<server>] and 404 anything ' +
+              'else, so every document names an issuer something issues ' +
+              'from. ' +
+              'check_session_iframe is absent (#121).' },
   { id: 'oidc-registration',
     name: 'OpenID Connect Dynamic Client Registration 1.0',
     where: 'OpenID Foundation',
@@ -8051,7 +8067,20 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Authorization Server Metadata (issuer with a path)', specs: [
       'rfc8414'],
     what: 'The same document at the section 3.1 shape, where the issuer ' +
-          'identifier carries a path.' },
+          'identifier carries a path. The path is read as ' +
+          '[realm/<id>][/<server>] and answered INSIDE that realm (#119), so ' +
+          'a realm\'s document names the realm\'s issuer and keys; anything ' +
+          'else is a 404 and creates no server.' },
+  { path: '/.well-known/webfinger', group: 'OAuth 2.0 / OIDC',
+    name: 'WebFinger issuer discovery', specs: ['oidc-discovery', 'rfc7033'],
+    what: 'OpenID Connect Discovery section 2 (#119): the issuer for an ' +
+          'acct: URI, an e-mail address or a host, resolved by the realm ' +
+          'whose DNS domain it is, and for an https URL on this service by ' +
+          'its /realm/<id> path. The person is never looked up, so no ' +
+          'account can be enumerated; an unknown domain is a 404. A JRD with ' +
+          'the http://openid.net/specs/connect/1.0/issuer link, rel ' +
+          'filtering, and Access-Control-Allow-Origin: * (RFC 7033 section ' +
+          '5).' },
   { path: '/.well-known/openid-configuration', group: 'OAuth 2.0 / OIDC',
     name: 'OpenID Provider Configuration',
     specs: ['oidc-discovery', 'oidc', 'oidc-logout', 'oidc-bclogout',
@@ -8062,15 +8091,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'subject_types_supported, id_token_signing_alg_values_supported, ' +
           'claims_supported, the request/claims parameter booleans and ' +
           'end_session_endpoint. Built from the same source as the RFC 8414 ' +
-          'document so the two cannot drift. No userinfo_endpoint: there is ' +
-          'no userinfo endpoint, and the claims are in the id_token.' },
+          'document so the two cannot drift. userinfo_endpoint names ' +
+          '/oauth2/userinfo.' },
   { path: '/.well-known/openid-configuration/*', group: 'OAuth 2.0 / OIDC',
     name: 'OpenID Provider Configuration (RFC 8414 inserted-path form)',
     specs: ['oidc-discovery', 'rfc8414'],
     what: 'The same document where the well-known segment is INSERTED before ' +
           'the issuer\'s path, which is RFC 8414 section 3.1\'s shape rather ' +
-          'than OIDC\'s. Answered like the oauth-authorization-server route: ' +
-          'the issuer is the base URL the request arrived on.' },
+          'than OIDC\'s. The path is [realm/<id>][/<server>], answered ' +
+          'inside that realm, and anything else is a 404 (#119).' },
   { path: '/*/.well-known/openid-configuration', group: 'OAuth 2.0 / OIDC',
     name: 'OpenID Provider Configuration (issuer with a path)',
     specs: ['oidc-discovery'],

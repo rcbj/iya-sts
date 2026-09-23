@@ -36,6 +36,40 @@ and OpenID Connect Discovery *appends* it
 (`/tenant1/.well-known/openid-configuration`). That difference is the usual
 reason a discovery fetch 404s.
 
+**Discovery follows the realms on the one listener.** An issuer here is
+`https://host[/realm/<id>][/<server>]`: a [trust realm](trust-realms.md), and
+optionally a named authorization server inside it. Both shapes read that
+path, and the document comes from the realm it names, with the realm's issuer,
+keys and endpoints:
+
+| Issuer | Inserted (RFC 8414) | Appended (OIDC Discovery) |
+|---|---|---|
+| `https://host/realm/acme` | `/.well-known/openid-configuration/realm/acme` | `/realm/acme/.well-known/openid-configuration` |
+| `https://host/realm/acme/t1` | `/.well-known/openid-configuration/realm/acme/t1` | `/realm/acme/t1/.well-known/openid-configuration` |
+
+`oauth-authorization-server` takes the same paths. A path that names no issuer
+(an unknown realm, or more than one segment after the realm) is a 404, and it
+creates no authorization server.
+
+**WebFinger** (Discovery section 2) is at `/.well-known/webfinger` on the host
+root and answers for every realm:
+
+* `acct:alice@acme.example`, `alice@acme.example` or a host `acme.example`
+  resolve to the realm whose DNS domain it is. The default realm's domain is
+  `global.domain`. The person is never looked up, so WebFinger cannot be used
+  to find out whether an account exists. An unknown domain is a 404.
+* An `https` URL on this service resolves by its path:
+  `https://host/realm/acme` is realm acme's issuer.
+
+```bash
+curl -s 'https://localhost:8081/.well-known/webfinger?resource=acct:alice@acme.example&rel=http://openid.net/specs/connect/1.0/issuer'
+```
+
+The answer is a JRD (`application/jrd+json`) with the issuer link, and it
+carries `Access-Control-Allow-Origin: *`, as RFC 7033 section 5 asks. It is
+the one response exempt from the CORS allowlist (`global.corsOrigins` and each
+application's `appCorsOrigin`), because it holds nothing but a public URL.
+
 The signing keys are at `/oauth2/jwks`. Both documents carry a
 `signed_metadata` member (RFC 8414 section 2.1), signed once and reused while
 the document is unchanged. The issuer is the base URL the request arrived on
