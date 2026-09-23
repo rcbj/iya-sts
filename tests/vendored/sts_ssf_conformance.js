@@ -456,30 +456,61 @@ async function test() {
     return call("POST", realmBase + "/ssf/receive", unsignedSet(header, body),
                 { "Content-Type": "application/secevent+jwt" });
   };
+  // THE SETS HERE ARE UNSIGNED, which only development accepts: since #117
+  // product mode refuses any SET it cannot verify, and it asks that FIRST, so
+  // every push below is `invalid_key` there and the type, issuer and audience
+  // checks behind it are development's to show. The realm's mode is asked
+  // rather than assumed, because the suite runs this job in both.
+  const modeReport = await call("GET", realmApi + "/mode");
+  const product = !!(modeReport.json && modeReport.json.mode === "product");
+  log.info("section 7 runs in " + (product ? "product" : "development") +
+           " mode (" + modeReport.status + ")");
+  const refusedUnverified = function (what) {
+    log.debug("Entering refusedUnverified().");
+    log.debug("Leaving refusedUnverified().");
+    return function () {
+      assert.strictEqual(r.status, 400, r.text);
+      assert.strictEqual(r.json.err, "invalid_key", what + ": " + r.text);
+    };
+  };
   const typed = { alg: "RS256", typ: "secevent+jwt", kid: "conformance" };
   r = await push(typed, claims(issuer, receiveUrl));
-  check("a SET from this realm's issuer, addressed to the endpoint's own " +
-        "URL, is accepted (202)", function () {
-          assert.strictEqual(r.status, 202, r.text);
-        });
+  check(product
+    ? "PRODUCT: an unsigned SET from this realm's issuer, addressed to the " +
+      "endpoint's own URL, is refused invalid_key — nothing unverified is " +
+      "accepted (#117)"
+    : "a SET from this realm's issuer, addressed to the endpoint's own " +
+      "URL, is accepted (202)",
+    product ? refusedUnverified("the well-formed SET") : function () {
+      assert.strictEqual(r.status, 202, r.text);
+    });
   r = await push(typed, claims("https://other.example", receiveUrl));
-  check("ONE FROM ANOTHER ISSUER IS REFUSED with invalid_issuer (section " +
-        "4.1.6)", function () {
-          assert.strictEqual(r.status, 400, r.text);
-          assert.strictEqual(r.json.err, "invalid_issuer");
-        });
+  check(product
+    ? "PRODUCT: one from another issuer is refused before its issuer is " +
+      "read, invalid_key"
+    : "ONE FROM ANOTHER ISSUER IS REFUSED with invalid_issuer (section " +
+      "4.1.6)",
+    product ? refusedUnverified("another issuer") : function () {
+      assert.strictEqual(r.status, 400, r.text);
+      assert.strictEqual(r.json.err, "invalid_issuer");
+    });
   r = await push(typed, claims(issuer, "somebody-else"));
-  check("one addressed to somebody else is refused with invalid_audience",
-        function () {
-          assert.strictEqual(r.status, 400, r.text);
-          assert.strictEqual(r.json.err, "invalid_audience");
-        });
+  check(product
+    ? "PRODUCT: one addressed to somebody else is refused invalid_key"
+    : "one addressed to somebody else is refused with invalid_audience",
+    product ? refusedUnverified("another audience") : function () {
+      assert.strictEqual(r.status, 400, r.text);
+      assert.strictEqual(r.json.err, "invalid_audience");
+    });
   r = await push({ alg: "RS256", typ: "JWT" }, claims(issuer, receiveUrl));
-  check("and one that is not explicitly typed secevent+jwt is refused " +
-        "(section 4.1.1)", function () {
-          assert.strictEqual(r.status, 400, r.text);
-          assert.ok(/secevent\+jwt/.test(r.json.description), r.text);
-        });
+  check(product
+    ? "PRODUCT: one not typed secevent+jwt is refused invalid_key"
+    : "and one that is not explicitly typed secevent+jwt is refused " +
+      "(section 4.1.1)",
+    product ? refusedUnverified("an untyped SET") : function () {
+      assert.strictEqual(r.status, 400, r.text);
+      assert.ok(/secevent\+jwt/.test(r.json.description), r.text);
+    });
 
   r = await alice.send("DELETE", "/ssf/stream" + q);
   check("alice deletes her own stream", function () {

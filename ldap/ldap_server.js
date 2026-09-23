@@ -5256,6 +5256,14 @@ function autoCreateUser(detail) {
     if (existing &&
         applyFederatedAttributes(existing, info, { created: false })) {
       existing.attributes.modifytimestamp = [generalizedTime()];
+      // TOLD, because the write above edited the stored entry in place and
+      // nothing else here would have said so (#168). Without it the partner's
+      // attributes reached the store only when an unrelated write happened to
+      // touch this entry — 110ms after the sign-in had answered in a product
+      // node, so `sts_federation_encryption` read the old mail — and a row
+      // replicated from another process in between was merged over a base
+      // that never knew about them.
+      touchDirectory(existing.dn);
       log.debug('Leaving autoCreateUser(). Creation is off; the provisioned ' +
                 'entry records the federated sign-in.');
       return existing;
@@ -5364,6 +5372,8 @@ function autoCreateUser(detail) {
     }
     if (changed) {
       existing.attributes.modifytimestamp = [generalizedTime()];
+      // TOLD, for the reason the creation-off branch above gives (#168).
+      touchDirectory(existing.dn);
       log.debug('Leaving autoCreateUser(). The entry existed and now records ' +
                 'something it did not before.');
       return existing;

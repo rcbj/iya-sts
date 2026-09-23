@@ -71,6 +71,36 @@ function childMain() {
     const audit = require(ROOT + '/common/audit');
     const ldap = require(ROOT + '/ldap/ldap_server');
     const federation = require(ROOT + '/federation/federation');
+    // EVERY DN THE DIRECTORY TELLS PERSISTENCE ABOUT (#168). A federated
+    // sign-in onto an entry that already exists edits it in place, and an edit
+    // persistence is not told about reaches the store only when something else
+    // touches that entry — in a product node, after the sign-in has answered.
+    // Memory mode never notices, which is why the check is on the call.
+    const persistence = require(ROOT + '/persistence/persistence');
+    const toldDns = [];
+    const originalChanged = persistence.directoryChanged;
+    // With the entry's mail AS IT WAS WHEN PERSISTENCE WAS TOLD: another write
+    // in the same sign-in may touch the entry before the partner's attributes
+    // are on it, and a touch that saw the old value is not the one owed.
+    persistence.directoryChanged = function (dn) {
+      const text = String(dn || '').toLowerCase();
+      const uid = (/^uid=([^,]+),/.exec(text) || [])[1];
+      let mail = null;
+      try {
+        const entry = uid ? ldap.existingUserEntry(uid) : null;
+        mail = entry ? (entry.attributes.mail || [])[0] || null : null;
+      } catch (e) {
+        mail = 'unreadable: ' + ((e && e.message) || e);
+      }
+      toldDns.push({ dn: text, mail: mail });
+      return originalChanged.apply(this, arguments);
+    };
+    const toldAbout = function (name, from, mail) {
+      const want = 'uid=' + name.toLowerCase() + ',';
+      return toldDns.slice(from).some(function (one) {
+        return one.dn.indexOf(want) === 0 && one.mail === mail;
+      });
+    };
 
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
@@ -345,6 +375,7 @@ function childMain() {
     // 6. THE SAME SWITCHES, TURNED BACK ON
     // =======================================================================
     await setRel('fedUpdateUserAttributes', 'TRUE');
+    let toldFrom = toldDns.length;
     r = await federatedSignIn('fp-new-noupdate');
     const refreshed = await inSp(function () {
       return entryOf(NEW_NOUPDATE);
@@ -353,6 +384,10 @@ function childMain() {
          (attr(refreshed, 'mail')[0] || '') !== 'edited@directory.example',
          '6a. and with REFRESH back ON the next sign-in overwrites it again',
          refreshed && JSON.stringify(attr(refreshed, 'mail')));
+    note(toldAbout(NEW_NOUPDATE, toldFrom,
+                   attr(refreshed, 'mail')[0] || '?'),
+         '6b. and persistence is told that entry changed (#168)',
+         JSON.stringify(toldDns.slice(toldFrom)));
 
     // =======================================================================
     // 7. THIS SERVICE CREATES NOBODY — product mode's rule, and
@@ -374,6 +409,7 @@ function childMain() {
         schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
         userName: 'fp-nocreate', emails: [{ value: 'nocreate@scim.example',
                                             primary: true }] } });
+    toldFrom = toldDns.length;
     r = await federatedSignIn('fp-nocreate');
     const recorded = await inSp(function () {
       return entryOf('fp-nocreate');
@@ -388,6 +424,11 @@ function childMain() {
          'nocreate@scim.example' && /@/.test(attr(recorded, 'mail')[0] || ''),
          '7b. and, with refresh on, takes the partner\'s mail',
          recorded && JSON.stringify(attr(recorded, 'mail')));
+    note(toldAbout('fp-nocreate', toldFrom,
+                   attr(recorded, 'mail')[0] || '?'),
+         '7b-ii. and persistence is told that entry changed, so the ' +
+         'partner\'s attributes do not wait for an unrelated write (#168)',
+         JSON.stringify(toldDns.slice(toldFrom)));
     r = await federatedSignIn('fp-nocreate-nobody');
     const nobody = await inSp(function () {
       return entryOf('fp-nocreate-nobody') ||
