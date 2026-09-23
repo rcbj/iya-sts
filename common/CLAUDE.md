@@ -38,6 +38,7 @@ more than one family needs it, not because it felt general.
 | `certificate_subject.js` | **RFC 8705 SECTION 2.1.2's FIVE CERTIFICATE SUBJECT PARAMETERS, READ AND COMPARED (2026-09-13)** — an RFC 4514 DN compared as a name (types, OIDs, escapes, caseIgnoreMatch, a multi-valued RDN in any order), the four subjectAltName kinds off node's `X509Certificate` (a host name without case, an IP by value, an email's domain without case, a URI exactly), and the grammar a registration may hold. `applications.js` asks it what may be written and `oauth-oidc/client_auth.js` whether a certificate matches. A LEAF over `helpers.js`. |
 | `realm_chooser.ts` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list in development and a text box in product (`mode.listsRealmsBeforeSignIn()`) — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
 | `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
+| `outbound_tls.ts` | **WHETHER AN OUTBOUND REQUEST MAY BE PLAIN HTTP, AND WHETHER THE CERTIFICATE OF WHOEVER ANSWERS IS VERIFIED (#171, 2026-09-23)** — one policy for GNAP's push finish, SSF push, federation's back channels (and every requester that borrows them) and the XACML nudge, each handing in its three settings and two codes. A static utility class. See *`outbound_tls.ts`* below. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
 
@@ -6642,6 +6643,54 @@ window is that realm's. `admin-ui/CLAUDE.md` 8a has the rest: the bootstrap
 account's claim bound to a password, and the closed console logged at startup.
 The one thing it needed from here is `oidc_rp.ts` recording, beside the ID
 Token's `amr`, the sign-on session's `signInAuthority` on the console session.
+
+**NOR, SINCE 2026-09-23 (#171), DOES IT SEND ANYTHING OVER TLS IT DID NOT
+VERIFY** (`skipsOutboundTlsVerification()`, and `dialsPlainHttpOutbound()` for
+plain http; the `outbound-tls` row). See *`outbound_tls.ts`* below.
+
+## `outbound_tls.ts`: THE TRANSPORT OF AN OUTBOUND REQUEST (#171, 2026-09-23)
+
+Four families dial an address somebody else answers — GNAP's push finish, SSF
+push delivery, federation's back channels, the XACML PEP nudge — and each had
+ONE `…AllowInsecure` switch that allowed plain http AND turned verification
+off, which product mode honoured. Each is three settings now, and this module
+is where all four ask; the module header argues why it is one module and why
+in `common/` (rcbj's rule that TLS code lives in a shared module, and GNAP,
+SSF and XACML not requiring the federation module for their transport).
+
+* **`httpVerdict(family, host)`** — `…AllowHttp` off refuses; development
+  (`mode.dialsPlainHttpOutbound()`) allows; product allows loopback only where
+  the family says a spec names it (GNAP) and otherwise refuses with the
+  family's code.
+* **`tlsVerdict(family, origin)`** — `rejectUnauthorized` and `ca`. A skip is
+  honoured only while `mode.skipsOutboundTlsVerification()` says so, with a
+  warning per request; in product it is ignored and said ONCE per setting per
+  process (`skipsVerification()`, which SPIRE's kubelet skip asks directly).
+  `…CaFile` is read on EVERY request (no cache — a handshake costs more, and a
+  rotated file is in force at once) and added BESIDE `tls.rootCertificates`;
+  a file that cannot be used refuses the request, `STS-CORE-0104`.
+* **`describe(family)`** — the three as they are IN FORCE, for the console and
+  `/admin-api` views, where a skip stored in a product realm reads false.
+
+**THE WRITE IS REFUSED IN `config.js`, NOT HERE.** A row carrying
+`onlyWhile: '<mode predicate>'` may be set TRUE only while that predicate
+answers true (`modeWriteProblem()`, `STS-CORE-0103`), asked by
+`setOverride()`, by `checkWrite()` — which `admin-core/admin_actions.ts`'s
+all-or-nothing sections ask before writing anything — and by `realms.js` for a
+realm set, create or update with THAT realm ambient. **It is deliberately not
+in `checkOverride()`**, which is also what a start and a restore validate a
+STORED value with: refusing there would refuse to restore a realm that holds
+one, where the rule is that a stored value is ignored where it is read. The
+lazy `require('./mode')` inside `modeWriteProblem()` closes no cycle: both
+modules are loaded by the time anything writes.
+
+**THE OLD KEYS ARE REFUSED AT START, WITH NO SHIM.** `config.js`'s
+`REPLACED_SETTINGS`: an appconfig file or an environment variable naming one
+stops the start and names the three replacements (`STS-CORE-0105`), because a
+deployment that set one would otherwise start and dial nothing; a stored
+override naming one is refused as an unknown key (`STS-CORE-0008`) with the
+replacement named. There is no mapping from old to new, because which half an
+operator meant is the question the split exists to make them answer.
 
 ## ALL FIVE GATED SURFACES ASK THE POLICY, AND THEY ALL SIGN IN THROUGH ONE STORE (2026-09-06)
 

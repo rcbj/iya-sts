@@ -35,8 +35,8 @@
 //     is never dialled and a URL supplied by the ADMINISTRATOR may be. Loading
 //     a document is an Admin Write action on both surfaces, so it is the second
 //     kind — and it takes that module's rules rather than a copy of them: the
-//     `federation.outbound` kill switch, https only unless
-//     `federation.outboundAllowInsecure`, no redirect followed, the body capped
+//     `federation.outbound` kill switch, https with the certificate verified
+//     (#171), no redirect followed, the body capped
 //     at `federation.maxResponseBytes`, the request timed out at
 //     `federation.outboundTimeoutMs`. That module's header says a new kind of
 //     URL is "a separate argument in a separate function, never a fourth name
@@ -695,18 +695,28 @@ class ProtectedResourceMetadata {
           log.debug("Leaving done().");
         };
         const agent = parsed.protocol === 'https:' ? https : http;
-        const insecure = fedHttp.allowInsecure();
         if (parsed.protocol !== 'https:') {
           // Every insecure request, not only the setting — federation_http.ts's
           // rule.
           log.warn('resource metadata: fetching ' + parsed.origin + ' over ' +
-                   'plain http because federation.outboundAllowInsecure is ' +
-                   'ON.');
+                   'plain http because federation.outboundAllowHttp is ON.');
+        }
+        // Federation's certificate policy (#171): node's store and
+        // `federation.outboundCaFile`; off only in development.
+        const policy = parsed.protocol === 'https:'
+          ? fedHttp.tlsFor(parsed.origin) : null;
+        if (policy && !policy.ok) {
+          done(self.refusal(policy.errorCode, 'The URL cannot be fetched: ' +
+                            policy.why + '.'));
+          return;
         }
         const options: Json = {
           headers: { accept: 'application/json', 'user-agent': USER_AGENT },
-          rejectUnauthorized: !insecure
+          rejectUnauthorized: !policy || policy.rejectUnauthorized
         };
+        if (policy && policy.ca) {
+          options.ca = policy.ca;
+        }
         if (vetted.address) {
           // PINNED to the address that was checked. The Host header and TLS
           // server name still come from the URL, so a certificate is checked

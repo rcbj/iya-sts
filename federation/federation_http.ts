@@ -68,7 +68,7 @@
 // address it resolves to is checked against the internal ranges below, and
 // the connection is pinned to the address that was checked
 // (`mode.dialsInternalAddresses()`). It keeps every other rule here — the kill
-// switch, https unless `federation.outboundAllowInsecure`, no redirect, the
+// switch, https with the certificate verified (#171), no redirect, the
 // body cap, a timeout — and it reads its URL off a record by an attribute
 // name from its OWN list, `SENDABLE`, never from `DIALLABLE`.
 //
@@ -85,15 +85,23 @@
 //    somebody watching a federated sign-in fail in an air-gapped test knows
 //    within one line why.
 //
-// 2. **https ONLY, unless `federation.outboundAllowInsecure` says otherwise.**
-//    What travels on these requests is a client secret and an authorization
-//    code, at somebody ELSE'S service — this is the one place in this
-//    repository where a credential leaves the process, and it is the one place
-//    this service is stricter than a mock would ordinarily be. `allowInsecure`
-//    exists because federating against another mock on localhost is the
-//    ordinary development case, and every request made under it is LOGGED as
-//    insecure rather than only the setting being logged once: a certificate
-//    check disabled six months ago and forgotten is the worst kind of leftover.
+// 2. **https ONLY, WITH THE PARTNER'S CERTIFICATE VERIFIED.** What travels on
+//    these requests is a client secret and an authorization code, at somebody
+//    ELSE'S service — this is the one place in this repository where a
+//    credential leaves the process, and it is the one place this service is
+//    stricter than a mock would ordinarily be (RFC 6749 section 3.2, RFC 9700
+//    section 2, BCP 195). Since #171 the policy is `common/outbound_tls.ts`'s,
+//    shared with GNAP, SSF and XACML, and it is three settings where there was
+//    one: `federation.outboundAllowHttp` admits plain http, in development
+//    only; `federation.outboundSkipTlsVerification` turns the certificate
+//    check off, in development only — federating against another mock on
+//    localhost is the case it exists for; and `federation.outboundCaFile`
+//    names a private CA, which is what product uses instead. Every request
+//    made insecurely is LOGGED as such rather than only the setting being
+//    logged once: a certificate check disabled six months ago and forgotten
+//    is the worst kind of leftover. The SAML SP metadata refresh, the RFC 9728
+//    import and every other requester that borrows this policy ask
+//    `tlsFor()` here rather than reading a setting of their own.
 //
 // 3. **NO REDIRECTS ARE FOLLOWED.** A 302 from a token endpoint is not a
 //    protocol this service speaks, and following one would hand the credential
@@ -151,6 +159,7 @@ import InstanceSlot = require('./../common/instance_slot');
 // — the result object itself is never sent to anybody. A leaf, so no cycle.
 import errorCodes = require('./../common/error_codes');
 import version = require('./../common/version');
+import OutboundTls = require('./../common/outbound_tls');
 
 const { URL } = url;
 
@@ -261,8 +270,22 @@ interface FederationHttpDeps {
   // mode check needs, and the predicate that decides whether it applies.
   dns?: typeof dns;
   net?: typeof net;
-  mode?: { dialsInternalAddresses(): boolean };
+  mode?: { dialsInternalAddresses(): boolean;
+          skipsOutboundTlsVerification(): boolean };
 }
+
+// THE OUTBOUND TRANSPORT POLICY, as `common/outbound_tls.ts` takes it (#171).
+// No plain http in product: a client secret travels on these requests, and
+// no specification a partner speaks names a loopback exception.
+const OUTBOUND_TRANSPORT = {
+  what: 'a federation back-channel request',
+  allowHttpKey: 'federation.outboundAllowHttp',
+  skipTlsKey: 'federation.outboundSkipTlsVerification',
+  caFileKey: 'federation.outboundCaFile',
+  loopbackHttpInProduct: false,
+  httpRefusedCode: 'STS-FED-0112',
+  skipIgnoredCode: 'STS-FED-0113'
+};
 
 class FederationHttp {
   static readonly DIALLABLE = DIALLABLE;
@@ -312,11 +335,37 @@ class FederationHttp {
     return !!config.value('federation.outbound');
   }
 
-  allowInsecure(): boolean {
-    const { log, config } = this.deps;
-    log.debug("Entering FederationHttp.allowInsecure().");
-    log.debug("Leaving FederationHttp.allowInsecure().");
-    return !!config.value('federation.outboundAllowInsecure');
+  // THE TLS OPTIONS FOR ONE REQUEST to `origin` (#171), for this module and
+  // for every requester that borrows its policy: `{ ok, why, errorCode,
+  // rejectUnauthorized, ca, skipped }`. `ok: false` is a CA file that cannot
+  // be used, and the request is not to be made.
+  tlsFor(origin: string): ReturnType<typeof OutboundTls.tlsVerdict> {
+    const { log } = this.deps;
+    log.debug("Entering FederationHttp.tlsFor().");
+    log.debug("Leaving FederationHttp.tlsFor().");
+    return OutboundTls.tlsVerdict(OUTBOUND_TRANSPORT, origin);
+  }
+
+  // The three transport settings as they are IN FORCE in this realm.
+  transportSettings(): ReturnType<typeof OutboundTls.describe> {
+    const { log } = this.deps;
+    log.debug("Entering FederationHttp.transportSettings().");
+    log.debug("Leaving FederationHttp.transportSettings().");
+    return OutboundTls.describe(OUTBOUND_TRANSPORT);
+  }
+
+  // Node's request options for the policy's answer: `ca` only when a CA file
+  // named one, because node reads that option by value and an explicit list
+  // REPLACES its store.
+  applyTls(requestOptions: any,
+           policy: ReturnType<typeof OutboundTls.tlsVerdict>): void {
+    const { log } = this.deps;
+    log.debug("Entering FederationHttp.applyTls().");
+    requestOptions.rejectUnauthorized = policy.rejectUnauthorized;
+    if (policy.ca) {
+      requestOptions.ca = policy.ca;
+    }
+    log.debug("Leaving FederationHttp.applyTls().");
   }
 
   private timeoutMs(): number {
@@ -337,40 +386,53 @@ class FederationHttp {
   urlProblem(raw: unknown): string {
     const { log } = this.deps;
     log.debug("Entering FederationHttp.urlProblem().");
+    log.debug("Leaving FederationHttp.urlProblem().");
+    return this.urlVerdict(raw).why;
+  }
+
+  // The same answer, with `STS-FED-0112` when the refusal is plain http in
+  // product mode and '' for every other, whose code is the caller's.
+  urlVerdict(raw: unknown): { why: string; errorCode: string } {
+    const { log } = this.deps;
+    log.debug("Entering FederationHttp.urlVerdict().");
     const text = String(raw || '').trim();
     if (!text) {
-      log.debug("Leaving FederationHttp.urlProblem(). Empty.");
-      return 'there is no URL configured for it';
+      log.debug("Leaving FederationHttp.urlVerdict(). Empty.");
+      return { why: 'there is no URL configured for it', errorCode: '' };
     }
     let parsed = null;
     try {
       parsed = new URL(text);
     } catch (e) {
-      log.debug("Caught in FederationHttp.urlProblem(): " +
+      log.debug("Caught in FederationHttp.urlVerdict(): " +
                 ((e && e.message) || e));
-      log.debug("Leaving FederationHttp.urlProblem(). It will not parse.");
-      return '"' + text + '" is not a URL (' + e.message + ')';
+      log.debug("Leaving FederationHttp.urlVerdict(). It will not parse.");
+      return { why: '"' + text + '" is not a URL (' + e.message + ')',
+               errorCode: '' };
     }
     if (parsed.protocol === 'https:') {
-      log.debug("Leaving FederationHttp.urlProblem(). https, fine.");
-      return '';
+      log.debug("Leaving FederationHttp.urlVerdict(). https, fine.");
+      return { why: '', errorCode: '' };
     }
     if (parsed.protocol === 'http:') {
-      if (this.allowInsecure()) {
-        log.debug("Leaving FederationHttp.urlProblem(). http, allowed by " +
+      const verdict = OutboundTls.httpVerdict(OUTBOUND_TRANSPORT,
+                                              parsed.hostname);
+      if (verdict.ok) {
+        log.debug("Leaving FederationHttp.urlVerdict(). http, allowed by " +
                   'setting.');
-        return '';
+        return { why: '', errorCode: '' };
       }
-      log.debug("Leaving FederationHttp.urlProblem(). http, refused.");
-      return 'it is an http:// URL and federation.outboundAllowInsecure is ' +
-             'off. A client secret and an authorization code travel on this ' +
-             'request, so plain http is refused unless that setting says ' +
-             'otherwise';
+      log.debug("Leaving FederationHttp.urlVerdict(). http, refused.");
+      return { why: verdict.why + '. A client secret and an authorization ' +
+                    'code travel on this kind of request',
+               errorCode: verdict.errorCode };
     }
-    log.debug("Leaving FederationHttp.urlProblem(). Wrong scheme.");
-    return 'its scheme is "' + parsed.protocol.replace(':', '') + '", and ' +
-           'only https (or http, with federation.outboundAllowInsecure on) ' +
-           'is dialled';
+    log.debug("Leaving FederationHttp.urlVerdict(). Wrong scheme.");
+    return { why: 'its scheme is "' + parsed.protocol.replace(':', '') +
+                  '", and only https (or http, with ' +
+                  'federation.outboundAllowHttp on, in development mode) is ' +
+                  'dialled',
+             errorCode: '' };
   }
 
   // -------------------------------------------------------------------------
@@ -520,18 +582,23 @@ class FederationHttp {
                      'service makes no outbound request at all');
     }
     const raw = String((record && record[attribute]) || '');
-    const problem = this.urlProblem(raw);
-    if (problem) {
-      log.debug("Leaving FederationHttp.deliverForm(). " + problem);
-      return refused('url', attribute + ' cannot be dialled: ' + problem, raw);
+    const problem = this.urlVerdict(raw);
+    if (problem.why) {
+      log.debug("Leaving FederationHttp.deliverForm(). " + problem.why);
+      return refused('url', attribute + ' cannot be dialled: ' + problem.why,
+                     raw);
     }
     const target = new URL(raw);
     const secure = target.protocol === 'https:';
     if (!secure) {
       // Every insecure request, not just the setting. See the header.
       log.warn('outbound: sending to ' + target.origin + ' over plain http ' +
-               'for ' + id + ' because federation.outboundAllowInsecure is ' +
-               'ON.');
+               'for ' + id + ' because federation.outboundAllowHttp is ON.');
+    }
+    const policy = this.tlsFor(target.origin);
+    if (secure && !policy.ok) {
+      log.debug("Leaving FederationHttp.deliverForm(). " + policy.why);
+      return refused('ca-file', policy.why, raw);
     }
     const body = new URLSearchParams(form).toString();
     const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs)
@@ -566,8 +633,11 @@ class FederationHttp {
             'Content-Length': Buffer.byteLength(body),
             'User-Agent': self.deps.userAgent
           },
-          rejectUnauthorized: secure && !self.allowInsecure()
+          rejectUnauthorized: secure
         };
+        if (secure) {
+          self.applyTls(requestOptions, policy);
+        }
         if (vetted.address) {
           // PINNED to the address that was checked. The Host header and the
           // TLS server name still come from the URL, so a certificate is
@@ -671,8 +741,8 @@ class FederationHttp {
   // against that same certificate, so nothing that arrives is believed on
   // its own say-so (header point 5).
   //
-  // Everything else here still applies: the kill switch, https unless
-  // `federation.outboundAllowInsecure`, the internal-address check in product
+  // Everything else here still applies: the kill switch, the transport
+  // policy (`tlsFor()`, #171), the internal-address check in product
   // mode with the connection pinned, the body cap, the timeout — and NO
   // REDIRECT, which the draft's section 8.2 says a client SHOULD follow and
   // its section 11.4 says is where the risk is; a list that has moved is a
@@ -711,7 +781,12 @@ class FederationHttp {
     const secure = target.protocol === 'https:';
     if (!secure) {
       log.warn('outbound: fetching ' + target.origin + ' over plain http ' +
-               'because federation.outboundAllowInsecure is ON.');
+               'because federation.outboundAllowHttp is ON.');
+    }
+    const policy = this.tlsFor(target.origin);
+    if (secure && !policy.ok) {
+      log.debug("Leaving FederationHttp.fetchPublished(). " + policy.why);
+      return refused('ca-file', policy.why);
     }
     const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs)
                                                  : this.timeoutMs();
@@ -745,8 +820,11 @@ class FederationHttp {
             'Accept': String(opts.accept || '*/*'),
             'User-Agent': self.deps.userAgent
           },
-          rejectUnauthorized: secure && !self.allowInsecure()
+          rejectUnauthorized: secure
         };
+        if (secure) {
+          self.applyTls(requestOptions, policy);
+        }
         if (vetted.address) {
           requestOptions.servername = target.hostname;
           requestOptions.lookup = function (hostname, lookupOptions,
@@ -931,8 +1009,8 @@ class FederationHttp {
   // Kubernetes API server lives on an internal address as a rule, and
   // refusing internal addresses here would refuse the one place it lives.
   //
-  // Everything else holds: the kill switch, https unless
-  // `federation.outboundAllowInsecure`, no redirect, the body cap, the
+  // Everything else holds: the kill switch, the transport policy
+  // (`tlsFor()`, #171), no redirect, the body cap, the
   // timeout. `options.ca` is a PEM bundle to verify the server against
   // INSTEAD of node's default roots — a cluster's own CA — and the TLS check
   // is never turned off by it.
@@ -951,7 +1029,7 @@ class FederationHttp {
   // not its NAME — SPIRE's check when no node name is configured, because a
   // kubelet's certificate names the node and not 127.0.0.1; `skipVerify` is
   // `skip_kubelet_verification`, an administrator's explicit choice, logged on
-  // every request; and `loopbackPlainHttp` admits http to 127.0.0.1 or ::1
+  // every request and honoured in DEVELOPMENT MODE ONLY (#171); and `loopbackPlainHttp` admits http to 127.0.0.1 or ::1
   // ONLY, which is the kubelet's read-only port. It NEVER rejects.
   // -------------------------------------------------------------------------
   requestConfigured(raw: string, options?: {
@@ -988,7 +1066,18 @@ class FederationHttp {
     if (!secure && !plainSigned) {
       log.warn('outbound: a SPIFFE node attestor is dialling ' +
                target.origin + ' over plain http because ' +
-               'federation.outboundAllowInsecure is ON.');
+               'federation.outboundAllowHttp is ON.');
+    }
+    // THE ADMINISTRATOR'S OWN ANCHOR WINS: `opts.ca` (a cluster's CA, the
+    // kubelet's) replaces node's store as it always did, and the federation
+    // policy's CA file is asked only when there is none. Verification off is
+    // the policy's to decide, in development only (#171).
+    const policy = this.tlsFor(target.origin);
+    if (secure && !opts.ca && !policy.ok) {
+      log.debug("Leaving FederationHttp.requestConfigured(). " + policy.why);
+      return Promise.resolve({ ok: false, status: 0, body: empty,
+        headers: {}, kind: 'ca-file', url: String(raw || ''),
+        why: policy.why });
     }
     const body = opts.body === undefined || opts.body === null ? null
       : Buffer.isBuffer(opts.body) ? opts.body
@@ -1003,8 +1092,11 @@ class FederationHttp {
       path: target.pathname + target.search,
       method: String(opts.method || 'GET').toUpperCase(),
       headers: headers,
-      rejectUnauthorized: secure && !this.allowInsecure()
+      rejectUnauthorized: secure
     };
+    if (secure) {
+      this.applyTls(requestOptions, policy);
+    }
     if (secure && opts.ca) requestOptions.ca = String(opts.ca);
     if (secure && opts.cert && opts.key) {
       requestOptions.cert = String(opts.cert);
@@ -1016,7 +1108,14 @@ class FederationHttp {
         return undefined;
       };
     }
-    if (secure && opts.skipVerify) {
+    // SPIRE's `skip_kubelet_verification` (#171): development only. The
+    // attestor asks `common/outbound_tls.ts` before it sets `skipVerify`, and
+    // says once when product mode ignores it; this is the same predicate
+    // asked again where the option is applied, so no other caller can pass
+    // it past the mode.
+    const modeModule = this.deps.mode || mode;
+    if (secure && opts.skipVerify &&
+        modeModule.skipsOutboundTlsVerification()) {
       log.warn('outbound: ' + target.origin + ' is dialled WITHOUT ' +
                'verifying its certificate, because the configuration asks ' +
                'for that (a kubelet\'s skip_kubelet_verification).');
@@ -1092,7 +1191,7 @@ class FederationHttp {
   //   5. nothing is sent but the request line and a User-Agent, and what
   //      comes back is compared with a nonce and discarded.
   //
-  // It is plain HTTP, and `federation.outboundAllowInsecure` is not asked:
+  // It is plain HTTP, and `federation.outboundAllowHttp` is not asked:
   // SPIRE's plugin speaks http, nothing secret travels on the request, and
   // the proof is the nonce coming back from the address the name resolves
   // to — which is exactly as strong as this network's DNS, and no stronger.
@@ -1203,15 +1302,15 @@ class FederationHttp {
                                     'keys in fedJwks' });
     }
     const raw = String((record && record[attribute]) || '');
-    const problem = this.urlProblem(raw);
-    if (problem) {
-      log.debug("Leaving FederationHttp.fetchJson(). " + problem);
+    const problem = this.urlVerdict(raw);
+    if (problem.why) {
+      log.debug("Leaving FederationHttp.fetchJson(). " + problem.why);
       log.debug("Leaving FederationHttp.fetchJson().");
       return Promise.resolve({ ok: false, status: 0, json: null, text: '',
                                url: raw,
-                               errorCode: 'STS-FED-0048',
+                               errorCode: problem.errorCode || 'STS-FED-0048',
                                why: attribute + ' cannot be dialled: ' +
-                                    problem });
+                                    problem.why });
     }
 
     const target = new URL(raw);
@@ -1220,8 +1319,16 @@ class FederationHttp {
       // Every insecure request, not just the setting. See the header.
       log.warn('federation: dialling ' + target.origin + ' over plain http ' +
                'for ' + id +
-               ' because federation.outboundAllowInsecure is ON. A client ' +
+               ' because federation.outboundAllowHttp is ON. A client ' +
                'secret and an authorization code travel on this request.');
+    }
+    const policy = this.tlsFor(target.origin);
+    if (secure && !policy.ok) {
+      log.debug("Leaving FederationHttp.fetchJson(). " + policy.why);
+      return Promise.resolve({ ok: false, status: 0, json: null, text: '',
+                               url: raw, errorCode: policy.errorCode,
+                               why: attribute + ' cannot be dialled: ' +
+                                    policy.why });
     }
     const method = String(opts.method || 'GET').toUpperCase();
     const headers = Object.assign({ 'Accept': 'application/json',
@@ -1255,7 +1362,7 @@ class FederationHttp {
       };
       let request = null;
       try {
-        request = transport.request({
+        const requestOptions: any = {
           protocol: target.protocol,
           hostname: target.hostname,
           port: target.port || (secure ? 443 : 80),
@@ -1266,10 +1373,16 @@ class FederationHttp {
           // one place in this service where a real TLS verification happens
           // against somebody else's certificate, and the mock's usual "verify
           // nothing" posture is exactly wrong for it: what is being protected
-          // is the secret in the Authorization header. `allowInsecure` turns
-          // it off for localhost work and is warned about above.
-          rejectUnauthorized: secure && !this.allowInsecure()
-        }, function (response) {
+          // is the secret in the Authorization header. `policy` decides it:
+          // only development mode with
+          // `federation.outboundSkipTlsVerification` on turns it off, and
+          // that is warned about on every request.
+          rejectUnauthorized: secure
+        };
+        if (secure) {
+          this.applyTls(requestOptions, policy);
+        }
+        request = transport.request(requestOptions, function (response) {
           const status = response.statusCode || 0;
           const location = response.headers.location;
           if (status >= 300 && status < 400 && location) {
@@ -1367,7 +1480,7 @@ class FederationHttp {
                     (e.code === 'DEPTH_ZERO_SELF_SIGNED_CERT' ||
                      e.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
                      e.code === 'SELF_SIGNED_CERT_IN_CHAIN'
-                       ? '. Set federation.outboundAllowInsecure to dial a ' +
+                       ? '. Name its CA in federation.outboundCaFile to dial a ' +
                          'partner whose certificate nothing here trusts'
                        : '') });
       });
@@ -1414,5 +1527,8 @@ export = {
   urlProblem: slot.forward('urlProblem'),
   fetchJson: slot.forward('fetchJson'),
   outboundAllowed: slot.forward('outboundAllowed'),
-  allowInsecure: slot.forward('allowInsecure')
+  urlVerdict: slot.forward('urlVerdict'),
+  tlsFor: slot.forward('tlsFor'),
+  transportSettings: slot.forward('transportSettings'),
+  OUTBOUND_TRANSPORT: OUTBOUND_TRANSPORT
 };

@@ -647,13 +647,26 @@ deployment with no egress: SAML, SAML 1.1 and WS-Federation need no back channel
 at all, and an OpenID Connect partner can still be used with
 `fedResponseType: id_token` and its keys pasted into `fedJwks`.
 
-`federation.outboundAllowInsecure` is **OFF by default, which is the one place
-this service is stricter than a mock would ordinarily be.** What travels on those
-requests is a client secret and an authorization code, at somebody else's
-service. ON accepts an `http://` endpoint and a certificate nothing here trusts —
-which is what federating against another mock on localhost needs — and every
-request made under it is logged as insecure, rather than the setting being logged
-once at startup and forgotten.
+**A partner's certificate is always verified in product mode, and plain http is
+never used there** (#171). What travels on those requests is a client secret and
+an authorization code, at somebody else's service. Three settings govern it, all
+off or empty by default:
+
+* `federation.outboundAllowHttp` accepts an `http://` endpoint — in development
+  mode only;
+* `federation.outboundSkipTlsVerification` accepts a certificate nothing here
+  trusts — in development mode only, which is what federating against another
+  mock on localhost needs. Product ignores it and refuses to set it;
+* `federation.outboundCaFile` names a PEM file of CA certificates a partner may
+  chain to, beside node's own store, which is how product reaches a partner
+  certified by a private CA.
+
+Every request made insecurely is logged as such, rather than the setting being
+logged once at startup and forgotten. GNAP push (`gnap.push…`), Shared Signals
+push (`ssf.push…`) and the XACML PEP nudge (`xacml.pepNotify…`) have the same
+three settings each. The old single `…AllowInsecure` switches were removed and
+a service whose configuration still names one refuses to start
+(`STS-CORE-0105`).
 
 Everything else about a relationship is not a setting at all: it is an entry
 under `ou=federations`, configured at `/admin/federation`, through `POST

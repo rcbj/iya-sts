@@ -267,8 +267,9 @@ function childMain() {
 
     config.setOverride('oauth2.consentRequired', false);
     // The key host is plain http on the loopback; development mode dials an
-    // internal address, and this lets it dial http.
-    config.setOverride('federation.outboundAllowInsecure', true);
+    // internal address, and this lets it dial http (#171: plain http is
+    // `federation.outboundAllowHttp`, honoured in development only).
+    config.setOverride('federation.outboundAllowHttp', true);
 
     // --- a. registration ---------------------------------------------------
     let r = await request(port, 'POST', '/oauth2/register',
@@ -436,13 +437,13 @@ function childMain() {
            (hits['/jwks'] || 0) === 2,
          '2d. a redirect is not followed (the outbound policy)',
          r.status + ' ' + JSON.stringify(hits));
-    config.setOverride('federation.outboundAllowInsecure', false);
+    config.setOverride('federation.outboundAllowHttp', false);
     const before = hits['/jwks'];
     const refused = await clientJwks.ensure(KEYS + '/jwks?fresh', '');
     note(!refused.ok && hits['/jwks'] === before,
-         '2d. with federation.outboundAllowInsecure off an http jwks_uri is ' +
+         '2d. with federation.outboundAllowHttp off an http jwks_uri is ' +
          'never dialled', JSON.stringify(refused));
-    config.setOverride('federation.outboundAllowInsecure', true);
+    config.setOverride('federation.outboundAllowHttp', true);
 
     // --- e. an encrypted response's key ------------------------------------
     r = await request(port, 'POST', '/oauth2/register', { json: {

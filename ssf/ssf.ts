@@ -1775,12 +1775,14 @@ class SharedSignals {
       // never be dialled is refused when it is created rather than accepted
       // and then silently delivering nothing.
       if (body.delivery && body.delivery.method === streams.DELIVERY_PUSH) {
-        const problem = transport.urlProblem(body.delivery.endpoint_url);
-        if (problem) {
-          errorCodes.mark(res, 'STS-SSF-0012');
+        // `urlVerdict()` since #171: plain http refused because this realm
+        // is in product mode carries its own code (STS-SSF-0108).
+        const problem = transport.urlVerdict(body.delivery.endpoint_url);
+        if (problem.why) {
+          errorCodes.mark(res, problem.errorCode || 'STS-SSF-0012');
           this.fail(res, 400, 'invalid_request',
             'delivery.endpoint_url cannot be dialled by this transmitter: ' +
-            problem + '. It is refused now rather than at delivery time, ' +
+            problem.why + '. It is refused now rather than at delivery time, ' +
             'because a stream that is accepted and then silently delivers ' +
             'nothing is the worst outcome available here.');
           log.debug('Leaving POST /ssf/stream. Undiallable endpoint.');
@@ -2611,7 +2613,9 @@ class SharedSignals {
       }),
       push: {
         allowed: transport.pushAllowed(),
-        allowInsecure: transport.allowInsecure(),
+        // #171: plain http, the certificate check, and the CA file, as they
+        // are IN FORCE here — a skip stored in a product realm reads false.
+        transport: transport.transportSettings(),
         allowedHosts: transport.allowedHosts(),
         retries: config.value('ssf.pushRetries'),
         maxResponseBytes: transport.maxBodyBytes(),

@@ -919,6 +919,13 @@ function create(spec) {
   // Not for a realm the store or another process hands back — see
   // kerberosOverrideProblem() for why a restore is never refused for this.
   if (!(spec && spec.restored)) {
+    const modeErrors = modeWriteProblems({ id: id, overrides: {} },
+                                         (spec || {}).overrides);
+    if (modeErrors.length) {
+      log.debug("Leaving create(). Refused by the realm's mode.");
+      return errorCodes.mark({ ok: false, errors: modeErrors },
+                             'STS-CORE-0103');
+    }
     const kerberos = refusedForKerberos(id, Object.assign(
       seededNames(id, domain), (spec || {}).overrides || {}), {});
     if (kerberos) {
@@ -993,6 +1000,15 @@ function update(id, changes) {
     // A REPLICATED update is not asked, for a restore's reason: the process
     // that made the change already was, and refusing it here would leave two
     // processes holding different overrides for one realm.
+    // The whole object REPLACES the realm's overrides, so the mode is asked
+    // of these alone (#171).
+    const modeErrors = spec.replicated ? [] :
+      modeWriteProblems({ id: realm.id, overrides: {} }, spec.overrides);
+    if (modeErrors.length) {
+      log.debug("Leaving update(). Refused by the realm's mode.");
+      return errorCodes.mark({ ok: false, errors: modeErrors },
+                             'STS-CORE-0103');
+    }
     const kerberos = spec.replicated ? null :
       refusedForKerberos(realm.id, spec.overrides, realm.overrides);
     if (kerberos) {
@@ -1114,6 +1130,16 @@ function setOverride(id, key, raw) {
     return errorCodes.mark({ ok: false, errors: [problem] },
                            checkRealmOverrideCode(key, raw));
   }
+  // THE MODE RULE, ASKED IN THE REALM THE WRITE LANDS IN (#171): a
+  // TLS-verification skip may not be turned on in a product realm. Asked
+  // with that realm ambient, because the mode is per realm and the request
+  // carrying this write may be in another.
+  const modeProblem = modeWriteProblems(realm, { [key]: raw });
+  if (modeProblem.length) {
+    log.debug("Leaving setOverride(). Refused by the realm's mode.");
+    return errorCodes.mark({ ok: false, errors: modeProblem },
+                           'STS-CORE-0103');
+  }
   const after = Object.assign({}, realm.overrides);
   after[key] = raw;
   const kerberos = refusedForKerberos(realm.id, after, realm.overrides);
@@ -1157,6 +1183,33 @@ function clearOverride(id, key) {
   changed(realm.id, 'clear-override');
   log.debug("Leaving clearOverride().");
   return { ok: true, errors: [], key: key };
+}
+
+// The mode rule of `config.modeWriteProblem()` for a set of overrides that
+// are about to be written to a realm (#171), asked with the realm AS IT WILL
+// BE ambient — its overrides and these together — so that a create or an
+// update that sets `global.mode=product` and turns a TLS-verification skip on
+// in one body is refused like the two writes made one at a time. Not asked
+// for a restore or a replicated change: those were asked when they were made,
+// and a stored value is ignored where it is read.
+function modeWriteProblems(realm, overrides) {
+  log.debug("Entering modeWriteProblems().");
+  const candidate = Object.assign({}, realm || {}, {
+    candidate: true,
+    overrides: Object.assign({}, (realm && realm.overrides) || {},
+                             overrides || {})
+  });
+  const errors = [];
+  run(candidate, function () {
+    Object.keys(overrides || {}).forEach(function (key) {
+      const problem = config.modeWriteProblem(key, overrides[key]);
+      if (problem) {
+        errors.push(problem);
+      }
+    });
+  });
+  log.debug("Leaving modeWriteProblems(). " + errors.length);
+  return errors;
 }
 
 // Validate a whole override object without applying any of it, which is the
@@ -2834,11 +2887,18 @@ function sharedMap(options) {
 // is what makes /admin/config, /admin/token-lifetimes and POST
 // /admin-api/config/set realm-aware without one of them being edited — and a
 // write wants to name the realm in its log line.
+//
+// A CANDIDATE is answered even before any realm exists (#171): the record
+// `modeWriteProblems()` builds for a realm that is being created, so that the
+// mode its overrides name is the mode its other overrides are judged in. The
+// first realm a service creates is created while `active()` is still false,
+// and without this that one realm's `global.mode` was not seen.
 // ---------------------------------------------------------------------------
 function realmContext() {
   log.debug("Entering realmContext().");
   const realm = als.getStore();
-  if (!realm || realm.id === DEFAULT_ID || !active()) {
+  if (!realm || realm.id === DEFAULT_ID ||
+      (!active() && !(realm.candidate && config.value('realms.enabled')))) {
     log.debug("Leaving realmContext().");
     return null;
   }

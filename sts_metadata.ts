@@ -2000,6 +2000,30 @@ const SPECS: Spec[] = [
               '`value`/`values` on a claims request other than acr, and a ' +
               'client in development mode that registered no redirect URI is ' +
               'not held to one.' },
+  { id: 'oidc-session', name: 'OpenID Connect Session Management 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-session-1_0.html',
+    coverage: 'full, behind oauth2.sessionManagement, which is OFF by ' +
+              'default (#121, 2026-09-23). On: discovery names ' +
+              'check_session_iframe (section 3.3); every OpenID Connect ' +
+              'authentication response to an http(s) redirect URI carries ' +
+              'session_state — errors, prompt=none and JARM included — ' +
+              'computed as section 3 gives it over the OP browser state, a ' +
+              'random value minted with every session handle and written ' +
+              'beside the response as the cookie sts_op_browser_state ' +
+              '(readable by script; SameSite=None on an HTTPS port); and ' +
+              '/oauth2/check_session is the section 3.2 OP iframe, whose ' +
+              'script answers changed, unchanged or error to the origin ' +
+              'that asked. The iframe may be framed only by the origins of ' +
+              'the realm\'s registered redirect URIs — frame-ancestors ' +
+              'narrowed, never dropped. Limits, stated rather than hidden: ' +
+              'a browser blocking third-party cookies never sends the cookie ' +
+              'to the iframe; a plain-HTTP port cannot set SameSite=None; a ' +
+              'session that expires or that an administrator ends is not ' +
+              'seen until the relying party asks again (Back-Channel ' +
+              'Logout is what tells it); an unregistered development client ' +
+              'cannot frame the iframe; and a native client (a private-use ' +
+              'redirect URI) gets no session_state.' },
   { id: 'oidc-fclogout', name: 'OpenID Connect Front-Channel Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-frontchannel-1_0.html',
@@ -2052,8 +2076,8 @@ const SPECS: Spec[] = [
               'section 2.8), taken over when the node sending it dies, and ' +
               'dead-lettered on a final failure — listed, paged and retried ' +
               'from /admin/logout and /admin-api/logout. Through the ' +
-              'outbound policy (https unless ' +
-              'federation.outboundAllowInsecure, no internal address in ' +
+              'outbound policy (https with the certificate verified, no ' +
+              'internal address in ' +
               'product mode); one audit row per outcome and a periodic ' +
               'summary line. Front-channel logout cannot follow an expiry: ' +
               'it needs the browser. oauth2.backchannelLogout turns the ' +
@@ -8571,6 +8595,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'to \'self\', which is the smallest exception that works. An ' +
           'inline script there would simply not run, with the button doing ' +
           'nothing and no error anywhere.' },
+  { path: '/oauth2/check_session', group: 'OAuth 2.0 / OIDC',
+    name: 'OP iframe (check_session_iframe)', specs: ['oidc-session'],
+    what: 'Session Management section 3.2 (#121), while ' +
+          'oauth2.sessionManagement is on in the realm, and a 404 naming ' +
+          'that setting otherwise. A relying party frames it and posts "client_id ' +
+          'session_state"; its script compares that with the OP browser ' +
+          'state it can read and answers changed, unchanged or error. The ' +
+          'one page here that may be framed, and only by the origins of the ' +
+          'realm\'s registered redirect URIs.' },
+  { path: '/oauth2/check_session.js', group: 'OAuth 2.0 / OIDC',
+    name: 'OP iframe script', specs: ['oidc-session'],
+    what: 'The OP iframe\'s one script, served from this origin because ' +
+          'every page here runs under script-src \'none\' or \'self\'. ' +
+          'Answers a postMessage with changed, unchanged or error, posted ' +
+          'to the asking origin only.' },
   { path: '/oauth2/logout', group: 'OAuth 2.0 / OIDC', name: 'Session end ' +
       '(end_session_endpoint)',
     specs: ['oidc', 'oidc-logout', 'rfc9700'],
@@ -9442,7 +9481,8 @@ SPECS.forEach(function (s) {
 // ---------------------------------------------------------------------------
 const PROTOCOLS: Protocol[] = [
   { name: 'OAuth2 / OIDC', groups: ['OAuth 2.0 / OIDC'],
-    specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21'],
+    specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
+            'oidc-session'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +
@@ -9498,8 +9538,11 @@ const PROTOCOLS: Protocol[] = [
              'the push finish method: the interaction reference is POSTed to ' +
              'a finish URI registered on the client\'s application entry. ' +
              'gnap.pushFinish turns it off, gnap.pushAllowedHosts narrows ' +
-             'it, and plain http is refused unless gnap.pushAllowInsecure is ' +
-             'set.' },
+             'it, and plain http is refused unless gnap.pushAllowHttp is ' +
+             'set (and in product mode is allowed to loopback only). The ' +
+             'client\'s certificate is verified — against node\'s store and ' +
+             'gnap.pushCaFile — and gnap.pushSkipTlsVerification turns that ' +
+             'off in development mode only (#171).' },
   { name: 'XACML', groups: ['XACML'],
     specs: ['xacml30', 'xacmljson'],
     what: 'A Policy Decision Point, a policy repository that IS ' +

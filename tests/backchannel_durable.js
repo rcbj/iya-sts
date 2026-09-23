@@ -187,7 +187,7 @@ function childMain() {
     };
 
     config.setOverride('oauth2.consentRequired', false);
-    config.setOverride('federation.outboundAllowInsecure', true);
+    config.setOverride('federation.outboundAllowHttp', true);
     config.setOverride('oauth2.backchannelLogoutBackoffMs', 0);
     config.setOverride('oauth2.backchannelLogoutTimeoutMs', 2000);
     config.setOverride('oauth2.backchannelLogoutLeaseMs', 1000);

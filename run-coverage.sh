@@ -449,6 +449,13 @@ else
     # bridge. Here the service is a child of this container, so `localhost`
     # — the job's own default — is where it has to dial.
     -e GNAP_PUSH_HOST=
+    # AND THE DIRECTORY SHARED WITH THE SERVICE (#171), the fifth: the compose
+    # file names a volume mounted into `sts` and this container, which this
+    # run has no `sts` for. The service is a child of this container, so one
+    # temp directory is both sides' view — a job writes the run-time CA's
+    # certificate there and names the same path in a `…CaFile` setting.
+    -e OUTBOUND_TEST_CA_DIR=/tmp/sts-test-ca
+    -e OUTBOUND_TEST_CA_FILE=/tmp/sts-test-ca/outbound-test-ca.crt
     -e "STS_TEST_CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
     -e "LOG_LEVEL=${LOG_LEVEL:-info}"
   )

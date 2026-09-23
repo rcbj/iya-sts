@@ -74,7 +74,7 @@ function child() {
   (async function () {
     const config = require(ROOT + '/common/config');
     [['ssf.enabled', 'true'], ['ssf.pushDelivery', 'true'],
-     ['ssf.pushAllowInsecure', 'true'], ['ssf.maxStreams', '2'],
+     ['ssf.pushAllowHttp', 'true'], ['ssf.maxStreams', '2'],
      ['ssf.pushTimeoutMs', '3000'], ['ssf.minVerificationInterval', '0']]
       .forEach(function (pair) {
       try {

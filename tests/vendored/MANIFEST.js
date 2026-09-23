@@ -294,6 +294,12 @@ const JOBS = [
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
   { file: 'sts_discovery_realms.js',     browser: false, local: true },
+  // OPENID CONNECT SESSION MANAGEMENT OVER THE WIRE (#121, 2026-09-23): off
+  // by default, then the discovery member, the OP iframe's narrowed
+  // frame-ancestors and its script, and prompt=none's session_state checked
+  // by section 3's formula. `local: true`: this repository's own OP, in a
+  // throwaway realm it leaves behind.
+  { file: 'sts_session_management.js',  browser: false, local: true },
   { file: 'sts_fapi_baseline.js',        browser: false, local: true },
   { file: 'sts_fapi_advanced.js',        browser: false, local: true },
   { file: 'sts_fapi2.js',                browser: false, local: true },
@@ -625,6 +631,11 @@ const JOBS = [
   // policies, the linking sign-in, the administrator refusal, the links set
   // and removed through /admin-api and SCIM — over HTTP, in either mode.
   { file: 'sts_federation_subject_policy.js', browser: false, local: true },
+  // #171 (2026-09-23): the outbound transport policy over HTTP — the write
+  // doors in a product realm, SSF push to this job's own listeners in both
+  // modes (a skip ignored in product, a CA file honoured), the RFC 9728
+  // import under federation's policy, and XACML's in-force view.
+  { file: 'sts_outbound_tls.js',         browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
@@ -773,7 +784,13 @@ const LOCAL_HELPERS = [
   'oauth_fixtures.js',
   // What the service under test IS — its mode, its Kerberos realm, its base DN
   // — read from /admin-api/config rather than assumed (2026-09-18).
-  'service_facts.js'
+  'service_facts.js',
+  // A CA MADE AT RUN TIME (#171): a listener certificate the service can be
+  // told to trust through a `…CaFile` setting, for the jobs that run a push
+  // or notify listener of their own — product mode ignores every skip of
+  // verification — and the directory shared with the service its certificate
+  // is written to. The vendored PKI encoder; no key material is committed.
+  'outbound_test_ca.js'
 ];
 
 // ---------------------------------------------------------------------------

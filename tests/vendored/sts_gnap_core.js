@@ -29,7 +29,12 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
-const scep = require("./scep_client.js");
+const testCa = require("./outbound_test_ca.js");
+
+// The CA section 6's push listener is certified by, made in section 0, and the
+// path the service reads its certificate at (null: no shared directory).
+let pushCa = null;
+let pushCaFile = null;
 
 var appconfig;
 let appconfigProblem = null;
@@ -110,7 +115,17 @@ async function test() {
            "created " +
       "the realm");
   await setting("gnap.continueWaitS", 0);
-  await setting("gnap.pushAllowInsecure", true);
+  // THE PUSH LISTENER'S CA, NOT A SKIP OF VERIFICATION (#171): product mode
+  // ignores gnap.pushSkipTlsVerification, so section 6's listener presents a
+  // certificate from a CA this job makes now, and the service is told to
+  // trust that CA — which works in both modes. The CA certificate reaches the
+  // service through a directory both can see (outbound_test_ca.js); with none,
+  // section 6 is skipped and says so.
+  pushCa = await testCa.makeCa();
+  pushCaFile = testCa.publishCa(pushCa);
+  if (pushCaFile) {
+    await setting("gnap.pushCaFile", pushCaFile);
+  }
   await ensurePerson(OWNER);
   await ensurePerson(STRANGER);
 
@@ -540,78 +555,86 @@ async function test() {
   // 6. PUSH FINISH (section 4.2.2), to a listener in this process.
   // =========================================================================
   log.info("=== 6. push finish ===");
-  const pushed = [];
-  const callbackHost = process.env.GNAP_PUSH_HOST || "localhost";
-  // HTTPS (2026-09-21), because product mode refuses a plain-http finish URI
-  // to any host but loopback (STS-GNAP-0103) and GNAP_PUSH_HOST is not
-  // loopback. The certificate is self-signed; gnap.pushAllowInsecure
-  // (section 0) is what lets the service dial it without verifying it.
-  const pushKey = scep.rsaKey();
-  const listener = https.createServer({
-    key: pushKey.privateKeyPem,
-    cert: scep.selfSigned(pushKey, callbackHost)
-  }, function (req, res) {
-    let text = "";
-    req.on("data", function (c) { text += c; });
-    req.on("end", function () {
-      pushed.push({ method: req.method, type: req.headers["content-type"],
-                    body: text });
-      res.writeHead(204);
-      res.end();
+  if (!pushCaFile) {
+    // No directory shared with the service, so it cannot be told to trust
+    // the CA this job made — see outbound_test_ca.js.
+    log.info("[skip] section 6: " + testCa.skipReason());
+  } else {
+    const pushed = [];
+    const callbackHost = process.env.GNAP_PUSH_HOST || "localhost";
+    // HTTPS (2026-09-21), because product mode refuses a plain-http finish URI
+    // to any host but loopback (STS-GNAP-0103) and GNAP_PUSH_HOST is not
+    // loopback. The certificate is issued for GNAP_PUSH_HOST by the CA this
+    // job made in section 0, which gnap.pushCaFile names, so the service
+    // VERIFIES it — in product mode there is no other way in (#171).
+    const pushCredential = await testCa.listenerCertificate(pushCa,
+                                                            callbackHost);
+    const listener = https.createServer({
+      key: pushCredential.key,
+      cert: pushCredential.cert
+    }, function (req, res) {
+      let text = "";
+      req.on("data", function (c) { text += c; });
+      req.on("end", function () {
+        pushed.push({ method: req.method, type: req.headers["content-type"],
+                      body: text });
+        res.writeHead(204);
+        res.end();
+      });
     });
-  });
-  await new Promise(function (resolve) {
-    listener.listen(0, "0.0.0.0", resolve);
-  });
-  const pushUri = "https://" + callbackHost + ":" +
-                  listener.address().port + "/gnap-push";
-  // A KEY OF ITS OWN (2026-09-21): product mode uses only a REGISTERED
-  // finish URI (STS-GNAP-0101), the port is known only now, and `es` was
-  // registered in section 2 — so a fresh key, registered on its first request
-  // with the push URI on it, makes this grant request.
-  h.finishUris.push(pushUri);
-  const pusher = new gnap.Client({ key: gnap.newKey("ES256") });
-  body = grantBody(pusher,
-                   { interact: { start: ["redirect"],
-                                 finish: { method: "push", uri: pushUri,
-                                                                    nonce: "push-nonce-1" } } });
-  r = await pusher.send("POST", GRANT, { json: body });
-  check("a push-finish grant request is answered with an interaction",
-        function () {
-    assert.ok(r.status === 200 && r.json && r.json.interact,
-              r.text.slice(0, 300));
-  });
-  pending = r.json;
-  b = browser();
-  approval = await reachApproval(b, pending.interact.redirect, OWNER);
-  r = await answer(b, approval, "allow");
-  check("after approval the browser is shown a page, not redirected (push)",
-        function () {
-    assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-  });
-  check("the AS POSTed {hash, interact_ref} as JSON to the push URI with a " +
-        "verifiable hash",
-        function () {
-          assert.strictEqual(pushed.length, 1, JSON.stringify(pushed));
-          assert.strictEqual(pushed[0].method, "POST");
-          assert.ok(/application\/json/.test(pushed[0].type));
-          const message = JSON.parse(pushed[0].body);
-          assert.strictEqual(message.hash,
-                             gnap.interactionHash("push-nonce-1",
-                                                                pending.interact.finish,
-                                                                message.interact_ref, GRANT));
-          pending.pushedRef = message.interact_ref;
-        });
-  r = await pusher.send("POST", pending.continue.uri,
-                        { token: pending.continue.access_token.value,
-                                                        json: {
-                                                          interact_ref:
-                                                            pending.pushedRef } });
-  check("the pushed interaction reference releases the grant", function () {
-    assert.strictEqual(r.status, 200, r.text);
-    assert.ok(r.json.access_token);
-  });
-  listener.close();
+    await new Promise(function (resolve) {
+      listener.listen(0, "0.0.0.0", resolve);
+    });
+    const pushUri = "https://" + callbackHost + ":" +
+                    listener.address().port + "/gnap-push";
+    // A KEY OF ITS OWN (2026-09-21): product mode uses only a REGISTERED
+    // finish URI (STS-GNAP-0101), the port is known only now, and `es` was
+    // registered in section 2 — so a fresh key, registered on its first request
+    // with the push URI on it, makes this grant request.
+    h.finishUris.push(pushUri);
+    const pusher = new gnap.Client({ key: gnap.newKey("ES256") });
+    body = grantBody(pusher,
+                     { interact: { start: ["redirect"],
+                                   finish: { method: "push", uri: pushUri,
+                                                                      nonce: "push-nonce-1" } } });
+    r = await pusher.send("POST", GRANT, { json: body });
+    check("a push-finish grant request is answered with an interaction",
+          function () {
+      assert.ok(r.status === 200 && r.json && r.json.interact,
+                r.text.slice(0, 300));
+    });
+    pending = r.json;
+    b = browser();
+    approval = await reachApproval(b, pending.interact.redirect, OWNER);
+    r = await answer(b, approval, "allow");
+    check("after approval the browser is shown a page, not redirected (push)",
+          function () {
+      assert.strictEqual(r.status, 200, r.text.slice(0, 300));
+    });
+    check("the AS POSTed {hash, interact_ref} as JSON to the push URI with a " +
+          "verifiable hash",
+          function () {
+            assert.strictEqual(pushed.length, 1, JSON.stringify(pushed));
+            assert.strictEqual(pushed[0].method, "POST");
+            assert.ok(/application\/json/.test(pushed[0].type));
+            const message = JSON.parse(pushed[0].body);
+            assert.strictEqual(message.hash,
+                               gnap.interactionHash("push-nonce-1",
+                                                                  pending.interact.finish,
+                                                                  message.interact_ref, GRANT));
+            pending.pushedRef = message.interact_ref;
+          });
+    r = await pusher.send("POST", pending.continue.uri,
+                          { token: pending.continue.access_token.value,
+                                                          json: {
+                                                            interact_ref:
+                                                              pending.pushedRef } });
+    check("the pushed interaction reference releases the grant", function () {
+      assert.strictEqual(r.status, 200, r.text);
+      assert.ok(r.json.access_token);
+    });
+    listener.close();
+  }
 
   // =========================================================================
   // 7. MULTIPLE TOKENS, BEARER, SUBJECT INFORMATION AND ASSERTIONS.
