@@ -116,26 +116,27 @@ var config = {
 
   // --- XACML -----------------------------------------------------------
   xacml: {
-    enforceAccess: true,                 // Decide access with policy
-    accessPolicy: "access-control",      // Access policy name
-    enabled: true,                       // XACML enabled
-    maxPolicies: 200,                    // Policies the repository may hold
-    pepBias: "deny-biased",              // What the embedded PEP does with a non-Permit
-    returnPolicyIdList: false,           // Always return the applicable policy identifiers
-    remotePeps: true,                    // Remote Policy Enforcement Points may register
-    pepRequireCertificate: true,         // A registering PEP must present a client certificate
-    pipMaxPerWindow: 600,                // PIP queries one caller may make per rate-limit window
-    pipMaxDesignators: 50,               // Attributes one PIP query may ask about
-    maxPeps: 50,                         // Remote PEPs the register may hold
-    pepStaleAfterS: 300,                 // Seconds before a registered PEP is reported stale
-    pepNotify: true,                     // Nudge a registered PEP when the repository changes
-    pepNotifyAllowedHosts: "",           // Notify endpoint allowlist
-    pepNotifyAllowHttp: false,           // Allow http:// for a nudge (development only)
-    pepNotifySkipTlsVerification: false, // Skip TLS verification for a nudge (development only)
-    pepNotifyCaFile: "",                 // CA certificates for a nudge
-    pepNotifyTimeoutMs: 2000,            // Nudge timeout (ms)
-    riskResponsePolicy: "risk-response", // The policy a change of risk is answered with
-    issuancePolicy: "role-issuance"      // The policy issuance decisions are made with
+    enforceAccess: true,                     // Decide access with policy
+    accessPolicy: "access-control",          // Access policy name
+    enabled: true,                           // XACML enabled
+    maxPolicies: 200,                        // Policies the repository may hold
+    pepBias: "deny-biased",                  // What the embedded PEP does with a non-Permit
+    returnPolicyIdList: false,               // Always return the applicable policy identifiers
+    remotePeps: true,                        // Remote Policy Enforcement Points may register
+    pepRequireCertificate: true,             // A registering PEP must present a client certificate
+    pipMaxPerWindow: 600,                    // PIP queries one caller may make per rate-limit window
+    pipMaxDesignators: 50,                   // Attributes one PIP query may ask about
+    maxPeps: 50,                             // Remote PEPs the register may hold
+    pepStaleAfterS: 300,                     // Seconds before a registered PEP is reported stale
+    pepNotify: true,                         // Nudge a registered PEP when the repository changes
+    pepNotifyAllowedHosts: "",               // Notify endpoint allowlist
+    pepNotifyAllowHttp: false,               // Allow http:// for a nudge (development only)
+    pepNotifySkipTlsVerification: false,     // Skip TLS verification for a nudge (development only)
+    pepNotifyCaFile: "",                     // CA certificates for a nudge
+    pepNotifyTimeoutMs: 2000,                // Nudge timeout (ms)
+    signalResponsePolicy: "signal-response", // The policy a received signal is answered with
+    riskResponsePolicy: "risk-response",     // The policy a change of risk is answered with
+    issuancePolicy: "role-issuance"          // The policy issuance decisions are made with
   },
 
   // --- Web security ----------------------------------------------------
@@ -777,6 +778,7 @@ var config = {
     receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
     receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
+    actOnSignalsInDevelopment: false,                                                                                                                     // The console and portal act on received signals in development
     legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim (development only)
     breakSetSignature: false                                                                                                                              // Sign every SET badly (development only)
   },

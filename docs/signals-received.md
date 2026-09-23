@@ -120,11 +120,51 @@ could empty it. The console has one for its own inbox, and it drops only what is
 held — the stream goes on delivering, and the audit log's record of every
 delivery cannot be cleared at all.
 
+## What the console and the portal do with a signal
+
+A receiver acts on what it is told. When the console or the portal receives an
+event, it can end **its own** sessions for the person the event names:
+
+- the console signs that person out of the console;
+- the portal signs that person out of the portal.
+
+It never ends the identity provider's session. That session belongs to the
+transmitter, which has usually ended it already.
+
+The `signal-response` XACML policy decides which events do this. By default
+they are:
+
+- CAEP `session-revoked` and `credential-change`;
+- RISC `account-disabled`, `account-purged`,
+  `account-credential-change-required`, `sessions-revoked` and
+  `credential-compromise`;
+- a CAEP `risk-level-change` to `HIGH`.
+
+You can change the list in the policy without a new release (see
+[XACML](xacml.md)).
+
+These rules can't be relaxed by any policy:
+
+- **An event is acted on only if its signature verified**, whatever
+  `ssf.receiveRequireSignature` says about accepting it, and only if it
+  passed every other check. An unverified event is recorded and nothing
+  else happens.
+- **Who the event is about is decided the same way the portal's page decides
+  it**, and it fails closed: an identifier this service can't match to the
+  person holding a session ends nothing.
+- **Development mode records what it would have done** and ends nothing,
+  unless `ssf.actOnSignalsInDevelopment` is on. Product mode acts.
+
+Each row on `/admin/signals` and `/portal/signals` says what was done with
+that event.
+
 ## Settings
 
 | Setting | Default | What it does |
 |---|---|---|
 | `ssf.internalReceivers` | `true` | seed the two streams. Restart to apply |
+| `ssf.actOnSignalsInDevelopment` | `false` | end the surfaces' own sessions on a received signal in development mode too; product always does |
+| `xacml.signalResponsePolicy` | `signal-response` | the policy asked which received events end them |
 | `ssf.pushDelivery` | `true` | make outbound push requests **at all**, these two included |
 | `ssf.maxReceivedEvents` | `200` | how many delivered events each inbox keeps, per realm |
 

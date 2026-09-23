@@ -993,6 +993,21 @@ function observesRiskOnly() {
   return !isProduct();
 }
 
+// Does a surface's reaction to a RECEIVED signal only OBSERVE (#62,
+// 2026-09-22)? This service's own console and portal receive the CAEP and
+// RISC events it transmits, and the `signal-response` policy decides which
+// of them end the surface's own sessions for the person named. Development
+// records what the policy permitted and ends nothing, unless
+// `ssf.actOnSignalsInDevelopment` is on — a suite driving the console emits
+// events about the very people it is signed in as. Product takes them.
+// `ssf/ssf_receivers.ts` asks it.
+function observesSignalsOnly() {
+  log.debug("Entering observesSignalsOnly().");
+  log.debug("Leaving observesSignalsOnly().");
+  return !isProduct() &&
+         config.value('ssf.actOnSignalsInDevelopment') !== true;
+}
+
 // ---------------------------------------------------------------------------
 // WHAT THE MODE CHANGES, as data rather than as prose — so that /admin/mode,
 // GET /admin-api/mode and this file cannot come to disagree about what product
@@ -1027,6 +1042,18 @@ const REQUIREMENTS = [
              'key, or that this realm revoked, is refused invalid_token ' +
              '(HTTP 401) before anything is issued.',
     where: 'oid4vc/vc_issuer.ts, oauth-oidc/dpop.ts' },
+  { id: 'signal-reactions',
+    what: 'What this service\'s own console and portal do with a CAEP or ' +
+          'RISC event they receive is done',
+    development: 'A verified event is recorded on the surface\'s signal ' +
+                 'inbox with what the signal-response policy permitted, and ' +
+                 'nothing is ended, unless ssf.actOnSignalsInDevelopment is ' +
+                 'on.',
+    product: 'A verified event the signal-response policy permits — ' +
+             'session-revoked, credential-change, a RISC account or ' +
+             'credential event, a risk-level-change to HIGH, by default — ' +
+             'ends the receiving surface\'s own sessions for the person it ' +
+             'names. An unverified event is never acted on in either mode.' },
   { id: 'risk-decisions',
     what: 'The issuance policy\'s decisions on the RISK of an ' +
           'authentication are enforced',
@@ -2036,6 +2063,7 @@ module.exports = {
   gatesSharedSignals: gatesSharedSignals,
   gatesSpireServerApi: gatesSpireServerApi,
   observesRiskOnly: observesRiskOnly,
+  observesSignalsOnly: observesSignalsOnly,
   allowsValue: allowsValue,
   valueInForce: valueInForce,
   writeRefusalReason: writeRefusalReason,

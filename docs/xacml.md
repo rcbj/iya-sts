@@ -148,13 +148,14 @@ cached, so each decision makes a fresh query.
 
 ### The embedded PEPs: this service's own issuance and access
 
-Four PEPs are built into the process:
+Five PEPs are built into the process:
 
 | PEP | Decides | Policy |
 |---|---|---|
 | **issuance** | every one of the nine kinds of issuance: session, access token, ID token, refresh token, authorization code, SAML assertion, WS-Federation token, WS-Trust token and Kerberos ticket | `xacml.issuancePolicy` (`role-issuance`) |
 | **access** | who may reach the admin console, the management API, the User Portal, SCIM, the SPIRE Server API, the embedded debugger and the `/xacml` surface | `xacml.accessPolicy` (`access-control`) |
 | **risk response** | what happens when a person's risk level changes: a CAEP announcement, ending everything they hold, a RISC credential-compromise, disabling the account — one question per reaction, a Permit meaning do it ([Risk scoring](risk-scoring.md#when-a-persons-risk-changes)) | `xacml.riskResponsePolicy` (`risk-response`) |
+| **signal response** | what this service's own console and portal do with a verified CAEP or RISC event they receive: whether it ends their own sessions for the person it names ([Signals received](signals-received.md#what-the-console-and-the-portal-do-with-a-signal)) | `xacml.signalResponsePolicy` (`signal-response`) |
 | **demonstration** | `GET /xacml/protected` | the repository root |
 
 The issuance PEP builds a request in which the subject is the party being

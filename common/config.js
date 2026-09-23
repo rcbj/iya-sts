@@ -9294,6 +9294,17 @@ const SETTINGS = [
                  'which is what a real receiver does and is the negative a ' +
                  'transmitter needs to be able to reach.' },
 
+  { key: 'ssf.actOnSignalsInDevelopment', group: 'SSF',
+    label: 'The console and portal act on received signals in development',
+    env: 'STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode always does what the signal-response policy ' +
+                 'permits with a verified event this service\'s own console ' +
+                 'or portal receives — ends that surface\'s own sessions for ' +
+                 'the person it names (#62). Development records what it ' +
+                 'would have done and ends nothing, unless this is on. An ' +
+                 'unverified event is never acted on, whatever this says.' },
+
   { key: 'ssf.legacySubClaim', group: 'SSF',
     label: 'Also emit the deprecated `sub` claim (development only)',
     env: 'STS_SSF_LEGACY_SUB_CLAIM', type: 'bool', dflt: false, runtime: true,
@@ -10250,6 +10261,17 @@ const SETTINGS = [
                  'to every caller; that is the way to take the XACML surface ' +
                  'away without turning xacml.enabled off and losing the ' +
                  'embedded issuance and access PEPs with it.' },
+
+  { key: 'xacml.signalResponsePolicy', group: 'XACML',
+    label: 'The policy a received signal is answered with',
+    env: 'STS_XACML_SIGNAL_RESPONSE_POLICY', type: 'string',
+    dflt: 'signal-response', runtime: true,
+    description: 'The directory entry name of the policy the embedded PEP ' +
+                 'asks when this service\'s own console or portal receives ' +
+                 'a verified CAEP or RISC event (#62): whether it ends that ' +
+                 'surface\'s own sessions for the person named. The built-in ' +
+                 'policy of that name answers until a realm writes its own; ' +
+                 'a DISABLED one decides nothing, so nothing is ended.' },
 
   { key: 'xacml.riskResponsePolicy', group: 'XACML',
     label: 'The policy a change of risk is answered with',

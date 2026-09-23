@@ -544,12 +544,12 @@ kept in step with `common/config.js`.
   the one policy every issuance passes through, so it can be changed without
   a release and read in one place.
 
-## What is coming
+## Receivers act on it
 
-The remaining work on [issue #62](https://github.com/rcbj/iya-sts/issues/62):
-
-- **The console and portal acting on the risk signals they receive**, with
-  issues #153 and #117.
+This service's own console and portal receive the CAEP `risk-level-change`
+events it sends. At `HIGH`, each one ends its own sessions for that person
+(product mode), as the `signal-response` policy permits. See
+[Signals received](signals-received.md#what-the-console-and-the-portal-do-with-a-signal).
 
 ## In the running service
 
