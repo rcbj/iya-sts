@@ -2869,8 +2869,9 @@ class Saml11Sso {
                               'through ' +
                               'ResponseID'
                             : responseSig.why)
-          : 'unsigned — saml11.signResponse is off, which is a supported ' +
-            'state and not a failure of the relying party');
+          : 'unsigned — saml11.signResponse is off, which development ' +
+            'mode allows as a test case (the Browser/POST profile requires ' +
+            'a signed Response, so product never sends one)');
 
     const assertion = firstByLocal(root, 'Assertion');
     add('it contains an assertion', !!assertion,

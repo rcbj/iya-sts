@@ -700,6 +700,12 @@ const JOBS = [
   // are read once a realm holding them is switched to product (the ID
   // Token's nonce, a SET's signature, GET /spiffe's view).
   { file: 'sts_development_only_settings.js', browser: false, local: true },
+  // #181 (2026-09-23): six more of that class — the RISC subject type, the
+  // KDC's clock offset, the SAML signature switches, the Workload API header
+  // and the SHA-1 / RSA 1.5 values — refused on write in a product realm
+  // (and on an application's override), ignored where they are read once a
+  // realm holding them is switched; and GET /admin/mode and /admin-api/mode.
+  { file: 'sts_mode_weak_settings.js',   browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE

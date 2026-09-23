@@ -323,11 +323,13 @@ A transmitter that is always correct is hard to write error handling against,
 so each of these switches produces a known mistake.
 
 **`ssf.legacySubClaim` and `ssf.breakSetSignature` make a SET wrong, and are
-honoured in development mode only** (#104). A realm in product mode ignores
-them where the SET is built and signed — even one still stored from before the
-realm was switched, which is logged once (`STS-CORE-0106`) — and refuses
-turning them on (`STS-CORE-0103`). The other three produce SETs that conform to
-their specifications, and are honoured in both modes.
+honoured in development mode only** (#104), **and so is
+`risc.googleSubjectType`** (#181), whose `subject_type` RISC 1.0 section 3.1
+says new services MUST NOT use. A realm in product mode ignores them where the
+SET is built and signed — even one still stored from before the realm was
+switched, which is logged once (`STS-CORE-0106`) — and refuses turning them on
+(`STS-CORE-0103`). The other two produce SETs that conform to their
+specifications, and are honoured in both modes.
 
 | Setting | What it breaks |
 |---|---|
@@ -458,7 +460,7 @@ types from what a stream may ask for.
 | `risc.eventsSupported` | `STS_RISC_EVENTS_SUPPORTED` | all fourteen | yes | Which RISC types a stream may ask for, including the deprecated `sessions-revoked`. |
 | `risc.subjectFormat` | `STS_RISC_SUBJECT_FORMAT` | `iss_sub` | yes | The RFC 9493 format of an account subject: `iss_sub`, `email` or `opaque`. The two identifier events always use `email`. |
 | `risc.honourOptOut` | `STS_RISC_HONOUR_OPT_OUT` | `true` | yes | Suppresses events for an account in the `opt-out` state, except the four opt-out events. |
-| `risc.googleSubjectType` | `STS_RISC_GOOGLE_SUBJECT_TYPE` | `false` | yes | Deliberate defect: spells the subject discriminator `subject_type` on RISC subjects. |
+| `risc.googleSubjectType` | `STS_RISC_GOOGLE_SUBJECT_TYPE` | `false` | yes | Deliberate defect: spells the subject discriminator `subject_type` on RISC subjects. Development mode only: ignored in product, and turning it on is refused (#181). |
 | `risc.reasonLanguage` | `STS_RISC_REASON_LANGUAGE` | `en` | yes | The language tag of the reason members on `credential-compromise`. |
 | `risc.includeReasons` | `STS_RISC_INCLUDE_REASONS` | `true` | yes | Whether `credential-compromise` carries its optional reason members. |
 | `risc.omitEventTimestamp` | `STS_RISC_OMIT_EVENT_TIMESTAMP` | `false` | yes | Deliberate defect: leaves `event_timestamp` off `credential-compromise`. |

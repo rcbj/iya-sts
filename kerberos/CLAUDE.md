@@ -493,7 +493,12 @@ wrong:**
   after accepted, no hole either way. (Since `authtime` arrives truncated, the
   ceiling is equivalent to comparing with the raw stamp; it is written out so
   the rule reads as what it is.) **One clock**: `signOut()` stamps
-  `Date.now() + krb5.clockOffset`, the clock `now()` takes `authtime` on;
+  `Date.now() + krb5.clockOffset`, the clock `now()` takes `authtime` on —
+  the offset AS IN FORCE, which is 0 in a product realm (#181:
+  `krb5.clockOffset` carries `spoilsOnPurpose`, and `krb5_kdc.js`'s
+  `clockOffsetSeconds()`, `krb5_principals.js`'s `kdcNowMs()` and
+  `krb5_fast.ts`'s `now()` all read `mode.valueInForce()`, adding no require
+  — `mode` was already in the COPY closure);
   changing the offset between a sign-out and a TGS-REQ moves one side of the
   comparison, which is what the offset is for.
 * **It is BOUNDED by a horizon, not kept for ever.** No ticket from before the

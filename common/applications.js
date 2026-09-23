@@ -8112,6 +8112,16 @@ function createApplication(detail) {
     log.debug("Leaving createApplication().");
     return errorCodes.mark({ ok: false, errors: wrongFamily }, 'STS-REG-0010');
   }
+  // And the mode rule `updateApplication()` applies (#181): a create is the
+  // other door an override attribute can be written through.
+  const modeProblems = Object.keys(given.fields).map(function (name) {
+    return overrideModeProblem(name, valuesOf(given.fields[name])[0]);
+  }).filter(function (one) { return !!one; });
+  if (modeProblems.length) {
+    log.debug("Leaving createApplication(). A development-only value.");
+    return errorCodes.mark({ ok: false, errors: modeProblems },
+                           'STS-REG-0193');
+  }
   const record = loaded.record;
   const now = Date.now();
   record.firstAt = now;
@@ -8277,6 +8287,40 @@ function viewAfterWrite(identifier, record) {
 // against the row rather than trusted, because a `set` on a multi-valued
 // attribute would replace a list of redirect URIs with one and read afterwards
 // as the others having been forgotten.
+// ---------------------------------------------------------------------------
+// AN OVERRIDE THE MODE DOES NOT ALLOW (#181). An attribute that overrides a
+// setting whose row carries `onlyWhile` — `saml2SignAssertion`,
+// `saml11SignAssertion`, `saml11SignResponse`, `saml2KeyTransportAlgorithm` —
+// may not be set to a development-only value in a product realm, for the
+// reason `config.js`'s `modeWriteProblem()` refuses the setting itself: the
+// value would be ignored where it is read (`settingFor()`), and a write that
+// is accepted and then ignored is a console that lies. A value that does not
+// parse is left to `settingFor()`'s own warning, as before; a clear is never
+// refused. Answers the sentence, or ''.
+// ---------------------------------------------------------------------------
+function overrideModeProblem(attribute, value) {
+  log.debug("Entering overrideModeProblem(). attribute=" + attribute);
+  const row = ATTRIBUTE_BY_NAME[attribute];
+  const key = row && row.overrides;
+  if (!key || !value) {
+    log.debug("Leaving overrideModeProblem(). Not an override, or a clear.");
+    return '';
+  }
+  const parsed = config.parseAs(key, value);
+  if (!parsed.ok || mode.allowsValue(key, parsed.value)) {
+    log.debug("Leaving overrideModeProblem(). Allowed.");
+    return '';
+  }
+  const setting = config.SETTINGS.filter(function (one) {
+    return one.key === key;
+  })[0];
+  log.debug("Leaving overrideModeProblem(). Refused.");
+  return '"' + attribute + '" cannot be set to ' + value + ' here: it ' +
+    'overrides ' + key + ', and this realm is in product mode ' +
+    '(global.mode=product), where that value is ignored — ' +
+    mode.writeRefusalReason(setting ? setting.onlyWhile : '');
+}
+
 function updateApplication(identifier, change) {
   log.debug("Entering updateApplication().");
   const asked = change || {};
@@ -8380,6 +8424,14 @@ function updateApplication(identifier, change) {
   // one step further. A value can arrive here by `ldapmodify`, or be left
   // behind by a family being untimed from the entry after it was set, and
   // refusing to remove it would shut the one door that could tidy it up.
+  if (mode === 'set' && value) {
+    const modeProblem = overrideModeProblem(attribute, value);
+    if (modeProblem) {
+      log.debug("Leaving updateApplication(). Development-only value.");
+      return errorCodes.mark({ ok: false, errors: [modeProblem] },
+                             'STS-REG-0193');
+    }
+  }
   if ((mode === 'set' && value) || mode === 'add') {
     const wrongFamily = familyRefusal(attribute,
                                       declaredFamiliesOf(loaded.record),
@@ -9941,10 +9993,20 @@ function largestSetting(settingKey, config) {
   return most;
 }
 
+// **A DEVELOPMENT-ONLY VALUE IS NOT IN FORCE IN PRODUCT, WHEREVER IT CAME
+// FROM** (#181). A setting whose row carries `onlyWhile` —
+// `saml2.signAssertion` off, `saml2.keyTransportAlgorithm` `rsa-1_5`, … — is read as `mode.js`
+// says: the setting through `valueInForce()`, and an entry's override of it
+// through `inForce()`, which answers the row's default in a product realm and
+// says so once per setting and attribute (STS-CORE-0106). Checked HERE,
+// because every per-application read comes through this function; a check at
+// each caller would be the one a new caller forgets. `updateApplication()`
+// refuses to write such a value (STS-REG-0193).
 function settingFor(identifier, settingKey, config) {
   log.debug("Entering settingFor(). identifier=" + (identifier || '(none)') +
             ", setting=" + settingKey);
-  const fallback = config.value(settingKey);
+  const fallback = mode.inForce(settingKey, config.value(settingKey),
+                                settingKey);
   if (!identifier) {
     log.debug("Leaving settingFor(). No application named; the setting " +
               "decides.");
@@ -9984,7 +10046,7 @@ function settingFor(identifier, settingKey, config) {
   }
   log.debug("Leaving settingFor(). " + identifier + " overrides " + settingKey +
             ".");
-  return parsed.value;
+  return mode.inForce(settingKey, parsed.value, attribute);
 }
 
 // Which attribute overrides which setting, built ONCE from the schema rows'

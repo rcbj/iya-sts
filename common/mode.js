@@ -283,9 +283,83 @@ function trustsUnverifiedLocalSocket() {
 // where it is read — the mode can be flipped at runtime, so the read is the
 // guard — said once per process (STS-CORE-0106, `valueInForce()` below), and
 // refused on write (the `onlyWhile` marker, STS-CORE-0103).
+//
+// TWO MORE SINCE #181 (2026-09-23), each already called a deliberate defect
+// by its own description: `risc.googleSubjectType`, which writes the
+// `subject_type` member RISC 1.0 section 3.1 says new services MUST NOT use,
+// and `krb5.clockOffset`, which moves the KDC's clock so that a skew failure
+// can be produced on purpose. A product KDC's clock is the machine's.
 function spoilsOnPurpose() {
   log.debug("Entering spoilsOnPurpose().");
   log.debug("Leaving spoilsOnPurpose().");
+  return !isProduct();
+}
+
+// May a BROKEN ALGORITHM be used (#181, 2026-09-23)? Two are offered here
+// because deployed peers still demand them and a client library is entitled
+// to be tested against one: SHA-1 in a signature, and RSAES-PKCS1-v1_5 key
+// transport, which Bleichenbacher's adaptive chosen-ciphertext attack is
+// against — XML Encryption 1.1 section 5.1 lists it with no requirement
+// level and a security note, and section 6.1.2 recommends RSA-OAEP instead.
+// Development uses them where a setting says to. Product never does:
+//
+//   * `saml.signatureAlgorithm` `rsa-sha1` — what this service SIGNS XML with;
+//   * `saml2.keyTransportAlgorithm` `rsa-1_5` — how it wraps a content key,
+//     and the same value on an application's `saml2KeyTransportAlgorithm`;
+//   * `saml.allowSha1Signatures` on — accepting SHA-1 in a signature it
+//     VERIFIES, on every XML path (SAML, WS-Trust, WS-Federation, RFC 7522);
+//   * `pki.signatureAlgorithm` `sha1-rsa` / `sha1-ecdsa` — a certificate
+//     authority signing with SHA-1, and a build form naming either;
+//   * an XML element encrypted TO this service with `rsa-1_5` — the unwrap
+//     that is the decryption oracle — which no setting governs.
+//
+// Each value is IGNORED where it is read (STS-CORE-0106) and refused on
+// write (STS-CORE-0103); the stronger values of each setting stay allowed.
+// JOSE's `RSA1_5` is refused in both modes already (`common/crypto.js`).
+function usesBrokenAlgorithms() {
+  log.debug("Entering usesBrokenAlgorithms().");
+  log.debug("Leaving usesBrokenAlgorithms().");
+  return !isProduct();
+}
+
+// May a SAML assertion or a SAML 1.1 Response go out UNSIGNED (#181,
+// 2026-09-23)? Development says yes where `saml2.signAssertion`,
+// `saml11.signAssertion` or `saml11.signResponse` is off, or an application
+// overrides one of them off: a relying party that accepts an unsigned
+// assertion has a hole, and this is how it is found.
+//
+// Product signs all three, and the decision is the specifications':
+//
+//   * SAML 2.0 (saml-profiles-2.0-os sections 4.1.3.5 and 4.1.4.5): the
+//     assertions in a Response delivered by the HTTP POST binding MUST be
+//     signed; over the Artifact binding they MAY be. The approved errata let
+//     a signature over the Response stand in for the assertion's. Product
+//     signs the ASSERTION whatever the binding: that satisfies both texts,
+//     and an assertion that leaves its Response — resolved by artifact, held
+//     for AssertionIDReference, presented as an RFC 7522 grant — carries the
+//     only signature it will ever have. `saml2.signResponse` off stays
+//     allowed, because with the assertion signed the profile asks for no
+//     more.
+//   * SAML 1.1 (oasis-sstc-saml-bindings-1.1 section 4.1.2.4): in the
+//     Browser/POST profile "the SAML response MUST be digitally signed" and
+//     the assertions in it MAY be. So `saml11.signResponse` off is a
+//     non-conforming Browser/POST response and is development's; and the
+//     assertion is signed too, for the reason the 2.0 one is.
+function issuesUnsignedAssertions() {
+  log.debug("Entering issuesUnsignedAssertions().");
+  log.debug("Leaving issuesUnsignedAssertions().");
+  return !isProduct();
+}
+
+// May the SPIFFE Workload API serve a call that does not carry the
+// `workload.spiffe.io: true` metadata header (#181, 2026-09-23)? The
+// SPIFFE Workload Endpoint specification section 3 says a server MUST
+// refuse one. Development honours `spiffe.requireSecurityHeader` off, which
+// is how something other than the header is tested with a client that does
+// not send it; product always refuses.
+function servesWithoutSecurityHeader() {
+  log.debug("Entering servesWithoutSecurityHeader().");
+  log.debug("Leaving servesWithoutSecurityHeader().");
   return !isProduct();
 }
 
@@ -1317,16 +1391,75 @@ const REQUIREMENTS = [
     what: 'A deliberate defect does not make a response wrong',
     development: 'oauth2.breakIdTokenNonce puts a wrong nonce in every ID ' +
                  'Token that should carry one, ssf.breakSetSignature changes ' +
-                 'one character of every SET\'s signature, and ' +
+                 'one character of every SET\'s signature, ' +
                  'ssf.legacySubClaim adds the `sub` claim RFC 8417 ' +
-                 'discourages beside `sub_id` — each while it is on, so that ' +
-                 'a client\'s handling of a wrong answer can be exercised.',
-    product: 'All three are IGNORED where they are read — a realm switched ' +
-             'to product with one still stored answers correctly — logged ' +
-             'once per process (STS-CORE-0106), and refused on write ' +
-             'through /admin, /admin-api and a realm\'s settings ' +
+                 'discourages beside `sub_id`, risc.googleSubjectType writes ' +
+                 'the `subject_type` member RISC 1.0 section 3.1 says new ' +
+                 'services MUST NOT use, and krb5.clockOffset moves the ' +
+                 'KDC\'s clock — each while it is set, so that a client\'s ' +
+                 'handling of a wrong answer can be exercised.',
+    product: 'All five are IGNORED where they are read — a realm switched ' +
+             'to product with one still stored answers correctly, on the ' +
+             'machine\'s clock — logged once per process (STS-CORE-0106), ' +
+             'and refused on write through /admin, /admin-api and a ' +
+             'realm\'s settings (STS-CORE-0103).',
+    where: 'common/mode.js, oauth-oidc/oauth2.ts, ssf/ssf_events.js, ' +
+           'ssf/risc.ts, kerberos/krb5_kdc.js, kerberos/krb5_principals.js, ' +
+           'kerberos/krb5_fast.ts' },
+  // #181 (2026-09-23).
+  { id: 'broken-algorithms',
+    what: 'No broken algorithm is used: SHA-1 in a signature, or RSA ' +
+          'PKCS#1 v1.5 key transport',
+    development: 'saml.signatureAlgorithm rsa-sha1 signs every XML ' +
+                 'signature with SHA-1, saml2.keyTransportAlgorithm rsa-1_5 ' +
+                 '(or an application\'s saml2KeyTransportAlgorithm) wraps ' +
+                 'an encrypted assertion\'s key with RSAES-PKCS1-v1_5, ' +
+                 'saml.allowSha1Signatures on accepts SHA-1 in a signature ' +
+                 'this service verifies, pki.signatureAlgorithm sha1-rsa or ' +
+                 'sha1-ecdsa (or a build form naming either) makes a ' +
+                 'certificate authority sign with SHA-1, and an XML element ' +
+                 'encrypted to this service with rsa-1_5 is unwrapped. ' +
+                 'Every one is off unless set.',
+    product: 'Each weak value is IGNORED where it is read (logged once, ' +
+             'STS-CORE-0106) and refused on write (STS-CORE-0103, and ' +
+             'STS-REG-0193 on an application): XML is signed with the ' +
+             'default rsa-sha256, keys are wrapped with rsa-oaep-mgf1p, a ' +
+             'SHA-1 signature is refused, a CA build or key pair naming ' +
+             'SHA-1 is refused (STS-PKI-0191) and one inherited from a ' +
+             'branch built in development is replaced by the key\'s ' +
+             'default, and an rsa-1_5 EncryptedKey is ' +
+             'refused before it is unwrapped (STS-KEYS-0070) — XML ' +
+             'Encryption 1.1 section 6.1.2. The stronger values of every ' +
+             'setting stay available. JOSE RSA1_5 is refused in both modes.',
+    where: 'saml/document_settings.ts, saml/saml2_sso.ts, common/crypto.js, ' +
+           'common/pki.js, common/applications.js' },
+  { id: 'signed-assertions',
+    what: 'Every SAML assertion is signed, and every SAML 1.1 Response',
+    development: 'saml2.signAssertion, saml11.signAssertion and ' +
+                 'saml11.signResponse off — service-wide or on one ' +
+                 'application — send an unsigned assertion or an unsigned ' +
+                 'SAML 1.1 Response, which is how a relying party that ' +
+                 'accepts one is found.',
+    product: 'All three are IGNORED where they are read (STS-CORE-0106) ' +
+             'and refused on write (STS-CORE-0103; STS-REG-0193 on an ' +
+             'application). A SAML 2.0 assertion is signed whatever the ' +
+             'binding (saml-profiles-2.0-os 4.1.3.5 and 4.1.4.5 require it ' +
+             'over POST), and a SAML 1.1 Response is signed ' +
+             '(oasis-sstc-saml-bindings-1.1 4.1.2.4 requires it in ' +
+             'Browser/POST), with its assertion. saml2.signResponse off ' +
+             'stays allowed: with the assertion signed, the profile asks ' +
+             'for no more.',
+    where: 'saml/saml2_sso.ts, saml/saml11_sso.ts, common/applications.js' },
+  { id: 'workload-security-header',
+    what: 'A Workload API call without the workload.spiffe.io header is ' +
+          'refused',
+    development: 'spiffe.requireSecurityHeader is on by default, as in ' +
+                 'product; off serves a call without the header.',
+    product: 'Always refused (the SPIFFE Workload Endpoint specification ' +
+             'section 3, an SSRF hardening measure): off is IGNORED where ' +
+             'it is read (STS-CORE-0106) and refused on write ' +
              '(STS-CORE-0103).',
-    where: 'common/mode.js, oauth-oidc/oauth2.ts, ssf/ssf_events.js' },
+    where: 'spiffe/spiffe_grpc.ts' },
   { id: 'credential-status-reference',
     what: 'A presented credential must carry a status reference',
     development: 'oid4vp.requireStatusReference is all by default, as in ' +
@@ -2128,22 +2261,37 @@ function allowsValue(key, value) {
 // value, or its default where the mode refuses a development-only value.
 function valueInForce(key) {
   log.debug("Entering valueInForce(). key=" + key);
-  const value = config.value(key);
+  log.debug("Leaving valueInForce().");
+  return inForce(key, config.value(key), key);
+}
+
+// The same for a value that came from somewhere OTHER than the setting — an
+// application entry's override of it (#181: `saml2SignAssertion`,
+// `saml2KeyTransportAlgorithm` …, read by `applications.settingFor()`).
+// `source` names where it came from in the warning, and is part of what is
+// said once, so the setting and each overriding attribute are each said once
+// per process: still a set bounded by the table's rows and the schema's
+// attributes, never by how many entries carry one.
+function inForce(key, value, source) {
+  log.debug("Entering inForce(). key=" + key);
   if (allowsValue(key, value)) {
-    log.debug("Leaving valueInForce(). As set.");
+    log.debug("Leaving inForce(). As set.");
     return value;
   }
   const row = rowOf(key);
-  if (!ignoredAnnounced.has(key)) {
-    ignoredAnnounced.add(key);
-    log.warn(errorCodes.tag('STS-CORE-0106') + 'mode: ' + key + ' is set ' +
-             'to ' + JSON.stringify(value) + ' and is IGNORED, because this ' +
-             'realm is in product mode (global.mode=product): ' +
+  const said = key + '|' + String(source || key);
+  if (!ignoredAnnounced.has(said)) {
+    ignoredAnnounced.add(said);
+    log.warn(errorCodes.tag('STS-CORE-0106') + 'mode: ' +
+             (source && source !== key ? source + ' (overriding ' + key +
+                                         ')' : key) +
+             ' is set to ' + JSON.stringify(value) + ' and is IGNORED, ' +
+             'because this realm is in product mode (global.mode=product): ' +
              writeRefusalReason(row.onlyWhile) + ' It is read as ' +
              JSON.stringify(row.dflt) + ' until it is reset. Said once per ' +
              'process.');
   }
-  log.debug("Leaving valueInForce(). The default, in product.");
+  log.debug("Leaving inForce(). The default, in product.");
   return row.dflt;
 }
 
@@ -2167,7 +2315,18 @@ const WRITE_REFUSALS = {
     'a credential this realm issued that shows no status reference could ' +
     'be one that was revoked, so the Verifier requires one there. own-only ' +
     'is allowed, and oid4vp.statusOptionalIssuers exempts a trusted issuer ' +
-    'that publishes no status.'
+    'that publishes no status.',
+  usesBrokenAlgorithms:
+    'SHA-1 signatures and RSA PKCS#1 v1.5 key transport are broken, and ' +
+    'product never uses either. The stronger values are allowed.',
+  issuesUnsignedAssertions:
+    'every SAML assertion, and every SAML 1.1 Response, is signed there ' +
+    '(saml-profiles-2.0-os 4.1.4.5, oasis-sstc-saml-bindings-1.1 4.1.2.4). ' +
+    'Exercise a relying party against an unsigned one in a development ' +
+    'realm.',
+  servesWithoutSecurityHeader:
+    'the SPIFFE Workload Endpoint specification (section 3) says a call ' +
+    'without the workload.spiffe.io header MUST be refused.'
 };
 
 function writeRefusalReason(predicate) {
@@ -2177,19 +2336,44 @@ function writeRefusalReason(predicate) {
     'the setting is for development mode only.';
 }
 
-// The whole answer, for the console page, the management API and the metadata
-// report. One function so the three cannot disagree.
+// Every row carrying the `onlyWhile` marker, with the value the ambient realm
+// holds and the value IN FORCE — which differ exactly where a development-only
+// value is stored in a product realm (#181). Read through `allowsValue()`
+// rather than `valueInForce()`, so drawing the page logs nothing.
+function developmentOnlySettings() {
+  log.debug("Entering developmentOnlySettings().");
+  const rows = config.SETTINGS.filter(function (row) {
+    return !!row.onlyWhile;
+  }).map(function (row) {
+    const stored = config.value(row.key);
+    const allowed = allowsValue(row.key, stored);
+    return { key: row.key, group: row.group, predicate: row.onlyWhile,
+             developmentOnlyValues: Array.isArray(row.onlyWhileValues) ?
+               row.onlyWhileValues.slice() : null,
+             default: row.dflt, value: stored,
+             inForce: allowed ? stored : row.dflt, ignored: !allowed,
+             why: writeRefusalReason(row.onlyWhile) };
+  });
+  log.debug("Leaving developmentOnlySettings(). " + rows.length + " row(s).");
+  return rows;
+}
+
+// The whole answer, for the console page (`GET /admin/mode`), the management
+// API (`GET /admin-api/mode`) and the metadata report. One function so the
+// three cannot disagree; `admin-ui/mode_admin.ts` draws it and adds nothing.
 function report() {
   log.debug("Entering report().");
+  const product = isProduct();
   log.debug("Leaving report().");
   return {
     mode: current(),
-    isProduct: isProduct(),
+    isProduct: product,
     requirements: REQUIREMENTS.map(function (row) {
-      return Object.assign({ inForce: isProduct() ? row.product :
+      return Object.assign({ inForce: product ? row.product :
                                       row.development },
                            row);
     }),
+    developmentOnlySettings: developmentOnlySettings(),
     notYet: NOT_YET
   };
 }
@@ -2263,8 +2447,12 @@ module.exports = {
   gatesSpireServerApi: gatesSpireServerApi,
   observesRiskOnly: observesRiskOnly,
   observesSignalsOnly: observesSignalsOnly,
+  usesBrokenAlgorithms: usesBrokenAlgorithms,
+  issuesUnsignedAssertions: issuesUnsignedAssertions,
+  servesWithoutSecurityHeader: servesWithoutSecurityHeader,
   allowsValue: allowsValue,
   valueInForce: valueInForce,
+  inForce: inForce,
   writeRefusalReason: writeRefusalReason,
   REQUIREMENTS: REQUIREMENTS,
   NOT_YET: NOT_YET,

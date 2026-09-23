@@ -3911,7 +3911,11 @@ class Saml2Sso {
                  ' ' +
                  'carried an <saml:EncryptedID> that could not be read ' +
                  '— ' + decrypted.why + '.');
-        errorCodes.mark(res, 'STS-SAML-0020');
+        // An rsa-1_5 key transport refused in product (#181) is recorded as
+        // itself, because the operator's fix is the service provider's
+        // algorithm rather than its certificate; every other failure is 0020.
+        errorCodes.mark(res, errorCodes.codeOf(decrypted) === 'STS-KEYS-0070'
+          ? 'STS-KEYS-0070' : 'STS-SAML-0020');
         log.debug("Leaving Saml2Sso.singleLogout().");
         return this.samlError(res, 400,
                               'That EncryptedID could not be decrypted',

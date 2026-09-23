@@ -273,7 +273,9 @@ const SPECS: Spec[] = [
               'ValidateJWTSVID — over a Unix socket and over TCP, with the ' +
               'streams held open and re-sent at half the SVID lifetime so a ' +
               'client\'s rotation path runs. The mandatory ' +
-              '`workload.spiffe.io: true` header IS enforced. FetchWITSVID ' +
+              '`workload.spiffe.io: true` header IS enforced — always in ' +
+              'product mode, and in development unless ' +
+              'spiffe.requireSecurityHeader is off (#181). FetchWITSVID ' +
               'and FetchWITBundles answer Unimplemented, because the ' +
               'Workload Identity Token\'s format is not settled in a ' +
               'document this service could implement against and inventing ' +
@@ -661,7 +663,8 @@ const SPECS: Spec[] = [
               'exception opt-out-effective could never be delivered and ' +
               'opt-in could never bring an account back. Section 3.1\'s ' +
               'Google compatibility note is reproducible at ' +
-              'risc.googleSubjectType. NOT covered: no detector finds a ' +
+              'risc.googleSubjectType, in development mode only (#181). ' +
+              'NOT covered: no detector finds a ' +
               'compromised credential by itself (#62); the deprecated ' +
               'sessions-revoked is emitted only by hand from /admin/risc or ' +
               'POST /admin-api/risc/emit; a person cannot start recovery ' +
@@ -1183,8 +1186,8 @@ const SPECS: Spec[] = [
               'against its REGISTERED certificate (never its KeyInfo), in ' +
               'every mode, in every family common/crypto.js verifies (RSA, ' +
               'RSASSA-PSS, ECDSA, EdDSA, DSA, ML-DSA, SLH-DSA), with either ' +
-              'canonicalization; SHA-1 only with saml.allowSha1Signatures; ' +
-              'an unsigned one is refused where ' +
+              'canonicalization; SHA-1 only with saml.allowSha1Signatures, ' +
+              'never in product mode; an unsigned one is refused where ' +
               'saml2.requireSignedAuthnRequests (on in product) or its ' +
               'metadata requires a signature.' },
   { id: 'saml2-profiles', name: 'SAML 2.0 Profiles',
@@ -1193,7 +1196,10 @@ const SPECS: Spec[] = [
       'https://docs.oasis-open.org/security/saml/v2.0/saml-profiles-2.0-os.pdf',
     coverage: 'partial: the Web Browser SSO profile (section 4.1) ' +
               'service-provider-initiated, over all three bindings, with the ' +
-              'bearer SubjectConfirmationData 4.1.4.2 requires; and Single ' +
+              'bearer SubjectConfirmationData 4.1.4.2 requires, every ' +
+              'assertion SIGNED in product mode whatever the binding ' +
+              '(4.1.3.5 and 4.1.4.5 require it over POST; ' +
+              'saml2.signAssertion off is development\'s, #181); and Single ' +
               'Logout (4.4), both directions, WITHOUT front-channel fan-out ' +
               '— an identity-provider-initiated logout NAMES the other ' +
               'service providers and builds a LogoutRequest for each rather ' +
@@ -1284,9 +1290,12 @@ const SPECS: Spec[] = [
               'An artifact resolves EXACTLY ONCE (3.2.3): resolving destroys ' +
               'it, and the second attempt is refused with a status naming ' +
               'the reason.' },
+  // The SAML 1.1 profiles are chapter 4 of the bindings-and-profiles
+  // document; download 3404, which this row named until #181, is the
+  // security and privacy considerations.
   { id: 'saml11-profiles', name: 'SAML 1.1 Profiles',
-    where: 'OASIS oasis-sstc-saml-profile-1.1',
-    url: 'https://www.oasis-open.org/committees/download.php/3404/oasis-sstc-saml-profile-1.1.pdf',
+    where: 'OASIS oasis-sstc-saml-bindings-1.1, chapter 4',
+    url: 'https://www.oasis-open.org/committees/download.php/3405/oasis-sstc-saml-bindings-1.1.pdf',
     coverage: 'partial: BOTH browser profiles — Browser/Artifact (section ' +
               '4.1) and Browser/POST (4.2) — each with the confirmation ' +
               'method its section requires, which are different values and ' +
@@ -1300,7 +1309,10 @@ const SPECS: Spec[] = [
               'and advertised, because it is what every real SAML 1.1 ' +
               'service provider sends. `shire` is used as sent in ' +
               'development mode and must be registered on the relying ' +
-              'party\'s entry in PRODUCT mode (2026-09-12).' },
+              'party\'s entry in PRODUCT mode (2026-09-12). The Browser/POST ' +
+              'Response is signed as section 4.1.2.4 requires, with its ' +
+              'assertion; turning either signature off is a development ' +
+              'test case that product mode ignores (#181).' },
   { id: 'ws-federation', name: 'WS-Federation 1.2',
     where: 'OASIS wsfed',
     url: 'https://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation-1.2-spec-os.html',
@@ -1329,16 +1341,20 @@ const SPECS: Spec[] = [
     url: 'https://www.w3.org/TR/xmldsig-core1/',
     coverage: 'full for what it emits: enveloped signature, exclusive ' +
               'canonicalization, RSA-SHA256 by default and RSA-SHA384/512 or ' +
-              'the broken RSA-SHA1 by saml.signatureAlgorithm (2026-09-12); ' +
-              'AES-GCM or AES-CBC content encryption with an RSA-OAEP or ' +
-              'RSA-1_5 wrapped key. VERIFIES (since 2026-09-17) every ' +
+              'the broken RSA-SHA1 by saml.signatureAlgorithm (2026-09-12; ' +
+              'development mode only since #181); AES-GCM or AES-CBC ' +
+              'content encryption with an RSA-OAEP or, in development mode ' +
+              'only, an RSA-1_5 wrapped key — product neither wraps nor ' +
+              'unwraps RSA-1_5 (XML Encryption 1.1 section 6.1.2). ' +
+              'VERIFIES (since 2026-09-17) every ' +
               'SignatureMethod of RFC 9231 and XMLDSig 1.1 node\'s OpenSSL ' +
               'implements — RSA PKCS#1 v1.5 and RSASSA-PSS (with and without ' +
               'RSAPSSParams), ECDSA, EdDSA Ed25519/Ed448, DSA — and the ' +
               'ML-DSA and SLH-DSA identifiers of the draft ' +
               'draft-eastlake-rfc9231bis-xmlsec-uris; SHA-224, SHA-2, SHA-3 ' +
               'and RIPEMD-160 digests; SHA-1 only with ' +
-              'saml.allowSha1Signatures. NOT verified, and refused by name: ' +
+              'saml.allowSha1Signatures, in development mode. NOT ' +
+              'verified, and refused by name: ' +
               'MD5, the MACs, Whirlpool, ESIGN, pre-hashed EdDSA and the ' +
               'stateful HSS/LMS and XMSS.' },
   { id: 'rfc6749', name: 'RFC 6749 — OAuth 2.0',
@@ -4686,7 +4702,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'watches authentication. The risc.* settings ' +
           'post back to it, including risc.googleSubjectType — the only ' +
           'deliberate defect in this service that a specification asks for ' +
-          'by name (RISC section 3.1). Add ?format=json.' },
+          'by name (RISC section 3.1), and development mode\'s alone ' +
+          '(#181). Add ?format=json.' },
   { path: '/admin/risc-accounts', group: 'Admin', name: 'RISC accounts',
     specs: ['risc', 'ssf'],
     what: 'THE MONITORING HALF: one row per account this service has been ' +
@@ -6091,6 +6108,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'exactly wrong for the one endpoint whose purpose is to land you ' +
           'in a different one. 303, so the reload after it is a GET.' },
 
+  { path: '/admin/mode', group: 'Admin', name: 'Mode',
+    specs: [],
+    what: 'NON-SPEC (#181). What global.mode changes and what is in force ' +
+          'in this realm, drawn from common/mode.js\'s report(): every ' +
+          'requirement with its development and product answers, every ' +
+          'development-only setting with the value stored and the value in ' +
+          'force (a product realm ignores a development-only value it still ' +
+          'holds), and what product mode still does not check. Read-only; ' +
+          'global.mode is set on /admin/config. Add ?format=json.' },
   { path: '/admin/config', group: 'Admin', name: 'Configuration',
     specs: [],
     effect: 'changes what every FUTURE token, assertion, ticket and search ' +
@@ -7472,6 +7498,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'existing — and the default realm cannot be removed at all, since ' +
           'every URL this service published before realms existed is a URL ' +
           'in it.' },
+  { path: '/admin-api/mode', group: 'Management API', name: 'Mode',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#181). GET /admin/mode over JSON: the realm\'s mode, ' +
+          'its requirements, its development-only settings as stored and ' +
+          'as in force, and what product mode still does not check.' },
   { path: '/admin-api/config', group: 'Management API', name: 'Configuration',
     specs: [],
     what: 'NON-SPEC. Every setting, its effective value, and the source of ' +
@@ -7537,7 +7568,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'of them restart-only because the principal database and every ' +
           'long-term key in it are built from them at startup. Two of them ' +
           'exist to make failures reachable — krb5.unknownUsers and ' +
-          'krb5.clockOffset — and the reply says so. Read-only.' },
+          'krb5.clockOffset, the second development mode\'s alone (#181) ' +
+          '— and the reply says so. Read-only.' },
   { path: '/admin-api/ldap', group: 'Management API', name: 'LDAP / LDAPS ' +
       'settings',
     specs: ['rfc4511', 'rfc4519', 'openapi'],

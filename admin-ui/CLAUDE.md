@@ -6043,6 +6043,35 @@ things are this console's.
 `tests/admin_credential_controls.js` drives the actions, the portal page and the
 enrolment step in a child process; no owned browser job presses the section yet.
 
+## `/admin/mode`: WHAT THE MODE CHANGES, AND WHAT IS IN FORCE HERE (#181, 2026-09-23)
+
+Server configuration → Mode, beside Configuration, drawn by `mode_admin.ts`
+from `common/mode.js`'s `report()` and nothing else: the realm's mode; every
+REQUIREMENTS row with its development and product answers (the one in force in
+bold) and where it is implemented; every `onlyWhile` row of `config.js` with
+the value stored, the value in force and whether it is ignored (a warning box
+lists the ignored ones, which is exactly where a realm was switched to product
+with a development-only value still stored); and NOT_YET. The prose — this
+file's section on the mode, `mode.js`, `global.mode`'s description and
+`docs/what-is-not-checked.md` — cited this page and `GET /admin-api/mode` for
+two weeks before either was registered.
+
+Three decisions:
+
+* **A REALM'S PAGE, and a READ-ONLY one.** The mode is per realm, so a realm's
+  administrator reads their own answer; it is absent from `SERVICE_PAGES`.
+  `global.mode` itself stays in the Global group on `/admin/config`
+  (SETTING_HOMES has no row for this page, because it draws no setting group);
+  the page links there rather than being a second door onto the value.
+* **NOT PAGED**, against the rule that lists are: the rows are the source's
+  tables — REQUIREMENTS, NOT_YET, the marked settings — bounded by the code and
+  not by anything a deployment accumulates, and comparing two requirements
+  must not need a page turn. `/admin/sts-metadata` is unpaged for the same
+  reason.
+* **IT ADDS NO FACT.** A sentence here that is not in `report()` would be the
+  second copy `mode.js`'s header refuses; the page's `?format=json` is
+  `report()` itself, which is what `GET /admin-api/mode` answers (rule 7).
+
 ## `/admin/vc-status`: THIS REALM'S STATUS LISTS, AND THE ONE CONTROL THEY HAVE (#38's follow-ups, 2026-09-17)
 
 Verifiable Credentials → Credential status, drawn by `vc_status_admin.ts` from

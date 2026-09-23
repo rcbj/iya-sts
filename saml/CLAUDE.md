@@ -388,10 +388,22 @@ Four block ciphers (`aes256-gcm`, `aes128-gcm`, `aes256-cbc`, `aes128-cbc`) and
 two key transports (`rsa-oaep-mgf1p`, `rsa-1_5`), service-wide with
 per-application overrides. The defaults are the modern pair.
 
-**`rsa-1_5` IS BLEICHENBACHER-BROKEN AND IS OFFERED ANYWAY**, because a great
-many deployed service providers accept nothing else and a client library is
-entitled to be tested against the world as it is. Nothing this service encrypts
-is a real secret.
+**`rsa-1_5` IS BLEICHENBACHER-BROKEN AND IS OFFERED ANYWAY — IN DEVELOPMENT
+MODE**, because a great many deployed service providers accept nothing else and
+a client library is entitled to be tested against the world as it is.
+**Since #181 (2026-09-23) product never uses it**: the row carries
+`onlyWhile: 'usesBrokenAlgorithms'` with `onlyWhileValues: ['rsa-1_5']`, so a
+product realm refuses the write (`STS-CORE-0103`, and `STS-REG-0193` on an
+application's `saml2KeyTransportAlgorithm`) and reads a stored one as
+`rsa-oaep-mgf1p` — `applications.settingFor()` is the one funnel, so the
+setting and the override are guarded in one place. The INBOUND half is
+`common/crypto.js`'s: an `EncryptedID` whose key is wrapped `rsa-1_5` is
+refused before any RSA operation (`STS-KEYS-0070`, recorded on the logout in
+place of `0020`), because the unwrap is the oracle, and XML Encryption 1.1
+section 6.1.3 adds that decrypting PKCS#1 v1.5 under a key that also signs —
+this realm's XML key does both — lets signatures be forged.
+`saml.signatureAlgorithm`'s `rsa-sha1` is held the same way
+(`saml/document_settings.ts` reads it as in force).
 
 **CBC IS UNAUTHENTICATED AND THAT IS NOT A DEFECT HERE.** It was MEASURED, not
 assumed: flipping one character of a CBC cipher value produces a plaintext that
@@ -875,8 +887,9 @@ forged LogoutRequest can end somebody's session.
   present. The check runs ONCE, on the first arrival — the only moment the raw
   query exists — and its outcome rides on the held request (`pendingRequests`),
   which is the server's copy.
-* **SHA-1 is a setting, `saml.allowSha1Signatures`, off in both modes**, and it
-  is enforced in `common/crypto.js` rather than here, so this family and every
+* **SHA-1 is a setting, `saml.allowSha1Signatures`, off in both modes, and ON
+  is development's (#181)** — a product realm refuses SHA-1 whatever is
+  stored. It is enforced in `common/crypto.js` rather than here, so this family and every
   other XML signature path give one answer; with it on, SHA-1 verifies and is
   marked `weak`. Every family that file verifies is accepted, with either
   canonicalization (`STS-SAML-0064`, which refused inclusive c14n, is retired:
@@ -964,6 +977,18 @@ is not RSA is a signing key and is simply not used for encryption.
 * **WantAssertionsSigned** signs the assertion even with `saml2.signAssertion`
   off — in product (`mode.sendsWeakerThanAsked()`); development honours the
   setting, which is the test case, and logs that the service provider asked.
+  **Since #181 product signs EVERY assertion**, asked or not:
+  `saml2.signAssertion`, `saml11.signAssertion` and `saml11.signResponse` off
+  are development's (`mode.issuesUnsignedAssertions()`), read as ON through
+  `applications.settingFor()` and refused on write. The decision is the
+  profiles' text: saml-profiles-2.0-os 4.1.3.5 and 4.1.4.5 require the
+  assertions in a POST-delivered Response to be signed (the errata let a
+  Response signature stand in, and over Artifact they MAY be), and
+  oasis-sstc-saml-bindings-1.1 4.1.2.4 requires the SAML 1.1 Browser/POST
+  RESPONSE to be signed (its assertions MAY be). Signing the assertion in every
+  binding satisfies both texts and protects one that leaves its Response;
+  `saml2.signResponse` off stays allowed in product because the profile asks
+  no more once the assertion is signed. `mode.js`'s predicate argues it.
 * **WantAuthnRequestsSigned** in `/saml2/metadata[/{sp}]` is the table above's
   product column: true when the setting (or, per service provider, its metadata)
   requires signed requests.
@@ -1006,7 +1031,8 @@ vendored registry names them); no W3C or IETF standard has any. **HSS/LMS, XMSS,
 the MACs, MD5, Whirlpool, ESIGN and pre-hashed EdDSA are not verified** and are
 refused as not checkable (`STS-SAML-0062`), each with its reason.
 
-`saml.allowSha1Signatures` (off, both modes) refuses a SHA-1 SignatureMethod or
+`saml.allowSha1Signatures` (off, both modes; on only in development, #181)
+refuses a SHA-1 SignatureMethod or
 DigestMethod before any cryptography — `STS-SAML-0073` here, `STS-KEYS-0062`
 underneath — on every XML signature path in the service, because the rule is in
 the one verifier. The setting is in the `SAML` group, so it is drawn on both
