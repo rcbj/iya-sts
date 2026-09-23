@@ -36026,7 +36026,8 @@ class AdminConsole {
                       '<code>HTTP/web.example.com</code>, with or without ' +
                       '<code>@' + self.esc(json.realm) + '</code>. It gets a ' +
                       'RANDOM key for every enctype in ' +
-                      '<code>krb5.enctypes</code> at kvno ' +
+                      '<code>krb5.enctypes</code> (never rc4-hmac in product ' +
+                      'mode) at kvno ' +
                       self.esc(String(json.startingKvno)) + ', stored sealed ' +
                       'on its application entry, and the next page shows its ' +
                       'keytab ONCE. <code>krbtgt</code> is refused: that key ' +

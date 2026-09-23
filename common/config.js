@@ -8003,10 +8003,18 @@ const SETTINGS = [
                  'its sAMAccountName, which nothing in the SPN reveals, so ' +
                  'an acceptor for tickets from a real KDC needs this set.' },
 
+  // `23` is DEVELOPMENT MODE ONLY since #182 (2026-09-23): the marker is on
+  // the ELEMENT (`onlyWhileValues` over a csv row, `common/mode.js`'s
+  // `allowsValue()`), so the default keeps it for development and a product
+  // realm reads the list without it. 1, 2, 3 (DES, RFC 6649), 16 (3DES) and
+  // 24 (rc4-hmac-exp, RFC 8429) are named beside it for the day the codec
+  // implements them; today it refuses them at startup anyway.
   { key: 'krb5.enctypes', group: 'Kerberos', label: 'Encryption types',
     env: 'KRB5_ENCTYPES', type: 'csv', dflt: '18,17,20,19,23',
     runtime: false,
     realmRuntime: true,
+    onlyWhile: 'usesBrokenAlgorithms',
+    onlyWhileValues: ['1', '2', '3', '16', '23', '24'],
     restartReason: 'every principal\'s supported encryption types are fixed ' +
                    'at startup' +
                    REALM_BUILDS_ITS_OWN,
@@ -8014,12 +8022,17 @@ const SETTINGS = [
                  'RFC 3961 numbers, strongest first: 18 ' +
                  'aes256-cts-hmac-sha1-96, 17 aes128-cts-hmac-sha1-96, 20 ' +
                  'aes256-cts-hmac-sha384-192, 19 aes128-cts-hmac-sha256-128, ' +
-                 '23 rc4-hmac. The default includes RC4 so a client that ' +
-                 'still needs it can be exercised; removing 23 is what a ' +
-                 'hardened domain does, and then the rc4only account stops ' +
-                 'working exactly as it would there. A number the Kerberos ' +
-                 'codec does not implement stops the service at startup ' +
-                 'naming it.' },
+                 '23 rc4-hmac. WARNING: RFC 8429 deprecates rc4-hmac, whose ' +
+                 'key is the unsalted NT hash. The default includes it so a ' +
+                 'client that still needs it can be exercised in ' +
+                 'DEVELOPMENT MODE; removing 23 is what a hardened domain ' +
+                 'does, and then the rc4only account stops working exactly ' +
+                 'as it would there. In PRODUCT MODE 23 is always removed: ' +
+                 'the list is read without it, no RC4 key is derived or put ' +
+                 'in a keytab, a request offering only RC4 is refused ' +
+                 'KDC_ERR_ETYPE_NOSUPP, and a write naming it is refused. A ' +
+                 'number the Kerberos codec does not implement stops the ' +
+                 'service at startup naming it.' },
 
   { key: 'krb5.kvno', group: 'Kerberos', label: 'Key version number',
     env: 'KRB5_KVNO', type: 'int', dflt: 3, min: 1, max: 2147483647,
@@ -8581,8 +8594,10 @@ const SETTINGS = [
 
   { key: 'scim.authDigest', group: 'SCIM', label: 'Offer HTTP Digest',
     env: 'SCIM_AUTH_DIGEST', type: 'bool', dflt: true, runtime: true,
-    description: 'RFC 7616, with SHA-256, SHA-512-256 and MD5 offered in ' +
-                 'that order and the -sess variants accepted. NEVER OFFERED ' +
+    description: 'RFC 7616, with SHA-256 and SHA-512-256 offered in that ' +
+                 'order (and MD5 last where scim.digestMd5 turns it on, in ' +
+                 'development only) and the -sess variants accepted. NEVER ' +
+                 'OFFERED ' +
                  'IN PRODUCT MODE: RFC 7616 needs the password or its hash, ' +
                  'and a stored scrypt hash can check neither. In development ' +
                  'it is the one scheme where the password really is checked, ' +
@@ -8615,15 +8630,24 @@ const SETTINGS = [
                  'hand-written clients have never run. Lower it to a few ' +
                  'seconds to make it happen on demand.' },
 
+  // DEVELOPMENT MODE ONLY since #182 (2026-09-23), and OFF by default: the
+  // `onlyWhile` marker's default is the product value, and the most secure
+  // option is the default. Product offers no Digest at all, so on is moot
+  // there — marked so that it cannot be stored meaning something it does not
+  // do.
   { key: 'scim.digestMd5', group: 'SCIM', label: 'Offer MD5 for Digest',
-    env: 'SCIM_DIGEST_MD5', type: 'bool', dflt: true, runtime: true,
+    env: 'SCIM_DIGEST_MD5', type: 'bool', dflt: false, runtime: true,
+    onlyWhile: 'usesBrokenAlgorithms',
     description: 'Whether HTTP Digest offers and accepts MD5 beside SHA-256 ' +
-                 'and SHA-512-256. On by default because most Digest clients ' +
-                 'speak nothing else; RFC 7616 keeps MD5 for backward ' +
-                 'compatibility only, and a deployment whose clients speak ' +
-                 'SHA-256 should turn it off. Off, an MD5 credential is ' +
-                 'refused naming this setting. (Digest itself is never ' +
-                 'offered in product mode — see scim.authDigest.)' },
+                 'and SHA-512-256. WARNING: MD5 is collision-broken, and RFC ' +
+                 '7616 section 3.3 keeps it for backward compatibility only ' +
+                 '— turn it on only to exercise a client that speaks ' +
+                 'nothing else. Off (the default), an MD5 credential, or one ' +
+                 'naming no algorithm (which RFC 7616 reads as MD5), is ' +
+                 'refused naming this setting. DEVELOPMENT MODE ONLY: in ' +
+                 'product it is refused on write and ignored where it is ' +
+                 'read, and Digest itself is never offered there — see ' +
+                 'scim.authDigest.' },
 
   { key: 'scim.maxDigestNonces', group: 'SCIM', label: 'Digest nonces held',
     env: 'SCIM_MAX_DIGEST_NONCES', type: 'int', dflt: 2000, runtime: true,
@@ -12516,14 +12540,20 @@ function replacedBy(key) {
 // `saml.allowSha1Signatures` and, through `onlyWhileValues`, the weak values
 // alone of `saml.signatureAlgorithm` (`rsa-sha1`),
 // `saml2.keyTransportAlgorithm` (`rsa-1_5`) and `pki.signatureAlgorithm`
-// (`sha1-rsa`, `sha1-ecdsa`). An APPLICATION's override of a marked setting
+// (`sha1-rsa`, `sha1-ecdsa`). #182 added `scim.digestMd5` and, on the csv
+// row `krb5.enctypes`, the ELEMENT `23` (rc4-hmac): a list is refused when
+// any element is one `onlyWhileValues` names — its default included, which
+// keeps 23 for development — and is read in product without those elements.
+// An APPLICATION's override of a marked setting
 // (`saml2SignAssertion` …) is held to the same rule by
 // `common/applications.js`: ignored where `settingFor()` reads it, refused
 // where `updateApplication()` writes it (STS-REG-0193). In
 // a product realm a write of a marked value other than the default is refused
 // (STS-CORE-0103), through /admin and
 // /admin-api alike — the `set`, `set-many` and realm `set` doors. Writing the
-// default is always allowed, which is how a stored value is taken back.
+// default is always allowed, which is how a stored value is taken back — with
+// one exception, the list row above whose default itself carries a marked
+// element: there a stored value is taken back by CLEARING it.
 // `mode.writeRefusalReason()` supplies the sentence that says why, per
 // predicate, so the refusal and the read-time warning cannot disagree.
 //

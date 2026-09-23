@@ -8148,6 +8148,24 @@ const CODES = [
     summary: 'An AS exchange waited (at most a second) for its client\'s ' +
       'sign-out second to pass before taking authtime, so the new ticket is ' +
       'newer than the sign-out. Logged at debug; not a failure.' },
+  { code: 'STS-KRB-0156',
+    summary: 'An AS-REQ or TGS-REQ offered only encryption types this ' +
+      'realm\'s mode withholds — rc4-hmac, in product mode (#182).',
+    spec: 'RFC 8429; KDC_ERR_ETYPE_NOSUPP (14)' },
+  { code: 'STS-KRB-0157',
+    summary: 'A TGS-REQ\'s ticket session key or Authenticator subkey is of ' +
+      'an encryption type product mode withholds (rc4-hmac, #182).',
+    spec: 'RFC 8429; KDC_ERR_ETYPE_NOSUPP (14)' },
+  { code: 'STS-KRB-0158',
+    summary: 'The acceptor refused an AP-REQ whose ticket session key or ' +
+      'Authenticator subkey is of an encryption type product mode ' +
+      'withholds (rc4-hmac, #182).',
+    spec: 'RFC 8429; KDC_ERR_ETYPE_NOSUPP (14)' },
+  { code: 'STS-KRB-0159',
+    summary: 'A FAST armor AP-REQ\'s subkey or ticket session key is of an ' +
+      'encryption type product mode withholds (rc4-hmac, #182), so no ' +
+      'armor key was made.',
+    spec: 'RFC 6113 section 5.4.1.1, RFC 8429; KDC_ERR_ETYPE_NOSUPP (14)' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +

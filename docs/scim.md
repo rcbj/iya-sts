@@ -132,7 +132,7 @@ disappears from both.
 | OAuth 2.0 Bearer ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750)) | `oauthbearertoken` | An access token from this service with `scim:read` or `scim:write`, verified for signature, revocation and audience |
 | DPoP ([RFC 9449](https://www.rfc-editor.org/rfc/rfc9449)) | `oauth2` | The same token, key-bound, with a proof. An [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705) certificate-bound token is honoured too |
 | HTTP Basic ([RFC 7617](https://www.rfc-editor.org/rfc/rfc7617)) | `httpbasic` | A username and password |
-| HTTP Digest ([RFC 7616](https://www.rfc-editor.org/rfc/rfc7616)) | `httpdigest` | SHA-256, SHA-512-256 or MD5, with the `-sess` variants |
+| HTTP Digest ([RFC 7616](https://www.rfc-editor.org/rfc/rfc7616)) | `httpdigest` | SHA-256 or SHA-512-256, with the `-sess` variants; MD5 only where `scim.digestMd5` turns it on, in development mode |
 | HOBA ([RFC 7486](https://www.rfc-editor.org/rfc/rfc7486)) | `hoba` | An RSA/SHA-256 signature over the server's challenge, by a key registered at `POST /.well-known/hoba/register` |
 | Session cookie | `httpcookie` | The browser sign-on session from `/authn/login`, consulted only when there is no `Authorization` header |
 | TLS client certificate | `tlsclientauth` | A certificate that verified against the client truststore on the main port (needs `global.https`) |
@@ -227,7 +227,7 @@ CPU per request in product mode, so a bulk provisioning client should use a
 | `scim.authDigest` | `SCIM_AUTH_DIGEST` | `true` | yes | Offer HTTP Digest (never offered in product mode). |
 | `scim.digestPassword` | `SCIM_DIGEST_PASSWORD` | `password!` | yes | The password every username shares for Digest in development. |
 | `scim.digestNonceSeconds` | `SCIM_DIGEST_NONCE_SECONDS` | `300` | yes | How long a Digest nonce is usable before it is refused with `stale=true`. |
-| `scim.digestMd5` | `SCIM_DIGEST_MD5` | `true` | yes | Whether Digest offers and accepts MD5 beside SHA-256 and SHA-512-256. |
+| `scim.digestMd5` | `SCIM_DIGEST_MD5` | `false` | yes | Whether Digest offers and accepts MD5 beside SHA-256 and SHA-512-256. **Warning:** MD5 is collision-broken and RFC 7616 keeps it for backward compatibility only; turn it on only to exercise a client that speaks nothing else. **Development mode only** — refused on write in product (`STS-CORE-0103`) and ignored if stored (`STS-CORE-0106`); product offers no Digest at all. |
 | `scim.maxDigestNonces` | `SCIM_MAX_DIGEST_NONCES` | `2000` | yes | How many issued Digest nonces are remembered; a forgotten one is refused `stale=true`. |
 | `scim.authHoba` | `SCIM_AUTH_HOBA` | `true` | yes | Offer HOBA, and turn `/.well-known/hoba/register` on or off. |
 | `scim.hobaMaxAgeSeconds` | `SCIM_HOBA_MAX_AGE_SECONDS` | `600` | yes | The max-age of a HOBA challenge, published and enforced. |

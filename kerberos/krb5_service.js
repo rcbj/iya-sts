@@ -491,6 +491,33 @@ async function acceptInRealm(tokenBytes, opts) {
       '11: ' + e.message), checks: checks, ok: false };
   }
 
+  // 4a. No key of an enctype the mode withholds (#182, RFC 8429): the
+  // ticket's session key — RC4 only if the ticket was issued before the realm
+  // became product — or the Authenticator's subkey, which the INITIATOR
+  // chooses and which would key the GSS tokens and the acceptor's own
+  // subkey. The ticket itself cannot be RC4 here: its key would come from
+  // `longTermKey()`, which refuses one (step 2).
+  const withheldKey = !principals.etypePermitted(ticketPart.key.etype) ?
+    ticketPart.key.etype :
+    (authenticator.subkey &&
+     !principals.etypePermitted(authenticator.subkey.etype) ?
+      authenticator.subkey.etype : null);
+  if (withheldKey !== null) {
+    check('no key of an enctype product mode withholds', false,
+          kcrypto.etypeName(withheldKey));
+    log.debug("Leaving acceptInRealm().");
+    return { errorCode: 'STS-KRB-0158',
+             reply: errorReply(14, 'the ' +
+               (withheldKey === ticketPart.key.etype ? 'ticket\'s session ' +
+                                                      'key'
+                                                    : 'Authenticator\'s ' +
+                                                      'subkey') +
+               ' is ' + kcrypto.etypeName(withheldKey) + ', which this ' +
+               'service does not use in product mode (RFC 8429 deprecates ' +
+               'it)'),
+             checks: checks, ok: false };
+  }
+
   // 5. Same client in both.
   if (authenticator.cname.name.join('/') !== ticketPart.cname.name.join('/') ||
       authenticator.crealm !== ticketPart.crealm) {

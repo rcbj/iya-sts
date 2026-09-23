@@ -205,7 +205,7 @@ both encrypted under it, so even a permissive KDC has to pick a key the client
 cannot guess.
 
 **In product mode** none of the fixture accounts exist, nobody is created on
-first sight, and no password is published. Each trust realm with
+first sight, no password is published, and no rc4-hmac key exists (#182). Each trust realm with
 `krb5.enabled` has a KDC, a Kerberos realm and keys of its own, on the shared
 port 88, told apart by the realm name in the request. Its `krbtgt` and the
 account `krb5.servicePrincipal` names are created only when their password
@@ -400,6 +400,17 @@ something to run against:
   ignored too. Each is refused on write (`STS-CORE-0103`, `STS-REG-0193` on an
   application) and logged once when a stored one is ignored (`STS-CORE-0106`);
   the stronger values of every setting stay available.
+- **rc4-hmac in Kerberos and MD5 in SCIM Digest are development's** (#182).
+  `krb5.enctypes` keeps 23 in its default so a development KDC exercises an
+  RC4 client; a product realm reads the list without it, so no RC4 key is
+  derived, stored or put in a keytab for the `krbtgt`, a service or a person,
+  an AS-REQ or TGS-REQ offering only RC4 is `KDC_ERR_ETYPE_NOSUPP`, and an RC4
+  session key or subkey in a TGS-REQ, an AP-REQ or FAST armor is refused —
+  also in a realm switched to product with RC4 keys already derived.
+  `scim.digestMd5` is off by default in both modes and cannot be turned on in
+  product, which offers no Digest at all. RFC 8429 and RFC 7616 section 3.3.
+  [MS-SFU]'s PA-FOR-USER checksum is HMAC-MD5 whatever the session key, fixed
+  by that specification, and is unaffected.
 - **WS-Federation's `wauth`** is never faked. A relying party demanding
   multi-factor or a hardware token against a session that does not have it
   sends the person back through the sign-in with that factor required — a
@@ -608,7 +619,8 @@ required in both modes, and after authentication the XACML access gate decides
 (it permits by default).
 
 **In product** Basic verifies the password against the entry, Digest is not
-offered and is refused (`STS-SCIM-0056`), and a HOBA key can be registered only
+offered and is refused (`STS-SCIM-0056`) — and MD5 in it cannot be turned on
+(`scim.digestMd5`, #182) — and a HOBA key can be registered only
 by the account's own signed-in owner (`STS-SCIM-0069`) — registration never
 creates an account.
 

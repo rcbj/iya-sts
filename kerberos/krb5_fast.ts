@@ -380,6 +380,27 @@ class Krb5Fast {
                          'Authenticator carries no subkey, which ' +
                          'FX_FAST_ARMOR_AP_REQUEST requires');
     }
+    // NO ARMOR OF AN ENCTYPE THE MODE WITHHOLDS (#182, 2026-09-23). The
+    // armor key is KRB-FX-CF2 of the subkey and the ticket's session key and
+    // takes the SUBKEY's enctype (RFC 6113 section 5.1), so a client that
+    // chose an rc4-hmac subkey would have the whole FAST exchange — the
+    // encrypted challenge, the OTP request, the strengthened reply key —
+    // keyed with RC4. `common/crypto.js`'s PRF covers enctype 23 because
+    // development exercises it; product refuses it here, before any key is
+    // made, and a session key of that type with it.
+    const withheldArmor = !principals.etypePermitted(
+      authenticator.subkey.etype) ? authenticator.subkey.etype :
+      (!principals.etypePermitted(ticketPart.key.etype) ?
+        ticketPart.key.etype : null);
+    if (withheldArmor !== null) {
+      log.debug('Leaving Krb5Fast.openAsRequest(). Withheld enctype.');
+      return this.refuse(14, 'STS-KRB-0159', 'the FAST armor ' +
+                         (withheldArmor === authenticator.subkey.etype ?
+                           'subkey' : 'ticket\'s session key') + ' is ' +
+                         kcrypto.etypeName(withheldArmor) + ', which this ' +
+                         'KDC does not use in product mode (RFC 8429 ' +
+                         'deprecates it)');
+    }
     let armorKey: Key;
     try {
       armorKey = this.cf2({ etype: authenticator.subkey.etype,

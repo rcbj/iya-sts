@@ -1714,6 +1714,29 @@ async function answerAsReq(request, fast) {
 
   // Negotiate. The client's order is its preference; a KDC honours it.
   const etype = principals.chooseEtype(client, body.etypes);
+  // A request offering ONLY enctypes this realm's mode withholds — rc4-hmac
+  // in product (#182, RFC 8429) — is the same KDC_ERR_ETYPE_NOSUPP under a
+  // code of its own, because the fix is the client's configuration and the
+  // e-text has to say which.
+  const withheld = etype === null ?
+    principals.onlyWithheldEtypes(body.etypes) : [];
+  if (withheld.length) {
+    log.info('krb5: ' + client.name.join('/') + ' offered only ' +
+             withheld.map(kcrypto.etypeName).join(', ') + ', which product ' +
+             'mode does not use (RFC 8429).');
+    log.debug("Leaving answerAsReq().");
+    return errorReply(14, {
+      errorCode: 'STS-KRB-0156',
+      crealm: body.realm, cname: body.cname, sname: body.sname,
+      eText: 'the request offers only ' +
+             withheld.map(kcrypto.etypeName).join(', ') + ', which this ' +
+             'KDC does not use in product mode (RFC 8429 deprecates it); ' +
+             'offer one of ' +
+             principals.supportedEtypes(client)
+                       .map(kcrypto.etypeName)
+                       .join(', ')
+    });
+  }
   if (etype === null) {
     log.info('krb5: no common etype for ' + client.name.join('/') + '. It ' +
         'offers [' +
@@ -2218,6 +2241,28 @@ async function handleTgsReq(request) {
              'key at key usage 7' });
   }
 
+  // NO KEY OF AN ENCTYPE THE MODE WITHHOLDS (#182): the TGT's session key —
+  // RC4 only if it was issued before the realm became product — and the
+  // Authenticator's subkey, which is the CLIENT's choice and which the
+  // reply's enc-part would be sealed under (key usage 9).
+  const withheldKey = !principals.etypePermitted(ticketPart.key.etype) ?
+    ticketPart.key.etype :
+    (authenticator.subkey &&
+     !principals.etypePermitted(authenticator.subkey.etype) ?
+      authenticator.subkey.etype : null);
+  if (withheldKey !== null) {
+    log.info('krb5: refusing a TGS-REQ whose session key or subkey is ' +
+             kcrypto.etypeName(withheldKey) + ', which product mode does ' +
+             'not use.');
+    log.debug("Leaving handleTgsReq().");
+    return errorReply(14, { realm: ourRealm(), sname: body.sname,
+      errorCode: 'STS-KRB-0157',
+      eText: 'the ' + (withheldKey === ticketPart.key.etype ?
+                       'ticket\'s session key' : 'Authenticator\'s subkey') +
+             ' is ' + kcrypto.etypeName(withheldKey) + ', which this KDC ' +
+             'does not use in product mode (RFC 8429 deprecates it)' });
+  }
+
   // The Authenticator's cname must match the ticket's, or one client's TGT
   // would authenticate a request naming another.
   if (authenticator.cname.name.join('/') !== ticketPart.cname.name.join('/') ||
@@ -2492,6 +2537,22 @@ async function handleTgsReq(request) {
       eText: 'this KDC has no krbtgt principal for ' + answeringRealm });
   }
   const etype = principals.chooseEtype(service, body.etypes);
+  const withheld = etype === null ?
+    principals.onlyWithheldEtypes(body.etypes) : [];
+  if (withheld.length) {
+    // STS-KRB-0156's case in the TGS exchange (#182): see answerAsReq().
+    log.debug("Leaving handleTgsReq().");
+    return errorReply(14, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+      errorCode: 'STS-KRB-0156',
+      realm: answeringRealm, sname: body.sname,
+      eText: 'the request offers only ' +
+             withheld.map(kcrypto.etypeName).join(', ') + ', which this ' +
+             'KDC does not use in product mode (RFC 8429 deprecates it); ' +
+             service.name.join('/') + ' supports ' +
+             principals.supportedEtypes(service)
+                       .map(kcrypto.etypeName)
+                       .join(', ') });
+  }
   if (etype === null) {
     log.debug("Leaving handleTgsReq().");
     return errorReply(14, { crealm: ticketPart.crealm, cname: ticketPart.cname,

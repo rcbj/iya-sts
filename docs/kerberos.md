@@ -37,7 +37,12 @@ client cannot guess.
 * **Encryption types** from `krb5.enctypes`: aes256-cts-hmac-sha1-96 (18),
   aes128-cts-hmac-sha1-96 (17), aes256-cts-hmac-sha384-192 (20),
   aes128-cts-hmac-sha256-128 (19) and rc4-hmac (23). Removing 23 is what a
-  hardened domain does.
+  hardened domain does. **rc4-hmac is development mode's** (#182): RFC 8429
+  deprecates it, so in product mode the list is read without 23 — no RC4 key
+  is derived, stored or put in a keytab, an AS-REQ or TGS-REQ offering only
+  RC4 is refused `KDC_ERR_ETYPE_NOSUPP` (`STS-KRB-0156`), an RC4 session key
+  or subkey in a TGS-REQ, an AP-REQ or FAST armor is refused (`STS-KRB-0157`,
+  `0158`, `0159`), and a write naming 23 is refused (`STS-CORE-0103`).
 * **A signed [MS-PAC]** in every ticket, built under `krb5.domainSid`, with
   `krb5.logonServer` as the LogonServer.
 * **Renewable tickets**, bounded by `krb5.ticketLifetimeSeconds` and
@@ -300,7 +305,7 @@ modes**, and a replay is refused in both. See
 | `krb5.servicePrincipal` | `KRB5_SERVICE_PRINCIPAL` | `HTTP/web.example.com` | no | The acceptor's SPN; a trust realm left at this default derives `HTTP/web.<its domain>`. |
 | `krb5.servicePassword` | `KRB5_SERVICE_PASSWORD` | `service-account-password` | no | The acceptor account's password (the keytab equivalent); the default is refused in product mode. |
 | `krb5.serviceSalt` | `KRB5_SERVICE_SALT` | *(empty)* | no | The string-to-key salt for that account; set it to accept tickets from a real Active Directory KDC. |
-| `krb5.enctypes` | `KRB5_ENCTYPES` | `18,17,20,19,23` | no | The RFC 3961 encryption types used, strongest first; an unimplemented number stops startup. |
+| `krb5.enctypes` | `KRB5_ENCTYPES` | `18,17,20,19,23` | no | The RFC 3961 encryption types used, strongest first; an unimplemented number stops startup. **Warning:** 23 (rc4-hmac) is deprecated by RFC 8429 and is used in development mode only — product reads the list without it and refuses a write naming it. |
 | `krb5.kvno` | `KRB5_KVNO` | `3` | no | The kvno of every account built from a configured password, and the starting kvno of stored keys. |
 | `krb5.ticketLifetimeSeconds` | `KRB5_TICKET_LIFETIME_S` | `36000` | yes | The longest a ticket is valid. |
 | `krb5.renewLifetimeSeconds` | `KRB5_RENEW_LIFETIME_S` | `604800` | yes | How far `renew-till` reaches for a renewable ticket. |

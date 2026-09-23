@@ -668,6 +668,14 @@ const JOBS = [
   // old TGT and a renewal of it still refused, and restore-kerberos refused
   // in product — in both modes.
   { file: 'sts_kerberos_signout.js',     browser: false, local: true },
+  // RC4-HMAC AND DIGEST MD5 ARE DEVELOPMENT'S (#182, 2026-09-23): over TCP
+  // 88, an AS-REQ or TGS-REQ offering only rc4-hmac, an RC4 TGS subkey, an
+  // RC4 initiator subkey at the acceptor and RC4 FAST armor refused in
+  // product and working in development; no RC4 key in a product keytab; MIT
+  // kinit restricted to rc4-hmac; krb5.enctypes naming 23 and
+  // scim.digestMd5 refused in a product realm; SCIM Digest MD5 off by
+  // default, and accepted in development only when turned on.
+  { file: 'sts_kerberos_rc4.js',         browser: false, local: true },
   // Both gRPC surfaces over the network. Since #166 (2026-09-23) also the
   // Workload API's TCP port in product: refused where the network is not
   // declared to authenticate source addresses, and entries selecting this
