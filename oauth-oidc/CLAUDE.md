@@ -319,6 +319,16 @@ so must `admin-ui/admin.ts`.
    reachable negative. Do not fold it into the mode — a compliance flag that
    also breaks tokens is a flag nobody will turn on.
 
+   **IT IS DEVELOPMENT MODE'S, NOT RFC 9700 MODE'S (#104, 2026-09-23).** Product
+   mode honoured it until then. The row carries `onlyWhile: 'spoilsOnPurpose'`,
+   so a product realm refuses turning it on (`STS-CORE-0103`, `config.js`'s
+   `modeWriteProblem()`), and `idToken()` reads it through
+   `mode.valueInForce()`, which answers the default in a product realm whatever
+   is stored and says so once (`STS-CORE-0106`). The READ is the guard, because
+   `global.mode` is itself a runtime setting and a realm can be switched with
+   the value still stored; `GET /oauth2/rfc9700` reports it the same way, as it
+   is in force.
+
    **THE TLS REQUIREMENT IS NOT A CHECK AND MUST NOT BE MADE ONE.** "An
    authorization response MUST NOT be sent over an unencrypted connection"
    cannot be refused per request — by the time anything here runs the request
@@ -2092,6 +2102,50 @@ the same day and read it at introspection instead.
    development client with no registered redirect URI cannot frame the
    iframe. `tests/session_management.js` and
    `tests/vendored/sts_session_management.js` hold it.
+
+## RP-INITIATED LOGOUT 1.0, WHOLE (#124, WHICH FOLDED #115 IN, 2026-09-23)
+
+`end_session_endpoint` was graded `mock`: GET only, the session ended BEFORE
+the request was read, `id_token_hint` accepted and never read, `state` never
+returned, and — outside RFC 9700 mode — `post_logout_redirect_uri` followed
+wherever it pointed. rcbj's answers:
+
+| Asked | Chosen |
+|---|---|
+| #115 (the hint, the confirmation) | Folded in; it closes with #124 |
+| When the return is followed | #118's rule, in every mode: the client's registered list, exactly; development still follows one for a client that registered none |
+| When the person is asked | In every mode, unless a verified hint names THIS session (its `sid`) and any `logout_hint` names them |
+
+**`logoutEndpoint()` READS, `logoutRequest()` DECIDES, `logoutFinish()`
+ENDS**, in that order, so nothing is ended by a request that is then refused:
+a malformed request, a POST that is not a form (`STS-OAUTH-0604`) and a hint
+that does not verify (`0602`) are 400 PAGES with the session untouched.
+
+**THE HINT** is #118's `verifyIdTokenHint()`: this issuer, a signature this
+realm made (an expired one is still a hint), and `aud` naming the client —
+`client_id` where the request gives one (so a hint issued to another client is
+refused, section 2's MUST), otherwise the hint's own `azp` or single audience,
+read unverified only to choose what it is verified against.
+
+**THE RETURN** is `bcp.checkPostLogoutRedirectUri()`, rewritten and now in
+every mode: the client's `post_logout_redirect_uris` exactly (`0123`); with
+nothing registered, a private-use address never (`0290`), OAuth 2.1 mode never
+(`0286`), product never (`0603`), development yes. `oauth2.redirectUris` — the
+AUTHORIZATION list — is no longer read. A refused return is NOT a refusal of
+the sign-out: the person is signed out and the page says where they were not
+sent. `state` rides on every return (`withLogoutState()`), the front-channel
+page's included.
+
+**THE CONFIRMATION** is a form POSTing the request's own parameters back with
+`confirm_for`, a digest of the session's CURRENT handle hash
+(`logoutConfirmFor()`): only a page drawn for this session carries it, and a
+re-authentication in between voids it. `SameSite=Lax` keeps the sign-on cookie
+off a cross-site POST, so such a POST is ASKED rather than answered — answering
+it would clear a cookie it never saw. No script: a button needs none.
+
+**NOT DONE**: `ui_locales` is accepted and every page is English, the only
+language here (section 2 permits that). `tests/rp_initiated_logout.js` holds
+it in a child process; `tests/vendored/sts_rp_initiated_logout.js` over HTTP.
 
 ## OPENID CONNECT REGISTRATION, AND THE `jwks_uri` (#120, 2026-09-22)
 

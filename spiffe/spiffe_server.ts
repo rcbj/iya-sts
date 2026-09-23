@@ -416,8 +416,9 @@ class SpiffeServer {
         'NOTHING VERIFIES AN ASSERTED SELECTOR. With ' +
         'spiffe.acceptAssertedSelectors on, a Workload API caller may send ' +
         'its own selectors in a metadata header and they are matched as ' +
-        'though something had checked them. It is off by default and it ' +
-        'exists because selector matching is ' +
+        'though something had checked them. It is off by default, is ' +
+        'never in force in product mode (nor can it be turned on there), ' +
+        'and it exists because selector matching is ' +
         'the interesting behaviour of a Workload ' +
         'API and there is otherwise no way to exercise a client\'s "these ' +
         'matched and those did not" path here.',
@@ -1040,15 +1041,33 @@ class SpiffeServer {
       // is null for every address but one.
       const tls = !entry.socketPath && secure;
       const self = this;
+      // THE SPIRE SERVER API'S SOCKET IS ACCEPTED THROUGH THE SAME LISTENER
+      // (#104) wherever the native module is built, in both modes, so that a
+      // product realm can read the peer's kernel uid before it calls anybody
+      // `local`. Nothing is refused at accept: the facts are recorded, and
+      // `spiffe_auth.ts`'s `localTrust()` decides per call, in the mode the
+      // realm is in then. Without the module it is bound as it always was,
+      // and a product realm trusts nobody on it (STS-SPIFFE-0119).
+      const peerRead = surface === 'server' && !!entry.socketPath &&
+        this.deps.peer.availability().available;
       const bound = attested
         ? await rpc.bindAttestedSocket(server, entry.socketPath,
           function (socket) {
             return self.attestConnection(realmId, socket);
           })
-        : await rpc.bindOne(server, entry.address,
-          tls ? secure : rpc.grpc.ServerCredentials.createInsecure());
+        : peerRead
+          ? await rpc.bindAttestedSocket(server, entry.socketPath,
+            function (socket) {
+              return self.observeLocalCaller(entry.socketPath, socket);
+            })
+          : await rpc.bindOne(server, entry.address,
+            tls ? secure : rpc.grpc.ServerCredentials.createInsecure());
       bound.tls = !!tls;
       bound.socket = !!entry.socketPath;
+      // Workload attestation is the Workload API's; the SPIRE Server API's
+      // socket only has its peer's credentials read (#104).
+      bound.attested = attested;
+      bound.peerCredentials = attested || peerRead;
       if (bound.listening && entry.socketPath && surface === 'server') {
         bound.restricted = rpc.restrictSocket(entry.socketPath);
       }
@@ -1058,8 +1077,23 @@ class SpiffeServer {
       bound.authentication = entry.socketPath
         ? (surface === 'server'
             ? (auth.trustLocalSocket()
-                ? 'No credential. This socket is the `local` entity and is ' +
-                  'trusted outright, which is how the spire-server CLI works.'
+                ? (this.deps.mode.trustsUnverifiedLocalSocket()
+                    ? 'No credential. This socket is the `local` entity and ' +
+                      'is trusted outright, which is how the spire-server ' +
+                      'CLI works.'
+                    : (peerRead && bound.restricted
+                        ? 'No credential, from a process running as this ' +
+                          'service\'s own uid: product mode verifies per ' +
+                          'connection that the socket is private and reads ' +
+                          'the caller\'s uid from the kernel before it is ' +
+                          'the `local` entity.'
+                        : 'Nobody is the `local` entity here: product mode ' +
+                          'verifies the socket\'s boundary and cannot (' +
+                          (peerRead ? 'the socket is not private'
+                                    : 'the peer\'s uid cannot be read — ' +
+                                      this.deps.peer.availability().problem) +
+                          '). Present an administrator\'s X509-SVID on the ' +
+                          'TCP port.'))
                 : 'An X509-SVID is required even here ' +
                   '(spiffe.trustLocalSocket is off).')
             : 'None, and there must be none: the Workload Endpoint ' +
@@ -1318,6 +1352,21 @@ class SpiffeServer {
     log.debug('Leaving SpiffeServer.attestConnection(). ' + facts.tag + ' ' +
               facts.selectors.length + ' selector(s)' +
               (facts.error ? ', failed: ' + facts.error : ''));
+    return facts;
+  }
+
+  // ONE SPIRE SERVER API SOCKET CONNECTION (#104): the kernel's facts and
+  // whether the socket is private, recorded for `localTrust()`. No workload
+  // attestor runs — this is not the Workload API — and nothing is refused
+  // here: an unreadable peer is `facts.error`, which `localTrust()` reads as
+  // "not local" in a product realm and a development realm never asks.
+  async observeLocalCaller(socketPath, socket) {
+    const { log, peer, rpc } = this.deps;
+    log.debug('Entering SpiffeServer.observeLocalCaller().');
+    const facts = peer.observe(socket);
+    facts.localSocket = rpc.socketPrivacy(socketPath);
+    log.debug('Leaving SpiffeServer.observeLocalCaller(). ' + facts.tag +
+              ' uid=' + facts.uid + ' private=' + facts.localSocket.private);
     return facts;
   }
 

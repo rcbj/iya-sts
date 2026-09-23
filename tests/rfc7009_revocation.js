@@ -332,7 +332,7 @@ function childMain() {
            '3c. product: another client\'s token is invalid_grant and stays ' +
            'active', r.status + ' ' + r.text.slice(0, 200));
       const row = lastRevokeRow();
-      note(row && row.errorCode === 'STS-OAUTH-0606' &&
+      note(row && row.errorCode === 'STS-OAUTH-0610' &&
            row.actor === 'r79-b' && /r79-a/.test(JSON.stringify(row)),
            '3d. the audit row names the caller and the owner',
            JSON.stringify(row || null).slice(0, 300));

@@ -710,6 +710,46 @@ process and asserts the child's pid, uid, gid and selectors, the revalidation,
 and a failing attestor's refusal; the attestors over fake `/proc`, Engine and
 kubelet beside it.
 
+**THE TWO LOOSENING SWITCHES ARE DEVELOPMENT MODE'S (#104, 2026-09-23).**
+`spiffe.acceptAssertedSelectors` was already ignored in product (#40) and
+`spiffe.attestWorkloads` OFF was not: it handed every caller every entry,
+which made the attestation above meaningless. Both rows carry `onlyWhile`
+(`believesAssertedSelectors`, `servesUnattestedEntries`), so a product realm
+refuses the non-default value on write (`STS-CORE-0103`), and
+`spiffe_auth.ts` reads both through `mode.valueInForce()`, which answers the
+default there whatever is stored and says so once (`STS-CORE-0106`).
+
+### The `local` entity, verified in product (#104)
+
+SPIRE trusts its private socket outright and relies on its filesystem
+permissions; `spiffe.trustLocalSocket` (on) did the same here in every mode,
+and a chmod that FAILED (`STS-SPIFFE-0010`) left the socket served and trusted
+in product. rcbj's decision on #104 was to keep the default on and VERIFY the
+boundary in product rather than assume it. `SpiffeAuth.localTrust()`, asked per
+call on the server surface in the listener's realm:
+
+* development (`mode.trustsUnverifiedLocalSocket()`): `local` on the socket's
+  existence, unchanged;
+* product: `local` only when the connection's facts say the socket is PRIVATE
+  (`restrictSocket()` succeeded for that path before the connection was
+  accepted, and neither the socket nor its directory has a group or other bit —
+  `SpiffeGrpc.socketPrivacy()`, `STS-SPIFFE-0117`) AND the peer's kernel uid is
+  `process.geteuid()` (`STS-SPIFFE-0118`). Facts that cannot be read — no
+  native module, `SO_PEERCRED` failed — are "not local" (`STS-SPIFFE-0119`).
+  Root is NOT accepted as a stand-in for the service's uid.
+
+**The facts come from the Workload API's own listener.** Wherever the native
+module is built, the Server socket is bound through `bindAttestedSocket()` in
+both modes and `observeLocalCaller()` records the peer's credentials and
+`facts.localSocket` at accept; no workload attestor runs and nothing is refused
+there. Without the module it is bound as before and a product realm trusts
+nobody on it — it is still SERVED, because the mode is per realm and runtime,
+and the refusal (with its code) is what tells the operator why. A refused
+caller is anonymous on the socket (it carries no TLS), and `authorize()` puts
+the local refusal's code and sentence on the `UNAUTHENTICATED` answer.
+`tests/spiffe_local_socket.js` holds all of it, the real socket and a CLI in a
+child process included.
+
 **THE SPIRE SERVER API IS THE OTHER HALF**, and it came first: its TCP port is
 MUTUAL TLS, its callers present an X509-SVID verified against the trust bundle,
 and every method is authorized against SPIRE's own table. Those are two

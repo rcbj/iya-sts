@@ -886,7 +886,7 @@ unedited service behaves exactly as it did.
 | `authn.sessionIdleTimeoutS` | `STS_AUTHN_SESSION_IDLE_TIMEOUT_S` | `0` | yes — applies to sessions that already exist | How long a session may go unused before it ends, on top of the lifetime. **Zero means no idle timeout**, which is what this service has always done. A request to the console or the portal counts as use of the sign-on session behind it. |
 | `authn.pendingTtlS` | `STS_AUTHN_PENDING_TTL_S` | `600` | yes | How long a sign-in waits at the screen — and the console's and portal's own authorization code flows, and an arrival session's inactivity window, which are the same clock on purpose. |
 | `authn.mfaStepTtlS` | `STS_AUTHN_MFA_STEP_TTL_S` | `300` | yes | How long somebody past the password step has to present a security key, a one-time code or a recovery code. |
-| `authn.mfaRequired` | `STS_AUTHN_MFA_REQUIRED` | `false` | yes | Require a second factor — an authenticator app or a security key in the `mfa` role — of everybody who signs in at this realm's sign-in screen. Somebody who holds neither is shown `/authn/mfa-setup` after their password is accepted and gets no session until one is enrolled; a passwordless security-key sign-in is refused. The same requirement can be placed on one person from their `/admin/users` page. In product mode it also refuses the person's own password at the five password-only doors — an LDAP bind, a WS-Trust UsernameToken, SCIM, SSF and EST Basic — answered as a wrong password; an app password scoped to the door is what they use there (#101). **What it does not reach**: a federated assertion, a SPNEGO ticket or a Kerberos AS-REQ, a TLS client certificate. |
+| `authn.mfaRequired` | `STS_AUTHN_MFA_REQUIRED` | `false` | yes | Require a second factor — an authenticator app or a security key in the `mfa` role — of everybody who signs in at this realm's sign-in screen. Somebody who holds neither is shown `/authn/mfa-setup` after their password is accepted and gets no session until one is enrolled; a passwordless security-key sign-in is refused. The same requirement can be placed on one person from their `/admin/users` page. In product mode it also refuses the person's own password at the five password-only doors — an LDAP bind, a WS-Trust UsernameToken, SCIM, SSF and EST Basic — answered as a wrong password; an app password scoped to the door is what they use there (#101). In product it also refuses a Kerberos AS-REQ proving the password alone (`KDC_ERR_POLICY`, after the password verified); FAST with OTP pre-authentication — the password and an authenticator code — gets them a ticket (#173). **What it does not reach**: a federated assertion, a TLS client certificate, and a SPNEGO ticket from a KDC other than this one. |
 | `authn.passwordAloneDoors` | `STS_AUTHN_PASSWORD_ALONE_DOORS` | *(empty)* | yes | Product mode only. The password-only doors — any of `ldap`, `wstrust`, `scim`, `ssf`, `est` — at which a person who holds or must hold a second factor is STILL accepted with their own password. Empty refuses it at all five and accepts only an app password there. **Warning: every door listed lowers every such person to ONE factor at that door** (NIST SP 800-63B section 4.2), so a stolen password opens it without the second factor. |
 | `appPasswords.enabled` | `STS_APP_PASSWORDS_ENABLED` | `true` | yes | Whether a person may make an app password on `/portal/app-passwords`, and an administrator one for them on their `/admin/users` page or `POST /admin-api/users/create-app-password`. Generated, shown once, stored as a scrypt hash, named and scoped to password-only doors; never accepted at the sign-in screen. Turning it off does not invalidate one already made. |
 | `appPasswords.maxPerPerson` | `STS_APP_PASSWORDS_MAX` | `10` | yes | How many app passwords one person may hold at once (1–50). |
@@ -914,7 +914,7 @@ unedited service behaves exactly as it did.
 | `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | REFUSE an authorization or token request that asks for a permission the client has not been granted, IN DEVELOPMENT MODE — product mode always refuses one, whatever this says. A permission is defined on a resource application — a base URI and a name, joined into `https://example.com/write` — and granted to a client application on its own entry; `/admin/delegation` is the register and defines both. With this OFF (the default) in development an ungranted permission is still honoured: the token is audienced to the base URI and carries the permission name on its scope claim exactly as a granted one would, and the console marks it. With it ON the same request is refused `invalid_scope` at the AUTHORIZATION endpoint — where the client can still be told — and at the token endpoint for the grants that never reach it. A scope naming no defined permission is unaffected in both modes. It does NOT re-judge a grant already issued. |
 | `oauth2.consentRequired` | `STS_OAUTH2_CONSENT_REQUIRED` | **`true`** — the one policy here that is on by default | yes | ASK THE PERSON before the authorization endpoint issues anything for a scope they have not already agreed to for that application. The first time a given username signs in to a given `client_id` for a given scope, `/oauth2/consent` is drawn listing the scopes that are new; nothing is issued until they press Allow, and Deny returns `access_denied` to the client. The answer is written to `oauthConsent` on that person's own entry under `ou=users` — one value per (person, application, scope), spelled `<when> <scope> <client_id>` — so the second sign-in is silent and an `ldapsearch` can read what somebody agreed to. A delegated permission is recorded by its WHOLE identifier (`https://example.com/write`) and never by the bare permission name, because two resources may each expose a `read`. `oauthGlobalConsent` on an APPLICATION's entry consents a scope for everybody who signs in to it and writes nothing about anybody — an override rather than a record, so removing it asks everybody again. `prompt=consent` asks again whatever is on the entry; `prompt=none` with something outstanding is `consent_required`. With this OFF nothing is asked and nothing is recorded, which is what this service did before the screen existed — it is NOT "everybody consented". `/admin/consent` is the register. |
 | `oauth2.tokenExchangeRefreshToken` | `STS_OAUTH2_TOKEN_EXCHANGE_REFRESH_TOKEN` | `when-requested` | yes | WHETHER AN RFC 8693 TOKEN EXCHANGE HANDS BACK A `refresh_token` beside the exchanged access token. Section 2.2.1 makes it OPTIONAL and names the case it is for: a client that must keep reaching a resource "even when the original credential is no longer valid" — the user-not-present case, where there is no session by design. Three values. `when-requested` is the default and is section 2.1 read literally — the client asks with `requested_token_type=urn:ietf:params:oauth:token-type:refresh_token` and gets one only if it did. `never` refuses the ask silently: the exchange still succeeds, with no refresh token in it, which is what this service did before the parameter was implemented. `always` hands one to every exchange whether it asked or not, which is how several deployed authorization servers behave and is the path a client written against the other two has never run. What comes back is an ORDINARY refresh token of this service in every case — redeemable at the refresh grant, revocable, subject to `oauth2.refreshTokenTtlS`, rotated wherever rotation is required (either compliance mode, or `oauth2.refreshTokenRotation`), and bound to the DPoP key or client certificate the exchange was made with — and `issued_token_type` says `access_token` throughout, because it describes the token in the `access_token` member. `oauthTokenExchangeRefreshToken` on the CLIENT application's entry overrides it for that client alone. |
-| `oauth2.breakIdTokenNonce` | `STS_OAUTH2_BREAK_ID_TOKEN_NONCE` | `false` | yes | Put a DELIBERATELY WRONG nonce in every ID Token that should carry one. |
+| `oauth2.breakIdTokenNonce` | `STS_OAUTH2_BREAK_ID_TOKEN_NONCE` | `false` | yes | Put a DELIBERATELY WRONG nonce in every ID Token that should carry one. DEVELOPMENT MODE ONLY: ignored in a product realm and refused there on write. |
 | `oauth2.refreshIdleSeconds` | `STS_OAUTH2_REFRESH_IDLE_SECONDS` | `86400` | yes | In RFC 9700 mode, how long a refresh CHAIN may go unused before it stops working — section 2.2.2 says a refresh token SHOULD expire after a period of client inactivity, and says the period is deployment-dependent, which is why this is a setting rather than a constant. |
 | `oauth2.revokeRefreshOnLogout` | `STS_OAUTH2_REVOKE_REFRESH_ON_LOGOUT` | `true` | yes | In every mode (#123), end a browser sign-on session and every refresh token issued ON that session without `offline_access` is revoked — OpenID Connect Back-Channel Logout 1.0 section 2.7's SHOULD. A token granted `offline_access` is kept. |
 | `oauth2.sessionManagement` | `STS_OAUTH2_SESSION_MANAGEMENT` | `false` | yes | OpenID Connect Session Management 1.0 (#121). On: `check_session_iframe` in discovery, `session_state` on every OpenID Connect authentication response to an http(s) redirect URI, the OP iframe at `/oauth2/check_session` (framable only by the realm's registered redirect-URI origins), and the OP browser state as the script-readable cookie `sts_op_browser_state` (`SameSite=None` on an HTTPS port). Off by default: it adds a cross-site cookie, and browsers blocking third-party cookies defeat it anyway. |
@@ -1577,11 +1577,11 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `spiffe.agentSvidTtl` | `STS_SPIFFE_AGENT_SVID_TTL` | `0` | yes | The lifetime of an agent's X509-SVID from AttestAgent and RenewAgent. `0` means `spiffe.svidTtl`. |
 | `spiffe.autoCreateEntries` | `STS_SPIFFE_AUTOCREATE_ENTRIES` | `true` | yes | THIS IS THE SETTING THAT MAKES THIS A MOCK. |
 | `spiffe.requireSecurityHeader` | `STS_SPIFFE_REQUIRE_SECURITY_HEADER` | `true` | yes | The Workload Endpoint specification says a client MUST send `workload.spiffe.io: true` on every call and a server MUST refuse one without it. |
-| `spiffe.trustLocalSocket` | `STS_SPIFFE_TRUST_LOCAL_SOCKET` | `true` | yes | A real SPIRE server trusts its private Unix socket outright — the access control is the socket's filesystem permissions — and a caller there is the `local` entity, which may do everything an admin may and two things an admin may not. |
+| `spiffe.trustLocalSocket` | `STS_SPIFFE_TRUST_LOCAL_SOCKET` | `true` | yes | A real SPIRE server trusts its private Unix socket outright — the access control is the socket's filesystem permissions — and a caller there is the `local` entity, which may do everything an admin may and two things an admin may not. In product mode the boundary is VERIFIED per connection: a 0600 socket in a private directory, and a caller whose kernel uid is the service's own. |
 | `spiffe.adminIds` | `STS_SPIFFE_ADMIN_IDS` | *(empty)* | yes | SPIFFE IDs whose holders are administrators of the SPIRE Server API, separated by commas or spaces — SPIRE's own `admin_ids`, and like SPIRE's it needs NO registration entry behind it. |
 | `spiffe.clockSkew` | `STS_SPIFFE_CLOCK_SKEW` | `60` | yes | How far out a caller's clock may be when its X509-SVID is checked for validity. |
-| `spiffe.attestWorkloads` | `STS_SPIFFE_ATTEST_WORKLOADS` | `true` | yes | ON, a Workload API caller is IDENTIFIED from what this service can actually see about it — the transport, the endpoint it reached, its peer address — and is answered with the registration entries whose selectors that identification matches, which is what a real agent does. |
-| `spiffe.acceptAssertedSelectors` | `STS_SPIFFE_ACCEPT_ASSERTED_SELECTORS` | `false` | yes | OFF by default, and it is the one setting here that is not attestation of any kind. |
+| `spiffe.attestWorkloads` | `STS_SPIFFE_ATTEST_WORKLOADS` | `true` | yes | ON, a Workload API caller is answered with the registration entries whose selectors match what this service observed about it, which is what a real agent does. OFF (every entry to every caller) is DEVELOPMENT MODE ONLY. |
+| `spiffe.acceptAssertedSelectors` | `STS_SPIFFE_ACCEPT_ASSERTED_SELECTORS` | `false` | yes | OFF by default, and it is the one setting here that is not attestation of any kind. DEVELOPMENT MODE ONLY: never believed in product, and refused there on write. |
 | `spiffe.maxEntries` | `STS_SPIFFE_MAX_ENTRIES` | `500` | yes | How many entries may live under ou=spiffe. Past it a new one is REFUSED and the SVID request that would have created it is answered without one — the registry is a directory container and a container has a size, the same cap ou=applications has. |
 | `spiffe.maxAgents` | `STS_SPIFFE_MAX_AGENTS` | `200` | yes | How many attested agents are held. The agent id comes off whatever the caller sent, so any caller can invent one; past the cap the oldest is dropped rather than the newest refused, because an agent that cannot attest is an agent that cannot do anything at all. |
 | `spiffe.maxFederatedBundles` | `STS_SPIFFE_MAX_FEDERATED_BUNDLES` | `32` | yes | How many foreign trust domains' bundles are held. They are PASTED IN and never fetched — see /spiffe — so this bounds what an operator or the SPIRE Server API can add, not what any polling loop could accumulate. |
@@ -2234,9 +2234,10 @@ members — ID Token, UserInfo and request object — are published now that eac
 implemented, ID Token encryption since 2026-09-17, and `acr_values_supported` is published since RFC 9470 made the authorization endpoint
 honour `acr_values` — see *Step-up authentication*), because none is implemented and an invented value is worse than the member's
 absence, which says exactly the right thing. `end_session_endpoint` *is* advertised
-because `/oauth2/logout` really does end the session — but it neither requires nor
-checks `id_token_hint` and does not validate the redirect target, so it is the shape of
-RP-initiated logout and not its security, and `/admin/sts-metadata` grades it `mock`.
+because `/oauth2/logout` really does end the session, and since #124 it is the whole
+of RP-Initiated Logout 1.0: GET and POST, a verified `id_token_hint`, a confirmation
+page unless the hint is for this session, and a return held to the client's registered
+`post_logout_redirect_uris` in every mode.
 
 **Three URLs, because an issuer with a path resolves differently in the two specs** —
 which is the usual reason a discovery fetch 404s. Discovery section 4 *appends*
@@ -2346,11 +2347,10 @@ redirector until then. `error=invalid_request` forwarded to an arbitrary URL is 
 the browser being forwarded to an arbitrary URL, and an attacker does not mind which
 parameters ride along.
 
-The same comparison now guards **`post_logout_redirect_uri`** at
-`/oauth2/logout`, which without the mode is the plainest open redirector in the
-service: any absolute `http(s)` URL in a query parameter, followed, with no client and
-no session involved. `/admin/sts-metadata` says that about it in both directions rather than
-only the flattering one.
+**`post_logout_redirect_uri`** at `/oauth2/logout` is held to the client's own
+registered list in EVERY mode since #124 — it used to be this mode only, and without it
+was the plainest open redirector in the service. Development still follows an address
+for a client that registered none; this mode, OAuth 2.1 mode and product do not.
 
 #### The port itself becomes HTTPS
 
@@ -2784,6 +2784,9 @@ knobs and the reserved password `invalid`: a reachable negative, off by default,
 part of RFC 9700 mode — it is useful in either — reported on `GET /oauth2/rfc9700`
 whichever mode is in force, and logged loudly on every token it spoils, because an ID
 Token that is wrong in a way nobody remembers turning on is an expensive afternoon.
+**It works in development mode only** (#104): a realm in PRODUCT mode ignores it
+where the ID Token is built, logs once that it did (`STS-CORE-0106`), and refuses
+turning it on (`STS-CORE-0103`).
 
 #### The implicit grant (section 2.1.2)
 
@@ -6506,11 +6509,19 @@ aes128/256-cts-hmac-sha1-96 (17, 18 — the AD workhorses), aes128/256-cts-hmac-
 only story about RC4 is "that is deprecated" cannot help anybody still running it. DES
 decodes and is never produced: Windows Server 2025 removed it and it is not coming back.
 
-**Not implemented, and each for a reason worth knowing:** FAST (RFC 6113), PKINIT,
-kpasswd, SPNEGO (`krb5_gss.js` recognises the SPNEGO OID and says it is not implemented
-rather than failing opaquely — the GSS layer is separate from the AP-REQ precisely so
-that this is a wrapper to add and not a rewrite), request signatures, and the SID
-filtering noted above. The **AP exchange** is not missing from the KDC — it belongs to a
+**FAST, OTP pre-authentication and authentication indicators (2026-09-22, #173).** RFC
+6113 FAST in the AS exchange, armored by a TGT the client host got with its own keytab;
+the encrypted challenge; RFC 6560 OTP pre-authentication with the person's authenticator
+app, the password as the PIN, verified by the sign-in screen's verifier and once-only
+step; and the RFC 8129 indicator `otp` in an AD-CAMMAC, carried into service tickets and
+counted as a second factor at `/authn/spnego`. In product a person who holds or must hold
+a second factor gets `KDC_ERR_POLICY` for a password alone — after the password verified,
+so a wrong one is still `KDC_ERR_PREAUTH_FAILED`. MIT `kinit -T` completes it end to end.
+The KRB-FX-CF2 and the Kerberos PRF are `common/crypto.js`'s section 9, held to RFC 3961's
+and MIT's vectors.
+
+**Not implemented, and each for a reason worth knowing:** PKINIT (#179), FAST in the TGS
+exchange, kpasswd, request signatures, and the SID filtering noted above. The **AP exchange** is not missing from the KDC — it belongs to a
 service rather than to a KDC, and it lives in `krb5_service.js`.
 
 ### LDAP v3 — the other protocol here that is not HTTP
@@ -7430,7 +7441,8 @@ Four things follow, and each is deliberate:
   entry's selectors must be a **subset** of the workload's, not equal to them and
   not merely intersecting — and the Workload API uses it, which it did not
   before. `spiffe.attestWorkloads` off restores the old answer: every entry to
-  every caller.
+  every caller — in development mode only; a product realm narrows whatever the
+  setting says (#104).
 * **The selectors are spelt `transport:`, `endpoint:` and `peer:`**, and never
   `unix:` or `k8s:`. Writing `unix:uid:1000` for a uid that nothing read would be
   inventing an attested fact — the same offence as minting a credential format
@@ -7438,9 +7450,10 @@ Four things follow, and each is deliberate:
   `x-sts-workload-selector` metadata header, with
   `spiffe.acceptAssertedSelectors` on: those are passed through verbatim because
   they are the caller's claim rather than this service's invention, **nothing
-  verifies them**, and the setting is off by default. It exists because selector
-  matching is the interesting behaviour of a Workload API and there is otherwise
-  no way to run a client's "these matched and those did not" path here at all.
+  verifies them**, and the setting is off by default and development mode only.
+  It exists because selector matching is the interesting behaviour of a Workload
+  API and there is otherwise no way to run a client's "these matched and those
+  did not" path here at all.
 * **`spiffe.autoCreateEntries` off is still the interesting setting.** With it
   off, a caller matching no entry is answered with an **empty SVID list**, which
   is exactly what a real agent does for an unregistered workload and is the only
@@ -7474,7 +7487,7 @@ host is `local`, and an agent that also holds an entry marked `admin` is both:
 
 | Entity | What it means |
 |---|---|
-| `local` | the call arrived on the Unix socket, which is trusted outright (`spiffe.trustLocalSocket`) |
+| `local` | the call arrived on the Unix socket, which is trusted outright (`spiffe.trustLocalSocket`) — in product mode only when the socket is verified 0600 in a private directory and the caller's kernel uid is the service's own (#104) |
 | `agent` | an X509-SVID whose SPIFFE ID is an agent id, naming an agent this server has attested and has not banned |
 | `admin` | the SPIFFE ID is in `spiffe.adminIds` — SPIRE's own `admin_ids`, which needs no entry — or a registration entry for it is marked `admin` |
 | `downstream` | a registration entry for it is marked `downstream`: a nested SPIRE server |

@@ -558,9 +558,17 @@ from a script.
 
 ### Logout
 
-* **RP-Initiated Logout**: `/oauth2/logout` ends the session and returns to
-  `post_logout_redirect_uri`. It neither requires nor checks `id_token_hint`,
-  and it validates the redirect target only in RFC 9700 or OAuth 2.1 mode.
+* **[RP-Initiated Logout 1.0](https://openid.net/specs/openid-connect-rpinitiated-1_0.html)**:
+  `/oauth2/logout` accepts GET and POST.
+  * The request is validated before anything ends. A malformed request is a
+    page, and the person stays signed in.
+  * An `id_token_hint` is verified as an ID Token this server issued. An
+    expired one still counts. Its audience names the client.
+  * Without a hint for the current session, the person is asked to confirm on
+    a page with a real button and no script.
+  * `post_logout_redirect_uri` is followed only if the client registered it
+    exactly, in every mode. Development still follows one for a client that
+    registered none. `state` is returned with it.
 * **[Front-Channel Logout 1.0](https://openid.net/specs/openid-connect-frontchannel-1_0.html)**:
   every sign-out page renders a hidden iframe per registered
   `frontchannel_logout_uri`, with a visible link beside each one.
@@ -871,7 +879,7 @@ The console's **Protocols → OAuth2 / OIDC** group:
 
 | Page | What it is for |
 |---|---|
-| `/admin/oauth2` | the `oauth2.*` settings: issuer, both compliance modes, redirect URIs, logout, the deliberate `breakIdTokenNonce` defect |
+| `/admin/oauth2` | the `oauth2.*` settings: issuer, both compliance modes, redirect URIs, logout, the deliberate `breakIdTokenNonce` defect (development mode only) |
 | `/admin/authorization-servers` | named authorization server profiles, their members and their drift |
 | `/admin/token-lifetimes` | the three lifetimes and the clock skew, beside a count of what has expired |
 | `/admin/claims` | the access token and ID Token custom claim sets |
