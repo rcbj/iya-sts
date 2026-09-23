@@ -2359,7 +2359,7 @@ function personSecondFactor(nameComponents, realm) {
     // A source that threw cannot say the person owes nothing. Answered as
     // NEEDED, so a product KDC refuses the password alone rather than issue on
     // a question it could not ask: the caller refuses, and says why.
-    log.error(errorCodes.tag('STS-KRB-0149') + 'krb5: asking whether ' +
+    log.error(errorCodes.tag('STS-KRB-0154') + 'krb5: asking whether ' +
               nameComponents[0] + ' holds a second factor threw, so a ' +
               'password alone is treated as not enough: ' +
               ((e && e.message) || e));

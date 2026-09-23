@@ -626,6 +626,11 @@ const JOBS = [
   // indicator in the tickets — with real MIT kinit where it is installed.
   // `local: true`: this repository's KDC, portal and API.
   { file: 'sts_kerberos_fast_otp.js',    browser: false, local: true },
+  // A PERSON'S KEYTAB (#59, 2026-09-22): from the administrator's reset, a
+  // generated password and /portal/kerberos, each read with `klist -k` and
+  // SIGNED IN WITH by MIT `kinit -k -t` and by `krb5_wire.js` using the
+  // keytab's key — against the KDC at the published address, in both modes.
+  { file: 'sts_kerberos_keytab.js',      browser: false, local: true },
   { file: 'sts_spiffe_grpc.js',          browser: false, local: true },
   { file: 'sts_oid4vp_wallet.js',        browser: false, local: true },
   { file: 'sts_federation_realms.js',    browser: false, local: true },

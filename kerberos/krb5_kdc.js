@@ -1452,7 +1452,7 @@ async function handleAsReq(request) {
     // error as the KDC being unable to accept its armor.
     log.debug('Leaving handleAsReq(). The armor was refused.');
     return errorReply(opened.code, {
-      // error-code: none — the code is the refusal's own, STS-KRB-0131..0136, chosen in krb5_fast.ts
+      // error-code: none — the code is the refusal's own, STS-KRB-0136..0136, chosen in krb5_fast.ts
       errorCode: opened.errorCode,
       crealm: request.reqBody.realm, cname: request.reqBody.cname,
       sname: request.reqBody.sname, eText: opened.eText
@@ -1715,7 +1715,7 @@ async function answerAsReq(request, fast) {
     log.debug('Entering preauthFailed().');
     log.debug('Leaving preauthFailed().');
     return errorReply(failure.code, {
-      // error-code: none — the code is the check's own, STS-KRB-0014..0017 here or STS-KRB-0137..0147 in krb5_fast.ts
+      // error-code: none — the code is the check's own, STS-KRB-0014..0017 here or STS-KRB-0142..0147 in krb5_fast.ts
       errorCode: failure.errorCode || 'STS-KRB-0016',
       crealm: body.realm, cname: body.cname, sname: body.sname,
       eText: failure.eText,
@@ -1763,7 +1763,7 @@ async function answerAsReq(request, fast) {
   // A PASSWORD ALONE, FROM A PERSON WHO HOLDS OR OWES A SECOND FACTOR (#173).
   //
   // Refused KDC_ERR_POLICY (12) — RFC 4120's code for a request the KDC's
-  // policy will not grant — under STS-KRB-0130, in product
+  // policy will not grant — under STS-KRB-0135, in product
   // (`mode.issuesTicketsOnPasswordAlone()`). **AFTER the password verified,
   // and only then**: a wrong password was answered KDC_ERR_PREAUTH_FAILED
   // above, exactly as for anybody, so this refusal tells nobody who lacks the
@@ -1784,7 +1784,7 @@ async function answerAsReq(request, fast) {
              why + ', so no ticket is issued. KDC_ERR_POLICY.');
     log.debug("Leaving answerAsReq(). A password alone.");
     return errorReply(12, {
-      errorCode: 'STS-KRB-0130',
+      errorCode: 'STS-KRB-0135',
       crealm: body.realm, cname: body.cname, sname: body.sname,
       // ASCII only, for the reason every eText here is.
       eText: 'a password alone is not enough: ' + why + '. ' +
@@ -2752,7 +2752,7 @@ async function handleTgsReq(request) {
       ticketPart.authorizationData || [],
       { etype: apReq.ticket.encPart.etype, key: ticketOpeningKey });
     if (carried.problem) {
-      log.error(errorCodes.tag('STS-KRB-0148') + 'krb5: the TGT for ' +
+      log.error(errorCodes.tag('STS-KRB-0153') + 'krb5: the TGT for ' +
                 ticketPart.cname.name.join('/') + '@' + ticketPart.crealm +
                 ' carries ' + carried.problem + '; its authentication ' +
                 'indicators are NOT carried into the service ticket');

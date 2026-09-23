@@ -6301,6 +6301,19 @@ as ONE sealed value (`stsKrb5Keys`, with the public `stsKrb5KeyInfo` beside it).
 sealed on the application entry for `<spn>@<realm>`, and an **MIT keytab handed over once**.
 Rotate replaces the key at the next kvno; delete removes it.
 
+**A person's keytab (#59) is derived from a password in hand, never read out of storage.**
+On `/portal/kerberos` a person types their current password (verified first — it is also
+the re-authentication a password-equivalent export needs) and gets an MIT keytab for their
+own principal, with nothing on the account changed. On their page under Directory → Users
+an administrator uses **Reset password and download keytab** (`POST
+/admin-api/kerberos/principals/reset-person-keytab`): a typed password, or `random` for a
+generated one nobody is shown — **a password reset**, so the kvno moves up, the old password
+stops working, and they are signed out, but NOT made to change it at their next sign-in,
+which would end the keytab. Either way the key is derived again and compared with the one
+the KDC holds before the keytab is handed over, and the keytab carries the current kvno
+only. In development mode every user is keyed from `krb5.userPassword`, so the keytab holds
+that key (`source: "development"`). `kinit -k -t <file> <user>@<REALM>` uses it.
+
 **Previous key versions are kept, for a bounded window.** A rotation or a password change
 keeps the version it replaced, sealed in the same value as the current keys, as a real KDC
 keeps the previous kvno in its database and a service keeps it in its keytab — so a ticket
@@ -6327,7 +6340,7 @@ expired, and is refused `KRB_AP_ERR_BADKEYVER` after that:
 the stored key in both modes, and the acceptor prefers a stored key for its own SPN over
 `krb5.servicePassword` — which is how the acceptor in product mode gets a key without a
 password printed anywhere. **No key is ever shown**: not on any page, not in any
-`/admin-api` reply but the create's and rotate's keytab, not in the audit log, and not in
+`/admin-api` reply but the create's, rotate's and a person's keytab, not in the audit log, and not in
 an LDAP search or the directory dump, which withhold both key attributes ciphertext
 included.
 

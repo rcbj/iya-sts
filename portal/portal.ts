@@ -519,7 +519,13 @@ const NAV = [
       // password in product mode, and this is what they use there. Drawn by
       // `portal_app_passwords.ts`.
       { path: BASE + '/app-passwords', label: 'App passwords',
-        heading: 'Your app passwords' }
+        heading: 'Your app passwords' },
+      // KERBEROS (#59, 2026-09-22), in this section for the signing keys'
+      // reason: the principal is this person's own entry, and a keytab is a
+      // credential derived from their own password. Drawn by
+      // `portal_kerberos.ts`.
+      { path: BASE + '/kerberos', label: 'Kerberos',
+        heading: 'Your Kerberos principal and keytab' }
     ] }
 ];
 
@@ -6078,6 +6084,8 @@ helpers.log.info('The User Portal is at ' + BASE + ': a person\'s own ' +
 const portalCertificates = require('./portal_certificates');
 // /portal/app-passwords (#101), the same arrangement, registered after it.
 const portalAppPasswords = require('./portal_app_passwords');
+// /portal/kerberos (#59), the same arrangement, registered after that.
+const portalKerberos = require('./portal_kerberos');
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
@@ -6099,6 +6107,19 @@ export = {
       audit: audit, errorCodes: errorCodes, config: config
     });
     portalAppPasswords.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalKerberos.register({
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),

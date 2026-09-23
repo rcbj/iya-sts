@@ -769,7 +769,7 @@ async function acceptInRealm(tokenBytes, opts) {
         { etype: apReq.ticket.encPart.etype, key: ticketKey });
       authIndicators = read.indicators || [];
       if (read.problem) {
-        log.error(errorCodes.tag('STS-KRB-0148') + 'krb5-service: the ' +
+        log.error(errorCodes.tag('STS-KRB-0153') + 'krb5-service: the ' +
                   'ticket for ' + clientName + ' carries ' + read.problem +
                   '; its authentication indicators are ignored');
       }

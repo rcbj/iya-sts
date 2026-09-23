@@ -1775,7 +1775,7 @@ second factor.** `common/credentials.ts`'s `secondFactorDemand()` — the questi
 account at the KDC too (`kerberos/krb5_person_keys.ts` asks it through the
 principal database's key source), so the two cannot disagree. In product
 (`mode.issuesTicketsOnPasswordAlone()` false) an AS-REQ proving the password
-alone is refused `KDC_ERR_POLICY` (`STS-KRB-0130`) — and, unlike the five
+alone is refused `KDC_ERR_POLICY` (`STS-KRB-0135`) — and, unlike the five
 doors' answer, that is NOT a wrong password's: the refusal comes only AFTER the
 password verified, so somebody without it gets `KDC_ERR_PREAUTH_FAILED` and
 learns nothing, and somebody with it learns what this screen tells them by

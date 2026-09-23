@@ -277,7 +277,7 @@ class Krb5Fast {
       log.debug('Caught in Krb5Fast.openAsRequest(): ' +
                 ((e && e.message) || e));
       log.debug('Leaving Krb5Fast.openAsRequest(). Not a PA-FX-FAST-REQUEST.');
-      return this.refuse(24, 'STS-KRB-0131', 'PA-FX-FAST does not decode ' +
+      return this.refuse(24, 'STS-KRB-0136', 'PA-FX-FAST does not decode ' +
                          'as a PA-FX-FAST-REQUEST');
     }
     if (!armored.armor ||
@@ -285,7 +285,7 @@ class Krb5Fast {
       log.debug('Leaving Krb5Fast.openAsRequest(). No usable armor.');
       // RFC 6113 section 5.4.1: an unknown armor type is PREAUTH_FAILED, and
       // section 5.4.2 makes the armor mandatory in an AS-REQ.
-      return this.refuse(24, 'STS-KRB-0131', armored.armor
+      return this.refuse(24, 'STS-KRB-0136', armored.armor
         ? 'armor type ' + armored.armor.type + ' is not implemented here; ' +
           'the one armor type is FX_FAST_ARMOR_AP_REQUEST (1)'
         : 'an AS-REQ armored with FAST must carry its armor');
@@ -297,7 +297,7 @@ class Krb5Fast {
       log.debug('Caught in Krb5Fast.openAsRequest(): ' +
                 ((e && e.message) || e));
       log.debug('Leaving Krb5Fast.openAsRequest(). Armor is not an AP-REQ.');
-      return this.refuse(24, 'STS-KRB-0131', 'the FX_FAST_ARMOR_AP_REQUEST ' +
+      return this.refuse(24, 'STS-KRB-0136', 'the FX_FAST_ARMOR_AP_REQUEST ' +
                          'armor is not an AP-REQ');
     }
     // THE ARMOR TICKET MUST BE A TGT FOR A REALM THIS KDC SERVES — "the
@@ -310,7 +310,7 @@ class Krb5Fast {
         sname[1] !== armorRealm ||
         principals.realmsServed().indexOf(armorRealm) === -1) {
       log.debug('Leaving Krb5Fast.openAsRequest(). Not our TGS.');
-      return this.refuse(24, 'STS-KRB-0132', 'the armor ticket is for ' +
+      return this.refuse(24, 'STS-KRB-0137', 'the armor ticket is for ' +
                          sname.join('/') + '@' + armorRealm + ', not for ' +
                          'the ticket-granting service of a realm this KDC ' +
                          'serves');
@@ -327,20 +327,20 @@ class Krb5Fast {
       log.debug('Caught in Krb5Fast.openAsRequest(): ' +
                 ((e && e.message) || e));
       log.debug('Leaving Krb5Fast.openAsRequest(). Armor ticket sealed.');
-      return this.refuse(31, 'STS-KRB-0132', 'the armor ticket does not ' +
+      return this.refuse(31, 'STS-KRB-0137', 'the armor ticket does not ' +
                          'decrypt with this KDC\'s key for krbtgt/' +
                          armorRealm);
     }
     const at = this.now();
     if (ticketPart.endtime.getTime() + this.skewMs() <= at.getTime()) {
       log.debug('Leaving Krb5Fast.openAsRequest(). Armor ticket expired.');
-      return this.refuse(32, 'STS-KRB-0132', 'the armor ticket expired at ' +
+      return this.refuse(32, 'STS-KRB-0137', 'the armor ticket expired at ' +
                          ticketPart.endtime.toISOString());
     }
     if (ticketPart.starttime &&
         ticketPart.starttime.getTime() > at.getTime() + this.skewMs()) {
       log.debug('Leaving Krb5Fast.openAsRequest(). Armor not yet valid.');
-      return this.refuse(33, 'STS-KRB-0132', 'the armor ticket is not yet ' +
+      return this.refuse(33, 'STS-KRB-0137', 'the armor ticket is not yet ' +
                          'valid');
     }
     let authenticator;
@@ -353,7 +353,7 @@ class Krb5Fast {
       log.debug('Caught in Krb5Fast.openAsRequest(): ' +
                 ((e && e.message) || e));
       log.debug('Leaving Krb5Fast.openAsRequest(). Authenticator sealed.');
-      return this.refuse(31, 'STS-KRB-0133', 'the armor AP-REQ\'s ' +
+      return this.refuse(31, 'STS-KRB-0138', 'the armor AP-REQ\'s ' +
                          'Authenticator does not decrypt with the armor ' +
                          'ticket\'s session key at key usage 11');
     }
@@ -361,20 +361,20 @@ class Krb5Fast {
           ticketPart.cname.name.join('/') ||
         authenticator.crealm !== ticketPart.crealm) {
       log.debug('Leaving Krb5Fast.openAsRequest(). Names disagree.');
-      return this.refuse(36, 'STS-KRB-0133', 'the armor Authenticator and ' +
+      return this.refuse(36, 'STS-KRB-0138', 'the armor Authenticator and ' +
                          'the armor ticket name different clients');
     }
     if (Math.abs(at.getTime() - authenticator.ctime.getTime()) >
         this.skewMs()) {
       log.debug('Leaving Krb5Fast.openAsRequest(). Authenticator skew.');
-      return this.refuse(37, 'STS-KRB-0133', 'the armor Authenticator\'s ' +
+      return this.refuse(37, 'STS-KRB-0138', 'the armor Authenticator\'s ' +
                          'clock is outside the tolerance');
     }
     if (!authenticator.subkey) {
       log.debug('Leaving Krb5Fast.openAsRequest(). No subkey.');
       // RFC 6113 section 5.4.1.1: "The subkey field in the AP-REQ MUST be
       // present." Without it there is no client contribution to the armor.
-      return this.refuse(24, 'STS-KRB-0133', 'the armor AP-REQ\'s ' +
+      return this.refuse(24, 'STS-KRB-0138', 'the armor AP-REQ\'s ' +
                          'Authenticator carries no subkey, which ' +
                          'FX_FAST_ARMOR_AP_REQUEST requires');
     }
@@ -389,7 +389,7 @@ class Krb5Fast {
       log.debug('Caught in Krb5Fast.openAsRequest(): ' +
                 ((e && e.message) || e));
       log.debug('Leaving Krb5Fast.openAsRequest(). No armor key.');
-      return this.refuse(24, 'STS-KRB-0133', 'no armor key can be made from ' +
+      return this.refuse(24, 'STS-KRB-0138', 'no armor key can be made from ' +
                          'a ' + kcrypto.etypeName(authenticator.subkey.etype) +
                          ' subkey');
     }
@@ -410,7 +410,7 @@ class Krb5Fast {
     }
     if (!bound) {
       log.debug('Leaving Krb5Fast.openAsRequest(). Checksum.');
-      return this.refuse(41, 'STS-KRB-0134', 'the FAST req-checksum does ' +
+      return this.refuse(41, 'STS-KRB-0139', 'the FAST req-checksum does ' +
                          'not cover this request\'s body under the armor key ' +
                          '(key usage 50, checksum type ' +
                          armorProfile.checksumType + ')');
@@ -418,7 +418,7 @@ class Krb5Fast {
     let inner;
     try {
       if (armored.encFastReq.etype !== armorKey.etype) {
-        // error-code: none — caught below and refused under STS-KRB-0135
+        // error-code: none — caught below and refused under STS-KRB-0140
         throw new Error('the enc-fast-req is ' +
                         kcrypto.etypeName(armored.encFastReq.etype) +
                         ' and the armor key ' +
@@ -430,7 +430,7 @@ class Krb5Fast {
       log.debug('Caught in Krb5Fast.openAsRequest(): ' +
                 ((e && e.message) || e));
       log.debug('Leaving Krb5Fast.openAsRequest(). Inner request.');
-      return this.refuse(31, 'STS-KRB-0135', 'the armored KrbFastReq does ' +
+      return this.refuse(31, 'STS-KRB-0140', 'the armored KrbFastReq does ' +
                          'not open under the armor key: ' +
                          ((e && e.message) || e));
     }
@@ -441,13 +441,13 @@ class Krb5Fast {
       log.debug('Leaving Krb5Fast.openAsRequest(). Critical options.');
       // Section 5.4.2: "If the KDC does not support a critical option, it
       // MUST fail the request" — and no e-data is defined for the error.
-      return this.refuse(93, 'STS-KRB-0136', 'FAST option bit(s) ' +
+      return this.refuse(93, 'STS-KRB-0141', 'FAST option bit(s) ' +
                          critical.join(', ') + ' are critical and not ' +
                          'implemented here (hide-client-names is bit 1)');
     }
     if (inner.reqBody.realm !== armorRealm) {
       log.debug('Leaving Krb5Fast.openAsRequest(). Another realm.');
-      return this.refuse(24, 'STS-KRB-0132', 'the armor ticket is for ' +
+      return this.refuse(24, 'STS-KRB-0137', 'the armor ticket is for ' +
                          'krbtgt/' + armorRealm + ' and the request is for ' +
                          inner.reqBody.realm + '; the armor must identify ' +
                          'the ticket-granting service of the realm asked');
@@ -641,7 +641,7 @@ class Krb5Fast {
       log.debug('Caught in Krb5Fast.checkEncryptedChallenge(): ' +
                 ((e && e.message) || e));
       log.debug('Leaving Krb5Fast.checkEncryptedChallenge(). Malformed.');
-      return this.refuse(24, 'STS-KRB-0137', 'PA-ENCRYPTED-CHALLENGE is not ' +
+      return this.refuse(24, 'STS-KRB-0142', 'PA-ENCRYPTED-CHALLENGE is not ' +
                          'an EncryptedData');
     }
     // The challenge key has the ARMOR key's enctype (K1 of KRB-FX-CF2); the
@@ -678,13 +678,13 @@ class Krb5Fast {
       log.debug('Leaving Krb5Fast.checkEncryptedChallenge(). Wrong key.');
       // What a wrong password looks like here — the same answer
       // PA-ENC-TIMESTAMP gets.
-      return this.refuse(24, 'STS-KRB-0137', 'PREAUTH_FAILED');
+      return this.refuse(24, 'STS-KRB-0142', 'PREAUTH_FAILED');
     }
     const at = this.now();
     if (Math.abs(at.getTime() - opened.patimestamp.getTime()) >
         this.skewMs()) {
       log.debug('Leaving Krb5Fast.checkEncryptedChallenge(). Skew.');
-      return this.refuse(37, 'STS-KRB-0138', 'the encrypted challenge\'s ' +
+      return this.refuse(37, 'STS-KRB-0143', 'the encrypted challenge\'s ' +
                          'timestamp is outside the clock tolerance');
     }
     // SECTION 5.4.6's REPLAY CHECK: the same CIPHERTEXT, never the same time.
@@ -697,12 +697,12 @@ class Krb5Fast {
     });
     if (!spent.ok && spent.reason === 'used') {
       log.debug('Leaving Krb5Fast.checkEncryptedChallenge(). Replayed.');
-      return this.refuse(34, 'STS-KRB-0139', 'this encrypted challenge has ' +
+      return this.refuse(34, 'STS-KRB-0144', 'this encrypted challenge has ' +
                          'been presented before');
     }
     if (!spent.ok) {
       log.debug('Leaving Krb5Fast.checkEncryptedChallenge(). No store.');
-      return this.refuse(60, 'STS-KRB-0140', 'the encrypted challenge could ' +
+      return this.refuse(60, 'STS-KRB-0145', 'the encrypted challenge could ' +
                          'not be proved unused just now; try again');
     }
     // The KDC's half: its own time under the KDC challenge key. "If the KDC
@@ -744,14 +744,14 @@ class Krb5Fast {
       log.debug('Caught in Krb5Fast.checkOtpRequest(): ' +
                 ((e && e.message) || e));
       log.debug('Leaving Krb5Fast.checkOtpRequest(). Malformed.');
-      return this.refuse(24, 'STS-KRB-0141', 'PA-OTP-REQUEST does not ' +
+      return this.refuse(24, 'STS-KRB-0146', 'PA-OTP-REQUEST does not ' +
                          'decode');
     }
     if (req.encData.etype !== fast.armorKey.etype) {
       log.debug('Leaving Krb5Fast.checkOtpRequest(). Etype.');
       // Section 3.4: an encData enctype against KDC policy is
       // KDC_ERR_ETYPE_NOSUPP. The Client Key IS the armor key here.
-      return this.refuse(14, 'STS-KRB-0141', 'the PA-OTP-REQUEST encData ' +
+      return this.refuse(14, 'STS-KRB-0146', 'the PA-OTP-REQUEST encData ' +
                          'must be under the armor key (' +
                          kcrypto.etypeName(fast.armorKey.etype) + ')');
     }
@@ -765,7 +765,7 @@ class Krb5Fast {
       log.debug('Caught in Krb5Fast.checkOtpRequest(): ' +
                 ((e && e.message) || e));
       log.debug('Leaving Krb5Fast.checkOtpRequest(). encData sealed.');
-      return this.refuse(24, 'STS-KRB-0141', 'the PA-OTP-REQUEST encData ' +
+      return this.refuse(24, 'STS-KRB-0146', 'the PA-OTP-REQUEST encData ' +
                          'does not open under the armor key at key usage 45');
     }
     if (encData.nonce) {
@@ -775,7 +775,7 @@ class Krb5Fast {
       if (!cookie || !cookie.n ||
           cookie.n !== Buffer.from(encData.nonce).toString('hex')) {
         log.debug('Leaving Krb5Fast.checkOtpRequest(). Not our nonce.');
-        return this.refuse(24, 'STS-KRB-0141', 'the PA-OTP-REQUEST answers ' +
+        return this.refuse(24, 'STS-KRB-0146', 'the PA-OTP-REQUEST answers ' +
                            'no PA-OTP-CHALLENGE this KDC issued for this ' +
                            'principal in the last ' +
                            (COOKIE_LIFETIME_MS / 60000) + ' minutes');
@@ -786,19 +786,19 @@ class Krb5Fast {
                             encData.timestamp.getTime());
       if (skew > this.skewMs()) {
         log.debug('Leaving Krb5Fast.checkOtpRequest(). Skew.');
-        return this.refuse(37, 'STS-KRB-0141', 'the PA-OTP-REQUEST ' +
+        return this.refuse(37, 'STS-KRB-0146', 'the PA-OTP-REQUEST ' +
                            'timestamp is outside the clock tolerance');
       }
     }
     if (req.hashing || req.value === null) {
       log.debug('Leaving Krb5Fast.checkOtpRequest(). No otp-value.');
-      return this.refuse(24, 'STS-KRB-0147', 'the PA-OTP-REQUEST carries no ' +
+      return this.refuse(24, 'STS-KRB-0152', 'the PA-OTP-REQUEST carries no ' +
                          'otp-value: this KDC did not set must-encrypt-nonce ' +
                          'and does not take a hashed OTP');
     }
     if (req.pin === null || req.pin === '') {
       log.debug('Leaving Krb5Fast.checkOtpRequest(). No PIN.');
-      return this.refuse(97, 'STS-KRB-0142', 'this KDC requires the ' +
+      return this.refuse(97, 'STS-KRB-0147', 'this KDC requires the ' +
                          'password as the otp-pin (separate-pin-required)');
     }
     // THE PIN IS THE PASSWORD, checked as the KEY it derives: string-to-key
@@ -819,7 +819,7 @@ class Krb5Fast {
     }
     if (!pinOk) {
       log.debug('Leaving Krb5Fast.checkOtpRequest(). Wrong PIN.');
-      return this.refuse(24, 'STS-KRB-0143', 'PREAUTH_FAILED');
+      return this.refuse(24, 'STS-KRB-0148', 'PREAUTH_FAILED');
     }
     // THE CODE, through the sign-in screen's own verifier and its once-only
     // step (`verifyTotpAsync()`, the cluster counter `authn.totp-step`).
@@ -838,14 +838,14 @@ class Krb5Fast {
       log.debug('Leaving Krb5Fast.checkOtpRequest(). Code refused: ' +
                 reason);
       if (reason === 'replay') {
-        return this.refuse(24, 'STS-KRB-0145', 'PREAUTH_FAILED: that code ' +
+        return this.refuse(24, 'STS-KRB-0150', 'PREAUTH_FAILED: that code ' +
                            'has already been used; wait for the next one');
       }
       if (reason === 'store') {
-        return this.refuse(24, 'STS-KRB-0146', 'PREAUTH_FAILED: the code ' +
+        return this.refuse(24, 'STS-KRB-0151', 'PREAUTH_FAILED: the code ' +
                            'could not be proved unspent just now');
       }
-      return this.refuse(24, 'STS-KRB-0144', 'PREAUTH_FAILED');
+      return this.refuse(24, 'STS-KRB-0149', 'PREAUTH_FAILED');
     }
     log.info('krb5-fast: OTP pre-authentication verified the password and ' +
              'an authenticator code for ' + client.name.join('/') +
