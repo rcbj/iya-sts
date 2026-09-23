@@ -2968,7 +2968,11 @@ class AdminApi {
         ] },
         handler: function (req, res) {
           log.debug("Entering the management API users endpoint.");
-          self.sendJson(res, 200, adminViews.usersJson(req));
+          // The person's current risk, read first (#62) — the console's
+          // route does the same, so the two answers agree.
+          return adminViews.riskFor(req.query).then(function (risk) {
+            self.sendJson(res, 200, adminViews.usersJson(req, risk));
+          });
           log.debug("Leaving the management API users endpoint.");
         } },
 

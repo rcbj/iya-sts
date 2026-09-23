@@ -126,7 +126,10 @@ class RiskAdmin {
       offset: offset });
     const address = String(q.address || '').trim();
     const lookup = address ? await datasets.lookup(address, realm) : null;
+    // `subject` narrows the assessments to one person — the link under the
+    // risk badge on their Directory → Users page (#62).
     const assessed = await engine.view(realm, { level: q.level || '',
+                                               subject: q.subject || '',
                                                offset: q.aoffset || 0 });
     log.debug("Leaving RiskAdmin.riskView().");
     return {

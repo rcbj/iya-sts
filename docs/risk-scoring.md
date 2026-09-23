@@ -522,7 +522,6 @@ The remaining work on [issue #62](https://github.com/rcbj/iya-sts/issues/62):
 - **Calibration**: a report of the levels and signals real sign-ins have
   been given, with the thresholds and factors it suggests.
 - **A realm's own administrators** see their realm's risk page.
-- **Each person's current risk on their user page** in the console.
 - **Monitoring → Risk Scoring**: metrics about the scoring itself.
 - **The console and portal acting on the risk signals they receive**, with
   issues #153 and #117.
@@ -533,7 +532,13 @@ The remaining work on [issue #62](https://github.com/rcbj/iya-sts/issues/62):
   assessments, people by current standing, a lookup of any address, every
   dataset and its versions, the providers, their terms and who accepted
   them, and the refused passwords. It also shows the data credits and these
-  settings.
+  settings. `?subject=` narrows the assessments to one person.
+- **Each person's page under Directory → Users** opens with their current
+  risk, drawn large in the level's colour: LOW green, MEDIUM amber, HIGH
+  red, grey for someone never assessed. It shows the score, the level it
+  came from, when it changed, the signals that moved it, and a link to that
+  person's assessments. `GET /admin-api/users?user=` carries the same
+  standing as `risk` (`null` when never assessed).
 - **`GET /admin-api/risk`** returns the same view as JSON. Its actions are
   `POST /admin-api/risk/import`, `activate`, `rollback`, `delete` and
   `accept-terms`, described in the

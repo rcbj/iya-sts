@@ -462,6 +462,20 @@ they say about one — once, and only about their own (schema 9's
 
 Monitoring → Risk shows each answer beside its assessment.
 
+## A PERSON'S RISK ON THEIR USER PAGE (2026-09-22)
+
+rcbj asked for it "large and colorful": `admin.ts`'s `riskBadge()` opens
+the Directory → Users page of a person with their standing, in the level's
+colour. **The standing is read before the page is drawn**, by
+`admin_views.riskFor(req.query)`, which both the console's route and
+`/admin-api/users` await and hand to the view as an argument: the user
+views are synchronous and the standing is a row in a store that is not.
+**It is an argument, not a field on the request**, because
+`tests/admin_actions_layer.js` holds that a view reads nothing off the
+request but its query — the first version hung it on `req` and failed that. `engine.standingFor()` never rejects;
+a store that cannot answer draws the grey UNKNOWN badge, the same as a
+person never assessed, because the page must still open.
+
 ## BREACHED PASSWORDS (P6, 2026-09-22)
 
 rcbj chose the **range API** over a filter built from the downloadable
@@ -535,6 +549,9 @@ hit the same trap through `request_pool.js` in P0.
   development observing, a realm override that disables, CAEP's new act, a
   browser update not assessed and a replayed cookie assessed and ended, and
   the rescore job raising a session whose address became a Tor exit.
+* `tests/risk_user_badge.js` — the badge on a person's Directory → Users
+  page in each colour, grey when never assessed, the same standing on
+  `/admin-api/users?user=`, and the link narrowed to the person.
 
 **Not tested yet**: a real DB-IP or IPinfo release at full size — and it will
 not be tested with one in this repository, because none may be committed; a

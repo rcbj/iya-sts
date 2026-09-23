@@ -1315,6 +1315,35 @@ class RiskEngine {
     return { ok: true, verdict: verdict, moved: moved };
   }
 
+  // -------------------------------------------------------------------------
+  // ONE PERSON'S CURRENT STANDING, from the store (#62): what the console's
+  // user page draws large and `/admin-api/users?user=` returns. Null for a
+  // person never assessed. Never rejects.
+  // -------------------------------------------------------------------------
+  async standingFor(realm: string, subject: string): Promise<Json | null> {
+    const { log, store } = this.deps;
+    log.debug("Entering RiskEngine.standingFor().");
+    try {
+      const row = subject ? await store.subjectOf(realm, subject,
+                                                  this.sealing()) : null;
+      log.debug("Leaving RiskEngine.standingFor(). " +
+                (row ? row.level : 'None.'));
+      return row ? { subject: subject, level: String(row.level || ''),
+                     score: Number(row.score) || 0,
+                     previousLevel: String(row.previousLevel || ''),
+                     reason: String(row.reason || ''),
+                     lastAssessment: String(row.lastAssessment || ''),
+                     crossedAt: Number(row.crossedAt) || 0,
+                     updatedAt: Number(row.updatedAt) || 0 } : null;
+    } catch (e) {
+      log.debug("Caught in RiskEngine.standingFor(): " +
+                ((e && e.message) || e));
+      // The store could not answer: the page says the risk is unknown.
+      log.debug("Leaving RiskEngine.standingFor(). Unknown.");
+      return null;
+    }
+  }
+
   // A page of assessments and the people by standing, for the page.
   async view(realm: string, opts: Json): Promise<Json> {
     const { log, store, now } = this.deps;
@@ -1391,6 +1420,7 @@ export = {
   settle: slot.forward('settle'),
   respond: slot.forward('respond'),
   feedback: slot.forward('feedback'),
+  standingFor: slot.forward('standingFor'),
   rescoreSession: slot.forward('rescoreSession'),
   rescoreLiveSessions: slot.forward('rescoreLiveSessions'),
   enforced: slot.forward('enforced'),
