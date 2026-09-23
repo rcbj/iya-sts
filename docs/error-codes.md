@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3066** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3068** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 200
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 485
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 487
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1576,6 +1576,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0603` | In product mode, an RP-Initiated Logout post_logout_redirect_uri named no client that registered it (#124): not followed. Development still follows one. | none (the sign-out page says so) |
 | `STS-OAUTH-0604` | An RP-Initiated Logout request sent with POST was not a form (application/x-www-form-urlencoded, section 2) (#124). | HTTP 400 (an HTML page) |
 | `STS-OAUTH-0605` | The RP-Initiated Logout endpoint failed while answering (#124). | HTTP 500 (an HTML page) |
+| `STS-OAUTH-0606` | response_type none was combined with another response type; it asks for nothing to be issued (Multiple Response Type Encoding Practices section 4, #125). | redirect {error: unsupported_response_type} |
+| `STS-OAUTH-0607` | response_mode=query was asked for a response type that returns a token or an ID Token, which section 2.1 of Multiple Response Type Encoding Practices forbids (#125). The refusal goes in the fragment. | redirect {error: invalid_request} |
 
 ## STS-SAML
 

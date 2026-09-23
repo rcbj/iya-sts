@@ -87,6 +87,9 @@ response type or endpoint that would be refused.
   ([RFC 7636](https://www.rfc-editor.org/rfc/rfc7636), `S256` and `plain`).
 * **Implicit and hybrid**: every combination of `code`, `token` and
   `id_token`, including `id_token token`.
+* **`response_type=none`**: nothing is issued. The response carries `state`
+  and `iss`, in the query. `none` combined with another value is refused
+  (Multiple Response Type Encoding Practices section 4).
 * **Response modes** `query`, `fragment` and `form_post`. `form_post` is
   answered with a self-submitting form that also has a real submit button.
   Without an explicit mode, `code` alone answers in the query and every
@@ -95,7 +98,9 @@ response type or endpoint that would be refused.
   Practices](https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html)
   section 2.1). **An error goes where the success would have gone**, so an
   implicit or hybrid request gets its error in the fragment. An explicit
-  `response_mode=query` is ignored for a response type that returns a token.
+  `response_mode=query` for a response type that returns a token or an ID
+  Token is **refused**, and the error goes in the fragment, because section
+  2.1 says that encoding MUST NOT be used.
 * **JWT-secured responses (JARM)**: the response modes `query.jwt`,
   `fragment.jwt`, `form_post.jwt` and `jwt` (a query for `code`, a fragment
   otherwise) answer with one `response` parameter, a JWT carrying what the

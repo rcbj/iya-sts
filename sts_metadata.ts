@@ -1638,16 +1638,17 @@ const SPECS: Spec[] = [
     name: 'OAuth 2.0 Multiple Response Type Encoding Practices',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html',
-    coverage: 'partial: the combined response types code id_token, code ' +
-              'token, code id_token token and id_token token, and section ' +
-              '2.1\'s default response modes — the query for code alone and ' +
-              'the fragment for every type that returns a token — for a ' +
-              'successful response AND an error (#118; errors went in the ' +
-              'query until then). An explicit response_mode=fragment is ' +
-              'honoured for any type; an explicit query is honoured only ' +
-              'for code alone. NOT covered: response_type=none, and refusing ' +
-              'rather than overriding an explicit query for a token-bearing ' +
-              'type (#125).' },
+    coverage: 'full (#118, #125): the combined response types code ' +
+              'id_token, code token, code id_token token and id_token ' +
+              'token; section 4\'s response_type=none — state and iss ' +
+              'alone, in the query, advertised, and refused in combination ' +
+              '(STS-OAUTH-0606) — and section 2.1\'s default response modes ' +
+              '(the query for code and none, the fragment for every type ' +
+              'that returns a token) for a successful response AND an error. ' +
+              'An explicit response_mode=fragment is honoured for any type, ' +
+              'and an explicit query for a type that returns a token or an ' +
+              'ID Token is REFUSED, in the fragment (STS-OAUTH-0607), since ' +
+              'the section says it MUST NOT be used.' },
   { id: 'oauth-form-post', name: 'OAuth 2.0 Form Post Response Mode',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/oauth-v2-form-post-response-mode-1_0.html',
