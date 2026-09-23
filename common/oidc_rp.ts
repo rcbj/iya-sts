@@ -1680,7 +1680,9 @@ class OidcRelyingParty {
     query.forEach(function (value, name) {
       claims[name] = value;
     });
-    if (this.deps.fapi.advanced()) {
+    // JARM under FAPI 1.0 Advanced (#139) and FAPI 2.0 Message Signing
+    // (#141), each of which requires it for `code`.
+    if (this.deps.fapi.advanced() || this.deps.fapi.messageSigning()) {
       claims.response_mode = 'jwt';
     }
     claims.iss = surface.clientId;

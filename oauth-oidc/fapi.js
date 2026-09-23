@@ -12,6 +12,14 @@
 // switch:
 //
 //   oauth2.fapi = 'off' | '1-baseline' | '1-advanced' | '2-security'
+//                 | '2-message-signing'
+//
+// FAPI 2.0 MESSAGE SIGNING (final, 2025-09-25; #141) IS THE SECURITY PROFILE
+// PLUS ALL THREE OF ITS COMPONENTS — rcbj's decision, over a switch per
+// component: a JAR-signed request object required at PAR (section 5.3), JARM
+// required (5.4), and RFC 9701 introspection responses signed (5.5, which
+// every JWT introspection response here already is). `fapi2()` is true for
+// both 2.0 values, and `messageSigning()` for the second.
 //
 // THE FAPI 2.0 SECURITY PROFILE (final, #140) IS NOT BUILT ON 1.0. It is a
 // profile of its own — confidential clients only, PAR always, `code` only,
@@ -72,9 +80,11 @@ const config = require('../common/config');
 
 // The profiles this service implements, in the order the specifications were
 // published. #139–#141 add theirs here.
-const PROFILES = ['1-baseline', '1-advanced', '2-security'];
+const PROFILES = ['1-baseline', '1-advanced', '2-security',
+                  '2-message-signing'];
 const ADVANCED = '1-advanced';
 const FAPI2 = '2-security';
+const MESSAGE_SIGNING = '2-message-signing';
 
 // The switch's own "no profile", and what a named authorization server may
 // say to be NOT a FAPI server even though its realm is.
@@ -87,6 +97,9 @@ const ADVANCED_NAME = 'FAPI 1.0 Part 2: Advanced Security Profile (final)';
 const FAPI2_NAME = 'FAPI 2.0 Security Profile (final)';
 const FAPI2_URL =
   'https://openid.net/specs/fapi-security-profile-2_0-final.html';
+const MESSAGE_SIGNING_NAME = 'FAPI 2.0 Message Signing (final)';
+const MESSAGE_SIGNING_URL =
+  'https://openid.net/specs/fapi-message-signing-2_0.html';
 const ADVANCED_URL =
   'https://openid.net/specs/openid-financial-api-part-2-1_0.html';
 
@@ -398,6 +411,45 @@ const FAPI2_REQUIREMENTS = [
           'not of a realm.' }
 ];
 
+// ---------------------------------------------------------------------------
+// WHAT FAPI 2.0 MESSAGE SIGNING ADDS TO THE SECURITY PROFILE (section 5), row
+// by row. Under `2-message-signing` GET /oauth2/fapi lists these after the
+// Security Profile's.
+// ---------------------------------------------------------------------------
+const MESSAGE_SIGNING_REQUIREMENTS = [
+  { id: 'signed-request-at-par', section: '5.3.2 item 1', level: 'SHALL',
+    enforced: 'yes',
+    title: 'A JAR-signed request object at the PAR endpoint',
+    note: 'A push of plain parameters is refused (STS-OAUTH-0415).' },
+  { id: 'request-object-claims', section: '5.3.2 items 2-4', level: 'SHALL',
+    enforced: 'yes',
+    title: 'aud the issuer; nbf at most 60 minutes old; exp at most 60 ' +
+           'minutes after nbf',
+    note: 'STS-OAUTH-0584, STS-OAUTH-0585.' },
+  { id: 'request-object-typ', section: '5.3.2 item 5', level: 'SHALL',
+    enforced: 'already', title: 'typ oauth-authz-req+jwt is accepted',
+    note: 'RFC 9101 section 10.8, in every mode.' },
+  { id: 'jarm-required', section: '5.4.2 item 1', level: 'SHALL',
+    enforced: 'yes',
+    title: 'Signed authorization responses (JARM), required',
+    note: 'A request without a JARM response mode is refused ' +
+          '(STS-OAUTH-0591); response_modes_supported lists only JARM\'s.' },
+  { id: 'jarm-iss', section: '5.4.2 item 2', level: 'SHOULD',
+    enforced: 'yes', title: 'iss inside the JWT, not beside it',
+    note: 'A JARM response is the single `response` parameter.' },
+  { id: 'signed-introspection', section: '5.5.2 item 1', level: 'SHALL',
+    enforced: 'already',
+    title: 'Introspection responses in JWT format are signed (RFC 9701)',
+    note: 'Every JWT introspection response is; PS256 by default under the ' +
+          'profile.' },
+  { id: 'non-repudiation', section: '5.2', level: 'guidance',
+    enforced: 'deployment',
+    title: 'Non-repudiation: keys and records kept',
+    note: 'Retired signing keys stay published for their grace period and ' +
+          'every issuance is audited; docs/oauth-security.md says what a ' +
+          'deployment keeps and for how long.' }
+];
+
 // The ambient profile of the request being answered: the named
 // authorization server's own value, when `oauth2.ts` set one.
 const ambient = new AsyncLocalStorage();
@@ -443,8 +495,16 @@ function enabled() {
 // Whether the FAPI 2.0 Security Profile is in force.
 function fapi2() {
   log.debug("Entering fapi2().");
-  const on = profile() === FAPI2;
+  const on = profile() === FAPI2 || profile() === MESSAGE_SIGNING;
   log.debug("Leaving fapi2(). " + on);
+  return on;
+}
+
+// Whether FAPI 2.0 Message Signing is in force (and so the Security Profile).
+function messageSigning() {
+  log.debug("Entering messageSigning().");
+  const on = profile() === MESSAGE_SIGNING;
+  log.debug("Leaving messageSigning(). " + on);
   return on;
 }
 
@@ -476,7 +536,9 @@ function advanced() {
 function profileName() {
   log.debug("Entering profileName().");
   log.debug("Leaving profileName().");
-  return advanced() ? ADVANCED_NAME : (fapi2() ? FAPI2_NAME : BASELINE);
+  return advanced() ? ADVANCED_NAME
+    : (messageSigning() ? MESSAGE_SIGNING_NAME + ', over ' + FAPI2_NAME
+                        : (fapi2() ? FAPI2_NAME : BASELINE));
 }
 
 function refusal(errorCode, error, requirement, description) {
@@ -577,6 +639,16 @@ function authorizationRefusal(query, context) {
                    'response_type "' + String(q.response_type || '') +
                    '" is not code, the only one this profile allows (FAPI ' +
                    '2.0 section 5.3.2.2 item 1)');
+  }
+  // FAPI 2.0 Message Signing section 5.4.2 item 1 (#141): JARM, required.
+  if (messageSigning() &&
+      JARM_MODES.indexOf(String(q.response_mode || '')) < 0) {
+    log.debug("Leaving authorizationRefusal(). Not JARM.");
+    return refusal('STS-OAUTH-0591', 'invalid_request', 'jarm-required',
+                   'response_mode "' + String(q.response_mode || '') + '" ' +
+                   'is not a JWT-secured one; this profile requires JARM ' +
+                   '(FAPI 2.0 Message Signing section 5.4.2 item 1) — ' +
+                   'response_mode=jwt');
   }
   if (advanced()) {
     const type = responseTypeOf(q.response_type);
@@ -952,7 +1024,7 @@ function signingAlgRefusal(alg, what) {
 function requiresSignedRequestObject() {
   log.debug("Entering requiresSignedRequestObject().");
   log.debug("Leaving requiresSignedRequestObject().");
-  return advanced();
+  return advanced() || messageSigning();
 }
 
 // ---------------------------------------------------------------------------
@@ -961,7 +1033,9 @@ function requiresSignedRequestObject() {
 // ---------------------------------------------------------------------------
 function requestObjectRefusal(claims, issuer, now) {
   log.debug("Entering requestObjectRefusal().");
-  if (!advanced()) {
+  // FAPI 1.0 Advanced items 13, 15, 17, and FAPI 2.0 Message Signing section
+  // 5.3.2 items 2-4, which ask the same three things (#141).
+  if (!advanced() && !messageSigning()) {
     log.debug("Leaving requestObjectRefusal(). Not Advanced.");
     return null;
   }
@@ -1128,8 +1202,15 @@ function applyToMetadata(metadata) {
         });
       }
     });
-    if (advanced()) {
+    if (advanced() || messageSigning()) {
       metadata.require_signed_request_object = true;
+    }
+    if (messageSigning() &&
+        Array.isArray(metadata.response_modes_supported)) {
+      metadata.response_modes_supported = metadata.response_modes_supported
+        .filter(function (one) {
+          return JARM_MODES.indexOf(one) >= 0;
+        });
     }
     if (fapi2()) {
       metadata.require_pushed_authorization_requests = true;
@@ -1147,9 +1228,12 @@ function state() {
     profile: on || null,
     enabled: !!on,
     profiles_supported: PROFILES.slice(),
-    specification: on === FAPI2 ? FAPI2_NAME
+    specification: on === MESSAGE_SIGNING
+      ? MESSAGE_SIGNING_NAME + ', over ' + FAPI2_NAME
+      : on === FAPI2 ? FAPI2_NAME
       : (on === ADVANCED ? ADVANCED_NAME + ', over ' + BASELINE : BASELINE),
-    url: on === FAPI2 ? FAPI2_URL
+    url: on === MESSAGE_SIGNING ? MESSAGE_SIGNING_URL
+      : on === FAPI2 ? FAPI2_URL
       : (on === ADVANCED ? ADVANCED_URL : BASELINE_URL),
     require_mtls: requiresMtls(),
     implies: 'oauth2.rfc9700 — GET /oauth2/rfc9700 lists what that mode ' +
@@ -1165,11 +1249,19 @@ function state() {
       'oauth2.fapiRequireMtls': !!config.value('oauth2.fapiRequireMtls'),
       'oauth2.rfc9700': !!config.value('oauth2.rfc9700')
     },
-    requirements: on === FAPI2 ? FAPI2_REQUIREMENTS.map(function (row) {
-      return { id: row.id, section: 'FAPI 2.0 ' + row.section,
-               level: row.level, enforced: row.enforced, title: row.title,
-               note: row.note };
-    }) : REQUIREMENTS.map(function (row) {
+    requirements: (on === FAPI2 || on === MESSAGE_SIGNING)
+      ? FAPI2_REQUIREMENTS.map(function (row) {
+        return { id: row.id, section: 'FAPI 2.0 ' + row.section,
+                 level: row.level, enforced: row.enforced, title: row.title,
+                 note: row.note };
+      }).concat(on === MESSAGE_SIGNING
+        ? MESSAGE_SIGNING_REQUIREMENTS.map(function (row) {
+          return { id: row.id,
+                   section: 'FAPI 2.0 Message Signing ' + row.section,
+                   level: row.level, enforced: row.enforced,
+                   title: row.title, note: row.note };
+        }) : [])
+      : REQUIREMENTS.map(function (row) {
       const relaxed = on === ADVANCED && row.id === 'pkce-s256';
       return { id: row.id, section: 'FAPI 1.0 Part 1 ' + row.section,
                level: row.level,
@@ -1192,6 +1284,8 @@ module.exports = {
   PROFILES: PROFILES,
   ADVANCED: ADVANCED,
   FAPI2: FAPI2,
+  MESSAGE_SIGNING: MESSAGE_SIGNING,
+  MESSAGE_SIGNING_REQUIREMENTS: MESSAGE_SIGNING_REQUIREMENTS,
   FAPI2_SIGNING_ALGS: FAPI2_SIGNING_ALGS,
   FAPI2_REQUIREMENTS: FAPI2_REQUIREMENTS,
   NONE: NONE,
@@ -1211,6 +1305,7 @@ module.exports = {
   enabled: enabled,
   advanced: advanced,
   fapi2: fapi2,
+  messageSigning: messageSigning,
   v1: v1,
   profileSigningAlgs: profileSigningAlgs,
   redirectUriAllowed: redirectUriAllowed,
