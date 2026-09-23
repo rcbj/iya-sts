@@ -543,6 +543,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3au | `scope_policy.ts` and `scopeRefusal()`, #110: a scope tied to the client that declares it (`oauthAllowedScope`) — this service's protected scopes in both modes, every other scope in product, refused at the endpoints, narrowed in `tokenSet()`, re-checked by `/admin-api`, SCIM and Shared Signals | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | 3av | `fapi.js`, the FAPI profiles over RFC 9700 mode — 1.0 Baseline (#138) and Advanced (#139), and FAPI 2.0's Security Profile (#140) and Message Signing (#141): per realm or per named authorization server (ambient), the checks beyond that mode, consent, the sender constraint, rotation, PS256 by default, and the hosted surfaces conforming | `oauth-oidc/CLAUDE.md` |
 | 3aw | `jarm.ts`, JARM (#143) in every mode: one place sends it (`redirectBack()`), the four modes, the signed and optionally encrypted response, never sent unsecured | `oauth-oidc/CLAUDE.md` |
+| 3ax | `session_management.js`, OpenID Connect Session Management 1.0 (#121), off by default: the OP browser state minted with the session handle, `session_state` on every authentication response, the OP iframe framed only by registered relying parties, and its script | `oauth-oidc/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
@@ -604,20 +605,31 @@ Two rules come out of it:
   still carry the clause", not "is it the value I set", so the relaxations are
   untouched.
 
+**THE ONE PAGE THAT MAY BE FRAMED IS THE OP IFRAME (#121, 2026-09-23)**, and
+it narrows the clause rather than dropping it: `app.framedContentSecurityPolicy()`
+— a second, named door, so `contentSecurityPolicy()` keeps its rule — sets
+`frame-ancestors` to the origins of the realm's registered redirect URIs, and
+to `'none'` when there are none or when anything given is not an http(s)
+origin. `*` is unreachable through it. OpenID Connect Session Management
+cannot work otherwise, since the iframe exists to be framed by a relying
+party; it is off by default (`oauth2.sessionManagement`). `oauth-oidc/CLAUDE.md`
+argues it.
+
 **Do not replace Express's 404 body.** `Cannot GET /path` is how
 `tests/vendored/sts_metadata.js` tells an unrouted path from an endpoint legitimately answering
 404. Fixing the header was the whole fix; a prettier 404 would break that test
 silently.
 
 
-## Eight pages here have a script on them, and each is the same exception
+## Nine pages here have a script on them, and each is the same exception
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
-than merely unlikely. Eight pages need a script and each takes the SAME shape of
+than merely unlikely. Nine pages need a script and each takes the SAME shape of
 exception — `script-src 'self'` naming one resource, never `'unsafe-inline'` —
-and **each carries a REAL SUBMIT BUTTON as well**, because with the script
-blocked the button is the whole mechanism.
+and **each but the OP iframe carries a REAL SUBMIT BUTTON as well**, because
+with the script blocked the button is the whole mechanism. The OP iframe has
+no person in front of it and nothing to submit; its argument is its row.
 
 | Page | Script | Argued in |
 |---|---|---|
@@ -629,6 +641,7 @@ blocked the button is the whole mechanism.
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
 | `/portal/keys` | `/authn/webauthn.js` — the SAME resource, not a copy | `portal/CLAUDE.md` |
 | `/authn/wallet/wait` (2026-09-17) | `/authn/wallet.js` — the W3C Digital Credentials API call, which no markup can make | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
+| `/oauth2/check_session` (#121, 2026-09-23, off by default) | `/oauth2/check_session.js` — it answers a relying party's `postMessage`, which no markup can; so it is the one page here with **NO submit button**, and with script off a relying party's question simply goes unanswered | `oauth-oidc/CLAUDE.md` |
 
 **The embedded debugger's pages are NOT on this list, because they are not on
 this origin** (2026-09-13): `debugger/debugger_server.ts` serves them on a

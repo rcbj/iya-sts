@@ -4121,6 +4121,45 @@ function corsOriginsOfRealm() {
   return out;
 }
 
+// The origin of every http or https redirect URI any application in the
+// ambient realm registered — the relying parties OpenID Connect Session
+// Management's OP iframe may be framed by (#121, `frame-ancestors`). Read off
+// the directory's attributes, `corsOriginsOfRealm()`'s reason: no view is
+// built and no sealed key opened. A private-use scheme has no web origin and
+// cannot frame anything, so it is left out, as is anything that does not
+// parse.
+function redirectOriginsOfRealm() {
+  log.debug("Entering redirectOriginsOfRealm().");
+  const backing = store();
+  if (!backing) {
+    log.debug("Leaving redirectOriginsOfRealm(). No directory.");
+    return [];
+  }
+  const out = [];
+  backing.allApplications().forEach(function (entry) {
+    valuesOf(byLowerName(entry.attributes).oauthredirecturi)
+      .forEach(function (uri) {
+        let origin = '';
+        try {
+          const parsed = new URL(String(uri));
+          origin = /^https?:$/.test(parsed.protocol) ? parsed.origin : '';
+        } catch (e) {
+          log.debug("Caught in redirectOriginsOfRealm(): " +
+                    ((e && e.message) || e));
+          // Not a URL: no origin to frame from.
+          origin = '';
+        }
+        if (origin && out.indexOf(origin) < 0) {
+          out.push(origin);
+        }
+      });
+  });
+  out.sort();
+  log.debug("Leaving redirectOriginsOfRealm(). " + out.length +
+            " origin(s).");
+  return out;
+}
+
 // ===========================================================================
 // THE ONE ATTRIBUTE IN THIS TABLE THAT IS A PRIVATE KEY, AND WHAT IS DONE
 // WITH IT (2026-09-10).
@@ -11067,6 +11106,7 @@ module.exports = {
   corsOriginsForClient: corsOriginsForClient,
   ssfAllowedEventsFor: ssfAllowedEventsFor,
   corsOriginsOfRealm: corsOriginsOfRealm,
+  redirectOriginsOfRealm: redirectOriginsOfRealm,
   ssfAllowedEventProblem: ssfAllowedEventProblem,
   // THE SEALED ATTRIBUTE AND THE PREFIX TEST THAT RECOGNISES ONE. Exported for
   // `admin-ui/admin.ts`, whose application page dumps `attributes` — the entry
