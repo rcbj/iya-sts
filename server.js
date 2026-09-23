@@ -662,6 +662,7 @@ const serviceState = require('./common/service_state');
 // listener in bind() and on the KDC's TCP listener in announce(), and asked
 // once, below, whether this process may start at all. See that file.
 const proxyProtocol = require('./common/proxy_protocol');
+const clientHello = require('./tls/client_hello');
 
 // ---------------------------------------------------------------------------
 // THIS PROCESS'S STATE, IN THE ONE ORDER THERE IS.
@@ -954,6 +955,12 @@ if (useHttps) {
   // invisible: the far end sees a closed socket and this log said nothing.
   tlsServer.observeConnectionsOn(mainServer,
                                  'the main port (' + PORT + ')');
+  // THE CLIENT'S JA4 TLS FINGERPRINT (#62 P0, 2026-09-22), read off the
+  // ClientHello before the TLS engine takes the socket — see
+  // tls/client_hello.ts. Installed BEFORE the PROXY protocol below, so that
+  // one's wrapper is the outer one and this reads a socket whose header is
+  // already gone.
+  clientHello.install(mainServer, { label: 'the main port (' + PORT + ')' });
   // The PROXY protocol header comes off BEFORE the TLS handshake — see
   // common/proxy_protocol.ts. A no-op with global.proxyProtocol off.
   proxyProtocol.install(mainServer, { label: 'the main port (' + PORT + ')',

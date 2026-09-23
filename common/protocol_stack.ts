@@ -569,6 +569,10 @@ class ProtocolStack {
     require('../pki/pki_service');
     this.build('common/proxy_protocol', require('./proxy_protocol'),
                'ProxyProtocol');
+    // The JA4 reader (#62 P0): a library like the PROXY protocol above it,
+    // installed on the main port by `server.js` and read by `authn/`.
+    this.build('tls/client_hello', require('../tls/client_hello'),
+               'ClientHello');
     this.build('pki/pki_service', require('../pki/pki_service'), 'PkiService');
     this.register(app, require('../pki/pki_service'), 'pki/pki_service');
     // 17c. THE PUBLIC CRYPTO METADATA DOCUMENT (#42, 2026-09-22):

@@ -1157,6 +1157,9 @@ class FederationSp {
                                        result.acr || '', via,
                                        Object.assign({
                                          request: req,
+                                         // Which credential answered (#62):
+                                         // a partner's assertion.
+                                         credential: { kind: 'federation' },
                                          application:
                                            record.fedApplication || ''
                                        }, detail));

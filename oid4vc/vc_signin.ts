@@ -960,6 +960,8 @@ class VcSignin {
     const session = authn.startSession(res, username, outcome.amr || ['pop'],
       outcome.acr || '1', VIA, {
         request: req,
+        // Which credential answered (#62 P0): a wallet presentation.
+        credential: { kind: 'wallet' },
         application: record.application || '',
         protocol: 'OpenID4VP',
         method: 'a wallet: a ' + (outcome.format || 'dc+sd-jwt') +
