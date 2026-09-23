@@ -7411,6 +7411,120 @@ function azureImdsRoots() {
     .certificates;
 }
 
+// ----- The FIDO Metadata Service's BLOB (#62 P5, 2026-09-22) ----------------
+//
+// FIDO MDS3 (FIDO Metadata Service v3.0, section 3.1.8) publishes one signed
+// JWT — the "BLOB" — whose payload lists every certified authenticator model
+// and what is currently known about it: its certification level, and whether
+// it has been REVOKED or its keys reported compromised. Section 3.1.8's steps,
+// as this verifies them:
+//
+//   * the header's `x5c` is the signing chain, leaf first; it is required;
+//   * the chain must end at the FIDO root — which FIDO documents as
+//     GlobalSign Root CA - R3 — or at an anchor the operator configured
+//     (`risk.mdsTrustAnchors`, a PEM bundle). **The root is not shipped**:
+//     with no anchor configured it is found in node's own root store
+//     (`tls.rootCertificates`, the bundle every HTTPS request here already
+//     trusts), by name — so nothing FIDO-specific is in this repository;
+//   * the signature must verify under the leaf's key, with one of the
+//     algorithms section 3.1.7 allows, named here rather than read off the
+//     token (`verifyCompactJws()`'s rule);
+//   * revocation of every certificate in the chain (step 5) is the CALLER's
+//     next step, through `revocation_status.verdictFor()` — it fetches, and
+//     this does not;
+//   * the payload's `no` and `nextUpdate` are answered for the caller's
+//     rollback and staleness checks.
+//
+// Answers `{ ok: true, header, payload, chainPems }` or `{ ok: false,
+// reason }`. Never rejects.
+// ---------------------------------------------------------------------------
+const MDS_ALGORITHMS = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
+                        'ES256', 'ES384', 'ES512', 'EdDSA'];
+
+// The anchors a BLOB's chain must end at: the operator's, or FIDO's root out
+// of node's own root store.
+function fidoMdsRoots(anchorsPem) {
+  log.debug("Entering fidoMdsRoots().");
+  if (String(anchorsPem || '').trim()) {
+    log.debug("Leaving fidoMdsRoots(). The operator's.");
+    return certificateBundle(anchorsPem).certificates;
+  }
+  const system = certificateBundle(require('tls').rootCertificates.join('\n'))
+    .certificates.filter(function (one) {
+      return /CN=GlobalSign\b/.test(String(one.x509.subject)) &&
+             /OU=GlobalSign Root CA - R3/.test(String(one.x509.subject));
+    });
+  log.debug("Leaving fidoMdsRoots(). " + system.length + " from node's " +
+            "root store.");
+  return system;
+}
+
+async function verifyFidoMdsBlob(token, opts) {
+  log.debug("Entering verifyFidoMdsBlob().");
+  const options = opts || {};
+  const text = String(token || '').trim();
+  const parts = text.split('.');
+  if (parts.length !== 3) {
+    log.debug("Leaving verifyFidoMdsBlob(). Not a JWT.");
+    return { ok: false, reason: 'the BLOB is not a compact JWS (it has ' +
+             parts.length + ' part(s), not 3)' };
+  }
+  let header = null;
+  try {
+    header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+  } catch (e) {
+    log.debug("Caught in verifyFidoMdsBlob(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyFidoMdsBlob(). Unreadable header.");
+    return { ok: false, reason: 'the BLOB\'s header is not JSON' };
+  }
+  const x5c = Array.isArray(header && header.x5c) ? header.x5c : [];
+  if (!x5c.length) {
+    log.debug("Leaving verifyFidoMdsBlob(). No x5c.");
+    return { ok: false, reason: 'the BLOB\'s header carries no x5c: MDS3 ' +
+             'section 3.1.7 signs it with a certificate chain' };
+  }
+  const ders = x5c.map(function (one) {
+    return Buffer.from(String(one), 'base64');
+  });
+  const anchors = fidoMdsRoots(options.anchorsPem);
+  if (!anchors.length) {
+    log.debug("Leaving verifyFidoMdsBlob(). No anchor.");
+    return { ok: false, reason: 'no FIDO MDS trust anchor: none is ' +
+             'configured (risk.mdsTrustAnchors) and GlobalSign Root CA - R3 ' +
+             'is not in this node\'s root store' };
+  }
+  const path = await verifyPathToAnchors(ders[0], ders.slice(1), anchors,
+                                         { now: options.now });
+  if (!path.ok) {
+    log.debug("Leaving verifyFidoMdsBlob(). No path.");
+    return { ok: false, reason: 'the BLOB\'s signing chain does not verify: ' +
+             path.reason };
+  }
+  const leaf = certificateFromDer(ders[0]);
+  let verified = null;
+  try {
+    verified = stsCrypto.verifyCompactJws(text, leaf.pem,
+                                          { algorithms: MDS_ALGORITHMS });
+  } catch (e) {
+    log.debug("Caught in verifyFidoMdsBlob(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyFidoMdsBlob(). Signature.");
+    return { ok: false, reason: 'the BLOB\'s signature does not verify ' +
+             'under its signing certificate: ' + ((e && e.message) || e) };
+  }
+  const payload = (verified && (verified.claims || verified.payload)) || null;
+  if (!payload || typeof payload !== 'object' ||
+      !Array.isArray(payload.entries) || !isFinite(Number(payload.no))) {
+    log.debug("Leaving verifyFidoMdsBlob(). Not a BLOB payload.");
+    return { ok: false, reason: 'the payload is not an MDS3 BLOB: it needs ' +
+             'a serial number (no) and a list of entries' };
+  }
+  log.debug("Leaving verifyFidoMdsBlob(). Verified, no=" + payload.no + ".");
+  return { ok: true, header: header, payload: payload,
+           chainPems: ders.map(function (der) {
+             return certificateFromDer(der).pem;
+           }) };
+}
+
 module.exports = {
   // --- somebody else's certificates (#40) ---
   certificateFromDer: certificateFromDer,
@@ -7419,6 +7533,9 @@ module.exports = {
   spkiOf: spkiOf,
   keyUsageOf: keyUsageOf,
   verifyPathToAnchors: verifyPathToAnchors,
+  // --- the FIDO MDS3 BLOB (#62 P5) ---
+  fidoMdsRoots: fidoMdsRoots,
+  verifyFidoMdsBlob: verifyFidoMdsBlob,
   SSH_HOST_CERT: SSH_HOST_CERT,
   parseSshPublicKey: parseSshPublicKey,
   parseSshAuthorizedKey: parseSshAuthorizedKey,

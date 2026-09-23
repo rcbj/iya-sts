@@ -656,10 +656,12 @@ const TEMPLATES: TemplateRow[] = [
     parameters: [
       { name: 'credentialSignals',
         label: 'Signals that are evidence about a CREDENTIAL',
-        dflt: 'account-failures', type: 'string',
+        dflt: 'account-failures, authenticator-compromised', type: 'string',
         help: 'Comma separated. Crossing into HIGH with one of them sends ' +
               'RISC credential-compromise: the password is being guessed or ' +
-              'has been, and relying parties should stop trusting it.' },
+              'has been, or the security key\'s model is reported ' +
+              'compromised in the FIDO metadata, and relying parties should ' +
+              'stop trusting it.' },
       { name: 'disableFromScore',
         label: 'Disable the account from this score (empty: never)',
         dflt: '', type: 'string',

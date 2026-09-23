@@ -29,7 +29,8 @@ policy*, below.
 | P2 | **Done** (2026-09-23): the model (a port of Freeman et al. from `das-group/rba-algorithm`, MIT), `sts_risk_assessments`, `sts_risk_feature_counts`, `sts_risk_subjects`, `sts_risk_session_context`, device signals (`bowser`, `isbot`). Observe only. |
 | P3 | **Done** (2026-09-22): the risk facts in every issuance request, three risk rules in the built-in `role-issuance` policy, step-up at the doors that can ask, enforced in product and observed in development. The design change is on #62 (comment 5787912263). |
 | P4 | **Done** (2026-09-22): the `risk-response` policy and the reactions it permits, taken once per assessment; continuous evaluation of a live session's device, TLS client and network; the `risk.rescore` job; CAEP risk-level-change emitted on its own. |
-| P5–P6 | MDS3, fingerprinting and the breached-password filter — the plan comment. |
+| P5 | **Done** (2026-09-22): FIDO MDS3 — the `fido.mds3` dataset, the BLOB verified to the FIDO root and its chain's revocation checked, a rollback refused, the latest BLOB only, and `authenticator-compromised` scored at sign-in and by the rescore job. Mail (#63) is its own ticket. |
+| P6 | Optional fingerprinting, the breached-password filter, "this was me" — the plan comment. |
 
 ## THE LICENCE BOUNDARY: NOTHING THIRD-PARTY IS SHIPPED (2026-09-22)
 
@@ -395,6 +396,51 @@ it: a list that rotated an address out is not a reason to trust a session
 more than its sign-in did. The device and the model cannot move without a
 request, which is continuous evaluation's business.
 
+## THE FIDO METADATA (P5, 2026-09-22)
+
+`fido.mds3` is a dataset like the others — imported by `importVersion()`
+from the loader, the directory or an upload, under a recorded acceptance of
+`fido-mds3`'s terms — with its own path, `importMds()`, because it is one
+signed document rather than lines, and MDS3 section 3.1.8 says what must be
+true of it before a byte is kept:
+
+* **Signature and chain**: `pki.verifyFidoMdsBlob()` — the header's `x5c`
+  to the FIDO root with `verifyPathToAnchors()`, the signature with
+  `crypto.verifyCompactJws()` and an algorithm list named here. **The root is
+  not shipped**: with `risk.mdsTrustAnchors` empty it is GlobalSign Root CA -
+  R3 out of node's `tls.rootCertificates`, by name. A chain and signature
+  check belongs in `pki.js` and `crypto.js` (rcbj's rule of 2026-09-21), and
+  that is where it is.
+* **Revocation**: `revocation_status.verdictFor()` on the chain, fetching
+  its CRLs, under the mode's revocation policy — the same question a
+  presented chain is asked. In the loader it is the loader that dials; on an
+  upload it is the service, as for any presented chain.
+* **Rollback**: the serial `no` must exceed every BLOB already processed
+  (`parameters.mdsNo`), or STS-RISK-0024.
+* **The latest only** (`latestOnly`, FIDO's terms): activating a BLOB
+  deletes every older version's rows at once; the version rows stay as the
+  record. The shrink check does not apply — the signature is the integrity
+  check, and a BLOB may legitimately list fewer models.
+* **Stale** past its own `nextUpdate` plus `risk.mdsStaleGraceDays`.
+
+The rows (`sts_risk_fido_authenticators`, from schema 7) are one per key a
+model is listed under — AAGUID, AAID, attestation key identifier — with the
+status reports, the latest status by date, the certification level, and
+**`compromised` if any report ever said REVOKED, USER_VERIFICATION_BYPASS or
+one of the three KEY_COMPROMISE statuses** (a later "update available" does
+not recall a key the model already leaked). The metadata statement is kept
+without its icon.
+
+**Scored**: `lookupAuthenticator()` by the AAGUID the WebAuthn ceremony
+recorded on the event; a compromised model is `authenticator-compromised`
+(×50 — HIGH on its own), and the assessment records the BLOB's version and
+the model's certification level. The rescore job checks a live session's key
+the same way, so a BLOB that newly reports a model reaches the sessions
+resting on it. `risk-response`'s default `credentialSignals` include it, and
+RISC `credential-compromise` then names a FIDO credential. An unlisted
+model, and the all-zero AAGUID of an authenticator that attests nothing, are
+unknown and decide nothing.
+
 ## THE REQUIRE ORDER, AND THE TRAP IT HIT
 
 The four libraries and the page are built at **18j** in
@@ -430,6 +476,10 @@ hit the same trap through `request_pool.js` in P0.
   one, a session at HIGH issued no code, a MEDIUM session with a device
   signal sent back for a key, an operator deny list refused — and observed
   in development.
+* `tests/risk_mds.js` (P5) — a SYNTHETIC BLOB (a root and signer minted in
+  the test): an entry as rows, the verification's four refusals, import,
+  rollback refused, the latest only, lookup, staleness, a revoked model
+  scored HIGH, and a BLOB under another root refused and recorded.
 * `tests/risk_response.js` (P4) — the `risk-response` policy in both shapes
   and its round trips, its decisions, sessions ended once per assessment,
   development observing, a realm override that disables, CAEP's new act, a

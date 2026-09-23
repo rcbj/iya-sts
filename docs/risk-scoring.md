@@ -93,6 +93,7 @@ on a new device scores well above 1.
 | `new-tls-stack` | ×2 | the connection's TLS client fingerprint (JA4) is one this person has not signed in with before |
 | `account-failures` | ×3 | five or more refused passwords for this person in the last hour |
 | `network-failures` | ×3 | twenty or more refused passwords from this network in the last hour |
+| `authenticator-compromised` | ×50 | the security key's model is reported revoked or compromised in the FIDO metadata |
 
 These factors are a first calibration. Every assessment on Monitoring → Risk
 lists the signals it carried, so the factors can be tuned against real
@@ -246,7 +247,9 @@ ways in:
   send `POST /admin-api/risk/import`. This suits small lists; a file of
   millions of rows belongs in the loader or the directory.
 
-The running service never fetches a dataset.
+The running service never fetches a dataset. It does fetch the CRLs of a
+FIDO BLOB's signing chain when a BLOB is uploaded to it, as it does for any
+certificate chain presented to it.
 
 | Dataset | What it holds | Formats |
 |---|---|---|
@@ -256,6 +259,42 @@ The running service never fetches a dataset.
 | `iplist.tor-exit` | Tor exit addresses | one address, CIDR block or range per line |
 | `iplist.reputation` | an IP reputation list | the same |
 | `iplist.operator-deny`, `iplist.operator-allow` | your own lists, one per realm | the same |
+| `fido.mds3` | every FIDO-certified authenticator model and its status reports, by AAGUID | the MDS3 BLOB exactly as FIDO publishes it: one signed JWT |
+
+### The FIDO metadata
+
+The FIDO Alliance's Metadata Service (MDS3) lists every certified
+authenticator model. It also says when a model has been **revoked**, or its
+keys can be extracted, or its user verification bypassed. A security key of
+such a model proves possession of something anybody may hold, so a sign-in
+with one carries the signal `authenticator-compromised` (×50) and is HIGH.
+The `risk.rescore` job raises a live session resting on such a key when a new
+BLOB reports it. RISC's `credential-compromise` then names a FIDO credential,
+not a password.
+
+Load it with the loader, adding `fido-mds3` to `--accept-terms`:
+
+```json
+{ "datasets": [ { "dataset": "fido.mds3", "format": "fido-mds3-jwt",
+                  "url": "https://mds3.fidoalliance.org/" } ] }
+```
+
+Before anything is kept, each BLOB goes through the checks MDS3 section 3.1.8
+names:
+
+- **The signature and the chain.** The chain must end at the FIDO root,
+  GlobalSign Root CA - R3, which is found in the Node.js root store; iya-sts
+  ships no FIDO certificate. `risk.mdsTrustAnchors` pins a different root.
+- **Revocation.** Each certificate in the chain is checked against its CRL,
+  under the same revocation policy as any other presented certificate.
+- **A serial number greater than any BLOB already processed.** An older one
+  is a rollback and is refused.
+
+As FIDO's terms require, **only the latest BLOB is kept**: when a new one
+becomes active, the older one's rows are deleted at once. It stops answering
+`risk.mdsStaleGraceDays` after the date the BLOB says the next one is due; run
+the loader again before then. An authenticator the metadata does not list,
+including one that attests nothing (the all-zero AAGUID), is simply unknown.
 
 ### Each version is checked before it becomes active
 
@@ -313,7 +352,7 @@ acceptance.
 | **FireHOL lists** | each list's own terms | An aggregate: each list inside it (DShield, Feodo, Fullbogons, Spamhaus DROP and others) keeps its own terms. Use it internally and never redistribute it. |
 | Your own lists | yours | Nothing to accept. |
 | **MaxMind GeoLite2** | GeoLite EULA | **Not supported.** An import naming it is refused. |
-| **FIDO MDS3** | FIDO Alliance metadata terms | Planned. |
+| **FIDO MDS3** | FIDO Alliance metadata terms | Contractual metadata, not open data: use it for FIDO authentication, keep only the latest BLOB, and do not copy or redistribute it. |
 | **Pwned Passwords** | Have I Been Pwned's Pwned Passwords terms | Planned. |
 
 ## What is kept about the people who sign in
@@ -360,6 +399,8 @@ kept in step with `common/config.js`.
 |---|---|---|---|
 | `risk.assessSignIns` | `STS_RISK_ASSESS_SIGN_INS` | `true` | Score and record every sign-in, and give the issuance policy its risk. |
 | `risk.enforceInDevelopment` | `STS_RISK_ENFORCE_IN_DEVELOPMENT` | `false` | Enforce the policy's risk decisions in development mode too. |
+| `risk.mdsTrustAnchors` | `STS_RISK_MDS_TRUST_ANCHORS` | *(empty)* | The certificates a FIDO MDS3 BLOB's chain must end at; empty uses GlobalSign Root CA - R3 from the Node.js root store. |
+| `risk.mdsStaleGraceDays` | `STS_RISK_MDS_STALE_GRACE_DAYS` | `7` | How long past its `nextUpdate` the active BLOB still answers. |
 | `risk.rescoreEveryS` | `STS_RISK_RESCORE_EVERY_S` | `300` | How often the `risk.rescore` job re-checks every live session. |
 | `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | The policy asked what happens when a person's risk changes. |
 | `risk.standingValidMinutes` | `STS_RISK_STANDING_VALID_MINUTES` | `720` | How long a person's last assessed risk stands in for an issuance with no session. |
@@ -401,7 +442,6 @@ The next phases of [issue #62](https://github.com/rcbj/iya-sts/issues/62)
 will do the following:
 
 - **Add more checks.**
-  - Use FIDO authenticator metadata.
   - Check new passwords against Pwned Passwords with a probabilistic filter.
   - Add optional browser fingerprinting. It will be off by default, with its
     own switch per realm.
@@ -417,7 +457,7 @@ will do the following:
   `POST /admin-api/risk/import`, `activate`, `rollback`, `delete` and
   `accept-terms`, described in the
   [OpenAPI document](management-api.md).
-- **Error codes** `STS-RISK-0001` to `STS-RISK-0021` are listed on
+- **Error codes** `STS-RISK-0001` to `STS-RISK-0024` are listed on
   [Error codes](error-codes.md).
 
 ## Related

@@ -95,7 +95,19 @@ const CATALOGUE: Record<string, Json> = {
     category: 'operator-allow', stale: 'never', perRealm: true,
     formats: ['ip-list'], provider: 'operator',
     what: 'Networks this realm\'s operator vouches for — a corporate egress, ' +
-          'a VPN concentrator.' }
+          'a VPN concentrator.' },
+  // THE FIDO METADATA SERVICE (#62 P5): every certified authenticator model,
+  // by AAGUID, and what is known about it — above all whether it has been
+  // REVOKED or its keys reported compromised. One signed BLOB, verified
+  // (`pki.verifyFidoMdsBlob()`, then revocation) before anything is kept;
+  // only the LATEST is kept, as FIDO's terms require (`latestOnly`), and it
+  // is stale past its own `nextUpdate` plus `risk.mdsStaleGraceDays`.
+  'fido.mds3': { kind: 'fido', title: 'FIDO authenticator metadata (MDS3)',
+    stale: 'fido', formats: ['fido-mds3-jwt'], provider: 'fido-mds3',
+    latestOnly: true,
+    what: 'Every FIDO-certified authenticator model and its status reports. ' +
+          'A security key whose model the metadata reports REVOKED or ' +
+          'compromised is a risk signal; the rest is shown, not scored.' }
 };
 
 // WHO A DATASET COMES FROM, AND ON WHAT TERMS, is `risk_terms.ts`'s: the
@@ -121,6 +133,9 @@ const FORMATS: Record<string, Json> = {
   'ipinfo-lite-csv': { provider: 'ipinfo-lite',
     what: 'IPinfo Lite, with its header row: network, country, ' +
           'country_code, continent, continent_code, asn, as_name, as_domain.' },
+  'fido-mds3-jwt': { provider: 'fido-mds3',
+    what: 'The MDS3 BLOB exactly as FIDO publishes it: one signed JWT, whose ' +
+          'x5c chain must end at the FIDO root.' },
   'ip-list': { provider: '',
     what: 'One address, CIDR block or "first - last" range per line; text ' +
           'after # or ; is a comment. The Tor Project\'s exit list and ' +
@@ -494,6 +509,10 @@ class RiskDatasets {
       publishedAt: Number(o.publishedAt) || fetchedAt,
       nextUpdateAt: 0, fetchedAt: fetchedAt
     };
+    if (entry.kind === 'fido') {
+      log.debug("Leaving RiskDatasets.importVersion(). An MDS3 BLOB.");
+      return this.importMds(o, meta);
+    }
     const began = await store.beginVersion(meta);
     if (!began) {
       log.debug("Leaving RiskDatasets.importVersion(). Already recorded.");
@@ -599,6 +618,246 @@ class RiskDatasets {
   }
 
   // A refusal, audited and coded.
+  // -------------------------------------------------------------------------
+  // THE FIDO MDS3 BLOB (#62 P5), MDS3 section 3.1.8's steps in order:
+  //
+  //   1. the signature and the chain to the FIDO root (`pki.js`);
+  //   2. every certificate in the chain not revoked — `revocation_status.js`
+  //      fetches their CRLs, and the mode's revocation policy decides what an
+  //      unknown answer means, as it does for any presented chain;
+  //   3. the serial number `no` GREATER than the active BLOB's: an older one
+  //      is a rollback and is refused (STS-RISK-0024), whatever it is signed
+  //      with;
+  //   4. then the entries, one row per key an authenticator model is listed
+  //      under (AAGUID, AAID, attestation key identifier), activated — and
+  //      every OLDER version's rows deleted at once (`latestOnly`): FIDO's
+  //      terms are the latest BLOB and nothing kept to roll back to.
+  //
+  // A refused BLOB is still recorded as a refused version, with its reason
+  // and code, as every dataset's is.
+  // -------------------------------------------------------------------------
+  private async importMds(o: Json, meta: Json): Promise<Json> {
+    const { log, store, now, config } = this.deps;
+    log.debug("Entering RiskDatasets.importMds().");
+    const text = o.path ? fs.readFileSync(o.path, 'utf8') : String(o.content);
+    const refuse = async (code: string, why: string,
+                          params?: Json): Promise<Json> => {
+      log.debug("Entering refuse(). " + code);
+      await store.beginVersion(meta);
+      await store.finishVersion('', meta.dataset, meta.version, {
+        state: 'refused', rowCount: 0, loadedAt: now(), refusal: why,
+        errorCode: code, parameters: params || {} });
+      log.debug("Leaving refuse().");
+      return this.refused(code, why, o, meta.version);
+    };
+    if (o.sha256 && String(o.sha256).toLowerCase() !== meta.sha256) {
+      log.debug("Leaving RiskDatasets.importMds(). Checksum.");
+      return refuse('STS-RISK-0002', 'The file\'s SHA-256 is ' + meta.sha256 +
+                    ', not the ' + o.sha256 + ' that was named.');
+    }
+    const pki = require('../common/pki');
+    const verified = await pki.verifyFidoMdsBlob(text, {
+      anchorsPem: String(config.value('risk.mdsTrustAnchors') || ''),
+      now: now() });
+    if (!verified.ok) {
+      log.debug("Leaving RiskDatasets.importMds(). Does not verify.");
+      return refuse('STS-RISK-0022', 'The BLOB does not verify: ' +
+                    verified.reason + '. Nothing was loaded.');
+    }
+    const verdict = await require('../common/revocation_status').verdictFor({
+      leaf: verified.chainPems[0], chain: verified.chainPems.slice(1),
+      verified: true }, { external: 'fetch' });
+    if (verdict.refused || verdict.status === 'revoked') {
+      log.debug("Leaving RiskDatasets.importMds(). Revocation.");
+      return refuse('STS-RISK-0023', 'The BLOB\'s signing chain is ' +
+                    (verdict.status === 'revoked' ? 'REVOKED'
+                                                  : 'of unknown status') +
+                    ', and the revocation policy (' + String(verdict.policy ||
+                    '') + ') refuses it: ' + String(verdict.message ||
+                    verdict.why || '') + '. Nothing was loaded.',
+                    { revocation: String(verdict.status || '') });
+    }
+    const payload = verified.payload;
+    const serial = Number(payload.no);
+    const versions = await store.listVersions('', meta.dataset);
+    const newest = versions.reduce(function (most: number, v: Json): number {
+      const no = Number(v.parameters && v.parameters.mdsNo);
+      return (v.state === 'active' || v.state === 'superseded') &&
+             isFinite(no) && no > most ? no : most;
+    }, -1);
+    if (serial <= newest) {
+      log.debug("Leaving RiskDatasets.importMds(). Not newer.");
+      return refuse('STS-RISK-0024', 'This BLOB\'s serial number is ' +
+                    serial + ', and ' + newest + ' has already been ' +
+                    'processed. MDS3 section 3.1.8 refuses a BLOB that is ' +
+                    'not newer: an older one is a rollback, however well ' +
+                    'it is signed.');
+    }
+    const nextUpdate = Date.parse(String(payload.nextUpdate || ''));
+    const staged = Object.assign({}, meta, {
+      version: String(o.version || 'no-' + serial),
+      verification: 'signature',
+      nextUpdateAt: isFinite(nextUpdate) ? nextUpdate : 0,
+      parameters: Object.assign({}, meta.parameters, {
+        mdsNo: serial, revocation: String(verdict.status || ''),
+        legalHeader: String(payload.legalHeader || '').slice(0, 500) }) });
+    const began = await store.beginVersion(staged);
+    if (!began) {
+      log.debug("Leaving RiskDatasets.importMds(). Already recorded.");
+      return { ok: true, duplicate: true, dataset: staged.dataset,
+               version: staged.version,
+               message: 'BLOB ' + serial + ' is already recorded.' };
+    }
+    const rows: Json[] = [];
+    payload.entries.forEach(function (entry: Json): void {
+      RiskDatasets.mdsRowsOf(entry).forEach(function (row: Json): void {
+        rows.push(row);
+      });
+    });
+    let written = 0;
+    for (let i = 0; i < rows.length; i += BATCH_ROWS) {
+      written += await store.insertRows('fido', '', staged.dataset,
+                                        staged.version,
+                                        rows.slice(i, i + BATCH_ROWS));
+    }
+    if (!written) {
+      await store.finishVersion('', staged.dataset, staged.version, {
+        state: 'refused', rowCount: 0, loadedAt: now(),
+        refusal: 'the BLOB lists no authenticator', errorCode: 'STS-RISK-0004' });
+      log.debug("Leaving RiskDatasets.importMds(). Empty.");
+      return this.refused('STS-RISK-0004', 'The BLOB lists no authenticator.',
+                          o, staged.version);
+    }
+    await store.finishVersion('', staged.dataset, staged.version, {
+      state: 'ready', rowCount: written, loadedAt: now() });
+    let activated = false;
+    if (o.activate !== false) {
+      const answer = await store.activate('', staged.dataset, 'fido',
+                                          staged.version, now());
+      activated = !!(answer && answer.activated);
+    }
+    let dropped = 0;
+    if (activated) {
+      // THE LATEST ONLY: every older BLOB's rows go now, not at the
+      // retention job's next pass. Its version row stays, as the record.
+      for (const v of await store.listVersions('', staged.dataset)) {
+        if (v.version !== staged.version && v.state !== 'refused' &&
+            v.rowCount) {
+          dropped += await this.dropRows('fido', '', staged.dataset,
+                                         v.version);
+          await store.markRowsDeleted('', staged.dataset, v.version, now());
+        }
+      }
+    }
+    this.auditRow('risk.dataset.import', o, staged.version, 'success', '',
+                  'FIDO MDS3 BLOB ' + serial + ': ' + written +
+                  ' authenticator key(s) loaded' +
+                  (activated ? ' and activated' : '') +
+                  (dropped ? '; ' + dropped + ' older row(s) deleted' : ''));
+    log.info('risk: FIDO MDS3 BLOB ' + serial + ' verified (revocation ' +
+             String(verdict.status || 'unchecked') + '): ' + written +
+             ' authenticator key(s)' + (activated ? ', now active' : '') +
+             (dropped ? '; the older BLOB\'s ' + dropped + ' row(s) deleted'
+                      : '') + '.');
+    log.debug("Leaving RiskDatasets.importMds(). Loaded.");
+    return { ok: true, dataset: staged.dataset, realm: '',
+             version: staged.version, state: activated ? 'active' : 'ready',
+             rows: written, skipped: 0, activated: activated,
+             sha256: meta.sha256, serial: serial,
+             message: 'FIDO MDS3 BLOB ' + serial + ' verified: ' + written +
+                      ' authenticator key(s) loaded' +
+                      (activated ? ', now active' : '') + '.' };
+  }
+
+  // The statuses MDS3 section 3.1.4 uses to say an authenticator model can
+  // no longer be trusted to protect a key.
+  static readonly MDS_COMPROMISED = ['REVOKED', 'USER_VERIFICATION_BYPASS',
+    'ATTESTATION_KEY_COMPROMISE', 'USER_KEY_REMOTE_COMPROMISE',
+    'USER_KEY_PHYSICAL_COMPROMISE'];
+
+  // -------------------------------------------------------------------------
+  // ONE MDS3 ENTRY AS ROWS: one per key the model is listed under. The
+  // latest status report is the one with the latest effective date; the
+  // model is COMPROMISED if any report ever said so (a later "update
+  // available" does not recall a key the model already leaked); the
+  // certification level is the latest FIDO_CERTIFIED* report's. The metadata
+  // statement is kept for the page without its icon, which is an image.
+  // -------------------------------------------------------------------------
+  static mdsRowsOf(entry: Json): Json[] {
+    log.debug("Entering RiskDatasets.mdsRowsOf().");
+    const e = entry || {};
+    const reports = (Array.isArray(e.statusReports) ? e.statusReports : [])
+      .slice().sort(function (a: Json, b: Json): number {
+        return String(a.effectiveDate || '') < String(b.effectiveDate || '')
+          ? -1 : 1;
+      });
+    const latest = reports.length ? reports[reports.length - 1] : {};
+    const certified = reports.filter(function (r: Json): boolean {
+      return /^FIDO_CERTIFIED/.test(String(r.status || ''));
+    });
+    const statement = Object.assign({}, e.metadataStatement || {});
+    delete statement.icon;
+    const base = {
+      description: String(statement.description || ''),
+      protocolFamily: String(statement.protocolFamily || ''),
+      certificationLevel: certified.length
+        ? String(certified[certified.length - 1].status) : '',
+      latestStatus: String(latest.status || ''),
+      latestStatusAt: Date.parse(String(latest.effectiveDate || '')) || 0,
+      compromised: reports.some(function (r: Json): boolean {
+        return RiskDatasets.MDS_COMPROMISED.indexOf(String(r.status)) >= 0;
+      }),
+      statusReports: reports.map(function (r: Json): Json {
+        return { status: String(r.status || ''),
+                 effectiveDate: String(r.effectiveDate || '') };
+      }),
+      metadataStatement: statement
+    };
+    const rows: Json[] = [];
+    if (e.aaguid) {
+      rows.push(Object.assign({ keyKind: 'aaguid',
+                                key: String(e.aaguid).toLowerCase() }, base));
+    }
+    if (e.aaid) {
+      rows.push(Object.assign({ keyKind: 'aaid',
+                                key: String(e.aaid).toLowerCase() }, base));
+    }
+    (Array.isArray(e.attestationCertificateKeyIdentifiers)
+      ? e.attestationCertificateKeyIdentifiers : [])
+      .forEach(function (one: unknown): void {
+        rows.push(Object.assign({ keyKind: 'acki',
+                                  key: String(one).toLowerCase() }, base));
+      });
+    log.debug("Leaving RiskDatasets.mdsRowsOf(). " + rows.length + ".");
+    return rows;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT THE METADATA SAYS ABOUT ONE AUTHENTICATOR MODEL, by AAGUID (#62
+  // P5): `{ model, version }`, or null — no active BLOB, a stale one, the
+  // all-zero AAGUID of an authenticator that attests nothing, or a model the
+  // BLOB does not list. Null decides nothing: unknown never denies.
+  // -------------------------------------------------------------------------
+  async lookupAuthenticator(aaguid: string): Promise<Json | null> {
+    const { log, store, now } = this.deps;
+    log.debug("Entering RiskDatasets.lookupAuthenticator().");
+    const key = String(aaguid || '').toLowerCase();
+    if (!key || /^[0-]+$/.test(key)) {
+      log.debug("Leaving RiskDatasets.lookupAuthenticator(). No AAGUID.");
+      return null;
+    }
+    const active = (await this.activeVersions()).get('\u0000fido.mds3');
+    if (!active || this.isStale(CATALOGUE['fido.mds3'], active, now())) {
+      log.debug("Leaving RiskDatasets.lookupAuthenticator(). No usable BLOB.");
+      return null;
+    }
+    const model = await store.lookupFido('fido.mds3', active.version,
+                                         'aaguid', key);
+    log.debug("Leaving RiskDatasets.lookupAuthenticator(). " +
+              (model ? 'Listed.' : 'Not listed.'));
+    return model ? { model: model, version: active.version } : null;
+  }
+
   private refused(code: string, why: string, o: Json, version?: string): Json {
     const { log } = this.deps;
     log.debug("Entering RiskDatasets.refused(). " + code);
@@ -798,6 +1057,7 @@ class RiskDatasets {
         realm: row.realm, dataset: row.dataset, version: row.activeVersion,
         previousVersion: row.previousVersion,
         publishedAt: v ? v.publishedAt : 0, rowCount: v ? v.rowCount : 0,
+        nextUpdateAt: v ? Number(v.nextUpdateAt) || 0 : 0,
         provider: v ? v.provider : '',
         attribution: v ? v.attribution : '',
         attributionUrl: v && v.parameters
@@ -809,8 +1069,16 @@ class RiskDatasets {
   }
 
   private isStale(entry: Json, active: Json, at: number): boolean {
-    const { log } = this.deps;
+    const { log, config } = this.deps;
     log.debug("Entering RiskDatasets.isStale().");
+    if (entry.stale === 'fido') {
+      // The BLOB says when the next one is due; past it, and the grace, the
+      // metadata is out of date and says nothing (#62 P5).
+      const due = Number(active.nextUpdateAt || 0);
+      log.debug("Leaving RiskDatasets.isStale(). FIDO.");
+      return !due || at > due +
+        Number(config.value('risk.mdsStaleGraceDays')) * 86400000;
+    }
     const limit = this.staleAfterMs(entry);
     log.debug("Leaving RiskDatasets.isStale().");
     return limit > 0 && at - Number(active.publishedAt || 0) > limit;
@@ -1195,6 +1463,8 @@ export = {
   rollback: slot.forward('rollback'),
   deleteVersion: slot.forward('deleteVersion'),
   lookup: slot.forward('lookup'),
+  lookupAuthenticator: slot.forward('lookupAuthenticator'),
+  mdsRowsOf: RiskDatasets.mdsRowsOf,
   registry: slot.forward('registry'),
   importDirectory: slot.forward('importDirectory'),
   retainVersions: slot.forward('retainVersions'),
