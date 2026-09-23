@@ -233,9 +233,36 @@ All are per realm and changeable while running. They are listed in
 
 `oid4vp.federationAuthorityHints` was replaced by `oidfed.authorityHints`.
 
+## Client registration through the federation
+
+A realm's OpenID Provider registers relying parties it was never configured
+with, when a Trust Anchor it trusts vouches for them
+(`oidfed.clientRegistrationTypes`, default `automatic,explicit`). This is the
+same in development and product mode.
+
+- **Automatic.** The RP's first authorization or PAR request uses its Entity
+  Identifier as `client_id`. It proves it holds its key with a signed request
+  object, or with a `private_key_jwt` at PAR. The request's `aud` must be this
+  OP alone.
+- **Explicit.** The RP POSTs its Entity Configuration, with `aud` naming this
+  OP, to `/oidfed/register`. It can also send a Trust Chain beginning with
+  that configuration, as `application/trust-chain+json`. The answer is a
+  signed `explicit-registration-response+jwt`.
+
+Either way, the RP's chain must reach one of the realm's Trust Anchors. Its
+resolved `openid_relying_party` metadata is then checked like any RFC 7591
+registration. The registration lasts until the chain expires, or for at most
+`oidfed.registrationLifetimeS`.
+
+**This service as a federated RP.** Set `fedTrustAnchor` on an OpenID Connect
+federation relationship, with `fedPeer` as the OP's Entity Identifier. The OP
+is then discovered through its Trust Chain and registered with automatically.
+The realm's Entity Configuration publishes `openid_relying_party` metadata
+carrying its signing key.
+
 ## Not yet
 
-- **OpenID Connect client registration through the federation** (automatic
-  and explicit), and this service as a federated relying party (#134).
+- As an RP, this service registers only automatically.
+- Trusting a credential issuer through the federation (OpenID4VP).
 - **Extended Subordinate Listing, Entity Collection and Subordinate Events**
   (#135–#137).

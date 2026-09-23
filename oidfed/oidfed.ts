@@ -76,7 +76,9 @@ const PATHS = Object.freeze({
   trustMark: '/oidfed/trust-mark',
   trustMarkStatus: '/oidfed/trust-mark-status',
   trustMarkList: '/oidfed/trust-mark-list',
-  historicalKeys: '/oidfed/historical-keys'
+  historicalKeys: '/oidfed/historical-keys',
+  // Connect 1.1's federation_registration_endpoint (#134).
+  register: '/oidfed/register'
 });
 
 // Resolutions this process has made, per realm, keyed `<sub> <anchor>`. A
@@ -131,6 +133,10 @@ interface OidfedDeps {
   fedHttp: () => Json;
   audit: () => Json;
   scheduler: () => Json;
+  // Client registration through the federation (#134), which reads this
+  // module back.
+  registration: () => Json;
+  relyingParty: () => Json;
   now: () => number;
 }
 
@@ -172,6 +178,12 @@ class Oidfed {
       },
       scheduler: function (): Json {
         return require('../cluster/scheduler');
+      },
+      registration: function (): Json {
+        return require('./oidfed_registration');
+      },
+      relyingParty: function (): Json {
+        return require('./oidfed_rp');
       },
       now: function (): number {
         return Date.now();
@@ -489,6 +501,37 @@ class Oidfed {
     Object.keys(documents).forEach(function (type: string): void {
       out[type] = self.withoutNulls(documents[type]);
     });
+    // CLIENT REGISTRATION THROUGH THE FEDERATION (Connect 1.1, 5.1.2 and 12,
+    // #134): the types this realm's OP accepts, and where an Explicit
+    // Registration is sent. Beside the OpenID Provider metadata ONLY here —
+    // the discovery document is for a client that already registered.
+    if (out.openid_provider) {
+      const types = this.registrationTypes();
+      out.openid_provider.client_registration_types_supported = types;
+      if (types.indexOf('explicit') >= 0) {
+        out.openid_provider.federation_registration_endpoint =
+          this.deps.baseUrlOf(req) + PATHS.register;
+      }
+      // How an automatic registration proves the RP holds its key (Connect
+      // 1.1, 5.1.2, 12.1.1): a request object at either endpoint, or a
+      // private_key_jwt at PAR — what oidfed_registration.ts accepts.
+      if (types.indexOf('automatic') >= 0) {
+        out.openid_provider.request_authentication_methods_supported = {
+          authorization_endpoint: ['request_object'],
+          pushed_authorization_request_endpoint: ['request_object',
+                                                  'private_key_jwt']
+        };
+        out.openid_provider
+          .request_authentication_signing_alg_values_supported =
+          EntityStatement.acceptedAlgorithms();
+      }
+    }
+    // THIS REALM AS A RELYING PARTY (#134): published only where a
+    // federation relationship discovers its OP through a Trust Chain.
+    const rp = this.deps.relyingParty().relyingPartyMetadata(req);
+    if (rp) {
+      out.openid_relying_party = rp;
+    }
     const v = verifier();
     if (v && typeof v.federationVerifierMetadata === 'function') {
       out.openid_credential_verifier =
@@ -496,6 +539,21 @@ class Oidfed {
     }
     log.debug("Leaving Oidfed.protocolMetadata(). " +
               Object.keys(out).join(', '));
+    return out;
+  }
+
+  // The client registration types this realm's OP accepts through the
+  // federation (`oidfed.clientRegistrationTypes`, Connect 1.1, 12).
+  registrationTypes(): string[] {
+    const { log, config } = this.deps;
+    log.debug("Entering Oidfed.registrationTypes().");
+    const out = (config.value('oidfed.clientRegistrationTypes') || [])
+      .map(function (t: Json): string {
+        return String(t).trim();
+      }).filter(function (t: string): boolean {
+        return t === 'automatic' || t === 'explicit';
+      });
+    log.debug("Leaving Oidfed.registrationTypes(). " + out.join(','));
     return out;
   }
 
@@ -1219,6 +1277,23 @@ class Oidfed {
         }
         self.sendJwt(res, 'jwk-set+jwt', String(out.jwt));
       }));
+    // Explicit Registration (OpenID Federation for OpenID Connect 1.1,
+    // 12.2, #134): the body is the RP's Entity Configuration or a Trust
+    // Chain, which app.js's text parser hands over as the string sent.
+    app.post(PATHS.register, this.endpoint('registration',
+      async function (req: Req, res: Res): Promise<void> {
+        const out = await self.deps.registration().explicit(req,
+          String(req.get('content-type') || ''),
+          typeof req.body === 'string' ? req.body : '');
+        if (!out.ok) {
+          self.sendError(res, { ok: false, code: out.code,
+                                why: out.description, error: out.error,
+                                status: out.status });
+          return;
+        }
+        self.sendJwt(res, 'explicit-registration-response+jwt',
+                     String(out.jwt));
+      }));
     log.debug("Leaving Oidfed.registerRoutes().");
   }
 
@@ -1819,6 +1894,7 @@ export = {
   PATHS: PATHS,
   registerRoutes: slot.forward('registerRoutes'),
   entityId: slot.forward('entityId'),
+  registrationTypes: slot.forward('registrationTypes'),
   configuration: slot.forward('configuration'),
   subordinateStatement: slot.forward('subordinateStatement'),
   resolve: slot.forward('resolve'),

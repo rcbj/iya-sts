@@ -547,6 +547,12 @@ const ACTIONS = [
 
   { action: 'application.delete', category: 'application',
     label: 'An application was deleted from the registry' },
+  // OpenID Federation client registration (#134): an application that came
+  // to exist because a Trust Anchor vouched for it, and one that tried.
+  { action: 'oidfed.registered', category: 'application',
+    label: 'A relying party was registered through an OpenID Federation' },
+  { action: 'oidfed.registration-refused', category: 'application',
+    label: 'A registration through an OpenID Federation was refused' },
 
   { action: 'admin.view', category: 'admin',
     label: 'A console page was viewed' },

@@ -898,6 +898,25 @@ const SCHEMA = {
             '"startup" (one of this service\'s own seeded clients). Absent ' +
             'on an application that simply turned up. Written by this ' +
             'registry and not editable; it grants and refuses nothing.' },
+    // REGISTERED THROUGH AN OPENID FEDERATION (#134, 2026-09-23): an
+    // application that became a client because its Trust Chain ended at one
+    // of this realm's Trust Anchors (OpenID Federation for OpenID Connect
+    // 1.1, section 12), how, until when and through which anchor. Past
+    // appFederationExpiresAt the client is UNKNOWN to every endpoint
+    // (clientConfigOf()) — 12.3: a registration may not outlive the chain it
+    // was made from — and the oidfed.registrations-expire job removes it.
+    { name: 'appFederationRegistration', kind: 'single',
+      from: 'OpenID Federation (#134)',
+      what: '"automatic" (its first signed authentication request) or ' +
+            '"explicit" (its Entity Configuration POSTed to /oidfed/register).' },
+    { name: 'appFederationExpiresAt', kind: 'single',
+      from: 'OpenID Federation (#134)',
+      what: 'When the registration ends, in SECONDS since the epoch: the ' +
+            'Trust Chain\'s own expiry, or oidfed.registrationLifetimeS ' +
+            'if that comes first.' },
+    { name: 'appFederationTrustAnchor', kind: 'single',
+      from: 'OpenID Federation (#134)',
+      what: 'The Trust Anchor its chain ended at.' },
     { name: 'oauthClientId', kind: 'multi', from: 'OAuth 2.0 / OIDC / ' +
                                                   'OpenID4VCI',
       identifier: true,
@@ -7761,15 +7780,27 @@ function register(clientId, registration, options) {
   record.registered = true;
   // Only when nobody registered it first: an administrator's entry that later
   // registers through RFC 7591 was still put here by the administrator.
-  if (!record.fields.appRegisteredBy) {
+  // A FEDERATION REGISTRATION (#134) says so, and when it ends — replacing
+  // whatever an earlier one of the same client said (12.2.2: an existing
+  // registration is invalidated by a new one).
+  const federated = (options || {}).federation;
+  if (federated) {
+    setField(record, 'appRegisteredBy', 'oidfed-' + federated.type);
+    setField(record, 'appFederationRegistration', String(federated.type));
+    setField(record, 'appFederationExpiresAt', String(federated.expiresAt));
+    setField(record, 'appFederationTrustAnchor',
+             String(federated.trustAnchor));
+  } else if (!record.fields.appRegisteredBy) {
     setField(record, 'appRegisteredBy', 'rfc7591');
   }
   record.firstAt = record.firstAt || now;
   record.lastAt = now;
   addTo(record.kinds, 'oauth2-client');
   addTo(record.protocols, 'OAuth 2.0');
-  addTo(record.descriptions, 'registered through RFC 7591 dynamic client ' +
-                             'registration');
+  addTo(record.descriptions, federated
+    ? 'registered through an OpenID Federation Trust Chain (' +
+      federated.type + ')'
+    : 'registered through RFC 7591 dynamic client registration');
   if (registration.client_name) record.name = String(registration.client_name);
   applyRegistrationFields(record, registration,
                           (options || {}).softwareStatement);
@@ -7778,7 +7809,9 @@ function register(clientId, registration, options) {
     action: loaded.known ? 'application.update' : 'application.create',
     actor: '', protocol: 'OAuth 2.0', channel: 'internal',
     target: String(clientId),
-    summary: 'Client "' + clientId + '" registered through RFC 7591',
+    summary: 'Client "' + clientId + '" registered through ' +
+             (federated ? 'OpenID Federation (' + federated.type + ')'
+                        : 'RFC 7591'),
     detail: { identifier: String(clientId), registered: true,
               redirectUris: (registration.redirect_uris || []).length,
               storedInDirectory: written }
@@ -7904,6 +7937,42 @@ function softwareStatementFactsOf(clientId) {
            publisher: one('appSoftwareStatementPublisher') };
 }
 
+// Has a federation registration ended (#134, 12.3)? Its expiry is checked
+// at the read, whenever the job that removes it last ran.
+function federationExpired(fields) {
+  log.debug("Entering federationExpired().");
+  const at = Number((fields || {}).appFederationExpiresAt);
+  log.debug("Leaving federationExpired().");
+  return !!(fields && fields.appFederationRegistration) &&
+         !(at > Math.floor(Date.now() / 1000));
+}
+
+// Every application registered through an OpenID Federation, for the job
+// that removes the ones past their expiry and for the console.
+function federatedRegistrations() {
+  log.debug("Entering federatedRegistrations().");
+  const backing = store();
+  if (!backing) {
+    log.debug("Leaving federatedRegistrations(). No directory.");
+    return [];
+  }
+  const out = [];
+  backing.allApplications().forEach(function (entry) {
+    const record = recordFromAttributes(entry.attributes);
+    const f = record.fields;
+    if (f.appFederationRegistration) {
+      out.push({ identifier: String(record.identifier || f.oauthClientId ||
+                                    ''),
+                 type: String(f.appFederationRegistration),
+                 expiresAt: Number(f.appFederationExpiresAt) || 0,
+                 trustAnchor: String(f.appFederationTrustAnchor || ''),
+                 expired: federationExpired(f) });
+    }
+  });
+  log.debug("Leaving federatedRegistrations(). " + out.length);
+  return out;
+}
+
 // What oauth2.js's `registeredClients.get(id)` used to answer: the RFC 7591
 // record, or null for an application that merely turned up. "Registered" is the
 // distinction RFC 9700 mode's redirect URI and client authentication rules turn
@@ -7917,7 +7986,8 @@ function softwareStatementFactsOf(clientId) {
 function registrationOf(clientId) {
   log.debug("Entering registrationOf().");
   const loaded = load(clientId);
-  if (!loaded.known || !loaded.record.registered) {
+  if (!loaded.known || !loaded.record.registered ||
+      federationExpired(loaded.record.fields)) {
     log.debug("Leaving registrationOf().");
     return null;
   }
@@ -8111,8 +8181,11 @@ function declaredClient(record, fields, redirectCount) {
 function clientConfigOf(identifier) {
   log.debug("Entering clientConfigOf(). identifier=" + identifier);
   const loaded = load(identifier);
-  if (!loaded.known) {
-    log.debug("Leaving clientConfigOf(). Never seen.");
+  // A FEDERATION REGISTRATION PAST ITS CHAIN (#134, 12.3) is no registration:
+  // the client is answered as unknown everywhere until it registers again.
+  if (!loaded.known || federationExpired(loaded.record.fields)) {
+    log.debug("Leaving clientConfigOf(). Never seen, or a federation " +
+              "registration that has ended.");
     return { known: false, registered: false, declared: false,
              redirect_uris: [],
              post_logout_redirect_uris: [], token_endpoint_auth_method: '',
@@ -11858,6 +11931,9 @@ module.exports = {
   discardReturnAddress: discardReturnAddress,
   deleteApplication: deleteApplication,
   list: list,
+  // OpenID Federation registrations (#134).
+  federatedRegistrations: federatedRegistrations,
+  federationExpired: federationExpired,
   get: get,
   settingFor: settingFor,
   largestSetting: largestSetting,

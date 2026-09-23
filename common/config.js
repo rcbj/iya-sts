@@ -8068,6 +8068,27 @@ const SETTINGS = [
                  'allows one without exp, and a mark that never expires ' +
                  'outlives any decision to withdraw it.' },
 
+  { key: 'oidfed.clientRegistrationTypes', group: 'OpenID Federation',
+    label: 'Client registration through the federation',
+    env: 'STS_OIDFED_CLIENT_REGISTRATION_TYPES', type: 'csv',
+    dflt: 'automatic,explicit', runtime: true,
+    description: 'How a relying party with no registration here may become ' +
+                 'a client through the federation (OpenID Federation for ' +
+                 'OpenID Connect 1.1, 12): automatic — its first signed ' +
+                 'authentication request, whose client_id is its Entity ' +
+                 'Identifier — and explicit — its Entity Configuration ' +
+                 'POSTed to /oidfed/register. Either way only an RP whose ' +
+                 'Trust Chain ends at one of this realm\'s Trust Anchors is ' +
+                 'registered. Empty: neither.' },
+
+  { key: 'oidfed.registrationLifetimeS', group: 'OpenID Federation',
+    label: 'Federated registration lifetime (s)',
+    env: 'STS_OIDFED_REGISTRATION_LIFETIME_S', type: 'int', dflt: 86400,
+    min: 60, max: 31536000, runtime: true,
+    description: 'The longest a client registered through the federation ' +
+                 'stays registered before its Trust Chain must be resolved ' +
+                 'again — never past the chain\'s own expiry (12.3).' },
+
   { key: 'oidfed.maxAuthorityHints', group: 'OpenID Federation',
     label: 'Authority hints followed per entity',
     env: 'STS_OIDFED_MAX_AUTHORITY_HINTS', type: 'int', dflt: 5,
