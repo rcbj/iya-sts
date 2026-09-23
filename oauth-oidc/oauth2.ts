@@ -21,6 +21,8 @@
 //   POST /oauth2/par         RFC 9126 pushed authorization requests
 //   *    /oauth2/register    RFC 7591 registration + RFC 7592 management
 //   GET  /oauth2/logout      end_session_endpoint (RP-Initiated Logout)
+//   GET  /oauth2/check_session  the OP iframe, and its script beside it
+//                            (Session Management, #121; off by default)
 //   *    /oauth2/step-up/resource/:application
 //                            NON-SPEC: RFC 9470's stand-in resource server
 //   GET  /oauth2/rfc9700     NON-SPEC: whether the RFC 9700 Security BCP mode
@@ -336,6 +338,8 @@ import websecurity = require('../common/websecurity');
 import clusterClaims = require('../cluster/cluster_claims');
 import clusterBarrier = require('../cluster/cluster_barrier');
 import capabilities = require('../cluster/cluster_capabilities');
+// A leaf: OpenID Connect Session Management 1.0 (#121).
+import sessionManagement = require('./session_management');
 // A leaf: a client's registered `jwks_uri`, fetched and cached (#120).
 import clientJwks = require('./client_jwks');
 
@@ -2542,9 +2546,10 @@ class OAuth2Server {
   // What is DELIBERATELY ABSENT, since a discovery document is read as a
   // promise:
   //
-  //   * `check_session_iframe`: not implemented (#121), and an empty or
-  //     invented value for any of them is worse than the member's absence,
-  //     which says exactly the right thing. (`acr_values_supported` left this
+  //   * `check_session_iframe` while `oauth2.sessionManagement` is off
+  //     (#121 built it, off by default), and an empty or invented value for
+  //     any of them is worse than the member's absence, which says exactly
+  //     the right thing. (`acr_values_supported` left this
   //     list on 2026-09-13, when RFC 9470 made acr_values something the
   //     authorization endpoint honours; asMetadata() publishes it.)
   //   (WebFinger, section 2, is its own endpoint since #119 —
@@ -2697,6 +2702,14 @@ class OAuth2Server {
       // because the alternative is a client with no way to end a session that
       // this server really does end.
       end_session_endpoint: at + '/oauth2/logout',
+      // OpenID Connect Session Management 1.0 section 3.3 (#121): the OP
+      // iframe, only while `oauth2.sessionManagement` is on in this realm —
+      // an absent member is the honest answer while it is off. At the
+      // REALM's base under a named server too: the session, and so the
+      // browser state, is the realm's, one across its authorization servers.
+      ...(sessionManagement.enabled()
+        ? { check_session_iframe: base + sessionManagement.IFRAME_PATH }
+        : {}),
       // BOTH LOGOUT SPECIFICATIONS, EACH FOLLOWING ITS OWN SETTING. The
       // members are stated whichever way they read, because "the OP did not
       // mention it" and "the OP said no" read identically to a client and only
@@ -6234,6 +6247,58 @@ class OAuth2Server {
     return tokenBearing;
   }
 
+  // The OP iframe and its script while Session Management is off (#121): a
+  // 404 that says why. The caller has marked STS-OAUTH-0601.
+  sessionManagementOff(res: Res): Json {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.sessionManagementOff().");
+    // error-code: none — both callers mark STS-OAUTH-0601 first
+    res.status(404).type('text/plain').set('Cache-Control', 'no-store')
+       .send('OpenID Connect Session Management is off in this realm ' +
+             '(oauth2.sessionManagement), so there is no OP iframe.');
+    log.debug("Leaving OAuth2Server.sessionManagementOff().");
+    return undefined;
+  }
+
+  // ---------------------------------------------------------------------------
+  // `session_state` for the authorization response on `res` (#121), and the
+  // OP browser state written to the browser beside it; null where none is
+  // owed. The client is the one `authorizeRequest()` remembered for JARM, the
+  // scope and the session the request's own — `res.req`, because every
+  // authorization response leaves through a function that is handed `res`.
+  // ---------------------------------------------------------------------------
+  // The same, as the fields of a link (the interstitial's): `{}` or
+  // `{ session_state }`.
+  sessionStateField(res: Res, redirectUri: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.sessionStateField().");
+    const found = this.sessionStateOf(res, redirectUri);
+    log.debug("Leaving OAuth2Server.sessionStateField().");
+    return found ? { session_state: found.value } : {};
+  }
+
+  sessionStateOf(res: Res, redirectUri: Json): Json {
+    const { log, sessionOf } = this.deps;
+    log.debug("Entering OAuth2Server.sessionStateOf().");
+    const req: any = res && (res as any).req;
+    const held = (res && res.locals && res.locals.stsJarm) || {};
+    if (!req || !sessionManagement.enabled()) {
+      log.debug("Leaving OAuth2Server.sessionStateOf(). Not on.");
+      return null;
+    }
+    const session = sessionOf(req);
+    const value = sessionManagement.sessionStateFor(held.clientId,
+      redirectUri, (req.query || {}).scope, session);
+    if (!value) {
+      log.debug("Leaving OAuth2Server.sessionStateOf(). None owed.");
+      return null;
+    }
+    sessionManagement.writeCookie(res,
+                                  sessionManagement.browserStateOf(session));
+    log.debug("Leaving OAuth2Server.sessionStateOf().");
+    return { value: value };
+  }
+
   redirectBack(res: Res, base: Json, redirectUri: Json, state: Json,
                params: Json, fragment?: Json, mode?: Json): any {
     const { log, oauth21 } = this.deps;
@@ -6255,6 +6320,15 @@ class OAuth2Server {
     // RFC 9207 on every response, in every mode: a form POST is still an
     // authorization response and a client that requires `iss` requires it here.
     fields.iss = base;
+    // OPENID CONNECT SESSION MANAGEMENT section 3 (#121), where it is on: the
+    // `session_state` on every authentication response, an error included,
+    // and the OP browser state it was computed from written beside it — so
+    // the cookie the OP iframe reads can never lag the value the relying
+    // party holds. Inside a JARM response it is a claim like the rest.
+    const sessionState = self.sessionStateOf(res, redirectUri);
+    if (sessionState) {
+      fields.session_state = sessionState.value;
+    }
     // JARM (#139, #143): every one of the fields above goes into ONE signed
     // JWT, sent as `response` — `iss` becomes its claim.
     if (self.deps.jarm.isJarm(mode)) {
@@ -7363,16 +7437,19 @@ class OAuth2Server {
           // redirect would have — including the RFC 9207 iss — because the
           // point is to make the redirect a DECISION rather than to change it.
           target: self.redirectTarget(base, redirectUri, q.state,
-                                      { error: error,
+                                      Object.assign({ error: error,
                                         error_description: description },
+                                        self.sessionStateField(res,
+                                                               redirectUri)),
                                       self.usesFragment(q.response_type,
                                                         q.response_mode))
         };
         // A JARM request's link carries the JWT-secured error (#139, #143),
         // which is what its client reads.
         if (self.deps.jarm.isJarm(q.response_mode)) {
-          const fields: Json = { error: error,
-                                 error_description: description, iss: base };
+          const fields: Json = Object.assign({ error: error,
+                                 error_description: description, iss: base },
+                                 self.sessionStateField(res, redirectUri));
           if (q.state !== undefined) {
             fields.state = q.state;
           }
@@ -14044,6 +14121,62 @@ class OAuth2Server {
          .set('Cache-Control', 'no-store')
          .send(AUTOPOST_SCRIPT);
       log.debug("Leaving the authorization form-post script.");
+    });
+
+    // -------------------------------------------------------------------------
+    // OPENID CONNECT SESSION MANAGEMENT 1.0 section 3.2: THE OP IFRAME (#121).
+    //
+    // THE ONE PAGE HERE THAT MAY BE FRAMED — by the realm's registered
+    // relying parties and nobody else (`app.framedContentSecurityPolicy()`
+    // narrows `frame-ancestors` to their redirect-URI origins; with none it is
+    // still 'none'), and X-Frame-Options, which can only say DENY or
+    // SAMEORIGIN, is removed so it cannot overrule the narrower CSP.
+    //
+    // THE NINTH SCRIPTED PAGE, argued from scratch (the root CLAUDE.md's
+    // table): the iframe's whole job is to ANSWER A `postMessage`, and no
+    // markup can, so there is no submit button to fall back on — with script
+    // off it answers nothing, and a relying party's `postMessage` goes
+    // unanswered, which the specification already treats as the iframe
+    // being unusable. `script-src 'self'` naming the one sibling resource.
+    //
+    // Off (the default), both paths answer a 404 of their own that names the
+    // setting — NOT Express's `Cannot GET`, which is how
+    // tests/vendored/sts_metadata.js tells a path nobody routed from an
+    // endpoint answering 404.
+    // -------------------------------------------------------------------------
+    app.get(sessionManagement.IFRAME_PATH, function (req, res) {
+      log.debug("Entering the OP iframe.");
+      if (!sessionManagement.enabled()) {
+        errorCodes.mark(res, 'STS-OAUTH-0601');
+        log.debug("Leaving the OP iframe. Session Management is off.");
+        return self.sessionManagementOff(res);
+      }
+      res.set('Content-Security-Policy',
+              app.framedContentSecurityPolicy(
+                sessionManagement.frameAncestors(),
+                { 'script-src': "'self'", 'style-src': null }));
+      res.removeHeader('X-Frame-Options');
+      res.status(200).type('text/html').set('Cache-Control', 'no-store')
+         .send(sessionManagement.iframePage());
+      log.debug("Leaving the OP iframe.");
+      return undefined;
+    });
+
+    app.get(sessionManagement.SCRIPT_PATH, function (req, res) {
+      log.debug("Entering the OP iframe's script.");
+      if (!sessionManagement.enabled()) {
+        errorCodes.mark(res, 'STS-OAUTH-0601');
+        log.debug("Leaving the OP iframe's script. Session Management is off.");
+        return self.sessionManagementOff(res);
+      }
+      res.set('Content-Security-Policy',
+              app.contentSecurityPolicy({ 'style-src': null,
+                                          'img-src': null }));
+      res.status(200).type('application/javascript')
+         .set('Cache-Control', 'no-store')
+         .send(sessionManagement.IFRAME_SCRIPT);
+      log.debug("Leaving the OP iframe's script.");
+      return undefined;
     });
 
     app.get('/oauth2/authorize', self.authorizeEndpoint.bind(self));

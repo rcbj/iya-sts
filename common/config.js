@@ -5351,6 +5351,27 @@ const SETTINGS = [
   // only with `oauth2.backchannelLogout` off as well (2026-09-17, #36), because
   // Back-Channel Logout needs the same `sid`.
   // ---------------------------------------------------------------------
+  // OPENID CONNECT SESSION MANAGEMENT 1.0 (#121, 2026-09-23). OFF by default,
+  // rcbj's decision: on, it sets a cookie script can read and a cross-site
+  // iframe is sent (the OP browser state), which no deployment should acquire
+  // without asking. `oauth-oidc/session_management.js` argues the rest.
+  { key: 'oauth2.sessionManagement', group: 'OAuth 2.0 / OIDC',
+    label: 'OpenID Connect Session Management',
+    env: 'STS_OAUTH2_SESSION_MANAGEMENT', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Perform OpenID Connect Session Management 1.0. With it on: ' +
+                 'the discovery document names check_session_iframe, ' +
+                 '/oauth2/check_session answers with the OP iframe (framable ' +
+                 'only by the origins of the realm\'s registered redirect ' +
+                 'URIs), every OpenID Connect authorization response to an ' +
+                 'http(s) redirect URI carries session_state, and the OP ' +
+                 'browser state is written as the cookie ' +
+                 'sts_op_browser_state — readable by script and, on an HTTPS ' +
+                 'port, SameSite=None so the iframe on a relying party\'s ' +
+                 'page is sent it. Browsers that block third-party cookies ' +
+                 'never send it, and an expired or administratively ended ' +
+                 'session is not seen until the relying party asks again. ' +
+                 'Off, none of it exists.' },
   { key: 'oauth2.frontchannelLogout', group: 'OAuth 2.0 / OIDC',
     label: 'OpenID Connect Front-Channel Logout',
     env: 'STS_OAUTH2_FRONTCHANNEL_LOGOUT', type: 'bool', dflt: true,

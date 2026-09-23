@@ -5116,7 +5116,27 @@ async function sha256OfFile(file, limit) {
   return hash.digest('hex');
 }
 
+// ---------------------------------------------------------------------------
+// OPENID CONNECT SESSION MANAGEMENT 1.0 SECTION 3's `session_state` (#121):
+// SHA-256 over `client_id + " " + origin + " " + browser_state + " " + salt`,
+// base64url, then "." and the salt. The OP iframe's script repeats this
+// computation in the browser with the Web Crypto API, so the two must agree
+// on every octet: UTF-8, single spaces, no padding. A fresh salt when none is
+// given, which is every authorization response.
+// ---------------------------------------------------------------------------
+function sessionStateHash(clientId, origin, browserState, salt) {
+  log.debug('Entering sessionStateHash().');
+  const chosen = salt || nodeCrypto.randomBytes(16).toString('base64url');
+  const digest = nodeCrypto.createHash('sha256')
+    .update(String(clientId) + ' ' + String(origin) + ' ' +
+            String(browserState || '') + ' ' + chosen, 'utf8')
+    .digest('base64url');
+  log.debug('Leaving sessionStateHash().');
+  return digest + '.' + chosen;
+}
+
 module.exports = {
+  sessionStateHash: sessionStateHash,
   userAgentFingerprint: userAgentFingerprint,
   credentialFingerprint: credentialFingerprint,
   truncatedSha256Hex: truncatedSha256Hex,

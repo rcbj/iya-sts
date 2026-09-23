@@ -6191,6 +6191,11 @@ const CODES = [
       'answer a JSON Web Key Set (#120). Logged at warn; the verification ' +
       'or encryption that needed the key is refused with its own code.',
     spec: 'none (log only)' },
+  { code: 'STS-OAUTH-0601',
+    summary: 'The OP iframe or its script was asked for while ' +
+      'oauth2.sessionManagement is off in the realm (#121): a 404 naming ' +
+      'the setting.',
+    spec: 'HTTP 404' },
   { code: 'STS-OAUTH-0600',
     summary: 'A client that registered grant_types without refresh_token ' +
       'was answered with no refresh token (RFC 7591 section 2) (#120). ' +

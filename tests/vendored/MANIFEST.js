@@ -294,6 +294,12 @@ const JOBS = [
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
   { file: 'sts_discovery_realms.js',     browser: false, local: true },
+  // OPENID CONNECT SESSION MANAGEMENT OVER THE WIRE (#121, 2026-09-23): off
+  // by default, then the discovery member, the OP iframe's narrowed
+  // frame-ancestors and its script, and prompt=none's session_state checked
+  // by section 3's formula. `local: true`: this repository's own OP, in a
+  // throwaway realm it leaves behind.
+  { file: 'sts_session_management.js',  browser: false, local: true },
   { file: 'sts_fapi_baseline.js',        browser: false, local: true },
   { file: 'sts_fapi_advanced.js',        browser: false, local: true },
   { file: 'sts_fapi2.js',                browser: false, local: true },
