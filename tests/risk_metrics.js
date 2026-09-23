@@ -16,7 +16,12 @@
 //   D. THE STANDINGS: people at each level now.
 //   E. THIS PROCESS: counts of its own, apart from the store's.
 //   F. THE PAGE: the timeline, the level bars in the level's colour, the
-//      signals table and the process table, with no script.
+//      signals and calibration tables and the process table, with no script.
+//   G. CALIBRATION: thresholds at the target shares' quantiles once there
+//      are enough assessments; a factor raised or lowered by how often its
+//      sign-ins were answered "not me" against the baseline, left alone
+//      with too few answers; `risk.signalFactors` shown and calibrated
+//      from, its bad entries named and ignored.
 //
 // The postgres driver's SQL is held to the same answers by
 // `tests/vendored/sts_admin_risk.js` in the modes that have a database.
@@ -92,10 +97,11 @@ function childMain() {
             a.byCountry.NZ === 5 && a.bots === 1,
             'A2. by door, decision, phase and country, and the automated ' +
             'clients', JSON.stringify(a));
-    t.check(a.byBand['< 0.001'] === 1 && a.byBand['0.001 – 0.01'] === 2 &&
-            a.byBand['0.01 – 0.1'] === 1 && a.byBand['0.1 – 1'] === 1 &&
-            a.byBand['≥ 1'] === 1,
-            'A3. the scores in decades', JSON.stringify(a.byBand));
+    t.check(a.byBand['< 0.01'] === 3 && a.byBand['0.01 – 0.1'] === 1 &&
+            a.byBand['0.1 – 1'] === 1 && a.byBand['1 – 10'] === 1 &&
+            !a.byBand['10 – 100'] && !a.byBand['≥ 100'],
+            'A3. the scores in decades, with MEDIUM\'s 1 and HIGH\'s 10 as ' +
+            'two of the edges', JSON.stringify(a.byBand));
     t.check(a.feedback.denied === 1 && a.feedback.confirmed === 1 &&
             a.subjects === 4 && Math.abs(a.maxScore - 2) < 1e-9,
             'A4. what people said, the people assessed, and the highest ' +
@@ -153,6 +159,78 @@ function childMain() {
             'E1. this process\'s own counts, apart from the store\'s, and ' +
             'the store named', JSON.stringify(p));
 
+    // --- G. calibration ------------------------------------------------------
+    // 150 assessments in a realm of their own, scored 0.0 to 14.9: forty
+    // carry tor-exit, answered 30 "not me" and 10 "me"; twenty-five carry
+    // new-device, answered 2 and 23; seventy more are answered 10 and 60.
+    // So the baseline is 42 "not me" of 135 answered, tor-exit's rate is
+    // over twice it and new-device's a quarter of it.
+    const realms = require(ROOT + '/common/realms');
+    const config = require(ROOT + '/common/config');
+    const CAL = 'rm-cal';
+    realms.create({ id: CAL, name: 'Risk calibration' });
+    for (let i = 0; i < 150; i++) {
+      const tor = i < 40;
+      const device = i >= 40 && i < 65;
+      const answer = tor ? (i < 30 ? 'denied' : 'confirmed')
+        : device ? (i < 42 ? 'denied' : 'confirmed')
+        : (i < 75 ? 'denied' : (i < 135 ? 'confirmed' : ''));
+      await record(CAL, { score: i / 10,
+        level: i >= 100 ? 'HIGH' : (i >= 10 ? 'MEDIUM' : 'LOW'),
+        signals: tor ? [{ signal: 'tor-exit' }]
+          : (device ? [{ signal: 'new-device' }] : []),
+        feedback: answer });
+    }
+    const cal = (await riskAdmin.metricsView({ realm: CAL,
+                                               window: '7d' })).calibration;
+    t.check(cal.thresholds.high.suggested === 14.8 &&
+            cal.thresholds.medium.suggested === 14.2 &&
+            Math.abs(cal.thresholds.high.share - 50 / 150) < 1e-9 &&
+            cal.thresholds.high.target === 0.01,
+            'G1. the thresholds suggested are the scores 1% and 5% of the ' +
+            'window reach, beside the share at each level now',
+            JSON.stringify(cal.thresholds));
+    const of = function (id) {
+      return cal.signals.filter(function (s) {
+        return s.signal === id;
+      })[0] || {};
+    };
+    t.check(of('tor-exit').advice === 'raise' &&
+            of('tor-exit').suggested > 5 && of('tor-exit').answered === 40 &&
+            of('new-device').advice === 'lower' &&
+            of('new-device').suggested < 2 &&
+            /not enough answers/.test(of('reputation').advice) &&
+            of('reputation').suggested === null &&
+            !cal.signals.some(function (s) {
+              return s.signal === 'reported-not-me';
+            }),
+            'G2. a signal answered "not me" more than the baseline is ' +
+            'raised, one answered less is lowered, one with too few answers ' +
+            'is left, and reported-not-me is not calibrated',
+            JSON.stringify([of('tor-exit'), of('new-device')]));
+    const few = (await riskAdmin.metricsView({ window: '7d' })).calibration;
+    t.check(few.thresholds.high.suggested === null,
+            'G3. a window of fewer than 100 assessments suggests no threshold');
+    config.setOverride('risk.signalFactors',
+                       'tor-exit=8,no-such-signal=3,new-device=-1');
+    let tuned = null;
+    try {
+      tuned = await riskAdmin.metricsView({ realm: CAL, window: '7d' });
+    } finally {
+      config.clearOverride('risk.signalFactors');
+    }
+    const torRow = tuned.signals.filter(function (s) {
+      return s.signal === 'tor-exit';
+    })[0];
+    t.check(torRow.factor === 8 && torRow.builtIn === 5 &&
+            tuned.calibration.invalidFactors.length === 2 &&
+            tuned.signals.filter(function (s) {
+              return s.signal === 'new-device';
+            })[0].factor === 2,
+            'G4. risk.signalFactors is the factor shown and calibrated from, ' +
+            'and its two bad entries are named and ignored',
+            JSON.stringify(tuned.calibration.invalidFactors));
+
     // --- F. the page ---------------------------------------------------------
     const res = { statusCode: 200, headers: {}, body: '',
       status: function (c) { this.statusCode = c; return this; },
@@ -186,7 +264,9 @@ function childMain() {
             /background:#d93025/.test(html) &&
             /id="risk-signals"/.test(html) &&
             /id="risk-process"/.test(html) &&
-            /id="risk-feedback"/.test(html) && !/<script/i.test(html),
+            /id="risk-feedback"/.test(html) &&
+            /id="risk-calibration-signals"/.test(html) &&
+            !/<script/i.test(html),
             'F1. the page draws the timeline, the level bars in the level\'s ' +
             'colour, the signals and this process, with no script',
             html.slice(0, 400));

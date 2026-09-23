@@ -205,6 +205,24 @@ const tally = {
   rescore: { runs: 0, sessions: 0, raised: 0 }
 };
 
+// ---------------------------------------------------------------------------
+// THE FACTORS AN OPERATOR SET (#62, calibration): `risk.signalFactors` is a
+// list of `signal=factor` — `tor-exit=8,new-device=1.5` — over SIGNALS'
+// built-in factors, per realm like every setting, so a factor the
+// calibration report suggests is applied without a release. The parse is
+// kept per raw value, and a malformed entry is logged ONCE for that value
+// (STS-RISK-0026) rather than at every sign-in, and ignored: an unknown
+// signal, or a factor that is not a positive number, would otherwise change
+// every score by a typo.
+// ---------------------------------------------------------------------------
+const parsedFactors = new Map<string, Json>();
+
+// How many calibration answers a signal needs before a factor is suggested
+// for it, and how many assessments a window needs before thresholds are:
+// below these a suggestion is noise, and the report says "not enough".
+const MIN_ANSWERS_PER_SIGNAL = 20;
+const MIN_ASSESSMENTS_FOR_THRESHOLDS = 100;
+
 // One more of `key` in a count table. A hot path's helper, no pair.
 function bump(table: Record<string, number>, key: string): void {
   table[key] = (table[key] || 0) + 1;
@@ -704,11 +722,12 @@ class RiskEngine {
                                             true, sealing);
     const modelled = riskModel.score(attempt, user, population);
 
-    // THE EVALUATORS (SIGNALS).
+    // THE EVALUATORS (SIGNALS), each at the realm's factor.
+    const factorOf = this.factors().factors;
     const signals: Json[] = [];
     const add = function (id: string, evidence: string): void {
       log.debug("Entering add(). " + id);
-      signals.push({ signal: id, factor: SIGNALS[id].factor,
+      signals.push({ signal: id, factor: factorOf[id],
                      what: SIGNALS[id].what, evidence: evidence });
       log.debug("Leaving add().");
     };
@@ -1133,8 +1152,9 @@ class RiskEngine {
       signals.push('authenticator-compromised');
     }
     const held = (risk.signals || []).map(String);
+    const factorOf = this.factors().factors;
     const fresh = signals.filter(function (one: string): boolean {
-      return held.indexOf(one) < 0 && SIGNALS[one].factor > 1;
+      return held.indexOf(one) < 0 && factorOf[one] > 1;
     });
     if (!fresh.length) {
       log.debug("Leaving RiskEngine.rescoreSession(). Nothing new.");
@@ -1142,7 +1162,7 @@ class RiskEngine {
     }
     let score = typeof risk.score === 'number' ? risk.score : 1;
     fresh.forEach(function (one: string): void {
-      score *= SIGNALS[one].factor;
+      score *= factorOf[one];
     });
     const level = this.levelOf(score);
     if ((RANK[level] || 0) <= (RANK[String(risk.level)] || 0)) {
@@ -1170,7 +1190,7 @@ class RiskEngine {
       signals: [{ signal: 'model', score: risk.score, factors: null,
                   why: 'the sign-in\'s score, re-checked' }]
         .concat(held.concat(fresh).map(function (one: string): Json {
-          return { signal: one, factor: SIGNALS[one].factor,
+          return { signal: one, factor: factorOf[one],
                    what: SIGNALS[one].what,
                    evidence: fresh.indexOf(one) >= 0 ? 'new' : 'held' };
         })),
@@ -1367,6 +1387,135 @@ class RiskEngine {
   }
 
   // -------------------------------------------------------------------------
+  // EVERY SIGNAL'S FACTOR, as scored now: SIGNALS' own, with the realm's
+  // `risk.signalFactors` over them. `invalid` names the entries ignored.
+  // -------------------------------------------------------------------------
+  factors(): Json {
+    const { log, config } = this.deps;
+    log.debug("Entering RiskEngine.factors().");
+    const listed = config.value('risk.signalFactors') || [];
+    const raw = (Array.isArray(listed) ? listed : [listed]).join(',');
+    const held = parsedFactors.get(raw);
+    if (held) {
+      log.debug("Leaving RiskEngine.factors(). Held.");
+      return held;
+    }
+    const map: Record<string, number> = {};
+    Object.keys(SIGNALS).forEach(function (id: string): void {
+      map[id] = SIGNALS[id].factor;
+    });
+    const set: Record<string, number> = {};
+    const invalid: string[] = [];
+    (Array.isArray(listed) ? listed : [listed]).forEach(function (one) {
+      const text = String(one || '').trim();
+      if (!text) {
+        return;
+      }
+      const at = text.indexOf('=');
+      const id = at > 0 ? text.slice(0, at).trim() : '';
+      const value = at > 0 ? Number(text.slice(at + 1).trim()) : NaN;
+      if (!SIGNALS[id] || !isFinite(value) || value <= 0) {
+        invalid.push(text);
+        return;
+      }
+      map[id] = value;
+      set[id] = value;
+    });
+    if (invalid.length) {
+      log.warn(errorCodes.tag('STS-RISK-0026') + 'risk: risk.signalFactors ' +
+               'entries ignored, each needing a known signal and a positive ' +
+               'factor: ' + invalid.join(', ') + '.');
+    }
+    const answer = { factors: map, set: set, invalid: invalid };
+    if (parsedFactors.size > 64) {
+      // Bounded: one entry per distinct value a realm has been given.
+      parsedFactors.clear();
+    }
+    parsedFactors.set(raw, answer);
+    log.debug("Leaving RiskEngine.factors().");
+    return answer;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE CALIBRATION REPORT (#62; rcbj: "calibrate the factors"). Advice, from
+  // the window's assessments, and never applied by itself:
+  //
+  //   * THRESHOLDS: the score at which the target share of sign-ins
+  //     (`risk.calibrationMediumPercent`, `risk.calibrationHighPercent`)
+  //     would be MEDIUM or worse and HIGH — the window's own quantiles.
+  //   * FACTORS: for each signal, how often a sign-in carrying it was
+  //     answered "not me" on /portal/sign-ins against how often any answered
+  //     sign-in was. The suggested factor is the current one scaled by that
+  //     ratio, bounded to [0.1, 100]. The answers are a biased sample — a
+  //     flagged sign-in is likelier to be asked about — which is why this is
+  //     advice and the page says so.
+  // -------------------------------------------------------------------------
+  static calibrate(counted: Json, thresholds: Json, targets: Json,
+                   factors: Json): Json {
+    log.debug("Entering RiskEngine.calibrate().");
+    const total = Number(counted.total) || 0;
+    const shareAtOrAbove = function (levels: string[]): number {
+      return total ? levels.reduce(function (s: number, l: string): number {
+        return s + (Number(counted.byLevel[l]) || 0);
+      }, 0) / total : 0;
+    };
+    const q = counted.scoreQuantiles || {};
+    const enough = total >= MIN_ASSESSMENTS_FOR_THRESHOLDS;
+    const answered = (Number(counted.feedback.denied) || 0) +
+                     (Number(counted.feedback.confirmed) || 0);
+    const baseline = answered
+      ? (Number(counted.feedback.denied) || 0) / answered : 0;
+    // `reported-not-me` IS the answer rather than evidence for one, so it
+    // has nothing to be calibrated against.
+    const signals = Object.keys(factors.factors).filter(function (id) {
+      return id !== 'reported-not-me';
+    }).map(function (id: string) {
+      const fb = (counted.bySignalFeedback || {})[id] || {};
+      const denied = Number(fb.denied) || 0;
+      const confirmed = Number(fb.confirmed) || 0;
+      const levels = (counted.bySignalLevel || {})[id] || {};
+      const fired = Number((counted.bySignal || {})[id]) || 0;
+      const current = factors.factors[id];
+      let suggested: number | null = null;
+      let advice = 'not enough answers (' + (denied + confirmed) + ' of ' +
+                   MIN_ANSWERS_PER_SIGNAL + ')';
+      if (denied + confirmed >= MIN_ANSWERS_PER_SIGNAL && baseline > 0) {
+        const lift = (denied / (denied + confirmed)) / baseline;
+        const raw = Math.min(100, Math.max(0.1, current * lift));
+        suggested = Number(raw.toPrecision(2));
+        advice = suggested > current * 1.25 ? 'raise'
+          : (suggested < current / 1.25 ? 'lower' : 'keep');
+      } else if (denied + confirmed >= MIN_ANSWERS_PER_SIGNAL) {
+        advice = 'nobody has answered "not me" yet: no baseline';
+      }
+      return { signal: id, factor: current, builtIn: SIGNALS[id].factor,
+               fired: fired,
+               high: Number(levels.HIGH) || 0,
+               answered: denied + confirmed, notMe: denied,
+               suggested: suggested, advice: advice };
+    });
+    log.debug("Leaving RiskEngine.calibrate().");
+    return {
+      assessments: total, answered: answered, notMeRate: baseline,
+      minimums: { assessments: MIN_ASSESSMENTS_FOR_THRESHOLDS,
+                  answersPerSignal: MIN_ANSWERS_PER_SIGNAL },
+      thresholds: {
+        medium: { current: thresholds.medium,
+                  share: shareAtOrAbove(['MEDIUM', 'HIGH']),
+                  target: targets.medium,
+                  suggested: enough && q[String(1 - targets.medium)] !==
+                    undefined ? q[String(1 - targets.medium)] : null },
+        high: { current: thresholds.high, share: shareAtOrAbove(['HIGH']),
+                target: targets.high,
+                suggested: enough && q[String(1 - targets.high)] !==
+                  undefined ? q[String(1 - targets.high)] : null }
+      },
+      signals: signals,
+      invalidFactors: factors.invalid
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // THE SCORING SYSTEM, MEASURED (#62): what Monitoring → Risk Scoring draws
   // and `GET /admin-api/risk/metrics` returns. Two kinds of number, and the
   // answer keeps them apart: `assessments` and `standings` are counted in
@@ -1385,8 +1534,13 @@ class RiskEngine {
     const bucketMs = span <= 3600000 ? 300000
       : (span <= 2 * 86400000 ? 3600000 : 86400000);
     const since = now() - span;
+    const targets = {
+      medium: Number(config.value('risk.calibrationMediumPercent')) / 100,
+      high: Number(config.value('risk.calibrationHighPercent')) / 100 };
     const counted = await store.assessmentMetrics(realm, {
-      since: since, bucketMs: bucketMs }, sealing);
+      since: since, bucketMs: bucketMs,
+      quantiles: [1 - targets.medium, 1 - targets.high] }, sealing);
+    const factors = this.factors();
     const standings = await store.subjectLevels(realm, sealing);
     const sorted = tally.durations.slice().sort(function (a: number,
                                                           b: number): number {
@@ -1401,19 +1555,22 @@ class RiskEngine {
       breach = null;
     }
     const signals = Object.keys(SIGNALS).map(function (id: string): Json {
-      return { signal: id, factor: SIGNALS[id].factor,
-               what: SIGNALS[id].what,
+      return { signal: id, factor: factors.factors[id],
+               builtIn: SIGNALS[id].factor, what: SIGNALS[id].what,
                fired: Number(counted.bySignal[id]) || 0 };
     });
+    const thresholds = {
+      medium: Number(config.value('risk.mediumScorePercent')) / 100,
+      high: Number(config.value('risk.highScorePercent')) / 100 };
     log.debug("Leaving RiskEngine.metrics().");
     return {
       realm: realm, windowMs: span, since: since, bucketMs: bucketMs,
       database: store.failuresInDatabase(sealing),
       enforced: this.enforced(),
-      thresholds: {
-        medium: Number(config.value('risk.mediumScorePercent')) / 100,
-        high: Number(config.value('risk.highScorePercent')) / 100 },
+      thresholds: thresholds,
       assessments: counted,
+      calibration: RiskEngine.calibrate(counted, thresholds, targets,
+                                        factors),
       standings: standings,
       signals: signals,
       process: {
@@ -1540,6 +1697,8 @@ export = {
   respond: slot.forward('respond'),
   feedback: slot.forward('feedback'),
   metrics: slot.forward('metrics'),
+  factors: slot.forward('factors'),
+  calibrate: RiskEngine.calibrate,
   standingFor: slot.forward('standingFor'),
   rescoreSession: slot.forward('rescoreSession'),
   rescoreLiveSessions: slot.forward('rescoreLiveSessions'),

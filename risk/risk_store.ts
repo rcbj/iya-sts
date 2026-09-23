@@ -883,7 +883,10 @@ class RiskStore {
     if (this.failuresInDatabase(sealing)) {
       log.debug("Leaving RiskStore.assessmentMetrics(). Database.");
       return Promise.resolve(this.driver.riskAssessmentMetrics(realm, {
-        since: Number(o.since) || 0, bucketMs: bucketMs }))
+        since: Number(o.since) || 0, bucketMs: bucketMs,
+        quantiles: (o.quantiles || []).filter(function (f: number) {
+          return f > 0 && f <= 1;
+        }) }))
         .then(function (grouped: Json): Json {
           return RiskStore.metricsOf(grouped);
         });
@@ -896,6 +899,7 @@ class RiskStore {
     const groups = new Map<string, Json>();
     const series = new Map<string, Json>();
     const subjects = new Set<string>();
+    const scores: number[] = [];
     const totals = { total: 0, bots: 0, scoreSum: 0, scoreMax: 0 };
     const count = function (k: string, v: string): void {
       const key = k + '\u0000' + v;
@@ -912,6 +916,7 @@ class RiskStore {
       totals.scoreSum += Number(a.score) || 0;
       totals.scoreMax = Math.max(totals.scoreMax, Number(a.score) || 0);
       subjects.add(String(a.subject || ''));
+      scores.push(Number(a.score) || 0);
       count('level', String(a.level || ''));
       count('door', String(a.door || ''));
       count('decision', String(a.decision || ''));
@@ -922,7 +927,14 @@ class RiskStore {
         count('feedback', String(a.feedback));
       }
       (a.signals || []).forEach(function (s: Json): void {
-        count('signal', String((s && s.signal) || ''));
+        const id = String((s && s.signal) || '');
+        count('signal', id);
+        // For calibration: the level a signal's sign-ins ended at, and
+        // what their people said.
+        count('signal-level', id + '\u0001' + String(a.level || ''));
+        if (a.feedback) {
+          count('signal-feedback', id + '\u0001' + String(a.feedback));
+        }
       });
       const bucket = Math.floor(Number(a.at) / bucketMs) * bucketMs;
       const key = bucket + '\u0000' + String(a.level || '');
@@ -934,8 +946,21 @@ class RiskStore {
                           n: 1 });
       }
     });
+    // PostgreSQL's percentile_disc: the first score whose cumulative share
+    // reaches the fraction.
+    scores.sort(function (x: number, y: number): number {
+      return x - y;
+    });
+    const quantiles: Record<string, number> = {};
+    (o.quantiles || []).forEach(function (f: number): void {
+      if (scores.length && f > 0 && f <= 1) {
+        quantiles[String(f)] =
+          scores[Math.max(0, Math.ceil(f * scores.length) - 1)];
+      }
+    });
     log.debug("Leaving RiskStore.assessmentMetrics(). Memory.");
     return Promise.resolve(RiskStore.metricsOf({
+      quantiles: quantiles,
       totals: { total: totals.total, subjects: subjects.size,
                 bots: totals.bots,
                 meanScore: totals.total ? totals.scoreSum / totals.total : 0,
@@ -944,16 +969,14 @@ class RiskStore {
       series: Array.from(series.values()) }));
   }
 
-  // A score's band, a decade each, for the histogram. The levels'
-  // thresholds are percentages of 1 (1 and 10 by default), so the bands
-  // are where those thresholds fall. A hot path — once per assessment
+  // A score's band, a decade each, for the histogram. The score is a
+  // likelihood ratio — 1 is as likely an attacker as the person — and the
+  // levels begin at 1 (MEDIUM) and 10 (HIGH) by default, so those are two
+  // of the edges. A hot path — once per assessment
   // counted — so no Entering or Leaving pair would add anything but volume.
   static bandOf(score: number): string {
-    if (score < 0.001) {
-      return '< 0.001';
-    }
     if (score < 0.01) {
-      return '0.001 – 0.01';
+      return '< 0.01';
     }
     if (score < 0.1) {
       return '0.01 – 0.1';
@@ -961,8 +984,18 @@ class RiskStore {
     if (score < 1) {
       return '0.1 – 1';
     }
-    return '≥ 1';
+    if (score < 10) {
+      return '1 – 10';
+    }
+    if (score < 100) {
+      return '10 – 100';
+    }
+    return '≥ 100';
   }
+
+  // The bands, lowest first, for a page that draws them in order.
+  static readonly BANDS = ['< 0.01', '0.01 – 0.1', '0.1 – 1', '1 – 10',
+                           '10 – 100', '≥ 100'];
 
   // The grouped rows, from either store, as the page and the API read them.
   static metricsOf(grouped: Json): Json {
@@ -971,8 +1004,17 @@ class RiskStore {
     const by: Record<string, Record<string, number>> = {
       level: {}, door: {}, decision: {}, phase: {}, country: {}, band: {},
       feedback: {}, signal: {} };
+    // Per signal, by level and by answer: `signal\u0001LEVEL` apart.
+    const pairs: Record<string, Record<string, Record<string, number>>> = {
+      'signal-level': {}, 'signal-feedback': {} };
     (g.groups || []).forEach(function (row: Json): void {
-      if (by[row.k] && row.v !== '') {
+      if (pairs[row.k]) {
+        const cut = String(row.v).indexOf('\u0001');
+        const id = String(row.v).slice(0, cut);
+        const of = String(row.v).slice(cut + 1);
+        const table = pairs[row.k][id] || (pairs[row.k][id] = {});
+        table[of] = (table[of] || 0) + Number(row.n);
+      } else if (by[row.k] && row.v !== '') {
         by[row.k][row.v] = (by[row.k][row.v] || 0) + Number(row.n);
       }
     });
@@ -996,6 +1038,9 @@ class RiskStore {
       byLevel: by.level, byDoor: by.door, byDecision: by.decision,
       byPhase: by.phase, byCountry: by.country, byBand: by.band,
       bySignal: by.signal,
+      bySignalLevel: pairs['signal-level'],
+      bySignalFeedback: pairs['signal-feedback'],
+      scoreQuantiles: Object.assign({}, g.quantiles || {}),
       feedback: { confirmed: by.feedback.confirmed || 0,
                   denied: by.feedback.denied || 0 },
       series: Array.from(buckets.values()).sort(function (a: Json,
@@ -1338,6 +1383,7 @@ export = {
   assessmentMetrics: slot.forward('assessmentMetrics'),
   subjectLevels: slot.forward('subjectLevels'),
   bandOf: RiskStore.bandOf,
+  BANDS: RiskStore.BANDS,
   settleAssessment: slot.forward('settleAssessment'),
   subjectOf: slot.forward('subjectOf'),
   claimAction: slot.forward('claimAction'),

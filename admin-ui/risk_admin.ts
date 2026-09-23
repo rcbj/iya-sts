@@ -50,6 +50,7 @@ import InstanceSlot = require('../common/instance_slot');
 import riskDatasets = require('../risk/risk_datasets');
 import riskFailures = require('../risk/risk_failures');
 import riskEngine = require('../risk/risk_engine');
+import riskStore = require('../risk/risk_store');
 
 type Req = any;
 type Res = any;
@@ -382,6 +383,71 @@ class RiskAdmin {
     return ms / 60000 + ' minutes';
   }
 
+  // THE CALIBRATION REPORT (`RiskEngine.calibrate()`): advice, drawn beside
+  // what is set now, with the setting that would apply it named.
+  private calibrationHtml(m: Json): string {
+    const { log, admin } = this.deps;
+    log.debug("Entering RiskAdmin.calibrationHtml().");
+    const esc = admin.esc.bind(admin);
+    const c = m.calibration;
+    const pct = function (x: number): string {
+      return (x * 100).toFixed(1) + '%';
+    };
+    const threshold = function (name: string, t: Json, key: string): string {
+      return '<tr><td>' + name + '</td><td class="num">' + esc(t.current) +
+        '</td><td class="num">' + pct(t.share) + '</td><td class="num">' +
+        pct(t.target) + '</td><td class="num">' + (t.suggested === null
+          ? '<small>fewer than ' + c.minimums.assessments + ' assessments' +
+            '</small>'
+          : esc(Number(t.suggested).toPrecision(3)) + ' <small>(<code>' +
+            key + '</code> = ' + Math.max(1, Math.round(t.suggested * 100)) +
+            ')</small>') + '</td></tr>';
+    };
+    const rows = c.signals.map(function (s: Json): string {
+      return '<tr><td><code>' + esc(s.signal) + '</code></td>' +
+        '<td class="num">&times;' + esc(s.factor) +
+        (s.factor !== s.builtIn ? ' <small>(built in &times;' +
+                                  esc(s.builtIn) + ')</small>' : '') +
+        '</td><td class="num">' + s.fired + '</td><td class="num">' +
+        s.high + '</td><td class="num">' + s.answered + '</td>' +
+        '<td class="num">' + s.notMe + '</td><td>' +
+        (s.suggested === null ? '<small>' + esc(s.advice) + '</small>'
+          : '<strong>' + esc(s.advice) + '</strong> &times;' +
+            esc(s.suggested)) + '</td></tr>';
+    }).join('');
+    const suggested = c.signals.filter(function (s: Json): boolean {
+      return s.suggested !== null && s.advice !== 'keep';
+    }).map(function (s: Json): string {
+      return s.signal + '=' + s.suggested;
+    });
+    log.debug("Leaving RiskAdmin.calibrationHtml().");
+    return '<h3 id="risk-calibration">Calibration</h3><p>Advice from this ' +
+      'window, never applied by itself. <strong>Thresholds</strong>: the ' +
+      'score the target share of sign-ins reaches. <strong>Factors</strong>' +
+      ': how often a sign-in carrying the signal was answered "not me" on ' +
+      '/portal/sign-ins, against how often any answered sign-in was (' +
+      pct(c.notMeRate) + ' of ' + c.answered + '), scaled onto the current ' +
+      'factor. The answers are a biased sample — a flagged sign-in is ' +
+      'likelier to be asked about — so read a suggestion as a direction.' +
+      '</p><table class="grid" id="risk-calibration-thresholds"><thead><tr>' +
+      '<th>Level</th><th>From score</th><th>Share now</th><th>Target</th>' +
+      '<th>Suggested</th></tr></thead><tbody>' +
+      threshold('MEDIUM or worse', c.thresholds.medium,
+                'risk.mediumScorePercent') +
+      threshold('HIGH', c.thresholds.high, 'risk.highScorePercent') +
+      '</tbody></table><table class="grid" id="risk-calibration-signals">' +
+      '<thead><tr><th>Signal</th><th>Factor</th><th>Fired</th>' +
+      '<th>Ended HIGH</th><th>Answered</th><th>"Not me"</th>' +
+      '<th>Suggestion</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      (suggested.length ? '<p>To apply every suggestion, set <code>' +
+        'risk.signalFactors</code> to <code id="risk-calibration-apply">' +
+        esc(suggested.join(',')) + '</code> on Monitoring &rarr; Risk.</p>'
+        : '') +
+      (c.invalidFactors.length ? '<div class="err">risk.signalFactors ' +
+        'entries ignored (STS-RISK-0026): ' +
+        esc(c.invalidFactors.join(', ')) + '</div>' : '');
+  }
+
   private metricsHtml(m: Json): string {
     const { log, admin } = this.deps;
     log.debug("Entering RiskAdmin.metricsHtml().");
@@ -454,8 +520,7 @@ class RiskAdmin {
        'decisions are OBSERVED, not enforced.') + '</small></p>' +
       '<h3>Scores</h3>' +
       this.bars('risk-by-band', 'Score', a.byBand, a.total, undefined,
-                undefined, ['< 0.001', '0.001 – 0.01', '0.01 – 0.1',
-                            '0.1 – 1', '≥ 1']) +
+                undefined, riskStore.BANDS) +
       '<h3>People by current standing</h3>' +
       this.bars('risk-standings', 'Level', m.standings, people, level,
                 undefined, LEVELS) +
@@ -465,6 +530,7 @@ class RiskAdmin {
       '<table class="grid" id="risk-signals"><thead><tr><th>Signal</th>' +
       '<th>What</th><th>Factor</th><th>Fired</th><th>Of assessments</th>' +
       '</tr></thead><tbody>' + signals + '</tbody></table>' +
+      this.calibrationHtml(m) +
       '<h3>Decisions</h3>' +
       this.bars('risk-by-decision', 'Decision', a.byDecision, a.total) +
       '<h3>Doors</h3>' +

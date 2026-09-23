@@ -96,9 +96,35 @@ on a new device scores well above 1.
 | `network-failures` | ×3 | twenty or more refused passwords from this network in the last hour |
 | `authenticator-compromised` | ×50 | the security key's model is reported revoked or compromised in the FIDO metadata |
 
-These factors are a first calibration. Every assessment on Monitoring → Risk
-lists the signals it carried, so the factors can be tuned against real
-sign-ins.
+These factors are a first calibration. You can change any of them for a
+realm with `risk.signalFactors`, without a new release. It takes a list of
+`signal=factor` pairs, such as `tor-exit=8,new-device=1.5`. The service
+ignores an entry that names no signal, or whose factor is not a positive
+number, and logs it once (`STS-RISK-0026`).
+
+### Calibration
+
+Monitoring → Risk Scoring has a **Calibration** section, and
+`GET /admin-api/risk/metrics` has a `calibration` member. They suggest
+changes from the window's own assessments; nothing is applied until you
+apply it.
+
+- **Thresholds**: for MEDIUM-or-worse and for HIGH, the report shows the
+  share of sign-ins at that level now, and the score that the target share
+  of sign-ins reaches. The targets are `risk.calibrationMediumPercent` (5)
+  and `risk.calibrationHighPercent` (1). A threshold is suggested only once
+  the window has 100 assessments.
+- **Factors**: for each signal, the report compares how often a sign-in
+  carrying it was answered "this wasn't me" on `/portal/sign-ins` with how
+  often any answered sign-in was. It suggests the current factor scaled by
+  that ratio, bounded to ×0.1–×100, and says whether to raise it, lower it
+  or keep it. A signal needs 20 answered sign-ins before a factor is
+  suggested.
+
+The page gives the `risk.signalFactors` value that would apply every
+suggestion. The answers are a biased sample: people are more likely to be
+asked about a sign-in that was flagged. Read a suggestion as a direction to
+check, not a measurement.
 
 ### Levels
 
@@ -486,6 +512,9 @@ kept in step with `common/config.js`.
 | `risk.standingCacheSize` | `STS_RISK_STANDING_CACHE_SIZE` | `20000` | How many people's standing each process holds. |
 | `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `100` | The score, in hundredths, from which a sign-in is MEDIUM. |
 | `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | The score, in hundredths, from which a sign-in is HIGH. |
+| `risk.signalFactors` | `STS_RISK_SIGNAL_FACTORS` | *(empty)* | Factors over the built-in ones, as `signal=factor`, comma-separated. |
+| `risk.calibrationMediumPercent` | `STS_RISK_CALIBRATION_MEDIUM_PERCENT` | `5` | The share of sign-ins calibration aims to have at MEDIUM or worse. |
+| `risk.calibrationHighPercent` | `STS_RISK_CALIBRATION_HIGH_PERCENT` | `1` | The share of sign-ins calibration aims to have at HIGH. |
 | `risk.recordFailures` | `STS_RISK_RECORD_FAILURES` | `true` | Record every refused password. |
 | `risk.failureRetentionDays` | `STS_RISK_FAILURE_RETENTION_DAYS` | `30` | How long a refused password is kept. |
 | `risk.assessmentRetentionDays` | `STS_RISK_ASSESSMENT_RETENTION_DAYS` | `90` | How long an assessment is kept. |
@@ -519,8 +548,6 @@ kept in step with `common/config.js`.
 
 The remaining work on [issue #62](https://github.com/rcbj/iya-sts/issues/62):
 
-- **Calibration**: a report of the levels and signals real sign-ins have
-  been given, with the thresholds and factors it suggests.
 - **The console and portal acting on the risk signals they receive**, with
   issues #153 and #117.
 
@@ -574,7 +601,7 @@ The remaining work on [issue #62](https://github.com/rcbj/iya-sts/issues/62):
   `POST /admin-api/risk/import`, `activate`, `rollback`, `delete` and
   `accept-terms`, described in the
   [OpenAPI document](management-api.md).
-- **Error codes** `STS-RISK-0001` to `STS-RISK-0025` are listed on
+- **Error codes** `STS-RISK-0001` to `STS-RISK-0026` are listed on
   [Error codes](error-codes.md).
 
 ## Related

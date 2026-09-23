@@ -4562,10 +4562,12 @@ function create(options) {
       const o = opts || {};
       const where = 'WHERE realm = $1 AND at >= $2';
       const params = [realm || '', Number(o.since) || 0];
-      const band = 'CASE WHEN score < 0.001 THEN \'< 0.001\' ' +
-        'WHEN score < 0.01 THEN \'0.001 – 0.01\' ' +
+      const band = 'CASE WHEN score < 0.01 THEN \'< 0.01\' ' +
         'WHEN score < 0.1 THEN \'0.01 – 0.1\' ' +
-        'WHEN score < 1 THEN \'0.1 – 1\' ELSE \'≥ 1\' END';
+        'WHEN score < 1 THEN \'0.1 – 1\' ' +
+        'WHEN score < 10 THEN \'1 – 10\' ' +
+        'WHEN score < 100 THEN \'10 – 100\' ELSE \'≥ 100\' END';
+      const quantiles = (o.quantiles || []).map(Number);
       log.debug("Leaving riskAssessmentMetrics().");
       return Promise.all([
         pool.query(
@@ -4592,14 +4594,36 @@ function create(options) {
           where + ' AND feedback <> \'\' UNION ALL ' +
           'SELECT \'signal\', s->>\'signal\' FROM ' +
           'sts_risk_assessments, jsonb_array_elements(signals) AS s ' +
-          where + ') AS grouped GROUP BY k, v', params),
+          where + ' UNION ALL ' +
+          // For calibration: a signal's sign-ins by level and by answer,
+          // the two halves apart at U+0001 as the memory store keeps them.
+          'SELECT \'signal-level\', (s->>\'signal\') || chr(1) || level ' +
+          'FROM sts_risk_assessments, jsonb_array_elements(signals) AS s ' +
+          where + ' UNION ALL ' +
+          'SELECT \'signal-feedback\', (s->>\'signal\') || chr(1) || ' +
+          'feedback FROM sts_risk_assessments, ' +
+          'jsonb_array_elements(signals) AS s ' + where +
+          ' AND feedback <> \'\') AS grouped GROUP BY k, v', params),
         pool.query(
           'SELECT (at / $3) * $3 AS bucket, level, count(*) AS n ' +
           'FROM sts_risk_assessments ' + where + ' GROUP BY 1, 2',
-          params.concat([Math.max(60000, Number(o.bucketMs) || 3600000)]))
+          params.concat([Math.max(60000, Number(o.bucketMs) || 3600000)])),
+        quantiles.length
+          ? pool.query('SELECT percentile_disc($3::float8[]) WITHIN GROUP ' +
+                       '(ORDER BY score) AS q FROM sts_risk_assessments ' +
+                       where, params.concat([quantiles]))
+          : Promise.resolve({ rows: [] })
       ]).then(function (answers) {
         const t = answers[0].rows[0] || {};
+        const got = (answers[3].rows[0] || {}).q || [];
+        const byFraction = {};
+        quantiles.forEach(function (f, i) {
+          if (got[i] !== null && got[i] !== undefined) {
+            byFraction[String(f)] = Number(got[i]);
+          }
+        });
         return {
+          quantiles: byFraction,
           totals: { total: Number(t.total) || 0,
                     subjects: Number(t.subjects) || 0,
                     bots: Number(t.bots) || 0,

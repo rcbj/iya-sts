@@ -485,11 +485,42 @@ the risk scoring system". It is `/admin/risk-scoring`, drawn by
   started. They are the one per-process part of the page, and the page says
   so.
 
-The score bands are decades, because the level thresholds are percentages
-of 1 (1 and 10 by default). `RiskStore.bandOf()` spells them in TypeScript,
-and the driver spells them again in SQL. The 2026-09-22 probe (a throwaway
-postgres and the driver with `tests/risk_metrics.js`'s rows) gave the same
-answers from both.
+The score bands are decades around the level thresholds (see
+*Calibration*, below). `RiskStore.bandOf()` spells them in TypeScript, and
+the driver spells them again in SQL. The 2026-09-22 probes ran a throwaway
+postgres and the driver against `tests/risk_metrics.js`'s rows, the
+calibration rows included, and gave the same answers from both stores.
+
+## CALIBRATION (2026-09-22)
+
+rcbj asked for the factors to be calibrated. **Nothing can be calibrated
+without real sign-ins**, so what was built is the means:
+
+* **The report**: `RiskEngine.calibrate()`, on Monitoring → Risk Scoring
+  and in `/admin-api/risk/metrics`.
+  - Thresholds come from the window's own score quantiles:
+    `percentile_disc` on postgres, and the same index rule in memory.
+  - A factor's suggestion is the current factor scaled by its signal's
+    "not me" rate against the baseline, where the rates come from the
+    answers on `/portal/sign-ins`.
+  - Below 100 assessments no threshold is suggested, and below 20 answers
+    for a signal no factor is (constants in the engine, both stated on the
+    page).
+  - `reported-not-me` is left out, because it is the answer rather than
+    evidence for one.
+* **The knob**: `risk.signalFactors`, per realm, read by `factors()` at
+  every scoring site: the evaluators, the live-session re-check and the
+  report itself. That makes the report's suggestion the value it
+  measures from.
+
+**The answers are a biased sample**, since a flagged sign-in is likelier to
+be asked about. The report says so, and it never applies itself.
+
+**The score bands were wrong in the first version of the page.** They were
+decades up to "≥ 1", as though the thresholds were fractions of 1. The
+score is a likelihood ratio, and MEDIUM and HIGH begin at 1 and 10, so
+everything MEDIUM or worse fell into one band. They now run from below 0.01
+to 100 and over, and those two thresholds are edges.
 
 ## A REALM ADMINISTRATOR ON THE RISK PAGES (2026-09-22)
 
