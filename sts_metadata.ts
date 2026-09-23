@@ -2056,9 +2056,17 @@ const SPECS: Spec[] = [
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-backchannel-1_0.html',
     coverage: 'full for the provider (2026-09-17): the two discovery ' +
-              'members, the two per-client registration members (http or ' +
-              'https, no fragment, at registration, the console, /admin-api ' +
-              'and again when read), the sid claim, and a Logout Token — ' +
+              'members, the two per-client registration members (https, no ' +
+              'fragment; http only for a confidential client and only where ' +
+              'the outbound policy sends over http — ' +
+              'federation.outboundAllowHttp, development mode — section 2.2, ' +
+              '#123; ' +
+              'at registration, the console, /admin-api and again when ' +
+              'read; backchannel_logout_session_required is stored and ' +
+              'always met, since every token carries sid), the sid claim, ' +
+              'section 2.7\'s revocation at sign-out in every mode of the ' +
+              'refresh tokens issued on the session without offline_access ' +
+              '(oauth2.revokeRefreshOnLogout, #123), and a Logout Token — ' +
               'typ logout+jwt, iss, aud, iat, exp two minutes on, jti, the ' +
               'events member, sub and sid, no nonce, signed like the ' +
               'client\'s ID Token (any algorithm of the table, post-quantum ' +
@@ -4920,6 +4928,25 @@ const ENDPOINTS: EndpointEntry[] = [
           'hash, named, and scoped to one or more of those doors — accepted ' +
           'there and NEVER at a browser sign-in. It lists each one with its ' +
           'last use and revokes one (a CAEP credential-change). The identity ' +
+          'is the session\'s; nothing on the form names a person. A real ' +
+          'submit button and no script.' },
+  { path: '/portal/kerberos', group: 'User portal',
+    name: 'Your Kerberos principal, and a keytab from your own password',
+    specs: ['rfc4120', 'rfc3961'],
+    effect: 'makes the signed-in person a keytab for their own principal, ' +
+            'shown once; changes nothing on the account',
+    what: 'NON-SPEC page (#59). Shows the signed-in person\'s Kerberos ' +
+          'principal in this realm and the PUBLIC half of their keys (kvno, ' +
+          'enctypes), and makes them an MIT keytab (format 0x502) from their ' +
+          'CURRENT PASSWORD, typed on the form and verified first — which is ' +
+          'also the re-authentication a password-equivalent export needs, ' +
+          'counted against the password change\'s budget. RFC 3961 ' +
+          'string-to-key over that password and the account\'s salt, at the ' +
+          'current kvno only, checked against the key the KDC holds before ' +
+          'it is handed over; a stored key is never read back out. SHOWN ' +
+          'ONCE on the 200 that answers the form, no-store, and not kept. In ' +
+          'development mode the KDC keys every user from krb5.userPassword, ' +
+          'so the keytab holds that key and the page says so. The identity ' +
           'is the session\'s; nothing on the form names a person. A real ' +
           'submit button and no script.' },
   { path: '/portal/signing-key', group: 'User portal',

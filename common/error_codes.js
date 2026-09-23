@@ -7716,6 +7716,31 @@ const CODES = [
     summary: 'An AS-REQ, or an S4U2Self naming a person, was refused ' +
       'because that person\'s account is disabled.',
     spec: 'KDC_ERR_CLIENT_REVOKED (18)' },
+  // A person's keytab (#59, 2026-09-22), kerberos/krb5_person_keys.ts.
+  { code: 'STS-KRB-0130',
+    summary: 'A keytab was asked for a name that is not a person in this ' +
+      'trust realm\'s directory (no directory, no usable single-component ' +
+      'name, or no entry).',
+    spec: 'HTTP 400 { ok: false, errors } / a 400 portal page' },
+  { code: 'STS-KRB-0131',
+    summary: 'A keytab was refused because the product KDC holds no current ' +
+      'keys for the person — none derived yet, derived from an older ' +
+      'password, unreadable, or krb5.personKeys off.',
+    spec: 'HTTP 400 { ok: false, errors } / a 400 portal page' },
+  { code: 'STS-KRB-0132',
+    summary: 'A keytab was refused because the password given does not ' +
+      'derive the key the product KDC holds for the person, or none was ' +
+      'given.',
+    spec: 'HTTP 400 { ok: false, errors } / a 400 portal page' },
+  { code: 'STS-KRB-0133',
+    summary: 'A development-mode keytab was refused because the ' +
+      'development KDC has no principal for the person and will not make ' +
+      'one (a name krb5.unknownUsers reserves), or it offers no enctype.',
+    spec: 'HTTP 400 { ok: false, errors } / a 400 portal page' },
+  { code: 'STS-KRB-0134',
+    summary: 'A keytab was refused because the person\'s account is ' +
+      'disabled, which the KDC refuses whatever key is presented.',
+    spec: 'HTTP 400 { ok: false, errors } / a 400 portal page' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
@@ -12390,6 +12415,17 @@ const CODES = [
     summary: 'Revoking somebody\'s app password was refused; the credential ' +
       'store\'s own code is on the audit row.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  // "Reset password and download keytab" (#59, 2026-09-22).
+  { code: 'STS-ADMIN-0802',
+    summary: 'A password reset for a Kerberos keytab gave neither or both of ' +
+      'a password and random, or the new password was refused (the password ' +
+      'policy\'s own code wins where it gave one). Nothing was changed.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0803',
+    summary: 'A password reset for a Kerberos keytab SET the password and ' +
+      'then no keytab could be made, or a Kerberos principals action threw ' +
+      'inside the console.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -12972,6 +13008,20 @@ const CODES = [
     summary: 'A POST to /portal/app-passwords named an action the page does ' +
       'not have.',
     spec: 'HTTP 400 page' },
+  // /portal/kerberos (#59, 2026-09-22).
+  { code: 'STS-PORTAL-0080',
+    summary: 'A keytab download on /portal/kerberos was refused because the ' +
+      'password typed is not the person\'s current one.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0081',
+    summary: 'A keytab download on /portal/kerberos was refused by the ' +
+      'Kerberos register after the password verified; its own STS-KRB code ' +
+      'is on the audit row.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0082',
+    summary: 'A POST to /portal/kerberos named an action the page does not ' +
+      'have.',
+    spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
@@ -13545,6 +13595,18 @@ const CODES = [
   { code: 'STS-REG-0188',
     summary: 'initiate_login_uri is not an https URL (OpenID Connect ' +
       'Registration section 2) (#120).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0189',
+    summary: 'A backchannel_logout_uri with the http scheme for a public ' +
+      'client: Back-Channel Logout 1.0 section 2.2 allows http only to a ' +
+      'confidential one (#123). At registration, a create and an ' +
+      'attribute write.',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0190',
+    summary: 'A backchannel_logout_uri the outbound policy would not dial ' +
+      '(http with federation.outboundAllowHttp off, or in product mode): ' +
+      'every delivery would be dead-lettered, so it is refused where it is ' +
+      'written (#123).',
     spec: 'HTTP 400 {error: invalid_client_metadata}' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +

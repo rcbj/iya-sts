@@ -551,7 +551,12 @@ from a script.
   like the client's ID Token and encrypted where it registered encryption. Each
   delivery is a persisted row: it is sent once for the cluster, retried with
   backoff across restarts, and dead-lettered on a final failure (listed and
-  retried on `/admin/logout`).
+  retried on `/admin/logout`). An `http` logout URI is accepted only from a
+  confidential client, and only where the outbound policy sends over `http`
+  (`federation.outboundAllowHttp`, development mode).
+* **Refresh tokens at sign-out** (Back-Channel Logout section 2.7): in every
+  mode, a sign-out revokes the refresh tokens issued on that session without
+  `offline_access`. Tokens granted `offline_access` are kept.
 
 ### Session Management
 
