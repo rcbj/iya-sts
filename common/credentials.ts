@@ -937,7 +937,8 @@ class Credentials {
   // the ACCOUNT's: in product mode a person who HOLDS a second factor (an
   // authenticator app, or a security key in the `mfa` role — what
   // `mechanismsFor().mfaRequired` means) or of whom one is REQUIRED
-  // (`mfaRequirementFor()`: stsMfaRequired, or the authentication policy for the
+  // (`mfaRequirementFor()`: stsMfaRequired, or the authentication policy for
+  // the
   // realm) is refused their own right password there. NIST SP 800-63B section
   // 4.2: an account bound to two factors is at AAL2, and a verifier that
   // accepts one of them alone brings it down to AAL1.

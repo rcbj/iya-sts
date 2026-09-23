@@ -2970,7 +2970,8 @@ function realmSupport() {
             'main port is https or it is not, for every realm at once, and ' +
             'GET /oauth2/rfc9700 reports which.' },
     { family: 'Authentication service', state: 'full', by: 'path',
-      cards: ['WebAuthn / CTAP', 'One-time passwords (TOTP)', 'Recovery codes'],
+      cards: ['WebAuthn / CTAP', 'One-time passwords (TOTP)', 'Recovery codes',
+              'Email codes and links'],
       note: 'Its own sessions and second factors — WebAuthn credentials, ' +
             'TOTP secrets and recovery codes — so signing in to one ' +
             'realm signs you in to that realm only. That is the point of a ' +

@@ -11808,7 +11808,8 @@ class AdminConsole {
               'at all.'
             : 'Authenticator apps are switched off in this realm ' +
               '(the authentication policy on <a href="/admin/policies#authn">' +
-              'Policies</a>; the TOTP settings are on <a href="/admin/totp">TOTP ' +
+              'Policies</a>; the TOTP settings are on <a ' +
+              'href="/admin/totp">TOTP ' +
               'MFA</a>), so nobody new can enrol one.'))
         : (!mech.totpUsable
             ? this.warn('<strong>An enrolment exists and this process cannot ' +
@@ -24992,7 +24993,8 @@ class AdminConsole {
       (info.offered
         ? ''
         : this.warn('<strong>The authentication policy turns authenticator ' +
-          'apps off</strong> (<a href="/admin/policies#authn">Policies</a>), so ' +
+          'apps off</strong> (<a href="/admin/policies#authn">Policies</a>), ' +
+          'so ' +
           'nobody new can enrol an authenticator app. <strong>It does not ' +
           'disable a secret somebody already holds</strong> — that account ' +
           'is still configured for two factors and the sign-in screen still ' +

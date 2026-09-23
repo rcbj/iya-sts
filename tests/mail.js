@@ -54,6 +54,16 @@
 //      the account signals hand over.
 //  12. REALMS: a realm's transport overrides the service's, and one realm's
 //      outbox is not another's.
+//  14. THE LAYOUT (#64): every message is wrapped in the realm's layout, its
+//      body inserted once and escaped once; a layout without {{content}}, or
+//      with it twice, is refused; the layout is not a message; a realm's
+//      layout is that realm's.
+//  15. THE RECOVERY-CODE RESET (#64, D4): username, address and recovery
+//      code, each wrong one answered with the one sentence and mailed
+//      nothing but, for a wrong code, the attempt notice; the code spent.
+//  16. THE ADDRESS CHANGE (#64, D5): the new address is mailed a link and is
+//      not `mail` until it is followed; then it is, verified, and the former
+//      address is told; a link outlives no change of address.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -384,6 +394,11 @@ async function twoNodes(t) {
     };
     const r2 = quiet.send({ username: 'erin', template: 'test-message' });
     await r2.delivered;
+    // THE TEST'S CLOCK STARTS NO EARLIER THAN THE ROW (#64): it was read
+    // before the send, so a queue that crossed a millisecond left the row
+    // "not due" on the stalled node's clock and it never reached its
+    // transport — a race the layout's rendering made common.
+    clock = Math.max(clock, Date.now());
     const dying = makeMail({ transports: hanging, claims: claims, now: now });
     const heir = makeMail({ transports: counted, claims: claims, now: now });
     const stalled = dying.attempt(realm.id, r2.queued[0].id);
@@ -989,7 +1004,10 @@ async function uses(t) {
   mailModule.setDirectory(dir);
   await withRealm(t, realms, realmId('mail-uses'),
                   { 'global.mode': 'product', 'mail.transport': 'smtp',
-                    'global.publicBaseUrl': 'https://idp.example' },
+                    'global.publicBaseUrl': 'https://idp.example',
+                    // THE ONE-FIELD FORM, which these checks describe: the
+                    // recovery-code form is section 15's (#64).
+                    'mail.resetRequiresBackupCode': 'false' },
                   async function () {
     const transports = stubTransports();
     const m = makeMail({ transports: transports });
@@ -1289,6 +1307,293 @@ async function consolePages(t) {
   log.debug('Leaving consolePages().');
 }
 
+// ---------------------------------------------------------------------------
+// 14. THE LAYOUT (#64)
+// ---------------------------------------------------------------------------
+async function layout(t) {
+  log.debug('Entering layout().');
+  const realms = require('../common/realms');
+  const mailModule = require('../common/mail');
+  const MailTemplates = require('../common/mail_templates');
+  const spec = MailTemplates.builtIn('layout');
+  t.check(!!spec && MailTemplates.problem(spec, spec) === '',
+          '14a. the built-in layout is a template that passes its own rules');
+  const body = MailTemplates.render(MailTemplates.builtIn('password-changed'),
+    { username: '<b>eve</b>', when: 'now', how: 'x' });
+  const wrapped = MailTemplates.wrap(spec, body,
+    { realm: 'R', service: 'S', reason: 'a <reason>' });
+  t.check(wrapped.html.indexOf('&lt;b&gt;eve&lt;/b&gt;') >= 0 &&
+          wrapped.html.indexOf('&amp;lt;b') < 0 &&
+          wrapped.html.indexOf('a &lt;reason&gt;') >= 0 &&
+          wrapped.subject === body.subject &&
+          wrapped.text.indexOf(body.text) === 0,
+          '14b. the body goes in ONCE and escaped ONCE, the subject is the ' +
+          'message\'s, and the layout\'s own values are escaped',
+          wrapped.html.slice(0, 200));
+  const noContent = { subject: '{{subject}}', text: 'no body here',
+                      html: '<p>no body</p>' };
+  const twice = { subject: '{{subject}}', text: '{{content}}{{content}}',
+                  html: '{{content}}' };
+  const noSubject = { subject: 'fixed', text: '{{content}}',
+                      html: '{{content}}' };
+  t.check(/exactly once/.test(MailTemplates.problem(spec, noContent)) &&
+          /exactly once/.test(MailTemplates.problem(spec, twice)) &&
+          /\{\{subject\}\}/.test(MailTemplates.problem(spec, noSubject)),
+          '14c. a layout without {{content}}, with it twice, or without ' +
+          '{{subject}} is refused');
+  const dir = stubDirectory({ gus: { mail: ['gus@example.com'] } });
+  mailModule.setDirectory(dir);
+  const a = realmId('mail-layout-a');
+  let aId = '';
+  await withRealm(t, realms, a, { 'mail.transport': 'smtp' },
+                  async function (realm) {
+    aId = realm.id;
+    const transports = stubTransports();
+    const m = makeMail({ transports: transports });
+    const refused = m.send({ username: 'gus', template: 'layout' });
+    t.check(!refused.ok && refused.refused[0] &&
+            refused.refused[0].code === 'STS-MAIL-0017',
+            '14d. the layout is not a message: send() refuses it by name',
+            JSON.stringify(refused.refused));
+    const saved = m.saveTemplate('layout', 'en', {
+      subject: '[A] {{subject}}', text: 'Realm A says\n{{content}}',
+      html: '<div>Realm A</div>{{content}}' }, 'test');
+    t.check(saved.ok, '14e. a realm saves a layout of its own',
+            JSON.stringify(saved));
+    const sent = m.send({ username: 'gus', template: 'test-message',
+                          values: { username: 'gus', when: 'now',
+                                    transport: 'smtp' } });
+    await sent.delivered;
+    const got = transports.sent[transports.sent.length - 1];
+    t.check(got && /^\[A\] /.test(got.subject) &&
+            /^Realm A says/.test(got.text) &&
+            got.html.indexOf('<div>Realm A</div>') >= 0,
+            '14f. and every message sent in that realm is wrapped in it',
+            got && got.subject);
+  });
+  await withRealm(t, realms, realmId('mail-layout-b'),
+                  { 'mail.transport': 'smtp' }, async function () {
+    const transports = stubTransports();
+    const m = makeMail({ transports: transports });
+    const sent = m.send({ username: 'gus', template: 'test-message',
+                          values: { username: 'gus', when: 'now',
+                                    transport: 'smtp' } });
+    await sent.delivered;
+    const got = transports.sent[transports.sent.length - 1];
+    t.check(got && !/Realm A/.test(got.text) &&
+            /You received this because/.test(got.text),
+            '14g. another realm keeps the built-in layout — a realm\'s ' +
+            'layout is its own (' + aId + ')', got && got.text);
+  });
+  log.debug('Leaving layout().');
+}
+
+// ---------------------------------------------------------------------------
+// 15. THE RECOVERY-CODE RESET (#64, D4)
+// ---------------------------------------------------------------------------
+async function recoveryCodeReset(t) {
+  log.debug('Entering recoveryCodeReset().');
+  const realms = require('../common/realms');
+  const mailModule = require('../common/mail');
+  const usesModule = require('../common/mail_uses');
+  const dir = stubDirectory({
+    ria: { mail: ['ria@example.com'], stsmailverified: ['ria@example.com'] },
+    sol: { mail: ['sol@example.com'], stsmailverified: ['sol@example.com'] },
+    ted: { mail: ['ted@example.com'] }
+  });
+  mailModule.setDirectory(dir);
+  await withRealm(t, realms, realmId('mail-reset-code'),
+                  { 'global.mode': 'product', 'mail.transport': 'smtp',
+                    'global.publicBaseUrl': 'https://idp.example' },
+                  async function () {
+    const transports = stubTransports();
+    const m = makeMail({ transports: transports });
+    const issued = [];
+    const spent = [];
+    const creds = {
+      accountDisabled: function () {
+        return false;
+      },
+      issuePasswordReset: function (u) {
+        issued.push(u);
+        return { ok: true, token: 'tok-' + u, expiresAt: 'soon' };
+      },
+      // ria holds two codes, sol none, ted two (but no verified address).
+      backupCodeStatus: function (u) {
+        return { remaining: u === 'sol' ? 0 : 2, total: 2 };
+      },
+      verifyBackupCodeAsync: function (u, code) {
+        if (code === 'GOOD-CODE' && spent.indexOf(u + code) < 0) {
+          spent.push(u + code);
+          return Promise.resolve({ ok: true, remaining: 1, total: 2 });
+        }
+        return Promise.resolve({ ok: false, reason: 'wrong' });
+      }
+    };
+    const u = new usesModule.MailUses(Object.assign(
+      usesModule.MailUses.defaultDeps(), {
+        mail: {
+          send: m.send.bind(m), available: m.available.bind(m),
+          directory: function () {
+            return dir;
+          },
+          recipient: m.recipient.bind(m),
+          sendToFormerAddress: m.sendToFormerAddress.bind(m)
+        },
+        credentials: function () {
+          return creds;
+        },
+        accountSignals: function () {
+          return { recoveryActivated: function () {
+            return undefined;
+          } };
+        }
+      }));
+    t.check(u.resetNeedsRecoveryCode() === true,
+            '15a. the recovery code is asked for by default');
+    const ask = function (who, address, code) {
+      return u.requestReset(who, 'test', { address: address, code: code });
+    };
+    const nobody = await ask('nobody', 'x@example.com', 'GOOD-CODE');
+    const byAddress = await ask('ria@example.com', 'ria@example.com',
+                                'GOOD-CODE');
+    const wrongAddress = await ask('ria', 'other@example.com', 'GOOD-CODE');
+    const unverified = await ask('ted', 'ted@example.com', 'GOOD-CODE');
+    const noCodes = await ask('sol', 'sol@example.com', 'GOOD-CODE');
+    const wrongCode = await ask('ria', 'RIA@example.com', 'BAD-CODE');
+    const answers = [nobody, byAddress, wrongAddress, unverified, noCodes,
+                     wrongCode];
+    t.check(answers.every(function (a) {
+      return a.message === usesModule.RESET_ANSWER;
+    }), '15b. every combination is answered with the one sentence');
+    t.check(nobody.outcome === 'no such account' &&
+            byAddress.outcome === 'no such account' &&
+            /not the account/.test(wrongAddress.outcome) &&
+            /not verified/.test(unverified.outcome) &&
+            /no unused recovery code/.test(noCodes.outcome) &&
+            /recovery code is not right/.test(wrongCode.outcome) &&
+            issued.length === 0,
+            '15c. a username only (not an address), the account\'s own ' +
+            'address, a verified one, a code held and the RIGHT code — and ' +
+            'no link issued for any wrong one',
+            JSON.stringify(answers.map(function (a) {
+              return a.outcome;
+            })));
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 30);
+    });
+    const notices = transports.sent.filter(function (x) {
+      return /tried to reset/.test(x.subject);
+    });
+    t.check(notices.length === 1 && notices[0].to === 'ria@example.com' &&
+            !transports.sent.some(function (x) {
+              return /Reset your/.test(x.subject);
+            }),
+            '15d. a wrong code with the right name and address tells the ' +
+            'address owner, and sends no reset link',
+            JSON.stringify(transports.sent.map(function (x) {
+              return x.subject;
+            })));
+    const right = await ask('ria', 'ria@example.com', 'GOOD-CODE');
+    const again = await ask('ria', 'ria@example.com', 'GOOD-CODE');
+    t.check(right.outcome === 'mailed' && issued.join(',') === 'ria' &&
+            /recovery code is not right/.test(again.outcome),
+            '15e. all three right: the link is mailed and the code is SPENT ' +
+            '— the same code a second time is wrong',
+            JSON.stringify([right.outcome, again.outcome]));
+  });
+  log.debug('Leaving recoveryCodeReset().');
+}
+
+// ---------------------------------------------------------------------------
+// 16. THE ADDRESS CHANGE (#64, D5)
+// ---------------------------------------------------------------------------
+async function addressChange(t) {
+  log.debug('Entering addressChange().');
+  const realms = require('../common/realms');
+  const mailModule = require('../common/mail');
+  const usesModule = require('../common/mail_uses');
+  const dir = stubDirectory({
+    uma: { mail: ['uma@example.com'], stsmailverified: ['uma@example.com'] }
+  });
+  const written = [];
+  dir.writeAddress = function (u, address, source) {
+    written.push([u, address, source]);
+    const before = (dir.people[u].mail || [])[0];
+    dir.people[u].mail = [address];
+    dir.writeMailFlag(u, 'stsMailVerified', source === 'link' ? address : '');
+    written.push(['former', before]);
+    return true;
+  };
+  mailModule.setDirectory(dir);
+  await withRealm(t, realms, realmId('mail-change'),
+                  { 'mail.transport': 'smtp',
+                    'global.publicBaseUrl': 'https://idp.example' },
+                  async function () {
+    const transports = stubTransports();
+    const m = makeMail({ transports: transports });
+    const u = new usesModule.MailUses(Object.assign(
+      usesModule.MailUses.defaultDeps(), {
+        mail: {
+          send: m.send.bind(m), available: m.available.bind(m),
+          directory: function () {
+            return dir;
+          },
+          recipient: m.recipient.bind(m),
+          sendToFormerAddress: m.sendToFormerAddress.bind(m),
+          sendToPendingAddress: m.sendToPendingAddress.bind(m)
+        }
+      }));
+    const bad = u.startAddressChange('uma', 'not an address', 'test');
+    t.check(!bad.ok && bad.errors && /not an address/.test(bad.errors[0]),
+            '16a. something that is not an address is refused',
+            JSON.stringify(bad));
+    const started = u.startAddressChange('uma', 'uma.new@example.com',
+                                         'test');
+    t.check(started.ok && dir.people.uma.mail[0] === 'uma@example.com' &&
+            m.recipient('uma').verified,
+            '16b. the change is PENDING: `mail` is still the old, verified ' +
+            'address', JSON.stringify(started));
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 30);
+    });
+    const mailed = transports.sent.filter(function (x) {
+      return /Confirm your address/.test(x.subject);
+    })[0];
+    t.check(mailed && mailed.to === 'uma.new@example.com',
+            '16c. the link goes to the NEW address — the entry\'s pending ' +
+            'one, never a request\'s', mailed && mailed.to);
+    const token = new URL(/(https:\/\/idp\.example\S+)/.exec(mailed.text)[1])
+      .searchParams.get('token');
+    const done = u.completeVerification('uma', token);
+    t.check(done.ok && done.changed &&
+            written[0].join(',') === 'uma,uma.new@example.com,link' &&
+            m.recipient('uma').verified &&
+            dir.people.uma.mail[0] === 'uma.new@example.com',
+            '16d. following it makes the new address `mail`, verified, ' +
+            'through the directory — which tells the former one',
+            JSON.stringify([done, written]));
+    t.check(!u.completeVerification('uma', token).ok,
+            '16e. once');
+    const second = u.startAddressChange('uma', 'uma.third@example.com',
+                                        'test');
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 30);
+    });
+    const third = transports.sent.filter(function (x) {
+      return x.to === 'uma.third@example.com';
+    })[0];
+    const thirdToken = new URL(/(https:\/\/idp\.example\S+)/
+      .exec(third.text)[1]).searchParams.get('token');
+    // Somebody else changes the address before the link is followed.
+    dir.people.uma.mail = ['uma.admin@example.com'];
+    t.check(second.ok && !u.checkVerification('uma', thirdToken).ok,
+            '16f. a link outlives no change of address: it is bound to the ' +
+            'address the account had when it was sent');
+  });
+  log.debug('Leaving addressChange().');
+}
+
 module.exports = {
   name: 'mail',
   describe: 'The mail channel (#63): templates, directory-only recipients, ' +
@@ -1309,6 +1614,9 @@ module.exports = {
     await uses(t);
     await realmsSeparate(t);
     await consolePages(t);
+    await layout(t);
+    await recoveryCodeReset(t);
+    await addressChange(t);
     log.debug('Leaving run().');
   }
 };

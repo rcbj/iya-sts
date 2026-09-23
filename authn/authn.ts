@@ -2456,11 +2456,11 @@ class Authn {
     }
     if (code) {
       log.debug("Leaving Authn.methodPhraseFor().");
-      // Unreachable today and deliberately written anyway: a one-time code can
-      // never be a first factor here (see common/totp.ts), so this branch says
-      // what would be true if that ever changed rather than reporting it as a
-      // password sign-in.
-      return 'sign-in screen (a one-time code alone)';
+      // REACHABLE SINCE #64: an emailed code or link as the first factor is
+      // `amr ["otp"]` alone. An authenticator app still never is (see
+      // common/totp.ts). The credential kind on the event says which.
+      return 'sign-in screen (a one-time code alone — an emailed code or ' +
+             'link)';
     }
     log.debug("Leaving Authn.methodPhraseFor().");
     return 'sign-in screen (password)';
@@ -3549,6 +3549,42 @@ class Authn {
   // `refusedSession()` is the screen's reader. The risk decision (#62) will
   // refuse here too and say why the same way.
   // ---------------------------------------------------------------------------
+  // Which mechanism, in which role, the authentication policy refuses for
+  // this session — its code — or ''. See the paragraph in startSession().
+  private authnPolicyRefusal(amr: any, credential: any): string {
+    const { log, authnPolicy } = this.deps;
+    log.debug("Entering Authn.authnPolicyRefusal().");
+    const kind = String((credential && credential.kind) || '');
+    const factors = Array.isArray(amr) ? amr.map(String) : [];
+    const ONLY_FIRST: Record<string, string> = {
+      certificate: 'certificate', kerberos: 'kerberos',
+      federation: 'federation'
+    };
+    let mechanism = '';
+    let role: 'primary' | 'second-factor' = factors.length <= 1
+      ? 'primary' : 'second-factor';
+    if (ONLY_FIRST[kind]) {
+      mechanism = ONLY_FIRST[kind];
+      role = 'primary';
+    } else if (kind === 'password') {
+      mechanism = 'password';
+    } else if (kind === 'wallet') {
+      mechanism = 'wallet';
+    } else if (kind === 'email-code') {
+      mechanism = 'emailCode';
+    } else if (kind === 'email-link') {
+      mechanism = 'emailLink';
+    } else if (kind === 'webauthn' && role === 'primary') {
+      mechanism = 'passkey';
+    }
+    // A held second factor is never refused here (see the caller).
+    const refused = mechanism && !authnPolicy.allows(mechanism, role);
+    const code = !refused ? ''
+      : (role === 'primary' ? 'STS-AUTHN-0268' : 'STS-AUTHN-0269');
+    log.debug("Leaving Authn.authnPolicyRefusal(). " + (code || 'allowed'));
+    return code;
+  }
+
   startSession(res, username, amr, acr, via, detail) {
     const { log, randomId, userFor, helpers, stats, gate, audit,
       errorCodes } = this.deps;
@@ -3583,6 +3619,41 @@ class Authn {
       });
       extra.refusedWith = 'STS-AUTHN-0201';
       log.debug("Leaving Authn.startSession(). The account is disabled.");
+      return null;
+    }
+    // -------------------------------------------------------------------------
+    // THE AUTHENTICATION POLICY (#64), ASKED AT THE ONE LINE EVERY DOOR
+    // REACHES. Which mechanism answered — the credential kind the door names —
+    // and in which role: a first factor where this is the only `amr` value, or
+    // where the mechanism can only ever be one (a certificate, a Kerberos
+    // ticket, a federation partner); otherwise the second. A door that names
+    // no credential is not asked. HELD second factors — an authenticator app,
+    // a security key in the mfa role, a recovery code — are NOT refused
+    // here: their rows stop new ones, never one already held (the contract
+    // `totp.enabled` kept). A refusal is `null`, which every door already
+    // draws as the policy's refusal.
+    // -------------------------------------------------------------------------
+    const policyCode = extra.authenticated === false ? ''
+      : this.authnPolicyRefusal(amr, extra.credential);
+    if (policyCode) {
+      log.info('authn: a session for "' + username + '" was REFUSED at the ' +
+               (via || 'sign-in') + ' door: this realm\'s authentication ' +
+               'policy does not accept ' +
+               String(extra.credential && extra.credential.kind) +
+               ' there (' + policyCode + ').');
+      audit.audit({
+        action: 'session.refuse', actor: String(username || ''),
+        errorCode: policyCode,
+        protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+        summary: 'a session for ' + username + ' was refused at the ' +
+                 (via || 'sign-in') + ' door: the authentication policy ' +
+                 'does not accept that mechanism in that role',
+        detail: { credential: String(extra.credential &&
+                                     extra.credential.kind),
+                  application: String(extra.application || '') }
+      });
+      extra.refusedWith = policyCode;
+      log.debug("Leaving Authn.startSession(). The policy refused.");
       return null;
     }
     // -------------------------------------------------------------------------

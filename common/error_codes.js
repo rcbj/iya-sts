@@ -4344,6 +4344,20 @@ const CODES = [
     summary: 'The emailed code or link door failed unexpectedly; the line ' +
       'carries the stack (#64).',
     spec: 'an error page' },
+  { code: 'STS-AUTHN-0268',
+    summary: 'A session was refused: this realm\'s authentication policy ' +
+             'does ' +
+      'not accept the mechanism the door named as a first factor (a ' +
+      'certificate, a Kerberos ticket, a federation partner, a wallet, a ' +
+      'passkey, a password or an emailed code or link) (#64).',
+    spec: 'the door\'s own refusal page' },
+  { code: 'STS-AUTHN-0269',
+    summary: 'A session was refused: this realm\'s authentication policy ' +
+             'does ' +
+      'not accept the mechanism that answered as a second factor (a ' +
+      'password or wallet after another factor, or an emailed code or ' +
+      'link) (#64).',
+    spec: 'the door\'s own refusal page' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

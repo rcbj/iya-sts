@@ -659,11 +659,11 @@ class EmailFactor {
 
   // A wrong secret: counted on the step and — for a real account holding the
   // factor or using it first — on the entry.
-  private async refuse(res: any, mfaId: string, step: any,
+  private async countWrong(res: any, mfaId: string, step: any,
                        kind: Kind): Promise<string> {
     const { log, authn, authnPolicy, mailFactor, audit, errorCodes } =
       this.deps;
-    log.debug("Entering EmailFactor.refuse(). " + kind);
+    log.debug("Entering EmailFactor.countWrong(). " + kind);
     const state = step.emailState;
     state.attempts += 1;
     const limit = authnPolicy.emailSettings().attempts;
@@ -678,11 +678,11 @@ class EmailFactor {
     errorCodes.mark(res, 'STS-AUTHN-0264');
     if (state.attempts >= limit) {
       authn.dropMfaStep(mfaId);
-      log.debug("Leaving EmailFactor.refuse(). The step ended.");
+      log.debug("Leaving EmailFactor.countWrong(). The step ended.");
       return 'ended';
     }
     authn.saveMfaStep(mfaId, step);
-    log.debug("Leaving EmailFactor.refuse(). " + state.attempts + " of " +
+    log.debug("Leaving EmailFactor.countWrong(). " + state.attempts + " of " +
               limit + ".");
     return 'That ' + kind + ' is not right. ' + (limit - state.attempts) +
            ' more attempt(s) before this sign-in ends.';
@@ -788,7 +788,7 @@ class EmailFactor {
     const right = !!typed && !!state.hash &&
                   await mailFactor.matches(typed, state.hash);
     if (!right) {
-      const said = await this.refuse(res, mfaId, step, 'code');
+      const said = await this.countWrong(res, mfaId, step, 'code');
       if (said === 'ended') {
         this.endPage(res, 400, 'Too many wrong codes', 'This sign-in has ' +
                      'ended.');
@@ -945,7 +945,7 @@ class EmailFactor {
     const right = !!state.hash &&
                   await mailFactor.matches(String(posted.value.t), state.hash);
     if (!right) {
-      const said = await this.refuse(res, mfaId, step, 'link');
+      const said = await this.countWrong(res, mfaId, step, 'link');
       this.endPage(res, 400, 'That link is not right', said === 'ended'
         ? 'This sign-in has ended.' : 'That link is not the latest one ' +
           'sent. Use the newest message.');

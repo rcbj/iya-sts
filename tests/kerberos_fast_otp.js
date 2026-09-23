@@ -19,7 +19,7 @@
 //   4. in a PRODUCT-MODE CHILD, real AS-REQs through `handleMessage()`:
 //      the refusal DECISION for a person with an authenticator app, one
 //      required to have a second factor on their entry, everybody under the
-//      realm's `authn.mfaRequired`, and nobody — and that the refusal comes
+//      realm's authentication policy, and nobody — and that the refusal comes
 //      only after the password verified; FAST armor from a host's TGT, the
 //      encrypted challenge, the OTP exchange with the password as the PIN,
 //      the step the sign-in screen spent refused at the KDC (one once-only
@@ -311,6 +311,8 @@ async function productChild() {
   const gss = require(R + '/kerberos/krb5_gss.js');
   const directory = require(R + '/ldap/ldap_server');
   const credentials = require(R + '/common/credentials');
+  // #64: the realm-wide requirement is the authentication policy's.
+  const authnPolicy = require(R + '/common/authn_policy');
   const personKeys = require(R + '/kerberos/krb5_person_keys');
   const cryptoLib = require(R + '/common/crypto');
   const codec = require(R + '/kerberos/krb5_fast_codec');
@@ -559,10 +561,11 @@ async function productChild() {
   out.pwReq = brief(await asReq('kfreq', PW));
   out.wrongReq = brief(await asReq('kfreq', PW + '-wrong'));
   out.pwNone = brief(await asReq('kfnone', PW));
-  config.setOverride('authn.mfaRequired', 'true');
+  out.policySaved = authnPolicy.save('default', Object.assign({},
+    authnPolicy.DEFAULTS, { requireSecondFactor: 'always' })).ok;
   out.demand.realm = personKeys.personSecondFactor('kfrealm');
   out.pwRealm = brief(await asReq('kfrealm', PW));
-  config.clearOverride('authn.mfaRequired');
+  authnPolicy.reset('default');
   out.pwRealmAfter = brief(await asReq('kfrealm', PW));
 
   // --- 4b. the host's TGT, the armor ---
@@ -863,7 +866,8 @@ function theRefusalDecision(t, r) {
           JSON.stringify([r.pwReq, r.wrongReq]));
   t.check(!r.pwRealm.ok && r.pwRealm.code === 12 &&
           /this realm requires/.test(r.pwRealm.eText) && r.pwRealmAfter.ok,
-          'REQUIRED BY THE REALM (authn.mfaRequired): KDC_ERR_POLICY, and a ' +
+          'REQUIRED BY THE REALM (the authentication policy): ' +
+          'KDC_ERR_POLICY, and a ' +
           'ticket once the requirement is cleared',
           JSON.stringify([r.pwRealm, r.pwRealmAfter]));
   t.check(r.pwNone.ok && r.pwNone.flags.indexOf('pre-authent') !== -1,

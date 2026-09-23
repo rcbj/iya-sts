@@ -4057,7 +4057,8 @@ class AdminApi {
             summary: 'Set somebody\'s email address',
             description: 'Writes `mail` on the person\'s entry and marks it ' +
                          'VERIFIED (`stsMailVerified`): an administrator is ' +
-                         'one of the trusted sources #64 names, with SCIM, an ' +
+                         'one of the trusted sources #64 names, with SCIM, ' +
+                         'an ' +
                          'administrator\'s LDAP write and a federation ' +
                          'partner. The FORMER address, if there was one, is ' +
                          'told it changed. Refused unless it is an address ' +
@@ -4282,7 +4283,8 @@ class AdminApi {
                          'reach** is a sign-in that is neither that screen ' +
                          'nor one of those doors: federation, SPNEGO or a ' +
                          'Kerberos AS-REQ, a TLS client certificate. ' +
-                         'The authentication policy\'s `requireSecondFactor: always` ' +
+                         'The authentication policy\'s `requireSecondFactor: ' +
+                         'always` ' +
                          'is the same requirement for ' +
                          'every person in the realm.',
             requestBodyRequired: true,
@@ -4306,7 +4308,8 @@ class AdminApi {
             operationId: 'stopRequiringUserSecondFactor',
             summary: 'Take the per-account second-factor requirement off',
             description: 'Clears `stsMfaRequired`. A realm requirement ' +
-                         '(the authentication policy) is unaffected and the reply ' +
+                         '(the authentication policy) is unaffected and the ' +
+                         'reply ' +
                          'says whether one is in force. ' +
                          'A second factor the person ' +
                          'holds goes on being asked for, as it always is.',

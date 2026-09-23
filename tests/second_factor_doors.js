@@ -16,7 +16,7 @@
 //   A. `credentials.verify()` and `verifyAsync()` at each of the five doors:
 //      a person holding a security key in the `mfa` role, one required by
 //      their entry (stsMfaRequired), everybody required by the realm
-//      (authn.mfaRequired) — refused STS-AUTHN-0213 with `ok: false`, the
+//      (the authentication policy) — refused STS-AUTHN-0213 with `ok: false`, the
 //      shape a wrong password has; a person with neither is verified; the two
 //      declared exemptions (`asked-next`, `session-held`) pass; and
 //      `authn.passwordAloneDoors` admits exactly the doors it lists;
@@ -54,6 +54,9 @@ const applications = require('../common/applications');
 const certEnrollment = require('../common/cert_enrollment');
 const adminActions = require('../admin-core/admin_actions');
 const adminViews = require('../admin-core/admin_views');
+// #64: a second factor required of everybody is the authentication policy's
+// `requireSecondFactor: always` now — it was the `authn.mfaRequired` setting.
+const authnPolicy = require('../common/authn_policy');
 
 const log = require('bunyan').createLogger({ name: 'second_factor_doors',
   level: process.env.LOG_LEVEL || 'info' });
@@ -83,6 +86,24 @@ function withSettings(pairs, fn) {
     keys.forEach(function (key) {
       config.clearOverride(key);
     });
+  }
+}
+
+// The authentication policy with `requireSecondFactor: always` for the length
+// of `fn`, and this realm's own profile removed again after it.
+function withEverybodyRequired(fn) {
+  log.debug("Entering withEverybodyRequired().");
+  const saved = authnPolicy.save('default', Object.assign({},
+    authnPolicy.DEFAULTS, { requireSecondFactor: 'always' }));
+  if (!saved.ok) {
+    throw new Error('the authentication policy was not saved: ' +
+                    JSON.stringify(saved.errors));
+  }
+  try {
+    log.debug("Leaving withEverybodyRequired().");
+    return fn();
+  } finally {
+    authnPolicy.reset('default');
   }
 }
 
@@ -204,7 +225,7 @@ async function run(t) {
     t.check(credentials.verify(KEYED, WRONG, { secondFactor: 'asked-next' })
       .ok === false, 'A5. and the exemption is not a pass: a wrong password ' +
                      'is still wrong');
-    withSettings({ 'authn.mfaRequired': 'true' }, function () {
+    withEverybodyRequired(function () {
       sameAsWrong(t, PLAIN, 'scim', 'A6. everybody required by the realm');
     });
     withSettings({ 'authn.passwordAloneDoors': 'ldap,bogus' }, function () {
@@ -478,14 +499,15 @@ async function run(t) {
             errorCodes.codeOf(appMade)) >= 0,
           'G1. an application is not given an app password',
           JSON.stringify(appMade));
-  withSettings({ 'global.mode': 'product', 'authn.mfaRequired': 'true' },
-               function () {
-    const doors = credentials.passwordOnlyDoors(appDn);
-    t.check(doors.secondFactor === false && doors.refused.length === 0,
-            'G2. and its secret is not a person\'s account: even with the ' +
-            'realm requiring a second factor, no door refuses it on that ' +
-            'ground — the entry\'s KIND decides, not its name',
-            JSON.stringify(doors));
+  withSettings({ 'global.mode': 'product' }, function () {
+    withEverybodyRequired(function () {
+      const doors = credentials.passwordOnlyDoors(appDn);
+      t.check(doors.secondFactor === false && doors.refused.length === 0,
+              'G2. and its secret is not a person\'s account: even with the ' +
+              'realm requiring a second factor, no door refuses it on that ' +
+              'ground — the entry\'s KIND decides, not its name',
+              JSON.stringify(doors));
+    });
   });
   t.check(appPasswords.DOOR_IDS.join(',') === DOORS.join(','),
           'G3. the five doors are the five this file drives');

@@ -949,6 +949,10 @@ const NO_PUBLIC_METADATA = {
     "artifact is a credential, which is TOTP's position above read a second " +
     "time and with no document even in principle. An anonymous GET of " +
     "anything here is meant to fail.",
+  "Email codes and links":
+    "not a protocol — a code or a link is mailed to one person's verified " +
+    "address and is a credential, not a document; there is nothing a " +
+    "stranger could discover and nothing any client would look for.",
   "Federation":
     "there is no service-wide document — /federation/metadata/:id is one per " +
     "CONFIGURED relationship, and section 5 asserts the surface is ungated " +

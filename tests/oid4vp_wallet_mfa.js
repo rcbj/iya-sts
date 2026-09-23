@@ -67,6 +67,8 @@ function childMain() {
     const credentials = require(ROOT + '/common/credentials');
     const totp = require(ROOT + '/common/totp');
     const adminActions = require(ROOT + '/admin-core/admin_actions');
+    // #64: the realm-wide requirement is the authentication policy's.
+    const authnPolicy = require(ROOT + '/common/authn_policy');
     await w.inRealm(function () {
       w.provision();
       m.ldap.createUser('mfa-alice', { invent: false });
@@ -174,15 +176,17 @@ function childMain() {
 
     // The realm-wide requirement reaches this door too.
     await w.inRealm(function () {
-      m.config.setOverride('authn.mfaRequired', 'true');
+      authnPolicy.save('default', Object.assign({}, authnPolicy.DEFAULTS,
+        { requireSecondFactor: 'always' }));
     });
     const required = await walletSignIn('mfa-bob', bobKey, bob.credential);
     note(required.page.status === 200 &&
          /id="totp-submit"/.test(required.page.text) && !required.session,
-         '1e. authn.mfaRequired asks for one after a wallet sign-in too, ' +
+         '1e. the realm\'s requirement asks for one after a wallet sign-in ' +
+         'too, ' +
          'with no demand from the request at all', required.page.status);
     await w.inRealm(function () {
-      m.config.clearOverride('authn.mfaRequired');
+      authnPolicy.reset('default');
     });
 
     // ==================================================================

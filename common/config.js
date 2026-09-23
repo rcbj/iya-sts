@@ -4558,7 +4558,8 @@ const SETTINGS = [
   // attributes.
   //
   // **IT HAS A SWITCH BECAUSE EVERY OTHER SELF-SERVICE MECHANISM IN THE
-  // PORTAL HAS ONE** — the TOTP and recovery-code rows of the authentication policy are the two
+  // PORTAL HAS ONE** — the TOTP and recovery-code rows of the authentication
+  // policy are the two
   // beside it — and for their reason rather than by analogy: what a person may
   // hand themselves is a deployment's decision, and an operator who wants keys
   // issued only by an administrator has nowhere else to say so.

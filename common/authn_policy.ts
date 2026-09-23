@@ -216,9 +216,10 @@ const MECHANISMS: Mechanism[] = [
     secondFactor: null,
     what: 'GET /authn/spnego with a Kerberos ticket.' },
   { id: 'wallet', label: 'Wallet presentation', primary: true,
-    secondFactor: null,
+    secondFactor: true,
     what: '/authn/wallet with a credential this realm issued, or a SIOPv2 ' +
-          'self-issued ID Token from an enrolled key.' },
+          'self-issued ID Token from an enrolled key. As a SECOND factor, ' +
+          'the wallet presented after a password.' },
   { id: 'federation', label: 'Federation partner', primary: true,
     secondFactor: null,
     what: 'A sign-in asserted by a configured federation partner.' }
@@ -274,7 +275,8 @@ const FIELDS: PolicyField[] = ([
   { key: 'emailCodeTtlS', attribute: 'stsAuthnEmailCodeTtlS', type: 'int',
     dflt: 300, min: 60, max: 600, unit: 'seconds', email: true,
     label: 'How long an emailed code or link is valid',
-    what: 'From the moment it is sent. At most ten minutes, NIST SP 800-63B-4 ' +
+    what: 'From the moment it is sent. At most ten minutes, NIST SP ' +
+          '800-63B-4 ' +
           'section 3.1.3.2\'s bound for an out-of-band secret.' },
   { key: 'emailCodeAttempts', attribute: 'stsAuthnEmailCodeAttempts',
     type: 'int', dflt: 5, min: 1, max: 10, unit: 'attempts', email: true,
