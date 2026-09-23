@@ -577,10 +577,13 @@ signed request may use **all four Client Identifier prefixes**.
 * **The prefixes live in `signedClientId()`**: the DID URL `kid`
   (`helpers.signJwt()`'s `kidDid`), the Verifier Attestation in the `jwt`
   header (a configured one is checked against this realm's key and refused
-  with `STS-VC-0092` rather than sent), and the Entity Configuration at
-  `/.well-known/openid-federation` (`entityConfiguration()`). That document
-  lives in `vc_verifier.ts` while the Verifier is this entity's only
-  federation role; #132-#137 move it when another joins.
+  with `STS-VC-0092` rather than sent), and the realm's Entity Identifier
+  for `openid_federation:`. **The Entity Configuration moved to `oidfed/` on
+  2026-09-23 (#132)**, when the realm became a federation entity in every
+  role: `vc_verifier.ts` now contributes only its entity type,
+  `federationVerifierMetadata()` — the `openid_credential_verifier` metadata
+  naming the request-signing key, a PROTOCOL key, never the Federation Entity
+  Key (`oidfed/CLAUDE.md`).
 * **Not built, by argument**: the `fragment` response mode (a Verifier
   chooses its mode, and a fragment needs a script on a page here) and dynamic
   discovery of a Self-Issued OP (the static `siopv2:` configuration).

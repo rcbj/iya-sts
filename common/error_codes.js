@@ -242,6 +242,11 @@ const SUBSYSTEMS = [
     what: 'Relationships with foreign identity providers and service ' +
           'providers, in either direction, including the outbound requests ' +
           'made to a partner.' },
+  { id: 'OIDFED', label: 'OpenID Federation',
+    where: 'oidfed/',
+    what: 'OpenID Federation 1.1 (#132): Entity Statements, Trust Chains and ' +
+          'their resolution, metadata policy and constraints, Trust Marks, ' +
+          'the Federation Entity Keys, and the federation endpoints.' },
   { id: 'KRB', label: 'Kerberos and SPNEGO',
     where: 'kerberos/',
     what: 'The KDC on TCP/UDP 88 and MS-KKDCP, the Kerberos service, SPNEGO ' +
@@ -7874,6 +7879,228 @@ const CODES = [
       'assertion beside another assertion; which one a signature covered ' +
       'and which one was read must not be a choice.',
     spec: 'HTTP 400 page' },
+  // ===== OIDFED ============================================================
+  { code: 'STS-OIDFED-0001',
+    summary: 'A metadata_policy is not the three levels of JSON objects ' +
+      'section 6.1.2 describes, or an operator\'s value is of a type ' +
+      'the operator does not take (#132).',
+    spec: 'invalid_metadata (resolving a Trust Chain)' },
+  { code: 'STS-OIDFED-0002',
+    summary: 'A metadata parameter policy combines operators section 6.1.3.1 ' +
+      'does not allow together — in one statement, or after the ' +
+      'chain\'s policies were merged (#132).',
+    spec: 'invalid_metadata (resolving a Trust Chain)' },
+  { code: 'STS-OIDFED-0003',
+    summary: 'Two superiors\' values for the same operator could not be ' +
+      'merged (unequal value or default, an empty one_of) (#132, ' +
+      '6.1.3.1).',
+    spec: 'invalid_metadata (resolving a Trust Chain)' },
+  { code: 'STS-OIDFED-0004',
+    summary: 'A metadata policy operator the chain declares critical ' +
+      '(metadata_policy_crit) is one this service does not understand ' +
+      '(#132, 6.1.3.2).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0005',
+    summary: 'Applying the resolved metadata policy failed: a check did not ' +
+      'hold, or an operator met a parameter of a type it does not act ' +
+      'on (#132, 6.1.4.2).',
+    spec: 'invalid_metadata' },
+  { code: 'STS-OIDFED-0006',
+    summary: 'A metadata parameter the resolved policy marks essential is ' +
+      'absent (#132, 6.1.3.1.7).',
+    spec: 'invalid_metadata' },
+  { code: 'STS-OIDFED-0007',
+    summary: 'A Trust Chain has more Intermediates than a superior\'s ' +
+      'max_path_length allows (#132, 6.2.1).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0008',
+    summary: 'An entity in a Trust Chain is outside, or excluded by, a ' +
+      'superior\'s naming_constraints (#132, 6.2.2).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0009',
+    summary: 'A Subordinate Statement\'s constraints are malformed (#132, ' +
+      '6.2).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0010',
+    summary: 'A federation JWT is not a signed JWT whose header and claims ' +
+      'are JSON objects (#132).',
+    spec: 'invalid_trust_chain, or the endpoint\'s invalid_request' },
+  { code: 'STS-OIDFED-0011',
+    summary: 'A federation JWT is not typed as its kind requires ' +
+      '(entity-statement+jwt, trust-mark+jwt, …) (#132, RFC 8725 ' +
+      '3.11).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0012',
+    summary: 'A federation JWT is signed with an algorithm that is not an ' +
+      'asymmetric one this service verifies, or none (#132, 3.2).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0013',
+    summary: 'A federation JWT names no kid, or its kid names no key (or ' +
+      'more than one) of the JWK Set it is checked against (#132, ' +
+      '3.2).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0014',
+    summary: 'A federation JWT\'s signature does not verify with the key its ' +
+      'kid names (#132, 3.2).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0015',
+    summary: 'An Entity Statement claim is missing or malformed: iss, sub, ' +
+      'jwks, the hints, the Trust Mark claims, constraints, ' +
+      'metadata_policy_crit or source_endpoint (#132, 3.1, 3.2).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0016',
+    summary: 'An Entity Statement was issued in the future or has expired ' +
+      '(#132, 3.2).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0017',
+    summary: 'An Entity Statement\'s crit names a claim this specification ' +
+      'defines, one it does not carry, or one this service does not ' +
+      'understand (#132, 3.2, 13.4).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0018',
+    summary: 'A claim appears in the wrong kind of Entity Statement — a ' +
+      'Subordinate Statement\'s claim in an Entity Configuration, or ' +
+      'the reverse (#132, 3.1.2, 3.1.3).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0019',
+    summary: 'An Entity Statement\'s metadata is malformed: not objects, a ' +
+      'null member, a JWK Set under federation_entity, or a ' +
+      'federation endpoint that is not https (#132, 5).',
+    spec: 'invalid_metadata' },
+  { code: 'STS-OIDFED-0020',
+    summary: 'A Trust Chain is not an array of Entity Statements beginning ' +
+      'with its subject\'s Entity Configuration, with only the last an ' +
+      'Entity Configuration besides (#132, 4, 10.2).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0021',
+    summary: 'A Trust Chain\'s statements do not link: one statement\'s ' +
+      'issuer ' +
+      'is not the next one\'s subject (#132, 4, 10.2).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0022',
+    summary: 'A Trust Chain ends at an entity that is not a Trust Anchor ' +
+      'this realm is configured with, or the realm has none (#132, ' +
+      '10.2).',
+    spec: 'invalid_trust_anchor (HTTP 404)' },
+  { code: 'STS-OIDFED-0023',
+    summary: 'A Subordinate Statement\'s issuer is not among its subject\'s ' +
+      'authority_hints (#132, 3.2).',
+    spec: 'invalid_trust_chain' },
+  { code: 'STS-OIDFED-0024',
+    summary: 'An entity\'s Entity Configuration could not be obtained, was ' +
+      'not served as application/entity-statement+jwt, or is not ' +
+      'about the entity it was fetched for (#132, 9, 10.1).',
+    spec: 'none — the resolution reports it' },
+  { code: 'STS-OIDFED-0025',
+    summary: 'A superior publishes no federation_fetch_endpoint, so a ' +
+      'Subordinate Statement cannot be fetched from it (#132, 5.1.1, ' +
+      '8.1).',
+    spec: 'none — the resolution reports it' },
+  { code: 'STS-OIDFED-0026',
+    summary: 'A superior\'s fetch endpoint answered with a statement about ' +
+      'somebody else, by somebody else, or had none (#132, 8.1.2).',
+    spec: 'none — the resolution reports it' },
+  { code: 'STS-OIDFED-0027',
+    summary: 'An entity could not be resolved to any configured Trust Anchor ' +
+      '(#132, 10).',
+    spec: 'invalid_trust_chain (HTTP 400)' },
+  { code: 'STS-OIDFED-0028',
+    summary: 'A resolution reached oidfed.maxFetchesPerResolution and ' +
+      'stopped (#132, 18.1).',
+    spec: 'invalid_trust_chain (HTTP 400)' },
+  { code: 'STS-OIDFED-0029',
+    summary: 'A Trust Mark did not validate: its type, its issuer, its ' +
+      'subject or its times (#132, 7.3).',
+    spec: 'none — the mark is left out' },
+  { code: 'STS-OIDFED-0030',
+    summary: 'A Trust Mark\'s issuer is not one the Trust Anchor trusts to ' +
+      'issue marks of its type (#132, 3.1.2, 7).',
+    spec: 'none — the mark is left out' },
+  { code: 'STS-OIDFED-0031',
+    summary: 'A Trust Mark of a type the Trust Anchor names an owner for ' +
+      'carries no delegation, or one that does not validate against ' +
+      'the owner\'s keys (#132, 7.2.2, 7.3).',
+    spec: 'none — the mark is left out' },
+  { code: 'STS-OIDFED-0032',
+    summary: 'A fetch request named no sub, or named the fetching entity ' +
+      'itself (#132, 8.1).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OIDFED-0033',
+    summary: 'A fetch request named an entity this realm does not vouch for ' +
+      '(#132, 8.1.2).',
+    spec: 'not_found (HTTP 404)' },
+  { code: 'STS-OIDFED-0034',
+    summary: 'A resolve request lacked sub or trust_anchor (#132, 8.3.1).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OIDFED-0035',
+    summary: 'A resolve request, or an act, named no Trust Anchor this realm ' +
+      'is configured with (#132, 8.3).',
+    spec: 'invalid_trust_anchor (HTTP 404)' },
+  { code: 'STS-OIDFED-0036',
+    summary: 'A resolve request named an entity this realm has not resolved, ' +
+      'and an unauthenticated request does not start a resolution ' +
+      '(#132, 18.1).',
+    spec: 'not_found (HTTP 404)' },
+  { code: 'STS-OIDFED-0037',
+    summary: 'A Trust Mark, Trust Mark Status or Trust Mark listing request ' +
+      'lacked a required parameter (#132, 8.4.1, 8.5.1, 8.6.1).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OIDFED-0038',
+    summary: 'A Trust Mark request named a subject this realm holds no valid ' +
+      'mark of that type for (#132, 8.6.2).',
+    spec: 'not_found (HTTP 404)' },
+  { code: 'STS-OIDFED-0039',
+    summary: 'A Trust Mark Status request carried a mark this realm did not ' +
+      'issue (#132, 8.4.2).',
+    spec: 'not_found (HTTP 404)' },
+  { code: 'STS-OIDFED-0040',
+    summary: 'A Federation Entity Key is sealed under a key-encryption key ' +
+      'this process does not hold, so the realm signs no federation ' +
+      'statement until the key is rotated (#132).',
+    spec: '' },
+  { code: 'STS-OIDFED-0041',
+    summary: 'An administrator asked to revoke a Federation Entity Key the ' +
+      'realm does not hold (#132).',
+    spec: '' },
+  { code: 'STS-OIDFED-0042',
+    summary: 'An administrator asked to revoke the current or next ' +
+      'Federation Entity Key by hand, which only an emergency ' +
+      'rotation does (#132).',
+    spec: '' },
+  { code: 'STS-OIDFED-0043',
+    summary: 'The realm had no Federation Entity Key to sign with — a ' +
+      'cluster node that lost the race to mint the first one, until ' +
+      'the directory catches up (#132).',
+    spec: 'temporarily_unavailable (HTTP 503)' },
+  { code: 'STS-OIDFED-0044',
+    summary: 'A Subordinate Listing request\'s trust_marked or intermediate ' +
+      'was not true or false (#132, 8.2.1).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OIDFED-0045',
+    summary: 'An OpenID Federation console or /admin-api act was refused for ' +
+      'its input (#132).',
+    spec: '' },
+  { code: 'STS-OIDFED-0046',
+    summary: 'An OpenID Federation act named something the realm does not ' +
+      'hold, or no act at all (#132).',
+    spec: '' },
+  { code: 'STS-OIDFED-0047',
+    summary: 'An administrator asked to issue a Trust Mark of a type this ' +
+      'realm does not issue (#132).',
+    spec: '' },
+  { code: 'STS-OIDFED-0048',
+    summary: 'A Trust Mark offered for this realm to carry is not a ' +
+      'trust-mark+jwt issued to it (#132).',
+    spec: '' },
+  { code: 'STS-OIDFED-0049',
+    summary: 'The keys of an entity being registered could not be read — ' +
+      'neither given as a valid JWK Set nor obtained from its Entity ' +
+      'Configuration (#132).',
+    spec: '' },
+  { code: 'STS-OIDFED-0050',
+    summary: 'A federation endpoint failed unexpectedly (#132).',
+    spec: 'server_error (HTTP 500)' },
+
   // ===== KRB ===============================================================
   { code: 'STS-KRB-0001',
     summary: 'A cross-realm referral could not be issued because the trust ' +

@@ -7962,16 +7962,168 @@ const SETTINGS = [
                  'attests itself, which only a wallet that already trusts ' +
                  'this realm will accept.' },
 
-  { key: 'oid4vp.federationAuthorityHints', group: 'OID4VP',
-    label: 'OpenID Federation authority hints',
-    env: 'OID4VP_FEDERATION_AUTHORITY_HINTS', type: 'csv', dflt: '',
+  // ===== OPENID FEDERATION 1.1 (#132, #133, 2026-09-23) =====================
+  // `oidfed/`. Replaced oid4vp.federationAuthorityHints (REPLACED_SETTINGS):
+  // the realm is a federation entity in every role now, not only as a
+  // verifier.
+  { key: 'oidfed.signingAlg', group: 'OpenID Federation',
+    label: 'Federation Entity Key algorithm',
+    env: 'STS_OIDFED_SIGNING_ALG', type: 'enum',
+    enumValues: ['ES256', 'ES384', 'ES512', 'EdDSA', 'ML-DSA-44', 'ML-DSA-65',
+                 'ML-DSA-87'],
+    dflt: 'ES256', runtime: true,
+    description: 'The algorithm of the key each realm signs its federation ' +
+                 'statements with (OpenID Federation 1.1 section 3.1.1), ' +
+                 'kept apart from the protocol signing keys. A change takes ' +
+                 'effect at the next key minted; a rotation by hand makes it ' +
+                 'at once. ES256 by default because every federation ' +
+                 'implementation verifies it; the ML-DSA keys are post-' +
+                 'quantum, and a federation whose members verify them is ' +
+                 'one that can choose them.' },
+
+  { key: 'oidfed.keyRotationDays', group: 'OpenID Federation',
+    label: 'Federation Entity Key lifetime (days)',
+    env: 'STS_OIDFED_KEY_ROTATION_DAYS', type: 'int', dflt: 180,
+    min: 1, max: 3650, runtime: true,
+    description: 'How long a Federation Entity Key signs before the ' +
+                 'oidfed.key-rotate job replaces it (product mode; ' +
+                 'development makes new keys at every start).' },
+
+  { key: 'oidfed.keyOverlapDays', group: 'OpenID Federation',
+    label: 'Federation Entity Key overlap (days)',
+    env: 'STS_OIDFED_KEY_OVERLAP_DAYS', type: 'int', dflt: 14,
+    min: 0, max: 365, runtime: true,
+    description: 'How long a next key is published before it signs, and a ' +
+                 'retired key after it stopped (11.2) — so an entity that ' +
+                 'refreshes this realm\'s Entity Configuration at least this ' +
+                 'often never meets a statement it cannot verify.' },
+
+  { key: 'oidfed.statementLifetimeS', group: 'OpenID Federation',
+    label: 'Entity Statement lifetime (s)',
+    env: 'STS_OIDFED_STATEMENT_LIFETIME_S', type: 'int', dflt: 86400,
+    min: 60, max: 31536000, runtime: true,
+    description: 'The exp of the Entity Configuration and of every ' +
+                 'Subordinate Statement this realm signs: how long another ' +
+                 'entity may rely on them before fetching them again (11.1).' },
+
+  { key: 'oidfed.realmsAreSubordinates', group: 'OpenID Federation',
+    label: 'Every realm is a subordinate of the default realm',
+    env: 'STS_OIDFED_REALMS_ARE_SUBORDINATES', type: 'bool', dflt: true,
     runtime: true,
-    description: 'The entity identifiers of the federation intermediates or ' +
-                 'trust anchors directly above this realm, published as ' +
-                 '`authority_hints` in its Entity Configuration. EMPTY, the ' +
-                 'default: the configuration names none, and a wallet can ' +
-                 'build a trust chain to this Verifier only if it trusts ' +
-                 'this realm as a trust anchor itself.' },
+    description: 'ON: the default realm is a Trust Anchor vouching for every ' +
+                 'other realm, and each other realm names it as its ' +
+                 'authority and trusts it — a whole federation in one ' +
+                 'service. OFF: each realm is only what its own register ' +
+                 'and oidfed.authorityHints make it.' },
+
+  { key: 'oidfed.authorityHints', group: 'OpenID Federation',
+    label: 'Authority hints',
+    env: 'STS_OIDFED_AUTHORITY_HINTS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The Entity Identifiers of the Intermediates or Trust ' +
+                 'Anchors directly above this realm, published as ' +
+                 'authority_hints (3.1.2) beside the default realm when ' +
+                 'oidfed.realmsAreSubordinates is on. A realm that names ' +
+                 'none is a Trust Anchor.' },
+
+  { key: 'oidfed.organizationName', group: 'OpenID Federation',
+    label: 'Organization name',
+    env: 'STS_OIDFED_ORGANIZATION_NAME', type: 'string', dflt: '',
+    runtime: true,
+    description: 'organization_name in the federation_entity metadata ' +
+                 '(5.2.2), which the specification recommends every entity ' +
+                 'publish. Empty: omitted.' },
+
+  { key: 'oidfed.contacts', group: 'OpenID Federation',
+    label: 'Contacts',
+    env: 'STS_OIDFED_CONTACTS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'contacts in the federation_entity metadata (5.2.2).' },
+
+  { key: 'oidfed.logoUri', group: 'OpenID Federation',
+    label: 'Logo URI',
+    env: 'STS_OIDFED_LOGO_URI', type: 'string', dflt: '',
+    runtime: true,
+    description: 'logo_uri in the federation_entity metadata (5.2.2).' },
+
+  { key: 'oidfed.policyUri', group: 'OpenID Federation',
+    label: 'Policy URI',
+    env: 'STS_OIDFED_POLICY_URI', type: 'string', dflt: '',
+    runtime: true,
+    description: 'policy_uri in the federation_entity metadata (5.2.2).' },
+
+  { key: 'oidfed.organizationUri', group: 'OpenID Federation',
+    label: 'Organization URI',
+    env: 'STS_OIDFED_ORGANIZATION_URI', type: 'string', dflt: '',
+    runtime: true,
+    description: 'organization_uri in the federation_entity metadata ' +
+                 '(5.2.2).' },
+
+  { key: 'oidfed.trustMarkLifetimeS', group: 'OpenID Federation',
+    label: 'Trust Mark lifetime (s)',
+    env: 'STS_OIDFED_TRUST_MARK_LIFETIME_S', type: 'int', dflt: 31536000,
+    min: 60, max: 315360000, runtime: true,
+    description: 'The lifetime a Trust Mark type is registered with when ' +
+                 'none is given. Every mark this service issues expires: 7.1 ' +
+                 'allows one without exp, and a mark that never expires ' +
+                 'outlives any decision to withdraw it.' },
+
+  { key: 'oidfed.maxAuthorityHints', group: 'OpenID Federation',
+    label: 'Authority hints followed per entity',
+    env: 'STS_OIDFED_MAX_AUTHORITY_HINTS', type: 'int', dflt: 5,
+    min: 1, max: 50, runtime: true,
+    description: 'How many of an entity\'s authority_hints a resolution ' +
+                 'follows — section 18.1\'s defence against an entity ' +
+                 'naming hundreds to make this service fetch them.' },
+
+  { key: 'oidfed.maxChainDepth', group: 'OpenID Federation',
+    label: 'Longest Trust Chain',
+    env: 'STS_OIDFED_MAX_CHAIN_DEPTH', type: 'int', dflt: 6,
+    min: 2, max: 20, runtime: true,
+    description: 'How many statements deep a resolution walks before it ' +
+                 'gives up.' },
+
+  { key: 'oidfed.maxFetchesPerResolution', group: 'OpenID Federation',
+    label: 'Fetches per resolution',
+    env: 'STS_OIDFED_MAX_FETCHES_PER_RESOLUTION', type: 'int', dflt: 24,
+    min: 1, max: 500, runtime: true,
+    description: 'The most statements one resolution fetches, whatever the ' +
+                 'hints and the depth multiply to (18.1).' },
+
+  { key: 'oidfed.fetchTimeoutMs', group: 'OpenID Federation',
+    label: 'Fetch timeout (ms)',
+    env: 'STS_OIDFED_FETCH_TIMEOUT_MS', type: 'int', dflt: 5000,
+    min: 100, max: 60000, runtime: true,
+    description: 'How long one fetch of an Entity Statement may take.' },
+
+  { key: 'oidfed.fetchMaxBytes', group: 'OpenID Federation',
+    label: 'Largest fetched statement (bytes)',
+    env: 'STS_OIDFED_FETCH_MAX_BYTES', type: 'int', dflt: 262144,
+    min: 1024, max: 10485760, runtime: true,
+    description: 'The largest Entity Statement a fetch reads.' },
+
+  { key: 'oidfed.resolveCacheS', group: 'OpenID Federation',
+    label: 'Resolution cache lifetime (s)',
+    env: 'STS_OIDFED_RESOLVE_CACHE_S', type: 'int', dflt: 3600,
+    min: 0, max: 86400, runtime: true,
+    description: 'How long a resolved Trust Chain is kept for the resolve ' +
+                 'endpoint, at most — never past the chain\'s own expiry ' +
+                 '(10.4). 0 keeps nothing, and the endpoint then answers ' +
+                 'only for this service\'s own realms.' },
+
+  { key: 'oidfed.resolveCacheMax', group: 'OpenID Federation',
+    label: 'Resolutions kept',
+    env: 'STS_OIDFED_RESOLVE_CACHE_MAX', type: 'int', dflt: 1000,
+    min: 1, max: 100000, runtime: true,
+    description: 'How many resolved Trust Chains a realm keeps; the oldest ' +
+                 'is dropped for a new one.' },
+
+  { key: 'oidfed.clockSkewS', group: 'OpenID Federation',
+    label: 'Clock skew allowed (s)',
+    env: 'STS_OIDFED_CLOCK_SKEW_S', type: 'int', dflt: 60,
+    min: 0, max: 600, runtime: true,
+    description: 'The leeway on iat and exp when a federation statement is ' +
+                 'read (3.2).' },
 
   { key: 'oid4vp.claims', group: 'OID4VP', label: 'Requested claims',
     env: 'OID4VP_CLAIMS', type: 'csv', dflt: 'given_name,family_name',
@@ -13602,7 +13754,13 @@ const REPLACED_SETTINGS = [
   { key: 'xacml.pepNotifyAllowInsecure',
     env: 'STS_XACML_PEP_NOTIFY_ALLOW_INSECURE',
     now: ['xacml.pepNotifyAllowHttp', 'xacml.pepNotifySkipTlsVerification',
-          'xacml.pepNotifyCaFile'] }
+          'xacml.pepNotifyCaFile'] },
+  { key: 'oid4vp.federationAuthorityHints',
+    env: 'OID4VP_FEDERATION_AUTHORITY_HINTS',
+    now: ['oidfed.authorityHints'],
+    why: ' It was removed on 2026-09-23 (#132) and replaced by ' +
+         'oidfed.authorityHints: the realm is an OpenID Federation entity in ' +
+         'every role now, not only as a verifier.' }
 ];
 
 // The sentence for a replaced key, or '' for any other.
@@ -13612,6 +13770,9 @@ function replacedBy(key) {
     return one.key === key;
   })[0];
   log.debug("Leaving replacedBy().");
+  if (row && row.why) {
+    return row.why;
+  }
   return row
     ? ' It was removed on 2026-09-23 (#171) and replaced by ' +
       row.now.join(', ') + ': plain http, certificate verification (off in ' +

@@ -1343,6 +1343,19 @@ const SECTIONS = [
                'read. So a relationship is created DISABLED and an assertion ' +
                'is refused unless it verifies against the certificate ' +
                'configured on it.' },
+      // OPENID FEDERATION 1.1 (#132, 2026-09-23), beside Federation because a
+      // reader looking for one looks for the other — and a separate page,
+      // because it is a different thing: TRUST THROUGH A CHAIN of signed
+      // statements, where `/admin/federation` is a bilateral relationship
+      // with one pinned key. Drawn by oidfed/oidfed_admin.ts.
+      { path: '/admin/oidfed', label: 'OpenID Federation',
+        blurb: 'This realm as an OpenID Federation 1.1 entity: its Entity ' +
+               'Configuration and role (Trust Anchor, Intermediate or Leaf), ' +
+               'its Federation Entity Keys and their history, the ' +
+               'subordinates it vouches for and the Trust Anchors it ' +
+               'trusts, the Trust Marks it issues and carries, resolving ' +
+               'another entity\'s Trust Chain, and the ' +
+               '<code>oidfed.*</code> settings.' },
 
       // FIVE PAGES ADDED ON 2026-08-27, AND EVERY ONE OF THEM EXISTS BECAUSE
       // ITS FAMILY HAD SETTINGS AND NO PAGE. Kerberos has nineteen appconfig
@@ -39293,6 +39306,7 @@ const SETTING_HOMES = [
   { group: 'Management API', pages: ['/admin/rbac'] },
   { group: 'Applications', pages: ['/admin/applications'] },
   { group: 'Federation', pages: ['/admin/federation'] },
+  { group: 'OpenID Federation', pages: ['/admin/oidfed'] },
   { group: 'XACML', pages: ['/admin/xacml'] },
   // THE CERTIFICATE AUTHORITY'S FOUR SETTINGS, on the page that builds one.
   // They are DEFAULTS FOR A FORM rather than a policy — what a hierarchy was
@@ -39589,6 +39603,7 @@ const LIST_PARAMS = {
                     'backchannelDeliveriesPage'],
   '/admin/realms': ['per', 'page'],
   '/admin/federation': ['q', 'role', 'per', 'page'],
+  '/admin/oidfed': [],
   // TWO lists on one page — the global overrides and the recorded answers —
   // so each gets a page parameter of its own and they share one `per`, which
   // is the arrangement /admin/delegation already has and pagingOf()'s

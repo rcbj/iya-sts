@@ -404,6 +404,7 @@ interface AdminApiDeps {
   loadAcmeApi(): typeof import('../acme/acme_api');
   loadEstApi(): typeof import('../est/est_api');
   loadScepApi(): typeof import('../scep/scep_api');
+  loadOidfedApi(): typeof import('../oidfed/oidfed_api');
   loadOauth2MonitorApi(): typeof import('../oauth-oidc/oauth2_monitor_api');
 }
 
@@ -474,6 +475,11 @@ class AdminApi {
       },
       loadScepApi: function () {
         return require('../scep/scep_api');
+      },
+      // OPENID FEDERATION (#132): the same shape, its view and acts reached
+      // lazily inside each handler.
+      loadOidfedApi: function () {
+        return require('../oidfed/oidfed_api');
       },
       loadOauth2MonitorApi: function () {
         return require('../oauth-oidc/oauth2_monitor_api');
@@ -1561,7 +1567,7 @@ class AdminApi {
             cachesAdmin, parseBody, loadApiExplorer, admin, adminActions, rbac, helpers,
             realms, stats, resourceMetadata, applications, loadGnapConsole, pki,
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
-            loadScepApi, loadOauth2MonitorApi } = this.deps;
+            loadScepApi, loadOidfedApi, loadOauth2MonitorApi } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
     const ROUTES: any[] = [
@@ -17334,6 +17340,7 @@ class AdminApi {
       ...loadAcmeApi().ROUTES,
       ...loadEstApi().ROUTES,
       ...loadScepApi().ROUTES,
+      ...loadOidfedApi().ROUTES,
       // THE OAUTH 2.0 / OIDC MONITORING PAGE (2026-09-13), declared beside its
       // family in the same shape: no route registered there, and its view model
       // required lazily inside each handler.

@@ -666,7 +666,6 @@ var config = {
     siopIdTokenMaxAgeS: 300,                           // Self-issued ID Token max age (s)
     clientIdPrefix: "pre-registered",                  // Client Identifier prefix of a signed request
     verifierAttestation: "",                           // Verifier Attestation JWT
-    federationAuthorityHints: "",                      // OpenID Federation authority hints
     claims: "given_name,family_name",                  // Requested claims
     presentationRequestTtlS: 600,                      // Presentation request lifetime (s)
     maxTransactions: 5000,                             // Presentation requests waiting (per realm)
@@ -685,6 +684,30 @@ var config = {
     statusListMaxCacheS: 3600,                         // Longest a fetched status list is kept (s)
     requireStatusReference: "all",                     // Require a status reference on every presented credential
     statusOptionalIssuers: ""                          // Trusted issuers exempt from the status reference
+  },
+
+  // --- OpenID Federation -----------------------------------------------
+  oidfed: {
+    signingAlg: "ES256",          // Federation Entity Key algorithm
+    keyRotationDays: 180,         // Federation Entity Key lifetime (days)
+    keyOverlapDays: 14,           // Federation Entity Key overlap (days)
+    statementLifetimeS: 86400,    // Entity Statement lifetime (s)
+    realmsAreSubordinates: true,  // Every realm is a subordinate of the default realm
+    authorityHints: "",           // Authority hints
+    organizationName: "",         // Organization name
+    contacts: "",                 // Contacts
+    logoUri: "",                  // Logo URI
+    policyUri: "",                // Policy URI
+    organizationUri: "",          // Organization URI
+    trustMarkLifetimeS: 31536000, // Trust Mark lifetime (s)
+    maxAuthorityHints: 5,         // Authority hints followed per entity
+    maxChainDepth: 6,             // Longest Trust Chain
+    maxFetchesPerResolution: 24,  // Fetches per resolution
+    fetchTimeoutMs: 5000,         // Fetch timeout (ms)
+    fetchMaxBytes: 262144,        // Largest fetched statement (bytes)
+    resolveCacheS: 3600,          // Resolution cache lifetime (s)
+    resolveCacheMax: 1000,        // Resolutions kept
+    clockSkewS: 60                // Clock skew allowed (s)
   },
 
   // --- Kerberos --------------------------------------------------------

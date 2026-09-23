@@ -48,6 +48,7 @@ dc=example,dc=com                       domain, dcObject
 │   ├── ou=entries                      applicationProcess + spiffeRegistrationEntry
 │   └── ou=agents                       applicationProcess + spiffeAgent
 ├── ou=devices                          device + stsDevice          (#130)
+├── ou=oidfed                           stsOidfedEntry              (#132)
 ├── ou=trustAnchors                     stsTrustAnchor              (default realm only)
 └── ou=crl                              cRLDistributionPoint        (created on first CRL)
 ```
@@ -316,6 +317,22 @@ One person holds at most `oauth2.maxDevicesPerPerson` devices; at that limit
 the least recently used device whose session has ended is replaced (or, if
 none has ended, the least recently used one).
 
+## OpenID Federation: `ou=oidfed` (#132)
+
+The realm's register as an OpenID Federation entity
+([OpenID Federation](oidfed.md)). Every entry is of class `stsOidfedEntry`
+and is named `cn=<prefix><digest>`, where the digest is SHA-256 of what the
+entry is about (hex, 32 characters). `oidfed/oidfed_store.ts` owns what an
+entry means.
+
+| Attribute | Meaning |
+|---|---|
+| `objectClass` | `top`, `stsOidfedEntry` |
+| `stsOidfedKind` | `keys`, `subordinate` (`sub-`), `anchor` (`ta-`), `mark-type` (`mt-`), `issued-mark` (`im-`), `held-mark` (`hm-`) or `mark-policy` (`mp-`) |
+| `stsOidfedEntityId` | the Entity Identifier the entry is about |
+| `stsOidfedData` | the record, as one JSON value: a subordinate's keys, metadata, metadata policy and constraints; an anchor's pinned keys; a mark and its status |
+| `stsOidfedKeys` | on the one `cn=keys` entry: the realm's Federation Entity Key table, one JSON row per value, each private key **sealed** where keys persist. **Withheld from every read**, and each row's private key is replaced by a placeholder in searches and in the directory dump |
+
 ## Trust anchors and CRLs
 
 `ou=trustAnchors` exists only in the default realm, with one
@@ -350,10 +367,12 @@ included (`SECRET_ATTRIBUTES` in `ldap/ldap_server.js`):
 * Kerberos and GNAP keys: `stsKrb5Keys`, `krb5ServiceKeys`, `gnapSymmetricKey`,
   `gnapMacaroonKey`
 * devices: `stsDeviceSecretHash` (from #130)
+* the Federation Entity Key table: `stsOidfedKeys` (from #132)
 
 **Some are withheld in every mode**, replaced by a placeholder in searches and
 in the directory dump: the certificate-enrollment secrets, the Kerberos keys,
-and the private key inside each `fedEncryptionKey` row.
+and the private key inside each `fedEncryptionKey` row and each
+`stsOidfedKeys` row.
 
 **Hashed** (scrypt): `userPassword`, `pwdHistory`, the activation, reset and
 mail-verification tokens, each recovery code and each app password.

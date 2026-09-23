@@ -860,9 +860,11 @@ class VcVerifier {
   //                             (`oid4vp.verifierAttestation`), checked
   //                             against this realm's key before it is used,
   //                             or one this realm signs for itself.
-  //   openid_federation         this realm's entity identifier; the wallet
+  //   openid_federation         this realm's Entity Identifier; the wallet
   //                             resolves `/.well-known/openid-federation`
-  //                             (`oauth-oidc/openid_federation.ts`).
+  //                             (`oidfed/oidfed.ts`, #132), whose
+  //                             `openid_credential_verifier` metadata is
+  //                             federationVerifierMetadata() below.
   //
   // Throws, with `code`, where the configured attestation cannot be used —
   // a request a wallet must refuse is worse than none.
@@ -886,9 +888,13 @@ class VcVerifier {
                header: { jwt: attestation.jwt }, kidDid: '' };
     }
     if (prefix === 'openid_federation') {
+      // The realm's ENTITY IDENTIFIER (#132): its issuer, which is what its
+      // Entity Configuration names as `iss` — the base URL unless an
+      // `oauth2.issuer` is pinned.
+      const entityId = require('../oidfed/oidfed').entityId(req);
       log.debug("Leaving VcVerifier.signedClientId(). A federation entity.");
-      return { clientId: 'openid_federation:' + baseUrlOf(req), header: {},
-               kidDid: '' };
+      return { clientId: 'openid_federation:' + (entityId || baseUrlOf(req)),
+               header: {}, kidDid: '' };
     }
     log.debug("Leaving VcVerifier.signedClientId(). Pre-registered.");
     return { clientId: this.vpClientId(), header: {}, kidDid: '' };
@@ -908,40 +914,26 @@ class VcVerifier {
              kid: publishedKidFor(STS.kid) };
   }
 
-  // THIS REALM AS AN OPENID FEDERATION ENTITY: its Entity Configuration, a
-  // JWT of type entity-statement+jwt (OpenID Federation 1.0 section 3).
-  entityConfiguration(req: any): string {
-    const { log, config, signJwt, nowSec, baseUrlOf, siop } = this.deps;
-    log.debug("Entering VcVerifier.entityConfiguration().");
+  // THIS REALM'S VERIFIER AS AN OPENID FEDERATION ENTITY TYPE (OpenID4VP
+  // section 11.2): the `openid_credential_verifier` metadata the realm's
+  // Entity Configuration carries (`oidfed/oidfed.ts`, #132, which replaced
+  // the Entity Configuration #129 served from here). `jwks` is the key the
+  // request objects are signed with — a PROTOCOL key, published under the
+  // protocol's entity type, never the Federation Entity Key.
+  federationVerifierMetadata(req: any): Record<string, any> {
+    const { log, baseUrlOf, siop } = this.deps;
+    log.debug("Entering VcVerifier.federationVerifierMetadata().");
     const entity = baseUrlOf(req);
     const key = this.requestSigningJwk();
-    const now = nowSec();
-    const hints = (config.value('oid4vp.federationAuthorityHints') || [])
-      .map(function (one: unknown) {
-        return String(one).trim();
-      }).filter(Boolean);
-    const payload: Record<string, any> = {
-      iss: entity, sub: entity, iat: now, exp: now + 86400,
+    const out = Object.assign({
+      client_name: 'OpenID4VP Verifier',
       jwks: { keys: [key] },
-      metadata: {
-        openid_credential_verifier: Object.assign({
-          client_name: 'OpenID4VP Verifier',
-          jwks: { keys: [key] },
-          response_uris: [entity + '/oid4vp/response'],
-          redirect_uris: [entity + '/oid4vp/response'],
-          vp_formats_supported: this.vpFormatsSupported()
-        }, siop.clientMetadata())
-      }
-    };
-    if (hints.length) {
-      payload.authority_hints = hints;
-    }
-    // certificate-header: none — an Entity Configuration's trust is the
-    // key it names and the chain of statements above it, never an X.509 path.
-    const jwt = signJwt(payload, null,
-                        { header: { typ: 'entity-statement+jwt' } });
-    log.debug("Leaving VcVerifier.entityConfiguration().");
-    return jwt;
+      response_uris: [entity + '/oid4vp/response'],
+      redirect_uris: [entity + '/oid4vp/response'],
+      vp_formats_supported: this.vpFormatsSupported()
+    }, siop.clientMetadata());
+    log.debug("Leaving VcVerifier.federationVerifierMetadata().");
+    return out;
   }
 
   // THE VERIFIER ATTESTATION (OpenID4VP section 12): `{ jwt, sub }`.
@@ -3649,25 +3641,6 @@ class VcVerifier {
       log.debug("Leaving the OID4VP response endpoint. Accepted.");
     });
 
-    // THE ENTITY CONFIGURATION (OpenID Federation 1.0 section 9, #129): what
-    // a wallet resolves when a signed request's Client Identifier is
-    // `openid_federation:<this realm's base URL>`. Self-signed with the key
-    // the request objects are signed with, which is also this entity's
-    // federation key; its one entity type is `openid_credential_verifier`
-    // (OpenID4VP section 11.2), and `authority_hints` are the operator's
-    // (`oid4vp.federationAuthorityHints`). It lives with the Verifier while
-    // the Verifier is the only role this entity plays in a federation; the
-    // OpenID Federation tickets (#132-#137) move it to a module of its own
-    // when another role joins it. no-store, as every document describing a
-    // key is (root CLAUDE.md).
-    app.get('/.well-known/openid-federation', (req, res) => {
-      log.debug("Entering the entity configuration endpoint.");
-      res.set('Cache-Control', 'no-store');
-      res.status(200).type('application/entity-statement+jwt')
-         .send(this.entityConfiguration(req));
-      log.debug("Leaving the entity configuration endpoint.");
-    });
-
     // Not in the spec: the verdict, so the wallet's own page (and the test
     // suite) can show what this Verifier decided and why. A real Verifier tells
     // the End-User in its own UI; this makes the same information
@@ -3774,7 +3747,7 @@ export = {
   // SIOPv2 and the Client Identifier prefixes (#129).
   signedClientId: slot.forward('signedClientId'),
   verifierAttestation: slot.forward('verifierAttestation'),
-  entityConfiguration: slot.forward('entityConfiguration'),
+  federationVerifierMetadata: slot.forward('federationVerifierMetadata'),
   vpDcqlQuery: slot.forward('vpDcqlQuery'),
   // THE SIGN-IN'S HALF (2026-09-17, #38), for `vc_signin.ts` and its test:
   // the request a sign-in asks with, how a wallet is handed it, whom a

@@ -2939,6 +2939,47 @@ async function mintStandbyKey(unitRow, role) {
                                publicJwk: pq.publicJwk });
 }
 
+// ---------------------------------------------------------------------------
+// A FEDERATION ENTITY KEY (OpenID Federation 1.1 section 3.1.1, #132,
+// 2026-09-23) — made by the recipes a signing unit's `next` key is
+// (`curveKeyFrom()` over CURVE_KEY_SPECS, `pqKeyFrom()`), so there is still
+// one way a key is made here (rcbj's rule of 2026-09-21). What differs is
+// only its NAME and its OWNER: the `kid` is the key's RFC 7638 thumbprint, as
+// 3.1.1 recommends, and the key belongs to no signing unit — it is held,
+// sealed, published and rotated by `oidfed/federation_keys.ts`, and appears
+// in the realm's Entity Configuration and nowhere else ("These Federation
+// Entity Keys SHOULD NOT be used in other protocols"). RSA is not offered:
+// a Federation Entity Key is new, so there is no installed base to be
+// compatible with, and the curve and post-quantum keys are the stronger
+// choices at their sizes.
+// ---------------------------------------------------------------------------
+const FEDERATION_KEY_ALGS = Object.freeze(['ES256', 'ES384', 'ES512', 'EdDSA',
+                                           'ML-DSA-44', 'ML-DSA-65',
+                                           'ML-DSA-87']);
+
+async function makeFederationKey(alg) {
+  log.debug("Entering makeFederationKey(). alg=" + alg);
+  if (FEDERATION_KEY_ALGS.indexOf(alg) < 0) {
+    log.debug("Leaving makeFederationKey(). Not offered.");
+    throw new Error('"' + alg + '" is not an algorithm a Federation Entity ' +
+                    'Key is made for; the offered ones are ' +
+                    FEDERATION_KEY_ALGS.join(', ') + '.');
+  }
+  let entry;
+  if (/^ML-DSA-/.test(alg)) {
+    entry = pqKeyFrom(alg, await pqJose.generateAsync(alg));
+  } else {
+    const spec = curveSpecFor({ alg: alg, crv: alg === 'EdDSA' ? 'Ed25519'
+                                                                : '' });
+    entry = curveKeyFrom(spec, await generateCurvePairAsync(spec));
+  }
+  const publicJwk = Object.assign({}, entry.publicJwk, { use: 'sig',
+                                                         alg: alg });
+  publicJwk.kid = stsCrypto.jwkThumbprint(publicJwk);
+  log.debug("Leaving makeFederationKey(). kid=" + publicJwk.kid);
+  return { alg: alg, privateKey: entry.privateKey, publicJwk: publicJwk };
+}
+
 // A plain copy of a set's CURRENT members — everything `keystore.serialise()`
 // reads — with `overrides` applied. Reading it decrypts, which is why only a
 // rotation (on the scheduler's leader) builds one.
@@ -4970,6 +5011,9 @@ module.exports = {
   nowSec: nowSec,
   randomId: randomId,
   bbsKeyPair: bbsKeyPair,
+  // A Federation Entity Key (#132), for `oidfed/federation_keys.ts`.
+  makeFederationKey: makeFederationKey,
+  FEDERATION_KEY_ALGS: FEDERATION_KEY_ALGS,
   bbsGenerations: bbsGenerations,
   bbsKidOf: bbsKidOf,
   BBS_UNIT: BBS_UNIT,

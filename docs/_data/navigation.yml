@@ -25,6 +25,7 @@
     - { title: JWT assertions (RFC 7523), url: /jwt-assertions.html }
     - { title: SAML assertions (RFC 7522), url: /saml-assertions.html }
     - { title: GNAP, url: /gnap.html }
+    - { title: OpenID Federation, url: /oidfed.html }
 
 - section: SAML and WS-*
   items:
