@@ -105,6 +105,7 @@ import webauthnPolicy = require('../authn/webauthn_policy');
 import backupCodes = require('../common/backup_codes');
 // App passwords (#101): a LIBRARY, for the scope catalogue and the settings.
 import appPasswords = require('../common/app_passwords');
+import identityAssurance = require('../common/identity_assurance');
 // THE SIGN-ON SESSION MAP, which `signOnSessionRows()` walks. It is the same
 // destructured-require trap one module along: admin.js pulls fourteen names
 // out of two modules through multi-line destructures, and a name taken from
@@ -403,6 +404,7 @@ interface AdminViewsDeps {
   webauthnPolicy: typeof webauthnPolicy;
   backupCodes: typeof backupCodes;
   appPasswords: typeof appPasswords;
+  identityAssurance: typeof identityAssurance;
   sessions: typeof authn.sessions;
   sessionStartedAt: typeof authn.sessionStartedAt;
   config: typeof config;
@@ -481,6 +483,7 @@ class AdminViews {
       webauthnPolicy: webauthnPolicy,
       backupCodes: backupCodes,
       appPasswords: appPasswords,
+      identityAssurance: identityAssurance,
       sessions: authn.sessions,
       sessionStartedAt: authn.sessionStartedAt,
       config: config,
@@ -6883,6 +6886,40 @@ class AdminViews {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // ONE PERSON'S IDENTITY VERIFICATIONS, PAGED (#127) — `GET
+  // /admin-api/users/verifications`, the list the Identity verifications block
+  // on their /admin/users page draws. The whole record, evidence included:
+  // this is the administrator who recorded it reading it back, and the
+  // directory withholds the attribute from every LDAP read for exactly that
+  // reason. Beside it, the vocabularies a record is made from.
+  // ---------------------------------------------------------------------------
+  verificationsJson(query) {
+    const { log, identityAssurance } = this.deps;
+    log.debug("Entering AdminViews.verificationsJson().");
+    const who = String((query && (query.user || query.username)) || '').trim();
+    const held = who ? identityAssurance.list(who) : [];
+    const page = this.pagedRows(query || {}, held,
+                                { noun: 'identity verifications' });
+    log.debug("Leaving AdminViews.verificationsJson(). " + held.length +
+              " held.");
+    return {
+      user: who,
+      trustFrameworks: identityAssurance.trustFrameworks(),
+      evidenceTypes: identityAssurance.EVIDENCE_TYPES.slice(0),
+      documentTypes: identityAssurance.DOCUMENT_TYPES.slice(0),
+      checkMethods: identityAssurance.CHECK_METHODS.slice(0),
+      electronicRecordTypes:
+        identityAssurance.ELECTRONIC_RECORD_TYPES.slice(0),
+      attestationTypes: identityAssurance.ATTESTATION_TYPES.slice(0),
+      verifiableClaims: identityAssurance.VERIFIABLE_CLAIMS.slice(0),
+      verifications: page.shown,
+      page: page.paging.page, pages: page.paging.pages,
+      perPage: page.paging.perPage, total: page.paging.total,
+      paging: this.pagingJson(page.paging)
+    };
+  }
+
   // THIS PERSON'S DIRECTORY ENTRY, which is the whole json half of the panel
   // `ldapObjectSection()` draws: `directoryReader(key)`, or null where no
   // directory is loaded in this process. The section keeps the markup and takes
@@ -7222,6 +7259,7 @@ export = {
   userDetailSubject: helpers.subjectForName,
   mfaJson: slot.forward('mfaJson'),
   appPasswordsJson: slot.forward('appPasswordsJson'),
+  verificationsJson: slot.forward('verificationsJson'),
   passwordOnlyDoorsFor: slot.forward('passwordOnlyDoorsFor'),
   userDetailJson: slot.forward('userDetailJson'),
   riskFor: slot.forward('riskFor'),

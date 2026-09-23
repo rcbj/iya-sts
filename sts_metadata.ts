@@ -2176,6 +2176,31 @@ const SPECS: Spec[] = [
               'mapped from a federation partner\'s claims, and drawn on the ' +
               'portal account page. Development invents values; product ' +
               'releases what the entry holds.' },
+  { id: 'oidc-ida', name: 'OpenID Connect for Identity Assurance 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-4-identity-assurance-1_0.html',
+    coverage: 'partial (#127, 2026-09-23): verified_claims in the ID Token ' +
+              'and at UserInfo through the claims request, answered from ' +
+              'the verifications recorded on the person\'s entry — by an ' +
+              'administrator (console and /admin-api), and automatically by ' +
+              'a wallet sign-in (electronic_record, vcrypt) and a client ' +
+              'certificate sign-in (electronic_signature). All four evidence ' +
+              'types, with the schema\'s document, check-method and ' +
+              'electronic-record vocabularies. Section 6\'s request rules ' +
+              'are enforced: verification and a non-empty claims required, ' +
+              'purpose 3 to 300 characters, value/values and time.max_age ' +
+              'on the verification and every requested evidence element ' +
+              'filter, an unsatisfied element is omitted, and only the ' +
+              'members asked for are returned. A claim is released as ' +
+              'verified only while the entry still holds the value that was ' +
+              'verified. Section 7\'s discovery members are published. ' +
+              'MISSING: aggregated and distributed verified claims (#147), ' +
+              'attachments (attachments_supported is empty), and ' +
+              'value/values on the claims inside verified_claims, which are ' +
+              'reported and not enforced as on every other claim. ' +
+              'Development answers a person with no record with an invented ' +
+              'verification under urn:sts:demo; product releases recorded ' +
+              'verifications only.' },
   { id: 'oidc', name: 'OpenID Connect Core 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-core-1_0.html',
@@ -7101,6 +7126,16 @@ const ENDPOINTS: EndpointEntry[] = [
           '/admin-api/users/create-app-password makes one, returned once; ' +
           '/admin-api/users/revoke-app-password takes one away. Mirrors the ' +
           'App passwords block on the person\'s /admin/users page.' },
+  { path: '/admin-api/users/verifications', group: 'Management API',
+    name: 'One person\'s identity verifications', specs: ['oidc-ida'],
+    what: 'NON-SPEC (#127). The identity verifications recorded for a ' +
+          'person, PAGED (`page`, `per`), newest first: each one\'s id, ' +
+          'source (admin, wallet, certificate), who recorded it, the ' +
+          'verification element and the claims it covered with their ' +
+          'verified values, beside the vocabularies a record is made from. ' +
+          'POST /admin-api/users/record-verification records one; ' +
+          '/admin-api/users/remove-verification takes one away. Mirrors the ' +
+          'Identity verifications block on the person\'s /admin/users page.' },
   { path: '/admin-api/users/new', group: 'Management API',
     name: 'New user form', specs: ['rfc4511', 'rfc4519'],
     what: 'NON-SPEC. THE CLOSED ATTRIBUTE CATALOGUE A CREATE TAKES, as JSON: ' +
@@ -8675,7 +8710,7 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/.well-known/openid-configuration', group: 'OAuth 2.0 / OIDC',
     name: 'OpenID Provider Configuration',
     specs: ['oidc-discovery', 'oidc', 'oidc-logout', 'oidc-bclogout',
-            'rfc8414',
+            'oidc-ida', 'rfc8414',
                                                    'rfc9207', 'rfc9449'],
     what: 'What an OIDC client looks for first. The RFC 8414 document ' +
           'extended with what OpenID Connect Discovery adds — ' +
@@ -9346,7 +9381,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'the mode is the oauth2.oauth21 setting.' },
   { path: '/oauth2/userinfo', group: 'OAuth 2.0 / OIDC', name: 'UserInfo ' +
       'endpoint',
-    specs: ['oidc', 'oidc-ida-claims', 'rfc6750', 'rfc9449', 'rfc7591',
+    specs: ['oidc', 'oidc-ida-claims', 'oidc-ida', 'rfc6750', 'rfc9449',
+            'rfc7591',
             'rfc8705', 'rfc8707',
             'rfc9068', 'rfc9470'],
     effect: 'answers 401 with a WWW-Authenticate challenge when followed ' +
@@ -9982,7 +10018,7 @@ SPECS.forEach(function (s) {
 const PROTOCOLS: Protocol[] = [
   { name: 'OAuth2 / OIDC', groups: ['OAuth 2.0 / OIDC'],
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
-            'oidc-session', 'oidc-ida-claims'],
+            'oidc-session', 'oidc-ida-claims', 'oidc-ida'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +

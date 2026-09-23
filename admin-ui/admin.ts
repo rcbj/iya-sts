@@ -11631,7 +11631,7 @@ class AdminConsole {
   // ===========================================================================
   mfaSection(row, key, state, back) {
     const { log, credentials, totp, webauthnPolicy, backupCodes,
-            adminViews } = this.deps;
+            adminViews, mode } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.mfaSection(). key=" + key);
     const heading = '<h2>Second factors, and what this person can sign in ' +
@@ -12049,6 +12049,135 @@ class AdminConsole {
         : this.note('Making or revoking one needs <strong>Admin ' +
                     'Write</strong>.'));
 
+    // --- identity verifications (#127, 2026-09-23) ------------------------
+    // WHAT A CLIENT'S `verified_claims` REQUEST IS ANSWERED FROM (OpenID
+    // Connect for Identity Assurance 1.0). The list — framework, evidence,
+    // the claims covered, where it came from — with a Remove per row, and a
+    // form that records one: a single evidence element as flat fields, which
+    // `identity_assurance.ts`'s `fromForm()` turns into the element the API
+    // takes as JSON. With no script, every type's fields are drawn and those
+    // of the types not chosen are ignored. `POST
+    // /admin-api/users/record-verification` and `remove-verification` are
+    // the same two acts (rule 7), and `GET /admin-api/users/verifications`
+    // is this list, paged.
+    const ida = adminViews.verificationsJson({ user: key, per: 100 });
+    const option = function (value, label?) {
+      log.debug("Entering option().");
+      log.debug("Leaving option().");
+      return '<option value="' + self.esc(value) + '">' +
+             self.esc(label || value) + '</option>';
+    };
+    const select = function (name, values, blank?) {
+      log.debug("Entering select().");
+      log.debug("Leaving select().");
+      return '<select name="' + name + '">' +
+             (blank ? option('', blank) : '') +
+             values.map(function (one) {
+               return option(one);
+             }).join('') + '</select>';
+    };
+    const field = function (label, name, placeholder?) {
+      log.debug("Entering field().");
+      log.debug("Leaving field().");
+      return '<label>' + self.esc(label) + ' <input type="text" name="' +
+             name + '" maxlength="256"' + (placeholder
+               ? ' placeholder="' + self.esc(placeholder) + '"' : '') +
+             '></label> ';
+    };
+    const idaRow = function (one) {
+      log.debug("Entering idaRow().");
+      const v = one.verification || {};
+      log.debug("Leaving idaRow().");
+      return '<tr><td><code>' + self.esc(v.trust_framework || '') +
+        '</code>' + (v.assurance_level
+          ? ' (' + self.esc(v.assurance_level) + ')' : '') + '</td><td>' +
+        self.esc((v.evidence || []).map(function (e) {
+          const detail = (e.document_details && e.document_details.type) ||
+                         (e.record && e.record.type) ||
+                         (e.attestation && e.attestation.type) ||
+                         e.signature_type || '';
+          return e.type + (detail ? ' — ' + detail : '');
+        }).join('; ') || 'none') + '</td><td>' +
+        self.esc(Object.keys(one.claims || {}).join(', ')) + '</td><td>' +
+        self.esc(v.time ? self.whenText(v.time) : '—') + '</td><td>' +
+        self.esc(one.source || '') + (one.by ? ' (' + self.esc(one.by) +
+                                      ')' : '') + '</td><td>' +
+        (state.write
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" value="remove-verification">' +
+            '<input type="hidden" name="user" value="' + self.esc(key) +
+            '"><input type="hidden" name="id" value="' + self.esc(one.id) +
+            '"><input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + self.esc(back) +
+            '"><button class="danger" type="submit">Remove</button></form>'
+          : '') + '</td></tr>';
+    };
+    const verificationsBlock = '<h3>Identity verifications</h3>' +
+      this.note('What a client asking for <code>verified_claims</code> ' +
+                '(OpenID Connect for Identity Assurance 1.0) is answered ' +
+                'from. A claim is released as verified only while this ' +
+                'entry still holds the value that was verified. ' +
+                (mode.inventsClaimValues()
+                  ? 'In development mode a person with none is answered ' +
+                    'with an invented one under <code>urn:sts:demo</code>.'
+                  : 'Nothing is released for a person with none.')) +
+      (ida.verifications.length
+        ? '<table><tr><th>Trust framework</th><th>Evidence</th>' +
+          '<th>Claims</th><th>Verified</th><th>Source</th><th></th></tr>' +
+          ida.verifications.map(idaRow).join('') + '</table>'
+        : this.note('<strong>None recorded.</strong>')) +
+      (state.write && ida.trustFrameworks.length
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="record-verification">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          '<input type="hidden" name="from" value="user">' +
+          '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
+          '<div class="formrow"><label>Trust framework ' +
+          select('trust_framework', ida.trustFrameworks) + '</label> ' +
+          field('Assurance level', 'assurance_level') +
+          field('Verified at', 'time', '2026-09-23T10:00:00Z (now if empty)') +
+          '</div><div class="formrow"><label>Evidence ' +
+          select('evidence_type', ida.evidenceTypes, 'none') + '</label> ' +
+          '<label>Check method ' + select('check_method', ida.checkMethods,
+                                          'none') + '</label></div>' +
+          '<div class="formrow"><strong>document:</strong> <label>Type ' +
+          select('document_type', ida.documentTypes) + '</label> ' +
+          field('Number', 'document_number') +
+          field('Issuer', 'issuer_name') +
+          field('Issuer country', 'issuer_country', 'DEU') +
+          field('Issued', 'date_of_issuance', 'YYYY-MM-DD') +
+          field('Expires', 'date_of_expiry', 'YYYY-MM-DD') + '</div>' +
+          '<div class="formrow"><strong>electronic_record:</strong> ' +
+          '<label>Type ' + select('record_type', ida.electronicRecordTypes) +
+          '</label> ' + field('Source', 'source_name') + '</div>' +
+          '<div class="formrow"><strong>vouch:</strong> <label>Type ' +
+          select('attestation_type', ida.attestationTypes) + '</label> ' +
+          field('Reference', 'reference_number') +
+          field('Voucher', 'voucher_name') + '</div>' +
+          '<div class="formrow"><strong>electronic_signature:</strong> ' +
+          field('Signature type', 'signature_type') +
+          field('Issuer', 'signature_issuer') +
+          field('Serial number', 'serial_number') +
+          field('Created', 'created_at', '2026-09-23T10:00:00Z') + '</div>' +
+          '<div class="formrow">Claims verified: ' +
+          ida.verifiableClaims.map(function (claim) {
+            // One field per claim, as the app-password doors are: a form
+            // body keeps only the last of a repeated name.
+            return '<label><input type="checkbox" name="claim_' +
+                   self.esc(claim) + '" value="on"> ' + self.esc(claim) +
+                   '</label> ';
+          }).join('') + '</div><div class="formrow"><button ' +
+          'type="submit" title="' + this.esc('Records the verification ' +
+            'with each ticked claim\'s value as the entry holds it now.') +
+          '">Record a verification</button></div></form>'
+        : (state.write
+            ? this.note('No trust framework is configured ' +
+                        '(<code>oauth2.idaTrustFrameworks</code> on <a ' +
+                        'href="/admin/oauth2">OAuth 2.0 / OIDC</a>), so ' +
+                        'none can be recorded.')
+            : this.note('Recording or removing one needs <strong>Admin ' +
+                        'Write</strong>.')));
+
     const html = heading +
       this.note('Everything in this section is about <code>' +
                 this.esc(row.name) +
@@ -12058,7 +12187,8 @@ class AdminConsole {
       'href="/admin/totp">TOTP MFA</a> and <a ' +
       'href="/admin/webauthn">WebAuthn</a> under Protocols; this is who ' +
       'holds what.') +
-      wayIn + totpBlock + keysBlock + recoveryBlock + appPasswordsBlock;
+      wayIn + totpBlock + keysBlock + recoveryBlock + appPasswordsBlock +
+      verificationsBlock;
 
     log.debug("Leaving AdminConsole.mfaSection(). totp=" + mech.totp + ", " +
               allKeys.length +

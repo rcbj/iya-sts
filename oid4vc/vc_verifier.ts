@@ -2313,6 +2313,9 @@ class VcVerifier {
     return { ok: true, errorCode: '', reason: '', username: username,
              subject: row.subject, amr: assurance.amr, acr: assurance.acr,
              format: format, keyStorage: assurance.keyStorage,
+             // What the presentation disclosed, for the identity
+             // verification a wallet sign-in records (#127).
+             disclosed: verified.claims || {},
              holderKey: (verified.holderJwk.kty || '') +
                         (verified.holderJwk.crv ?
                           ' ' + verified.holderJwk.crv :

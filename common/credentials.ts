@@ -4236,6 +4236,40 @@ class Credentials {
   // the recovery codes' reason — reporting it as absent would write over
   // records somebody's client is still using.
   // ===========================================================================
+  // ---------------------------------------------------------------------------
+  // A PERSON'S IDENTITY VERIFICATIONS (#127), passed through to the directory
+  // for `common/identity_assurance.js`, which owns their shape. Here because
+  // this is the one module the directory hands its per-person read and write
+  // pairs to; nothing here interprets the value.
+  // ---------------------------------------------------------------------------
+  readIdaVerifications(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.readIdaVerifications().');
+    if (!directory || typeof directory.readIdaVerifications !== 'function') {
+      log.debug('Leaving Credentials.readIdaVerifications(). No store.');
+      return null;
+    }
+    const value = String(directory.readIdaVerifications(
+      String(username || '')) || '');
+    log.debug('Leaving Credentials.readIdaVerifications().');
+    return value;
+  }
+
+  writeIdaVerifications(username, value) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.writeIdaVerifications().');
+    if (!directory || typeof directory.writeIdaVerifications !== 'function') {
+      log.debug('Leaving Credentials.writeIdaVerifications(). No store.');
+      return false;
+    }
+    const written = !!directory.writeIdaVerifications(String(username || ''),
+                                                      value);
+    log.debug('Leaving Credentials.writeIdaVerifications(). ' + written);
+    return written;
+  }
+
   static readonly APP_PASSWORDS_ATTRIBUTE = 'stsAppPassword';
   static readonly APP_PASSWORD_USE_WRITE_MS = 60 * 1000;
 
@@ -6134,6 +6168,9 @@ slot.buildNowUnlessDeferred();
 
 export = {
   Credentials: Credentials,
+  // --- identity verifications, passed through (#127) ---
+  readIdaVerifications: slot.forward('readIdaVerifications'),
+  writeIdaVerifications: slot.forward('writeIdaVerifications'),
   installInstance: (instance: Credentials): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   // --- the authenticator app (RFC 6238) ---

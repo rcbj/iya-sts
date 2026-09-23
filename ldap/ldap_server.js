@@ -2019,7 +2019,15 @@ const OWN_NAMES = [
   // value holding each one's name, scope, scrypt hash and last use. A
   // verifier like `userPassword`, and withheld from every read like it
   // (SECRET_ATTRIBUTES). `common/credentials.ts` keeps them.
-  'stsAppPassword'
+  'stsAppPassword',
+
+  // AND A TENTH (#127, 2026-09-23): the person's IDENTITY VERIFICATIONS for
+  // OpenID Connect for Identity Assurance — one JSON value holding each
+  // verification's trust framework, time and evidence. Evidence carries
+  // document numbers and a voucher's name, so it is withheld from every read
+  // like the credentials beside it (SECRET_ATTRIBUTES).
+  // `common/identity_assurance.js` keeps them.
+  'stsIdaVerification'
 ];
 
 // The table itself, built from the two lists. `learnName()` is the ONE way in,
@@ -7791,6 +7799,9 @@ const SECRET_ATTRIBUTES = [
   // A person's app passwords (#101): scrypt hashes, a verifier like
   // userPassword and withheld like it.
   'stsapppassword',
+  // A person's identity verifications (#127): evidence with document
+  // numbers, personal data no directory read should hand out.
+  'stsidaverification',
   // A password reset link's hash (2026-09-13), for the activation token's
   // reason beside it.
   'stspasswordresettoken',
@@ -8488,6 +8499,44 @@ function writeAppPasswords(key, value) {
   return true;
 }
 
+// A PERSON'S IDENTITY VERIFICATIONS (#127), one JSON value on their entry;
+// `common/identity_assurance.js` owns the shape. Not created here, for
+// `writeTotp()`'s reason.
+function readIdaVerifications(key) {
+  log.debug('Entering readIdaVerifications(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readIdaVerifications(). No entry.');
+    return '';
+  }
+  const value = (stored.attributes.stsidaverification || [])[0];
+  log.debug('Leaving readIdaVerifications(). ' + (value ? 'Held.' : 'None.'));
+  return value ? String(value) : '';
+}
+
+function writeIdaVerifications(key, value) {
+  log.debug('Entering writeIdaVerifications(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no identity ' +
+             'verification was recorded.');
+    log.debug('Leaving writeIdaVerifications(). No entry.');
+    return false;
+  }
+  if (value === null || value === undefined || value === '') {
+    delete stored.attributes.stsidaverification;
+  } else {
+    stored.attributes.stsidaverification = [String(value)];
+  }
+  touchDirectory();
+  log.debug('Leaving writeIdaVerifications(). ' +
+            (value ? 'Written to ' : 'Removed from ') + stored.dn + '.');
+  return true;
+}
+
 // THE ACTIVATION TOKEN, hashed. It is the one credential in this service that
 // completes an account setup on its own, so a leaked one is an account
 // takeover — which is why it is stored the way a password is and never in the
@@ -8565,6 +8614,10 @@ if (typeof credentials.setDirectory === 'function') {
     // pair above is.
     readAppPasswords: readAppPasswords,
     writeAppPasswords: writeAppPasswords,
+    // Identity verifications (#127), checked where they are used for the
+    // reason the pair above is.
+    readIdaVerifications: readIdaVerifications,
+    writeIdaVerifications: writeIdaVerifications,
     // IS THIS ENTRY A PERSON (#101)? By placement, `isPersonEntry()`'s rule —
     // never by name. The second-factor refusal at the password-only doors is
     // about a person's account, and an application's secret is not one.

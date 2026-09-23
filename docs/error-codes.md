@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3218** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3221** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 220
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 502
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 503
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 185
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 187
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 64
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -1623,6 +1623,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0620` | A token exchange was refused because the verified subject_token carries a may_act claim naming a party other than the actor (the actor_token's subject, or the client when there is no actor_token). Held in every mode (#108). | invalid_request (HTTP 400), RFC 8693 sections 2.2.2 and 4.4 |
 | `STS-OAUTH-0621` | A token exchange asked for a scope wider than the verified subject_token's own scope claim, and product mode refuses an exchange that widens what the subject granted (#108). | invalid_scope (HTTP 400), RFC 6749 section 5.2 |
 | `STS-OAUTH-0622` | A token exchange the delegation attributes allowed was refused because the issuance policy answered Deny for action-id `delegate` — the deny-only XACML layer (#108). Product mode only. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0623` | A person's recorded identity verifications (OpenID Connect for Identity Assurance, #127) could not be read — the value on the entry is not a JSON list — or recording one after a wallet or certificate sign-in threw. Read as none; the sign-in stands. | none — verified_claims is omitted |
 
 ## STS-SAML
 
@@ -3298,6 +3299,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0804` | restore-kerberos (clearing a Kerberos sign-out instant) was refused because it is a development-only test control. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0805` | set-not-delegated (marking a person as one who cannot be delegated, or clearing it) was refused (#108). | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0806` | set-may-act (naming the one party who may act for a person, or clearing it) was refused (#108). | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0807` | record-verification (an identity verification for OpenID Connect for Identity Assurance, #127) was refused: the verification did not check, a claim is not verifiable or has no value on the entry, or the entry does not exist. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0808` | remove-verification named a verification not recorded for the person, or the directory did not store the change (#127). | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 

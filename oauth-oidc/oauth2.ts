@@ -299,6 +299,7 @@ import consentScreen = require('./consent_screen');
 // because the slot answers "what did an administrator TICK" and this is the
 // other question: "what did the CLIENT ask for".
 import claimAttributes = require('../common/claim_attributes');
+import identityAssurance = require('../common/identity_assurance');
 // THE ROLE GATE. A LEAF (rule 3): it registers nothing, requires `helpers`,
 // `config` and `error_codes` and nothing else here, and answers "allowed" in
 // any process that never loaded the XACML family — so this require cannot move
@@ -452,6 +453,7 @@ interface OAuth2ServerDeps {
   consent: typeof consent;
   consentScreen: typeof consentScreen;
   claimAttributes: typeof claimAttributes;
+  identityAssurance: typeof identityAssurance;
   gate: typeof gate;
   debuggerAccess: typeof debuggerAccess;
   scopePolicy: typeof scopePolicy;
@@ -1526,6 +1528,7 @@ class OAuth2Server {
       consent: consent,
       consentScreen: consentScreen,
       claimAttributes: claimAttributes,
+      identityAssurance: identityAssurance,
       gate: gate,
       debuggerAccess: debuggerAccess,
       scopePolicy: scopePolicy,
@@ -2711,7 +2714,10 @@ class OAuth2Server {
                            // OpenID Connect for Identity Assurance Claims
                            // Registration 1.0 section 4 (#128): answered
                            // from the directory through the claims request.
-                           IDA_REGISTERED_CLAIMS),
+                           IDA_REGISTERED_CLAIMS,
+                           // OpenID Connect for Identity Assurance 1.0
+                           // section 7 (#127): the element itself.
+                           ['verified_claims']),
       claim_types_supported: ['normal'],
       // Three parameters this server reads and two it does not, stated as the
       // booleans the specification defines rather than left to a client to
@@ -2820,6 +2826,12 @@ class OAuth2Server {
         metadata.mtls_endpoint_aliases,
         { userinfo_endpoint: metadata.userinfo_endpoint });
     }
+    // OPENID CONNECT FOR IDENTITY ASSURANCE 1.0, section 7 (#127): which
+    // frameworks, evidence and claims `verified_claims` may carry. Read per
+    // request, because the frameworks are a runtime setting and development
+    // adds the one it invents under.
+    Object.assign(metadata,
+                  this.deps.identityAssurance.discoveryMetadata());
     // THE PROFILE, AGAIN, and it has to be applied twice.
     //
     // asMetadata() applied it already — and then the Object.assign above
@@ -3922,7 +3934,7 @@ class OAuth2Server {
     // ---------------------------------------------------------------------
     const asked = self.requestedClaimsOf(opts.claims, 'id_token',
                                          user.username, user);
-    if (asked.report.length) {
+    if (asked.report.length || asked.claims.verified_claims !== undefined) {
       log.debug("idToken(): " + asked.report.length + " claim(s) this " +
                 "client asked for by name.");
       // The federation release policy applies to these TOO, and this is the one
@@ -4549,7 +4561,7 @@ class OAuth2Server {
   // behave the same today and they are still different facts, and the one that
   // is recorded on the token is the one the client actually sent.
   parseClaimsRequest(raw: Json): Json {
-    const { log } = this.deps;
+    const { log, identityAssurance } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.parseClaimsRequest().");
     if (raw === undefined || raw === null || raw === '') {
@@ -4612,6 +4624,28 @@ class OAuth2Server {
                     "claim name.");
           return { error: 'claims.' + member +
                           ' has a member with an empty name.' };
+        }
+        // OPENID CONNECT FOR IDENTITY ASSURANCE 1.0 (#127): `verified_claims`
+        // is not a claim name but a structure — a verification and the claims
+        // it covers — and section 6 says how it is refused. Each node of it
+        // counts toward the cap, since the whole of it rides in the token.
+        if (name === 'verified_claims') {
+          const ida = identityAssurance.parseRequest(value[names[j]], member);
+          if (ida.error) {
+            log.debug("Leaving OAuth2Server.parseClaimsRequest(). " +
+                      ida.error);
+            return { error: ida.error };
+          }
+          total += ida.count;
+          if (total > self.maxRequestedClaims()) {
+            log.debug("Leaving OAuth2Server.parseClaimsRequest(). Over the " +
+                      "cap.");
+            return { error: 'a claims request may name at most ' +
+                            self.maxRequestedClaims() + ' claims here, and ' +
+                            'each member of verified_claims counts as one.' };
+          }
+          bucket[name] = ida.elements;
+          continue;
         }
         total++;
         if (total > self.maxRequestedClaims()) {
@@ -4819,20 +4853,37 @@ class OAuth2Server {
   // ---------------------------------------------------------------------------
   requestedClaimsOf(request: Json, member: Json, username: Json, user: Json)
     : Json {
-    const { log, claimAttributes } = this.deps;
+    const { log, claimAttributes, identityAssurance } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.requestedClaimsOf(). member=" + member);
-    const names = self.requestedClaimNames(request, member);
+    // `verified_claims` (#127) is answered by its own library and is not a
+    // name the catalogue resolves.
+    const names = self.requestedClaimNames(request, member)
+      .filter(function (name) {
+        return name !== 'verified_claims';
+      });
     const out = { names: names, claims: {}, report: [], unknown: [],
                   mismatched: [],
-                  missingEssential: [], entryFound: false };
+                  missingEssential: [], entryFound: false,
+                  verified: [] };
+    const verifiedAsked = request && request[member] &&
+                          request[member].verified_claims;
+    if (verifiedAsked) {
+      const answered = identityAssurance.respond(username,
+        [].concat(verifiedAsked), Array.isArray(verifiedAsked) &&
+                                  verifiedAsked.length > 1);
+      out.verified = answered.report;
+      if (answered.value !== undefined) {
+        out.claims = { verified_claims: answered.value };
+      }
+    }
     if (!names.length) {
       log.debug("Leaving OAuth2Server.requestedClaimsOf(). Nothing was asked " +
                 "for.");
       return out;
     }
     const built = claimAttributes.requestedClaimsFor(username, names);
-    out.claims = Object.assign({}, built.claims);
+    out.claims = Object.assign({}, built.claims, out.claims);
     out.report = built.report.slice(0);
     out.entryFound = built.entryFound;
     built.unknown.forEach(function (name) {
@@ -8993,12 +9044,13 @@ class OAuth2Server {
 
     const request = self.mergedUserinfoRequest(claims.claims, direct.request);
     const asked = self.requestedClaimsOf(request, 'userinfo', username, user);
-    if (asked.names.length) {
+    if (asked.names.length || asked.verified.length) {
       logArtifact('UserInfo claims request', 'as understood (OIDC Core 5.5)',
                   { requested: asked.names, resolved: asked.report,
                     unresolvable: asked.unknown,
                     essentialAndAbsent: asked.missingEssential,
                     valueMismatches: asked.mismatched,
+                    verifiedClaims: asked.verified,
                     fromTheAccessToken: self.requestedClaimNames(claims.claims,
                                                             'userinfo'),
                     fromThisRequest: self.requestedClaimNames(direct.request,
