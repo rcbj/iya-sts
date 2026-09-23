@@ -821,6 +821,47 @@ class RiskStore {
       }) });
   }
 
+  // What was decided on an assessment (#62 P3) — see the driver's
+  // `riskSettleAssessment()`. In memory the row is found and amended.
+  settleAssessment(a: Json, sealing: boolean): Promise<boolean> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.settleAssessment(). " + a.id);
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.settleAssessment(). Database.");
+      return Promise.resolve(this.driver.riskSettleAssessment(a));
+    }
+    const held = this.assessments.get(String(a.realm || '')) || [];
+    for (let i = held.length - 1; i >= 0; i--) {
+      if (held[i].id === a.id) {
+        held[i].decision = a.decision || '';
+        held[i].policyId = a.policyId || '';
+        held[i].errorCode = a.errorCode || '';
+        if (a.sessionId) {
+          held[i].sessionId = a.sessionId;
+        }
+        log.debug("Leaving RiskStore.settleAssessment(). Memory.");
+        return Promise.resolve(true);
+      }
+    }
+    log.debug("Leaving RiskStore.settleAssessment(). Not held.");
+    return Promise.resolve(false);
+  }
+
+  // One person's standing, or null.
+  subjectOf(realm: string, subject: string,
+            sealing: boolean): Promise<Json | null> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.subjectOf().");
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.subjectOf(). Database.");
+      return Promise.resolve(this.driver.riskSubjectOf(realm, subject));
+    }
+    const held = this.subjectStates.get(String(realm || ''));
+    const row = held ? held.get(subject) : null;
+    log.debug("Leaving RiskStore.subjectOf(). Memory.");
+    return Promise.resolve(row ? Object.assign({}, row) : null);
+  }
+
   upsertSubject(s: Json, sealing: boolean): Promise<boolean> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.upsertSubject().");
@@ -1031,6 +1072,8 @@ export = {
   recordAssessment: slot.forward('recordAssessment'),
   listAssessments: slot.forward('listAssessments'),
   upsertSubject: slot.forward('upsertSubject'),
+  settleAssessment: slot.forward('settleAssessment'),
+  subjectOf: slot.forward('subjectOf'),
   listSubjects: slot.forward('listSubjects'),
   upsertSessionContext: slot.forward('upsertSessionContext'),
   sessionContextOf: slot.forward('sessionContextOf'),

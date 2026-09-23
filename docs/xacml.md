@@ -165,6 +165,18 @@ issuance. **Nothing else in the service tests roles.** The reason someone was
 refused is always a document that you can read, edit, try out and find in the
 audit log.
 
+**The request also carries the RISK of the authentication** the issuance
+rests on, as four environment attributes (`urn:sts:xacml:risk-level`,
+`-score`, `-signal` and `-satisfied`), and the built-in `role-issuance`
+policy decides on it in the same evaluation: HIGH is refused, and MEDIUM is
+refused until the authentication carries a second factor or, for a signal
+about the device, a security key. A risk rule's Deny carries the obligation
+`urn:sts:xacml:obligation:risk`, which says whether to refuse or step up and
+with what; the doors that can ask a person for that factor do. Product mode
+enforces a risk Deny, and development mode records it and lets the issuance
+through. [Risk scoring](risk-scoring.md#how-a-score-decides) has the rules and
+how to change them.
+
 Both service policies are **built in and called directly, not seeded**. The
 same built-in document applies in every realm. A realm that wants something
 different writes a repository entry with the name in the setting, and that

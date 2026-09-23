@@ -54,6 +54,7 @@ import InstanceSlot = require('../common/instance_slot');
 import riskStore = require('./risk_store');
 import riskDatasets = require('./risk_datasets');
 import riskModel = require('./risk_model');
+import cacheRegistry = require('../common/cache_registry');
 
 const log = bunyan.createLogger({ name: 'sts-risk-engine' });
 config.registerLogger(log);
@@ -102,7 +103,61 @@ interface RiskEngineDeps {
   now(): number;
   keystore(): Json;
   randomId(): string;
+  mode(): Json;
 }
+
+// ---------------------------------------------------------------------------
+// A PERSON'S STANDING, PER PROCESS (#62 P3). What an issuance with NO
+// SESSION to read its risk from stands on — a Kerberos service ticket (the
+// KDC is the parent project's locked code and asks the gate synchronously),
+// a WS-Trust token — so that a person made HIGH at the browser is not issued
+// a ticket at the next door. Filled by every assessment made in this
+// process and by `loadStanding()` where a door can wait for the store;
+// read by `standingOf()` only while `risk.standingValidMinutes` says it
+// still answers. A standing forgotten or never held is an issuance decided
+// on roles alone: unknown never denies. Keyed by realm and USERNAME, because
+// the gate's subject is a name.
+// ---------------------------------------------------------------------------
+const standings = new Map<string, Json>();
+const standingsCount = cacheRegistry.register({
+  name: 'risk.standings',
+  title: 'Risk standings',
+  description: 'Each person\'s last assessed risk (level, score, signals), ' +
+    'for an issuance with no session to read it from — a Kerberos ticket, ' +
+    'a WS-Trust token (#62 P3).',
+  owner: 'risk/risk_engine.ts',
+  scope: 'process',
+  kind: 'cache',
+  persisted: false,
+  hitMeaning: 'a standing held and still valid, so the issuance was ' +
+    'decided with it',
+  settings: ['risk.standingValidMinutes', 'risk.standingCacheSize'],
+  maxEntries: function (): number {
+    return Number(config.value('risk.standingCacheSize'));
+  },
+  bound: 'Enforced: risk.standingCacheSize people per process; full, the ' +
+    'oldest is dropped, which decides that person\'s next sessionless ' +
+    'issuance on roles alone.',
+  lifetime: function (): string {
+    return 'risk.standingValidMinutes after the assessment it records.';
+  },
+  eject: cacheRegistry.mapEjector(standings,
+    function (row: Json, key: unknown, now: number): boolean {
+      return !row || now - Number(row.at) >
+        Number(config.value('risk.standingValidMinutes')) * 60000;
+    }),
+  entries: function (): unknown[] {
+    const valid = Number(config.value('risk.standingValidMinutes')) * 60000;
+    const out: Json[] = [];
+    standings.forEach(function (row: Json, key: string): void {
+      out.push({ realm: key.split('\u0000')[0],
+                 key: cacheRegistry.digestKey(key),
+                 validUntil: Number(row.at) + valid,
+                 basis: 'the assessment ' + row.assessmentId });
+    });
+    return out;
+  }
+});
 
 class RiskEngine {
   static readonly SIGNALS = SIGNALS;
@@ -128,8 +183,244 @@ class RiskEngine {
       },
       randomId: function (): string {
         return require('crypto').randomUUID();
+      },
+      mode: function (): Json {
+        return require('../common/mode');
       }
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE STEP-UPS AN AUTHENTICATION ALREADY MEETS (#62 P3), from the `amr`
+  // and `acr` of the session or event it rests on — the issuance policy's
+  // `risk-satisfied` bag. `second-factor` for two factors (acr `mfa`);
+  // `security-key` — and second-factor with it — where a WebAuthn key
+  // (amr `hwk`) was one of them, passwordless included: a key bound to this
+  // origin is the step-up a relayed one-time code cannot pass, and asking
+  // somebody who just used one for a code as well would be the weaker
+  // factor demanded after the stronger.
+  // -------------------------------------------------------------------------
+  static satisfiedBy(amr: unknown, acr: unknown): string[] {
+    log.debug("Entering RiskEngine.satisfiedBy().");
+    const list = Array.isArray(amr) ? amr.map(String) : [];
+    const out: string[] = [];
+    if (list.indexOf('hwk') >= 0) {
+      out.push('security-key', 'second-factor');
+    } else if (String(acr || '') === 'mfa') {
+      out.push('second-factor');
+    }
+    log.debug("Leaving RiskEngine.satisfiedBy(). " + out.join(','));
+    return out;
+  }
+
+  // Whether a risk Deny is KEPT: product, or development with
+  // `risk.enforceInDevelopment` (`mode.observesRiskOnly()`).
+  enforced(): boolean {
+    const { log, config, mode } = this.deps;
+    log.debug("Entering RiskEngine.enforced().");
+    let observes = true;
+    try {
+      observes = !!mode().observesRiskOnly();
+    } catch (e) {
+      log.debug("Caught in RiskEngine.enforced(): " + ((e && e.message) || e));
+      // No mode module in this process: observe, which is development's
+      // answer and never refuses anybody.
+      observes = true;
+    }
+    const answer = !observes ||
+      config.value('risk.enforceInDevelopment') === true;
+    log.debug("Leaving RiskEngine.enforced(). " + answer);
+    return answer;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT A SESSION CARRIES (#62 P3): the assessment reduced to what the
+  // issuance policy reads, so every later issuance on the session is
+  // decided on the risk its authentication established — and what P4's
+  // re-scoring will replace. Never the address, never a dataset's answer.
+  // -------------------------------------------------------------------------
+  static riskOf(assessment: Json): Json | null {
+    log.debug("Entering RiskEngine.riskOf().");
+    if (!assessment || !assessment.level) {
+      log.debug("Leaving RiskEngine.riskOf(). None.");
+      return null;
+    }
+    const modelled = (assessment.signals || []).filter(function (s: Json) {
+      return s && s.signal === 'model';
+    })[0];
+    log.debug("Leaving RiskEngine.riskOf().");
+    return {
+      level: String(assessment.level),
+      score: modelled && modelled.score === null ? null
+        : Number(assessment.score),
+      signals: (assessment.signals || []).filter(function (s: Json) {
+        return s && s.signal && s.signal !== 'model';
+      }).map(function (s: Json): string {
+        return String(s.signal);
+      }),
+      assessmentId: String(assessment.id || ''),
+      at: Number(assessment.at) || 0
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE FACTS THE ISSUANCE GATE HANDS THE POLICY (#62 P3): a `riskOf()`
+  // record, the step-ups the authentication meets, and whether a risk Deny
+  // is enforced. Null — no risk attribute in the request — when there is
+  // nothing assessed, or when `risk.assessSignIns` is off.
+  // -------------------------------------------------------------------------
+  factsOf(risk: Json, amr: unknown, acr: unknown): Json | null {
+    const { log, config } = this.deps;
+    log.debug("Entering RiskEngine.factsOf().");
+    if (!risk || !risk.level ||
+        config.value('risk.assessSignIns') === false) {
+      log.debug("Leaving RiskEngine.factsOf(). None.");
+      return null;
+    }
+    log.debug("Leaving RiskEngine.factsOf().");
+    return {
+      level: String(risk.level),
+      score: risk.score === null || risk.score === undefined ? null
+        : Number(risk.score),
+      signals: (risk.signals || []).map(String),
+      satisfied: RiskEngine.satisfiedBy(amr, acr),
+      enforced: this.enforced(),
+      assessmentId: String(risk.assessmentId || '')
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE FACTS FOR AN ISSUANCE, WHEREVER THEY ARE (#62 P3) — what
+  // `common/issuance_gate.js` asks when a caller named no `risk` of its
+  // own: the session's, where the caller handed one; the standing held in
+  // this process for the person, where not. `amr`/`acr` come with the
+  // session; a standing meets no step-up, because nothing says what the
+  // next authentication will carry.
+  // -------------------------------------------------------------------------
+  factsForIssuance(asked: Json): Json | null {
+    const { log } = this.deps;
+    log.debug("Entering RiskEngine.factsForIssuance().");
+    const q = asked || {};
+    const session = q.session;
+    if (session && session.risk) {
+      log.debug("Leaving RiskEngine.factsForIssuance(). The session's.");
+      return this.factsOf(session.risk, session.amr, session.acr);
+    }
+    const subject = q.subject || {};
+    if (subject.kind !== 'user' || !subject.name ||
+        subject.authenticated === false) {
+      log.debug("Leaving RiskEngine.factsForIssuance(). Not a person.");
+      return null;
+    }
+    const standing = this.standingOf(String(q.realm || ''),
+                                     String(subject.name));
+    log.debug("Leaving RiskEngine.factsForIssuance(). " +
+              (standing ? 'A standing.' : 'None.'));
+    return standing ? this.factsOf(standing, [], '') : null;
+  }
+
+  // A person's standing held in this process, while it still answers.
+  // A hot path — asked at every sessionless issuance — so no Entering or
+  // Leaving pair would add anything but volume, as the code style allows
+  // when it says so.
+  standingOf(realm: string, username: string): Json | null {
+    const { config, now } = this.deps;
+    const row = standings.get(realm + '\u0000' + username);
+    if (!row || now() - Number(row.at) >
+        Number(config.value('risk.standingValidMinutes')) * 60000) {
+      standingsCount.miss();
+      return null;
+    }
+    standingsCount.hit();
+    return row;
+  }
+
+  // Held from an assessment made in this process, or read from the store.
+  private holdStanding(realm: string, username: string, risk: Json): void {
+    const { log, config } = this.deps;
+    log.debug("Entering RiskEngine.holdStanding().");
+    if (!username || !risk) {
+      log.debug("Leaving RiskEngine.holdStanding(). Nothing to hold.");
+      return;
+    }
+    const key = realm + '\u0000' + username;
+    standings.delete(key);
+    cacheRegistry.makeRoom(standings,
+                           Number(config.value('risk.standingCacheSize')),
+                           { name: 'risk.standings', counter: standingsCount,
+                             setting: 'risk.standingCacheSize' });
+    standings.set(key, risk);
+    log.debug("Leaving RiskEngine.holdStanding().");
+  }
+
+  // -------------------------------------------------------------------------
+  // A PERSON'S STANDING READ FROM THE STORE, for a door that can wait for it
+  // before asking the gate (WS-Trust). `subject` is the person's `sub`;
+  // `username` is what the gate is asked about. Never rejects.
+  // -------------------------------------------------------------------------
+  async loadStanding(realm: string, username: string,
+                     subject: string): Promise<Json | null> {
+    const { log, store } = this.deps;
+    log.debug("Entering RiskEngine.loadStanding().");
+    try {
+      const row = await store.subjectOf(realm, subject, this.sealing());
+      if (!row || !row.level) {
+        log.debug("Leaving RiskEngine.loadStanding(). None.");
+        return null;
+      }
+      const risk = { level: String(row.level), score: Number(row.score),
+                     signals: String(row.reason || '').split(', ')
+                       .filter(function (one: string): boolean {
+                         return !!SIGNALS[one];
+                       }),
+                     assessmentId: String(row.lastAssessment || ''),
+                     at: Number(row.updatedAt) || 0 };
+      this.holdStanding(realm, username, risk);
+      log.debug("Leaving RiskEngine.loadStanding().");
+      return risk;
+    } catch (e) {
+      log.debug("Caught in RiskEngine.loadStanding(): " +
+                ((e && e.message) || e));
+      // The store could not answer: no standing, and the issuance is decided
+      // on roles alone — unknown never denies.
+      log.debug("Leaving RiskEngine.loadStanding(). Failed.");
+      return null;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT WAS DECIDED, written onto the assessment (#62 P3): the policy's
+  // answer — permit, step-up, refuse, or observed — the policy that gave it,
+  // the code of a refusal, and the session it became. Not awaited by the
+  // sign-in; never rejects.
+  // -------------------------------------------------------------------------
+  settle(realm: string, assessmentId: string, outcome: Json): void {
+    const { log, store } = this.deps;
+    log.debug("Entering RiskEngine.settle(). " + assessmentId);
+    if (!assessmentId) {
+      log.debug("Leaving RiskEngine.settle(). No assessment.");
+      return;
+    }
+    const o = outcome || {};
+    store.settleAssessment({ realm: realm, id: assessmentId,
+      decision: String(o.decision || ''), policyId: String(o.policy || ''),
+      errorCode: String(o.errorCode || ''),
+      sessionId: String(o.sessionId || '') }, this.sealing())
+      .catch(function (e: Json): void {
+        log.debug("Caught in RiskEngine.settle(): " + ((e && e.message) || e));
+        // The decision stands; only its record on the assessment is lost.
+      });
+    if (o.sessionId && o.context) {
+      store.upsertSessionContext(Object.assign({}, o.context,
+        { sessionId: String(o.sessionId) }), this.sealing())
+        .catch(function (e: Json): void {
+          log.debug("Caught in RiskEngine.settle(): " +
+                    ((e && e.message) || e));
+          // Continuous evaluation (P4) will find no context for this
+          // session, and will assess its next request afresh.
+        });
+    }
+    log.debug("Leaving RiskEngine.settle().");
   }
 
   // ---------------------------------------------------------------------------
@@ -441,14 +732,23 @@ class RiskEngine {
       }).join(', ') || (modelled.score === null ? String(modelled.why)
                                                 : 'the model'),
       lastAssessment: assessment.id, updatedAt: at }, sealing);
+    // THE SESSION'S CONTEXT, for continuous evaluation (P4). Since P3 an
+    // assessment is made BEFORE the session exists, so the context rides on
+    // the answer and `settle()` writes it once the session has an id; an
+    // assessment made for a session that already exists writes it here.
+    const sessionContext = { realm: realm, subject: subject,
+      addressPrefix: assessment.addressPrefix, asn: assessment.asn,
+      country: assessment.country, uaHash: assessment.uaHash,
+      ja4: assessment.ja4, jkt: '', score: score, level: level,
+      updatedAt: at };
     if (assessment.sessionId) {
-      await store.upsertSessionContext({ realm: realm,
-        sessionId: assessment.sessionId, subject: subject,
-        addressPrefix: assessment.addressPrefix, asn: assessment.asn,
-        country: assessment.country, uaHash: assessment.uaHash,
-        ja4: assessment.ja4, jkt: '', score: score, level: level,
-        updatedAt: at }, sealing);
+      await store.upsertSessionContext(Object.assign({
+        sessionId: assessment.sessionId }, sessionContext), sealing);
     }
+    Object.defineProperty(assessment, 'sessionContext',
+                          { value: sessionContext, enumerable: false });
+    this.holdStanding(realm, String(input.username || ''),
+                      RiskEngine.riskOf(assessment));
     log.info('risk: ' + subject + ' at ' + assessment.door + ' scored ' +
              (modelled.score === null ? 'nothing (' + modelled.why + ')'
                                       : score.toPrecision(3)) + ' — ' +
@@ -517,7 +817,15 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   SIGNALS: RiskEngine.SIGNALS,
   deviceOf: RiskEngine.deviceOf,
+  satisfiedBy: RiskEngine.satisfiedBy,
+  riskOf: RiskEngine.riskOf,
   assess: slot.forward('assess'),
+  factsOf: slot.forward('factsOf'),
+  factsForIssuance: slot.forward('factsForIssuance'),
+  standingOf: slot.forward('standingOf'),
+  loadStanding: slot.forward('loadStanding'),
+  settle: slot.forward('settle'),
+  enforced: slot.forward('enforced'),
   view: slot.forward('view'),
   purge: slot.forward('purge')
 };

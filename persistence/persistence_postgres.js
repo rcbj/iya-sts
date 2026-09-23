@@ -4376,6 +4376,45 @@ function create(options) {
       });
     },
 
+    // WHAT WAS DECIDED on an assessment (#62 P3): the issuance policy's
+    // answer, the policy that gave it and the code of a refusal, and the
+    // session it became — none of which exists when the assessment is
+    // written, because it is written BEFORE the session is started. A
+    // session id is only ever filled in, never cleared.
+    riskSettleAssessment: function (a) {
+      log.debug("Entering riskSettleAssessment(). " + a.id);
+      log.debug("Leaving riskSettleAssessment().");
+      return pool.query(
+        'UPDATE sts_risk_assessments SET decision = $3, policy_id = $4, ' +
+        'error_code = $5, session_id = CASE WHEN $6 = \'\' THEN session_id ' +
+        'ELSE $6 END WHERE realm = $1 AND id = $2',
+        [a.realm || '', a.id, a.decision || '', a.policyId || '',
+         a.errorCode || '', a.sessionId || '']
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // One person's standing, or null — what an issuance with no session to
+    // read its risk from stands on (#62 P3).
+    riskSubjectOf: function (realm, subject) {
+      log.debug("Entering riskSubjectOf(). realm=" + realm);
+      log.debug("Leaving riskSubjectOf().");
+      return pool.query(
+        'SELECT subject, score, level, previous_level, reason, ' +
+        'last_assessment, crossed_at, updated_at FROM sts_risk_subjects ' +
+        'WHERE realm = $1 AND subject = $2', [realm || '', subject || '']
+      ).then(function (r) {
+        const row = r.rows[0];
+        return row ? { subject: row.subject, score: Number(row.score),
+                       level: row.level, previousLevel: row.previous_level,
+                       reason: row.reason,
+                       lastAssessment: row.last_assessment,
+                       crossedAt: Number(row.crossed_at) || 0,
+                       updatedAt: Number(row.updated_at) || 0 } : null;
+      });
+    },
+
     // A person's current standing, replaced whole.
     riskUpsertSubject: function (s) {
       log.debug("Entering riskUpsertSubject().");

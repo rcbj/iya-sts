@@ -107,14 +107,14 @@ function childMain() {
       'oid4vci.status-list-tokens', 'oid4vp.sign-in-register',
       'oid4vp.status-lists-fetched', 'oid4vp.transactions',
       'revocation.ca-certificates', 'revocation.crl', 'revocation.failures',
-      'revocation.ocsp', 'scim.digest-nonce-counts', 'scim.digest-nonces',
-      'scim.hoba-challenges', 'scim.hoba-signatures'
+      'revocation.ocsp', 'risk.standings', 'scim.digest-nonce-counts',
+      'scim.digest-nonces', 'scim.hoba-challenges', 'scim.hoba-signatures'
     ].sort();
     const ejecting = registry.ejecting().filter(function (n) {
       return !/^test\./.test(n);
     });
     note(JSON.stringify(ejecting) === JSON.stringify(expected),
-         'B1. exactly the twenty-four stores whose entries expire eject them',
+         'B1. exactly the twenty-five stores whose entries expire eject them',
          JSON.stringify({ missing: expected.filter(function (n) {
            return ejecting.indexOf(n) < 0;
          }), extra: ejecting.filter(function (n) {

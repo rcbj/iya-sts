@@ -11,11 +11,13 @@ sign-ins. It also looks for signals that a comparison can't see: an address
 on a Tor or reputation list, an automated client, a TLS client this person
 has never used, and a run of refused passwords.
 
-> **Today it observes and records only.** A score decides nothing yet: no
-> sign-in is refused or asked for a second factor because of one, and no
-> sign-in waits for its assessment. Acting on a score is the next phase of
-> [issue #62](https://github.com/rcbj/iya-sts/issues/62) and is described
-> under [What is coming](#what-is-coming).
+> **The decision is an XACML policy, not code.** The score, its level and
+> its signals are given to the issuance policy that every session and every
+> token already passes through, and the policy decides: by default HIGH is
+> refused, and MEDIUM asks for a second factor or a security key. You can
+> change those rules in the policy without a new release. Product mode
+> enforces what the policy decides; development mode records it and lets the
+> sign-in through (see [How a score decides](#how-a-score-decides)).
 
 Every assessment is shown in the admin console at **Monitoring → Risk**
 (`/admin/risk`) and returned by `GET /admin-api/risk`.
@@ -94,7 +96,7 @@ on a new device scores well above 1.
 
 These factors are a first calibration. Every assessment on Monitoring → Risk
 lists the signals it carried, so the factors can be tuned against real
-sign-ins before scores start to decide anything.
+sign-ins.
 
 ### Levels
 
@@ -104,6 +106,72 @@ sign-ins before scores start to decide anything.
 | MEDIUM | from `risk.mediumScorePercent` ÷ 100 |
 | HIGH | from `risk.highScorePercent` ÷ 100 (10 by default) |
 | UNSCORED | a first sign-in with no evaluator signal |
+
+## How a score decides
+
+A score decides nothing by itself. The service's **issuance policy** — the
+XACML policy asked before anything is issued, whether a session, an access
+token, an ID token, a SAML assertion, a WS-Federation or WS-Trust token, a
+Kerberos ticket or a GNAP grant — is given the risk of the authentication as
+four attributes, and decides on them in the same evaluation that decides the
+person's roles:
+
+| Attribute | What it holds |
+|---|---|
+| `urn:sts:xacml:risk-level` | `LOW`, `MEDIUM`, `HIGH` or `UNSCORED` |
+| `urn:sts:xacml:risk-score` | the score (absent for a first sign-in) |
+| `urn:sts:xacml:risk-signal` | every evaluator that fired, such as `tor-exit` |
+| `urn:sts:xacml:risk-satisfied` | the step-ups the authentication already meets: `second-factor`, and `security-key` when a WebAuthn key was used |
+
+The built-in policy has three risk rules, ahead of the role rule, and a risk
+Deny overrides a role Permit:
+
+| Risk | Decision |
+|---|---|
+| LOW or UNSCORED | decided on roles alone |
+| MEDIUM, with a signal about the device or TLS client (`automated-client`, `new-tls-stack`) | refused until the authentication used a **security key** |
+| any other MEDIUM | refused until the authentication carried a **second factor** |
+| HIGH | refused |
+
+**An authentication with no assessment is decided on roles alone.** Nothing
+unknown is ever a reason to refuse.
+
+**Where a person can act, a step-up is a question, not a refusal:**
+
+- **The sign-in screen** asks for the factor before any session exists.
+- **The wallet sign-in** asks for it after the presentation.
+- **`/oauth2/authorize`** on an existing session sends the person to sign in
+  again with the factor demanded.
+- **Doors that cannot ask** refuse, unless the authentication already meets
+  the demand: SPNEGO, a federated sign-in, WS-Trust, the token endpoint and
+  the Kerberos KDC.
+
+**A step-up never offers to enrol a new factor.** A person who holds nothing
+that answers it is refused, because an elevated risk suspects exactly the
+person who knows the password and would enrol their own.
+
+**A client is told nothing about the risk.** A refusal says only that
+authentication failed. The level, the signals and the assessment are on the
+audit record, under `STS-RISK-0016` (refused) and `STS-RISK-0017` (a step-up
+the door could not ask for).
+
+**Every session carries the risk it was decided on**, and every token issued
+on it is decided on that risk. An issuance with no session, such as a Kerberos
+service ticket, uses the person's last assessed risk held by that node, for
+`risk.standingValidMinutes`.
+
+### Changing the rules
+
+The rules are an ordinary policy on **XACML → Policies**: a realm's own
+override of `role-issuance` replaces the built-in document in that realm. You
+can permit MEDIUM, refuse it outright for administrators, add a rule on any
+attribute of the person's directory entry, or change which signals demand a
+key — the `role-issuance` template's `keySignals` parameter. Building the
+template with `decideRisk` set to `no` gives the roles-only policy.
+
+**An override written before these rules existed reads no risk attribute**,
+and that realm then refuses nothing on risk. The console says so on the
+policy's status.
 
 ## Datasets
 
@@ -235,7 +303,8 @@ document.** The settings above are how you put those decisions into effect.
 |---|---|---|
 | Scoring and recording | on | on |
 | Where the history is kept | in the process, unless a key-encryption key exists | in the database (a key-encryption key is required) |
-| Scores decide a sign-in | no | **not yet**: see [What is coming](#what-is-coming) |
+| The issuance policy decides on the risk | yes, and the decision is recorded | yes |
+| A refusal or step-up on risk is enforced | no, unless `risk.enforceInDevelopment` is on | yes |
 
 ## Configuration
 
@@ -246,7 +315,10 @@ kept in step with `common/config.js`.
 
 | Setting | Environment variable | Default | What it does |
 |---|---|---|---|
-| `risk.assessSignIns` | `STS_RISK_ASSESS_SIGN_INS` | `true` | Score and record every sign-in. |
+| `risk.assessSignIns` | `STS_RISK_ASSESS_SIGN_INS` | `true` | Score and record every sign-in, and give the issuance policy its risk. |
+| `risk.enforceInDevelopment` | `STS_RISK_ENFORCE_IN_DEVELOPMENT` | `false` | Enforce the policy's risk decisions in development mode too. |
+| `risk.standingValidMinutes` | `STS_RISK_STANDING_VALID_MINUTES` | `720` | How long a person's last assessed risk stands in for an issuance with no session. |
+| `risk.standingCacheSize` | `STS_RISK_STANDING_CACHE_SIZE` | `20000` | How many people's standing each process holds. |
 | `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `100` | The score, in hundredths, from which a sign-in is MEDIUM. |
 | `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | The score, in hundredths, from which a sign-in is HIGH. |
 | `risk.recordFailures` | `STS_RISK_RECORD_FAILURES` | `true` | Record every refused password. |
@@ -274,19 +346,15 @@ kept in step with `common/config.js`.
   assessment.
 - **Addresses are never kept in the clear.** An address is kept sealed, as a
   network prefix, or as a keyed digest.
+- **Authorization is policy.** What a score leads to is written in XACML, in
+  the one policy every issuance passes through, so it can be changed without
+  a release and read in one place.
 
 ## What is coming
 
 The next phases of [issue #62](https://github.com/rcbj/iya-sts/issues/62)
 will do the following:
 
-- **Decide at sign-in, in product mode.**
-  - LOW is permitted.
-  - MEDIUM sends the person back to the sign-in screen for a second factor,
-    or a security key when the evidence is about the device.
-  - HIGH is refused.
-  - Development mode will go on observing, unless a setting turns
-    enforcement on.
 - **Act when a person's risk crosses HIGH.** This emits a CAEP
   `risk-level-change`, and a RISC `credential-compromise` when the evidence
   is about a credential. It also ends all of the person's sessions. Past a
@@ -309,11 +377,13 @@ will do the following:
   `POST /admin-api/risk/import`, `activate`, `rollback`, `delete` and
   `accept-terms`, described in the
   [OpenAPI document](management-api.md).
-- **Error codes** `STS-RISK-0001` to `STS-RISK-0015` are listed on
+- **Error codes** `STS-RISK-0001` to `STS-RISK-0019` are listed on
   [Error codes](error-codes.md).
 
 ## Related
 
+- [XACML](xacml.md): the issuance policy, and the console where it is
+  edited.
 - [CAEP events](caep-events.md): `risk-level-change`, which risk scoring will
   send.
 - [Sessions](sessions.md) and [Authentication](authentication.md): what is

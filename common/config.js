@@ -9301,8 +9301,45 @@ const SETTINGS = [
                  'against the person\'s history and the realm\'s, and the ' +
                  'evaluators — Tor, reputation and operator lists, an ' +
                  'automated client, a TLS stack never seen, recent refused ' +
-                 'passwords. OBSERVE ONLY: an assessment is recorded and ' +
-                 'decides nothing yet, and a sign-in never waits for it.' },
+                 'passwords. The assessment is made BEFORE the session ' +
+                 'exists, and its facts go to the issuance policy (#62 P3) ' +
+                 'with every session and token that rests on it. Off, ' +
+                 'nothing is scored and the policy decides on roles alone.' },
+
+  { key: 'risk.enforceInDevelopment', group: 'Risk',
+    label: 'Enforce risk decisions in development mode',
+    env: 'STS_RISK_ENFORCE_IN_DEVELOPMENT', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode always ENFORCES what the issuance policy ' +
+                 'decides on risk (#62 P3): a HIGH authentication is refused ' +
+                 'and a MEDIUM one asked for a step-up. Development mode ' +
+                 'OBSERVES: the decision is made and recorded, and the roles ' +
+                 'alone decide the issuance, so a client under test is not ' +
+                 'refused because its test runs from a new address. On ' +
+                 'turns enforcement on in development too. The RULES are ' +
+                 'the issuance policy\'s, in ou=policies — this switches ' +
+                 'only whether a risk Deny is kept.' },
+
+  { key: 'risk.standingValidMinutes', group: 'Risk',
+    label: 'A person\'s standing answers for (minutes)',
+    env: 'STS_RISK_STANDING_VALID_MINUTES', type: 'int', dflt: 720, min: 1,
+    max: 43200, runtime: true,
+    description: 'How long a person\'s last assessed risk stands in for ' +
+                 'an issuance that has no session to read it from — a ' +
+                 'Kerberos service ticket, a WS-Trust token — so that a ' +
+                 'person made HIGH at the browser is not issued a ticket ' +
+                 'elsewhere. Older than this, the issuance carries no risk ' +
+                 'facts and the roles decide.' },
+
+  { key: 'risk.standingCacheSize', group: 'Risk',
+    label: 'People whose standing each process holds',
+    env: 'STS_RISK_STANDING_CACHE_SIZE', type: 'int', dflt: 20000, min: 1,
+    max: 10000000, runtime: true,
+    description: 'The bound on the per-process cache of people\'s last ' +
+                 'assessed risk that an issuance with no session reads ' +
+                 '(risk.standingValidMinutes). Full, the oldest is dropped: ' +
+                 'a standing forgotten is an issuance decided on roles ' +
+                 'alone, never a refusal.' },
 
   { key: 'risk.mediumScorePercent', group: 'Risk',
     label: 'MEDIUM from (percent of a score of 1)',

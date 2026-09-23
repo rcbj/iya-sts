@@ -1682,7 +1682,10 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `risk.ipListStaleAfterHours` | `STS_RISK_IP_LIST_STALE_AFTER_HOURS` | `24` | yes | The same for a Tor exit or reputation list; an operator's own lists are never stale. |
 | `risk.recordFailures` | `STS_RISK_RECORD_FAILURES` | `true` | yes | Whether every refused password, at every door that checks one, is recorded with the person (or a keyed digest of a name that matched nobody), the network and the code — in the database only where the address can be sealed. |
 | `risk.failureRetentionDays` | `STS_RISK_FAILURE_RETENTION_DAYS` | `30` | yes | How long a recorded failure is kept. |
-| `risk.assessSignIns` | `STS_RISK_ASSESS_SIGN_INS` | `true` | yes | Whether every sign-in that starts or re-authenticates a session is scored — the Freeman et al. model plus the evaluators — and recorded on Monitoring → Risk. **Observe only**: nothing is decided by a score yet, and no sign-in waits for one. |
+| `risk.assessSignIns` | `STS_RISK_ASSESS_SIGN_INS` | `true` | yes | Whether every sign-in that starts or re-authenticates a session is scored — the Freeman et al. model plus the evaluators — recorded on Monitoring → Risk, and its facts handed to the issuance policy with every session and token that rests on it (#62 P3). Off, the policy decides on roles alone. |
+| `risk.enforceInDevelopment` | `STS_RISK_ENFORCE_IN_DEVELOPMENT` | `false` | yes | Enforce the issuance policy's risk decisions in development mode too. Product mode always enforces them; development records them and lets the issuance through. |
+| `risk.standingValidMinutes` | `STS_RISK_STANDING_VALID_MINUTES` | `720` | yes | How long a person's last assessed risk stands in for an issuance with no session to read it from — a Kerberos ticket, a WS-Trust token. |
+| `risk.standingCacheSize` | `STS_RISK_STANDING_CACHE_SIZE` | `20000` | yes | How many people's standing each process holds; full, the oldest is dropped, which decides that person's next sessionless issuance on roles alone. |
 | `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `100` | yes | The score, in hundredths, from which a sign-in is MEDIUM (100 is a score of 1). |
 | `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | yes | The score, in hundredths, from which a sign-in is HIGH. |
 | `risk.assessmentRetentionDays` | `STS_RISK_ASSESSMENT_RETENTION_DAYS` | `90` | yes | How long an assessment is kept. |
@@ -8280,10 +8283,16 @@ Freeman et al.'s statistical model (das-group's `rba-algorithm`, MIT) against
 the person's own sign-in history and the realm's, plus evaluators — the
 address on a Tor, reputation or operator list, an automated client, a TLS
 client (JA4) never seen, recent refused passwords. The level is CAEP's LOW,
-MEDIUM or HIGH. **Today it observes and records only**; deciding at sign-in
-(a second factor at MEDIUM, refusal at HIGH, in product mode) is the next
-phase. Every assessment is listed on Monitoring → Risk and returned by
-`GET /admin-api/risk`.
+MEDIUM or HIGH. **The decision is XACML policy (#62 P3)**: the level, the
+score, the signals and the step-ups the authentication already meets are
+environment attributes of the issuance request every session and token
+passes through, and the built-in `role-issuance` policy refuses HIGH and asks
+MEDIUM for a second factor — a security key where a signal is about the
+device — in the same evaluation as the roles. Product mode enforces it;
+development records it and lets the issuance through
+(`risk.enforceInDevelopment`). The rules are changed in the policy, not the
+code: `docs/risk-scoring.md` has them. Every assessment, with the decision it
+met, is listed on Monitoring → Risk and returned by `GET /admin-api/risk`.
 
 ### Third-party datasets: supplied by you, never shipped
 

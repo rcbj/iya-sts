@@ -2989,7 +2989,10 @@ class Saml2Sso {
       subject: { kind: 'user', name: String((session.user || {}).username ||
                                             ''),
                  authenticated: session.authenticated !== false },
-      claims: null
+      claims: null,
+      // The session the assertion rests on, whose risk the issuance policy
+      // reads (#62 P3).
+      session: session
     });
     if (!roleAnswer.allowed) {
       log.info('saml2: the issuance policy refused an assertion for "' +

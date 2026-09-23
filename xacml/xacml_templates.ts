@@ -171,6 +171,50 @@ const ISSUANCE_ATTRIBUTE = {
 };
 
 // ---------------------------------------------------------------------------
+// THE ATTRIBUTE VOCABULARY OF A RISK DECISION (#62 P3, 2026-09-22).
+//
+// rcbj's directive that day: EVERY AUTHORIZATION DECISION IS POLICY, so the
+// rules can be changed in `ou=policies` without a rebuild. `risk/` supplies
+// FACTS about the authentication an issuance rests on; the issuance policy
+// below DECIDES on them, in the same evaluation that decides the roles. The
+// facts are on the ENVIRONMENT category because they are about the
+// circumstances of this request — where it came from, over what, after how
+// many refused passwords — and neither the subject's standing attributes nor
+// the resource's. URI-shaped for `ISSUANCE_ATTRIBUTE`'s reason: a bare name
+// would send the PIP to the directory.
+//
+// **AN ABSENT LEVEL IS NOT A LEVEL.** No assessment — a first sign-in's
+// UNSCORED is still sent, but a door that could not score, a stale dataset or
+// the engine switched off sends nothing — makes every risk rule below
+// inapplicable, so unknown never denies. That is the datasets' rule
+// (`risk/CLAUDE.md`) carried into the decision.
+// ---------------------------------------------------------------------------
+const RISK_ATTRIBUTE = {
+  // LOW, MEDIUM, HIGH or UNSCORED — CAEP's own words, plus the one for a
+  // first sign-in with nothing to compare it to.
+  LEVEL: 'urn:sts:xacml:risk-level',
+  // The score the level was read from: the model's times every evaluator's
+  // factor. A double, for a policy that wants a threshold of its own.
+  SCORE: 'urn:sts:xacml:risk-score',
+  // A BAG: every evaluator that fired (`risk_engine.ts`'s SIGNALS keys —
+  // tor-exit, reputation, operator-deny, operator-allow, automated-client,
+  // new-tls-stack, account-failures, network-failures).
+  SIGNAL: 'urn:sts:xacml:risk-signal',
+  // A BAG: the step-ups the authentication ALREADY meets — `second-factor`
+  // when it carried two (acr `mfa`), `security-key` when one of them was a
+  // WebAuthn key (amr `hwk`). Computed from the session's events at each
+  // decision, so a re-authentication with a key moves it at once.
+  SATISFIED: 'urn:sts:xacml:risk-satisfied',
+  // The obligation every risk rule carries, and its two assignments. It is
+  // how the PEP tells a Deny about RISK from a Deny about ROLES — they are
+  // enforced differently (a step-up, and observe-only in development) — and
+  // what it reads to know which factor to ask for.
+  OBLIGATION: 'urn:sts:xacml:obligation:risk',
+  ACTION: 'urn:sts:xacml:risk-action',
+  FACTOR: 'urn:sts:xacml:risk-step-up-factor'
+};
+
+// ---------------------------------------------------------------------------
 // SMALL MODEL BUILDERS.
 //
 // Named for what they produce rather than for the element they emit, because
@@ -303,14 +347,20 @@ const TEMPLATES: TemplateRow[] = [
     label: 'Role-based issuance (this service\'s own)',
     blurb: 'The policy the embedded PEP asks before this service issues ' +
            'anything: the party being authenticated must hold one of the ' +
-           'roles the application requires.',
+           'roles the application requires, and the authentication must not ' +
+           'be too risky (#62).',
     what: 'Produces ONE Permit rule whose condition is an intersection test ' +
           'between the roles the subject holds and the roles the resource ' +
           'requires — plus the same test against the roles found in a ' +
           'PRESENTED TOKEN\'s claim, and a permit for an application that ' +
-          'requires nothing at all. The combining algorithm is ' +
-          'deny-unless-permit, so anything the rule does not permit is ' +
-          'refused rather than left to the PEP\'s bias. Because the ' +
+          'requires nothing at all — and, with `decideRisk`, three Deny ' +
+          'rules on the risk of the authentication (HIGH refused, MEDIUM ' +
+          'refused until a step-up), each carrying an obligation that says ' +
+          'what to ask for. The combining algorithm is ' +
+          'ordered-deny-overrides with the risk rules and ' +
+          'deny-unless-permit without, so either way anything the role rule ' +
+          'does not permit is refused rather than left to the PEP\'s bias, ' +
+          'and a risk Deny wins over a role Permit. Because the ' +
           'requirement travels in the REQUEST rather than being written into ' +
           'the policy, this one document decides for every application, and ' +
           'narrowing an application is editing its entry rather than editing ' +
@@ -333,13 +383,32 @@ const TEMPLATES: TemplateRow[] = [
               'given EVERYBODY by the registry, so this arm is a belt-and- ' +
               'braces answer for a request that carries no requirement at ' +
               'all — a PEP written by somebody else, or this one after a ' +
-              'future change. Saying no makes such a request a Deny.' }
+              'future change. Saying no makes such a request a Deny.' },
+      { name: 'decideRisk',
+        label: 'Decide on the risk of the authentication (#62)',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, the three risk rules are in the ' +
+              'document: HIGH is refused, and MEDIUM is refused until the ' +
+              'authentication carries the step-up the obligation names. ' +
+              'Saying no builds the roles-only policy this was before risk ' +
+              'scoring decided anything — assessments are still recorded.' },
+      { name: 'keySignals',
+        label: 'Signals that demand a SECURITY KEY at MEDIUM',
+        dflt: 'automated-client, new-tls-stack', type: 'string',
+        help: 'The risk signals, comma separated, that are about the DEVICE ' +
+              'or the TLS client rather than the network. At MEDIUM with ' +
+              'one of them, a second factor is not enough: an attacker ' +
+              'relaying a person\'s one-time code from another machine ' +
+              'passes a code, and cannot pass a WebAuthn ceremony bound to ' +
+              'this origin. Empty makes every MEDIUM a second-factor step-up.' }
     ],
     build: function (answers, options) {
       log.debug('Entering buildRoleIssuance().');
       const given = answers || {};
       const useTokenRoles = B.yes(given.allowTokenRoles, true);
       const permitEmpty = B.yes(given.permitWhenNothingRequired, true);
+      const decideRisk = B.yes(given.decideRisk, true);
+      const keySignals = B.listOf(given.keySignals);
 
       // THE INTERSECTION TEST, and it is a HIGHER-ORDER function because that
       // is the only way XACML expresses "do these two bags share a member".
@@ -379,7 +448,93 @@ const TEMPLATES: TemplateRow[] = [
       const condition = arms.length === 1 ? arms[0]
         : B.apply(F1 + 'or', arms);
 
-      log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s).');
+      // -------------------------------------------------------------------
+      // THE RISK RULES (#62 P3, 2026-09-22). Deny rules, each carrying the
+      // `RISK_ATTRIBUTE.OBLIGATION` that says refuse or step up and with
+      // what, and MUTUALLY EXCLUSIVE by construction — HIGH, MEDIUM with a
+      // key signal, MEDIUM without one — so a Deny carries exactly one
+      // instruction. Under ordered-deny-overrides a risk Deny beats the role
+      // Permit, and a request no rule speaks to is still refused, as it was
+      // under deny-unless-permit: NotApplicable is not a Permit to the PEP.
+      // -------------------------------------------------------------------
+      const env = model.CATEGORY.ENVIRONMENT;
+      const levelIs = function (level: string): any {
+        log.debug("Entering levelIs().");
+        log.debug("Leaving levelIs().");
+        return B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, level),
+          B.designator(env, RISK_ATTRIBUTE.LEVEL, TYPE.STRING)]);
+      };
+      const satisfied = function (factor: string): any {
+        log.debug("Entering satisfied().");
+        log.debug("Leaving satisfied().");
+        return B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, factor),
+          B.designator(env, RISK_ATTRIBUTE.SATISFIED, TYPE.STRING)]);
+      };
+      const obligation = function (action: string, factor: string): any {
+        log.debug("Entering obligation().");
+        const assignments = [{ attributeId: RISK_ATTRIBUTE.ACTION,
+          category: null, issuer: null,
+          expression: B.value(TYPE.STRING, action) }];
+        if (factor) {
+          assignments.push({ attributeId: RISK_ATTRIBUTE.FACTOR,
+            category: null, issuer: null,
+            expression: B.value(TYPE.STRING, factor) });
+        }
+        log.debug("Leaving obligation().");
+        return [{ id: RISK_ATTRIBUTE.OBLIGATION, on: model.EFFECT.DENY,
+                  assignments: assignments }];
+      };
+      const keySignal = keySignals.length
+        ? B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(env, RISK_ATTRIBUTE.SIGNAL, TYPE.STRING),
+          B.apply(F1 + 'string-bag', keySignals.map(function (one) {
+            return B.value(TYPE.STRING, one);
+          }))])
+        : null;
+      const riskRules: any[] = [];
+      if (decideRisk) {
+        riskRules.push({
+          id: options.idBase + ':rule:risk-high',
+          effect: model.EFFECT.DENY,
+          description: 'Refuse an authentication whose risk is HIGH, ' +
+                       'whatever roles the subject holds and however many ' +
+                       'factors it presented.',
+          target: null, condition: levelIs('HIGH'),
+          obligations: obligation('refuse', ''), advice: []
+        });
+        if (keySignal) {
+          riskRules.push({
+            id: options.idBase + ':rule:risk-medium-key',
+            effect: model.EFFECT.DENY,
+            description: 'At MEDIUM, with a signal about the device or the ' +
+                         'TLS client, refuse until the authentication used ' +
+                         'a SECURITY KEY — the obligation asks for one.',
+            target: null,
+            condition: B.apply(F1 + 'and', [levelIs('MEDIUM'), keySignal,
+              B.apply(F1 + 'not', [satisfied('security-key')])]),
+            obligations: obligation('step-up', 'security-key'), advice: []
+          });
+        }
+        const secondFactor = [levelIs('MEDIUM'),
+          B.apply(F1 + 'not', [satisfied('second-factor')])];
+        if (keySignal) {
+          secondFactor.push(B.apply(F1 + 'not', [keySignal]));
+        }
+        riskRules.push({
+          id: options.idBase + ':rule:risk-medium-second-factor',
+          effect: model.EFFECT.DENY,
+          description: 'At MEDIUM, refuse until the authentication carried ' +
+                       'a SECOND FACTOR — the obligation asks for one.',
+          target: null, condition: B.apply(F1 + 'and', secondFactor),
+          obligations: obligation('step-up', 'second-factor'), advice: []
+        });
+      }
+
+      log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s), ' +
+                riskRules.length + ' risk rule(s).');
       return {
         kind: 'Policy',
         id: options.idBase,
@@ -397,10 +552,22 @@ const TEMPLATES: TemplateRow[] = [
                      (permitEmpty
                         ? ', or when the application requires nothing at all'
                         : '') +
-                     '. Everything else is denied, because the combining ' +
-                     'algorithm is deny-unless-permit and an issuance ' +
-                     'decision must not depend on a PEP\'s bias.',
-        combiningAlgId: model.RULE_ALG.DENY_UNLESS_PERMIT,
+                     '. Everything else is denied: an issuance decision ' +
+                     'must not depend on a PEP\'s bias.' +
+                     (decideRisk
+                        ? ' AND IT DECIDES ON RISK (#62): an authentication ' +
+                          'whose risk is HIGH is refused, and one at MEDIUM ' +
+                          'is refused until it carries the step-up the risk ' +
+                          'obligation names' + (keySignals.length
+                            ? ' — a security key where a signal is about the ' +
+                              'device or TLS client (' + keySignals.join(', ') +
+                              '), a second factor otherwise'
+                            : ' — a second factor') + '. The risk rules deny ' +
+                          'and override the role rule; an authentication ' +
+                          'with no assessment is decided on roles alone.'
+                        : '') ,
+        combiningAlgId: decideRisk ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
+                                   : model.RULE_ALG.DENY_UNLESS_PERMIT,
         // NO TARGET, and that is deliberate rather than an omission: this
         // document is evaluated by ONE caller that only ever asks about an
         // issuance, so a target restating that could only ever refuse a
@@ -409,7 +576,7 @@ const TEMPLATES: TemplateRow[] = [
         // explain.
         target: null,
         variables: {},
-        rules: [{
+        rules: riskRules.concat([{
           id: options.idBase + ':rule:holds-a-required-role',
           effect: model.EFFECT.PERMIT,
           description: 'Permit when the roles the subject holds and the ' +
@@ -417,7 +584,7 @@ const TEMPLATES: TemplateRow[] = [
           target: null,
           condition: condition,
           obligations: [], advice: []
-        }],
+        }]),
         obligations: [], advice: []
       };
     }
@@ -992,6 +1159,7 @@ const TEMPLATES: TemplateRow[] = [
 
 class XacmlTemplates {
   static readonly ISSUANCE_ATTRIBUTE = ISSUANCE_ATTRIBUTE;
+  static readonly RISK_ATTRIBUTE = RISK_ATTRIBUTE;
   static readonly TEMPLATES = TEMPLATES;
 
   constructor(private readonly deps: XacmlTemplatesDeps) {
@@ -1103,6 +1271,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   PolicyBuilders: PolicyBuilders,
   ISSUANCE_ATTRIBUTE: XacmlTemplates.ISSUANCE_ATTRIBUTE,
+  RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
   TEMPLATES: XacmlTemplates.TEMPLATES,
   lookup: slot.forward('lookup'),
   build: slot.forward('build'),

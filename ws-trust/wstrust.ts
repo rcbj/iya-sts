@@ -1555,7 +1555,51 @@ class WsTrust {
     log.debug("Leaving the STS description endpoint.");
   }
 
+  // -------------------------------------------------------------------------
+  // THE PERSON'S RISK STANDING, READ BEFORE THE EXCHANGE (#62 P3). An RST
+  // rests on no session, so the issuance policy's risk facts are the
+  // person's standing — and `handleRst()` asks the gate synchronously, so the
+  // standing is read from the store HERE, first, for the name the request
+  // CLAIMS (a UsernameToken's Username). Nothing is authenticated by it and
+  // nothing is decided: a name that turns out not to authenticate simply
+  // left a standing in this process's cache. Never rejects; a store that
+  // cannot answer leaves the decision to roles alone.
+  // -------------------------------------------------------------------------
   private stsEndpoint(req, res) {
+    const { log, validation, textByLocal, subjectForName } = this.deps;
+    log.debug("Entering WsTrust.stsEndpoint().");
+    const self = this;
+    let claimed = '';
+    const read = validation.parseXml(req.body || '', 'request');
+    if (read.ok) {
+      claimed = textByLocal(read.value, 'Username');
+    }
+    let preload: Promise<unknown> = Promise.resolve(null);
+    if (claimed) {
+      try {
+        const sub = String(subjectForName(claimed) || '');
+        preload = sub ? require('../risk/risk_engine').loadStanding(
+          require('../common/realms').currentId(), claimed, sub)
+          : preload;
+      } catch (e) {
+        log.debug("Caught in WsTrust.stsEndpoint(): " +
+                  ((e && e.message) || e));
+        // No risk engine in this process: nothing to read, and the roles
+        // decide.
+        preload = Promise.resolve(null);
+      }
+    }
+    log.debug("Leaving WsTrust.stsEndpoint().");
+    return preload.then(function (): unknown {
+      return self.stsEndpointNow(req, res);
+    }, function (e: any): unknown {
+      log.debug("Caught in WsTrust.stsEndpoint(): " + ((e && e.message) || e));
+      // loadStanding() never rejects; this is its belt and braces.
+      return self.stsEndpointNow(req, res);
+    });
+  }
+
+  private stsEndpointNow(req, res) {
     const { authn, errorCodes, log } = this.deps;
     log.debug("Entering the WS-Trust STS endpoint.");
     const contentType = req.headers['content-type'] || '';

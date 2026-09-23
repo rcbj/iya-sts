@@ -789,6 +789,9 @@ var config = {
     recordFailures: true,          // Record attributable failures
     failureRetentionDays: 30,      // Keep failures (days)
     assessSignIns: true,           // Assess every sign-in
+    enforceInDevelopment: false,   // Enforce risk decisions in development mode
+    standingValidMinutes: 720,     // A person's standing answers for (minutes)
+    standingCacheSize: 20000,      // People whose standing each process holds
     mediumScorePercent: 100,       // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,        // HIGH from (percent of a score of 1)
     assessmentRetentionDays: 90,   // Keep assessments (days)
