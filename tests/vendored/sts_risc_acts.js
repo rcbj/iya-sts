@@ -65,7 +65,13 @@ const BOB = names.usernameFor("r146-bob");
 const DAVE = names.usernameFor("r146-dave");
 const EVE = names.usernameFor("r146-eve");
 const SHARED = "recycled-" + STAMP.toLowerCase() + "@risc146.test";
-const AGENT = "sts_risc_acts/1.0";
+// A desktop Chrome string, with this job's own name on the end so the
+// fingerprint it hashes is still its own: isbot reads the bare name as
+// an automated client, and product mode refuses a first sign-in from
+// one on risk (#62).
+const AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
+  "(KHTML, like " +
+  "Gecko) Chrome/140.0.0.0 Safari/537.36 sts_risc_acts/1.0";
 
 let checks = 0;
 function check(what, fn) {

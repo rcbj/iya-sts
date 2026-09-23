@@ -2920,6 +2920,10 @@ class Authn {
       uaFingerprint: stsCrypto.userAgentFingerprint(
         headers['user-agent'] || ''),
       ja4: hello ? hello.ja4 : '',
+      // What risk compares: the JA4 with the resumption extensions left out
+      // (`tls/client_hello.ts`'s `stack()`), or a resumed connection reads
+      // as a new TLS client.
+      tlsStack: hello ? (hello.stack || hello.ja4) : '',
       device: fp ? stsCrypto.credentialFingerprint('device:' + fp) : '',
       credential: credential
     };
@@ -3243,7 +3247,8 @@ class Authn {
     }
     const now = this.eventContext({ request: req });
     const keyOf = function (c: any): string {
-      return [String(c.uaFingerprint || ''), String(c.ja4 || ''),
+      return [String(c.uaFingerprint || ''),
+              String(c.tlsStack || c.ja4 || ''),
               c.address ? prefixOf(String(c.address)) : ''].join('|');
     };
     const is = keyOf(now);
@@ -3266,7 +3271,8 @@ class Authn {
         moved.push('device');
       }
     }
-    if (String(now.ja4 || '') !== String(last.context.ja4 || '')) {
+    if (String(now.tlsStack || now.ja4 || '') !==
+        String(last.context.tlsStack || last.context.ja4 || '')) {
       moved.push('TLS client');
     }
     if (is.split('|')[2] !== keyOf(last.context).split('|')[2]) {

@@ -9785,6 +9785,23 @@ const SETTINGS = [
     description: 'The score, in hundredths, at which a sign-in is HIGH ' +
                  'risk: 1000 is a score of 10.' },
 
+  { key: 'risk.accountFailureThreshold', group: 'Risk',
+    label: 'Refused passwords for one person that are a signal',
+    env: 'STS_RISK_ACCOUNT_FAILURE_THRESHOLD', type: 'int', dflt: 5, min: 1,
+    max: 1000000, runtime: true,
+    description: 'How many refused passwords for one person in the last ' +
+                 'hour put the account-failures signal on their next ' +
+                 'sign-in.' },
+
+  { key: 'risk.networkFailureThreshold', group: 'Risk',
+    label: 'Refused passwords from one network that are a signal',
+    env: 'STS_RISK_NETWORK_FAILURE_THRESHOLD', type: 'int', dflt: 20, min: 1,
+    max: 1000000, runtime: true,
+    description: 'How many refused passwords from one network (the address ' +
+                 'prefix risk scoring groups by) in the last hour put the ' +
+                 'network-failures signal on every sign-in from it. Every ' +
+                 'person behind one NAT shares this count.' },
+
   // CALIBRATION (#62): the factors an operator sets, and the shares of
   // sign-ins the calibration report suggests thresholds for.
   { key: 'risk.signalFactors', group: 'Risk',
