@@ -11087,7 +11087,7 @@ function publishConnectionsSoon() {
 }
 
 // --- add -------------------------------------------------------------------
-server.add('', function (req, res, next) {
+function ldapAddNow(req, res, next) {
   log.debug('Entering the LDAP add handler.');
   const dn = req.dn.toString();
   // At debug (2026-09-21): one line per entry, and a bulk load is thousands.
@@ -11260,7 +11260,68 @@ server.add('', function (req, res, next) {
   res.end();
   log.debug('Leaving the LDAP add handler. The entry was added.');
   return next();
+}
+
+// ---------------------------------------------------------------------------
+// A PASSWORD WRITTEN OVER LDAP IS SCREENED FIRST (#62 P6): an add or a modify
+// carrying a clear `userPassword` asks Pwned Passwords before the handler
+// runs, so `credentials.preparePassword()` — synchronous, inside a modify that
+// is atomic across its changes — finds the verdict waiting and refuses a
+// breached password as it refuses one the policy does not allow. A value
+// already hashed (`{SCRYPT}`, `$scrypt$`) is not a password anybody typed and
+// is not asked about. The handler runs whatever the screen answered: an
+// unreachable API decides nothing.
+// ---------------------------------------------------------------------------
+function clearPasswordsIn(attributes) {
+  log.debug('Entering clearPasswordsIn().');
+  const out = [];
+  (attributes || []).forEach(function (attr) {
+    if (String((attr && attr.type) || '').toLowerCase() !== 'userpassword') {
+      return;
+    }
+    (attr.values || []).forEach(function (value) {
+      const text = Buffer.isBuffer(value) ? value.toString('utf8')
+                                          : String(value);
+      if (text && !/^\{[A-Za-z0-9-]+\}/.test(text) &&
+          text.indexOf('$scrypt$') !== 0) {
+        out.push(text);
+      }
+    });
+  });
+  log.debug('Leaving clearPasswordsIn(). ' + out.length + '.');
+  return out;
+}
+
+function screenedThen(passwords, run) {
+  log.debug('Entering screenedThen().');
+  let breached = null;
+  try {
+    breached = require('../common/breached_passwords');
+  } catch (e) {
+    log.debug('Caught in screenedThen(): ' + ((e && e.message) || e));
+    // Not loaded in this process: nothing to screen with.
+    breached = null;
+  }
+  if (!breached || !passwords.length || !breached.enabled()) {
+    log.debug('Leaving screenedThen(). Nothing to screen.');
+    return run();
+  }
+  log.debug('Leaving screenedThen(). Screening.');
+  return Promise.all(passwords.map(function (one) {
+    return breached.screen(one);
+  })).then(run, function (e) {
+    log.debug('Caught in screenedThen(): ' + ((e && e.message) || e));
+    // screen() never rejects; this is its belt and braces.
+    return run();
+  });
+}
+
+server.add('', function (req, res, next) {
+  return screenedThen(clearPasswordsIn(req.attributes), function () {
+    return ldapAddNow(req, res, next);
+  });
 });
+
 
 // --- delete ----------------------------------------------------------------
 server.del('', function (req, res, next) {
@@ -11336,7 +11397,7 @@ server.del('', function (req, res, next) {
 });
 
 // --- modify ----------------------------------------------------------------
-server.modify('', function (req, res, next) {
+function ldapModifyNow(req, res, next) {
   log.debug('Entering the LDAP modify handler.');
   const dn = req.dn.toString();
   log.info('ldap: MODIFY ' + dn + ' with ' + req.changes.length +
@@ -11524,7 +11585,19 @@ server.modify('', function (req, res, next) {
   res.end();
   log.debug('Leaving the LDAP modify handler. The changes were applied.');
   return next();
+}
+
+server.modify('', function (req, res, next) {
+  return screenedThen(clearPasswordsIn((req.changes || [])
+    .filter(function (change) {
+      return change.operation !== 'delete';
+    }).map(function (change) {
+      return change.modification;
+    })), function () {
+    return ldapModifyNow(req, res, next);
+  });
 });
+
 
 // --- modifyDN (rename) -----------------------------------------------------
 server.modifyDN('', function (req, res, next) {

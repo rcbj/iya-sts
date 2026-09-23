@@ -5789,6 +5789,10 @@ class AdminActions {
       return refused;
     }
     const password = random ? credentials.generatePassword(who) : typed;
+    // A typed password is screened against Pwned Passwords first (#62 P6).
+    if (!random) {
+      await require('../common/breached_passwords').screen(password);
+    }
     const set = credentials.setPassword(who, password,
                                         random ? { generated: true } : {});
     if (!set.ok) {

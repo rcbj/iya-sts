@@ -104,6 +104,7 @@ function childMain() {
       'krb5.authenticator-replay', 'oauth2.redeemed-codes',
       'oauth2.client-jwks', 'oauth2.request-uri', 'oauth2.signed-metadata',
       'oauth2.used-assertions', 'oid4vci.nonces', 'oid4vci.status-entries',
+      'passwords.breach-ranges', 'passwords.breach-verdicts',
       'oid4vci.status-list-tokens', 'oid4vp.sign-in-register',
       'oid4vp.status-lists-fetched', 'oid4vp.transactions',
       'revocation.ca-certificates', 'revocation.crl', 'revocation.failures',
@@ -114,7 +115,7 @@ function childMain() {
       return !/^test\./.test(n);
     });
     note(JSON.stringify(ejecting) === JSON.stringify(expected),
-         'B1. exactly the twenty-five stores whose entries expire eject them',
+         'B1. exactly the twenty-seven stores whose entries expire eject them',
          JSON.stringify({ missing: expected.filter(function (n) {
            return ejecting.indexOf(n) < 0;
          }), extra: ejecting.filter(function (n) {

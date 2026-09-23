@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3070** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3087** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -62,8 +62,8 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 200
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 487
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 204
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 494
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 155
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 119
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 123
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 101
@@ -81,7 +81,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 181
 * [Management API (`STS-API`)](#sts-api) — 73
-* [User portal (`STS-PORTAL`)](#sts-portal) — 60
+* [User portal (`STS-PORTAL`)](#sts-portal) — 62
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 123
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -1082,6 +1082,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0219` | An app password was not revoked: the person holds none with that id. | HTTP 400 (API), or 404 on the portal, where somebody else's is answered as one that does not exist |
 | `STS-AUTHN-0220` | The app passwords on a person's entry could not be read or written: the directory threw, refused the write, or holds a value this service did not write. A value it cannot read is refused rather than compared. | HTTP 400 (API), the page redrawn, or the door's wrong-password answer |
 | `STS-AUTHN-0221` | An app password was not made: the name is not a person in this realm's directory. An application authenticates with its own client credentials, and an app password is a person's. | HTTP 400 (API) |
+| `STS-AUTHN-0222` | A password being set was refused because it has appeared in a data breach: Pwned Passwords lists it (#62 P6, product mode). | NIST SP 800-63B section 3.1.1.2 |
+| `STS-AUTHN-0223` | A password was set in product mode by a door that did not screen it against Pwned Passwords first, so no breach verdict was there to read. The door is named in the line; it needs a screen(). | — |
+| `STS-AUTHN-0224` | The Pwned Passwords range API did not answer (off, unreachable, refused by the outbound rules, or too slow); a password was set unscreened. | — |
+| `STS-AUTHN-0225` | The browser fingerprint script was asked for while risk.fingerprinting is off in the realm; nothing draws a page that uses it, so it is not served (#62 P6). | HTTP 404 |
 
 ## STS-OAUTH
 
@@ -1578,6 +1582,13 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0605` | The RP-Initiated Logout endpoint failed while answering (#124). | HTTP 500 (an HTML page) |
 | `STS-OAUTH-0606` | response_type none was combined with another response type; it asks for nothing to be issued (Multiple Response Type Encoding Practices section 4, #125). | redirect {error: unsupported_response_type} |
 | `STS-OAUTH-0607` | response_mode=query was asked for a response type that returns a token or an ID Token, which section 2.1 of Multiple Response Type Encoding Practices forbids (#125). The refusal goes in the fragment. | redirect {error: invalid_request} |
+| `STS-OAUTH-0608` | An RFC 7009 revocation request named no token: section 2.1 makes the token parameter REQUIRED (#102). In both modes. | invalid_request (HTTP 400) |
+| `STS-OAUTH-0609` | An RFC 7009 revocation request from a registered client did not authenticate: in product mode a confidential client presented no credential, or (in either mode) a credential that did not verify, or an entry that declares no method presented none (#102). | invalid_client (HTTP 401, RFC 7009 section 2.1) |
+| `STS-OAUTH-0610` | Product mode: an RFC 7009 revocation request named no client this realm has registered — no client_id at all, or one with no entry — so there is no client to validate (#102). | invalid_client (HTTP 401, RFC 7009 section 2.1) |
+| `STS-OAUTH-0611` | An RFC 7009 revocation request presented a token this realm signed that is neither an access token nor a refresh token — an ID Token, a logout token, a SET — which this server does not revoke (#102). | unsupported_token_type (HTTP 400, RFC 7009 section 2.2.1) |
+| `STS-OAUTH-0612` | An RFC 7009 revocation request from an authenticated or identified client presented a token issued to another client. Refused and nothing revoked; the audit row names both clients (#102). | invalid_grant (HTTP 400, RFC 7009 section 2.1 and RFC 6749 section 5.2) |
+| `STS-OAUTH-0613` | A client authenticating at the revocation endpoint declares a token_endpoint_auth_method the selected authorization server does not list in revocation_endpoint_auth_methods_supported (#102). | invalid_client (HTTP 401) |
+| `STS-OAUTH-0614` | The revocation endpoint failed with an unexpected error outside every refusal it makes (#102). | server_error (HTTP 500) |
 
 ## STS-SAML
 
@@ -2279,6 +2290,10 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0117` | A caller on the SPIRE Server API's Unix socket was not trusted as the local entity, in a product realm, because the socket was not verified private: it was not made 0600 (STS-SPIFFE-0010), the connection came before it was, or the socket or its directory has a group or other bit (#104). | gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, which it may call only as another entity |
 | `STS-SPIFFE-0118` | A caller on the SPIRE Server API's Unix socket was not trusted as the local entity, in a product realm, because the kernel says it runs as a uid that is not this service's own (#104). | gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, which it may call only as another entity |
 | `STS-SPIFFE-0119` | A caller on the SPIRE Server API's Unix socket was not trusted as the local entity, in a product realm, because its kernel credentials could not be read — the native module is not built, or SO_PEERCRED failed (#104). | gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, which it may call only as another entity |
+| `STS-SPIFFE-0120` | The Workload API was not served over TCP in a product realm, because spiffe.workloadTcpSourceAuthenticated does not declare that the network authenticates source addresses (SPIFFE Workload Endpoint section 3) — the port was not bound, or a realm switched to product with it bound refused the call (#166). | nothing listening on the port; gRPC UNAVAILABLE on a port already bound |
+| `STS-SPIFFE-0121` | The Workload API was not served over TCP in a product realm: spiffe.workloadTcpSourceAuthenticated is on but spiffe.grpcHost is a wildcard address, and the declaration covers one named network (#166). | nothing listening on the port; gRPC UNAVAILABLE on a port already bound |
+| `STS-SPIFFE-0122` | A SPIFFE registration entry was refused in a product realm because it selects nothing that identifies a workload — no selector, or only transport: and endpoint: ones — at the console, /admin-api or the SPIRE Server API (#166). | gRPC INVALID_ARGUMENT for the item in BatchCreateEntry and BatchUpdateEntry; a refused console or management API action |
+| `STS-SPIFFE-0123` | A SPIFFE registration entry already in the registry that selects nothing identifying a workload answered no Workload API caller, because its realm is in product mode; said once per entry per process (#166). | the entry is left out of the answer; the caller may get an empty SVID list |
 
 ## STS-TLS
 
@@ -3310,6 +3325,8 @@ Raised from: portal/.
 | `STS-PORTAL-0080` | A keytab download on /portal/kerberos was refused because the password typed is not the person's current one. | HTTP 400 page |
 | `STS-PORTAL-0081` | A keytab download on /portal/kerberos was refused by the Kerberos register after the password verified; its own STS-KRB code is on the audit row. | HTTP 400 page |
 | `STS-PORTAL-0082` | A POST to /portal/kerberos named an action the page does not have. | HTTP 400 page |
+| `STS-PORTAL-0083` | A POST to /portal/sign-ins was refused: its CSRF token did not match the session. | HTTP 403 page |
+| `STS-PORTAL-0084` | A POST to /portal/sign-ins named a sign-in that is not the person's own, is too old, or has already been answered (#62 P6). | HTTP 400 page |
 
 ## STS-LOGOUT
 

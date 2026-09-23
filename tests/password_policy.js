@@ -138,7 +138,10 @@ function checkThePolicy(t, who) {
   t.check(attributeOf(who, 'pwdChangedTime').length === 1,
           'and pwdChangedTime is stamped');
 
-  withSettings({ 'global.mode': 'product' }, function () {
+  // The Pwned Passwords screen off: this file is about the policy, and the
+  // screen is tests/breached_passwords.js's (#62 P6).
+  withSettings({ 'global.mode': 'product', 'risk.breachCheck': 'off' },
+               function () {
     // ---------------------------------------------------------------------
     t.log.info('=== 1b. product mode: the composition rules ===');
     const short = credentials.setPassword(who, 'x');

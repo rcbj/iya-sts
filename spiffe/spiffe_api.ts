@@ -723,10 +723,12 @@ class SpiffeApi {
             // Per item, never the whole call. See the header: a batch of fifty
             // that fails because the thirteenth had a typo is how a client
             // loses forty-nine entries it correctly submitted.
-            return { status: self.refusedItem('STS-SPIFFE-0047',
-                                              status.INVALID_ARGUMENT,
-                                              created.errors.join(' '),
-                                              record.id),
+            // An entry selecting nothing that identifies a workload, in a
+            // product realm, carries its own code, STS-SPIFFE-0122 (#166).
+            return { status: self.refusedItem(
+                       errorCodes.codeOf(created) || 'STS-SPIFFE-0047',
+                       status.INVALID_ARGUMENT, created.errors.join(' '),
+                       record.id),
                      entry: null };
           }
           return { status: self.okStatus(),
@@ -763,7 +765,8 @@ class SpiffeApi {
             const missing = /No registration entry has the id/.test(
                 updated.errors[0] || '');
             return { status: self.refusedItem(
-              missing ? 'STS-SPIFFE-0046' : 'STS-SPIFFE-0049',
+              missing ? 'STS-SPIFFE-0046'
+                      : (errorCodes.codeOf(updated) || 'STS-SPIFFE-0049'),
               missing ? status.NOT_FOUND : status.INVALID_ARGUMENT,
               updated.errors.join(' '), id), entry: null };
           }

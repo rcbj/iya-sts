@@ -4061,6 +4061,25 @@ const CODES = [
       'this realm\'s directory. An application authenticates with its own ' +
       'client credentials, and an app password is a person\'s.',
     spec: 'HTTP 400 (API)' },
+  { code: 'STS-AUTHN-0222',
+    summary: 'A password being set was refused because it has appeared in a ' +
+      'data breach: Pwned Passwords lists it (#62 P6, product mode).',
+    spec: 'NIST SP 800-63B section 3.1.1.2' },
+  { code: 'STS-AUTHN-0223',
+    summary: 'A password was set in product mode by a door that did not ' +
+      'screen it against Pwned Passwords first, so no breach verdict was ' +
+      'there to read. The door is named in the line; it needs a screen().',
+    spec: '' },
+  { code: 'STS-AUTHN-0224',
+    summary: 'The Pwned Passwords range API did not answer (off, ' +
+      'unreachable, refused by the outbound rules, or too slow); a password ' +
+      'was set unscreened.',
+    spec: '' },
+  { code: 'STS-AUTHN-0225',
+    summary: 'The browser fingerprint script was asked for while ' +
+      'risk.fingerprinting is off in the realm; nothing draws a page that ' +
+      'uses it, so it is not served (#62 P6).',
+    spec: 'HTTP 404' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -6263,6 +6282,43 @@ const CODES = [
       'Response Type Encoding Practices forbids (#125). The refusal goes in ' +
       'the fragment.',
     spec: 'redirect {error: invalid_request}' },
+  { code: 'STS-OAUTH-0608',
+    summary: 'An RFC 7009 revocation request named no token: section 2.1 ' +
+      'makes the token parameter REQUIRED (#102). In both modes.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0609',
+    summary: 'An RFC 7009 revocation request from a registered client did ' +
+      'not authenticate: in product mode a confidential client presented no ' +
+      'credential, or (in either mode) a credential that did not verify, ' +
+      'or an entry that declares no method presented none (#102).',
+    spec: 'invalid_client (HTTP 401, RFC 7009 section 2.1)' },
+  { code: 'STS-OAUTH-0610',
+    summary: 'Product mode: an RFC 7009 revocation request named no client ' +
+      'this realm has registered — no client_id at all, or one with no ' +
+      'entry — so there is no client to validate (#102).',
+    spec: 'invalid_client (HTTP 401, RFC 7009 section 2.1)' },
+  { code: 'STS-OAUTH-0611',
+    summary: 'An RFC 7009 revocation request presented a token this realm ' +
+      'signed that is neither an access token nor a refresh token — an ID ' +
+      'Token, a logout token, a SET — which this server does not revoke ' +
+      '(#102).',
+    spec: 'unsupported_token_type (HTTP 400, RFC 7009 section 2.2.1)' },
+  { code: 'STS-OAUTH-0612',
+    summary: 'An RFC 7009 revocation request from an authenticated or ' +
+      'identified client presented a token issued to another client. ' +
+      'Refused and nothing revoked; the audit row names both clients ' +
+      '(#102).',
+    spec: 'invalid_grant (HTTP 400, RFC 7009 section 2.1 and RFC 6749 ' +
+      'section 5.2)' },
+  { code: 'STS-OAUTH-0613',
+    summary: 'A client authenticating at the revocation endpoint declares a ' +
+      'token_endpoint_auth_method the selected authorization server does ' +
+      'not list in revocation_endpoint_auth_methods_supported (#102).',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0614',
+    summary: 'The revocation endpoint failed with an unexpected error ' +
+      'outside every refusal it makes (#102).',
+    spec: 'server_error (HTTP 500)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -9005,6 +9061,34 @@ const CODES = [
       'SO_PEERCRED failed (#104).',
     spec: 'gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, ' +
       'which it may call only as another entity' },
+  { code: 'STS-SPIFFE-0120',
+    summary: 'The Workload API was not served over TCP in a product realm, ' +
+      'because spiffe.workloadTcpSourceAuthenticated does not declare that ' +
+      'the network authenticates source addresses (SPIFFE Workload Endpoint ' +
+      'section 3) — the port was not bound, or a realm switched to product ' +
+      'with it bound refused the call (#166).',
+    spec: 'nothing listening on the port; gRPC UNAVAILABLE on a port already ' +
+      'bound' },
+  { code: 'STS-SPIFFE-0121',
+    summary: 'The Workload API was not served over TCP in a product realm: ' +
+      'spiffe.workloadTcpSourceAuthenticated is on but spiffe.grpcHost is a ' +
+      'wildcard address, and the declaration covers one named network (#166).',
+    spec: 'nothing listening on the port; gRPC UNAVAILABLE on a port already ' +
+      'bound' },
+  { code: 'STS-SPIFFE-0122',
+    summary: 'A SPIFFE registration entry was refused in a product realm ' +
+      'because it selects nothing that identifies a workload — no selector, ' +
+      'or only transport: and endpoint: ones — at the console, /admin-api or ' +
+      'the SPIRE Server API (#166).',
+    spec: 'gRPC INVALID_ARGUMENT for the item in BatchCreateEntry and ' +
+      'BatchUpdateEntry; a refused console or management API action' },
+  { code: 'STS-SPIFFE-0123',
+    summary: 'A SPIFFE registration entry already in the registry that ' +
+      'selects nothing identifying a workload answered no Workload API ' +
+      'caller, because its realm is in product mode; said once per entry ' +
+      'per process (#166).',
+    spec: 'the entry is left out of the answer; the caller may get an empty ' +
+      'SVID list' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
@@ -13189,6 +13273,14 @@ const CODES = [
   { code: 'STS-PORTAL-0082',
     summary: 'A POST to /portal/kerberos named an action the page does not ' +
       'have.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0083',
+    summary: 'A POST to /portal/sign-ins was refused: its CSRF token did not ' +
+      'match the session.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-PORTAL-0084',
+    summary: 'A POST to /portal/sign-ins named a sign-in that is not the ' +
+      'person\'s own, is too old, or has already been answered (#62 P6).',
     spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +

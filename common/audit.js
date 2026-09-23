@@ -595,6 +595,13 @@ const ACTIONS = [
 
   { action: 'protocol.call', category: 'protocol',
     label: 'A protocol endpoint was called' },
+  // RFC 7009 (#102, 2026-09-22): the funnel's row for /oauth2/revoke says a
+  // request was answered, and cannot say WHICH client revoked WHOSE token —
+  // which is the question an operator reading a revocation, or a refused one,
+  // is asking.
+  { action: 'oauth.token.revoke', category: 'protocol',
+    label: 'A client revoked an OAuth 2.0 token at /oauth2/revoke, or was ' +
+           'refused another client\'s' },
   // A REFUSAL OR FAILURE ON A SOCKET THAT IS NOT HTTP — a KRB-ERROR on port 88,
   // a gRPC status on the SPIRE Server API — or inside an HTTP request where the
   // funnel's own row cannot say which condition it was. It always carries an

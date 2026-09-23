@@ -267,7 +267,7 @@ const SPECS: Spec[] = [
     name: 'SPIFFE Workload API and Workload Endpoint',
     where: 'SPIFFE (CNCF)',
     url: 'https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Workload_API.md',
-    coverage: 'partial, and the gap is the whole of workload attestation. ' +
+    coverage: 'partial, and the gap is attestation of a TCP caller. ' +
               'Five of the seven methods are implemented — FetchX509SVID, ' +
               'FetchX509Bundles, FetchJWTSVID, FetchJWTBundles, ' +
               'ValidateJWTSVID — over a Unix socket and over TCP, with the ' +
@@ -281,16 +281,18 @@ const SPECS: Spec[] = [
               'ASKED FOR AND THERE MUST NOT BE ONE — the Workload Endpoint ' +
               'specification says the endpoint MUST NOT require direct ' +
               'authentication of its clients and that TLS MUST NOT be ' +
-              'required — so what is missing is ATTESTATION rather than ' +
-              'authentication. A caller is identified only by the transport ' +
-              'it arrived on, the endpoint it reached and its peer address, ' +
-              'because node cannot read a Unix socket\'s peer credentials; ' +
-              'those selectors DO decide which registration entries answer ' +
-              '(spiffe.attestWorkloads), and they prove nothing about who is ' +
-              'calling, so any caller that reaches the socket still gets an ' +
-              'identity. The selectors are spelt `transport:`, `endpoint:` ' +
-              'and `peer:` rather than `unix:` so that they cannot be ' +
-              'mistaken for an attestor\'s.' },
+              'required — so what is needed is ATTESTATION. A caller on the ' +
+              'Unix socket is attested from the kernel\'s account of the ' +
+              'connecting process by the unix, docker and k8s workload ' +
+              'attestors (#40). A caller over TCP has no process to ask and ' +
+              'is identified by its transport, endpoint and source address ' +
+              '(`transport:`, `endpoint:`, `peer:`), so section 3 allows TCP ' +
+              'only where the network authenticates the source address: ' +
+              'PRODUCT mode does not bind the TCP port unless ' +
+              'spiffe.workloadTcpSourceAuthenticated declares that, and not ' +
+              'on a wildcard address, and refuses a registration entry that ' +
+              'selects nothing but the transport and endpoint (#166). ' +
+              'Development serves TCP to anybody who reaches it.' },
   { id: 'spire-server-api', name: 'SPIRE Server API',
     where: 'SPIRE (CNCF) — spire-api-sdk',
     url: 'https://github.com/spiffe/spire-api-sdk',
@@ -1342,8 +1344,15 @@ const SPECS: Spec[] = [
               'server.' },
   { id: 'rfc7009', name: 'RFC 7009 — Token Revocation',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7009',
-    coverage: 'full: revocation takes effect — a revoked token is reported ' +
-              'inactive by introspection.' },
+    coverage: 'full: section 2.1 in product mode — a confidential client ' +
+              'authenticates, a public one names its registered client_id, ' +
+              'and a client revokes only its own tokens (invalid_grant ' +
+              'otherwise); development authenticates only a caller that ' +
+              'presents a credential. Access and refresh tokens are ' +
+              'revocable, anything else is unsupported_token_type; an ' +
+              'unknown token_type_hint is ignored; a refresh token takes ' +
+              'its whole grant, access tokens included; a revoked token is ' +
+              'reported inactive by introspection (#102).' },
   { id: 'rfc7515', name: 'RFC 7515/7516/7517/7518 — JWS, JWE, JWK, JWA',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7515',
     coverage: 'partial: RS256 signatures throughout; RSA-OAEP-256 with ' +
@@ -1664,7 +1673,12 @@ const SPECS: Spec[] = [
               'blocked the button is the whole mechanism. It was ADVERTISED ' +
               'AND MISSING for a long time — every request got a 302 ' +
               'whatever it asked for — which is why the member was removed ' +
-              'from the metadata until this existed.' },
+              'from the metadata until this existed. Where RFC 9700 section ' +
+              '4.11.2 shows an error instead of redirecting it (nobody ' +
+              'signed in), the way on for a form_post request is a FORM ' +
+              'POSTing the same fields — and form_post.jwt\'s one response ' +
+              'field — with a button and no script, never a GET link ' +
+              'carrying them in the URL (#126).' },
   { id: 'rfc7521', name: 'RFC 7521 — Assertion Framework for OAuth 2.0 ' +
                         'Client Authentication and Authorization Grants',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7521',
@@ -1870,7 +1884,8 @@ const SPECS: Spec[] = [
               'token keeping its scope are true in every mode. NOT covered: ' +
               'the OpenID4VCI pre-authorized code grant and the assertion ' +
               'grants are exempt from the registered-client rule, and ' +
-              'introspection and revocation still authenticate no client. ' +
+              'introspection (JSON) and revocation authenticate their ' +
+              'caller by global.mode, not by this mode (#102). ' +
               'GET /oauth2/oauth21 lists every requirement.' },
   { id: 'fapi1-baseline', name: 'FAPI 1.0 Part 1: Baseline Security ' +
                                'Profile (final)',
@@ -3847,11 +3862,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'SOCKETS, all four: this page is built by walking the Express ' +
           'router and cannot see one, so their state is reported by GET ' +
           '/spiffe and on /admin/spiffe rather than here. MOST OF THAT PAGE ' +
-          'IS WHAT IS AND IS NOT CHECKED — no workload attestation (node ' +
-          'attestation is verified or refused since 2026-09-21, #40; a ' +
-          'Workload API caller is identified by its ' +
-          'transport, endpoint and peer address and nothing else, because ' +
-          'node cannot read a socket\'s peer credentials), no revocation ' +
+          'IS WHAT IS AND IS NOT CHECKED — node attestation verified or ' +
+          'refused and the Unix socket\'s workload attested (#40), a TCP ' +
+          'caller identified by its transport, endpoint and source address ' +
+          'alone and therefore served in product only on a network ' +
+          'declared to authenticate source addresses (#166), no revocation ' +
           'anywhere — the directory does record a `spiffeCredentialStatus` ' +
           'on an identity whose last registration entry was deleted or whose ' +
           'agent was banned or deleted, and that is not one: nothing reads ' +
@@ -5013,6 +5028,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'so the keytab holds that key and the page says so. The identity ' +
           'is the session\'s; nothing on the form names a person. A real ' +
           'submit button and no script.' },
+  { path: '/portal/sign-ins', group: 'User portal',
+    name: 'Your recent sign-ins, and whether each was you',
+    specs: [],
+    effect: 'records "this was me" or "this wasn\'t me" on one of the ' +
+            'signed-in person\'s own assessed sign-ins; "not me" puts their ' +
+            'risk at HIGH, which ends everything they hold',
+    what: 'NON-SPEC page (#62 P6). The signed-in person\'s own risk ' +
+          'assessments of the last thirty days — when, from where (the city, ' +
+          'country and network the datasets named), with what browser and ' +
+          'system, through which door, at what level — each with two ' +
+          'buttons until answered. "This was me" is recorded for ' +
+          'calibration and lowers the person\'s standing to LOW only when ' +
+          'said from another, low-risk session. "This wasn\'t me" puts the ' +
+          'standing at HIGH (reported-not-me), which the risk-response ' +
+          'policy answers — every session ended, RISC told the credential is ' +
+          'compromised. The identity is the session\'s; the assessment ' +
+          'named must be the person\'s own. Real submit buttons and no ' +
+          'script.' },
   { path: '/portal/signing-key', group: 'User portal',
     name: 'Your own RFC 7523 signing key',
     specs: ['rfc7521', 'rfc7523', 'rfc5280'],
@@ -8661,6 +8694,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'page has NO SCRIPT and is served under the service-wide ' +
           'script-src \'none\' — a person reads digits and types them, so ' +
           'the exception the security-key page needs does not apply here.' },
+  { path: '/authn/fingerprint.js', group: 'Authentication',
+    name: 'Browser fingerprint script (optional)',
+    specs: [],
+    what: 'NON-SPEC (#62 P6). Served only while risk.fingerprinting is on in ' +
+          'the realm — 404 otherwise — and then the sign-in screen is the ' +
+          'ninth scripted page: FingerprintJS (MIT, v5; it runs in the ' +
+          'browser and sends nothing, its usage ping turned off) puts a ' +
+          'visitorId in a hidden field, and the service keeps only a keyed ' +
+          'digest of it, scored as a device this person never used. The ' +
+          'form works without it. Off by default: it is personal data, and ' +
+          'turning it on is the operator\'s decision, after the privacy ' +
+          'impact assessment the risk-scoring page describes.' },
   { path: '/authn/webauthn.js', group: 'Authentication', name: 'WebAuthn ' +
       'ceremony script',
     specs: ['webauthn'],
@@ -9026,7 +9071,11 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oauth2/revoke', group: 'OAuth 2.0 / OIDC', name: 'Revocation ' +
       'endpoint',
     specs: ['rfc7009'], what: 'Revocation that takes effect: introspection ' +
-                              'then reports inactive.' },
+                              'then reports inactive. The client ' +
+                              'authenticates (in development only when it ' +
+                              'presents a credential), revokes only its ' +
+                              'own tokens, and a refresh token takes its ' +
+                              'grant with it.' },
   { path: '/oauth2/register', group: 'OAuth 2.0 / OIDC', name: 'Dynamic ' +
       'client registration',
     specs: ['rfc7591', 'rfc9700', 'oidc-registration'],

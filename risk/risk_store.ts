@@ -59,7 +59,8 @@ const RISK_GROUP = ['riskListDatasets', 'riskListVersions', 'riskBeginVersion',
                     'riskRecordAcceptance', 'riskListAcceptances',
                     // #62 P3 and P4.
                     'riskSettleAssessment', 'riskSubjectOf',
-                    'riskClaimAction', 'riskLookupFido'];
+                    'riskClaimAction', 'riskLookupFido',
+                    'riskSetFeedback'];
 
 // The most assessments one realm holds in memory, as for failures.
 const MAX_MEMORY_ASSESSMENTS = 50000;
@@ -917,6 +918,31 @@ class RiskStore {
     return Promise.resolve(true);
   }
 
+  // What the person said about one of their own sign-ins (#62 P6): only an
+  // assessment of that subject, and only once. True when it was recorded.
+  setFeedback(realm: string, id: string, subject: string, feedback: string,
+              at: number, sealing: boolean): Promise<boolean> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.setFeedback(). " + id);
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.setFeedback(). Database.");
+      return Promise.resolve(this.driver.riskSetFeedback(realm, id, subject,
+                                                          feedback, at));
+    }
+    const held = this.assessments.get(String(realm || '')) || [];
+    for (let i = held.length - 1; i >= 0; i--) {
+      if (held[i].id === id && held[i].subject === subject &&
+          !held[i].feedback) {
+        held[i].feedback = feedback;
+        held[i].feedbackAt = at;
+        log.debug("Leaving RiskStore.setFeedback(). Memory.");
+        return Promise.resolve(true);
+      }
+    }
+    log.debug("Leaving RiskStore.setFeedback(). Not recorded.");
+    return Promise.resolve(false);
+  }
+
   // One person's standing, or null.
   subjectOf(realm: string, subject: string,
             sealing: boolean): Promise<Json | null> {
@@ -1150,6 +1176,7 @@ export = {
   settleAssessment: slot.forward('settleAssessment'),
   subjectOf: slot.forward('subjectOf'),
   claimAction: slot.forward('claimAction'),
+  setFeedback: slot.forward('setFeedback'),
   listSubjects: slot.forward('listSubjects'),
   upsertSessionContext: slot.forward('upsertSessionContext'),
   sessionContextOf: slot.forward('sessionContextOf'),

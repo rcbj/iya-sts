@@ -294,12 +294,23 @@ const JOBS = [
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
   { file: 'sts_discovery_realms.js',     browser: false, local: true },
+  // RFC 7009 TOKEN REVOCATION (#102, 2026-09-22): client authentication by
+  // mode, another client's token refused invalid_grant, the token types, an
+  // unknown hint, and a refresh token taking its grant with it. `local:
+  // true`: this repository's own authorization server, in a throwaway realm.
+  { file: 'sts_token_revocation.js',     browser: false, local: true },
   // OPENID CONNECT RP-INITIATED LOGOUT OVER THE WIRE (#124 with #115,
   // 2026-09-23): refusals as pages, the registered return with state by GET
   // and POST, each mode's answer for a client that registered none, and a
   // foreign hint refused. `local: true`: this repository's own OP, in a
   // throwaway realm it leaves behind.
   { file: 'sts_rp_initiated_logout.js',  browser: false, local: true },
+  // FORM POST RESPONSE MODE's INTERSTITIAL (#126, 2026-09-23): with nobody
+  // signed in, an error for a form_post request offers a FORM POSTing the
+  // fields — and form_post.jwt the one `response` field — never a GET link.
+  // `local: true`: this repository's own authorization server, in a
+  // throwaway realm with RFC 9700 mode on.
+  { file: 'sts_form_post.js',            browser: false, local: true },
   // OPENID CONNECT SESSION MANAGEMENT OVER THE WIRE (#121, 2026-09-23): off
   // by default, then the discovery member, the OP iframe's narrowed
   // frame-ancestors and its script, and prompt=none's session_state checked
@@ -643,6 +654,10 @@ const JOBS = [
   // old TGT and a renewal of it still refused, and restore-kerberos refused
   // in product — in both modes.
   { file: 'sts_kerberos_signout.js',     browser: false, local: true },
+  // Both gRPC surfaces over the network. Since #166 (2026-09-23) also the
+  // Workload API's TCP port in product: refused where the network is not
+  // declared to authenticate source addresses, and entries selecting this
+  // job's own peer: address where it is.
   { file: 'sts_spiffe_grpc.js',          browser: false, local: true },
   { file: 'sts_oid4vp_wallet.js',        browser: false, local: true },
   { file: 'sts_federation_realms.js',    browser: false, local: true },

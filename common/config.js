@@ -9561,6 +9561,73 @@ const SETTINGS = [
                  'elsewhere. Older than this, the issuance carries no risk ' +
                  'facts and the roles decide.' },
 
+  { key: 'risk.fingerprinting', group: 'Risk',
+    label: 'Fingerprint the browser at sign-in',
+    env: 'STS_RISK_FINGERPRINTING', type: 'bool', dflt: false, runtime: true,
+    description: 'OFF BY DEFAULT (#62 P6). On, the sign-in screen runs one ' +
+                 'script, FingerprintJS (MIT; it sends nothing anywhere), ' +
+                 'which computes an identifier from what the browser exposes ' +
+                 'and puts it in the form; the service keeps only a keyed ' +
+                 'digest, and a browser this person has never signed in ' +
+                 'from is the signal new-device (x2). A browser fingerprint ' +
+                 'is personal data: complete the privacy impact assessment ' +
+                 'in docs/risk-scoring.md, and tell the people who sign in, ' +
+                 'before turning it on. Per realm, like every setting.' },
+
+  { key: 'risk.breachCheck', group: 'Risk',
+    label: 'Refuse passwords known from data breaches',
+    env: 'STS_RISK_BREACH_CHECK', type: 'enum', dflt: 'on',
+    enumValues: ['on', 'off'], runtime: true,
+    description: 'In product mode, a password being set is checked against ' +
+                 'Have I Been Pwned\'s Pwned Passwords by k-anonymity (#62 ' +
+                 'P6, NIST SP 800-63B section 3.1.1.2): the first five ' +
+                 'characters of its SHA-1 go to risk.breachApiUrl, and one ' +
+                 'that has appeared in a breach is refused. The password ' +
+                 'itself never leaves this service. An unreachable API sets ' +
+                 'the password unscreened rather than refusing it. Also ' +
+                 'asked at sign-in (risk.breachCheckAtSignIn). Development ' +
+                 'mode checks no password.' },
+
+  { key: 'risk.breachCheckAtSignIn', group: 'Risk',
+    label: 'Ask a breached password to be changed at sign-in',
+    env: 'STS_RISK_BREACH_CHECK_AT_SIGN_IN', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'With risk.breachCheck on, a correct password typed at the ' +
+                 'sign-in screen is checked too, and one that has appeared ' +
+                 'in a breach must be changed before the sign-in finishes — ' +
+                 'the same step a password an administrator set does.' },
+
+  { key: 'risk.breachApiUrl', group: 'Risk',
+    label: 'Pwned Passwords range API',
+    env: 'STS_RISK_BREACH_API_URL', type: 'string',
+    dflt: 'https://api.pwnedpasswords.com/range/', runtime: true,
+    description: 'Where the five-character prefix is sent; the prefix is ' +
+                 'appended to it. The operator\'s address — a mirror, or an ' +
+                 'internal copy of the service — never a caller\'s. Every ' +
+                 'request goes through the outbound rules ' +
+                 '(federation.outbound, TLS verified in product mode).' },
+
+  { key: 'risk.breachCacheMinutes', group: 'Risk',
+    label: 'Keep a range answer (minutes)',
+    env: 'STS_RISK_BREACH_CACHE_MINUTES', type: 'int', dflt: 60, min: 1,
+    max: 10080, runtime: true,
+    description: 'How long the answer for one five-character prefix is ' +
+                 'reused before it is asked for again.' },
+
+  { key: 'risk.breachCacheSize', group: 'Risk',
+    label: 'Range answers each process keeps',
+    env: 'STS_RISK_BREACH_CACHE_SIZE', type: 'int', dflt: 5000, min: 1,
+    max: 1048576, runtime: true,
+    description: 'The bound on the per-process cache of range answers; full, ' +
+                 'the oldest is dropped.' },
+
+  { key: 'risk.breachTimeoutMs', group: 'Risk',
+    label: 'Wait for the range API (milliseconds)',
+    env: 'STS_RISK_BREACH_TIMEOUT_MS', type: 'int', dflt: 3000, min: 100,
+    max: 60000, runtime: true,
+    description: 'How long a password being set waits for the range API ' +
+                 'before it is set unscreened.' },
+
   { key: 'risk.mdsTrustAnchors', group: 'Risk',
     label: 'FIDO metadata trust anchors (PEM)',
     env: 'STS_RISK_MDS_TRUST_ANCHORS', type: 'string', dflt: '',
@@ -11311,6 +11378,33 @@ const SETTINGS = [
                  'this is reached from another container or from a host that ' +
                  'cannot share the socket. 0 turns it off and leaves the ' +
                  'Unix socket alone.' },
+
+  // #166 (2026-09-23): the Workload Endpoint specification's section 3
+  // condition, which only the operator can know. See `mode.js`'s
+  // `servesUnattestedWorkloadTcp()`.
+  { key: 'spiffe.workloadTcpSourceAuthenticated', group: 'SPIFFE',
+    label: 'Workload API TCP: the network authenticates source addresses',
+    env: 'STS_SPIFFE_WORKLOAD_TCP_SOURCE_AUTHENTICATED', type: 'bool',
+    dflt: false, runtime: false, realmRuntime: true,
+    restartReason: 'it decides whether the Workload API TCP port is bound, ' +
+                   'which happens when the process starts; a REALM\'s ' +
+                   'decision is taken when its SPIFFE is turned on',
+    description: 'In PRODUCT mode the Workload API is not served over TCP ' +
+                 'at all unless this is on. Turning it on DECLARES what the ' +
+                 'SPIFFE Workload Endpoint specification (section 3) makes ' +
+                 'the condition for TCP: that the network lets this server ' +
+                 'strongly authenticate a workload by its source IP address ' +
+                 '— a pod network with anti-spoofing, a host-only bridge — ' +
+                 'because a TCP caller has no peer process to attest and its ' +
+                 'address is the only identity it carries. This service ' +
+                 'cannot check the claim. WARNING: every host that can reach ' +
+                 'the port from an address a registration entry selects ' +
+                 '(peer:<address>) is issued that entry\'s X509-SVIDs and ' +
+                 'JWT-SVIDs, so an address that can be spoofed, shared ' +
+                 'behind a NAT or reassigned hands the identity to whoever ' +
+                 'holds it. Product also refuses a wildcard spiffe.grpcHost ' +
+                 'with this on: name the address whose source authentication ' +
+                 'you vouch for. Development serves TCP whatever this says.' },
 
   { key: 'spiffe.serverPort', group: 'SPIFFE', label: 'SPIRE Server API TCP ' +
                                                       'port',

@@ -210,6 +210,10 @@ function checkMarker(t) {
     'spiffe.workloadSocketEnabled',
     'spiffe.workloadSocket',
     'spiffe.workloadPort',
+    // #166: whether that port is bound in product is decided with it, when
+    // the realm's listeners are, so it is restart-only for the process and a
+    // realm's own for the same reason as the port.
+    'spiffe.workloadTcpSourceAuthenticated',
     'spiffe.serverSocketEnabled',
     'spiffe.serverSocket',
     'spiffe.serverPort',

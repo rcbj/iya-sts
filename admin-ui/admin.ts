@@ -24537,7 +24537,19 @@ class AdminConsole {
           this.esc(state.problem)
         : '<strong>The native module is not loaded, so the Unix socket is ' +
           'NOT SERVED</strong> (product): ' + this.esc(state.problem));
+    // THE TCP PORT (#166): what the realm's posture is and whether its port
+    // is listening. A product realm serves it only where the network is
+    // declared to authenticate source addresses, on a named address.
+    const tcp = state.tcp || null;
+    const tcpLine = tcp
+      ? ' The Workload API TCP port is <strong>' + this.esc(tcp.state) +
+        '</strong>' + (tcp.port
+          ? ' (' + this.esc(tcp.host + ':' + tcp.port) + ', ' +
+            (tcp.listening ? 'listening' : 'not listening') + ')'
+          : '') + ': ' + this.esc(tcp.why) + '.'
+      : '';
     const out = '<h2>Workload attestation</h2>' + this.note(kernel +
+      tcpLine +
       ' A TCP caller is never attested. Which attestors run is ' +
       '<code>spiffe.workloadAttestors</code>' +
       (state.unknownConfigured.length
@@ -31670,14 +31682,20 @@ class AdminConsole {
       // runs the body below synchronously, exactly as before.
       const creating = String(body.action || '') === 'create'
         ? { username: String(body.username || body.user || '') } : null;
-      createClaims.runClaimed(creating, function (held) {
-        self.usersPost(req, res, body, held);
-      }, function (held) {
-        errorCodes.mark(res, held.code);
-        self.respondToAction(req, res, '/admin/users' +
-          queryWith(self.listViewFromBack('/admin/users', body.back), {}),
-          { ok: false, errors: [createClaims.refusalMessage(held)] });
-      }, next);
+      // A PASSWORD IN THE BODY IS SCREENED AGAINST PWNED PASSWORDS FIRST
+      // (#62 P6): the action below is synchronous, and the password rules
+      // read the verdict this leaves.
+      require('../common/breached_passwords').screenAll([body.password])
+        .then(function () {
+        createClaims.runClaimed(creating, function (held) {
+          self.usersPost(req, res, body, held);
+        }, function (held) {
+          errorCodes.mark(res, held.code);
+          self.respondToAction(req, res, '/admin/users' +
+            queryWith(self.listViewFromBack('/admin/users', body.back), {}),
+            { ok: false, errors: [createClaims.refusalMessage(held)] });
+        }, next);
+        });
       log.debug("Leaving the admin users action endpoint.");
     });
 
@@ -31815,25 +31833,29 @@ class AdminConsole {
       // administrator, and a value taken from the form would be whatever the
       // poster typed. The same way `/admin/delegation` and `/admin/sessions`
       // name their actor.
-      createClaims.runClaimed({ username: posted.username }, function (held) {
-        self.newUserCreate(req, res, body, posted, wantsJson, held);
-      }, function (held) {
-        errorCodes.mark(res, held.code);
-        const refusal = { ok: false,
-                          errors: [createClaims.refusalMessage(held)] };
-        if (wantsJson) {
-          self.respondToAction(req, res, '/admin/users/new', refusal);
-          return;
-        }
-        const view = self.newUserPage(req, posted);
-        self.respond(req, res, Object.assign({ created: false,
-                                               errors: refusal.errors },
-                                               view.json),
-                     'New user', '/admin/users',
-                     self.warn('<strong>Nobody was created.</strong> ' +
-                               self.esc(refusal.errors[0])) + view.inner,
-                               self.newUserUp());
-      }, next);
+      // Screened against Pwned Passwords first (#62 P6), as above.
+      require('../common/breached_passwords').screenAll([body.password])
+        .then(function () {
+        createClaims.runClaimed({ username: posted.username }, function (held) {
+          self.newUserCreate(req, res, body, posted, wantsJson, held);
+        }, function (held) {
+          errorCodes.mark(res, held.code);
+          const refusal = { ok: false,
+                            errors: [createClaims.refusalMessage(held)] };
+          if (wantsJson) {
+            self.respondToAction(req, res, '/admin/users/new', refusal);
+            return;
+          }
+          const view = self.newUserPage(req, posted);
+          self.respond(req, res, Object.assign({ created: false,
+                                                 errors: refusal.errors },
+                                                 view.json),
+                       'New user', '/admin/users',
+                       self.warn('<strong>Nobody was created.</strong> ' +
+                                 self.esc(refusal.errors[0])) + view.inner,
+                                 self.newUserUp());
+        }, next);
+        });
       log.debug("Leaving the admin new-user action endpoint. Create.");
     });
 

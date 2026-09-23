@@ -37,6 +37,22 @@
 //   * C, created once an agent has attested, with that agent as its parent,
 //     which is what `GetAuthorizedEntries` must hand the agent back.
 //
+// **IN PRODUCT THE ENTRIES SELECT THIS JOB'S OWN SOURCE ADDRESS AS WELL
+// (#166, 2026-09-23).** A product realm refuses an entry that selects nothing
+// but `transport:` and `endpoint:` — every caller of the port carries those —
+// so W, A and N there also carry `peer:<the address this job connects
+// from>`, read off a TCP connection to the Workload API port (or
+// STS_SPIFFE_WORKLOAD_PEER, where a NAT between here and the service makes
+// the local address the wrong one). And a product realm serves the Workload
+// API over TCP only where `spiffe.workloadTcpSourceAuthenticated` declares
+// the network authenticates source addresses, on a named address: where it
+// does not (`GET /admin-api/spiffe`'s `workloadAttestation.tcp`), this job
+// asserts that the port refuses a Workload API call and that /admin-api
+// refuses a transport-only entry, and stops there — everything after needs
+// an SVID from that port. Section 0 asserts the /admin-api refusal and
+// section 10 the SPIRE Server API's (INVALID_ARGUMENT per item) wherever the
+// realm is in product.
+//
 // **THE WORKLOAD API AUTHENTICATES NOBODY AND ATTESTS NOTHING, BY DESIGN**
 // (`spiffe/CLAUDE.md`): any TCP caller of the port matches W and A while they
 // exist. So A is the shortest-lived thing this job makes — its SVIDs live five
@@ -120,6 +136,7 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const path = require("path");
 const { Command, Option } = require("commander");
+const net = require("net");
 const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
 const forge = require("node-forge");
@@ -524,6 +541,37 @@ function firstMessage(client, method, request, metadata, holdMs) {
   });
 }
 
+// The address this job's connections to `target` (`host:port`) come FROM,
+// which is what the service's `peer:` selector sees where nothing translates
+// addresses in between. '' when nothing answers there.
+function localAddressToward(target) {
+  log.debug("Entering localAddressToward(). " + target);
+  const cut = target.lastIndexOf(":");
+  const host = target.slice(0, cut).replace(/^\[|\]$/g, "");
+  const port = Number(target.slice(cut + 1));
+  return new Promise(function (resolve) {
+    const socket = net.connect({ host: host, port: port });
+    const timer = setTimeout(function () {
+      socket.destroy();
+      log.debug("Leaving localAddressToward(). Timed out.");
+      resolve("");
+    }, DEADLINE_MS);
+    socket.on("connect", function () {
+      clearTimeout(timer);
+      const address = String(socket.localAddress || "")
+        .replace(/^::ffff:/, "");
+      socket.destroy();
+      log.debug("Leaving localAddressToward(). " + address);
+      resolve(address);
+    });
+    socket.on("error", function (e) {
+      clearTimeout(timer);
+      log.debug("Caught in localAddressToward(): " + ((e && e.message) || e));
+      resolve("");
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // test()
 // ---------------------------------------------------------------------------
@@ -604,10 +652,36 @@ async function test() {
   // which attests a caller by ITS bind address; the selector then named an
   // endpoint no workload is at, and the Workload API answered no SVID. A named
   // socket is the endpoint.
-  const tcpSelectors = "transport:tcp, endpoint:" +
+  const describedTcpSelectors = "transport:tcp, endpoint:" +
                        (process.env.STS_SPIFFE_WORKLOAD_URL
                          ? workloadTarget
                          : grpcHost + ":" + workloadPort);
+
+  // WHETHER THE PORT IS SERVED AT ALL (#166): a product realm serves the
+  // Workload API over TCP only on a declared network and a named address.
+  const spiffeState = await call("GET", API + "/spiffe");
+  const attestation = spiffeState.json &&
+                      spiffeState.json.workloadAttestation;
+  const tcpPosture = (attestation && attestation.tcp) || null;
+  log.info("The Workload API TCP port is " +
+           (tcpPosture ? tcpPosture.state : "(not reported)") + ".");
+  if (tcpPosture && !tcpPosture.served) {
+    await tcpNotServed();
+    log.debug("Leaving test(). The TCP port is not served here.");
+    return;
+  }
+  // AND WHICH ADDRESS THIS JOB IS SEEN FROM, which a product entry selects.
+  const peerAddress = process.env.STS_SPIFFE_WORKLOAD_PEER ||
+                      (product ? await localAddressToward(workloadTarget)
+                               : "");
+  if (product) {
+    assert.ok(peerAddress, "the address this job connects to " +
+              workloadTarget + " from could be read (or name it in " +
+              "STS_SPIFFE_WORKLOAD_PEER)");
+    log.info("This job reaches the Workload API from " + peerAddress + ".");
+  }
+  const tcpSelectors = describedTcpSelectors +
+                       (product ? ", peer:" + peerAddress : "");
   const W = tdId + "/sts-test/spiffe-grpc/" + RUN + "/workload";
   const A = tdId + "/sts-test/spiffe-grpc/" + RUN + "/admin";
   const N = tdId + "/sts-test/spiffe-grpc/" + RUN + "/unix-only";
@@ -698,6 +772,70 @@ async function test() {
     return !!(answer && !answer.error);
   }
 
+  // ---------------------------------------------------------------------
+  // T. THE WORKLOAD API IS NOT SERVED OVER TCP HERE (#166): a product realm
+  // with no `spiffe.workloadTcpSourceAuthenticated`, or with it and a
+  // wildcard bind address. What that must look like from the network, and
+  // the registry's refusal, which holds whatever the port does.
+  // ---------------------------------------------------------------------
+  async function tcpNotServed() {
+    log.debug("Entering tcpNotServed().");
+    log.info("=== T. the Workload API is not served over TCP here ===");
+    check("only a product realm declines to serve it", function () {
+      assert.ok(product, JSON.stringify(tcpPosture));
+      assert.ok(/^not served \(product, /.test(tcpPosture.state),
+                JSON.stringify(tcpPosture));
+      assert.strictEqual(tcpPosture.listening, false,
+                         JSON.stringify(tcpPosture));
+    });
+    const binding = ((spiffeState.json.listeners || {}).workloadApi || [])
+      .filter(function (b) {
+        return !b.socket && (b.realm || "") === "";
+      })[0];
+    check("GET /admin-api/spiffe reports the TCP listener as not bound, " +
+          "saying why", function () {
+      assert.ok(binding && binding.listening === false &&
+                /product mode|wildcard/i.test(binding.error || ""),
+                JSON.stringify(binding || null));
+    });
+    const a = await unary(workload(), "FetchJWTSVID",
+                          { audience: [AUDIENCE] }, workloadMetadata(true));
+    check("a Workload API call to " + workloadTarget + " is refused " +
+          "UNAVAILABLE: nothing answers there", function () {
+      assert.ok(codeIs(grpc.status.UNAVAILABLE)(a), describe(a));
+    });
+    const r = await call("POST", API + "/spiffe/entries/create",
+                         { spiffeId: tdId + "/sts-test/spiffe-grpc/" + RUN +
+                                     "/any-tcp",
+                           selectors: describedTcpSelectors });
+    check("and an entry selecting only the transport and endpoint is " +
+          "refused through /admin-api", function () {
+      assert.strictEqual(r.status, 400, r.text.slice(0, 300));
+    });
+    const ok = await call("POST", API + "/spiffe/entries/create",
+                          { spiffeId: tdId + "/sts-test/spiffe-grpc/" + RUN +
+                                      "/from-peer",
+                            selectors: describedTcpSelectors +
+                                       ", peer:192.0.2.166" });
+    check("while one that also selects a peer: address is accepted",
+          function () {
+      assert.ok(ok.status === 200 && ok.json && ok.json.id,
+                ok.text.slice(0, 300));
+    });
+    if (ok.json && ok.json.id) {
+      const d = await deleteEntry(ok.json.id);
+      check("…and deleted again", function () {
+        assert.strictEqual(d.status, 200, d.text.slice(0, 300));
+      });
+    }
+    assert.ok(checks >= 6, "only " + checks + " checks ran");
+    log.info(checks + " check(s) passed. The rest of this job needs an SVID " +
+             "from the Workload API's TCP port, which this deployment does " +
+             "not serve.");
+    log.info("Test completed successfully.");
+    log.debug("Leaving tcpNotServed().");
+  }
+
   try {
     // =======================================================================
     // 0. THE REGISTRY, THROUGH /admin-api — including its two refusals.
@@ -727,8 +865,26 @@ async function test() {
       assert.ok(r.status === 200 && r.json && r.json.entry &&
                 r.json.entry.admin === true, r.text.slice(0, 400));
     });
+    // N selects the Unix socket, which a TCP caller never is. In product it
+    // must select something that identifies a workload as well (#166), so it
+    // carries this job's peer: — and a TCP caller from that address still
+    // does not match it, which is the subset rule doing the work.
     created.N = await createEntry({ spiffeId: N,
-                                    selectors: "transport:uds" }, "N");
+                                    selectors: "transport:uds" +
+                                      (product ? ", peer:" + peerAddress
+                                               : "") }, "N");
+    if (product) {
+      r = await call("POST", API + "/spiffe/entries/create",
+                     { spiffeId: tdId + "/sts-test/spiffe-grpc/" + RUN +
+                                 "/any-tcp",
+                       selectors: describedTcpSelectors });
+      check("product: an entry selecting only the transport and endpoint " +
+            "every TCP caller carries is refused (#166)", function () {
+        assert.strictEqual(r.status, 400, r.text.slice(0, 300));
+        assert.ok(/identifies its workload|every caller/i.test(r.text),
+                  r.text.slice(0, 300));
+      });
+    }
 
     // =======================================================================
     // 1–2. FetchX509SVID.
@@ -1117,6 +1273,23 @@ async function test() {
       assert.ok(viaId, describe(a));
       created.via = viaId;
     });
+    if (product) {
+      a = await unary(server(svc.Entry, aIdentity), "BatchCreateEntry", {
+        entries: [{ spiffe_id: { trust_domain: trustDomain,
+                                 path: viaSpire.slice(tdId.length) +
+                                       "-tcp-only" },
+                    parent_id: { trust_domain: trustDomain,
+                                 path: "/spire/server" },
+                    selectors: [{ type: "transport", value: "tcp" }] }] });
+      check("product: BatchCreateEntry refuses an entry selecting only " +
+            "transport:tcp, INVALID_ARGUMENT for the item (#166)",
+            function () {
+        assert.ok(!a.error, describe(a));
+        const one = a.value.results[0];
+        assert.strictEqual(one.status.code, grpc.status.INVALID_ARGUMENT,
+                           JSON.stringify(one.status));
+      });
+    }
     a = await eventually("BatchDeleteEntry as A", function () {
       return unary(server(svc.Entry, aIdentity), "BatchDeleteEntry",
                    { ids: [viaId] });

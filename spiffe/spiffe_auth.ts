@@ -62,6 +62,13 @@
 //   * and, only when `spiffe.acceptAssertedSelectors` is on, whatever the
 //     caller SAID about itself.
 //
+// (The Unix socket's caller is ATTESTED since #40 — the native module reads
+// SO_PEERCRED after all — and those selectors join these; see
+// `workloadSelectors()`. Only the first two say HOW a caller arrived and never
+// WHO it is, which is why a product realm refuses an entry that selects
+// nothing else, and serves TCP, whose only WHO is the peer address, only on a
+// network declared to authenticate it — #166, `workloadTcpPosture()`.)
+//
 // The first three are facts about the connection and are real. The fourth is
 // not attestation at all and is named so that nobody can mistake it for any:
 // it exists because SELECTOR MATCHING IS THE INTERESTING BEHAVIOUR and there is
@@ -276,6 +283,10 @@ const POLICY = {
 // the same method read the same way.
 const ENTITY_ORDER = ['local', 'admin', 'agent', 'downstream'];
 
+// The bind addresses that mean EVERY interface (#166). `spiffe_server.ts`'s
+// `overlaps()` recognises the same four for the address-collision refusal.
+const WILDCARD_HOSTS = ['0.0.0.0', '::', '[::]', ''];
+
 // What `SpiffeAuth` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
@@ -456,6 +467,86 @@ class SpiffeAuth {
                   'trusts as local (spiffe.trustLocalSocket): the socket is ' +
                   'private and the caller runs as this service\'s uid ' +
                   own + ', verified by the kernel' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // IS THE WORKLOAD API SERVED OVER TCP HERE, AND WHY? (#166, 2026-09-23.)
+  //
+  // The Workload Endpoint specification section 3: "TCP transport MUST NOT be
+  // used unless the underlying network allows the Workload Endpoint server to
+  // strongly authenticate the workload based on source IP address." Section
+  // 3.1 and section 5 rule out the other fixes — "Transport Layer Security
+  // MUST NOT be required", and the endpoint "MUST NOT require any direct
+  // authentication of its clients" — so the only identity a TCP caller can
+  // carry is its source address, and only on a network that guarantees it.
+  // That is a fact about the deployment this process cannot observe, so the
+  // operator DECLARES it (`spiffe.workloadTcpSourceAuthenticated`) and a
+  // product realm does not serve TCP without the declaration.
+  //
+  // WITH it, a wildcard `spiffe.grpcHost` is still refused: 0.0.0.0 is every
+  // interface this host has, including ones the declaration was never about,
+  // so the operator names the address whose network they vouch for.
+  //
+  // One answer for three askers: `spiffe_server.ts`'s `bindAll()` (whether
+  // the port is bound), `spiffe_grpc.ts`'s `prepareCall()` (a realm switched
+  // to product with the port already bound refuses every call on it — the
+  // mode is runtime, so the read is the guard) and the three pages, through
+  // `workloadAttestationState()`. Read in the AMBIENT realm, which is the
+  // listener's in all three.
+  // ---------------------------------------------------------------------------
+  workloadTcpPosture(): { port: number; host: string; served: boolean;
+                          declared: boolean; errorCode: string;
+                          state: string; why: string } {
+    const { log, config, mode } = this.deps;
+    log.debug('Entering SpiffeAuth.workloadTcpPosture().');
+    const port = Number(config.value('spiffe.workloadPort'));
+    const host = String(config.value('spiffe.grpcHost') || '');
+    const declared = !!config.value('spiffe.workloadTcpSourceAuthenticated');
+    const base = { port: port, host: host, declared: declared };
+    if (!port) {
+      log.debug('Leaving SpiffeAuth.workloadTcpPosture(). The port is 0.');
+      return Object.assign(base, { served: false, errorCode: '',
+        state: 'off (spiffe.workloadPort is 0)',
+        why: 'the Workload API TCP port is turned off' });
+    }
+    if (mode.servesUnattestedWorkloadTcp()) {
+      log.debug('Leaving SpiffeAuth.workloadTcpPosture(). Development.');
+      return Object.assign(base, { served: true, errorCode: '',
+        state: 'served (development, not attested)',
+        why: 'development mode serves the Workload API over TCP; a caller ' +
+             'there is identified by its transport, the endpoint it ' +
+             'reached and its source address, and nothing attests it' });
+    }
+    if (!declared) {
+      log.debug('Leaving SpiffeAuth.workloadTcpPosture(). Not declared.');
+      return Object.assign(base, { served: false,
+        errorCode: 'STS-SPIFFE-0120',
+        state: 'not served (product, source not declared authenticated)',
+        why: 'this realm is in product mode, where the Workload API is not ' +
+             'served over TCP unless spiffe.workloadTcpSourceAuthenticated ' +
+             'declares that the network authenticates source addresses — ' +
+             'the SPIFFE Workload Endpoint specification, section 3, allows ' +
+             'TCP on no other condition. Use the Unix socket, or declare the ' +
+             'network and name its address in spiffe.grpcHost' });
+    }
+    if (WILDCARD_HOSTS.indexOf(host) >= 0) {
+      log.debug('Leaving SpiffeAuth.workloadTcpPosture(). A wildcard.');
+      return Object.assign(base, { served: false,
+        errorCode: 'STS-SPIFFE-0121',
+        state: 'not served (product, wildcard bind address)',
+        why: 'spiffe.workloadTcpSourceAuthenticated declares one network\'s ' +
+             'source addresses authenticated, and spiffe.grpcHost is "' +
+             host + '" — every interface on this host, including ones that ' +
+             'declaration was never about. Product mode refuses it: set ' +
+             'spiffe.grpcHost to the address on the network you vouch for' });
+    }
+    log.debug('Leaving SpiffeAuth.workloadTcpPosture(). Declared.');
+    return Object.assign(base, { served: true, errorCode: '',
+      state: 'served (product, source declared authenticated)',
+      why: 'spiffe.workloadTcpSourceAuthenticated declares that the network ' +
+           'at ' + host + ' authenticates source addresses, so a TCP caller ' +
+           'is identified by its peer: address, and a registration entry ' +
+           'must select one (or another identifying selector) to answer it' });
   }
 
   // The admin ids, as a list. A string in configuration because it is a list of
@@ -1479,6 +1570,7 @@ export = {
   recordIdentity: slot.forward('recordIdentity'),
   recordCaller: slot.forward('recordCaller'),
   workloadSelectors: slot.forward('workloadSelectors'),
+  workloadTcpPosture: slot.forward('workloadTcpPosture'),
   endpointFor: slot.forward('endpointFor'),
   peerSelectorValue: slot.forward('peerSelectorValue'),
   spiffeIdFromCertificate: slot.forward('spiffeIdFromCertificate'),

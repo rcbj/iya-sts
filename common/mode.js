@@ -191,6 +191,42 @@ function requiresWorkloadAttestation() {
   return isProduct();
 }
 
+// May the SPIFFE Workload API be served over TCP to callers nothing attests
+// (#166, 2026-09-23)? The Workload Endpoint specification section 3: "TCP
+// transport MUST NOT be used unless the underlying network allows the
+// Workload Endpoint server to strongly authenticate the workload based on
+// source IP address". A TCP connection has no peer process to ask, so the
+// source address is the only identity it can carry, and whether the network
+// guarantees it is something this service cannot observe. Development says
+// yes: the port is how a client in another container reaches it, and GET
+// /spiffe says nothing on it is attested. Product says no — the port is not
+// bound (STS-SPIFFE-0120) — unless the operator DECLARES the section 3
+// condition with `spiffe.workloadTcpSourceAuthenticated`, and then only on a
+// named address, never the wildcard (STS-SPIFFE-0121).
+// `spiffe/spiffe_auth.ts`'s `workloadTcpPosture()` asks it.
+function servesUnattestedWorkloadTcp() {
+  log.debug("Entering servesUnattestedWorkloadTcp().");
+  log.debug("Leaving servesUnattestedWorkloadTcp().");
+  return !isProduct();
+}
+
+// May a SPIFFE registration entry select its workload on NOTHING THAT
+// IDENTIFIES ONE (#166, 2026-09-23) — no selector at all, or only the
+// `transport:` and `endpoint:` a caller reached? Such an entry matches every
+// caller of a transport, which is the unattested identity #40 closed for the
+// socket, arriving through the registry instead. Development says yes: it is
+// how a client reaches an SVID with no attestor, and what an invented entry
+// carries. Product says no: it is refused at every door that creates or
+// updates an entry (STS-SPIFFE-0122) — as SPIRE refuses an entry with an
+// empty selector list — and one already in the registry (written while the
+// realm was in development) answers nobody (STS-SPIFFE-0123).
+// `spiffe/spiffe_registry.ts` asks it.
+function registersUnidentifyingEntries() {
+  log.debug("Entering registersUnidentifyingEntries().");
+  log.debug("Leaving registersUnidentifyingEntries().");
+  return !isProduct();
+}
+
 // May `spiffe.attestWorkloads` OFF answer a Workload API caller with entries
 // its selectors do not match (#104, 2026-09-23)? Development says yes: off is
 // the answer this service gave before selectors decided anything, and a
@@ -561,6 +597,28 @@ function requiresEnrollmentTls() {
 function opensIntrospection() {
   log.debug("Entering opensIntrospection().");
   log.debug("Leaving opensIntrospection().");
+  return !isProduct();
+}
+
+// May a caller that does not authenticate revoke a token at /oauth2/revoke
+// (#102, 2026-09-22)? RFC 7009 section 2.1 has the server first validate "the
+// client credentials (in case of a confidential client)" and then whether the
+// token "was issued to the client making the revocation request" — and
+// development answers yes anyway, for `opensIntrospection()`'s reason: the
+// suites and every client under test revoke with nothing but the token, and a
+// refusal there removes the case they run. Product answers no: a confidential
+// client must present a credential that verifies, a public one must name a
+// registered `client_id`, and either may revoke only its own token. A token
+// issued to somebody else is refused `invalid_grant` there.
+//
+// **A CREDENTIAL THAT IS PRESENTED IS VERIFIED IN BOTH MODES**, which is where
+// this differs from introspection: a client under test that authenticates at
+// the revocation endpoint should meet section 2.1's refusals, the wrong-secret
+// 401 and another client's token, rather than a quiet 200.
+// `oauth-oidc/oauth2.ts`'s `revokeRequest()` makes both decisions.
+function opensRevocation() {
+  log.debug("Entering opensRevocation().");
+  log.debug("Leaving opensRevocation().");
   return !isProduct();
 }
 
@@ -1230,6 +1288,23 @@ const REQUIREMENTS = [
              '401 invalid_client otherwise (400 for a JWT request, RFC 9701 ' +
              'section 5).',
     where: 'oauth-oidc/oauth2.ts, oauth-oidc/introspection_jwt.ts' },
+  { id: 'revocation',
+    what: 'A caller of /oauth2/revoke authenticates, and revokes only its ' +
+          'own token',
+    development: 'An RFC 7009 revocation with no client credential revokes ' +
+                 'any access or refresh token this realm issued, for anybody ' +
+                 'who holds the token string. A caller that DOES present a ' +
+                 'credential is held to what product holds it to: a ' +
+                 'credential that does not verify is refused 401 ' +
+                 'invalid_client, and a token issued to another client ' +
+                 'is refused invalid_grant.',
+    product: 'Every revocation request must come from a client: a ' +
+             'confidential one presents a credential that verifies (the ' +
+             'token endpoint\'s methods), a public one names its registered ' +
+             'client_id, and anything else is refused 401 invalid_client ' +
+             '(RFC 7009 section 2.1). A token issued to another client is ' +
+             'refused 400 invalid_grant and nothing is revoked.',
+    where: 'oauth-oidc/oauth2.ts' },
   { id: 'request-objects',
     what: 'A JWT-secured authorization request is signed, and a request_uri ' +
           'is HTTPS',
@@ -1521,6 +1596,36 @@ const REQUIREMENTS = [
              'refused on write (STS-CORE-0103).',
     where: 'spiffe/spiffe_peer.ts, spiffe/spiffe_auth.ts, ' +
            'spiffe/spiffe_workload.ts' },
+  // #166 (2026-09-23): the Workload API over TCP, and what an entry must
+  // select.
+  { id: 'spiffe-workload-tcp',
+    what: 'The SPIFFE Workload API over TCP (spiffe.workloadPort)',
+    development: 'Served on spiffe.grpcHost, the wildcard included. A TCP ' +
+                 'caller is not attested — there is no peer process to ask — ' +
+                 'and is identified by its transport, the endpoint it ' +
+                 'reached and its source address.',
+    product: 'NOT SERVED (STS-SPIFFE-0120) unless ' +
+             'spiffe.workloadTcpSourceAuthenticated declares that the ' +
+             'network authenticates source addresses (Workload Endpoint ' +
+             'section 3), and then only on a named address: a wildcard ' +
+             'spiffe.grpcHost is refused (STS-SPIFFE-0121). A realm switched ' +
+             'to product with the port already bound refuses every call on ' +
+             'it with the same codes.',
+    where: 'spiffe/spiffe_auth.ts, spiffe/spiffe_server.ts, ' +
+           'spiffe/spiffe_grpc.ts' },
+  { id: 'spiffe-entry-selectors',
+    what: 'A SPIFFE registration entry selects something that identifies a ' +
+          'workload',
+    development: 'Any selectors, none included: an entry on transport:tcp ' +
+                 'alone is issued to every TCP caller, and an invented entry ' +
+                 'carries exactly that.',
+    product: 'An entry with no selector, or only transport: and endpoint: ' +
+             'ones, is refused at the console, /admin-api and the SPIRE ' +
+             'Server API (STS-SPIFFE-0122; INVALID_ARGUMENT per item there), ' +
+             'and one already in the registry answers no caller ' +
+             '(STS-SPIFFE-0123). A peer: selector matches the source address ' +
+             'exactly — no prefixes, as in SPIRE.',
+    where: 'spiffe/spiffe_registry.ts, spiffe/spiffe_workload.ts' },
   // 2026-09-12. The one row here whose two columns differ in what is REFUSED
   // for a reason that is not "development checks nothing": both modes consult
   // the register, and the difference is what an UNREACHABLE foreign CRL costs.
@@ -1880,6 +1985,8 @@ module.exports = {
   believesAssertedSelectors: believesAssertedSelectors,
   requiresWorkloadAttestation: requiresWorkloadAttestation,
   servesUnattestedEntries: servesUnattestedEntries,
+  servesUnattestedWorkloadTcp: servesUnattestedWorkloadTcp,
+  registersUnidentifyingEntries: registersUnidentifyingEntries,
   trustsUnverifiedLocalSocket: trustsUnverifiedLocalSocket,
   spoilsOnPurpose: spoilsOnPurpose,
   requiresConfidentialClientAuthentication:
@@ -1904,6 +2011,7 @@ module.exports = {
   refusesUnknownRevocationStatus: refusesUnknownRevocationStatus,
   requiresEnrollmentTls: requiresEnrollmentTls,
   opensIntrospection: opensIntrospection,
+  opensRevocation: opensRevocation,
   acceptsUnverifiedIssuerTokens: acceptsUnverifiedIssuerTokens,
   exchangesUnverifiedTokens: exchangesUnverifiedTokens,
   grantsUndeclaredScopes: grantsUndeclaredScopes,
