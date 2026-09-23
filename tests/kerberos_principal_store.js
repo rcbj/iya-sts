@@ -360,7 +360,15 @@ function view(record) {
   const spnKey = spnParts.join('/') + '@' + p.REALM;
   const krbtgtKey = 'krbtgt/' + p.REALM + '@' + p.REALM;
   const svc = p.find(spnParts);
-  const krbtgt = p.find(['krbtgt', p.REALM]);
+  // THE HELD RECORD, not find()'s answer: a product krbtgt has no password
+  // and no stored key in this child (#169), so find() answers null for it,
+  // while the configured record the restore rule protects is still there.
+  function heldKrbtgt() {
+    return p.all().filter(function (one) {
+      return one.name.join('/') + '@' + one.realm === krbtgtKey;
+    })[0] || null;
+  }
+  const krbtgt = heldKrbtgt();
   const report = { enabled: minted.enabled(), mode: config.value('global.mode'),
                    configuredBefore: { svc: view(svc), krbtgt: view(krbtgt) } };
 
@@ -394,7 +402,7 @@ function view(record) {
   report.afterRestore = {
     svcSame: p.find(spnParts) === svc,
     svc: view(p.find(spnParts)),
-    krbtgt: view(p.find(['krbtgt', p.REALM])),
+    krbtgt: view(heldKrbtgt()),
     alice: view(held('alice')),
     dana: view(held('dana')),
     erin: view(held('erin'))
@@ -418,7 +426,7 @@ function view(record) {
   // A removal of krbtgt arrives, and a removal of dana.
   rows.delete(krbtgtKey);
   await minted.applyChange(change(krbtgtKey));
-  report.krbtgtAfterRemoval = view(p.find(['krbtgt', p.REALM]));
+  report.krbtgtAfterRemoval = view(heldKrbtgt());
   rows.delete('dana@' + p.REALM);
   await minted.applyChange(change('dana@' + p.REALM));
   report.danaAfterRemoval = view(p.all().filter(function (one) { return one.name[0] === 'dana'; })[0]);
@@ -439,6 +447,8 @@ function theDoorsInProductMode(t) {
     STS_MODE: 'product',
     STS_KEYS_SOURCE: 'persisted',
     STS_KEYS_KEK_PROVIDER: 'file',
+    // Set, and IGNORED in product since #169: the krbtgt carries no
+    // password there at all.
     KRB5_KRBTGT_PASSWORD: 'krbtgt-now-configured',
     KRB5_SERVICE_PASSWORD: 'svc-now-configured',
     KRB5_SERVICE_SALT: 'EXAMPLE.COMsvc-now'
@@ -467,9 +477,10 @@ function theDoorsInProductMode(t) {
           JSON.stringify(svc));
   t.equal(svc && svc.signedOutAt, '2026-01-02T03:04:05.000Z',
           'while the sign-out the stored row carried survives the restart');
-  t.equal(r.afterRestore.krbtgt && r.afterRestore.krbtgt.password,
-          'krbtgt-now-configured',
-          'and the krbtgt key is the configured one, not the one in the store');
+  t.check(!!r.afterRestore.krbtgt && r.afterRestore.krbtgt.password === null,
+          'and the krbtgt keeps the NO password its settings build (#169: ' +
+          'product keys it at random), not the one in the store',
+          JSON.stringify(r.afterRestore.krbtgt));
   t.equal(r.afterRestore.alice, null,
           'A DEVELOPMENT FIXTURE LEFT IN THE STORE IS NOT RESTORED INTO ' +
           'PRODUCT MODE — alice with the published password does not come ' +

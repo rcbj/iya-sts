@@ -7791,8 +7791,9 @@ const CODES = [
   { code: 'STS-KRB-0062',
     summary: 'Product mode refused the published default ' +
       'krb5.krbtgtPassword, so no krbtgt was created and the KDC ' +
-      'issues no ticket.',
-    spec: '' },
+      'issues no ticket. RETIRED 2026-09-23 (#169): product keys krbtgt ' +
+      'at random and reads no password for it.',
+    spec: '', retired: true },
   { code: 'STS-KRB-0063',
     summary: 'The Kerberos acceptor refused a token larger than ' +
       'krb5.serviceMaxTokenBytes.',
@@ -8226,6 +8227,34 @@ const CODES = [
       'encryption type product mode withholds (rc4-hmac, #182), so no ' +
       'armor key was made.',
     spec: 'RFC 6113 section 5.4.1.1, RFC 8429; KDC_ERR_ETYPE_NOSUPP (14)' },
+  // #169 (2026-09-23): the krbtgt key, stored and rotated.
+  { code: 'STS-KRB-0160',
+    summary: 'A rotation of a trust realm\'s krbtgt key failed — the new key ' +
+      'could not be sealed or written to its directory entry — so nothing ' +
+      'changed and the current key still seals every TGT.',
+    spec: '' },
+  { code: 'STS-KRB-0161',
+    summary: 'A trust realm\'s stored krbtgt key record cannot be opened ' +
+      '(sealed under another key-encryption key, stored in the clear in ' +
+      'product mode, or bound to another realm). It is never rewritten: the ' +
+      'KDC answers as though the realm had no krbtgt, and only "rotate and ' +
+      'invalidate" replaces it.',
+    spec: '' },
+  { code: 'STS-KRB-0162',
+    summary: 'A node lost the race to create a trust realm\'s first random ' +
+      'krbtgt key and, re-reading the directory, did not find the winner\'s ' +
+      'key yet; the KDC refuses until it arrives.',
+    spec: '' },
+  { code: 'STS-KRB-0163',
+    summary: 'A trust realm\'s first random krbtgt key was not made: this ' +
+      'node could not ask the shared store whether another node was making ' +
+      'it.',
+    spec: '' },
+  { code: 'STS-KRB-0164',
+    summary: 'A FAST armor ticket was sealed under a krbtgt key version the ' +
+      'KDC no longer holds (a rotation retired it and its window ended, or ' +
+      '"rotate and invalidate" dropped it).',
+    spec: 'RFC 6113 section 5.4.1.1; KRB_AP_ERR_BADKEYVER (44)' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
@@ -10395,6 +10424,11 @@ const CODES = [
       'signal failed: the receiving surface\'s sessions for the person could ' +
       'not be ended.',
     spec: '' },
+  { code: 'STS-SSF-0112',
+    summary: 'The kerberos-tickets-invalidated event (this service\'s own, ' +
+      '#169) could not be transmitted after a krbtgt key was rotated with ' +
+      'nothing kept; the rotation itself stands.',
+    spec: 'none — logged; nothing is sent to a receiver' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -12822,6 +12856,14 @@ const CODES = [
   { code: 'STS-ADMIN-0609',
     summary: 'The Kerberos key register has no directory in this process, so ' +
       'a principal could be neither listed nor changed.',
+    spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
+  { code: 'STS-ADMIN-0610',
+    summary: '"Rotate and invalidate" of the krbtgt key was asked for ' +
+      'without the typed confirmation "invalidate"; nothing was queued.',
+    spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
+  { code: 'STS-ADMIN-0611',
+    summary: 'A rotation of the krbtgt key could not be queued on the ' +
+      'scheduler (the scheduler is off, or refused the run).',
     spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
   { code: 'STS-ADMIN-0620',
     summary: 'Regenerating an application\'s client secret was refused: the ' +

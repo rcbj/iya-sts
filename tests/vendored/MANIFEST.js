@@ -692,6 +692,13 @@ const JOBS = [
   // scim.digestMd5 refused in a product realm; SCIM Digest MD5 off by
   // default, and accepted in development only when turned on.
   { file: 'sts_kerberos_rc4.js',         browser: false, local: true },
+  // #169 (2026-09-23): the krbtgt key, in a throwaway realm's KDC over
+  // MS-KKDCP — rotate-krbtgt queued on the scheduler, a TGT outliving it
+  // through the kept kvno, rotate-krbtgt-invalidate refusing every earlier
+  // TGT 44, the scheduler's two jobs, and the console and the API agreeing
+  // on the kvno — in both modes. `local: true`: this repository's KDC,
+  // scheduler and API.
+  { file: 'sts_kerberos_krbtgt_rotation.js', browser: false, local: true },
   // Both gRPC surfaces over the network. Since #166 (2026-09-23) also the
   // Workload API's TCP port in product: refused where the network is not
   // declared to authenticate source addresses, and entries selecting this

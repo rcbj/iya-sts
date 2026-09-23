@@ -430,6 +430,8 @@ interface AdminViewsDeps {
   delegationPolicy: typeof delegationPolicy;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
+  // The krbtgt rotation (#169), lazily, for `admin_actions.ts`'s reason.
+  krbtgtRotation: () => any;
   oauth2: typeof oauth2;
   backchannel: typeof backchannel;
   softwareStatement: typeof softwareStatement;
@@ -505,6 +507,9 @@ class AdminViews {
       delegationPolicy: delegationPolicy,
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
+      krbtgtRotation: function () {
+        return require('../kerberos/krb5_krbtgt_rotation');
+      },
       oauth2: oauth2,
       backchannel: backchannel,
       softwareStatement: softwareStatement,
@@ -3375,6 +3380,24 @@ class AdminViews {
   // `krb5.enabled` is off has none, which `kerberos` below says rather than
   // showing an empty table that looks like a service with nothing in it.
   // ---------------------------------------------------------------------------
+  // The krbtgt block of `kerberosPrincipalsJson()` and of `/admin/kerberos`'s
+  // status (#169). A process without the rotation module — a console loaded
+  // without the composition root — answers the register's state alone.
+  krbtgtView() {
+    const { log, krb5PersonKeys, krbtgtRotation } = this.deps;
+    log.debug("Entering AdminViews.krbtgtView().");
+    try {
+      const view = krbtgtRotation().rotationView();
+      log.debug("Leaving AdminViews.krbtgtView().");
+      return view;
+    } catch (e) {
+      log.debug("Caught in AdminViews.krbtgtView(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving AdminViews.krbtgtView(). The register's state.");
+      return krb5PersonKeys.krbtgtState();
+    }
+  }
+
   kerberosPrincipalsJson(req) {
     const { log, config, realms, krb5Principals, krb5PersonKeys,
       adminActions } = this.deps;
@@ -3420,6 +3443,10 @@ class AdminViews {
                    ttlSetting: Number(config.value('krb5.retainedKeyTtlS')) },
       acceptor: { spn: account.spn, available: account.available,
                   storedKey: !!account.storedKey },
+      // THE REALM'S KRBTGT (#169): where its key comes from, the kvno, when
+      // it was made and last rotated, the versions kept, and the schedule —
+      // never a key. `null` in a realm with no KDC.
+      krbtgt: kerberos.enabled ? this.krbtgtView() : null,
       actions: adminActions.KERBEROS_PRINCIPAL_ACTIONS.slice(),
       people: peoplePage.shown,
       peopleTotal: people.length,
@@ -7225,6 +7252,7 @@ export = {
   setTruststore: slot.forward('setTruststore'),
   truststoreJson: slot.forward('truststoreJson'),
   kerberosPrincipalsJson: slot.forward('kerberosPrincipalsJson'),
+  krbtgtView: slot.forward('krbtgtView'),
   consoleRpSession: slot.forward('consoleRpSession'),
   gateStateFor: slot.forward('gateStateFor'),
   signOnSessionRows: slot.forward('signOnSessionRows'),

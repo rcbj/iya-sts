@@ -14005,8 +14005,10 @@ class AdminApi {
       // Rule 7: `/admin/kerberos/principals` has six controls — the two "Drop
       // previous versions" buttons joined the four on 2026-09-12 — and a
       // person's page under Directory → Users a seventh (#59, "Reset password
-      // and download keytab", posted to the same page), so this resource has
-      // the same seven, through `kerberosPrincipalsAction()` and
+      // and download keytab", posted to the same page), and the krbtgt block
+      // two more (#169, "Rotate the krbtgt key" and "Rotate and
+      // invalidate"), so this resource has the same nine, through
+      // `kerberosPrincipalsAction()` and
       // `kerberosPrincipalsJson()` in `admin-core/`, which reach
       // `kerberos/krb5_person_keys.ts` by a plain require.
       //
@@ -14040,7 +14042,13 @@ class AdminApi {
                      'next verified sign-in derives new ones.\n\n`services` ' +
                      '— the service principals created with a RANDOM key: ' +
                      'the principal, the kvno, the enctypes, when created ' +
-                     'and last rotated.\n\n**NO KEY MATERIAL IS IN THIS ' +
+                     'and last rotated.\n\n`krbtgt` (#169) — the realm\'s ' +
+                     'krbtgt key: where it comes from (`stored`, ' +
+                     '`password` in development, `none`, `unreadable`), ' +
+                     'its kvno and enctypes, when it was made and last ' +
+                     'rotated, the versions kept and until when, and the ' +
+                     'schedule — `scheduled`, `offReason`, `intervalDays`, ' +
+                     '`nextDueAt`.\n\n**NO KEY MATERIAL IS IN THIS ' +
                      'REPLY**, sealed or otherwise — both lists are built ' +
                      'from the public info attributes. A trust realm has a ' +
                      'KDC and a principal database of its own since ' +
@@ -14242,7 +14250,9 @@ class AdminApi {
                          'operator wants after a keytab is compromised. ' +
                          'Nothing kept answers `dropped: 0` rather than a ' +
                          'refusal. Refused for an SPN with no stored key, ' +
-                         'and for a key this service cannot open.',
+                         'and for a key this service cannot open. Takes ' +
+                         'the realm\'s own `krbtgt/<REALM>` too (#169), ' +
+                         'ending a krbtgt rotation\'s window now.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -14347,7 +14357,74 @@ class AdminApi {
                                  '(`password` or `development`), whether ' +
                                  'the password was generated, the sign-out, ' +
                                  'and the keytab (base64) with a file name ' +
-                                 'for it.' }
+                                 'for it.' },
+
+          // #169 (2026-09-23): the realm's krbtgt key, rule 7's twins of the
+          // two krbtgt controls on /admin/kerberos/principals. Each QUEUES a
+          // run of `krb5.krbtgt-rotate-now`; neither returns a key.
+          { action: 'rotate-krbtgt',
+            operationId: 'rotateKerberosKrbtgt',
+            summary: 'Rotate the realm\'s krbtgt key, keeping the one it ' +
+                     'replaces for the TGTs already sealed under it',
+            description: 'Queues a run of the scheduler job ' +
+                         '`krb5.krbtgt-rotate-now` for the trust realm of ' +
+                         'the call, which runs once, on the scheduler\'s ' +
+                         'leader, at its next tick: a new RANDOM key for ' +
+                         'every enctype in `krb5.enctypes`, at the next ' +
+                         'kvno, sealed on the directory entry ' +
+                         '`krbtgt/<REALM>@<REALM>`. The key it replaces is ' +
+                         'KEPT — at most `krb5.retainedKeyVersions`, for the ' +
+                         'longer of the ticket and renew lifetimes plus the ' +
+                         'clock skew unless `krb5.retainedKeyTtlS` names a ' +
+                         'number — so every TGT already issued goes on ' +
+                         'working until it expires. In development mode it ' +
+                         'replaces the key derived from ' +
+                         '`krb5.krbtgtPassword`, which is then the version ' +
+                         'kept.\n\n**NO KEY IS IN THE REPLY, OR ANYWHERE.** ' +
+                         'The answer is the run\'s id; ' +
+                         '`GET /admin-api/kerberos/principals` shows the ' +
+                         '`krbtgt` block with its new kvno once the run has ' +
+                         'happened. Refused in a realm with no KDC.',
+            requestBodyRequired: false,
+            requestBody: {
+              type: 'object', properties: {},
+              examples: [{}],
+              additionalProperties: false
+            },
+            responseDescription: '`queued`, the `runId`, and whether an ' +
+                                 'identical run was already queued.' },
+
+          { action: 'rotate-krbtgt-invalidate',
+            operationId: 'rotateKerberosKrbtgtInvalidate',
+            summary: 'Rotate the realm\'s krbtgt key and keep NOTHING, so ' +
+                     'every TGT in the realm is refused',
+            description: 'Active Directory\'s double reset in one act, for a ' +
+                         'krbtgt key presumed compromised: `rotate-krbtgt` ' +
+                         'with no previous version kept, so every TGT the ' +
+                         'realm issued before the run is refused ' +
+                         'KRB_AP_ERR_BADKEYVER at its next TGS-REQ and every ' +
+                         'person runs a fresh AS exchange. A Shared Signals ' +
+                         'event of this service\'s own vocabulary ' +
+                         '(`urn:iya:sts:secevent:event-type:' +
+                         'kerberos-tickets-invalidated`) says so to every ' +
+                         'stream that takes it. It is also the one act that ' +
+                         'replaces a stored krbtgt record this service ' +
+                         'cannot open. Needs `confirm: "invalidate"`; ' +
+                         'refused without it, and in a realm with no KDC.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                confirm: { type: 'string', enum: ['invalidate'],
+                           description: 'The word `invalidate`, because ' +
+                                        'this cannot be undone.' }
+              },
+              required: ['confirm'],
+              examples: [{ confirm: 'invalidate' }],
+              additionalProperties: false
+            },
+            responseDescription: '`queued`, the `runId`, and `invalidate: ' +
+                                 'true`.' }
         ] },
 
       { method: 'GET', path: BASE + '/audit', tag: 'Audit log',

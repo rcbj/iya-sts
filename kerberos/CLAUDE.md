@@ -2,9 +2,10 @@
 
 Kerberos v5 — a KDC on raw TCP and UDP 88 and over MS-KKDCP, a Kerberos-protected
 service, the same acceptor over HTTP as SPNEGO (RFC 4559/4178), and **a way of
-signing in with it**. Eighteen files, and they divide into three groups — the two
-stored-key modules of 2026-09-12 and the two FAST modules of 2026-09-22 belong to
-the service group and are described at the foot.
+signing in with it**. Nineteen files, and they divide into three groups — the two
+stored-key modules of 2026-09-12, the two FAST modules of 2026-09-22 and the
+krbtgt rotation of 2026-09-23 belong to the service group and are described at
+the foot.
 
 **The codec**, which knows nothing about this service: `krb5_primitives.js`,
 `krb5_asn1.js`, `krb5_crypto.js`, `krb5_messages.js`, `krb5_ndr.js`,
@@ -691,12 +692,14 @@ computer account, the four delegation services with their literal passwords and 
 realm list is then one realm, so `PARTNER.COM` is `KDC_ERR_WRONG_REALM`.
 
 **What it creates, and the one refusal each carries.** `krbtgt/<realm>` and the account
-`krb5.servicePrincipal` names — each ONLY where its password is not the value the
-settings table publishes (`publishedDefault()` reads the row's `dflt`, so the literal
-is written once). A krbtgt from `krbtgt-mock-password` is a golden ticket handed out in
-the README; a service key from `service-account-password` is a silver one. Refused, the
-reason is carried by `serviceAccount()` / `krbtgtUnavailableReason()`, the acceptor puts
-it in its refusal, and `GET /krb5/service` and `GET /krb5/principals` publish it.
+`krb5.servicePrincipal` names. The service account ONLY where its password is not the
+value the settings table publishes (`publishedDefault()` reads the row's `dflt`, so the
+literal is written once) — a service key from `service-account-password` is a silver
+ticket; refused, the reason is carried by `serviceAccount()`, the acceptor puts it in its
+refusal, and `GET /krb5/service` and `GET /krb5/principals` publish it. **The krbtgt
+refusal (`STS-KRB-0062`) is RETIRED since #169**: product reads no password for krbtgt at
+all — it is registered with no password and keyed at random from the directory (THE
+KRBTGT KEY, at the foot), and `krbtgtUnavailableReason()` says why a realm has none yet.
 
 **A PRODUCT KDC AUTHENTICATED NOBODY UNTIL LATER THE SAME DAY, AND NOW IT AUTHENTICATES
 THE DIRECTORY'S PEOPLE.** This paragraph read: *nothing is created on demand, no fixture
@@ -849,9 +852,11 @@ half). Six things about it are decisions:
   know.
 * **THE KVNO.** A first key starts at `krb5.kvno`; a new password is the stored kvno plus
   one; the SAME password adding enctypes keeps its version. A service principal starts at
-  `krb5.kvno` and a Rotate adds one. `krb5.kvno` therefore means two things now and the
-  settings row says both: the fixed version of every account built from a password in the
-  configuration, and the STARTING version of a stored key.
+  `krb5.kvno` and a Rotate adds one; so does a product realm's krbtgt (#169), and a
+  development krbtgt's first rotation goes from the configured kvno to one above it.
+  `krb5.kvno` therefore means two things now and the settings row says both: the fixed
+  version of every account built from a password in the configuration, and the STARTING
+  version of a stored key.
 * **ONE SEALED VALUE, NOT ONE PER ENCTYPE.** The authentication tag covers the name and the
   stamp beside the keys, so a value copied to another entry names the wrong person and one
   kept past a password change carries the wrong stamp. While keys persist a CLEAR value is
@@ -877,7 +882,8 @@ half). Six things about it are decisions:
   development password left on the record would be a second key for every person — and the
   keys go into the non-enumerable cache, refilled from the source on every AS lookup. A
   stored SERVICE key is not registered: it is built over the configured account, if any, per
-  lookup, and `krbtgt/*` is never asked.
+  lookup. `krbtgt/*` was never asked until #169; this realm's own krbtgt is now asked
+  through the source's `krbtgtKeys()`, and `krbtgt/<another realm>` still never is.
 
 **THE SLOTS, AND RULE 3e.** `krb5_principals.js` offers `setKeySource()` and this module
 fills it; `common/credentials.ts` offers `setPasswordObserver()` and this module fills it;
@@ -966,11 +972,13 @@ its keytab until those tickets have expired; this is that, bounded twice.
   with `previous` empty and the current key untouched, audited as
   `admin.krb5.previous.dropped`. Nothing kept is `dropped: 0`; a record this process cannot
   open is refused rather than rewritten.
-* **WHAT IT DOES NOT COVER.** `krbtgt` has no rotation here (its key is the restart-only
-  `krb5.krbtgtPassword` at a fixed kvno), so the TGT path consults kept versions only for the
-  stored-key principals that have them; a TGT under an older krbtgt password is still
-  refused. And the principal's own check in `retainedKeyFor()` against the clock duplicates
-  the source's (mutant M4 below survives because of it, deliberately).
+* **WHAT IT DOES NOT COVER.** It read *`krbtgt` has no rotation here (its key is the
+  restart-only `krb5.krbtgtPassword` at a fixed kvno), so the TGT path consults kept
+  versions only for the stored-key principals that have them* — **paid by #169**: the
+  krbtgt is a stored key with kept versions (THE KRBTGT KEY, at the foot). What is left:
+  the inter-realm trust key `krbtgt/<partner>` is not rotated, and the principal's own
+  check in `retainedKeyFor()` against the clock duplicates the source's (mutant M4 below
+  survives because of it, deliberately).
 
 `tests/kerberos_person_keys.js` sections 5 holds it in the product child with real AS-REQs,
 TGS-REQs and AP-REQs: a TGT and a ticket sealed under a person's key both still accepted
@@ -1264,3 +1272,111 @@ in-process transport) and `tests/vendored/sts_kerberos_rc4.js` (`local: true`,
 over TCP 88 in both modes, and MIT `kinit` with `permitted_enctypes =
 rc4-hmac`). `krb5_wire.js` gained `etypes`, `subkeyEtype` and an RC4 PRF for
 them.
+
+## THE KRBTGT KEY: RANDOM IN PRODUCT, STORED, ROTATED (#169, 2026-09-23)
+
+**THE HOLE.** Each trust realm's krbtgt key was derived at startup from
+`krb5.krbtgtPassword` at the fixed `krb5.kvno`, never rotated, and kept no previous
+version — so one leaked krbtgt key let whoever held it forge TGTs for the realm (a
+golden ticket) for as long as the service ran with that setting. rcbj's decisions on
+the issue (taken autonomously while away, from the plan's recommendations): the key is
+stored on a directory entry reusing the previous-version machinery; product keys it at
+random and retires the password there; the schedule is 180 days through a new
+`mode.rotatesKerberosKeys()`; the invalidate form emits a Shared Signals event in this
+service's own vocabulary.
+
+**WHERE IT LIVES.** The application entry `krbtgt/<REALM>@<REALM>` under
+`ou=applications` (kind `kerberos-service` — every identity maps to an entry), in the
+SAME sealed `krb5ServiceKeys` / `krb5ServiceKeyInfo` pair a service principal's key
+uses, `previous` inside the seal. `krb5_person_keys.ts`'s THE KRBTGT KEY is the
+register: `krbtgtKeys()` (the key source member), `createKrbtgtKey()`,
+`ensureKrbtgtKey()`, `rotateKrbtgt()`, `krbtgtState()`, `dropPreviousKrbtgtKeys()`.
+Five decisions there:
+
+* **RANDOM, NO KEYTAB, EVER.** RFC 3961 random-to-key per enctype the KDC offers. The
+  one party that needs the key is this KDC, so no act hands one out; the service
+  controls (`create-service`, `rotate-service`) still refuse `krbtgt/*`, and
+  `listServices()` leaves the entry out.
+* **THE FIRST KEY IS MADE ONCE PER CLUSTER.** `server.js` awaits
+  `krb5_krbtgt_rotation.ensureAll()` after the bootstrap and before the request
+  workers fork: behind a shared store (postgres) each realm's first key is made under
+  the claim `krb5.krbtgt-create`, after catching up, and the claim is given back only
+  once the write is flushed — `credentials.bootstrapOnce()`'s shape. A loser that still
+  reads nothing is `STS-KRB-0162`; a store that cannot be asked `STS-KRB-0163`. Without
+  a shared store `krbtgtKeys()` makes it on the KDC's first request; with one it only
+  kicks `ensureKrbtgtKey()` and answers none, so a realm turned on while running is
+  refused once rather than keyed twice.
+* **ITS WINDOW IS A TGT'S** (`krbtgtTtlSeconds()`): the longer of the ticket and
+  renew lifetimes plus the skew — the sign-out horizon's bound — unless
+  `krb5.retainedKeyTtlS` names a number. Threaded as an optional `ttlS` through
+  `retire()`, `withinBounds()`, `retainedInfo()`, `retainedRows()`,
+  `retainedForKdc()` and `dropPrevious()`; every other caller is unchanged.
+* **AN UNREADABLE RECORD IS NEVER REWRITTEN** (`STS-KRB-0161`, said once per realm per
+  process): the KDC answers as though the realm had no krbtgt. Only "rotate and
+  invalidate" replaces it, because it carries nothing of it forward.
+* **DEVELOPMENT'S FIRST ROTATION KEEPS THE PASSWORD'S KEY** as the previous version
+  (derived through `principals.longTermKey()` on the configured record), so a TGT a
+  reader was opening with the published password still works after it.
+
+**IN THE PRINCIPAL DATABASE** (`krb5_principals.js`, no new require): the key source
+gained the optional member `krbtgtKeys()` (validated as #173's two are: absent, a
+development krbtgt is derived from its password and a product one is absent).
+`storedService()` asks it for THIS realm's `krbtgt/<REALM>` — never `krbtgt/<other
+realm>` — and builds the principal over the configured record with
+`directoryKeys`/`storedServiceKey`, so `ticketKeyFor()` and `retainedKeyFor()` treat it
+exactly as a stored service key: a kept kvno opens, any other is 44
+(`STS-KRB-0115`). A product krbtgt is REGISTERED with `directoryKeys` and no password
+(`ctx.KRBTGT_FROM_PASSWORD` false, captured at build like `SEEDS_DEMO`), and `find()`
+answers null for it while no key is stored, so nothing can derive one. The getter
+`krbtgtFromPassword` joined the exported ones. **`krb5.krbtgtPassword` carries the
+`onlyWhile` marker on `mode.derivesKrbtgtFromPassword()`**: read through
+`mode.valueInForce()` in development and not read at all in product.
+
+**FAST ACROSS A ROTATION (#173's armor and cookie).** `krb5_fast.ts`: an armor TGT
+sealed under a kept kvno opens through `retainedKeyFor()`; one under a kvno neither
+current nor kept is refused `KRB_AP_ERR_BADKEYVER` (44) unarmored, `STS-KRB-0164`,
+rather than failing to decrypt. The cookie's EncryptedData now carries the krbtgt kvno
+it was sealed under, and `openCookie()` opens it under that version; a dropped version
+opens to nothing and the request is refused as answering no challenge this KDC issued —
+the clean refusal, after which MIT's client starts again. **#111's sign-out is
+untouched**: it is a stamp on the person's principal compared with `authtime`, whatever
+key sealed the ticket.
+
+**WHEN — `krb5_krbtgt_rotation.ts`**, a library that registers two scheduler jobs and no
+route, built at 23b-iii in `common/protocol_stack.ts` (after `ldap/ldap_server`):
+`krb5.krbtgt-rotate` (cluster, realm, hourly, deciding from the key's own age:
+`krb5.krbtgtRotationIntervalDays`, never while the kept version's window is open, off in
+development, with an interval of 0, with no KDC, and with `krb5.retainedKeyVersions` 0)
+and `krb5.krbtgt-rotate-now` (manual only, every mode; `params.invalidate` keeps
+nothing and announces `kerberos-tickets-invalidated` through
+`ssf.kerberosTicketsInvalidated()`). `decide()` is the pure timing; `requestRotation()`
+is what the console and `/admin-api` queue (`STS-ADMIN-0610` without the typed
+`invalidate`, `STS-ADMIN-0611` when the scheduler refuses, `STS-KRB-0128` with no KDC);
+`rotationView()` is the block `/admin/kerberos`, `/admin/kerberos/principals` and their
+API twins draw. Each run's result names the kvno, the last rotation and the next due
+time, which is what `/admin/scheduler` shows for it.
+
+**NO NEW REQUIRE REACHES THE PARENT PROJECT'S COPY SET.** `krb5_kdc.js` changed one
+string (`implemented` names the rotation, `notImplementedYet` the trust key), and it and
+`krb5_principals.js` gained no require; the register and the rotation module are
+reached only through the key source and lazily. A parent in-process job (no key source)
+keeps its password-derived development krbtgt exactly as before.
+
+**PQC.** No post-quantum Kerberos enctype is standardised; the strongest registered are
+aes256-cts-hmac-sha384-192 (20) and aes256-cts-hmac-sha1-96 (18), and Grover leaves
+AES-256 at about 128 bits, so the rotation needs no new enctype. PKINIT's public-key key
+agreement is the quantum-exposed part and is #179. `docs/kerberos.md` says so.
+
+**TESTS.** `tests/kerberos_krbtgt_rotation.js` (three children: product first start —
+creation, a TGT across a rotation, the timing, FAST armor and cookie across one, the
+count and lifetime bounds, invalidate with the Shared Signals notice, the doors, no key
+anywhere; a product restart on the same ldif store and KEK — the key, its kept version
+and an old TGT come back; development — the password's krbtgt, a rotation by hand
+keeping it, invalidate). `tests/vendored/sts_kerberos_krbtgt_rotation.js`
+(`local: true`, a throwaway realm's KDC over MS-KKDCP, both modes: rotate and
+invalidate queued on the scheduler, a TGT across them, the scheduler's two jobs, the
+console and the API agreeing). Untested: two nodes of a cluster racing the first key
+(the claim is `credentials.bootstrapOnce()`'s, and held by `tests/cluster_*` for that
+one), and a node reading a krbtgt rotated on another before replication lands (the KDC
+catches up with the cluster before an AS-REQ or TGS-REQ in active-active mode, as for a
+sign-out).

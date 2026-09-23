@@ -1113,6 +1113,52 @@ const STS_EVENTS = [
       log.debug("Leaving generate().");
       return payload;
     }
+  },
+  // #169 (2026-09-23, rcbj's decision 4): a realm's krbtgt key was rotated
+  // WITH NOTHING KEPT — Active Directory's double reset in one act — so every
+  // ticket-granting ticket its KDC issued before it is refused, and every
+  // person's Kerberos session in the realm has ended. Like the one above it
+  // has no subject: it is about the realm's KDC, not anybody. An ordinary
+  // rotation is not announced, because every TGT goes on working.
+  {
+    uri: STS_PREFIX + 'kerberos-tickets-invalidated',
+    family: 'sts',
+    name: 'Kerberos Tickets Invalidated',
+    subject: 'none',
+    members: [
+      { name: 'realm', required: true, type: 'string',
+        what: 'The trust realm whose krbtgt key was replaced.' },
+      { name: 'kerberos_realm', required: true, type: 'string',
+        what: 'The Kerberos realm its KDC answers for.' },
+      { name: 'kvno', required: true, type: 'number',
+        what: 'The krbtgt key version now current; no earlier one is kept.' },
+      { name: 'reason', required: true, type: 'enum',
+        values: ['invalidated'],
+        what: 'Why: an administrator asked for "rotate and invalidate".' },
+      { name: 'event_timestamp', required: false, type: 'number',
+        what: 'When the key was replaced, in seconds since the epoch.' }
+    ],
+    required: ['realm', 'kerberos_realm', 'kvno', 'reason'],
+    what: 'NON-SPEC, this service\'s own. A realm\'s krbtgt key was ' +
+          'replaced and no previous version kept, so every Kerberos ' +
+          'ticket-granting ticket issued before this event is refused ' +
+          '(KRB_AP_ERR_BADKEYVER) at its next use, and every person signs ' +
+          'in to Kerberos again. A receiver that trusts sessions built on ' +
+          'those tickets re-checks them.',
+    generate: function (values) {
+      log.debug("Entering generate().");
+      const v = values || {};
+      const payload = {
+        realm: String(v.realm || 'default'),
+        kerberos_realm: String(v.kerberos_realm || ''),
+        kvno: Number(v.kvno) || 0,
+        reason: 'invalidated',
+        event_timestamp: Number(v.event_timestamp) ||
+                         Math.floor(Date.now() / 1000)
+      };
+      log.debug("Leaving generate().");
+      return payload;
+    }
   }
 ];
 
@@ -1843,6 +1889,7 @@ module.exports = {
   STS_PREFIX: STS_PREFIX,
   STS_EVENTS: STS_EVENTS,
   SIGNING_KEY_ROTATED: STS_PREFIX + 'signing-key-rotated',
+  KERBEROS_TICKETS_INVALIDATED: STS_PREFIX + 'kerberos-tickets-invalidated',
   STATUSES: STATUSES,
   supportedEventUris: supportedEventUris,
   validateEvent: validateEvent,

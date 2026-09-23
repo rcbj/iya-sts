@@ -5700,6 +5700,22 @@ none of the person's — `kerberos/CLAUDE.md` argues it; the section's warning i
 drawn before the button. The *deliberately no button* note on this page now
 points there.
 
+**THE KRBTGT KEY (2026-09-23, #169)** has a block of its own above the service
+table: where the key comes from (a random stored key; the password in
+development; none yet; a record this service cannot open), its kvno, when it
+was made, last rotated and last invalidated, the next scheduled rotation (or
+why there is none), and the versions kept. It is NOT a service row — no
+service control applies, and `rotate-service` would hand its key out as a
+keytab — so `listServices()` leaves the entry out. Two controls, Admin Write:
+**Rotate the krbtgt key** and **Rotate and invalidate**, the second a text field
+for the word `invalidate` and a `danger` button — a typed confirmation needs no
+script, and the action refuses without the word (`STS-ADMIN-0610`). Both QUEUE
+a run on the scheduler and 303 back with its id; the kvno on the page moves
+when the leader has run it. **Drop previous versions** appears while a version
+is kept. `/admin/kerberos`'s status block (`kerberosPreauthStatusBlock()`)
+carries the same kvno, last rotation, next due time and kept versions, read
+lazily through `adminViews.krbtgtView()`, and links here for the controls.
+
 ## `/admin/applications?application=…` HAS A CREDENTIALS SECTION (2026-09-13)
 
 Asked for by rcbj: the application's page shows its client secret and the key
