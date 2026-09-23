@@ -1048,8 +1048,10 @@ const SCHEMA = {
             'outbound policy (https with the certificate verified; no ' +
             'internal address in ' +
             'product mode). SINGLE-valued, like the front-channel URI: the ' +
-            'specification defines one per client. http or https with no ' +
-            'fragment.' },
+            'specification defines one per client. https with no fragment; ' +
+            'http only for a confidential client and only where the ' +
+            'outbound policy sends over http (federation.outboundAllowHttp, ' +
+            'development mode; section 2.2, #123).' },
     { name: 'oauthBackchannelLogoutSessionRequired', kind: 'single',
       from: 'POST /oauth2/register, the console, or by hand',
       what: 'TRUE if this client requires `sid` in the Logout Token — ' +
@@ -4538,6 +4540,51 @@ function frontchannelOriginProblem(uri, redirectUris) {
     ' — Front-Channel Logout 1.0 section 2.';
 }
 
+// ---------------------------------------------------------------------------
+// BACK-CHANNEL LOGOUT 1.0 SECTION 2.2's SCHEME RULE (#123, 2026-09-23): the
+// `backchannel_logout_uri` "SHOULD use the https scheme ... however, it MAY
+// use the http scheme, provided that the Client Type is confidential". Two
+// refusals, both of an http URI, in every mode:
+//
+//   * a PUBLIC client's (STS-REG-0189) — the specification's own rule;
+//   * anybody's that the outbound policy would refuse to dial
+//     (STS-REG-0190) — `federation.outboundAllowHttp` off, or product mode,
+//     which never sends over plain http (#171) — so the registration would
+//     be a promise that goes straight to the dead-letter queue. Refused where
+//     the client can still be told, with the policy's own reason: the
+//     question is ASKED of `federation_http.ts` (lazily, for #120's reason),
+//     so this refusal and the delivery cannot disagree.
+//
+// `publicClient` is the caller's reading of the client's type: an explicit
+// `none` at registration, and a create or an entry declaring none.
+// ---------------------------------------------------------------------------
+function backchannelSchemeProblem(uri, publicClient) {
+  log.debug("Entering backchannelSchemeProblem().");
+  if (!/^http:/i.test(String(uri || ''))) {
+    log.debug("Leaving backchannelSchemeProblem(). Not http.");
+    return null;
+  }
+  if (publicClient) {
+    log.debug("Leaving backchannelSchemeProblem(). A public client.");
+    return { errorCode: 'STS-REG-0189', error: 'invalid_client_metadata',
+             description: 'backchannel_logout_uri: an http URI is allowed ' +
+               'only to a confidential client (Back-Channel Logout 1.0 ' +
+               'section 2.2); this client authenticates with none. Use ' +
+               'https.' };
+  }
+  const undeliverable = require('../federation/federation_http')
+    .urlProblem(String(uri));
+  if (undeliverable) {
+    log.debug("Leaving backchannelSchemeProblem(). Undeliverable.");
+    return { errorCode: 'STS-REG-0190', error: 'invalid_client_metadata',
+             description: 'backchannel_logout_uri: every Logout Token to ' +
+               'this address would be dead-lettered — ' + undeliverable +
+               '. Use https.' };
+  }
+  log.debug("Leaving backchannelSchemeProblem(). Allowed.");
+  return null;
+}
+
 // The same question about an RFC 7591 document, before any of it is written.
 // Answers null or `{ errorCode, error, description }` in RFC 7591 section
 // 3.2.2's vocabulary — `invalid_redirect_uri` for a redirect URI, and
@@ -4563,6 +4610,17 @@ function registrationUriProblem(metadata) {
         return { errorCode: 'STS-REG-0070', error: members[i][2],
                  description: members[i][0] + ': ' + problem };
       }
+    }
+  }
+  const backchannel = valuesOf(meta.backchannel_logout_uri)[0];
+  if (backchannel) {
+    // RFC 7591 section 2: an omitted method is client_secret_basic, so only
+    // an explicit `none` is a public client here.
+    const schemeProblem = backchannelSchemeProblem(backchannel,
+      String(meta.token_endpoint_auth_method || '') === 'none');
+    if (schemeProblem) {
+      log.debug("Leaving registrationUriProblem(). The back-channel scheme.");
+      return schemeProblem;
     }
   }
   const frontchannel = valuesOf(meta.frontchannel_logout_uri)[0];
@@ -6100,6 +6158,21 @@ function normaliseFields(value) {
         addressProblems.forEach(function (one) { errors.push(one); });
         code = code || 'STS-REG-0071';
         return;
+      }
+      // Back-Channel Logout section 2.2's scheme (#123). A create naming no
+      // method and carrying no credential declares `none` (the method
+      // createApplication() writes for it).
+      if (name === 'oauthBackchannelLogoutUri') {
+        const method = String(asked.oauthTokenEndpointAuthMethod || '');
+        const schemeProblem = backchannelSchemeProblem(values[0],
+          method === 'none' ||
+          (!method && !asked.oauthClientSecret && !asked.oauthJwks &&
+           !asked.oauthJwksUri));
+        if (schemeProblem) {
+          errors.push(schemeProblem.description);
+          code = code || schemeProblem.errorCode;
+          return;
+        }
       }
       // Front-Channel Logout section 2, against the create's redirect URIs.
       if (name === 'oauthFrontchannelLogoutUri') {
@@ -8428,6 +8501,18 @@ function updateApplication(identifier, change) {
     if (problem) {
       log.debug("Leaving updateApplication(). Not a usable address.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0071');
+    }
+    // Back-Channel Logout section 2.2's scheme (#123), for the entry's type.
+    if (attribute === 'oauthBackchannelLogoutUri') {
+      const schemeProblem = backchannelSchemeProblem(value,
+        String(loaded.record.fields.oauthTokenEndpointAuthMethod || '') ===
+          'none');
+      if (schemeProblem) {
+        log.debug("Leaving updateApplication(). The back-channel scheme.");
+        return errorCodes.mark({ ok: false,
+                                 errors: [schemeProblem.description] },
+                               schemeProblem.errorCode);
+      }
     }
     // Front-Channel Logout section 2, against the entry's redirect URIs.
     if (attribute === 'oauthFrontchannelLogoutUri') {
@@ -11066,6 +11151,7 @@ module.exports = {
   issuedJwtKeyPairValues: issuedJwtKeyPairValues,
   storeIssuedJwtKeyPair: storeIssuedJwtKeyPair,
   frontchannelOriginProblem: frontchannelOriginProblem,
+  backchannelSchemeProblem: backchannelSchemeProblem,
   requiredRolesOf: requiredRolesOf,
   requiresNarrowedRoles: requiresNarrowedRoles,
   KINDS: KINDS,

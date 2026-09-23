@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3033** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3035** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 60
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 121
+* [Registries (`STS-REG`)](#sts-reg) — 123
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -3421,6 +3421,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0186` | A registration carried jwks together with jwks_uri, or a jwks_uri that is not https (RFC 7591 section 2) (#120). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0187` | default_max_age, require_auth_time or default_acr_values is not of its type (OpenID Connect Registration section 2) (#120). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0188` | initiate_login_uri is not an https URL (OpenID Connect Registration section 2) (#120). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0189` | A backchannel_logout_uri with the http scheme for a public client: Back-Channel Logout 1.0 section 2.2 allows http only to a confidential one (#123). At registration, a create and an attribute write. | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0190` | A backchannel_logout_uri the outbound policy would not dial (http with federation.outboundAllowHttp off, or in product mode): every delivery would be dead-lettered, so it is refused where it is written (#123). | HTTP 400 {error: invalid_client_metadata} |
 
 ## STS-DBG
 
