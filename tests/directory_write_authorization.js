@@ -184,11 +184,17 @@ function run(t) {
       // ---------------------------------------------------------------------
       t.log.info('=== 2. the empty-roster rule does not make anybody an ' +
                  'administrator here ===');
+      // PRODUCT NEVER OPENS THE CONSOLE'S WINDOW (#103, 2026-09-22): this
+      // read "with no role group member, the console treats this person as
+      // holding Admin Write", which was product's behaviour until then. The
+      // LDAP refusal below is asserted as before, whatever the console says.
       const roles = adminRbac.rolesOf(PERSON);
-      t.check(roles.write === true && roles.open === true,
-              'precondition: with no role group member, the console treats ' +
-              'this person as holding Admin Write',
-              JSON.stringify({ write: roles.write, open: roles.open }));
+      t.check(roles.write === false && roles.open === false &&
+              roles.openable === true,
+              'with no role group member, product mode opens the console to ' +
+              'nobody: this person holds no Admin Write there either',
+              JSON.stringify({ write: roles.write, open: roles.open,
+                               openable: roles.openable }));
       refusedWith50(t,
                     modify(personDn, otherDn,
                            [['replace', 'mail', 'x@example.test']]),

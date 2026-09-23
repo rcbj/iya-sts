@@ -577,15 +577,29 @@ and the account cannot be deleted or renamed. In development any password
 reaches that screen. In product mode the account gets the generated password
 that is logged once.
 
-`admin.openWhenEmpty` is on and keeps the console open to anybody who signs in
-until that account first signs in to `/admin`; every page says so while it
-lasts. Off, only members of the two groups may use the console from the start.
-A process that never seeded the bootstrap administrator keeps the older rule:
-open while *neither* group has a member. If the console is ever closed to
-everybody, `/admin-api` is the way back out: it is gated by a credential of its own
-(`adminApi.authRequired`, an OAuth 2.0 access token rather than a console
-session), so getting back in means holding that token — or turning that one
-setting off, which restores the open API this had until 2026-09-09.
+`admin.openWhenEmpty` is honoured **in development mode only**. There it is on
+and keeps the console open to anybody who signs in until that account first
+signs in to `/admin`; every page says so while it lasts. Off, only members of
+the two groups may use the console from the start. A process that never seeded
+the bootstrap administrator keeps the older rule: open while *neither* group
+has a member.
+
+**Product mode never opens the console to anybody**, whatever this setting
+says (since 2026-09-22): only the roster decides, which at first is the
+bootstrap administrator alone. Until that account has claimed the console, its
+roles are honoured only from a **password** sign-in through its own realm, and
+only such a sign-in claims it — a federation partner asserting `admin`, a
+certificate whose CN is `admin`, a wallet or a Kerberos ticket holds nothing.
+The embedded debugger waits for the claim too. A realm with no bootstrap
+administrator and nobody on its roster is closed, and says so in the log at
+startup (`STS-ADMIN-0798`).
+
+If the console is ever closed to everybody, `/admin-api` is the way back out:
+it is gated by a credential of its own (`adminApi.authRequired`, an OAuth 2.0
+access token rather than a console session), so getting back in means holding
+that token and calling `POST /admin-api/rbac/grant`. In development, turning
+that one setting off restores the open API this had until 2026-09-09; in
+product it gates `/admin-api` by the console's own session and roles instead.
 
 Renaming a role group does not move anybody: the members stay in the old group,
 which stops granting anything the moment the name changes.

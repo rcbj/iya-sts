@@ -4546,7 +4546,9 @@ class AdminApi {
       // THAN LESS. Rule 7 says a console control gets an operation in the same
       // change; here the API half is not merely parity, it is the ONLY door
       // onto the roster that still works when nobody holds a role and
-      // `admin.openWhenEmpty` is off. The console cannot let you fix that — you
+      // `admin.openWhenEmpty` is off — or in product mode, which never opens
+      // the console to whoever signs in (#103). The console cannot let you
+      // fix that — you
       // cannot reach it — so this can. It reaches it with a DIFFERENT
       // credential: an access token carrying `admin:write`, rather than the
       // console session the roster gates.
@@ -4576,12 +4578,21 @@ class AdminApi {
                      'READ.** A member of the write group does not also need ' +
                      'the read group.\n\n**The bootstrap administrator** ' +
                      '(`admin.bootstrapUsername`, reported in `bootstrap`) ' +
-                     'is made a member of both groups at startup. Until it ' +
-                     'first signs in to `/admin` (`bootstrap.claimedAt`), ' +
-                     '`openToAnyone` is true and anybody who signs in holds ' +
-                     'both roles. A process that never seeded it ' +
-                     '(`bootstrap.seeded` false) keeps the older rule: open ' +
-                     'while NEITHER group has a member. ' +
+                     'is made a member of both groups at startup. In ' +
+                     'DEVELOPMENT mode, until it first signs in to `/admin` ' +
+                     '(`bootstrap.claimedAt`), `openToAnyone` is true and ' +
+                     'anybody who signs in holds both roles; a process that ' +
+                     'never seeded it (`bootstrap.seeded` false) keeps the ' +
+                     'older rule: open while NEITHER group has a member. ' +
+                     '**In PRODUCT mode the window never opens** ' +
+                     '(`windowOpens` false, `openToAnyone` false whatever ' +
+                     '`admin.openWhenEmpty` says), and until the bootstrap ' +
+                     'administrator has claimed the console ' +
+                     '(`bootstrapPasswordRequired` true) its roles are ' +
+                     'honoured only from a PASSWORD sign-in through its own ' +
+                     'realm, which is also the only sign-in that claims it — ' +
+                     'a federation partner, a certificate, a wallet or a ' +
+                     'Kerberos ticket naming it holds nothing. ' +
                      '`admin.openWhenEmpty` turns the open window off, and ' +
                      '`closedToEveryone` reports a console no browser can ' +
                      'reach, which is what this resource is the way out ' +
@@ -4726,8 +4737,10 @@ class AdminApi {
                          'group that does not exist.\n\n**Taking away the ' +
                          'LAST grant empties the roster.** Where no ' +
                          'bootstrap administrator was seeded that re-opens ' +
-                         'the console to anybody who signs in (or closes it ' +
-                         'to everybody, if `admin.openWhenEmpty` is off); ' +
+                         'the console to anybody who signs in, in ' +
+                         'development mode (or closes it to everybody, if ' +
+                         '`admin.openWhenEmpty` is off, and always in ' +
+                         'product mode); ' +
                          'once the bootstrap administrator has signed in it ' +
                          'closes the console to everybody. The reply says ' +
                          'which.',

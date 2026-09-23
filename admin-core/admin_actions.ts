@@ -4396,6 +4396,9 @@ class AdminActions {
       // The console draws it on a page of its own rather than in a redirect,
       // for `/admin/users`' reset-password reason.
       const seeded = rbac.seedBootstrapAdministrator(result.realm.id);
+      // And, in product, a realm left with nobody who may enter its console
+      // is logged at once (#103, STS-ADMIN-0798).
+      rbac.reportClosedConsole(result.realm.id);
       let password = '';
       if (seeded.ran && seeded.created && mode.isProduct()) {
         realms.run(result.realm, function () {
@@ -4433,7 +4436,17 @@ class AdminActions {
                             '/admin' + (seeded.created
                               ? ', and must choose a new password at its ' +
                                 'first sign-in.'
-                              : '.')
+                              : '.') +
+                            // #103: product never opens a realm's console
+                            // to whoever signs in first.
+                            (!realms.run(result.realm, function () {
+                              return mode.opensConsoleToAnyone();
+                            })
+                              ? ' Until it has signed in there with its ' +
+                                'password nobody else may use that console, ' +
+                                'and a sign-in as "' + seeded.username +
+                                '" by any other method does not count.'
+                              : '')
                           : '') };
     }
 

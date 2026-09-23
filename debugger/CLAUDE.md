@@ -194,6 +194,15 @@ such bootstrap, so a role held only because nobody holds one is refused with
 That check runs BEFORE the role test, which everybody would otherwise pass. The
 console and the debugger therefore disagree in exactly one state, on purpose, and
 the "not an administrator" page says which state it is and where to grant a role.
+**Since 2026-09-22 (#103) that state exists in development only** — product
+never opens the window — **and product adds one more refusal the console makes
+too**: until the bootstrap administrator has claimed the console with its
+password, its roles are honoured at the console alone, from a password session.
+This module sees a name (at issuance) or a token's claims (at the gate) and
+never the session, so it refuses that account the permission until the claim
+(`STS-DBG-0033`, `claimPending` from `rolesOf()`), and the page says to sign in
+to `/admin` with the password first. A partner asserting `admin` is the case it
+stops. `tests/console_bootstrap_product.js` holds it.
 `tests/debugger_access.js` asserts it against the console's own answer (open,
 Admin Write) and `tests/debugger_server.js` at the gate; removing the check fails
 three assertions. **The policy is asked as well, never

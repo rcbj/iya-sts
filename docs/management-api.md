@@ -272,7 +272,7 @@ override them, because they decide who administers the service.
 | `adminApi.audience` | `ADMIN_API_AUDIENCE` | derived: `global.publicBaseUrl` + `/admin-api`, or this process's scheme, host and port + `/admin-api` | yes | The `aud` a token must carry. At its default, `/admin-api` under the host the request arrived on is accepted as well; any other value pins that one value. |
 | `admin.readGroup` | `ADMIN_READ_GROUP` | `admin-read` | yes | The directory group whose members hold Admin Read, which lets them read the console and, with the token gate off in product mode, `GET` the API. |
 | `admin.writeGroup` | `ADMIN_WRITE_GROUP` | `admin-write` | yes | The directory group whose members hold Admin Write; write implies read. |
-| `admin.openWhenEmpty` | `ADMIN_OPEN_WHEN_EMPTY` | `true` | yes | Keep the console open to every signed-in person until the bootstrap administrator first signs in. |
+| `admin.openWhenEmpty` | `ADMIN_OPEN_WHEN_EMPTY` | `true` | yes | Keep the console open to every signed-in person until the bootstrap administrator first signs in. Development mode only: product never opens it. |
 | `admin.bootstrapUsername` | `STS_ADMIN_BOOTSTRAP_USERNAME` | `admin` | no | The administrator seeded at startup in every realm, a member of both roles, with a forced password change. |
 | `admin.bootstrapPassword` | `STS_ADMIN_BOOTSTRAP_PASSWORD` | empty | no | In product mode, the bootstrap administrator's password instead of a generated one that is logged once. Secret; held to the password policy. |
 | `xacml.enforceAccess` | `STS_XACML_ENFORCE_ACCESS` | `true` | yes | Ask the XACML policy before letting a caller through; on the token path this is what checks the scope. |

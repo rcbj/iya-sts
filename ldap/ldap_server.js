@@ -7505,7 +7505,12 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written) {
 // (`admin.openWhenEmpty`); that is the console being reachable at all on a
 // fresh service. Carried over, it would make every bound connection an
 // administrator of the directory on exactly the deployment nobody has set up,
-// so a role held only through `open` is not a role here.
+// so a role held only through `open` is not a role here. (Since 2026-09-22,
+// #103, the window opens in development mode only; product never opens it.)
+// The bootstrap account's own roles ARE honoured here before it has claimed
+// the console, where the console would honour them only from a password
+// sign-in: a bind that authorizes a write is a verified password in product
+// mode, which is the password sign-in that rule asks for.
 //
 // **THE ALLOWLIST IS AN ALLOWLIST** because this directory is schemaless — a
 // client can write any attribute name at all — and the names that matter look

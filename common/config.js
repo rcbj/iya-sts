@@ -5534,7 +5534,13 @@ const SETTINGS = [
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
     // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
-    description: 'SINCE 2026-09-13, on a service that seeded its bootstrap ' +
+    description: 'HONOURED IN DEVELOPMENT MODE ONLY (2026-09-22, #103): ' +
+                 'product mode never opens the console to anybody, whatever ' +
+                 'this says — only the roster decides, and until the ' +
+                 'bootstrap administrator has claimed the console its roles ' +
+                 'are honoured only from a password sign-in. In ' +
+                 'development, since 2026-09-13, on a service that seeded ' +
+                 'its bootstrap ' +
                  'administrator (admin.bootstrapUsername): ON, every ' +
                  'signed-in person may use the whole console UNTIL that ' +
                  'account first signs in to /admin, after which only members ' +
@@ -5552,7 +5558,9 @@ const SETTINGS = [
                  '/admin-api is the way back in: POST /admin-api/rbac/grant ' +
                  'with an access token carrying admin:write, or — if nobody ' +
                  'can get one of those either — adminApi.authRequired=false ' +
-                 'and then that same call.' },
+                 'and then that same call (development only: product then ' +
+                 'gates /admin-api by the console\'s own session and ' +
+                 'roles).' },
 
   // --- Protocol debugger ---------------------------------------------------
   //

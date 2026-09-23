@@ -46,6 +46,14 @@
 // the same judgement `common/cert_enrollment.ts` makes about issuing
 // certificates in somebody else's name.
 //
+// **SINCE 2026-09-22 (#103) THE WINDOW IS DEVELOPMENT'S ALONE, AND THE
+// DEBUGGER AND THE CONSOLE AGREE ABOUT THE REST OF IT.** Product never opens
+// the window, and before the bootstrap administrator has claimed the console
+// its roles are honoured from a password sign-in only. The console can see
+// the session; this module sees a name, so it refuses that account the
+// permission until the claim (`STS-DBG-0033`) — a partner asserting `admin`
+// must not be issued it.
+//
 // **AND THE POLICY IS ASKED AS WELL, NEVER INSTEAD.** The roles are put into a
 // request to `common/access_gate.ts` under `RESOURCE.DEBUGGER`, so an operator
 // can narrow the debugger further with a XACML rule. What the policy cannot do
@@ -186,6 +194,22 @@ class DebuggerAccess {
                     'role on /admin/rbac (or POST /admin-api/rbac/grant) ' +
                     'first' };
     }
+    // THE BOOTSTRAP ADMINISTRATOR BEFORE ITS CLAIM, IN PRODUCT (2026-09-22,
+    // #103). It holds both roles by membership, and until it has claimed the
+    // console with its password those roles are honoured at the console alone,
+    // from a password session. Nothing here knows how the subject signed in —
+    // at issuance a subject is a name, and at the debugger a token's claims —
+    // so the debugger waits for the claim rather than guessing. A federation
+    // partner asserting `admin` would otherwise be issued the permission.
+    if (held && held.claimPending === true) {
+      log.debug("Leaving DebuggerAccess.isAdministrator(). The bootstrap " +
+                "administrator has not claimed the console.");
+      return { allowed: false, code: 'STS-DBG-0033', roles: [],
+               why: name + ' is the bootstrap administrator and has not yet ' +
+                    'claimed the admin console by signing in to it with its ' +
+                    'password; until it has, its roles open the console ' +
+                    'alone. Sign in to /admin with the password first' };
+    }
     const holdsOne = roles.some(function (role) {
       return CONSOLE_ROLES.indexOf(role) >= 0;
     });
@@ -269,7 +293,10 @@ class DebuggerAccess {
     // The empty roster has a code of its own, because what an operator does
     // about it is different: grant somebody a role, rather than find out why
     // this person does not hold one.
-    audit.failure(answer.code === 'STS-DBG-0024' ? 'STS-DBG-0024'
+    // The unclaimed bootstrap account (#103) likewise: what to do is sign in
+    // to the console with the password, not look for a missing role.
+    audit.failure(answer.code === 'STS-DBG-0024' ||
+                  answer.code === 'STS-DBG-0033' ? answer.code
                                                  : 'STS-DBG-0001', {
       actor: name,
       protocol: 'OAuth 2.0 / OIDC',
