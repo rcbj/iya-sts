@@ -663,6 +663,15 @@ library, wired by `spiffe_server.ts`:
   on loopback or its secure port (`requestConfigured()`), with the token, the
   client certificate and the CA read from FILES — no credential is a setting,
   because settings are drawn, returned by `/admin-api` and persisted.
+  `spiffe.k8sSkipKubeletVerification` (SPIRE's `skip_kubelet_verification`)
+  is honoured in DEVELOPMENT MODE ONLY since #171 (2026-09-23): the attestor
+  asks `common/outbound_tls.ts`'s `skipsVerification()`, which in product
+  ignores it — said once, `STS-SPIFFE-0116` — so the kubelet's certificate is
+  verified against `spiffe.k8sKubeletCaFile` as though it were off; the row
+  carries `onlyWhile`, so product refuses to set it (`STS-CORE-0103`).
+  `requestConfigured()` asks the same predicate again where the option is
+  applied. The read-only port's plain http to loopback is SPIRE's own
+  arrangement and is not governed by `federation.outboundAllowHttp`.
 
 **THE SEAM IS `spiffe_grpc.ts`'s `bindAttestedSocket()`.** grpc-js does not
 expose an accepted connection's file descriptor, so the Workload API's Unix

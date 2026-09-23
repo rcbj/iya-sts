@@ -174,7 +174,7 @@ function childMain() {
     const rpBase = 'http://127.0.0.1:' + rp.address().port;
 
     config.setOverride('oauth2.consentRequired', false);
-    config.setOverride('federation.outboundAllowInsecure', true);
+    config.setOverride('federation.outboundAllowHttp', true);
     config.setOverride('oauth2.backchannelLogoutBackoffMs', 0);
 
     const SECRET = 'account-disable-secret-0123456789abcdef';

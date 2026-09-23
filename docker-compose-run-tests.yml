@@ -511,6 +511,16 @@ services:
       # listener. Read-only, and the identity they carry can read two values
       # and change nothing.
       - sts-bao-client:/run/secrets/bao:ro
+      # A DIRECTORY SHARED WITH THE RUNNER (#171). A job that runs a push
+      # listener of its own makes a CA at run time and writes the CA's
+      # CERTIFICATE here, then names it in a `…CaFile` setting so the service
+      # VERIFIES that listener: product mode ignores every
+      # `…SkipTlsVerification`, and a CA file is a path on this container's
+      # filesystem. Nothing is committed and no key is ever written here.
+      # tests/vendored/outbound_test_ca.js argues it; the runner mounts the
+      # same volume below. The cluster file's `sts2` inherits it through
+      # `extends`. Read-only on this side.
+      - sts-test-shared:/run/sts-test:ro
     healthcheck:
       # The scheme follows the mode in this service — oauth2.rfc9700 derives
       # global.https — so the probe decides which module to use the same way
@@ -615,10 +625,12 @@ services:
       # rather than once, for federation_http.ts's reason.
       - PEP_TLS_INSECURE=true
       # THE ADDRESS THE SERVICE NUDGES, and it is deliverable in this stack
-      # once the job turns xacml.pepNotifyAllowInsecure on in its realm — which
+      # once the job turns xacml.pepNotifyAllowHttp on in its realm — which
       # is the one place this repository's third outbound request is dialled at
       # a listener that answers. Until it does, the service refuses to dial a
-      # plain-http URL and says so on the row, which the job asserts first.
+      # plain-http URL and says so on the row, which the job asserts first. In
+      # product mode plain http stays refused (#171): the job asserts that and
+      # puts its own realm in development mode for the delivery.
       - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-http://xacml-pep:9090/notify}
       - PEP_RESOURCE=${XACML_PEP_RESOURCE:-https://example.test/records}
       - PEP_BIAS=${XACML_PEP_BIAS:-deny-biased}
@@ -746,6 +758,11 @@ services:
       # child of this container and `localhost` is right.
       # ---------------------------------------------------------------------
       - GNAP_PUSH_HOST=${GNAP_PUSH_HOST:-tests}
+      # The shared directory (#171): where this container writes a run-time
+      # CA's certificate, and the path the SERVICE reads it at — the same
+      # volume, mounted into `sts` at the same place.
+      - OUTBOUND_TEST_CA_DIR=${OUTBOUND_TEST_CA_DIR:-/run/sts-test}
+      - OUTBOUND_TEST_CA_FILE=${OUTBOUND_TEST_CA_FILE:-/run/sts-test/outbound-test-ca.crt}
       - XACML_PEP_NAME=${XACML_PEP_NAME:-xacml-pep}
       - XACML_PEP_REALM=${XACML_PEP_REALM:-pep-e2e}
       # ---------------------------------------------------------------------
@@ -809,6 +826,8 @@ services:
       # root inside the container, which is why the workflow chowns it before
       # the upload step reads it.
       - ./tests/report:/usr/src/sts/tests/report
+      # The directory shared with the service (#171) — see `sts` above.
+      - sts-test-shared:/run/sts-test
     depends_on:
       sts:
         # The whole ordering of this file. `up` reports success for a container
@@ -844,6 +863,8 @@ services:
 volumes:
   sts-bao-file:
   sts-bao-client:
+  # The run-time CA certificates a job hands the service (#171).
+  sts-test-shared:
 
 # One bridge, and nothing published on it. `docker compose` gives the network a
 # name from the project, so two projects cannot share one.

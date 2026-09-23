@@ -56,7 +56,7 @@ files did not change; the paths did.
 
 | Directory | What is in it |
 |---|---|
-| `common/` | Everything more than one family reads — settings, the express app, **`crypto.js` (the one place this service signs, verifies, encrypts and decrypts)**, trust realms, both worker pools and the shared require order, the registers (applications, delegation, permissions, consent, roles, the issuance gate), the certificate authority (`pki.js`), the second factors, the password policy, the error-code table, and **`mode.js`, the one place `development` and `product` are told apart**. `common/CLAUDE.md`. |
+| `common/` | Everything more than one family reads — settings, the express app, **`crypto.js` (the one place this service signs, verifies, encrypts and decrypts)**, trust realms, both worker pools and the shared require order, the registers (applications, delegation, permissions, consent, roles, the issuance gate), the certificate authority (`pki.js`), the second factors, the password policy, the error-code table, `outbound_tls.ts` (whether an outbound request may be plain http, and whether the peer's certificate is verified — #171), and **`mode.js`, the one place `development` and `product` are told apart**. `common/CLAUDE.md`. |
 | `common/vendored/` | Byte-identical copies of the parent project's files — `xmldsig.js`, the PKI and post-quantum encoders — plus the JSON-LD `contexts/`. **Do not edit them here.** `common/vendored/CLAUDE.md`. |
 | `home/` | The front door: `GET /` and the one image on it. `home/CLAUDE.md`. |
 | `logout/` | The protocol-independent sign-out at `GET|POST /logout`, and the one model of what a live session is, per identity (`/admin/logout`) and service-wide (`/admin/sessions`). `logout/CLAUDE.md`. |

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3005** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3016** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 56
+* [Service core (`STS-CORE`)](#sts-core) — 59
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 41
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -67,17 +67,17 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 95
+* [Federation (`STS-FED`)](#sts-fed) — 97
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 115
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 116
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 99
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 101
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 15
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 275
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 276
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 178
 * [Management API (`STS-API`)](#sts-api) — 73
@@ -195,6 +195,9 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0100` | A trust realm was given a domain another realm — the default realm's global.domain included — already has. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0101` | An update tried to change a trust realm's domain, which is fixed when the realm is created. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0102` | A cache or replay store could not eject its expired entries; the store still refuses an expired entry where it reads it. | none — logged by the caches.eject-expired job |
+| `STS-CORE-0103` | A write turning on a development-only setting — a …SkipTlsVerification, or spiffe.k8sSkipKubeletVerification — was refused because the realm it lands in is in product mode (#171). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-CORE-0104` | An outbound request (a GNAP push, an SSF push, a federation back channel or an XACML nudge) was not made because the CA file its …CaFile setting names could not be read or holds no certificate. | none — the family's own failure record (a grant history, a dead letter, a relationship's last error, a PEP row) |
+| `STS-CORE-0105` | The service did not start: the appconfig file or the environment still names a setting removed on 2026-09-23 (#171) — gnap.pushAllowInsecure, ssf.pushAllowInsecure, federation.outboundAllowInsecure or xacml.pepNotifyAllowInsecure. | none — the process exits |
 
 ## STS-WORKER
 
@@ -1499,7 +1502,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0530` | An access token carrying no cnf x5t#S256 was presented at a resource while oauth2.accessTokenRequireMtls is on. | invalid_token (HTTP 401) |
 | `STS-OAUTH-0531` | A certificate-bound access token was presented at a resource over a connection carrying no matching certificate, while oauth2.accessTokenRequireMtls is on. | invalid_token (HTTP 401) |
 | `STS-OAUTH-0532` | A back-channel Logout Token was not sent because federation.outbound is off, so this service makes no outbound request. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
-| `STS-OAUTH-0533` | A back-channel Logout Token was not sent because the client's backchannel_logout_uri cannot be dialled: not http(s), plain http with federation.outboundAllowInsecure off, or not a URL. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
+| `STS-OAUTH-0533` | A back-channel Logout Token was not sent because the client's backchannel_logout_uri cannot be dialled: not http(s), plain http refused (federation.outboundAllowHttp off, or product mode), or not a URL. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
 | `STS-OAUTH-0534` | Product mode: a back-channel Logout Token was not sent because the backchannel_logout_uri resolves to a loopback, private, link-local or reserved address. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
 | `STS-OAUTH-0535` | Product mode: a back-channel Logout Token was not sent because the backchannel_logout_uri's host could not be resolved. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
 | `STS-OAUTH-0536` | A relying party answered a back-channel Logout Token with 400, which Back-Channel Logout 1.0 section 2.8 makes a final refusal; it is not retried. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
@@ -1762,7 +1765,7 @@ Raised from: federation/.
 | `STS-FED-0045` | The application registry threw while recording the foreign identity provider after a federated sign-in; the sign-in stood. | — |
 | `STS-FED-0046` | A caller asked federation_http.js to dial an attribute outside DIALLABLE — a bug in the caller, refused. | HTTP 502 or 500 page for the federated sign-in it was part of |
 | `STS-FED-0047` | A back-channel request to a federation partner was not made because federation.outbound is off. | HTTP 502 or 500 page for the federated sign-in it was part of |
-| `STS-FED-0048` | A back-channel URL on a federation relationship cannot be dialled: empty, not a URL, plain http with federation.outboundAllowInsecure off, or another scheme. | HTTP 502 or 500 page for the federated sign-in it was part of |
+| `STS-FED-0048` | A back-channel URL on a federation relationship cannot be dialled: empty, not a URL, plain http with federation.outboundAllowHttp off, or another scheme. | HTTP 502 or 500 page for the federated sign-in it was part of |
 | `STS-FED-0049` | A federation partner answered a back-channel request with a redirect, which is not followed. | HTTP 502 or 500 page for the federated sign-in it was part of |
 | `STS-FED-0050` | A federation partner's back-channel response exceeded federation.maxResponseBytes and was abandoned. | HTTP 502 or 500 page for the federated sign-in it was part of |
 | `STS-FED-0051` | A federation partner answered a back-channel request with a non-2xx status. | HTTP 502 or 500 page for the federated sign-in it was part of |
@@ -1810,6 +1813,8 @@ Raised from: federation/.
 | `STS-FED-0109` | The directory would not write a federation link or unlink. | action result ok:false (console redirect or /admin-api HTTP 400) |
 | `STS-FED-0110` | A federation link was removed and ending the sessions that partner had signed the person in to failed; the unlink stands. | — |
 | `STS-FED-0111` | The linking step was reached in a browser that did not start it: the cookie binding it to the browser the partner's response arrived in was absent or different. | HTTP 403 page |
+| `STS-FED-0112` | An outbound federation request (a back channel, a metadata or status-list fetch, a Logout Token) was refused because its URL is plain http and the realm is in product mode, whatever federation.outboundAllowHttp says (#171). | the caller's failure: a sign-in page, a dead letter, a refusal |
+| `STS-FED-0113` | Product mode ignored federation.outboundSkipTlsVerification: an outbound request verifies the certificate of whoever answers whatever it says. Logged once per process (#171). | none — a warning in the log |
 
 ## STS-KRB
 
@@ -2236,6 +2241,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0113` | A realm's Workload API Unix socket was not bound: this is a product and the native module workload attestation needs is not in the image. | — |
 | `STS-SPIFFE-0114` | A realm's SPIRE Server API could not take a new certificate after the service Root was replaced, so it still presents a chain under the old Root and a client holding the new bundle cannot verify it until a restart. | — |
 | `STS-SPIFFE-0115` | After the service Root was replaced, a realm's certificate authority branch did not arrive under the new Root within 30 seconds, so its SPIRE Server API was re-keyed anyway and the branch was repaired in this process — which may leave the realm with two Intermediate CAs if the process that replaced the Root rebuilds it too. | — |
+| `STS-SPIFFE-0116` | Product mode ignored spiffe.k8sSkipKubeletVerification: the k8s workload attestor verifies the kubelet's certificate against its CA whatever it says. Logged once per process (#171). | none — a warning in the log |
 
 ## STS-TLS
 
@@ -2394,7 +2400,7 @@ Raised from: ssf/.
 | `STS-SSF-0009` | An SSF HTTP Basic credential failed password verification (product mode: no such person, a wrong password, or a person with no password). | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
 | `STS-SSF-0010` | A protected SSF endpoint was called with no credential at all. | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
 | `STS-SSF-0011` | The body of an SSF management, subject, verification or poll request is not JSON. | HTTP 400 {err: invalid_request} |
-| `STS-SSF-0012` | A push stream was refused at creation because its delivery endpoint cannot be dialled by this transmitter (not a URL, wrong scheme, plain http with ssf.pushAllowInsecure off, or a host outside ssf.pushAllowedHosts). | HTTP 400 {err: invalid_request} |
+| `STS-SSF-0012` | A push stream was refused at creation because its delivery endpoint cannot be dialled by this transmitter (not a URL, wrong scheme, plain http with ssf.pushAllowHttp off, or a host outside ssf.pushAllowedHosts). | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0013` | A Stream Configuration was refused at creation (a missing aud, an unsupported delivery method, a malformed member). | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0014` | An SSF request named a stream_id this transmitter does not hold for the authenticated receiver — one that does not exist, or another receiver's, which answers identically (#144). | HTTP 404 {err: invalid_request} |
 | `STS-SSF-0015` | A stream update (PUT or PATCH) was refused because the configuration it would produce is invalid. | HTTP 400 {err: invalid_request} |
@@ -2482,6 +2488,8 @@ Raised from: ssf/.
 | `STS-SSF-0105` | A Security Event Token delivered to one of this service's receivers carries an iss other than its stream's, or one ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was recorded and refused. | HTTP 400 {err: invalid_issuer} |
 | `STS-SSF-0106` | A Security Event Token pushed at POST /ssf/receive is addressed to no audience ssf.receiveAudiences lists; it was recorded and refused. | HTTP 400 {err: invalid_audience} |
 | `STS-SSF-0107` | An access token (OAuth or GNAP) carried the Shared Signals scope an operation needs, and the client it was issued to no longer declares that scope in its oauthAllowedScope. | HTTP 403 {err: access_denied} |
+| `STS-SSF-0108` | A push delivery endpoint was refused because it is plain http and the realm is in product mode, where RFC 8935 push goes over TLS whatever ssf.pushAllowHttp says (#171). | at stream creation HTTP 400 {err: invalid_request}; at push time none — a dead letter |
+| `STS-SSF-0109` | Product mode ignored ssf.pushSkipTlsVerification: a push verifies the receiver's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
 
 ## STS-RISK
 
@@ -2583,8 +2591,8 @@ Raised from: gnap/.
 | `STS-GNAP-0092` | A GNAP access token could not be minted in its chosen format; the token was left out of the response. | — |
 | `STS-GNAP-0100` | None of the interaction start modes a GNAP client offered is supported for it, and no push finish can reach the resource owner another way. | HTTP 400 GNAP invalid_interaction |
 | `STS-GNAP-0101` | In product mode, a GNAP interaction finish URI is not registered for the client instance (gnapFinishUri). | HTTP 400 GNAP invalid_interaction |
-| `STS-GNAP-0102` | A GNAP push finish URI is not one this service will dial (not an absolute http(s) URL, plain http with gnap.pushAllowInsecure off, or a host outside gnap.pushAllowedHosts). | HTTP 400 GNAP invalid_interaction |
-| `STS-GNAP-0103` | In product mode, a GNAP finish URI uses plain http to a host other than localhost. | HTTP 400 GNAP invalid_interaction |
+| `STS-GNAP-0102` | A GNAP push finish URI is not one this service will dial (not an absolute http(s) URL, plain http with gnap.pushAllowHttp off, or a host outside gnap.pushAllowedHosts). | HTTP 400 GNAP invalid_interaction |
+| `STS-GNAP-0103` | In product mode, a GNAP finish URI uses plain http to a host other than localhost — refused at grant time, and a push finish refused at push time for the same reason (#171). | HTTP 400 GNAP invalid_interaction |
 | `STS-GNAP-0110` | A GNAP client proved its key with a proofing method this authorization server's key_proofs_supported does not list. | HTTP 401 GNAP invalid_client |
 | `STS-GNAP-0111` | A GNAP client asked for a bearer token while bearer tokens are off (gnap.bearerTokens) or its entry forbids them (gnapBearerTokens). | HTTP 400 GNAP invalid_flag |
 | `STS-GNAP-0112` | A GNAP grant request or modification asks for an access right the client may not request (gnapAllowedAccess), or names an unregistered reference while gnap.unknownAccessReferences is refuse. | HTTP 403 GNAP request_denied |
@@ -2790,6 +2798,7 @@ Raised from: gnap/.
 | `STS-GNAP-0717` | A resource owner's decision on a GNAP grant was refused because a decision on the same interaction had already been recorded, by another request or another node against the same store (the cluster claim, #46). | RFC 9635 section 4 (an interaction is answered once) |
 | `STS-GNAP-0718` | A signed GNAP request was refused because the realm's signature replay history held gnap.replayCacheSize LIVE entries: forgetting one would let that signature be replayed, so the request is refused instead until entries age out. | RFC 9635 section 7.3 (invalid_request) |
 | `STS-GNAP-0719` | A GNAP client asked for an access right naming one of this service's own protected scopes (ssf:read, ssf:write, as a reference string or an object of type ssf) that its application's oauthAllowedScope does not list. | RFC 9635 section 3.6 (request_denied) |
+| `STS-GNAP-0720` | Product mode ignored gnap.pushSkipTlsVerification: a push finish verifies the client's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
 
 ## STS-XACML
 
@@ -2864,13 +2873,15 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0063` | A decision was recorded against an asker the monitor's catalogue does not know, so it was not counted. | — |
 | `STS-XACML-0064` | A realm's remote PEP register could not be read (for the monitor or the other-realms hint); that part was reported as empty. | — |
 | `STS-XACML-0065` | The change-nudge dispatcher threw, which is a defect rather than an unreachable PEP; no policy change is lost. | — |
-| `STS-XACML-0066` | A change nudge was not sent because the PEP's notify URL is outside the outbound bounds (not a URL, wrong scheme, plain http without xacml.pepNotifyAllowInsecure, or a host not in xacml.pepNotifyAllowedHosts). | — |
+| `STS-XACML-0066` | A change nudge was not sent because the PEP's notify URL is outside the outbound bounds (not a URL, wrong scheme, plain http without xacml.pepNotifyAllowHttp, or a host not in xacml.pepNotifyAllowedHosts). | — |
 | `STS-XACML-0067` | A PEP's notify endpoint answered a change nudge with a redirect, which is not followed. | — |
 | `STS-XACML-0068` | A PEP's notify endpoint answered a change nudge with a non-2xx status. | — |
 | `STS-XACML-0069` | A PEP's notify endpoint did not answer a change nudge within xacml.pepNotifyTimeoutMs. | — |
 | `STS-XACML-0070` | A change nudge could not be delivered because the connection to the PEP's notify endpoint failed. | — |
 | `STS-XACML-0071` | An HTTPS listener certificate was asked for a PEP that is not registered in this realm, so there is no realm to issue it from. | console: a page saying so; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-XACML-0072` | A remote PEP's HTTPS listener certificate could not be issued: the certificate authority refused it, or issuing threw. | console: a page saying so; /admin-api: HTTP 400 { ok: false, errors }, or 500 when issuing threw |
+| `STS-XACML-0073` | A change nudge was not sent because the PEP's notify URL is plain http and the realm is in product mode, whatever xacml.pepNotifyAllowHttp says (#171). | — |
+| `STS-XACML-0074` | Product mode ignored xacml.pepNotifySkipTlsVerification: a nudge verifies the PEP's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
 
 ## STS-XPEP
 
@@ -3336,7 +3347,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0076` | An RFC 9728 document was empty, too large (federation.maxResponseBytes), not JSON, not a JSON object, or refused by the JSON document walk. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0077` | An RFC 9728 document is malformed: `resource` missing, not a URL or carrying a fragment, or a member of the wrong JSON type. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0078` | An RFC 9728 document was to be fetched by URL and federation.outbound is off. | the caller's refusal (errors on a console or /admin-api reply) |
-| `STS-REG-0079` | The URL an RFC 9728 document was to be fetched from is not a URL, or not https while federation.outboundAllowInsecure is off. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0079` | The URL an RFC 9728 document was to be fetched from is not a URL, or not https while plain http is refused (federation.outboundAllowHttp off, or product mode). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0080` | In product mode, the host of an RFC 9728 document URL resolves to a loopback, private, link-local or reserved address. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0081` | The host of an RFC 9728 document URL could not be resolved. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0082` | The RFC 9728 document URL answered with a redirect, which is not followed. | the caller's refusal (errors on a console or /admin-api reply) |

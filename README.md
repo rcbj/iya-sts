@@ -606,7 +606,8 @@ which is what a service provider encrypts an `EncryptedID` to.
 that writes the certificate onto the entry, and issuing reads the entry — so no
 sign-in waits on somebody else's web server. It is the second outbound-request
 surface in this service after federation, and follows the same refusals: https
-only unless `federation.outboundAllowInsecure` is on, a timeout of
+with the certificate verified (plain http only with `federation.outboundAllowHttp`
+on, in development mode), a timeout of
 `federation.outboundTimeoutMs`, no redirects followed, and a size cap. A failure
 changes nothing, so an application that was working keeps working.
 
@@ -813,7 +814,9 @@ trust realm. [docs/gnap.md](docs/gnap.md) says what each one changes on the wire
 | `gnap.resourceRegistration` | `STS_GNAP_RESOURCE_REGISTRATION` | `true` | yes | RFC 9767 section 3.4. |
 | `gnap.tokenDerivation` | `STS_GNAP_TOKEN_DERIVATION` | `true` | yes | RFC 9767 section 4: a resource server presents a token it was given as existing_access_token and receives a token for a downstream resource server. |
 | `gnap.pushFinish` | `STS_GNAP_PUSH_FINISH` | `true` | yes | Section 4.2.2: an HTTP POST to a URI the CLIENT supplied. |
-| `gnap.pushAllowInsecure` | `STS_GNAP_PUSH_ALLOW_INSECURE` | `false` | yes | Push to a plain http URI, or to an https one whose certificate does not verify. |
+| `gnap.pushAllowHttp` | `STS_GNAP_PUSH_ALLOW_HTTP` | `false` | yes | Push to a plain http finish URI: any host in development, loopback only in product (RFC 9635 section 2.5.2.1). |
+| `gnap.pushSkipTlsVerification` | `STS_GNAP_PUSH_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only.** Push to an https URI without verifying its certificate. Product ignores it (`STS-GNAP-0720`) and refuses to set it (`STS-CORE-0103`). |
+| `gnap.pushCaFile` | `STS_GNAP_PUSH_CA_FILE` | `` | yes | A PEM file of CA certificates a push listener may chain to, beside node's store. |
 | `gnap.pushAllowedHosts` | `STS_GNAP_PUSH_ALLOWED_HOSTS` | `` | yes | Host names a push finish may go to. |
 | `gnap.pushTimeoutMs` | `STS_GNAP_PUSH_TIMEOUT_MS` | `5000` | yes | How long a push interaction finish may take. |
 | `gnap.jweEnc` | `STS_GNAP_JWE_ENC` | `A256GCM` | yes | The enc of a jwt-encrypted token encrypted to a resource server's own key. |
@@ -916,7 +919,7 @@ unedited service behaves exactly as it did.
 | `oauth2.revokeRefreshOnLogout` | `STS_OAUTH2_REVOKE_REFRESH_ON_LOGOUT` | `true` | yes | In RFC 9700 mode, end a browser sign-on session and every refresh token issued ON that session is revoked — the section MAY that names logout and a password change as the examples. |
 | `oauth2.frontchannelLogout` | `STS_OAUTH2_FRONTCHANNEL_LOGOUT` | `true` | yes | OpenID Connect Front-Channel Logout 1.0: the two discovery members, the `sid` claim on an ID Token issued on a browser sign-on session, and a hidden iframe per registered `frontchannel_logout_uri` on every sign-out — with `iss` and `sid` where the client registered `frontchannel_logout_session_required`. Off, none of the three happens; `sid` stays while `oauth2.backchannelLogout` is on, so only both off restores the tokens issued before either feature existed. |
 | `oauth2.frontchannelLogoutWaitS` | `STS_OAUTH2_FRONTCHANNEL_LOGOUT_WAIT_S` | `3` | yes | After an `/oauth2/logout` that notified relying parties by Front-Channel Logout, the seconds the sign-out page waits for their iframes to load before a `<meta>` refresh returns the browser to the checked `post_logout_redirect_uri` (section 4). The link stays beside it. `0` returns only when the link is followed. |
-| `oauth2.backchannelLogout` | `STS_OAUTH2_BACKCHANNEL_LOGOUT` | `true` | yes | OpenID Connect Back-Channel Logout 1.0: `backchannel_logout_supported` and `backchannel_logout_session_supported` in discovery, the `sid` claim, and — whenever a session ends, by any door, by an account being disabled, or by EXPIRY — a signed (and where registered encrypted) Logout Token POSTed to every relying party on it that registered a `backchannel_logout_uri`. Each delivery is a persisted row sent once for the cluster and retried by any node; through the outbound policy (`federation.outbound`, https unless `federation.outboundAllowInsecure`, no internal address in product mode). |
+| `oauth2.backchannelLogout` | `STS_OAUTH2_BACKCHANNEL_LOGOUT` | `true` | yes | OpenID Connect Back-Channel Logout 1.0: `backchannel_logout_supported` and `backchannel_logout_session_supported` in discovery, the `sid` claim, and — whenever a session ends, by any door, by an account being disabled, or by EXPIRY — a signed (and where registered encrypted) Logout Token POSTed to every relying party on it that registered a `backchannel_logout_uri`. Each delivery is a persisted row sent once for the cluster and retried by any node; through the outbound policy (`federation.outbound`, https with the certificate verified, no internal address in product mode). |
 | `oauth2.backchannelLogoutOnExpiry` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_ON_EXPIRY` | `true` | yes | Send the Logout Tokens when a session EXPIRES — its lifetime ran out, or it went idle — as well as when somebody signs out. Off for a deployment whose relying parties deliberately outlive the provider's idle timeout, or a test that wants an expiry silent. Front-channel logout cannot follow an expiry either way: it needs the browser. |
 | `oauth2.backchannelLogoutTokenTtlS` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_TOKEN_TTL_S` | `120` | yes | How far in the future a Logout Token's `exp` is — the specification's "at most two minutes". A token is signed once and resent unchanged while it is good; one that would expire before a retry is signed again with the same `jti`. |
 | `oauth2.backchannelLogoutAttempts` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_ATTEMPTS` | `3` | yes | How many times one Logout Token is POSTed before the delivery becomes a dead letter. Only a timeout, a connection failure, a 5xx, 408 or 429 is retried; a 400 is final (section 2.8), and so is an outbound-policy refusal. |
@@ -1079,7 +1082,9 @@ what its api may dial.
 | `federation.loginButtons` | `STS_FEDERATION_LOGIN_BUTTONS` | `true` | yes | Show a button per usable service-provider-side relationship on /authn/login, so a federated identity can satisfy ANY flow already in progress — an OAuth 2.0 authorization request, a WS-Federation sign-in, a SAML AuthnRequest, the admin console. |
 | `federation.outbound` | `STS_FEDERATION_OUTBOUND` | `true` | yes | Whether this service may make an HTTP request OUT, to a partner's token endpoint, UserInfo endpoint or JWKS. |
 | `federation.outboundTimeoutMs` | `STS_FEDERATION_OUTBOUND_TIMEOUT_MS` | `15000` | yes | How long to wait for a partner to answer before giving up. It was `5000` until 2026-08-30: the partner here is usually THIS process (a trust realm is a logical copy of this service), and the first thing anybody asks a brand-new realm for is its JWKS — which brings that realm's eleven post-quantum keys into being, one of them an SLH-DSA key generation of about five seconds. |
-| `federation.outboundAllowInsecure` | `STS_FEDERATION_OUTBOUND_ALLOW_INSECURE` | `false` | yes | OFF by default, which is the one place this service is stricter than a mock would ordinarily be: what travels on these requests is a client secret and an authorization code, at somebody else's service. |
+| `federation.outboundAllowHttp` | `STS_FEDERATION_OUTBOUND_ALLOW_HTTP` | `false` | yes | Accept an `http://` partner endpoint, in development mode only; product refuses plain http whatever it says (#171). What travels on these requests is a client secret and an authorization code, at somebody else's service. |
+| `federation.outboundSkipTlsVerification` | `STS_FEDERATION_OUTBOUND_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only.** Dial a partner WITHOUT verifying its certificate, logged on every request. Product mode ignores it (logged once, `STS-FED-0113`) and refuses to set it (`STS-CORE-0103`). |
+| `federation.outboundCaFile` | `STS_FEDERATION_OUTBOUND_CA_FILE` | `` | yes | A PEM file of CA certificates a partner may chain to, beside node's store — how a privately certified partner is reached with verification on. |
 | `federation.requestTtlMin` | `STS_FEDERATION_REQUEST_TTL_MIN` | `10` | yes | How long this service remembers that it sent somebody to a partner. |
 | `federation.maxContexts` | `STS_FEDERATION_MAX_CONTEXTS` | `500` | yes | Outbound federated sign-ins held per realm; past it the oldest is dropped. Was a constant. |
 | `federation.maxApplicationLength` | `STS_FEDERATION_MAX_APPLICATION_LENGTH` | `256` | yes | The longest `?application=` a federated login carries across the round trip. |
@@ -1640,7 +1645,7 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `spiffe.k8sPrivateKeyFile` | `STS_SPIFFE_K8S_PRIVATE_KEY_FILE` | (empty) | yes | k8s: its private key FILE. |
 | `spiffe.k8sUseAnonymousAuthentication` | `STS_SPIFFE_K8S_USE_ANONYMOUS_AUTHENTICATION` | `false` | yes | k8s: no token and no certificate. |
 | `spiffe.k8sTokenFile` | `STS_SPIFFE_K8S_TOKEN_FILE` | (empty) | yes | k8s: bearer token FILE; empty is the in-cluster service account's. |
-| `spiffe.k8sSkipKubeletVerification` | `STS_SPIFFE_K8S_SKIP_KUBELET_VERIFICATION` | `false` | yes | k8s: do not verify the kubelet's certificate. |
+| `spiffe.k8sSkipKubeletVerification` | `STS_SPIFFE_K8S_SKIP_KUBELET_VERIFICATION` | `false` | yes | k8s: do not verify the kubelet's certificate (SPIRE's `skip_kubelet_verification`). **Development only** since #171: product mode ignores it (`STS-SPIFFE-0116`) and refuses to set it (`STS-CORE-0103`). |
 | `spiffe.k8sKubeletCaFile` | `STS_SPIFFE_K8S_KUBELET_CA_FILE` | (empty) | yes | k8s: the kubelet's CA FILE; empty is the in-cluster `ca.crt`. |
 | `spiffe.k8sMaxPollAttempts` | `STS_SPIFFE_K8S_MAX_POLL_ATTEMPTS` | `60` | yes | k8s: pod list reads before a missing container fails. |
 | `spiffe.k8sPollRetryIntervalMs` | `STS_SPIFFE_K8S_POLL_RETRY_INTERVAL_MS` | `500` | yes | k8s: between those reads. |
@@ -1658,6 +1663,9 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `spiffe.serverSocket` | `STS_SPIFFE_SERVER_SOCKET` | `/tmp/spire-server/private/api.sock` | **restart** — the listener is bound when the process starts | Where that socket lives when it is on. SPIRE's own default path, for the same reason the Workload API's is. |
 | `spiffe.grpcHost` | `STS_SPIFFE_GRPC_HOST` | `0.0.0.0` | **restart**, and **settable on a REALM** — a realm's listeners are bound when its SPIFFE is turned on | The address both TCP gRPC listeners bind. 0.0.0.0 is every interface, which is what a container needs; 127.0.0.1 confines them to the machine this runs on. **THIS IS THE ROW THAT KEEPS TWO REALMS APART**: each takes an address of its own and keeps the ports, because the endpoint address is the only thing a SPIFFE client has to name a tenant with. A realm left on the wildcard collides with the default realm's listeners, and the refusal says so by name. |
 | `ssf.authBasic` | `STS_SSF_AUTH_BASIC` | `true` | yes | Whether the Shared Signals endpoints accept HTTP Basic. Development accepts any name with any password but `invalid`; product mode verifies it against the person's hashed `userPassword`. A Basic principal holds both scopes either way — turn this off to enforce `ssf:read`/`ssf:write` for every caller. |
+| `ssf.pushAllowHttp` | `STS_SSF_PUSH_ALLOW_HTTP` | `false` | yes | Push to an `http://` receiver, in development mode only; product refuses plain http whatever it says (`STS-SSF-0108`). This service's own receivers are exempt. |
+| `ssf.pushSkipTlsVerification` | `STS_SSF_PUSH_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only.** Push without verifying the receiver's certificate. Product ignores it (`STS-SSF-0109`) and refuses to set it (`STS-CORE-0103`). |
+| `ssf.pushCaFile` | `STS_SSF_PUSH_CA_FILE` | `` | yes | A PEM file of CA certificates a receiver may chain to, beside node's store. |
 | `ssf.pushMaxResponseBytes` | `STS_SSF_PUSH_MAX_RESPONSE_BYTES` | `65536` | yes | How much of a receiver's answer to a push is read before the push counts as failed. |
 | `ssf.pushRetries` | `STS_SSF_PUSH_RETRIES` | `0` | yes | How many times a failed push is tried again. `0` is what this service always did. Only a connection failure, a timeout, a 5xx or a 429 is retried — never a receiver's 400 refusal. |
 | `ssf.pushRetryDelayMs` | `STS_SSF_PUSH_RETRY_DELAY_MS` | `1000` | yes | The wait before a retry, times the attempt number. |
@@ -4411,8 +4419,8 @@ any sign-out ->  POST https://rp.example/bc-logout
   /admin-api/logout/retry-backchannel`), which mints a new token and uses the
   client's current address.
 * **It goes out through the outbound policy**: nothing at all with
-  `federation.outbound` off, https unless `federation.outboundAllowInsecure`,
-  no redirect followed, and **in product mode no loopback, private or
+  `federation.outbound` off, https with the certificate verified (#171), no
+  redirect followed, and **in product mode no loopback, private or
   link-local address** — the name is resolved once and the connection pinned
   to the address that was checked.
 * **A session that EXPIRES sends too** (`oauth2.backchannelLogoutOnExpiry`,
@@ -5085,8 +5093,11 @@ The mechanism that keeps that honest is the API rather than the intention.
 `federation_http.ts` **will not take a URL**: it takes a relationship and the
 *name* of the attribute holding one, and refuses any name outside its list of
 three. A caller with a URL from anywhere else cannot use it. Beside that: `https`
-only unless `federation.outboundAllowInsecure` says otherwise (warned on every
-request, not once at startup), **no redirects followed** — a 302 from a token
+with the partner's certificate verified — plain http only with
+`federation.outboundAllowHttp`, verification off only with
+`federation.outboundSkipTlsVerification`, and both in development mode only
+(#171; warned on every request, not once at startup); a private CA through
+`federation.outboundCaFile` — **no redirects followed** — a 302 from a token
 endpoint would hand the credential in the `Authorization` header to whatever
 `Location` said — a capped body, a short timeout because a browser is waiting,
 and no judgement at all about what comes back.
@@ -5687,7 +5698,7 @@ Create is pressed. The document is kept on the entry as `oauthResourceMetadata`
   that is an issuer this realm publishes is shown green; one that is not is a
   warning, and the application can still be created.
 * **A fetch follows the federation outbound policy** — `federation.outbound`,
-  https unless `federation.outboundAllowInsecure`, no redirects,
+  https with the certificate verified (#171), no redirects,
   `federation.maxResponseBytes`, `federation.outboundTimeoutMs` — and needs Admin
   Write, because a URL here is one an administrator names.
 * **In product mode** the URL may not resolve to a loopback, private, link-local or

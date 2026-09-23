@@ -102,7 +102,9 @@ var config = {
     resourceRegistration: true,                                            // Offer resource set registration
     tokenDerivation: true,                                                 // Allow downstream token derivation
     pushFinish: true,                                                      // Deliver push interaction finishes
-    pushAllowInsecure: false,                                              // Allow http:// and untrusted TLS for push
+    pushAllowHttp: false,                                                  // Allow http:// for push
+    pushSkipTlsVerification: false,                                        // Skip TLS verification for push (development only)
+    pushCaFile: "",                                                        // CA certificates for push
     pushAllowedHosts: "",                                                  // Push host allowlist
     pushTimeoutMs: 5000,                                                   // Push timeout (ms)
     jweEnc: "A256GCM",                                                     // jwt-encrypted content encryption
@@ -114,23 +116,25 @@ var config = {
 
   // --- XACML -----------------------------------------------------------
   xacml: {
-    enforceAccess: true,             // Decide access with policy
-    accessPolicy: "access-control",  // Access policy name
-    enabled: true,                   // XACML enabled
-    maxPolicies: 200,                // Policies the repository may hold
-    pepBias: "deny-biased",          // What the embedded PEP does with a non-Permit
-    returnPolicyIdList: false,       // Always return the applicable policy identifiers
-    remotePeps: true,                // Remote Policy Enforcement Points may register
-    pepRequireCertificate: true,     // A registering PEP must present a client certificate
-    pipMaxPerWindow: 600,            // PIP queries one caller may make per rate-limit window
-    pipMaxDesignators: 50,           // Attributes one PIP query may ask about
-    maxPeps: 50,                     // Remote PEPs the register may hold
-    pepStaleAfterS: 300,             // Seconds before a registered PEP is reported stale
-    pepNotify: true,                 // Nudge a registered PEP when the repository changes
-    pepNotifyAllowedHosts: "",       // Notify endpoint allowlist
-    pepNotifyAllowInsecure: false,   // Allow http:// and untrusted TLS for a nudge
-    pepNotifyTimeoutMs: 2000,        // Nudge timeout (ms)
-    issuancePolicy: "role-issuance"  // The policy issuance decisions are made with
+    enforceAccess: true,                 // Decide access with policy
+    accessPolicy: "access-control",      // Access policy name
+    enabled: true,                       // XACML enabled
+    maxPolicies: 200,                    // Policies the repository may hold
+    pepBias: "deny-biased",              // What the embedded PEP does with a non-Permit
+    returnPolicyIdList: false,           // Always return the applicable policy identifiers
+    remotePeps: true,                    // Remote Policy Enforcement Points may register
+    pepRequireCertificate: true,         // A registering PEP must present a client certificate
+    pipMaxPerWindow: 600,                // PIP queries one caller may make per rate-limit window
+    pipMaxDesignators: 50,               // Attributes one PIP query may ask about
+    maxPeps: 50,                         // Remote PEPs the register may hold
+    pepStaleAfterS: 300,                 // Seconds before a registered PEP is reported stale
+    pepNotify: true,                     // Nudge a registered PEP when the repository changes
+    pepNotifyAllowedHosts: "",           // Notify endpoint allowlist
+    pepNotifyAllowHttp: false,           // Allow http:// for a nudge (development only)
+    pepNotifySkipTlsVerification: false, // Skip TLS verification for a nudge (development only)
+    pepNotifyCaFile: "",                 // CA certificates for a nudge
+    pepNotifyTimeoutMs: 2000,            // Nudge timeout (ms)
+    issuancePolicy: "role-issuance"      // The policy issuance decisions are made with
   },
 
   // --- Web security ----------------------------------------------------
@@ -492,7 +496,9 @@ var config = {
     loginButtons: true,                                                      // Offer partners at the sign-in screen
     outbound: true,                                                          // Make back-channel requests to partners
     outboundTimeoutMs: 15000,                                                // Back-channel timeout (ms)
-    outboundAllowInsecure: false,                                            // Allow http:// and untrusted TLS to a partner
+    outboundAllowHttp: false,                                                // Allow http:// to a partner (development only)
+    outboundSkipTlsVerification: false,                                      // Skip TLS verification to a partner (development only)
+    outboundCaFile: "",                                                      // CA certificates for outbound requests
     requestTtlMin: 10,                                                       // Outbound request lifetime (minutes)
     maxContexts: 500,                                                        // Sign-ins in flight per realm
     maxApplicationLength: 256,                                               // Longest application a sign-in may name
@@ -738,7 +744,9 @@ var config = {
     eventsSupported: "https://schemas.openid.net/secevent/ssf/event-type/verification,https://schemas.openid.net/secevent/ssf/event-type/stream-updated", // Event types offered
     pushDelivery: true,                                                                                                                                   // Make outbound push requests
     pushAllowedHosts: "",                                                                                                                                 // Push endpoint allowlist
-    pushAllowInsecure: false,                                                                                                                             // Allow http:// and untrusted TLS to a receiver
+    pushAllowHttp: false,                                                                                                                                 // Allow http:// to a receiver (development only)
+    pushSkipTlsVerification: false,                                                                                                                       // Skip TLS verification to a receiver (development only)
+    pushCaFile: "",                                                                                                                                       // CA certificates for push delivery
     pushTimeoutMs: 10000,                                                                                                                                 // Push timeout (ms)
     pushMaxResponseBytes: 65536,                                                                                                                          // Largest push response read (bytes)
     pushRetries: 0,                                                                                                                                       // Push retries
@@ -935,7 +943,7 @@ var config = {
     k8sPrivateKeyFile: "",                                        // k8s: kubelet client key file
     k8sUseAnonymousAuthentication: false,                         // k8s: anonymous to the kubelet
     k8sTokenFile: "",                                             // k8s: kubelet bearer token file
-    k8sSkipKubeletVerification: false,                            // k8s: skip kubelet certificate verification
+    k8sSkipKubeletVerification: false,                            // k8s: skip kubelet certificate verification (development only)
     k8sKubeletCaFile: "",                                         // k8s: kubelet CA file
     k8sMaxPollAttempts: 60,                                       // k8s: pod list attempts
     k8sPollRetryIntervalMs: 500,                                  // k8s: pod list retry interval (ms)

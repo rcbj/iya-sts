@@ -319,7 +319,7 @@ function childMain() {
     await w.inRealm(function () {
       m.config.setOverride('oid4vp.trustedIssuerCertificates',
                            partner.certPem);
-      m.config.setOverride('federation.outboundAllowInsecure', 'true');
+      m.config.setOverride('federation.outboundAllowHttp', 'true');
       m.config.setOverride('oid4vp.claims', '');
     });
 
@@ -379,7 +379,7 @@ function childMain() {
     partnerServer.close();
     await w.inRealm(function () {
       m.config.clearOverride('oid4vp.trustedIssuerCertificates');
-      m.config.clearOverride('federation.outboundAllowInsecure');
+      m.config.clearOverride('federation.outboundAllowHttp');
       m.config.clearOverride('oid4vp.claims');
     });
 

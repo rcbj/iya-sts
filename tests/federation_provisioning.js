@@ -173,7 +173,7 @@ function childMain() {
     }
 
     // --- the partner, and the relationship to it ----------------------------
-    config.setOverride('federation.outboundAllowInsecure', 'true');
+    config.setOverride('federation.outboundAllowHttp', 'true');
     config.setOverride('oauth2.consentRequired', 'false');
     const discovery = await request('GET',
                                     '/.well-known/openid-configuration');

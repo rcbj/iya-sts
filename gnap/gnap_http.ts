@@ -30,8 +30,14 @@
 //      application entry (`applications.returnAddressesOf()`, the same decision
 //      every return address here goes through), and a sighting never registers
 //      one.
-//   3. **https unless `gnap.pushAllowInsecure`**, warned about on every
-//      insecure request; an optional host allowlist, `gnap.pushAllowedHosts`.
+//   3. **https, with the certificate verified** (#171): plain http only with
+//      `gnap.pushAllowHttp` on — and in product mode only to a loopback
+//      address, RFC 9635 section 2.5.2.1's exception and `STS-GNAP-0103`'s
+//      rule; verification off only with `gnap.pushSkipTlsVerification`, and
+//      only in development; a private CA through `gnap.pushCaFile`. The policy
+//      is `common/outbound_tls.ts`'s, shared with SSF, federation and XACML.
+//      Every insecure request is warned about. An optional host allowlist,
+//      `gnap.pushAllowedHosts`.
 //   4. **No redirects, a capped response, a timeout.** A 3xx is a failure — a
 //      redirect is how an allowed host forwards the request somewhere that is
 //      not — and nothing the client returns is read beyond its status.
@@ -59,6 +65,7 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import version = require('../common/version');
+import OutboundTls = require('../common/outbound_tls');
 
 // What a push answers. It never rejects.
 interface PushResult {
@@ -96,6 +103,20 @@ const USER_AGENT = (function () {
 
 const MAX_RESPONSE_BYTES = 64 * 1024;
 
+// THE OUTBOUND TRANSPORT POLICY, as `common/outbound_tls.ts` takes it (#171).
+// Plain http in product is admitted to loopback only — RFC 9635 section
+// 2.5.2.1 — and a refusal of it is `STS-GNAP-0103`, the code the grant-time
+// check already gives that same condition (one code per condition).
+const PUSH_TRANSPORT = {
+  what: 'a GNAP push interaction finish',
+  allowHttpKey: 'gnap.pushAllowHttp',
+  skipTlsKey: 'gnap.pushSkipTlsVerification',
+  caFileKey: 'gnap.pushCaFile',
+  loopbackHttpInProduct: true,
+  httpRefusedCode: 'STS-GNAP-0103',
+  skipIgnoredCode: 'STS-GNAP-0720'
+};
+
 class GnapHttp {
   static readonly USER_AGENT = USER_AGENT;
   static readonly MAX_RESPONSE_BYTES = MAX_RESPONSE_BYTES;
@@ -123,37 +144,52 @@ class GnapHttp {
   // `invalid_interaction`), rather than after a person has approved a request
   // that can then never finish.
   urlProblem(raw: unknown): string {
-    const { log, config } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering GnapHttp.urlProblem().");
+    log.debug("Leaving GnapHttp.urlProblem().");
+    return this.urlVerdict(raw).why;
+  }
+
+  // The same answer with the code a product-mode refusal of plain http
+  // carries (`STS-GNAP-0103`), '' for every other refusal — whose code is the
+  // caller's (`STS-GNAP-0102` at grant time, `STS-GNAP-0601` at push time).
+  urlVerdict(raw: unknown): { why: string; errorCode: string } {
+    const { log } = this.deps;
+    log.debug("Entering GnapHttp.urlVerdict().");
     let parsed: URL;
     try {
       parsed = new URL(String(raw || ''));
     } catch (e) {
-      log.debug("Caught in GnapHttp.urlProblem(): " +
+      log.debug("Caught in GnapHttp.urlVerdict(): " +
                 ((e && e.message) || e));
-      log.debug("Leaving GnapHttp.urlProblem(). Not a URL.");
-      return 'the push finish URI is not an absolute URL';
+      log.debug("Leaving GnapHttp.urlVerdict(). Not a URL.");
+      return { why: 'the push finish URI is not an absolute URL',
+               errorCode: '' };
     }
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-      log.debug("Leaving GnapHttp.urlProblem(). Scheme.");
-      return 'the push finish URI must be http(s); "' + parsed.protocol +
-          '" cannot be POSTed to';
+      log.debug("Leaving GnapHttp.urlVerdict(). Scheme.");
+      return { why: 'the push finish URI must be http(s); "' +
+                    parsed.protocol + '" cannot be POSTed to',
+               errorCode: '' };
     }
-    if (parsed.protocol === 'http:' &&
-        !config.value('gnap.pushAllowInsecure')) {
-      log.debug("Leaving GnapHttp.urlProblem(). Plain http without the " +
-                "setting.");
-      return 'the push finish URI uses plain http and ' +
-             'gnap.pushAllowInsecure is off';
+    if (parsed.protocol === 'http:') {
+      const verdict = OutboundTls.httpVerdict(PUSH_TRANSPORT,
+                                              parsed.hostname);
+      if (!verdict.ok) {
+        log.debug("Leaving GnapHttp.urlVerdict(). Plain http refused.");
+        return { why: 'the push finish URI: ' + verdict.why,
+                 errorCode: verdict.errorCode };
+      }
     }
     const hosts = this.allowedHosts();
     if (hosts.length && hosts.indexOf(parsed.hostname.toLowerCase()) < 0) {
-      log.debug("Leaving GnapHttp.urlProblem(). Host not allowed.");
-      return 'the push finish URI\'s host ' + parsed.hostname +
-          ' is not in gnap.pushAllowedHosts';
+      log.debug("Leaving GnapHttp.urlVerdict(). Host not allowed.");
+      return { why: 'the push finish URI\'s host ' + parsed.hostname +
+                    ' is not in gnap.pushAllowedHosts',
+               errorCode: '' };
     }
-    log.debug("Leaving GnapHttp.urlProblem(). Dialable.");
-    return '';
+    log.debug("Leaving GnapHttp.urlVerdict(). Dialable.");
+    return { why: '', errorCode: '' };
   }
 
   pushFinish(url: string, message: unknown): Promise<PushResult> {
@@ -168,19 +204,33 @@ class GnapHttp {
         url: url },
         'STS-GNAP-0600'));
     }
-    const problem = this.urlProblem(url);
-    if (problem) {
-      log.debug("Leaving GnapHttp.pushFinish(). " + problem);
+    const problem = this.urlVerdict(url);
+    if (problem.why) {
+      log.debug("Leaving GnapHttp.pushFinish(). " + problem.why);
+      const code = problem.errorCode || 'STS-GNAP-0601';
       return Promise.resolve(errorCodes.mark({ ok: false, status: 0,
-        errorCode: 'STS-GNAP-0601',
-        why: problem, url: url }, 'STS-GNAP-0601'));
+        errorCode: code,
+        why: problem.why, url: url }, code));
     }
     const target = new URL(url);
     const secure = target.protocol === 'https:';
     if (!secure) {
       log.warn('gnap: pushing an interaction finish to ' + target.origin +
-               ' over plain http because gnap.pushAllowInsecure is ON. The ' +
+               ' over plain http because gnap.pushAllowHttp is ON. The ' +
                'interaction reference travels in clear.');
+    }
+    // The certificate IS checked unless development mode and
+    // `gnap.pushSkipTlsVerification` both say otherwise: what travels is a
+    // one-time interaction reference, and a client that can be impersonated
+    // on the network is a grant that can be finished by somebody else (RFC
+    // 9635 section 11.1).
+    const transport = secure ? OutboundTls.tlsVerdict(PUSH_TRANSPORT,
+                                                      target.origin) : null;
+    if (transport && !transport.ok) {
+      log.debug("Leaving GnapHttp.pushFinish(). " + transport.why);
+      return Promise.resolve(errorCodes.mark({ ok: false, status: 0,
+        errorCode: transport.errorCode,
+        why: transport.why, url: url }, transport.errorCode));
     }
     const body = Buffer.from(JSON.stringify(message), 'utf8');
     const timeout = Number(config.value('gnap.pushTimeoutMs')) || 5000;
@@ -202,22 +252,23 @@ class GnapHttp {
         log.debug("Leaving GnapHttp.pushFinish().done().");
       };
       let request: http.ClientRequest;
+      const requestOptions: https.RequestOptions = {
+        protocol: target.protocol,
+        hostname: target.hostname,
+        port: target.port || (secure ? 443 : 80),
+        path: target.pathname + target.search,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json',
+                   'Content-Length': body.length,
+                   'User-Agent': USER_AGENT },
+        rejectUnauthorized: !transport || transport.rejectUnauthorized
+      };
+      if (transport && transport.ca) {
+        requestOptions.ca = transport.ca;
+      }
       try {
-        request = (secure ? https : http).request({
-          protocol: target.protocol,
-          hostname: target.hostname,
-          port: target.port || (secure ? 443 : 80),
-          path: target.pathname + target.search,
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json',
-                     'Content-Length': body.length,
-                     'User-Agent': USER_AGENT },
-          // The certificate IS checked unless the operator said otherwise:
-          // what travels is a one-time interaction reference, and a client
-          // that can be impersonated on the network is a grant that can be
-          // finished by somebody else.
-          rejectUnauthorized: !config.value('gnap.pushAllowInsecure')
-        }, function (response) {
+        request = (secure ? https : http).request(requestOptions,
+                                                  function (response) {
           let received = 0;
           response.on('data', function (chunk) {
             received += chunk.length;
@@ -302,5 +353,7 @@ export = {
   installInstance: (instance: GnapHttp): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   urlProblem: slot.forward('urlProblem'),
+  urlVerdict: slot.forward('urlVerdict'),
+  PUSH_TRANSPORT: PUSH_TRANSPORT,
   pushFinish: slot.forward('pushFinish')
 };

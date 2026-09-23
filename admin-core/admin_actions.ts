@@ -4763,9 +4763,11 @@ class AdminActions {
       // Checked first, every one of them, and only then written. A section that
       // applied its first three fields and refused the fourth would leave the
       // service in a state nobody asked for and the page showing it.
+      // `checkWrite()` since #171, so a value the realm's mode does not allow
+      // (a TLS-verification skip in product) is refused here, before any.
       const errors = [];
       wanted.forEach(function (key) {
-        const problem = config.checkOverride(key, body[key]);
+        const problem = config.checkWrite(key, body[key]);
         if (problem) errors.push(problem);
       });
       if (errors.length) {
@@ -4903,7 +4905,7 @@ class AdminActions {
       }
       const errors = [];
       wanted.forEach(function (key) {
-        const problem = config.checkOverride(key, body[key]);
+        const problem = config.checkWrite(key, body[key]);
         if (problem) errors.push(problem);
       });
       if (errors.length) {
@@ -5025,7 +5027,7 @@ class AdminActions {
       }
       const errors = [];
       wanted.forEach(function (key) {
-        const problem = config.checkOverride(key, body[key]);
+        const problem = config.checkWrite(key, body[key]);
         if (problem) errors.push(problem);
       });
       if (errors.length) {

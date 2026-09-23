@@ -760,7 +760,10 @@ record of the decisions.
 * **`sp_metadata.ts` HAD ITS OWN COPY OF THE OUTBOUND POLICY AND IT WAS WRONG**
   four ways: `federation.outbound` ignored, `outboundAllowInsecure` applied to the
   scheme but not the certificate, no User-Agent, and a `|| 5000` timeout fallback
-  that disagreed with the setting's 15000. It asks `federation_http.ts` now.
+  that disagreed with the setting's 15000. It asks `federation_http.ts` now —
+  since #171 its `tlsFor()`, so the certificate is verified in product whatever
+  `federation.outboundSkipTlsVerification` says, and a private CA is reached
+  through `federation.outboundCaFile`.
 
 ### Product mode only, each behind the predicate that names the question
 

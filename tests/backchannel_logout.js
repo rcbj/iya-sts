@@ -231,7 +231,7 @@ async function library(t) {
   const productHttp = new fedHttp.FederationHttp(Object.assign(
     fedHttp.FederationHttp.defaultDeps(),
     { mode: { dialsInternalAddresses: function () { return false; } } }));
-  config.setOverride('federation.outboundAllowInsecure', true);
+  config.setOverride('federation.outboundAllowHttp', true);
   try {
     const http = require('http');
     let hits = 0;
@@ -291,7 +291,7 @@ async function library(t) {
       listener.close();
     }
   } finally {
-    config.clearOverride('federation.outboundAllowInsecure');
+    config.clearOverride('federation.outboundAllowHttp');
   }
   log.debug("Leaving library().");
 }
@@ -421,7 +421,7 @@ function childMain() {
     };
 
     config.setOverride('oauth2.consentRequired', false);
-    config.setOverride('federation.outboundAllowInsecure', true);
+    config.setOverride('federation.outboundAllowHttp', true);
     config.setOverride('oauth2.backchannelLogoutBackoffMs', 0);
     config.setOverride('oauth2.backchannelLogoutTimeoutMs', 2000);
 

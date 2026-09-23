@@ -1070,13 +1070,14 @@ services:
       - PEP_TLS_INSECURE=true
       # THE MOCK REFUSES TO DIAL THIS BY DEFAULT and that is the design
       # demonstrating itself rather than a misconfiguration: it is plain
-      # http, and xacml.pepNotifyAllowInsecure is off. So on a plain
+      # http, and xacml.pepNotifyAllowHttp is off. So on a plain
       # `--profile xacml up` no nudge is ever delivered, the PDP says why on
       # the PEP's row at /admin/xacml/peps, and the PEP converges on its
       # fifteen-second poll anyway — which is the whole claim the nudge is
-      # affordable under. Set STS_XACML_PEP_NOTIFY_ALLOW_INSECURE=true on the
+      # affordable under. Set STS_XACML_PEP_NOTIFY_ALLOW_HTTP=true on the
       # sts service to watch a change reach this container in under a second
-      # instead.
+      # instead — in development mode only: product refuses a plain-http
+      # nudge whatever that says (#171).
       - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-http://xacml-pep:9090/notify}
       - PEP_RESOURCE=${XACML_PEP_RESOURCE:-https://xacml-pep/protected}
       - PEP_BIAS=${XACML_PEP_BIAS:-deny-biased}

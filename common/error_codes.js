@@ -738,6 +738,24 @@ const CODES = [
     summary: 'A cache or replay store could not eject its expired entries; ' +
       'the store still refuses an expired entry where it reads it.',
     spec: 'none — logged by the caches.eject-expired job' },
+  { code: 'STS-CORE-0103',
+    summary: 'A write turning on a development-only setting — a ' +
+      '…SkipTlsVerification, or spiffe.k8sSkipKubeletVerification — was ' +
+      'refused because the realm it lands in is in product mode (#171).',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }' },
+  { code: 'STS-CORE-0104',
+    summary: 'An outbound request (a GNAP push, an SSF push, a federation ' +
+      'back channel or an XACML nudge) was not made because the CA file ' +
+      'its …CaFile setting names could not be read or holds no certificate.',
+    spec: 'none — the family\'s own failure record (a grant history, a ' +
+      'dead letter, a relationship\'s last error, a PEP row)' },
+  { code: 'STS-CORE-0105',
+    summary: 'The service did not start: the appconfig file or the ' +
+      'environment still names a setting removed on 2026-09-23 (#171) — ' +
+      'gnap.pushAllowInsecure, ssf.pushAllowInsecure, ' +
+      'federation.outboundAllowInsecure or xacml.pepNotifyAllowInsecure.',
+    spec: 'none — the process exits' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',
@@ -5845,7 +5863,8 @@ const CODES = [
   { code: 'STS-OAUTH-0533',
     summary: 'A back-channel Logout Token was not sent because the ' +
       'client\'s backchannel_logout_uri cannot be dialled: not http(s), ' +
-      'plain http with federation.outboundAllowInsecure off, or not a URL.',
+      'plain http refused (federation.outboundAllowHttp off, or product ' +
+      'mode), or not a URL.',
     spec: 'none — a logout.backchannel audit row and a dead letter on ' +
       '/admin/logout' },
   { code: 'STS-OAUTH-0534',
@@ -6922,7 +6941,7 @@ const CODES = [
   { code: 'STS-FED-0048',
     summary: 'A back-channel URL on a federation relationship cannot be ' +
       'dialled: empty, not a URL, plain http with ' +
-      'federation.outboundAllowInsecure off, or another scheme.',
+      'federation.outboundAllowHttp off, or another scheme.',
     spec: 'HTTP 502 or 500 page for the federated sign-in it was part of' },
   { code: 'STS-FED-0049',
     summary: 'A federation partner answered a back-channel request with a ' +
@@ -7142,6 +7161,17 @@ const CODES = [
       'it: the cookie binding it to the browser the partner\'s response ' +
       'arrived in was absent or different.',
     spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0112',
+    summary: 'An outbound federation request (a back channel, a metadata or ' +
+      'status-list fetch, a Logout Token) was refused because its URL is ' +
+      'plain http and the realm is in product mode, whatever ' +
+      'federation.outboundAllowHttp says (#171).',
+    spec: 'the caller\'s failure: a sign-in page, a dead letter, a refusal' },
+  { code: 'STS-FED-0113',
+    summary: 'Product mode ignored federation.outboundSkipTlsVerification: ' +
+      'an outbound request verifies the certificate of whoever answers ' +
+      'whatever it says. Logged once per process (#171).',
+    spec: 'none — a warning in the log' },
   // ===== KRB ===============================================================
   { code: 'STS-KRB-0001',
     summary: 'A cross-realm referral could not be issued because the trust ' +
@@ -8776,6 +8806,11 @@ const CODES = [
       'Intermediate CAs if the process that replaced the Root rebuilds it ' +
       'too.',
     spec: '' },
+  { code: 'STS-SPIFFE-0116',
+    summary: 'Product mode ignored spiffe.k8sSkipKubeletVerification: the ' +
+      'k8s workload attestor verifies the kubelet\'s certificate against ' +
+      'its CA whatever it says. Logged once per process (#171).',
+    spec: 'none — a warning in the log' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
@@ -9353,7 +9388,7 @@ const CODES = [
   { code: 'STS-SSF-0012',
     summary: 'A push stream was refused at creation because its delivery ' +
       'endpoint cannot be dialled by this transmitter (not a URL, ' +
-      'wrong scheme, plain http with ssf.pushAllowInsecure off, or a ' +
+      'wrong scheme, plain http with ssf.pushAllowHttp off, or a ' +
       'host outside ssf.pushAllowedHosts).',
     spec: 'HTTP 400 {err: invalid_request}' },
   { code: 'STS-SSF-0013',
@@ -9750,6 +9785,17 @@ const CODES = [
       'scope an operation needs, and the client it was issued to no longer ' +
       'declares that scope in its oauthAllowedScope.',
     spec: 'HTTP 403 {err: access_denied}' },
+  { code: 'STS-SSF-0108',
+    summary: 'A push delivery endpoint was refused because it is plain http ' +
+      'and the realm is in product mode, where RFC 8935 push goes over TLS ' +
+      'whatever ssf.pushAllowHttp says (#171).',
+    spec: 'at stream creation HTTP 400 {err: invalid_request}; at push time ' +
+      'none — a dead letter' },
+  { code: 'STS-SSF-0109',
+    summary: 'Product mode ignored ssf.pushSkipTlsVerification: a push ' +
+      'verifies the receiver\'s certificate whatever it says. Logged once ' +
+      'per process (#171).',
+    spec: 'none — a warning in the log' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -10098,12 +10144,13 @@ const CODES = [
   { code: 'STS-GNAP-0102',
     summary: 'A GNAP push finish URI is not one this service will dial ' +
       '(not an absolute http(s) URL, plain http with ' +
-      'gnap.pushAllowInsecure off, or a host outside ' +
+      'gnap.pushAllowHttp off, or a host outside ' +
       'gnap.pushAllowedHosts).',
     spec: 'HTTP 400 GNAP invalid_interaction' },
   { code: 'STS-GNAP-0103',
     summary: 'In product mode, a GNAP finish URI uses plain http to a host ' +
-      'other than localhost.',
+      'other than localhost — refused at grant time, and a push finish ' +
+      'refused at push time for the same reason (#171).',
     spec: 'HTTP 400 GNAP invalid_interaction' },
   { code: 'STS-GNAP-0110',
     summary: 'A GNAP client proved its key with a proofing method this ' +
@@ -11046,6 +11093,11 @@ const CODES = [
       'reference string or an object of type ssf) that its application\'s ' +
       'oauthAllowedScope does not list.',
     spec: 'RFC 9635 section 3.6 (request_denied)' },
+  { code: 'STS-GNAP-0720',
+    summary: 'Product mode ignored gnap.pushSkipTlsVerification: a push ' +
+      'finish verifies the client\'s certificate whatever it says. Logged ' +
+      'once per process (#171).',
+    spec: 'none — a warning in the log' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +
@@ -11348,7 +11400,7 @@ const CODES = [
   { code: 'STS-XACML-0066',
     summary: 'A change nudge was not sent because the PEP\'s notify URL is ' +
       'outside the outbound bounds (not a URL, wrong scheme, plain ' +
-      'http without xacml.pepNotifyAllowInsecure, or a host not in ' +
+      'http without xacml.pepNotifyAllowHttp, or a host not in ' +
       'xacml.pepNotifyAllowedHosts).',
     spec: '' },
   { code: 'STS-XACML-0067',
@@ -11377,6 +11429,16 @@ const CODES = [
       'issued: the certificate authority refused it, or issuing threw.',
     spec: 'console: a page saying so; /admin-api: HTTP 400 ' +
       '{ ok: false, errors }, or 500 when issuing threw' },
+  { code: 'STS-XACML-0073',
+    summary: 'A change nudge was not sent because the PEP\'s notify URL is ' +
+      'plain http and the realm is in product mode, whatever ' +
+      'xacml.pepNotifyAllowHttp says (#171).',
+    spec: '' },
+  { code: 'STS-XACML-0074',
+    summary: 'Product mode ignored xacml.pepNotifySkipTlsVerification: a ' +
+      'nudge verifies the PEP\'s certificate whatever it says. Logged once ' +
+      'per process (#171).',
+    spec: 'none — a warning in the log' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -13167,7 +13229,8 @@ const CODES = [
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0079',
     summary: 'The URL an RFC 9728 document was to be fetched from is not a ' +
-      'URL, or not https while federation.outboundAllowInsecure is off.',
+      'URL, or not https while plain http is refused ' +
+      '(federation.outboundAllowHttp off, or product mode).',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0080',
     summary: 'In product mode, the host of an RFC 9728 document URL resolves ' +

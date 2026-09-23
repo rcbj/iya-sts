@@ -29,7 +29,11 @@
 // the kubelet's URL is the administrator's configuration, and its
 // certificate is checked against the kubelet CA — by chain alone when no node
 // name is configured, which is SPIRE's rule (a kubelet's certificate names
-// the node, not 127.0.0.1). SPIRE's workload broker (`AttestReference`) and
+// the node, not 127.0.0.1). `spiffe.k8sSkipKubeletVerification` — SPIRE's
+// `skip_kubelet_verification` — is honoured in DEVELOPMENT MODE ONLY (#171,
+// `common/outbound_tls.ts`): product ignores it, says so once
+// (STS-SPIFFE-0116) and verifies against the kubelet CA as though it were
+// off. SPIRE's workload broker (`AttestReference`) and
 // sigstore verification are follow-ups on #40.
 // ---------------------------------------------------------------------------
 
@@ -38,6 +42,7 @@ import helpers = require('../common/helpers');
 const { log } = helpers;
 import config = require('../common/config');
 import outbound = require('../federation/federation_http');
+import OutboundTls = require('../common/outbound_tls');
 
 const IN_CLUSTER = '/var/run/secrets/kubernetes.io/serviceaccount';
 
@@ -119,7 +124,9 @@ class K8sWorkloadAttestor {
           .trim();
         if (token) headers['Authorization'] = 'Bearer ' + token;
       }
-      const skip = !!config.value('spiffe.k8sSkipKubeletVerification');
+      const skip = OutboundTls.skipsVerification(
+        'spiffe.k8sSkipKubeletVerification', 'STS-SPIFFE-0116',
+        'the k8s workload attestor\'s kubelet request');
       answer = await outbound.requestConfigured('https://' +
         (nodeName || '127.0.0.1') + ':' + port + '/pods', {
           headers: headers, skipVerify: skip, chainOnly: !skip && !nodeName,
