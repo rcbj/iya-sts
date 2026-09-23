@@ -9615,6 +9615,20 @@ const CODES = [
       'generation of this realm\'s BBS key (current, next, or retired within ' +
       'its grace).',
     spec: 'HTTP 404 not_found' },
+  { code: 'STS-VC-0088',
+    summary: 'A credential presented to the OpenID4VP Verifier names no ' +
+      'status (no Token Status List claim, no BitstringStatusListEntry) ' +
+      'and oid4vp.requireStatusReference requires one: a foreign ' +
+      'credential under all whose issuer certificate is not in ' +
+      'oid4vp.statusOptionalIssuers, or one this realm signed under all or ' +
+      'own-only.',
+    spec: 'invalid_request (HTTP 400); HTTP 403 page at a sign-in' },
+  { code: 'STS-VC-0089',
+    summary: 'An ldp_vc presented at the OpenID4VP Verifier (not a sign-in, ' +
+      'whose register holds the status) disclosed no credentialStatus ' +
+      'entry, though the request asked for it and ' +
+      'oid4vp.requireStatusReference requires one.',
+    spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

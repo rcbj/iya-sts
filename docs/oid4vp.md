@@ -101,9 +101,32 @@ credential's status (see [status lists](oid4vci.md#status-lists)):
 
 A credential whose status is not VALID is refused. So is one whose status
 cannot be established, because a list that cannot be fetched or verified means
-no statement can be made (`STS-VC-0072`). This realm's own credential with no
-status reference is refused. A foreign credential that carries no status
-reference is accepted.
+no statement can be made (`STS-VC-0072`).
+
+**A credential must name its status** (#165). `oid4vp.requireStatusReference`
+says what a credential with no status reference means, and it is `all` by
+default in both modes:
+
+* `all` refuses any credential that names no status (`STS-VC-0088`) — a
+  credential with no reference can never be shown to have been revoked;
+* `own-only` accepts a **foreign** credential with no reference. **Warning:**
+  a credential its issuer has taken back then goes on being accepted here;
+* `off` also accepts this realm's own credential with no reference, and an
+  `ldp_vc` that withheld its status. It is for development only: product mode
+  refuses to set it (`STS-CORE-0103`) and reads a stored `off` as `all`.
+
+A trusted issuer that publishes no status is exempted one at a time, by the
+SHA-256 thumbprint of its certificate in `oid4vp.statusOptionalIssuers` (hex,
+colon-hex as `openssl x509 -fingerprint -sha256` prints it, or base64url).
+The exemption covers a missing reference only: a credential that does name a
+status is still checked against it.
+
+An `ldp_vc` is a bbs-2023 derived proof, which discloses only what the holder
+chooses. The bar door's DCQL query therefore asks for `credentialStatus`, and
+a presentation that does not disclose it is refused (`STS-VC-0089`): every
+`ldp_vc` this realm issues carries it, so its absence means it was withheld. A
+wallet sign-in asks for it too, and reads that credential's status from the
+sign-in register whether or not it was disclosed.
 
 ### What the bar door asks for
 
@@ -282,6 +305,8 @@ check are the same in both modes. See
 | `oid4vp.presentationRequestTtlS` | `OID4VP_PRESENTATION_REQUEST_TTL_S` | `600` | yes | How long a presentation request waits for a wallet's response. |
 | `oid4vp.maxTransactions` | `OID4VP_MAX_TRANSACTIONS` | `5000` | yes | How many waiting requests a realm keeps; past it the oldest is dropped. |
 | `oid4vp.statusListMaxCacheS` | `OID4VP_STATUS_LIST_MAX_CACHE_S` | `3600` | yes | The longest a foreign issuer's status list is kept; `0` fetches every time. |
+| `oid4vp.requireStatusReference` | `OID4VP_REQUIRE_STATUS_REFERENCE` | `all` | yes | Whether a presented credential must name its status: `all`, `own-only` (foreign credentials exempt — **warning:** one its issuer revoked is accepted), or `off` (development only). |
+| `oid4vp.statusOptionalIssuers` | `OID4VP_STATUS_OPTIONAL_ISSUERS` | *(empty)* | yes | SHA-256 thumbprints of trusted issuer certificates whose credentials may name no status. **Warning:** such a credential can never be shown revoked. |
 | `oid4vp.signIn` | `OID4VP_SIGN_IN` | `true` | yes | Offer *Sign in with a wallet* and answer `/authn/wallet`. |
 | `oid4vp.signInTtlS` | `OID4VP_SIGN_IN_TTL_S` | `300` | yes | How long a wallet sign-in waits for the wallet and for the browser to collect the session. |
 | `oid4vp.signInPollS` | `OID4VP_SIGN_IN_POLL_S` | `3` | yes | How often the QR-code page reloads itself. |

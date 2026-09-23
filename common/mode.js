@@ -240,6 +240,23 @@ function servesUnattestedEntries() {
   return !isProduct();
 }
 
+// May the OpenID4VP Verifier accept a credential of THIS realm that carries
+// no status reference, or an `ldp_vc` whose presentation withheld its
+// `credentialStatus` (#165, 2026-09-23)? `oid4vp.requireStatusReference`
+// `off` is the setting that says so, and only development honours it: a
+// credential with no reference is one that can never be shown to have been
+// revoked, and for a credential this realm issued — every one of which
+// carries a reference — its absence means the holder hid it. Product reads
+// `off` as the default, `all` (`valueInForce()`, logged once, STS-CORE-0106),
+// and refuses to write it (the `onlyWhile` marker, STS-CORE-0103).
+// `own-only`, which relaxes the rule for FOREIGN credentials alone, is allowed
+// in both modes, with the warning its description carries.
+function acceptsCredentialsWithoutStatus() {
+  log.debug("Entering acceptsCredentialsWithoutStatus().");
+  log.debug("Leaving acceptsCredentialsWithoutStatus().");
+  return !isProduct();
+}
+
 // May a caller on the SPIRE Server API's Unix socket be the `local` entity
 // with nothing verified but the socket's existence (#104, 2026-09-23)?
 // `spiffe.trustLocalSocket` (on by default) is SPIRE's own model — the local
@@ -1218,6 +1235,22 @@ const REQUIREMENTS = [
              'through /admin, /admin-api and a realm\'s settings ' +
              '(STS-CORE-0103).',
     where: 'common/mode.js, oauth-oidc/oauth2.ts, ssf/ssf_events.js' },
+  { id: 'credential-status-reference',
+    what: 'A presented credential must carry a status reference',
+    development: 'oid4vp.requireStatusReference is all by default, as in ' +
+                 'product: every credential presented to the OpenID4VP ' +
+                 'Verifier must name a status that resolves VALID, unless ' +
+                 'its trusted issuer is listed in ' +
+                 'oid4vp.statusOptionalIssuers. own-only exempts foreign ' +
+                 'credentials, and off — development only — accepts one of ' +
+                 'this realm\'s own with no reference, and an ldp_vc whose ' +
+                 'presentation withheld its credentialStatus.',
+    product: 'off is IGNORED where it is read (logged once, STS-CORE-0106) ' +
+             'and refused on write (STS-CORE-0103): a credential of this ' +
+             'realm with no status reference, or an ldp_vc that did not ' +
+             'disclose its credentialStatus, is always refused. own-only ' +
+             'and the per-issuer exemption are allowed.',
+    where: 'oid4vc/vc_verifier.ts, oid4vc/vc_status.ts' },
   { id: 'realm-chooser',
     what: 'The realm chooser before sign-in lists every realm',
     development: 'A browser with no session at /admin or /portal, on a ' +
@@ -1924,6 +1957,15 @@ function allowsValue(key, value) {
     log.debug("Leaving allowsValue(). Unmarked, or the default.");
     return true;
   }
+  // `onlyWhileValues` narrows the marker to the values it names (#165): an
+  // enum whose weaker values are not all development-only —
+  // `oid4vp.requireStatusReference`'s `own-only` is allowed in product, its
+  // `off` is not. A row without it marks every value but the default.
+  if (Array.isArray(row.onlyWhileValues) &&
+      row.onlyWhileValues.indexOf(value) < 0) {
+    log.debug("Leaving allowsValue(). A value the marker does not name.");
+    return true;
+  }
   const predicate = module.exports[row.onlyWhile];
   if (typeof predicate !== 'function') {
     // A marker naming no predicate is a defect in config.js; refusing the
@@ -1974,7 +2016,12 @@ const WRITE_REFUSALS = {
     'and product never believes one.',
   servesUnattestedEntries:
     'the Workload API answers a caller only with the registration entries ' +
-    'its attested selectors match there, never with every entry.'
+    'its attested selectors match there, never with every entry.',
+  acceptsCredentialsWithoutStatus:
+    'a credential this realm issued that shows no status reference could ' +
+    'be one that was revoked, so the Verifier requires one there. own-only ' +
+    'is allowed, and oid4vp.statusOptionalIssuers exempts a trusted issuer ' +
+    'that publishes no status.'
 };
 
 function writeRefusalReason(predicate) {
@@ -2012,6 +2059,7 @@ module.exports = {
   believesAssertedSelectors: believesAssertedSelectors,
   requiresWorkloadAttestation: requiresWorkloadAttestation,
   servesUnattestedEntries: servesUnattestedEntries,
+  acceptsCredentialsWithoutStatus: acceptsCredentialsWithoutStatus,
   servesUnattestedWorkloadTcp: servesUnattestedWorkloadTcp,
   registersUnidentifyingEntries: registersUnidentifyingEntries,
   trustsUnverifiedLocalSocket: trustsUnverifiedLocalSocket,

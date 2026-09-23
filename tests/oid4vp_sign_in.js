@@ -756,8 +756,16 @@ function childMain() {
       return require(ROOT + '/common/crypto').selfSignedRsaCertificate(
         { commonName: 'wsi partner issuer' });
     });
+    // The partner names no status, and since #165 a credential naming none
+    // is refused by oid4vp.requireStatusReference before it could verify —
+    // so the partner is exempted by its certificate's thumbprint, which is
+    // what an operator whose partner publishes no status does, and what is
+    // asserted is the refusal this row is about.
     await realms.run(DEFAULT, function () {
       config.setOverride('oid4vp.trustedIssuerCertificates', partner.certPem);
+      config.setOverride('oid4vp.statusOptionalIssuers',
+        require(ROOT + '/common/crypto').certificateThumbprint(
+          partner.certPem, { format: 'hex' }));
     });
     const partnerKey = holderKey();
     const partnerCredential = jws({ alg: 'RS256', typ: 'dc+sd-jwt' },
@@ -775,6 +783,7 @@ function childMain() {
                   }, true, 'STS-VC-0058');
     await realms.run(DEFAULT, function () {
       config.clearOverride('oid4vp.trustedIssuerCertificates');
+      config.clearOverride('oid4vp.statusOptionalIssuers');
     });
 
     // A deleted entry.
