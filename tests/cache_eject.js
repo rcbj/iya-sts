@@ -107,8 +107,8 @@ function childMain() {
       'oid4vci.status-list-tokens', 'oid4vp.sign-in-register',
       'oid4vp.status-lists-fetched', 'oid4vp.transactions',
       'revocation.ca-certificates', 'revocation.crl', 'revocation.failures',
-      'revocation.ocsp', 'scim.digest-nonce-counts', 'scim.digest-nonces',
-      'scim.hoba-challenges', 'scim.hoba-signatures'
+      'revocation.ocsp', 'risk.standings', 'scim.digest-nonce-counts',
+      'scim.digest-nonces', 'scim.hoba-challenges', 'scim.hoba-signatures'
     ].sort();
     const ejecting = registry.ejecting().filter(function (n) {
       return !/^test\./.test(n);

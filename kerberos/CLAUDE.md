@@ -821,7 +821,9 @@ half). Six things about it are decisions:
 * **NOTHING IS SHOWN.** Both key attributes are withheld from the directory dump and from an
   LDAP search (ciphertext included), from `applications.view()`, from `/admin-api` and from
   the audit log. A service key leaves this service ONCE, as the keytab the create or rotate
-  hands over; nothing reads a stored key back out.
+  hands over; nothing reads a stored key back out. A PERSON's keytab (#59, below) is
+  DERIVED from a password in hand and compared with the stored key, never copied out of
+  it.
 * **THE PRINCIPAL IS A RECORD AND THE KEYS ARE NOT.** A person the KDC resolves from the
   directory is registered in `principals` (so a sign-out stamps it, the TGS handler finds it
   and `/krb5/principals` lists it with `directoryKeys: true`) with NO PASSWORD — the shared
@@ -848,7 +850,8 @@ as it did (and in product refuses a person with a sentence naming the missing so
 
 **`/admin/kerberos/principals`** is the console page and `GET /admin-api/kerberos/principals`
 + `POST /admin-api/kerberos/principals/{create-service,rotate-service,delete-service,
-clear-person-keys}` its twins (rule 7). `admin-ui/CLAUDE.md` argues the page.
+clear-person-keys}` its twins (rule 7) — seven actions with the two drops below and #59's
+`reset-person-keytab`. `admin-ui/CLAUDE.md` argues the page.
 
 `tests/kerberos_person_keys.js` holds it: RFC 3962 Appendix B through the derivation path,
 the keytab against an independent reader, development unchanged, and — in a product-mode
@@ -933,6 +936,80 @@ refusing 4 while 5 is accepted. Sixteen mutants, fifteen caught; **M4 (the princ
 expiry check removed) survives** because the source filters by the same clock in the same
 synchronous call — a belt-and-braces guard, recorded rather than counted. Untested: the
 S4U2Proxy evidence path under a kept version, and a drop racing a derivation.
+
+### A PERSON'S KEYTAB, FROM A PASSWORD IN HAND (2026-09-22, #59)
+
+A keytab is how a client that cannot type a password — a cron job, `kinit -k` on a
+server — signs in as a person, and it is exactly as good as their password. The issue
+asked for one from a person's page on the console and from the portal. **rcbj's
+decision, asked before any code: a person's keytab is always DERIVED from a password
+that is in hand at that moment, and a stored key is never read back out** — the rule
+this directory already kept for stored keys. Exporting the stored current key was the
+alternative, and it was refused. So there are two doors, and they differ in where the
+password comes from:
+
+* **`/portal/kerberos`** (`portal/portal_kerberos.ts`): the person types their CURRENT
+  password, `credentials.verify()` checks it (`session-held`, and the password change's
+  rate-limit budget), and the keytab is derived from it. **Nothing on the account
+  changes** — same password, same kvno — and the keytab dies with the next password
+  change. The password is also the re-authentication: a browser left signed in cannot
+  export a password-equivalent credential.
+* **"Reset password and download keytab"** on the person's `/admin/users` page, and
+  `POST /admin-api/kerberos/principals/reset-person-keytab` (rule 7): an administrator
+  has no password of the person's in hand, so the only one they can derive from is one
+  they SET now — typed, or `random` (generated under the password policy and NEVER
+  returned, so the keytab is then the only way in). **It is a password reset**: the
+  kvno moves up by one, the old password stops working in every protocol, an
+  outstanding reset link is spent, the person is signed out of everything and a CAEP
+  credential-change is sent. **It is NOT a forced change** — `pwdReset` is cleared,
+  not set — because the person changing it would kill the keytab it was set for.
+  `admin-core/admin_actions.ts`'s `resetPersonKeytab()` asks the register's
+  `personKeytabRefusal()` FIRST, so a refusal (no KDC, nobody, disabled) changes
+  nothing; a keytab refused after the password was set says the password WAS set
+  (`STS-ADMIN-0803`).
+
+**`personKeytab()` in `krb5_person_keys.ts` is the one function both reach.** In
+product it waits for the derivation the set or verify queued (`idle()`), re-derives
+every stored enctype from the password with the RECORD's salt, and **compares each key
+with the one the KDC holds, in constant time**, before writing the keytab. The stored
+key is opened for that comparison and nothing else. It buys two things: a keytab that
+would not work is never handed out (a password written behind the observer, a stale
+record), and the kvno and salt are the KDC's own rather than a guess. A mismatch is
+`STS-KRB-0132`; no current keys is `STS-KRB-0131`.
+
+**ONLY THE CURRENT kvno.** `kinit -k` needs the key a new AS-REQ is checked against;
+the previous versions kept after a password change exist to open tickets already
+issued, and in a client keytab they would be more password-equivalent material for no
+use. (A service ROTATION's keytab does carry them, for the acceptor's reason above.)
+
+**DEVELOPMENT MODE** keys every user from `krb5.userPassword`, so a keytab from the
+typed password would open nothing there. A development keytab is derived from the
+password on the principal record the development KDC answers with (`lookupUser()`,
+created on first sight as its AS exchange would), `source: 'development'` says so, and
+both pages say so. The portal checks no password in development, as nothing does.
+
+**Refused before anything is derived**: a realm with no KDC (`STS-KRB-0128`), nobody
+or an unusable name (`0130`), a disabled account (`0134`, which the KDC would refuse
+whatever key it presented), `krb5.personKeys` off in product (`0131`); in development a
+name the KDC keeps unknown (`0133`). Every keytab is audited `krb5.keytab.person` with
+its kvno, enctypes, source and a fingerprint of the file — never a key or the file.
+
+`personKerberosState()` is the public half for the two pages and the user page's JSON
+(`kerberos`): principal, KDC kind, the key info attribute. Nothing is opened.
+
+**NO NEW REQUIRE REACHES THE PARENT PROJECT'S COPY SET**: the three locked files and
+`krb5_principals.js` are untouched; `portal_kerberos.ts` requires the register LAZILY,
+because the portal is built at 8a, long before the Kerberos modules.
+
+`tests/kerberos_person_keytab.js` holds it in a product and a development child: each
+keytab read by an independent reader and SIGNED IN WITH — its key, not the password,
+pre-authenticating a real AS-REQ; wrong password, nobody, disabled and no-KDC refused;
+the reset moving the kvno, the old password and the old keytab refused, no forced
+change, the link spent; `random` with no password in the reply; neither/both and a
+policy refusal changing nothing; nothing secret in the audit ring.
+`tests/vendored/sts_kerberos_keytab.js` does it over the wire in both modes — the API,
+the portal page and the console form — and signs in with every keytab through **MIT
+`kinit -k -t`** against the published KDC (the tests image installs `krb5-user`).
 
 ---
 

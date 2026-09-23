@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3020** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3037** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -63,25 +63,25 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 200
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 480
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 481
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 97
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 134
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 119
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 101
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 15
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 21
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 276
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 178
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 180
 * [Management API (`STS-API`)](#sts-api) — 73
-* [User portal (`STS-PORTAL`)](#sts-portal) — 57
+* [User portal (`STS-PORTAL`)](#sts-portal) — 60
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 121
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -1571,6 +1571,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0598` | A token request used a grant_type the client did not register in grant_types (RFC 7591 section 2) (#120). | HTTP 400 {error: unauthorized_client} |
 | `STS-OAUTH-0599` | A client's registered jwks_uri could not be read: the outbound policy refused it, it did not answer 200, or it did not answer a JSON Web Key Set (#120). Logged at warn; the verification or encryption that needed the key is refused with its own code. | none (log only) |
 | `STS-OAUTH-0600` | A client that registered grant_types without refresh_token was answered with no refresh token (RFC 7591 section 2) (#120). Recorded, not refused. | none (the token response omits refresh_token) |
+| `STS-OAUTH-0601` | The OP iframe or its script was asked for while oauth2.sessionManagement is off in the realm (#121): a 404 naming the setting. | HTTP 404 |
 
 ## STS-SAML
 
@@ -1954,6 +1955,11 @@ Raised from: kerberos/.
 | `STS-KRB-0127` | Two trust realms answer to one Kerberos realm name (a restored or replicated realm the registry did not re-judge), so the KDC routes that name to the first and not the second. | none (logged when the router finds it) |
 | `STS-KRB-0128` | A Kerberos key act — creating, rotating, deleting or clearing a stored key — was asked of a trust realm that has no KDC, so there is no principal for the key to belong to. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-KRB-0129` | An AS-REQ, or an S4U2Self naming a person, was refused because that person's account is disabled. | KDC_ERR_CLIENT_REVOKED (18) |
+| `STS-KRB-0130` | A keytab was asked for a name that is not a person in this trust realm's directory (no directory, no usable single-component name, or no entry). | HTTP 400 { ok: false, errors } / a 400 portal page |
+| `STS-KRB-0131` | A keytab was refused because the product KDC holds no current keys for the person — none derived yet, derived from an older password, unreadable, or krb5.personKeys off. | HTTP 400 { ok: false, errors } / a 400 portal page |
+| `STS-KRB-0132` | A keytab was refused because the password given does not derive the key the product KDC holds for the person, or none was given. | HTTP 400 { ok: false, errors } / a 400 portal page |
+| `STS-KRB-0133` | A development-mode keytab was refused because the development KDC has no principal for the person and will not make one (a name krb5.unknownUsers reserves), or it offers no enctype. | HTTP 400 { ok: false, errors } / a 400 portal page |
+| `STS-KRB-0134` | A keytab was refused because the person's account is disabled, which the KDC refuses whatever key is presented. | HTTP 400 { ok: false, errors } / a 400 portal page |
 
 ## STS-LDAP
 
@@ -2518,6 +2524,12 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0013` | A sign-in could not be assessed for risk (the store or a dataset lookup failed part-way). The sign-in stands; only its assessment is missing. | — |
 | `STS-RISK-0014` | A dataset import was refused because nobody has accepted its provider's current terms (or the terms changed since they were accepted), or an acceptance was asked for a provider with none to accept. | — |
 | `STS-RISK-0015` | The install-time loader fetched a provider's terms page (--check-terms) and it differs from the page seen at the last acceptance: read it before relying on the acceptance. | — |
+| `STS-RISK-0016` | An issuance was REFUSED on risk: the issuance policy denied it with the risk obligation's `refuse` — by default, an authentication whose risk is HIGH. The client is told only that authentication failed. | — |
+| `STS-RISK-0017` | An issuance was refused UNTIL A STEP-UP: the issuance policy denied it with the risk obligation's `step-up` (a second factor or a security key) and the door could not ask for it — a token endpoint, WS-Trust, the KDC, a federated or certificate sign-in, or a screen whose person holds no such factor. | — |
+| `STS-RISK-0018` | A step-up on risk was asked of a person who holds no factor that answers it. Refused rather than offered enrolment: enrolling a new factor under an elevated risk is how an attacker holding the password would get one. | — |
+| `STS-RISK-0019` | In development mode (observe only) the issuance policy would have refused on risk, and did not: the decision is recorded on the assessment and the issuance went ahead. risk.enforceInDevelopment turns enforcement on. | — |
+| `STS-RISK-0020` | A person's risk level changed and no reaction could be decided: the risk-response policy is disabled or does not load. The change is recorded; nothing is announced, ended or disabled. | — |
+| `STS-RISK-0021` | A reaction the risk-response policy permitted (announce, end sessions, RISC credential-compromise, disable) failed part-way. The others were still taken; the change of risk is recorded. | — |
 
 ## STS-GNAP
 
@@ -3114,6 +3126,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0799` | An authorization server profile's access_token_signing_alg was set to an algorithm this service does not sign access tokens with (#139). | HTTP 400 |
 | `STS-ADMIN-0800` | Making an app password for somebody was refused; the credential store's own code is on the audit row. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0801` | Revoking somebody's app password was refused; the credential store's own code is on the audit row. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0802` | A password reset for a Kerberos keytab gave neither or both of a password and random, or the new password was refused (the password policy's own code wins where it gave one). Nothing was changed. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0803` | A password reset for a Kerberos keytab SET the password and then no keytab could be made, or a Kerberos principals action threw inside the console. | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 
@@ -3262,6 +3276,9 @@ Raised from: portal/.
 | `STS-PORTAL-0077` | A person's own app password was not made on /portal/app-passwords; the credential store's code is on the audit row. | HTTP 400 page |
 | `STS-PORTAL-0078` | A person asked /portal/app-passwords to revoke an app password they do not hold. | HTTP 404 page |
 | `STS-PORTAL-0079` | A POST to /portal/app-passwords named an action the page does not have. | HTTP 400 page |
+| `STS-PORTAL-0080` | A keytab download on /portal/kerberos was refused because the password typed is not the person's current one. | HTTP 400 page |
+| `STS-PORTAL-0081` | A keytab download on /portal/kerberos was refused by the Kerberos register after the password verified; its own STS-KRB code is on the audit row. | HTTP 400 page |
+| `STS-PORTAL-0082` | A POST to /portal/kerberos named an action the page does not have. | HTTP 400 page |
 
 ## STS-LOGOUT
 

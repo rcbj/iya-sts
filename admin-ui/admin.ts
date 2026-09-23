@@ -12186,6 +12186,124 @@ class AdminConsole {
     return heading + nav.head + rows + nav.foot + add;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE PERSON'S KERBEROS ACCOUNT (#59, 2026-09-22): the principal, what this
+  // realm's KDC holds for them — the PUBLIC half, never a key — and "Reset
+  // password and download keytab".
+  //
+  // **THE ONE CONTROL IS A PASSWORD RESET**, and the section says so before
+  // the button does. A keytab is derived from a password in hand and this
+  // service holds none of this person's, so the only password an
+  // administrator can derive one from is a password they set now — typed, or
+  // generated and never shown (`kerberos/krb5_person_keys.ts`,
+  // `personKeytab()`). The form posts to `/admin/kerberos/principals`, the
+  // page every other Kerberos key act goes through, and whose answer is the
+  // shown-once keytab page.
+  // ---------------------------------------------------------------------------
+  userKerberosSection(key, kerberos, gate) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.userKerberosSection(). key=" + key);
+    const heading = '<h2 id="kerberos">Kerberos</h2>';
+    if (!kerberos || !kerberos.kdc) {
+      log.debug("Leaving AdminConsole.userKerberosSection(). No KDC.");
+      return heading + this.note('Trust realm <code>' +
+        this.esc((kerberos && kerberos.trustRealm) || '') + '</code> has no ' +
+        'KDC (' + this.esc((kerberos && kerberos.reason) || 'krb5.enabled is ' +
+        'off for it') + '), so there is no Kerberos principal for this ' +
+        'person and no keytab to make.');
+    }
+    if (!kerberos.person) {
+      log.debug("Leaving AdminConsole.userKerberosSection(). Not in the " +
+                "directory.");
+      return heading + this.note('This identity has no entry in this realm\'s ' +
+        'directory, which is the one its KDC reads, so it is not a Kerberos ' +
+        'principal here.');
+    }
+    const keys = kerberos.keys;
+    const etypeList = function (etypes) {
+      log.debug("Entering etypeList().");
+      log.debug("Leaving etypeList().");
+      return (etypes || []).map(function (one) {
+        return '<code>' + self.esc(one.name) + '</code>';
+      }).join(' ');
+    };
+    const state = '<table class="key">' +
+      '<tr><th>Principal</th><td><code>' + this.esc(kerberos.principal) +
+      '</code></td></tr>' +
+      '<tr><th>KDC</th><td>' + (kerberos.productKdc
+        ? 'product — keyed from their own password'
+        : 'development — every user is keyed from <code>krb5.userPassword' +
+          '</code>, not from their own password') +
+      '</td></tr>' +
+      (kerberos.productKdc
+        ? '<tr><th>Keys</th><td>' + (keys
+            ? 'kvno ' + this.esc(String(keys.kvno)) + ' ' +
+              etypeList(keys.etypes) + (keys.current ? ''
+                : ' — <span class="state-invalid">not from the password ' +
+                  'they hold now</span>, so the KDC refuses them until ' +
+                  'their next verified sign-in') +
+              (keys.derivedAt ? '<br><span class="sub">derived ' +
+                this.esc(keys.derivedAt) + (keys.derivedOn ? ' on a ' +
+                'password ' + this.esc(keys.derivedOn) : '') + '</span>' : '')
+            : '<span class="state-none">none yet</span> — they get them the ' +
+              'first time a password is set or verified here') +
+          '</td></tr>' +
+          '<tr><th>Previous versions</th><td>' + (keys &&
+            keys.retained.length
+            ? keys.retained.map(function (one) {
+                return 'kvno ' + self.esc(String(one.kvno)) + ' until ' +
+                       self.esc(one.expiresAt);
+              }).join('<br>')
+            : '<span class="state-none">none</span>') + '</td></tr>'
+        : '') +
+      (kerberos.disabled
+        ? '<tr><th>Account</th><td><strong class="state-expired">DISABLED' +
+          '</strong> — the KDC refuses it KDC_ERR_CLIENT_REVOKED</td></tr>'
+        : '') +
+      '</table>';
+    const why = this.note('<strong>A keytab is as good as their ' +
+      'password</strong>: whoever holds it gets a Kerberos ticket as them ' +
+      '(<code>kinit -k -t</code>). This service never reads a stored key ' +
+      'back out, so a keytab is DERIVED from a password in hand — and the ' +
+      'only password you can have in hand for somebody else is one you set ' +
+      'now. The person can make their own, from their own password, on ' +
+      '<code>/portal/kerberos</code>.');
+    if (!gate.write) {
+      log.debug("Leaving AdminConsole.userKerberosSection(). Read only.");
+      return heading + state + why + this.note('Resetting the password for ' +
+        'a keytab needs <strong>Admin Write</strong>.');
+    }
+    if (kerberos.disabled) {
+      log.debug("Leaving AdminConsole.userKerberosSection(). Disabled.");
+      return heading + state + why + this.note('The account is disabled, so ' +
+        'a keytab for it could not sign in. Enable it first.');
+    }
+    const form = '<h3>Reset password and download keytab</h3>' +
+      this.warn('<strong>This CHANGES ' + this.esc(key) + '\'s ' +
+        'password</strong>: their old one stops working for every protocol, ' +
+        'the Kerberos kvno moves up by one, and they are signed out of ' +
+        'everything. They are NOT asked to change it at their next sign-in, ' +
+        'because that would end the keytab. With <strong>a generated ' +
+        'password</strong> nobody is shown it, and the keytab is the only ' +
+        'thing that signs them in until a password is set again.') +
+      '<form method="post" action="/admin/kerberos/principals">' +
+      '<input type="hidden" name="action" value="reset-person-keytab">' +
+      '<input type="hidden" name="username" value="' + this.esc(key) + '">' +
+      '<input type="hidden" name="from" value="user">' +
+      '<div class="formrow"><label for="krb5-keytab-password">New ' +
+      'password</label><input type="password" id="krb5-keytab-password" ' +
+      'name="password" autocomplete="new-password" size="30"></div>' +
+      '<div class="formrow"><label><input type="checkbox" name="random" ' +
+      'value="true"> or a generated one that is never shown</label></div>' +
+      '<div class="formrow"><button class="danger" type="submit" title="' +
+      this.esc('Sets the password, signs them out everywhere, and shows the ' +
+               'keytab derived from it once.') + '">Reset password and ' +
+      'download keytab</button></div></form>';
+    log.debug("Leaving AdminConsole.userKerberosSection().");
+    return heading + state + why + form;
+  }
+
   userCredentialControlsSection(key, factors, gate, back) {
     const { log } = this.deps;
     const self = this;
@@ -12584,6 +12702,10 @@ class AdminConsole {
       // reset signs the person out as well.
       this.userCredentialControlsSection(key, view.mfa.json, gateStateFor(req),
                                          back) +
+
+      // THEIR KERBEROS ACCOUNT, AND A KEYTAB FOR IT (#59): after the password
+      // controls, because the one control here IS a password reset.
+      this.userKerberosSection(key, view.kerberos, gateStateFor(req)) +
 
       // ---------------------------------------------------------------------
       // TWO BUTTONS, AND THE ORDER IS THE ARGUMENT (2026-09-05).
@@ -35644,9 +35766,14 @@ class AdminConsole {
                          json.peoplePaging.perPage) +
         '<h2>What there is deliberately no button for</h2>' +
         self.note('<strong>Downloading a keytab again.</strong> A stored key ' +
-                  'is never read back out: the keytab is handed over by the ' +
-                  'create or rotate that made it, and a lost one is replaced ' +
-                  'by rotating. <strong>Setting a person\'s keys.</strong> ' +
+                  'is never read back out: a service principal\'s keytab is ' +
+                  'handed over by the create or rotate that made it, and a ' +
+                  'lost one is replaced by rotating. A PERSON\'s keytab ' +
+                  '(#59) is derived from a password in hand: <strong>Reset ' +
+                  'password and download keytab</strong> on their page ' +
+                  'under Directory &rarr; Users, or their own password on ' +
+                  '<code>/portal/kerberos</code>. <strong>Setting a ' +
+                  'person\'s keys.</strong> ' +
                   'They come from the person\'s password and from nothing ' +
                   'else; clearing them is the one control, and the next ' +
                   'verified sign-in derives them again.') +
@@ -35667,17 +35794,51 @@ class AdminConsole {
       log.debug("Entering the admin Kerberos principals action endpoint.");
       const body = parseBody(req);
       const state = gateStateFor(req);
-      const result = adminActions.kerberosPrincipalsAction(body,
-        { actor: (state && state.username) || '', via: 'console' });
+      // ONE ACTION ANSWERS A PROMISE (#59's `reset-person-keytab`, whose
+      // string-to-key is asynchronous), so every answer is resolved.
+      Promise.resolve(adminActions.kerberosPrincipalsAction(body,
+        { actor: (state && state.username) || '', via: 'console' }))
+        .then(function (result) {
+          answered(result);
+        }, function (e) {
+          log.error(errorCodes.tag('STS-ADMIN-0803') + 'admin: a Kerberos ' +
+                    'principals action threw: ' + ((e && e.stack) || e));
+          answered(errorCodes.mark({ ok: false, errors: ['The action ' +
+            'failed inside this service; the log says why.'] },
+            'STS-ADMIN-0803'));
+        });
+      log.debug("Leaving the admin Kerberos principals action endpoint. " +
+                "Answering when the action settles.");
+
+      function answered(result) {
+      log.debug("Entering answered().");
       const isJson = /json/i.test(String(req.headers['content-type'] || ''));
       if (result.ok && result.keytab && !isJson) {
         // THE ONE TIME THE KEYTAB IS DRAWN. See the header above the GET.
         const shown = Object.assign({}, result);
         delete shown.keytab;
+        // A PERSON'S KEYTAB (#59) is not replaced by rotating: it is made
+        // again from a password, and this one came from a password the
+        // administrator just set — which the page says above everything else.
+        const person = !!result.username;
         const inner = self.warn('<strong>This keytab is shown once.</strong> ' +
             'It is not kept in the clear anywhere and this service cannot ' +
-            'show it again; a lost keytab is replaced by rotating, which ' +
-            'makes a new key.') +
+            'show it again; ' +
+            (person
+              ? 'another is made by resetting the password again, or by ' +
+                'the person from their own password on the portal.'
+              : 'a lost keytab is replaced by rotating, which makes a new ' +
+                'key.')) +
+          (person
+            ? self.warn('<strong>' + self.esc(result.username) + '\'s ' +
+                'password was changed</strong> to ' +
+                (result.generated
+                  ? 'a generated one that nobody was shown, so this keytab ' +
+                    'is the only thing that signs them in until a password ' +
+                    'is set again'
+                  : 'the one you typed') +
+                ', and they were signed out of everything.')
+            : '') +
           self.note(self.esc(result.message)) +
           '<table class="key">' +
           '<tr><th>Principal</th><td><code>' + self.esc(result.principal) +
@@ -35706,20 +35867,30 @@ class AdminConsole {
           '<textarea readonly rows="6" name="keytab-base64">' +
           self.esc(result.keytab) +
           '</textarea>' +
-          self.note('<a href="/admin/kerberos/principals">Back to the ' +
-                    'Kerberos principals</a>');
+          self.note(person
+            ? '<a href="' + self.esc('/admin/users' +
+                queryWith({ user: result.username }, {})) + '">Back to ' +
+              self.esc(result.username) + '</a>'
+            : '<a href="/admin/kerberos/principals">Back to the ' +
+              'Kerberos principals</a>');
+        // Never cached: the body carries a key.
+        res.set('Cache-Control', 'no-store');
         self.respond(req, res, shown, 'Kerberos keytab',
-                     '/admin/kerberos/principals',
+                     person ? '/admin/users' : '/admin/kerberos/principals',
                      inner);
-        log.debug("Leaving the admin Kerberos principals action endpoint. " +
-                  "Keytab shown.");
+        log.debug("Leaving answered(). Keytab shown.");
         return;
       }
-      self.respondToAction(req, res, '/admin/kerberos/principals' +
-        queryWith(self.listViewFromBack('/admin/kerberos/principals',
-                                        body.back), {}),
+      // A person's action returns to their page when that is where it was
+      // asked from; the list view otherwise.
+      self.respondToAction(req, res, body.from === 'user' && body.username
+        ? '/admin/users' + queryWith({ user: String(body.username) }, {})
+        : '/admin/kerberos/principals' +
+          queryWith(self.listViewFromBack('/admin/kerberos/principals',
+                                          body.back), {}),
                            result);
-      log.debug("Leaving the admin Kerberos principals action endpoint.");
+      log.debug("Leaving answered().");
+      }
     });
 
     app.get('/admin/ssf', function (req, res) {

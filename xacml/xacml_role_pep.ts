@@ -126,6 +126,27 @@ interface IssuanceQuestion {
   subject?: any;
   claims?: any;
   preview?: boolean;
+  // The RISK of the authentication this issuance rests on (#62 P3), as
+  // `risk/risk_engine.ts`'s `factsOf()` states it: level, score, signals,
+  // the step-ups already met, and whether a risk Deny is ENFORCED here
+  // (product) or only recorded (development). Absent — nothing assessed —
+  // puts no risk attribute in the request, and the risk rules do not apply.
+  risk?: RiskFacts | null;
+  // The ROLE question is waived — nothing named an application, or
+  // `roles.enforceIssuance` is off — and the policy is asked only because
+  // there are risk facts. A Deny that is not about risk is then not a
+  // refusal. See `common/issuance_gate.js`.
+  rolesWaived?: boolean;
+}
+
+// The risk facts, as the gate hands them on.
+interface RiskFacts {
+  level: string;
+  score: number | null;
+  signals: string[];
+  satisfied: string[];
+  enforced: boolean;
+  assessmentId?: string;
 }
 
 // What a decision answers.
@@ -137,6 +158,9 @@ interface IssuanceAnswer {
   required: string[];
   policy: string;
   status?: any;
+  // The risk rule that denied (#62 P3): `refuse`, or `step-up` with the
+  // factor to ask for. `observed` when development let it through.
+  risk?: { action: string; factor: string; observed: boolean } | null;
 }
 
 // Which document decides: `policy` when one does, `why` when none can.
@@ -170,6 +194,7 @@ interface XacmlRolePepDeps {
 }
 
 const ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE;
+const RISK = templates.RISK_ATTRIBUTE;
 
 // Said once per process rather than once per issuance. A service running
 // without its issuance policy would otherwise write a line per token, which
@@ -408,11 +433,67 @@ class XacmlRolePep {
           attributes: [this.attribute(model.ATTRIBUTE.ACTION_ID,
                                       [asked.kind])] },
         { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-          attributes: [] }
+          attributes: this.riskAttributes(asked.risk) }
       ]
     };
     log.debug('Leaving XacmlRolePep.buildRequest().');
     return request;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE RISK FACTS AS ENVIRONMENT ATTRIBUTES (#62 P3). None at all when there
+  // are none: an absent level is what makes the risk rules inapplicable, and
+  // an empty string would be a level nobody wrote a rule for. The score goes
+  // only when there is one — a first sign-in is UNSCORED and has none.
+  // -------------------------------------------------------------------------
+  private riskAttributes(risk: RiskFacts | null | undefined): any[] {
+    const { log, model } = this.deps;
+    log.debug("Entering XacmlRolePep.riskAttributes().");
+    if (!risk || !risk.level) {
+      log.debug("Leaving XacmlRolePep.riskAttributes(). No facts.");
+      return [];
+    }
+    const out = [
+      this.attribute(RISK.LEVEL, [risk.level]),
+      this.attribute(RISK.SIGNAL, risk.signals || []),
+      this.attribute(RISK.SATISFIED, risk.satisfied || [])
+    ];
+    if (typeof risk.score === 'number' && isFinite(risk.score)) {
+      out.push(this.attribute(RISK.SCORE, [risk.score], model.TYPE.DOUBLE));
+    }
+    log.debug("Leaving XacmlRolePep.riskAttributes().");
+    return out;
+  }
+
+  // The risk obligation on a Deny, read: `{ action, factor }`, or null when
+  // the Deny is not about risk. The action defaults to `refuse`: an
+  // obligation this PEP cannot read is a policy saying no, not a policy
+  // saying nothing.
+  private riskObligationOf(answer: any): { action: string;
+                                           factor: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.riskObligationOf().");
+    const found = (answer && answer.obligations || []).filter(function (o) {
+      return o && o.id === RISK.OBLIGATION;
+    })[0];
+    if (!found) {
+      log.debug("Leaving XacmlRolePep.riskObligationOf(). None.");
+      return null;
+    }
+    const valueOf = function (id: string): string {
+      log.debug("Entering valueOf().");
+      const hit = (found.assignments || []).filter(function (a) {
+        return a.attributeId === id;
+      })[0];
+      log.debug("Leaving valueOf().");
+      return hit ? String(hit.lexical !== undefined ? hit.lexical
+                                                     : hit.value) : '';
+    };
+    const action = valueOf(RISK.ACTION) === 'step-up' ? 'step-up' : 'refuse';
+    log.debug("Leaving XacmlRolePep.riskObligationOf(). " + action);
+    return { action: action,
+             factor: action === 'step-up'
+               ? (valueOf(RISK.FACTOR) || 'second-factor') : '' };
   }
 
   // -------------------------------------------------------------------------
@@ -446,7 +527,11 @@ class XacmlRolePep {
     }
 
     const subject = asked.subject || {};
-    const required = applications.requiredRolesOf(asked.application);
+    // A WAIVED ROLE QUESTION requires nothing, which the policy's "requires
+    // nothing" arm permits — and a Deny that is not about risk is set aside
+    // below, for a policy written without that arm.
+    const required = asked.rolesWaived ? []
+      : applications.requiredRolesOf(asked.application);
     const held = roles.rolesOf(subject);
     const fromToken = roles.rolesInClaims(asked.claims);
     const narrowed = applications.requiresNarrowedRoles(asked.application);
@@ -516,9 +601,89 @@ class XacmlRolePep {
       resolver: pip.resolverFor(request)
     });
 
+    // -----------------------------------------------------------------------
+    // A DENY ABOUT RISK (#62 P3) — the policy's risk obligation says so. In
+    // product it refuses, and the answer carries what to do about it (a
+    // step-up and its factor) for the doors that can. In development it is
+    // RECORDED and set aside: the policy is asked again without the risk
+    // facts, and the roles decide, exactly as before risk scoring decided
+    // anything. Asked again rather than the role rule read off this answer,
+    // because under deny-overrides a Deny says nothing about the Permit it
+    // overrode — and an operator's own document may have rules of its own.
+    // -----------------------------------------------------------------------
+    const riskDeny = answer.decision === model.DECISION.DENY
+      ? this.riskObligationOf(answer) : null;
+    if (riskDeny) {
+      const facts = asked.risk as RiskFacts;
+      if (facts && facts.enforced) {
+        const code = riskDeny.action === 'step-up' ? 'STS-RISK-0017'
+                                                   : 'STS-RISK-0016';
+        const riskWhy = riskDeny.action === 'step-up'
+          ? 'The risk of this authentication is ' + facts.level + ' (' +
+            (facts.signals.join(', ') || 'the model') + '), and the ' +
+            'issuance policy asks for a ' + riskDeny.factor.replace('-', ' ') +
+            ' before anything is issued.'
+          : 'The risk of this authentication is ' + facts.level + ' (' +
+            (facts.signals.join(', ') || 'the model') + '), and the ' +
+            'issuance policy refuses it.';
+        if (!dryRun) {
+          audit.audit({
+            action: 'xacml.issuance.refused', errorCode: code,
+            actor: subject.name || '', protocol: 'XACML',
+            detail: 'Deny on risk for ' + (asked.kind || 'an issuance') +
+                    ' to "' + String(asked.application || '') + '": ' +
+                    riskWhy + (facts.assessmentId
+                      ? ' Assessment ' + facts.assessmentId + '.' : '')
+          });
+        }
+        log.info('xacml: ' + (dryRun ? 'a dry run would have REFUSED '
+                                     : 'REFUSED ') +
+                 (asked.kind || 'an issuance') + ' for "' +
+                 String(asked.application || '') + '" to "' +
+                 (subject.name || 'nobody') + '" on risk — ' + riskWhy);
+        // THE SENTENCE A CLIENT MAY SEE IS NOT `riskWhy`. Issuance sites put
+        // a refusal's `why` in an error_description, a SOAP fault or a SAML
+        // status message, and the level and the signals are exactly what an
+        // attacker probing from a Tor exit would like to read back. The
+        // detail is on the audit row and in the log above; the answer says
+        // what every failed authentication says.
+        const refusal = this.refused(riskDeny.action === 'step-up'
+          ? 'A stronger authentication is required.'
+          : 'Authentication failed.', answer.decision, held, required,
+                                     answer);
+        refusal.risk = { action: riskDeny.action, factor: riskDeny.factor,
+                         observed: false };
+        log.debug('Leaving XacmlRolePep.decideNow(). Deny on risk.');
+        return refusal;
+      }
+      if (!dryRun) {
+        log.info(errorCodes.tag('STS-RISK-0019') + 'xacml: the issuance ' +
+                 'policy would have ' + (riskDeny.action === 'step-up'
+                   ? 'asked for a ' + riskDeny.factor + ' before issuing '
+                   : 'REFUSED ') + (asked.kind || 'an issuance') + ' to "' +
+                 (subject.name || 'nobody') + '" on risk (' +
+                 (facts ? facts.level : '?') + '); development observes, ' +
+                 'so the roles decide.');
+      }
+      const withoutRisk = Object.assign({}, asked, { risk: null });
+      const roleAnswer = this.decideNow(withoutRisk);
+      roleAnswer.risk = { action: riskDeny.action, factor: riskDeny.factor,
+                          observed: true };
+      log.debug('Leaving XacmlRolePep.decideNow(). Risk observed.');
+      return roleAnswer;
+    }
+
     if (answer.decision === model.DECISION.PERMIT) {
       log.debug('Leaving XacmlRolePep.decideNow(). Permit.');
       return this.allowed('The issuance policy permitted it.', held, required,
+                          answer);
+    }
+
+    if (asked.rolesWaived) {
+      log.debug('Leaving XacmlRolePep.decideNow(). Not about risk, and the ' +
+                'role question was waived.');
+      return this.allowed('The role question was waived and the issuance ' +
+                          'policy denied nothing on risk.', held, required,
                           answer);
     }
 
@@ -656,6 +821,19 @@ class XacmlRolePep {
           : 'The repository entry "' + name + '" decides. It overrides the ' +
             'built-in document.')
       : 'NOTHING IS BEING EVALUATED: ' + loaded.why;
+    // A DOCUMENT THAT READS NO RISK ATTRIBUTE DECIDES NOTHING ON RISK (#62
+    // P3), and says so rather than being rewritten: an override built from
+    // the template before the risk rules existed — or written by hand
+    // without them — is the operator's document, and this realm then
+    // assesses every sign-in and refuses none on it.
+    (out as any).readsRisk = !!loaded.policy &&
+      JSON.stringify(loaded.policy).indexOf(RISK.LEVEL) >= 0;
+    if (out.ok && !(out as any).readsRisk) {
+      out.effect += ' IT READS NO RISK ATTRIBUTE (' + RISK.LEVEL + '), so ' +
+        'nothing is refused or stepped up on the risk of an authentication ' +
+        'in this realm (#62): rebuild it from the `role-issuance` template, ' +
+        'or add the risk rules, to decide on it.';
+    }
     log.debug('Leaving XacmlRolePep.issuancePolicyState(). ' +
               (out.ok ? (out.builtIn ? 'Built in.' : 'Overridden.')
                       : 'Not evaluated.'));

@@ -32,7 +32,7 @@ The short version:
 | `credential-change` | **yes** — any credential of a person created, changed, revoked or deleted, at every door that changes one (every door since 2026-09-22; administrators' changes since 2026-09-13) |
 | `assurance-level-change` | **yes** — a re-authentication on a held session that moves its `acr` (since 2026-09-14) |
 | `device-compliance-change` | no — by hand only, until [#164](https://github.com/rcbj/iya-sts/issues/164) gives it a source |
-| `risk-level-change` | no — by hand only, until [#62](https://github.com/rcbj/iya-sts/issues/62) gives it a source |
+| `risk-level-change` | **yes** — when a person's risk level changes and the `risk-response` policy permits announcing it ([Risk scoring](risk-scoring.md#when-a-persons-risk-changes)) |
 
 ## Three gates every event passes, whatever fired it
 
@@ -45,10 +45,11 @@ arrived" are the third.
    receiver, and exactly the case a receiver ought to be tested against.
    `caep.eventsSupported` narrows the eight without turning the profile off.
 2. **Did something fire it.** For the automatic ones, `caep.autoEmit`
-   (default on) and `caep.autoEmitTypes` (default: all six — the three session
-   events, `credential-change`, `assurance-level-change`, which goes out
-   when the same person re-authenticates on a session they already hold and
-   its `acr` changes, on the `urn:sts:acr` scale, and `token-claims-change`).
+   (default on) and `caep.autoEmitTypes` (default: all seven — the three
+   session events, `credential-change`, `assurance-level-change`, which goes
+   out when the same person re-authenticates on a session they already hold
+   and its `acr` changes, on the `urn:sts:acr` scale, `token-claims-change`,
+   and `risk-level-change`).
    Naming any other type in
    `autoEmitTypes` is **dropped with a warning** rather than
    honoured — no code path here would ever fire it, and a setting that reads as
@@ -317,9 +318,10 @@ five can be emitted **by hand**. Three have since gained an automatic trigger
 as well — `credential-change` when any credential of a person changes,
 `assurance-level-change` when a re-authentication moves a session's `acr`, and
 `token-claims-change` when a directory change moves a claim somebody's live
-tokens carry, or a GNAP grant is modified (see the table at the top). **No
-device reports compliance to this service and no risk engine talks to it**, so
-the other two are by hand only. That is a feature rather than a gap: they are exactly the events a
+tokens carry, or a GNAP grant is modified (see the table at the top) — and a
+fourth, `risk-level-change`, when a person's risk level changes (#62). **No
+device reports compliance to this service**, so `device-compliance-change` is
+by hand only. That is a feature rather than a gap: they are exactly the events a
 receiver is hardest to test against, because in a real deployment they arrive
 from systems you do not control.
 
@@ -493,6 +495,13 @@ eight that is a judgement rather than a fact** — the other seven report someth
 that happened — which is why it carries a reason and why a receiver is expected
 to weigh it rather than act on it.
 
+**This service sends it by itself since #62**: when a person's risk level
+changes and the `risk-response` policy permits announcing it — every change
+but a person's first level being LOW, by default. It names the person
+(`principal` `USER`, an `iss_sub` subject), carries `previous_level` where
+there was one, and puts the signals that moved it in `risk_reason`
+([Risk scoring](risk-scoring.md#when-a-persons-risk-changes)).
+
 - **Required:** `principal` and `current_level`.
 - `principal` says **what** the risk level is about, and it is required because
   the subject alone cannot say: a complex subject names a person *and* a device
@@ -567,7 +576,7 @@ None of these is the subject of a session event:
 |---|---|---|
 | `caep.enabled` | on | off drops all eight from `events_supported` |
 | `caep.autoEmit` | on | off leaves the register accurate and sends nothing by itself |
-| `caep.autoEmitTypes` | the six | which of the six observable acts emit; naming any other type is dropped with a warning |
+| `caep.autoEmitTypes` | the seven | which of the seven observable acts emit; naming any other type is dropped with a warning |
 | `caep.eventsSupported` | all eight | which types this transmitter will agree to deliver |
 | `caep.omitEventTimestamp` | off | on produces a conforming event with **no** `event_timestamp`, to break a receiver that assumes one |
 | `caep.includeReasons` | on | whether `reason_admin` / `reason_user` are sent |

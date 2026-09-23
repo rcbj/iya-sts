@@ -3383,7 +3383,10 @@ class AdminViews {
           'keys are derived from their password when it is set or verified ' +
           'and ' +
           'are never shown; a service principal\'s keytab is handed over ' +
-          'ONCE, by the create or rotate that made it.',
+          'ONCE, by the create or rotate that made it, and a person\'s ' +
+          'keytab ONCE, derived from a password in hand — the one an ' +
+          'administrator sets on the person\'s page, or their own on ' +
+          '/portal/kerberos.',
         mode: krb5PersonKeys.productKdc()
           ?
           'This KDC is a PRODUCT one: a person authenticates with their own ' +
@@ -6407,6 +6410,10 @@ class AdminViews {
     // link through a deleted relationship matches nothing, and saying so is
     // cheaper than leaving a reader to wonder why it does nothing.
     const federationLinkPage = this.federationLinksOf(req.query, key);
+    // THEIR KERBEROS ACCOUNT (#59): the principal, this realm's KDC, and the
+    // PUBLIC half of their keys — never a key. Read once, for the page's
+    // Kerberos section and this reply's `kerberos`.
+    const kerberos = this.deps.krb5PersonKeys.personKerberosState(key);
     log.debug("Leaving AdminViews.userDetailJson().");
     return {
       detail: detail, row: row, sessionRows: sessionRows, live: live,
@@ -6420,7 +6427,7 @@ class AdminViews {
       sessionPage: sessionPage, sessionTokenPages: sessionTokenPages,
       endedPage: endedPage, sessionlessPage: sessionlessPage, artifactPage:
                                                                 artifactPage,
-      federationLinkPage: federationLinkPage,
+      federationLinkPage: federationLinkPage, kerberos: kerberos,
       json: (function () {
       return {
           user: row,
@@ -6469,7 +6476,11 @@ class AdminViews {
           // removed with POST /admin-api/users/federation-link and
           // /federation-unlink.
           federationLinks: federationLinkPage.shown,
-          federationLinksPaging: self.pagingJson(federationLinkPage.paging)
+          federationLinksPaging: self.pagingJson(federationLinkPage.paging),
+          // Their Kerberos principal and the public half of their keys
+          // (#59). A keytab is made with POST
+          // /admin-api/kerberos/principals/reset-person-keytab.
+          kerberos: kerberos
       };
       }())
     };

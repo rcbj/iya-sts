@@ -553,13 +553,41 @@ from a script.
   backoff across restarts, and dead-lettered on a final failure (listed and
   retried on `/admin/logout`).
 
+### Session Management
+
+[OpenID Connect Session Management 1.0](https://openid.net/specs/openid-connect-session-1_0.html)
+is **off by default**. Turn it on per realm with `oauth2.sessionManagement`.
+When it is on:
+
+* Discovery names `check_session_iframe`.
+* Every OpenID Connect authentication response to an `http(s)` redirect URI
+  carries `session_state`. That includes errors, `prompt=none` and JARM
+  responses.
+* `/oauth2/check_session` is the OP iframe. A relying party frames it and
+  posts `client_id session_state`. It answers `changed`, `unchanged` or
+  `error`.
+* Only the origins of the realm's registered redirect URIs may frame it.
+
+The OP browser state is the cookie `sts_op_browser_state`. Script can read
+it, and on an HTTPS port it is `SameSite=None` so the iframe is sent it. It
+changes at every sign-in and is cleared at every sign-out.
+
+**Limitations:**
+
+* Browsers that block third-party cookies never send the cookie to the
+  iframe.
+* An expired or administratively ended session shows as `unchanged` until the
+  relying party asks the authorization endpoint again. Use
+  [Back-Channel Logout](#logout) for that.
+* A native client, whose redirect URI uses a private-use scheme, gets no
+  `session_state`.
+
 [Signing out](signing-out.md) describes the protocol-independent `/logout` and
 what it reaches.
 
 ### Not implemented
 
 * The device authorization grant: there is no device authorization endpoint.
-* `check_session_iframe` (Session Management, #121).
 * Aggregated and distributed claims (#147) and a Self-Issued OP (#129).
 * Enforcing `value`/`values` or `essential` in a claims request, other than
   for `acr`.
@@ -723,6 +751,7 @@ on [OAuth security](oauth-security.md#configuration).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
+| `oauth2.sessionManagement` | `STS_OAUTH2_SESSION_MANAGEMENT` | `false` | yes | Session Management 1.0: `check_session_iframe`, `session_state` and the OP browser state cookie. |
 | `oauth2.frontchannelLogout` | `STS_OAUTH2_FRONTCHANNEL_LOGOUT` | `true` | yes | Front-Channel Logout 1.0: the discovery members, the `sid` claim and a hidden iframe per registered `frontchannel_logout_uri`. |
 | `oauth2.backchannelLogout` | `STS_OAUTH2_BACKCHANNEL_LOGOUT` | `true` | yes | Back-Channel Logout 1.0: the discovery members, the `sid` claim and a Logout Token POSTed to every registered `backchannel_logout_uri`. |
 | `oauth2.backchannelLogoutOnExpiry` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_ON_EXPIRY` | `true` | yes | Send Logout Tokens when a session expires, not only when somebody signs out. |

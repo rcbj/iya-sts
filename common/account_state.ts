@@ -251,7 +251,10 @@ class AccountState {
                  'instead.'] }, 'STS-ADMIN-0792');
     }
     const was = this.isDisabled(name);
-    const door = o.via === 'api' ? '/admin-api/users' : 'the admin console';
+    // `door` names an actor that is not an administrator at either surface
+    // — risk scoring (#62 P4) disables where its policy says to.
+    const door = o.door ? String(o.door)
+      : (o.via === 'api' ? '/admin-api/users' : 'the admin console');
     if (was === !!disabled) {
       log.debug("Leaving AccountState.setDisabled(). No change.");
       return { ok: true, username: name, disabled: !!disabled,
@@ -271,7 +274,8 @@ class AccountState {
     const ended = disabled
       ? this.endEverything(name, {
           actor: o.actor || '', channel: o.via || 'http',
-          by: 'the account was disabled by an administrator (' + door + ')' })
+          by: o.by ? String(o.by)
+            : 'the account was disabled by an administrator (' + door + ')' })
       : null;
     audit.audit({
       action: disabled ? 'account.disable' : 'account.enable',

@@ -203,7 +203,10 @@ sealed on their entry, and checked — a wrong password is
 `KDC_ERR_PREAUTH_FAILED`, somebody whose keys have not been derived yet is told
 to sign in once, and a disabled account is `KDC_ERR_CLIENT_REVOKED`.
 `krb5.personKeys` turns person keys off. Service principals an operator creates
-at `/admin/kerberos/principals` get a random key and a keytab. A password change
+at `/admin/kerberos/principals` get a random key and a keytab. A person's keytab
+is derived from a password in hand — their own on `/portal/kerberos`, or one an
+administrator sets with **Reset password and download keytab** — and holds the
+current kvno only. A password change
 or rotation keeps the previous key version for a bounded window
 (`krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS`) so a ticket issued under it
 is still accepted; the old *password* is not. The `krbtgt` key is not rotated
