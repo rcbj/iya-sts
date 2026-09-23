@@ -8989,6 +8989,34 @@ const CODES = [
       'SO_PEERCRED failed (#104).',
     spec: 'gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, ' +
       'which it may call only as another entity' },
+  { code: 'STS-SPIFFE-0120',
+    summary: 'The Workload API was not served over TCP in a product realm, ' +
+      'because spiffe.workloadTcpSourceAuthenticated does not declare that ' +
+      'the network authenticates source addresses (SPIFFE Workload Endpoint ' +
+      'section 3) — the port was not bound, or a realm switched to product ' +
+      'with it bound refused the call (#166).',
+    spec: 'nothing listening on the port; gRPC UNAVAILABLE on a port already ' +
+      'bound' },
+  { code: 'STS-SPIFFE-0121',
+    summary: 'The Workload API was not served over TCP in a product realm: ' +
+      'spiffe.workloadTcpSourceAuthenticated is on but spiffe.grpcHost is a ' +
+      'wildcard address, and the declaration covers one named network (#166).',
+    spec: 'nothing listening on the port; gRPC UNAVAILABLE on a port already ' +
+      'bound' },
+  { code: 'STS-SPIFFE-0122',
+    summary: 'A SPIFFE registration entry was refused in a product realm ' +
+      'because it selects nothing that identifies a workload — no selector, ' +
+      'or only transport: and endpoint: ones — at the console, /admin-api or ' +
+      'the SPIRE Server API (#166).',
+    spec: 'gRPC INVALID_ARGUMENT for the item in BatchCreateEntry and ' +
+      'BatchUpdateEntry; a refused console or management API action' },
+  { code: 'STS-SPIFFE-0123',
+    summary: 'A SPIFFE registration entry already in the registry that ' +
+      'selects nothing identifying a workload answered no Workload API ' +
+      'caller, because its realm is in product mode; said once per entry ' +
+      'per process (#166).',
+    spec: 'the entry is left out of the answer; the caller may get an empty ' +
+      'SVID list' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +

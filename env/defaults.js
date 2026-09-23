@@ -278,7 +278,7 @@ var config = {
     consentRequired: true,                       // Ask for consent
     delegatedPermissionsEnforced: false,         // Enforce delegated permissions
     tokenExchangeRefreshToken: "when-requested", // Refresh token from a token exchange
-    breakIdTokenNonce: false,                    // Break the ID Token nonce
+    breakIdTokenNonce: false,                    // Break the ID Token nonce (development only)
     refreshIdleSeconds: 86400,                   // Refresh token idle timeout (s)
     revokeRefreshOnLogout: true,                 // Revoke refresh tokens on sign-out
     eddsaCurve: "Ed25519",                       // EdDSA curve
@@ -777,8 +777,8 @@ var config = {
     receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
     receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
-    legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim
-    breakSetSignature: false                                                                                                                              // Sign every SET badly
+    legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim (development only)
+    breakSetSignature: false                                                                                                                              // Sign every SET badly (development only)
   },
 
   // --- CAEP ------------------------------------------------------------
@@ -965,8 +965,8 @@ var config = {
     trustLocalSocket: true,                                       // Trust the SPIRE Server API socket as local
     adminIds: "",                                                 // Administrator SPIFFE IDs
     clockSkew: 60,                                                // Clock skew (s)
-    attestWorkloads: true,                                        // Match Workload API callers on selectors
-    acceptAssertedSelectors: false,                               // Believe selectors a workload asserts
+    attestWorkloads: true,                                        // Match Workload API callers on selectors (off: development only)
+    acceptAssertedSelectors: false,                               // Believe selectors a workload asserts (development only)
     maxEntries: 500,                                              // Maximum registration entries
     maxAgents: 200,                                               // Maximum attested agents
     maxFederatedBundles: 32,                                      // Maximum federated bundles
@@ -974,6 +974,7 @@ var config = {
     workloadSocketEnabled: true,                                  // Workload API on a Unix socket; restart to apply
     workloadSocket: "/tmp/spire-agent/public/api.sock",           // Workload API socket path; restart to apply
     workloadPort: 8092,                                           // Workload API TCP port; restart to apply
+    workloadTcpSourceAuthenticated: false,                        // Workload API TCP: the network authenticates source addresses; restart to apply
     serverPort: 8181,                                             // SPIRE Server API TCP port; restart to apply
     serverSocketEnabled: false,                                   // SPIRE Server API on a Unix socket; restart to apply
     serverSocket: "/tmp/spire-server/private/api.sock",           // SPIRE Server API socket path; restart to apply

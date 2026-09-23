@@ -15702,7 +15702,11 @@ class AdminApi {
                      'you, because neither this API nor GET ' +
                      '/admin/sts-metadata can see a socket, and ' +
                      '`workloadAttestation`: what the Workload API\'s Unix ' +
-                     'socket attests.\n\nThe reply ' +
+                     'socket attests, and under `tcp` whether its TCP port ' +
+                     'is served — in product only where ' +
+                     '`spiffe.workloadTcpSourceAuthenticated` declares the ' +
+                     'network authenticates source addresses, on a named ' +
+                     'address (#166).\n\nThe reply ' +
                      'also carries `authentication`: whether the SPIRE ' +
                      'Server API is enforcing mutual TLS, which identities ' +
                      'are administrators, and the whole per-method ' +
@@ -15711,7 +15715,10 @@ class AdminApi {
                      'caller on the Unix socket is attested by the workload ' +
                      'attestors `spiffe.workloadAttestors` names; one over ' +
                      'TCP is identified only by the transport, the endpoint ' +
-                     'and its address. An agent\'s attestation is verified ' +
+                     'and its address, which is why a product realm refuses ' +
+                     'a registration entry selecting nothing but the ' +
+                     'transport and endpoint. An agent\'s attestation is ' +
+                     'verified ' +
                      'by the attestor its type names or refused (#40, ' +
                      '2026-09-21). Where ' +
                      'the SPIRE Server API authenticates nobody, any caller ' +

@@ -124,6 +124,17 @@ import spiffeId = require('./spiffe_id');
 // until it expires.
 // ---------------------------------------------------------------------------
 import stats = require('../common/admin_stats');
+// A LEAF: the code a refusal carries, and the tag on the one warning (#166).
+import errorCodes = require('../common/error_codes');
+
+// The selector types that say only HOW a caller arrived, never WHO it is
+// (#166): every caller of a transport carries the same two. See
+// `identifiesWorkload()`.
+const DESCRIPTIVE_SELECTOR_TYPES = ['transport', 'endpoint'];
+
+// The inert entries already reported, so a product realm's warning about one
+// is said once per process rather than on every call (#166).
+const inertAnnounced = new Set<string>();
 
 // What `SpiffeRegistry` needs from the rest of the service: the modules this
 // file used to reach for itself, passed in so that the composition root can
@@ -506,9 +517,82 @@ class SpiffeRegistry {
                     'type:value, and both halves are required.');
       }
     });
+    // A FOURTH REFUSAL, IN PRODUCT (#166): an entry that selects nothing
+    // that identifies a workload. See `identifiesWorkload()`. Checked here so
+    // that the console, /admin-api and the SPIRE Server API are held to it
+    // alike, and the code rides the result for each door to record.
+    let errorCode = '';
+    if (!this.deps.mode.registersUnidentifyingEntries() &&
+        !this.identifiesWorkload(selectors)) {
+      errorCode = 'STS-SPIFFE-0122';
+      errors.push('selectors: ' + (selectors.length
+        ? 'transport: and endpoint: say only how a caller arrived, so an ' +
+          'entry selecting nothing else is issued to EVERY caller of that ' +
+          'transport'
+        : 'an entry with no selectors is issued to every caller') +
+        '. This realm is in product mode, where an entry must select ' +
+        'something that identifies its workload: an attested selector ' +
+        '(unix:, docker:, k8s:) for the Unix socket, or peer:<address> ' +
+        'for TCP where spiffe.workloadTcpSourceAuthenticated declares the ' +
+        'network authenticates source addresses.');
+    }
     log.debug('Leaving SpiffeRegistry.checkRecord(). ' + errors.length +
               ' problem(s).');
-    return { ok: !errors.length, errors: errors };
+    return { ok: !errors.length, errors: errors, errorCode: errorCode };
+  }
+
+  // ---------------------------------------------------------------------------
+  // DOES AN ENTRY'S SELECTOR LIST IDENTIFY A WORKLOAD? (#166, 2026-09-23.)
+  //
+  // `transport:` and `endpoint:` are DESCRIPTIVE: every caller on a transport
+  // carries the same two, so an entry selecting only those — or nothing, which
+  // `selectorsMatch()` reads as matching everything, as SPIRE would if it
+  // allowed one — is issued to every caller that reaches the endpoint. That is
+  // the unattested identity #40 closed for the socket, arriving through the
+  // registry. Every other type identifies: the attested `unix:`, `docker:`
+  // and `k8s:` selectors, `spiffe_id:` (an agent alias), and `peer:`, the
+  // TCP caller's source address, matched EXACTLY — no prefix — as SPIRE
+  // matches every selector. SPIRE itself refuses an entry with an empty
+  // selector list.
+  // ---------------------------------------------------------------------------
+  identifiesWorkload(selectors) {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeRegistry.identifiesWorkload().');
+    const found = (selectors || []).some(function (selector) {
+      const type = String((selector && selector.type) || '').trim()
+        .toLowerCase();
+      return !!type && DESCRIPTIVE_SELECTOR_TYPES.indexOf(type) < 0;
+    });
+    log.debug('Leaving SpiffeRegistry.identifiesWorkload(). ' + found);
+    return found;
+  }
+
+  // WHETHER AN ENTRY MAY ANSWER A WORKLOAD NOW (#166): always in development;
+  // in product only if it identifies one. An entry written while the realm was
+  // in development stays in the registry and answers nobody once the realm is
+  // in product — the mode is runtime, so the read is the guard — said once
+  // per entry per process (STS-SPIFFE-0123).
+  answersWorkloads(entry) {
+    const { log, mode } = this.deps;
+    log.debug('Entering SpiffeRegistry.answersWorkloads().');
+    if (mode.registersUnidentifyingEntries() ||
+        this.identifiesWorkload(entry && entry.selectors)) {
+      log.debug('Leaving SpiffeRegistry.answersWorkloads(). Yes.');
+      return true;
+    }
+    const key = String((entry && entry.id) || '');
+    if (!inertAnnounced.has(key)) {
+      inertAnnounced.add(key);
+      log.warn(errorCodes.tag('STS-SPIFFE-0123') + 'spiffe: the ' +
+               'registration entry ' + key + ' (' +
+               String((entry && entry.spiffeId) || '') + ') selects nothing ' +
+               'that identifies a workload, and this realm is in product ' +
+               'mode, so it answers no Workload API caller. Give it an ' +
+               'identifying selector or delete it. Said once per entry per ' +
+               'process.');
+    }
+    log.debug('Leaving SpiffeRegistry.answersWorkloads(). No.');
+    return false;
   }
 
   // ---------------------------------------------------------------------------
@@ -678,7 +762,11 @@ class SpiffeRegistry {
     const checked = this.checkRecord(record, trustDomain);
     if (!checked.ok) {
       log.debug('Leaving SpiffeRegistry.createEntry(). Refused.');
-      return { ok: false, errors: checked.errors };
+      // The code rides as errorCodes' non-enumerable mark, so a door that
+      // hands this result to a client never sends it (#166).
+      const refused = { ok: false, errors: checked.errors };
+      return checked.errorCode ? errorCodes.mark(refused, checked.errorCode)
+                               : refused;
     }
     if (this.entryCount() >= this.maxEntries()) {
       log.debug('Leaving SpiffeRegistry.createEntry(). Full.');
@@ -743,7 +831,11 @@ class SpiffeRegistry {
     const checked = this.checkRecord(merged, trustDomain);
     if (!checked.ok) {
       log.debug('Leaving SpiffeRegistry.updateEntry(). Refused.');
-      return { ok: false, errors: checked.errors };
+      // The code rides as errorCodes' non-enumerable mark, so a door that
+      // hands this result to a client never sends it (#166).
+      const refused = { ok: false, errors: checked.errors };
+      return checked.errorCode ? errorCodes.mark(refused, checked.errorCode)
+                               : refused;
     }
     directory.writeEntry(id,
                          this.attributesFromRecord(merged,
@@ -1425,6 +1517,8 @@ export = {
   selectorText: slot.forward('selectorText'),
   selectorsMatch: slot.forward('selectorsMatch'),
   checkRecord: slot.forward('checkRecord'),
+  identifiesWorkload: slot.forward('identifiesWorkload'),
+  answersWorkloads: slot.forward('answersWorkloads'),
   newEntryId: slot.forward('newEntryId'),
   generalizedTime: slot.forward('generalizedTime'),
   agentCnFor: slot.forward('agentCnFor'),

@@ -267,7 +267,7 @@ const SPECS: Spec[] = [
     name: 'SPIFFE Workload API and Workload Endpoint',
     where: 'SPIFFE (CNCF)',
     url: 'https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Workload_API.md',
-    coverage: 'partial, and the gap is the whole of workload attestation. ' +
+    coverage: 'partial, and the gap is attestation of a TCP caller. ' +
               'Five of the seven methods are implemented — FetchX509SVID, ' +
               'FetchX509Bundles, FetchJWTSVID, FetchJWTBundles, ' +
               'ValidateJWTSVID — over a Unix socket and over TCP, with the ' +
@@ -281,16 +281,18 @@ const SPECS: Spec[] = [
               'ASKED FOR AND THERE MUST NOT BE ONE — the Workload Endpoint ' +
               'specification says the endpoint MUST NOT require direct ' +
               'authentication of its clients and that TLS MUST NOT be ' +
-              'required — so what is missing is ATTESTATION rather than ' +
-              'authentication. A caller is identified only by the transport ' +
-              'it arrived on, the endpoint it reached and its peer address, ' +
-              'because node cannot read a Unix socket\'s peer credentials; ' +
-              'those selectors DO decide which registration entries answer ' +
-              '(spiffe.attestWorkloads), and they prove nothing about who is ' +
-              'calling, so any caller that reaches the socket still gets an ' +
-              'identity. The selectors are spelt `transport:`, `endpoint:` ' +
-              'and `peer:` rather than `unix:` so that they cannot be ' +
-              'mistaken for an attestor\'s.' },
+              'required — so what is needed is ATTESTATION. A caller on the ' +
+              'Unix socket is attested from the kernel\'s account of the ' +
+              'connecting process by the unix, docker and k8s workload ' +
+              'attestors (#40). A caller over TCP has no process to ask and ' +
+              'is identified by its transport, endpoint and source address ' +
+              '(`transport:`, `endpoint:`, `peer:`), so section 3 allows TCP ' +
+              'only where the network authenticates the source address: ' +
+              'PRODUCT mode does not bind the TCP port unless ' +
+              'spiffe.workloadTcpSourceAuthenticated declares that, and not ' +
+              'on a wildcard address, and refuses a registration entry that ' +
+              'selects nothing but the transport and endpoint (#166). ' +
+              'Development serves TCP to anybody who reaches it.' },
   { id: 'spire-server-api', name: 'SPIRE Server API',
     where: 'SPIRE (CNCF) — spire-api-sdk',
     url: 'https://github.com/spiffe/spire-api-sdk',
@@ -3846,11 +3848,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'SOCKETS, all four: this page is built by walking the Express ' +
           'router and cannot see one, so their state is reported by GET ' +
           '/spiffe and on /admin/spiffe rather than here. MOST OF THAT PAGE ' +
-          'IS WHAT IS AND IS NOT CHECKED — no workload attestation (node ' +
-          'attestation is verified or refused since 2026-09-21, #40; a ' +
-          'Workload API caller is identified by its ' +
-          'transport, endpoint and peer address and nothing else, because ' +
-          'node cannot read a socket\'s peer credentials), no revocation ' +
+          'IS WHAT IS AND IS NOT CHECKED — node attestation verified or ' +
+          'refused and the Unix socket\'s workload attested (#40), a TCP ' +
+          'caller identified by its transport, endpoint and source address ' +
+          'alone and therefore served in product only on a network ' +
+          'declared to authenticate source addresses (#166), no revocation ' +
           'anywhere — the directory does record a `spiffeCredentialStatus` ' +
           'on an identity whose last registration entry was deleted or whose ' +
           'agent was banned or deleted, and that is not one: nothing reads ' +
