@@ -3416,7 +3416,8 @@ class Authn {
   // any sign-out is. Answers how many ended.
   // ---------------------------------------------------------------------------
   endRelyingPartySessions(surfaceId: string, fromRealm: string,
-                          about: (user: any) => boolean, via: string): number {
+                          about: (user: any, session?: any) => boolean,
+                          via: string): number {
     const { log, realms } = this.deps;
     const self = this;
     log.debug("Entering Authn.endRelyingPartySessions(). " + surfaceId);
@@ -3427,7 +3428,7 @@ class Authn {
       store.forEach(function (session, id) {
         if (session && session.rpSurface === surfaceId &&
             String(session.derivedFromRealm || partition) === fromRealm &&
-            session.user && about(session.user)) {
+            session.user && about(session.user, session)) {
           doomed.push(id);
         }
       });

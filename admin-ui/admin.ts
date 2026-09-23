@@ -35328,6 +35328,7 @@ class AdminConsole {
             return '<div class="signal-reaction ' +
               (r.failed ? 'state-invalid' : 'sub') + '">' + (r.failed
                 ? 'could not end its sessions'
+                : r.skipped ? 'ended nothing: ' + self.esc(r.skipped)
                 : (r.observed ? 'would end this console\'s sessions ' +
                                 '(development observes)'
                               : 'ended ' + self.esc(String(r.ended)) +

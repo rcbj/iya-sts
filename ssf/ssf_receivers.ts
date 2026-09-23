@@ -976,7 +976,42 @@ class SsfReceivers {
         // is done.
         decided = { reactions: [] };
       }
+      // WHAT THE EVENT IS ABOUT DECIDES WHICH OF THE SURFACE'S SESSIONS IT
+      // CAN END (2026-09-23). The policy says which event types are acted on;
+      // two of the defaults need narrowing by what the event itself says,
+      // and ending on the person alone got both wrong:
+      //
+      // * a `session-revoked` names the SIGN-ON session that ended. Only the
+      //   surface's sessions DERIVED from it are that session ending — a
+      //   person's other sign-ins are not — and one whose initiating entity
+      //   is `policy` is an EXPIRY, which a renewable relying-party session
+      //   is designed to outlive (`authn.ts`, "A PARENT THAT RAN OUT IS NOT
+      //   A PARENT THAT SIGNED OUT"). The sign-out cascade in `dropSession()`
+      //   already ends what a real sign-out ends.
+      // * a `credential-change` the PERSON made (`initiating_entity: user`)
+      //   is them changing their own credential — on the portal, usually —
+      //   and signing them out of the page they did it on is the opposite of
+      //   what OWASP ASVS 3.3 asks (keep the session that made the change).
+      //   An administrator's or a policy's change still ends them.
+      const initiator = String(body.initiating_entity || '');
+      const subjectSession = ((entry.claims && entry.claims.sub_id) || {})
+        .session;
+      const revokedSession = family === 'caep' &&
+        short === 'session-revoked' && subjectSession &&
+        typeof subjectSession.id === 'string' ? subjectSession.id : '';
+      let skip = '';
+      if (family === 'caep' && short === 'session-revoked' &&
+          initiator === 'policy') {
+        skip = 'an expiry, which a renewable session outlives';
+      } else if (family === 'caep' && short === 'credential-change' &&
+                 initiator === 'user') {
+        skip = 'the person\'s own change';
+      }
       (decided.reactions || []).forEach(function (reaction: string): void {
+        if (skip) {
+          out.push({ event: short, reaction: reaction, skipped: skip });
+          return;
+        }
         if (observe) {
           out.push({ event: short, reaction: reaction, observed: true });
           return;
@@ -986,7 +1021,12 @@ class SsfReceivers {
             surface.rpSurface, realms.currentId(),
             // The person as the portal composes one (`personOf()`): three
             // names and no more.
-            function (user: Loose): boolean {
+            function (user: Loose, session?: Loose): boolean {
+              if (revokedSession) {
+                // Only what the ended sign-on session was the parent of.
+                return !!session &&
+                  String(session.derivedFrom || '') === revokedSession;
+              }
               return self.isAbout(entry, { username: user.username,
                                            sub: user.sub || '',
                                            mail: user.email || '' });

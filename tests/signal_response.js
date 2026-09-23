@@ -183,6 +183,72 @@ function childMain() {
          'C6. a risk-level-change to HIGH ends the person\'s console session ' +
          '(the one C3 left standing)', JSON.stringify(high.entry.reactions));
 
+    // --- E. what the event says narrows what it ends (2026-09-23) ----------
+    // A console session DERIVED from a named sign-on session, and one that is
+    // not; a session-revoked naming that sign-on session ends the first only.
+    const derived = function (username, parent) {
+      const res = { headers: {}, setHeader: function (k, v) {
+        this.headers[k] = v;
+      } };
+      return authn.startRelyingPartySession({ res: res, username: username,
+        parent: parent,
+        claims: { sub: String(helpers.subjectForName(username)),
+                  preferred_username: username },
+        surface: 'admin', label: 'Admin console',
+        clientId: 'sts-admin-console', cookie: 'sts_admin' });
+    };
+    const pushAbout = function (short, subject, payload) {
+      const claims = events.buildSet({ uri: events.CAEP_PREFIX + short,
+        issuer: record.iss, audience: 'sts-admin-console',
+        subject: subject,
+        payload: Object.assign({ event_timestamp:
+          Math.floor(Date.now() / 1000) }, payload || {}) });
+      const req = { headers: {
+        authorization: record.delivery.authorization_header,
+        'content-type': 'application/secevent+jwt' },
+        body: events.signSetSync(claims), res: {} };
+      return receivers.accept('admin-console', req);
+    };
+    const bySession = function (sid) {
+      return { format: 'complex',
+               user: { format: 'iss_sub', iss: record.iss, sub: erin },
+               session: { format: 'opaque', id: sid } };
+    };
+    // Whatever C and D left of erin's console sessions is ended first.
+    push('session-revoked', erin);
+    derived('sr-erin', 'sso-parent-1');
+    derived('sr-erin', 'sso-parent-2');
+    const one = pushAbout('session-revoked', bySession('sso-parent-1'),
+                          { initiating_entity: 'user' });
+    const two = pushAbout('session-revoked', bySession('sso-parent-1'),
+                          { initiating_entity: 'user' });
+    note(endedOf(one) === 1 && endedOf(two) === 0,
+         'E1. a session-revoked naming a sign-on session ends only the ' +
+         'console session derived from it, not the person\'s other one',
+         JSON.stringify([one.entry.reactions, two.entry.reactions]));
+    const expiry = pushAbout('session-revoked', bySession('sso-parent-2'),
+                             { initiating_entity: 'policy' });
+    note(endedOf(expiry) === 0 &&
+         expiry.entry.reactions.length === 1 &&
+         !!expiry.entry.reactions[0].skipped,
+         'E2. a session-revoked from an EXPIRY (initiating_entity policy) ' +
+         'ends nothing: a renewable session outlives its parent',
+         JSON.stringify(expiry.entry.reactions));
+    const own = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'user', credential_type: 'password',
+        change_type: 'update' });
+    note(endedOf(own) === 0 && !!(own.entry.reactions[0] || {}).skipped,
+         'E3. the person\'s own credential-change ends nothing',
+         JSON.stringify(own.entry.reactions));
+    const byAdmin = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'update' });
+    note(endedOf(byAdmin) === 1,
+         'E4. an administrator\'s credential-change still ends the ' +
+         'person\'s console session', JSON.stringify(byAdmin.entry.reactions));
+
     // --- D. a disabled policy ----------------------------------------------
     const written = xacmlStore.write('signal-response',
       xacmlXml.writePolicy(plain.policy), { enabled: false });
