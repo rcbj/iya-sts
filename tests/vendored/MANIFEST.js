@@ -287,6 +287,7 @@ const JOBS = [
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
   { file: 'sts_fapi_baseline.js',        browser: false, local: true },
+  { file: 'sts_fapi_advanced.js',        browser: false, local: true },
   // OPENID CONNECT FRONT-CHANNEL LOGOUT OVER THE WIRE (#122, 2026-09-22):
   // the discovery member, section 2's origin rule at registration, at
   // /admin-api and when a sign-out reads a stored URI, the iss of a named

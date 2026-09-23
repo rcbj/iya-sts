@@ -5436,13 +5436,31 @@ class AdminConsole {
   // actually reach, and it is the page where that sentence is ACTIONABLE. The
   // two that were context are gone on purpose.
   sendToConsoleSignIn(req, res) {
-    const { log, oidcRp, mode, errorCodes, realms } = this.deps;
+    const { log, oidcRp } = this.deps;
     log.debug("Entering AdminConsole.sendToConsoleSignIn().");
-    const started = oidcRp.beginSignIn(req, res, 'admin', {
+    const begun = oidcRp.beginSignIn(req, res, 'admin', {
       returnTo: String(req.originalUrl || '/admin'),
       fallback: '/admin'
     });
-    if (!started.ok) {
+    // A promise under FAPI 1.0 Advanced (#139), where the request is signed
+    // and pushed before the browser is sent; a value otherwise, answered in
+    // the same tick as it always was.
+    if (begun && typeof begun.then === 'function') {
+      begun.then((started: any) => {
+        this.startedConsoleSignIn(req, res, started);
+      });
+      log.debug("Leaving AdminConsole.sendToConsoleSignIn(). Pushing.");
+      return;
+    }
+    this.startedConsoleSignIn(req, res, begun);
+    log.debug("Leaving AdminConsole.sendToConsoleSignIn().");
+  }
+
+  // What `sendToConsoleSignIn()` does with the answer.
+  startedConsoleSignIn(req, res, started) {
+    const { log, mode, errorCodes, realms } = this.deps;
+    log.debug("Entering AdminConsole.startedConsoleSignIn().");
+    if (!started.ok && !res.headersSent) {
       // THREE REASONS REACH HERE, AND THE SENTENCE A READER NEEDS DIFFERS. The
       // client entry is gone, or has no secret — or, since 2026-09-12, product
       // mode refused to start a flow at an address the entry does not carry,
@@ -5468,7 +5486,7 @@ class AdminConsole {
                   { needed: unregistered ? 'address' : 'client', signIn: '',
                     signInRealm: realms.DEFAULT_ID });
     }
-    log.debug("Leaving AdminConsole.sendToConsoleSignIn(). " +
+    log.debug("Leaving AdminConsole.startedConsoleSignIn(). " +
               (started.ok ? "Sent to the authorization endpoint." :
                "Refused."));
   }

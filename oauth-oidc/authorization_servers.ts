@@ -134,6 +134,12 @@ import config = require('../common/config');
 // #138: the FAPI profiles a named server may carry, and the refusal's code.
 // Both leaves.
 import fapi = require('./fapi');
+
+// The algorithms an access token may be signed with —
+// `oauth2.accessTokenSigningAlg`'s list less its `default` (#139).
+const ACCESS_TOKEN_ALGS = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384',
+                           'PS512', 'ES256', 'ES384', 'ES512', 'ES256K',
+                           'EdDSA'];
 import errorCodes = require('../common/error_codes');
 
 // A loose JSON-shaped object: a profile, a document, a result.
@@ -307,10 +313,22 @@ const MEMBERS: MemberRow[] = [
     document: 'server',
     enforces: 'which FAPI profile this authorization server enforces',
     what: 'The FAPI security profile of this authorization server alone: ' +
-          '1-baseline (FAPI 1.0 Part 1), or off to opt out of a profile its ' +
+          '1-baseline (FAPI 1.0 Part 1), 1-advanced (Part 2), or off to opt ' +
+          'out of a profile its ' +
           'realm carries. Absent, it follows oauth2.fapi. Every profile ' +
           'turns RFC 9700 mode on for this server\'s requests. Published ' +
           'in no document — GET /{id}/oauth2/fapi reports it.' },
+  // THE ALGORITHM THIS SERVER'S ACCESS TOKENS ARE SIGNED WITH (#139). Not a
+  // discovery member either: RFC 8414 defines none for it. Absent follows
+  // oauth2.accessTokenSigningAlg.
+  { name: 'access_token_signing_alg', group: 'Security capabilities',
+    kind: 'string', document: 'server',
+    enforces: 'the JWS algorithm of the access and refresh tokens it issues',
+    what: 'The JWS algorithm this authorization server signs its access ' +
+          'and refresh tokens with — RS256, PS256, ES256 and the rest of ' +
+          'the classical table, by this realm\'s key for it. Absent, it ' +
+          'follows oauth2.accessTokenSigningAlg. Under FAPI 1.0 Advanced ' +
+          'anything but PS256 or ES256 is replaced by PS256.' },
   // RFC 9126 (2026-09-13). /oauth2/authorize READS it for the authorization
   // server a request selected — see `pushedRequestPolicyRefusal()` in
   // `oauth2.ts`. A removed member means the check does not run.
@@ -938,6 +956,16 @@ class AuthorizationServers {
         ' is not a FAPI profile this service enforces: it is one of ' +
         fapi.PROFILES.join(', ') + ', or ' + fapi.NONE + ' to opt this ' +
         'server out of its realm\'s oauth2.fapi.'] }, 'STS-ADMIN-0795');
+    }
+    // So is the access-token algorithm (#139): one this realm holds no key
+    // for would fail every token request on this server.
+    if (name === 'access_token_signing_alg' &&
+        ACCESS_TOKEN_ALGS.indexOf(String(value)) < 0) {
+      log.debug("Leaving AuthorizationServers.setMember(). Not an " +
+                "algorithm access tokens are signed with.");
+      return errorCodes.mark({ ok: false, errors: [JSON.stringify(value) +
+        ' is not an algorithm this service signs access tokens with: it is ' +
+        'one of ' + ACCESS_TOKEN_ALGS.join(', ') + '.'] }, 'STS-ADMIN-0799');
     }
     profile.overrides[name] = value;
     // A member being set is a member not being removed. Without this, setting

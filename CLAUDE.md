@@ -538,7 +538,8 @@ in every file, including the ones in the source comments. This is the index.
 | 3as | `id_token_encryption.ts`, OIDC Core 10.2's encrypted ID Token — and the Logout Token encrypted the same way | `oauth-oidc/CLAUDE.md` |
 | 3at | `account_state.ts`, a DISABLED account: the one place `pwdAccountLockedTime` is written, what ending everything it holds means, and the doors that ask | `common/CLAUDE.md`, `authn/CLAUDE.md` |
 | 3au | `scope_policy.ts` and `scopeRefusal()`, #110: a scope tied to the client that declares it (`oauthAllowedScope`) — this service's protected scopes in both modes, every other scope in product, refused at the endpoints, narrowed in `tokenSet()`, re-checked by `/admin-api`, SCIM and Shared Signals | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
-| 3av | `fapi.js`, FAPI 1.0 Baseline as a profile over RFC 9700 mode: per realm or per named authorization server (ambient), the checks beyond that mode, the person's own consent, and the hosted surfaces on `private_key_jwt` | `oauth-oidc/CLAUDE.md` |
+| 3av | `fapi.js`, the FAPI profiles over RFC 9700 mode — 1.0 Baseline (#138) and Advanced (#139): per realm or per named authorization server (ambient), the checks beyond that mode, the person's own consent, the sender constraint and its mTLS flag, PS256 by default, and the hosted surfaces conforming | `oauth-oidc/CLAUDE.md` |
+| 3aw | `jarm.ts`, JARM (#143) in every mode: one place sends it (`redirectBack()`), the four modes, the signed and optionally encrypted response, never sent unsecured | `oauth-oidc/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |

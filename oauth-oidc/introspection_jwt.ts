@@ -97,6 +97,8 @@ import errorCodes = require('../common/error_codes');
 // service's default resource indicator. A library requiring only `common/`
 // modules and `authorization_servers.ts`, so this is still a leaf.
 import jwtAccessToken = require('./jwt_access_token');
+// FAPI's default signing algorithm (#139). A leaf: it requires nothing here.
+import fapi = require('./fapi');
 
 // A loose JSON-shaped object: a registration, an answer, a key.
 type Json = any;
@@ -291,8 +293,9 @@ class IntrospectionJwt {
     const { log, applications, errorCodes } = this.deps;
     log.debug("Entering IntrospectionJwt.protectionFor().");
     const registered = client || {};
+    // FAPI 1.0 Advanced signs PS256 by default (section 8.6, #139).
     const signAlg = String(registered.introspection_signed_response_alg || '')
-      .trim() || DEFAULT_SIGNING_ALG;
+      .trim() || fapi.defaultSigningAlg() || DEFAULT_SIGNING_ALG;
     const encAlg = String(registered.introspection_encrypted_response_alg ||
                           '').trim();
     const encEncRaw = String(registered.introspection_encrypted_response_enc ||

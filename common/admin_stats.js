@@ -2470,7 +2470,8 @@ function recordAuthentication(detail) {
 // ---------------------------------------------------------------------------
 const RESERVED_JWT_CLAIMS = [
   'iss', 'sub', 'aud', 'exp', 'nbf', 'iat', 'jti', 'typ', 'cnf',
-  'scope', 'client_id', 'azp', 'nonce', 'at_hash', 'c_hash', 'auth_time',
+  'scope', 'client_id', 'azp', 'nonce', 'at_hash', 'c_hash', 's_hash',
+  'auth_time',
   'amr', 'acr', 'username', 'authorization_details', 'act',
   // OIDC Core 5.5's claims request, as the authorization endpoint understood
   // it. It rides in the access token for the reason `authorization_details`

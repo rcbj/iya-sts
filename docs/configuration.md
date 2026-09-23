@@ -149,6 +149,12 @@ its realm's (the `fapi` member on `/admin/authorization-servers`).
 `GET /oauth2/fapi` lists every requirement. See
 [OAuth security](oauth-security.md#fapi-10-baseline).
 
+`1-advanced` is FAPI 1.0 Part 2: Advanced (final) on top of all of that: a
+signed request object, `code id_token` or `code` with JARM, sender-constrained
+access tokens only (`oauth2.fapiRequireMtls` makes that mutual TLS only),
+`private_key_jwt` or mutual TLS client authentication, and PS256 or ES256 for
+every signature. See [OAuth security](oauth-security.md#fapi-10-advanced).
+
 ### Sender constraints — five settings that ask for more than either mode
 
 **Neither OAuth 2.1 nor RFC 9700 requires DPoP**, and that is worth saying once

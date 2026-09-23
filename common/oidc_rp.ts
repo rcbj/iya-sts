@@ -181,6 +181,9 @@ import errorCodes = require('./error_codes');
 import clusterClaims = require('../cluster/cluster_claims');
 import clusterBarrier = require('../cluster/cluster_barrier');
 import InstanceSlot = require('./instance_slot');
+// FAPI (#139): whether this realm is in FAPI 1.0 Advanced, which changes how
+// a surface signs in. A leaf that requires only `helpers` and `config`.
+import fapi = require('../oauth-oidc/fapi');
 
 type SurfaceId = 'admin' | 'portal' | 'debugger';
 
@@ -206,6 +209,9 @@ interface BackChannelOptions {
   // The request being served; a surface worker reads its protocol-worker
   // hint off it.
   from?: { stsProtocolWorker?: unknown } | null;
+  // A TLS client certificate to present (#139): the surface's own, under
+  // FAPI 1.0 Advanced with oauth2.fapiRequireMtls on.
+  clientCertificate?: { cert: string; key: string } | null;
 }
 
 // A key this relying party proves possession of (#34).
@@ -252,6 +258,7 @@ interface OidcRelyingPartyDeps {
   errorCodes: typeof errorCodes;
   clusterClaims: typeof clusterClaims;
   clusterBarrier: typeof clusterBarrier;
+  fapi: typeof fapi;
   http: typeof http;
   https: typeof https;
   // `tls/tls_server.js`, required only when the back channel runs — see the
@@ -421,6 +428,10 @@ const SURFACE_SIGNING_ALG = 'ES256';
 const SURFACE_KEY_DAYS = 365;
 const KEY_RENEW_BEFORE_MS = 30 * 24 * 3600 * 1000;
 const ASSERTION_LIFETIME_S = 60;
+// A signed request object's lifetime under FAPI 1.0 Advanced (#139): well
+// inside Part 2's sixty minutes, because it is used within a redirect.
+const REQUEST_OBJECT_LIFETIME_S = 300;
+const PAR_PATH = '/oauth2/par';
 
 // A flow in progress, per realm, keyed by `state`. `federation_sp.ts`'s
 // decision 3 exactly: the partner — here, the browser — carries an opaque
@@ -507,6 +518,7 @@ class OidcRelyingParty {
       loadTlsServer: function () {
         return require('../tls/tls_server');
       },
+      fapi: fapi,
       loadPki: function () {
         return require('./pki');
       },
@@ -1104,6 +1116,13 @@ class OidcRelyingParty {
         // loopback interface. Pinning the anchor is the stronger half of the
         // two.
         ca: anchor ? [anchor] : undefined,
+        // THE SURFACE'S CLIENT CERTIFICATE (#139), where FAPI 1.0 Advanced
+        // requires every access token to be bound to one: the certificate
+        // this realm's CA issued with the surface's signing key.
+        cert: useHttps && options.clientCertificate
+          ? options.clientCertificate.cert : undefined,
+        key: useHttps && options.clientCertificate
+          ? options.clientCertificate.key : undefined,
         checkServerIdentity: useHttps ? function () {
           return undefined;
         } : undefined
@@ -1552,6 +1571,189 @@ class OidcRelyingParty {
     return { ok: true, privateKeyPem: pem, kid: kid };
   }
 
+  // The certificate and key this surface presents at the handshake: under
+  // FAPI 1.0 Advanced with oauth2.fapiRequireMtls on, the certificate this
+  // realm's CA issued with its signing key (#139); none otherwise.
+  surfaceCertificate(surface: Surface): { cert: string; key: string } | null {
+    const { log, applications, fapi } = this.deps;
+    log.debug("Entering OidcRelyingParty.surfaceCertificate().");
+    if (!fapi.requiresMtls()) {
+      log.debug("Leaving OidcRelyingParty.surfaceCertificate(). Not asked.");
+      return null;
+    }
+    const entry = applications.get(surface.clientId);
+    const fields = (entry && entry.fields) || {};
+    const first = function (value: any): string {
+      return String((Array.isArray(value) ? value[0] : value) || '');
+    };
+    const cert = first(fields.oauthAssertionCertificate);
+    const key = first(fields.oauthAssertionPrivateKey);
+    if (!cert || !key) {
+      log.debug("Leaving OidcRelyingParty.surfaceCertificate(). None held.");
+      return null;
+    }
+    log.debug("Leaving OidcRelyingParty.surfaceCertificate(). Held.");
+    return { cert: cert + first(fields.oauthAssertionCertificateChain),
+             key: key };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE SIGN-IN UNDER FAPI 1.0 ADVANCED (#139, rcbj's decision: the surfaces
+  // CONFORM rather than being exempted). The request the browser would have
+  // carried becomes a signed request object (ES256, the surface's issued key;
+  // `exp`, `nbf` and `aud` as Part 2 section 5.2.2 items 13, 15 and 17 ask),
+  // asks for `response_mode=jwt` — JARM, which is what `response_type=code`
+  // needs under the profile — and is PUSHED to /oauth2/par with the surface's
+  // `private_key_jwt`, so the browser carries only a request_uri. Where PAR is
+  // switched off the object goes by value instead. The callback opens the
+  // JARM response before anything else (`openJarmResponse()`).
+  // -------------------------------------------------------------------------
+  private async advancedRedirect(req: any, res: any, surface: Surface,
+                                 client: any, query: URLSearchParams,
+                                 authorizationBase: string, state: string,
+                                 poolPin: unknown): Promise<any> {
+    const { log, config, stsCrypto, realms } = this.deps;
+    log.debug("Entering OidcRelyingParty.advancedRedirect().");
+    const key = await this.surfaceKey(surface);
+    if (!key.ok) {
+      log.debug("Leaving OidcRelyingParty.advancedRedirect(). No key.");
+      return this.coded(this.deps.errorCodes.codeOf(key) || 'STS-AUTHN-0207',
+                        { ok: false, why: key.why, reason: 'no-client' });
+    }
+    const host = this.hostHeaderFrom(authorizationBase);
+    const now = Math.floor(Date.now() / 1000);
+    const claims: any = {};
+    query.forEach(function (value, name) {
+      claims[name] = value;
+    });
+    claims.response_mode = 'jwt';
+    claims.iss = surface.clientId;
+    claims.aud = this.assertionAudience(host);
+    claims.iat = now;
+    claims.nbf = now;
+    claims.exp = now + REQUEST_OBJECT_LIFETIME_S;
+    claims.jti = nodeCrypto.randomBytes(16).toString('base64url');
+    // certificate-header: none — a request object is verified against the
+    // key registered on the surface's own entry.
+    const requestObject = stsCrypto.signJws(claims, key.privateKeyPem,
+      { algorithm: SURFACE_SIGNING_ALG, keyid: key.kid,
+        header: { typ: 'oauth-authz-req+jwt' } });
+    const to = new URLSearchParams({ client_id: surface.clientId });
+    if (config.value('oauth2.pushedAuthorizationRequests')) {
+      const form = new URLSearchParams({ request: requestObject });
+      const auth = await this.clientAuthentication(surface, client, form,
+                                                   host);
+      if (!auth.ok) {
+        log.debug("Leaving OidcRelyingParty.advancedRedirect(). No client " +
+                  "authentication.");
+        return auth;
+      }
+      const pushed = await this.backChannel({
+        method: 'POST', path: realms.currentPrefix() + PAR_PATH, host: host,
+        headers: auth.headers || {}, body: form.toString(),
+        clientCertificate: this.surfaceCertificate(surface),
+        poolPin: poolPin, from: req
+      });
+      if (!pushed.ok || pushed.status !== 201 || !pushed.json ||
+          !pushed.json.request_uri) {
+        const why = 'the pushed authorization request was refused: ' +
+          (pushed.why || (pushed.status + ' ' +
+            ((pushed.json && (pushed.json.error_description ||
+                              pushed.json.error)) || pushed.text || '')));
+        log.error(this.deps.errorCodes.tag('STS-AUTHN-0211') + 'oidc_rp: ' +
+                  'the ' + surface.label + ' could not push its request. ' +
+                  why);
+        log.debug("Leaving OidcRelyingParty.advancedRedirect(). PAR failed.");
+        return this.coded('STS-AUTHN-0211', { ok: false, why: why,
+                                               reason: 'no-client' });
+      }
+      to.set('request_uri', String(pushed.json.request_uri));
+    } else {
+      to.set('request', requestObject);
+    }
+    res.status(303).set('Location', authorizationBase + AUTHORIZE_PATH + '?' +
+                        to.toString()).end();
+    log.debug("Leaving OidcRelyingParty.advancedRedirect(). Redirected.");
+    return { ok: true, state: state };
+  }
+
+  // -------------------------------------------------------------------------
+  // A JARM RESPONSE AT THE CALLBACK (#139): verified against this realm's
+  // JWKS — fetched over the back channel, as the ID Token's is — held to
+  // JARM section 2.4's checks (issuer, audience, expiry, signature, in that
+  // order of meaning), and only then read for `code`, `state` or `error`.
+  // -------------------------------------------------------------------------
+  private async openJarmResponse(req: any, surface: Surface, opts: any,
+                                 jwt: string): Promise<any> {
+    const { log, realms, stsCrypto } = this.deps;
+    log.debug("Entering OidcRelyingParty.openJarmResponse().");
+    const publicBase = opts.authorizationBase || this.publicBaseOf(req);
+    const host = this.hostHeaderFrom(publicBase);
+    const refuse = function (why: string): any {
+      log.debug("Leaving OidcRelyingParty.openJarmResponse(). " + why);
+      return { ok: false, why: 'the JWT-secured authorization response ' +
+               'did not verify: ' + why };
+    };
+    let header: any = null;
+    let peeked: any = null;
+    try {
+      const parts = String(jwt).split('.');
+      header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+      peeked = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    } catch (e) {
+      log.debug("Caught in OidcRelyingParty.openJarmResponse(): " +
+                ((e && e.message) || e));
+      return refuse('it is not a signed JWT');
+    }
+    const alg = String((header && header.alg) || '');
+    const spec = stsCrypto.JWS_ALGS[alg];
+    if (!spec || spec.family === 'hmac') {
+      return refuse('it is signed "' + alg + '", and a response from this ' +
+                    'service is signed with one of its own published keys');
+    }
+    const jwksAnswer = await this.backChannel({
+      method: 'GET', path: realms.currentPrefix() + JWKS_PATH, host: host,
+      poolPin: opts.poolPin, from: req
+    });
+    const keys = (jwksAnswer.ok && jwksAnswer.json &&
+                  Array.isArray(jwksAnswer.json.keys)) ? jwksAnswer.json.keys
+                                                       : [];
+    const jwk = keys.filter(function (one: any) {
+      return one && one.kid === header.kid;
+    })[0];
+    if (!jwk) {
+      return refuse('it names key "' + String(header.kid || '') + '", which ' +
+                    'this realm\'s JWKS does not hold');
+    }
+    let verified: any = null;
+    try {
+      const key = spec.family === 'pq' ? jwk
+        : nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' })
+          .export({ type: 'spki', format: 'pem' });
+      verified = stsCrypto.verifyCompactJws(jwt, key, { algorithms: [alg] });
+    } catch (e) {
+      log.debug("Caught in OidcRelyingParty.openJarmResponse(): " +
+                ((e && e.message) || e));
+      return refuse('its signature: ' + ((e && e.message) || e));
+    }
+    const claims = (verified && verified.claims) || peeked || {};
+    const issuer = this.assertionAudience(host);
+    if (String(claims.iss || '') !== issuer) {
+      return refuse('its iss is "' + String(claims.iss || '') + '", and ' +
+                    'this surface expects "' + issuer + '"');
+    }
+    const audiences = Array.isArray(claims.aud) ? claims.aud.map(String)
+                                                : [String(claims.aud || '')];
+    if (audiences.indexOf(surface.clientId) < 0) {
+      return refuse('its aud does not name ' + surface.clientId);
+    }
+    if (!(Number(claims.exp) > Math.floor(Date.now() / 1000))) {
+      return refuse('it has expired');
+    }
+    log.debug("Leaving OidcRelyingParty.openJarmResponse(). Verified.");
+    return { ok: true, params: claims };
+  }
+
   // The surface's signing key, issued if the entry holds none it can use.
   // See "HOW A SURFACE AUTHENTICATES" above the paths.
   private async surfaceKey(surface: Surface): Promise<any> {
@@ -1850,6 +2052,14 @@ class OidcRelyingParty {
       if (opts.prompt) {
         query.set('prompt', String(opts.prompt));
       }
+      // FAPI 1.0 ADVANCED (#139): signed, pushed and answered with JARM —
+      // `advancedRedirect()`. A promise, which the three callers settle.
+      if (self.deps.fapi.advanced()) {
+        log.debug('Leaving OidcRelyingParty.beginSignIn(). FAPI Advanced.');
+        return self.advancedRedirect(req, res, surface, found.client, query,
+                                     opts.authorizationBase || publicBase,
+                                     state, opts.poolPin);
+      }
       const to = (opts.authorizationBase || publicBase) + AUTHORIZE_PATH +
                  '?' + query.toString();
       log.info('oidc_rp: sending a browser to the authorization endpoint ' +
@@ -1888,7 +2098,27 @@ class OidcRelyingParty {
               surfaceId);
     const surface = this.surfaceOf(surfaceId);
     const opts: SignInOptions = options || {};
-    const query = req.query || {};
+    let query = req.query || {};
+
+    // A JARM RESPONSE (#139) is opened first: what it carries — `code` and
+    // `state`, or `error` — is believed only once it verified, and then read
+    // exactly as the plain parameters are below.
+    if (query.response !== undefined && query.response !== '') {
+      const opened = await this.inFlowRealm(surface, function () {
+        return self.openJarmResponse(req, surface, opts,
+                                     String(query.response));
+      });
+      if (!opened.ok) {
+        log.warn(errorCodes.tag('STS-AUTHN-0210') + 'oidc_rp: the ' +
+                 surface.label + ' refused its authorization response. ' +
+                 opened.why);
+        log.debug('Leaving OidcRelyingParty.handleCallback(). The JARM ' +
+                  'response did not verify.');
+        return this.coded('STS-AUTHN-0210', { ok: false, why: opened.why },
+                          res);
+      }
+      query = opened.params;
+    }
 
     // THE AUTHORIZATION SERVER'S OWN REFUSAL, first: `error` beats everything
     // below it, and reporting "no such state" for a request that carries a
@@ -2005,6 +2235,7 @@ class OidcRelyingParty {
         host: host,
         headers: headers,
         body: form.toString(),
+        clientCertificate: self.surfaceCertificate(surface),
         poolPin: opts.poolPin,
         // Which protocol worker redeems it when there are two pools; see
         // backChannel().
@@ -2382,6 +2613,7 @@ class OidcRelyingParty {
       host: host,
       headers: headers,
       body: form.toString(),
+      clientCertificate: this.surfaceCertificate(surface),
       from: req
     });
     if (!tokenAnswer.ok) {

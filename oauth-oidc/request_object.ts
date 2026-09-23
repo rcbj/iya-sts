@@ -186,6 +186,8 @@ import usedAssertions = require('../common/used_assertions');
 // `keysForParty()`: which of a client's registered keys may verify something it
 // signed. One answer for RFC 7523, the software statement and this.
 import assertionGrant = require('./assertion_grant');
+// FAPI 1.0 Advanced's request-object rules (#139). A leaf.
+import fapi = require('./fapi');
 
 // A loose JSON-shaped object: the claims, clients, profiles and results this
 // file reads and answers. Their shapes are the libraries' own, and those
@@ -212,6 +214,7 @@ interface RequestObjectDeps {
   helpers: typeof helpers;
   assertionGrant: typeof assertionGrant;
   usedAssertions: typeof usedAssertions;
+  fapi: typeof fapi;
   log: typeof helpers.log;
   // `oauth-oidc/par`, required at the moment a pushed request's URN arrives
   // (see pushedRequest()). It may throw.
@@ -345,6 +348,7 @@ class RequestObject {
       helpers: helpers,
       assertionGrant: assertionGrant,
       usedAssertions: usedAssertions,
+      fapi: fapi,
       log: helpers.log,
       // Required LAZILY: `par.ts` requires this module for
       // `verifyObject()`, and a require back at load would close the cycle.
@@ -378,9 +382,12 @@ class RequestObject {
   signedRequired(client: Json, profile: Json): Json {
     const { config, log } = this.deps;
     log.debug("Entering RequestObject.signedRequired().");
+    // FAPI 1.0 Advanced requires one of every client (Part 2 section 5.2.2
+    // item 1, #139).
     const required = !!config.value('oauth2.requireSignedRequestObject') ||
                      !!(client && client.require_signed_request_object) ||
-                     !!(profile && profile.requireSigned === true);
+                     !!(profile && profile.requireSigned === true) ||
+                     this.deps.fapi.requiresSignedRequestObject();
     log.debug("Leaving RequestObject.signedRequired(). " + required);
     return required;
   }
@@ -767,6 +774,15 @@ class RequestObject {
         'server advertises request_object_signing_alg_values_supported ' +
         JSON.stringify(offered) + '.');
     }
+    // FAPI 1.0 Advanced section 8.6: PS256 or ES256 (#139).
+    const profiled = self.deps.fapi.signingAlgRefusal(alg,
+                                                     'the request object');
+    if (profiled) {
+      log.debug("Leaving RequestObject.verify(). Not an algorithm FAPI " +
+                "Advanced allows.");
+      return self.refusal(profiled.errorCode, 'invalid_request_object',
+                          profiled.description);
+    }
     if (alg === 'none') {
       try {
         const claims = self.unsignedClaims(jws);
@@ -1122,6 +1138,16 @@ class RequestObject {
           'identifier "' + options.issuer + '" (RFC 9101 section 4) or its ' +
           'authorization endpoint.');
       }
+    }
+    // FAPI 1.0 Advanced (#139): exp and nbf required and within 60 minutes,
+    // and aud this server's issuer (Part 2 section 5.2.2 items 13, 15, 17).
+    const lifetime = self.deps.fapi.requestObjectRefusal(claims,
+                                                         options.issuer);
+    if (lifetime) {
+      log.debug("Leaving RequestObject.verifyObject(). FAPI Advanced " +
+                "refused its claims.");
+      return self.refusal(lifetime.errorCode, lifetime.error,
+                          lifetime.description);
     }
     if (claims.client_id !== undefined &&
         String(claims.client_id) !== clientId) {

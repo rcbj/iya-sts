@@ -28,7 +28,8 @@ libraries that decide things on its behalf.
 | `backchannel_logout.ts` | **OpenID Connect Back-Channel Logout 1.0 (#36, 2026-09-17).** Plans, signs, encrypts and delivers a Logout Token to every relying party on an ending (or EXPIRING) session that registered a `backchannel_logout_uri`. Each delivery is a row of a persisted, replicated store: retried with backoff by any node across restarts, sent once through a claimed lease, dead-lettered on a final failure. See 3aq. |
 | `id_token_encryption.ts` | **The encrypted ID Token (OIDC Core 10.2, 2026-09-17)** — signed then encrypted to the key in the client's inline `jwks`, and the same protection on a back-channel Logout Token. See 3as. |
 | `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.ts`, `oauth2_bcp.js`, `dpop.ts`, `mgmt-api/admin_api.ts` and `debugger/debugger_server.ts` require and that may require none of them back. See 3ao. |
-| `fapi.js` | **FAPI 1.0 Part 1 Baseline as a PROFILE over RFC 9700 mode (#138, 2026-09-22).** `oauth2.fapi` per realm, or a named authorization server's own `fapi` member, made AMBIENT per request; the checks FAPI asks beyond RFC 9700 mode, as a table of requirements with a check citing each. A leaf. See 3av. |
+| `fapi.js` | **The FAPI profiles over RFC 9700 mode: FAPI 1.0 Part 1 Baseline (#138) and Part 2 Advanced (#139), 2026-09-22.** `oauth2.fapi` per realm, or a named authorization server's own `fapi` member, made AMBIENT per request; the checks each profile asks beyond RFC 9700 mode, as tables of requirements with a check citing each. A leaf. See 3av. |
+| `jarm.ts` | **JARM, the JWT-secured authorization response (#143, built in #139).** The four response modes, the signed (and optionally encrypted) response JWT, the section 2.3.1 refusal, and the registration key check. `redirectBack()` in `oauth2.ts` is the one place that sends one. See 3aw. |
 
 **Everything but `oauth2.ts` — and, since 2026-09-13, the console page
 `oauth2_monitor_admin.ts`, required at 18f rather than from here — registers
@@ -497,6 +498,111 @@ so must `admin-ui/admin.ts`.
    FAPI 1.0 Advanced (#139). `tests/fapi_baseline_units.js` holds the library
    and the surfaces' key in a child process; `tests/vendored/sts_fapi_baseline.js`
    drives a FAPI realm over HTTP, the portal's sign-in included.
+
+   **FAPI 1.0 ADVANCED (#139, 2026-09-22) IS THE SECOND VALUE OF THE SAME
+   SWITCH**, `oauth2.fapi=1-advanced`, and it is Baseline and more: Part 2
+   section 5.2.2 opens by requiring Baseline's section 5.2.2, "except that
+   Section 5.2.2-7 (enforcement of RFC7636) is not required" — so
+   `authorizationRefusal()` asks PKCE only of a PUSHED request under Advanced
+   (item 18), and a challenge that is sent is still held to S256. rcbj's
+   answers:
+
+   | Asked | Chosen |
+   |---|---|
+   | JARM (#143) | Built here, so both response types Advanced allows work |
+   | Sender constraint | mTLS OR DPoP by default; `oauth2.fapiRequireMtls` (runtime, per realm) makes it mTLS only, which is what FAPI 1.0 names |
+   | Algorithms | PS256 by default for what this server signs; a setting chooses the access-token algorithm (`oauth2.accessTokenSigningAlg`, and a named server's `access_token_signing_alg`); section 8.6's PS256/ES256 held under Advanced; the setting built for the whole classical table because rcbj wants every algorithm, post-quantum ones included, eventually |
+   | The hosted surfaces | CONFORM, not exempted |
+
+   **WHAT ADVANCED ADDS**, each with its code:
+   * a signed request object (`requiresSignedRequestObject()` feeds
+     `request_object.ts`'s `signedRequired()` and the authorization
+     endpoint's gate), with exp and nbf within 60 minutes (`STS-OAUTH-0584`)
+     and aud the issuer (`0585`);
+   * `code id_token`, or `code` with a JARM mode (`0582`);
+   * the ID Token's `s_hash` — added in EVERY mode, because an unknown claim
+     is ignored and the detached signature is only whole with it;
+   * a sender-constrained token or no token at all (`0583`), asked above the
+     grant switch, with `mtls_endpoint_aliases` published wherever the main
+     port asks for a certificate (every endpoint is its own alias);
+   * `tls_client_auth`, `self_signed_tls_client_auth` or `private_key_jwt`,
+     no `client_secret_jwt` and no public client (`0580`, `STS-REG-0174`);
+   * registration's response types (`STS-REG-0178`) and algorithms
+     (`STS-REG-0177`);
+   * PS256 or ES256 for a client assertion or a request object (`0586`).
+   `applyToMetadata()` narrows every signing list to the two and drops
+   RSA1_5, and runs a SECOND time in `oidcMetadata()`, inside a named server's
+   own profile, because that function's merge puts the OIDC lists back.
+
+   **THIS SERVER'S OWN SIGNATURES FOLLOW ONE DEFAULT**: `fapi.defaultSigningAlg()`
+   is PS256 under Advanced and '' otherwise, and the ID Token, the access
+   and refresh tokens (`accessTokenAlg()`), UserInfo's refusal, the RFC 9701
+   introspection response and JARM all read it. `helpers.signJwt()` takes an
+   `algorithm` now and signs any classical one with this realm's own key
+   (`ownSignerFor()`), so every token is still COUNTED through it — the ID
+   Token routes its RSA and curve algorithms there too. **`verifyOwnJws()`
+   and `verifyOwnCompactJws()` verify by the token's own algorithm** against
+   the realm's key of that family (`ownCandidatesFor()`, standbys included),
+   which is safe only because every candidate is of the algorithm's family —
+   an HMAC token keyed by the public certificate verifies against nothing.
+   The published RSA JWK names no `alg`, so PS256 needs nothing new there.
+   `id_token_hint` verifies RS* and PS* alike. GNAP's own tokens and its ID
+   Token subject assertion still pin RS256: NOT DONE.
+
+   **THE HOSTED SURFACES UNDER ADVANCED** (`common/oidc_rp.ts`,
+   `advancedRedirect()` and `openJarmResponse()`): the request becomes an
+   ES256 request object signed with the surface's issued key, asking
+   `response_mode=jwt`, PUSHED with `private_key_jwt` (by value where PAR is
+   off); the callback verifies the JARM response against the realm's JWKS
+   before reading `code` or `state` (`STS-AUTHN-0210`, `0211` for a refused
+   push); and with `oauth2.fapiRequireMtls` on, the loopback presents the
+   CA-issued certificate that came with the surface's key
+   (`surfaceCertificate()`), so the tokens are bound to it. `beginSignIn()`
+   answers a PROMISE under Advanced, and its three callers settle it; a value
+   otherwise, in the same tick as before.
+
+   **NOT DONE**: the conformance suite (#176); a post-quantum access token
+   (`accessToken()` is synchronous); GNAP's RS256 pins.
+   `tests/fapi_advanced_units.js` and `tests/vendored/sts_fapi_advanced.js`
+   hold it.
+
+3aw. **`jarm.ts` IS JARM, THE JWT-SECURED AUTHORIZATION RESPONSE (#143, BUILT
+   IN #139, 2026-09-22), IN EVERY MODE.** FAPI 1.0 Advanced needs it, and it
+   is a final specification of its own that any client may ask for, so it is
+   not a FAPI-only feature. A library (rule 3): `common/` modules,
+   `introspection_jwt.ts` for the key selection and `fapi.js`; `oauth2.ts`
+   requires it.
+
+   **ONE PLACE SENDS IT: `redirectBack()`.** Every authorization response —
+   success, `fail()`'s errors, a consent refusal — goes through that function
+   with the request's `response_mode`, so a JARM branch there covers them all
+   (`jarmRedirect()`); the interstitial link RFC 9700 mode shows instead of a
+   redirect carries the JARM response too (`jarmUrl()`). The client and the
+   response type are put on `res.locals.stsJarm` at the top of
+   `authorizeRequest()`, from the request as resolved (a request object's
+   own). A response that cannot be made — a registration this service can no
+   longer honour — is a 400 on this server (`STS-OAUTH-0588`), never sent
+   unsecured.
+
+   **THE MODES** (section 2.3): `query.jwt`, `fragment.jwt`, `form_post.jwt`,
+   and `jwt` — a query for `code` (and `none`), a fragment otherwise.
+   `query.jwt` with `token` or `id_token` is refused unless the client
+   registered encryption (section 2.3.1, `STS-OAUTH-0587`).
+
+   **THE JWT** (section 2.1): the fields as they would have been in the URL,
+   `expires_in` a number, plus `iss` (the RFC 9207 value), `aud` (the client)
+   and `exp` (`oauth2.jarmResponseLifetimeS`, at most 600). Signed with
+   `authorization_signed_response_alg` — RS256 by default, PS256 under
+   Advanced, an HMAC keyed by the client secret — and encrypted where the
+   client registered `authorization_encrypted_response_alg` / `_enc`, to its
+   inline `jwks`, exactly as an ID Token is. The three members live in
+   `appRegistrationJson`; `applications.jarmMetadataProblem()` owns the
+   grammar (`STS-REG-0179`) and `jarm.registrationKeyProblem()` the key
+   (`STS-REG-0180`). Discovery lists the four modes and the three
+   `authorization_*_values_supported` members.
+
+   **NOT DONE**: JARM for the device and CIBA flows (not built here), and a
+   `jwks_uri` for the encryption key (never fetched, as everywhere).
 
 3i. **`client_auth.js` verifies all six token-endpoint methods, and it is the
    PROTOCOL half of section 2.5.** `oauth2_bcp.js` decides whether a client has

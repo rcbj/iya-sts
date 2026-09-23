@@ -1842,11 +1842,32 @@ class Portal {
       log.debug("Leaving Portal.requireSignIn(). The realm chooser.");
       return null;
     }
-    const started = oidcRp.beginSignIn(req, res, 'portal', {
+    const begun = oidcRp.beginSignIn(req, res, 'portal', {
       returnTo: returnTo || BASE,
       fallback: BASE
     });
-    if (!started.ok) {
+    // A promise under FAPI 1.0 Advanced (#139), where the request is signed
+    // and pushed before the browser is sent; a value otherwise, answered in
+    // the same tick as it always was.
+    if (begun && typeof begun.then === 'function') {
+      begun.then(function (started: any) {
+        self.startedSignIn(res, started);
+      });
+      log.debug("Leaving Portal.requireSignIn(). Pushing.");
+      return null;
+    }
+    self.startedSignIn(res, begun);
+    log.debug("Leaving Portal.requireSignIn().");
+    return null;
+  }
+
+  // What `requireSignIn()` does with the answer: nothing when the browser was
+  // sent on, and the refusal page when it could not be.
+  startedSignIn(res, started) {
+    const self = this;
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering Portal.startedSignIn().");
+    if (!started.ok && !res.headersSent) {
       // The client entry is gone or has no secret. A refusal with the reason on
       // it rather than a redirect into a flow that cannot complete — and it
       // names the entry, because that is where somebody has to look.
@@ -1875,8 +1896,7 @@ class Portal {
           : ' &mdash; which is what has happened.') +
         '</p></div>'));
     }
-    log.debug("Leaving Portal.requireSignIn().");
-    return null;
+    log.debug("Leaving Portal.startedSignIn().");
   }
 
   // ---------------------------------------------------------------------------
