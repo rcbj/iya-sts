@@ -477,8 +477,28 @@ reported as `{"active": false}`. The answer includes `cnf`, `acr`, `auth_time`
 and `authorization_details`.
 
 `POST /oauth2/revoke` ([RFC 7009](https://www.rfc-editor.org/rfc/rfc7009))
-authenticates nobody in any mode. It writes to the same revocation set as the
-console's **Revoke** buttons.
+writes to the same revocation set as the console's **Revoke** buttons, and
+since [#102](https://github.com/rcbj/iya-sts/issues/102) it follows section 2.1:
+
+* **The client first.** In product mode every request comes from a client: a
+  confidential one presents a credential that verifies, by any method the
+  token endpoint accepts, and a public one names its registered `client_id`.
+  Anything else is 401 `invalid_client`. In development a request with no
+  credential still revokes, but a credential that is presented is verified,
+  and one that fails is refused the same way.
+* **A client revokes only its own tokens.** A token issued to another client
+  is refused `invalid_grant` and nothing is revoked.
+* **Access and refresh tokens only.** An ID Token, or any other token this
+  realm signed, is `unsupported_token_type` (section 2.2.1). A token that does
+  not verify is still answered 200, as section 2.2 says.
+* **`token` is required** (`invalid_request` without it), and
+  `token_type_hint` is a hint: an unknown value is ignored.
+* **A refresh token takes its grant with it.** Revoking one revokes every
+  refresh token of its family and every access token issued beside them.
+  Revoking an access token revokes that token alone.
+
+`revocation_endpoint_auth_methods_supported` is the same list as
+introspection's, `none` included.
 
 ### Dynamic registration and software statements
 
