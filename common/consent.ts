@@ -157,6 +157,9 @@ import errorCodes = require('./error_codes');
 // closes no cycle and moves nothing in the router.
 import stats = require('./admin_stats');
 import InstanceSlot = require('./instance_slot');
+// FAPI 1.0 Part 1 section 5.2.2 item 12 (#138): a leaf requiring helpers and
+// config only, with no instance, so requiring it this early builds nothing.
+import fapi = require('../oauth-oidc/fapi');
 
 // The attribute a person's agreement is written into, and the one an operator's
 // override is written into. Named here rather than spelled at each call site so
@@ -186,6 +189,7 @@ interface ConsentDeps {
   applications: typeof applications;
   errorCodes: typeof errorCodes;
   stats: typeof stats;
+  fapi: typeof fapi;
 }
 
 // A GeneralizedTime stamp's exact shape — see `parseConsentValue()`.
@@ -212,7 +216,8 @@ class Consent {
       config: config,
       applications: applications,
       errorCodes: errorCodes,
-      stats: stats
+      stats: stats,
+      fapi: fapi
     };
   }
 
@@ -308,11 +313,15 @@ class Consent {
   // differently from any other prompt value. It is not "consent everything" —
   // no agreement is written down, so turning the setting back on asks again.
   // ---------------------------------------------------------------------------
+  //
+  // A FAPI PROFILE (#138) REQUIRES IT whatever the setting says: section
+  // 5.2.2 item 12, "shall require explicit approval by the user to authorize
+  // the requested scope if it has not been previously authorized".
   required() {
-    const { log, config } = this.deps;
+    const { log, config, fapi } = this.deps;
     log.debug("Entering Consent.required().");
     log.debug("Leaving Consent.required().");
-    return !!config.value('oauth2.consentRequired');
+    return !!config.value('oauth2.consentRequired') || fapi.enabled();
   }
 
   // ---------------------------------------------------------------------------
@@ -594,7 +603,12 @@ class Consent {
     const clientId = String(asked.clientId || '').trim();
     const wanted = self.scopesOf(asked.scope);
     const all = !!asked.all;
-    const global = self.globalConsentsOf(clientId);
+    // AN ADMINISTRATOR'S GLOBAL CONSENT IS NOT THE USER'S APPROVAL under a
+    // FAPI profile (#138, section 5.2.2 item 12) — this service's own console
+    // and portal included, by rcbj's decision: the person approves each
+    // client's scope once, and after that it is "previously authorized".
+    const global = self.deps.fapi.honoursGlobalConsent()
+      ? self.globalConsentsOf(clientId) : [];
     const held = self.consentsOf(asked.username).filter(function (one) {
       return one.client === clientId;
     });

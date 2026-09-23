@@ -747,7 +747,7 @@ serviceState.start().then(function (both) {
       adminRbac.seedBootstrapAdministrator();
       // A CONSOLE NOBODY CAN ENTER IS SAID HERE, ONCE (#103): product mode
       // never opens it to whoever signs in, so a realm left with no bootstrap
-      // administrator and an empty roster is logged under STS-ADMIN-0797
+      // administrator and an empty roster is logged under STS-ADMIN-0798
       // rather than discovered by being refused.
       adminRbac.reportClosedConsole();
       return credentials.bootstrap({ username: bootstrapUsername });

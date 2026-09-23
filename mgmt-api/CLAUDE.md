@@ -567,7 +567,7 @@ They are why the off switch exists.
   sign-in, `admin.openWhenEmpty` off with no role granted, or — since
   2026-09-22, #103 — a product-mode realm with no bootstrap administrator and
   nobody on its roster, which product never opens and logs at startup as
-  `STS-ADMIN-0797`), NO browser can
+  `STS-ADMIN-0798`), NO browser can
   reach the console — the screen that grants the first role is
   behind the gate that role opens. `POST /admin-api/rbac/grant` is the only door
   out of that state, and a door that needed a role would not be one.

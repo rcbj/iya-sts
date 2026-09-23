@@ -1798,6 +1798,30 @@ const SPECS: Spec[] = [
               'grants are exempt from the registered-client rule, and ' +
               'introspection and revocation still authenticate no client. ' +
               'GET /oauth2/oauth21 lists every requirement.' },
+  { id: 'fapi1-baseline', name: 'FAPI 1.0 Part 1: Baseline Security ' +
+                               'Profile (final)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-financial-api-part-1-1_0.html',
+    coverage: 'full for the authorization server, AND OFF BY DEFAULT — a ' +
+              'PROFILE (oauth2.fapi=1-baseline, per realm, or the fapi ' +
+              'member of a named authorization server) that turns RFC 9700 ' +
+              'mode on and adds what section 5.2.2 asks beyond it (#138): ' +
+              'confidential clients authenticating with tls_client_auth, ' +
+              'self_signed_tls_client_auth, private_key_jwt or ' +
+              'client_secret_jwt only, at registration and at the token and ' +
+              'PAR endpoints; registered keys of RSA 2048 / EC 160 bits or ' +
+              'more; PKCE S256 of every client; redirect_uri sent and https; ' +
+              'nonce with openid and state without it (5.2.2.2, 5.2.2.3); ' +
+              'one client named per request (item 19); the user\'s own ' +
+              'consent, an administrator\'s global consent not counting ' +
+              '(item 12); and access tokens capped at ten minutes unless ' +
+              'sender-constrained (item 21). Inherited from RFC 9700 mode: ' +
+              'exact redirect matching and a replayed code refused. Already ' +
+              'true in every mode: the granted scope in every token ' +
+              'response, discovery, token entropy, acr honoured. GET ' +
+              '/oauth2/fapi lists every requirement. NOT covered: the OpenID ' +
+              'Foundation conformance suite has not been run (#176); FAPI ' +
+              '1.0 Advanced and FAPI 2.0 are #139-#141.' },
   { id: 'webauthn', name: 'Web Authentication (WebAuthn) Level 3',
     where: 'W3C',
     url: 'https://www.w3.org/TR/webauthn-3/',
@@ -8555,6 +8579,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'enforced with the reason attached. Read-only: the mode is the ' +
           'oauth2.rfc9700 setting, so it is turned on at /admin/oauth2 or ' +
           'through POST /admin-api/config like everything else configurable.' },
+  { path: '/oauth2/fapi', group: 'OAuth 2.0 / OIDC',
+    name: 'FAPI profile report (not a spec endpoint)',
+    specs: ['fapi1-baseline'],
+    what: 'NON-SPEC: FAPI defines no document saying which profile a server ' +
+          'follows. The profile in force (oauth2.fapi, off by default), ' +
+          'every requirement of FAPI 1.0 Part 1 section 5.2.2 by item, and ' +
+          'whether it is enforced here, inherited from RFC 9700 mode (which ' +
+          'every profile turns on) or already true. Read-only.' },
+  { path: '/:as/oauth2/fapi', group: 'OAuth 2.0 / OIDC',
+    name: 'FAPI profile report (a named authorization server)',
+    specs: ['fapi1-baseline'],
+    what: 'The same report for one named authorization server, answered ' +
+          'inside that server\'s own profile: its fapi member when it has ' +
+          'one, its realm\'s oauth2.fapi when it does not, and nothing when ' +
+          'it opts out with off.' },
   { path: '/oauth2/oauth21', group: 'OAuth 2.0 / OIDC',
     name: 'OAuth 2.1 mode report (not a spec endpoint)', specs: ['oauth21'],
     what: 'NON-SPEC, for the RFC 9700 report\'s reason beside it: OAuth 2.1 ' +

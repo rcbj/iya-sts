@@ -26108,15 +26108,15 @@ class AdminConsole {
       //     password this service verified — a partner asserting its name, a
       //     certificate whose CN is `admin`, a wallet, a Kerberos ticket. It
       //     holds both roles by membership and `gateStateFor()` has withheld
-      //     them; the page says to sign in with the password (STS-ADMIN-0795);
+      //     them; the page says to sign in with the password (STS-ADMIN-0796);
       //   * anybody else, whom development's open window would have let in and
-      //     product does not (STS-ADMIN-0796), recorded once per session.
+      //     product does not (STS-ADMIN-0797), recorded once per session.
       //
       // Both are logged once per console session rather than per request: a
       // browser that keeps clicking is one event, not forty.
       // ---------------------------------------------------------------------
       if (state.bootstrapPasswordRequired) {
-        self.noteBootstrapRefusal(state, 'STS-ADMIN-0795',
+        self.noteBootstrapRefusal(state, 'STS-ADMIN-0796',
           'the bootstrap administrator "' + state.username + '" reached the ' +
           'console before claiming it, signed in by ' +
           ((state.session && (state.session.amr || []).join(', ')) ||
@@ -26124,7 +26124,7 @@ class AdminConsole {
           ((state.session && state.session.signInAuthority) || 'no') +
           ' authority rather than by a password verified here; its roles ' +
           'were not honoured and the console stays unclaimed');
-        errorCodes.mark(res, 'STS-ADMIN-0795');
+        errorCodes.mark(res, 'STS-ADMIN-0796');
         self.refuse(req, res, 403, 'bootstrap_password_required',
                     'Sign in with the bootstrap administrator\'s password.',
                     'The bootstrap administrator\'s first console sign-in ' +
@@ -26255,7 +26255,7 @@ class AdminConsole {
       // holder of no role is, and what an operator needs to know is that the
       // console has not been claimed yet.
       if (state.windowWithheld) {
-        self.noteBootstrapRefusal(state, 'STS-ADMIN-0796',
+        self.noteBootstrapRefusal(state, 'STS-ADMIN-0797',
           state.username + ' holds no console role and reached the console ' +
           'while its bootstrap administrator' +
           (state.bootstrap && state.bootstrap.username
@@ -26263,7 +26263,7 @@ class AdminConsole {
           ' has not claimed it; product mode does not open the console to ' +
           'whoever signs in');
       }
-      errorCodes.mark(res, state.windowWithheld ? 'STS-ADMIN-0796'
+      errorCodes.mark(res, state.windowWithheld ? 'STS-ADMIN-0797'
         : (needsWrite ? 'STS-ADMIN-0008' : 'STS-ADMIN-0007'));
       self.refuse(req, res, 403, 'insufficient_role',
                   'You are signed in and that is not enough.',
@@ -40040,6 +40040,8 @@ const PROTOCOL_SETTINGS_PAGES = [
     links: [['/.well-known/openid-configuration', 'the discovery document'],
             ['/oauth2/rfc9700', 'what RFC 9700 mode enforces'],
             ['/oauth2/oauth21', 'what OAuth 2.1 mode enforces'],
+            ['/oauth2/fapi',
+             'which FAPI profile is in force, and what it enforces'],
             ['/admin/token-lifetimes', 'how long what it issues lasts'],
             ['/admin/tokens', 'what has been issued']] },
 

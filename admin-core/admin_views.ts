@@ -722,7 +722,7 @@ class AdminViews {
     // this service verified is honoured (`rbac.passwordSignIn()`). Any other
     // sign-in as that account — a federation partner asserting it, a
     // certificate naming it, a wallet, a Kerberos ticket — holds nothing
-    // here, and the gate says why (STS-ADMIN-0795). Decided HERE, for the
+    // here, and the gate says why (STS-ADMIN-0796). Decided HERE, for the
     // reason this function exists: the console, `/admin-api`'s session
     // fallback and the banner all read this one answer.
     // ---------------------------------------------------------------------

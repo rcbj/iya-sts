@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2907** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2920** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -62,8 +62,8 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 185
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 455
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 188
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 461
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -78,11 +78,11 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 275
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 174
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 175
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 54
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 106
+* [Registries (`STS-REG`)](#sts-reg) — 109
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -989,7 +989,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0110` | The directory refused to store the password policy profile (it is at its maximum number of entries). | action result with the reason |
 | `STS-AUTHN-0111` | No generated password satisfied the password policy within the draw limit, so none was generated. | the caller's own failure (usually HTTP 500 or an action refusal) |
 | `STS-AUTHN-0112` | A hosted surface (console or portal) cannot sign anybody in: its seeded OIDC client is not in this realm's registry. | the console's or portal's sign-in refusal page |
-| `STS-AUTHN-0113` | A hosted surface's seeded OIDC client carries no client secret, so it cannot authenticate at the token endpoint. | the console's or portal's sign-in refusal page |
+| `STS-AUTHN-0113` | A hosted surface's OIDC client declares a client secret method (client_secret_basic or client_secret_post) and carries no client secret, so it cannot authenticate at the token endpoint. The seeded entries use private_key_jwt and hold no secret (#138). | the console's or portal's sign-in refusal page |
 | `STS-AUTHN-0114` | Product mode refused a hosted-surface sign-in because this service was reached at an address that is not a registered redirect URI of its client. | the console's or portal's sign-in refusal page |
 | `STS-AUTHN-0115` | In development a hosted surface's client could not learn the redirect URI for the address it was reached at; the sign-in went ahead. | — |
 | `STS-AUTHN-0116` | The OIDC back channel could not read this service's own TLS certificate to verify the loopback connection against. | the console's or portal's sign-in refusal page |
@@ -1062,6 +1062,9 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0204` | A sign-in that demands a security key (a WS-Federation HardwareToken wauth, or OAuth acr_values naming only key aliases) was answered with something else — a one-time code, a recovery code — or the account holds a second factor and no key to present. | HTTP 400 invalid_request, or the sign-in screen again |
 | `STS-AUTHN-0205` | The product-mode bootstrap was given a password through admin.bootstrapPassword that the password policy refuses, so no bootstrap account was created and nobody can sign in. It is NOT replaced with a generated one: the operator set it so that the only way in would not be in a log, and generating one would put a working credential there and leave theirs not working. | none — logged, and the service starts with nobody able to sign in |
 | `STS-AUTHN-0206` | Product mode: a passwordless sign-in named a person who holds no security key that signs in on its own, and the sign-in screen does not enrol one — enrolling there would give the account to whoever claimed the name first. A primary key is added on /portal/keys, by an activation link or by an operator. Development enrols on first use (mode.enrolsKeysOnFirstUse()). | none — the sign-in screen is drawn again with the reason |
+| `STS-AUTHN-0207` | A hosted surface (the console, the portal or the embedded debugger) could not get the key it signs its private_key_jwt client assertion with: this realm has no certificate authority to issue one, the issue failed, or the key could not be written onto the surface's application entry. The surface cannot authenticate at the token endpoint, so the sign-in or renewal stops (#138). | RFC 7523 section 2.2; OIDC Core section 9 |
+| `STS-AUTHN-0208` | A hosted surface's key was being issued by another process, and neither the key nor an answer from the claim store arrived in time; the sign-in or renewal stops rather than issuing a second key (#138). | none — a refusal of this service's own |
+| `STS-AUTHN-0209` | A hosted surface's application entry declares a token endpoint authentication method the surface does not implement. It implements private_key_jwt, and client_secret_basic or client_secret_post for an entry an operator set so (#138). | RFC 7591 section 2 |
 
 ## STS-OAUTH
 
@@ -1523,9 +1526,15 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0570` | A client assertion was not signed with the client's registered token_endpoint_auth_signing_alg (OIDC Core section 9). | HTTP 401 {error: invalid_client} |
 | `STS-OAUTH-0571` | An access token was sent to the UserInfo endpoint in more than one place (RFC 6750 section 2). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0572` | A client's stored frontchannel_logout_uri matches none of its redirect URIs by scheme, host and port (Front-Channel Logout 1.0 section 2), so a sign-out does not frame it. | none — the client is listed on the sign-out page as not notified, with the reason |
+| `STS-OAUTH-0573` | Under a FAPI profile, an authorization request carried no code_challenge with code_challenge_method S256 (FAPI 1.0 Part 1 section 5.2.2 item 7). | redirect or HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0574` | Under a FAPI profile, an authorization request carried no redirect_uri, or one that is not https (FAPI 1.0 Part 1 section 5.2.2 items 9 and 20). | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0575` | Under a FAPI profile, an authorization request asked for openid without a nonce (FAPI 1.0 Part 1 section 5.2.2.2). | redirect: error=invalid_request |
+| `STS-OAUTH-0576` | Under a FAPI profile, an authorization request without openid carried no state (FAPI 1.0 Part 1 section 5.2.2.3). | redirect: error=invalid_request |
 | `STS-OAUTH-0577` | A client asked for one of this service's own protected scopes (admin:read, admin:write, the SCIM or Shared Signals scopes, the debugger permission) that its oauthAllowedScope does not list. Held in every mode. | invalid_scope (redirected error, or HTTP 400 at the token and pushed authorization request endpoints) |
 | `STS-OAUTH-0578` | In product mode, a client asked for a scope outside its oauthAllowedScope — or, declaring none, outside the default set (OpenID Connect's six and the OpenID4VCI credential scopes). | invalid_scope (redirected error, or HTTP 400 at the token and pushed authorization request endpoints) |
 | `STS-OAUTH-0579` | A grant carrying its scope from earlier (a refresh, a token exchange, an assertion grant) named a scope the client may no longer be issued; it was taken off the tokens and recorded. | none — the token response's scope says what was issued (RFC 6749 section 5.1) |
+| `STS-OAUTH-0580` | Under a FAPI profile, a confidential client authenticated with client_secret_basic or client_secret_post (FAPI 1.0 Part 1 section 5.2.2 item 4). | HTTP 401 {error: invalid_client} |
+| `STS-OAUTH-0581` | Under a FAPI profile, a token or PAR request identified its client in two different ways — the Basic header, the body's client_id, a client assertion's sub (FAPI 1.0 Part 1 section 5.2.2 item 19). | HTTP 401 {error: invalid_client} |
 
 ## STS-SAML
 
@@ -2835,7 +2844,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-ADMIN-0001` | The admin console could not start a sign-in: its OIDC client entry (sts-admin-console) is missing or has no secret. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
+| `STS-ADMIN-0001` | The admin console could not start a sign-in: its OIDC client entry (sts-admin-console) is missing, or declares a client secret method and has no secret. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
 | `STS-ADMIN-0002` | The admin console could not start a sign-in in product mode because the address it was reached at is not a registered redirect URI of sts-admin-console. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
 | `STS-ADMIN-0003` | A console request that cannot be redirected to sign in (a JSON caller, or a form POST) carried no console session. | HTTP 401 login_required |
 | `STS-ADMIN-0004` | A console sign-out was refused because the form did not carry this session's CSRF token. | HTTP 403 csrf |
@@ -3006,9 +3015,10 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0792` | Disabling or enabling an account named nobody, or named the anonymous principal, which is not an account. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0793` | Disabling or enabling an account was refused and the refusal carried no code of its own. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0794` | A disable named a riscReason that is not one of RISC account-disabled's two (hijacking, bulk-account; RISC 1.0 section 2.2). | HTTP 400 |
-| `STS-ADMIN-0795` | Product mode: the bootstrap administrator reached the console before claiming it, signed in by something other than a password verified in its own realm (a federation partner, a certificate, a wallet, a Kerberos ticket). Its roles are not honoured and the window stays unclaimed. | HTTP 403 bootstrap_password_required |
-| `STS-ADMIN-0796` | Product mode: a signed-in person holding no console role reached the console while its bootstrap administrator had not yet claimed it. Development would have opened the console to them; product does not. Logged once per console session. | HTTP 403 insufficient_role |
-| `STS-ADMIN-0797` | Product mode, at startup or at a realm's creation: a realm has no bootstrap administrator and nobody on its console roster, so its console is closed to everybody. POST /admin-api/rbac/grant with an admin:write access token is the way in. | none (a log line) |
+| `STS-ADMIN-0795` | A named authorization server's fapi member was set to a value that is not a FAPI profile this service enforces, nor off (#138). | HTTP 400 |
+| `STS-ADMIN-0796` | Product mode: the bootstrap administrator reached the console before claiming it, signed in by something other than a password verified in its own realm (a federation partner, a certificate, a wallet, a Kerberos ticket). Its roles are not honoured and the window stays unclaimed. | HTTP 403 bootstrap_password_required |
+| `STS-ADMIN-0797` | Product mode: a signed-in person holding no console role reached the console while its bootstrap administrator had not yet claimed it. Development would have opened the console to them; product does not. Logged once per console session. | HTTP 403 insufficient_role |
+| `STS-ADMIN-0798` | Product mode, at startup or at a realm's creation: a realm has no bootstrap administrator and nobody on its console roster, so its console is closed to everybody. POST /admin-api/rbac/grant with an admin:write access token is the way in. | none (a log line) |
 
 ## STS-API
 
@@ -3285,6 +3295,9 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0171` | A console or /admin-api write set oauthFrontchannelLogoutUri to a URI whose scheme, host and port match none of the entry's oauthRedirectUri values (Front-Channel Logout 1.0 section 2). | HTTP 400 |
 | `STS-REG-0172` | A console or /admin-api write put a value on oauthAllowedScope that is not an RFC 6749 section 3.3 scope token. | HTTP 400 |
 | `STS-REG-0173` | An RFC 7591 registration or RFC 7592 update named one of this service's own protected scopes in `scope` (or sent a scope that is not a string); only an administrator declares those. | invalid_client_metadata (HTTP 400) |
+| `STS-REG-0174` | Under a FAPI profile, a registration declared a token_endpoint_auth_method FAPI does not allow (FAPI 1.0 Part 1 section 5.2.2 item 4). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0175` | Under a FAPI profile, a registration's jwks held an RSA key under 2048 bits or an EC key under 160 (FAPI 1.0 Part 1 section 5.2.2 items 5 and 6). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0176` | Under a FAPI profile, a registration named a redirect URI that is not https (FAPI 1.0 Part 1 section 5.2.2 item 20). | HTTP 400 {error: invalid_redirect_uri} |
 
 ## STS-DBG
 

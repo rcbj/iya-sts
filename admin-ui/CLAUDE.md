@@ -3492,7 +3492,7 @@ decisions, taken as the issue's plan recommended:
   weaker product option: `admin.openWhenEmpty` is read in development only.
   `rolesOf()` still answers `openable` for the banner, and `withheld` for a
   person development would have let in; the gate refuses them
-  `insufficient_role` coded `STS-ADMIN-0796`, logged once per console session.
+  `insufficient_role` coded `STS-ADMIN-0797`, logged once per console session.
 * **The claim is bound to the PASSWORD.** The account `admin` exists, so any
   door that can sign in AS it — a partner may assert any existing person
   (#109), a certificate's CN maps to an entry — would inherit its roles by
@@ -3504,7 +3504,7 @@ decisions, taken as the issue's plan recommended:
   for by this service (`signInAuthority: 'local'`, which
   `authn.startRelyingPartySession()` copies off the parent). `amr` alone is not
   enough: SPNEGO puts `pwd` there for a pre-authenticated ticket. Anything else
-  is refused 403 `bootstrap_password_required` (`STS-ADMIN-0795`) and
+  is refused 403 `bootstrap_password_required` (`STS-ADMIN-0796`) and
   `noteConsoleSignIn()` claims nothing. The debugger, which never sees the
   session, waits for the claim (`STS-DBG-0033`); so does a portal session's
   certificate-enrollment authority (`sessionIsAdmin()`). An LDAP bind and EST
@@ -3513,7 +3513,7 @@ decisions, taken as the issue's plan recommended:
 * **A realm with no bootstrap administrator and an empty roster is closed** in
   product — seeding failed (`STS-ADMIN-0706`) or `admin.bootstrapUsername` is
   empty — and `reportClosedConsole()` says so at error level
-  (`STS-ADMIN-0797`) from `server.js`'s bootstrap and a realm's create. The way
+  (`STS-ADMIN-0798`) from `server.js`'s bootstrap and a realm's create. The way
   in is `POST /admin-api/rbac/grant` with an `admin:write` token.
 
 `tests/console_bootstrap_product.js` holds the in-process half (the rules, the

@@ -28,6 +28,7 @@ libraries that decide things on its behalf.
 | `backchannel_logout.ts` | **OpenID Connect Back-Channel Logout 1.0 (#36, 2026-09-17).** Plans, signs, encrypts and delivers a Logout Token to every relying party on an ending (or EXPIRING) session that registered a `backchannel_logout_uri`. Each delivery is a row of a persisted, replicated store: retried with backoff by any node across restarts, sent once through a claimed lease, dead-lettered on a final failure. See 3aq. |
 | `id_token_encryption.ts` | **The encrypted ID Token (OIDC Core 10.2, 2026-09-17)** — signed then encrypted to the key in the client's inline `jwks`, and the same protection on a back-channel Logout Token. See 3as. |
 | `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.ts`, `oauth2_bcp.js`, `dpop.ts`, `mgmt-api/admin_api.ts` and `debugger/debugger_server.ts` require and that may require none of them back. See 3ao. |
+| `fapi.js` | **FAPI 1.0 Part 1 Baseline as a PROFILE over RFC 9700 mode (#138, 2026-09-22).** `oauth2.fapi` per realm, or a named authorization server's own `fapi` member, made AMBIENT per request; the checks FAPI asks beyond RFC 9700 mode, as a table of requirements with a check citing each. A leaf. See 3av. |
 
 **Everything but `oauth2.ts` — and, since 2026-09-13, the console page
 `oauth2_monitor_admin.ts`, required at 18f rather than from here — registers
@@ -433,6 +434,69 @@ so must `admin-ui/admin.ts`.
    still checks an OAuth `redirect_uri` only when one of the two modes is on.
    `tests/oauth21_mode.js` and `tests/redirect_uri_schemes.js` are the
    in-process half, mutation-tested against twenty mutants.
+
+3av. **`fapi.js` IS FAPI 1.0 PART 1 BASELINE, AS A PROFILE OVER RFC 9700 MODE
+   (#138, 2026-09-22).** One switch, `oauth2.fapi` — `off` or `1-baseline`;
+   #139–#141 add FAPI 1.0 Advanced and the two FAPI 2.0 profiles as further
+   values. A LEAF (rule 3): `helpers.js`, `config.js` and `async_hooks`;
+   `oauth2_bcp.js`, `common/consent.ts`, `authorization_servers.ts` and
+   `oauth2.ts` require it. It decides; `oauth2.ts` answers. rcbj's answers on
+   #138:
+
+   | Asked | Chosen |
+   |---|---|
+   | Where the switch lives | A realm-runtime setting AND a named authorization server's `fapi` member |
+   | RFC 9700 mode | Implied by every profile, as OAuth 2.1 mode implies it |
+   | The OpenID conformance suite | A separate ticket |
+   | Item 12's consent | The person's own; an administrator's global consent does not count, the hosted surfaces included |
+   | The hosted surfaces, which used `client_secret_basic` | `private_key_jwt`, with no credential in any browser |
+
+   **THE PROFILE IS AMBIENT, BECAUSE A NAMED SERVER IS NOT A REALM.**
+   `oauth2_bcp.js`'s `enabled()` is asked from a dozen places that have no
+   request, and a realm's setting reaches them because the realm is ambient.
+   A named authorization server is chosen by a path segment, so `forProfile()`
+   in `oauth2.ts` runs each `/{id}/oauth2/…` handler inside
+   `fapi.withProfile()` with that server's value (`fapiOf()`, read off
+   `capabilitiesOf(id, {}, 'server')`), and `asMetadata()` enters it too for a
+   named server's document. `profile()` reads the ambient value first and the
+   setting second; `off` there opts the server out of its realm's profile. The
+   `fapi` catalogue row is `document: 'server'`: it is published in no
+   discovery document, and `setMember()` refuses a value that is not a profile
+   or `off` (`STS-ADMIN-0795`).
+
+   **WHAT IT ADDS TO RFC 9700 MODE**, each with its code: PKCE with S256 for
+   every client (`STS-OAUTH-0573`), `redirect_uri` sent and https (`0574`, a
+   400 on this server), `nonce` with `openid` (`0575`) and `state` without it
+   (`0576`) — all in `vetAuthorizationRequest()`, so a pushed request is
+   vetted too; the confidential client methods at the token and PAR endpoints
+   (`0580`) and at registration (`STS-REG-0174`, with key sizes `0175` and
+   https redirect URIs `0176`); one client identifier per request (`0581` —
+   `presentedClientIds()` reads the Basic user, the body's `client_id` and an
+   assertion's `sub`); an unbound access token capped at 600 s in
+   `accessToken()` and in `expires_in`; the metadata narrowed after
+   `bcp.applyToMetadata()`; and consent — `consent.required()` is true under a
+   profile and `outstanding()` stops reading global consents.
+   `global.https` derives from the setting as from the other two modes.
+
+   **THE REFUSAL AT THE TOKEN ENDPOINT IS OFTEN NOT FAPI'S.** With the
+   metadata narrowed, a `client_secret_basic` client meets the advertised-methods
+   check first (400 `invalid_client`); `0580` catches a client whose server
+   profile re-advertises a secret method.
+
+   **THE HOSTED SURFACES AUTHENTICATE BY `private_key_jwt`, IN EVERY MODE**
+   (`common/oidc_rp.ts`, "HOW A SURFACE AUTHENTICATES"). Under FAPI their
+   seeded `client_secret_basic` would have locked the console out of a FAPI
+   realm. The key is issued by the realm's CA through `pki.issueSigningKeyPair()`
+   and stored with `applications.storeIssuedJwtKeyPair()` — the same seven
+   attributes `/admin/pki` writes — under a cluster claim so two nodes do not
+   issue two keys; codes `STS-AUTHN-0207..0209`. A persisted entry seeded
+   before this keeps the method it declares: nothing migrates it.
+
+   **NOT DONE**: the OpenID conformance suite (a ticket of its own); items the
+   profile puts on the CLIENT; a `request_uri` or JAR requirement, which is
+   FAPI 1.0 Advanced (#139). `tests/fapi_baseline_units.js` holds the library
+   and the surfaces' key in a child process; `tests/vendored/sts_fapi_baseline.js`
+   drives a FAPI realm over HTTP, the portal's sign-in included.
 
 3i. **`client_auth.js` verifies all six token-endpoint methods, and it is the
    PROTOCOL half of section 2.5.** `oauth2_bcp.js` decides whether a client has

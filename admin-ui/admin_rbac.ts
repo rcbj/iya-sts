@@ -846,7 +846,7 @@ class AdminRbac {
       // signed in by other doors — a partner asserting `admin`, a certificate
       // whose CN is `admin` — and none of them proves the arrival is the
       // operator who read the generated password. The gate refuses such a
-      // session its roles (STS-ADMIN-0795); here it simply claims nothing.
+      // session its roles (STS-ADMIN-0796); here it simply claims nothing.
       if (!self.windowOpensHere() && !self.passwordSignIn(session)) {
         log.debug("A sign-in as the bootstrap administrator that is not a " +
                   "password verified here claims nothing in product mode.");
@@ -1000,7 +1000,7 @@ class AdminRbac {
       Object.keys(held).length > 0;
     // The window is unclaimed and product never opens it: a person holding no
     // role is refused where development would have let them in. The gate
-    // records it once per session (STS-ADMIN-0796).
+    // records it once per session (STS-ADMIN-0797).
     out.withheld = !opens && unclaimed && !Object.keys(held).length;
 
     out.roles = ROLE_IDS.filter(function (id) { return !!held[id]; });
@@ -1493,7 +1493,7 @@ class AdminRbac {
                 "enter.");
       return false;
     }
-    log.error(errorCodes.tag('STS-ADMIN-0797') + 'admin_rbac: the console of ' +
+    log.error(errorCodes.tag('STS-ADMIN-0798') + 'admin_rbac: the console of ' +
               'the "' + self.boundRealmId() + '" realm is CLOSED TO ' +
               'EVERYBODY. It has no bootstrap administrator' +
               (state.username ? ' ("' + state.username + '" was not seeded)'

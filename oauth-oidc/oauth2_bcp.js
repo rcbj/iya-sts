@@ -145,6 +145,10 @@ const clientAuth = require('./client_auth');
 // to oauth2.redirectUris), plus the refusals 2.1 adds at the checks already
 // in this file. `oauth-oidc/CLAUDE.md` rule 3ah.
 const oauth21 = require('./oauth21');
+// A FAPI PROFILE IMPLIES THIS MODE TOO (#138): a leaf requiring only helpers
+// and config, whose enabled() reads the realm's oauth2.fapi or a named
+// authorization server's own value from the request's ambient context.
+const fapi = require('./fapi');
 // PRODUCT MODE IMPLIES THIS MODE (2026-09-17) — `enabled()` below. A leaf
 // beneath `config`: `mode.js` requires config and bunyan and nothing else, so
 // this require closes no cycle and moves no route.
@@ -1412,11 +1416,14 @@ const REQUIREMENTS = [
 // it; the product-mode term is the process's and is a FLOOR — `||`, never
 // `&&`. A realm able to opt out would be a realm whose public clients had
 // neither a credential nor the rules that replace one.
+// **AND ANY FAPI PROFILE (#138)**, which is a stricter superset in the same
+// way — per realm, or per named authorization server through fapi.js's
+// ambient profile.
 function enabled() {
   log.debug("Entering enabled().");
   log.debug("Leaving enabled().");
   return !!config.value('oauth2.rfc9700') || oauth21.enabled() ||
-         mode.enforcesOauthSecurityBcp();
+         fapi.enabled() || mode.enforcesOauthSecurityBcp();
 }
 
 // OAuth 2.1 section 8.4.2 makes the wildcard a MUST, so that mode ignores the
@@ -2270,6 +2277,15 @@ function checkClientRegistration(metadata) {
     log.debug("Leaving checkClientRegistration(). OAuth 2.1 (" +
               stricter.requirement + ").");
     return stricter;
+  }
+  // FAPI's (#138): the client authentication methods it allows, https
+  // redirect URIs, and key sizes. A client made another way is held to the
+  // method at the token endpoint, which every client passes through.
+  const profiled = fapi.registrationRefusal(meta);
+  if (profiled) {
+    log.debug("Leaving checkClientRegistration(). FAPI (" +
+              profiled.requirement + ").");
+    return profiled;
   }
   const uris = Array.isArray(meta.redirect_uris) ?
                meta.redirect_uris.map(String) : [];
@@ -3714,11 +3730,16 @@ function state() {
     // WHICH FLAG turned it on. `oauth2.oauth21` implies this mode, and without
     // this member a realm carrying only that one would read here as enforcing
     // everything with `oauth2.rfc9700: false` beside it.
-    enabled_by: !on ? '' : (config.value('oauth2.rfc9700') ? 'oauth2.rfc9700'
-                                                           : 'oauth2.oauth21'),
+    // Four things can (#138 added FAPI; product mode is the floor).
+    enabled_by: !on ? ''
+      : config.value('oauth2.rfc9700') ? 'oauth2.rfc9700'
+      : oauth21.enabled() ? 'oauth2.oauth21'
+      : fapi.enabled() ? 'oauth2.fapi=' + fapi.profile()
+      : 'global.mode=product',
     settings: {
       'oauth2.rfc9700': !!config.value('oauth2.rfc9700'),
       'oauth2.oauth21': oauth21.enabled(),
+      'oauth2.fapi': fapi.profile() || null,
       'oauth2.redirectUris': configuredRedirectUris(),
       'oauth2.loopbackPortWildcard': loopbackPortWildcard(),
       'global.https': mainPortIsTls(),

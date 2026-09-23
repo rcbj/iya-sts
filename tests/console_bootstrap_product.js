@@ -34,7 +34,7 @@
 //      `insufficient_role`, a password session claims the console and is let
 //      in, after which the certificate session is an ordinary member's.
 //   8. THE UN-SEEDED PRODUCT REALM is closed to everybody and logs
-//      STS-ADMIN-0797; a development realm and a seeded one log nothing.
+//      STS-ADMIN-0798; a development realm and a seeded one log nothing.
 //
 // In a CHILD PROCESS, for `admin_bootstrap.js`'s reason: it loads the whole
 // protocol stack, flips `global.mode` and writes rosters that every other file
@@ -393,9 +393,9 @@ function childMain() {
       // unable to report anything at all.
       process.stdout.write = realWrite;
     }
-    note(said === true && printed.indexOf('STS-ADMIN-0797') >= 0 &&
+    note(said === true && printed.indexOf('STS-ADMIN-0798') >= 0 &&
          printed.indexOf(U) >= 0,
-         '8b. and says so at startup, at error level, under STS-ADMIN-0797',
+         '8b. and says so at startup, at error level, under STS-ADMIN-0798',
          JSON.stringify({ said: said, chars: printed.length }));
     note(saidSeeded === false && saidDev === false,
          '8c. a seeded product realm and a development realm say nothing',
@@ -472,6 +472,6 @@ module.exports = {
   describe: 'product never opens the console to whoever signs in; the ' +
             'bootstrap administrator claims it only with a password; the ' +
             'gate, the debugger and enrollment agree; development keeps its ' +
-            'window; an un-seeded product realm logs STS-ADMIN-0797',
+            'window; an un-seeded product realm logs STS-ADMIN-0798',
   run: run
 };

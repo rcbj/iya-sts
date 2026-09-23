@@ -4397,7 +4397,7 @@ class AdminActions {
       // for `/admin/users`' reset-password reason.
       const seeded = rbac.seedBootstrapAdministrator(result.realm.id);
       // And, in product, a realm left with nobody who may enter its console
-      // is logged at once (#103, STS-ADMIN-0797).
+      // is logged at once (#103, STS-ADMIN-0798).
       rbac.reportClosedConsole(result.realm.id);
       let password = '';
       if (seeded.ran && seeded.created && mode.isProduct()) {

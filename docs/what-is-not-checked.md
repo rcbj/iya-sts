@@ -546,11 +546,11 @@ administrator alone. Until it has claimed the console, its roles are honoured
 only from a **password** sign-in verified here through its own realm, and only
 that sign-in claims it — a federation partner asserting `admin`, a certificate
 whose CN is `admin`, a wallet or a Kerberos ticket holds nothing and is refused
-`bootstrap_password_required` (`STS-ADMIN-0795`). Anybody else is refused
-until somebody grants them a role (`STS-ADMIN-0796`, logged once per session),
+`bootstrap_password_required` (`STS-ADMIN-0796`). Anybody else is refused
+until somebody grants them a role (`STS-ADMIN-0797`, logged once per session),
 the embedded debugger waits for the claim (`STS-DBG-0033`), and a realm with no
 bootstrap administrator and an empty roster is closed and logged at startup
-(`STS-ADMIN-0797`) — `POST /admin-api/rbac/grant` with an `admin:write` token
+(`STS-ADMIN-0798`) — `POST /admin-api/rbac/grant` with an `admin:write` token
 is the way in.
 
 ### The management API, at `/admin-api`

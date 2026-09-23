@@ -131,6 +131,10 @@ import mode = require('../common/mode');
 // For `oauth2.maxAuthorizationServerProfiles`. A leaf that requires nothing
 // here.
 import config = require('../common/config');
+// #138: the FAPI profiles a named server may carry, and the refusal's code.
+// Both leaves.
+import fapi = require('./fapi');
+import errorCodes = require('../common/error_codes');
 
 // A loose JSON-shaped object: a profile, a document, a result.
 type Json = any;
@@ -295,6 +299,18 @@ const MEMBERS: MemberRow[] = [
           'metadata says the server sends it. Setting this false while the ' +
           'responses still carry iss is a way to test the client\'s side of ' +
           'that.' },
+  // THE FAPI PROFILE OF THIS SERVER (#138). Not a discovery member: it is
+  // published in NO document (`document: 'server'`), and oauth2.ts reads it
+  // to run every request to this server inside that profile. Absent follows
+  // the realm's oauth2.fapi; `off` opts this server out of it.
+  { name: 'fapi', group: 'Security capabilities', kind: 'string',
+    document: 'server',
+    enforces: 'which FAPI profile this authorization server enforces',
+    what: 'The FAPI security profile of this authorization server alone: ' +
+          '1-baseline (FAPI 1.0 Part 1), or off to opt out of a profile its ' +
+          'realm carries. Absent, it follows oauth2.fapi. Every profile ' +
+          'turns RFC 9700 mode on for this server\'s requests. Published ' +
+          'in no document — GET /{id}/oauth2/fapi reports it.' },
   // RFC 9126 (2026-09-13). /oauth2/authorize READS it for the authorization
   // server a request selected — see `pushedRequestPolicyRefusal()` in
   // `oauth2.ts`. A removed member means the check does not run.
@@ -910,6 +926,18 @@ class AuthorizationServers {
         // line: `https://example.com/token` is the ordinary case.
         value = rawValue;
       }
+    }
+    // THE FAPI MEMBER IS A SWITCH, NOT A DOCUMENT (#138): a value this
+    // service has no profile for is refused rather than stored, because a
+    // stored one would read as enforcing something while enforcing nothing.
+    if (name === 'fapi' && (typeof value !== 'string' ||
+        (value !== fapi.NONE && fapi.PROFILES.indexOf(value) < 0))) {
+      log.debug("Leaving AuthorizationServers.setMember(). Not a FAPI " +
+                "profile.");
+      return errorCodes.mark({ ok: false, errors: [JSON.stringify(value) +
+        ' is not a FAPI profile this service enforces: it is one of ' +
+        fapi.PROFILES.join(', ') + ', or ' + fapi.NONE + ' to opt this ' +
+        'server out of its realm\'s oauth2.fapi.'] }, 'STS-ADMIN-0795');
     }
     profile.overrides[name] = value;
     // A member being set is a member not being removed. Without this, setting

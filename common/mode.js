@@ -1031,10 +1031,10 @@ const REQUIREMENTS = [
              'honoured only from a PASSWORD sign-in through its own realm ' +
              '(amr pwd, verified here, not a federation partner, a ' +
              'certificate, a wallet or a Kerberos ticket), and only that ' +
-             'sign-in claims it (STS-ADMIN-0795); the debugger and a ' +
+             'sign-in claims it (STS-ADMIN-0796); the debugger and a ' +
              'session\'s certificate-enrollment authority wait for the ' +
              'claim. A realm with no bootstrap administrator and an empty ' +
-             'roster is closed and logged at startup (STS-ADMIN-0797); ' +
+             'roster is closed and logged at startup (STS-ADMIN-0798); ' +
              'POST /admin-api/rbac/grant is the way in.',
     where: 'admin-ui/admin_rbac.ts, admin-core/admin_views.ts, ' +
            'admin-ui/admin.ts, debugger/debugger_access.ts, ' +
