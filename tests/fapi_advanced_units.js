@@ -284,7 +284,7 @@ function childMain() {
     }
     note(opened && opened.code === 'c-1' && opened.state === 's-1' &&
          opened.aud === 'client-c' && opened.iss === iss &&
-         opened.exp - now <= 600 && opened.exp > now,
+         opened.exp - opened.iat <= 600 && opened.exp > now,
          'C. a response carries code, state, iss, aud and exp, and ' +
          'verifies against this realm\'s key', JSON.stringify(opened));
     const pair = nodeCrypto.generateKeyPairSync('rsa',
