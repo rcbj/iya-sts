@@ -6451,6 +6451,19 @@ state at all.
 `tls/CLAUDE.md` carries what it looked like from the outside, and
 `tests/pki_anchor_drift.js` pins the repair.
 
+### And the certificate it replaces stays known to the responder (2026-09-23, #185)
+
+A slot is certified again whenever a key set changes — every rotation,
+promotion and retirement re-certifies the set, issuing a NEW certificate for
+the same key — and `certify()` overwrote the slot's record, so the serial it
+replaced left the issued register. A relying party holding the certificate the
+realm had published seconds earlier then got `unknown` from its OCSP
+responder, which hard-fail refuses (`sts_pki_distribution_points`, when the
+hourly `signing.retire` ran during it). The displaced serial is now kept in
+`issuedKeyPairs` with `pki_merge.js`'s `displacedRecord()`, the record a
+cluster merge already keeps: `good` until it expires, `revoked` once something
+revokes it, never unknown. `tests/signing_rotation.js` section J.
+
 ### And it records only what the CURRENT authority signed (2026-09-15, #46)
 
 The signature is an await, and a branch rebuild or a reissue of the use case

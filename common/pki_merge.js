@@ -519,5 +519,8 @@ module.exports = {
   // either way. See liveAgain()'s own block.
   dropRevocationsOfLiveTiers: liveAgain,
   canonical: canonical,
-  normalSerial: normalSerial
+  normalSerial: normalSerial,
+  // The issued-register record for a certificate a slot no longer holds, for
+  // `pki.js`'s `certify()` (#185): one shape for both callers.
+  displacedRecord: displacedRecord
 };
