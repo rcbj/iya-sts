@@ -981,10 +981,20 @@ class Krb5PersonKeys {
                                         : { ok: false };
     const record = opened.ok ? opened.record : null;
     const info = this.parseInfo(current.info);
+    // CURRENT means the record holds exactly the enctypes wanted: every one
+    // of them, and none besides. The second half is #182's (2026-09-23): a
+    // realm that became product holds an rc4-hmac key derived while it was
+    // development, which `KDC_ETYPES` no longer lists, and the next verified
+    // sign-in re-derives without it — the same password, so the same kvno —
+    // rather than leave an RC4 key sealed on the entry. (It is never handed
+    // to the KDC meanwhile: `keyPairs()` reads only the enctypes offered.)
     if (event !== 'set' && record && record.name === name &&
         record.stamp === stamp &&
         wanted.every(function (etype) {
           return typeof record.keys[etype] === 'string';
+        }) &&
+        Object.keys(record.keys || {}).every(function (etype) {
+          return wanted.indexOf(Number(etype)) >= 0;
         })) {
       log.debug('Leaving Krb5PersonKeys.derive(). The keys are already ' +
                 'current.');

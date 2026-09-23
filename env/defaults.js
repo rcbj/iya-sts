@@ -725,7 +725,7 @@ var config = {
     authDigest: true,            // Offer HTTP Digest
     digestPassword: "password!", // The shared Digest password
     digestNonceSeconds: 300,     // Digest nonce lifetime
-    digestMd5: true,             // Offer MD5 for Digest
+    digestMd5: false,            // Offer MD5 for Digest
     maxDigestNonces: 2000,       // Digest nonces held
     authHoba: true,              // Offer HOBA
     hobaMaxAgeSeconds: 600,      // HOBA challenge lifetime

@@ -14028,7 +14028,8 @@ class AdminApi {
             summary: 'Create a service principal with a random key, and get ' +
                      'its keytab once',
             description: 'Makes a RANDOM key for every enctype in ' +
-                         '`krb5.enctypes`, at kvno `krb5.kvno`, for `spn` in ' +
+                         '`krb5.enctypes` (never rc4-hmac in product mode), ' +
+                         'at kvno `krb5.kvno`, for `spn` in ' +
                          'this KDC\'s realm, stores them SEALED on the ' +
                          'application entry for `<spn>@<realm>` (creating ' +
                          'that entry if it is not there), and answers with ' +
@@ -14211,7 +14212,8 @@ class AdminApi {
                          'with `random: true` to a generated one that is ' +
                          'NEVER returned — and answers with an MIT keytab ' +
                          '(format 0x502) in `keytab`, base64, derived from ' +
-                         'it: one entry per enctype in `krb5.enctypes`, at ' +
+                         'it: one entry per enctype in `krb5.enctypes` ' +
+                         '(never rc4-hmac in product mode), at ' +
                          'the CURRENT kvno only.\n\n**THIS IS A PASSWORD ' +
                          'RESET.** A stored key is never read back out, so ' +
                          'a keytab is derived from a password in hand, and ' +

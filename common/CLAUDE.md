@@ -6803,6 +6803,19 @@ stored value, the value in force and whether it is ignored — and is drawn by
 and answered by **`GET /admin-api/mode`**; until then the prose cited both
 routes and neither was registered.
 
+**#182 (2026-09-23) PUT THE MARKER ON A LIST ELEMENT.** `usesBrokenAlgorithms()`
+also governs `scim.digestMd5` (default now OFF — the marker's default is the
+product value) and the `23` (rc4-hmac, RFC 8429) in `krb5.enctypes`, a csv row
+whose DEFAULT keeps 23 so a development KDC exercises RC4. So for a list with
+`onlyWhileValues`, `mode.allowsValue()` judges ELEMENTS — a list is allowed
+when none of its elements is one the marker names, its default included — and
+`mode.inForce()` answers `productValue()`: the list WITHOUT those elements (the
+default's elements when nothing would be left), not the row's default. The
+STS-CORE-0106 line names the elements ignored. A stored value of that row is
+taken back by clearing it, since writing the default is itself refused in a
+product realm. `kerberos/CLAUDE.md` has where the KDC asks
+(`principals.etypePermitted()`, the same marker for one number).
+
 ## `outbound_tls.ts`: THE TRANSPORT OF AN OUTBOUND REQUEST (#171, 2026-09-23)
 
 Four families dial an address somebody else answers — GNAP's push finish, SSF

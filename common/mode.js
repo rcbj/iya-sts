@@ -316,6 +316,24 @@ function spoilsOnPurpose() {
 // Each value is IGNORED where it is read (STS-CORE-0106) and refused on
 // write (STS-CORE-0103); the stronger values of each setting stay allowed.
 // JOSE's `RSA1_5` is refused in both modes already (`common/crypto.js`).
+//
+// TWO MORE SINCE #182 (2026-09-23):
+//
+//   * `scim.digestMd5` on — MD5 in SCIM's HTTP Digest. RFC 7616 section 3.3
+//     keeps MD5 for backward compatibility only, and it is collision-broken.
+//     Product offers no Digest at all (`scim/scim_auth.ts`, STS-SCIM-0056),
+//     so the value is moot there; it is marked so that it cannot be stored
+//     meaning something it does not do, and its default is now OFF in
+//     development too.
+//   * the `23` (rc4-hmac) in `krb5.enctypes`, beside the RFC 8429 and RFC
+//     6649 numbers the codec does not implement (1, 2, 3, 16, 24), which the
+//     marker names for the day it does. RFC 8429 deprecates RC4-HMAC: its
+//     key is the unsalted NT hash, and RC4 is broken. The marker is on the
+//     ELEMENT, not the list (`allowsValue()` below), because the default
+//     keeps `23` so a development KDC exercises an RC4 client out of the box:
+//     a product KDC reads the list without it, derives and stores no RC4 key,
+//     opens nothing sealed under one, and answers a request that offers
+//     nothing else KDC_ERR_ETYPE_NOSUPP (`kerberos/krb5_principals.js`).
 function usesBrokenAlgorithms() {
   log.debug("Entering usesBrokenAlgorithms().");
   log.debug("Leaving usesBrokenAlgorithms().");
@@ -1378,8 +1396,9 @@ const REQUIREMENTS = [
                  'this service verifies, pki.signatureAlgorithm sha1-rsa or ' +
                  'sha1-ecdsa (or a build form naming either) makes a ' +
                  'certificate authority sign with SHA-1, and an XML element ' +
-                 'encrypted to this service with rsa-1_5 is unwrapped. ' +
-                 'Every one is off unless set.',
+                 'encrypted to this service with rsa-1_5 is unwrapped, and ' +
+                 'scim.digestMd5 on offers and accepts MD5 in SCIM\'s HTTP ' +
+                 'Digest. Every one is off unless set.',
     product: 'Each weak value is IGNORED where it is read (logged once, ' +
              'STS-CORE-0106) and refused on write (STS-CORE-0103, and ' +
              'STS-REG-0193 on an application): XML is signed with the ' +
@@ -1389,10 +1408,31 @@ const REQUIREMENTS = [
              'branch built in development is replaced by the key\'s ' +
              'default, and an rsa-1_5 EncryptedKey is ' +
              'refused before it is unwrapped (STS-KEYS-0070) — XML ' +
-             'Encryption 1.1 section 6.1.2. The stronger values of every ' +
-             'setting stay available. JOSE RSA1_5 is refused in both modes.',
+             'Encryption 1.1 section 6.1.2. scim.digestMd5 is moot, product ' +
+             'offering no Digest at all (STS-SCIM-0056). The stronger ' +
+             'values of every setting stay available. JOSE RSA1_5 is ' +
+             'refused in both modes.',
     where: 'saml/document_settings.ts, saml/saml2_sso.ts, common/crypto.js, ' +
-           'common/pki.js, common/applications.js' },
+           'common/pki.js, common/applications.js, scim/scim_auth.ts' },
+  // #182 (2026-09-23).
+  { id: 'kerberos-deprecated-enctypes',
+    what: 'No Kerberos key, ticket or exchange uses an enctype RFC 8429 ' +
+          'deprecates (rc4-hmac)',
+    development: 'krb5.enctypes is 18,17,20,19,23 by default: every account ' +
+                 'has an rc4-hmac key beside its AES keys, the rc4only ' +
+                 'fixture has nothing else, and a client offering only 23 ' +
+                 'gets a ticket — so an RC4 client can be exercised.',
+    product: 'The list is read WITHOUT 23 (logged once, STS-CORE-0106) and ' +
+             'a write naming it is refused (STS-CORE-0103). No RC4 key is ' +
+             'derived, stored or put in a keytab for krbtgt, a service or a ' +
+             'person; a key or a ticket of that enctype is never used; an ' +
+             'AS-REQ or TGS-REQ offering nothing else is refused ' +
+             'KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156); an RC4 session key or ' +
+             'subkey in a TGS-REQ, an AP-REQ or FAST armor is refused ' +
+             '(STS-KRB-0157, 0158, 0159). AES (17, 18, 19, 20) is what is ' +
+             'left.',
+    where: 'kerberos/krb5_principals.js, kerberos/krb5_kdc.js, ' +
+           'kerberos/krb5_service.js, kerberos/krb5_fast.ts' },
   { id: 'signed-assertions',
     what: 'Every SAML assertion is signed, and every SAML 1.1 Response',
     development: 'saml2.signAssertion, saml11.signAssertion and ' +
@@ -2162,16 +2202,31 @@ function rowOf(key) {
 function allowsValue(key, value) {
   log.debug("Entering allowsValue(). key=" + key);
   const row = rowOf(key);
-  if (!row || !row.onlyWhile || value === row.dflt) {
-    log.debug("Leaving allowsValue(). Unmarked, or the default.");
+  if (!row || !row.onlyWhile) {
+    log.debug("Leaving allowsValue(). Unmarked.");
     return true;
   }
-  // `onlyWhileValues` narrows the marker to the values it names (#165): an
-  // enum whose weaker values are not all development-only —
-  // `oid4vp.requireStatusReference`'s `own-only` is allowed in product, its
-  // `off` is not. A row without it marks every value but the default.
-  if (Array.isArray(row.onlyWhileValues) &&
-      row.onlyWhileValues.indexOf(value) < 0) {
+  // A LIST (#182, 2026-09-23): `krb5.enctypes` is a csv row, and what is
+  // development-only is an ELEMENT of it — `23`, rc4-hmac — not the list.
+  // So a list is allowed when none of its elements is one the marker names,
+  // and is judged element by element even when it is the default, because
+  // that row's default carries `23` on purpose (development exercises RC4 out
+  // of the box) and product must not inherit it. `marked()` below is the one
+  // reading of which elements those are, shared with `productValue()`.
+  if (Array.isArray(value) && Array.isArray(row.onlyWhileValues)) {
+    if (!marked(row, value).length) {
+      log.debug("Leaving allowsValue(). No element the marker names.");
+      return true;
+    }
+  } else if (value === row.dflt) {
+    log.debug("Leaving allowsValue(). The default.");
+    return true;
+  } else if (Array.isArray(row.onlyWhileValues) &&
+             row.onlyWhileValues.indexOf(value) < 0) {
+    // `onlyWhileValues` narrows the marker to the values it names (#165): an
+    // enum whose weaker values are not all development-only —
+    // `oid4vp.requireStatusReference`'s `own-only` is allowed in product, its
+    // `off` is not. A row without it marks every value but the default.
     log.debug("Leaving allowsValue(). A value the marker does not name.");
     return true;
   }
@@ -2209,20 +2264,68 @@ function inForce(key, value, source) {
     return value;
   }
   const row = rowOf(key);
+  const read = productValue(row, value);
   const said = key + '|' + String(source || key);
   if (!ignoredAnnounced.has(said)) {
     ignoredAnnounced.add(said);
     log.warn(errorCodes.tag('STS-CORE-0106') + 'mode: ' +
              (source && source !== key ? source + ' (overriding ' + key +
                                          ')' : key) +
-             ' is set to ' + JSON.stringify(value) + ' and is IGNORED, ' +
+             // A list names the ELEMENTS ignored (#182) — the default of
+             // `krb5.enctypes` carries one, and "is set to" would say
+             // somebody set it.
+             (Array.isArray(value) && Array.isArray(row.onlyWhileValues)
+               ? ' names ' + JSON.stringify(marked(row, value)) + ', which ' +
+                 'is IGNORED, '
+               : ' is set to ' + JSON.stringify(value) + ' and is IGNORED, ') +
              'because this realm is in product mode (global.mode=product): ' +
              writeRefusalReason(row.onlyWhile) + ' It is read as ' +
-             JSON.stringify(row.dflt) + ' until it is reset. Said once per ' +
+             JSON.stringify(read) + ' until it is reset. Said once per ' +
              'process.');
   }
-  log.debug("Leaving inForce(). The default, in product.");
-  return row.dflt;
+  log.debug("Leaving inForce(). The product reading.");
+  return read;
+}
+
+// The elements of a LIST value that a row's `onlyWhileValues` names (#182),
+// compared as text: a csv row's value is an array of strings, and a caller
+// asking about one enctype passes a number.
+function marked(row, list) {
+  log.debug("Entering marked(). key=" + row.key);
+  const names = (row.onlyWhileValues || []).map(String);
+  log.debug("Leaving marked().");
+  return list.filter(function (one) {
+    return names.indexOf(String(one)) >= 0;
+  });
+}
+
+// WHAT A VALUE THE MODE REFUSES IS READ AS. For a single value that is the
+// row's default, which is the product value by construction (#104). For a
+// LIST (#182) it is the list WITHOUT the elements the marker names, in the
+// order it was written — a product realm whose `krb5.enctypes` says
+// `18,17,23` uses 18 and 17 — and where nothing would be left, the default
+// without them, so a product KDC is never configured into offering nothing.
+function productValue(row, value) {
+  log.debug("Entering productValue(). key=" + row.key);
+  if (!(Array.isArray(value) && Array.isArray(row.onlyWhileValues))) {
+    log.debug("Leaving productValue(). The default.");
+    return row.dflt;
+  }
+  const withheld = marked(row, value);
+  const kept = value.filter(function (one) {
+    return withheld.indexOf(one) < 0;
+  });
+  if (kept.length) {
+    log.debug("Leaving productValue(). " + kept.length + " element(s).");
+    return kept;
+  }
+  const fallback = config.parseAs(row.key, row.dflt);
+  const dflt = fallback.ok && Array.isArray(fallback.value) ?
+    fallback.value : [];
+  log.debug("Leaving productValue(). The default's elements.");
+  return dflt.filter(function (one) {
+    return marked(row, [one]).length === 0;
+  });
 }
 
 // WHY a marked row's value is not allowed, by the predicate the row names:
@@ -2247,8 +2350,9 @@ const WRITE_REFUSALS = {
     'is allowed, and oid4vp.statusOptionalIssuers exempts a trusted issuer ' +
     'that publishes no status.',
   usesBrokenAlgorithms:
-    'SHA-1 signatures and RSA PKCS#1 v1.5 key transport are broken, and ' +
-    'product never uses either. The stronger values are allowed.',
+    'SHA-1 signatures, RSA PKCS#1 v1.5 key transport, MD5 in HTTP Digest ' +
+    'and the Kerberos enctypes RFC 8429 deprecates (rc4-hmac) are broken, ' +
+    'and product never uses any of them. The stronger values are allowed.',
   issuesUnsignedAssertions:
     'every SAML assertion, and every SAML 1.1 Response, is signed there ' +
     '(saml-profiles-2.0-os 4.1.4.5, oasis-sstc-saml-bindings-1.1 4.1.2.4). ' +
@@ -2281,7 +2385,8 @@ function developmentOnlySettings() {
              developmentOnlyValues: Array.isArray(row.onlyWhileValues) ?
                row.onlyWhileValues.slice() : null,
              default: row.dflt, value: stored,
-             inForce: allowed ? stored : row.dflt, ignored: !allowed,
+             inForce: allowed ? stored : productValue(row, stored),
+             ignored: !allowed,
              why: writeRefusalReason(row.onlyWhile) };
   });
   log.debug("Leaving developmentOnlySettings(). " + rows.length + " row(s).");

@@ -1217,3 +1217,50 @@ code, the refusal and PREAUTH_FAILED, FAST and OTP with its own client in
 `krb5_wire.js`, the indicator read with the keytab key, the SPNEGO session's
 `amr`, and MIT `kinit -k`, `kinit -T` and `kvno`).
 
+## RC4-HMAC IS DEVELOPMENT MODE'S (#182, 2026-09-23)
+
+RFC 8429 deprecates rc4-hmac (23): its key is the unsalted NT hash and RC4 is
+broken. `krb5.enctypes`'s default kept 23 in product, so every krbtgt, service
+and person got an RC4 key there. **The default still carries 23**, because a
+development KDC exists to exercise an RC4 client (the `rc4only` fixture, the
+parent project's `krb5_as_exchange.js`); the setting row marks the ELEMENT
+(`onlyWhile: 'usesBrokenAlgorithms'`, `onlyWhileValues` — 23 and the DES,
+3DES and rc4-hmac-exp numbers the codec does not implement), and
+`common/CLAUDE.md` says how a list is judged. In product:
+
+* **`configuredEtypes()` reads `mode.valueInForce('krb5.enctypes')`**, so a
+  product realm's database is BUILT with no 23 (STS-CORE-0106, said once).
+* **The read is the guard, not the build.** A realm switched to product holds a
+  database built in development — RC4 in its etype lists, RC4 keys in its
+  caches — so `principals.etypePermitted(etype)` asks the SAME marker about one
+  number, and every place a key is chosen, derived or used asks it:
+  `supportedEtypes()` (hence negotiation, ETYPE-INFO2, the FAST cookie key and
+  `/krb5/principals`), the `KDC_ETYPES` getter (hence a person's derived keys,
+  a new service key and the keytabs), `longTermKey()` BEFORE its cache (throws,
+  so a ticket or a timestamp sealed with RC4 does not open) and
+  `retainedKeyFor()`. A person whose sealed record still holds an RC4 key from
+  development is re-derived without it at the next verified sign-in, same
+  kvno; `keyPairs()` never hands it to the KDC meanwhile.
+* **Refusals, each `KDC_ERR_ETYPE_NOSUPP` (14)**: an AS-REQ or TGS-REQ that
+  offers ONLY withheld enctypes (`STS-KRB-0156`, with an e-text naming product
+  mode — an ordinary mismatch stays 0025/0040); a TGS-REQ whose TGT session
+  key or Authenticator subkey is RC4 (`0157` — the subkey is the client's
+  choice and would seal the reply); an AP-REQ at the acceptor with an RC4
+  session key or initiator subkey (`0158`, in `krb5_service.js`); FAST armor
+  whose subkey or ticket session key is RC4 (`0159`, in `krb5_fast.ts`, before
+  KRB-FX-CF2 — the armor key takes the subkey's enctype, and `common/crypto.js`
+  keeps its RC4 PRF for development).
+* **Unaffected, by specification**: [MS-SFU] 2.2.1's PA-FOR-USER checksum is
+  HMAC-MD5 at key usage 17 whatever the session key; it is a keyed checksum the
+  protocol fixes, not an enctype.
+
+**NO NEW REQUIRE REACHES THE PARENT PROJECT'S COPY SET.** `krb5_kdc.js`,
+`krb5_service.js` and `krb5_principals.js` already required `common/mode`;
+the checks call `principals.etypePermitted()` and `onlyWithheldEtypes()`.
+
+`tests/mode_rc4_md5.js` (a product child and a development child switched to
+product and back, the clients `tests/vendored/krb5_wire.js`'s over an
+in-process transport) and `tests/vendored/sts_kerberos_rc4.js` (`local: true`,
+over TCP 88 in both modes, and MIT `kinit` with `permitted_enctypes =
+rc4-hmac`). `krb5_wire.js` gained `etypes`, `subkeyEtype` and an RC4 PRF for
+them.

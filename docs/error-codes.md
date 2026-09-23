@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3128** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3132** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 120
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 155
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 159
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 123
@@ -2029,6 +2029,10 @@ Raised from: kerberos/.
 | `STS-KRB-0153` | A ticket's AD-CAMMAC did not verify under the key the ticket is sealed with, so its authentication indicators were ignored. | RFC 7751 section 7, RFC 8129 section 5 |
 | `STS-KRB-0154` | Asking whether a person holds a second factor failed, so the KDC treated a password alone as not enough. | — |
 | `STS-KRB-0155` | An AS exchange waited (at most a second) for its client's sign-out second to pass before taking authtime, so the new ticket is newer than the sign-out. Logged at debug; not a failure. | — |
+| `STS-KRB-0156` | An AS-REQ or TGS-REQ offered only encryption types this realm's mode withholds — rc4-hmac, in product mode (#182). | RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0157` | A TGS-REQ's ticket session key or Authenticator subkey is of an encryption type product mode withholds (rc4-hmac, #182). | RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0158` | The acceptor refused an AP-REQ whose ticket session key or Authenticator subkey is of an encryption type product mode withholds (rc4-hmac, #182). | RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0159` | A FAST armor AP-REQ's subkey or ticket session key is of an encryption type product mode withholds (rc4-hmac, #182), so no armor key was made. | RFC 6113 section 5.4.1.1, RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
 
 ## STS-LDAP
 

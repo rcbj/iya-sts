@@ -404,8 +404,11 @@ const SPECS: Spec[] = [
               '18), aes128/256-cts-hmac-sha256/384 (19, 20) and ' +
               'arcfour-hmac-md5 (23). DES is decode-only and not offered. ' +
               'Which of the five are offered at all is krb5.enctypes, all ' +
-              'five by default; a number the codec does not implement stops ' +
-              'the service at startup. The same codec runs in the browser.' },
+              'five by default in development; in product mode 23 is never ' +
+              'offered, derived or accepted (RFC 8429, #182), which leaves ' +
+              'the four AES types. A number the codec does not implement ' +
+              'stops the service at startup. The same codec runs in the ' +
+              'browser.' },
   { id: 'ms-sfu', name: '[MS-SFU] Kerberos Protocol Extensions: ' +
                        'Service for User and Constrained Delegation',
     where: 'Microsoft Open Specifications',
@@ -859,8 +862,10 @@ const SPECS: Spec[] = [
     coverage: 'partial, and it is the ONE scheme here that really checks a ' +
               'password — it cannot not, since the response is a hash over ' +
               'it, so every username shares one password exactly as they do ' +
-              'in Kerberos. SHA-256, SHA-512-256 and MD5 with their -sess ' +
-              'variants, qop=auth, stale=true on an expired nonce, nonce ' +
+              'in Kerberos. SHA-256 and SHA-512-256 with their -sess ' +
+              'variants, and MD5 only where scim.digestMd5 turns it on ' +
+              '(off by default, development only, #182), qop=auth, ' +
+              'stale=true on an expired nonce, nonce ' +
               'count replay refused, and the section 3.5 Authentication-Info ' +
               'response so a client can authenticate this server back. NOT ' +
               'covered: qop=auth-int (the body has been through this ' +
