@@ -338,7 +338,11 @@ something to run against:
 - **`invalid` as a SCIM `userName`** is refused, as is a duplicate one.
 - **`oauth2.breakIdTokenNonce`** puts a deliberately wrong `nonce` in every ID
   Token. It is off by default, is not part of RFC 9700 mode, and **is honoured
-  in product mode as well** — do not turn it on in a deployment.
+  in development mode only** (#104): a product realm ignores it where the ID
+  Token is built — even with it still stored from before the realm was
+  switched, which is logged once (`STS-CORE-0106`) — and refuses turning it on
+  (`STS-CORE-0103`). The same is true of SSF's two deliberate defects,
+  `ssf.breakSetSignature` and `ssf.legacySubClaim`.
 - **WS-Federation's `wauth`** is never faked. A relying party demanding
   multi-factor or a hardware token against a session that does not have it
   sends the person back through the sign-in with that factor required — a
@@ -548,7 +552,14 @@ verified against the trust bundle and checked for revocation, and every method
 is authorized against SPIRE's own per-method table, copied row for row from
 `pkg/server/authpolicy/policy_data.json`. `Agent.AttestAgent` is open to
 everybody by design. **The private Unix socket is trusted as `local` with no
-credential** while `spiffe.trustLocalSocket` is on, which it is by default.
+credential** while `spiffe.trustLocalSocket` is on, which it is by default —
+in development on the socket's existence alone, as a real `spire-server` does.
+**In product the boundary is verified per connection** (#104): the socket must
+have been made 0600 in a directory with no group or other bits
+(`STS-SPIFFE-0117`), and the caller's kernel uid, read with `SO_PEERCRED`
+through the native module, must be the service's own (`STS-SPIFFE-0118`;
+`STS-SPIFFE-0119` where it cannot be read). Any other caller on the socket is
+not `local` and needs an administrator's X509-SVID on the TCP port.
 
 **Node attestation is verified or refused, in every mode (2026-09-21).**
 `Agent.AttestAgent` accepts only an attestation type the realm names in
@@ -745,12 +756,15 @@ What is still not attested:
 * SPIRE's `systemd` workload attestor, the docker attestor's sigstore signature
   checks and Podman sockets, and the Kubernetes broker. Each is a follow-up on #40.
 
-**Asserted selectors are never believed in product mode.** In development,
-`spiffe.acceptAssertedSelectors` still lets a caller assert them, so that
-selector matching can be exercised with no attestor at all.
+**Asserted selectors are never believed in product mode**, and
+`spiffe.acceptAssertedSelectors` cannot be turned on there (#104). In
+development it still lets a caller assert them, so that selector matching can
+be exercised with no attestor at all.
 
 Selector matching still **decides** which entries answer a caller
-(`spiffe.attestWorkloads`, on by default). A caller that matches no entry gets
+(`spiffe.attestWorkloads`, on by default). **Off is development only** (#104):
+it hands every caller every entry, so a product realm reads it as on whatever
+is stored and refuses turning it off. A caller that matches no entry gets
 an empty SVID list — what a real agent does for an unregistered workload — **in
 product always**, and in development when `spiffe.autoCreateEntries` is off;
 with it on, development creates an entry for the caller. Product seeds no
@@ -807,11 +821,6 @@ These are true in a product deployment today, and are tracked as issues:
 * **`/oauth2/revoke` authenticates no client** and does not check that the token
   belongs to the caller (RFC 7009 section 2.1). Anybody holding a token string
   can revoke it ([#102](https://github.com/rcbj/iya-sts/issues/102)).
-* **`oauth2.breakIdTokenNonce`** and **`spiffe.trustLocalSocket`** are honoured
-  in product; the first is off by default and the second is on
-  ([#104](https://github.com/rcbj/iya-sts/issues/104)).
-  `spiffe.acceptAssertedSelectors` is not: product never believes asserted
-  selectors, whatever it says (#40).
 * **A WebAuthn attestation statement is not verified**: there is no FIDO
   metadata service ([#105](https://github.com/rcbj/iya-sts/issues/105)).
 * **The directory has no per-identity read authorization**: anybody who has bound

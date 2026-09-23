@@ -317,7 +317,14 @@ empty page has five possible causes.
 ### Deliberate defects
 
 A transmitter that is always correct is hard to write error handling against,
-so each of these switches produces a known mistake:
+so each of these switches produces a known mistake.
+
+**`ssf.legacySubClaim` and `ssf.breakSetSignature` make a SET wrong, and are
+honoured in development mode only** (#104). A realm in product mode ignores
+them where the SET is built and signed — even one still stored from before the
+realm was switched, which is logged once (`STS-CORE-0106`) — and refuses
+turning them on (`STS-CORE-0103`). The other three produce SETs that conform to
+their specifications, and are honoured in both modes.
 
 | Setting | What it breaks |
 |---|---|
@@ -414,8 +421,8 @@ types from what a stream may ask for.
 | `ssf.authScopeWrite` | `STS_SSF_AUTH_SCOPE_WRITE` | `ssf:write` | yes | The scope needed to change anything about a stream. |
 | `ssf.receiveEnabled` | `STS_SSF_RECEIVE_ENABLED` | `true` | yes | Whether `POST /ssf/receive` accepts pushed SETs. When off, it answers 501. |
 | `ssf.receiveRequireSignature` | `STS_SSF_RECEIVE_REQUIRE_SIGNATURE` | `false` | yes | Refuses a received SET whose signature fails, with 400 `invalid_key`. |
-| `ssf.legacySubClaim` | `STS_SSF_LEGACY_SUB_CLAIM` | `false` | yes | Deliberate defect: adds the deprecated `sub` claim beside `sub_id`. |
-| `ssf.breakSetSignature` | `STS_SSF_BREAK_SET_SIGNATURE` | `false` | yes | Deliberate defect: changes one character of every SET's signature. |
+| `ssf.legacySubClaim` | `STS_SSF_LEGACY_SUB_CLAIM` | `false` | yes | Deliberate defect, development only: adds the deprecated `sub` claim beside `sub_id`. |
+| `ssf.breakSetSignature` | `STS_SSF_BREAK_SET_SIGNATURE` | `false` | yes | Deliberate defect, development only: changes one character of every SET's signature. |
 | `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | A stream owned by a GNAP application only hears about people who approved a grant to it. |
 
 ### CAEP (`caep.*`)

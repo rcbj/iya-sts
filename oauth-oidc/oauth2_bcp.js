@@ -1374,8 +1374,8 @@ const REQUIREMENTS = [
           'find out: `oauth2.breakIdTokenNonce` puts a DELIBERATELY WRONG ' +
           'nonce in the ID Token, so a client that accepts the result is a ' +
           'client that is not checking. That switch is off by default, is ' +
-          'not part of this mode, and every token it spoils is logged as ' +
-          'spoiled.' },
+          'not part of this mode, is honoured in development mode only, and ' +
+          'every token it spoils is logged as spoiled.' },
 
   { id: 'no-token-use-before-nonce-check', section: '4.5.3.2',
     level: 'MUST NOT',
@@ -3745,7 +3745,10 @@ function state() {
       // reading this page to find out what it is talking to needs to know that
       // the ID Tokens are being spoiled on purpose, and this is the page they
       // are reading.
-      'oauth2.breakIdTokenNonce': !!config.value('oauth2.breakIdTokenNonce'),
+      // AS IT IS IN FORCE: false in a product realm whatever is stored
+      // (#104, `mode.valueInForce()`).
+      'oauth2.breakIdTokenNonce':
+        !!mode.valueInForce('oauth2.breakIdTokenNonce'),
       // #34 (2026-09-15). Reported here for the reason the row above is:
       // a client author reading this page is trying to find out what this
       // server will do to their request, and four of these five turn a SHOULD

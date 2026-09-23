@@ -67,6 +67,9 @@ interface PeerFacts {
   // Why attestation failed, when it did; calls on the connection are refused.
   error: string;
   note: string;
+  // On the SPIRE Server API's socket only (#104): whether the socket was
+  // private when this connection was accepted, and why not.
+  localSocket?: { private: boolean; why: string };
 }
 
 interface SpiffePeerDeps {

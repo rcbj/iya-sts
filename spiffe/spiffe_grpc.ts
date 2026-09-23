@@ -170,6 +170,12 @@ interface SpiffeGrpcDeps {
 // The accepting listeners of attested sockets, by the gRPC server they feed.
 const ATTESTED_LISTENERS = new Map<any, any[]>();
 
+// WHETHER EACH SPIRE SERVER API SOCKET WAS MADE 0600, by path (#104): set by
+// restrictSocket() when a socket is bound, read by socketPrivacy() when a
+// connection is accepted. At most one entry per configured socket path, so it
+// is bounded by configuration and is not a cache.
+const RESTRICTED_SOCKETS = new Map<string, boolean>();
+
 // The services `SpiffeGrpc.wire()` names.
 type ServiceName = 'workload' | 'entry' | 'agent' | 'bundle' | 'svid' |
   'trustdomain' | 'debug';
@@ -1400,6 +1406,8 @@ class SpiffeGrpc {
               ' private=' + !!privateSocket);
     const directory = path.dirname(socketPath);
     const existed = fs.existsSync(directory);
+    // A new socket is not private until restrictSocket() says so (#104).
+    RESTRICTED_SOCKETS.delete(String(socketPath));
     try {
       // `mode` applies to every directory `recursive` creates and to none that
       // existed — which is the half this function wants.
@@ -1491,17 +1499,70 @@ class SpiffeGrpc {
     try {
       fs.chmodSync(socketPath, PRIVATE_SOCKET_MODE);
     } catch (e) {
+      RESTRICTED_SOCKETS.set(String(socketPath), false);
       log.error(errorCodes.tag('STS-SPIFFE-0010') +
                 'spiffe: could not make the SPIRE Server API socket ' +
-                socketPath + ' mode 0600 (' + e.message + '). Other users on ' +
-                'this machine may be able to connect to it as the trusted ' +
-                '`local` entity; turn spiffe.trustLocalSocket off or move ' +
-                'the socket until this is fixed.');
+                socketPath + ' mode 0600 (' + e.message + '). In a product ' +
+                'realm no caller on it is trusted as the `local` entity ' +
+                '(STS-SPIFFE-0117); in a development realm other users on ' +
+                'this machine may be able to connect to it as that entity — ' +
+                'turn spiffe.trustLocalSocket off or move the socket until ' +
+                'this is fixed.');
       log.debug('Leaving SpiffeGrpc.restrictSocket(). It failed.');
       return false;
     }
+    RESTRICTED_SOCKETS.set(String(socketPath), true);
     log.debug('Leaving SpiffeGrpc.restrictSocket().');
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // IS THE SPIRE SERVER API SOCKET AT `socketPath` PRIVATE? (#104.) Asked
+  // when a connection is accepted, and what product mode's `local` entity
+  // stands on (`spiffe_auth.ts`'s `localTrust()`): restrictSocket() must have
+  // made it 0600 — a chmod that FAILED (STS-SPIFFE-0010) is refused, and so is
+  // a connection accepted before the chmod ran — and neither the socket nor
+  // its directory may carry a group or other bit. The directory matters
+  // because between the bind and the chmod the socket has the umask's mode,
+  // and only a directory nobody else can enter closes that window. Never
+  // throws; `why` is the sentence a refusal quotes.
+  // ---------------------------------------------------------------------------
+  socketPrivacy(socketPath: string): { private: boolean; why: string } {
+    const { log, fs, path } = this.deps;
+    log.debug('Entering SpiffeGrpc.socketPrivacy(). ' + socketPath);
+    const restricted = RESTRICTED_SOCKETS.get(String(socketPath));
+    if (restricted !== true) {
+      log.debug('Leaving SpiffeGrpc.socketPrivacy(). Not restricted.');
+      return { private: false,
+               why: restricted === false
+                 ? 'the socket could not be made mode 0600 (STS-SPIFFE-0010)'
+                 : 'the socket had not been made mode 0600 when this ' +
+                   'connection was accepted' };
+    }
+    const checks = [{ what: 'the socket ' + socketPath, at: socketPath },
+                    { what: 'its directory ' + path.dirname(socketPath),
+                      at: path.dirname(socketPath) }];
+    for (let i = 0; i < checks.length; i++) {
+      let bits = 0;
+      try {
+        bits = fs.statSync(checks[i].at).mode & 0o777;
+      } catch (e) {
+        log.debug('Caught in SpiffeGrpc.socketPrivacy(): ' +
+                  ((e && e.message) || e));
+        log.debug('Leaving SpiffeGrpc.socketPrivacy(). Unreadable.');
+        return { private: false,
+                 why: checks[i].what + ' could not be read (' +
+                      ((e && e.code) || (e && e.message) || e) + ')' };
+      }
+      if (bits & 0o077) {
+        log.debug('Leaving SpiffeGrpc.socketPrivacy(). Reachable.');
+        return { private: false,
+                 why: checks[i].what + ' is mode ' + bits.toString(8) +
+                      ', which other users can reach' };
+      }
+    }
+    log.debug('Leaving SpiffeGrpc.socketPrivacy(). Private.');
+    return { private: true, why: '' };
   }
 
   // Build a server with a set of services on it. One function for both
@@ -1972,6 +2033,7 @@ export = {
   bindAttestedSocket: slot.forward('bindAttestedSocket'),
   closeAttested: slot.forward('closeAttested'),
   restrictSocket: slot.forward('restrictSocket'),
+  socketPrivacy: slot.forward('socketPrivacy'),
   buildServer: slot.forward('buildServer'),
   bindOne: slot.forward('bindOne'),
   serverApiCredentials: slot.forward('serverApiCredentials'),

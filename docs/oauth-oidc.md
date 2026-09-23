@@ -817,7 +817,7 @@ The console's **Protocols → OAuth2 / OIDC** group:
 
 | Page | What it is for |
 |---|---|
-| `/admin/oauth2` | the `oauth2.*` settings: issuer, both compliance modes, redirect URIs, logout, the deliberate `breakIdTokenNonce` defect |
+| `/admin/oauth2` | the `oauth2.*` settings: issuer, both compliance modes, redirect URIs, logout, the deliberate `breakIdTokenNonce` defect (development mode only) |
 | `/admin/authorization-servers` | named authorization server profiles, their members and their drift |
 | `/admin/token-lifetimes` | the three lifetimes and the clock skew, beside a count of what has expired |
 | `/admin/claims` | the access token and ID Token custom claim sets |

@@ -3682,7 +3682,7 @@ class OAuth2Server {
   async idToken(base: Json, opts: Json): Promise<Json> {
     const { log, nowSec, randomId, signJwt, signJwtAsAsync, userFor, stats,
             config, frontchannel, backchannel, applications,
-            idTokenEncryption } = this.deps;
+            idTokenEncryption, mode } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.idToken().");
     const iat = nowSec();
@@ -3747,8 +3747,13 @@ class OAuth2Server {
     // `invalid` — a reachable negative, off by default, and loud every single
     // time, because an ID Token that is wrong in a way nobody remembers turning
     // on would be the most expensive hour in this repository.
+    //
+    // DEVELOPMENT MODE ONLY (#104, `mode.spoilsOnPurpose()`): read through
+    // `mode.valueInForce()`, which answers the default in a product realm
+    // whatever is stored — the mode can be switched at runtime, so this read
+    // is the guard and the refused write beside it is not.
     if (opts.nonce) {
-      if (config.value('oauth2.breakIdTokenNonce')) {
+      if (mode.valueInForce('oauth2.breakIdTokenNonce')) {
         payload.nonce = 'broken-' + randomId(8);
         log.warn('oauth2.breakIdTokenNonce is ON: this ID Token carries the ' +
                  'nonce "' + payload.nonce + '" where the authorization ' +

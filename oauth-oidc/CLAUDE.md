@@ -318,6 +318,16 @@ so must `admin-ui/admin.ts`.
    reachable negative. Do not fold it into the mode — a compliance flag that
    also breaks tokens is a flag nobody will turn on.
 
+   **IT IS DEVELOPMENT MODE'S, NOT RFC 9700 MODE'S (#104, 2026-09-23).** Product
+   mode honoured it until then. The row carries `onlyWhile: 'spoilsOnPurpose'`,
+   so a product realm refuses turning it on (`STS-CORE-0103`, `config.js`'s
+   `modeWriteProblem()`), and `idToken()` reads it through
+   `mode.valueInForce()`, which answers the default in a product realm whatever
+   is stored and says so once (`STS-CORE-0106`). The READ is the guard, because
+   `global.mode` is itself a runtime setting and a realm can be switched with
+   the value still stored; `GET /oauth2/rfc9700` reports it the same way, as it
+   is in force.
+
    **THE TLS REQUIREMENT IS NOT A CHECK AND MUST NOT BE MADE ONE.** "An
    authorization response MUST NOT be sent over an unencrypted connection"
    cannot be refused per request — by the time anything here runs the request
