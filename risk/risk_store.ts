@@ -59,7 +59,7 @@ const RISK_GROUP = ['riskListDatasets', 'riskListVersions', 'riskBeginVersion',
                     'riskRecordAcceptance', 'riskListAcceptances',
                     // #62 P3 and P4.
                     'riskSettleAssessment', 'riskSubjectOf',
-                    'riskClaimAction'];
+                    'riskClaimAction', 'riskLookupFido'];
 
 // The most assessments one realm holds in memory, as for failures.
 const MAX_MEMORY_ASSESSMENTS = 50000;
@@ -93,6 +93,8 @@ class RiskStore {
   private readonly versions = new Map<string, Json>();
   private readonly ranges = new Map<string, HeldRange[]>();
   private readonly unsorted = new Set<string>();
+  // FIDO MDS3 authenticator models by version (#62 P5): key -> model.
+  private readonly fido = new Map<string, Map<string, Json>>();
   private readonly failures = new Map<string, Json[]>();
   private failureSeq = 0;
   // The model's history, held here when it is not in the database:
@@ -435,6 +437,19 @@ class RiskStore {
     }
     const k = RiskStore.key(kind, kind === 'iplist' ? realm : '', dataset,
                             version);
+    if (kind === 'fido') {
+      // Authenticator models (#62 P5) are keyed, not ranged.
+      const models = this.fido.get(k) || new Map();
+      rows.forEach(function (row) {
+        models.set(String(row.keyKind) + '\u0000' +
+                   String(row.key || '').toLowerCase(),
+                   Object.assign({}, row));
+      });
+      this.fido.set(k, models);
+      log.debug("Leaving RiskStore.insertRows(). " + rows.length +
+                " model(s).");
+      return Promise.resolve(rows.length);
+    }
     const held = this.ranges.get(k) || [];
     let added = 0;
     rows.forEach(function (row) {
@@ -538,6 +553,12 @@ class RiskStore {
     }
     const k = RiskStore.key(kind, kind === 'iplist' ? realm : '', dataset,
                             version);
+    if (kind === 'fido') {
+      const models = this.fido.get(k);
+      this.fido.delete(k);
+      log.debug("Leaving RiskStore.deleteRows(). Memory, models.");
+      return Promise.resolve(models ? models.size : 0);
+    }
     const held = this.ranges.get(k) || [];
     this.ranges.delete(k);
     this.unsorted.delete(k);
@@ -570,6 +591,24 @@ class RiskStore {
   // descending probe — the greatest start not above the address, kept only
   // if its end is not below it. The ranges are sorted once after a load.
   // -------------------------------------------------------------------------
+  // One authenticator model of a FIDO MDS3 version (#62 P5), or null.
+  lookupFido(dataset: string, version: string, keyKind: string,
+             key: string): Promise<Json | null> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.lookupFido(). " + keyKind);
+    if (this.driver) {
+      log.debug("Leaving RiskStore.lookupFido(). Database.");
+      return Promise.resolve(this.driver.riskLookupFido(dataset, version,
+                                                         keyKind, key));
+    }
+    const models = this.fido.get(RiskStore.key('fido', '', dataset,
+                                               version));
+    const hit = models ? models.get(String(keyKind) + '\u0000' +
+                                    String(key || '').toLowerCase()) : null;
+    log.debug("Leaving RiskStore.lookupFido(). " + (hit ? 'Hit.' : 'Miss.'));
+    return Promise.resolve(hit ? Object.assign({}, hit) : null);
+  }
+
   lookupRange(kind: string, realm: string, dataset: string, version: string,
               address: string): Promise<Json | null> {
     const { log } = this.deps;
@@ -1050,6 +1089,7 @@ class RiskStore {
     this.versions.clear();
     this.ranges.clear();
     this.unsorted.clear();
+    this.fido.clear();
     this.failures.clear();
     this.failureSeq = 0;
     this.counts.clear();
@@ -1096,6 +1136,7 @@ export = {
   deleteRows: slot.forward('deleteRows'),
   markRowsDeleted: slot.forward('markRowsDeleted'),
   lookupRange: slot.forward('lookupRange'),
+  lookupFido: slot.forward('lookupFido'),
   failuresInDatabase: slot.forward('failuresInDatabase'),
   recordFailure: slot.forward('recordFailure'),
   listFailures: slot.forward('listFailures'),
