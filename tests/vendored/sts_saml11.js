@@ -1134,24 +1134,43 @@ async function main() {
   heading('the settings, one at a time');
   // An unsigned assertion being ACCEPTED by a relying party is the finding that
   // matters, and no happy path shows it. Each of these is restored at the end.
-  await setSetting('saml11.signAssertion', false);
+  // IN PRODUCT MODE THESE TWO ARE DEVELOPMENT-ONLY (iya-sts #181): a write
+  // turning either off is refused and the service keeps signing both, which
+  // is what the SAML 1.1 Browser/POST profile requires of the Response.
+  // Against a product-mode sts from before #181 the write still takes, so
+  // both outcomes are accepted there; development asserts the old behaviour.
+  let wrote = await setSetting('saml11.signAssertion', false);
+  let refused = wrote.status !== 200 ||
+                /refus|development only|STS-CORE-0103/i.test(wrote.body || '');
   cookie = '';
   res = await resume('/saml11/sso?' + form({ providerId: RP, shire: acs, TARGET: target,
                                              profile: 'post' }), 'judy');
   let xml = samlResponseIn(res.body);
-  check('saml11.signAssertion=false issues an UNSIGNED assertion',
-        !!xml && !childByLocal(byLocal(parse(xml), 'Assertion'), 'Signature'));
+  if (PRODUCT && refused) {
+    check('product: saml11.signAssertion=false is refused and the assertion is still SIGNED',
+          !!xml && !!childByLocal(byLocal(parse(xml), 'Assertion'), 'Signature'));
+  } else {
+    check('saml11.signAssertion=false issues an UNSIGNED assertion',
+          !!xml && !childByLocal(byLocal(parse(xml), 'Assertion'), 'Signature'));
+  }
   check('and the Response around it is still signed',
         !!xml && !!childByLocal(parse(xml).documentElement, 'Signature'));
   await setSetting('saml11.signAssertion', true);
 
-  await setSetting('saml11.signResponse', false);
+  wrote = await setSetting('saml11.signResponse', false);
+  refused = wrote.status !== 200 ||
+            /refus|development only|STS-CORE-0103/i.test(wrote.body || '');
   cookie = '';
   res = await resume('/saml11/sso?' + form({ providerId: RP, shire: acs, TARGET: target,
                                              profile: 'post' }), 'judy');
   xml = samlResponseIn(res.body);
-  check('saml11.signResponse=false issues an unsigned Response',
-        !!xml && !childByLocal(parse(xml).documentElement, 'Signature'));
+  if (PRODUCT && refused) {
+    check('product: saml11.signResponse=false is refused and the Response is still SIGNED',
+          !!xml && !!childByLocal(parse(xml).documentElement, 'Signature'));
+  } else {
+    check('saml11.signResponse=false issues an unsigned Response',
+          !!xml && !childByLocal(parse(xml).documentElement, 'Signature'));
+  }
   check('and the assertion inside it is still signed',
         !!xml && !!childByLocal(byLocal(parse(xml), 'Assertion'), 'Signature'));
   await setSetting('saml11.signResponse', true);
