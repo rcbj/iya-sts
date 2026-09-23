@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2974** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2977** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 191
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 471
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 474
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1549,6 +1549,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0589` | Under the FAPI 2.0 Security Profile, a pushed authorization request did not authenticate its client (section 5.3.2.2 item 4). | HTTP 401 {error: invalid_client} |
 | `STS-OAUTH-0590` | Under the FAPI 2.0 Security Profile, a client assertion, a request object or a DPoP proof carried an iat or nbf more than 60 seconds in the future (section 5.3.2.1 item 13). | HTTP 400 {error: invalid_request}, invalid_request_object, or invalid_dpop_proof |
 | `STS-OAUTH-0591` | Under FAPI 2.0 Message Signing, an authorization request did not ask for a JWT-secured response (JARM), which the profile requires (section 5.4.2 item 1). | redirect or HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0592` | A WebFinger request carried no single resource parameter, or one that is not an acct: URI, an e-mail address, an https URL or a host (RFC 7033 section 4.2, OIDC Discovery section 2.1). | HTTP 400 |
+| `STS-OAUTH-0593` | A WebFinger resource named a domain no realm has, or a path on this service that names no realm (RFC 7033 section 4.2). | HTTP 404 |
+| `STS-OAUTH-0594` | A discovery path named no issuer: not [realm/<id>][/<server>], an unknown realm, or more than one server segment. Answered with Express's 404 and no authorization server created (#119). | HTTP 404 |
 
 ## STS-SAML
 
