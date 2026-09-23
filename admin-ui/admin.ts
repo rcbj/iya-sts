@@ -39922,6 +39922,8 @@ const PROTOCOL_SETTINGS_PAGES = [
     links: [['/.well-known/openid-configuration', 'the discovery document'],
             ['/oauth2/rfc9700', 'what RFC 9700 mode enforces'],
             ['/oauth2/oauth21', 'what OAuth 2.1 mode enforces'],
+            ['/oauth2/fapi',
+             'which FAPI profile is in force, and what it enforces'],
             ['/admin/token-lifetimes', 'how long what it issues lasts'],
             ['/admin/tokens', 'what has been issued']] },
 

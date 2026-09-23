@@ -5930,6 +5930,49 @@ function generalizedTime(when) {
          pad(d.getUTCSeconds()) + 'Z';
 }
 
+// ---------------------------------------------------------------------------
+// AN ISSUED RFC 7523 KEY PAIR, ONTO ITS APPLICATION'S ENTRY (#138): the seven
+// attributes `/admin/pki` writes, in the order it writes them, as one list so
+// the console and this service's own surfaces (`oidc_rp.ts`, which issues its
+// console, portal and debugger their private_key_jwt keys) cannot disagree
+// about what an issued key pair is. `record` is `pki.issueSigningKeyPair()`'s
+// `issued`.
+// ---------------------------------------------------------------------------
+function issuedJwtKeyPairValues(record) {
+  log.debug("Entering issuedJwtKeyPairValues().");
+  log.debug("Leaving issuedJwtKeyPairValues().");
+  return [
+    ['oauthAssertionJwks', JSON.stringify(record.jwks)],
+    ['oauthAssertionCertificate', record.certificatePem],
+    ['oauthAssertionCertificateChain', (record.chainPem || []).join('')],
+    ['oauthAssertionPrivateKey', record.privateKeyPem],
+    ['oauthAssertionKid', record.kid],
+    ['oauthAssertionExpiresAt', generalizedTime(new Date(record.notAfter))],
+    // `issued` for a key pair generated here; an upload's record says which
+    // kind of upload it was. See KEY_SOURCES.
+    ['oauthAssertionKeySource', record.source || 'issued']
+  ];
+}
+
+// Writes them, all or a report of which failed. A failure loses the private
+// key — common/pki.js keeps no copy — so the caller must issue again.
+function storeIssuedJwtKeyPair(identifier, record) {
+  log.debug("Entering storeIssuedJwtKeyPair(). " + identifier);
+  const writes = issuedJwtKeyPairValues(record);
+  for (let i = 0; i < writes.length; i++) {
+    const done = updateApplication(identifier, {
+      attribute: writes[i][0], mode: 'set', value: writes[i][1] });
+    if (!done || done.ok === false) {
+      log.debug("Leaving storeIssuedJwtKeyPair(). " + writes[i][0] +
+                " failed.");
+      return { ok: false, failed: writes[i][0],
+               errors: (done && done.errors) || [] };
+    }
+  }
+  log.debug("Leaving storeIssuedJwtKeyPair(). Stored.");
+  return { ok: true };
+}
+
 function fromGeneralizedTime(value) {
   log.debug("Entering fromGeneralizedTime().");
   const text = String(value || '');
@@ -10179,8 +10222,6 @@ function debuggerApplications() {
         client_id: 'sts-debugger-ui',
         client_name: 'Protocol debugger',
         client_id_issued_at: issued,
-        client_secret: randomId(24),
-        client_secret_expires_at: 0,
         registration_access_token: randomId(24),
         registration_client_uri: internalBaseUrl() +
                                  '/oauth2/register/sts-debugger-ui',
@@ -10191,7 +10232,7 @@ function debuggerApplications() {
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         scope: 'openid profile email offline_access ' + permission,
-        token_endpoint_auth_method: 'client_secret_basic'
+        token_endpoint_auth_method: 'private_key_jwt'
       } }
   ];
 }
@@ -10252,8 +10293,6 @@ function internalApplications() {
         client_id: 'sts-admin-console',
         client_name: 'Admin console',
         client_id_issued_at: issued,
-        client_secret: randomId(24),
-        client_secret_expires_at: 0,
         registration_access_token: randomId(24),
         registration_client_uri: base + '/oauth2/register/sts-admin-console',
         client_uri: base + '/admin',
@@ -10263,7 +10302,7 @@ function internalApplications() {
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         scope: 'openid profile email offline_access',
-        token_endpoint_auth_method: 'client_secret_basic'
+        token_endpoint_auth_method: 'private_key_jwt'
       } },
     // THE USER PORTAL, ADDED 2026-09-06 WITH THE MOVE ONTO THE CODE FLOW. It
     // was the admin console's row with one difference, `realmScope: 'every'`,
@@ -10296,8 +10335,6 @@ function internalApplications() {
         client_id: 'sts-user-portal',
         client_name: 'User portal',
         client_id_issued_at: issued,
-        client_secret: randomId(24),
-        client_secret_expires_at: 0,
         registration_access_token: randomId(24),
         registration_client_uri: base + '/oauth2/register/sts-user-portal',
         client_uri: base + '/portal',
@@ -10307,7 +10344,7 @@ function internalApplications() {
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         scope: 'openid profile email offline_access',
-        token_endpoint_auth_method: 'client_secret_basic'
+        token_endpoint_auth_method: 'private_key_jwt'
       } },
     { identifier: 'sts-management-api',
       name: 'Management API',
@@ -10467,6 +10504,8 @@ function seedInternalApplications(options) {
 
 module.exports = {
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
+  issuedJwtKeyPairValues: issuedJwtKeyPairValues,
+  storeIssuedJwtKeyPair: storeIssuedJwtKeyPair,
   frontchannelOriginProblem: frontchannelOriginProblem,
   requiredRolesOf: requiredRolesOf,
   requiresNarrowedRoles: requiresNarrowedRoles,

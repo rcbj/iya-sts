@@ -3607,8 +3607,10 @@ const CODES = [
       'its seeded OIDC client is not in this realm\'s registry.',
     spec: 'the console\'s or portal\'s sign-in refusal page' },
   { code: 'STS-AUTHN-0113',
-    summary: 'A hosted surface\'s seeded OIDC client carries no client ' +
-      'secret, so it cannot authenticate at the token endpoint.',
+    summary: 'A hosted surface\'s OIDC client declares a client secret ' +
+      'method (client_secret_basic or client_secret_post) and carries no ' +
+      'client secret, so it cannot authenticate at the token endpoint. The ' +
+      'seeded entries use private_key_jwt and hold no secret (#138).',
     spec: 'the console\'s or portal\'s sign-in refusal page' },
   { code: 'STS-AUTHN-0114',
     summary: 'Product mode refused a hosted-surface sign-in because this ' +
@@ -3937,6 +3939,26 @@ const CODES = [
       'enrols on first use (mode.enrolsKeysOnFirstUse()).',
     spec: 'none — the sign-in screen is drawn again with the reason' },
   // ===== OAUTH =============================================================
+  { code: 'STS-AUTHN-0207',
+    summary: 'A hosted surface (the console, the portal or the embedded ' +
+      'debugger) could not get the key it signs its private_key_jwt client ' +
+      'assertion with: this realm has no certificate authority to issue ' +
+      'one, the issue failed, or the key could not be written onto the ' +
+      'surface\'s application entry. The surface cannot authenticate at the ' +
+      'token endpoint, so the sign-in or renewal stops (#138).',
+    spec: 'RFC 7523 section 2.2; OIDC Core section 9' },
+  { code: 'STS-AUTHN-0208',
+    summary: 'A hosted surface\'s key was being issued by another process, ' +
+      'and neither the key nor an answer from the claim store arrived in ' +
+      'time; the sign-in or renewal stops rather than issuing a second key ' +
+      '(#138).',
+    spec: 'none — a refusal of this service\'s own' },
+  { code: 'STS-AUTHN-0209',
+    summary: 'A hosted surface\'s application entry declares a token ' +
+      'endpoint authentication method the surface does not implement. It ' +
+      'implements private_key_jwt, and client_secret_basic or ' +
+      'client_secret_post for an entry an operator set so (#138).',
+    spec: 'RFC 7591 section 2' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -5953,6 +5975,35 @@ const CODES = [
       'section 2), so a sign-out does not frame it.',
     spec: 'none — the client is listed on the sign-out page as not ' +
       'notified, with the reason' },
+  { code: 'STS-OAUTH-0573',
+    summary: 'Under a FAPI profile, an authorization request carried no ' +
+      'code_challenge with code_challenge_method S256 (FAPI 1.0 Part 1 ' +
+      'section 5.2.2 item 7).',
+    spec: 'redirect or HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0574',
+    summary: 'Under a FAPI profile, an authorization request carried no ' +
+      'redirect_uri, or one that is not https (FAPI 1.0 Part 1 section ' +
+      '5.2.2 items 9 and 20).',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0575',
+    summary: 'Under a FAPI profile, an authorization request asked for ' +
+      'openid without a nonce (FAPI 1.0 Part 1 section 5.2.2.2).',
+    spec: 'redirect: error=invalid_request' },
+  { code: 'STS-OAUTH-0576',
+    summary: 'Under a FAPI profile, an authorization request without openid ' +
+      'carried no state (FAPI 1.0 Part 1 section 5.2.2.3).',
+    spec: 'redirect: error=invalid_request' },
+  { code: 'STS-OAUTH-0580',
+    summary: 'Under a FAPI profile, a confidential client authenticated with ' +
+      'client_secret_basic or client_secret_post (FAPI 1.0 Part 1 section ' +
+      '5.2.2 item 4).',
+    spec: 'HTTP 401 {error: invalid_client}' },
+  { code: 'STS-OAUTH-0581',
+    summary: 'Under a FAPI profile, a token or PAR request identified its ' +
+      'client in two different ways — the Basic header, the body\'s ' +
+      'client_id, a client assertion\'s sub (FAPI 1.0 Part 1 section 5.2.2 ' +
+      'item 19).',
+    spec: 'HTTP 401 {error: invalid_client}' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -11800,6 +11851,11 @@ const CODES = [
       'account-disabled\'s two (hijacking, bulk-account; RISC 1.0 ' +
       'section 2.2).',
     spec: 'HTTP 400' },
+  { code: 'STS-ADMIN-0795',
+    summary: 'A named authorization server\'s fapi member was set to a ' +
+      'value that is not a FAPI profile this service enforces, nor off ' +
+      '(#138).',
+    spec: 'HTTP 400' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -12857,6 +12913,20 @@ const CODES = [
       'to a URI whose scheme, host and port match none of the entry\'s ' +
       'oauthRedirectUri values (Front-Channel Logout 1.0 section 2).',
     spec: 'HTTP 400' },
+  { code: 'STS-REG-0175',
+    summary: 'Under a FAPI profile, a registration declared a ' +
+      'token_endpoint_auth_method FAPI does not allow (FAPI 1.0 Part 1 ' +
+      'section 5.2.2 item 4).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0176',
+    summary: 'Under a FAPI profile, a registration\'s jwks held an RSA key ' +
+      'under 2048 bits or an EC key under 160 (FAPI 1.0 Part 1 section 5.2.2 ' +
+      'items 5 and 6).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0177',
+    summary: 'Under a FAPI profile, a registration named a redirect URI that ' +
+      'is not https (FAPI 1.0 Part 1 section 5.2.2 item 20).',
+    spec: 'HTTP 400 {error: invalid_redirect_uri}' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

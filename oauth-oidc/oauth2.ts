@@ -179,6 +179,9 @@ import bcp = require('./oauth2_bcp');
 // 3ah): it requires helpers.js and config.js, decides, and never touches `res`.
 // Every call below is a no-op while `oauth2.oauth21` is off.
 import oauth21 = require('./oauth21');
+// The FAPI profiles (#138): a leaf like oauth21.js, whose enabled() also
+// turns RFC 9700 mode on.
+import fapi = require('./fapi');
 // THE FIVE SETTINGS THAT ASK FOR MORE THAN EITHER OF THE TWO MODES ABOVE (#34,
 // 2026-09-15): refresh token rotation on its own switch, and DPoP or mutual
 // TLS REQUIRED at the token endpoint and at every resource. A leaf like
@@ -405,6 +408,7 @@ interface OAuth2ServerDeps {
   endSession: typeof authn.endSession;
   bcp: typeof bcp;
   oauth21: typeof oauth21;
+  fapi: typeof fapi;
   senderConstraints: typeof senderConstraints;
   frontchannel: typeof frontchannel;
   backchannel: typeof backchannel;
@@ -1442,6 +1446,7 @@ class OAuth2Server {
       endSession: authn.endSession,
       bcp: bcp,
       oauth21: oauth21,
+      fapi: fapi,
       senderConstraints: senderConstraints,
       frontchannel: frontchannel,
       backchannel: backchannel,
@@ -1577,9 +1582,21 @@ class OAuth2Server {
     const { log, baseUrlOf, authorizationServers, config, assertionGrant,
             samlAssertionGrant, stsCrypto, richAuthorization, clientAuth,
             mtls, introspectionJwt, applications, mode, stepUp, dpop,
-            bcp } = this.deps;
+            bcp, fapi } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.asMetadata(). raw=" + !!raw);
+    // A NAMED SERVER'S OWN FAPI PROFILE (#138). The discovery routes do not
+    // pass through forProfile(), so the document is built inside that
+    // server's profile here, once.
+    const ownFapi = self.fapiOf(self.profileOf(req));
+    if (ownFapi && !(req as Json).__fapiScoped) {
+      (req as Json).__fapiScoped = true;
+      log.debug("Leaving OAuth2Server.asMetadata(). Rebuilt inside the " +
+                "server's FAPI profile.");
+      return fapi.withProfile(ownFapi, function () {
+        return self.asMetadata(req, raw);
+      });
+    }
     const base = baseUrlOf(req);
     // WHERE THIS AUTHORIZATION SERVER'S ENDPOINTS ARE. The default one is at
     // the unprefixed paths and a named one is under its own name, which is the
@@ -1862,6 +1879,9 @@ class OAuth2Server {
     // object exists to prevent — a client configured from openid-configuration
     // being refused for a value oauth-authorization-server never advertised.
     bcp.applyToMetadata(metadata);
+    // FAPI (#138): S256 alone, and the confidential client authentication
+    // methods the profile allows.
+    fapi.applyToMetadata(metadata);
     // The PROFILE, last, so it can override anything above it — including what
     // RFC 9700 mode just narrowed. That order is deliberate and it is the one a
     // reader of the form expects: a profile is somebody saying "publish this",
@@ -1884,6 +1904,32 @@ class OAuth2Server {
   // after the well-known segment and OpenID Connect Discovery section 4 APPENDS
   // the well-known segment to it — so the routes hand it in rather than this
   // function guessing from the URL.
+  // GET /oauth2/fapi and /{id}/oauth2/fapi (#138): fapi.js's report, and
+  // which authorization server it is about.
+  fapiReport(req: Req, res: Res): void {
+    const { log, fapi } = this.deps;
+    log.debug("Entering OAuth2Server.fapiReport().");
+    const view = Object.assign({ authorization_server: this.profileOf(req),
+                                 server_setting: this.fapiOf(
+                                   this.profileOf(req)) || null },
+                               fapi.state());
+    res.status(200).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify(view, null, 2));
+    log.debug("Leaving OAuth2Server.fapiReport(). " +
+              (view.profile || 'no profile'));
+  }
+
+  // A named authorization server's own FAPI profile (#138): the `fapi` member
+  // of its profile, which is published in no document. '' when it has none,
+  // and `none` when it opts out of its realm's.
+  fapiOf(profileId: string): string {
+    const { log, authorizationServers } = this.deps;
+    log.debug("Entering OAuth2Server.fapiOf().");
+    const own = authorizationServers.capabilitiesOf(profileId, {}, 'server');
+    log.debug("Leaving OAuth2Server.fapiOf().");
+    return String((own && own.fapi) || '');
+  }
+
   private profileOf(req: Req): string {
     const { log, authorizationServers } = this.deps;
     log.debug("Entering OAuth2Server.profileOf().");
@@ -1907,7 +1953,7 @@ class OAuth2Server {
   private forProfile(handler: (req: Req, res: Res) => unknown):
       (req: Req, res: Res) => unknown {
     const { log, authorizationServers, validation,
-            errorCodes } = this.deps;
+            errorCodes, fapi } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.forProfile().");
     log.debug("Leaving OAuth2Server.forProfile().");
@@ -1932,6 +1978,15 @@ class OAuth2Server {
       log.debug("This request is for the " + req.__asProfile +
                 " authorization " +
           "server.");
+      // ITS OWN FAPI PROFILE, ambient for the whole handler (#138), so RFC
+      // 9700 mode and everything else that asks fapi.enabled() sees it.
+      const ownFapi = self.fapiOf(req.__asProfile);
+      if (ownFapi) {
+        (req as Json).__fapiScoped = true;
+        return fapi.withProfile(ownFapi, function () {
+          return handler(req, res);
+        });
+      }
       return handler(req, res);
     };
   }
@@ -2965,6 +3020,11 @@ class OAuth2Server {
     // certificate off.
     if (opts.request) payload.cnf = mtls.confirmationFor(opts.request,
                                                          payload.cnf);
+    // FAPI 1.0 Part 1 section 5.2.2 item 21 (#138): under ten minutes unless
+    // the token is sender-constrained — which the cnf just decided.
+    payload.exp = payload.iat +
+      this.deps.fapi.accessTokenLifetime(payload.exp - payload.iat,
+                                         !!payload.cnf);
     // OID4VCI section 6.2: when the authorization was expressed as
     // authorization_details, the token response grants credential_identifiers
     // and the Credential Request must use one of them. They ride in the access
@@ -3701,7 +3761,10 @@ class OAuth2Server {
       // — a bound token announced as Bearer would be presented as one and
       // refused.
       token_type: opts.jkt ? 'DPoP' : 'Bearer',
-      expires_in: self.accessTokenTtl(opts.client_id),
+      // The token's own lifetime, FAPI's cap included (#138): the binding
+      // test is the one noteTokenBinding() above uses.
+      expires_in: fapi.accessTokenLifetime(self.accessTokenTtl(opts.client_id),
+        !!(opts.jkt || (opts.request && mtls.presentedThumbprint(opts.request)))),
       // RFC 6749 section 5.1: `scope` describes the ACCESS TOKEN that was
       // issued, and this one no longer carries the value that became its
       // audience. It is therefore not identical to what was requested, which is
@@ -5991,8 +6054,8 @@ class OAuth2Server {
   // ok: false, redirect: true, error, description, code, q, redirectUri }`.
   // ---------------------------------------------------------------------------
   private vetAuthorizationRequest(req: Req, options?: Json): Json {
-    const { log, STS, mode, bcp, oauth21, applications, validation, stepUp,
-            hasScope } = this.deps;
+    const { log, STS, mode, bcp, oauth21, fapi, applications, validation,
+            stepUp, hasScope } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.vetAuthorizationRequest().");
     const opts = options || {};
@@ -6423,6 +6486,20 @@ class OAuth2Server {
                 "authorization request (" + requestCheck.requirement + ").");
       return redirectable(requestCheck.errorCode || 'STS-OAUTH-0158',
                           requestCheck.error, requestCheck.description);
+    }
+    // FAPI (#138): what a FAPI profile asks beyond RFC 9700 mode — PKCE S256
+    // of every client, nonce with openid, state without it, and a redirect_uri
+    // that was SENT and is https. The last is answered here as a 400 rather
+    // than at the address it concerns.
+    const fapiCheck = fapi.authorizationRefusal(q);
+    if (fapiCheck) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). FAPI " +
+                "refused the authorization request (" + fapiCheck.requirement +
+                ").");
+      return fapiCheck.requirement === 'redirect-uri'
+        ? refuse(fapiCheck.errorCode, fapiCheck.error, fapiCheck.description)
+        : redirectable(fapiCheck.errorCode, fapiCheck.error,
+                       fapiCheck.description);
     }
     log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). Vetted.");
     return { ok: true, q: q, types: types, registeredClient: registeredClient,
@@ -8419,6 +8496,51 @@ class OAuth2Server {
   // preferring a Basic header, and so cannot say that a request carried two.
   // OAuth 2.1 section 2.4 refuses that, and the secret rate limit below counts
   // only requests that carried a secret.
+  // EVERY CLIENT IDENTIFIER ONE REQUEST CARRIES (#138, FAPI 1.0 Part 1 section
+  // 5.2.2 item 19): the Basic header's user, the body's client_id, and a JWT
+  // client assertion's sub. clientFrom() takes the first it finds and ignores
+  // the rest, which is right until a profile says two that disagree must be
+  // refused.
+  private presentedClientIds(req: Req, body: Json): string[] {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.presentedClientIds().");
+    const out: string[] = [];
+    const auth = String(req.headers['authorization'] || '');
+    if (/^Basic\s+/i.test(auth)) {
+      try {
+        const decoded = Buffer.from(auth.replace(/^Basic\s+/i, ''), 'base64')
+          .toString('utf8');
+        const at = decoded.indexOf(':');
+        out.push(decodeURIComponent(at < 0 ? decoded : decoded.slice(0, at)));
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.presentedClientIds(): " +
+                  ((e && e.message) || e));
+        // An unreadable header names nothing here; clientFrom() reports it.
+      }
+    }
+    if (body && body.client_id) {
+      out.push(String(body.client_id));
+    }
+    if (body && body.client_assertion &&
+        String(body.client_assertion).split('.').length === 3) {
+      try {
+        const claims = JSON.parse(Buffer.from(
+          String(body.client_assertion).split('.')[1], 'base64url')
+          .toString('utf8'));
+        if (claims && claims.sub) {
+          out.push(String(claims.sub));
+        }
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.presentedClientIds(): " +
+                  ((e && e.message) || e));
+        // Not a JWT this can read; the assertion's own check refuses it.
+      }
+    }
+    log.debug("Leaving OAuth2Server.presentedClientIds(). " + out.length +
+              ".");
+    return out;
+  }
+
   private presentedClientAuthentication(req: Req, body: Json): Json {
     const { log, clientAuth } = this.deps;
     log.debug("Entering OAuth2Server.presentedClientAuthentication().");
@@ -8552,7 +8674,8 @@ class OAuth2Server {
             parseBody, bodyValues, userFor, dpop, mtls, assertionGrant,
             samlAssertionGrant, mode, authorizationServers, stats, VCI_SCOPE,
             deferredAccessTokens, preAuthorizedCodes, checkTxCode,
-            spendPreAuthorizedCode, config, bcp, oauth21, senderConstraints,
+            spendPreAuthorizedCode, config, bcp, oauth21, fapi,
+            senderConstraints,
             applications, validation, errorCodes, refreshTokenCrypto,
             richAuthorization, delegation, credentials, websecurity,
             clusterClaims, hasScope, authn } = this.deps;
@@ -8577,6 +8700,20 @@ class OAuth2Server {
     res.set('Cache-Control', 'no-store');
     const presented = self.presentedClientAuthentication(req, body);
     const registeredClient = applications.clientConfigOf(client.client_id);
+
+    // FAPI (#138): one client, however many ways the request names it.
+    const identified = fapi.clientIdentifierRefusal(
+      self.presentedClientIds(req, body));
+    if (identified) {
+      if (presented.basic) {
+        res.set('WWW-Authenticate', self.basicChallenge());
+      }
+      log.debug("Leaving the token endpoint. FAPI: two clients named.");
+      errorCodes.mark(res, identified.errorCode || 'STS-OAUTH-0581');
+      log.debug("Leaving OAuth2Server.tokenGrant().");
+      return self.oauthError(res, 401, identified.error,
+                             identified.description);
+    }
 
     // OAUTH 2.1 — two refusals about the SHAPE of the request, before anything
     // in it is believed: a repeated parameter (sections 3.1 and 3.2) and more
@@ -9067,6 +9204,21 @@ class OAuth2Server {
                   "the limit.");
         return self.secretLockout(res, client.client_id, racedOut);
       }
+    }
+
+    // FAPI (#138): a confidential client authenticates with mTLS,
+    // private_key_jwt or client_secret_jwt, never a plain secret.
+    const fapiAuth = fapi.clientAuthenticationRefusal(
+      clientObservation.method);
+    if (fapiAuth) {
+      if (presented.basic) {
+        res.set('WWW-Authenticate', self.basicChallenge());
+      }
+      log.debug("Leaving the token endpoint. FAPI refused the client's " +
+                "authentication method.");
+      errorCodes.mark(res, fapiAuth.errorCode || 'STS-OAUTH-0580');
+      log.debug("Leaving OAuth2Server.tokenGrant().");
+      return self.oauthError(res, 401, fapiAuth.error, fapiAuth.description);
     }
 
     // OAUTH 2.1 — WHAT THE CLIENT PRESENTED. A credential that was included
@@ -11291,7 +11443,7 @@ class OAuth2Server {
 
   private async parRequest(req: Req, res: Res): Promise<Json> {
     const { realms, jwt, log, STS, parseBody, bodyValues,
-            hasScope, dpop, mtls, mode, config, bcp, oauth21,
+            hasScope, dpop, mtls, mode, config, bcp, oauth21, fapi,
             applications, validation, errorCodes, requestObject,
             par, oauthMonitor, websecurity } = this.deps;
     const self = this;
@@ -11380,6 +11532,18 @@ class OAuth2Server {
         'STS-OAUTH-0405');
     }
     const registered = applications.clientConfigOf(clientId);
+
+    // FAPI (#138): one client, however many ways the request names it.
+    const identified = fapi.clientIdentifierRefusal(
+      self.presentedClientIds(req, body));
+    if (identified) {
+      log.debug("Leaving OAuth2Server.parRequest(). FAPI: two clients " +
+                "named.");
+      return refuse(401, identified.error, identified.description,
+                    identified.errorCode,
+                    presented.basic ?
+                      { 'WWW-Authenticate': self.basicChallenge() } : null);
+    }
 
     // OAuth 2.1's two refusals about the SHAPE, as at the token endpoint.
     const repeatedInBody = oauth21.repeatedNames(null, raw);
@@ -11537,6 +11701,16 @@ class OAuth2Server {
                       { 'WWW-Authenticate': self.basicChallenge() } : null);
     }
     const observation = await bcp.observeClientAuthentication(authentication);
+    // FAPI (#138): the confidential client authentication methods it allows.
+    const fapiAuth = fapi.clientAuthenticationRefusal(observation.method);
+    if (fapiAuth) {
+      log.debug("Leaving OAuth2Server.parRequest(). FAPI refused the " +
+                "client's authentication method.");
+      return refuse(401, fapiAuth.error, fapiAuth.description,
+                    fapiAuth.errorCode,
+                    presented.basic ?
+                      { 'WWW-Authenticate': self.basicChallenge() } : null);
+    }
     if (observation.authenticated) {
       const racedOut = await self.settleSecretSuccess(req, clientId, presented,
                                                  registered);
@@ -12858,6 +13032,11 @@ class OAuth2Server {
                 oauth21.enabled());
     });
 
+    // THE FAPI PROFILE IN FORCE (#138), for the realm here and for a named
+    // authorization server at /{id}/oauth2/fapi (in the table below, so it is
+    // answered inside that server's own profile).
+    app.get('/oauth2/fapi', self.fapiReport.bind(self));
+
     app.get('/oauth2/rfc9700', function (req, res) {
       log.debug("Entering the RFC 9700 mode report.");
       res.status(200).type('application/json').set('Cache-Control', 'no-store')
@@ -13040,7 +13219,8 @@ class OAuth2Server {
       ['post', '/:as/oauth2/introspect', self.introspectEndpoint.bind(self)],
       ['post', '/:as/oauth2/revoke', self.revokeEndpoint.bind(self)],
       ['post', '/:as/oauth2/register', self.registerEndpoint.bind(self)],
-      ['get', '/:as/oauth2/jwks', self.jwksEndpoint.bind(self)]
+      ['get', '/:as/oauth2/jwks', self.jwksEndpoint.bind(self)],
+      ['get', '/:as/oauth2/fapi', self.fapiReport.bind(self)]
     ].forEach(function (route) {
       app[route[0]](route[1], self.forProfile(route[2]));
     });

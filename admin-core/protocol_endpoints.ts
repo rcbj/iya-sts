@@ -191,6 +191,7 @@ class ProtocolEndpoints {
       this.perServer('/:as/oauth2/revoke'),
       this.perServer('/:as/oauth2/register'),
       this.perServer('/:as/oauth2/logout'),
+      this.perServer('/:as/oauth2/fapi'),
       this.perServer('/:as/oauth2/jwks')
     ];
     log.debug("Leaving ProtocolEndpoints.buildPages().");
@@ -203,6 +204,7 @@ class ProtocolEndpoints {
         '/oauth2/revoke', '/oauth2/register', '/oauth2/register/:client_id',
         '/oauth2/logout', '/oauth2/consent', '/oauth2/rfc9700',
         '/oauth2/oauth21',
+        '/oauth2/fapi',
         '/dpop/nonce-mode'
       ].map(route),
       '/admin/authorization-servers': namedServerRoutes,

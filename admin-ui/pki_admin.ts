@@ -434,18 +434,9 @@ class PkiAdmin {
         valuesOf: function (record) {
           log.debug("Entering valuesOf().");
           log.debug("Leaving valuesOf().");
-          return [
-            ['oauthAssertionJwks', JSON.stringify(record.jwks)],
-            ['oauthAssertionCertificate', record.certificatePem],
-            ['oauthAssertionCertificateChain', record.chainPem.join('')],
-            ['oauthAssertionPrivateKey', record.privateKeyPem],
-            ['oauthAssertionKid', record.kid],
-            ['oauthAssertionExpiresAt',
-             self.generalizedTime(new Date(record.notAfter))],
-            // `issued` for a key pair generated here; an upload's record says
-            // which kind of upload it was. See KEY_SOURCES in applications.js.
-            ['oauthAssertionKeySource', record.source || 'issued']
-          ];
+          // ONE LIST, in applications.js (#138), which this service's own
+          // surfaces write their private_key_jwt keys through as well.
+          return applications.issuedJwtKeyPairValues(record);
         }
       },
       saml: {

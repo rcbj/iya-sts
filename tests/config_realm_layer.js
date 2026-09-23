@@ -202,6 +202,8 @@ function checkMarker(t) {
     // OAuth 2.1 mode (2026-09-13). It implies RFC 9700 mode and moves the
     // socket for the same one reason, argued at its row in config.js.
     'oauth2.oauth21',
+    // #138: the FAPI profile switch, argued beside its row.
+    'oauth2.fapi',
     'spiffe.trustDomain',
     'spiffe.x509KeyType',
     'spiffe.jwtKeyType',

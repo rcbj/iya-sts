@@ -259,6 +259,7 @@ var config = {
     issuer: "",                                  // Issuer identifier
     rfc9700: false,                              // RFC 9700 mode; restart to apply
     oauth21: false,                              // OAuth 2.1 mode; restart to apply
+    fapi: "off",                                 // FAPI profile; restart to apply
     consentRequired: true,                       // Ask for consent
     delegatedPermissionsEnforced: false,         // Enforce delegated permissions
     tokenExchangeRefreshToken: "when-requested", // Refresh token from a token exchange

@@ -1985,8 +1985,9 @@ build the development-mode second realm at startup.
 **MOVED FROM THE ROOT `CLAUDE.md`'s TRUST-REALM INDEX, AND IT DISAGREES WITH THE
 FIRST-ROW PARAGRAPHS ABOVE** — a realm may be in RFC 9700 mode while the process
 is not: the `realmRuntime` marker, which had one row until 2026-09-12, TWELVE
-from 2026-09-13 and **TWENTY-TWO since 2026-09-15**, and must not get a
-twenty-third by analogy: `oauth2.rfc9700`, `oauth2.oauth21`, the ten SPIFFE rows
+from 2026-09-13, TWENTY-TWO from 2026-09-15 and **TWENTY-THREE since
+2026-09-22**, and must not get a twenty-fourth by analogy: `oauth2.rfc9700`,
+`oauth2.oauth21`, `oauth2.fapi` (#138), the ten SPIFFE rows
 a realm's own listeners and authorities are built from, and
 the ten Kerberos rows a realm's own principal database is built from — each
 group's argument made at the head of its own group in `config.js` rather than
@@ -1999,7 +2000,12 @@ consumed at startup, since `oauth-oidc/oauth21.js` reads it per request. It is i
 `tests/config_realm_layer.js`'s list, whose generic check that a realmRuntime row
 moves no derived row holds for it for that reason. A realm binds no socket, so the reason `oauth2.rfc9700`
 is restart-only service-wide does not reach it; what a realm does NOT get is a
-scheme of its own.
+scheme of its own. **`oauth2.fapi` (#138, 2026-09-22) made it a third time**:
+every FAPI profile turns RFC 9700 mode on and requires TLS, so `global.https`
+reads it through `processValue()` too, and `oauth-oidc/fapi.js` reads it per
+request (and a named authorization server's own value from the request's
+ambient context). It is an enum, `off` by default, because #139–#141 add
+profiles to the same switch.
 
 **A ROW MAY NARROW ITS TYPE, and only the `int` type can so far.** `min`, `max`
 and `step` are OPTIONAL members of a row that `TYPES.int.check()` applies; a row

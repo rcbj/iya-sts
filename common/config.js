@@ -633,8 +633,11 @@ const SETTINGS = [
     dflt: function () {
       log.debug("Entering dflt().");
       log.debug("Leaving dflt().");
+      // A FAPI profile (#138) implies RFC 9700 mode too, and FAPI requires
+      // TLS of its own accord.
+      const fapiProfile = String(processValue('oauth2.fapi') || 'off');
       return !!(processValue('oauth2.rfc9700') ||
-                processValue('oauth2.oauth21'));
+                processValue('oauth2.oauth21') || fapiProfile !== 'off');
     },
     runtime: false,
     restartReason: 'the listener is bound when the process starts, and its ' +
@@ -3033,6 +3036,43 @@ const SETTINGS = [
                  'may omit redirect_uri, and an authorization request may ' +
                  'omit it when the client registered one. OFF by default. ' +
                  'GET /oauth2/oauth21 lists every requirement.' },
+
+  // ---------------------------------------------------------------------
+  // THE FAPI PROFILES (#138, 2026-09-22), AND EVERY ONE IMPLIES RFC 9700 MODE.
+  //
+  // `realmRuntime` ON A THIRD OAUTH ROW, AND THE ARGUMENT IS MADE AGAIN
+  // rather than borrowed from the two above. The marker's test is that the
+  // restart reason must be something a realm demonstrably does not have. This
+  // row's ONLY consequence before the service is listening is `global.https`'s
+  // default, which derives from it as from the other two (FAPI implies RFC
+  // 9700 mode, and requires TLS itself), so turning it on for the PROCESS
+  // binds the main port as HTTPS. Nothing else is consumed at startup:
+  // `oauth-oidc/fapi.js`'s `profile()` reads the setting per request through
+  // the realm layer (and a named authorization server's own value from the
+  // request's ambient context), and no material is built from it. A realm
+  // binds no socket, so the reason does not reach it. It is an ENUM rather
+  // than a flag because #139-#141 add three more profiles to the same switch.
+  { key: 'oauth2.fapi', group: 'OAuth 2.0 / OIDC', label: 'FAPI profile',
+    env: 'STS_OAUTH2_FAPI', type: 'enum', enumValues: ['off', '1-baseline'],
+    dflt: 'off', runtime: false, realmRuntime: true,
+    restartReason: 'a profile turns RFC 9700 mode on, which decides whether ' +
+                   'the main port is bound as HTTPS (global.https), and a ' +
+                   'listener is bound when the process starts. A REALM may ' +
+                   'carry it even so — a realm binds no socket, so only the ' +
+                   'profile\'s checks change',
+    description: 'Enforce a FAPI security profile. 1-baseline is FAPI 1.0 ' +
+                 'Part 1 (final): RFC 9700 mode on, and beyond it PKCE S256 ' +
+                 'for every client, redirect_uri sent and https, nonce with ' +
+                 'openid and state without it, confidential clients ' +
+                 'authenticating with mTLS, private_key_jwt or ' +
+                 'client_secret_jwt only, registered keys of RSA 2048 / EC ' +
+                 '160 bits or more, one client named per request, the ' +
+                 'user\'s own consent (an administrator\'s global consent ' +
+                 'does not count), and access tokens under ten minutes unless ' +
+                 'sender-constrained. A named authorization server may carry ' +
+                 'its own value (the fapi member on ' +
+                 '/admin/authorization-servers). OFF by default. GET ' +
+                 '/oauth2/fapi lists every requirement.' },
 
   // ---------------------------------------------------------------------------
   // A POLICY THAT DEFAULTS TO ON, AND THE ARGUMENT IS NOT THE USUAL ONE.
