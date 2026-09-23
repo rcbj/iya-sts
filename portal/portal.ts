@@ -486,7 +486,14 @@ const NAV = [
       // each application ask for — with the one control that belongs there,
       // taking it back. Drawn by `portal_consents.ts`.
       { path: BASE + '/consents', label: 'Consents',
-        heading: 'What you have agreed applications may do' }
+        heading: 'What you have agreed applications may do' },
+      // EMAIL (#63, 2026-09-22): the address this service writes to, whether
+      // it is verified, which messages may be declined, and what was sent.
+      // Under *Your account* for Security activity's reason — it is what this
+      // service SAYS to the person, not a credential. Drawn by
+      // `portal_mail.ts`.
+      { path: BASE + '/email', label: 'Email',
+        heading: 'Your email address and messages' }
     ] },
   { title: 'How you sign in',
     what: 'The credentials on your own entry, one page each.',
@@ -706,8 +713,9 @@ const LINK_SPENT = Symbol('portal.linkSpent');
 // ---------------------------------------------------------------------------
 const RESET_REFUSAL =
   'This password reset link is not valid. It may have expired, it may ' +
-  'already have been used, or it may never have been issued. Ask whoever ' +
-  'manages your account for a new one.';
+  'already have been used, or it may never have been issued. Ask for a new ' +
+  'one on the "Forgot your password?" page where it is offered, or ask ' +
+  'whoever manages your account.';
 
 const RESET_QUERY = vz.object({
   user: vt.opt(vt.name),
@@ -1714,6 +1722,17 @@ class Portal {
       '<p><a href="' + self.esc(next) + '">Sign in</a></p></div>'));
   }
 
+  // A PAGE WITH NO NAVIGATION COLUMN, for the pages nobody is signed in to —
+  // the forgot-password form and the address verification link
+  // (`portal_mail.ts`, #63), beside the reset and activation pages that use
+  // `page()` directly.
+  bare(title, inner) {
+    const { log } = this.deps;
+    log.debug("Entering Portal.bare().");
+    log.debug("Leaving Portal.bare().");
+    return this.page(title, inner);
+  }
+
   private resetPasswordForm(base, username, token, error) {
     const self = this;
     const { log } = this.deps;
@@ -1724,9 +1743,8 @@ class Portal {
       '<h1>Choose a new password</h1>' +
       '<p class="sub">You are choosing the password <strong>' +
       self.esc(username) +
-      '</strong> signs in to <code>' + self.esc(base) + '</code> with. Your ' +
-
-      'old password no longer works.</p>' +
+      '</strong> signs in to <code>' + self.esc(base) + '</code> with. ' +
+      'Once it is set, no password you had before works.</p>' +
       (error ? '<div class="err">' + self.esc(error) + '</div>' : '') +
       '<form method="post" action="' + RESET_PASSWORD + '">' +
       // THE TOKEN RIDES IN THE FORM, for the activation form's reason: nobody
@@ -4181,7 +4199,9 @@ class Portal {
       // the router against its own descriptions, and a route registered and
       // undescribed fails the suite.
       .concat([ACTIVATE, BASE + '/callback', BASE + '/remove-key',
-               BASE + '/signout', BASE + '/signals/receive']);
+               BASE + '/signout', BASE + '/signals/receive',
+               // The mail channel's two pages nobody is signed in to (#63).
+               BASE + '/forgot-password', BASE + '/verify-email']);
   }
 
   registerRoutes(app: typeof import('../common/app')): void {
@@ -6159,6 +6179,9 @@ const portalSignIns = require('./portal_sign_ins');
 const portalConsents = require('./portal_consents');
 // /portal/delegate (#108), the same arrangement, registered after that.
 const portalDelegate = require('./portal_delegate');
+// /portal/email, /portal/verify-email and /portal/forgot-password (#63),
+// the same arrangement, registered after that.
+const portalMail = require('./portal_mail');
 // /portal/self-issued (#129), the same arrangement, registered after that.
 const portalSelfIssued = require('./portal_self_issued');
 
@@ -6238,6 +6261,20 @@ export = {
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
       send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalMail.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      bare: slot.forward('bare'),
       requireSignIn: slot.forward('requireSignIn'),
       refuseShape: slot.forward('refuseShape'),
       innerCode: slot.forward('innerCode'),

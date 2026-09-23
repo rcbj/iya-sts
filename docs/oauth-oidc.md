@@ -771,7 +771,7 @@ on [What is not checked](what-is-not-checked.md).
 | Expired client secret | accepted and logged | refused `invalid_client` |
 | Scopes | any; this service's protected scopes only to a client declaring them | only those the client declares, or the default set; `invalid_scope` otherwise |
 | Ungranted delegated permission | honoured unless `oauth2.delegatedPermissionsEnforced` | refused `invalid_scope` |
-| Profile claims | an invented persona fills gaps | from the directory entry or omitted; `email_verified` is never set |
+| Profile claims | an invented persona fills gaps | from the directory entry or omitted; `email_verified` is `true` only for an address the person verified ([mail](mail.md)), else `false` |
 | Signing keys | new on every start | persisted, sealed, and rotated with an overlap |
 | `/logout?username=` | honoured (`logout.anyUser`) | ignored |
 

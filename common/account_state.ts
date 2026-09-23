@@ -226,6 +226,22 @@ class AccountState {
              message: String((result && result.message) || '') };
   }
 
+  // THE PERSON IS TOLD BY MAIL (#63): `common/mail_uses.ts`'s security
+  // notice, which they cannot decline. `bySystem` — risk scoring disabled
+  // them, not an administrator — tells the realm's administrators too.
+  // Lazily required, and never allowed to throw into the disable.
+  private mailNotice(name: string, why: string, bySystem: boolean): void {
+    const { log } = this.deps;
+    log.debug("Entering AccountState.mailNotice().");
+    try {
+      require('./mail_uses').accountDisabled(name, why, bySystem);
+    } catch (e) {
+      log.debug("Caught in AccountState.mailNotice(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving AccountState.mailNotice().");
+  }
+
   // -------------------------------------------------------------------------
   // DISABLE OR ENABLE — the administrator's act, from `/admin/users` and
   // `POST /admin-api/users/{disable|enable}`. `opts`: `actor`, `via`
@@ -297,6 +313,9 @@ class AccountState {
     });
     log.info('account state: ' + name + ' was ' +
              (disabled ? 'DISABLED' : 'enabled') + ' from ' + door + '.');
+    if (disabled) {
+      this.mailNotice(name, String(o.reason || ''), !!o.door);
+    }
     log.debug("Leaving AccountState.setDisabled(). Changed.");
     return {
       ok: true, username: name, disabled: !!disabled, changed: true,
@@ -338,6 +357,9 @@ class AccountState {
     const realm = realms.get(String(c.realm || '')) || realms.current();
     later(function (): void {
       realms.run(realm, function (): void {
+        if (c.disabled) {
+          self.mailNotice(name, '', false);
+        }
         const ended = c.disabled
           ? self.endEverything(name, {
               channel: 'internal',

@@ -275,6 +275,16 @@ const SUBSYSTEMS = [
     what: 'The external datasets a risk score reads — their import, ' +
           'verification, activation, rollback and retention — and the ' +
           'attributable failure history (#62).' },
+  { id: 'MAIL', label: 'Mail',
+    where: 'common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, ' +
+           'common/mail_templates.ts, admin-ui/mail_admin.ts, ' +
+           'portal/portal_mail.ts',
+    what: 'The one outbound mail channel (#63): the outbox and its delivery ' +
+          'job, the five transports (capture, SMTP, Amazon SES, Azure ' +
+          'Communication Services, the Gmail API), the templates, the rate ' +
+          'ceilings, and the uses — self-service password reset, address ' +
+          'verification, an administrator\'s links mailed, and the security ' +
+          'notices. No code here is ever sent to a recipient.' },
   { id: 'GNAP', label: 'GNAP (RFC 9635 / RFC 9767)',
     where: 'gnap/',
     what: 'The grant request and continuation endpoints; interaction ' +
@@ -10865,6 +10875,152 @@ const CODES = [
       'server did not answer 200, or the BLOB is larger than ' +
       'risk.mdsMaxBytes (#105). The active BLOB stays in force.',
     spec: 'FIDO Metadata Service section 3.2' },
+  // ===== MAIL ==============================================================
+  { code: 'STS-MAIL-0001',
+    summary: 'A message was not queued because no mail transport is ' +
+      'configured in the realm (mail.transport is off, or default in ' +
+      'product mode).',
+    spec: '' },
+  { code: 'STS-MAIL-0002',
+    summary: 'Product mode: a configured mail transport cannot be built, ' +
+      'and the service does not start.',
+    spec: 'the service does not start' },
+  { code: 'STS-MAIL-0003',
+    summary: 'The capture mail transport was asked for in product mode, ' +
+      'where a captured message would put its body on the console; refused ' +
+      'on write and at start.',
+    spec: 'HTTP 400 on a settings write; the service does not start' },
+  { code: 'STS-MAIL-0004',
+    summary: 'A mail transport could not be built (a missing host, an ' +
+      'unreadable file, a half-configured option); the attempt is retried ' +
+      'and then dead-lettered.',
+    spec: '' },
+  { code: 'STS-MAIL-0005',
+    summary: 'A cloud mail transport needs its SDK (an optional peer) and ' +
+      'it is not installed.',
+    spec: '' },
+  { code: 'STS-MAIL-0006',
+    summary: 'A mail secret (the SMTP password, the DKIM key, the Azure ' +
+      'connection string or the Gmail key) could not be read from its ' +
+      'store.',
+    spec: '' },
+  { code: 'STS-MAIL-0007',
+    summary: 'A mail secret was read and is empty.',
+    spec: '' },
+  { code: 'STS-MAIL-0008',
+    summary: 'The relay or provider refused the message permanently (an ' +
+      'SMTP 5xx, a rejected sender or recipient, a failed Azure operation); ' +
+      'it is a dead letter.',
+    spec: '' },
+  { code: 'STS-MAIL-0009',
+    summary: 'A message could not be handed over this time (a timeout, a ' +
+      'lost connection, an SMTP 4xx, throttling or a 5xx); it is retried ' +
+      'with backoff.',
+    spec: '' },
+  { code: 'STS-MAIL-0010',
+    summary: 'A message was not queued because its recipient reached a rate ' +
+      'ceiling (mail.ratePerRecipient or mail.ratePerCategory in ' +
+      'mail.rateWindowS).',
+    spec: '' },
+  { code: 'STS-MAIL-0011',
+    summary: 'A message was not queued because the recipient\'s entry has ' +
+      'no mail address (or, for a self-service reset, no verified one).',
+    spec: '' },
+  { code: 'STS-MAIL-0012',
+    summary: 'A message was not queued because there is no entry for the ' +
+      'recipient in the realm.',
+    spec: '' },
+  { code: 'STS-MAIL-0013',
+    summary: 'A message was not queued because the recipient declined its ' +
+      '(optional) category.',
+    spec: '' },
+  { code: 'STS-MAIL-0014',
+    summary: 'TLS with the mail relay failed (its certificate did not ' +
+      'verify, or the upgrade was refused) and nothing is sent in the ' +
+      'clear.',
+    spec: '' },
+  { code: 'STS-MAIL-0015',
+    summary: 'A message carrying a link was not queued: ' +
+      'global.publicBaseUrl is empty and product mode never builds a mailed ' +
+      'link from a request.',
+    spec: '' },
+  { code: 'STS-MAIL-0016',
+    summary: 'A realm\'s message template was refused when saved: an ' +
+      'address of its own, remote content, script, an unknown placeholder ' +
+      'or a missing link.',
+    spec: 'HTTP 400' },
+  { code: 'STS-MAIL-0017',
+    summary: 'A message template was named that does not exist, or a ' +
+      'template to reset has no realm wording.',
+    spec: 'HTTP 400' },
+  { code: 'STS-MAIL-0018',
+    summary: 'A mail retry was refused: the message is unknown, not a dead ' +
+      'letter, kept no body, or its recipient has no usable address now.',
+    spec: 'HTTP 400' },
+  { code: 'STS-MAIL-0019',
+    summary: 'A message still pending mail.retentionS after it was queued ' +
+      'was dead-lettered.',
+    spec: '' },
+  { code: 'STS-MAIL-0020',
+    summary: 'A delivery attempt was deferred because the claim store could ' +
+      'not be reached; the next sweep tries again.',
+    spec: '' },
+  { code: 'STS-MAIL-0021',
+    summary: 'The mail relay refused this service\'s SMTP login.',
+    spec: '' },
+  { code: 'STS-MAIL-0022',
+    summary: 'DKIM signing is configured and cannot be done (no key, no ' +
+      'selector, or a key that cannot sign).',
+    spec: '' },
+  { code: 'STS-MAIL-0023',
+    summary: 'A message was not queued because an address (the recipient\'s ' +
+      'mail attribute or mail.from) is not one plain mailbox.',
+    spec: '' },
+  { code: 'STS-MAIL-0024',
+    summary: 'An address verification link was refused: used, expired, or ' +
+      'sent to an address the entry no longer has.',
+    spec: 'HTTP 400 page on /portal/verify-email' },
+  { code: 'STS-MAIL-0025',
+    summary: 'A console or management API mail action was unknown or ' +
+      'malformed.',
+    spec: 'HTTP 400' },
+  { code: 'STS-MAIL-0026',
+    summary: 'A console session that may read but not write posted a mail ' +
+      'action.',
+    spec: 'HTTP 400' },
+  { code: 'STS-MAIL-0027',
+    summary: 'A test message was asked for by an administrator whose own ' +
+      'entry has no usable mail address.',
+    spec: 'HTTP 400' },
+  { code: 'STS-MAIL-0028',
+    summary: 'The periodic mail summary line counted dead letters or ' +
+      'deferred attempts since the last one.',
+    spec: '' },
+  { code: 'STS-MAIL-0029',
+    summary: 'The mail outbox sweep failed in a realm.',
+    spec: '' },
+  { code: 'STS-MAIL-0030',
+    summary: 'A self-service password reset was asked for and no link was ' +
+      'sent (not offered, the account disabled, or none could be issued); ' +
+      'the form answers exactly as if one was.',
+    spec: '' },
+  { code: 'STS-MAIL-0031',
+    summary: 'A message or security notice could not be queued because of ' +
+      'an unexpected error in the mail channel.',
+    spec: '' },
+  { code: 'STS-MAIL-0032',
+    summary: 'An address verification was asked for where no mail transport ' +
+      'is available.',
+    spec: 'HTTP 400' },
+  { code: 'STS-MAIL-0033',
+    summary: 'A self-service password reset page was asked for where it is ' +
+      'not offered (mail.selfServiceReset off, no transport, or passwords ' +
+      'are not verified).',
+    spec: 'HTTP 404' },
+  { code: 'STS-MAIL-0034',
+    summary: 'A person tried to decline a mail category that cannot be ' +
+      'declined (security notices, requested links).',
+    spec: 'HTTP 400' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

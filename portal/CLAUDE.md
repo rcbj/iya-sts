@@ -1308,3 +1308,32 @@ code, the authenticator step drawn before the link is spent (a 200 that does
 not finish), a dropped connection. So a link behaves exactly as it did on one
 node except that two requests cannot both finish it. A claimed link is the one
 sentence every link failure is, audited under `STS-AUTHN-0183`.
+
+## `portal_mail.ts`: `/portal/email`, `/portal/verify-email` and `/portal/forgot-password` (#63, 2026-09-22)
+
+Three pages over the mail channel (`common/CLAUDE.md`, 3ay), in a file beside
+`portal.ts` that is registered exactly as `portal_app_passwords.ts` is.
+
+- **`/portal/email`** follows this portal's rule: it is signed in, and the
+  identity is the session's. It shows the address on the person's own entry,
+  whether it is verified, a button that mails a verification link to it, the
+  one category of message that may be declined, and what was sent to them —
+  never a body. It is under *Your account* for Security activity's reason: it
+  is what this service SAYS, not a credential.
+- **`/portal/verify-email` and `/portal/forgot-password` are the third and
+  fourth pages nobody is signed in to**, beside `/portal/activate` and
+  `/portal/reset-password`, and they take a username for those pages' reason:
+  nobody is signed in, and what authorises them is the TOKEN, or nothing at
+  all.
+  - The verification GET draws a button and spends nothing, because a mail
+    scanner follows every link.
+  - The forgot-password page answers ONE sentence, before the work is done, so
+    neither the words nor the timing say whether an account exists. It answers
+    404 wherever `mail_uses.resetOffered()` says no.
+  - It carries no CSRF token, because nobody is signed in to forge a request
+    as. A cross-site POST can at most send a person a link they did not ask
+    for. That is bounded by the rate limits and the mail ceiling, and it
+    changes nothing until the link is used.
+- **The reset form's sentence changed with it**: "no password you had before
+  works once it is set" rather than "your old password no longer works",
+  because a self-service link removes nothing until it is used.

@@ -56,7 +56,7 @@ files did not change; the paths did.
 
 | Directory | What is in it |
 |---|---|
-| `common/` | Everything more than one family reads — settings, the express app, **`crypto.js` (the one place this service signs, verifies, encrypts and decrypts)**, trust realms, both worker pools and the shared require order, the registers (applications, delegation, permissions, consent, roles, the issuance gate), the certificate authority (`pki.js`), the second factors, the password policy, the error-code table, `outbound_tls.ts` (whether an outbound request may be plain http, and whether the peer's certificate is verified — #171), and **`mode.js`, the one place `development` and `product` are told apart**. `common/CLAUDE.md`. |
+| `common/` | Everything more than one family reads — settings, the express app, **`crypto.js` (the one place this service signs, verifies, encrypts and decrypts)**, trust realms, both worker pools and the shared require order, the registers (applications, delegation, permissions, consent, roles, the issuance gate), the certificate authority (`pki.js`), the second factors, the password policy, the error-code table, `outbound_tls.ts` (whether an outbound request may be plain http, and whether the peer's certificate is verified — #171), **the mail channel** (`mail.ts` and its transports, templates and uses — #63), and **`mode.js`, the one place `development` and `product` are told apart**. `common/CLAUDE.md`. |
 | `common/vendored/` | Byte-identical copies of the parent project's files — `xmldsig.js`, the PKI and post-quantum encoders — plus the JSON-LD `contexts/`. **Do not edit them here.** `common/vendored/CLAUDE.md`. |
 | `home/` | The front door: `GET /` and the one image on it. `home/CLAUDE.md`. |
 | `logout/` | The protocol-independent sign-out at `GET|POST /logout`, and the one model of what a live session is, per identity (`/admin/logout`) and service-wide (`/admin/sessions`). `logout/CLAUDE.md`. |
@@ -129,6 +129,7 @@ these protocol families:
 - **A certificate authority**: one Root, an Intermediate per realm, CRLs and OCSP (`/admin/pki`).
 - **SPIFFE**: the bundle endpoint, the Workload API and the SPIRE Server API, per trust realm.
 - **XACML 3.0** and **GNAP** (RFC 9635).
+- **Mail, sending only** (#63): SMTP with STARTTLS or implicit TLS and DKIM, Amazon SES, Azure Communication Services and the Gmail API — for self-service password reset, address verification, an administrator's links and security notices.
 
 It exists to exercise *clients*: in development mode it checks no password,
 validates no access token and **attests no Workload API caller over TCP**
@@ -441,6 +442,7 @@ is and the named file says why.
 | 8 | `authn/authn` | Before `oauth2`: it owns the session that module reads. | `authn/CLAUDE.md` |
 | 7 | `ws-trust/wstrust` | After `authn` since 2026-09-05 (it calls `startSession()`); the number predates the move. | `ws-trust/CLAUDE.md` |
 | 8a | `portal/portal` | After `authn`, whose session every portal route reads; an OIDC relying party of `oauth2`, which needs that module's routes registered, not required. | `portal/CLAUDE.md` |
+| 8a-mail | `common/mail`, `common/mail_uses`, `portal/portal_mail` | Built with the portal, before it: the portal's `registerRoutes()` registers `portal_mail`'s three pages. The channel and its uses are LIBRARIES; the directory fills the channel's slot at 21. | `common/CLAUDE.md` |
 | 8b | `oauth-oidc/consent_screen` | After `authn`, before `oauth2`. | `oauth-oidc/CLAUDE.md` |
 | 9 | `oauth-oidc/oauth2` | Before `admin-ui/admin` (rule 5). | `oauth-oidc/CLAUDE.md` |
 | 10 | `ws-federation/wsfed` | After `authn` (rule 4), whose session it signs people in to. | `ws-federation/CLAUDE.md` |
@@ -466,6 +468,7 @@ is and the named file says why.
 | 18i | `admin-ui/scheduler_admin` | 18a's placement and 18a's reason (#49): the console's shell and `cluster/scheduler` (a library the job owners above already loaded), and `mgmt-api/admin_api` requires it. A job registered later still appears: the page asks the scheduler when it is drawn. | `cluster/CLAUDE.md` |
 | 18j | `risk/risk_store`, `risk_datasets`, `risk_failures`, `risk_engine`, then `admin-ui/risk_admin` | 18a's placement and 18a's reason (#62): libraries, then the page, after the scheduler (whose two risk jobs `risk_datasets` registers when wired), before `mgmt-api/admin_api`, which requires the page. **Nothing requires the four libraries earlier**: `persistence.js`, `credentials.ts` and `authn.ts` reach them lazily. | `risk/CLAUDE.md` |
 | 18k | `admin-ui/mode_admin` | 18a's placement and 18a's reason (#181): the console's shell and `common/mode` (a leaf), and `mgmt-api/admin_api` requires it for `GET /admin-api/mode`. | `admin-ui/CLAUDE.md` |
+| 18l | `admin-ui/mail_admin` | 18a's placement and 18a's reason (#63): Server configuration → Mail and Monitoring → Mail outbox, one module; the console's shell and the channel (8a-mail) already loaded, and `mgmt-api/admin_api` requires it. | `admin-ui/CLAUDE.md`, `common/CLAUDE.md` |
 | 19 | `mgmt-api/admin_api` | After `admin-ui/admin` (rule 7). | `mgmt-api/CLAUDE.md` |
 | 19a | `admin-ui/api_explorer` | After `admin-ui/admin` (the shell and gate) and `mgmt-api/admin_api` (the route table its OpenAPI document is built from); a file of its own so `admin.ts` never requires the API. | `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | 20 | `tls/tls_server` | JavaScript: registers its `/tls*` views at this require. Before `ldap/ldap_server`, which serves its certificate on 636. | `tls/CLAUDE.md` |
@@ -538,6 +541,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3ax | `app_passwords.ts` and `credentials.ts`'s `secondFactorRefusal()`, #101: a second-factor person's own password refused at the five password-only doors in product as a wrong password is, and the app passwords — generated, hashed, scoped to doors, found by a public id, never at a browser sign-in — accepted there instead | `common/CLAUDE.md`, `authn/CLAUDE.md` |
 | 3ba | `siop.ts`, SIOPv2 as the relying party (#129): a self-issued subject enrolled on the entry (by proof on the portal, by value by an administrator), refused unenrolled in both modes, section 11.1, a did:web fetched only when enrolled, the four Client Identifier prefixes | `oid4vc/CLAUDE.md` |
 | 3ay | `identity_assurance.ts`, OpenID Connect for Identity Assurance 1.0 (#127): verifications recorded on the entry by an administrator or a wallet or certificate sign-in, only directory values verified and released while unchanged, `value`/`values` enforced on the verification only, development's `urn:sts:demo` | `common/CLAUDE.md` |
+| 3ba | `mail.ts`, `mail_transports.ts`, `mail_templates.ts`, `mail_uses.ts`, #63: one outbound mail channel — a per-realm persisted outbox delivered once for the cluster by a claimed lease and the `mail.deliver` job, five transports behind one method, recipients from the directory only, links on the pinned origin, ceilings and duplicates, templates that load nothing, and the four uses | `common/CLAUDE.md` |
 | 3ap | `cache_registry.js`, every cache and replay store describing itself to `/admin/caches`: why a leaf in JavaScript, why a row is five members, where a lookup is counted, and why valid is the owner's call | `common/CLAUDE.md` |
 | 3p | `user_graph.js`, and why the union of two registers is a library rather than a page | `common/CLAUDE.md` |
 | 3o | `federation.js`, why four modules may require it, and why `PATHS` is not beside the routes | `federation/CLAUDE.md` |
@@ -997,6 +1001,7 @@ the file the row names.
 | Deliver a response to an address nobody registered, **in product mode** — an address development merely observed is marked and refused until confirmed | `common/applications.js`, `saml/CLAUDE.md`, `common/oidc_rp.ts` |
 | Start with demonstration data, invent a claim value, or open a test control to anybody, **in product mode** | `common/mode.js`, `common/CLAUDE.md` |
 | Dial its database in the clear — and it does not authenticate that server either | `persistence/CLAUDE.md` |
+| Send mail to an address a request supplies, through a relay a caller names, or in the clear (#63) — every recipient is a directory entry, the only address dialled is the operator's configured relay or provider endpoint, a mailed link is built on `global.publicBaseUrl` and never on the request, and SMTP is STARTTLS-required or implicit TLS with the relay verified in both modes | `common/CLAUDE.md` (`mail.ts`) |
 | ~~Coordinate several processes through that store~~ — **reversed 2026-09-06**: the change log is the contract; it shares state and not sockets | `persistence/CLAUDE.md`, `common/CLAUDE.md` |
 | Recall anything it has already ISSUED — it DISOWNS them, which is a different claim | `logout/CLAUDE.md`, `common/CLAUDE.md` |
 | ~~Perform back-channel logout. Front-channel IS implemented~~ — **reversed 2026-09-17 (#36)**: a signed (and, where registered, encrypted) Logout Token POSTed to every relying party on a session any sign-out ends, an EXPIRY ends or a DISABLE ends — a persisted row per delivery, sent once for the cluster, retried by any node across restarts, dead-lettered and retried by hand. Front-channel still cannot follow an expiry: it needs the browser | `oauth-oidc/CLAUDE.md` (3aq), `logout/CLAUDE.md`, `authn/CLAUDE.md`, `federation/CLAUDE.md` |

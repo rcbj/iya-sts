@@ -257,6 +257,51 @@ services:
       - ./openbao/read-only.hcl:/usr/src/sts/openbao/read-only.hcl:ro
     command: ["node", "openbao/seed.js"]
 
+  # ===========================================================================
+  # A MAIL CATCHER (#63, 2026-09-22): Mailpit (MIT), which the mail channel's
+  # SMTP transport delivers to in `tests/vendored/sts_mail.js` — and whose
+  # HTTP API is how that job reads what arrived. It REQUIRES STARTTLS, so a
+  # message it holds is one that went over TLS, and it accepts any SMTP AUTH.
+  #
+  # Its certificate is minted at run time by `openbao/generate-tls.js` — the
+  # one encoder every certificate in this stack comes from, and never a key in
+  # git — into the directory shared with the service (#171), which reads it
+  # there as `mail.smtpCaFile`: a self-signed server certificate is its own
+  # trust anchor. The service does not depend on the catcher: a job that
+  # needs it waits for it, and a catcher that will not start fails that job
+  # alone rather than the suite.
+  # ===========================================================================
+  mailpit-tls:
+    container_name: ${STS_MAILPIT_TLS_CONTAINER_NAME:-sts-docker-tests-mailpit-tls}
+    image: ${STS_IMAGE:-rcbj/sts}
+    build:
+      context: .
+    restart: "no"
+    environment:
+      - STS_BAO_TLS_DIR=/run/sts-test/mailpit
+      - STS_BAO_TLS_NAMES=mailpit,localhost
+      - STS_BAO_TLS_IPS=127.0.0.1
+    volumes:
+      - sts-test-shared:/run/sts-test
+      - ./openbao/generate-tls.js:/usr/src/sts/openbao/generate-tls.js:ro
+    command: ["node", "openbao/generate-tls.js"]
+
+  mailpit:
+    container_name: ${STS_MAILPIT_CONTAINER_NAME:-sts-docker-tests-mailpit}
+    hostname: mailpit
+    image: axllent/mailpit:${MAILPIT_TAG:-latest}
+    depends_on:
+      mailpit-tls:
+        condition: service_completed_successfully
+    environment:
+      - MP_SMTP_TLS_CERT=/run/sts-test/mailpit/server.crt
+      - MP_SMTP_TLS_KEY=/run/sts-test/mailpit/server.key
+      - MP_SMTP_REQUIRE_STARTTLS=true
+      - MP_SMTP_AUTH_ACCEPT_ANY=true
+      - MP_MAX_MESSAGES=5000
+    volumes:
+      - sts-test-shared:/run/sts-test:ro
+
   sts:
     # Named, so that a `docker logs` while a run is going has something to name,
     # and DIFFERENT from docker-compose.yml's `sts` so that a test run can never
@@ -797,6 +842,13 @@ services:
       # volume, mounted into `sts` at the same place.
       - OUTBOUND_TEST_CA_DIR=${OUTBOUND_TEST_CA_DIR:-/run/sts-test}
       - OUTBOUND_TEST_CA_FILE=${OUTBOUND_TEST_CA_FILE:-/run/sts-test/outbound-test-ca.crt}
+      # THE MAIL CATCHER (#63): where `tests/vendored/sts_mail.js` reads what
+      # arrived, and where it tells the service to deliver — the host, the
+      # port and the catcher's certificate AS THE SERVICE SEES IT.
+      - MAILPIT_API_URL=${MAILPIT_API_URL:-http://mailpit:8025}
+      - MAILPIT_SMTP_HOST=${MAILPIT_SMTP_HOST:-mailpit}
+      - MAILPIT_SMTP_PORT=${MAILPIT_SMTP_PORT:-1025}
+      - MAILPIT_CA_FILE=${MAILPIT_CA_FILE:-/run/sts-test/mailpit/server.crt}
       - XACML_PEP_NAME=${XACML_PEP_NAME:-xacml-pep}
       - XACML_PEP_REALM=${XACML_PEP_REALM:-pep-e2e}
       # ---------------------------------------------------------------------
@@ -863,6 +915,10 @@ services:
       # The directory shared with the service (#171) — see `sts` above.
       - sts-test-shared:/run/sts-test
     depends_on:
+      # The mail catcher (#63): STARTED, for xacml-pep's reason below — a
+      # catcher that will not come up fails sts_mail.js and nothing else.
+      mailpit:
+        condition: service_started
       sts:
         # The whole ordering of this file. `up` reports success for a container
         # that was created and then exited, so "started" is not the question —

@@ -764,6 +764,10 @@ const JOBS = [
   // (and on an application's override), ignored where they are read once a
   // realm holding them is switched; and GET /admin/mode and /admin-api/mode.
   { file: 'sts_mode_weak_settings.js',   browser: false, local: true },
+  // The mail channel (#63): delivery to the Mailpit the stack runs, a
+  // product realm of its own, verification, a self-service reset, a dead
+  // letter. Skips its delivery sections where there is no catcher.
+  { file: 'sts_mail.js',                 browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE

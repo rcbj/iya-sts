@@ -302,8 +302,8 @@ function childMain() {
              'or email claims — section 5.4 puts them at UserInfo',
              JSON.stringify(idt));
         note(!('email_verified' in idt),
-             '6b. and it asserts NO email_verified, because nothing verified ' +
-             'that mailbox', idt.email_verified);
+             '6b. and it asserts NO email_verified — the claim goes where ' +
+             'email goes, to UserInfo', idt.email_verified);
         note(idt.sub === helpers.subjectForName('pcp-alice') &&
              /^urn:uuid:/.test(idt.sub),
              '6c. and sub is the person\'s urn:uuid:<entryUUID>', idt.sub);
@@ -317,9 +317,10 @@ function childMain() {
         note(info.status === 200 && info.json &&
              info.json.family_name === 'Public' &&
              info.json.email === 'alice@pcp.example' &&
-             !('email_verified' in info.json),
+             info.json.email_verified === false,
              '6d. PRODUCT: UserInfo answers profile and email from the ' +
-             'directory, without email_verified',
+             'directory, and email_verified FALSE — nobody followed a ' +
+             'verification link sent to that address (#63)',
              info.status + ' ' + info.text.slice(0, 200));
       }
       flow = await codeFlow('pcp-public', 'pcp-bare');
