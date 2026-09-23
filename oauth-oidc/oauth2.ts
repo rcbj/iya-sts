@@ -6289,8 +6289,16 @@ class OAuth2Server {
           xmlEscape(String(info.state)) + '</code></dd>'
         : '') +
       '</dl>' +
-      '<p><a href="' + xmlEscape(info.target) + '">Continue to ' +
-      xmlEscape(info.redirectUri) + '</a></p><p class="sub">Nothing has been ' +
+      (info.form
+        ? '<form method="post" action="' + xmlEscape(info.redirectUri) +
+          '">' + Object.keys(info.form).map(function (name: string): string {
+            return '<input type="hidden" name="' + xmlEscape(name) +
+                   '" value="' + xmlEscape(String(info.form[name])) + '">';
+          }).join('') + '<button type="submit">Continue to ' +
+          xmlEscape(info.redirectUri) + '</button></form>'
+        : '<p><a href="' + xmlEscape(info.target) + '">Continue to ' +
+          xmlEscape(info.redirectUri) + '</a></p>') +
+      '<p class="sub">Nothing has been ' +
       'sent anywhere yet. Following that link delivers the error above to ' +
       'the application, which is what would have happened automatically if ' +
       'you were signed in here.</p></body></html>';
@@ -7548,7 +7556,7 @@ class OAuth2Server {
         log.debug("Leaving the authorization endpoint. Showing " + error +
                   " rather than redirecting it (" + policy.requirement + ").");
         log.debug("Leaving fail().");
-        const shown = {
+        const shown: Json = {
           error: error, description: description, redirectUri: redirectUri,
           clientId: q.client_id, state: q.state, why: policy.why,
           // The link the person can choose. It carries the same parameters the
@@ -7562,6 +7570,24 @@ class OAuth2Server {
                                       self.usesFragment(q.response_type,
                                                         q.response_mode))
         };
+        // A FORM POST REQUEST GETS A FORM (#126). The link above is a GET
+        // carrying the error in the URL — exactly what a client that asked
+        // for form_post asked NOT to receive (OAuth 2.0 Form Post Response
+        // Mode, section 2). So the person's choice is a button that POSTs
+        // the same fields to the redirect URI; no script, because this page is
+        // a decision and a form that submitted itself would be the redirect
+        // with an extra page in front of it.
+        if (String(q.response_mode || '') === 'form_post') {
+          const posted: Json = Object.assign({ error: error,
+            error_description:
+              self.deps.oauth21.sanitizeDescription(description) },
+            self.sessionStateField(res, redirectUri));
+          if (q.state !== undefined) {
+            posted.state = q.state;
+          }
+          posted.iss = base;
+          shown.form = posted;
+        }
         // A JARM request's link carries the JWT-secured error (#139, #143),
         // which is what its client reads.
         if (self.deps.jarm.isJarm(q.response_mode)) {
@@ -7574,8 +7600,12 @@ class OAuth2Server {
           return self.jarmUrl(res, base, redirectUri, fields,
                               String(q.response_mode))
             .then(function (target: Json): Json {
+              // form_post.jwt (#126): the JWT as a form field, POSTed.
               return self.sendRedirectInterstitial(res,
-                Object.assign(shown, { target: target.url }));
+                Object.assign(shown, { target: target.url },
+                              target.formPost
+                                ? { form: { response: target.response } }
+                                : {}));
             }).catch(function (e: Json): void {
               log.debug("Caught in fail(): " + ((e && e.message) || e));
               errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-OAUTH-0588');

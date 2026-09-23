@@ -92,6 +92,9 @@ response type or endpoint that would be refused.
   (Multiple Response Type Encoding Practices section 4).
 * **Response modes** `query`, `fragment` and `form_post`. `form_post` is
   answered with a self-submitting form that also has a real submit button.
+  When an error is shown instead of redirected (RFC 9700 mode, nobody signed
+  in), a `form_post` request's way on is a form with a button that POSTs the
+  error, never a link carrying it in the URL.
   Without an explicit mode, `code` alone answers in the query and every
   response type that returns a token or an ID Token answers in the fragment
   ([Multiple Response Type Encoding
