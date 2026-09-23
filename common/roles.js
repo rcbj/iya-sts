@@ -559,7 +559,18 @@ function write(name, record) {
              'STS-XACML-0026');
   }
   const given = record || {};
+  // THE CLASS THE SCHEMA ABOVE DECLARES, written on the entry (2026-09-23).
+  // Until then a role was the one registry entry carrying no objectClass at
+  // all — `cn` and the role attributes only — so `(objectClass=stsRole)`
+  // matched nothing and a client listing classes saw an entry with none.
+  // Taken from SCHEMA, as `applications.js`'s attributesFor() does, so the
+  // published schema and the stored entry cannot name different classes.
+  // An entry written before this gains it on its next save; it is not
+  // rewritten at load (no migrations).
   const attributes = {
+    objectClass: ['top'].concat(SCHEMA.objectClasses.map(function (one) {
+      return one.name;
+    })),
     roleName: String(name),
     description: String(given.description || ''),
     roleMemberUser: (given.users || []).map(String),

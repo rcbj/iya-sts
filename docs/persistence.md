@@ -146,10 +146,13 @@ Point it somewhere else with `STS_DATABASE_URL`, or by editing
 `persistence.databaseUrl` in your appconfig file — all four of them carry the
 same base block.
 
-Five tables: `sts_ldap_entries` (one row per entry, attributes as JSONB, keyed
-by realm and normalised DN), `sts_realms`, `sts_appconfig`, `sts_keys` (the
-signing keys, as ciphertext, in product mode) and `sts_schema`. Nothing is
-migrated: if the schema ever changes, drop them.
+The directory is `sts_ldap_entries` (one row per entry, attributes as JSONB,
+keyed by realm and normalised DN), beside the realm registry, the runtime
+settings, the sealed keys, the minted state, the change log, the cluster's
+coordination tables and risk scoring's datasets and history.
+[PostgreSQL schema](postgres-schema.md) describes every table and column. A
+schema change only ever adds; running `postgres/schema.sql` again upgrades an
+older database.
 
 #### Building it, and the role that cannot rebuild it
 

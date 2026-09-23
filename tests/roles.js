@@ -233,6 +233,29 @@ function theRegister(t) {
           'which still contains EVERYBODY, so an unedited application still ' +
           'admits everybody it admitted before');
 
+  // WHAT A WRITE PUTS ON THE ENTRY: the class the published schema declares.
+  // A role was written with no objectClass at all until 2026-09-23, so
+  // `(objectClass=stsRole)` found nothing; this holds the write to the schema.
+  const written = {};
+  const writer = directoryOf({}, {});
+  writer.writeRole = function (name, attributes) {
+    log.debug("Entering writeRole().");
+    written[name] = attributes;
+    log.debug("Leaving writeRole().");
+    return true;
+  };
+  roles.setDirectory(writer);
+  t.equal(roles.write('auditors', { users: ['alice'] }).ok, true,
+          'a role is written through the directory');
+  t.equal(JSON.stringify((written.auditors || {}).objectClass),
+          '["top","stsRole"]',
+          'and its entry carries objectClass top and stsRole, the class ' +
+          'roles.SCHEMA publishes');
+  t.equal(JSON.stringify(roles.SCHEMA.objectClasses.map(function (one) {
+    return one.name;
+  })), '["stsRole"]',
+          'which is the only class that schema names');
+
   roles.setDirectory(null);
   t.equal(roles.all().length, 0,
           'with no directory at all the register is empty rather than an ' +
