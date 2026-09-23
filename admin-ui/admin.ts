@@ -8221,7 +8221,10 @@ class AdminConsole {
     const appLink = function (identifier) {
       log.debug("Entering appLink().");
       log.debug("Leaving appLink().");
-      return '<a href="' + self.esc('/admin/applications/' +
+      // The application's page is `?application=`, not a path segment:
+      // `/admin/applications/<id>` is no route and 404s, which the console
+      // crawl in `sts_admin_console.js` reports (2026-09-23).
+      return '<a href="' + self.esc('/admin/applications?application=' +
         encodeURIComponent(String(identifier))) + '"><code>' +
         self.esc(identifier) + '</code></a>';
     };
@@ -8258,7 +8261,7 @@ class AdminConsole {
           }).join('<br>') : 'anybody not protected') + '</td></tr>';
     }).join('');
     const peopleRows = view.people.shown.map(function (row) {
-      return '<tr><td class="who"><a href="' + self.esc('/admin/users/' +
+      return '<tr><td class="who"><a href="' + self.esc('/admin/users?user=' +
         encodeURIComponent(String(row.username))) + '">' +
         self.esc(row.username) + '</a></td><td>' +
         (row.notDelegated ? '<code>stsNotDelegated</code> — nobody may act ' +
