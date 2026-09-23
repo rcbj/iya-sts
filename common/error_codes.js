@@ -6319,6 +6319,23 @@ const CODES = [
     summary: 'The revocation endpoint failed with an unexpected error ' +
       'outside every refusal it makes (#102).',
     spec: 'server_error (HTTP 500)' },
+  { code: 'STS-OAUTH-0615',
+    summary: 'A refresh was refused because a consent its grant stood on — ' +
+      'the person\'s own, or the application\'s global consent that the ' +
+      'person had not given themselves — was withdrawn at or after the ' +
+      'grant was made (#172). The refresh token\'s grant is revoked.',
+    spec: 'HTTP 400 {error: invalid_grant}' },
+  { code: 'STS-OAUTH-0616',
+    summary: 'A refresh of a grant made at the authorization endpoint was ' +
+      'refused because no recorded consent covered one of its scopes when it ' +
+      'was granted, while consent is required and ' +
+      'oauth2.refreshRequiresConsent is on (#172).',
+    spec: 'HTTP 400 {error: invalid_grant}' },
+  { code: 'STS-OAUTH-0617',
+    summary: 'Withdrawing a consent could not revoke a refresh family by id; ' +
+      'its members known on this node were revoked, and the refresh grant ' +
+      'refuses any other at its first use (#172).',
+    spec: 'none — logged' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -13273,6 +13290,11 @@ const CODES = [
     summary: 'A POST to /portal/sign-ins named a sign-in that is not the ' +
       'person\'s own, is too old, or has already been answered (#62 P6).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0085',
+    summary: 'A POST to /portal/consents named no consent of the signed-in ' +
+      'person\'s own to withdraw — none held for that application and ' +
+      'scope, or no scope named (#172).',
+    spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
@@ -13859,6 +13881,18 @@ const CODES = [
       'every delivery would be dead-lettered, so it is refused where it is ' +
       'written (#123).',
     spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0191',
+    summary: 'A generic application edit tried to remove a value of ' +
+      'oauthGlobalConsent. A global consent is withdrawn only through the ' +
+      'consent register (revoke-global-consent), which also revokes what ' +
+      'was issued under it and records when (#172).',
+    spec: 'HTTP 400 page / {ok: false}' },
+  { code: 'STS-REG-0192',
+    summary: 'A consent was withdrawn and its tokens revoked, but the ' +
+      'withdrawal instant could not be written onto the person\'s or the ' +
+      'application\'s entry, so a re-consent could revive a refresh token ' +
+      'the revocation did not reach (#172).',
+    spec: 'none — logged' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

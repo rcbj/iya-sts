@@ -4200,11 +4200,20 @@ under global consent correctly looks like):
   held as `oauthConsent` on the person's entry. Removing a row asks that person
   and nobody else.
 
-**FOUR ACTIONS, and `CONSENT_ACTIONS` is built from the switch rather than
+**EVERY REMOVAL IS A WITHDRAWAL SINCE #172**: it revokes the tokens issued
+under the consent and records when, so a refresh token granted before it is
+refused even after the consent is given again (`common/CLAUDE.md`, 3t). The page
+said *nothing already issued is touched* until then, and now says the opposite.
+`revoke-global-consent` is the only door that removes an `oauthGlobalConsent`
+value; the generic application edit refuses it.
+
+**FIVE ACTIONS (the fifth, `revoke-application-consent`, since #172 — the
+console's and the API's twin of `/portal/consents`' per-application Withdraw),
+and `CONSENT_ACTIONS` is built from the switch rather than
 typed**, for `PERMISSION_ACTIONS`' reason: `tests/vendored/admin_api.js` reads
 the refusal sentence to check that every console action has an `/admin-api`
 operation, so a list short by one turns the parity check off for that action.
-Two of the four go through `applications.updateApplication()` like every other
+Two of the five go through `applications.updateApplication()` like every other
 attribute write in this console, so the schema rules, the `application.update`
 audit row and the `ldapmodify` equivalence all come for free.
 

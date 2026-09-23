@@ -3190,11 +3190,21 @@ server draws on a first sign-in, and a client that has never met one has never
 run the code that survives it. It still checks nothing — the person has already
 been let in under any name they typed.
 
-**THE TOKEN ENDPOINT ASKS NOBODY ANYTHING.** A grant already issued is never
-re-judged, the same rule delegated permissions follow and federation follows
-about not re-checking a person once the session exists — so a refresh of a code
-obtained before the setting was turned on still works, and revoking a consent
-does not touch a token already minted.
+**THE REFRESH GRANT RE-CHECKS CONSENT SINCE #172 (2026-09-23)**, and it said
+the opposite until then: *the token endpoint asks nobody anything, a grant
+already issued is never re-judged.* That left a withdrawn `offline_access`
+refreshing for the token's whole life. Now `consent.refreshRefusal()` is asked
+right after the revocation check, in every mode, from the refresh token's own
+`grant_at` and `grant_type` (inside the JWE, carried unchanged through every
+refresh, the code's minting instant for an authorization code): a consent
+withdrawn at or after the grant refuses it (`STS-OAUTH-0615`), and a grant from
+the authorization endpoint that no recorded consent covered refuses it while
+consent is required and `oauth2.refreshRequiresConsent` is on
+(`STS-OAUTH-0616`). A refusal takes the grant with it — `grantMembersOf()` and
+`revokeFamily()`, #102's way. Withdrawing also REVOKES what was issued under the
+consent at once; `common/CLAUDE.md` (3t, *Withdrawn means withdrawn*) argues
+the three parts. Delegated permissions and federation still do not re-judge an
+issued grant.
 
 ## The UserInfo endpoint's two halves have no test in either repository
 

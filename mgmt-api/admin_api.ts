@@ -15591,10 +15591,29 @@ class AdminApi {
                          'about the people it covers. Somebody who agreed to ' +
                          'it personally is unaffected — their answer is on ' +
                          'their own entry and `revoke-consent` is what takes ' +
-                         'that away.\n\nNothing already ISSUED is touched. ' +
-                         'An access token minted while the override stood is ' +
-                         'still valid, exactly as revoking a delegated ' +
-                         'permission does not re-judge a grant already made.',
+                         'that away.\n\n**What was issued under it is ' +
+                         'revoked (#172).** Every access and refresh token ' +
+                         'of ' +
+                         'this application carrying the scope, for everybody ' +
+                         'but the people who agreed to it themselves, goes ' +
+                         'on ' +
+                         'the revocation register every node reads — so it ' +
+                         'introspects inactive at once — and the instant is ' +
+                         'written onto the application\'s entry as ' +
+                         '`oauthGlobalConsentWithdrawn`, so a refresh token ' +
+                         'granted before it is refused even if the override ' +
+                         'is added back. `revoked` is how many tokens this ' +
+                         'call revoked. **This is the only way to take a ' +
+                         'global consent away**: the generic ' +
+                         '`applications/remove` of `oauthGlobalConsent` is ' +
+                         'refused (`STS-REG-0191`). On one of this ' +
+                         'service\'s ' +
+                         'own surfaces (`sts-admin-console`, ' +
+                         '`sts-user-portal`, `sts-debugger-ui`) it is not ' +
+                         'refused either: every session of that surface ' +
+                         'standing on the override ends at its next token ' +
+                         'renewal and the person signs in again and is ' +
+                         'asked.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15608,7 +15627,9 @@ class AdminApi {
               examples: [{ client: 'webapp1', scope: 'openid' }],
               additionalProperties: false
             },
-            responseDescription: 'What was removed, and who is asked again.' },
+            responseDescription: 'What was removed, who is asked again, ' +
+                                 'how many tokens were revoked (`revoked`) ' +
+                                 'and when (`withdrawnAt`).' },
 
           { action: 'revoke-consent', operationId: 'revokeConsent',
             summary: 'Take back one answer one person gave',
@@ -15626,8 +15647,16 @@ class AdminApi {
                          'nothing here to remove and this refuses rather ' +
                          'than pretending: `revoke-global-consent` ' +
                          'is the operation for that, and ' +
-                         'the refusal says so. Nothing already issued is ' +
-                         'touched.',
+                         'the refusal says so.\n\n**What was issued under it ' +
+                         'is revoked (#172)**: every access and refresh ' +
+                         'token ' +
+                         'this application holds for this person carrying ' +
+                         'the scope — a refresh token with its whole grant, ' +
+                         'since withdrawing one scope revokes the whole ' +
+                         'refresh token — and the instant goes onto their ' +
+                         'entry as `oauthConsentWithdrawn`, so a refresh ' +
+                         'token granted before it is refused even after they ' +
+                         'consent again.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15650,7 +15679,45 @@ class AdminApi {
                            scope: 'openid' }],
               additionalProperties: false
             },
-            responseDescription: 'What was removed, and what is asked again.' },
+            responseDescription: 'What was removed, what is asked again, ' +
+                                 'how many tokens were revoked (`revoked`) ' +
+                                 'and when (`withdrawnAt`).' },
+
+          { action: 'revoke-application-consent',
+            operationId: 'revokeApplicationConsent',
+            summary: 'Withdraw everything one person agreed to for one ' +
+                     'application',
+            description: 'Every `oauthConsent` value naming this person and ' +
+                         'this application, in one act (#172) — the ' +
+                         'console\'s and the API\'s counterpart of the ' +
+                         'Withdraw button a person has for each application ' +
+                         'on `/portal/consents`. They are asked again the ' +
+                         'next time that application requests anything; ' +
+                         'every access and refresh token it holds for them ' +
+                         'under those scopes is revoked; and the instant ' +
+                         'goes onto their entry, so a refresh token granted ' +
+                         'before it is refused even after they consent ' +
+                         'again. Refused when nothing is recorded for the ' +
+                         'pair — a scope under GLOBAL consent is not on ' +
+                         'anybody\'s entry.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                username: { type: 'string',
+                            description: 'The person, exactly as ' +
+                                         '/admin/users names them.' },
+                client: { type: 'string',
+                          description: 'The application whose every ' +
+                                       'consent is withdrawn.' }
+              },
+              required: ['username', 'client'],
+              examples: [{ username: 'alice', client: 'webapp1' }],
+              additionalProperties: false
+            },
+            responseDescription: 'How many consents were withdrawn ' +
+                                 '(`removed`), how many tokens were revoked ' +
+                                 '(`revoked`) and when (`withdrawnAt`).' },
 
           { action: 'forget-user-consent', operationId: 'forgetUserConsent',
             summary: 'Forget everything one person agreed to',
@@ -15665,8 +15732,11 @@ class AdminApi {
                          'consent, because there is nothing on their entry ' +
                          'to reach — a scope they were never asked about ' +
                          'leaves no record, which is what lets the ' +
-                         'register tell the two apart at all. Nothing ' +
-                         'already issued is touched.',
+                         'register tell the two apart at all.\n\n**What ' +
+                         'was issued under those consents is revoked ' +
+                         '(#172)**, per application, and each withdrawal ' +
+                         'instant is written onto their entry — see ' +
+                         '`revoke-consent`.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15679,7 +15749,8 @@ class AdminApi {
               examples: [{ username: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'How many answers were forgotten.' }
+            responseDescription: 'How many answers were forgotten, and how ' +
+                                 'many tokens were revoked (`revoked`).' }
         ] },
 
       // -----------------------------------------------------------------------

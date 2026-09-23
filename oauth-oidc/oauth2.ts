@@ -3538,7 +3538,19 @@ class OAuth2Server {
       // no client reads it. A refresh token whose scope lacks
       // `offline_access` is an ONLINE one (OIDC Core section 11) and the
       // refresh grant refuses it once this session has ended.
-      sid: opts.session_id || undefined
+      sid: opts.session_id || undefined,
+      // THE GRANT THIS TOKEN REPRESENTS (#172), inside the JWE where no
+      // client reads it, and carried unchanged through every refresh: when it
+      // was made, to the millisecond, and by which grant. The refresh grant
+      // asks `consent.refreshRefusal()` about both — a consent withdrawn at
+      // or after `grant_at` refuses it in every mode, and a grant from the
+      // authorization endpoint (where consent is asked) that no recorded
+      // consent covers refuses it while consent is required. A refresh
+      // hands on its parent's pair (`opts.grant_at`, `opts.origin_grant`);
+      // every other grant is the root of its own.
+      grant_at: Number(opts.grant_at) > 0 ? Number(opts.grant_at) :
+                Date.now(),
+      grant_type: String(opts.origin_grant || opts.grant || '') || undefined
     };
     if (opts.request) {
       payload.cnf = mtls.confirmationFor(opts.request, payload.cnf);
@@ -6064,6 +6076,12 @@ class OAuth2Server {
         // requires the client to authenticate and still requires redirect_uri.
         // Empty outside that mode.
         pkce_exempt: oauth21.codeRecordFields(query, types).pkce_exempt || '',
+        // THE INSTANT THIS GRANT WAS MADE (#172), which the refresh token it
+        // is redeemed for carries as `grant_at` and the refresh grant judges
+        // a withdrawn consent against. The code's minting and not its
+        // redemption: a consent withdrawn between the two was withdrawn
+        // after the person granted this, and must refuse it.
+        granted_at: Date.now(),
         ttlMs: self.authCodeTtlMs(),
         expires: Date.now() + self.authCodeTtlMs()
       });
@@ -9706,7 +9724,7 @@ class OAuth2Server {
             senderConstraints,
             applications, validation, errorCodes, refreshTokenCrypto,
             richAuthorization, delegation, credentials, websecurity,
-            clusterClaims, hasScope, authn } = this.deps;
+            clusterClaims, hasScope, authn, consent } = this.deps;
     const self = this;
     log.debug("Entering the token endpoint.");
     const base = self.asBaseOf(req);
@@ -10886,6 +10904,8 @@ class OAuth2Server {
         // sign-on session and only arrive at the console as belonging to one
         // because of this line.
         session_id: record.session_id || '', grant: 'authorization_code',
+        // When the person granted this (#172) — see the code record.
+        grant_at: record.granted_at,
         // Off the code too, and for the same reason as the line above it: the
         // person is not here and their session cannot be looked up from a
         // back-channel request, so what the role gate is told about them is
@@ -11143,6 +11163,47 @@ class OAuth2Server {
         return self.oauthError(res, 400, 'invalid_grant',
                                'The refresh token was ' +
                                'revoked.');
+      }
+      // -------------------------------------------------------------------
+      // THE CONSENT THIS GRANT STOOD ON, ASKED AGAIN (#172), in every mode.
+      // RFC 6749 section 1.5: a refresh token represents the authorization
+      // the resource owner granted, so once they withdraw it there is
+      // nothing left for it to represent. `consent.refreshRefusal()` decides
+      // against the directory — stateless, so it holds on every node and
+      // for a token the withdrawal's own revocation walk never saw — and a
+      // refusal takes the whole grant with it, RFC 7009 section 2.1's way:
+      // the token, every member of its family and the access tokens minted
+      // beside them, and the family by id for a member minted elsewhere.
+      // -------------------------------------------------------------------
+      const consentProblem = consent.refreshRefusal({
+        username: String(claims.username || ''),
+        clientId: String(claims.client_id || ''),
+        scope: String(claims.scope || ''),
+        grantAt: claims.grant_at,
+        grantType: String(claims.grant_type || '')
+      });
+      if (consentProblem) {
+        const withdrawnVia = 'the consent it was granted under ' +
+          (consentProblem.reason === 'withdrawn' ? 'was withdrawn'
+                                                 : 'is not recorded');
+        const family = bcp.familyOfRefresh(claims);
+        bcp.grantMembersOf(family, claims.jti).forEach(function (jti) {
+          stats.revoke(jti, withdrawnVia);
+        });
+        if (family) {
+          await bcp.revokeFamily(family, String(claims.client_id || ''));
+        }
+        log.info(errorCodes.tag(consentProblem.errorCode) + 'oauth2: a ' +
+                 'refresh by "' + String(claims.client_id || '') + '" for "' +
+                 String(claims.username || '') + '" was refused: ' +
+                 withdrawnVia + ' (' + consentProblem.scope + ').');
+        errorCodes.mark(res, consentProblem.errorCode);
+        log.debug("Leaving OAuth2Server.tokenGrant(). Consent refused the " +
+                  "refresh.");
+        // error-code: none — marked above with the refusal's own code,
+        // STS-OAUTH-0615 or STS-OAUTH-0616.
+        return self.oauthError(res, 400, 'invalid_grant',
+                               consentProblem.description);
       }
       // -------------------------------------------------------------------
       // AN ONLINE REFRESH TOKEN ENDS WITH ITS SESSION (#118, OIDC Core
@@ -11406,7 +11467,12 @@ class OAuth2Server {
         auth_time: claims.auth_time || undefined,
         amr: Array.isArray(claims.amr) ? claims.amr : undefined,
         acr: claims.acr || undefined,
-        grant: 'refresh_token'
+        grant: 'refresh_token',
+        // THE GRANT THIS ONE DESCENDS FROM (#172): its instant and its type,
+        // unchanged, so a withdrawal is judged against when the person
+        // granted it rather than when the client last renewed it.
+        grant_at: claims.grant_at,
+        origin_grant: String(claims.grant_type || '')
       });
       // RFC 9700 section 2.2.2 — ROTATION. The token just redeemed is retired:
       // marked as rotated here (which is what makes a later presentation of it

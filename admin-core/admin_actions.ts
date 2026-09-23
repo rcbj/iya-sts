@@ -507,7 +507,8 @@ const MFA_ACTIONS = ['clear-totp', 'clear-key'];
 // console action has an /admin-api operation, so a list that is short by one is
 // a list that turns the parity check off for that action.
 const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
-                         'revoke-consent', 'forget-user-consent'];
+                         'revoke-consent', 'revoke-application-consent',
+                         'forget-user-consent'];
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for CONSENT_ACTIONS' reason:
 // this repository's own tests/vendored/admin_api.js READS the refusal sentence
@@ -3720,6 +3721,15 @@ class AdminActions {
 
     if (action === 'revoke-global-consent') {
       const result = consent.revokeGlobal(client, scope, actor);
+      if (result.ok) {
+        // The `application.update` row is the attribute's; this one is the
+        // withdrawal's, and says what it revoked (#172).
+        auditLog.audit({ action: 'consent.revoke', actor: actor, target: client,
+                      protocol: 'OAuth 2.0 / OIDC', channel: 'http',
+                      detail: 'withdrew the global consent to "' + scope +
+                              '"; ' + (result.revoked || 0) + ' token(s) ' +
+                              'issued under it revoked' });
+      }
       log.debug("Leaving AdminActions.consentAction(). revoke-global-consent " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0540', result);
@@ -3736,9 +3746,30 @@ class AdminActions {
         // consenting.
         auditLog.audit({ action: 'consent.revoke', actor: actor, target: client,
                       protocol: 'OAuth 2.0 / OIDC', channel: 'http',
-                      detail: 'revoked "' + scope + '" for ' + username });
+                      detail: 'revoked "' + scope + '" for ' + username +
+                              '; ' + (result.revoked || 0) + ' token(s) ' +
+                              'issued under it revoked (#172)' });
       }
       log.debug("Leaving AdminActions.consentAction(). revoke-consent " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0540', result);
+    }
+
+    // EVERY SCOPE ONE PERSON AGREED TO FOR ONE APPLICATION (#172) — what a
+    // person does from /portal/consents, offered here so that the console and
+    // /admin-api can do it for them (rule 7).
+    if (action === 'revoke-application-consent') {
+      const result = consent.revokeApplication(username, client, actor);
+      if (result.ok) {
+        auditLog.audit({ action: 'consent.revoke', actor: actor, target: client,
+                      protocol: 'OAuth 2.0 / OIDC', channel: 'http',
+                      detail: 'withdrew every consent (' + result.removed +
+                              ') to "' + client + '" for ' + username +
+                              '; ' + (result.revoked || 0) + ' token(s) ' +
+                              'issued under them revoked' });
+      }
+      log.debug("Leaving AdminActions.consentAction(). " +
+                "revoke-application-consent " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0540', result);
     }
@@ -3750,7 +3781,9 @@ class AdminActions {
                          target: username,
                       protocol: 'OAuth 2.0 / OIDC', channel: 'http',
                       detail: 'forgot every consent (' + result.removed +
-                              ') for ' + username });
+                              ') for ' + username + '; ' +
+                              (result.revoked || 0) + ' token(s) issued ' +
+                              'under them revoked' });
       }
       log.debug("Leaving AdminActions.consentAction(). forget-user-consent " +
                 (result.ok ? 'ok' : 'refused') + ".");

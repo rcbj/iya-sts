@@ -1824,11 +1824,19 @@ division is `group_claims.js`'s and `applications.js`'s: neither file knows the
 other's half.
 
 It is the SEVENTH `setDirectory()`-shaped slot this module fills at require
-time and the second that hands over a WRITER as well as readers. Four functions,
-validated whole, for `setLogoutReader()`'s reason: a filler that installed the
-two reads and neither write would leave a service that draws the consent screen,
-records nothing, and draws it again on the next request — a loop with a button
-in it, every part of it working.
+time and the second that hands over a WRITER as well as readers. Seven
+functions, validated whole, for `setLogoutReader()`'s reason: a filler that
+installed the two reads and neither write would leave a service that draws the
+consent screen, records nothing, and draws it again on the next request — a
+loop with a button in it, every part of it working.
+
+**THREE OF THE SEVEN ARE THE WITHDRAWALS (#172)**: `oauthConsentWithdrawn` on
+the same entry, `<stamp> <scope> <client_id>` with the instant to the
+millisecond, written when a consent is withdrawn so that a re-consent revives no
+refresh token granted before it (`common/CLAUDE.md`, 3t). One set of functions
+serves both attributes, told which by name (`consentAttributeOf()`), and a name
+that is neither is the consent attribute, so the slot cannot be used to write
+anything else onto somebody's entry.
 
 **NOTHING HERE CREATES AN ENTRY.** A consent is written for somebody who has
 just authenticated, so `observeIdentity()` made their entry on the way past.

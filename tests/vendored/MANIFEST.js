@@ -241,6 +241,12 @@ const JOBS = [
   // it only signs a certificate holder in, which in product claims nothing.
   { file: 'sts_console_bootstrap_product.js', browser: false, local: true },
   { file: 'sts_consent.js',              browser: false, local: true },
+  // WITHDRAWN MEANS WITHDRAWN (#172, 2026-09-23): a consent withdrawn through
+  // /admin-api, globally and on /portal/consents ends the grant it covered,
+  // a re-consent revives nothing, and oauth2.refreshRequiresConsent refuses a
+  // grant nobody consented to. `local: true`: the register, its operations
+  // and the portal are ours. Its realm is left standing.
+  { file: 'sts_consent_withdrawal.js',   browser: false, local: true },
   { file: 'sts_delegated_permissions_example.js', browser: false, local: true },
   // A SCOPE IS TIED TO THE CLIENT (#110, 2026-09-22): the protected scopes
   // refused at issuance and re-checked by SCIM, Shared Signals and
