@@ -1338,6 +1338,24 @@ async function testIntrospectionAndRevocation(meta, verify) {
   log.debug("Leaving testIntrospectionAndRevocation().");
 }
 
+// Whether this STS's application registry names `oauthAllowedScope` as an
+// editable attribute — the declared scopes of iya-sts #110. Read from the
+// same `editable` table sts_applications.js reads, so an STS that predates
+// the attribute is recognised rather than refused.
+async function allowedScopeEditable(base) {
+  log.debug("Entering allowedScopeEditable(). base=" + base);
+  if (!base || !(await registry.registryAvailable(base))) {
+    log.debug("Leaving allowedScopeEditable(). No registry.");
+    return false;
+  }
+  const doc = await registry.adminGet(base, "/applications/new");
+  const found = (doc.editable || []).some(function (row) {
+    return row.name === "oauthAllowedScope";
+  });
+  log.debug("Leaving allowedScopeEditable(). " + found);
+  return found;
+}
+
 async function testRegistration(meta) {
   log.debug("Entering testRegistration().");
   log.info("=== Dynamic client registration (RFC 7591 / 7592) ===");
@@ -1588,39 +1606,53 @@ async function test() {
   // testRegistration() further down registers a client of its own through RFC
   // 7591 and deletes it again; that one is not pre-registered here, because
   // its whole subject is what the registration endpoint does.
+  //
+  // THE SCOPES EACH CLIENT MAY BE ISSUED ARE DECLARED, where the STS knows
+  // the attribute (iya-sts #110, 2026-09-22): `oauthScope` became a record of
+  // what a client ASKED for, and in product mode a scope is issued only when
+  // it is on `oauthAllowedScope`. An STS from before that has no such
+  // attribute and refuses one it does not know, so it is added only when the
+  // registry's `editable` table names it — this file runs against both.
   // ---------------------------------------------------------------------
+  var declaresScopes = await allowedScopeEditable(registry.baseOf(stsBase));
+  var clientFields = {
+    oauthClientId: CLIENT_ID,
+    oauthRedirectUri: [REDIRECT_URI],
+    oauthResponseType: ["code", "token", "id_token", "code id_token",
+                        "code id_token token"],
+    oauthGrantType: ["authorization_code", "refresh_token",
+                     "client_credentials", "password",
+                     "urn:ietf:params:oauth:grant-type:device_code",
+                     "urn:ietf:params:oauth:grant-type:token-exchange"],
+    oauthScope: ["openid", "profile", "email", "api"],
+    oauthTokenEndpointAuthMethod: "client_secret_post",
+    oauthClientSecret: CLIENT_SECRET,
+    oauthConfidential: "TRUE"
+  };
+  var serviceFields = {
+    oauthClientId: SERVICE_CLIENT,
+    oauthGrantType: ["client_credentials"],
+    oauthScope: ["api"],
+    oauthTokenEndpointAuthMethod: "client_secret_basic",
+    oauthClientSecret: SERVICE_SECRET,
+    oauthConfidential: "TRUE"
+  };
+  if (declaresScopes) {
+    clientFields.oauthAllowedScope = ["openid", "profile", "email", "api"];
+    serviceFields.oauthAllowedScope = ["api"];
+  }
   await registry.provision(registry.baseOf(stsBase), {
     identifier: CLIENT_ID,
     name: "OAuth2 STS endpoints",
     protocols: ["oauth2", "oidc"],
-    fields: {
-      oauthClientId: CLIENT_ID,
-      oauthRedirectUri: [REDIRECT_URI],
-      oauthResponseType: ["code", "token", "id_token", "code id_token",
-                          "code id_token token"],
-      oauthGrantType: ["authorization_code", "refresh_token",
-                       "client_credentials", "password",
-                       "urn:ietf:params:oauth:grant-type:device_code",
-                       "urn:ietf:params:oauth:grant-type:token-exchange"],
-      oauthScope: ["openid", "profile", "email", "api"],
-      oauthTokenEndpointAuthMethod: "client_secret_post",
-      oauthClientSecret: CLIENT_SECRET,
-      oauthConfidential: "TRUE"
-    },
+    fields: clientFields,
     why: "the one client this file drives every advertised endpoint with"
   });
   await registry.provision(registry.baseOf(stsBase), {
     identifier: SERVICE_CLIENT,
     name: "OAuth2 STS endpoints (client credentials)",
     protocols: ["oauth2"],
-    fields: {
-      oauthClientId: SERVICE_CLIENT,
-      oauthGrantType: ["client_credentials"],
-      oauthScope: ["api"],
-      oauthTokenEndpointAuthMethod: "client_secret_basic",
-      oauthClientSecret: SERVICE_SECRET,
-      oauthConfidential: "TRUE"
-    },
+    fields: serviceFields,
     why: "the machine client the client_credentials grant authenticates as"
   });
 

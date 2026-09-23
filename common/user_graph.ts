@@ -133,8 +133,9 @@
 // the rule and the two spellings a client may use to produce either; the two
 // things worth knowing up here are that it is a fact about the TOKEN and not
 // about the register (a permission the client was never granted is still on the
-// line, because `oauth2.delegatedPermissionsEnforced` is off by default and the
-// token really does carry it), and that the array's PRESENCE is what tells
+// line in development, where `oauth2.delegatedPermissionsEnforced` is off by
+// default and the token really does carry it — product mode refuses one), and
+// that the array's PRESENCE is what tells
 // `delegation_map.js` this line came from a credential at all — the identical
 // `reaches` relation out of `delegation.js` describes a delegation ACT, which
 // has no scope claim behind it and carries no such member.
@@ -645,7 +646,8 @@ class UserGraph {
   // **NOTHING HERE ASKS WHETHER THE GRANT WAS HELD.** `holdsPermission()` is
   // that question and it belongs to the configured picture; this line is
   // evidence, and a token carrying a permission its client was never granted is
-  // exactly what `oauth2.delegatedPermissionsEnforced` being off produces.
+  // exactly what `oauth2.delegatedPermissionsEnforced` being off produces in
+  // development (product mode refuses the request instead, #110).
   // Colouring it as a refusal would be this renderer deciding a policy the
   // token endpoint declined to decide.
   //

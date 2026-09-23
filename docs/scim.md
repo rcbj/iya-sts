@@ -193,15 +193,20 @@ checked.
 
 | | Product | Development |
 |---|---|---|
-| OAuth tokens | Verified; the scope decides | Verified; the scope decides. Any client can get either scope from any grant |
+| OAuth tokens | Verified; the scope decides | Verified; the scope decides |
 | Basic | The password is verified against the person's hashed `userPassword` (off the request thread) | Any username, any password except `invalid` |
 | Digest | **Not offered**, and refused (`STS-SCIM-0056`). A salted scrypt hash cannot answer an RFC 7616 exchange | Any username with the one shared password, `scim.digestPassword` |
 | HOBA registration | Only the signed-in owner of an **existing** account may register a key for it (`STS-SCIM-0069`). A registration never creates an account | Anybody may register any key for any name |
 | The shared Digest password in a `401` | Never printed | Printed, as a test aid |
 
 **In every mode** a HOBA key id already registered to another account is
-refused (409), and a scope is not tied to a client: any client that can obtain a
-token can ask for `scim:write`. Verifying a Basic password costs about 70 ms of
+refused (409), and the SCIM scopes are tied to the client: they are issued only
+to a client whose `oauthAllowedScope` declares them, and a token is honoured only
+while its client still does — withdrawing the declaration cuts off tokens
+already issued (`STS-SCIM-0079`). Declare them on the application's page, or
+with `POST /admin-api/applications/add`
+(`{"application": "<id>", "attribute": "oauthAllowedScope", "value": "scim:write"}`).
+Verifying a Basic password costs about 70 ms of
 CPU per request in product mode, so a bulk provisioning client should use a
 `scim:write` access token. See [what is not checked](what-is-not-checked.md).
 

@@ -202,10 +202,19 @@ calling a prefix that no longer exists.
 | The service token | the default realm's `/oauth2/token`, with `resource=<base>/admin-api` | `/admin-api` and every `/realm/<id>/admin-api` | everything its scopes allow |
 | A realm's own token | `/realm/<id>/oauth2/token` as that realm's `sts-management-api`, with `resource=<base>/realm/<id>/admin-api` | `/realm/<id>/admin-api` only | that realm's operations only |
 
+**Either token must have been issued to a client that declares the scope it
+uses** (#110, 2026-09-22). `admin:read` and `admin:write` are issued only to a
+client whose `oauthAllowedScope` lists them, in both modes — any other client is
+refused `invalid_scope` at the token endpoint — and the API asks again on every
+call, in the realm that issued the token: a token whose client no longer
+declares the scope an operation needs is refused 403 (`STS-API-0123`), so
+withdrawing the declaration cuts off tokens already issued. The seeded
+`sts-management-api` and `sts-admin-console` declare both in every realm; an
+administrator may declare them on another client with
+`POST /admin-api/applications/add`. A dynamic registration may not.
+
 A realm's token is tried only under that realm's prefix. It must carry the
-realm's issuer and audience, and it must have been issued to the realm's own
-`sts-management-api` client (`STS-API-0111`). Any other client registered in
-the realm is refused, even with the `admin:*` scopes. The token is then
+realm's issuer and audience. The token is then
 refused whatever the console refuses the realm's administrators
 (`STS-API-0112`), and the same rule decides both doors:
 
@@ -307,12 +316,14 @@ them on the console or with `POST /admin-api/config/set`.
   is presented.** If a token minted in a realm counted as the service
   credential, anybody who could create a realm could mint a token for
   everything. A realm's own token is therefore believed only in that realm.
-* **The default realm's gate accepts `admin:*` from any client, but a realm's
-  gate accepts it only from `sts-management-api`.** The token endpoint does
-  not restrict who may ask for these scopes, and the realm check closes that
-  gap for realm tokens. For the service token it is still open: control who
-  can register clients (`oauth2.openRegistration` in product mode) with that
-  in mind.
+* **`admin:*` is tied to the client, in both realms and both modes (#110).**
+  Until 2026-09-22 the default realm's gate accepted the scopes from any
+  client — the token endpoint did not restrict who could ask for them, so any
+  client that could use `client_credentials` minted Admin Write — and only a
+  realm's gate required `sts-management-api`. Now the token endpoint issues
+  them only to a client whose `oauthAllowedScope` declares them, a registration
+  cannot declare them, and the gate asks the same question of every token
+  (`STS-API-0123`).
 * **The secret is a configuration setting, not an action.** A secret
   generated per start is readable only through the API it unlocks. That is a
   bootstrap hole, so `adminApi.clientSecret` pins it, and regenerating a

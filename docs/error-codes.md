@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2908** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2916** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -63,26 +63,26 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 188
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 458
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 461
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 74
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
-* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
+* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 115
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 98
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 274
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 99
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 275
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 172
-* [Management API (`STS-API`)](#sts-api) — 72
+* [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 54
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 107
+* [Registries (`STS-REG`)](#sts-reg) — 109
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 27
 
 ## STS-HTTP
@@ -1228,7 +1228,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0152` | The person declined consent on the consent screen; nothing was issued and the client is told access_denied. | access_denied (HTTP 303 back to the authorization endpoint, then redirected to the client) |
 | `STS-OAUTH-0153` | The authorization_details parameter is not readable JSON, not an array, names an unsupported type, or names a credential configuration this issuer does not offer. | invalid_authorization_details (redirected error, or HTTP 400 at the token endpoint) |
 | `STS-OAUTH-0154` | An RFC 8707 resource parameter is not an absolute URI or carries a fragment. | invalid_target (redirected error, or HTTP 400 at the token endpoint) |
-| `STS-OAUTH-0155` | A scope named a delegated permission the client has not been granted, and oauth2.delegatedPermissionsEnforced is on. | invalid_scope (redirected error, or HTTP 400 at the token endpoint) |
+| `STS-OAUTH-0155` | A scope named a delegated permission the client has not been granted — in product mode always, in development when oauth2.delegatedPermissionsEnforced is on. | invalid_scope (redirected error, or HTTP 400 at the token endpoint) |
 | `STS-OAUTH-0156` | The issuance policy (the role gate) refused to issue an authorization code to this person for this application. | access_denied (redirected error) |
 | `STS-OAUTH-0157` | The OpenID Connect Core 5.5 claims request on an authorization request is malformed. | invalid_request (redirected error) |
 | `STS-OAUTH-0158` | RFC 9700 mode refused a request for a reason the policy did not name (fallback; the policy normally names one of STS-OAUTH-0119 to -0147). | the error the RFC 9700 check named (HTTP 400 or redirected) |
@@ -1530,6 +1530,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0574` | Under a FAPI profile, an authorization request carried no redirect_uri, or one that is not https (FAPI 1.0 Part 1 section 5.2.2 items 9 and 20). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0575` | Under a FAPI profile, an authorization request asked for openid without a nonce (FAPI 1.0 Part 1 section 5.2.2.2). | redirect: error=invalid_request |
 | `STS-OAUTH-0576` | Under a FAPI profile, an authorization request without openid carried no state (FAPI 1.0 Part 1 section 5.2.2.3). | redirect: error=invalid_request |
+| `STS-OAUTH-0577` | A client asked for one of this service's own protected scopes (admin:read, admin:write, the SCIM or Shared Signals scopes, the debugger permission) that its oauthAllowedScope does not list. Held in every mode. | invalid_scope (redirected error, or HTTP 400 at the token and pushed authorization request endpoints) |
+| `STS-OAUTH-0578` | In product mode, a client asked for a scope outside its oauthAllowedScope — or, declaring none, outside the default set (OpenID Connect's six and the OpenID4VCI credential scopes). | invalid_scope (redirected error, or HTTP 400 at the token and pushed authorization request endpoints) |
+| `STS-OAUTH-0579` | A grant carrying its scope from earlier (a refresh, a token exchange, an assertion grant) named a scope the client may no longer be issued; it was taken off the tokens and recorded. | none — the token response's scope says what was issued (RFC 6749 section 5.1) |
 | `STS-OAUTH-0580` | Under a FAPI profile, a confidential client authenticated with client_secret_basic or client_secret_post (FAPI 1.0 Part 1 section 5.2.2 item 4). | HTTP 401 {error: invalid_client} |
 | `STS-OAUTH-0581` | Under a FAPI profile, a token or PAR request identified its client in two different ways — the Basic header, the body's client_id, a client assertion's sub (FAPI 1.0 Part 1 section 5.2.2 item 19). | HTTP 401 {error: invalid_client} |
 
@@ -2055,6 +2058,7 @@ Raised from: scim/.
 | `STS-SCIM-0076` | An HTTP Digest credential was refused because its nonce count had already been accepted with that nonce by another process of this service (a replay). | RFC 7616 section 3.4; HTTP 401 with a fresh challenge |
 | `STS-SCIM-0077` | A HOBA credential was refused because the same key id, challenge and nonce had already been accepted by another process of this service (a replay). | RFC 7486 section 6; HTTP 401 with a fresh challenge |
 | `STS-SCIM-0078` | A Digest or HOBA credential could not be proved unspent because the store that records spent credentials could not be asked; it was refused (fail closed). | HTTP 500 (SCIM Error) |
+| `STS-SCIM-0079` | An access token carried the SCIM scope an operation needs, and the client it was issued to no longer declares that scope in its oauthAllowedScope. | HTTP 403 insufficient_scope (SCIM Error) |
 
 ## STS-SPIFFE
 
@@ -2424,6 +2428,7 @@ Raised from: ssf/.
 | `STS-SSF-0104` | A Security Event Token delivered to one of this service's receivers is not explicitly typed secevent+jwt (SSF 1.0 section 4.1.1); it was recorded and refused. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0105` | A Security Event Token delivered to one of this service's receivers carries an iss other than its stream's, or one ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was recorded and refused. | HTTP 400 {err: invalid_issuer} |
 | `STS-SSF-0106` | A Security Event Token pushed at POST /ssf/receive is addressed to no audience ssf.receiveAudiences lists; it was recorded and refused. | HTTP 400 {err: invalid_audience} |
+| `STS-SSF-0107` | An access token (OAuth or GNAP) carried the Shared Signals scope an operation needs, and the client it was issued to no longer declares that scope in its oauthAllowedScope. | HTTP 403 {err: access_denied} |
 
 ## STS-GNAP
 
@@ -2707,6 +2712,7 @@ Raised from: gnap/.
 | `STS-GNAP-0716` | The cluster claim store could not be asked about a GNAP single-use value, so the request was refused rather than accepted unproven. | the refusal of the value it guarded |
 | `STS-GNAP-0717` | A resource owner's decision on a GNAP grant was refused because a decision on the same interaction had already been recorded, by another request or another node against the same store (the cluster claim, #46). | RFC 9635 section 4 (an interaction is answered once) |
 | `STS-GNAP-0718` | A signed GNAP request was refused because the realm's signature replay history held gnap.replayCacheSize LIVE entries: forgetting one would let that signature be replayed, so the request is refused instead until entries age out. | RFC 9635 section 7.3 (invalid_request) |
+| `STS-GNAP-0719` | A GNAP client asked for an access right naming one of this service's own protected scopes (ssf:read, ssf:write, as a reference string or an object of type ssf) that its application's oauthAllowedScope does not list. | RFC 9635 section 3.6 (request_denied) |
 
 ## STS-XACML
 
@@ -2838,7 +2844,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-ADMIN-0001` | The admin console could not start a sign-in: its OIDC client entry (sts-admin-console) is missing or has no secret. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
+| `STS-ADMIN-0001` | The admin console could not start a sign-in: its OIDC client entry (sts-admin-console) is missing, or declares a client secret method and has no secret. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
 | `STS-ADMIN-0002` | The admin console could not start a sign-in in product mode because the address it was reached at is not a registered redirect URI of sts-admin-console. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
 | `STS-ADMIN-0003` | A console request that cannot be redirected to sign in (a JSON caller, or a form POST) carried no console session. | HTTP 401 login_required |
 | `STS-ADMIN-0004` | A console sign-out was refused because the form did not carry this session's CSRF token. | HTTP 403 csrf |
@@ -3085,12 +3091,13 @@ Raised from: mgmt-api/.
 | `STS-API-0101` | An /admin-api/oauth2/monitor action was refused and the action layer attached no more specific code. | HTTP 400 { ok: false, errors } |
 | `STS-API-0102` | An /admin-api/oauth2/monitor action threw; nothing is known to have changed and the log line carries the stack. | HTTP 500 { ok: false, errors } |
 | `STS-API-0110` | An /admin-api access token bound to a client certificate (RFC 8705 cnf x5t#S256) was presented on a connection without that certificate. | invalid_token (HTTP 401) |
-| `STS-API-0111` | A trust realm's own access token was presented at /admin-api by a client other than that realm's sts-management-api. | HTTP 403 forbidden |
+| `STS-API-0111` *(retired)* | A trust realm's own access token was presented at /admin-api by a client other than that realm's sts-management-api. | HTTP 403 forbidden |
 | `STS-API-0112` | A trust realm's own token or administrator reached a service-wide /admin-api operation, or another realm's. | HTTP 403 forbidden |
 | `STS-API-0113` | A users or groups create that had claimed its name across nodes threw before it could answer; the claim was given back. | HTTP 500 |
 | `STS-API-0120` | A DPoP-bound access token (cnf.jkt) was presented at /admin-api as a Bearer token. | invalid_token (HTTP 401) |
 | `STS-API-0121` | A DPoP proof presented at /admin-api did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
 | `STS-API-0122` | A management API access token was refused because this service has revoked or disowned it, or the person it was issued to has a disabled account. | invalid_token (HTTP 401) |
+| `STS-API-0123` | A management API access token carried the admin scope an operation needs, and the client it was issued to does not declare that scope in its oauthAllowedScope (in the realm that issued it). | HTTP 403 forbidden |
 
 ## STS-PORTAL
 
@@ -3283,9 +3290,11 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0169` | A registered sector_identifier_uri could not be fetched, was not a JSON array of URIs, or did not list every redirect_uri (OIDC Core section 8.1). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0170` | A client registration named a frontchannel_logout_uri whose scheme, host and port match none of its redirect_uris (Front-Channel Logout 1.0 section 2). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0171` | A console or /admin-api write set oauthFrontchannelLogoutUri to a URI whose scheme, host and port match none of the entry's oauthRedirectUri values (Front-Channel Logout 1.0 section 2). | HTTP 400 |
-| `STS-REG-0175` | Under a FAPI profile, a registration declared a token_endpoint_auth_method FAPI does not allow (FAPI 1.0 Part 1 section 5.2.2 item 4). | HTTP 400 {error: invalid_client_metadata} |
-| `STS-REG-0176` | Under a FAPI profile, a registration's jwks held an RSA key under 2048 bits or an EC key under 160 (FAPI 1.0 Part 1 section 5.2.2 items 5 and 6). | HTTP 400 {error: invalid_client_metadata} |
-| `STS-REG-0177` | Under a FAPI profile, a registration named a redirect URI that is not https (FAPI 1.0 Part 1 section 5.2.2 item 20). | HTTP 400 {error: invalid_redirect_uri} |
+| `STS-REG-0172` | A console or /admin-api write put a value on oauthAllowedScope that is not an RFC 6749 section 3.3 scope token. | HTTP 400 |
+| `STS-REG-0173` | An RFC 7591 registration or RFC 7592 update named one of this service's own protected scopes in `scope` (or sent a scope that is not a string); only an administrator declares those. | invalid_client_metadata (HTTP 400) |
+| `STS-REG-0174` | Under a FAPI profile, a registration declared a token_endpoint_auth_method FAPI does not allow (FAPI 1.0 Part 1 section 5.2.2 item 4). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0175` | Under a FAPI profile, a registration's jwks held an RSA key under 2048 bits or an EC key under 160 (FAPI 1.0 Part 1 section 5.2.2 items 5 and 6). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0176` | Under a FAPI profile, a registration named a redirect URI that is not https (FAPI 1.0 Part 1 section 5.2.2 item 20). | HTTP 400 {error: invalid_redirect_uri} |
 
 ## STS-DBG
 

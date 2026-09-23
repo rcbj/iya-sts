@@ -138,6 +138,8 @@ const { log, parseBody, baseUrlOf, STS } = helpers;
 // into the roles the access policy asks for — see the gate below.
 import stsCrypto = require('../common/crypto');
 import roles = require('../common/roles');
+// WHICH CLIENTS MAY HOLD `admin:*` (#110) — the gate asks it of every token.
+import scopePolicy = require('../common/scope_policy');
 // The password policy's FIELD TABLE, which the request schema of
 // `save-password-policy` is generated from — for `narrowDoorProperties()`'s
 // reason: a hand-written list of what an operation accepts is a second
@@ -359,6 +361,7 @@ interface AdminApiDeps {
   STS: typeof STS;
   stsCrypto: typeof stsCrypto;
   roles: typeof roles;
+  scopePolicy: typeof scopePolicy;
   passwordPolicy: typeof passwordPolicy;
   admin: typeof admin;
   adminScope: typeof adminScope;
@@ -421,6 +424,7 @@ class AdminApi {
       STS: STS,
       stsCrypto: stsCrypto,
       roles: roles,
+      scopePolicy: scopePolicy,
       passwordPolicy: passwordPolicy,
       admin: admin,
       adminScope: adminScope,
@@ -14032,13 +14036,14 @@ class AdminApi {
                      'https://example.com/write` produces `aud: ' +
                      'https://example.com/` and `scope: openid write`. Each ' +
                      'grant row spells that out, because it is two facts a ' +
-                     'caller would otherwise have to compose.\n\n**It ' +
-                     'refuses nothing by default.** An ungranted permission ' +
-                     'is honoured exactly as a granted one is and marked ' +
-                     'here; only `oauth2.delegatedPermissionsEnforced` turns ' +
-                     'it into `invalid_scope`, at the authorization endpoint ' +
-                     'where the client can still be ' +
-                     'told.\n\n`grants[].dangling` is a grant naming a ' +
+                     'caller would otherwise have to compose.\n\n**In ' +
+                     'product mode an ungranted permission is ' +
+                     '`invalid_scope`**, at the authorization endpoint where ' +
+                     'the client can still be told and at the token ' +
+                     'endpoint. In development it is honoured exactly as a ' +
+                     'granted one is and marked here, unless ' +
+                     '`oauth2.delegatedPermissionsEnforced` is ' +
+                     'on.\n\n`grants[].dangling` is a grant naming a ' +
                      'permission no application defines — a deleted ' +
                      'resource, a permission removed from under it, or an ' +
                      '`ldapmodify`, since both console doors refuse to ' +
@@ -14332,8 +14337,9 @@ class AdminApi {
                          'after their base URI. An application cannot be ' +
                          'granted its own permission: the token would be ' +
                          'addressed to itself, which is what an ID Token ' +
-                         'already is.\n\n**It changes nothing about what is ' +
-                         'issued** unless ' +
+                         'already is.\n\n**In product mode it is what lets ' +
+                         'the request through.** In development it changes ' +
+                         'nothing about what is issued unless ' +
                          '`oauth2.delegatedPermissionsEnforced` is on. With ' +
                          'it off — the default — the request was already ' +
                          'producing the audience and the ' +
@@ -14363,7 +14369,9 @@ class AdminApi {
 
           { action: 'revoke-permission', operationId: 'revokePermission',
             summary: 'Take a permission away from a client application',
-            description: 'The opposite of `grant-permission`, and with the ' +
+            description: 'The opposite of `grant-permission`. In product ' +
+                         'mode the client\'s next request for the ' +
+                         'permission is refused. In development with the ' +
                          'setting off it changes nothing about what is ' +
                          'issued either: the permission still becomes an ' +
                          'audience and a scope, and those requests are ' +
@@ -14922,7 +14930,8 @@ class AdminApi {
                      '`globals[].granted` whether that client has also been ' +
                      'GRANTED it: the two are independent, and a consented ' +
                      'permission the client does not hold is still refused ' +
-                     'when `oauth2.delegatedPermissionsEnforced` is ' +
+                     'in product mode, and in development when ' +
+                     '`oauth2.delegatedPermissionsEnforced` is ' +
                      'on.\n\n`users[].unreadable` is a value on somebody\'s ' +
                      'entry that is not in the shape this service writes — ' +
                      'an `ldapmodify` put it there. It consents nothing and ' +
@@ -16002,23 +16011,48 @@ class AdminApi {
     return { path: '/admin' + resource.slice(BASE.length), action: action };
   }
 
-  // The client, and the scope table. Answers null, or `{ code, detail }`.
+  // ---------------------------------------------------------------------------
+  // THE ADMIN SCOPES A TOKEN MAY STILL USE (#110, 2026-09-22): those its
+  // client DECLARES, in the realm that issued it. Answers the scope list with
+  // every `admin:*` value the client no longer declares taken off, and which
+  // were taken.
   //
-  // **ONLY THIS REALM'S `sts-management-api`.** The token endpoint does not
-  // restrict who may ask for `admin:*`, so without this any client registered
-  // in the realm — by an operator, by dynamic registration — could mint itself
-  // Admin Write over the realm. The seeded client is the realm's door.
+  // ONE RULE FOR BOTH REALMS. Until #110 the default realm's token was
+  // accepted from ANY client carrying `admin:read`/`admin:write` — the token
+  // endpoint tied no scope to a client, so any client that could use
+  // client_credentials minted Admin Write here, and in development, where a
+  // client credential is not verified, that was any client_id — while a
+  // realm's token was accepted only from that realm's `sts-management-api`
+  // (STS-API-0111). The token endpoint now issues `admin:*` only to a client
+  // whose `oauthAllowedScope` lists it, and this asks the same question again
+  // on every call, so an allowance removed from a client stops the tokens it
+  // already holds. The seeded `sts-management-api` and `sts-admin-console`
+  // declare both in every realm.
+  // ---------------------------------------------------------------------------
+  declaredAdminScopes(claims, tokenRealm, scopes) {
+    const { log, realms, scopePolicy } = this.deps;
+    log.debug("Entering AdminApi.declaredAdminScopes().");
+    const clientId = String(claims.client_id || '');
+    const undeclared = realms.run(realms.get(tokenRealm), function () {
+      return scopes.filter(function (one) {
+        return scopePolicy.ADMIN_SCOPES.indexOf(one) >= 0 &&
+               !scopePolicy.declares(clientId, one);
+      });
+    });
+    log.debug("Leaving AdminApi.declaredAdminScopes(). " +
+              undeclared.length + " undeclared.");
+    return { kept: scopes.filter(function (one) {
+      return undeclared.indexOf(one) < 0;
+    }), undeclared: undeclared };
+  }
+
+  // The scope table for a realm's own token. Answers null, or
+  // `{ code, detail }`. Which CLIENT it was issued to is
+  // declaredAdminScopes()'s question, asked for both realms (#110); this is
+  // the realm's confinement.
   realmTokenRefusal(claims, req) {
     const { log, parseBody, adminScope, realms } = this.deps;
     log.debug("Entering AdminApi.realmTokenRefusal().");
-    if (String(claims.client_id || '') !== 'sts-management-api') {
-      log.debug("Leaving AdminApi.realmTokenRefusal(). Another client.");
-      return { code: 'STS-API-0111',
-               detail: 'A trust realm\'s own access token is accepted only ' +
-                       'from that realm\'s sts-management-api client, and ' +
-                       'this one was issued to ' +
-                       JSON.stringify(claims.client_id || null) + '.' };
-    }
     const operation = this.consoleOperationOf(req);
     const body = req.method === 'GET' || req.method === 'HEAD'
       ? null : Object.assign({}, parseBody(req));
@@ -16338,8 +16372,29 @@ class AdminApi {
           return self.sendJson(res, 401, { error: required.error,
                                            errors: [required.description] });
         }
-        const scopes = String(claims.scope || '').split(/\s+/).filter(Boolean);
+        const carried = String(claims.scope || '').split(/\s+/)
+          .filter(Boolean);
         const who = String(claims.client_id || claims.sub || '(a client)');
+        // THE CLIENT MUST STILL DECLARE WHAT THE TOKEN CARRIES (#110) — see
+        // declaredAdminScopes(). 403 when the scope this operation needs is
+        // one the client does not declare; an undeclared scope the operation
+        // does not need is dropped and the call goes on.
+        const declared = self.declaredAdminScopes(claims, tokenRealm, carried);
+        const scopes = declared.kept;
+        const neededScope = req.method === 'GET' ? 'admin:read' :
+          'admin:write';
+        if (declared.undeclared.indexOf(neededScope) >= 0) {
+          errorCodes.mark(res, 'STS-API-0123');
+          return self.sendJson(res, 403, { error: 'forbidden', errors: [
+            'This access token carries "' + neededScope + '", and the ' +
+            'client it was issued to, ' +
+            JSON.stringify(claims.client_id || null) + ', does not declare ' +
+            'it: a token is honoured here only while its client\'s ' +
+            'oauthAllowedScope lists the admin scope it uses. The seeded ' +
+            'sts-management-api declares both. Declare it on the ' +
+            'application (POST /admin-api/applications/add) or use that ' +
+            'client.'] });
+        }
         if (tokenRealm !== realms.DEFAULT_ID) {
           const realmRefusal = self.realmTokenRefusal(claims, req);
           if (realmRefusal) {

@@ -200,6 +200,21 @@ async function mintTheScimToken() {
     "neither STS_ADMIN_API_CLIENT_SECRET nor ADMIN_API_CLIENT_SECRET is set, " +
     "so this job cannot mint the SCIM access token it provisions with. " +
     "Every launcher sets one; a hand run has to as well.");
+  // THE SEEDED CLIENT DECLARES ONLY admin:* (#110): a SCIM scope is issued
+  // only to a client whose oauthAllowedScope lists it, so this job declares
+  // the two on it first, with the run's own /admin-api token (the preload
+  // attaches it). Adding is idempotent across runs.
+  for (const scope of ["scim:read", "scim:write"]) {
+    const r = await fetch(base.replace(/\/+$/, "") +
+                          "/admin-api/applications/add", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ application: "sts-management-api",
+                             attribute: "oauthAllowedScope", value: scope }) });
+    const text = await r.text();
+    assert.ok(r.status === 200 || /already/i.test(text),
+      "declaring " + scope + " on sts-management-api answered " + r.status +
+      " " + text.slice(0, 200));
+  }
   const token = await adminApiToken.mint(base, secret, {
     scope: "scim:read scim:write",
     audience: base.replace(/\/+$/, "") + "/resource"

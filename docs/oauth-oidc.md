@@ -179,6 +179,37 @@ nothing is asked and nothing is recorded; it does not mean everybody consented.
 The token endpoint never asks anything, so a grant that was already issued is
 not judged again. `/admin/consent` is the register.
 
+### Scopes a client may be issued
+
+A client is issued only the scopes it **declares** (#110). The list is
+`oauthAllowedScope` on its application entry — RFC 7591 section 2's `scope`,
+written there by a registration, returned by the registration and by RFC 7592's
+read, and edited on the application's console page or with
+`POST /admin-api/applications/add` and `remove`. `oauthScope` beside it only
+records what the client has asked for.
+
+* **This service's own protected scopes** — `admin:read`, `admin:write`, the
+  SCIM scopes (`scim.scopeRead`, `scim.scopeWrite`), the Shared Signals scopes
+  (`ssf.authScopeRead`, `ssf.authScopeWrite`) and the embedded debugger's
+  permission — are issued only to a client that lists them, **in both modes**.
+  `/admin-api`, SCIM and Shared Signals ask again on every call, so withdrawing
+  a declaration cuts off tokens already issued. A registration cannot declare
+  one (`invalid_client_metadata`); an administrator does. The seeded
+  `sts-management-api` and `sts-admin-console` declare the admin scopes.
+* **Every other scope, in product mode**, is issued only when the list names it.
+  A client with **no list** has the default set: `openid`, `profile`, `email`,
+  `address`, `phone`, `offline_access` and this realm's OpenID4VCI credential
+  scopes. In development any scope is issued.
+* **A scope naming another application or a delegated permission** keeps its own
+  rules: the first becomes the access token's audience, the second needs a grant
+  (`oauthDelegatedPermission`), which product mode always requires.
+
+The authorization, pushed authorization and token endpoints refuse anything else
+with `invalid_scope` (RFC 6749 section 3.3). A grant that carries its scope from
+earlier — a refresh, a token exchange inheriting the subject token's scope, an
+assertion grant — is issued without the scope instead, and the token response's
+`scope` says what was issued.
+
 ### ID Tokens
 
 An ID Token carries `nonce`, `at_hash` and `c_hash` in all three flows, plus
@@ -394,7 +425,9 @@ and the [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592) read, update and
 delete operations at `/oauth2/register/{client_id}`. A registration becomes an
 entry under `ou=applications`. The registry is not a cache, so an `ldapmodify`
 of the entry changes what the endpoints accept. What an endpoint would refuse,
-registration refuses too.
+registration refuses too. The registered `scope` is the list the client may be
+issued (`oauthAllowedScope`, see [Scopes](#scopes-a-client-may-be-issued)), and
+it may not name this service's own protected scopes.
 
 A **software statement** (RFC 7591 section 2.3) is trusted when this realm
 issued it (from an application's page or
@@ -479,6 +512,8 @@ on [What is not checked](what-is-not-checked.md).
 | Request objects | `alg: none` accepted unless a signature is required; `request_uri` may be `http` | must be signed; `request_uri` must be https and answer a JWT media type |
 | Token exchange | an unverified `subject_token` or `actor_token` is exchanged | both must verify against this realm's key |
 | Expired client secret | accepted and logged | refused `invalid_client` |
+| Scopes | any; this service's protected scopes only to a client declaring them | only those the client declares, or the default set; `invalid_scope` otherwise |
+| Ungranted delegated permission | honoured unless `oauth2.delegatedPermissionsEnforced` | refused `invalid_scope` |
 | Profile claims | an invented persona fills gaps | from the directory entry or omitted; `email_verified` is never set |
 | Signing keys | new on every start | persisted, sealed, and rotated with an overlap |
 | `/logout?username=` | honoured (`logout.anyUser`) | ignored |
@@ -539,7 +574,7 @@ on [OAuth security](oauth-security.md#configuration).
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `oauth2.consentRequired` | `STS_OAUTH2_CONSENT_REQUIRED` | `true` | yes | Ask the person, on `/oauth2/consent`, before issuing for a scope they have not agreed to for that application. |
-| `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | Refuse `invalid_scope` a request for a delegated permission the client has not been granted; off, it is honoured and logged. |
+| `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | In development, refuse `invalid_scope` a request for a delegated permission the client has not been granted; off, it is honoured and logged. Product mode always refuses one. |
 | `oauth2.maxRequestedClaims` | `STS_OAUTH2_MAX_REQUESTED_CLAIMS` | `64` | yes | The most claims one OpenID Connect Core 5.5 claims request may name. |
 
 ### Grants and assertions

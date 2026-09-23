@@ -310,6 +310,10 @@ import gate = require('../common/issuance_gate');
 // `common/helpers.js`, `common/realms.js` — so it
 // cannot move a route or close a cycle. See `debugger/debugger_access.ts`.
 import debuggerAccess = require('../debugger/debugger_access');
+// WHICH SCOPES A CLIENT MAY BE ISSUED (#110, 2026-09-22). A library (rule 3)
+// requiring only libraries this module already requires. See
+// `common/scope_policy.ts` and scopeRefusal() below.
+import scopePolicy = require('../common/scope_policy');
 // THE ONE PLACE A PRESENTED PASSWORD IS CHECKED, for the RFC 6749 section 4.3
 // password grant (2026-09-12). A library (rule 3): it registers no route, and
 // `authn/authn.ts` — required at 8, above this module — already requires it,
@@ -431,6 +435,7 @@ interface OAuth2ServerDeps {
   claimAttributes: typeof claimAttributes;
   gate: typeof gate;
   debuggerAccess: typeof debuggerAccess;
+  scopePolicy: typeof scopePolicy;
   credentials: typeof credentials;
   websecurity: typeof websecurity;
   clusterClaims: typeof clusterClaims;
@@ -1469,6 +1474,7 @@ class OAuth2Server {
       claimAttributes: claimAttributes,
       gate: gate,
       debuggerAccess: debuggerAccess,
+      scopePolicy: scopePolicy,
       credentials: credentials,
       websecurity: websecurity,
       clusterClaims: clusterClaims,
@@ -3651,7 +3657,8 @@ class OAuth2Server {
   // ASYNCHRONOUS BECAUSE idToken() IS, and for no other reason: everything else
   // it mints is RS256 and stays in this process.
   async tokenSet(base: Json, opts: Json): Promise<Json> {
-    const { log, randomId, hasScope, mtls, bcp, debuggerAccess } = this.deps;
+    const { log, randomId, hasScope, mtls, bcp, debuggerAccess,
+            scopePolicy } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.tokenSet(). scope=" +
               (opts.scope || '(none)'));
@@ -3675,6 +3682,19 @@ class OAuth2Server {
     // generations is `parent_refresh_jti`, which is a different relation and is
     // drawn as one at /admin/tokens/credential.
     opts = Object.assign({}, opts, { set_id: randomId(12) });
+    // THE SCOPES THIS CLIENT MAY BE ISSUED (#110) — the backstop. The
+    // endpoints REFUSE a scope the client did not declare (scopeRefusal());
+    // what reaches here undeclared is a grant carrying its scope from earlier
+    // — a refresh after an allowance was removed, an exchange inheriting the
+    // subject token's scope, an assertion grant — and it is taken off rather
+    // than refused, with an audit row, so the `scope` member below reports
+    // what was issued (RFC 6749 section 5.1). This service's protected scopes
+    // in every mode; every other scope in product only.
+    const allowedScope = scopePolicy.narrow(opts.scope, opts.client_id,
+      { grant: opts.grant, defaults: self.credentialScopes() });
+    if (allowedScope !== String(opts.scope == null ? '' : opts.scope)) {
+      opts.scope = allowedScope;
+    }
     // THE EMBEDDED DEBUGGER'S PERMISSION IS A CONSOLE ADMINISTRATOR'S AND
     // NOBODY ELSE'S (2026-09-13). Here, the one function every grant mints
     // through, so no grant — a refresh after a role was revoked, a token
@@ -4752,8 +4772,8 @@ class OAuth2Server {
       if (!application) {
         // An ordinary scope nobody here has heard of, which is most of them and
         // is exactly what a caller comes to this service to send. Kept
-        // verbatim; RFC 9700 mode notes it as unadvertised and grants it
-        // anyway.
+        // verbatim — this function translates; whether the client may HAVE
+        // it is scopeRefusal()'s question (#110), asked before this runs.
         kept.push(one);
         return;
       }
@@ -4778,10 +4798,11 @@ class OAuth2Server {
                  'the same arrangement. That client ' +
                  (one.granted
                    ? 'HOLDS this grant (oauthDelegatedPermission on its entry).'
-                   : 'has NOT been granted it. It is honoured anyway and ' +
-                     'recorded as ungranted — set ' +
+                   : 'has NOT been granted it. In development it is honoured ' +
+                     'and recorded as ungranted — set ' +
                      'oauth2.delegatedPermissionsEnforced to refuse it ' +
-                     'instead. /admin/delegation is where the grant is made.'));
+                     'instead; product mode refuses it. /admin/delegation ' +
+                     'is where the grant is made.'));
       });
     }
     if (audiences.length) {
@@ -4821,10 +4842,11 @@ class OAuth2Server {
   // request is turned away, or the decision is made six times and one of them
   // will get it wrong.
   //
-  // **IT IS OFF UNLESS `oauth2.delegatedPermissionsEnforced` IS SET**, which is
-  // off by default. Most refusals in this service are, for the reason README.md
-  // gives on its first page: a mock exists to exercise clients, and a client is
-  // exercised by both answers.
+  // **PRODUCT MODE ALWAYS ENFORCES IT (#110, 2026-09-22)**
+  // (`mode.honoursUngrantedPermissions()`). In development it is off unless
+  // `oauth2.delegatedPermissionsEnforced` is set, which is off by default, for
+  // the reason README.md gives on its first page: a mock exists to exercise
+  // clients, and a client is exercised by both answers.
   //
   // **IT IS NOT PART OF RFC 9700 MODE and must never be folded into it.** Every
   // check in `oauth2_bcp.js` cites a section of a published Best Current
@@ -4851,10 +4873,14 @@ class OAuth2Server {
   // on while something is running.
   // ---------------------------------------------------------------------------
   permissionRefusal(scope: Json, clientId: Json): Json {
-    const { log, config, applications, delegation } = this.deps;
+    const { log, config, applications, delegation, mode } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.permissionRefusal().");
-    if (!config.value('oauth2.delegatedPermissionsEnforced')) {
+    // PRODUCT ALWAYS ENFORCES (#110, 2026-09-22); the setting turns it on in
+    // development. See `mode.honoursUngrantedPermissions()`.
+    const enforced = !mode.honoursUngrantedPermissions() ||
+                     !!config.value('oauth2.delegatedPermissionsEnforced');
+    if (!enforced) {
       log.debug("Leaving OAuth2Server.permissionRefusal(). Not enforced.");
       return '';
     }
@@ -4869,7 +4895,9 @@ class OAuth2Server {
     // change in this service rather than a change to the request. A client
     // developer reading `invalid_scope` about a scope their own product defines
     // has no way to guess that.
-    const description = 'oauth2.delegatedPermissionsEnforced is on, and ' +
+    const description = (mode.honoursUngrantedPermissions()
+      ? 'oauth2.delegatedPermissionsEnforced is on, and '
+      : 'Product mode enforces delegated permissions, and ') +
       (who ? 'the client "' + who + '"' : 'this client') + ' has not been ' +
           'granted ' +
       (named.ungranted.length === 1 ? 'the permission ' : 'the permissions ') +
@@ -4887,14 +4915,72 @@ class OAuth2Server {
         .join(', ') +
       ', and a grant is a value of `oauthDelegatedPermission` on the ' +
       'requesting application\'s own entry in ou=applications — made at ' +
-      '/admin/delegation, or through POST /admin-api/permissions/grant. With ' +
-      'the setting OFF this request is honoured and the token is audienced ' +
-      'and scoped exactly as a granted one would be, which is what this ' +
-      'service ' +
-      'does by default.';
+      '/admin/delegation, or through POST /admin-api/permissions/grant. In ' +
+      'development with the setting OFF this request is honoured and the ' +
+      'token is audienced and scoped exactly as a granted one would be.';
     log.debug("Leaving OAuth2Server.permissionRefusal(). " +
               named.ungranted.length + " ungranted.");
     return description;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SCOPES A CLIENT MAY BE ISSUED (#110, 2026-09-22) — rule 3au.
+  //
+  // `audienceScopes()` translates and `permissionRefusal()` decides the one
+  // question delegated permissions ask; this is the OTHER policy, and it is a
+  // function of its own for that header's reason: a translation must not also
+  // be a policy. The decision is `common/scope_policy.ts`'s, shared with GNAP;
+  // what this adds is this server's DEFAULT SET — OpenID Connect's six and
+  // this realm's OpenID4VCI credential scopes, which is what a client that
+  // declares no `oauthAllowedScope` may have in product mode.
+  //
+  // IT IS ASKED WHERE `permissionRefusal()` IS — the authorization endpoint,
+  // the pushed authorization request endpoint and the token endpoint, before
+  // anything is spent — and REFUSES, `invalid_scope` (RFC 6749 sections
+  // 4.1.2.1 and 5.2), so a misconfigured client fails at the request that was
+  // wrong. `tokenSet()` NARROWS instead, as the backstop for a grant carrying
+  // its scope from earlier: a refresh, an exchange's inherited scope.
+  //
+  // **UNLIKE `permissionRefusal()`, A GRANT ALREADY ISSUED IS RE-JUDGED** at
+  // that backstop. A permission is a relationship the client was granted; a
+  // protected scope is a key to this service's own API, and removing it from a
+  // client has to stop the next refresh minting it again — which is what the
+  // resource servers' own re-check (`scopePolicy.declares()`) does for the
+  // tokens already out.
+  // ---------------------------------------------------------------------------
+  credentialScopes(): string[] {
+    const { log, VCI_CONFIGS } = this.deps;
+    log.debug("Entering OAuth2Server.credentialScopes().");
+    const names: string[] = [];
+    Object.keys(VCI_CONFIGS).forEach(function (id) {
+      const scope = VCI_CONFIGS[id] && VCI_CONFIGS[id].scope;
+      if (scope && names.indexOf(String(scope)) < 0) {
+        names.push(String(scope));
+      }
+    });
+    log.debug("Leaving OAuth2Server.credentialScopes(). " + names.length);
+    return names;
+  }
+
+  // This service's own protected scopes — `common/scope_policy.ts` reads
+  // each resource server's own settings for them.
+  protectedScopes(): string[] {
+    const { log, scopePolicy } = this.deps;
+    log.debug("Entering OAuth2Server.protectedScopes().");
+    const names = scopePolicy.protectedScopes();
+    log.debug("Leaving OAuth2Server.protectedScopes().");
+    return names;
+  }
+
+  // null, or `{ code, error, description, scopes }` to refuse with.
+  scopeRefusal(scope: Json, clientId: Json): Json {
+    const { log, scopePolicy } = this.deps;
+    log.debug("Entering OAuth2Server.scopeRefusal().");
+    const refused = scopePolicy.refusal(scope, clientId,
+                                        { defaults: this.credentialScopes() });
+    log.debug("Leaving OAuth2Server.scopeRefusal(). " +
+              (refused ? refused.code : 'allowed'));
+    return refused;
   }
 
   // ---------------------------------------------------------------------------
@@ -5198,8 +5284,8 @@ class OAuth2Server {
     // which is precisely what an ungranted permission is — so no new code had
     // to be invented and a client library's existing handling applies.
     //
-    // A NO-OP UNLESS `oauth2.delegatedPermissionsEnforced` IS ON, which is off
-    // by default. See permissionRefusal().
+    // Always in product mode; in development a no-op unless
+    // `oauth2.delegatedPermissionsEnforced` is on. See permissionRefusal().
     const permissionProblem = self.permissionRefusal(scope, query.client_id);
     if (permissionProblem) {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). An " +
@@ -5208,6 +5294,22 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse().");
       return self.redirectBack(res, base, redirectUri, query.state,
         { error: 'invalid_scope', error_description: permissionProblem },
+        self.usesFragment(types, query.response_mode),
+        query.response_mode);
+    }
+
+    // THE SCOPES THIS CLIENT MAY BE ISSUED (#110), for the same reason and in
+    // the same shape: `invalid_scope`, redirected, while the client is still
+    // being talked to. This service's own protected scopes in every mode,
+    // every other undeclared scope in product. See scopeRefusal().
+    const scopeProblem = self.scopeRefusal(scope, query.client_id);
+    if (scopeProblem) {
+      log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). A scope " +
+                "the client did not declare was asked for.");
+      // STS-OAUTH-0577 (protected) or STS-OAUTH-0578 (undeclared).
+      errorCodes.mark(res, scopeProblem.code);
+      return self.redirectBack(res, base, redirectUri, query.state,
+        { error: 'invalid_scope', error_description: scopeProblem.description },
         self.usesFragment(types, query.response_mode),
         query.response_mode);
     }
@@ -9091,7 +9193,8 @@ class OAuth2Server {
     // re-checking a federated person after the session exists, which is the
     // same rule.
     //
-    // A no-op unless `oauth2.delegatedPermissionsEnforced` is on.
+    // Always in product mode; in development a no-op unless
+    // `oauth2.delegatedPermissionsEnforced` is on.
     if (body.scope !== undefined && body.scope !== null &&
         String(body.scope) !== '') {
       const permissionProblem = self.permissionRefusal(String(body.scope),
@@ -9102,6 +9205,20 @@ class OAuth2Server {
         errorCodes.mark(res, 'STS-OAUTH-0155');
         log.debug("Leaving OAuth2Server.tokenGrant().");
         return self.oauthError(res, 400, 'invalid_scope', permissionProblem);
+      }
+      // THE SCOPES THIS CLIENT MAY BE ISSUED (#110), on the same reading of
+      // `body.scope` and for the same grants. What a grant carries from
+      // earlier is narrowed in tokenSet() instead. See scopeRefusal().
+      const scopeProblem = self.scopeRefusal(String(body.scope),
+        (client && client.client_id) || body.client_id);
+      if (scopeProblem) {
+        log.debug("Leaving the token endpoint. A scope the client did not " +
+                  "declare was asked for.");
+        // STS-OAUTH-0577 (protected) or STS-OAUTH-0578 (undeclared).
+        errorCodes.mark(res, scopeProblem.code);
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 400, 'invalid_scope',
+                               scopeProblem.description);
       }
     }
 
@@ -11922,6 +12039,15 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.parRequest(). An ungranted permission.");
       return refuse(400, 'invalid_scope', permissionProblem, 'STS-OAUTH-0155');
     }
+    // #110: the scopes this client may be issued, refused at the push for
+    // the authorization endpoint's reason. See scopeRefusal().
+    const scopeProblem = self.scopeRefusal(scope, clientId);
+    if (scopeProblem) {
+      log.debug("Leaving OAuth2Server.parRequest(). An undeclared scope.");
+      // STS-OAUTH-0577 (protected) or STS-OAUTH-0578 (undeclared).
+      return refuse(400, 'invalid_scope', scopeProblem.description,
+                    scopeProblem.code);
+    }
     // RFC 9396: details whose type belongs to one API beside a scope or
     // resource naming another are refused here, at the push, rather than when
     // the request_uri is used.
@@ -12514,6 +12640,54 @@ class OAuth2Server {
     return null;
   }
 
+  // ---------------------------------------------------------------------------
+  // RFC 7591 SECTION 2's `scope` AT REGISTRATION (#110, 2026-09-22). The member
+  // is written to `oauthAllowedScope` — the list the client may be issued —
+  // so a registration naming this service's own protected scopes would be a
+  // client granting itself Admin Write, SCIM or Shared Signals. Section 2
+  // lets the server refuse or replace what it will not accept; refused
+  // (`invalid_client_metadata`, section 3.2.2), so the client is told rather
+  // than holding a registration that says something this server will never
+  // issue. An RFC 7592 update may KEEP a protected scope an administrator
+  // already declared on the entry — `existing` — and may not add one.
+  // ---------------------------------------------------------------------------
+  private registeredScopeProblem(metadata: Json, existing?: string): Json {
+    const { log, scopePolicy, applications } = this.deps;
+    log.debug("Entering OAuth2Server.registeredScopeProblem().");
+    const raw = (metadata || {}).scope;
+    if (raw === undefined || raw === null) {
+      log.debug("Leaving OAuth2Server.registeredScopeProblem(). No scope.");
+      return null;
+    }
+    if (typeof raw !== 'string') {
+      log.debug("Leaving OAuth2Server.registeredScopeProblem(). Not a string.");
+      return { errorCode: 'STS-REG-0173', error: 'invalid_client_metadata',
+               description: 'scope must be a string of space-separated ' +
+                 'scope values (RFC 7591 section 2).' };
+    }
+    const held = existing ? (applications.allowedScopesOf(existing) || []) :
+      [];
+    const refused = scopePolicy.split(raw).filter(function (one) {
+      return scopePolicy.isProtected(one) && held.indexOf(one) < 0;
+    });
+    if (refused.length) {
+      log.debug("Leaving OAuth2Server.registeredScopeProblem(). Protected.");
+      return { errorCode: 'STS-REG-0173', error: 'invalid_client_metadata',
+               description: 'scope names ' + refused.map(function (one) {
+                 return '"' + one + '"';
+               }).join(', ') + ', and ' +
+                 (refused.length === 1 ? 'that is' : 'those are') + ' this ' +
+                 'service\'s own protected ' +
+                 (refused.length === 1 ? 'scope' : 'scopes') + ': a client ' +
+                 'is issued one only when an administrator declares it in ' +
+                 'the client\'s oauthAllowedScope, on the console or ' +
+                 'through POST /admin-api/applications/add. Register ' +
+                 'without it.' };
+    }
+    log.debug("Leaving OAuth2Server.registeredScopeProblem().");
+    return null;
+  }
+
   // A refusal `software_statement.ts` decided, answered. Both of RFC 7591
   // section 3.2.2's statement errors are a 400.
   private statementRefused(res: Res, refusal: Json): Json {
@@ -12651,7 +12825,8 @@ class OAuth2Server {
       applications.oidcSubjectMetadataProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||
-      applications.authorizationDetailsMetadataProblem(metadata);
+      applications.authorizationDetailsMetadataProblem(metadata) ||
+      self.registeredScopeProblem(metadata);
     if (addressProblem) {
       log.debug("Leaving the client registration endpoint. An unusable " +
                 "address or introspection response algorithm.");
@@ -12830,7 +13005,8 @@ class OAuth2Server {
       applications.oidcSubjectMetadataProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||
-      applications.authorizationDetailsMetadataProblem(metadata);
+      applications.authorizationDetailsMetadataProblem(metadata) ||
+      self.registeredScopeProblem(metadata, record.client_id);
     if (addressProblem) {
       log.debug("Leaving the client update endpoint. An unusable address.");
       errorCodes.mark(res, addressProblem.errorCode || 'STS-REG-0070');
@@ -13356,6 +13532,11 @@ export = {
   USERINFO_SIGNING_ALGS: USERINFO_SIGNING_ALGS,
   accessToken: slot.forward('accessToken'),
   tokenSet: slot.forward('tokenSet'),
+  // THE TWO SCOPE POLICIES (#110), for `tests/scope_policy.js`: which scopes
+  // a client may be issued, and whether it holds a delegated permission.
+  scopeRefusal: slot.forward('scopeRefusal'),
+  permissionRefusal: slot.forward('permissionRefusal'),
+  protectedScopes: slot.forward('protectedScopes'),
   // THE ID TOKEN BUILDER, for GNAP (2026-09-12). RFC 9635 section 3.4.1
   // lets a grant response carry an OpenID Connect ID Token as a SUBJECT
   // ASSERTION, and a second builder in `gnap/` would be a second answer to

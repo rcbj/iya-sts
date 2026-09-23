@@ -1063,7 +1063,56 @@ const SCHEMA = {
     { name: 'oauthResponseType', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'response_type values seen at the authorization endpoint.' },
     { name: 'oauthScope', kind: 'multi', from: 'OAuth 2.0 / OIDC',
-      what: 'Scopes this application has asked for.' },
+      what: 'Scopes this application has ASKED FOR, accumulated as it asks. ' +
+            'SIGHTED, never declared: nothing is allowed or refused by it. ' +
+            'What the application may be issued is oauthAllowedScope.' },
+    // ---------------------------------------------------------------------
+    // THE DECLARED TWIN OF `oauthScope` (#110, 2026-09-22), and the
+    // `appProtocol` / `appAllowedProtocol` split again: one attribute is what
+    // happened and the other is what somebody said. Until that day an RFC
+    // 7591 registration's `scope` was written onto `oauthScope` beside every
+    // scope the client had merely asked for, so what was declared and what was
+    // observed could not be told apart — and nothing read either as a limit.
+    //
+    // IT IS READ, in three places. The authorization, pushed authorization and
+    // token endpoints refuse a scope it does not list (`common/scope_policy.ts`
+    // decides which, and in which mode); `tokenSet()` narrows a refresh or an
+    // exchange to it; and the resource servers behind this service's own
+    // protected scopes — /admin-api, /scim/v2, the Shared Signals endpoints —
+    // ask it again on every call, so removing a value cuts off a token already
+    // issued. GNAP reads it for the Shared Signals access rights.
+    //
+    // NOT FAMILY-SCOPED, deliberately. A SCIM or Shared Signals client is
+    // declared for that family and still gets its token from /oauth2/token;
+    // refusing the declaration on its entry would refuse the one thing it
+    // needs.
+    // ---------------------------------------------------------------------
+    { name: 'oauthAllowedScope', kind: 'multi',
+      from: 'POST /oauth2/register (its `scope`), the console, the ' +
+            'management API, or by hand',
+      what: 'THE SCOPES THIS CLIENT MAY BE ISSUED — RFC 7591 section 2\'s ' +
+            '`scope`, "the list that the client can use when requesting ' +
+            'access tokens". One scope token per value. Three kinds of scope ' +
+            'read it differently.\n\n**This service\'s own protected ' +
+            'scopes** — admin:read and admin:write (/admin-api), the SCIM ' +
+            'scopes (scim.scopeRead, scim.scopeWrite), the Shared Signals ' +
+            'scopes (ssf.authScopeRead, ssf.authScopeWrite) and the debugger ' +
+            'permission — are issued ONLY to a client that lists them, IN ' +
+            'BOTH MODES, and the resource server behind each asks again on ' +
+            'every call, so removing a value here cuts off tokens already ' +
+            'issued. An RFC 7591 registration may not declare them; an ' +
+            'administrator does, here.\n\n**Every other scope**, in ' +
+            'product mode, is issued only when listed here — or, when ' +
+            'nothing is listed, when it is in the default set: openid, ' +
+            'profile, email, address, phone, offline_access and this ' +
+            'realm\'s OpenID4VCI credential scopes. In development any ' +
+            'scope is issued.\n\n**A scope naming an application or a ' +
+            'delegated permission** keeps its own rules (the audience, and ' +
+            'oauthDelegatedPermission) and need not be listed.\n\nA scope ' +
+            'outside the list is refused invalid_scope at the authorization ' +
+            'and token endpoints (RFC 6749 section 3.3), and taken off a ' +
+            'refresh or a token exchange. Distinct from oauthScope, which is ' +
+            'only what the client has asked for.' },
 
     // --- delegated permissions: the RESOURCE half, then the CLIENT half -----
     //
@@ -1167,14 +1216,12 @@ const SCHEMA = {
             'that decides what a token says.** A `scope` value matching a ' +
             'defined permission becomes the access token\'s `aud` (the base ' +
             'URI) and its `scope` (the name) — see oauth2.js\'s ' +
-            'audienceScopes(). Whether the client HOLDS the grant is ' +
-            'reported either way and REFUSES nothing unless ' +
-            '`oauth2.delegatedPermissionsEnforced` is on, which is off by ' +
-            'default: this service exists to exercise clients and a refusal ' +
-            'that cannot be turned off removes a test case rather than ' +
-            'adding one. With it on, an ungranted permission is ' +
-            '`invalid_scope` at the authorization endpoint, where the client ' +
-            'can still be told.\n\nA VALUE THAT RESOLVES TO NO DEFINED ' +
+            'audienceScopes(). In PRODUCT MODE an ungranted permission is ' +
+            'refused `invalid_scope` at the authorization and token ' +
+            'endpoints, always. In development it is reported and REFUSES ' +
+            'nothing unless `oauth2.delegatedPermissionsEnforced` is on, ' +
+            'which is off by default: a client under test is exercised by ' +
+            'both answers.\n\nA VALUE THAT RESOLVES TO NO DEFINED ' +
             'PERMISSION IS NOT AN ERROR AND IS NOT HIDDEN. The resource\'s ' +
             'entry may have been deleted, or the permission removed from ' +
             'under it; `/admin/delegation` shows such a grant as DANGLING, ' +
@@ -3274,6 +3321,8 @@ const EDITABLE = {
   oauthGrantType: 'multi',
   oauthResponseType: 'multi',
   oauthScope: 'multi',
+  // DECLARED (#110): what the client may be issued. See its SCHEMA row.
+  oauthAllowedScope: 'multi',
   // THE THREE THAT MAKE A DELEGATED PERMISSION. Two `multi` and one `set`, and
   // each mode is the attribute's own kind read back: a base URI is one answer
   // per application (its own row says why widening it would mean deciding
@@ -5731,6 +5780,19 @@ function normaliseFields(value) {
       });
       return;
     }
+    // #110: a declared scope is a scope token, the rule oauthGlobalConsent
+    // has, for its reason — a value that is not one can never be asked for.
+    if (name === 'oauthAllowedScope') {
+      const scopeProblems = values.map(scopeTokenProblem)
+                                  .filter(function (one) {
+        return !!one;
+      });
+      if (scopeProblems.length) {
+        scopeProblems.forEach(function (one) { errors.push(one); });
+        code = code || 'STS-REG-0172';
+        return;
+      }
+    }
     if (name === 'ssfAllowedEvents') {
       const problems = values.map(ssfAllowedEventProblem)
                              .filter(function (one) {
@@ -6835,8 +6897,20 @@ function applyRegistrationFields(record, registration, statement) {
   setField(record, 'appHomePageUrl', meta.client_uri);
   setField(record, 'oauthGrantType', meta.grant_types);
   setField(record, 'oauthResponseType', meta.response_types);
-  if (meta.scope) setField(record, 'oauthScope',
-                           String(meta.scope).split(/\s+/));
+  // RFC 7591 section 2's `scope` is a DECLARATION — "the list that the
+  // client can use when requesting access tokens" — so it goes on the
+  // declared attribute and never on `oauthScope`, which is what the client
+  // has ASKED for (#110). CLEARED when absent, for RFC 9701's reason above:
+  // RFC 7592 section 2.2 replaces the whole registration. The registration
+  // endpoint has already refused a protected scope in it
+  // (`common/scope_policy.ts`); a seeded row is this service's own and may
+  // declare one.
+  delete record.fields.oauthAllowedScope;
+  const declaredScope = String(meta.scope || '').split(/\s+/)
+    .filter(function (one) { return !!one; });
+  if (declaredScope.length) {
+    setField(record, 'oauthAllowedScope', declaredScope);
+  }
   // RFC 7591 section 2: an omitted method means client_secret_basic, so the
   // attribute states the EFFECTIVE value rather than the absence. An entry
   // saying nothing here would read as "unknown", and RFC 9700 mode's answer for
@@ -7090,6 +7164,17 @@ function registrationOf(clientId) {
       fields.oauthResponseType.slice(0);
   if (fields.oauthTokenEndpointAuthMethod !== undefined) {
     document.token_endpoint_auth_method = fields.oauthTokenEndpointAuthMethod;
+  }
+  // RFC 7591 section 3.2.1 returns the registered `scope`, and the
+  // attribute is what an operator edits (#110) — so it is read from there,
+  // and a list cleared on the console is a member the document no longer
+  // carries.
+  const allowedScope = valuesOf(fields.oauthAllowedScope).map(String)
+    .filter(function (one) { return !!one.trim(); });
+  if (allowedScope.length) {
+    document.scope = allowedScope.join(' ');
+  } else {
+    delete document.scope;
   }
   // RFC 9701's three, from the attributes, so an operator's edit is what RFC
   // 7592's read hands back — and an attribute cleared on the console is a
@@ -8156,6 +8241,16 @@ function updateApplication(identifier, change) {
       log.debug("Leaving updateApplication(). The consented scope is not a " +
                 "scope token.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0018');
+    }
+  }
+  // A DECLARED SCOPE (#110) the same way, and only an add for the same
+  // asymmetry: a remove names a value already on the entry.
+  if (attribute === 'oauthAllowedScope' && mode === 'add') {
+    const problem = scopeTokenProblem(value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). The declared scope is not a " +
+                "scope token.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0172');
     }
   }
   // ---------------------------------------------------------------------------
@@ -9729,8 +9824,9 @@ function forPermissionBase(base) {
 // have to know which spelling it is holding.
 //
 // IT IS A QUESTION AND NOT A GATE. Nothing in this module refuses anything for
-// its answer; `oauth2.delegatedPermissionsEnforced` is what turns a false into
-// a refusal, and it is off by default.
+// its answer; oauth2.ts's permissionRefusal() turns a false into a refusal —
+// always in product mode, and in development when
+// `oauth2.delegatedPermissionsEnforced` is on (#110).
 function holdsPermission(clientId, id) {
   log.debug("Entering holdsPermission().");
   const wanted = String(id == null ? '' : id).trim();
@@ -9748,6 +9844,41 @@ function holdsPermission(clientId, id) {
     .indexOf(wanted) >= 0;
   log.debug("Leaving holdsPermission(). " + (held ? 'held' : 'not held') + ".");
   return held;
+}
+
+// ---------------------------------------------------------------------------
+// THE SCOPES A CLIENT DECLARED (#110, 2026-09-22): its `oauthAllowedScope`,
+// or NULL when it declares none — and the difference between an empty list and
+// no list is the whole of what `common/scope_policy.ts` reads it for. A client
+// that lists nothing gets the documented default set in product; a client that
+// lists something gets exactly that.
+//
+// Looked up the way holdsPermission() looks a grant up, and for its reason:
+// by `client_id` first, because that is what a token names, and then by the
+// registry identifier, which is what a GNAP token names (its instanceId is the
+// application's identifier). IN THE AMBIENT REALM: a client_id names a client
+// in one realm, and the caller runs this inside the realm whose token it is.
+//
+// A QUESTION AND NOT A GATE, like its neighbour: nothing here refuses.
+// ---------------------------------------------------------------------------
+function allowedScopesOf(clientId) {
+  log.debug("Entering allowedScopesOf().");
+  const who = String(clientId == null ? '' : clientId).trim();
+  if (!who) {
+    log.debug("Leaving allowedScopesOf(). No client named.");
+    return null;
+  }
+  const found = forClientId(who) || get(who);
+  if (!found) {
+    log.debug("Leaving allowedScopesOf(). No such client in the registry.");
+    return null;
+  }
+  const held = valuesOf((found.fields || {}).oauthAllowedScope).map(String)
+    .map(function (one) { return one.trim(); })
+    .filter(function (one) { return !!one; });
+  log.debug("Leaving allowedScopesOf(). " +
+            (held.length ? held.length + " declared." : "None declared."));
+  return held.length ? held : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -10301,7 +10432,10 @@ function internalApplications() {
         post_logout_redirect_uris: [base + '/admin'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        scope: 'openid profile email offline_access',
+        // `admin:read admin:write` (#110): the API explorer mints the reader
+        // a token as this client, carrying the scopes their console roles
+        // grant, and /admin-api asks whether the client declared them.
+        scope: 'openid profile email offline_access admin:read admin:write',
         token_endpoint_auth_method: 'private_key_jwt'
       } },
     // THE USER PORTAL, ADDED 2026-09-06 WITH THE MOVE ONTO THE CODE FLOW. It
@@ -10706,6 +10840,7 @@ module.exports = {
   // And the question the lookup deliberately does not answer: whether the
   // client asking has been GRANTED what it is naming.
   holdsPermission: holdsPermission,
+  allowedScopesOf: allowedScopesOf,
   count: count,
   containerDn: containerDn,
   maxApplications: maxApplications

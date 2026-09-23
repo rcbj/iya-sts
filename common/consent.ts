@@ -828,8 +828,9 @@ class Consent {
           // Whether the client has also been GRANTED it. The two are
           // independent and the difference is the interesting reading: a
           // consented permission the client does not hold is a person agreeing
-          // to something the operator has not allowed, and with
-          // `oauth2.delegatedPermissionsEnforced` on it is refused anyway.
+          // to something the operator has not allowed, and in product mode —
+          // or with `oauth2.delegatedPermissionsEnforced` on — it is refused
+          // anyway.
           granted: permission ?
                    applications.holdsPermission(row.identifier, permission.id) :
                    false

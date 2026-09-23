@@ -339,7 +339,7 @@ so each of these switches produces a known mistake:
 
 | | Development | Product |
 |---|---|---|
-| Credential at `/ssf/*` | required, but only a check at the door: any name and any password except `invalid` passes Basic, and anybody can get a token with either scope | required, and a Basic password is checked against the person's hashed `userPassword` |
+| Credential at `/ssf/*` | required, but only a check at the door: any name and any password except `invalid` passes Basic. A token carries `ssf:read` or `ssf:write` only when its client declares them in `oauthAllowedScope` (in both modes), and is honoured only while it still does (`STS-SSF-0107`) | required, and a Basic password is checked against the person's hashed `userPassword` |
 | Access tokens | verified | verified |
 | Subjects of automatic events | a person with no `mail` gets an invented `@example.com` address | a real value from the directory entry, or the issuer/subject pair. RISC's two identifier events are not sent when there is no real value |
 | Streams, queues, CAEP and RISC registers | in memory, lost on restart | persisted with other minted state (product mode on postgres) |

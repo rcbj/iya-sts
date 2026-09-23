@@ -3404,10 +3404,10 @@ with `Cannot find module` naming a file the operator never mentioned.
    against the CURRENT registry.
 
    **AND NOTHING HERE ASKS WHETHER THE GRANT WAS HELD.** `holdsPermission()` is
-   that question and it belongs to the configured register;
+   that question and it belongs to the configured register; in development
    `oauth2.delegatedPermissionsEnforced` is off by default, so a token carrying
-   a permission its client was never granted is an ordinary outcome here and the
-   line reports what was ISSUED. Colouring it as a refusal would be this model
+   a permission its client was never granted is an ordinary outcome there (product
+   refuses the request, #110) and the line reports what was ISSUED. Colouring it as a refusal would be this model
    deciding a policy the token endpoint declined to decide.
 
    **THE ARRAY'S PRESENCE IS THE DISCRIMINATOR, and that is load-bearing rather
@@ -3506,6 +3506,66 @@ with `Cannot find module` naming a file the operator never mentioned.
    and drawing both would make the common case, a credential with no ancestry and
    no descendants, into a page explaining itself in two directions. The forward
    direction is what `/admin/delegation` and its map are for.
+
+## `scope_policy.ts`: which scopes a client may be issued (#110, 2026-09-22) — rule 3au
+
+Until #110 nothing tied a scope to a client: the token endpoint kept every scope
+a request named, in every mode, so any client that could use
+`client_credentials` minted `admin:write` for `/admin-api`, `scim:write` or
+`ssf:write`. `common/scope_policy.ts` is the policy that closes it, and
+`oauth-oidc/CLAUDE.md` (3au) says where the authorization server asks it.
+
+**THE DECLARATION IS `oauthAllowedScope`, AND IT IS THE `appAllowedProtocol`
+SPLIT AGAIN.** `oauthScope` is SIGHTED — what the client has asked for,
+written by `seen()` — and until #110 an RFC 7591 registration's `scope` was
+written there too, so the declared and the observed could not be told apart.
+The registration writes the new attribute now (and RFC 7592's read returns it
+from there), and `oauthScope` is sighted only. **It is not family-scoped**: a
+SCIM or Shared Signals client is declared for that family and still gets its
+token from `/oauth2/token`. `applications.allowedScopesOf()` answers the list
+or NULL — and the difference between an empty list and none is what the policy
+reads.
+
+**THREE KINDS OF SCOPE, READ THREE WAYS.**
+
+* **This service's own protected scopes**, in BOTH modes: `admin:read`,
+  `admin:write`, the SCIM pair and the Shared Signals pair BY THEIR SETTINGS
+  (`scim.scopeRead`/`scopeWrite`, `ssf.authScopeRead`/`authScopeWrite` — a list
+  written out would go stale the day one was renamed, and the renamed scope
+  would be issued to anybody), and the debugger permission. Development already
+  gates the resource servers behind them; a gate any client can mint the key to
+  is not one. The debugger permission keeps its own role rule on top
+  (`debugger_access.ts`).
+* **A scope naming an application or a delegated permission** is not judged
+  here: the first is an audience and not a privilege, the second has a grant of
+  its own (`oauthDelegatedPermission`, rule 3s).
+* **Every other scope**, in PRODUCT only (`mode.grantsUndeclaredScopes()`): a
+  client with a list gets what it lists; a client with none gets the documented
+  default — OIDC Core's six and the caller's `defaults` (the authorization
+  server passes this realm's OpenID4VCI scopes; GNAP passes none). That is RFC
+  6749 section 3.3's pre-defined default, and the alternative ("nothing without
+  a list") breaks every plain OpenID Connect client.
+
+**`declares()` IS THE RESOURCE SERVERS' QUESTION.** `/admin-api`
+(`declaredAdminScopes()`, `STS-API-0123`), SCIM (`STS-SCIM-0079`) and Shared
+Signals (`STS-SSF-0107`, OAuth and GNAP) ask it of every token, in the realm
+that issued it, so an allowance removed from a client stops the tokens it
+already holds. That is what replaced the realm gate's "only
+`sts-management-api`" (`STS-API-0111`, retired): one rule for both realms.
+
+**A LIBRARY, built by the composition root** beside `account_state`. It
+requires only libraries, so GNAP (`gnap_grants.ts`, `STS-GNAP-0719` — one
+declared vocabulary per application whatever protocol it asks in) and the three
+resource servers can require it without a cycle. The debugger permission's
+spelling is written out rather than required from `debugger/`, for
+`applications.js`'s reason, and `tests/scope_policy.js` compares the two.
+
+**NO MIGRATION.** A persisted `sts-management-api` or `sts-admin-console` seeded
+before #110 is left alone by `seedInternalApplication()` and carries no
+declaration: add `admin:read admin:write` to its `oauthAllowedScope` on the
+console (the application's page — the console's own gate is a session, which
+this does not touch) or by `ldapmodify`, since `/admin-api` then refuses its
+tokens; or delete the entry and restart.
 
 ## An OAuth client is not a person, and now it has somewhere to be
 

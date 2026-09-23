@@ -94,12 +94,12 @@ const REQUIREMENTS = [
            'or client_secret_jwt',
     note: 'client_secret_basic and client_secret_post are refused at ' +
           'registration and at the token and PAR endpoints ' +
-          '(STS-OAUTH-0580, STS-REG-0175).' },
+          '(STS-OAUTH-0580, STS-REG-0174).' },
   { id: 'key-sizes', section: '5.2.2 items 5-6', level: 'SHALL',
     enforced: 'yes',
     title: 'RSA keys of 2048 bits or more, EC keys of 160 or more',
     note: 'A registration whose jwks holds a smaller key is refused ' +
-          '(STS-REG-0176). This service\'s own keys already meet it.' },
+          '(STS-REG-0175). This service\'s own keys already meet it.' },
   { id: 'pkce-s256', section: '5.2.2 item 7', level: 'SHALL',
     enforced: 'yes',
     title: 'PKCE with S256, for every client',
@@ -109,7 +109,7 @@ const REQUIREMENTS = [
     enforced: 'yes',
     title: 'redirect_uri pre-registered, sent, exactly matched, and https',
     note: 'Matching is RFC 9700 mode\'s; sending it and https are this ' +
-          'profile\'s (STS-OAUTH-0574, STS-REG-0177).' },
+          'profile\'s (STS-OAUTH-0574, STS-REG-0176).' },
   { id: 'explicit-consent', section: '5.2.2 item 12', level: 'SHALL',
     enforced: 'yes',
     title: 'The user approves the scope explicitly unless previously ' +
@@ -367,7 +367,7 @@ function registrationRefusal(metadata) {
   const method = String(meta.token_endpoint_auth_method || '');
   if (method && method !== 'none' && BASELINE_METHODS.indexOf(method) < 0) {
     log.debug("Leaving registrationRefusal(). A method FAPI refuses.");
-    return refusal('STS-REG-0175', 'invalid_client_metadata',
+    return refusal('STS-REG-0174', 'invalid_client_metadata',
                    'confidential-client-auth',
                    'token_endpoint_auth_method "' + method + '" is not one ' +
                    'a FAPI client may use; it is one of ' +
@@ -380,7 +380,7 @@ function registrationRefusal(metadata) {
   });
   if (plain.length) {
     log.debug("Leaving registrationRefusal(). A redirect URI is not https.");
-    return refusal('STS-REG-0177', 'invalid_redirect_uri', 'redirect-uri',
+    return refusal('STS-REG-0176', 'invalid_redirect_uri', 'redirect-uri',
                    'every redirect URI must use the https scheme; ' +
                    plain.map(String).join(', ') + ' does not (section ' +
                    '5.2.2 item 20)');
@@ -393,7 +393,7 @@ function registrationRefusal(metadata) {
                   (keys[i] && keys[i].kty === 'EC' && bits < MIN_EC_BITS);
     if (small) {
       log.debug("Leaving registrationRefusal(). A key is too small.");
-      return refusal('STS-REG-0176', 'invalid_client_metadata', 'key-sizes',
+      return refusal('STS-REG-0175', 'invalid_client_metadata', 'key-sizes',
                      'jwks key ' + (keys[i].kid ? '"' + keys[i].kid + '" '
                                                 : '') +
                      'is ' + keys[i].kty + ' of ' + bits + ' bits; RSA keys ' +

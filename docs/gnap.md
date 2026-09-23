@@ -196,7 +196,10 @@ with a sentence saying what was wrong.
 * A **grant modified** sends `token-claims-change` carrying the new `access`.
 * A GNAP web application can **own a stream**: it presents its GNAP access token
   to `/ssf/stream` with the `GNAP` scheme and a proof, with `ssf:read` or
-  `ssf:write` in the token's access. The transmitter metadata lists
+  `ssf:write` in the token's access. Those rights are this service's own
+  protected scopes: a grant asking for them is refused `request_denied`
+  (`STS-GNAP-0719`) unless the application's `oauthAllowedScope` declares them,
+  and the transmitter asks again on every call. The transmitter metadata lists
   `urn:ietf:rfc:9635` for it.
 * A stream a GNAP web application owns is **scoped**: it hears only about
   people who approved a grant to that application.
