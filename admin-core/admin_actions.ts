@@ -198,6 +198,9 @@ import roles = require('../common/roles');
 // requiring it here moves nothing; the rules it holds are what both the action
 // below and `credentials.setPassword()` ask.
 import passwordPolicy = require('../common/password_policy');
+// THE KINDS OF POLICY ON /admin/policies (#64). A library over the policy
+// modules, which are leaves; `policiesAction()` hands each action to its kind.
+import policyKinds = require('./policy_kinds');
 // THE ERROR CODES (common/error_codes.js, a leaf). An action has no response to
 // mark, so a refusal's code goes on the RESULT, under the same non-enumerable
 // Symbol `mark()` writes on a response. JSON.stringify never sees a Symbol key,
@@ -589,12 +592,15 @@ const ROLE_MEMBER_KINDS = [
 ];
 
 // ---------------------------------------------------------------------------
-// THE PASSWORD POLICY'S TWO WRITES (2026-09-12), behind /admin/policies and
-// POST /admin-api/policies/{action}.
+// THE POLICIES' WRITES (2026-09-12; every kind since #64), behind
+// /admin/policies and POST /admin-api/policies/{action}.
 //
 // Every rule — which profile names may exist, what each field may be, how two
-// fields relate — is in `common/password_policy.ts`, so this reads a body and
-// decides nothing, which is the division `rolesAction()` has with `roles.js`.
+// fields relate — is in the kind's own module (`common/password_policy.ts`,
+// `common/authn_policy.ts`), so this reads a body and decides nothing, which
+// is the division `rolesAction()` has with `roles.js`. Each kind answers two
+// actions, `save-<kind>-policy` and `reset-<kind>-policy`, and the list is
+// `policy_kinds.ts`'s — so the refusal of an unknown one names every kind's.
 //
 // **A SAVE REPLACES THE WHOLE PROFILE AND THE BODY CARRIES EVERY FIELD.** The
 // console's form always does; an API caller that leaves one out is refused by
@@ -602,8 +608,6 @@ const ROLE_MEMBER_KINDS = [
 // loosened a rule nobody mentioned is the one mistake here that nobody sees.
 // `form: 'console'` is what tells the module an absent checkbox means "no".
 // ---------------------------------------------------------------------------
-const PASSWORD_POLICY_ACTIONS = ['save-password-policy',
-                                 'reset-password-policy'];
 
 // The six keys, in the order the page draws them: the three lifetimes, the
 // refresh token's idle limit and its revoke-on-logout switch, then the
@@ -824,6 +828,7 @@ interface AdminActionsDeps {
   consent: typeof consent;
   roles: typeof roles;
   passwordPolicy: typeof passwordPolicy;
+  policyKinds: typeof policyKinds;
   errorCodes: typeof errorCodes;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
@@ -887,6 +892,7 @@ class AdminActions {
       consent: consent,
       roles: roles,
       passwordPolicy: passwordPolicy,
+      policyKinds: policyKinds,
       errorCodes: errorCodes,
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
@@ -2454,7 +2460,8 @@ class AdminActions {
                      'security key before it continues.')
                : 'A second factor is no longer required of ' + who + ' on ' +
                  'their account.' + (mech.mfaRequirement.byRealm
-                   ? ' The REALM still requires one (authn.mfaRequired).' : '')
+                   ? ' The REALM still requires one (the authentication ' +
+                     'policy).' : '')
     };
   }
 
@@ -4429,94 +4436,95 @@ class AdminActions {
                                       ROLE_ACTIONS.join(', ') + '.'] });
   }
 
-  passwordPoliciesAction(body, context) {
-    const { log, auditLog, passwordPolicy } = this.deps;
-    log.debug("Entering AdminActions.passwordPoliciesAction(). action=" +
+  policiesAction(body, context) {
+    const { log, auditLog, policyKinds, numberWord } = this.deps;
+    log.debug("Entering AdminActions.policiesAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
     const ctx = context || {};
     const actor = String(ctx.actor || body.actor || '');
-    const profileName = String(body.profile ||
-                               passwordPolicy.DEFAULT_PROFILE).trim();
-    const before = passwordPolicy.read(passwordPolicy.DEFAULT_PROFILE);
+    const found = policyKinds.forAction(action);
+    if (!found) {
+      const known = policyKinds.actions();
+      log.debug("Leaving AdminActions.policiesAction(). Unknown action.");
+      return this.refused('STS-ADMIN-0500',
+                     { ok: false, errors: ['Unknown action "' + action +
+                                           '". The ' +
+                                           numberWord(known.length) +
+                                           ' are: ' + known.join(', ') +
+                                           '.'] });
+    }
+    const kind = found.kind;
+    const module = kind.module;
+    const noun = kind.label.toLowerCase() + ' profile';
+    const profileName = String(body.profile || module.DEFAULT_PROFILE).trim();
+    const before = module.read(module.DEFAULT_PROFILE);
     const valuesOf = function (profile) {
       log.debug("Entering valuesOf().");
       const out: Record<string, any> = {};
-      passwordPolicy.FIELDS.forEach(function (field) {
+      module.FIELDS.forEach(function (field) {
         out[field.key] = profile[field.key];
       });
       log.debug("Leaving valuesOf().");
       return out;
     };
 
-    if (action === 'save-password-policy') {
+    if (found.verb === 'save') {
       const given = Object.assign({}, body);
       if (ctx.via === 'console') {
         given.form = 'console';
       }
-      const result = passwordPolicy.save(profileName, given);
+      const result = module.save(profileName, given);
       if (!result.ok) {
-        log.debug("Leaving AdminActions.passwordPoliciesAction(). save " +
-                  "refused.");
+        log.debug("Leaving AdminActions.policiesAction(). save refused.");
         return this.refused(this.innerCode(result) || 'STS-ADMIN-0549',
                             { ok: false, errors: result.errors });
       }
       auditLog.audit({
-        action: 'admin.password-policy.change', actor: actor,
+        action: kind.auditAction, actor: actor,
         target: result.profile.dn, channel: 'http',
-        summary: 'saved the password policy profile "' + result.profile.name +
-                 '"',
-        detail: { via: ctx.via || '', before: valuesOf(before),
-                  after: valuesOf(result.profile) }
+        summary: 'saved the ' + noun + ' "' + result.profile.name + '"',
+        detail: { via: ctx.via || '', kind: kind.id,
+                  before: valuesOf(before), after: valuesOf(result.profile) }
       });
-      log.debug("Leaving AdminActions.passwordPoliciesAction(). saved.");
-      return { ok: true, profile: result.profile,
-               rules: passwordPolicy.describe(result.profile),
+      log.debug("Leaving AdminActions.policiesAction(). saved.");
+      return { ok: true, kind: kind.id, profile: result.profile,
+               rules: module.describe(result.profile),
                enforced: result.profile.enforced,
-               message: 'The password policy profile "' + result.profile.name +
+               message: 'The ' + noun + ' "' + result.profile.name +
                         '" is saved at ' + result.profile.dn + '. It applies ' +
-                        'to the NEXT password set in this realm and to ' +
-                        'nothing already stored' +
+                        'to ' + kind.appliesTo +
                         (result.profile.enforced ? '.'
                           : ' — and it is not enforced here until this realm ' +
                             'is in product mode.') };
     }
 
-    if (action === 'reset-password-policy') {
-      const result = passwordPolicy.reset(profileName);
-      if (!result.ok) {
-        log.debug("Leaving AdminActions.passwordPoliciesAction(). reset " +
-                  "refused.");
-        return this.refused(this.innerCode(result) || 'STS-ADMIN-0550',
-                            { ok: false, errors: result.errors });
-      }
-      if (result.removed) {
-        auditLog.audit({
-          action: 'admin.password-policy.change', actor: actor,
-          target: before.dn, channel: 'http',
-          summary: 'put the password policy profile "' + before.name + '" ' +
-                   'back to the built-in defaults',
-          detail: { via: ctx.via || '', before: valuesOf(before),
-                    after: valuesOf(result.profile) }
-        });
-      }
-      log.debug("Leaving AdminActions.passwordPoliciesAction(). reset.");
-      return { ok: true, removed: result.removed, profile: result.profile,
-               rules: passwordPolicy.describe(result.profile),
-               message: result.removed
-                 ? 'The stored profile is gone and the built-in defaults are ' +
-                   'in ' +
-                   'force: ' +
-                   passwordPolicy.describe(result.profile).join(', ') + '.'
-                 : 'Nothing was stored, so the built-in defaults were ' +
-                   'already in force.' };
+    const result = module.reset(profileName);
+    if (!result.ok) {
+      log.debug("Leaving AdminActions.policiesAction(). reset refused.");
+      return this.refused(this.innerCode(result) || 'STS-ADMIN-0550',
+                          { ok: false, errors: result.errors });
     }
-
-    log.debug("Leaving AdminActions.passwordPoliciesAction(). Unknown action.");
-    return this.refused('STS-ADMIN-0500',
-                   { ok: false, errors: ['Unknown action "' + action + '". ' +
-        'The two are: ' +
-                                 PASSWORD_POLICY_ACTIONS.join(', ') + '.'] });
+    if (result.removed) {
+      auditLog.audit({
+        action: kind.auditAction, actor: actor,
+        target: before.dn, channel: 'http',
+        summary: 'put the ' + noun + ' "' + before.name + '" back to ' +
+                 kind.fallsBackTo,
+        detail: { via: ctx.via || '', kind: kind.id,
+                  before: valuesOf(before), after: valuesOf(result.profile) }
+      });
+    }
+    log.debug("Leaving AdminActions.policiesAction(). reset.");
+    return { ok: true, kind: kind.id, removed: result.removed,
+             profile: result.profile,
+             rules: module.describe(result.profile),
+             message: result.removed
+               ? 'The stored profile is gone, and this realm follows ' +
+                 kind.fallsBackTo + ': ' +
+                 module.describe(result.profile).join(', ') + '.'
+               : 'Nothing was stored in this realm, so it already followed ' +
+                 kind.fallsBackTo + '.' };
   }
 
   // ---------------------------------------------------------------------------
@@ -6541,8 +6549,7 @@ export = {
   ROLE_MEMBER_KINDS: ROLE_MEMBER_KINDS,
   roleMemberKindOf: slot.forward('roleMemberKindOf'),
   rolesAction: slot.forward('rolesAction'),
-  passwordPoliciesAction: slot.forward('passwordPoliciesAction'),
-  PASSWORD_POLICY_ACTIONS: PASSWORD_POLICY_ACTIONS,
+  policiesAction: slot.forward('policiesAction'),
   DEFAULT_CREDENTIAL: DEFAULT_CREDENTIAL,
   claimsAction: slot.forward('claimsAction'),
   sweepText: slot.forward('sweepText'),

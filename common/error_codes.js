@@ -3559,7 +3559,7 @@ const CODES = [
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0074',
     summary: 'An authenticator-app enrolment was refused because ' +
-      'authenticator apps are switched off (totp.enabled).',
+      'authenticator apps are switched off (the authentication policy).',
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0075',
     summary: 'A pending authenticator-app or security-key enrolment was not ' +
@@ -3594,7 +3594,7 @@ const CODES = [
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0082',
     summary: 'Generating recovery codes was refused because they are ' +
-      'switched off (backupCodes.enabled).',
+      'switched off (the authentication policy).',
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0083',
     summary: 'A set of distinct recovery codes could not be generated at the ' +
@@ -3910,7 +3910,7 @@ const CODES = [
   { code: 'STS-AUTHN-0171',
     summary: 'A passwordless security-key sign-in was refused because a ' +
       'second factor is required of the person (their account or the ' +
-      'realm\'s authn.mfaRequired).',
+      'realm\'s authentication policy).',
     spec: 'the sign-in screen again with the reason' },
   { code: 'STS-AUTHN-0172',
     summary: 'A sign-in was refused: a second factor is required of the ' +

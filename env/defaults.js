@@ -159,7 +159,6 @@ var config = {
     sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
     mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
-    mfaRequired: false,             // Require a second factor of everybody
     passwordAloneDoors: "",         // Password-only doors that accept a password alone
     unauthenticatedSessions: false  // Offer "Continue without signing in"
   },
@@ -185,7 +184,6 @@ var config = {
 
   // --- TOTP MFA --------------------------------------------------------
   totp: {
-    enabled: true,           // Offer authenticator apps (TOTP)
     issuer: "",              // Authenticator app label
     algorithm: "SHA1",       // HMAC digest
     digits: 6,               // Digits in a code
@@ -197,7 +195,6 @@ var config = {
 
   // --- Backup codes ----------------------------------------------------
   backupCodes: {
-    enabled: true,    // Issue recovery codes with a second factor
     count: 10,        // Codes in a set
     length: 10,       // Characters in a code
     pendingTtlS: 900, // How long an unconfirmed set of recovery codes waits (seconds)

@@ -227,6 +227,10 @@ class ProtocolStack {
                'AppPasswords');
     this.build('common/password_policy', require('./password_policy'),
                'PasswordPolicy');
+    // #64: the authentication policy — which mechanisms are first and second
+    // factors. A library over the directory slot, like the password policy.
+    this.build('common/authn_policy', require('./authn_policy'),
+               'AuthnPolicy');
     this.build('authn/webauthn_policy', require('../authn/webauthn_policy'),
                'WebauthnPolicy');
     // #105: a registration's attestation statement, verified. A library

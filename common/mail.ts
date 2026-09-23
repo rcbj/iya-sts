@@ -818,7 +818,9 @@ class Mail {
     const out: Json = { ok: false, queued: [], refused: [], duplicates: [] };
     try {
       const spec = MailTemplates.builtIn(String((req && req.template) || ''));
-      if (!spec) {
+      // THE LAYOUT (#64) IS A TEMPLATE AND NOT A MESSAGE: it wraps every
+      // message, and sent on its own it would be an empty frame.
+      if (!spec || spec.id === MailTemplates.LAYOUT_ID) {
         out.refused.push(this.refuse(req || ({} as SendRequest), '',
           'STS-MAIL-0017', 'there is no message "' +
           String((req && req.template) || '') + '"'));
@@ -1000,7 +1002,19 @@ class Mail {
       values[name] = /^\/(?!\/)/.test(path) && !/[\s\\]/.test(path)
         ? base + path : '';
     });
-    const rendered = MailTemplates.render(chosen.parts, values);
+    // #64: EVERY MESSAGE IS WRAPPED IN THE REALM'S LAYOUT, in the language
+    // the message itself was chosen in where the realm has one, the
+    // built-in otherwise. `reason` is the category, which is what decides
+    // whether the person could have declined it.
+    const cat2 = MailTemplates.category(spec.category);
+    const layout = this.templateFor(MailTemplates.LAYOUT_ID,
+                                    [chosen.lang].concat(languages));
+    const body = MailTemplates.render(chosen.parts, values);
+    const rendered = layout
+      ? MailTemplates.wrap(layout.parts, body, Object.assign({}, values, {
+          reason: cat2 ? cat2.reason : 'a message from this service'
+        }))
+      : body;
     const at = now();
     const id = nodeCrypto.randomBytes(16).toString('base64url');
     const domain = this.fromAddress().split('@').pop();

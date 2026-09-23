@@ -1596,45 +1596,13 @@ const SETTINGS = [
                  'create on purpose. The reply says when it stopped.' },
 
   // ---------------------------------------------------------------------
-  // A SECOND FACTOR REQUIRED OF EVERYBODY IN THE REALM (2026-09-13).
-  //
-  // **A GROUP OF ITS OWN, DRAWN ON BOTH MECHANISM PAGES**, and the rename
-  // below is why it is not called `Multi-factor authentication`: that group
-  // named a category and mixed two mechanisms' settings on one screen. This is
-  // one POLICY that either mechanism satisfies, so it is drawn on `/admin/totp`
-  // AND `/admin/webauthn` — `saml.issuer`'s arrangement on the two SAML pages —
-  // and a reader of either page sees that it is in force.
-  //
-  // It is `authn.` because what it changes is the SIGN-IN SCREEN, which asks
-  // for enrolment when a person holds no second factor.
+  // `authn.mfaRequired` WAS HERE until #64 (2026-09-23), when it became the
+  // authentication policy's `requireSecondFactor` on Directory > Policies —
+  // `cn=default,ou=authnPolicies`, which a realm inherits from the default
+  // realm (common/authn_policy.ts). `totp.enabled` and `backupCodes.enabled`
+  // went with it, into that policy's TOTP and recovery-code rows. There is no
+  // shim: every install is rebuilt.
   // ---------------------------------------------------------------------
-  { key: 'authn.mfaRequired', group: 'Second-factor requirement',
-    label: 'Require a second factor of everybody',
-    path: 'authn.mfaRequired', env: 'STS_AUTHN_MFA_REQUIRED',
-    type: 'bool', dflt: false, runtime: true,
-    description: 'When on, every person who signs in at this realm\'s ' +
-                 'sign-in screen must use a second factor — an ' +
-                 'authenticator app (TOTP) or a security key in the mfa ' +
-                 'role. Somebody who holds neither is shown a set-up step ' +
-                 'after their password is accepted, and no session is ' +
-                 'started until one is enrolled. A passwordless security-key ' +
-                 'sign-in is REFUSED while it is on, because a key on its ' +
-                 'own is one factor (amr ["hwk"]). The same requirement ' +
-                 'can be placed on one person from their /admin/users ' +
-                 'page. In product mode it also refuses the person\'s own ' +
-                 'password at the five password-only doors — an LDAP bind, ' +
-                 'a WS-Trust UsernameToken, SCIM, SSF and EST Basic — where ' +
-                 'an app password is used instead (#101; see ' +
-                 'authn.passwordAloneDoors). **What it does not reach**: a ' +
-                 'sign-in that never meets this screen and is not one of ' +
-                 'those doors — a federated assertion, a SPNEGO ticket or ' +
-                 'a Kerberos AS-REQ, a TLS client certificate — and a ' +
-                 'session that already exists. Nothing is enrolled if both ' +
-                 'mechanisms are ' +
-                 'switched off (totp.enabled, webauthn.enabled or ' +
-                 'webauthn.mfaAllowed), and then the screen refuses the ' +
-                 'sign-in and names those settings rather than letting a ' +
-                 'required second factor quietly not be asked for.' },
 
   // ---------------------------------------------------------------------
   // THE PASSWORD-ONLY DOORS AND APP PASSWORDS (#101, 2026-09-22).
@@ -1675,7 +1643,8 @@ const SETTINGS = [
                  'entry, named, and accepted ONLY at the password-only doors ' +
                  'it is scoped to — never at the sign-in screen. **Turning ' +
                  'it off does not invalidate one already made**, the ' +
-                 'contract backupCodes.enabled keeps: it stops new ones. ' +
+                 'contract the recovery-code row of the authentication ' +
+                 'policy keeps: it stops new ones. ' +
                  'Revoke one on the same pages.' },
 
   { key: 'appPasswords.maxPerPerson', group: 'Second-factor requirement',
@@ -1713,21 +1682,6 @@ const SETTINGS = [
   // key policy no longer land on the same screen and read past each other.
   // ---------------------------------------------------------------------
 
-  { key: 'totp.enabled', group: 'TOTP MFA',
-    label: 'Offer authenticator apps (TOTP)',
-    path: 'totp.enabled', env: 'STS_TOTP_ENABLED',
-    type: 'bool', dflt: true, runtime: true,
-    description: 'Whether a person may enrol an RFC 6238 authenticator app ' +
-                 'as a second factor, on `/portal/mfa` or while spending an ' +
-                 'activation link. **Turning it off does NOT disable a ' +
-                 'secret somebody already enrolled** — that account is still ' +
-                 'configured for two factors and the sign-in screen still ' +
-                 'asks for the code. A setting that silently downgraded ' +
-                 'every enrolled account to a password alone would be a ' +
-                 'security control whose off switch does something other ' +
-                 'than what it says. What it stops is new enrolments; an ' +
-                 'existing one is removed on that person\'s own row under ' +
-                 '`/admin/users`.' },
 
   { key: 'totp.issuer', group: 'TOTP MFA',
     label: 'Authenticator app label',
@@ -1841,27 +1795,10 @@ const SETTINGS = [
   // scrypt hashes a set is generated when the PERSON asks, shown once and
   // stored only when they confirm it — a hash can only be made while the code
   // is in the clear, and an automatic issue would hash a list nobody saw
-  // (common/CLAUDE.md, 3y). `backupCodes.enabled` off is the one way to offer
-  // none, and it is the whole switch.
+  // (common/CLAUDE.md, 3y). The authentication policy's recovery-code row off
+  // (#64; it was `backupCodes.enabled`) is the one way to offer none, and it
+  // is the whole switch.
   // ---------------------------------------------------------------------
-  { key: 'backupCodes.enabled', group: 'Backup codes',
-    label: 'Issue recovery codes with a second factor',
-    path: 'backupCodes.enabled', env: 'STS_BACKUP_CODES_ENABLED',
-    type: 'bool', dflt: true, runtime: true,
-    description: 'Whether a person may generate a set of single-use recovery ' +
-                 'codes on /portal/mfa — shown once, and stored as scrypt ' +
-                 'hashes only when they confirm they have kept it. (Until ' +
-                 '2026-09-11 a set was issued automatically the first time a ' +
-                 'second factor was enrolled; that was reversed with the ' +
-                 'hashing, and this sentence was updated on 2026-09-12.) ' +
-                 '**Turning it off does NOT invalidate a set somebody ' +
-                 'already holds**, and that is the contract `totp.enabled` ' +
-                 'and `webauthn.enabled` both keep: a person issued ten ' +
-                 'codes still holds ten and the sign-in door still accepts ' +
-                 'one. A setting that silently took away the only way back ' +
-                 'into an account whose phone is lost would be the worst ' +
-                 'knob in this service. What it stops is a new set being ' +
-                 'issued.' },
 
   { key: 'backupCodes.count', group: 'Backup codes',
     label: 'Codes in a set', path: 'backupCodes.count',
@@ -1979,7 +1916,8 @@ const SETTINGS = [
                  'the two boxes on the sign-in screen, the enrolment on ' +
                  '`/portal/keys`, and the `/authn/webauthn` screen itself. ' +
                  '**Turning it off does NOT remove a key somebody already ' +
-                 'enrolled**, exactly as `totp.enabled` does not remove a ' +
+                 'enrolled**, exactly as the TOTP row of the ' +
+                 'authentication policy does not remove a ' +
                  'shared secret: an account configured for two factors is ' +
                  'still configured for two, and a setting that silently ' +
                  'downgraded it would be a security control whose off switch ' +
@@ -2307,7 +2245,8 @@ const SETTINGS = [
     type: 'bool', dflt: true, runtime: true,
     description: 'Whether a security key may be enrolled as a second factor ' +
                  'beside a password. Off, the remaining second factor is the ' +
-                 'authenticator app (`totp.enabled`), and a deployment with ' +
+                 'authenticator app (the TOTP row of the authentication ' +
+                 'policy), and a deployment with ' +
                  'both off offers no second factor at all — which is a ' +
                  'supported configuration and is what this service did ' +
                  'before either existed. **An enrolled `mfa` key goes on ' +
@@ -4619,7 +4558,7 @@ const SETTINGS = [
   // attributes.
   //
   // **IT HAS A SWITCH BECAUSE EVERY OTHER SELF-SERVICE MECHANISM IN THE
-  // PORTAL HAS ONE** — `totp.enabled` and `backupCodes.enabled` are the two
+  // PORTAL HAS ONE** — the TOTP and recovery-code rows of the authentication policy are the two
   // beside it — and for their reason rather than by analogy: what a person may
   // hand themselves is a deployment's decision, and an operator who wants keys
   // issued only by an administrator has nowhere else to say so.
@@ -4631,7 +4570,8 @@ const SETTINGS = [
   // form and the security-key enrolment clear.
   //
   // **TURNING IT OFF DOES NOT TAKE ANYBODY'S KEY PAIR AWAY**, which is
-  // `totp.enabled`'s contract word for word: a key already on an entry goes on
+  // the contract of the TOTP row of the authentication policy word for
+  // word: a key already on an entry goes on
   // verifying, because a setting that silently stopped honouring credentials
   // it had issued would be an off switch that does something other than what
   // it says. What it stops is new ones, from the portal only — `/admin/pki`
@@ -4649,7 +4589,8 @@ const SETTINGS = [
                  'the same bar the password form and the security-key ' +
                  'enrolment clear. **Turning it off does NOT take away a key ' +
                  'pair somebody already holds**: one on an entry goes on ' +
-                 'verifying, exactly as `totp.enabled` leaves an enrolled ' +
+                 'verifying, exactly as the TOTP row of the ' +
+                 'authentication policy leaves an enrolled ' +
                  'authenticator working. It stops new ones FROM THE PORTAL ' +
                  'only — an operator issuing from /admin/pki or POST ' +
                  '/admin-api/pki/issue is unaffected, which is the point of ' +

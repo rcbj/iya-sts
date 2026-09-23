@@ -121,6 +121,9 @@ import appPasswords = require('./app_passwords');
 // its directory arrives through a slot `ldap_server.js` fills, like this
 // file's.
 import passwordPolicy = require('./password_policy');
+// THE AUTHENTICATION POLICY (#64): which mechanisms are first and second
+// factors, and when a second is required. A LEAF, like the password policy.
+import authnPolicy = require('./authn_policy');
 // THE SECURITY KEY'S POLICY, AND IT IS THE ONE REQUIRE IN THIS FILE THAT
 // POINTS OUT OF `common/` (2026-09-10).
 //
@@ -187,6 +190,7 @@ interface CredentialsDeps {
   backupCodes: typeof backupCodes;
   appPasswords: typeof appPasswords;
   passwordPolicy: typeof passwordPolicy;
+  authnPolicy: typeof authnPolicy;
   webauthnPolicy: typeof webauthnPolicy;
   webauthnVerifier: typeof webauthnVerifier;
   webauthnAttestation: typeof webauthnAttestation;
@@ -306,6 +310,7 @@ class Credentials {
       backupCodes: backupCodes,
       appPasswords: appPasswords,
       passwordPolicy: passwordPolicy,
+      authnPolicy: authnPolicy,
       webauthnPolicy: webauthnPolicy,
       webauthnVerifier: webauthnVerifier,
       webauthnAttestation: webauthnAttestation,
@@ -932,7 +937,7 @@ class Credentials {
   // the ACCOUNT's: in product mode a person who HOLDS a second factor (an
   // authenticator app, or a security key in the `mfa` role — what
   // `mechanismsFor().mfaRequired` means) or of whom one is REQUIRED
-  // (`mfaRequirementFor()`: stsMfaRequired, or `authn.mfaRequired` for the
+  // (`mfaRequirementFor()`: stsMfaRequired, or the authentication policy for the
   // realm) is refused their own right password there. NIST SP 800-63B section
   // 4.2: an account bound to two factors is at AAL2, and a verifier that
   // accepts one of them alone brings it down to AAL1.
@@ -997,7 +1002,7 @@ class Credentials {
       : (requirement.byUser ? 'a second factor is required of them on their ' +
                               'entry (stsMfaRequired)'
                             : 'the realm requires a second factor of ' +
-                              'everybody (authn.mfaRequired)');
+                              'everybody (the authentication policy)');
     log.info('credentials: ' + name + ' presented the right password at ' +
              via + ', which cannot ask for a second factor, and ' + why +
              '. Refused as a wrong password is; an app password scoped to ' +
@@ -2500,7 +2505,7 @@ class Credentials {
       log.debug("Leaving Credentials.beginTotpEnrolment().");
       return coded('STS-AUTHN-0074', { ok: false, errors: ['Authenticator ' +
                                    'apps are turned off on this service ' +
-                                   '(totp.enabled).'] });
+                                   '(the authentication policy).'] });
     }
     if (!name) {
       log.debug("Leaving Credentials.beginTotpEnrolment().");
@@ -3423,7 +3428,7 @@ class Credentials {
       log.debug('Leaving Credentials.beginBackupCodes(). Turned off.');
       return coded('STS-AUTHN-0082', { ok: false, reason: 'disabled',
                errors: ['Recovery codes are turned off on this service ' +
-                        '(backupCodes.enabled).'] });
+                        '(the authentication policy).'] });
     }
     if (!name) {
       log.debug('Leaving Credentials.beginBackupCodes(). No name.');
@@ -5546,7 +5551,7 @@ class Credentials {
   //     lock anybody out, because none of those is a way in.
   //   * **`mfaRequirementFor()`** is whether a second factor is REQUIRED of
   //     somebody who may hold none: `stsMfaRequired` on their entry, or
-  //     `authn.mfaRequired` for the realm. `mfaRequired` beside it in
+  //     the authentication policy (#64). `mfaRequired` beside it in
   //     `mechanismsFor()` is still what they HOLD; the sign-in screen reads
   //     both.
   // ===========================================================================
@@ -5791,7 +5796,9 @@ class Credentials {
         byUser = false;
       }
     }
-    const byRealm = !!config.value('authn.mfaRequired');
+    // #64: the authentication policy's `requireSecondFactor`, which replaced
+    // `authn.mfaRequired`. `always` is the old `true`.
+    const byRealm = this.deps.authnPolicy.requireSecondFactor() === 'always';
     log.debug("Leaving Credentials.mfaRequirementFor(). user=" + byUser +
               ", realm=" + byRealm);
     return { required: byUser || byRealm, byUser: byUser, byRealm: byRealm };

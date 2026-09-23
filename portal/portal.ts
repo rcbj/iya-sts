@@ -1410,7 +1410,7 @@ class Portal {
       // answers — it is a SECOND factor beside whichever of them was
       // chosen, so it is an independent box.
       //
-      // It appears whether or not `totp.enabled` is on and the DOOR
+      // It appears whether or not the TOTP row is on and the DOOR
       // decides, exactly as the sign-in screen's anonymous button does...
       // no: it is DRAWN only when the mechanism is offered, because this
       // is a form somebody is filling in once and a tickbox that silently
@@ -2774,7 +2774,7 @@ class Portal {
       : '<div class="card"><h2>Not available</h2>' +
         '<p class="sub">' +
         self.esc('Authenticator apps are turned off on this service. An ' +
-            'operator turns them on with the totp.enabled setting.') +
+            'operator turns them on in the authentication policy.') +
         '</p></div>';
 
     const aboutCard =
@@ -2994,7 +2994,7 @@ class Portal {
            '"><h2>Recovery codes</h2>' + body +
       (!live.enabled
         ? '<p class="note">' + self.esc('Recovery codes are turned off on ' +
-            'this service (backupCodes.enabled), so no new set can be ' +
+            'this realm\'s authentication policy, so no new set can be ' +
             'generated. A set already saved goes on working — a setting that ' +
             'took away the only way back into an account whose phone is lost ' +
             'would be the worst switch here.') + '</p>'
@@ -5073,7 +5073,7 @@ class Portal {
         // **THE SETTING IS CHECKED AT THE DOOR AND NOT ONLY ON THE PAGE**,
         // which is `authn.js`'s rule about the anonymous button read again: the
         // page is markup and this is the door, so a form posted by hand while
-        // `totp.enabled` is off must not mint a secret.
+        // the TOTP row is off must not mint a secret.
         const begun = credentials.beginTotpEnrolment(username, { base: base });
         if (!begun.ok) {
           log.debug('Leaving POST ' + BASE + '/mfa. Refused to start.');
@@ -5825,7 +5825,7 @@ class Portal {
       if (action === 'begin') {
         // THE POLICY IS CHECKED AT THE DOOR AND NOT ONLY ON THE PAGE, which is
         // `authn.js`'s rule about the anonymous button and `/portal/mfa`'s
-        // about `totp.enabled`: the page is markup and this is the door, so a
+        // about the TOTP row: the page is markup and this is the door, so a
         // form posted by hand while `webauthn.primaryAllowed` is off must not
         // arm a ceremony that `addKey()` would then refuse after somebody had
         // touched their key. `beginKeyEnrolment()` makes every one of those

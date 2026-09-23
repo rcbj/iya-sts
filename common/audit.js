@@ -601,6 +601,11 @@ const ACTIONS = [
   { action: 'admin.password-policy.change', category: 'admin',
     label: 'A password policy profile was changed' },
 
+  // AN AUTHENTICATION POLICY PROFILE WAS SAVED OR PUT BACK (#64), for the row
+  // above's reason: which ways in a realm accepts, before and after.
+  { action: 'admin.authn-policy.change', category: 'admin',
+    label: 'An authentication policy profile was changed' },
+
   // A CLIENT-CERTIFICATE TRUST ANCHOR WAS ADDED OR REMOVED (2026-09-12),
   // through /admin/tls/trust or /admin-api/tls/trust. The SUBSTANCE, for
   // `claims.change`'s reason: the `admin.change` / `api.change` row says a form

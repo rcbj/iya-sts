@@ -5564,7 +5564,7 @@ class Authn {
   // starting a session, and it answers whether it took over the response:
   //
   //   * NO SECOND FACTOR IS NEEDED — the request did not demand two
-  //     (`record.forceMfa`), no requirement applies (`authn.mfaRequired`,
+  //     (`record.forceMfa`), no requirement applies (the authentication policy,
   //     the account's own), the person holds no second factor they are
   //     configured to be asked for (`mfaRequired`), or the presentation
   //     already claimed two (`acr` `mfa`, from a key attestation) — and it
@@ -6679,7 +6679,7 @@ class Authn {
     // ---------------------------------------------------------------------
     // A SECOND FACTOR REQUIRED OF THIS PERSON (2026-09-13) — by their own entry
     // (`stsMfaRequired`, set from /admin/users) or by the realm
-    // (`authn.mfaRequired`).
+    // (the authentication policy's `requireSecondFactor`).
     //
     // **A PASSWORDLESS SIGN-IN IS REFUSED UNDER IT**, before any ceremony: a
     // security key on its own is ONE factor — `amr ["hwk"]` — and a requirement
@@ -6711,7 +6711,8 @@ class Authn {
                  'authn: a second factor is ' +
                  'required of "' + username + '", who holds none, and ' +
                  'neither mechanism can be enrolled in this realm ' +
-                 '(totp.enabled, webauthn.enabled, webauthn.mfaAllowed). The ' +
+                 '(the authentication policy on Directory > Policies, ' +
+                 'webauthn.enabled, webauthn.mfaAllowed). The ' +
                  'sign-in is REFUSED rather than let through on one factor.');
         errorCodes.mark(res, 'STS-AUTHN-0172');
         log.debug("Leaving Authn.finishPasswordSignIn(). Nothing can be " +

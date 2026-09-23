@@ -431,7 +431,7 @@ class WebauthnPolicy {
       return errorCodes.mark({ ok: false,
                why: 'A security key cannot be a second factor in this realm ' +
                     '(webauthn.mfaAllowed). An authenticator app is the ' +
-                    'other one, where totp.enabled is on.' }, 'STS-AUTHN-0046');
+                    'other one, where the authentication policy allows it.' }, 'STS-AUTHN-0046');
     }
     log.debug('Leaving WebauthnPolicy.roleAllowed(). Allowed.');
     return { ok: true };

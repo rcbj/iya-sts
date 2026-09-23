@@ -9340,7 +9340,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'A password step that succeeded for a person of whom a second ' +
           'factor is required — stsMfaRequired on their entry, set from ' +
           'their ' +
-          '/admin/users page, or authn.mfaRequired for the realm — and who ' +
+          '/admin/users page, or the realm\'s authentication policy — and ' +
+          'who ' +
           'holds neither an authenticator app nor an mfa-role security key ' +
           'lands here instead of being signed in. They choose one: an ' +
           'authenticator app is enrolled on this page (a QR code this server ' +

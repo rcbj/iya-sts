@@ -339,6 +339,10 @@ const credentials = require('../common/credentials');
 // require moves no route and closes no cycle; what crosses the other way is the
 // three store functions its slot below installs.
 const passwordPolicy = require('../common/password_policy');
+// THE AUTHENTICATION POLICY REGISTER (#64, 2026-09-23), `ou=authnPolicies`, for
+// the password policy's reason exactly: a LEAF whose store this directory is,
+// so the require moves no route and closes no cycle.
+const authnPolicy = require('../common/authn_policy');
 const mode = require('../common/mode');
 // THE RATE LIMITER THE SIGN-IN SCREEN AND THE PORTAL ALREADY USE, for failed
 // binds (2026-09-12). A LIBRARY that requires only helpers, config, crypto,
@@ -775,6 +779,17 @@ function passwordPoliciesDn() {
   log.debug("Entering passwordPoliciesDn().");
   log.debug("Leaving passwordPoliciesDn().");
   return 'ou=passwordPolicies,' + baseDn();
+}
+
+// ou=authnPolicies is the AUTHENTICATION POLICY register (#64). A container of
+// its own rather than a second kind of entry under ou=passwordPolicies,
+// because rcbj asked for the two policies to stay separate — and a profile of
+// which ways in a realm accepts is not a rule about a password.
+// `common/authn_policy.ts` owns the schema.
+function authnPoliciesDn() {
+  log.debug("Entering authnPoliciesDn().");
+  log.debug("Leaving authnPoliciesDn().");
+  return 'ou=authnPolicies,' + baseDn();
 }
 
 // The fourth and fifth, and they are `spiffe_registry.js`'s store the way
@@ -2207,6 +2222,10 @@ passwordPolicy.SCHEMA.attributes.concat(passwordPolicy.SCHEMA.personAttributes)
   .forEach(function (row) {
     learnName(row.name, 'the password policy schema');
   });
+authnPolicy.SCHEMA.attributes.concat(authnPolicy.SCHEMA.personAttributes)
+  .forEach(function (row) {
+    learnName(row.name, 'the authentication policy schema');
+  });
 xacmlStore.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML policy schema');
 });
@@ -2999,6 +3018,19 @@ function seed() {
       'cn=default; while it is absent the built-in defaults are in force. ' +
       'ENFORCED IN PRODUCT MODE. common/password_policy.ts holds the schema; ' +
       'GET /admin/policies publishes it.'
+  }, { origin: 'seed' });
+  // The same argument for the authentication policy (#64): the container is
+  // structural, the profile is written the first time an operator saves it.
+  putEntry(authnPoliciesDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'authnPolicies',
+    description: 'AUTHENTICATION POLICY profiles: which mechanisms this ' +
+      'realm accepts as a first factor and as a second, and when a second ' +
+      'factor is required. The profile is cn=default; while it is absent a ' +
+      'realm other than the default one follows the DEFAULT REALM\'s ' +
+      'cn=default, and the built-in defaults apply where neither exists. ' +
+      'common/authn_policy.ts holds the schema; GET /admin/policies ' +
+      'publishes it.'
   }, { origin: 'seed' });
   putEntry(pepsDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -7096,6 +7128,19 @@ if (typeof passwordPolicy.setDirectory === 'function') {
   log.warn('ldap: common/password_policy.ts offers no setDirectory(), so ' +
            'ou=passwordPolicies is unreachable and the built-in default ' +
            'password policy cannot be edited.');
+}
+
+// THE AUTHENTICATION POLICY REGISTER'S CONTAINER (#64), guarded the same way.
+if (typeof authnPolicy.setDirectory === 'function') {
+  authnPolicy.setDirectory({
+    allAuthnPolicies: allAuthnPolicies,
+    writeAuthnPolicy: writeAuthnPolicy,
+    deleteAuthnPolicy: deleteAuthnPolicy
+  });
+} else {
+  log.warn('ldap: common/authn_policy.ts offers no setDirectory(), so ' +
+           'ou=authnPolicies is unreachable and the built-in authentication ' +
+           'policy cannot be edited.');
 }
 
 if (typeof xacmlStore.setDirectory === 'function') {
@@ -14255,6 +14300,75 @@ function deletePasswordPolicy(name) {
   touchDirectory();
   auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
   log.debug('Leaving deletePasswordPolicy(). ' + entries.size +
+            ' entry/entries left.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// ou=authnPolicies AS A STORE (#64). ou=passwordPolicies' three functions
+// again, for the same reasons: named by the profile, replaced rather than
+// merged, and the container put back if a restored directory has none.
+// ---------------------------------------------------------------------------
+function authnPolicyDn(name) {
+  log.debug("Entering authnPolicyDn().");
+  log.debug("Leaving authnPolicyDn().");
+  return 'cn=' + escapeDnValue(String(name)) + ',' + authnPoliciesDn();
+}
+
+function allAuthnPolicies() {
+  log.debug('Entering allAuthnPolicies().');
+  const rows = entriesUnder(authnPoliciesDn()).map(function (stored) {
+    const object = entryObject(stored);
+    object.name = (stored.attributes.cn || [])[0] ||
+                  stored.dn.split(',')[0].replace(/^cn=/i, '');
+    return object;
+  });
+  log.debug('Leaving allAuthnPolicies(). ' + rows.length + ' profile(s).');
+  return rows;
+}
+
+function writeAuthnPolicy(name, attributes) {
+  log.debug('Entering writeAuthnPolicy(). name=' + name);
+  const dn = authnPolicyDn(name);
+  const existing = getEntry(dn);
+  if (!existing && totalEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writeAuthnPolicy(). The directory is full.');
+    return false;
+  }
+  if (!getEntry(authnPoliciesDn())) {
+    putEntry(authnPoliciesDn(), {
+      objectClass: ['top', 'organizationalUnit'],
+      ou: 'authnPolicies'
+    }, { origin: 'authentication policy' });
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
+                          { origin: existing ? existing.origin
+                              : 'authentication policy' });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  auditPolicyDirectory(existing ? 'entry.update' : 'entry.create', dn,
+                       stored.attributes, !existing);
+  log.debug('Leaving writeAuthnPolicy(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return true;
+}
+
+function deleteAuthnPolicy(name) {
+  log.debug('Entering deleteAuthnPolicy(). name=' + name);
+  const stored = getEntry(authnPolicyDn(name));
+  if (!stored) {
+    log.debug('Leaving deleteAuthnPolicy(). It was not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory();
+  auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
+  log.debug('Leaving deleteAuthnPolicy(). ' + entries.size +
             ' entry/entries left.');
   return true;
 }
