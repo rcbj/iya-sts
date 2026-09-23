@@ -158,8 +158,8 @@ every signature. See [OAuth security](oauth-security.md#fapi-10-advanced).
 `2-security` is the FAPI 2.0 Security Profile (final), a profile of its own:
 confidential clients only, PAR required, `code` only, PKCE S256,
 sender-constrained tokens by mutual TLS or DPoP, codes of 60 seconds, no
-refresh-token rotation, and PS256, ES256 or EdDSA. See [OAuth
-security](oauth-security.md#fapi-20-security-profile).
+refresh-token rotation, and PS256, ES256 or EdDSA. See
+[OAuth security](oauth-security.md#fapi-20-security-profile).
 
 `2-message-signing` is FAPI 2.0 Message Signing on top of that: a signed
 request object at PAR, JARM required, and signed introspection responses.

@@ -287,8 +287,8 @@ Deleting an entry, or banning or deleting an agent, sets
 
 ## Devices: `ou=devices` (#130)
 
-Made by OpenID Connect Native SSO for Mobile Apps 1.0 ([OAuth 2.0 and OpenID
-Connect](oauth-oidc.md)). It is the foundation of #164, which will add a
+Made by OpenID Connect Native SSO for Mobile Apps 1.0
+([OAuth 2.0 and OpenID Connect](oauth-oidc.md)). It is the foundation of #164, which will add a
 device's keys and compliance state to the same entries. People see theirs on
 `/portal/devices`; administrators on the person's page and at
 `GET /admin-api/users/devices`.
