@@ -1398,6 +1398,11 @@ class Authn {
     const handle = randomId(24);
     session.handleHash = this.handleHashOf(handle);
     session.handleIssuedAt = Date.now();
+    // OPENID CONNECT SESSION MANAGEMENT's OP BROWSER STATE (#121): minted with
+    // the handle, so it changes at a sign-in and at every re-authentication
+    // exactly as the handle does, and travels with it through the row merge.
+    // Not a secret — script reads it — and it opens nothing.
+    session.browserState = randomId(24);
     log.debug("Leaving Authn.mintSessionHandle().");
     return session.id + '.' + handle;
   }
@@ -2525,6 +2530,23 @@ class Authn {
       self.dispatchBackchannel(planned);
     });
     log.debug("Leaving Authn.expireSession().");
+  }
+
+  // OpenID Connect Session Management's library (#121), LAZILY for the
+  // back-channel library's reason below, or null.
+  private sessionManagementLibrary() {
+    const { log } = this.deps;
+    log.debug("Entering Authn.sessionManagementLibrary().");
+    let library = null;
+    try {
+      library = require('../oauth-oidc/session_management');
+    } catch (e) {
+      log.debug("Caught in Authn.sessionManagementLibrary(): " +
+                ((e && e.message) || e));
+      library = null;
+    }
+    log.debug("Leaving Authn.sessionManagementLibrary().");
+    return library;
   }
 
   // The back-channel library, LAZILY (see dropSession()), or null in a
@@ -4328,8 +4350,16 @@ class Authn {
     const value = String(cookieName || SESSION_COOKIE) +
                   '=; Path=/; Max-Age=0' +
                   (config.value('global.https') ? '; Secure' : '');
+    // THE SIGN-ON SESSION's OP BROWSER STATE GOES WITH IT (#121), so a
+    // relying party's OP iframe answers `changed` after any sign-out door.
+    // Only for the sign-on cookie: a hosted surface's own cookie is not it.
+    const signOn = String(cookieName || SESSION_COOKIE) === SESSION_COOKIE;
+    const sessionManagement = signOn ? this.sessionManagementLibrary() : null;
     if (typeof res.append === 'function') {
       res.append('Set-Cookie', value);
+      if (sessionManagement && sessionManagement.enabled()) {
+        sessionManagement.writeCookie(res, '');
+      }
       log.debug("Leaving Authn.clearSessionCookie().");
       return;
     }

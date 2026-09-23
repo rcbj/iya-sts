@@ -30,6 +30,7 @@ libraries that decide things on its behalf.
 | `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.ts`, `oauth2_bcp.js`, `dpop.ts`, `mgmt-api/admin_api.ts` and `debugger/debugger_server.ts` require and that may require none of them back. See 3ao. |
 | `fapi.js` | **The FAPI profiles over RFC 9700 mode: FAPI 1.0 Part 1 Baseline (#138) and Part 2 Advanced (#139), 2026-09-22.** `oauth2.fapi` per realm, or a named authorization server's own `fapi` member, made AMBIENT per request; the checks each profile asks beyond RFC 9700 mode, as tables of requirements with a check citing each. A leaf. See 3av. |
 | `client_jwks.js` | **A client's registered `jwks_uri`, fetched and cached (#120, 2026-09-22).** Under `federation_http.ts`'s outbound policy; per realm; refetched for an unknown `kid`. A leaf. See *OpenID Connect Registration*. |
+| `session_management.js` | **OpenID Connect Session Management 1.0 (#121, 2026-09-23), off by default.** The OP browser state, `session_state`, the OP iframe's page, script and framing origins. A leaf. See 3ax. |
 | `jarm.ts` | **JARM, the JWT-secured authorization response (#143, built in #139).** The four response modes, the signed (and optionally encrypted) response JWT, the section 2.3.1 refusal, and the registration key check. `redirectBack()` in `oauth2.ts` is the one place that sends one. See 3aw. |
 
 **Everything but `oauth2.ts` — and, since 2026-09-13, the console page
@@ -2028,6 +2029,52 @@ in another. `tests/refresh_token_encryption.js` pins it; the parent project's
 `oauth2_sts_endpoints.js` and `sts_dpop.js` stopped decoding the refresh token
 the same day and read it at introspection instead.
 
+3ax. **`session_management.js` IS OPENID CONNECT SESSION MANAGEMENT 1.0
+   (#121, 2026-09-23), AND IT IS OFF UNLESS A REALM TURNS IT ON.** A leaf
+   (rule 3): `helpers`, `config`, `common/crypto.js` (`sessionStateHash()`),
+   and `applications` lazily. rcbj's answers:
+
+   | Asked | Chosen |
+   |---|---|
+   | Who may frame the OP iframe | The origins of the realm's registered redirect URIs — `frame-ancestors` narrowed, never dropped |
+   | On by default | No: `oauth2.sessionManagement`, per realm |
+   | The script | The ninth scripted page, with no button |
+   | Tests | The served script in a node vm with a fake window |
+
+   **THE OP BROWSER STATE** is `session.browserState`, a random value
+   `authn.ts`'s `mintSessionHandle()` sets beside the handle, so it changes at
+   every sign-in and re-authentication and travels with the row through the
+   merge. A browser with no authenticated session has the EMPTY state.
+   It reaches the browser as `sts_op_browser_state`: not HttpOnly (the
+   iframe's script reads it), `SameSite=None; Secure` on an HTTPS port and
+   `Lax` otherwise. It is written in ONE place — `sessionStateOf()`, beside
+   the `session_state` it was hashed into, so the two cannot drift — and
+   cleared in one: `authn.clearSessionCookie()` for the sign-on cookie,
+   which every sign-out door calls.
+
+   **`session_state` IS ON EVERY OPENID CONNECT AUTHENTICATION RESPONSE**
+   while the setting is on — `redirectBack()` for successes and errors, the
+   RFC 9700 interstitial's link, and inside a JARM JWT — for a client whose
+   redirect URI has a web origin (a private-use scheme has none, so a native
+   client gets none). Section 3's formula, in `common/crypto.js`, with a fresh
+   salt each time.
+
+   **THE OP IFRAME** (`/oauth2/check_session`, and `check_session_iframe` at
+   the REALM's base under a named server too, since the session is the
+   realm's) is the one framable page: `app.framedContentSecurityPolicy()`
+   and X-Frame-Options removed. Its script hashes the MESSAGE's origin, so
+   a page that is not the relying party computes a different value. Off, both
+   paths answer a 404 naming the setting (`STS-OAUTH-0601`), never Express's
+   `Cannot GET`, which `tests/vendored/sts_metadata.js` reads as unrouted.
+
+   **NOT DONE, AND ON THE CARD**: a session that EXPIRES or that an
+   administrator ends keeps its cookie, so the iframe says `unchanged` until
+   the relying party next asks (Back-Channel Logout is the answer to that);
+   a browser blocking third-party cookies never sends the cookie; a
+   development client with no registered redirect URI cannot frame the
+   iframe. `tests/session_management.js` and
+   `tests/vendored/sts_session_management.js` hold it.
+
 ## OPENID CONNECT REGISTRATION, AND THE `jwks_uri` (#120, 2026-09-22)
 
 The review on #45 found registration accepted most OpenID Connect client
@@ -3580,7 +3627,7 @@ the decisions rcbj made on #118:
   `presentedAccessToken(…, { formBody: true })`). Both places at once is refused.
 
 Left for their own tickets:
-* Session Management's `check_session_iframe`: #121.
+* ~~Session Management's `check_session_iframe`: #121.~~ Built (3ax).
 * Aggregated and distributed claims: #147.
 * Self-Issued OP: #129.
 * `value`/`values` enforcement for claims other than `acr`.
