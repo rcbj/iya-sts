@@ -491,6 +491,36 @@ and the driver spells them again in SQL. The 2026-09-22 probe (a throwaway
 postgres and the driver with `tests/risk_metrics.js`'s rows) gave the same
 answers from both.
 
+## A REALM ADMINISTRATOR ON THE RISK PAGES (2026-09-22)
+
+Both pages were service pages until rcbj asked for "realm admins see
+/admin/risk". **Most of what they show is a realm's**:
+
+* the assessments;
+* the standings;
+* the refused passwords;
+* the operator allow and deny lists, whose rows carry the realm.
+
+So they are realm pages now, **with the service's parts cut out in two
+places that agree**:
+
+* **The gate**: `admin_scope.ts`'s `/admin/risk` action rule refuses a
+  provider's terms, any dataset but a per-realm one, and a list of another
+  realm. Its read rule refuses `?realm=` naming another realm.
+* **The page**: `risk_admin.ts`'s `realmOnly` view drops the service's
+  datasets, providers and acceptances (the acceptances name service
+  administrators). The page drops the settings, all `risk.` rows and so all
+  service-only, and the scoring page drops `process`, since this process's
+  counts are every realm's.
+
+**The data credits stay**, because DB-IP's licence asks for them on any page
+that displays its results.
+
+**The unnamed realm is the one the page is drawn in** (`realms.currentId()`),
+which it was not before: `realmOf()` answered `default`, and that was right
+only while nobody but a service administrator in the default realm saw the
+page.
+
 ## A PERSON'S RISK ON THEIR USER PAGE (2026-09-22)
 
 rcbj asked for it "large and colorful": `admin.ts`'s `riskBadge()` opens
@@ -584,6 +614,9 @@ hit the same trap through `request_pool.js` in P0.
   process's counts, and the page without a script.
   `tests/vendored/sts_admin_risk.js` sections 8 and 9 hold the postgres
   driver's GROUP BY to the same sums over HTTP.
+* `tests/risk_realm_admin.js` — a realm administrator on both risk pages:
+  the gate's refusals and permissions, the realm-only views, and the pages
+  drawn for them.
 * `tests/risk_user_badge.js` — the badge on a person's Directory → Users
   page in each colour, grey when never assessed, the same standing on
   `/admin-api/users?user=`, and the link narrowed to the person.

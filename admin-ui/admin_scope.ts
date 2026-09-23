@@ -114,12 +114,15 @@ const SERVICE_PAGES = [
   // The explorer mints a DEFAULT-realm token for whoever holds the session,
   // which would hand a realm administrator a service credential. It is a
   // realm page only once it mints a realm token for a realm authority.
-  '/admin/api-explorer',
-  // The risk datasets are the whole service's (#62): a realm's operator list
-  // and failure history are drawn here too, but by a service administrator.
-  '/admin/risk',
-  // Its second half's `process` counts are the whole process's.
-  '/admin/risk-scoring'
+  '/admin/api-explorer'
+  // `/admin/risk` and `/admin/risk-scoring` LEFT THIS LIST on 2026-09-22
+  // (#62; rcbj: "realm admins see /admin/risk"). What they show is mostly
+  // the realm's own — its assessments, its people's standings, its refused
+  // passwords, its operator allow and deny lists — and the parts that are
+  // the service's are refused below (`/admin/risk`'s action rule) and left
+  // off the page by `admin-ui/risk_admin.ts` for a realm authority: the
+  // service datasets' controls, the providers' terms and who accepted them,
+  // the `risk.` settings, and this process's own counts.
 ];
 
 // Settings a realm administrator may not write. A row a realm may not carry at
@@ -240,6 +243,37 @@ class AdminScope {
         log.debug("Leaving the scheduler action rule. Allowed.");
         return '';
       },
+      // RISK SCORING (#62): a realm administrator manages their own
+      // realm's operator lists and nothing else — every other dataset, and
+      // a provider's terms, are the whole service's. The catalogue is asked
+      // LAZILY, for the scheduler rule's reason.
+      '/admin/risk': function (body, realmId) {
+        log.debug("Entering the risk action rule.");
+        const action = String((body && body.action) || '').trim();
+        if (action === 'accept-terms') {
+          log.debug("Leaving the risk action rule. Terms.");
+          return 'A provider\'s terms are accepted for the whole service, ' +
+                 'so that is a service administrator\'s act.';
+        }
+        const dataset = String((body && body.dataset) || '').trim();
+        const entry = dataset
+          ? require('../risk/risk_datasets').CATALOGUE[dataset] : null;
+        if (entry && !entry.perRealm) {
+          log.debug("Leaving the risk action rule. A service dataset.");
+          return dataset + ' is the whole service\'s dataset; a realm ' +
+                 'administrator manages their realm\'s operator allow and ' +
+                 'deny lists only.';
+        }
+        const named = String((body && body.realm) || '').trim();
+        if (entry && named !== realmId) {
+          log.debug("Leaving the risk action rule. Another realm.");
+          return 'That action names the "' + (named || 'default') +
+                 '" realm\'s list, and a realm administrator of "' +
+                 realmId + '" may change that realm\'s lists only.';
+        }
+        log.debug("Leaving the risk action rule. Allowed.");
+        return '';
+      },
       '/admin/keys/export': function (body) {
         return self.tlsServerKeyRule(body);
       },
@@ -252,7 +286,20 @@ class AdminScope {
           ? self.tlsServerKeyRule(body) : '';
       }
     };
+    const realmNamed = function (query: any, realmId?: string): string {
+      log.debug("Entering the realm-named read rule.");
+      const raw = query ? query.realm : '';
+      const id = String((Array.isArray(raw) ? raw[0] : raw) || '').trim();
+      log.debug("Leaving the realm-named read rule.");
+      return id && id !== realmId
+        ? 'That page names the "' + id + '" realm, and a realm ' +
+          'administrator of "' + realmId + '" may read that realm only.'
+        : '';
+    };
     this.realmReads = {
+      // The risk pages take `?realm=` (#62), as the realms page does.
+      '/admin/risk': realmNamed,
+      '/admin/risk-scoring': realmNamed,
       '/admin/realms': function (query, realmId) {
         log.debug("Entering the realms read rule.");
         const raw = query ? query.realm : '';

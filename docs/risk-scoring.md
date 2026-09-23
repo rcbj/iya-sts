@@ -521,7 +521,6 @@ The remaining work on [issue #62](https://github.com/rcbj/iya-sts/issues/62):
 
 - **Calibration**: a report of the levels and signals real sign-ins have
   been given, with the thresholds and factors it suggests.
-- **A realm's own administrators** see their realm's risk page.
 - **The console and portal acting on the risk signals they receive**, with
   issues #153 and #117.
 
@@ -532,6 +531,19 @@ The remaining work on [issue #62](https://github.com/rcbj/iya-sts/issues/62):
   dataset and its versions, the providers, their terms and who accepted
   them, and the refused passwords. It also shows the data credits and these
   settings. `?subject=` narrows the assessments to one person.
+- **A realm's own administrators** see both pages for their realm, at
+  `/realm/<id>/admin/risk` and `/realm/<id>/admin/risk-scoring`. They see:
+  - the realm's assessments;
+  - its people's standings;
+  - its refused passwords;
+  - its operator allow and deny lists, which they can also manage.
+
+  The following belong to the whole service, so they are left off the page
+  for them and refused if they try:
+  - the shared datasets;
+  - the providers' terms and who accepted them;
+  - the `risk.` settings;
+  - the per-process counts.
 - **Monitoring → Risk Scoring** (`/admin/risk-scoring`) measures the
   scoring itself over the last hour, day, week or 30 days:
   - assessments over time, stacked by level;

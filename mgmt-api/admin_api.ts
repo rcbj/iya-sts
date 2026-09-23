@@ -1904,7 +1904,8 @@ class AdminApi {
                        '`failures`.' },
         handler: function (req, res) {
           log.debug("Entering the management API risk endpoint.");
-          riskAdmin.riskView(req.query).then(function (view) {
+          const realmOnly = riskAdmin.realmOnly(req);
+          riskAdmin.riskView(req.query, realmOnly).then(function (view) {
             self.sendJson(res, 200, view);
             log.debug("Leaving the management API risk endpoint.");
           }).catch(function (e) {
@@ -1953,7 +1954,8 @@ class AdminApi {
                        '`thresholds`, `process`.' },
         handler: function (req, res) {
           log.debug("Entering the management API risk metrics endpoint.");
-          riskAdmin.metricsView(req.query).then(function (view) {
+          const realmOnly = riskAdmin.realmOnly(req);
+          riskAdmin.metricsView(req.query, realmOnly).then(function (view) {
             self.sendJson(res, 200, view);
             log.debug("Leaving the management API risk metrics endpoint.");
           }).catch(function (e) {

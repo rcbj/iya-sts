@@ -29,9 +29,16 @@
 // every one of those is `/admin-api/risk/:action`, which calls `riskAction()`
 // below, and `GET /admin-api/risk` answers `riskView()`.
 //
-// A SERVICE PAGE (`admin_scope.ts`): the datasets are the whole service's,
-// so a realm's own administrators do not see it. The failure history and an
-// operator list are per realm, and the page names the realm it shows.
+// A REALM ADMINISTRATOR SEES IT TOO (2026-09-22; it was a service page
+// until then): under `/realm/<id>/admin/risk` the page is their realm's —
+// its assessments, standings, refused passwords and operator allow and deny
+// lists, which they may manage. What is the service's is left off the page
+// for them (`realmOnly`): the service datasets' controls and versions, the
+// providers' terms and who accepted them, the `risk.` settings, and on the
+// scoring page this process's own counts. `admin_scope.ts` refuses the
+// same things at the gate, so the page hiding them is a courtesy and not the
+// control. The data credits stay: the licences ask for them wherever the
+// data is shown.
 // ===========================================================================
 
 import admin = require('./admin');
@@ -124,7 +131,9 @@ class RiskAdmin {
     const asked = String((query && query.realm) || '').trim();
     const known = asked && (asked === 'default' || realms.get(asked));
     log.debug("Leaving RiskAdmin.realmOf().");
-    return known ? asked : 'default';
+    // Unnamed, the realm the page is drawn in: `/realm/acme/admin/risk` is
+    // acme's, which is what a realm administrator of acme signs in to.
+    return known ? asked : (realms.currentId() || 'default');
   }
 
   // -------------------------------------------------------------------------
@@ -132,7 +141,9 @@ class RiskAdmin {
   // both answer. `query.address` adds the lookup; `query.offset` pages the
   // failures.
   // -------------------------------------------------------------------------
-  async riskView(query: Json): Promise<Json> {
+  // `realmOnly` is for a realm administrator: the realm's own and nothing
+  // of the service's (see the header).
+  async riskView(query: Json, realmOnly?: boolean): Promise<Json> {
     const { log, datasets, failures, engine, now } = this.deps;
     log.debug("Entering RiskAdmin.riskView().");
     const q = query || {};
@@ -152,12 +163,17 @@ class RiskAdmin {
     log.debug("Leaving RiskAdmin.riskView().");
     return {
       realm: realm,
+      realmOnly: !!realmOnly,
       store: registry.store,
-      directory: registry.directory,
-      datasets: registry.datasets,
+      directory: realmOnly ? '' : registry.directory,
+      datasets: realmOnly
+        ? registry.datasets.filter(function (d: Json): boolean {
+            return !!d.perRealm && d.realm === realm;
+          })
+        : registry.datasets,
       formats: registry.formats,
-      providers: registry.providers,
-      acceptances: registry.acceptances,
+      providers: realmOnly ? [] : registry.providers,
+      acceptances: realmOnly ? [] : registry.acceptances,
       attributions: registry.attributions,
       redistribution: registry.redistribution,
       lookup: lookup,
@@ -252,15 +268,19 @@ class RiskAdmin {
   // and `GET /admin-api/risk/metrics` both answer. `window` is one of
   // WINDOWS' names (24h by default); `realm` as on the page above.
   // -------------------------------------------------------------------------
-  async metricsView(query: Json): Promise<Json> {
+  async metricsView(query: Json, realmOnly?: boolean): Promise<Json> {
     const { log, engine } = this.deps;
     log.debug("Entering RiskAdmin.metricsView().");
     const q = query || {};
     const name = WINDOWS[String(q.window || '')] ? String(q.window) : '24h';
     const measured = await engine.metrics(this.realmOf(q), WINDOWS[name]);
+    if (realmOnly) {
+      // THIS PROCESS's counts are every realm's (see the header).
+      delete measured.process;
+    }
     log.debug("Leaving RiskAdmin.metricsView().");
-    return Object.assign({ window: name, windows: Object.keys(WINDOWS) },
-                         measured);
+    return Object.assign({ window: name, windows: Object.keys(WINDOWS),
+                           realmOnly: !!realmOnly }, measured);
   }
 
   // One table of counts with a bar each, largest first. `colour` gives a
@@ -398,16 +418,17 @@ class RiskAdmin {
         return esc(k) + ' ' + table[k];
       }).join(', ') : 'none';
     };
-    const d = p.durationMs;
-    const breach = p.breachedPasswords;
+    const d = p ? p.durationMs : { samples: 0 };
+    const breach = p ? p.breachedPasswords : null;
     log.debug("Leaving RiskAdmin.metricsHtml().");
     return admin.note('The scoring system measured: what it assessed, how ' +
         'the levels and signals fell, how long it took and what it did. ' +
         'The first sections are counted in the ' + (m.database
           ? 'database, over every node' : 'memory of THIS process (there ' +
             'is no database)') + ' for the realm <code>' + esc(m.realm) +
-        '</code>; <em>This process</em>, at the bottom, is since this ' +
-        'process started. Every person\'s own assessments are on ' +
+        '</code>' + (p ? '; <em>This process</em>, at the bottom, is ' +
+                         'since this process started' : '') + '. Every ' +
+        'person\'s own assessments are on ' +
         '<a href="' + PAGE + '">Monitoring &rarr; Risk</a>; the numbers ' +
         'are also <code>GET /admin-api/risk/metrics</code>.') +
       '<p id="risk-window">Window: ' + windows + '</p>' +
@@ -419,8 +440,8 @@ class RiskAdmin {
                    'of them HIGH') +
         admin.tile(a.meanScore.toPrecision(3), 'mean score') +
         admin.tile(a.bots, 'automated clients') +
-        admin.tile(d.samples ? Math.round(d.p95) + ' ms' : '—',
-                   'p95 to assess') +
+        (p ? admin.tile(d.samples ? Math.round(d.p95) + ' ms' : '—',
+                        'p95 to assess') : '') +
       '</div>' +
       '<h3>Assessments over time</h3>' + this.timeline(m) +
       '<h3>By level</h3>' +
@@ -457,7 +478,7 @@ class RiskAdmin {
       '<p id="risk-feedback">Of the sign-ins in this window, people said ' +
       '<strong>' + a.feedback.confirmed + '</strong> were them and <strong>' +
       a.feedback.denied + '</strong> were NOT, on /portal/sign-ins.</p>' +
-      '<h3>This process</h3>' +
+      (!p ? '' : '<h3>This process</h3>' +
       '<table class="grid" id="risk-process"><tbody>' +
       '<tr><th>Since</th><td>' + esc(this.when(p.since)) + '</td></tr>' +
       '<tr><th>Assessed</th><td>' + p.assessed + ' (' + p.failed +
@@ -479,7 +500,7 @@ class RiskAdmin {
           'breached, ' + breach.unanswered + ' unanswered, ' +
           breach.fromCache + ' answered from the cache'
         : 'not loaded in this process') + '</td></tr>' +
-      '</tbody></table>';
+      '</tbody></table>');
   }
 
   // ===== THE PAGE ==========================================================
@@ -589,14 +610,18 @@ class RiskAdmin {
       view.formats.map(function (f: Json): string {
         return '<option value="' + esc(f.format) + '">' + esc(f.format) +
           '</option>';
-      }).join('') + '</select></label> <label>Realm (an operator list ' +
-      'only) <input type="text" name="realm" value=""></label><br>' +
+      }).join('') + '</select></label> ' + (view.realmOnly
+        ? '<input type="hidden" name="realm" value="' + esc(view.realm) +
+          '">'
+        : '<label>Realm (an operator list only) <input type="text" ' +
+          'name="realm" value=""></label>') + '<br>' +
       '<label>Version <input type="text" name="version" ' +
       'placeholder="default: its SHA-256"></label> <label>SHA-256 ' +
       '<input type="text" name="sha256"></label><br>' +
-      '<label><input type="checkbox" name="acceptTerms" ' +
-      'id="risk-import-accept"> I have read and accept the provider\'s ' +
-      'terms (below), recorded in my name</label><br>' +
+      (view.realmOnly ? '' :
+        '<label><input type="checkbox" name="acceptTerms" ' +
+        'id="risk-import-accept"> I have read and accept the provider\'s ' +
+        'terms (below), recorded in my name</label><br>') +
       '<textarea name="content" rows="8" cols="80" id="risk-import-content" ' +
       'placeholder="One address, CIDR block or range per line"></textarea>' +
       '<br><button type="submit" id="risk-import">Import and activate' +
@@ -654,6 +679,17 @@ class RiskAdmin {
         }).join('') : '';
     const assessments = this.assessmentsHtml(view);
     log.debug("Leaving RiskAdmin.html().");
+    if (view.realmOnly) {
+      return tiles + admin.note('This is the <code>' + esc(view.realm) +
+        '</code> realm\'s risk: its assessments, its people\'s standings, ' +
+        'its operator allow and deny lists and its refused passwords. The ' +
+        'datasets every realm shares — geolocation, networks, Tor exits, ' +
+        'reputation, security-key metadata — their providers\' terms and ' +
+        'the <code>risk.</code> settings are the whole service\'s, and a ' +
+        'service administrator manages them.', 'What this page is') +
+        assessments + '<h3>Look up an address</h3>' + lookupForm + rows +
+        importForm + failures + credits;
+    }
     return tiles + about + assessments + '<h3>Look up an address</h3>' +
       lookupForm + rows + importForm + providers + failures + credits +
       '<h2>Settings</h2>' + admin.configFormsFor(PAGE);
@@ -773,13 +809,33 @@ class RiskAdmin {
       '">' + admin.esc(label) + '</button></form>';
   }
 
+  // Whether the request is a realm administrator's (#32): theirs is the
+  // realm-only view. The console's session and the management API's token
+  // both answer through `gateStateFor()`.
+  realmOnly(req: Req): boolean {
+    const { log, adminViews } = this.deps;
+    log.debug("Entering RiskAdmin.realmOnly().");
+    let state: Json = null;
+    try {
+      state = adminViews.gateStateFor(req);
+    } catch (e) {
+      log.debug("Caught in RiskAdmin.realmOnly(): " + ((e && e.message) || e));
+      // No gate state to read: not a realm administrator's request, and the
+      // gate in front of this route has already decided who it is.
+      state = null;
+    }
+    log.debug("Leaving RiskAdmin.realmOnly().");
+    return !!(state && state.authority === 'realm');
+  }
+
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, admin, errorCodes, parseBody } = this.deps;
     const self = this;
     log.debug("Entering RiskAdmin.registerRoutes().");
     app.get(PAGE, function (req: Req, res: Res): void {
       log.debug('Entering GET ' + PAGE + '.');
-      self.riskView(req.query).then(function (view: Json): void {
+      const realmOnly = self.realmOnly(req);
+      self.riskView(req.query, realmOnly).then(function (view: Json) {
         admin.respond(req, res, view, 'Risk', PAGE,
                       admin.messagesOf(req) + self.html(req, view));
         log.debug('Leaving GET ' + PAGE + '.');
@@ -795,7 +851,8 @@ class RiskAdmin {
     });
     app.get(METRICS_PAGE, function (req: Req, res: Res): void {
       log.debug('Entering GET ' + METRICS_PAGE + '.');
-      self.metricsView(req.query).then(function (view: Json): void {
+      const realmOnly = self.realmOnly(req);
+      self.metricsView(req.query, realmOnly).then(function (view: Json) {
         admin.respond(req, res, view, 'Risk scoring', METRICS_PAGE,
                       admin.messagesOf(req) + self.metricsHtml(view));
         log.debug('Leaving GET ' + METRICS_PAGE + '.');
@@ -858,6 +915,7 @@ export = {
   WINDOWS: WINDOWS,
   ACTIONS: RiskAdmin.ACTIONS,
   metricsView: slot.forward('metricsView'),
+  realmOnly: slot.forward('realmOnly'),
   riskView: slot.forward('riskView'),
   riskAction: slot.forward('riskAction')
 };
