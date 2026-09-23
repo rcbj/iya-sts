@@ -5661,6 +5661,20 @@ the keytab. The note above the tiles states the bounds as they stand now, with
 zero in `krb5.retainedKeyTtlS` already turned into the seconds it means, since a
 reader of that page is deciding whether to press Drop.
 
+**A PERSON'S KEYTAB (2026-09-22, #59)** is on the PERSON'S page, not this one:
+a *Kerberos* section on `/admin/users?user=` (`userKerberosSection()`, after the
+password controls) with the principal and the public half of their keys, and
+**Reset password and download keytab** — a typed password or a generated one
+that is never shown. The form POSTs HERE, `action=reset-person-keytab`, so it
+answers with the same shown-once keytab page, which for a person says above
+everything else that their password WAS changed and links back to their page.
+The one action that answers a PROMISE (string-to-key is asynchronous), so the
+POST handler resolves every action's answer. The control is a password reset
+because a keytab is derived from a password in hand and an administrator holds
+none of the person's — `kerberos/CLAUDE.md` argues it; the section's warning is
+drawn before the button. The *deliberately no button* note on this page now
+points there.
+
 ## `/admin/applications?application=…` HAS A CREDENTIALS SECTION (2026-09-13)
 
 Asked for by rcbj: the application's page shows its client secret and the key
