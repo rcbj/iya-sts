@@ -619,6 +619,16 @@ class ClientHello {
       socket.on('data', onData);
       socket.once('error', onDone);
       socket.once('close', onDone);
+      // RESUMED, because the socket may arrive PAUSED (2026-09-23). With
+      // `global.proxyProtocol` on, `common/proxy_protocol.ts` is installed
+      // over this file and hands the socket on paused, the header stripped —
+      // right for the tls.Server beneath, and a `data` listener alone never
+      // makes an explicitly paused socket flow. Every connection through the
+      // balancer then waited out HELLO_WAIT_MS before its handshake began:
+      // ten seconds a request, the whole `cluster` mode. A socket straight
+      // from accept is flowing already, so this changes nothing there.
+      // handOver() pauses again before the TLS engine is given the socket.
+      socket.resume();
       log.debug("Leaving capture().");
     }
 
