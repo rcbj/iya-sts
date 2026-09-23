@@ -237,6 +237,9 @@ The metadata document lists the schemes it accepts in
 * **HTTP Basic**: a directory person's name and password, so that a client
   that has no token flow yet can still reach every endpoint. Basic carries no
   scope, so a Basic caller gets both. `ssf.authBasic` turns the scheme off.
+  In product mode a person who holds or must hold a second factor is refused
+  their own password with the `401` a wrong one gets, and uses an
+  [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `ssf`.
 * **GNAP**: a key-bound GNAP access token whose access includes `ssf:read` or
   `ssf:write`, so that a GNAP web application can own a stream itself. See
   [GNAP](gnap.md).

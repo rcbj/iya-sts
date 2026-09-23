@@ -65,7 +65,8 @@
 // forms with another whole-valued attribute (a password and its history).
 const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
                 'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
-                'stsactivationexpires', 'appregistrationjson'];
+                'stsactivationexpires', 'appregistrationjson',
+                'stsapppassword'];
 
 // Always merged by value: lists this service appends to itself.
 const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',

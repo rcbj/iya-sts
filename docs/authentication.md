@@ -232,9 +232,40 @@ a security key, and no session is started until they do. A passwordless sign-in
 is refused (`STS-AUTHN-0171`). If both mechanisms are switched off, the sign-in
 is refused and the settings are named (`STS-AUTHN-0172`).
 
-**It is enforced at this screen only.** A federated assertion, a SPNEGO
-ticket, a TLS client certificate, the OAuth password grant, an LDAP bind,
-WS-Trust and SCIM Basic do not reach it, and an existing session is not ended.
+**This screen is the only door that can ask for the second factor.** A
+federated assertion, a SPNEGO ticket or a Kerberos AS-REQ, and a TLS client
+certificate do not reach it, and an existing session is not ended.
+
+### The password-only doors, and app passwords
+
+An LDAP bind, a WS-Trust UsernameToken, SCIM, Shared Signals and EST Basic take
+a password and nothing else, so they cannot ask for a second factor. **In
+product mode they refuse the own password of a person who holds a second factor
+or of whom one is required** (by the realm or on their entry) — answered
+exactly as a wrong password, and counted against the rate limit as one; the
+log and the audit row say `STS-AUTHN-0212`. Development accepts it, as it
+accepts every password.
+
+What such a person uses there is an **app password**:
+
+* made on `/portal/app-passwords` after signing in, or by an administrator on
+  the person's `/admin/users` page or with `POST
+  /admin-api/users/create-app-password`;
+* generated here — twenty-four characters, printed in six groups of four —
+  shown **once**, and stored as a scrypt hash on the entry;
+* named, and scoped to one or more of `ldap`, `wstrust`, `scim`, `ssf` and
+  `est`. It is accepted at those doors only, and **never at `/authn/login`** or
+  any browser sign-in (`STS-AUTHN-0213` where it is presented elsewhere);
+* one factor: the door records that an app password was used;
+* revocable one at a time on the same pages or with `POST
+  /admin-api/users/revoke-app-password`, with a CAEP `credential-change` for
+  each make and revoke. Its last use is recorded. A disabled account refuses
+  it; a password reset leaves it working.
+
+`authn.passwordAloneDoors` lists doors that accept the password alone anyway.
+**Each door listed is one factor for every such person** — use it only for a
+client that cannot be given an app password. `appPasswords.enabled` and
+`appPasswords.maxPerPerson` (10) govern making them.
 
 ### Disabling an account
 
@@ -396,13 +427,16 @@ be changed with `POST /admin-api/config/set`.
 * **Users** (`/admin/users`): per person, who holds which factor and how many
   recovery codes are left, with **Require MFA**, **Send a reset link**, set
   password, clear the authenticator app, a key or the recovery codes,
-  **Disable** and **Enable**. API: `POST /admin-api/users/{action}`, and the
-  roster at `GET /admin-api/mfa`.
+  **Disable** and **Enable**, and the person's **app passwords** — make one
+  (shown once) or revoke one. API: `POST /admin-api/users/{action}`, the
+  roster at `GET /admin-api/mfa`, and one person's app passwords, paged, at
+  `GET /admin-api/users/app-passwords`.
 * **Directory → Policies** (`/admin/policies`): the password policy.
 * **Sessions** (`/admin/sessions`): every live session, with how it was
   established.
 * **The user portal**: `/portal/mfa` (authenticator app, recovery codes),
-  `/portal/keys` (security keys), `/portal/password`, `/portal/activate` and
+  `/portal/keys` (security keys), `/portal/app-passwords` (app passwords for
+  the password-only doors), `/portal/password`, `/portal/activate` and
   `/portal/reset-password`.
 * Failures are recorded under `STS-AUTHN-NNNN` codes; see
   [Error codes](error-codes.md).

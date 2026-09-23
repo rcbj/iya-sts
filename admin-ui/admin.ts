@@ -11778,6 +11778,72 @@ class AdminConsole {
             ? this.note('Clearing needs <strong>Admin Write</strong>.')
             : ''));
 
+    // --- app passwords (#101, 2026-09-22) ---------------------------------
+    // WHAT THIS PERSON USES AT THE FIVE DOORS THAT TAKE ONLY A PASSWORD. The
+    // list — name, id, scope, made, last used, never a hash — with a Revoke
+    // per row, and a form that makes one and answers it ONCE on the page
+    // `usersPost()` draws. `POST /admin-api/users/create-app-password` and
+    // `revoke-app-password` are the same two acts (rule 7), and `GET
+    // /admin-api/users/app-passwords` is this list, paged.
+    const held = credentials.appPasswordsOf(key);
+    const doorsView = adminViews.passwordOnlyDoorsFor(key);
+    const appRow = function (one) {
+      log.debug("Entering appRow().");
+      log.debug("Leaving appRow().");
+      return '<tr><td>' + self.esc(one.name) + '</td><td><code>' +
+        self.esc(one.id) + '</code></td><td>' +
+        self.esc((one.doorLabels || one.doors).join(', ')) + '</td><td>' +
+        self.esc(one.createdAt ? self.whenText(one.createdAt) : '—') +
+        (one.createdBy ? ' by ' + self.esc(one.createdBy) : '') +
+        '</td><td>' +
+        self.esc(one.lastUsedAt ? self.whenText(one.lastUsedAt) +
+                 (one.lastUsedDoor ? ' (' + one.lastUsedDoor + ')' : '')
+                 : 'never') + '</td><td>' + (state.write
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" value="revoke-app-password">' +
+            '<input type="hidden" name="user" value="' + self.esc(key) +
+            '"><input type="hidden" name="id" value="' + self.esc(one.id) +
+            '"><input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + self.esc(back) +
+            '"><button class="danger" type="submit">Revoke</button></form>'
+          : '') + '</td></tr>';
+    };
+    const appPasswordsBlock = '<h3>App passwords</h3>' +
+      this.note(this.esc(doorsView.sentence)) +
+      (held.unreadable
+        ? this.warn('<strong>The app passwords on this entry cannot be ' +
+                    'read</strong>, so none of them is accepted and no new ' +
+                    'one is made over them.')
+        : (held.passwords.length
+            ? '<table><tr><th>Name</th><th>Id</th><th>Accepted at</th>' +
+              '<th>Made</th><th>Last used</th><th></th></tr>' +
+              held.passwords.map(appRow).join('') + '</table>'
+            : this.note('<strong>None.</strong> The person makes their own ' +
+                        'on <code>/portal/app-passwords</code>.'))) +
+      (state.write
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="create-app-password">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          '<input type="hidden" name="from" value="user">' +
+          '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
+          '<div class="formrow"><label>Name <input type="text" name="name" ' +
+          'maxlength="64" required></label></div><div class="formrow">' +
+          ['ldap', 'wstrust', 'scim', 'ssf', 'est'].map(function (door) {
+            return '<label><input type="checkbox" name="door_' + door +
+                   '" value="on"> ' + self.esc(door) + '</label> ';
+          }).join('') + '</div><div class="formrow"><button type="submit" ' +
+          'title="' + this.esc('Generates an app password for this person, ' +
+            'scoped to the doors ticked, and shows it to you ONCE.') +
+          '">Make an app password</button></div></form>' +
+          this.note('An app password is <strong>shown once</strong> — note ' +
+                    'it and give it to them by a channel you trust. It is ' +
+                    'one factor, accepted only at the doors ticked and ' +
+                    'never at the sign-in screen, and a CAEP ' +
+                    '<code>credential-change</code> says it was made or ' +
+                    'revoked.')
+        : this.note('Making or revoking one needs <strong>Admin ' +
+                    'Write</strong>.'));
+
     const html = heading +
       this.note('Everything in this section is about <code>' +
                 this.esc(row.name) +
@@ -11787,7 +11853,7 @@ class AdminConsole {
       'href="/admin/totp">TOTP MFA</a> and <a ' +
       'href="/admin/webauthn">WebAuthn</a> under Protocols; this is who ' +
       'holds what.') +
-      wayIn + totpBlock + keysBlock + recoveryBlock;
+      wayIn + totpBlock + keysBlock + recoveryBlock + appPasswordsBlock;
 
     log.debug("Leaving AdminConsole.mfaSection(). totp=" + mech.totp + ", " +
               allKeys.length +
@@ -13003,7 +13069,9 @@ class AdminConsole {
     // redirect's query string — the browser history, every proxy log on the
     // way, and the `Referer` of the next click. `/admin/users/new` made this
     // argument first. A JSON caller still gets JSON.
-    const oneTime = result.ok && (result.password || result.resetUrl);
+    // An app password (#101) is the third such secret.
+    const oneTime = result.ok && (result.password || result.resetUrl ||
+                                  result.appPassword);
     if (oneTime && !/json/i.test(String(req.headers['content-type'] || ''))) {
       this.respond(req, res, result, 'Credential reset', '/admin/users',
                    this.credentialResetPage(result, back),
@@ -13023,6 +13091,26 @@ class AdminConsole {
     log.debug("Entering AdminConsole.credentialResetPage().");
     const who = this.esc(result.username);
     const out = [];
+    if (result.appPassword) {
+      // AN APP PASSWORD (#101): shown once, and nothing else happened — no
+      // sign-out and no RISC event, so this page is the whole answer.
+      out.push('<h2>The app password "' + this.esc(result.name) + '" for ' +
+        who + ', shown once</h2>' +
+        '<div class="secret">' + this.esc(result.appPassword) + '</div>' +
+        this.warn('<strong>Note it now.</strong> This service stores a ' +
+        'scrypt hash and cannot show it again. Give it to ' + who + ' by a ' +
+        'channel you trust. It is accepted at ' +
+        this.esc((result.doorLabels || result.doors || []).join(', ')) +
+        ' only — never at the sign-in screen.') +
+        this.note('A CAEP <code>credential-change</code> (<code>password' +
+        '</code>, <code>create</code>) went to every stream that asked for ' +
+        'it and covers this person.') +
+        this.note('<a class="btn" href="' + this.esc(back) + '">Back to ' +
+                  who + '</a>'));
+      log.debug("Leaving AdminConsole.credentialResetPage(). An app " +
+                "password.");
+      return out.join('');
+    }
     if (result.password) {
       out.push('<h2>The new password for ' + who + ', shown once</h2>' +
         '<div class="secret">' + this.esc(result.password) + '</div>' +
@@ -37812,6 +37900,9 @@ const SETTING_HOMES = [
   // A POLICY ABOUT THE TWO MECHANISMS ABOVE (2026-09-13), and drawn on BOTH of
   // their pages — `saml.issuer`'s arrangement — because either one satisfies
   // it and a reader of either page must see that it is in force.
+  // Since #101 (2026-09-22) the group also holds `authn.passwordAloneDoors`
+  // and the two `appPasswords.*` settings: what the requirement does at the
+  // five password-only doors, and what a person uses there instead.
   { group: 'Second-factor requirement',
     pages: ['/admin/totp', '/admin/webauthn'] },
   { group: 'Group claim', pages: ['/admin/groups'] },

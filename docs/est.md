@@ -55,7 +55,10 @@ else in the realm; `/admin/est` gives the reason for each. An unknown label is
 ## Authenticating
 
 * **HTTP Basic with a person's directory password** — checked in product mode;
-  development mode accepts any password for a person who exists.
+  development mode accepts any password for a person who exists. In product a
+  person who holds or must hold a second factor — an administrator enrolling
+  for somebody else included — is refused their own password with the `401` a
+  wrong one gets, and uses an [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `est`, or a certificate.
 * **HTTP Basic with an application's `client_id` and `client_secret`** — the
   secret is required in product mode.
 * **A TLS client certificate this realm issued** (for example one enrolled over

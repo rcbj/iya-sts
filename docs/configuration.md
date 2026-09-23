@@ -857,13 +857,25 @@ security-key sign-in is refused while it is on. An administrator can place the
 same requirement on one person with **Require MFA** on their `/admin/users`
 page, which writes `stsMfaRequired` on the entry.
 
-**It is enforced at the sign-in screen and nowhere else.** A federated
-assertion, a SPNEGO ticket, a TLS client certificate, the OAuth password grant,
-an LDAP bind, WS-Trust and SCIM Basic authenticate somebody without that screen,
+**The sign-in screen is the one door that can ask for it.** In product mode
+the five doors that take a password and nothing else — an LDAP bind, a WS-Trust
+UsernameToken, SCIM, Shared Signals and EST Basic — refuse the person's own
+password instead, answered as a wrong password, and accept an app password
+scoped to the door. A federated assertion, a SPNEGO ticket or a Kerberos
+AS-REQ, and a TLS client certificate authenticate somebody without that screen,
 and a session that already exists is not ended. If both mechanisms are switched
 off (`totp.enabled`, and `webauthn.enabled` or `webauthn.mfaAllowed`), the
 screen refuses the sign-in and names those settings rather than silently not
 asking.
+
+**`authn.passwordAloneDoors`** (empty, runtime, per realm; product only) lists
+the password-only doors — `ldap`, `wstrust`, `scim`, `ssf`, `est` — that still
+accept such a person's own password. **Every door listed lowers every such
+person to one factor there** (NIST SP 800-63B section 4.2); prefer app
+passwords. **`appPasswords.enabled`** (on) lets people make app passwords on
+`/portal/app-passwords` and administrators make them on `/admin/users` and
+`/admin-api`; turning it off stops new ones and leaves the made ones working.
+**`appPasswords.maxPerPerson`** (10, 1–50) caps how many one person holds.
 
 **`security.passwordResetTtlMinutes`** (60) is how long a reset link issued with
 **Send a reset link** on a person's `/admin/users` page stays usable at

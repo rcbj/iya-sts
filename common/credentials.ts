@@ -26,6 +26,15 @@
 // with a permissive implementation can be swapped, extended, logged and tested.
 // An absence can only be found by reading everything.
 //
+// **AND A PASSWORD ALONE IS NOT ALWAYS ENOUGH (#101, 2026-09-22).** In product
+// a person who holds or must hold a second factor is refused their own right
+// password at the five doors that cannot ask for one — `secondFactorRefusal()`
+// below, refuse by default, answered as a wrong password — and an APP PASSWORD
+// scoped to the door is accepted there instead (the records are here, what one
+// IS is `common/app_passwords.ts`). A door names itself with `opts.door`; a
+// caller that asks for the second factor itself declares `opts.secondFactor`.
+// `common/CLAUDE.md` rule 3ax, and `authn/CLAUDE.md` owns the rule.
+//
 // **A NEW DOOR THAT TAKES A CREDENTIAL CALLS THIS.** If it needs a decision
 // this does not offer, the decision belongs here beside the others rather than
 // at the call site — see common/mode.js, which this file is the credential half
@@ -100,6 +109,11 @@ import totp = require('./totp');
 // and nothing else, so it cannot reach back here and this file stays the leaf
 // it was.
 import backupCodes = require('./backup_codes');
+// APP PASSWORDS (#101, 2026-09-22), for `backup_codes`'s reason: that module
+// owns what an app password IS — its shape, its scope, its hash — and this
+// file owns where the records live and when one is accepted. It requires
+// `config`, `crypto` and `helpers` and nothing else.
+import appPasswords = require('./app_passwords');
 // THE PASSWORD POLICY (2026-09-12). What a password here must look like, which
 // of a person's old ones it may not be, and how one is made up. A LEAF that
 // requires `helpers`, `mode`, `error_codes` and an npm package, so it cannot
@@ -167,6 +181,7 @@ interface CredentialsDeps {
   keystore: typeof keystore;
   totp: typeof totp;
   backupCodes: typeof backupCodes;
+  appPasswords: typeof appPasswords;
   passwordPolicy: typeof passwordPolicy;
   webauthnPolicy: typeof webauthnPolicy;
   webauthnVerifier: typeof webauthnVerifier;
@@ -284,6 +299,7 @@ class Credentials {
       keystore: keystore,
       totp: totp,
       backupCodes: backupCodes,
+      appPasswords: appPasswords,
       passwordPolicy: passwordPolicy,
       webauthnPolicy: webauthnPolicy,
       webauthnVerifier: webauthnVerifier,
@@ -629,7 +645,9 @@ class Credentials {
     if (!stored) {
       log.debug('Leaving Credentials.verifyPrepare(). Nobody by that name ' +
                 'holds a password.');
-      return { done: coded('STS-AUTHN-0052', { ok: false,
+      // `name` rides beside the refusal: a person with no password may still
+      // hold an app password, and `verify()` asks about that first (#101).
+      return { name: name, via: via, done: coded('STS-AUTHN-0052', { ok: false,
                reason: 'no-credential',
                detail: 'no ' + PASSWORD_ATTRIBUTE + ' is set for "' + name +
                        '". In product mode a person with no stored ' +
@@ -648,7 +666,7 @@ class Credentials {
                ' that this service did not write and cannot read. It is ' +
                'being REFUSED rather than compared as plaintext.');
       log.debug('Leaving Credentials.verifyPrepare(). Unreadable stored form.');
-      return { done: coded('STS-AUTHN-0053',
+      return { name: name, via: via, done: coded('STS-AUTHN-0053',
                            { ok: false, reason: 'unreadable-credential',
                detail: 'the stored ' + PASSWORD_ATTRIBUTE + ' is not in the ' +
                        'form this service writes, so it cannot be ' +
@@ -775,13 +793,27 @@ class Credentials {
     const { log, crypto } = this.deps;
     log.debug('Entering Credentials.verify().');
     const ready = this.verifyPrepare(username, password, opts);
+    // AN APP PASSWORD FIRST (#101), and only where the presented value has
+    // an app password's shape AND names one of this person's by its id —
+    // so an ordinary password costs nothing more than it did.
+    const candidate = this.appPasswordCandidate(ready, password);
+    if (candidate) {
+      const matched = this.deps.appPasswords.matchesHash(password,
+                                                         candidate.hash);
+      const answered = this.appPasswordAnswer(ready, candidate, matched, opts);
+      if (answered) {
+        log.debug('Leaving Credentials.verify(). An app password.');
+        return answered;
+      }
+    }
     if (ready.done) {
       log.debug('Leaving Credentials.verify(). Decided without a derivation.');
       return ready.done;
     }
     const ok = crypto.verifySecret(password, ready.stored);
     const finished = this.verifyFinish(ok, ready.name, ready.via);
-    const answer = this.resetRefusal(finished, ready.name, opts) || finished;
+    const answer = this.resetRefusal(finished, ready.name, opts) ||
+      this.secondFactorRefusal(finished, ready.name, opts) || finished;
     if (answer.ok && answer.reason === 'verified') {
       // The plaintext was just CONFIRMED — see the password observer above.
       this.notifyPassword(ready.name, password, 'verified');
@@ -807,22 +839,149 @@ class Credentials {
     const { log, crypto } = this.deps;
     log.debug('Entering Credentials.verifyAsync().');
     const ready = this.verifyPrepare(username, password, opts);
-    if (ready.done) {
-      log.debug('Leaving Credentials.verifyAsync(). Decided without a ' +
-                'derivation.');
-      return Promise.resolve(ready.done);
+    const candidate = this.appPasswordCandidate(ready, password);
+    const passwordStep = () => {
+      log.debug('Entering Credentials.verifyAsync() password step.');
+      if (ready.done) {
+        log.debug('Leaving Credentials.verifyAsync() password step. ' +
+                  'Decided without a derivation.');
+        return Promise.resolve(ready.done);
+      }
+      log.debug('Leaving Credentials.verifyAsync() password step. Handed ' +
+                'to the pool.');
+      return crypto.verifySecretAsync(password, ready.stored, opts)
+        .then((ok) => {
+          const finished = this.verifyFinish(ok, ready.name, ready.via);
+          const answer = this.resetRefusal(finished, ready.name, opts) ||
+            this.secondFactorRefusal(finished, ready.name, opts) || finished;
+          if (answer.ok && answer.reason === 'verified') {
+            this.notifyPassword(ready.name, password, 'verified');
+          }
+          return answer;
+        });
+    };
+    if (!candidate) {
+      log.debug('Leaving Credentials.verifyAsync(). No app password to try.');
+      return passwordStep();
     }
-    log.debug('Leaving Credentials.verifyAsync(). Handed to the pool.');
-    return crypto.verifySecretAsync(password, ready.stored, opts)
-      .then((ok) => {
-        const finished = this.verifyFinish(ok, ready.name, ready.via);
-        const answer = this.resetRefusal(finished, ready.name, opts) ||
-          finished;
-        if (answer.ok && answer.reason === 'verified') {
-          this.notifyPassword(ready.name, password, 'verified');
-        }
-        return answer;
+    log.debug('Leaving Credentials.verifyAsync(). An app password first.');
+    return this.deps.appPasswords.matchesHashAsync(password, candidate.hash)
+      .then((matched) => {
+        const answered = this.appPasswordAnswer(ready, candidate, matched,
+                                                opts);
+        return answered || passwordStep();
       });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SECOND FACTOR AT A DOOR THAT CANNOT ASK FOR ONE (#101, 2026-09-22).
+  //
+  // An LDAP simple bind, a WS-Security UsernameToken, SCIM and SSF HTTP Basic
+  // and EST Basic authenticate with a password and nothing else, and no
+  // specification behind any of them defines a second factor. So the rule is
+  // the ACCOUNT's: in product mode a person who HOLDS a second factor (an
+  // authenticator app, or a security key in the `mfa` role — what
+  // `mechanismsFor().mfaRequired` means) or of whom one is REQUIRED
+  // (`mfaRequirementFor()`: stsMfaRequired, or `authn.mfaRequired` for the
+  // realm) is refused their own right password there. NIST SP 800-63B section
+  // 4.2: an account bound to two factors is at AAL2, and a verifier that
+  // accepts one of them alone brings it down to AAL1.
+  //
+  // **REFUSE BY DEFAULT.** A caller is exempt only by DECLARING itself:
+  // `secondFactor: 'asked-next'` where the second factor is asked right after
+  // (the sign-in screen, and the wallet's password-factor screen, where the
+  // password IS the second factor), and `'session-held'` where a session that
+  // already met the requirement is re-proving a password (the portal's
+  // password change). A door added tomorrow that says nothing is covered.
+  //
+  // **THE ANSWER IS A WRONG PASSWORD'S.** Every door answers `ok: false` with
+  // its own single failure, so "right password, second factor needed" tells
+  // the caller nothing — otherwise this would be a password oracle. The code
+  // (STS-AUTHN-0212) rides on the verdict for the audit row and the log, and
+  // every door that rate-limits counts it as the failure it answers as.
+  //
+  // What such a person uses at those doors is an APP PASSWORD scoped to the
+  // door (`common/app_passwords.ts`), and `authn.passwordAloneDoors` is the
+  // documented weaker option. An APPLICATION's secret is untouched: the rule
+  // is about a PERSON's account, and the entry's kind — never its name — says
+  // which it is.
+  // ---------------------------------------------------------------------------
+  private secondFactorRefusal(answer, name, opts) {
+    const { log, mode, appPasswords } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug('Entering Credentials.secondFactorRefusal().');
+    const options = opts || {};
+    if (!answer || !answer.ok || answer.reason !== 'verified' ||
+        mode.acceptsPasswordAloneFromSecondFactorAccounts() ||
+        options.secondFactor === 'asked-next' ||
+        options.secondFactor === 'session-held') {
+      log.debug('Leaving Credentials.secondFactorRefusal(). The answer ' +
+                'stands.');
+      return null;
+    }
+    if (!this.isPersonEntry(name)) {
+      log.debug('Leaving Credentials.secondFactorRefusal(). Not a person.');
+      return null;
+    }
+    const holds = this.keysOf(name).some((one) => {
+      return one.role === 'mfa';
+    }) || !!this.totpOf(name);
+    const requirement = this.mfaRequirementFor(name);
+    if (!holds && !requirement.required) {
+      log.debug('Leaving Credentials.secondFactorRefusal(). No second ' +
+                'factor held or required.');
+      return null;
+    }
+    const door = String(options.door || '');
+    const via = options.via || 'unstated';
+    if (door && appPasswords.passwordAloneDoors().indexOf(door) >= 0) {
+      log.warn('credentials: ' + name + ' signed in with a password ALONE ' +
+               'at ' + via + ' though ' + (holds ? 'they hold' : 'they are ' +
+               'required to use') + ' a second factor, because ' +
+               'authn.passwordAloneDoors lists "' + door + '". That door ' +
+               'is one factor for them.');
+      log.debug('Leaving Credentials.secondFactorRefusal(). The door is ' +
+                'listed in authn.passwordAloneDoors.');
+      return null;
+    }
+    const why = holds ? 'they hold a second factor'
+      : (requirement.byUser ? 'a second factor is required of them on their ' +
+                              'entry (stsMfaRequired)'
+                            : 'the realm requires a second factor of ' +
+                              'everybody (authn.mfaRequired)');
+    log.info('credentials: ' + name + ' presented the right password at ' +
+             via + ', which cannot ask for a second factor, and ' + why +
+             '. Refused as a wrong password is; an app password scoped to ' +
+             'this door is what they use here.');
+    log.debug('Leaving Credentials.secondFactorRefusal(). Refused.');
+    return coded('STS-AUTHN-0212', { ok: false,
+      reason: 'second-factor-required',
+      detail: 'the password is right and ' + why + ', and ' + via + ' ' +
+              'cannot ask for one: make an app password for this door on ' +
+              '/portal/app-passwords' });
+  }
+
+  // Is this entry a PERSON? The directory decides, by placement, never by
+  // name. Where the hook is missing the answer is YES — refuse by default:
+  // an older `ldap_server.js` must not turn the rule off.
+  private isPersonEntry(name) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.isPersonEntry().');
+    if (!directory || typeof directory.isPerson !== 'function') {
+      log.debug('Leaving Credentials.isPersonEntry(). No hook; assumed.');
+      return true;
+    }
+    let person = true;
+    try {
+      person = !!directory.isPerson(name);
+    } catch (e) {
+      log.debug('Caught in Credentials.isPersonEntry(): ' +
+                ((e && e.message) || e));
+      person = true;
+    }
+    log.debug('Leaving Credentials.isPersonEntry(). ' + person);
+    return person;
   }
 
   // ---------------------------------------------------------------------------
@@ -3894,6 +4053,395 @@ class Credentials {
     return { ok: true, username: name };
   }
 
+  // ===========================================================================
+  // APP PASSWORDS (#101, 2026-09-22): WHERE THEY LIVE AND WHEN ONE IS ACCEPTED.
+  //
+  // `common/app_passwords.ts` owns what one IS — the shape, the public id, the
+  // five doors a scope may name, the hash. This file owns the records on the
+  // entry and the moment a presented value is accepted as one, beside the
+  // password it stands in for, because "when does a password-shaped thing let
+  // somebody in" must have one answer.
+  //
+  // **ONE JSON VALUE, SINGLE-VALUED, LIKE THE RECOVERY CODES BESIDE IT**
+  // (`stsAppPassword`). A list of records, each `{ id, name, doors, hash,
+  // createdAt, createdBy, lastUsedAt, lastUsedDoor }`. The HASH is scrypt
+  // (`crypto.hashSecret()`, rule 3r), so the value is not secret in the way a
+  // TOTP seed is — and it is still WITHHELD from every LDAP read, which is
+  // `userPassword`'s treatment and the right one for a verifier.
+  //
+  // **LAST USE IS WRITTEN AT MOST ONCE A MINUTE PER PASSWORD.** A pooled LDAP
+  // client binds on every connection it opens, and a directory write per bind
+  // would be a persisted write per bind. A minute is what "last used" is read
+  // to that precision anyway.
+  //
+  // **A VALUE THIS SERVICE CANNOT READ IS REFUSED, NOT IGNORED**: no app
+  // password on that entry is accepted, and a new one is not made over it, for
+  // the recovery codes' reason — reporting it as absent would write over
+  // records somebody's client is still using.
+  // ===========================================================================
+  static readonly APP_PASSWORDS_ATTRIBUTE = 'stsAppPassword';
+  static readonly APP_PASSWORD_USE_WRITE_MS = 60 * 1000;
+
+  private appPasswordRecords(username) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.appPasswordRecords().');
+    const name = String(username || '').trim();
+    if (!name || !directory ||
+        typeof directory.readAppPasswords !== 'function') {
+      log.debug('Leaving Credentials.appPasswordRecords(). No store.');
+      return { ok: true, records: [], stored: false };
+    }
+    let raw = '';
+    try {
+      raw = directory.readAppPasswords(name) || '';
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0219') + 'credentials: reading ' +
+                'the app passwords of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      log.debug('Leaving Credentials.appPasswordRecords(). It threw.');
+      return { ok: false, records: [], stored: true };
+    }
+    if (!raw) {
+      log.debug('Leaving Credentials.appPasswordRecords(). None.');
+      return { ok: true, records: [], stored: true };
+    }
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      log.debug('Caught in Credentials.appPasswordRecords(): ' +
+                ((e && e.message) || e));
+      parsed = null;
+    }
+    if (!parsed || !Array.isArray(parsed.passwords)) {
+      log.warn(errorCodes.tag('STS-AUTHN-0219') + 'credentials: the ' +
+               Credentials.APP_PASSWORDS_ATTRIBUTE + ' value on ' + name +
+               ' is not what this service writes, so none of it is ' +
+               'accepted and nothing is written over it.');
+      log.debug('Leaving Credentials.appPasswordRecords(). Unreadable.');
+      return { ok: false, records: [], stored: true };
+    }
+    const records = parsed.passwords.filter((one) => {
+      return one && typeof one.id === 'string' && typeof one.hash === 'string';
+    }).map((one) => {
+      return { id: String(one.id), name: String(one.name || ''),
+               doors: Array.isArray(one.doors) ? one.doors.map(String) : [],
+               hash: String(one.hash),
+               createdAt: Number(one.createdAt || 0),
+               createdBy: String(one.createdBy || ''),
+               lastUsedAt: Number(one.lastUsedAt || 0),
+               lastUsedDoor: String(one.lastUsedDoor || '') };
+    });
+    log.debug('Leaving Credentials.appPasswordRecords(). ' + records.length +
+              ' record(s).');
+    return { ok: true, records: records, stored: true };
+  }
+
+  private writeAppPasswordRecords(username, records) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug('Entering Credentials.writeAppPasswordRecords().');
+    const name = String(username || '').trim();
+    let written = false;
+    try {
+      written = !!directory.writeAppPasswords(name, records.length
+        ? JSON.stringify({ version: 1, passwords: records }) : null);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0219') + 'credentials: writing ' +
+                'the app passwords of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      written = false;
+    }
+    if (!written) {
+      log.debug('Leaving Credentials.writeAppPasswordRecords(). Not written.');
+      return coded('STS-AUTHN-0219', { ok: false, errors: ['The app ' +
+          'passwords could not be written onto ' + name + '\'s entry.'] });
+    }
+    log.debug('Leaving Credentials.writeAppPasswordRecords(). ' +
+              records.length + ' record(s).');
+    return { ok: true };
+  }
+
+  // A record as any page, the API or an audit row may see it: NEVER the hash.
+  private appPasswordView(one) {
+    const { log, appPasswords } = this.deps;
+    log.debug('Entering Credentials.appPasswordView().');
+    log.debug('Leaving Credentials.appPasswordView().');
+    return { id: one.id, name: one.name, doors: one.doors.slice(),
+             doorLabels: one.doors.map((door) => {
+               return appPasswords.doorLabel(door);
+             }),
+             createdAt: one.createdAt, createdBy: one.createdBy,
+             lastUsedAt: one.lastUsedAt, lastUsedDoor: one.lastUsedDoor };
+  }
+
+  // The person's app passwords, newest first, as `appPasswordView()` draws
+  // them. `unreadable` where the stored value is not this service's.
+  appPasswordsOf(username) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.appPasswordsOf().');
+    const held = this.appPasswordRecords(username);
+    const list = held.records.slice().sort((a, b) => {
+      return b.createdAt - a.createdAt;
+    }).map((one) => this.appPasswordView(one));
+    log.debug('Leaving Credentials.appPasswordsOf(). ' + list.length + '.');
+    return { ok: held.ok, unreadable: !held.ok, passwords: list };
+  }
+
+  // ---------------------------------------------------------------------------
+  // MAKING ONE. Answers the password ONCE, printed, in `password`; nothing
+  // anywhere can produce it again. `spec`: `{ name, doors, createdBy }`.
+  // ---------------------------------------------------------------------------
+  createAppPassword(username, spec?) {
+    const { log, appPasswords } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug('Entering Credentials.createAppPassword().');
+    const name = String(username || '').trim();
+    const asked = spec || {};
+    if (!directory || typeof directory.writeAppPasswords !== 'function') {
+      log.debug('Leaving Credentials.createAppPassword(). No store.');
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+          'store is installed.'] });
+    }
+    if (!name || !this.entryExists(name)) {
+      log.debug('Leaving Credentials.createAppPassword(). Nobody.');
+      return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+          'called "' + name + '" in this realm\'s directory.'] });
+    }
+    if (!this.isPersonEntry(name)) {
+      log.debug('Leaving Credentials.createAppPassword(). Not a person.');
+      return coded('STS-AUTHN-0220', { ok: false, errors: ['"' + name +
+          '" is not a person in this realm\'s directory. An app password ' +
+          'is a person\'s; an application uses its own client ' +
+          'credentials.'] });
+    }
+    const live = appPasswords.settings();
+    if (!live.enabled) {
+      log.debug('Leaving Credentials.createAppPassword(). Turned off.');
+      return coded('STS-AUTHN-0217', { ok: false, errors: ['App passwords ' +
+          'are turned off in this realm (appPasswords.enabled). One ' +
+          'already made goes on working.'] });
+    }
+    const label = appPasswords.nameOf(asked.name);
+    if (!label) {
+      log.debug('Leaving Credentials.createAppPassword(). Bad name.');
+      return coded('STS-AUTHN-0214', { ok: false, errors: ['Give the app ' +
+          'password a name of at most ' + appPasswords.MAX_NAME +
+          ' characters, saying which client it is for.'] });
+    }
+    const scope = appPasswords.scopeOf(asked.doors);
+    if (!scope.ok) {
+      log.debug('Leaving Credentials.createAppPassword(). Bad scope.');
+      return coded('STS-AUTHN-0215', { ok: false, errors: [(scope.bad.length
+        ? 'There is no door called ' + scope.bad.join(', ') + '. '
+        : 'Choose at least one door. ') + 'An app password is scoped to ' +
+        'one or more of: ' + appPasswords.DOOR_IDS.join(', ') + '.'] });
+    }
+    const held = this.appPasswordRecords(name);
+    if (!held.ok) {
+      log.debug('Leaving Credentials.createAppPassword(). Unreadable.');
+      return coded('STS-AUTHN-0219', { ok: false, errors: ['The app ' +
+          'passwords already on this entry cannot be read, so none is ' +
+          'made over them. An administrator can see what is stored on the ' +
+          'directory page.'] });
+    }
+    if (held.records.some((one) => { return one.name === label; })) {
+      log.debug('Leaving Credentials.createAppPassword(). Duplicate name.');
+      return coded('STS-AUTHN-0214', { ok: false, errors: ['There is ' +
+          'already an app password called "' + label + '". Revoke it, or ' +
+          'give this one another name.'] });
+    }
+    if (held.records.length >= live.maxPerPerson) {
+      log.debug('Leaving Credentials.createAppPassword(). At the cap.');
+      return coded('STS-AUTHN-0216', { ok: false, errors: [name + ' ' +
+          'already holds ' + held.records.length + ' app passwords, which ' +
+          'is the most one person may (appPasswords.maxPerPerson). Revoke ' +
+          'one first.'] });
+    }
+    const made = appPasswords.generate(held.records.map((one) => one.id));
+    const record = { id: made.id, name: label, doors: scope.doors,
+                     hash: appPasswords.hash(made.password),
+                     createdAt: Date.now(),
+                     createdBy: String(asked.createdBy || name),
+                     lastUsedAt: 0, lastUsedDoor: '' };
+    const written = this.writeAppPasswordRecords(name,
+      held.records.concat([record]));
+    if (!written.ok) {
+      log.debug('Leaving Credentials.createAppPassword(). Not written.');
+      return written;
+    }
+    log.info('credentials: an app password "' + label + '" (' + made.id +
+             ') was made for ' + name + ' by ' + record.createdBy +
+             ', scoped to ' + scope.doors.join(', ') + '. It was shown once.');
+    log.debug('Leaving Credentials.createAppPassword(). Made.');
+    return Object.assign({ ok: true, username: name,
+                           password: made.printed },
+                         this.appPasswordView(record));
+  }
+
+  // Revoking one, by its id. Answers what went — never its hash.
+  revokeAppPassword(username, id) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug('Entering Credentials.revokeAppPassword().');
+    const name = String(username || '').trim();
+    const wanted = String(id || '').trim().toUpperCase();
+    if (!directory || typeof directory.writeAppPasswords !== 'function') {
+      log.debug('Leaving Credentials.revokeAppPassword(). No store.');
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+          'store is installed.'] });
+    }
+    const held = this.appPasswordRecords(name);
+    if (!held.ok) {
+      log.debug('Leaving Credentials.revokeAppPassword(). Unreadable.');
+      return coded('STS-AUTHN-0219', { ok: false, errors: ['The app ' +
+          'passwords on this entry cannot be read.'] });
+    }
+    const going = held.records.filter((one) => one.id === wanted)[0];
+    if (!wanted || !going) {
+      log.debug('Leaving Credentials.revokeAppPassword(). No such one.');
+      return coded('STS-AUTHN-0218', { ok: false, errors: [name + ' holds ' +
+          'no app password with the id "' + wanted + '".'] });
+    }
+    const written = this.writeAppPasswordRecords(name,
+      held.records.filter((one) => one.id !== wanted));
+    if (!written.ok) {
+      log.debug('Leaving Credentials.revokeAppPassword(). Not written.');
+      return written;
+    }
+    log.info('credentials: the app password "' + going.name + '" (' +
+             going.id + ') of ' + name + ' was revoked.');
+    log.debug('Leaving Credentials.revokeAppPassword(). Revoked.');
+    return { ok: true, username: name, revoked: this.appPasswordView(going) };
+  }
+
+  // WHICH OF THE FIVE PASSWORD-ONLY DOORS REFUSE THIS PERSON'S OWN PASSWORD,
+  // the question `secondFactorRefusal()` answers per request, asked of the
+  // whole table at once for the pages that say it: `/portal/app-passwords`,
+  // `/portal/mfa`, the person's /admin/users page and `/admin-api`. One
+  // function, so a page cannot promise a door the verifier then refuses.
+  passwordOnlyDoors(username) {
+    const { log, mode, appPasswords } = this.deps;
+    log.debug('Entering Credentials.passwordOnlyDoors().');
+    const name = String(username || '').trim();
+    const person = !!name && this.isPersonEntry(name);
+    const holds = person && (this.keysOf(name).some((one) => {
+      return one.role === 'mfa';
+    }) || !!this.totpOf(name));
+    const requirement = person ? this.mfaRequirementFor(name)
+      : { required: false, byUser: false, byRealm: false };
+    const secondFactor = holds || requirement.required;
+    const applies = secondFactor &&
+      !mode.acceptsPasswordAloneFromSecondFactorAccounts();
+    const alone = appPasswords.passwordAloneDoors();
+    const refused = applies ? appPasswords.DOOR_IDS.filter((door) => {
+      return alone.indexOf(door) < 0;
+    }) : [];
+    log.debug('Leaving Credentials.passwordOnlyDoors(). refused=' +
+              refused.join(','));
+    return { secondFactor: secondFactor, holds: holds,
+             requirement: requirement, applies: applies, alone: alone,
+             refused: refused,
+             accepted: appPasswords.DOOR_IDS.filter((door) => {
+               return refused.indexOf(door) < 0;
+             }) };
+  }
+
+  // WHICH RECORD A PRESENTED VALUE WOULD BE, or null — and null for almost
+  // every password there is, because the shape and the id are asked first and
+  // cost nothing. Only where the verification got as far as a NAME: the
+  // reserved refusal, a disabled account and development mode have already
+  // answered, and an app password does not change any of them.
+  private appPasswordCandidate(ready, password) {
+    const { log, appPasswords } = this.deps;
+    log.debug('Entering Credentials.appPasswordCandidate().');
+    const settled = ready && ready.done &&
+      ['no-credential', 'unreadable-credential'].indexOf(ready.done.reason) < 0;
+    if (!ready || !ready.name || settled) {
+      log.debug('Leaving Credentials.appPasswordCandidate(). Not asked.');
+      return null;
+    }
+    const id = appPasswords.idOf(password);
+    if (!id) {
+      log.debug('Leaving Credentials.appPasswordCandidate(). Not the shape.');
+      return null;
+    }
+    const held = this.appPasswordRecords(ready.name);
+    const record = held.ok
+      ? held.records.filter((one) => one.id === id)[0] : null;
+    log.debug('Leaving Credentials.appPasswordCandidate(). ' +
+              (record ? 'One to check.' : 'None by that id.'));
+    return record ? { record: record, hash: record.hash } : null;
+  }
+
+  // The answer once a candidate's hash was checked. Null where it did not
+  // match, so the presented value is tried as the password — an ordinary
+  // password that happens to look like one is still a password.
+  private appPasswordAnswer(ready, candidate, matched, opts) {
+    const { log, appPasswords } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug('Entering Credentials.appPasswordAnswer().');
+    if (!matched) {
+      log.debug('Leaving Credentials.appPasswordAnswer(). No match.');
+      return null;
+    }
+    const record = candidate.record;
+    const door = String((opts && opts.door) || '');
+    const via = (opts && opts.via) || 'unstated';
+    if (!appPasswords.isDoor(door) || record.doors.indexOf(door) < 0) {
+      // NEVER AT A BROWSER SIGN-IN: the sign-in screen passes no door, so it
+      // lands here. A browser can do the second factor, and a credential
+      // that skips it has no business there.
+      log.info('credentials: ' + ready.name + ' presented the app password ' +
+               '"' + record.name + '" (' + record.id + ') at ' + via +
+               (door ? ', and it is scoped to ' + record.doors.join(', ') +
+                       ' only'
+                     : ', which accepts no app password at all') +
+               '. Refused as a wrong password is.');
+      log.debug('Leaving Credentials.appPasswordAnswer(). Out of scope.');
+      return coded('STS-AUTHN-0213', { ok: false,
+        reason: 'app-password-out-of-scope',
+        detail: 'an app password was presented where it is not accepted' });
+    }
+    this.noteAppPasswordUsed(ready.name, record.id, door);
+    log.info('credentials: ' + ready.name + ' authenticated with the app ' +
+             'password "' + record.name + '" (' + record.id + ') at ' + via +
+             '.');
+    log.debug('Leaving Credentials.appPasswordAnswer(). Accepted.');
+    return { ok: true, reason: 'app-password',
+             appPassword: { id: record.id, name: record.name,
+                            doors: record.doors.slice() },
+             detail: 'an app password ("' + record.name + '", ' + record.id +
+                     ') scoped to this door matched — one factor' };
+  }
+
+  // Last use, at most once a minute per password (see the header). A write
+  // that fails is logged and the acceptance stands: when it was last used is
+  // a report, not a credential.
+  private noteAppPasswordUsed(name, id, door) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.noteAppPasswordUsed().');
+    const held = this.appPasswordRecords(name);
+    const now = Date.now();
+    const record = held.ok ? held.records.filter((one) => one.id === id)[0]
+      : null;
+    if (!record || (now - record.lastUsedAt <
+                    Credentials.APP_PASSWORD_USE_WRITE_MS &&
+                    record.lastUsedDoor === door)) {
+      log.debug('Leaving Credentials.noteAppPasswordUsed(). Not written.');
+      return;
+    }
+    record.lastUsedAt = now;
+    record.lastUsedDoor = door;
+    const written = this.writeAppPasswordRecords(name, held.records);
+    log.debug('Leaving Credentials.noteAppPasswordUsed(). written=' +
+              !!written.ok);
+  }
+
   // ---------------------------------------------------------------------------
   // HOW CAN THIS PERSON SIGN IN? The question the sign-in screen, the
   // activation flow and the portal all ask, answered once.
@@ -5282,6 +5830,10 @@ export = {
   // scrypt hashes, which is 906ms of blocked event loop on one thread.
   verifyBackupCodeAsync: slot.forward('verifyBackupCodeAsync'),
   removeBackupCodes: slot.forward('removeBackupCodes'),
+  appPasswordsOf: slot.forward('appPasswordsOf'),
+  passwordOnlyDoors: slot.forward('passwordOnlyDoors'),
+  createAppPassword: slot.forward('createAppPassword'),
+  revokeAppPassword: slot.forward('revokeAppPassword'),
   hasTotp: slot.forward('hasTotp'),
   beginTotpEnrolment: slot.forward('beginTotpEnrolment'),
   pendingTotpFor: slot.forward('pendingTotpFor'),

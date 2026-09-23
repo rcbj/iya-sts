@@ -643,3 +643,12 @@ The capability row `scim.challenge-state` is provided by `scim_auth.ts`.
   next count is accepted, and a failing claim store refuses. Not run against two
   live nodes: Digest is not offered in product mode, and a HOBA run needs a
   signed-in owner to register a key.
+
+## A second-factor person's Basic password (2026-09-22, #101)
+
+Both Basic paths — `attemptBasic()` and `verifyBasicOffThread()` — pass
+`door: 'scim'`, so in product a person who holds or must hold a second factor
+is refused their own password with the one `STS-SCIM-0037` sentence a wrong
+password gets (the code on the call-log row is `STS-AUTHN-0212`), and uses an
+app password scoped to `scim`; the decision's `note` says so. `authn/CLAUDE.md`
+owns the rule.

@@ -1992,7 +1992,13 @@ const OWN_NAMES = [
   // every mode (`cert_enrollment.withheldValues()`); the certificates and the
   // host names are public.
   'stsEnrolledCertificate', 'stsEnrolledPrivateKey', 'stsAcmeEabKey',
-  'stsScepChallenge', 'stsCertificateHostName'
+  'stsScepChallenge', 'stsCertificateHostName',
+
+  // AND A NINTH SINCE 2026-09-22 (#101): a person's APP PASSWORDS — one JSON
+  // value holding each one's name, scope, scrypt hash and last use. A
+  // verifier like `userPassword`, and withheld from every read like it
+  // (SECRET_ATTRIBUTES). `common/credentials.ts` keeps them.
+  'stsAppPassword'
 ];
 
 // The table itself, built from the two lists. `learnName()` is the ONE way in,
@@ -7705,6 +7711,9 @@ const SECRET_ATTRIBUTES = [
   'oauthassertionprivatekey', 'oauthsamlassertionprivatekey',
   'stsassertionprivatekey', 'stssamlassertionprivatekey',
   'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
+  // A person's app passwords (#101): scrypt hashes, a verifier like
+  // userPassword and withheld like it.
+  'stsapppassword',
   // A password reset link's hash (2026-09-13), for the activation token's
   // reason beside it.
   'stspasswordresettoken',
@@ -8157,6 +8166,47 @@ function writeBackupCodes(key, value) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// THE APP PASSWORDS (#101, 2026-09-22). SINGLE-VALUED, like the recovery codes
+// above: one JSON value carrying every one the person holds, which
+// `common/credentials.ts` writes whole. A `null` value DELETES.
+// ---------------------------------------------------------------------------
+function readAppPasswords(key) {
+  log.debug('Entering readAppPasswords(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readAppPasswords(). No entry.');
+    return '';
+  }
+  const value = (stored.attributes.stsapppassword || [])[0];
+  log.debug('Leaving readAppPasswords(). ' + (value ? 'Held.' : 'None.'));
+  return value ? String(value) : '';
+}
+
+function writeAppPasswords(key, value) {
+  log.debug('Entering writeAppPasswords(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    // NOT created here, for `writeTotp()`'s reason.
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no app ' +
+             'password was recorded.');
+    log.debug('Leaving writeAppPasswords(). No entry.');
+    return false;
+  }
+  if (value === null || value === undefined || value === '') {
+    delete stored.attributes.stsapppassword;
+  } else {
+    stored.attributes.stsapppassword = [String(value)];
+  }
+  touchDirectory();
+  log.debug('Leaving writeAppPasswords(). ' +
+            (value ? 'Written to ' : 'Removed from ') + stored.dn + '.');
+  return true;
+}
+
 // THE ACTIVATION TOKEN, hashed. It is the one credential in this service that
 // completes an account setup on its own, so a leaked one is an account
 // takeover — which is why it is stored the way a password is and never in the
@@ -8230,6 +8280,20 @@ if (typeof credentials.setDirectory === 'function') {
     // `ensureBackupCodes()` reports `no-store` rather than throwing.
     readBackupCodes: readBackupCodes,
     writeBackupCodes: writeBackupCodes,
+    // App passwords (#101), checked where they are used for the reason the
+    // pair above is.
+    readAppPasswords: readAppPasswords,
+    writeAppPasswords: writeAppPasswords,
+    // IS THIS ENTRY A PERSON (#101)? By placement, `isPersonEntry()`'s rule —
+    // never by name. The second-factor refusal at the password-only doors is
+    // about a person's account, and an application's secret is not one.
+    isPerson: function (key) {
+      log.debug("Entering isPerson().");
+      const located = locateEntry(String(key || ''));
+      const person = !!(located.stored && isPersonEntry(located.stored));
+      log.debug("Leaving isPerson(). " + person);
+      return person;
+    },
     // WHO IS IN THIS REALM, for `secondFactorHolders()` — the operator's view
     // on `/admin/users`. It hands over NAMES and not entries, deliberately:
     // what the credential store needs is a list to ask itself about, and
@@ -10780,10 +10844,19 @@ server.bind('', function (req, res, next) {
   // both modes, and `reason: 'verified'` is the only answer that means a hash
   // was compared.
   let verified = false;
+  // WHICH APP PASSWORD, where one was what matched (#101) — for the two rows.
+  let appPassword = null;
   if (dn) {
+    // `door: 'ldap'` (#101): a password-only door, so in product a person
+    // with a second factor is refused their password here and an app password
+    // scoped to `ldap` is accepted instead (`common/credentials.ts`).
     const checked = credentials.verify(dn, credentials_value,
-                                       { via: 'an LDAP simple bind' });
-    verified = !!(checked && checked.ok && checked.reason === 'verified');
+                                       { via: 'an LDAP simple bind',
+                                         door: 'ldap' });
+    verified = !!(checked && checked.ok && (checked.reason === 'verified' ||
+                                            checked.reason === 'app-password'));
+    appPassword = checked && checked.ok && checked.appPassword
+      ? checked.appPassword : null;
     if (!checked.ok) {
       log.info('ldap: refusing the bind for ' + dn + ' (' + checked.reason +
                '): ' + checked.detail);
@@ -10852,7 +10925,12 @@ server.bind('', function (req, res, next) {
     detail: { anonymous: !dn,
               entryExists: dn ? !!getEntry(dn) : false,
               passwordVerified: verified,
-              note: verified
+              appPassword: appPassword
+                ? { id: appPassword.id, name: appPassword.name } : undefined,
+              note: appPassword
+                ? 'an app password scoped to LDAP ("' + appPassword.name +
+                  '") was verified — one factor'
+                : verified
                 ? 'the password was verified against this entry\'s userPassword'
                 : !dn
                   ? 'an anonymous bind: RFC 4511 section 5.1.1 defines it as ' +
@@ -10863,8 +10941,11 @@ server.bind('', function (req, res, next) {
   stats.recordAuthentication({
     presented: dn || '(anonymous)',
     protocol: 'ldap',
-    method: dn ? 'simple bind' : 'anonymous simple bind',
-    note: verified ? 'the password was verified' : 'no password was checked'
+    method: dn ? (appPassword ? 'simple bind (app password)' : 'simple bind')
+      : 'anonymous simple bind',
+    note: appPassword
+      ? 'an app password ("' + appPassword.name + '") was verified'
+      : verified ? 'the password was verified' : 'no password was checked'
   });
   // WHEN THIS CONNECTION BECAME THIS PERSON'S SESSION (2026-09-04). In LDAP the
   // connection IS the session (RFC 4511 section 4.2), and until this line there

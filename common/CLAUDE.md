@@ -7458,6 +7458,56 @@ on `/admin/totp` and `/admin/webauthn`) and `security.passwordResetTtlMinutes`.
 `recovery-information-changed` — `ssf/CLAUDE.md` has the table of which door
 sends what.
 
+## 3ax. `app_passwords.ts` and `credentials.ts`'s `secondFactorRefusal()`: the password-only doors and what they take instead (#101, 2026-09-22)
+
+`authn/CLAUDE.md` owns the RULE (a second-factor person's own password is
+refused at the five password-only doors in product, as a wrong password is).
+What is this directory's is where it is decided and what an app password is.
+
+* **`secondFactorRefusal(answer, name, opts)`** runs right after
+  `resetRefusal()` in `verify()` and `verifyAsync()`, only on a `verified`
+  answer, only in product (`mode.acceptsPasswordAloneFromSecondFactorAccounts()`
+  — the named predicate, and a `REQUIREMENTS` row `second-factor-doors`), only
+  for a PERSON (the slot's `isPerson`; where the hook is missing the answer is
+  yes — refuse by default), only when they hold an `mfa` key or an
+  authenticator app or `mfaRequirementFor()` says required, and never for a
+  caller declaring `secondFactor: 'asked-next'` or `'session-held'`. A `door`
+  listed in `authn.passwordAloneDoors` passes, with a WARN per use. The
+  refusal is `STS-AUTHN-0212`, shaped exactly as a wrong password's verdict,
+  and the Kerberos password observer is not called for it.
+* **`passwordOnlyDoors(username)`** answers the whole table at once for the
+  pages that say it — `/portal/app-passwords`, `/portal/mfa`, the person's
+  `/admin/users` page and the API — so a page cannot promise a door the
+  verifier refuses.
+* **`app_passwords.ts` is a LIBRARY (rule 3)** in `backup_codes.ts`'s shape and
+  for rule 3y's reasons: the SHAPE (twenty-four characters of the thirty-two
+  unconfusable ones, six groups of four; the first four are a PUBLIC ID), the
+  five door ids, the scope and name rules, and the hash — `crypto.hashSecret()`
+  (rule 3r), because an app password is verify-only. **The id is what makes a
+  presented value cost ONE scrypt**: the record is found by it and only its
+  hash is checked, where a constant-time walk would cost one per record on
+  every wrong password, on every bind a pooled client makes.
+* **The records live in `credentials.ts`** (`stsAppPassword`, one JSON value,
+  single-valued): `createAppPassword()` (refusals `0214` name, `0215` doors,
+  `0216` the cap `appPasswords.maxPerPerson`, `0217` `appPasswords.enabled`
+  off, `0219` an unreadable value it will not write over, `0220` not a
+  person), `revokeAppPassword()` (`0218`), `appPasswordsOf()` (never a hash).
+  **In `verify()` the app password is asked FIRST**, and only when the
+  presented value has the shape AND names one of the person's ids; a match at
+  a door outside its scope — or with no door, which is the sign-in screen — is
+  `0213`, and a non-match falls through to the ordinary password check (a
+  password that happens to look like one is still a password). It is asked
+  after the disabled check and the development pass, so a disabled account
+  refuses it and development checks nothing. Last use is written at most once
+  a minute per password.
+* **Three settings**, all in the *Second-factor requirement* group (drawn on
+  `/admin/totp` and `/admin/webauthn`, no new `SETTING_HOMES` row):
+  `authn.passwordAloneDoors`, `appPasswords.enabled`,
+  `appPasswords.maxPerPerson`.
+
+`tests/second_factor_doors.js` is the in-process half;
+`tests/vendored/sts_second_factor_doors.js` drives the five doors over the wire.
+
 ## Several nodes: second factors, links, enrollment credentials and the bootstrap (2026-09-14, #46)
 
 Issue #46 sections 2 and 8. Every value here was spent by reading an entry (or

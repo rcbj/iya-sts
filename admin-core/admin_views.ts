@@ -103,6 +103,8 @@ import credentials = require('../common/credentials');
 import totp = require('../common/totp');
 import webauthnPolicy = require('../authn/webauthn_policy');
 import backupCodes = require('../common/backup_codes');
+// App passwords (#101): a LIBRARY, for the scope catalogue and the settings.
+import appPasswords = require('../common/app_passwords');
 // THE SIGN-ON SESSION MAP, which `signOnSessionRows()` walks. It is the same
 // destructured-require trap one module along: admin.js pulls fourteen names
 // out of two modules through multi-line destructures, and a name taken from
@@ -392,6 +394,7 @@ interface AdminViewsDeps {
   totp: typeof totp;
   webauthnPolicy: typeof webauthnPolicy;
   backupCodes: typeof backupCodes;
+  appPasswords: typeof appPasswords;
   sessions: typeof authn.sessions;
   sessionStartedAt: typeof authn.sessionStartedAt;
   config: typeof config;
@@ -464,6 +467,7 @@ class AdminViews {
       totp: totp,
       webauthnPolicy: webauthnPolicy,
       backupCodes: backupCodes,
+      appPasswords: appPasswords,
       sessions: authn.sessions,
       sessionStartedAt: authn.sessionStartedAt,
       config: config,
@@ -6505,6 +6509,13 @@ class AdminViews {
       // together are the answer to "why can they not enrol one" — and a caller
       // that had to fetch /admin-api/webauthn as well would be reading a
       // second request's answer against this one's.
+      // APP PASSWORDS (#101): name, scope, when made and last used — never
+      // a hash — bounded by appPasswords.maxPerPerson (at most fifty), so not
+      // paged here; `GET /admin-api/users/app-passwords` is the paged list.
+      appPasswords: credentials.appPasswordsOf(key).passwords,
+      // WHICH PASSWORD-ONLY DOORS REFUSE THIS PERSON'S OWN PASSWORD (#101),
+      // the one sentence the page and the API both say.
+      passwordOnlyDoors: this.passwordOnlyDoorsFor(key),
       policy: { totpEnabled: totpLive.enabled,
                 backupCodesEnabled: recoveryLive.enabled,
                 backupCodesCount: recoveryLive.count,
@@ -6512,6 +6523,83 @@ class AdminViews {
                 primaryAllowed: keyLive.primaryAllowed,
                 mfaAllowed: keyLive.mfaAllowed,
                 maxKeysPerPerson: keyLive.maxKeysPerPerson }
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PASSWORD-ONLY DOORS FOR ONE PERSON (#101, 2026-09-22): which of the
+  // five refuse their own password — every one not listed in
+  // `authn.passwordAloneDoors`, in product mode, while they hold or must hold
+  // a second factor — and which accept it, from
+  // `credentials.passwordOnlyDoors()`, with the sentence the page and the API
+  // both carry.
+  // ---------------------------------------------------------------------------
+  passwordOnlyDoorsFor(key) {
+    const { log, credentials, appPasswords } = this.deps;
+    log.debug("Entering AdminViews.passwordOnlyDoorsFor().");
+    const doors = credentials.passwordOnlyDoors(key);
+    const label = function (door) {
+      return appPasswords.doorLabel(door);
+    };
+    log.debug("Leaving AdminViews.passwordOnlyDoorsFor().");
+    return {
+      secondFactor: doors.secondFactor,
+      refused: doors.refused,
+      accepted: doors.accepted,
+      passwordAloneDoors: doors.alone,
+      sentence: !doors.secondFactor
+        ? 'They hold no second factor and none is required of them, so ' +
+          'their password is accepted at every password-only door.'
+        : !doors.applies
+          ? 'This service is in development mode, which checks no password ' +
+            'at the password-only doors; in product mode their own password ' +
+            'would be refused there while they hold or must hold a second ' +
+            'factor.'
+          : (doors.refused.length
+              ? 'Their own password is REFUSED at ' +
+                doors.refused.map(label).join(', ') + ', which cannot ask ' +
+                'for a second factor; an app password scoped to the door is ' +
+                'what they use there.'
+              : 'Their own password is still accepted at every ' +
+                'password-only door.') +
+            (doors.alone.length
+              ? ' authn.passwordAloneDoors lets it through at ' +
+                doors.alone.map(label).join(', ') + ' — ONE factor there.'
+              : '')
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE PERSON'S APP PASSWORDS, PAGED (#101) — `GET
+  // /admin-api/users/app-passwords`, the list the person's /admin/users page
+  // draws and `/portal/app-passwords` draws for themselves. Never a hash.
+  // ---------------------------------------------------------------------------
+  appPasswordsJson(query) {
+    const { log, credentials, appPasswords } = this.deps;
+    log.debug("Entering AdminViews.appPasswordsJson().");
+    const who = String((query && (query.user || query.username)) || '').trim();
+    const live = appPasswords.settings();
+    const held = who ? credentials.appPasswordsOf(who)
+      : { ok: true, unreadable: false, passwords: [] };
+    // A FLAT list, so `page` and `per` — the parameters every list here
+    // pages on — rather than a drill-down's `<name>Page`.
+    const page = this.pagedRows(query || {}, held.passwords,
+                                { noun: 'app passwords' });
+    log.debug("Leaving AdminViews.appPasswordsJson(). " +
+              held.passwords.length + " held.");
+    return {
+      user: who,
+      enabled: live.enabled,
+      maxPerPerson: live.maxPerPerson,
+      unreadable: !!held.unreadable,
+      doors: appPasswords.DOORS.map(function (one) {
+        return { id: one.id, label: one.label, what: one.what };
+      }),
+      passwordOnlyDoors: this.passwordOnlyDoorsFor(who),
+      passwords: page.shown,
+      page: page.paging.page, pages: page.paging.pages,
+      perPage: page.paging.perPage, total: page.paging.total,
+      paging: this.pagingJson(page.paging)
     };
   }
 
@@ -6853,6 +6941,8 @@ export = {
   // answer the JSON half's `subject` member carries.
   userDetailSubject: helpers.subjectForName,
   mfaJson: slot.forward('mfaJson'),
+  appPasswordsJson: slot.forward('appPasswordsJson'),
+  passwordOnlyDoorsFor: slot.forward('passwordOnlyDoorsFor'),
   userDetailJson: slot.forward('userDetailJson'),
   personCredentialsState: slot.forward('personCredentialsState'),
   usersJson: slot.forward('usersJson'),
