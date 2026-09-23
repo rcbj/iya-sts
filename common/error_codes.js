@@ -4213,7 +4213,8 @@ const CODES = [
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0044',
     summary: 'The application declared as an RFC 7523 assertion issuer ' +
-      'registered only a jwks_uri, which this service will not fetch.',
+      'registered only a jwks_uri, and its keys could not be fetched ' +
+      '(#120; STS-OAUTH-0599 logs why).',
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0045',
     summary: 'The keys registered for an RFC 7523 assertion issuer could not ' +
@@ -4990,8 +4991,9 @@ const CODES = [
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-OAUTH-0235',
     summary: 'The client configuration endpoint was asked about a client ' +
-      'that was never dynamically registered.',
-    spec: 'invalid_client (HTTP 404)' },
+      'that does not exist; since #120 the registration access token is ' +
+      'revoked and the answer is RFC 7592 section 3\'s.',
+    spec: 'HTTP 401 {error: invalid_token}' },
   { code: 'STS-OAUTH-0236',
     summary: 'The registration access token presented at the client ' +
       'configuration endpoint does not match.',
@@ -6164,6 +6166,36 @@ const CODES = [
       'an unknown realm, or more than one server segment. Answered with ' +
       'Express\'s 404 and no authorization server created (#119).',
     spec: 'HTTP 404' },
+  { code: 'STS-OAUTH-0595',
+    summary: 'An RFC 7592 update named a client_id other than the one it ' +
+      'updates, or a client_secret other than the one this server issued ' +
+      '(section 2.2) (#120).',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0596',
+    summary: 'A registration access token was presented for a client that ' +
+      'no longer exists; the token was revoked and refused (RFC 7592 ' +
+      'section 3) (#120). Logged at warn.',
+    spec: 'HTTP 401 {error: invalid_token}' },
+  { code: 'STS-OAUTH-0597',
+    summary: 'An authorization request asked for a response_type the ' +
+      'client did not register in response_types (OpenID Connect ' +
+      'Registration section 2) (#120).',
+    spec: 'redirect {error: unauthorized_client}' },
+  { code: 'STS-OAUTH-0598',
+    summary: 'A token request used a grant_type the client did not register ' +
+      'in grant_types (RFC 7591 section 2) (#120).',
+    spec: 'HTTP 400 {error: unauthorized_client}' },
+  { code: 'STS-OAUTH-0599',
+    summary: 'A client\'s registered jwks_uri could not be read: the ' +
+      'outbound policy refused it, it did not answer 200, or it did not ' +
+      'answer a JSON Web Key Set (#120). Logged at warn; the verification ' +
+      'or encryption that needed the key is refused with its own code.',
+    spec: 'none (log only)' },
+  { code: 'STS-OAUTH-0600',
+    summary: 'A client that registered grant_types without refresh_token ' +
+      'was answered with no refresh token (RFC 7591 section 2) (#120). ' +
+      'Recorded, not refused.',
+    spec: 'none (the token response omits refresh_token)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -13360,6 +13392,40 @@ const CODES = [
     summary: 'A registration named authorization_encrypted_response_alg and ' +
       'its jwks holds no key to encrypt its authorization responses to ' +
       '(JARM section 3).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0181',
+    summary: 'A registration named an application_type other than web ' +
+      'or native (OpenID Connect Registration section 2) (#120).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0182',
+    summary: 'A redirect URI does not suit the application_type: a native ' +
+      'client\'s must be a loopback http URL or a private-use scheme, a ' +
+      'web client using the implicit grant\'s must be https and not ' +
+      'localhost (OpenID Connect Registration section 2) (#120).',
+    spec: 'HTTP 400 {error: invalid_redirect_uri}' },
+  { code: 'STS-REG-0183',
+    summary: 'grant_types and response_types disagree (RFC 7591 ' +
+      'section 2.1): a response type needs the grant that redeems it (#120).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0184',
+    summary: 'A client registered for authorization_code or implicit ' +
+      'named no redirect_uris (#120).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0185',
+    summary: 'id_token_signed_response_alg or userinfo_signed_response_alg ' +
+      'names an algorithm this service does not sign with (#120).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0186',
+    summary: 'A registration carried jwks together with jwks_uri, or a ' +
+      'jwks_uri that is not https (RFC 7591 section 2) (#120).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0187',
+    summary: 'default_max_age, require_auth_time or default_acr_values ' +
+      'is not of its type (OpenID Connect Registration section 2) (#120).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0188',
+    summary: 'initiate_login_uri is not an https URL (OpenID Connect ' +
+      'Registration section 2) (#120).',
     spec: 'HTTP 400 {error: invalid_client_metadata}' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +

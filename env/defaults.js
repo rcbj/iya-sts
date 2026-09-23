@@ -341,6 +341,8 @@ var config = {
     requireRequestObjectIssuerAudience: false,   // Require iss and aud in a request object
     requestObjectJtiOnce: true,                  // A request object's jti is accepted once
     requestObjectJtiRetentionS: 3600,            // How long a request object's jti is kept without exp (s)
+    clientJwksCacheS: 300,                       // Client jwks_uri cache (s)
+    clientJwksRefetchS: 30,                      // Client jwks_uri refetch interval (s)
     requestUriCacheS: 0,                         // request_uri content cache (s)
     requestObjectEncryptionKeyBits: 2048,        // Request object encryption: RSA key size (bits)
     requestObjectEncryptionCurve: "P-256",       // Request object encryption: EC curve

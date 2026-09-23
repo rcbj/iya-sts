@@ -139,6 +139,8 @@ import cacheRegistry = require('../common/cache_registry');
 import fedHttp = require('../federation/federation_http');
 import clusterClaims = require('../cluster/cluster_claims');
 import idTokenEncryption = require('./id_token_encryption');
+// A leaf: a client's fetched `jwks_uri` key set (#120).
+import clientJwks = require('./client_jwks');
 
 // A session, a registration document, a delivery result.
 type Json = any;
@@ -726,6 +728,12 @@ class BackchannelLogout {
     // Encrypted like the client's ID Token (section 2.4), or not at all.
     // `protect()` throws with STS-OAUTH-0546 when the registration can no
     // longer be honoured.
+    // A key registered by `jwks_uri` is fetched first (#120), for
+    // `recipientKey()`'s synchronous read.
+    if (registered.id_token_encrypted_response_alg && !registered.jwks &&
+        registered.jwks_uri) {
+      await clientJwks.ensure(String(registered.jwks_uri), '');
+    }
     const wrapped = idTokenEncryption.protect(signed, registered, TOKEN_TYPE);
     log.debug("Leaving BackchannelLogout.signedToken(). alg=" + alg +
               (wrapped.encrypted ? ', encrypted' : ''));

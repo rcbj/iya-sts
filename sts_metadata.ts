@@ -1331,9 +1331,14 @@ const SPECS: Spec[] = [
               'as this realm. The registered scope (section 2) is the list ' +
               'the client may be issued (oauthAllowedScope) and is returned; ' +
               'a registration may not declare this service\'s own protected ' +
-              'scopes. An initial access token (section 3) is not ' +
-              'issued; a trusted software statement is this service\'s ' +
-              'answer to a closed endpoint.' },
+              'scopes. Section 2\'s defaults are applied, stored and ' +
+              'returned (client_secret_basic, authorization_code, code), grant_types ' +
+              'and response_types are checked against each other and ' +
+              'ENFORCED at the token and authorization endpoints, jwks and ' +
+              'jwks_uri together are refused, and a jwks_uri is fetched ' +
+              'under the outbound policy and cached (#120). An initial ' +
+              'access token (section 3) is not issued; a trusted software ' +
+              'statement is this service\'s answer to a closed endpoint.' },
   { id: 'rfc9728', name: 'RFC 9728 — OAuth 2.0 Protected Resource Metadata',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9728',
     coverage: 'partial: CONSUMED, not published. /admin/applications/new ' +
@@ -1347,7 +1352,12 @@ const SPECS: Spec[] = [
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7592',
     coverage: 'full for the three operations: read, update and delete a ' +
               'registered client, each guarded by the registration access ' +
-              'token issued with it.' },
+              'token issued with it, at /oauth2/register/{client_id} and ' +
+              'under every named authorization server. An update must name ' +
+              'the client_id and any client_secret it was issued (section ' +
+              '2.2) and is returned with the defaults applied; a token for a ' +
+              'client that no longer exists is revoked and answered 401 ' +
+              'invalid_token (section 3).' },
   { id: 'rfc7636', name: 'RFC 7636 — PKCE',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7636',
     coverage: 'partial: S256 and plain are advertised and the challenge is ' +
@@ -2082,10 +2092,15 @@ const SPECS: Spec[] = [
               'id_token_encrypted_response_alg/enc, ' +
               'userinfo_signed_response_alg and its encryption members, the ' +
               'request object members, and the front- and back-channel ' +
-              'logout members. NOT covered (#120): default_max_age, ' +
-              'require_auth_time, default_acr_values, initiate_login_uri, ' +
-              'enforcing grant_types and response_types, and RFC 7592\'s ' +
-              '401 for an unknown client.' },
+              'logout members; and (#120) application_type (web, native) ' +
+              'with its redirect URI rules, grant_types and response_types ' +
+              'enforced, default_max_age and default_acr_values applied to a ' +
+              'request that names neither, require_auth_time (auth_time is ' +
+              'carried whenever known), jwks_uri fetched, and ' +
+              'initiate_login_uri launched from the user portal with iss ' +
+              'and login_hint (Core section 4). Not covered: policy_uri and ' +
+              'tos_uri are stored and returned but not drawn on the consent ' +
+              'screen.' },
   { id: 'oidc-logout', name: 'OpenID Connect RP-Initiated Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-rpinitiated-1_0.html',
@@ -8721,6 +8736,13 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Registers a client, which may then use ANY authorization server ' +
           'here — nothing restricts a client to the one it registered at, ' +
           'and /admin/applications records which ones it has actually used.' },
+  { path: '/:as/oauth2/register/:client_id', group: 'OAuth 2.0 / OIDC',
+    name: 'Registered client management (a named authorization server)',
+    specs: ['rfc7592', 'rfc6750'],
+    what: 'The RFC 7592 read, update and delete at the address a ' +
+          'registration made here returns as registration_client_uri ' +
+          '(#120). The registry is one, so this is the same client as at ' +
+          '/oauth2/register/{client_id}.' },
   { path: '/:as/oauth2/logout', group: 'OAuth 2.0 / OIDC',
     name: 'Session end (a named authorization server)',
     specs: ['oidc', 'oidc-logout'],
@@ -8909,7 +8931,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'registration access token. An update applies a software ' +
           'statement as registration does, and a client admitted by a ' +
           'trusted statement at an otherwise closed endpoint must present a ' +
-          'trusted statement from the same issuer with every update.' },
+          'trusted statement from the same issuer with every update. An ' +
+          'update names its own client_id and any client_secret it was ' +
+          'issued; a token for a client that no longer exists is revoked ' +
+          'and answered 401 (section 3, #120).' },
 
   // --- OID4VCI ---
   { path: '/.well-known/openid-credential-issuer', group: 'VC Issuance ' +

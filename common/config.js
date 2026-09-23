@@ -5142,6 +5142,29 @@ const SETTINGS = [
                  'that wants its request objects refused for good sends ' +
                  '`exp`.' },
 
+  // A CLIENT'S jwks_uri, FETCHED (#120, rcbj's decision). How long a fetched
+  // key set is used before it is fetched again, and the least time between
+  // two fetches that an unknown `kid` may force — the second is what keeps a
+  // stream of made-up kids from turning this service into a load generator
+  // against somebody's key endpoint.
+  { key: 'oauth2.clientJwksCacheS', group: 'OAuth 2.0 / OIDC',
+    label: 'Client jwks_uri cache (s)',
+    env: 'STS_OAUTH2_CLIENT_JWKS_CACHE_S', type: 'int', dflt: 300,
+    min: 0, max: 86400, runtime: true,
+    description: 'How long the key set a client\'s registered jwks_uri ' +
+                 'answered with is used before it is fetched again. ZERO ' +
+                 'fetches it for every request that needs a key. A key ' +
+                 'set lacking the kid an assertion names is fetched again ' +
+                 'sooner (oauth2.clientJwksRefetchS).' },
+  { key: 'oauth2.clientJwksRefetchS', group: 'OAuth 2.0 / OIDC',
+    label: 'Client jwks_uri refetch interval (s)',
+    env: 'STS_OAUTH2_CLIENT_JWKS_REFETCH_S', type: 'int', dflt: 30,
+    min: 0, max: 3600, runtime: true,
+    description: 'The least time between two fetches of one jwks_uri that ' +
+                 'an unknown kid may force, so a client that rotated its ' +
+                 'keys is picked up quickly and a stream of invented kids ' +
+                 'cannot make this service fetch on every request.' },
+
   { key: 'oauth2.requestUriCacheS', group: 'OAuth 2.0 / OIDC',
     label: 'request_uri content cache (s)',
     env: 'STS_OAUTH2_REQUEST_URI_CACHE_S', type: 'int', dflt: 0,
