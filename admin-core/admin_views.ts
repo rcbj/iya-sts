@@ -715,9 +715,23 @@ class AdminViews {
     const outsideRealm = authority === 'realm' && ambientRealm !==
                          identityRealm;
     const asked = rbac.rolesOf(username, identityRealm || realms.DEFAULT_ID);
-    const held = outsideRealm
+    // ---------------------------------------------------------------------
+    // THE BOOTSTRAP ADMINISTRATOR BEFORE ITS CLAIM, IN PRODUCT (2026-09-22,
+    // #103). `rolesOf()` answers what the account holds by membership; the
+    // session says how it signed in, and before the claim only a password
+    // this service verified is honoured (`rbac.passwordSignIn()`). Any other
+    // sign-in as that account — a federation partner asserting it, a
+    // certificate naming it, a wallet, a Kerberos ticket — holds nothing
+    // here, and the gate says why (STS-ADMIN-0795). Decided HERE, for the
+    // reason this function exists: the console, `/admin-api`'s session
+    // fallback and the banner all read this one answer.
+    // ---------------------------------------------------------------------
+    const passwordRequired = !!(asked.claimPending &&
+                                !rbac.passwordSignIn(session));
+    const held = outsideRealm || passwordRequired
       ? Object.assign({}, asked, { roles: [], read: false, write: false,
-                                   open: false, openable: false })
+                                   open: false, openable: outsideRealm
+                                     ? false : asked.openable })
       : asked;
     const state = {
       enforced: enforced,
@@ -751,7 +765,17 @@ class AdminViews {
       roles: enforced ? held.roles : rbac.ROLE_IDS.slice(0),
       open: enforced && held.open,
       closed: enforced && held.empty && !held.open && !held.roles.length,
+      // Whether the mode opens the window in the roster's realm at all (#103):
+      // false in product, which the banners say rather than blaming
+      // `admin.openWhenEmpty`.
+      windowOpens: held.windowOpens !== false,
       empty: held.empty,
+      // PRODUCT, BEFORE THE CLAIM (#103): this session is the bootstrap
+      // account signed in by something other than a password, and holds
+      // nothing — or it is somebody holding no role whom development's window
+      // would have let in. Each has a refusal of its own at the gate.
+      bootstrapPasswordRequired: enforced && passwordRequired,
+      windowWithheld: enforced && !outsideRealm && !!held.withheld,
       // The bootstrap administrator (2026-09-13), for the banner that says
       // whose arrival closes the open console. See admin_rbac.js's
       // bootstrapState().
@@ -4203,6 +4227,11 @@ class AdminViews {
           enforced: info.enforced, openWhenEmpty: info.openWhenEmpty,
           openToAnyone: info.openToAnyone,
           closedToEveryone: info.closedToEveryone,
+          // #103 (2026-09-22): whether the mode opens the window here at all
+          // (false in product), and whether the bootstrap administrator's
+          // roles are honoured from a password sign-in only, until it claims.
+          windowOpens: info.windowOpens,
+          bootstrapPasswordRequired: info.bootstrapPasswordRequired,
           // THE BOOTSTRAP ADMINISTRATOR (2026-09-13): who it is, whether it was
           // seeded, and when it first signed in to the console — the moment
           // `openToAnyone` stopped being true. See admin_rbac.js.

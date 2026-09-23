@@ -119,7 +119,8 @@ modes. It is not the only setting that defaults to on —
 `oauth2.saml2BearerRequireRegisteredIssuer`, `oauth2.requestObjectJtiOnce`,
 `adminApi.authRequired`, `admin.openWhenEmpty` and `gnap.consentRequired` are
 among the others — but it is the one that changes what every client meets on a
-first sign-in.
+first sign-in. (`admin.openWhenEmpty` is a development setting: product mode
+never opens the console to whoever signs in, whatever it says.)
 
 The reason it is on even in development is that consent is not a refusal. A
 consent screen ADDS a test case: the extra redirect, the second visit to the
@@ -534,10 +535,23 @@ groups must be bound as somebody holding Admin Write, and nobody may write
 **In development** no password is checked, so the gate proves only that somebody
 *typed* a name that holds a role.
 
-**In both modes, until the bootstrap administrator first signs in, anybody who
-signs in by any method holds both roles**, and every page says so.
+**In development, until the bootstrap administrator first signs in, anybody
+who signs in by any method holds both roles**, and every page says so.
 `admin.openWhenEmpty` (on by default) is that window; its first console sign-in
 ends it.
+
+**In product that window never opens**, whatever `admin.openWhenEmpty` says:
+only the roster decides, and at first the roster is the bootstrap
+administrator alone. Until it has claimed the console, its roles are honoured
+only from a **password** sign-in verified here through its own realm, and only
+that sign-in claims it — a federation partner asserting `admin`, a certificate
+whose CN is `admin`, a wallet or a Kerberos ticket holds nothing and is refused
+`bootstrap_password_required` (`STS-ADMIN-0795`). Anybody else is refused
+until somebody grants them a role (`STS-ADMIN-0796`, logged once per session),
+the embedded debugger waits for the claim (`STS-DBG-0033`), and a realm with no
+bootstrap administrator and an empty roster is closed and logged at startup
+(`STS-ADMIN-0797`) — `POST /admin-api/rbac/grant` with an `admin:write` token
+is the way in.
 
 ### The management API, at `/admin-api`
 
@@ -737,9 +751,6 @@ These are true in a product deployment today, and are tracked as issues:
 * **`/oauth2/revoke` authenticates no client** and does not check that the token
   belongs to the caller (RFC 7009 section 2.1). Anybody holding a token string
   can revoke it ([#102](https://github.com/rcbj/iya-sts/issues/102)).
-* **During the bootstrap window** (`admin.openWhenEmpty`), anybody who signs in
-  by any method — federation, SPNEGO, a certificate, a wallet — holds both
-  console roles ([#103](https://github.com/rcbj/iya-sts/issues/103)).
 * **`oauth2.breakIdTokenNonce`** and **`spiffe.trustLocalSocket`** are honoured
   in product; the first is off by default and the second is on
   ([#104](https://github.com/rcbj/iya-sts/issues/104)).

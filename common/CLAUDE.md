@@ -6629,6 +6629,14 @@ persona surname, `@sts.example` address or `email_verified: true`;
 1.1 attribute authority and a sign-out naming somebody else are refused.
 Development keeps all of it, which is what the test suite drives.
 
+**NOR, SINCE 2026-09-22 (#103), DOES IT OPEN THE CONSOLE TO WHOEVER SIGNS IN
+FIRST** (`opensConsoleToAnyone()`, the `console-bootstrap-window` row). It is
+asked in the realm whose roster is bound, not the realm being read, because the
+window is that realm's. `admin-ui/CLAUDE.md` 8a has the rest: the bootstrap
+account's claim bound to a password, and the closed console logged at startup.
+The one thing it needed from here is `oidc_rp.ts` recording, beside the ID
+Token's `amr`, the sign-on session's `signInAuthority` on the console session.
+
 ## ALL FIVE GATED SURFACES ASK THE POLICY, AND THEY ALL SIGN IN THROUGH ONE STORE (2026-09-06)
 
 `common/access_gate.ts` declared five resources from the day it was written and

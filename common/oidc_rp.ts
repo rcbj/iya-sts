@@ -1890,6 +1890,13 @@ class OidcRelyingParty {
           res: res,
           username: username,
           claims: claims,
+          // THE VERIFIED ID TOKEN'S `amr` IS RECORDED ON THE SESSION, as
+          // `amr`, and beside it the kind of authority that vouched for the
+          // sign-on session named by `sid` (`signInAuthority`). The console
+          // reads both before the bootstrap administrator has claimed it, in
+          // product mode (#103): only a password this service verified may
+          // claim it, and `amr` alone cannot say who verified what.
+          amr: Array.isArray(claims.amr) ? claims.amr.map(String) : [],
           // THE SURFACE, as the protocol this session came through — which
           // is what `/admin/sessions` draws in its Protocol column and what
           // the old arrangement passed to `beginAuthentication()`. The

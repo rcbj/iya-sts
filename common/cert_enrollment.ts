@@ -607,7 +607,13 @@ class CertEnrollment {
       roles = null;
     }
     log.debug("Leaving CertEnrollment.sessionIsAdmin().");
-    return !!(roles && roles.write === true && roles.open !== true);
+    // NOR THE BOOTSTRAP ACCOUNT BEFORE ITS CLAIM, IN PRODUCT (#103): a portal
+    // session may have been made by a federation partner or a certificate
+    // naming it, and until it has claimed the console with its password its
+    // roles open the console alone. `adminFor()` above verifies the password
+    // itself, so it IS a password sign-in and asks no such question.
+    return !!(roles && roles.write === true && roles.open !== true &&
+              roles.claimPending !== true);
   }
 
   async authenticatePerson(username, password, via?) {

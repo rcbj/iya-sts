@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2903** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2907** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -78,12 +78,12 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 275
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 171
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 174
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 54
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 106
-* [Protocol debugger (`STS-DBG`)](#sts-dbg) — 27
+* [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
 
@@ -3006,6 +3006,9 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0792` | Disabling or enabling an account named nobody, or named the anonymous principal, which is not an account. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0793` | Disabling or enabling an account was refused and the refusal carried no code of its own. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0794` | A disable named a riscReason that is not one of RISC account-disabled's two (hijacking, bulk-account; RISC 1.0 section 2.2). | HTTP 400 |
+| `STS-ADMIN-0795` | Product mode: the bootstrap administrator reached the console before claiming it, signed in by something other than a password verified in its own realm (a federation partner, a certificate, a wallet, a Kerberos ticket). Its roles are not honoured and the window stays unclaimed. | HTTP 403 bootstrap_password_required |
+| `STS-ADMIN-0796` | Product mode: a signed-in person holding no console role reached the console while its bootstrap administrator had not yet claimed it. Development would have opened the console to them; product does not. Logged once per console session. | HTTP 403 insufficient_role |
+| `STS-ADMIN-0797` | Product mode, at startup or at a realm's creation: a realm has no bootstrap administrator and nobody on its console roster, so its console is closed to everybody. POST /admin-api/rbac/grant with an admin:write access token is the way in. | none (a log line) |
 
 ## STS-API
 
@@ -3318,6 +3321,7 @@ Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.ts.
 | `STS-DBG-0030` | A certificate-bound access token (RFC 8705 cnf x5t#S256) was presented to the debugger on a connection without that certificate. | invalid_token (HTTP 401) |
 | `STS-DBG-0031` | A DPoP-bound access token (cnf.jkt) was presented to the debugger as a Bearer token. | invalid_token (HTTP 401) |
 | `STS-DBG-0032` | A DPoP proof presented to the debugger did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
+| `STS-DBG-0033` | Product mode: the debugger permission was refused to the bootstrap administrator because it has not yet claimed the console with its password; until it has, its roles are honoured at the console alone, from a password sign-in (#103). | none at issuance (the scope is left off); HTTP 403 at the debugger |
 
 ## Adding a code
 

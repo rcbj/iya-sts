@@ -348,6 +348,27 @@ function opensTestControls() {
   return !isProduct();
 }
 
+// Does the console's BOOTSTRAP WINDOW open the console to anybody who signs in
+// (2026-09-22, #103)? Until a realm's bootstrap administrator first signs in
+// to `/admin` — or, where none was seeded, while its roster is empty — the
+// window grants BOTH console roles to every signed-in person while
+// `admin.openWhenEmpty` is on. Development answers yes: a new stack must be
+// drivable by whoever signs in first, and every job signs in under a random
+// name. Product answers no, and there is no setting that says otherwise: the
+// window made anybody who could sign in BY ANY METHOD — a federation partner's
+// assertion, a trusted certificate, a wallet, a Kerberos ticket — an
+// administrator of the whole service until the operator arrived. So in
+// product only the roster decides, the bootstrap account's roles are honoured
+// from a PASSWORD sign-in alone until it has claimed the console, and a
+// realm with nobody on its roster is closed, reachable again through
+// `POST /admin-api/rbac/grant`. Read in the realm whose window it is, which
+// `admin-ui/admin_rbac.ts` binds. See `admin-ui/CLAUDE.md` 8a.
+function opensConsoleToAnyone() {
+  log.debug("Entering opensConsoleToAnyone().");
+  log.debug("Leaving opensConsoleToAnyone().");
+  return !isProduct();
+}
+
 // Is a write over the DIRECTORY'S OWN SOCKET authorized against the identity
 // that bound? Product mode: an anonymous connection writes nothing, an
 // administrator (Admin Write, in the default realm) writes anything, and a
@@ -994,6 +1015,30 @@ const REQUIREMENTS = [
                  'holds a role.',
     product: 'Required, and the sign-in behind it verifies the credential.',
     where: 'admin-ui/admin.ts' },
+  // #103 (2026-09-22). The row the `console` row above cannot state: WHO may
+  // use the console before anybody has taken charge of it.
+  { id: 'console-bootstrap-window',
+    what: 'The console is not opened to everybody before its bootstrap ' +
+          'administrator arrives',
+    development: 'Until a realm\'s bootstrap administrator first signs in ' +
+                 'to /admin — or, where none was seeded, while the roster ' +
+                 'is empty — every signed-in person holds both console ' +
+                 'roles in that realm, while admin.openWhenEmpty is on. Any ' +
+                 'sign-in by that account closes the window.',
+    product: 'Nobody holds a role because of the window, whatever ' +
+             'admin.openWhenEmpty says: only the roster decides. Until the ' +
+             'bootstrap administrator has claimed the console, its roles are ' +
+             'honoured only from a PASSWORD sign-in through its own realm ' +
+             '(amr pwd, verified here, not a federation partner, a ' +
+             'certificate, a wallet or a Kerberos ticket), and only that ' +
+             'sign-in claims it (STS-ADMIN-0795); the debugger and a ' +
+             'session\'s certificate-enrollment authority wait for the ' +
+             'claim. A realm with no bootstrap administrator and an empty ' +
+             'roster is closed and logged at startup (STS-ADMIN-0797); ' +
+             'POST /admin-api/rbac/grant is the way in.',
+    where: 'admin-ui/admin_rbac.ts, admin-core/admin_views.ts, ' +
+           'admin-ui/admin.ts, debugger/debugger_access.ts, ' +
+           'common/cert_enrollment.ts' },
   { id: 'certificate-enrollment',
     what: 'ACME and EST require TLS; an enrollment credential is verified',
     development: 'ACME (/enroll/acme) and EST (/.well-known/est) answer over ' +
@@ -1455,6 +1500,7 @@ module.exports = {
   inventsClaimValues: inventsClaimValues,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
   opensTestControls: opensTestControls,
+  opensConsoleToAnyone: opensConsoleToAnyone,
   authorizesDirectoryWrites: authorizesDirectoryWrites,
   requiresDirectoryBind: requiresDirectoryBind,
   withholdsDirectorySecrets: withholdsDirectorySecrets,

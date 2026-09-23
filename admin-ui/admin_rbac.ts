@@ -66,6 +66,21 @@
 // case; the way back in from it is `POST /admin-api/rbac/grant`, with an
 // access token carrying `admin:write`.
 //
+// **AND IT IS A DEVELOPMENT WINDOW ONLY, SINCE 2026-09-22 (#103).** In product
+// mode the window never opens (`mode.opensConsoleToAnyone()`): it gave both
+// roles to anybody who could sign in BY ANY METHOD — a federation partner
+// asserting a name, a certificate a trusted CA issued, a wallet, a Kerberos
+// ticket — for as long as the operator took to arrive. What is left in product
+// is the roster, which during the window is the bootstrap account alone, and
+// one more rule: until that account has claimed the console, its roles are
+// honoured only from a PASSWORD sign-in verified in its own realm
+// (`passwordSignIn()`), and only such a sign-in claims it. Every other name
+// that `admin` could be signed in as — a partner may assert any existing
+// person — would otherwise inherit the roles by membership and close the
+// window by arriving. A realm with no bootstrap account and an empty roster is
+// closed, logged at startup (`reportClosedConsole()`), and reached again
+// through `POST /admin-api/rbac/grant`. There is no setting that reopens it.
+//
 // It is deliberately "no members" rather than "the groups do not exist": a
 // group that exists with nobody in it is the state a revoke of the last grant
 // leaves behind, and treating that as closed would mean the console silently
@@ -753,6 +768,53 @@ class AdminRbac {
   }
 
   // ---------------------------------------------------------------------------
+  // WHETHER THE WINDOW OPENS AT ALL IN THE REALM WHOSE ROSTER IS BOUND
+  // (2026-09-22, #103) — `mode.opensConsoleToAnyone()`, asked IN THAT REALM:
+  // the mode is per realm, and the window belongs to the roster's realm rather
+  // than to whichever realm a request happens to be reading.
+  // ---------------------------------------------------------------------------
+  private windowOpensHere() {
+    const { log, mode, realms } = this.deps;
+    const self = this;
+    log.debug("Entering AdminRbac.windowOpensHere().");
+    const realm = realms.get(self.boundRealmId()) || realms.DEFAULT_REALM;
+    const opens = !!realms.run(realm, function () {
+      return mode.opensConsoleToAnyone();
+    });
+    log.debug("Leaving AdminRbac.windowOpensHere(). " + opens);
+    return opens;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WAS THIS CONSOLE SESSION MADE FROM A PASSWORD THIS SERVICE VERIFIED?
+  // (2026-09-22, #103.) Two facts, both on the relying-party session
+  // `common/oidc_rp.ts` made from a verified ID Token:
+  //
+  //   * `amr` carries `pwd` (RFC 8176) and not `federated` — the ID Token says
+  //     a password was how the person authenticated;
+  //   * `signInAuthority` is `local` — the sign-on session behind it was
+  //     vouched for by THIS service rather than by a federation partner or a
+  //     Kerberos realm. SPNEGO puts `pwd` in the amr for a pre-authenticated
+  //     ticket, and a partner's own amr rides behind `federated`, so `amr`
+  //     alone would let either through.
+  //
+  // A certificate (`swk`), a wallet (`pop`) and a passwordless security key
+  // (`hwk`) carry no `pwd` and are refused on the first fact.
+  // ---------------------------------------------------------------------------
+  passwordSignIn(session) {
+    const { log } = this.deps;
+    log.debug("Entering AdminRbac.passwordSignIn().");
+    const amr = session && Array.isArray(session.amr)
+      ? session.amr.map(String) : [];
+    const local = !!session &&
+                  String(session.signInAuthority || '') === 'local';
+    const answer = local && amr.indexOf('pwd') >= 0 &&
+                   amr.indexOf('federated') < 0;
+    log.debug("Leaving AdminRbac.passwordSignIn(). " + answer);
+    return answer;
+  }
+
+  // ---------------------------------------------------------------------------
   // THE WINDOW CLOSES WHEN THE BOOTSTRAP ADMINISTRATOR ARRIVES. Called by the
   // console gate for every signed-in request, so the common answer — not that
   // account, or already closed — is one flag read and no write.
@@ -780,6 +842,16 @@ class AdminRbac {
     const fromRealm = String((session && session.derivedFromRealm) ||
                              defaultRealmId || realms.DEFAULT_ID);
     const closed = self.inRosterRealm(fromRealm, function () {
+      // PRODUCT: ONLY A PASSWORD CLAIMS IT (#103). The account's name can be
+      // signed in by other doors — a partner asserting `admin`, a certificate
+      // whose CN is `admin` — and none of them proves the arrival is the
+      // operator who read the generated password. The gate refuses such a
+      // session its roles (STS-ADMIN-0795); here it simply claims nothing.
+      if (!self.windowOpensHere() && !self.passwordSignIn(session)) {
+        log.debug("A sign-in as the bootstrap administrator that is not a " +
+                  "password verified here claims nothing in product mode.");
+        return false;
+      }
       return self.closeBootstrapWindow(name, wanted);
     });
     log.debug("Leaving AdminRbac.noteConsoleSignIn(). " +
@@ -815,7 +887,7 @@ class AdminRbac {
 
   // Is the whole roster empty — which is what opens the console to anybody who
   // signs in, while `admin.openWhenEmpty` says so, where no bootstrap
-  // administrator was seeded (see `rolesOf()`).
+  // administrator was seeded, in development mode (see `rolesOf()`).
   //
   // Note what it counts: MEMBERSHIP VALUES, not resolvable members. A grant to
   // somebody who has never authenticated is a value naming an entry that is not
@@ -902,13 +974,34 @@ class AdminRbac {
     out.bootstrap = { username: bootstrap.username, seeded: bootstrap.seeded,
                       claimedAt: bootstrap.claimedAt };
     const unclaimed = bootstrap.seeded ? !bootstrap.claimedAt : out.empty;
+    // **DEVELOPMENT ONLY SINCE 2026-09-22 (#103)** — see the header. In
+    // product `openable` still says the window is unclaimed, for the banner,
+    // and `open` is never true.
+    const opens = self.windowOpensHere();
+    out.windowOpens = opens;
     if (unclaimed && !Object.keys(held).length) {
       out.openable = true;
-      if (config.value('admin.openWhenEmpty')) {
+      if (opens && config.value('admin.openWhenEmpty')) {
         out.open = true;
         ROLE_IDS.forEach(function (id) { held[id] = true; });
       }
     }
+    // THE BOOTSTRAP ACCOUNT BEFORE ITS CLAIM, IN PRODUCT (#103). It holds its
+    // roles by membership, and what a caller must add is HOW it signed in:
+    // the console honours them from a password session only (`gateStateFor()`
+    // with `passwordSignIn()`), and a door that has no session to ask — the
+    // debugger, a portal session's certificate-enrollment authority — does
+    // not honour them until the claim. A door that verified the password
+    // itself (an LDAP bind, EST's Basic) is the password sign-in and ignores
+    // this flag.
+    out.claimPending = !opens && bootstrap.seeded && !bootstrap.claimedAt &&
+      !!bootstrap.username &&
+      name.toLowerCase() === String(bootstrap.username).toLowerCase() &&
+      Object.keys(held).length > 0;
+    // The window is unclaimed and product never opens it: a person holding no
+    // role is refused where development would have let them in. The gate
+    // records it once per session (STS-ADMIN-0796).
+    out.withheld = !opens && unclaimed && !Object.keys(held).length;
 
     out.roles = ROLE_IDS.filter(function (id) { return !!held[id]; });
     out.read = !!held.read;
@@ -1265,7 +1358,8 @@ class AdminRbac {
     // window for good, so an empty roster no longer opens the console.
     const boot = nowEmpty ? self.bootstrapState() : null;
     const reopens = nowEmpty && config.value('admin.openWhenEmpty') &&
-                    !(boot.seeded && boot.claimedAt);
+                    !(boot.seeded && boot.claimedAt) &&
+                    self.windowOpensHere();
     log.debug("Leaving AdminRbac.revoke(). " + name + " no longer holds " +
               role.id + ".");
     return { ok: true, changed: true, role: role.id, username: name, dn: dn,
@@ -1371,6 +1465,48 @@ class AdminRbac {
   }
 
   // ---------------------------------------------------------------------------
+  // A CONSOLE NOBODY CAN REACH, SAID ONCE AT STARTUP (2026-09-22, #103).
+  //
+  // In product the window never opens, so a realm whose bootstrap
+  // administrator was not seeded — seeding failed (`STS-ADMIN-0706`), or
+  // `admin.bootstrapUsername` is empty — and whose roster names nobody has a
+  // console that no browser can enter. That is the right answer rather than a
+  // fault to paper over (the alternative is the window this change removed),
+  // and it is recovered through `POST /admin-api/rbac/grant` with an
+  // `admin:write` access token. But an operator must not discover it by being
+  // refused, so `server.js` asks here after the bootstrap and a realm's create
+  // asks after its seed, and this logs it at error level under its code.
+  // Answers whether it did.
+  // ---------------------------------------------------------------------------
+  reportClosedConsole() {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering AdminRbac.reportClosedConsole().");
+    if (!directory || self.windowOpensHere()) {
+      log.debug("Leaving AdminRbac.reportClosedConsole(). " +
+                (directory ? "The window opens here." : "No directory."));
+      return false;
+    }
+    const state = self.bootstrapState();
+    if (state.seeded || !self.rosterEmpty()) {
+      log.debug("Leaving AdminRbac.reportClosedConsole(). Somebody may " +
+                "enter.");
+      return false;
+    }
+    log.error(errorCodes.tag('STS-ADMIN-0797') + 'admin_rbac: the console of ' +
+              'the "' + self.boundRealmId() + '" realm is CLOSED TO ' +
+              'EVERYBODY. It has no bootstrap administrator' +
+              (state.username ? ' ("' + state.username + '" was not seeded)'
+                              : ' (admin.bootstrapUsername is empty)') +
+              ' and nobody holds a console role, and product mode never ' +
+              'opens the console to whoever signs in. Grant somebody a role ' +
+              'with POST /admin-api/rbac/grant and an access token carrying ' +
+              'admin:write.');
+    log.debug("Leaving AdminRbac.reportClosedConsole(). Reported.");
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------
   // The whole feature as one object, for the screen, for ?format=json and for
   // GET /admin-api/rbac. One builder so that the three cannot disagree — the
   // same rule /admin/scim follows about describing SCIM in the module that
@@ -1409,8 +1545,17 @@ class AdminRbac {
     // because it is the sentence every surface has to render and three of them
     // computing it separately is three chances to say the door is shut while it
     // is open.
-    out.openToAnyone = out.enforced && unclaimed && out.openWhenEmpty;
+    // **AND ONLY WHERE THE MODE OPENS IT (#103)**: never in product, so this
+    // is false there whatever `admin.openWhenEmpty` says.
+    out.windowOpens = self.windowOpensHere();
+    out.openToAnyone = out.enforced && unclaimed && out.openWhenEmpty &&
+                       out.windowOpens;
     out.closedToEveryone = out.enforced && out.empty && !out.openToAnyone;
+    // Product, before the bootstrap administrator's claim: its roles are
+    // honoured from a password sign-in through this realm only, and only such
+    // a sign-in claims the console.
+    out.bootstrapPasswordRequired = out.enforced && !out.windowOpens &&
+                                    bootstrap.seeded && !bootstrap.claimedAt;
     log.debug("Leaving AdminRbac.describe(). " + out.grantCount + " grant(s).");
     return out;
   }
@@ -1485,6 +1630,7 @@ class AdminRbac {
       seedBootstrapAdministrator: this.bound(this.seedBootstrapAdministrator,
                                              0),
       bootstrapState: this.bound(this.bootstrapState, 0),
+      reportClosedConsole: this.bound(this.reportClosedConsole, 0),
       rolesOf: this.bound(this.rolesOf, 1),
       grant: this.inContextRealm(this.grant),
       revoke: this.inContextRealm(this.revoke),
@@ -1552,6 +1698,9 @@ export = {
   seedBootstrapAdministrator: wrapped('seedBootstrapAdministrator'),
   noteConsoleSignIn: slot.forward('noteConsoleSignIn'),
   bootstrapState: wrapped('bootstrapState'),
+  // #103: how a console session was made, and a closed console reported.
+  passwordSignIn: slot.forward('passwordSignIn'),
+  reportClosedConsole: wrapped('reportClosedConsole'),
   rolesOf: wrapped('rolesOf'),
   grant: wrapped('grant'),
   revoke: wrapped('revoke'),

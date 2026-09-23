@@ -3481,6 +3481,45 @@ the group is created by the first grant, and treating the empty group a revoke
 leaves behind as *closed* would mean the console locking itself the moment
 somebody tidied up.
 
+**THE WINDOW IS DEVELOPMENT'S ALONE SINCE 2026-09-22 (#103).** It gave both
+roles to anybody who could sign in by ANY method — a federation partner
+asserting a name, a certificate a trusted CA issued, a wallet, a Kerberos
+ticket — until the operator arrived, which a product cannot ship. rcbj's three
+decisions, taken as the issue's plan recommended:
+
+* **Product never opens it** (`mode.opensConsoleToAnyone()`, asked in the
+  roster's realm by `admin_rbac.ts`'s `windowOpensHere()`), and there is no
+  weaker product option: `admin.openWhenEmpty` is read in development only.
+  `rolesOf()` still answers `openable` for the banner, and `withheld` for a
+  person development would have let in; the gate refuses them
+  `insufficient_role` coded `STS-ADMIN-0796`, logged once per console session.
+* **The claim is bound to the PASSWORD.** The account `admin` exists, so any
+  door that can sign in AS it — a partner may assert any existing person
+  (#109), a certificate's CN maps to an entry — would inherit its roles by
+  membership and close the window by arriving. Until the claim, in product,
+  `rolesOf()` marks the account `claimPending`, `gateStateFor()` honours its
+  roles only when `rbac.passwordSignIn(session)` says the console session was
+  made from a password this service verified — the ID Token's `amr` carries
+  `pwd` and not `federated`, AND the sign-on session's latest event was vouched
+  for by this service (`signInAuthority: 'local'`, which
+  `authn.startRelyingPartySession()` copies off the parent). `amr` alone is not
+  enough: SPNEGO puts `pwd` there for a pre-authenticated ticket. Anything else
+  is refused 403 `bootstrap_password_required` (`STS-ADMIN-0795`) and
+  `noteConsoleSignIn()` claims nothing. The debugger, which never sees the
+  session, waits for the claim (`STS-DBG-0033`); so does a portal session's
+  certificate-enrollment authority (`sessionIsAdmin()`). An LDAP bind and EST
+  Basic verify the password themselves, so they ARE the password sign-in and
+  honour the roles as before. Once claimed, `admin` is an ordinary member.
+* **A realm with no bootstrap administrator and an empty roster is closed** in
+  product — seeding failed (`STS-ADMIN-0706`) or `admin.bootstrapUsername` is
+  empty — and `reportClosedConsole()` says so at error level
+  (`STS-ADMIN-0797`) from `server.js`'s bootstrap and a realm's create. The way
+  in is `POST /admin-api/rbac/grant` with an `admin:write` token.
+
+`tests/console_bootstrap_product.js` holds the in-process half (the rules, the
+gate over a loopback socket, the debugger, the startup log) and
+`tests/vendored/sts_console_bootstrap_product.js` the HTTP half.
+
 **A grant to somebody who does not exist is allowed and dangles.** That is the
 interesting case for a mock — grant the role, then watch them arrive already
 holding it — and it is why the roster counts membership VALUES rather than
@@ -3576,7 +3615,8 @@ rules as the default realm's (8a): both roles, `pwdReset` on an account it
 created, and a window open until THAT account signs in through its realm —
 `noteConsoleSignIn()` closes the window of `session.derivedFromRealm`. While a
 realm's window is open, anybody signed in through that realm holds both of that
-realm's roles, and nothing outside it. A realm whose roster already named
+realm's roles, and nothing outside it — in development; in product the window
+never opens and the realm's `admin` claims it only with its password (8a, #103). A realm whose roster already named
 somebody seeds with its window closed. **In product mode a create generates the
 password** (`STS-ADMIN-0789` if it cannot), and `POST /admin/realms` answers a
 one-time page carrying it rather than a redirect, for `/admin/users/new`'s

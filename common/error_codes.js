@@ -11837,6 +11837,27 @@ const CODES = [
       'account-disabled\'s two (hijacking, bulk-account; RISC 1.0 ' +
       'section 2.2).',
     spec: 'HTTP 400' },
+  // #103 (2026-09-22): product mode's console before the bootstrap
+  // administrator has claimed it. `admin-ui/admin_rbac.ts` argues all three.
+  { code: 'STS-ADMIN-0795',
+    summary: 'Product mode: the bootstrap administrator reached the console ' +
+      'before claiming it, signed in by something other than a password ' +
+      'verified in its own realm (a federation partner, a certificate, a ' +
+      'wallet, a Kerberos ticket). Its roles are not honoured and the ' +
+      'window stays unclaimed.',
+    spec: 'HTTP 403 bootstrap_password_required' },
+  { code: 'STS-ADMIN-0796',
+    summary: 'Product mode: a signed-in person holding no console role ' +
+      'reached the console while its bootstrap administrator had not yet ' +
+      'claimed it. Development would have opened the console to them; ' +
+      'product does not. Logged once per console session.',
+    spec: 'HTTP 403 insufficient_role' },
+  { code: 'STS-ADMIN-0797',
+    summary: 'Product mode, at startup or at a realm\'s creation: a realm ' +
+      'has no bootstrap administrator and nobody on its console roster, so ' +
+      'its console is closed to everybody. POST /admin-api/rbac/grant with ' +
+      'an admin:write access token is the way in.',
+    spec: 'none (a log line)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -13025,7 +13046,14 @@ const CODES = [
   { code: 'STS-DBG-0032',
     summary: 'A DPoP proof presented to the debugger did not verify, and the ' +
       'proof check reported no code of its own.',
-    spec: 'invalid_dpop_proof (HTTP 401)' }
+    spec: 'invalid_dpop_proof (HTTP 401)' },
+  { code: 'STS-DBG-0033',
+    summary: 'Product mode: the debugger permission was refused to the ' +
+      'bootstrap administrator because it has not yet claimed the console ' +
+      'with its password; until it has, its roles are honoured at the ' +
+      'console alone, from a password sign-in (#103).',
+    spec: 'none at issuance (the scope is left off); HTTP 403 at the ' +
+      'debugger' }
   // ===== END ===============================================================
 ];
 

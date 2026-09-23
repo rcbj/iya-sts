@@ -564,7 +564,10 @@ They are why the off switch exists.
   premise is that it authenticates nobody.
 * **It is the way back in.** When the console is closed and nobody who holds a
   role can sign in (the roster emptied after the bootstrap administrator's first
-  sign-in, or `admin.openWhenEmpty` off with no role granted), NO browser can
+  sign-in, `admin.openWhenEmpty` off with no role granted, or — since
+  2026-09-22, #103 — a product-mode realm with no bootstrap administrator and
+  nobody on its roster, which product never opens and logs at startup as
+  `STS-ADMIN-0797`), NO browser can
   reach the console — the screen that grants the first role is
   behind the gate that role opens. `POST /admin-api/rbac/grant` is the only door
   out of that state, and a door that needed a role would not be one.
