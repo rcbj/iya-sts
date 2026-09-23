@@ -304,7 +304,20 @@ GET  /              what this PEP is, what it holds, what it has enforced
 GET  /protected     THE RESOURCE. 200 or 403, decided here
 POST /notify        the PDP's nudge: pull now
 GET  /healthcheck   liveness
+GET  /crl/<name>    this PEP's own credential's CRLs (#174), from PEP_CRL_DIR
 ```
+
+**`/crl/<name>` is not a fifth endpoint of the PEP's; it is its credential's
+distribution point (#174, 2026-09-23).** A product-mode PDP refuses, under
+hard-fail, a client certificate from an authority it does not hold that names
+no CRL and no OCSP responder (STS-PKI-0190) — nobody could ever revoke it. So
+`tests/tools/pep-credential.js --crl-base=http://xacml-pep:9090/crl` names the
+Root's and the Issuing CA's lists in the chain it mints and writes them beside
+the credential, and this container, the only thing alive for as long as that
+credential is presented, serves them from `PEP_CRL_DIR` (by default the `crl/`
+directory beside `PEP_TLS_CERT`). Only a name of the form `<word>.crl` is looked
+up; the documents are public and signed, and this container holds no key that
+could sign one.
 
 **`/notify` answers 204 immediately and pulls afterwards.** The PDP times that
 request out in two seconds by default, and holding it open for the length of a

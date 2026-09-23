@@ -96,6 +96,16 @@
 //     no request is a refusal naming the transports, never a 404.
 //
 // ---------------------------------------------------------------------------
+// AND ONE ADDRESS IT DOES NOT FOLLOW, ON PURPOSE (#174, section A2). A
+// certificate from an EXTERNAL authority whose only CRL is at a plain
+// `ldap://` address, uploaded as an application's RFC 7523 key and registered
+// as a private_key_jwt client's x5c: product mode refuses both, because the
+// default `pki.revocationLdap` does not dial that address and a list the
+// issuer published but this service did not read is a status it could not
+// establish; development accepts. Its twin, whose list this job serves over
+// http, is accepted in both.
+//
+// ---------------------------------------------------------------------------
 // WHAT IT DOES NOT DO.
 //
 // It does not verify a signature made with an algorithm node's own crypto
@@ -144,6 +154,19 @@ var REALM = usernameFor("pkidp").replace(/[^a-z0-9-]/g, "").slice(0, 30);
 var realmApi = base + "/realm/" + REALM + "/admin-api";
 var APPLICATION = "pkidp-app";
 var PERSON = usernameFor("pkidpperson");
+// Section A2's applications (#174).
+var X5C_APPLICATION = "pkidp-x5c";
+var TOKEN_ENDPOINT = base + "/realm/" + REALM + "/oauth2/token";
+
+// The vendored certificate encoder, for section A2's EXTERNAL authority — a
+// hierarchy this service did not make — and the helper that serves its lists.
+const path = require("path");
+const REPO = process.env.MOCK_STS_DIR || path.join(__dirname, "..", "..");
+const x509 = require(path.join(REPO, "common", "vendored", "x509.js"));
+const keyMaterial = require(path.join(REPO, "common", "vendored",
+                                      "key_material.js"));
+const crlHost = require("./test_crl_host.js");
+const serviceFacts = require("./service_facts.js");
 
 // The documents a relying party holds a certificate from, per realm. A 404 is
 // allowed — SPIFFE is off in a realm by default — and anything else that is
@@ -1077,6 +1100,226 @@ function judgeOcsp(r, where, certId, issuer, nonce, expect) {
 // ===========================================================================
 // THE TEST.
 // ===========================================================================
+// ===========================================================================
+// A2. A CERTIFICATE WHOSE ONLY LIST IS AT A PLAIN ldap: ADDRESS, USED OVER HTTP
+// (#174, 2026-09-23).
+//
+// Everything below this section follows the addresses THIS SERVICE writes.
+// This one is the other direction: an address somebody else's authority wrote
+// that this service is configured NOT to dial — plain `ldap://` under the
+// default `pki.revocationLdap=ldaps` — on a certificate under an external Root,
+// at two doors: an administrator UPLOADING it as an application's RFC 7523 key
+// pair (which checks the chain, revocation included), and the same leaf as the
+// x5c of a private_key_jwt client's registered JWK, used at the token endpoint.
+// Until #174 hard-fail answered it as a certificate that names no list and
+// ACCEPTED it, even though the issuer publishes one; now its status is one
+// this service could not establish, and a product-mode service (hard-fail by
+// `auto`) refuses at both doors — the upload naming the setting, the token
+// endpoint invalid_client — while a development-mode one (soft-fail) accepts.
+// The positive control is the same key's twin under the same Root, whose list
+// is at an http address this job serves (`test_crl_host.js`): accepted in both
+// modes, so the refusal is about the address and nothing else.
+// ===========================================================================
+function b64u(buf) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
+  return Buffer.from(buf).toString("base64url");
+}
+
+function signEs256(header, payload, privateKeyPem) {
+  log.debug("Entering signEs256().");
+  const signing = b64u(JSON.stringify(header)) + "." +
+                  b64u(JSON.stringify(payload));
+  const sig = nodeCrypto.sign("sha256", Buffer.from(signing),
+                              { key: privateKeyPem,
+                                dsaEncoding: "ieee-p1363" });
+  log.debug("Leaving signEs256().");
+  return signing + "." + b64u(sig);
+}
+
+async function externalLeaf(root, rootPair, label, crlUrl) {
+  log.debug("Entering externalLeaf(). " + label);
+  const leafPair = await keyMaterial.generateKeyPair("ec-p256");
+  const leaf = await x509.issueCertificate({
+    subject: [{ name: "CN", value: X5C_APPLICATION + " " + label }],
+    subjectPublicKey: leafPair.publicPem, signatureAlg: "sha256-rsa",
+    profile: "digital-signature",
+    issuer: { certificatePem: root.pem, privateKeyPem: rootPair.privatePem,
+              keyAlg: "rsa-2048" },
+    extensions: {
+      basicConstraints: { present: true, critical: true, ca: false },
+      keyUsage: { present: true, critical: true,
+                  usages: ["digitalSignature"] },
+      cRLDistributionPoints: { present: true, critical: false,
+                               urls: [crlUrl] }
+    }
+  });
+  log.debug("Leaving externalLeaf().");
+  return { pem: leaf.pem, privatePem: leafPair.privatePem };
+}
+
+function derBase64(pem) {
+  log.debug("Entering derBase64().");
+  log.debug("Leaving derBase64().");
+  return String(pem).replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+}
+
+async function formPost(url, fields) {
+  log.debug("Entering formPost().");
+  const r = await fetch(url, { method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(fields).toString() });
+  const raw = await r.text();
+  let body = {};
+  try {
+    body = JSON.parse(raw);
+  } catch (e) {
+    log.debug("Caught in formPost(): " + ((e && e.message) || e));
+    body = { raw: raw };
+  }
+  log.debug("Leaving formPost(). " + r.status);
+  return { status: r.status, body: body };
+}
+
+// THE FIRST DOOR: an administrator uploading the certificate as an
+// application's RFC 7523 key pair, which checks the chain — revocation
+// included — before it replaces anything.
+async function uploadOf(leaf, label) {
+  log.debug("Entering uploadOf(). " + label);
+  const application = X5C_APPLICATION + "-" + label;
+  await ok(realmApi + "/applications/create",
+           { identifier: application, protocols: ["oauth2"],
+             fields: { oauthClientId: application,
+                       oauthClientSecret: application + "-secret-" + REALM,
+                       oauthTokenEndpointAuthMethod: "client_secret_post" } },
+           "created an application for the " + label + " upload");
+  const r = await postJson(realmApi + "/pki/upload-certificate",
+    { identifier: application, purpose: "jwt", certificate: leaf.pem,
+      chain: leaf.rootPem });
+  log.debug("Leaving uploadOf(). " + r.status);
+  return r;
+}
+
+// THE SECOND DOOR: the same certificate as the x5c of a private_key_jwt
+// client's registered JWK, used at the token endpoint (RFC 7523 section 2.2).
+// Registering a JWKS is not a certificate upload and checks nothing, so what
+// refuses — or does not — is the token endpoint's own check of the key that
+// verified the assertion.
+async function clientAssertionWith(leaf, label) {
+  log.debug("Entering clientAssertionWith(). " + label);
+  const application = X5C_APPLICATION + "-jwt-" + label;
+  const jwk = nodeCrypto.createPublicKey(leaf.pem).export({ format: "jwk" });
+  jwk.kid = application + "-key";
+  jwk.use = "sig";
+  jwk.alg = "ES256";
+  jwk.x5c = [derBase64(leaf.pem), derBase64(leaf.rootPem)];
+  await ok(realmApi + "/applications/create",
+           { identifier: application, protocols: ["oauth2"],
+             fields: { oauthClientId: application,
+                       oauthTokenEndpointAuthMethod: "private_key_jwt",
+                       oauthJwks: JSON.stringify({ keys: [jwk] }) } },
+           "created the private_key_jwt client for the " + label + " key");
+  const now = Math.floor(Date.now() / 1000);
+  const assertion = signEs256({ alg: "ES256", typ: "JWT", kid: jwk.kid },
+    { iss: application, sub: application, aud: TOKEN_ENDPOINT, iat: now,
+      exp: now + 120, jti: nodeCrypto.randomUUID() }, leaf.privatePem);
+  const r = await formPost(TOKEN_ENDPOINT, {
+    grant_type: "client_credentials", client_id: application,
+    client_assertion_type:
+      "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+    client_assertion: assertion });
+  log.debug("Leaving clientAssertionWith(). " + r.status);
+  return r;
+}
+
+async function undialledLdapCertificate() {
+  log.debug("Entering undialledLdapCertificate().");
+  log.info("=== A2. a registered x5c whose only CRL is at a plain ldap: " +
+           "address (#174) ===");
+  const product = await serviceFacts.isProduct(api);
+  const rootPair = await keyMaterial.generateKeyPair("rsa-2048");
+  const root = await x509.issueCertificate({
+    subject: [{ name: "CN", value: X5C_APPLICATION + " external root " +
+                                   REALM }],
+    subjectPublicKey: rootPair.publicPem, signatureAlg: "sha256-rsa",
+    profile: "root-ca",
+    issuer: { privateKeyPem: rootPair.privatePem, keyAlg: "rsa-2048" },
+    extensions: {
+      basicConstraints: { present: true, critical: true, ca: true,
+                          pathLen: null },
+      keyUsage: { present: true, critical: true,
+                  usages: ["keyCertSign", "cRLSign"] }
+    }
+  });
+  // A directory nobody runs: the address is never dialled, which is the claim.
+  const ldapLeaf = await externalLeaf(root, rootPair, "ldap",
+    "ldap://" + crlHost.hostName() + ":1/cn=" + REALM +
+    ",o=nowhere?certificateRevocationList;binary");
+  ldapLeaf.rootPem = root.pem;
+  const list = await crlHost.reserve("pkidp-x5c-root");
+  const httpLeaf = await externalLeaf(root, rootPair, "http", list.url);
+  httpLeaf.rootPem = root.pem;
+  await list.publish({ pem: root.pem, privateKeyPem: rootPair.privatePem });
+
+  const uploaded = await uploadOf(ldapLeaf, "ldap");
+  const token = await clientAssertionWith(ldapLeaf, "ldap");
+  if (product) {
+    check("IN PRODUCT MODE uploading the certificate whose only CRL is at a " +
+          "plain ldap: address is REFUSED ON REVOCATION — the issuer " +
+          "published a list and pki.revocationLdap=ldaps is what stopped it " +
+          "being read, so its status could not be established and hard-fail " +
+          "refuses it (STS-PKI-0188), naming the setting", function () {
+            const said = JSON.stringify(uploaded.body);
+            assert.strictEqual(uploaded.status, 400, said.slice(0, 400));
+            assert.ok(/REFUSED ON REVOCATION/.test(said) &&
+                      /configured not to dial/.test(said) &&
+                      /pki\.revocationLdap/.test(said), said.slice(0, 600));
+          });
+    check("AND ITS x5c ON A private_key_jwt CLIENT'S REGISTERED KEY IS " +
+          "REFUSED at the token endpoint — invalid_client, the key that " +
+          "verified the assertion may no longer be used", function () {
+            assert.ok(token.status === 400 || token.status === 401,
+                      JSON.stringify(token.body).slice(0, 400));
+            assert.strictEqual(token.body.error, "invalid_client",
+                               JSON.stringify(token.body).slice(0, 400));
+            // REFUSED FOR THE RIGHT REASON: an assertion refused for its
+            // audience or its signature would pass the two lines above.
+            assert.ok(/may no longer be used/.test(
+                        token.body.error_description || "") &&
+                      /configured not to dial/.test(
+                        token.body.error_description || ""),
+                      "refused, but not on revocation: " +
+                      token.body.error_description);
+          });
+  } else {
+    check("IN DEVELOPMENT MODE (soft-fail) the same upload is accepted: an " +
+          "address not dialled is a status that could not be established, " +
+          "and soft-fail accepts that and reports it", function () {
+            assert.strictEqual(uploaded.status, 200,
+                               JSON.stringify(uploaded.body).slice(0, 400));
+          });
+    check("and a client authenticating with its x5c is issued a token",
+          function () {
+            assert.strictEqual(token.status, 200,
+                               JSON.stringify(token.body).slice(0, 400));
+            assert.ok(token.body.access_token);
+          });
+  }
+  const httpUpload = await uploadOf(httpLeaf, "http");
+  const httpToken = await clientAssertionWith(httpLeaf, "http");
+  check("while its twin under the SAME Root, whose list is at an http " +
+        "address this job serves, is uploaded AND authenticates in " +
+        (product ? "product" : "development") + " mode — the refusal is " +
+        "about the address and nothing else", function () {
+          assert.strictEqual(httpUpload.status, 200,
+                             JSON.stringify(httpUpload.body).slice(0, 400));
+          assert.strictEqual(httpToken.status, 200,
+                             JSON.stringify(httpToken.body).slice(0, 400));
+          assert.ok(httpToken.body.access_token);
+        });
+  log.debug("Leaving undialledLdapCertificate().");
+}
+
 async function test() {
   log.debug("Entering test().");
   const origin = new URL(base).origin;
@@ -1124,6 +1367,7 @@ async function test() {
                            givenName: "PKI", displayName: "PKI " + PERSON,
                            mail: PERSON + "@example.test" } },
            "created a person to issue a key pair to");
+  await undialledLdapCertificate();
   const realmIds = realmList.realms.map(function (one) {
     return { id: one.id, prefix: one.pathPrefix || "" };
   });

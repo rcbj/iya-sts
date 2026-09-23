@@ -1202,7 +1202,8 @@ mintThePepCredential()
              export NODE_EXTRA_CA_CERTS=/out/sts-certificate.pem ;;
          esac
          exec node /repo/tests/tools/pep-credential.js \
-           --url="$1" --out=/out --subject="$2"' \
+           --url="$1" --out=/out --subject="$2" \
+           --crl-base=http://xacml-pep:9090/crl' \
          sh "$(serviceUrl)" "${XACML_PEP_SUBJECT}" > /dev/null;
   then
     echo "" >&2

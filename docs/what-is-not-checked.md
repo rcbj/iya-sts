@@ -532,11 +532,21 @@ What is still not checked, in either mode unless a setting says so:
   about, because its issuer said not to.
 * **An OCSP response that echoes no nonce** is believed unless
   `pki.revocationOcspRequireNonce` is on.
-* **A plain `ldap:` distribution point** is not dialled unless
-  `pki.revocationLdap` is `ldaps-and-ldap`. A distribution point named relative
-  to its CRL issuer is used only with `pki.revocationLdapDirectory` set.
-* **A certificate naming no CRL and no responder, under hard-fail**, is accepted
-  unless `pki.revocationRequireDistributionPoint` is on.
+* **A certificate naming no CRL and no responder, in development.**
+  `pki.revocationRequireDistributionPoint` is `auto`: product refuses one
+  issued by a CA it does not hold (`STS-PKI-0190`) — nobody could ever revoke
+  it — and development accepts it. `off` accepts it in product too, and its
+  description says what that costs. A self-signed certificate is an anchor and
+  is never refused for this, and one carrying RFC 9608 `noRevAvail` is not
+  checked in either mode, because its issuer declared that no revocation
+  information exists.
+* **A list this service is configured not to dial** — a plain `ldap:`
+  distribution point under the default `pki.revocationLdap=ldaps`, any LDAP
+  address with it `off`, a name relative to its CRL issuer without
+  `pki.revocationLdapDirectory`, an OCSP responder with `pki.revocationOcsp=off`
+  — is **not read**. When it is all a certificate names, its status could not
+  be established: hard-fail refuses it (`STS-PKI-0188`, the reason naming the
+  setting) and soft-fail accepts it and reports it.
 * **A bare registered key** — a JWK with no `x5c` — names no issuer and no list;
   only taking it off the entry stops it verifying.
 * **LDAPS 636** asks for no client certificate, so there is nothing to check.
