@@ -60,7 +60,9 @@ const RISK_GROUP = ['riskListDatasets', 'riskListVersions', 'riskBeginVersion',
                     // #62 P3 and P4.
                     'riskSettleAssessment', 'riskSubjectOf',
                     'riskClaimAction', 'riskLookupFido',
-                    'riskSetFeedback'];
+                    'riskSetFeedback',
+                    // Monitoring → Risk Scoring.
+                    'riskAssessmentMetrics', 'riskSubjectLevels'];
 
 // The most assessments one realm holds in memory, as for failures.
 const MAX_MEMORY_ASSESSMENTS = 50000;
@@ -864,6 +866,166 @@ class RiskStore {
       }) });
   }
 
+  // -------------------------------------------------------------------------
+  // THE ASSESSMENTS OF A WINDOW, COUNTED (#62), for Monitoring → Risk
+  // Scoring: by level, door, decision, phase, signal, country and score
+  // band; the answers people gave; and a series of levels per `bucketMs`.
+  // The database counts with GROUP BY and this process counts its own rows,
+  // and both hand `metricsOf()` the same grouped rows, so the two stores
+  // cannot answer in different shapes.
+  // -------------------------------------------------------------------------
+  assessmentMetrics(realm: string, opts: Json,
+                    sealing: boolean): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.assessmentMetrics().");
+    const o = opts || {};
+    const bucketMs = Math.max(60000, Number(o.bucketMs) || 3600000);
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.assessmentMetrics(). Database.");
+      return Promise.resolve(this.driver.riskAssessmentMetrics(realm, {
+        since: Number(o.since) || 0, bucketMs: bucketMs }))
+        .then(function (grouped: Json): Json {
+          return RiskStore.metricsOf(grouped);
+        });
+    }
+    const since = Number(o.since) || 0;
+    const rows = (this.assessments.get(String(realm || '')) || [])
+      .filter(function (a: Json): boolean {
+        return a.at >= since;
+      });
+    const groups = new Map<string, Json>();
+    const series = new Map<string, Json>();
+    const subjects = new Set<string>();
+    const totals = { total: 0, bots: 0, scoreSum: 0, scoreMax: 0 };
+    const count = function (k: string, v: string): void {
+      const key = k + '\u0000' + v;
+      const held = groups.get(key);
+      if (held) {
+        held.n++;
+      } else {
+        groups.set(key, { k: k, v: v, n: 1 });
+      }
+    };
+    rows.forEach(function (a: Json): void {
+      totals.total++;
+      totals.bots += a.bot ? 1 : 0;
+      totals.scoreSum += Number(a.score) || 0;
+      totals.scoreMax = Math.max(totals.scoreMax, Number(a.score) || 0);
+      subjects.add(String(a.subject || ''));
+      count('level', String(a.level || ''));
+      count('door', String(a.door || ''));
+      count('decision', String(a.decision || ''));
+      count('phase', String(a.phase || ''));
+      count('country', String(a.country || ''));
+      count('band', RiskStore.bandOf(Number(a.score) || 0));
+      if (a.feedback) {
+        count('feedback', String(a.feedback));
+      }
+      (a.signals || []).forEach(function (s: Json): void {
+        count('signal', String((s && s.signal) || ''));
+      });
+      const bucket = Math.floor(Number(a.at) / bucketMs) * bucketMs;
+      const key = bucket + '\u0000' + String(a.level || '');
+      const held = series.get(key);
+      if (held) {
+        held.n++;
+      } else {
+        series.set(key, { bucket: bucket, level: String(a.level || ''),
+                          n: 1 });
+      }
+    });
+    log.debug("Leaving RiskStore.assessmentMetrics(). Memory.");
+    return Promise.resolve(RiskStore.metricsOf({
+      totals: { total: totals.total, subjects: subjects.size,
+                bots: totals.bots,
+                meanScore: totals.total ? totals.scoreSum / totals.total : 0,
+                maxScore: totals.scoreMax },
+      groups: Array.from(groups.values()),
+      series: Array.from(series.values()) }));
+  }
+
+  // A score's band, a decade each, for the histogram. The levels'
+  // thresholds are percentages of 1 (1 and 10 by default), so the bands
+  // are where those thresholds fall. A hot path — once per assessment
+  // counted — so no Entering or Leaving pair would add anything but volume.
+  static bandOf(score: number): string {
+    if (score < 0.001) {
+      return '< 0.001';
+    }
+    if (score < 0.01) {
+      return '0.001 – 0.01';
+    }
+    if (score < 0.1) {
+      return '0.01 – 0.1';
+    }
+    if (score < 1) {
+      return '0.1 – 1';
+    }
+    return '≥ 1';
+  }
+
+  // The grouped rows, from either store, as the page and the API read them.
+  static metricsOf(grouped: Json): Json {
+    log.debug("Entering RiskStore.metricsOf().");
+    const g = grouped || {};
+    const by: Record<string, Record<string, number>> = {
+      level: {}, door: {}, decision: {}, phase: {}, country: {}, band: {},
+      feedback: {}, signal: {} };
+    (g.groups || []).forEach(function (row: Json): void {
+      if (by[row.k] && row.v !== '') {
+        by[row.k][row.v] = (by[row.k][row.v] || 0) + Number(row.n);
+      }
+    });
+    const buckets = new Map<number, Json>();
+    (g.series || []).forEach(function (row: Json): void {
+      const at = Number(row.bucket);
+      const held = buckets.get(at) || { at: at, total: 0 };
+      held[String(row.level || 'UNSCORED')] =
+        (held[String(row.level || 'UNSCORED')] || 0) + Number(row.n);
+      held.total += Number(row.n);
+      buckets.set(at, held);
+    });
+    const t = g.totals || {};
+    log.debug("Leaving RiskStore.metricsOf().");
+    return {
+      total: Number(t.total) || 0,
+      subjects: Number(t.subjects) || 0,
+      bots: Number(t.bots) || 0,
+      meanScore: Number(t.meanScore) || 0,
+      maxScore: Number(t.maxScore) || 0,
+      byLevel: by.level, byDoor: by.door, byDecision: by.decision,
+      byPhase: by.phase, byCountry: by.country, byBand: by.band,
+      bySignal: by.signal,
+      feedback: { confirmed: by.feedback.confirmed || 0,
+                  denied: by.feedback.denied || 0 },
+      series: Array.from(buckets.values()).sort(function (a: Json,
+                                                          b: Json): number {
+        return a.at - b.at;
+      })
+    };
+  }
+
+  // How many people stand at each level now, and the reactions their
+  // standings record as taken.
+  subjectLevels(realm: string, sealing: boolean): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.subjectLevels().");
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.subjectLevels(). Database.");
+      return Promise.resolve(this.driver.riskSubjectLevels(realm));
+    }
+    const out: Record<string, number> = {};
+    const held = this.subjectStates.get(String(realm || ''));
+    if (held) {
+      held.forEach(function (row: Json): void {
+        const level = String(row.level || 'UNSCORED');
+        out[level] = (out[level] || 0) + 1;
+      });
+    }
+    log.debug("Leaving RiskStore.subjectLevels(). Memory.");
+    return Promise.resolve(out);
+  }
+
   // What was decided on an assessment (#62 P3) — see the driver's
   // `riskSettleAssessment()`. In memory the row is found and amended.
   settleAssessment(a: Json, sealing: boolean): Promise<boolean> {
@@ -1173,6 +1335,9 @@ export = {
   recordAssessment: slot.forward('recordAssessment'),
   listAssessments: slot.forward('listAssessments'),
   upsertSubject: slot.forward('upsertSubject'),
+  assessmentMetrics: slot.forward('assessmentMetrics'),
+  subjectLevels: slot.forward('subjectLevels'),
+  bandOf: RiskStore.bandOf,
   settleAssessment: slot.forward('settleAssessment'),
   subjectOf: slot.forward('subjectOf'),
   claimAction: slot.forward('claimAction'),

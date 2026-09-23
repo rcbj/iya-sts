@@ -117,7 +117,9 @@ const SERVICE_PAGES = [
   '/admin/api-explorer',
   // The risk datasets are the whole service's (#62): a realm's operator list
   // and failure history are drawn here too, but by a service administrator.
-  '/admin/risk'
+  '/admin/risk',
+  // Its second half's `process` counts are the whole process's.
+  '/admin/risk-scoring'
 ];
 
 // Settings a realm administrator may not write. A row a realm may not carry at

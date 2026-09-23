@@ -462,6 +462,35 @@ they say about one — once, and only about their own (schema 9's
 
 Monitoring → Risk shows each answer beside its assessment.
 
+## MONITORING → RISK SCORING (2026-09-22)
+
+rcbj asked for "a Monitoring → Risk Scoring page that includes metrics about
+the risk scoring system". It is `/admin/risk-scoring`, drawn by
+`admin-ui/risk_admin.ts` beside `/admin/risk`, and returned as JSON by
+`GET /admin-api/risk/metrics`.
+
+**It shows two kinds of number, and the page keeps them apart.**
+
+* **Counts over a window**: the assessments by level, door, decision,
+  phase, country, score band, signal and feedback, a series per bucket,
+  and the standings. These are rows, so the STORE counts them:
+  `risk_store.assessmentMetrics()` and `subjectLevels()`. On postgres the
+  driver groups them with GROUP BY, and on the memory store they are counted
+  in process. Both hand back the same grouped rows to `metricsOf()`, so the
+  two stores cannot answer in different shapes.
+* **Counts this process keeps**: things that are not rows (the time to
+  assess, a failed assessment, the reactions taken, the rescore runs, the
+  breached-password screening). The engine's `tally` and
+  `breached_passwords`' own counts hold them for THIS process since it
+  started. They are the one per-process part of the page, and the page says
+  so.
+
+The score bands are decades, because the level thresholds are percentages
+of 1 (1 and 10 by default). `RiskStore.bandOf()` spells them in TypeScript,
+and the driver spells them again in SQL. The 2026-09-22 probe (a throwaway
+postgres and the driver with `tests/risk_metrics.js`'s rows) gave the same
+answers from both.
+
 ## A PERSON'S RISK ON THEIR USER PAGE (2026-09-22)
 
 rcbj asked for it "large and colorful": `admin.ts`'s `riskBadge()` opens
@@ -549,6 +578,12 @@ hit the same trap through `request_pool.js` in P0.
   development observing, a realm override that disables, CAEP's new act, a
   browser update not assessed and a replayed cookie assessed and ended, and
   the rescore job raising a session whose address became a Tor exit.
+* `tests/risk_metrics.js` — Monitoring → Risk Scoring on the memory store:
+  every count of a window, the old and the other realm's left out, the
+  signals beside their factors, a series that adds up, the standings, this
+  process's counts, and the page without a script.
+  `tests/vendored/sts_admin_risk.js` sections 8 and 9 hold the postgres
+  driver's GROUP BY to the same sums over HTTP.
 * `tests/risk_user_badge.js` — the badge on a person's Directory → Users
   page in each colour, grey when never assessed, the same standing on
   `/admin-api/users?user=`, and the link narrowed to the person.

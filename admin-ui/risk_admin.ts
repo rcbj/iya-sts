@@ -50,6 +50,24 @@ type Json = any;
 
 const PAGE = '/admin/risk';
 
+// MONITORING → RISK SCORING (#62): the scoring system measured — what it
+// assessed over a window, how the levels and signals fell, how long it took
+// and what it did about it. A second page rather than a section of the one
+// above, because rcbj asked for it as a page and because the two answer
+// different questions: that one is "what does the service know", this one
+// "is the scoring working".
+const METRICS_PAGE = '/admin/risk-scoring';
+
+// The windows offered, by the name the query carries.
+const WINDOWS: Record<string, number> = {
+  '1h': 3600000, '24h': 86400000, '7d': 7 * 86400000, '30d': 30 * 86400000 };
+
+// Each level's colour: the same four as the badge on a person's user page
+// (`admin.ts`'s `riskBadge()`), so a level reads the same on both.
+const LEVEL_COLOURS: Record<string, string> = {
+  LOW: '#188038', MEDIUM: '#f9ab00', HIGH: '#d93025', UNSCORED: '#5f6368' };
+const LEVELS = ['HIGH', 'MEDIUM', 'LOW', 'UNSCORED'];
+
 // What `riskAction()` does, and what each needs.
 const ACTIONS = ['import', 'activate', 'rollback', 'delete', 'accept-terms'];
 
@@ -227,6 +245,241 @@ class RiskAdmin {
     }
     log.debug("Leaving RiskAdmin.riskAction(). ok=" + !!(result && result.ok));
     return result;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE SCORING SYSTEM, MEASURED: what `GET /admin/risk-scoring?format=json`
+  // and `GET /admin-api/risk/metrics` both answer. `window` is one of
+  // WINDOWS' names (24h by default); `realm` as on the page above.
+  // -------------------------------------------------------------------------
+  async metricsView(query: Json): Promise<Json> {
+    const { log, engine } = this.deps;
+    log.debug("Entering RiskAdmin.metricsView().");
+    const q = query || {};
+    const name = WINDOWS[String(q.window || '')] ? String(q.window) : '24h';
+    const measured = await engine.metrics(this.realmOf(q), WINDOWS[name]);
+    log.debug("Leaving RiskAdmin.metricsView().");
+    return Object.assign({ window: name, windows: Object.keys(WINDOWS) },
+                         measured);
+  }
+
+  // One table of counts with a bar each, largest first. `colour` gives a
+  // row's bar colour; `limit` keeps the longest tables short.
+  private bars(id: string, head: string, counts: Json, total: number,
+               colour?: (k: string) => string, limit?: number,
+               order?: string[]): string {
+    const { log, admin } = this.deps;
+    log.debug("Entering RiskAdmin.bars(). " + id);
+    const esc = admin.esc.bind(admin);
+    const keys = order ? order.filter(function (k: string): boolean {
+      return counts[k] !== undefined;
+    }) : Object.keys(counts || {}).sort(function (a: string,
+                                                   b: string): number {
+      return counts[b] - counts[a];
+    });
+    const shown = limit ? keys.slice(0, limit) : keys;
+    const rows = shown.map(function (k: string): string {
+      const n = Number(counts[k]) || 0;
+      const share = total ? n / total : 0;
+      return '<tr><td>' + esc(k || '(none)') + '</td><td class="num">' + n +
+        '</td><td class="num">' + (share * 100).toFixed(1) + '%</td>' +
+        '<td style="width:45%"><div style="height:12px;border-radius:3px;' +
+        'width:' + Math.max(share * 100, n ? 0.5 : 0).toFixed(1) + '%;' +
+        'background:' + (colour ? colour(k) : '#1a73e8') + '"></div></td>' +
+        '</tr>';
+    }).join('');
+    log.debug("Leaving RiskAdmin.bars().");
+    return '<table class="grid" id="' + id + '"><thead><tr><th>' +
+      esc(head) + '</th><th>Count</th><th>Share</th><th></th></tr></thead>' +
+      '<tbody>' + (rows || '<tr><td colspan="4">None in this window.</td>' +
+                           '</tr>') + '</tbody></table>' +
+      (limit && keys.length > limit ? '<p><small>' + (keys.length - limit) +
+       ' more not shown; the JSON has every one.</small></p>' : '');
+  }
+
+  // The levels over time: a column per bucket, stacked by level, drawn as
+  // markup — no script, for the reason the console has none.
+  private timeline(m: Json): string {
+    const { log, admin } = this.deps;
+    log.debug("Entering RiskAdmin.timeline().");
+    const esc = admin.esc.bind(admin);
+    const byAt = new Map<number, Json>();
+    (m.assessments.series || []).forEach(function (b: Json): void {
+      byAt.set(Number(b.at), b);
+    });
+    const first = Math.floor(Number(m.since) / m.bucketMs) * m.bucketMs;
+    const columns: Json[] = [];
+    for (let at = first; at <= Number(m.since) + Number(m.windowMs);
+         at += m.bucketMs) {
+      columns.push(byAt.get(at) || { at: at, total: 0 });
+    }
+    const peak = Math.max(1, ...columns.map(function (c: Json): number {
+      return Number(c.total) || 0;
+    }));
+    const stamp = function (ms: number): string {
+      return new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
+    };
+    const bars = columns.map(function (c: Json): string {
+      const parts = LEVELS.filter(function (l: string): boolean {
+        return Number(c[l]) > 0;
+      }).map(function (l: string): string {
+        return '<div style="height:' + (Number(c[l]) / peak * 100)
+          .toFixed(2) + '%;background:' + LEVEL_COLOURS[l] + '"></div>';
+      }).join('');
+      const title = stamp(c.at) + ' UTC: ' + (Number(c.total) || 0) +
+        ' assessment(s)' + LEVELS.filter(function (l: string): boolean {
+          return Number(c[l]) > 0;
+        }).map(function (l: string): string {
+          return ', ' + c[l] + ' ' + l;
+        }).join('');
+      return '<div title="' + esc(title) + '" style="flex:1;display:flex;' +
+        'flex-direction:column-reverse;min-width:3px">' + parts + '</div>';
+    }).join('');
+    const legend = LEVELS.map(function (l: string): string {
+      return '<span style="display:inline-block;width:10px;height:10px;' +
+        'background:' + LEVEL_COLOURS[l] + ';margin:0 4px 0 12px"></span>' +
+        l;
+    }).join('');
+    log.debug("Leaving RiskAdmin.timeline().");
+    return '<div id="risk-timeline" style="display:flex;align-items:' +
+      'flex-end;gap:2px;height:160px;padding:6px;border:1px solid #dadce0;' +
+      'border-radius:6px">' + bars + '</div><p><small>' +
+      esc(stamp(first)) + ' UTC to now, a column per ' +
+      esc(RiskAdmin.duration(m.bucketMs)) + '; the tallest is ' + peak +
+      '. Hover a column for its counts.' + legend + '</small></p>';
+  }
+
+  // A duration in the largest unit that divides it.
+  static duration(ms: number): string {
+    helpers.log.debug("Entering RiskAdmin.duration().");
+    helpers.log.debug("Leaving RiskAdmin.duration().");
+    if (ms % 86400000 === 0) {
+      return ms / 86400000 + ' day' + (ms === 86400000 ? '' : 's');
+    }
+    if (ms % 3600000 === 0) {
+      return ms / 3600000 + ' hour' + (ms === 3600000 ? '' : 's');
+    }
+    return ms / 60000 + ' minutes';
+  }
+
+  private metricsHtml(m: Json): string {
+    const { log, admin } = this.deps;
+    log.debug("Entering RiskAdmin.metricsHtml().");
+    const esc = admin.esc.bind(admin);
+    const a = m.assessments;
+    const p = m.process;
+    const level = function (k: string): string {
+      return LEVEL_COLOURS[k] || '#5f6368';
+    };
+    const windows = m.windows.map(function (w: string): string {
+      return w === m.window ? '<strong>' + esc(w) + '</strong>'
+        : '<a href="' + esc(METRICS_PAGE + '?window=' + w + '&realm=' +
+                            encodeURIComponent(m.realm)) + '">' + esc(w) +
+          '</a>';
+    }).join(' &middot; ');
+    const high = Number(a.byLevel.HIGH) || 0;
+    const people = Object.keys(m.standings).reduce(function (s: number,
+                                                           k: string) {
+      return s + Number(m.standings[k]);
+    }, 0);
+    const signals = m.signals.slice().sort(function (x: Json,
+                                                     y: Json): number {
+      return y.fired - x.fired || y.factor - x.factor;
+    }).map(function (s: Json): string {
+      const share = a.total ? s.fired / a.total : 0;
+      return '<tr><td><code>' + esc(s.signal) + '</code></td><td>' +
+        esc(s.what) + '</td><td class="num">&times;' + esc(s.factor) +
+        '</td><td class="num">' + s.fired + '</td><td class="num">' +
+        (share * 100).toFixed(1) + '%</td></tr>';
+    }).join('');
+    const counts = function (table: Json): string {
+      const keys = Object.keys(table || {});
+      return keys.length ? keys.map(function (k: string): string {
+        return esc(k) + ' ' + table[k];
+      }).join(', ') : 'none';
+    };
+    const d = p.durationMs;
+    const breach = p.breachedPasswords;
+    log.debug("Leaving RiskAdmin.metricsHtml().");
+    return admin.note('The scoring system measured: what it assessed, how ' +
+        'the levels and signals fell, how long it took and what it did. ' +
+        'The first sections are counted in the ' + (m.database
+          ? 'database, over every node' : 'memory of THIS process (there ' +
+            'is no database)') + ' for the realm <code>' + esc(m.realm) +
+        '</code>; <em>This process</em>, at the bottom, is since this ' +
+        'process started. Every person\'s own assessments are on ' +
+        '<a href="' + PAGE + '">Monitoring &rarr; Risk</a>; the numbers ' +
+        'are also <code>GET /admin-api/risk/metrics</code>.') +
+      '<p id="risk-window">Window: ' + windows + '</p>' +
+      '<div class="tiles">' +
+        admin.tile(a.total, 'assessments') +
+        admin.tile(a.subjects, 'people assessed') +
+        admin.tile(high, 'HIGH') +
+        admin.tile(a.total ? (high / a.total * 100).toFixed(1) + '%' : '—',
+                   'of them HIGH') +
+        admin.tile(a.meanScore.toPrecision(3), 'mean score') +
+        admin.tile(a.bots, 'automated clients') +
+        admin.tile(d.samples ? Math.round(d.p95) + ' ms' : '—',
+                   'p95 to assess') +
+      '</div>' +
+      '<h3>Assessments over time</h3>' + this.timeline(m) +
+      '<h3>By level</h3>' +
+      this.bars('risk-by-level', 'Level', a.byLevel, a.total, level,
+                undefined, LEVELS) +
+      '<p><small>MEDIUM from a score of ' + esc(m.thresholds.medium) +
+      ', HIGH from ' + esc(m.thresholds.high) + ' (<code>risk.' +
+      'mediumScorePercent</code>, <code>risk.highScorePercent</code>). ' +
+      (m.enforced ? 'Decisions are ENFORCED.' : 'Development mode: ' +
+       'decisions are OBSERVED, not enforced.') + '</small></p>' +
+      '<h3>Scores</h3>' +
+      this.bars('risk-by-band', 'Score', a.byBand, a.total, undefined,
+                undefined, ['< 0.001', '0.001 – 0.01', '0.01 – 0.1',
+                            '0.1 – 1', '≥ 1']) +
+      '<h3>People by current standing</h3>' +
+      this.bars('risk-standings', 'Level', m.standings, people, level,
+                undefined, LEVELS) +
+      '<h3>Signals</h3><p>Each signal with the factor it multiplies a ' +
+      'score by and how often it fired in the window: a signal that fires ' +
+      'on most sign-ins, or never, is the first thing to calibrate.</p>' +
+      '<table class="grid" id="risk-signals"><thead><tr><th>Signal</th>' +
+      '<th>What</th><th>Factor</th><th>Fired</th><th>Of assessments</th>' +
+      '</tr></thead><tbody>' + signals + '</tbody></table>' +
+      '<h3>Decisions</h3>' +
+      this.bars('risk-by-decision', 'Decision', a.byDecision, a.total) +
+      '<h3>Doors</h3>' +
+      this.bars('risk-by-door', 'Door', a.byDoor, a.total) +
+      '<h3>When assessed</h3>' +
+      this.bars('risk-by-phase', 'Phase', a.byPhase, a.total) +
+      '<h3>Countries</h3>' +
+      this.bars('risk-by-country', 'Country', a.byCountry, a.total,
+                undefined, 15) +
+      '<h3>What people said</h3>' +
+      '<p id="risk-feedback">Of the sign-ins in this window, people said ' +
+      '<strong>' + a.feedback.confirmed + '</strong> were them and <strong>' +
+      a.feedback.denied + '</strong> were NOT, on /portal/sign-ins.</p>' +
+      '<h3>This process</h3>' +
+      '<table class="grid" id="risk-process"><tbody>' +
+      '<tr><th>Since</th><td>' + esc(this.when(p.since)) + '</td></tr>' +
+      '<tr><th>Assessed</th><td>' + p.assessed + ' (' + p.failed +
+      ' could not be assessed and stood unassessed)</td></tr>' +
+      '<tr><th>Time to assess</th><td>' + (d.samples
+        ? 'mean ' + d.mean.toFixed(1) + ' ms, p50 ' + d.p50 + ', p95 ' +
+          d.p95 + ', p99 ' + d.p99 + ', max ' + d.max + ' ms, over the ' +
+          'last ' + d.samples : 'nothing assessed yet') + '</td></tr>' +
+      '<tr><th>Reactions taken</th><td>' + counts(p.reactions.taken) +
+      '</td></tr><tr><th>Observed only</th><td>' +
+      counts(p.reactions.observed) + '</td></tr><tr><th>Failed</th><td>' +
+      counts(p.reactions.failed) + '</td></tr>' +
+      '<tr><th>Live sessions re-checked</th><td>' + p.rescore.runs +
+      ' run(s) of <code>risk.rescore</code>, ' + p.rescore.sessions +
+      ' session(s) checked, ' + p.rescore.raised + ' raised</td></tr>' +
+      '<tr><th>Breached passwords</th><td>' + (breach
+        ? (breach.enabled ? 'screening on' : 'screening off') + ': ' +
+          breach.screened + ' screened, ' + breach.breached + ' found ' +
+          'breached, ' + breach.unanswered + ' unanswered, ' +
+          breach.fromCache + ' answered from the cache'
+        : 'not loaded in this process') + '</td></tr>' +
+      '</tbody></table>';
   }
 
   // ===== THE PAGE ==========================================================
@@ -540,6 +793,22 @@ class RiskAdmin {
         log.debug('Leaving GET ' + PAGE + '. Failed.');
       });
     });
+    app.get(METRICS_PAGE, function (req: Req, res: Res): void {
+      log.debug('Entering GET ' + METRICS_PAGE + '.');
+      self.metricsView(req.query).then(function (view: Json): void {
+        admin.respond(req, res, view, 'Risk scoring', METRICS_PAGE,
+                      admin.messagesOf(req) + self.metricsHtml(view));
+        log.debug('Leaving GET ' + METRICS_PAGE + '.');
+      }).catch(function (e: Json): void {
+        log.warn(errorCodes.tag('STS-RISK-0025') + 'risk: the scoring ' +
+                 'metrics could not be drawn: ' + ((e && e.message) || e));
+        errorCodes.mark(res, 'STS-RISK-0025');
+        res.status(500).type('text/plain')
+           .send('The risk scoring metrics could not be drawn: ' +
+                 ((e && e.message) || e));
+        log.debug('Leaving GET ' + METRICS_PAGE + '. Failed.');
+      });
+    });
     app.post(PAGE, function (req: Req, res: Res): void {
       log.debug('Entering POST ' + PAGE + '.');
       if (!admin.mayWrite(req)) {
@@ -585,7 +854,10 @@ export = {
   installInstance: (instance: RiskAdmin): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
+  METRICS_PAGE: METRICS_PAGE,
+  WINDOWS: WINDOWS,
   ACTIONS: RiskAdmin.ACTIONS,
+  metricsView: slot.forward('metricsView'),
   riskView: slot.forward('riskView'),
   riskAction: slot.forward('riskAction')
 };

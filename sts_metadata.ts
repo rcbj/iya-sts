@@ -5642,6 +5642,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'every version loaded or refused; a lookup of one address; and the ' +
           'realm\'s refused passwords, attributed to a person or a name\'s ' +
           'digest and a network, never an address. Add ?format=json.' },
+  { path: '/admin/risk-scoring', group: 'Admin',
+    name: 'Risk scoring',
+    specs: [],
+    what: 'NON-SPEC (#62). The risk scoring system measured over a window ' +
+          '(?window=1h|24h|7d|30d): assessments over time by level, the ' +
+          'score bands, people by standing, every signal with its factor ' +
+          'and how often it fired, decisions, doors, phases, countries and ' +
+          'what people said; and this process\'s time to assess, reactions ' +
+          'and live-session re-checks. Add ?format=json, or GET ' +
+          '/admin-api/risk/metrics.' },
   { path: '/admin/vc-status', group: 'Admin',
     name: 'Credential status',
     specs: ['token-status-list', 'bitstring-status-list'],
@@ -6471,6 +6481,9 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Risk', specs: ['openapi'],
     what: 'NON-SPEC (#62). GET /admin/risk over JSON: the datasets, a lookup ' +
           'with ?address=, and a page of the realm\'s refused passwords.' },
+  { path: '/admin-api/risk/metrics', group: 'Management API',
+    name: 'Risk scoring metrics', specs: ['openapi'],
+    what: 'NON-SPEC (#62). GET /admin/risk-scoring over JSON.' },
   { path: '/admin-api/risk/:action', group: 'Management API',
     name: 'Risk actions', specs: ['openapi'],
     what: 'NON-SPEC (#62). import, activate, rollback, delete and ' +

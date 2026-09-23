@@ -2427,6 +2427,15 @@ const SECTIONS = [
                'about an address, import a list, activate, roll back. ' +
                'Below, every refused password in the realm, attributed to a ' +
                'person and a network and never to a typed name.' },
+      // The scoring itself measured (#62): drawn by the same file.
+      { path: '/admin/risk-scoring', label: 'Risk scoring',
+        blurb: 'The risk scoring system measured over a window: ' +
+               'assessments over time by level, how scores and levels ' +
+               'fell, every signal beside its factor and how often it ' +
+               'fired, decisions, doors and countries, what people said ' +
+               'about their own sign-ins, and &mdash; for this process ' +
+               '&mdash; how long an assessment takes and the reactions ' +
+               'taken.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +

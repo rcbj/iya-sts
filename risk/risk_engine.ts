@@ -184,6 +184,44 @@ const standingsCount = cacheRegistry.register({
   }
 });
 
+// ---------------------------------------------------------------------------
+// WHAT THIS PROCESS HAS DONE, for Monitoring → Risk Scoring (#62). The
+// assessments themselves are rows in the store and are counted there, over
+// any window; what is NOT a row is counted here — how long an assessment
+// took, one that failed, the reactions taken, the live-session re-checks,
+// what people said about their sign-ins — and so it is per process and
+// since the process started, and the page says so. The durations are the
+// last DURATIONS_KEPT, which is what a percentile is taken over.
+// ---------------------------------------------------------------------------
+const DURATIONS_KEPT = 1000;
+const tally = {
+  since: Date.now(),
+  assessed: 0,
+  failed: 0,
+  durations: [] as number[],
+  reactions: { taken: {} as Record<string, number>,
+               observed: {} as Record<string, number>,
+               failed: {} as Record<string, number> },
+  rescore: { runs: 0, sessions: 0, raised: 0 }
+};
+
+// One more of `key` in a count table. A hot path's helper, no pair.
+function bump(table: Record<string, number>, key: string): void {
+  table[key] = (table[key] || 0) + 1;
+}
+
+// The value at fraction `p` of a sorted list, or 0 for an empty one.
+function percentile(sorted: number[], p: number): number {
+  log.debug("Entering percentile().");
+  if (!sorted.length) {
+    log.debug("Leaving percentile(). Empty.");
+    return 0;
+  }
+  log.debug("Leaving percentile().");
+  return sorted[Math.min(sorted.length - 1,
+                         Math.floor(p * sorted.length))];
+}
+
 class RiskEngine {
   static readonly SIGNALS = SIGNALS;
 
@@ -618,11 +656,18 @@ class RiskEngine {
       log.debug("Leaving RiskEngine.assess(). Not assessed.");
       return null;
     }
+    const started = Date.now();
     try {
       const answer = await this.assessNow(input);
+      tally.assessed++;
+      tally.durations.push(Date.now() - started);
+      if (tally.durations.length > DURATIONS_KEPT) {
+        tally.durations.splice(0, tally.durations.length - DURATIONS_KEPT);
+      }
       log.debug("Leaving RiskEngine.assess().");
       return answer;
     } catch (e) {
+      tally.failed++;
       log.warn(errorCodes.tag('STS-RISK-0013') + 'risk: a sign-in for ' +
                input.subject + ' at ' + input.door + ' could not be ' +
                'assessed: ' + ((e && e.message) || e) + '. The sign-in ' +
@@ -933,12 +978,15 @@ class RiskEngine {
       }
       if (reaction !== 'risk-announce' && !enforced) {
         observed.push(reaction);
+        bump(tally.reactions.observed, reaction);
         continue;
       }
       try {
         await this.take(reaction, change);
         taken.push(reaction);
+        bump(tally.reactions.taken, reaction);
       } catch (e) {
+        bump(tally.reactions.failed, reaction);
         log.warn(errorCodes.tag('STS-RISK-0021') + 'risk: the reaction ' +
                  reaction + ' to ' + change.username + '\'s risk going to ' +
                  change.level + ' failed: ' + ((e && e.message) || e));
@@ -1169,6 +1217,9 @@ class RiskEngine {
         out.raised++;
       }
     }
+    tally.rescore.runs++;
+    tally.rescore.sessions += out.sessions;
+    tally.rescore.raised += out.raised;
     log.debug("Leaving RiskEngine.rescoreLiveSessions(). " + out.raised +
               " raised.");
     return out;
@@ -1316,6 +1367,74 @@ class RiskEngine {
   }
 
   // -------------------------------------------------------------------------
+  // THE SCORING SYSTEM, MEASURED (#62): what Monitoring → Risk Scoring draws
+  // and `GET /admin-api/risk/metrics` returns. Two kinds of number, and the
+  // answer keeps them apart: `assessments` and `standings` are counted in
+  // the STORE over the window (the whole service, on postgres), `process`
+  // is THIS process since it started. `signals` is the table with each
+  // signal's factor beside how often it fired, which is what calibrating a
+  // factor starts from.
+  // -------------------------------------------------------------------------
+  async metrics(realm: string, windowMs: number): Promise<Json> {
+    const { log, store, config, now, lazy } = this.deps;
+    log.debug("Entering RiskEngine.metrics().");
+    const sealing = this.sealing();
+    const span = Math.max(3600000, Number(windowMs) || 86400000);
+    // A bar per five minutes for an hour, per hour for up to two days, and
+    // per day beyond: between twelve and sixty bars on every window offered.
+    const bucketMs = span <= 3600000 ? 300000
+      : (span <= 2 * 86400000 ? 3600000 : 86400000);
+    const since = now() - span;
+    const counted = await store.assessmentMetrics(realm, {
+      since: since, bucketMs: bucketMs }, sealing);
+    const standings = await store.subjectLevels(realm, sealing);
+    const sorted = tally.durations.slice().sort(function (a: number,
+                                                          b: number): number {
+      return a - b;
+    });
+    let breach: Json = null;
+    try {
+      breach = lazy('../common/breached_passwords').metrics();
+    } catch (e) {
+      log.debug("Caught in RiskEngine.metrics(): " + ((e && e.message) || e));
+      // Not loaded in this process: the page says so rather than a zero.
+      breach = null;
+    }
+    const signals = Object.keys(SIGNALS).map(function (id: string): Json {
+      return { signal: id, factor: SIGNALS[id].factor,
+               what: SIGNALS[id].what,
+               fired: Number(counted.bySignal[id]) || 0 };
+    });
+    log.debug("Leaving RiskEngine.metrics().");
+    return {
+      realm: realm, windowMs: span, since: since, bucketMs: bucketMs,
+      database: store.failuresInDatabase(sealing),
+      enforced: this.enforced(),
+      thresholds: {
+        medium: Number(config.value('risk.mediumScorePercent')) / 100,
+        high: Number(config.value('risk.highScorePercent')) / 100 },
+      assessments: counted,
+      standings: standings,
+      signals: signals,
+      process: {
+        since: tally.since, assessed: tally.assessed, failed: tally.failed,
+        durationMs: {
+          samples: sorted.length,
+          mean: sorted.length ? sorted.reduce(function (a: number,
+                                                        b: number): number {
+            return a + b;
+          }, 0) / sorted.length : 0,
+          p50: percentile(sorted, 0.5), p95: percentile(sorted, 0.95),
+          p99: percentile(sorted, 0.99),
+          max: sorted.length ? sorted[sorted.length - 1] : 0 },
+        reactions: JSON.parse(JSON.stringify(tally.reactions)),
+        rescore: Object.assign({}, tally.rescore),
+        breachedPasswords: breach
+      }
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // ONE PERSON'S CURRENT STANDING, from the store (#62): what the console's
   // user page draws large and `/admin-api/users?user=` returns. Null for a
   // person never assessed. Never rejects.
@@ -1420,6 +1539,7 @@ export = {
   settle: slot.forward('settle'),
   respond: slot.forward('respond'),
   feedback: slot.forward('feedback'),
+  metrics: slot.forward('metrics'),
   standingFor: slot.forward('standingFor'),
   rescoreSession: slot.forward('rescoreSession'),
   rescoreLiveSessions: slot.forward('rescoreLiveSessions'),

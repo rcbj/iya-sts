@@ -4550,6 +4550,89 @@ function create(options) {
       });
     },
 
+    // A window of one realm's assessments COUNTED, for Monitoring → Risk
+    // Scoring: the totals, one grouped row per (kind, value) — level, door,
+    // decision, phase, country, score band, answer, signal — and the levels
+    // per bucket of `bucketMs`. `risk_store.metricsOf()` shapes them, as it
+    // does the memory store's. The bands are `RiskStore.bandOf()`'s,
+    // spelled again in SQL; `tests/vendored/sts_admin_risk.js` holds the
+    // two to the same answer for the same rows.
+    riskAssessmentMetrics: function (realm, opts) {
+      log.debug("Entering riskAssessmentMetrics(). realm=" + realm);
+      const o = opts || {};
+      const where = 'WHERE realm = $1 AND at >= $2';
+      const params = [realm || '', Number(o.since) || 0];
+      const band = 'CASE WHEN score < 0.001 THEN \'< 0.001\' ' +
+        'WHEN score < 0.01 THEN \'0.001 – 0.01\' ' +
+        'WHEN score < 0.1 THEN \'0.01 – 0.1\' ' +
+        'WHEN score < 1 THEN \'0.1 – 1\' ELSE \'≥ 1\' END';
+      log.debug("Leaving riskAssessmentMetrics().");
+      return Promise.all([
+        pool.query(
+          'SELECT count(*) AS total, count(DISTINCT subject) AS subjects, ' +
+          'count(*) FILTER (WHERE bot) AS bots, ' +
+          'coalesce(avg(score), 0) AS mean_score, ' +
+          'coalesce(max(score), 0) AS max_score ' +
+          'FROM sts_risk_assessments ' + where, params),
+        pool.query(
+          'SELECT k, v, count(*) AS n FROM (' +
+          'SELECT \'level\' AS k, level AS v FROM sts_risk_assessments ' +
+          where + ' UNION ALL ' +
+          'SELECT \'door\', door FROM sts_risk_assessments ' + where +
+          ' UNION ALL ' +
+          'SELECT \'decision\', decision FROM sts_risk_assessments ' +
+          where + ' UNION ALL ' +
+          'SELECT \'phase\', phase FROM sts_risk_assessments ' + where +
+          ' UNION ALL ' +
+          'SELECT \'country\', country FROM sts_risk_assessments ' +
+          where + ' UNION ALL ' +
+          'SELECT \'band\', ' + band + ' FROM sts_risk_assessments ' +
+          where + ' UNION ALL ' +
+          'SELECT \'feedback\', feedback FROM sts_risk_assessments ' +
+          where + ' AND feedback <> \'\' UNION ALL ' +
+          'SELECT \'signal\', s->>\'signal\' FROM ' +
+          'sts_risk_assessments, jsonb_array_elements(signals) AS s ' +
+          where + ') AS grouped GROUP BY k, v', params),
+        pool.query(
+          'SELECT (at / $3) * $3 AS bucket, level, count(*) AS n ' +
+          'FROM sts_risk_assessments ' + where + ' GROUP BY 1, 2',
+          params.concat([Math.max(60000, Number(o.bucketMs) || 3600000)]))
+      ]).then(function (answers) {
+        const t = answers[0].rows[0] || {};
+        return {
+          totals: { total: Number(t.total) || 0,
+                    subjects: Number(t.subjects) || 0,
+                    bots: Number(t.bots) || 0,
+                    meanScore: Number(t.mean_score) || 0,
+                    maxScore: Number(t.max_score) || 0 },
+          groups: answers[1].rows.map(function (r) {
+            return { k: r.k, v: r.v === null ? '' : String(r.v),
+                     n: Number(r.n) };
+          }),
+          series: answers[2].rows.map(function (r) {
+            return { bucket: Number(r.bucket), level: r.level,
+                     n: Number(r.n) };
+          })
+        };
+      });
+    },
+
+    // How many of one realm's people stand at each level now.
+    riskSubjectLevels: function (realm) {
+      log.debug("Entering riskSubjectLevels(). realm=" + realm);
+      log.debug("Leaving riskSubjectLevels().");
+      return pool.query(
+        'SELECT level, count(*) AS n FROM sts_risk_subjects ' +
+        'WHERE realm = $1 GROUP BY level', [realm || '']
+      ).then(function (r) {
+        const out = {};
+        r.rows.forEach(function (row) {
+          out[row.level || 'UNSCORED'] = Number(row.n);
+        });
+        return out;
+      });
+    },
+
     // The last context a live session was assessed in, replaced whole — what
     // continuous evaluation (P4) compares a later request with.
     riskUpsertSessionContext: function (c) {

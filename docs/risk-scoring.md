@@ -522,7 +522,6 @@ The remaining work on [issue #62](https://github.com/rcbj/iya-sts/issues/62):
 - **Calibration**: a report of the levels and signals real sign-ins have
   been given, with the thresholds and factors it suggests.
 - **A realm's own administrators** see their realm's risk page.
-- **Monitoring → Risk Scoring**: metrics about the scoring itself.
 - **The console and portal acting on the risk signals they receive**, with
   issues #153 and #117.
 
@@ -533,6 +532,26 @@ The remaining work on [issue #62](https://github.com/rcbj/iya-sts/issues/62):
   dataset and its versions, the providers, their terms and who accepted
   them, and the refused passwords. It also shows the data credits and these
   settings. `?subject=` narrows the assessments to one person.
+- **Monitoring → Risk Scoring** (`/admin/risk-scoring`) measures the
+  scoring itself over the last hour, day, week or 30 days:
+  - assessments over time, stacked by level;
+  - the counts by level, by score band, by decision, by door, by phase and
+    by country;
+  - how many people stand at each level now;
+  - every signal beside its factor and how often it fired, which is where
+    calibration starts;
+  - what people said about their own sign-ins.
+
+  The counts above come from the store. On postgres they cover every node.
+  The page also shows figures for the process that drew it, since that
+  process started:
+  - assessments made and failed, and the time to assess (mean, p50, p95,
+    p99 and max);
+  - the reactions taken, observed only, or failed;
+  - the `risk.rescore` runs;
+  - the breached-password screening counts.
+
+  `GET /admin-api/risk/metrics?window=24h` returns the same data as JSON.
 - **Each person's page under Directory → Users** opens with their current
   risk, drawn large in the level's colour: LOW green, MEDIUM amber, HIGH
   red, grey for someone never assessed. It shows the score, the level it
@@ -543,7 +562,7 @@ The remaining work on [issue #62](https://github.com/rcbj/iya-sts/issues/62):
   `POST /admin-api/risk/import`, `activate`, `rollback`, `delete` and
   `accept-terms`, described in the
   [OpenAPI document](management-api.md).
-- **Error codes** `STS-RISK-0001` to `STS-RISK-0024` are listed on
+- **Error codes** `STS-RISK-0001` to `STS-RISK-0025` are listed on
   [Error codes](error-codes.md).
 
 ## Related
