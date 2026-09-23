@@ -215,8 +215,46 @@ that enforces the profile meets its goals. Here is how:
 | Code injection | Replays a stolen code into another session | PKCE S256 on every request, and single-use codes |
 | Open redirectors | Uses the server to redirect elsewhere | Refused in every mode that RFC 9700 mode governs |
 
-Not covered yet: FAPI 2.0 Message Signing (#141), and running the OpenID
-Foundation's conformance suite against this service (#176).
+### FAPI 2.0 Message Signing
+
+`oauth2.fapi=2-message-signing` is FAPI 2.0 Message Signing (final) on top of
+the Security Profile, with all three of its components required:
+
+* **Signed requests** (section 5.3): every pushed request is a JAR-signed
+  request object whose `aud` is the issuer, whose `nbf` is at most 60 minutes
+  old, and whose `exp` is at most 60 minutes after its `nbf`. A push of plain
+  parameters is refused.
+* **Signed responses** (section 5.4): JARM is required, so a request must ask
+  for a JWT response mode (`response_mode=jwt`). The `iss` travels inside the
+  response JWT. Discovery lists only JARM's modes.
+* **Signed introspection** (section 5.5): an RFC 9701 introspection response
+  is a signed JWT, PS256 by default.
+
+The console, portal and debugger conform. Each pushes a signed request object,
+asks for JARM, and verifies the response before reading the code.
+
+#### Non-repudiation (section 5.2)
+
+The section is guidance. Non-repudiation holds for individual signed messages:
+pushed requests, authorization responses, introspection responses and ID
+Tokens. It is **not** provided for a front-channel request. Proving later that
+this service signed something takes two things a deployment has to keep:
+
+* **The public keys.** A rotated signing key stays published in the JWKS for
+  `signing.retiredKeyGraceDays`. Archive the JWKS, or every retired key, for as
+  long as a signature has to remain provable.
+* **The record.** Every issuance and refusal is a row in the audit log. It is
+  a ring of `audit.maxEvents` rows (5000 by default), persisted where minted
+  state is (product mode on postgres), and the oldest rows are dropped, so it
+  is not an archive. Export it, or the service log, to storage you control
+  for the retention period your regulator sets. Section 7 warns that a signed message can carry personal data, so
+  limit access to it and keep it no longer than you need.
+
+HTTP message signatures on resource requests and responses (RFC 9421) are not
+part of the final Message Signing specification. They are tracked in #178.
+
+Not covered yet: running the OpenID Foundation's conformance suite against
+this service (#176).
 
 ### DPoP (RFC 9449)
 
@@ -377,7 +415,7 @@ headers) are described on [Configuration](configuration.md) and
 |---|---|---|---|---|
 | `oauth2.rfc9700` | `STS_OAUTH2_RFC9700` | `false` | restart (a realm may carry it) | RFC 9700 mode: enforce the OAuth 2.0 Security BCP on the authorization flow, and bind the main port as HTTPS. |
 | `oauth2.oauth21` | `STS_OAUTH2_OAUTH21` | `false` | restart (a realm may carry it) | OAuth 2.1 mode (draft-ietf-oauth-v2-1-16): turns RFC 9700 mode on and adds the draft's own requirements. |
-| `oauth2.fapi` | `STS_OAUTH2_FAPI` | `off` | restart (a realm, or a named authorization server, may carry it) | A FAPI security profile: `off`, `1-baseline` (FAPI 1.0 Part 1), `1-advanced` (Part 2) or `2-security` (the FAPI 2.0 Security Profile). Turns RFC 9700 mode on and adds the profile's requirements. |
+| `oauth2.fapi` | `STS_OAUTH2_FAPI` | `off` | restart (a realm, or a named authorization server, may carry it) | A FAPI security profile: `off`, `1-baseline` (FAPI 1.0 Part 1), `1-advanced` (Part 2), `2-security` (the FAPI 2.0 Security Profile) or `2-message-signing` (FAPI 2.0 Message Signing over it). Turns RFC 9700 mode on and adds the profile's requirements. |
 | `oauth2.fapiRequireMtls` | `STS_OAUTH2_FAPI_REQUIRE_MTLS` | `false` | yes | Under FAPI 1.0 Advanced, accept only mutual TLS as the sender constraint; off, a DPoP-bound token counts too. |
 | `oauth2.redirectUris` | `STS_OAUTH2_REDIRECT_URIS` | *(empty)* | yes | The redirect URIs RFC 9700 mode compares against, by exact string, for a client that registered none of its own. |
 | `oauth2.loopbackPortWildcard` | `STS_OAUTH2_LOOPBACK_PORT_WILDCARD` | `true` | yes | In RFC 9700 mode, let a registered loopback redirect URI match on any port (RFC 8252 section 7.3). |

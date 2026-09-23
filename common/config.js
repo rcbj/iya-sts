@@ -3054,7 +3054,8 @@ const SETTINGS = [
   // than a flag because #139-#141 add three more profiles to the same switch.
   { key: 'oauth2.fapi', group: 'OAuth 2.0 / OIDC', label: 'FAPI profile',
     env: 'STS_OAUTH2_FAPI', type: 'enum',
-    enumValues: ['off', '1-baseline', '1-advanced', '2-security'],
+    enumValues: ['off', '1-baseline', '1-advanced', '2-security',
+                 '2-message-signing'],
     dflt: 'off', runtime: false, realmRuntime: true,
     restartReason: 'a profile turns RFC 9700 mode on, which decides whether ' +
                    'the main port is bound as HTTPS (global.https), and a ' +
@@ -3085,8 +3086,12 @@ const SETTINGS = [
                  'confidential clients, PAR always, code only, PKCE S256, ' +
                  'mTLS or DPoP sender constraint, mTLS or private_key_jwt, ' +
                  'codes of 60 s, no refresh rotation, PS256, ES256 or ' +
-                 'EdDSA. OFF by default. GET /oauth2/fapi lists every ' +
-                 'requirement.' },
+                 'EdDSA. 2-message-signing is FAPI 2.0 Message Signing ' +
+                 '(final) over the Security Profile: a signed request ' +
+                 'object required at PAR (exp and nbf within 60 minutes, ' +
+                 'aud the issuer), JARM required, and signed JWT ' +
+                 'introspection responses. OFF by default. GET ' +
+                 '/oauth2/fapi lists every requirement.' },
 
   // FAPI 1.0 Advanced's strict reading of section 5.2.2 item 5 (#139, rcbj's
   // decision): off, a DPoP-bound access token satisfies "sender-constrained"

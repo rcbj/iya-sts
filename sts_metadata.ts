@@ -1821,7 +1821,7 @@ const SPECS: Spec[] = [
               'response, discovery, token entropy, acr honoured. GET ' +
               '/oauth2/fapi lists every requirement. NOT covered: the OpenID ' +
               'Foundation conformance suite has not been run (#176); FAPI ' +
-              '2.0 Message Signing is #141.' },
+              '2.0 is the fapi2-* cards.' },
   { id: 'fapi1-advanced', name: 'FAPI 1.0 Part 2: Advanced Security ' +
                                'Profile (final)',
     where: 'OpenID Foundation',
@@ -1866,6 +1866,19 @@ const SPECS: Spec[] = [
               'requirements; docs/oauth-security.md maps each attacker ' +
               'class to what stops it. The console, portal and debugger ' +
               'conform. NOT covered: the conformance suite (#176).' },
+  { id: 'fapi2-message-signing', name: 'FAPI 2.0 Message Signing (final)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/fapi-message-signing-2_0.html',
+    coverage: 'full for the authorization server, AND OFF BY DEFAULT — the ' +
+              'PROFILE oauth2.fapi=2-message-signing, the Security Profile ' +
+              'plus all three components (#141, rcbj\'s decision): a ' +
+              'JAR-signed request object required at PAR, with aud the ' +
+              'issuer and exp and nbf within 60 minutes (5.3); JARM ' +
+              'required, iss inside the JWT (5.4); RFC 9701 introspection ' +
+              'responses signed (5.5). Section 5.2\'s non-repudiation is ' +
+              'guidance, answered in docs/oauth-security.md. The console, ' +
+              'portal and debugger conform. RFC 9421 HTTP signatures are NOT ' +
+              'part of the final specification and are #178.' },
   { id: 'jarm', name: 'JWT Secured Authorization Response Mode for OAuth ' +
                      '2.0 (JARM)',
     where: 'OpenID Foundation',
@@ -8657,7 +8670,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'through POST /admin-api/config like everything else configurable.' },
   { path: '/oauth2/fapi', group: 'OAuth 2.0 / OIDC',
     name: 'FAPI profile report (not a spec endpoint)',
-    specs: ['fapi1-baseline', 'fapi1-advanced', 'fapi2-security'],
+    specs: ['fapi1-baseline', 'fapi1-advanced', 'fapi2-security',
+            'fapi2-message-signing'],
     what: 'NON-SPEC: FAPI defines no document saying which profile a server ' +
           'follows. The profile in force (oauth2.fapi, off by default), ' +
           'every requirement of FAPI 1.0 Part 1 section 5.2.2 by item, and ' +
