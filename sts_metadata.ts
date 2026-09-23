@@ -551,7 +551,8 @@ const SPECS: Spec[] = [
               '`sub` claim section 2.2 discourages is absent unless ' +
               'ssf.legacySubClaim is turned on, which is a deliberate defect ' +
               'for testing a client written against a transmitter that gets ' +
-              'it wrong.' },
+              'it wrong — in development mode only; a product realm ignores ' +
+              'it.' },
   { id: 'rfc9493', name: 'RFC 9493 — Subject Identifiers for Security Event ' +
                          'Tokens',
     where: 'IETF',
@@ -1840,7 +1841,8 @@ const SPECS: Spec[] = [
               'validate the ID Token nonce and must not use a token before ' +
               'that succeeds, neither of which this server can observe; ' +
               'oauth2.breakIdTokenNonce spoils the nonce on purpose so a ' +
-              'client author can find out whether their own code checks it. ' +
+              'client author can find out whether their own code checks it ' +
+              '(development mode only; a product realm ignores it). ' +
               'Pushed Authorization Requests (RFC 9126) and Resource ' +
               'Indicators (RFC 8707) are features of their own, in every ' +
               'mode, rather than constraints this mode enforces. GET /oauth2/rfc9700 lists every requirement with ' +
@@ -6024,7 +6026,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'a sign-out revokes refresh tokens, the client assertion clock ' +
           'skew, the four lifetimes /admin/token-lifetimes also draws — and ' +
           'oauth2.breakIdTokenNonce, which makes this service return a WRONG ' +
-          'nonce on purpose so that a client can be shown to check it. Every ' +
+          'nonce on purpose so that a client can be shown to check it (in ' +
+          'development mode only: a product realm ignores it and refuses ' +
+          'setting it). Every ' +
           'form here posts to /admin/config, so there is one store and one ' +
           'action; what moved is the door. Add ?format=json.' },
   { path: '/admin/oid4vci', group: 'Admin', name: 'OpenID4VCI settings',
@@ -7386,7 +7390,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'described — value, source, whether it can be changed while the ' +
           'service runs — and the prose and caveats the page carries, ' +
           'including that oauth2.breakIdTokenNonce makes this service wrong ' +
-          'on purpose. Read-only; POST /admin-api/config/set-many is how ' +
+          'on purpose, in development mode only. Read-only; POST ' +
+          '/admin-api/config/set-many is how ' +
           'they are written.' },
   { path: '/admin-api/oid4vci-settings', group: 'Management API',
     name: 'OpenID4VCI settings',

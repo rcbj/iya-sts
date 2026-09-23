@@ -1088,8 +1088,10 @@ class AdminApi {
                      'four lifetimes `GET /token-lifetimes` also reports — ' +
                      'and `oauth2.breakIdTokenNonce`, which makes this ' +
                      'service return an ID Token whose `nonce` is WRONG so ' +
-                     'that a client can be shown to check ' +
-                     'it.\n\n`oauth2.rfc9700` is restart-only and says so in ' +
+                     'that a client can be shown to check it — in ' +
+                     'development mode only; a product realm ignores it and ' +
+                     'refuses setting it.\n\n`oauth2.rfc9700` is ' +
+                     'restart-only and says so in ' +
                      '`restartReason`: `global.https` derives from it and a ' +
                      'listener\'s scheme is settled when the socket is ' +
                      'bound. A TRUST REALM can carry it while the process ' +

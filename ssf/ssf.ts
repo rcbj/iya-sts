@@ -2719,12 +2719,13 @@ class SharedSignals {
           answer: '403 access_denied naming the scope' },
         { what: 'Set ssf.verificationRateLimit and verify twice',
           answer: '429 with Retry-After' },
-        { what: 'Set ssf.breakSetSignature',
+        { what: 'Set ssf.breakSetSignature (development mode only)',
           answer: 'Every SET is signed and then broken by one character, so ' +
-                  'a ' +
-                  'receiver that does not verify accepts an unsigned event' },
-        { what: 'Set ssf.legacySubClaim',
-          answer: 'A deprecated `sub` claim appears beside `sub_id`' }
+                  'a receiver that does not verify accepts an unsigned ' +
+                  'event. A product realm ignores it and refuses setting it' },
+        { what: 'Set ssf.legacySubClaim (development mode only)',
+          answer: 'A deprecated `sub` claim appears beside `sub_id`. A ' +
+                  'product realm ignores it and refuses setting it' }
       ],
       doesNotDo: [
         'It does not retry a failed push unless ssf.pushRetries says to, ' +

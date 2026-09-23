@@ -649,6 +649,11 @@ const JOBS = [
   // modes (a skip ignored in product, a CA file honoured), the RFC 9728
   // import under federation's policy, and XACML's in-force view.
   { file: 'sts_outbound_tls.js',         browser: false, local: true },
+  // #104 (2026-09-23): the deliberate defects and the loosening SPIFFE
+  // switches — refused on write in a product realm, and ignored where they
+  // are read once a realm holding them is switched to product (the ID
+  // Token's nonce, a SET's signature, GET /spiffe's view).
+  { file: 'sts_development_only_settings.js', browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
