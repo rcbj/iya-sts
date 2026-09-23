@@ -41,6 +41,11 @@ function harness(options) {
                      "/gnap/rs/resource",
                  checks: 0 };
 
+  // Every finish URI a key is registered with (2026-09-21). Product mode uses
+  // only a registered one (STS-GNAP-0101), so a job finishing anywhere but
+  // FINISH pushes the address here BEFORE that key's first request.
+  self.finishUris = [FINISH];
+
   // THE REGISTRAR gnap_client.js asks before a key's first request
   // (2026-09-18): the key goes onto an application entry, in the realm the
   // request is addressed to, as `gnapKey` — which is how a request by value is
@@ -99,7 +104,8 @@ function harness(options) {
     await self.ok(where + "/applications/create", {
       identifier: identifier, name: "GNAP job key " + kid,
       protocols: ["gnap"],
-      fields: { gnapKey: JSON.stringify(keyObject), gnapFinishUri: FINISH }
+      fields: { gnapKey: JSON.stringify(keyObject),
+                gnapFinishUri: self.finishUris.slice() }
     }, "provisioned the GNAP key " + kid);
     registered.add(where + " " + identifier);
     log.debug("Leaving the GNAP registrar.");

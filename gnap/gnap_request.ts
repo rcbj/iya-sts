@@ -73,13 +73,13 @@ const ASSERTION_FORMATS = ['id_token', 'saml2'];
 // ---------------------------------------------------------------------------
 // RFC 9493 SUBJECT IDENTIFIER FORMATS, IN THE SPELLINGS RFC 9493 USES.
 //
-// `ssf/ssf_subjects.js` exists and is NOT used, deliberately: it carries SSF's
-// own vocabulary (`issuer_subject_id`, `decentralized_identifier`) where RFC
-// 9493 and GNAP section 2.2 say `iss_sub` and `did`. Aliasing between the two
-// would put a translation on the path of every GNAP subject, and a client that
-// sent `issuer_subject_id` to a GNAP AS would be accepted here and refused by
-// every other GNAP implementation. So the grammar is written again, in GNAP's
-// words, the way `ssf_subjects.js`'s own header argues a grammar should be.
+// `ssf/ssf_subjects.js` exists and is NOT used, deliberately. It carried the
+// pre-RFC names (`issuer_subject_id`, `decentralized_identifier`) when this was
+// written, and although it says `iss_sub` and `did` now (#144, 2026-09-22) it
+// also carries SSF 1.0 section 3.5's three formats, which are SSF's and not
+// RFC 9493's — GNAP section 2.2 names RFC 9493's registry and nothing else. So
+// the grammar is written again, in GNAP's words, the way `ssf_subjects.js`'s
+// own header argues a grammar should be.
 // ---------------------------------------------------------------------------
 const SUB_ID_FORMATS = {
   account: ['uri'],

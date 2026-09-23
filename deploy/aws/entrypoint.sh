@@ -22,7 +22,7 @@
 #   TF_ENV       the environment's name, 2-12 [a-z0-9]           (dev)
 #   TF_REALM     spiffe-realm only: the realm id, or `default`
 #   TF_ACTION    init | validate | plan | apply | destroy | output
-#                | output-json | suite | ecr-password                          (plan)
+#                | output-json | ecr-password                                  (plan)
 #   AWS_REGION                                                   (us-west-2)
 #
 #   TF_VAR_image_tag      the service image tag (the commit), for plan/apply
@@ -31,14 +31,11 @@
 #                         realm's two SPIFFE ports (deploy/aws/CLAUDE.md)
 #   TF_VAR_image_tag      suite-callbacks plan/apply: the run's image tag
 #                         (run-suite.sh pushes runner-<tag> and pep-<tag>)
-#   STS_SUITE_EXCLUDE, STS_SUITE_ONLY, STS_SUITE_KEEP_REALMS,
-#   STS_SUITE_JOB_TIMEOUT_MS   passed through by the `suite` action
 #
-# THE TWO ACTIONS THE PARENT DOES NOT HAVE:
-#   suite         deploy/aws/run-suite-in-aws.sh against TF_ENV: start the
-#                 suite task in the environment's VPC, wait for it, and put its
-#                 report in /workspace/report (mount a directory there). Exits
-#                 with the suite's code.
+# THE ACTION THE PARENT DOES NOT HAVE (there were two until 2026-09-21: `suite`
+# ran deploy/aws/run-suite-in-aws.sh, the in-VPC runner, which was removed that
+# day — the suite runs from deploy/aws/run-suite.sh, through ./run-tests.sh's
+# AWS targets):
 #   ecr-password  prints `aws ecr get-login-password` for the credentials the
 #                 container ends up with, so a host that builds the images can
 #                 `docker login` without installing the AWS CLI.
@@ -230,12 +227,86 @@ else
     -backend-config="bucket=${bucket}" >&2
 fi
 
+# EVERY STACK BUILT ON TOP OF AN ENVIRONMENT COMES DOWN BEFORE IT
+# (2026-09-21). `spiffe-realm/` puts two listeners, two target groups and
+# FOUR SECURITY-GROUP RULES on the environment's own `nlb` and `nodes`
+# groups, which it finds with `data` rather than owning; `suite-callbacks/`
+# puts a subnet and a NAT gateway behind an address the load balancer
+# admits. Terraform removes the rules ITS OWN state records — a rule another
+# state owns is invisible to it, and keeps the group alive, so
+# DeleteSecurityGroup answers DependencyViolation, the provider retries for
+# fifteen minutes per group, and the destroy ends with both groups and the
+# VPC still standing.
+#
+# **THAT IS WHAT HAPPENED TO `testidp` ON 2026-09-20**: the default realm's
+# 8092/8181 rules outlived the environment they were attached to, the
+# workflow spent 33 minutes failing twice over, and re-running it could not
+# help — the second run had the same blind spot as the first. The two groups
+# and the VPC were still there on 2026-09-21 and were removed by hand.
+#
+# The state keys ARE the enumeration, so nothing has to be told which realms
+# an environment was given: one object per dependent stack, under a prefix
+# the deployer role may already list (foundation/iam_deployer.tf,
+# `TerraformStateList`). A dependent whose state is empty destroys nothing
+# and costs one `init`, which is the right price for not having to know.
+#
+# Order matters in the other direction too: `spiffe-realm` reads the
+# environment's remote state and looks its load balancer up by name, so it
+# can only be destroyed WHILE the environment still exists. Here, not after.
+destroy_dependent_stacks() {
+  local prefix="environment/${TF_ENV}/"
+  local keys key realm
+  # A failure to list is reported and not fatal: an environment with no
+  # dependents must still come down when the listing is what broke.
+  if ! keys="$(aws s3api list-objects-v2 --bucket "${bucket}" \
+    --prefix "${prefix}" --query 'Contents[].Key' --output text 2>/dev/null)";
+  then
+    say "WARNING: could not list s3://${bucket}/${prefix} — if a stack built"
+    say "         on this environment still holds security-group rules, the"
+    say "         destroy below will fail with DependencyViolation."
+    return 0
+  fi
+  [ "${keys}" = "None" ] && keys=""
+  for key in ${keys}; do
+    case "${key}" in
+      "${prefix}spiffe-realm/"*.tfstate)
+        realm="${key#"${prefix}"spiffe-realm/}"
+        realm="${realm%.tfstate}"
+        say "dependent stack first: spiffe-realm/${realm}"
+        # The credentials of this process, already the deployer role: the
+        # child's own assume step sees an assumed-role ARN, not a user's,
+        # and leaves them alone. The forced-role variable is cleared so it
+        # cannot try to chain a second assume from them.
+        MOCK_STS_DEPLOYER_ROLE_ARN= TF_STACK=spiffe-realm \
+          TF_REALM="${realm}" TF_ACTION=destroy "$0" || \
+          die "the spiffe-realm stack for '${realm}' would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
+        ;;
+      "${prefix}suite-callbacks.tfstate")
+        say "dependent stack first: suite-callbacks"
+        MOCK_STS_DEPLOYER_ROLE_ARN= TF_STACK=suite-callbacks \
+          TF_ACTION=destroy "$0" || \
+          die "the suite-callbacks stack would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
+        ;;
+      *)
+        # A key under this environment's prefix that is not a stack this
+        # script knows how to destroy. Said out loud rather than skipped
+        # silently, because the next DependencyViolation will be its doing.
+        say "NOTE: state key left alone (no stack here owns it): ${key}"
+        ;;
+    esac
+  done
+}
+
 case "${TF_ACTION}" in
   init)     say "init only." ;;
   validate) terraform validate -no-color ;;
   plan)     tf plan -input=false -no-color "${VAR_FILE_ARGS[@]}" ;;
   apply)    tf apply -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}" ;;
   destroy)
+    if [ "${TF_STACK}" = "environment" ];
+    then
+      destroy_dependent_stacks
+    fi
     # A destroy that fails half way leaves resources running and billing; the
     # usual cause is an ENI a stopped task has not released yet. Once more,
     # after a minute, before giving up.
@@ -244,7 +315,7 @@ case "${TF_ACTION}" in
       say "destroy failed; retrying once in 60 seconds"
       sleep 60
       tf destroy -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}" || \
-        die "DESTROY FAILED TWICE — '${TF_ENV}' may still be running and billing. Re-run the destroy."
+        die "DESTROY FAILED TWICE — '${TF_ENV}' may still be running and billing. Re-run the destroy. A DependencyViolation on a security group means something OUTSIDE this state holds a rule on it; find what put it there, destroy that, and run this again."
     fi
     ;;
   # ADOPT A RESOURCE THAT EXISTS AND THE STATE DOES NOT RECORD (2026-09-19):
@@ -266,13 +337,7 @@ case "${TF_ACTION}" in
   # The outputs as JSON on stdout and nothing else there, for a script
   # (run-suite.sh) to read.
   output-json) terraform output -json ;;
-  suite)
-    [ "${TF_STACK}" = "environment" ] || die "the suite runs against an environment."
-    export STS_SUITE_REPORT_DIR="${STS_SUITE_REPORT_DIR:-/workspace/report}"
-    cd /workspace
-    exec deploy/aws/run-suite-in-aws.sh "${TF_ENV}"
-    ;;
-  *) die "unknown TF_ACTION='${TF_ACTION}' (init | validate | plan | apply | destroy | import | output | output-json | suite | ecr-password)." ;;
+  *) die "unknown TF_ACTION='${TF_ACTION}' (init | validate | plan | apply | destroy | import | output | output-json | ecr-password). The `suite` action was removed on 2026-09-21: run ./run-tests.sh --target=aws:<env>." ;;
 esac
 
 say "${TF_ACTION} complete."

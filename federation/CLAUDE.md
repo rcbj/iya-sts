@@ -16,11 +16,12 @@ Federation relationships: this service as either end of one, in five protocols.
 
 Read the rest of this repository first and every refusal in `federation_sp.ts`
 looks like something to relax. `README.md` and every directory `CLAUDE.md` say
-the same thing: this service checks no password, validates no access token and
-attests no workload. `/oauth2/token` mints a token for any username. `/saml2/sso`
-answers any entityID. Every LDAP bind succeeds. Three surfaces are already the
-exception — SCIM, the SPIRE Server API, the admin console — and each has its
-argument written down.
+the same thing about DEVELOPMENT mode: this service checks no password,
+validates no access token and attests no workload. `/oauth2/token` mints a token
+for any username. `/saml2/sso` answers any entityID. Every LDAP bind succeeds.
+Product mode checks most of that (`common/mode.js`), and several surfaces
+require a credential in both modes — SCIM, the SPIRE Server API, the admin
+console among them — each with its argument written down.
 
 **This is the fourth, and its argument is different from all three of theirs.**
 
@@ -53,9 +54,13 @@ it configures is a KEY.**
   (now required) and ADDRESSED TO this service** — see *Three checks that could be
   skipped* below. Both used to lapse with a warning.
 
-**Once past that, everything downstream is as permissive as the rest of this
-service.** Any username in the assertion is accepted. Any attribute is mapped.
-Nothing about the person is checked. A directory entry is created for them.
+**Once past that, the gate asks nothing about the person.** Any person the
+partner names is accepted and any attribute is mapped. Whether a directory entry
+is CREATED for somebody nobody provisioned depends on the mode: development
+creates one unless the relationship's `fedAutocreateUsers` is off; product
+creates nothing (`mode.autoCreates()`), so the person must already exist or the
+sign-in is refused `STS-FED-0090`, and the partner's attributes are written onto
+the entry that does.
 **The gate is on the SIGNER, not on the subject**, which is exactly the line
 `spiffe_auth.js` draws and for the same reason.
 
@@ -1025,7 +1030,7 @@ provider**, which is exactly the moment a deliberate click is worth having.
 | Consume a federated SIGN-OUT | A `wsignout1.0` or a `<LogoutRequest>` arriving at the ACS is refused with that named. This service can END sessions (`/logout`) and can FAN OUT its own sign-outs; being told by a partner that somebody signed out elsewhere is a third thing and is not built. |
 | Refresh anything | The tokens a partner issues are used once, to learn who the person is, and are then discarded. Nothing here holds a refresh token belonging to somebody else's service. |
 | Re-verify a person on a later request | The session is this service's from the moment it is created. A partner that revokes somebody five minutes later is not consulted, and nothing here polls. |
-| Restrict WHICH people a partner may assert | Any username in a verified assertion is accepted. The gate is on the signer; see the top of this file. |
+| Restrict WHICH people a partner may assert | Any person in a verified assertion is accepted — created on first sight in development, required to exist already in product. The gate is on the signer; see the top of this file. |
 | Federate the ADMIN CONSOLE's roles | A federated sign-in produces a session like any other, so a federated identity holding `admin-write` in the directory reaches `/admin`. The partner does not decide that — `ldap_server.js` and `admin_rbac.js` do, from group membership, exactly as for a local sign-in. |
 
 ---

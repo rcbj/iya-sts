@@ -1,0 +1,89 @@
+---
+# Only the main Sass file needs front matter (the dashes are enough)
+---
+
+// minima's stylesheet, then the sidebar layout on top of it.
+$content-width: 900px;
+
+@import "minima";
+
+$sidebar-width: 270px;
+
+.site-header { min-height: 48px; }
+.site-header-wrapper {
+  max-width: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.site-title { line-height: 48px; float: none; }
+.site-tagline { color: $grey-color; font-size: $small-font-size; }
+
+.site-body {
+  display: flex;
+  align-items: flex-start;
+}
+
+.sidebar {
+  flex: 0 0 $sidebar-width;
+  width: $sidebar-width;
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: $spacing-unit * 0.75 $spacing-unit * 0.5 $spacing-unit;
+  border-right: 1px solid $grey-color-light;
+  font-size: $small-font-size;
+  background: $background-color;
+
+  ul { list-style: none; margin: 0 0 $spacing-unit * 0.5 0; }
+  li { margin: 0; }
+  a {
+    display: block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    color: $grey-color-dark;
+    line-height: 1.35;
+    &:hover { background: lighten($grey-color-light, 5%); text-decoration: none; }
+    &.current { background: lighten($brand-color, 40%); color: darken($brand-color, 15%); font-weight: 600; }
+  }
+}
+
+.sidebar-heading {
+  margin: 0 0 4px 0;
+  padding: 0 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: $grey-color;
+}
+
+.page-content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+// Wide settings tables scroll inside the page rather than widening it.
+.page-content table {
+  display: block;
+  overflow-x: auto;
+}
+
+.sidebar-trigger { display: none; }
+.sidebar-button { display: none; cursor: pointer; color: $grey-color-dark; line-height: 0; }
+
+@include media-query($on-laptop) {
+  .site-body { display: block; }
+  .sidebar-button { display: inline-block; }
+  .sidebar {
+    display: none;
+    position: static;
+    width: auto;
+    max-height: none;
+    border-right: 0;
+    border-bottom: 1px solid $grey-color-light;
+  }
+  .sidebar-trigger:checked + .sidebar { display: block; }
+}

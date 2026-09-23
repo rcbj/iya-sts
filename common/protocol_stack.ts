@@ -350,6 +350,9 @@ class ProtocolStack {
     this.build('oauth-oidc/id_token_encryption',
                require('../oauth-oidc/id_token_encryption'),
                'IdTokenEncryption');
+    this.build('oauth-oidc/pairwise_subjects',
+               require('../oauth-oidc/pairwise_subjects'),
+               'PairwiseSubjects');
     this.build('oauth-oidc/request_object',
                require('../oauth-oidc/request_object'),
                'RequestObject');
@@ -563,6 +566,16 @@ class ProtocolStack {
                'ProxyProtocol');
     this.build('pki/pki_service', require('../pki/pki_service'), 'PkiService');
     this.register(app, require('../pki/pki_service'), 'pki/pki_service');
+    // 17c. THE PUBLIC CRYPTO METADATA DOCUMENT (#42, 2026-09-22):
+    // `/crypto/metadata{,.json,.xml,.jwt,.signed.xml,.xsd}`. Beside the
+    // revocation endpoints and for their reason: it requires libraries only,
+    // with `pki.js`, `oauth2.ts`'s signer and the revocation module each
+    // LAZILY, so it is grouped with them on `/admin/sts-metadata`.
+    this.build('pki/crypto_metadata_document',
+               require('../pki/crypto_metadata_document'),
+               'CryptoMetadataDocument');
+    this.register(app, require('../pki/crypto_metadata_document'),
+                  'pki/crypto_metadata_document');
     // The admin console. It must come AFTER oauth2.js and, like wsfed.ts, the
     // order is a dependency rather than a preference: its metrics page reports
     // the browser sign-on sessions oauth2.js owns, read through the `sessions`
@@ -787,6 +800,18 @@ class ProtocolStack {
                require('../admin-ui/vc_status_admin'), 'VcStatusAdmin');
     this.register(app, require('../admin-ui/vc_status_admin'),
                   'admin-ui/vc_status_admin');
+    // 18i. THE SCHEDULER'S PAGE (#49, 2026-09-22). `/admin/scheduler` —
+    // every job `cluster/scheduler.ts` knows, its last run and its next.
+    // 18a's placement and 18a's reason: the console's shell and the
+    // scheduler (a library, loaded by the job owners above) already here,
+    // and `mgmt-api/admin_api` requires it in the ordinary direction. A job
+    // registered later still appears: the page asks the scheduler when it
+    // is drawn.
+    require('../admin-ui/scheduler_admin');
+    this.build('admin-ui/scheduler_admin',
+               require('../admin-ui/scheduler_admin'), 'SchedulerAdmin');
+    this.register(app, require('../admin-ui/scheduler_admin'),
+                  'admin-ui/scheduler_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module
@@ -1037,6 +1062,11 @@ class ProtocolStack {
     this.build('ssf/ssf_cluster', require('../ssf/ssf_cluster'), 'SsfCluster');
     this.build('ssf/ssf', require('../ssf/ssf'), 'SharedSignals');
     this.register(app, require('../ssf/ssf'), 'ssf/ssf');
+    // 23b-ii. SIGNING KEY ROTATION (#42, 2026-09-22): a library that registers
+    // its two scheduler jobs when built and no route. After `ssf/ssf`, whose
+    // signingKeyRotated() it calls (lazily, so the order is for a reader).
+    this.build('common/signing_rotation', require('./signing_rotation'),
+               'SigningRotation');
     // -------------------------------------------------------------------------
     // 23c. XACML 3.0 — the PDP, the policy repository, the PIP, the embedded
     // PEPs and the PAP console.

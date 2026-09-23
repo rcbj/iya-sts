@@ -1072,13 +1072,53 @@ async function verify(opts) {
                                          : 'client_secret_basic (an ' +
                                            'Authorization: Basic header).') };
     }
-    if (!secretsMatch(info.presentedSecret, info.clientSecret)) {
+    // ROTATION AND EXPIRY (#49 P5), read off the client's own entry here
+    // rather than threaded through every caller: the secret a rotation
+    // replaced, accepted until its overlap ends, and when the current one
+    // expires. The registry is required LAZILY — it is not one of this
+    // file's dependencies and must not become a cycle.
+    let entry = {};
+    try {
+      entry = require('../common/applications')
+        .clientConfigOf(String(info.clientId || '')) || {};
+    } catch (e) {
+      log.debug("Caught in verify(): " + ((e && e.message) || e));
+      entry = {};
+    }
+    const current = secretsMatch(info.presentedSecret, info.clientSecret);
+    const previous = !current && !!entry.client_secret_previous &&
+      Date.now() < Number(entry.client_secret_previous_until) &&
+      secretsMatch(info.presentedSecret, entry.client_secret_previous);
+    if (!current && !previous) {
       log.debug("Leaving verify(). The secret did not match.");
       log.debug("Leaving verify().");
       return { ok: false, errorCode: 'STS-OAUTH-0020', description: 'the ' +
                                        'client_secret presented is not the ' +
                                        'one on this client\'s entry in the ' +
                                        'application registry.' };
+    }
+    if (previous) {
+      log.debug("Leaving verify(). The previous secret, inside its overlap.");
+      log.debug("Leaving verify().");
+      return { ok: true, method: method, previousSecret: true };
+    }
+    const expiresAt = Number(entry.client_secret_expires_at) || 0;
+    if (expiresAt > 0 && Math.floor(Date.now() / 1000) >= expiresAt) {
+      if (mode.refusesExpiredClientSecrets()) {
+        log.debug("Leaving verify(). The secret has expired.");
+        log.debug("Leaving verify().");
+        return { ok: false, errorCode: 'STS-OAUTH-0558', description: 'the ' +
+                 'client_secret presented expired at ' +
+                 new Date(expiresAt * 1000).toISOString() +
+                 ' (its client_secret_expires_at); ask this service\'s ' +
+                 'administrator for a new one, or rotate it through RFC ' +
+                 '7592 client registration management.' };
+      }
+      log.warn(errorCodes.tag('STS-OAUTH-0559') + 'client_auth: the ' +
+               'client_secret of "' + String(info.clientId || '') +
+               '" expired at ' + new Date(expiresAt * 1000).toISOString() +
+               ' and was ACCEPTED, because this is a development-mode ' +
+               'service (mode.refusesExpiredClientSecrets()).');
     }
     log.debug("Leaving verify(). The secret matched.");
     log.debug("Leaving verify().");

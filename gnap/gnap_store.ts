@@ -155,6 +155,12 @@ const replayCount = cacheRegistry.register({
   lifetime: function (): string {
     return 'Twice gnap.signatureMaxAgeS after it was seen.';
   },
+  // The rows `rememberOutcome()`'s makeRoom() already treats as expired
+  // (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, replay,
+    function (row: any, key: unknown, now: number): boolean {
+      return !row || Number(row.until) <= Math.floor(now / 1000);
+    }),
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, replay,
       function (seen: any, key: unknown): object {

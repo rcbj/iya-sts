@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2796** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2889** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -51,18 +51,19 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 55
+* [Service core (`STS-CORE`)](#sts-core) — 56
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 41
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 27
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 62
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 173
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 16
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 69
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 174
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 184
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 434
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 185
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 451
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -70,18 +71,18 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 77
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 32
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 86
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 273
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 115
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 98
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 274
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 170
 * [Management API (`STS-API`)](#sts-api) — 72
 * [User portal (`STS-PORTAL`)](#sts-portal) — 52
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 98
+* [Registries (`STS-REG`)](#sts-reg) — 102
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 27
 
 ## STS-HTTP
@@ -161,7 +162,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0022` | Two persisted stores were declared under one handle; the second is not persisted. | — |
 | `STS-CORE-0023` | A persisted store could not report a write to persistence; the write stands in memory and may not be written down. | — |
 | `STS-CORE-0024` | A trust realm's signing keys could not be certified under its Issuing CAs; they still sign, with a self-signed certificate. | — |
-| `STS-CORE-0025` | The BBS key pair handed down from the front process could not be read, so this process generated its own. | — |
+| `STS-CORE-0025` *(retired)* | The BBS key pair handed down from the front process could not be read, so this process generated its own. | — |
 | `STS-CORE-0026` | A request declared a JSON body that does not parse; it is read as empty. | whatever the endpoint answers for an empty body |
 | `STS-CORE-0027` | The token recorder behind the statistics threw while a JWT was being signed; the token is unaffected and is missing from /admin/tokens. | — |
 | `STS-CORE-0028` | A trust realm's post-quantum keys could not be generated ahead of time; the first JWKS fetch in that realm makes them instead. | — |
@@ -170,7 +171,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0031` | The SPIFFE gRPC listeners could not start; the rest of the service runs. | — |
 | `STS-CORE-0032` *(retired)* | The 8443/9443 TLS endpoints could not start. Retired 2026-09-16: both listeners were deleted and this module binds nothing, so there is no bind here to fail | — |
 | `STS-CORE-0033` | The last flush at shutdown failed, so the process exited non-zero and a change made just before it may not have been written down. | — |
-| `STS-CORE-0034` | The BBS key pair could not be shared with the request workers; each generates its own and a did:web document may name a key its siblings did not sign with. | — |
+| `STS-CORE-0034` *(retired)* | The BBS key pair could not be shared with the request workers; each generates its own and a did:web document may name a key its siblings did not sign with. | — |
 | `STS-CORE-0035` | The service refused to start because its signing key material (or the key-encryption key that opens it) could not be read. | — |
 | `STS-CORE-0036` | The service refused to start because the configured persistence store could not be opened or read. | — |
 | `STS-CORE-0037` | The front page's logo could not be read from disk at startup; the page is drawn without it. | — |
@@ -192,6 +193,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0099` | A trust realm's domain was not a DNS name of at least two labels (letters, digits and hyphens, each at most 63 characters, a top-level label that is not all digits). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0100` | A trust realm was given a domain another realm — the default realm's global.domain included — already has. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0101` | An update tried to change a trust realm's domain, which is fixed when the realm is created. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0102` | A cache or replay store could not eject its expired entries; the store still refuses an expired entry where it reads it. | none — logged by the caches.eject-expired job |
 
 ## STS-WORKER
 
@@ -349,6 +351,32 @@ Raised from: cluster/.
 | `STS-CLUSTER-0025` | A node's heartbeat ran late by a heartbeat or more because its event loop was busy; a stall past the membership lifetime costs the node its membership. | — |
 | `STS-CLUSTER-0026` | Active-active mode was refused because global.publicBaseUrl is empty, so each node would name itself by the address it was reached on. | — |
 | `STS-CLUSTER-0040` | A cluster mode was configured with persistence.minted off, so nodes would not share sessions, pending sign-ins, codes or tokens; the service does not start. | — |
+| `STS-CLUSTER-0041` | Standing down from a lease early failed in the store; the lease expires on its own within one node lifetime, and this node does not renew it. | — |
+
+## STS-SCHED
+
+**Scheduler.** The one scheduler every periodic job in this service runs on: who leads it, the claim and fence that make a job run once per slot in the whole cluster, the runs it records, manual runs and the planned handover of its leadership.
+
+Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-SCHED-0001` | A scheduled job's run threw or rejected; the run is recorded as failed with the reason, and the job runs again at its next slot. | — |
+| `STS-SCHED-0002` | A job's run took longer than its time limit; it is recorded as failed, its claim is given back, and anything it still does is fenced out. | — |
+| `STS-SCHED-0003` | A run's outcome was fenced out: another attempt took the run over after this one's claim lapsed, so this one's result is not written. | — |
+| `STS-SCHED-0004` | A manual run was refused: no job by that id is registered. | — |
+| `STS-SCHED-0005` | A manual run was refused: the job runs on its schedule only. | — |
+| `STS-SCHED-0006` | A manual run was refused: the job is off (its setting, scheduler.enabled, or a development-mode predicate), and says why. | — |
+| `STS-SCHED-0007` | A manual run was refused to a realm administrator: the job is service-scoped, or names another realm. | — |
+| `STS-SCHED-0008` | The claim store could not be asked whether a run was already taken; the run is not started until it can be, so it never runs twice. | — |
+| `STS-SCHED-0009` | A job registration was refused whole: a member is missing or malformed, or the id is taken. | — |
+| `STS-SCHED-0010` | A step-down was refused: this service is not clustered, so there is no other node to hand the scheduler to. | — |
+| `STS-SCHED-0011` | A run was abandoned: the node running it stopped holding its claim before it finished, and another attempt took it over. | — |
+| `STS-SCHED-0012` | A manual run was refused: the realm it names does not exist. | — |
+| `STS-SCHED-0013` | The scheduler's tick failed unexpectedly; it is tried again at the next tick. | — |
+| `STS-SCHED-0014` | The scheduler's leader could not stand down; its lease expires on its own. | — |
+| `STS-SCHED-0015` | A per-process job's run in this process threw or rejected; its row for this process says so, and it runs again at its next slot. | — |
+| `STS-SCHED-0016` | A run was asked for that does not exist (an unknown run id). | — |
 
 ## STS-KEYS
 
@@ -420,6 +448,13 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0060` | A detached HTTP Redirect binding signature could not be checked: no certificate, no Signature, an unreadable certificate, a Signature that is not base64, or an unreadable certificate. (An algorithm this service does not verify is STS-KEYS-0061 since 2026-09-17; SHA-1 refused by policy is STS-KEYS-0062.) | the caller's own refusal |
 | `STS-KEYS-0061` | An XML signature (enveloped, or an HTTP binding's detached one) names a SignatureMethod or DigestMethod this service does not verify — MD5, a MAC, Whirlpool, ESIGN, pre-hashed EdDSA, HSS/LMS or an unknown URI — or RSASSA-PSS parameters node cannot express. Refused as not checkable, on every XML signature path. | refusal by the calling protocol |
 | `STS-KEYS-0062` | An XML signature uses SHA-1 (its SignatureMethod or a DigestMethod) and saml.allowSha1Signatures is off (the default), so it was refused before any cryptography, on every XML signature path. | refusal by the calling protocol |
+| `STS-KEYS-0063` | A signing key rotation was refused: the realm's key set could not be replaced (a newer generation was already held, or the store refused the write). | the scheduler run fails with this code; /admin/keys and /admin-api report it |
+| `STS-KEYS-0064` | After an emergency key rotation the realm's sessions could not be ended; the keys were rotated and their certificates revoked. | none — logged; the run still succeeds and its audit row counts the sessions ended |
+| `STS-KEYS-0065` | A rotation was asked for a signing unit this realm does not have. | HTTP 400 from POST /admin-api/keys/rotate; a refusal on /admin/keys |
+| `STS-KEYS-0066` | An emergency rotation was asked for without its confirmation (confirm: "compromised"). | HTTP 400 from POST /admin-api/keys/emergency; a refusal on /admin/keys |
+| `STS-KEYS-0067` | A realm's signing-key history could not be recorded; the rotation or retirement itself succeeded. | none — logged. The next observation writes the rows, because the history is derived from the key set rather than from the event |
+| `STS-KEYS-0068` | The signing-key history was asked for a unit this realm has no record of. | HTTP 400 from GET /admin-api/keys/history; a refusal on /admin/keys/history |
+| `STS-KEYS-0069` | A certificate authority row listed a certificate it still publishes as revoked; the revocation was dropped rather than written. | none — logged. A row may not publish a certificate its own CRL calls revoked; the drop is evidence of a tier write that was lost |
 
 ## STS-PKI
 
@@ -602,6 +637,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0184` | Another node held the build of a certificate authority for longer than this node waits, and nothing appeared in the store. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-PKI-0185` | A CRL was not signed because its CRL number could not be advanced in the store shared by this service's nodes. | HTTP 500 from the CRL distribution point |
 | `STS-PKI-0186` | A certificate was not recorded because the Issuing CA that signed it was replaced, repeatedly, while it was being signed. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-PKI-0187` | The public crypto metadata document (/crypto/metadata) could not be built. | HTTP 500 server_error from /crypto/metadata |
 
 ## STS-ENROLL
 
@@ -1025,6 +1061,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0203` | An account was disabled and ending what the person held (the global logout) failed; the lock stands and every door refuses them. | none — logged; the disable's reply says what failed |
 | `STS-AUTHN-0204` | A sign-in that demands a security key (a WS-Federation HardwareToken wauth, or OAuth acr_values naming only key aliases) was answered with something else — a one-time code, a recovery code — or the account holds a second factor and no key to present. | HTTP 400 invalid_request, or the sign-in screen again |
 | `STS-AUTHN-0205` | The product-mode bootstrap was given a password through admin.bootstrapPassword that the password policy refuses, so no bootstrap account was created and nobody can sign in. It is NOT replaced with a generated one: the operator set it so that the only way in would not be in a log, and generating one would put a working credential there and leave theirs not working. | none — logged, and the service starts with nobody able to sign in |
+| `STS-AUTHN-0206` | Product mode: a passwordless sign-in named a person who holds no security key that signs in on its own, and the sign-in screen does not enrol one — enrolling there would give the account to whoever claimed the name first. A primary key is added on /portal/keys, by an activation link or by an operator. Development enrols on first use (mode.enrolsKeysOnFirstUse()). | none — the sign-in screen is drawn again with the reason |
 
 ## STS-OAUTH
 
@@ -1468,6 +1505,23 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0552` | A PUBLIC client (token_endpoint_auth_method="none") asked for the client credentials grant in product mode. RFC 6749 section 4.4 defines that grant for a client that HAS credentials and OAuth 2.1 section 4.2 limits it to confidential clients; a public client using it would mint a token for anybody who knows the client_id. | unauthorized_client (HTTP 400) |
 | `STS-OAUTH-0553` | A client whose application entry declares NO token_endpoint_auth_method presented no credential. Product mode reads the omission as RFC 7591 section 2's default, client_secret_basic, and refuses it at the token endpoint and at PAR; development records it as an unauthenticated client and answers. Setting oauthTokenEndpointAuthMethod to "none" makes it a public client. An application created from the console or /admin-api has been given a method since 2026-09-18, so this is an entry made before that or by another door. | invalid_client (HTTP 401) in product mode; none in development |
 | `STS-OAUTH-0554` | A DPoP proof was refused because the realm's proof-ID replay history held oauth2.dpopReplayCacheSize LIVE entries: forgetting one would let that proof be replayed, so the new proof is refused instead until entries age out (twice oauth2.dpopIatSkewS). | invalid_dpop_proof (HTTP 400 / 401) |
+| `STS-OAUTH-0555` | Product mode: an RFC 8693 subject_token that did not verify against this realm's signing key (a forged, foreign, expired or unreadable token) was refused. Development exchanges it unverified (mode.exchangesUnverifiedTokens()). | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0556` | Product mode: an RFC 8693 actor_token that did not verify against this realm's signing key was refused. Development reads its sub unverified into the act claim. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0557` | An RFC 8693 subject_token or actor_token that verified was refused because this realm has revoked it. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0558` | A client authenticated with a client_secret past its expiry (oauthClientSecretExpiresAt, or the registration's client_secret_expires_at), in product mode. | invalid_client (RFC 6749 section 5.2) |
+| `STS-OAUTH-0559` | A client authenticated with an expired client_secret and was accepted, because the service is in development mode. | none — logged; the request is answered |
+| `STS-OAUTH-0560` | An authorization request asked for an ID Token without the openid scope (OIDC Core section 3.1.2.1). | redirect: error=invalid_scope |
+| `STS-OAUTH-0561` | An authorization request combined prompt=none with another prompt value (OIDC Core section 3.1.2.1). | redirect: error=invalid_request |
+| `STS-OAUTH-0562` | An implicit-flow authorization request carried no nonce, which OIDC Core section 3.2.2.1 makes REQUIRED — in every mode. | redirect: error=invalid_request |
+| `STS-OAUTH-0563` | An implicit-flow authorization request named an http redirect_uri that is not a loopback address (OIDC Core section 3.2.2.1). | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0564` | An authorization request sent with POST was not application/x-www-form-urlencoded (OIDC Core section 3.1.2.1). | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0565` | The authorization endpoint failed while reading an id_token_hint. | HTTP 500 {error: server_error} |
+| `STS-OAUTH-0566` | An id_token_hint did not verify as an ID Token this authorization server issued to this client. | redirect: error=invalid_request |
+| `STS-OAUTH-0567` | The person signed in is not the one the id_token_hint names, and prompt=none (or the person signed in as somebody else again). | redirect: error=login_required |
+| `STS-OAUTH-0568` | A refresh token granted without offline_access was presented after the sign-on session it came from ended (OIDC Core section 11). | HTTP 400 {error: invalid_grant} |
+| `STS-OAUTH-0569` | A redirect_uri matched none of the redirect URIs the client registered (OIDC Core section 3.1.2.1), outside RFC 9700 mode. | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0570` | A client assertion was not signed with the client's registered token_endpoint_auth_signing_alg (OIDC Core section 9). | HTTP 401 {error: invalid_client} |
+| `STS-OAUTH-0571` | An access token was sent to the UserInfo endpoint in more than one place (RFC 6750 section 2). | HTTP 400 {error: invalid_request} |
 
 ## STS-SAML
 
@@ -2050,13 +2104,13 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0048` | An item of BatchUpdateEntry named no entry id. | gRPC INVALID_ARGUMENT (per batch item) |
 | `STS-SPIFFE-0049` | The registry refused a registration entry update in a BatchUpdateEntry call. | gRPC INVALID_ARGUMENT (per batch item) |
 | `STS-SPIFFE-0050` | No agent is recorded on this server under the id the call named or the connection carries. | gRPC NOT_FOUND |
-| `STS-SPIFFE-0051` | AttestAgent received a challenge_response when this server issues no attestation challenge. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0051` | AttestAgent received a challenge_response with no attestation challenge outstanding on the stream. | gRPC INVALID_ARGUMENT |
 | `STS-SPIFFE-0052` | The agent attesting or renewing is banned on this server. | gRPC PERMISSION_DENIED |
 | `STS-SPIFFE-0053` | A call that signs a certificate signing request carried none (AttestAgent, RenewAgent, MintX509SVID, a BatchNewX509SVID item). | gRPC INVALID_ARGUMENT (or per batch item) |
 | `STS-SPIFFE-0054` | A join_token attestation carried an empty token. | gRPC INVALID_ARGUMENT |
 | `STS-SPIFFE-0055` | A join token presented at AttestAgent was never issued by this realm, or has already been spent. | gRPC PERMISSION_DENIED |
 | `STS-SPIFFE-0056` | A join token presented at AttestAgent has expired. | gRPC PERMISSION_DENIED |
-| `STS-SPIFFE-0057` | A join token created for a named agent was presented by an attestation producing a different agent. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0057` *(retired)* | A join token created for a named agent was presented by an attestation producing a different agent. Retired 2026-09-21 (#40): the attesting agent is always the join token's own, so the check refused every such token; agent_id now registers an alias entry, as SPIRE does (STS-SPIFFE-0084). | gRPC PERMISSION_DENIED |
 | `STS-SPIFFE-0058` | RenewAgent was called on a connection that carries no attested agent's X509-SVID. | gRPC UNIMPLEMENTED |
 | `STS-SPIFFE-0059` | CreateJoinToken was refused because the realm holds spiffe.maxJoinTokens unexpired tokens. | gRPC RESOURCE_EXHAUSTED |
 | `STS-SPIFFE-0060` | AppendBundle or PublishJWTAuthority asked this service to add an authority to its own bundle, which it refuses. | gRPC PERMISSION_DENIED |
@@ -2077,6 +2131,44 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0075` | A join token at AttestAgent could not be proved unspent because the cluster store could not be asked, so the attestation was refused. | gRPC UNAVAILABLE |
 | `STS-SPIFFE-0076` | A realm's SPIFFE JWT authority or self-signed X.509 authority could not be established once for the cluster, so none was made. | the SPIFFE call fails as when no authority could be built |
 | `STS-SPIFFE-0077` | An agent asked for an SVID from a registration entry that is not beneath it (BatchNewX509SVID, NewJWTSVID). | gRPC PERMISSION_DENIED (per batch item for BatchNewX509SVID) |
+| `STS-SPIFFE-0078` | AttestAgent named a node attestor this realm does not accept: not in spiffe.nodeAttestors, or not one this server can verify. Nothing is taken on trust (#40). | gRPC FAILED_PRECONDITION |
+| `STS-SPIFFE-0079` | AttestAgent carried no attestation type in params.data.type. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0080` | A node attestor challenged the agent and no challenge_response arrived within spiffe.attestationChallengeTimeout. | gRPC DEADLINE_EXCEEDED |
+| `STS-SPIFFE-0081` | The message after an attestation challenge carried no challenge_response. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0082` | The AttestAgent stream closed or was cancelled while a node attestor's challenge was outstanding. | gRPC CANCELLED |
+| `STS-SPIFFE-0083` | An agent already attested with evidence that is not re-attestable (a join token, a trust-on-first-use document) attested again; the agent must be deleted first, as in SPIRE. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0084` | CreateJoinToken's agent_id could not be registered as the token's alias entry (not in this trust domain, reserved, or the registry refused it), so no token was issued. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0085` | A node attestor the realm accepts is not configured: x509pop in external_pki mode with no spiffe.x509popCaBundle, sshpop with no spiffe.sshpopCertAuthorities, tpm_devid with no DevID or endorsement anchors, or a template that does not parse. | gRPC FAILED_PRECONDITION |
+| `STS-SPIFFE-0086` | A node attestation payload or challenge response could not be read: not the attestor's JSON, or a certificate, SSH certificate or TPM structure in it that does not parse. | gRPC INVALID_ARGUMENT (INTERNAL for sshpop, as SPIRE answers) |
+| `STS-SPIFFE-0087` | An x509pop attestation carried more intermediate certificates than spiffe.x509popMaxIntermediates. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0088` | An x509pop attestation carried an RSA key larger than spiffe.x509popMaxRsaKeySize. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0089` | A node attestor's certificate did not chain to its configured trust anchors (x509pop, the tpm_devid DevID or endorsement certificate). | gRPC PERMISSION_DENIED (x509pop), INVALID_ARGUMENT (tpm_devid) |
+| `STS-SPIFFE-0090` | The agent's address is not one its certificate allows (x509pop IP subjectAltNames, sshpop source-address), or the certificate carries no such restriction. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0091` | verify_client_ip is on and the agent has no address to verify (it came in on the Unix socket). | gRPC INTERNAL |
+| `STS-SPIFFE-0092` | No challenge could be issued for the attesting key: an x509pop certificate not for digitalSignature, or a key type the attestor does not sign with. | gRPC INTERNAL |
+| `STS-SPIFFE-0093` | A node attestor's challenge response did not verify: the signature over the nonces, or the DevID signature. | gRPC PERMISSION_DENIED (x509pop), INTERNAL (sshpop), INVALID_ARGUMENT (tpm_devid) |
+| `STS-SPIFFE-0094` | An x509pop attestation in spiffe mode presented no SPIFFE ID, or one outside spiffe.x509popSpiffePrefix. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0095` | An agent path template could not produce a valid agent SPIFFE ID for this attestation. | gRPC INTERNAL |
+| `STS-SPIFFE-0096` | An sshpop host certificate was refused: not a host certificate, no principal, an authority not configured, outside its validity, an unsupported critical option, a signature that does not verify, or a first principal outside spiffe.sshpopCanonicalDomain. | gRPC INTERNAL |
+| `STS-SPIFFE-0097` | A tpm_devid attestation did not prove its DevID key resides in the TPM: incomplete, an endorsement certificate that does not match the EK, or a certification the attestation key did not sign. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0098` | A tpm_devid credential activation returned the wrong secret: the TPM holding the EK did not decrypt it for this AK. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0099` | A node attestor could not get an answer from a source it is configured to ask: a Kubernetes API server (TokenReview, a pod, a node), Google's certificates, Microsoft's tenant discovery or intermediate, or a cloud API. | gRPC INTERNAL |
+| `STS-SPIFFE-0100` | A k8s_psat token was not authenticated by the cluster's TokenReview, or not for this server's audience. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0101` | A k8s_psat agent's service account is not in the cluster's allow list, or the pod the token is bound to is not the pod that now has that name. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0102` | A k8s_psat agent named a cluster this realm is not configured for, or sent no cluster or token. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0103` | An http_challenge agent's port or agent name is not acceptable (required_port, allow_non_root_ports, the name's form). | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0104` | An http_challenge agent's host name matches none of spiffe.httpChallengeAllowedDnsPatterns (or is localhost), so it was neither resolved nor dialled. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0105` | An http_challenge fetch did not return the nonce: the host was unreachable, internal (product mode), redirected, or served something else. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0106` | A cloud node attestor is enabled and the SDK it calls its cloud with is not installed; the refusal names the package. | gRPC FAILED_PRECONDITION |
+| `STS-SPIFFE-0107` | A cloud identity document or token did not verify: an aws_iid signature against the region's AWS certificate, an azure_imds PKCS#7 signature or its certificate chain, a gcp_iit token signature. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0108` | A cloud node is not one this realm admits: a project, tenant or subscription not allowed, an account outside the organization, an instance outside the EKS clusters, a gcp_iit token for another audience or expired. | gRPC PERMISSION_DENIED (INTERNAL for the aws_iid organization and EKS checks, as SPIRE answers) |
+| `STS-SPIFFE-0109` | An aws_iid instance failed the block device check: its root volume and first network interface were not attached together. | gRPC INTERNAL |
+| `STS-SPIFFE-0110` | An azure_imds attested document did not carry this challenge's nonce, or lacked a VM or subscription ID. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0111` | A connection to the Workload API's Unix socket could not be attested — the kernel would not name its peer, or a workload attestor (unix, docker, k8s) failed — and every call on it is refused. | gRPC UNAVAILABLE |
+| `STS-SPIFFE-0112` | A Workload API call arrived on a connection attested for a process that has since exited, whose pid was reused, or that executed a different program. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0113` | A realm's Workload API Unix socket was not bound: this is a product and the native module workload attestation needs is not in the image. | — |
+| `STS-SPIFFE-0114` | A realm's SPIRE Server API could not take a new certificate after the service Root was replaced, so it still presents a chain under the old Root and a client holding the new bundle cannot verify it until a restart. | — |
+| `STS-SPIFFE-0115` | After the service Root was replaced, a realm's certificate authority branch did not arrive under the new Root within 30 seconds, so its SPIRE Server API was re-keyed anyway and the branch was repaired in this process — which may leave the realm with two Intermediate CAs if the process that replaced the Root rebuilds it too. | — |
 
 ## STS-TLS
 
@@ -2118,6 +2210,7 @@ Raised from: tls/.
 | `STS-TLS-0030` | The stored trust anchors could not be read; the truststore was left as it was. | — |
 | `STS-TLS-0031` *(retired)* | The required-client-certificate listener refused a verified certificate this service issued that is not a TLS client identity. Retired 2026-09-16 with that listener: the same certificate is now refused where it is USED — no session at GET /tls/sign-in, no client authentication at the token endpoint — rather than at a socket | HTTP 403 with the connection report |
 | `STS-TLS-0032` | The file named by tls.certificateFile holds self-signed certificates, none of which signs the chain the listener presents, so no trust anchor is taken from it. | — |
+| `STS-TLS-0033` | A socket that presents the listener certificate (LDAPS, the SPIRE Server API) threw while being told the certificate was re-issued; the others were still told, and the main port serves the new one. | — |
 
 ## STS-VC
 
@@ -2213,6 +2306,7 @@ Raised from: oid4vc/.
 | `STS-VC-0084` | A wallet could not be the second factor: the step had expired, its first factor was already a wallet, or the credential was issued to somebody other than the person whose password was entered. | HTTP 403 page at /authn/wallet/wait |
 | `STS-VC-0085` | A certificate in oid4vci.keyAttestationTrustedCertificates could not be read and was ignored. | — |
 | `STS-VC-0086` | An access token this realm revoked was presented at an OpenID4VCI endpoint (credential, deferred credential or notification) in product mode. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
+| `STS-VC-0087` | A BBS key was asked for at /bbs/keys/<kid> that is not a live generation of this realm's BBS key (current, next, or retired within its grace). | HTTP 404 not_found |
 
 ## STS-SSF
 
@@ -2235,13 +2329,13 @@ Raised from: ssf/.
 | `STS-SSF-0011` | The body of an SSF management, subject, verification or poll request is not JSON. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0012` | A push stream was refused at creation because its delivery endpoint cannot be dialled by this transmitter (not a URL, wrong scheme, plain http with ssf.pushAllowInsecure off, or a host outside ssf.pushAllowedHosts). | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0013` | A Stream Configuration was refused at creation (a missing aud, an unsupported delivery method, a malformed member). | HTTP 400 {err: invalid_request} |
-| `STS-SSF-0014` | An SSF request named a stream_id this transmitter does not hold. | HTTP 404 {err: invalid_request} |
+| `STS-SSF-0014` | An SSF request named a stream_id this transmitter does not hold for the authenticated receiver — one that does not exist, or another receiver's, which answers identically (#144). | HTTP 404 {err: invalid_request} |
 | `STS-SSF-0015` | A stream update (PUT or PATCH) was refused because the configuration it would produce is invalid. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0016` | A stream status change was refused (an unknown status value or a malformed request). | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0017` | An Add Subject request was refused because the subject identifier is invalid (RFC 9493 format or member rules, or a missing critical member). | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0018` | A Remove Subject request was refused because the subject identifier is invalid. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0019` | A verification request came sooner than the stream's min_verification_interval while ssf.verificationRateLimit is on. | HTTP 429 {err: invalid_request} with Retry-After |
-| `STS-SSF-0020` | A verification request was answered with a refusal because the verification event could not be transmitted or delivered; the transmission's own audit row names the cause. | HTTP 400 {err: invalid_request} |
+| `STS-SSF-0020` | A verification request was refused because its stream is disabled. (Until #144 it also meant a push that failed; delivery is asynchronous now and a failed one is a dead letter.) | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0021` | A poll request named a stream that delivers by push, so there is nothing to collect. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0022` | A Security Event Token was pushed at /ssf/receive while this service is not accepting pushed events (ssf.receiveEnabled). | HTTP 501 {err: invalid_request} |
 | `STS-SSF-0023` | A push at /ssf/receive carried an empty body. | HTTP 400 {err: invalid_request} |
@@ -2313,6 +2407,13 @@ Raised from: ssf/.
 | `STS-SSF-0097` | The dead-letter sweep failed in a realm; it is tried again at the next interval. | — |
 | `STS-SSF-0098` | Whether another process had already reported a stream as dead or revived could not be asked, so it was reported here and may be reported twice. | none — logged |
 | `STS-SSF-0099` | A GNAP key proof on a Shared Signals endpoint could not be confirmed unused across the cluster, so the token was refused. | HTTP 401 {err: invalid_token} |
+| `STS-SSF-0100` | The signing-key-rotated event (this service's own) could not be transmitted after a rotation; the rotation itself stands. | none — logged; nothing is sent to a receiver |
+| `STS-SSF-0101` | A receiver asked to create a stream and already holds ssf.maxStreams streams — the limit is per receiver (SSF 1.0 section 8.1.1.1, "not allowed to create a stream"). | HTTP 403 {err: access_denied} |
+| `STS-SSF-0102` | A transmitter-initiated verification event (the console's Verify, or POST /admin-api/ssf/verify) could not be sent on the stream. | HTTP 400 on /admin-api/ssf/verify |
+| `STS-SSF-0103` | The inserted-path form of the transmitter configuration document was asked for a path no transmitter's issuer has (SSF 1.0 section 7.2). | HTTP 404 {err: invalid_request} |
+| `STS-SSF-0104` | A Security Event Token delivered to one of this service's receivers is not explicitly typed secevent+jwt (SSF 1.0 section 4.1.1); it was recorded and refused. | HTTP 400 {err: invalid_request} |
+| `STS-SSF-0105` | A Security Event Token delivered to one of this service's receivers carries an iss other than its stream's, or one ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was recorded and refused. | HTTP 400 {err: invalid_issuer} |
+| `STS-SSF-0106` | A Security Event Token pushed at POST /ssf/receive is addressed to no audience ssf.receiveAudiences lists; it was recorded and refused. | HTTP 400 {err: invalid_audience} |
 
 ## STS-GNAP
 
@@ -2522,12 +2623,13 @@ Raised from: gnap/.
 | `STS-GNAP-0324` | A biscuit authorization check failed, or the authorizer could not be built for the presentation. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0325` | Biscuit authorization exceeded its run limits (facts, iterations or time), which is a refusal and never a pass. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0326` | A biscuit attenuation block was refused: empty, a parameter of an unsupported type, or rejected by the library. | — |
-| `STS-GNAP-0330` | ZCAP keys are unusable (no absolute controller URL, a keyId not under it, or not an Ed25519 KeyObject), or a capability's invocationTarget is not an absolute URI. | — |
+| `STS-GNAP-0330` | ZCAP keys are unusable (no absolute controller URL, a keyId not under it, not a key of the kind gnap.zcapCryptosuite signs with, or a suite that is none of the four), or a capability's invocationTarget is not an absolute URI. | — |
 | `STS-GNAP-0331` | The ZCAP libraries could not be loaded. | HTTP 401 invalid_token at a resource server; at issuance the token is left out |
 | `STS-GNAP-0332` | A presented ZCAP is not base64url JSON with exactly the members and @context this format writes. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0333` | A presented ZCAP's delegation proof does not verify under this authorization server's key. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0334` | A presented ZCAP's GNAP terms are inconsistent, or it names no invocationTarget. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0335` | The ZCAP libraries refused to sign a capability. | — |
+| `STS-GNAP-0336` | A presented ZCAP carries a proof of a suite other than the one this realm's gnap.zcapCryptosuite names, or not exactly one proof. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0340` | A presented jwt-encrypted GNAP access token is encrypted to a resource server's key, which this authorization server does not hold. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0341` | A presented jwt-encrypted GNAP access token does not decrypt. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0342` | A presented JWT GNAP access token's signature does not verify. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
@@ -3161,6 +3263,10 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0163` | A confirm or discard of a SAML service provider's observed signing certificate found none on the entry. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0164` | An RFC 7591 registration or RFC 7592 update named an id_token_encrypted_response_alg or _enc this service cannot honour (a symmetric family, an unknown content encryption), or an enc with no alg. | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0165` | A registration named id_token_encrypted_response_alg with no inline jwks key of the right type to encrypt to (a jwks_uri is never fetched). | invalid_client_metadata (HTTP 400) |
+| `STS-REG-0166` | An application's client secret has expired, or expires within oauth2.clientSecretExpiryWarningDays — found by the daily scheduler job oauth2.client-secret-expiry. | none — an audit row and a warning; rotate the secret on /admin/applications |
+| `STS-REG-0167` | A client registration named a subject_type, sector_identifier_uri or token_endpoint_auth_signing_alg this service cannot honour (OIDC Core sections 8 and 9). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0168` | A console or /admin-api write set oauthSubjectType, oauthSectorIdentifierUri or oauthTokenEndpointAuthSigningAlg to a value this service cannot honour. | HTTP 400 |
+| `STS-REG-0169` | A registered sector_identifier_uri could not be fetched, was not a JSON array of URIs, or did not list every redirect_uri (OIDC Core section 8.1). | HTTP 400 {error: invalid_client_metadata} |
 
 ## STS-DBG
 

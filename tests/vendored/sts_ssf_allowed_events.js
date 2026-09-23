@@ -245,8 +245,9 @@ async function test() {
            "allows ===");
   const limited = ssf(await tokenFor(LIMITED));
   const free = ssf(await tokenFor(FREE));
+  // No `aud`: it is Transmitter-Supplied (SSF 1.0 section 8.1.1, #144) and
+  // each stream is addressed to the application that created it.
   const asked = { delivery: { method: POLL },
-                  aud: "https://receiver.test/signals",
                   events_requested: [SESSION_REVOKED, ACCOUNT_DISABLED,
                                      ACCOUNT_PURGED, VERIFICATION] };
   let r = await limited.create(asked);

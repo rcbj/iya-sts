@@ -553,6 +553,119 @@ function rsaBitsFor(key) {
 // The service signing key is 2048 bits and not a setting.
 const STS_SIGNING_KEY_BITS = 2048;
 
+// ---------------------------------------------------------------------------
+// THE TWO RSA SIGNING KEYS' CERTIFICATES, AND WHY THERE ARE TWO (2026-09-22,
+// #42 — the plan's D2). One RSA key signed every JWT AND every XML signature
+// until then; rotation is per (realm, use case, algorithm), so `jose` and
+// `xml` have a key each, made by this one builder — a rotation's `next` key is
+// made by it too, so there is no second recipe for a signing key.
+//
+// The RSA keygen-and-self-sign skeleton is shared with `tls/tls_server.js`,
+// which builds a very different certificate — a TLS server certificate lives
+// or dies by its subjectAltName and this one carries no extensions at all.
+// What they had in common was the twenty lines of forge boilerplate, and that
+// is what moved; the differences stayed as arguments.
+//
+// The LEADING BYTE of a random serial, and not arbitrary: the TLS listener's
+// certificate is '03', the JOSE key's '02' and the XML key's '04', so a person
+// looking at this service's certificates in a packet capture can tell which
+// is which. It was the WHOLE serial until 2026-09-01, and a constant serial
+// over a key regenerated at every start is what Firefox reports as
+// SEC_ERROR_REUSED_ISSUER_AND_SERIAL — see certificateSerial() in
+// common/crypto.js.
+// ---------------------------------------------------------------------------
+const RSA_SIGNING_UNITS = {
+  jose: { commonName: 'ws-trust-sts', serialPrefix: '02' },
+  xml: { commonName: 'ws-trust-sts-xml', serialPrefix: '04' }
+};
+
+function makeRsaSigningKey(useCaseId, privateKeyPem) {
+  log.debug("Entering makeRsaSigningKey(). use=" + useCaseId);
+  const unit = RSA_SIGNING_UNITS[useCaseId] || RSA_SIGNING_UNITS.jose;
+  const made = stsCrypto.selfSignedRsaCertificate({
+    bits: STS_SIGNING_KEY_BITS,
+    rsaPrivateKeyPem: privateKeyPem,
+    commonName: unit.commonName,
+    serialPrefix: unit.serialPrefix,
+    years: 5
+  });
+  log.debug("Leaving makeRsaSigningKey().");
+  return made;
+}
+
+// ---------------------------------------------------------------------------
+// THE CURVE KEYS' TABLE, AND THE ONE WAY A CURVE KEY BECOMES AN ENTRY — out of
+// `makeStsKeys()` (2026-09-22, #42) so that a rotation's `next` key of a curve
+// unit is made by exactly the recipe the current one was.
+//
+// secp256k1 (RFC 8812): its curve is not one of the three NIST ones and node's
+// OpenSSL has it anyway; what it costs is a signature FORMAT conversion at
+// signing time, in stsCrypto.signJws(), because the library that signs
+// everything else here has no ES256K at all.
+//
+// ED448, AND WHY IT NEEDS A SECOND ENTRY UNDER THE SAME `alg`: RFC 8037
+// registers ONE algorithm value for both Edwards curves — the curve lives in
+// the key's `crv` — so a client that registers
+// `id_token_signed_response_alg: "EdDSA"` has not said which it wants and there
+// is no member for it to say so with. Both keys are therefore published, with
+// different `kid`s, and `oauth2.eddsaCurve` decides which one signs. A
+// verifier follows the `kid` in the header and needs to know nothing about the
+// setting. Publishing both rather than only the configured one is deliberate:
+// a JWKS that changed shape when a setting changed would strand every client
+// holding a cached copy.
+// ---------------------------------------------------------------------------
+const CURVE_KEY_SPECS = [
+  { alg: 'ES256', kty: 'EC', gen: ['ec', { namedCurve: 'prime256v1' }] },
+  { alg: 'ES384', kty: 'EC', gen: ['ec', { namedCurve: 'secp384r1' }] },
+  { alg: 'ES512', kty: 'EC', gen: ['ec', { namedCurve: 'secp521r1' }] },
+  { alg: 'ES256K', kty: 'EC', gen: ['ec', { namedCurve: 'secp256k1' }] },
+  { alg: 'EdDSA', kty: 'OKP', gen: ['ed25519', undefined] },
+  { alg: 'EdDSA', curve: 'Ed448', kty: 'OKP', gen: ['ed448', undefined] }
+];
+
+function curveKeyFrom(spec, pair) {
+  log.debug("Entering curveKeyFrom(). alg=" + spec.alg);
+  const publicJwk = pair.publicKey.export({ format: 'jwk' });
+  // The kid is derived from the key's own public material, the way the RSA
+  // one is derived from its certificate: two instances of this mock must not
+  // publish one name over two different keys.
+  const material = JSON.stringify([publicJwk.crv, publicJwk.x,
+                                   publicJwk.y || '']);
+  log.debug("Leaving curveKeyFrom().");
+  return {
+    alg: spec.alg,
+    privateKey: pair.privateKey,
+    // The kid names the CURVE as well as the algorithm, because the two EdDSA
+    // entries share an `alg` and a kid that did not tell them apart would be
+    // one name over two keys — the collision this whole scheme exists to
+    // avoid.
+    publicJwk: Object.assign({ use: 'sig', alg: spec.alg }, publicJwk,
+      { kid: 'sts-' +
+        (spec.curve || spec.alg).toLowerCase() + '-' +
+        forge.md.sha256.create()
+                       .update(material)
+                       .digest()
+                       .toHex()
+                       .slice(0, 8) })
+  };
+}
+
+// The same, for one post-quantum key: `pqKeysFor()`'s and `pqKeysForAsync()`'s
+// entry, and a rotation's.
+function pqKeyFrom(alg, pair) {
+  log.debug("Entering pqKeyFrom(). alg=" + alg);
+  const material = Buffer.from(pair.pub).toString('base64');
+  log.debug("Leaving pqKeyFrom().");
+  return {
+    alg: alg,
+    privateKey: pair.priv,
+    publicJwk: pqJose.akpPublicJwk(alg, pair.pub,
+      'sts-' + alg.toLowerCase() + '-' +
+      forge.md.sha256.create().update(material).digest().toHex()
+        .slice(0, 8))
+  };
+}
+
 // --- STS signing key/cert (generated once at startup) ----------------------
 // `made` (2026-09-14) is the four RSA pairs `prepareKeySet()` generated in
 // node's thread pool — `{ signingPem, vci, refresh, requestObject }` — and
@@ -564,25 +677,7 @@ const STS_SIGNING_KEY_BITS = 2048;
 function makeStsKeys(made) {
   log.debug("Entering makeStsKeys().");
   const pre = made || {};
-  // The RSA keygen-and-self-sign skeleton is shared with `tls/tls_server.js`,
-  // which builds a very different certificate — a TLS server certificate lives
-  // or dies by its subjectAltName and this one carries no extensions at all.
-  // What they had in common was the twenty lines of forge boilerplate, and that
-  // is what moved; the differences stayed as arguments.
-  const keys = stsCrypto.selfSignedRsaCertificate({
-    bits: STS_SIGNING_KEY_BITS,
-    rsaPrivateKeyPem: pre.signingPem,
-    commonName: 'ws-trust-sts',
-    // The LEADING BYTE of a random serial, and not arbitrary: the TLS
-    // listener's certificate is '03', so a person looking at two of this
-    // service's certificates in a packet capture can tell which is which. It
-    // was the WHOLE serial until 2026-09-01, and a constant serial over a key
-    // regenerated at every start is what Firefox reports as
-    // SEC_ERROR_REUSED_ISSUER_AND_SERIAL — see certificateSerial() in
-    // common/crypto.js.
-    serialPrefix: '02',
-    years: 5
-  });
+  const keys = makeRsaSigningKey('jose', pre.signingPem);
   // -------------------------------------------------------------------------
   // THE OTHER SIGNING KEYS, AND WHY THEY ARE GENERATED UNCONDITIONALLY.
   //
@@ -606,58 +701,13 @@ function makeStsKeys(made) {
   // Each gets a `kid` of its own derived from its own public key, so the
   // reasoning about kid collisions above holds per key rather than per service.
   // -------------------------------------------------------------------------
-  const extraKeys = [
-    { alg: 'ES256', kty: 'EC', gen: ['ec', { namedCurve: 'prime256v1' }] },
-    { alg: 'ES384', kty: 'EC', gen: ['ec', { namedCurve: 'secp384r1' }] },
-    { alg: 'ES512', kty: 'EC', gen: ['ec', { namedCurve: 'secp521r1' }] },
-    // secp256k1 (RFC 8812). Its curve is not one of the three NIST ones and
-    // node's OpenSSL has it anyway; what it costs is a signature FORMAT
-    // conversion at signing time, in stsCrypto.signJws(), because the library
-    // that signs everything else here has no ES256K at all.
-    { alg: 'ES256K', kty: 'EC', gen: ['ec', { namedCurve: 'secp256k1' }] },
-    { alg: 'EdDSA', kty: 'OKP', gen: ['ed25519', undefined] },
-    // ED448, AND WHY IT NEEDS A SECOND ENTRY UNDER THE SAME `alg`.
-    //
-    // RFC 8037 registers ONE algorithm value for both Edwards curves — the
-    // curve lives in the key's `crv` — so a client that registers
-    // `id_token_signed_response_alg: "EdDSA"` has not said which it wants and
-    // there is no member for it to say so with. Both keys are therefore
-    // published, with different `kid`s, and `oauth2.eddsaCurve` decides which
-    // one signs. A verifier follows the `kid` in the header and needs to know
-    // nothing about the setting.
-    //
-    // Publishing both rather than only the configured one is deliberate: a
-    // JWKS that changed shape when a setting changed would strand every client
-    // holding a cached copy.
-    { alg: 'EdDSA', curve: 'Ed448', kty: 'OKP', gen: ['ed448', undefined] }
-  ].map(function (spec) {
+  const extraKeys = CURVE_KEY_SPECS.map(function (spec) {
     // `any`: the key type is a table value, and the overloads want literals.
     const generate = /** @type {any} */ (crypto.generateKeyPairSync);
     const pair = spec.gen[1]
       ? generate(spec.gen[0], spec.gen[1])
       : generate(spec.gen[0]);
-    const publicJwk = pair.publicKey.export({ format: 'jwk' });
-    // The kid is derived from the key's own public material, the way the RSA
-    // one is derived from its certificate: two instances of this mock must not
-    // publish one name over two different keys.
-    const material = JSON.stringify([publicJwk.crv, publicJwk.x,
-                                     publicJwk.y || '']);
-    return {
-      alg: spec.alg,
-      privateKey: pair.privateKey,
-      // The kid names the CURVE as well as the algorithm, because the two
-      // EdDSA entries share an `alg` and a kid that did not tell them apart
-      // would be one name over two keys — the collision this whole scheme
-      // exists to avoid.
-      publicJwk: Object.assign({ use: 'sig', alg: spec.alg }, publicJwk,
-        { kid: 'sts-' +
-          (spec.curve || spec.alg).toLowerCase() + '-' +
-          forge.md.sha256.create()
-                         .update(material)
-                         .digest()
-                         .toHex()
-                         .slice(0, 8) })
-    };
+    return curveKeyFrom(spec, pair);
   });
 
   log.debug("Leaving makeStsKeys(). " + (extraKeys.length + 1) + " key(s).");
@@ -682,6 +732,11 @@ function makeStsKeys(made) {
     // THE REQUEST OBJECT ENCRYPTION KEYS (RFC 9101), made with the set for the
     // same reason — see makeRequestObjectEncryptionKeys().
     requestObjectEncKeys: makeRequestObjectEncryptionKeys(pre.requestObject),
+    // THE XML SIGNING KEY (2026-09-22, #42, D2), a member made with the set for
+    // the reason the others are: the set is what the key channel agrees and
+    // the keystore seals. See makeRsaSigningKey(). Its view — the certificate
+    // `pki.js` issued over it, and its kid — is installed by xmlKeyView().
+    xmlKey: makeRsaSigningKey('xml', pre.xmlPem),
     // A `kid` names a KEY, so it is derived from the key material rather than
     // hard-coded. This key is regenerated on every start, and the kid was
     // previously a constant — so two instances of this mock (a stale container
@@ -767,6 +822,19 @@ function plainKeySet(realmId, stored) {
   if (stored.requestObjectEncKeys) {
     set.requestObjectEncKeys = stored.requestObjectEncKeys;
   }
+  // AND THE XML SIGNING KEY AND THE KEY GENERATIONS (2026-09-22, #42), for
+  // the same reason: dropped here, this process would sign XML with a key of
+  // its own, or publish a JWKS without the `next` key its siblings publish.
+  if (stored.xmlKey) {
+    set.xmlKey = xmlKeyView(realmId, stored.xmlKey, null);
+  }
+  // AND THE BBS KEY (2026-09-22, #49 P5), for the same reason: dropped here,
+  // this process would sign ldp_vc proofs with a key its siblings' DID
+  // documents do not publish.
+  if (stored.bbsKey) {
+    set.bbsKey = stored.bbsKey;
+  }
+  set.generations = generationsView(realmId, stored.generations, null);
   log.debug("Leaving plainKeySet(). kid=" + set.kid);
   return set;
 }
@@ -896,6 +964,11 @@ function certifiedView(set, realmId, stored) {
   // they are being defined on would recurse.
   const selfSignedPem = stored.certPem;
   const selfSignedB64 = stored.certB64;
+  // THE KEY THIS SET'S CERTIFICATE MUST BE OVER (2026-09-22, #42): asked by
+  // kid, so a certificate the plain slot still holds for a key this realm no
+  // longer leads with — the moment after a promotion — is never published for
+  // the one it does.
+  const setKid = kidOf(selfSignedB64);
   const published = function () {
     log.debug("Entering published().");
     // `pki.js` is required lazily HERE and not at the top of this file, and it
@@ -906,7 +979,8 @@ function certifiedView(set, realmId, stored) {
     // certificate most of them never look at.
     let held = null;
     try {
-      held = require('./pki').publishedCertificateFor(realmId, 'jose', 'RS256');
+      held = require('./pki').publishedCertificateFor(realmId, 'jose', 'RS256',
+                                                      setKid);
     } catch (e) {
       log.debug("Caught in published(): " + ((e && e.message) || e));
       // The hierarchy is not built, or could not be read. The self-signed
@@ -953,7 +1027,7 @@ function certifiedView(set, realmId, stored) {
   // callers used to set it themselves and one of them (`makeStsKeys()`'s own
   // return) already has it; assigning it here makes all three agree by
   // construction.
-  set.kid = kidOf(selfSignedB64);
+  set.kid = setKid;
   // **THE SELF-SIGNED CERTIFICATE IS STILL REACHABLE**, and one caller needs
   // it: `/admin/keys` reports what a key was born with beside what it now
   // publishes, because "this key is certified" is a claim a reader should be
@@ -977,6 +1051,186 @@ function certifiedView(set, realmId, stored) {
   set.selfSignedCertB64 = selfSignedB64;
   log.debug("Leaving certifiedView().");
   return set;
+}
+
+// ---------------------------------------------------------------------------
+// THE XML SIGNING KEY'S VIEW (2026-09-22, #42, D2) — `certifiedView()`'s
+// arrangement for the `xml` use case: the certificate `pki.js` issued over it
+// under this realm's XML Issuing CA where there is one, the self-signed one it
+// was born with where there is not, and a `kid` derived from the latter and
+// never moving. `privateOf`, where given, is the keystore's decrypt-on-demand
+// door (the lazy set's), and then no private part is held here; without it the
+// private key is the one `stored` carries (a generated or a sibling's set).
+// `stored` is `{ privateKeyPem?, privateKey?, certPem, certB64 }`.
+// ---------------------------------------------------------------------------
+function xmlKeyView(realmId, stored, privateOf) {
+  log.debug("Entering xmlKeyView(). realm=" + realmId);
+  if (!stored || !stored.certB64) {
+    log.debug("Leaving xmlKeyView(). No XML key.");
+    return null;
+  }
+  const selfSignedPem = stored.certPem;
+  const selfSignedB64 = stored.certB64;
+  const kid = kidOf(selfSignedB64);
+  const view = { kid: kid, selfSignedCertPem: selfSignedPem,
+                 selfSignedCertB64: selfSignedB64 };
+  const published = function () {
+    log.debug("Entering published().");
+    let held = null;
+    try {
+      held = require('./pki').publishedCertificateFor(realmId, 'xml', 'RS256',
+                                                      kid);
+    } catch (e) {
+      log.debug("Caught in published(): " + ((e && e.message) || e));
+      held = null;
+    }
+    log.debug("Leaving published().");
+    return held;
+  };
+  Object.defineProperty(view, 'certPem', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      const held = published();
+      log.debug("Leaving get().");
+      return held ? held.certificatePem : selfSignedPem;
+    }
+  });
+  Object.defineProperty(view, 'certB64', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      const held = published();
+      log.debug("Leaving get().");
+      return held ? stsCrypto.stripPem(held.certificatePem) : selfSignedB64;
+    }
+  });
+  Object.defineProperty(view, 'certChainPem', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      const held = published();
+      log.debug("Leaving get().");
+      return held ? held.chainPem.slice() : [];
+    }
+  });
+  if (typeof privateOf === 'function') {
+    ['privateKeyPem', 'privateKey'].forEach(function (name) {
+      Object.defineProperty(view, name, {
+        enumerable: true, configurable: true,
+        get: function () {
+          log.debug("Entering get().");
+          const held = privateOf();
+          if (!held) {
+            throw new Error('the "' + realmId + '" realm\'s XML signing key ' +
+              'is held encrypted and could not be decrypted; see the ' +
+              'keystore errors above.');
+          }
+          log.debug("Leaving get().");
+          return held[name];
+        }
+      });
+    });
+  } else {
+    view.privateKeyPem = stored.privateKeyPem;
+    view.privateKey = stored.privateKey ||
+                      crypto.createPrivateKey(stored.privateKeyPem);
+  }
+  log.debug("Leaving xmlKeyView(). kid=" + kid);
+  return view;
+}
+
+// ---------------------------------------------------------------------------
+// THE KEY GENERATIONS' VIEW (2026-09-22, #42): every standby key — the `next`
+// of a unit and its retired keys — with its PUBLIC half resident (the kid, the
+// public JWK, an RSA key's self-signed certificate) and its private half the
+// keystore's decrypt-on-demand door where `privateOf` is given, for
+// `lazyKeySet()`'s reason: publishing a JWKS must not decrypt anything. Only
+// public members are copied out of `stored`, so no closure here captures a
+// private key. See the KEY GENERATIONS block below for the model.
+// ---------------------------------------------------------------------------
+const STANDBY_PUBLIC = ['unit', 'role', 'alg', 'crv', 'kid', 'kind', 'useCase',
+                        'slot', 'createdAt', 'retiredAt', 'retiredUntil',
+                        'reason', 'publicJwk', 'certPem', 'certB64',
+                        'publicKeyB64'];
+
+function generationsView(realmId, stored, privateOf) {
+  log.debug("Entering generationsView(). realm=" + realmId);
+  if (!stored) {
+    log.debug("Leaving generationsView(). None.");
+    return null;
+  }
+  const standby = (stored.standby || []).map(function (one) {
+    const entry = {};
+    STANDBY_PUBLIC.forEach(function (k) {
+      if (one[k] !== undefined) {
+        entry[k] = one[k];
+      }
+    });
+    if (entry.kind === 'rsa' && !entry.publicJwk && entry.certPem) {
+      entry.publicJwk = Object.assign(
+        crypto.createPublicKey(entry.certPem).export({ format: 'jwk' }),
+        { kid: entry.kid, use: 'sig', alg: 'RS256' });
+    }
+    const kid = entry.kid;
+    if (typeof privateOf === 'function') {
+      ['privateKey', 'privateKeyPem'].forEach(function (name) {
+        Object.defineProperty(entry, name, {
+          enumerable: true, configurable: true,
+          get: function () {
+            log.debug("Entering get().");
+            const held = privateOf();
+            const own = held && held.standby && held.standby.get(kid);
+            if (!own) {
+              throw new Error('the "' + realmId + '" realm\'s standby key ' +
+                kid + ' is held encrypted and could not be decrypted; see ' +
+                'the keystore errors above.');
+            }
+            log.debug("Leaving get().");
+            return own[name];
+          }
+        });
+      });
+    } else {
+      entry.privateKey = one.privateKey;
+      if (one.privateKeyPem) {
+        entry.privateKeyPem = one.privateKeyPem;
+      }
+    }
+    return entry;
+  });
+  // The retired refresh-token key sets (D7): the same rule — the keys
+  // themselves through the decrypt-on-demand door where there is one.
+  const retiredRefresh = (stored.retiredRefresh || []).map(function (one) {
+    const entry = /** @type {any} */ ({ kid: one.kid, retiredAt: one.retiredAt,
+                                        retiredUntil: one.retiredUntil });
+    const kid = one.kid;
+    if (typeof privateOf === 'function') {
+      Object.defineProperty(entry, 'keys', {
+        enumerable: true, configurable: true,
+        get: function () {
+          log.debug("Entering get().");
+          const held = privateOf();
+          const own = held && held.retiredRefresh &&
+                      held.retiredRefresh.get(kid);
+          if (!own) {
+            throw new Error('the "' + realmId + '" realm\'s retired ' +
+              'refresh-token keys ' + kid + ' are held encrypted and could ' +
+              'not be decrypted; see the keystore errors above.');
+          }
+          log.debug("Leaving get().");
+          return own;
+        }
+      });
+    } else {
+      entry.keys = one.keys;
+    }
+    return entry;
+  });
+  log.debug("Leaving generationsView(). " + standby.length + " standby.");
+  return { generation: Number(stored.generation) || 0,
+           rotated: Object.assign({}, stored.rotated || {}),
+           standby: standby, retiredRefresh: retiredRefresh };
 }
 
 // ---------------------------------------------------------------------------
@@ -1318,6 +1572,74 @@ function lazyKeySet(realmId, stored) {
       log.debug("Leaving set().");
     }
   });
+  // ---------------------------------------------------------------------
+  // **THE XML SIGNING KEY AND THE KEY GENERATIONS (2026-09-22, #42)**, the
+  // arrangement above: public halves resident, every private part a getter
+  // over the keystore. Only the XML key's CERTIFICATE is passed on — never
+  // `stored.xmlKey` itself, which carries the PEM beside it. The XML key has
+  // a setter for `xmlKeyFor()`'s backfill, as the members above do.
+  // ---------------------------------------------------------------------
+  const xmlPublic = stored.xmlKey && stored.xmlKey.certB64
+    ? { certPem: stored.xmlKey.certPem, certB64: stored.xmlKey.certB64 }
+    : null;
+  const xmlStoredView = xmlKeyView(realmId, xmlPublic, function () {
+    log.debug("Entering the XML key's private door.");
+    const held = keystore.privateMaterialFor(realmId);
+    log.debug("Leaving the XML key's private door.");
+    return held && held.xml;
+  });
+  let xmlGenerated = null;
+  Object.defineProperty(set, 'xmlKey', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
+      return xmlGenerated || xmlStoredView || undefined;
+    },
+    set: function (made) {
+      log.debug("Entering set().");
+      xmlGenerated = made || null;
+      log.debug("Leaving set().");
+    }
+  });
+  // THE BBS KEY (2026-09-22, #49 P5): its public half resident, its secret
+  // half the keystore's door, and a setter for bbsKeyPair()'s backfill.
+  const bbsPublic = stored.bbsKey && stored.bbsKey.publicKey
+    ? Uint8Array.from(stored.bbsKey.publicKey) : null;
+  let bbsGenerated = null;
+  const bbsStoredView = bbsPublic ? Object.defineProperty(
+    { publicKey: bbsPublic }, 'secretKey', {
+      enumerable: true, configurable: true,
+      get: function () {
+        log.debug("Entering the BBS key's private door.");
+        const held = keystore.privateMaterialFor(realmId);
+        if (!held || !held.bbs) {
+          throw new Error('the "' + realmId + '" realm\'s BBS key is held ' +
+                          'encrypted and could not be decrypted; see the ' +
+                          'keystore errors above.');
+        }
+        log.debug("Leaving the BBS key's private door.");
+        return held.bbs.secretKey;
+      }
+    }) : null;
+  Object.defineProperty(set, 'bbsKey', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
+      return bbsGenerated || bbsStoredView || undefined;
+    },
+    set: function (made) {
+      log.debug("Entering set().");
+      bbsGenerated = made || null;
+      log.debug("Leaving set().");
+    }
+  });
+  set.generations = generationsView(realmId, stored.generations, function () {
+    log.debug("Entering the standby keys' private door.");
+    log.debug("Leaving the standby keys' private door.");
+    return keystore.privateMaterialFor(realmId);
+  });
   certifiedView(set, realmId, stored);
   log.debug("Leaving lazyKeySet(). " + set.extraKeys.length + " curve key(s).");
   return set;
@@ -1588,6 +1910,10 @@ const stsKeysFor = realms.keyed(function (realm) {
   // being defined on would recurse.
   certifiedView(keys, realm.id,
                 { certPem: keys.certPem, certB64: keys.certB64 });
+  // The XML signing key's view, over the pair makeStsKeys() just made; a new
+  // set has no standby generations until a rotation mints one (#42).
+  keys.xmlKey = xmlKeyView(realm.id, keys.xmlKey, null);
+  keys.generations = null;
   // ---------------------------------------------------------------------
   // AND CERTIFY IT UNDER THIS REALM'S OWN ISSUING CAs — ASYNCHRONOUSLY, AND
   // DELIBERATELY NOT AWAITED (2026-09-11).
@@ -1776,14 +2102,17 @@ function prepareKeySet(realmId) {
     generateRsaPairAsync(STS_SIGNING_KEY_BITS, true),
     generateRsaPairAsync(bits.vci),
     generateRsaPairAsync(bits.refresh),
-    generateRsaPairAsync(bits.requestObject)
+    generateRsaPairAsync(bits.requestObject),
+    // The XML signing key (#42, D2), a fifth pair.
+    generateRsaPairAsync(STS_SIGNING_KEY_BITS, true)
   ]).then(function (pairs) {
     // Somebody may have made or adopted the set while the threads worked; the
     // factory's order decides, and a prepared set it does not use is dropped.
     if (keySetNeedsMaking(id)) {
       preparedSets.set(realm.id, { signingPem: pairs[0].privateKey,
                                    vci: pairs[1], refresh: pairs[2],
-                                   requestObject: pairs[3] });
+                                   requestObject: pairs[3],
+                                   xmlPem: pairs[4].privateKey });
       stsKeysFor.of(id);
       preparedSets.delete(realm.id);
     }
@@ -1960,6 +2289,38 @@ function requestObjectKeysFor(keySet) {
   return keys.requestObjectEncKeys || made;
 }
 
+// ---------------------------------------------------------------------------
+// THE XML SIGNING KEY OF A KEY SET (2026-09-22, #42, D2), BACKFILLED WHERE THE
+// SET WAS WRITTEN BEFORE IT EXISTED — `requestObjectKeysFor()` step for step.
+// What every XML signer and verifier here asks for, through `STS.xml`.
+// ---------------------------------------------------------------------------
+function xmlKeyFor(keySet) {
+  log.debug("Entering xmlKeyFor().");
+  const keys = keySet || stsKeysFor();
+  const present = keys.xmlKey;
+  if (present && present.certB64) {
+    log.debug("Leaving xmlKeyFor(). On the set.");
+    return present;
+  }
+  const realmId = String(keys.realm || realms.currentId());
+  const held = keystore.xmlKeyHeldFor(realmId);
+  if (held) {
+    keys.xmlKey = xmlKeyView(realmId, held, null);
+    log.debug("Leaving xmlKeyFor(). Already made by this service.");
+    return keys.xmlKey;
+  }
+  const made = makeRsaSigningKey('xml');
+  keys.xmlKey = xmlKeyView(realmId, made, null);
+  log.info('An XML signing key was added to the "' + realmId + '" realm\'s ' +
+           'key set, which was written by a build from before XML signing ' +
+           'had a key of its own: kid=' + keys.xmlKey.kid + '.');
+  keystore.remember(realmId, keys);
+  keystore.publishShared(realmId, keys);
+  certifyLater(realmId, keys);
+  log.debug("Leaving xmlKeyFor(). Backfilled.");
+  return keys.xmlKey;
+}
+
 // FORGET THE BUILT KEY SETS so the factory runs again, which is as close to a
 // restart as one process can get. `realms.keyed()` exposes its map as
 // `existing()`, which is the seam that makes this a clear rather than a
@@ -1983,6 +2344,12 @@ const STS = /** @type {any} */ (new Proxy({}, {
   get: function (target, prop) {
     log.debug("Entering get().");
     log.debug("Leaving get().");
+    // `STS.xml` (2026-09-22, #42, D2): the XML signing key's view, backfilled
+    // on a set written before it existed. Every XML signer and verifier here
+    // reads it; everything else on `STS` is the JOSE key, as it always was.
+    if (prop === 'xml') {
+      return xmlKeyFor(stsKeysFor());
+    }
     return stsKeysFor()[prop];
   },
   has: function (target, prop) {
@@ -2007,6 +2374,820 @@ const STS = /** @type {any} */ (new Proxy({}, {
   }
 }));
 
+
+// ===========================================================================
+// KEY GENERATIONS (2026-09-22, #42 and #48; the plan on #49, Part 3).
+//
+// A realm's signing keys ROTATE: each is replaced every
+// `signing.rotationIntervalDays` (product mode only —
+// `mode.rotatesSigningKeys()` — because a development process makes new keys
+// at every start anyway), and on demand. What rotates is a UNIT — (realm, use case, algorithm), rcbj's D2
+// — which is exactly one of `pki.js`'s certificate slots: `jose:RS256`,
+// `xml:RS256`, `jose:ES256:P-256`, `jose:EdDSA:Ed448`, `jose:ML-DSA-65`, …
+//
+// **EACH UNIT HAS ONE CURRENT KEY, AT MOST ONE `next` AND ANY NUMBER OF
+// `retired`.** The CURRENT key of every unit is where it always was on the set
+// — `privateKeyPem`/`kid` for `jose:RS256`, `xmlKey` for `xml:RS256`, an
+// `extraKeys` or `pqKeys` entry for the others — so every one of the ~80
+// readers of `STS` reads the current generation and changed nothing. The
+// others are `keys.generations.standby`:
+//
+//   * `next` is minted AHEAD of its promotion and PUBLISHED at once — in the
+//     JWKS, the SAML and WS-Federation metadata and the crypto metadata
+//     document — so by the time it signs, every relying party that refreshed
+//     its copy since the last rotation already holds it. It signs nothing.
+//   * `retired` was current until a promotion. It signs nothing, still
+//     VERIFIES (every "is this one of ours" check here asks the lookup below)
+//     and, for RSA, still DECRYPTS — something encrypted to a certificate a
+//     partner fetched before the rotation still opens — until its
+//     `retiredUntil`, when `signing.retire` drops it and supersedes its
+//     certificate.
+//
+// **NOTHING HERE MAKES A KEY A NEW WAY OR SIGNS A NEW WAY** (rcbj's rule of
+// 2026-09-21): a `next` key is made by the builders the current one was —
+// makeRsaSigningKey(), curveKeyFrom() over CURVE_KEY_SPECS, pqKeyFrom() — and
+// every signature and verification is still `common/crypto.js`'s. What is here
+// is the bookkeeping: which key is which, and a new blob handed to
+// `keystore.replaceKeySet()`, which is the one door by which a realm's keys
+// change while in use and which bumps nothing itself — the GENERATION counter
+// on the blob is what every copy is judged by (`keystore.js`,
+// serialiseGenerations()).
+// ===========================================================================
+
+// Every unit a key set holds a current key for, with where that key sits.
+function signingUnitsOf(keys) {
+  log.debug("Entering signingUnitsOf().");
+  const out = [{ unit: 'jose:RS256', useCase: 'jose', slot: 'RS256',
+                 alg: 'RS256', kind: 'rsa', kid: keys.kid }];
+  const xml = keys.xmlKey;
+  if (xml && xml.kid) {
+    out.push({ unit: 'xml:RS256', useCase: 'xml', slot: 'RS256', alg: 'RS256',
+               kind: 'rsa', kid: xml.kid });
+  }
+  (keys.extraKeys || []).forEach(function (one, i) {
+    const slot = certificateSlotOf(one);
+    out.push({ unit: 'jose:' + slot, useCase: 'jose', slot: slot,
+               alg: one.alg, crv: (one.publicJwk && one.publicJwk.crv) || '',
+               kind: 'curve', kid: one.publicJwk.kid, index: i });
+  });
+  const pqState = pqStateOf(keys);
+  if (pqState) {
+    (keys.pqKeys || []).forEach(function (one, i) {
+      out.push({ unit: 'jose:' + one.alg, useCase: 'jose', slot: one.alg,
+                 alg: one.alg, kind: 'pq', kid: one.publicJwk.kid, index: i });
+    });
+  }
+  // THE BBS KEY (2026-09-22, #49 P5): a unit of its own, once the realm has
+  // made one (bbsKeyPair()). It has no certificate — bbs-2023 keys are not
+  // X.509 subjects — so the PKI passes it by.
+  if (keys.bbsKey && keys.bbsKey.publicKey) {
+    out.push({ unit: BBS_UNIT, useCase: 'bbs', slot: 'BBS', alg: 'BBS',
+               kind: 'bbs', kid: bbsKidOf(keys.bbsKey.publicKey) });
+  }
+  log.debug("Leaving signingUnitsOf(). " + out.length + " unit(s).");
+  return out;
+}
+
+// The standby entries of a set (`next` and `retired`), optionally of one unit.
+function standbyOf(keys, unit) {
+  log.debug("Entering standbyOf().");
+  const all = (keys && keys.generations && keys.generations.standby) || [];
+  log.debug("Leaving standbyOf().");
+  return unit ? all.filter(function (one) {
+    return one.unit === unit;
+  }) : all.slice();
+}
+
+// Is a retired entry still within its grace? A `next` entry always is.
+function standbyLive(one, nowMs) {
+  log.debug("Entering standbyLive().");
+  log.debug("Leaving standbyLive().");
+  return one.role !== 'retired' ||
+         !(Number(one.retiredUntil) > 0) ||
+         Number(one.retiredUntil) > (nowMs || Date.now());
+}
+
+// ---------------------------------------------------------------------------
+// "IS THIS ONE OF OURS?" — THE ONE LOOKUP (2026-09-22, #42). Every place this
+// service verifies its OWN signature — an access token presented back to it,
+// a refresh token, a token to introspect or revoke or exchange, an assertion
+// it issued — checked it against `STS.certPem`, the one current key. With
+// generations that is wrong the moment after a promotion: everything signed
+// before it would stop verifying. So each of them asks this.
+//
+// The candidates of a use case's RSA unit, CURRENT FIRST, then `next`, then
+// every retired key still in its grace, each with the certificate it
+// publishes (its own generation slot's, or the self-signed one it was born
+// with). Selection only: the verification is still `crypto.js`'s.
+// ---------------------------------------------------------------------------
+function ownRsaCertificates(useCaseId, keySet) {
+  log.debug("Entering ownRsaCertificates(). use=" + useCaseId);
+  const keys = keySet || stsKeysFor();
+  const out = [];
+  if (useCaseId === 'xml') {
+    const xml = xmlKeyFor(keys);
+    out.push({ kid: xml.kid, certPem: xml.certPem, role: 'current' });
+  } else {
+    out.push({ kid: keys.kid, certPem: keys.certPem, role: 'current' });
+  }
+  const now = Date.now();
+  let pki = null;
+  try {
+    pki = require('./pki');
+  } catch (e) {
+    log.debug("Caught in ownRsaCertificates(): " + ((e && e.message) || e));
+    pki = null;
+  }
+  standbyOf(keys, useCaseId + ':RS256').filter(function (one) {
+    return standbyLive(one, now);
+  }).sort(function (a, b) {
+    return (a.role === 'next' ? 0 : 1) - (b.role === 'next' ? 0 : 1) ||
+           (Number(b.retiredAt) || 0) - (Number(a.retiredAt) || 0);
+  }).forEach(function (one) {
+    const held = pki ? pki.publishedCertificateFor(keys.realm, useCaseId,
+                                                   'RS256', one.kid) : null;
+    out.push({ kid: one.kid, certPem: held ? held.certificatePem : one.certPem,
+               role: one.role, chainPem: held ? held.chainPem.slice() : [] });
+  });
+  log.debug("Leaving ownRsaCertificates(). " + out.length + " candidate(s).");
+  return out;
+}
+
+function peekJoseHeader(token) {
+  log.debug("Entering peekJoseHeader().");
+  try {
+    const header = JSON.parse(Buffer.from(String(token || '').split('.')[0],
+                                          'base64url').toString('utf8'));
+    log.debug("Leaving peekJoseHeader().");
+    return header && typeof header === 'object' ? header : {};
+  } catch (e) {
+    log.debug("Caught in peekJoseHeader(): " + ((e && e.message) || e));
+    log.debug("Leaving peekJoseHeader(). Unreadable.");
+    return {};
+  }
+}
+
+// The candidates a token's own `kid` picks among: the ONE it names, when it
+// names one of them (under either spelling, `keys.kidFormat`), and otherwise
+// all of them in order — which is also what a token with no `kid` gets.
+function candidatesForKid(candidates, headerKid) {
+  log.debug("Entering candidatesForKid().");
+  if (headerKid) {
+    const named = candidates.filter(function (one) {
+      return kidNamesKey(headerKid, one.kid);
+    });
+    if (named.length) {
+      log.debug("Leaving candidatesForKid(). Named.");
+      return named;
+    }
+  }
+  log.debug("Leaving candidatesForKid(). Every candidate.");
+  return candidates;
+}
+
+// ---------------------------------------------------------------------------
+// VERIFY A JWS THIS REALM SIGNED — `stsCrypto.verifyJws()` against each
+// candidate above. The first that verifies answers; if none does, the error
+// from the CURRENT key is thrown, which is the error every caller already
+// knows how to read. A token naming one of our keys by `kid` is tried against
+// that key and no other, so an expired token's `exp` error is its own and not
+// "invalid signature" from the wrong key. `opts` is `verifyJws()`'s.
+// ---------------------------------------------------------------------------
+function verifyOwnJws(token, opts) {
+  log.debug("Entering verifyOwnJws().");
+  const header = peekJoseHeader(token);
+  const candidates = candidatesForKid(ownRsaCertificates('jose'), header.kid);
+  let first = null;
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      const claims = stsCrypto.verifyJws(token, candidates[i].certPem, opts);
+      log.debug("Leaving verifyOwnJws(). The " + candidates[i].role +
+                " key verified it.");
+      return claims;
+    } catch (e) {
+      log.debug("Caught in verifyOwnJws(): " + ((e && e.message) || e));
+      if (!first) {
+        first = e;
+      }
+    }
+  }
+  log.debug("Leaving verifyOwnJws(). None of " + candidates.length +
+            " verified it.");
+  throw first || new Error('no key of this realm could verify the token');
+}
+
+// `verifyCompactJws()`'s spelling of the same — the verifiers that check the
+// signature first and the claims themselves.
+function verifyOwnCompactJws(token, opts) {
+  log.debug("Entering verifyOwnCompactJws().");
+  const header = peekJoseHeader(token);
+  const candidates = candidatesForKid(ownRsaCertificates('jose'), header.kid);
+  let first = null;
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      const out = stsCrypto.verifyCompactJws(token, candidates[i].certPem,
+                                             opts);
+      log.debug("Leaving verifyOwnCompactJws().");
+      return out;
+    } catch (e) {
+      log.debug("Caught in verifyOwnCompactJws(): " + ((e && e.message) || e));
+      if (!first) {
+        first = e;
+      }
+    }
+  }
+  log.debug("Leaving verifyOwnCompactJws(). None verified it.");
+  throw first || new Error('no key of this realm could verify the token');
+}
+
+// ---------------------------------------------------------------------------
+// VERIFY AN XML SIGNATURE THIS REALM MADE — `stsCrypto.verifyXmlSignature()`
+// against each candidate of the `xml` unit. Answers the first `{ ok: true }`,
+// or the CURRENT key's answer when none verifies — the shape every caller
+// already reads. `opts` is that function's, less `certPem`.
+// ---------------------------------------------------------------------------
+function verifyOwnXml(xml, opts) {
+  log.debug("Entering verifyOwnXml().");
+  const candidates = ownRsaCertificates('xml');
+  let first = null;
+  for (let i = 0; i < candidates.length; i++) {
+    const answer = stsCrypto.verifyXmlSignature(xml, Object.assign({}, opts,
+      { certPem: candidates[i].certPem }));
+    if (answer && answer.ok) {
+      log.debug("Leaving verifyOwnXml(). The " + candidates[i].role +
+                " key verified it.");
+      return answer;
+    }
+    if (!first) {
+      first = answer;
+    }
+  }
+  log.debug("Leaving verifyOwnXml(). None verified it.");
+  return first;
+}
+
+// ---------------------------------------------------------------------------
+// THE RSA KEYS THAT MAY OPEN SOMETHING ENCRYPTED TO THIS REALM, most likely
+// first: the `xml` unit's current key, then the `jose` unit's (a JWE, and a
+// SAML document from a partner that took the JWKS key), then each unit's
+// `next` and retired keys still in their grace — so a document encrypted to a
+// certificate fetched before a rotation still opens. `{ kid, privateKeyPem,
+// privateKey }`, each read through the set's own getters.
+// ---------------------------------------------------------------------------
+function ownRsaDecryptionKeys(firstUseCase, keySet) {
+  log.debug("Entering ownRsaDecryptionKeys().");
+  const keys = keySet || stsKeysFor();
+  const xml = xmlKeyFor(keys);
+  const currents = [
+    { useCase: 'xml', kid: xml.kid, get: function () {
+      return { privateKeyPem: xml.privateKeyPem, privateKey: xml.privateKey };
+    } },
+    { useCase: 'jose', kid: keys.kid, get: function () {
+      return { privateKeyPem: keys.privateKeyPem,
+               privateKey: keys.privateKey };
+    } }
+  ];
+  if (firstUseCase === 'jose') {
+    currents.reverse();
+  }
+  const now = Date.now();
+  const standby = standbyOf(keys).filter(function (one) {
+    return one.kind === 'rsa' && standbyLive(one, now);
+  }).map(function (one) {
+    return { useCase: one.useCase, kid: one.kid, get: function () {
+      return { privateKeyPem: one.privateKeyPem, privateKey: one.privateKey };
+    } };
+  });
+  log.debug("Leaving ownRsaDecryptionKeys(). " +
+            (currents.length + standby.length) + " key(s).");
+  return currents.concat(standby).map(function (one) {
+    // `any`: the two accessors are defined below, which the checker cannot see.
+    return /** @type {any} */ (Object.defineProperties({
+      kid: one.kid, useCase: one.useCase }, {
+      privateKeyPem: { enumerable: true, get: function () {
+        return one.get().privateKeyPem;
+      } },
+      privateKey: { enumerable: true, get: function () {
+        return one.get().privateKey;
+      } }
+    }));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// OPEN AN XML ELEMENT ENCRYPTED TO THIS REALM — `stsCrypto.decryptElement()`
+// with each key above, XML key first, until one opens it (#42). Answers the
+// first `{ ok: true }`, or the first key's answer, whose `why` every caller
+// already words its refusal around.
+// ---------------------------------------------------------------------------
+function decryptOwnElement(xml, opts) {
+  log.debug("Entering decryptOwnElement().");
+  const keys = ownRsaDecryptionKeys('xml');
+  let first = null;
+  for (let i = 0; i < keys.length; i++) {
+    const opened = stsCrypto.decryptElement(String(xml), keys[i].privateKeyPem,
+                                            opts);
+    if (opened && opened.ok) {
+      log.debug("Leaving decryptOwnElement(). Opened by " + keys[i].kid + ".");
+      return opened;
+    }
+    if (!first) {
+      first = opened;
+    }
+  }
+  log.debug("Leaving decryptOwnElement(). None of " + keys.length +
+            " opened it.");
+  return first;
+}
+
+// Every PUBLIC signing key of this realm a verifier may find by `kid`: the
+// current curve and post-quantum keys and every live standby one of any unit.
+// For the verifiers that look their own keys up in a list —
+// `oid4vc/vc_verifier.ts`, `ssf/ssf_events.js`.
+function allVerificationKeys() {
+  log.debug("Entering allVerificationKeys().");
+  const keys = stsKeysFor();
+  const now = Date.now();
+  const out = allSigningKeys().concat(standbyOf(keys).filter(function (one) {
+    // The JWK-shaped generations only: a BBS key (#49 P5) has no JWK and is
+    // looked up through bbsGenerations().
+    return (one.kind === 'curve' || one.kind === 'pq') &&
+           standbyLive(one, now);
+  }).map(function (one) {
+    return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
+  }));
+  log.debug("Leaving allVerificationKeys(). " + out.length + " key(s).");
+  return out;
+}
+
+function allVerificationKeysAsync() {
+  log.debug("Entering allVerificationKeysAsync().");
+  const keys = stsKeysFor();
+  log.debug("Leaving allVerificationKeysAsync().");
+  return allSigningKeysAsync().then(function (current) {
+    const now = Date.now();
+    return current.concat(standbyOf(keys).filter(function (one) {
+      return (one.kind === 'curve' || one.kind === 'pq') &&
+             standbyLive(one, now);
+    }).map(function (one) {
+      return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
+    }));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// MINTING ONE UNIT'S NEXT KEY — off the event loop where there is an async
+// door (RSA and the curves in node's thread pool, the post-quantum keys on the
+// worker pool), with the builders the current keys were made by.
+// ---------------------------------------------------------------------------
+function curveSpecFor(unitRow) {
+  log.debug("Entering curveSpecFor().");
+  log.debug("Leaving curveSpecFor().");
+  return CURVE_KEY_SPECS.filter(function (spec) {
+    if (spec.alg !== unitRow.alg) {
+      return false;
+    }
+    if (spec.alg !== 'EdDSA') {
+      return true;
+    }
+    return (spec.curve || 'Ed25519') === (unitRow.crv || 'Ed25519');
+  })[0] || null;
+}
+
+function generateCurvePairAsync(spec) {
+  log.debug("Entering generateCurvePairAsync(). alg=" + spec.alg);
+  log.debug("Leaving generateCurvePairAsync().");
+  return new Promise(function (resolve, reject) {
+    const done = function (err, publicKey, privateKey) {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve({ publicKey: publicKey, privateKey: privateKey });
+    };
+    // `any`: the key type is a table value, and the overloads want literals.
+    const generate = /** @type {any} */ (crypto.generateKeyPair);
+    if (spec.gen[1]) {
+      generate(spec.gen[0], spec.gen[1], done);
+    } else {
+      generate(spec.gen[0], done);
+    }
+  });
+}
+
+async function mintStandbyKey(unitRow, role) {
+  log.debug("Entering mintStandbyKey(). unit=" + unitRow.unit);
+  const base = { unit: unitRow.unit, role: role || 'next', alg: unitRow.alg,
+                 crv: unitRow.crv || '', kind: unitRow.kind,
+                 useCase: unitRow.useCase, slot: unitRow.slot,
+                 createdAt: Date.now(), retiredAt: 0, retiredUntil: 0,
+                 reason: '' };
+  if (unitRow.kind === 'rsa') {
+    const pair = await generateRsaPairAsync(STS_SIGNING_KEY_BITS, true);
+    const made = makeRsaSigningKey(unitRow.useCase, pair.privateKey);
+    const kid = kidOf(made.certB64);
+    log.debug("Leaving mintStandbyKey(). RSA " + kid);
+    return Object.assign(base, {
+      kid: kid, privateKeyPem: made.privateKeyPem,
+      privateKey: crypto.createPrivateKey(made.privateKeyPem),
+      certPem: made.certPem, certB64: made.certB64,
+      publicJwk: Object.assign(
+        crypto.createPublicKey(made.certPem).export({ format: 'jwk' }),
+        { kid: kid, use: 'sig', alg: 'RS256' })
+    });
+  }
+  if (unitRow.kind === 'curve') {
+    const spec = curveSpecFor(unitRow);
+    if (!spec) {
+      log.debug("Leaving mintStandbyKey(). No curve spec.");
+      throw new Error('no curve key recipe for ' + unitRow.unit);
+    }
+    const entry = curveKeyFrom(spec, await generateCurvePairAsync(spec));
+    log.debug("Leaving mintStandbyKey(). Curve " + entry.publicJwk.kid);
+    return Object.assign(base, { kid: entry.publicJwk.kid,
+                                 privateKey: entry.privateKey,
+                                 publicJwk: entry.publicJwk });
+  }
+  if (unitRow.kind === 'bbs') {
+    const pair = await bbs2023.generateKeyPair();
+    const kid = bbsKidOf(pair.publicKey);
+    log.debug("Leaving mintStandbyKey(). BBS " + kid);
+    return Object.assign(base, {
+      kid: kid, privateKey: Buffer.from(pair.secretKey),
+      publicKeyB64: Buffer.from(pair.publicKey).toString('base64') });
+  }
+  const pq = pqKeyFrom(unitRow.alg, await pqJose.generateAsync(unitRow.alg));
+  log.debug("Leaving mintStandbyKey(). Post-quantum " + pq.publicJwk.kid);
+  return Object.assign(base, { kid: pq.publicJwk.kid,
+                               privateKey: pq.privateKey,
+                               publicJwk: pq.publicJwk });
+}
+
+// A plain copy of a set's CURRENT members — everything `keystore.serialise()`
+// reads — with `overrides` applied. Reading it decrypts, which is why only a
+// rotation (on the scheduler's leader) builds one.
+function plainCopyOf(keys, overrides) {
+  log.debug("Entering plainCopyOf().");
+  const out = {
+    realm: keys.realm, createdAt: keys.createdAt || Date.now(),
+    privateKeyPem: keys.privateKeyPem,
+    selfSignedCertPem: keys.selfSignedCertPem || keys.certPem,
+    selfSignedCertB64: keys.selfSignedCertB64 || keys.certB64,
+    extraKeys: (keys.extraKeys || []).map(function (one) {
+      return { alg: one.alg, privateKey: one.privateKey,
+               publicJwk: one.publicJwk };
+    }),
+    pqKeys: pqStateOf(keys) ? (keys.pqKeys || []).map(function (one) {
+      return { alg: one.alg, privateKey: one.privateKey,
+               publicJwk: one.publicJwk };
+    }) : [],
+    vciRequestEncKey: keys.vciRequestEncKey,
+    refreshTokenEncKeys: keys.refreshTokenEncKeys,
+    requestObjectEncKeys: keys.requestObjectEncKeys,
+    xmlKey: keys.xmlKey ? {
+      privateKeyPem: keys.xmlKey.privateKeyPem,
+      selfSignedCertPem: keys.xmlKey.selfSignedCertPem,
+      selfSignedCertB64: keys.xmlKey.selfSignedCertB64
+    } : null,
+    bbsKey: keys.bbsKey ? { secretKey: keys.bbsKey.secretKey,
+                            publicKey: keys.bbsKey.publicKey } : null,
+    generations: {
+      generation: Number(keys.generations && keys.generations.generation) || 0,
+      rotated: Object.assign({}, (keys.generations &&
+                                  keys.generations.rotated) || {}),
+      standby: standbyOf(keys).map(function (one) {
+        const copy = {};
+        STANDBY_PUBLIC.forEach(function (k) {
+          if (one[k] !== undefined) {
+            copy[k] = one[k];
+          }
+        });
+        copy.privateKey = one.privateKey;
+        if (one.kind === 'rsa') {
+          copy.privateKeyPem = one.privateKeyPem;
+        }
+        return copy;
+      }),
+      retiredRefresh: ((keys.generations && keys.generations.retiredRefresh) ||
+                       []).slice()
+    }
+  };
+  log.debug("Leaving plainCopyOf().");
+  return Object.assign(out, overrides || {});
+}
+
+// Hand a new generation to every copy, then certify its new keys.
+function replaceGeneration(realmId, next, why) {
+  log.debug("Entering replaceGeneration(). realm=" + realmId);
+  next.generations.generation =
+    (Number(next.generations.generation) || 0) + 1;
+  const answer = keystore.replaceKeySet(realmId, next, why);
+  if (answer.ok) {
+    certifyLater(realmId, stsKeysFor.of(realmId));
+  }
+  log.debug("Leaving replaceGeneration(). " + JSON.stringify(answer));
+  return answer;
+}
+
+// The units of a realm, filtered by `units` (unit names, or a use case
+// alone — `jose` means every JOSE unit) when given.
+function unitsWanted(keys, units) {
+  log.debug("Entering unitsWanted().");
+  const all = signingUnitsOf(keys);
+  if (!units || units === 'all' || !units.length) {
+    log.debug("Leaving unitsWanted(). All " + all.length + ".");
+    return all;
+  }
+  const wanted = [].concat(units).map(String);
+  log.debug("Leaving unitsWanted().");
+  return all.filter(function (row) {
+    return wanted.indexOf(row.unit) >= 0 || wanted.indexOf(row.useCase) >= 0;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ENSURE EVERY WANTED UNIT HAS A `next` KEY — minting the ones that do not,
+// and handing the set on ONCE for all of them. Idempotent: a unit that has a
+// `next` is left alone. Resolves `{ ok, minted: [unit…], generation }`.
+// ---------------------------------------------------------------------------
+async function ensureNextGenerations(realmId, options) {
+  log.debug("Entering ensureNextGenerations(). realm=" + realmId);
+  const o = options || {};
+  const id = String(realmId || '');
+  const keys = stsKeysFor.of(id);
+  const lacking = unitsWanted(keys, o.units).filter(function (row) {
+    return !standbyOf(keys, row.unit).some(function (one) {
+      return one.role === 'next';
+    });
+  });
+  if (!lacking.length) {
+    log.debug("Leaving ensureNextGenerations(). Nothing to mint.");
+    return { ok: true, minted: [],
+             generation: Number(keys.generations &&
+                                keys.generations.generation) || 0 };
+  }
+  const made = [];
+  for (let i = 0; i < lacking.length; i++) {
+    made.push(await mintStandbyKey(lacking[i], 'next'));
+  }
+  const current = stsKeysFor.of(id);
+  const copy = plainCopyOf(current);
+  copy.generations.standby = copy.generations.standby.concat(made);
+  const answer = replaceGeneration(id, copy, 'a next key minted for ' +
+    made.map(function (one) {
+      return one.unit;
+    }).join(', '));
+  log.debug("Leaving ensureNextGenerations(). " + made.length + " minted.");
+  return { ok: answer.ok, minted: made.map(function (one) {
+    return one.unit;
+  }), generation: answer.generation, why: answer.reason };
+}
+
+// ---------------------------------------------------------------------------
+// PROMOTE — the rotation itself (#42), and #48's emergency form of it.
+//
+// For each wanted unit that has a `next` key: `next` becomes CURRENT, and the
+// key that was current becomes RETIRED with `retiredUntil` = now + `graceMs`
+// (a scheduled rotation) — or, with `emergency`, is DROPPED at once and its
+// `next` discarded with it, because both were stored beside a key that is
+// presumed compromised; the caller revokes their certificates. A fresh `next`
+// is then minted for every unit rotated, so the published keys are one
+// rotation ahead again. One generation for the whole act.
+//
+// Resolves `{ ok, rotated: [{ unit, from, to }], dropped: [{ unit, kid, role,
+// certificate }], generation }`. Units with no `next` (never prepared) are
+// minted one first — a rotation of a key nobody has seen published is still a
+// rotation, and an emergency one has to be.
+// ---------------------------------------------------------------------------
+async function promoteGenerations(realmId, options) {
+  log.debug("Entering promoteGenerations(). realm=" + realmId);
+  const o = options || {};
+  const id = String(realmId || '');
+  const now = Date.now();
+  const graceMs = Math.max(0, Number(o.graceMs) || 0);
+  let keys = stsKeysFor.of(id);
+  const rows = unitsWanted(keys, o.units);
+  // A unit must have a `next` to promote. An emergency never promotes the one
+  // it has — it was stored beside the compromised key — so it mints fresh.
+  const fresh = {};
+  for (let i = 0; i < rows.length; i++) {
+    const hasNext = standbyOf(keys, rows[i].unit).some(function (one) {
+      return one.role === 'next';
+    });
+    if (o.emergency || !hasNext) {
+      fresh[rows[i].unit] = await mintStandbyKey(rows[i], 'next');
+    }
+  }
+  keys = stsKeysFor.of(id);
+  const copy = plainCopyOf(keys);
+  const rotated = [];
+  const dropped = [];
+  let standby = copy.generations.standby;
+  signingUnitsOf(keys).filter(function (row) {
+    return rows.some(function (want) {
+      return want.unit === row.unit;
+    });
+  }).forEach(function (row) {
+    const nextEntry = fresh[row.unit] || standby.filter(function (one) {
+      return one.unit === row.unit && one.role === 'next';
+    })[0];
+    if (!nextEntry) {
+      return;
+    }
+    if (o.emergency) {
+      // Every other key of the unit goes with it: the next key and the
+      // retired ones were all stored in the same set as the key presumed
+      // compromised (#48).
+      standby.filter(function (one) {
+        return one.unit === row.unit && one !== nextEntry &&
+               (one.role === 'next' || one.role === 'retired');
+      }).forEach(function (one) {
+        dropped.push({ unit: row.unit, kid: one.kid, role: one.role,
+                       useCase: row.useCase, slot: row.slot });
+      });
+      standby = standby.filter(function (one) {
+        return !(one.unit === row.unit && one.role === 'retired');
+      });
+    }
+    standby = standby.filter(function (one) {
+      return !(one.unit === row.unit && one.role === 'next');
+    });
+    const retiredFrom = { unit: row.unit, role: 'retired', alg: row.alg,
+                          crv: row.crv || '', kind: row.kind,
+                          useCase: row.useCase, slot: row.slot,
+                          kid: row.kid, createdAt: 0, retiredAt: now,
+                          retiredUntil: now + graceMs,
+                          reason: o.emergency ? 'emergency' : 'rotated' };
+    if (row.unit === 'jose:RS256') {
+      Object.assign(retiredFrom, {
+        privateKeyPem: copy.privateKeyPem,
+        privateKey: crypto.createPrivateKey(copy.privateKeyPem),
+        certPem: copy.selfSignedCertPem, certB64: copy.selfSignedCertB64,
+        createdAt: copy.createdAt });
+      copy.privateKeyPem = nextEntry.privateKeyPem;
+      copy.selfSignedCertPem = nextEntry.certPem;
+      copy.selfSignedCertB64 = nextEntry.certB64;
+    } else if (row.unit === 'xml:RS256') {
+      Object.assign(retiredFrom, {
+        privateKeyPem: copy.xmlKey.privateKeyPem,
+        privateKey: crypto.createPrivateKey(copy.xmlKey.privateKeyPem),
+        certPem: copy.xmlKey.selfSignedCertPem,
+        certB64: copy.xmlKey.selfSignedCertB64 });
+      copy.xmlKey = { privateKeyPem: nextEntry.privateKeyPem,
+                      selfSignedCertPem: nextEntry.certPem,
+                      selfSignedCertB64: nextEntry.certB64 };
+    } else if (row.kind === 'bbs') {
+      Object.assign(retiredFrom, {
+        privateKey: Buffer.from(copy.bbsKey.secretKey),
+        publicKeyB64: Buffer.from(copy.bbsKey.publicKey).toString('base64') });
+      copy.bbsKey = {
+        secretKey: Uint8Array.from(Buffer.from(nextEntry.privateKey)),
+        publicKey: Uint8Array.from(Buffer.from(nextEntry.publicKeyB64,
+                                               'base64')) };
+    } else {
+      const list = row.kind === 'pq' ? copy.pqKeys : copy.extraKeys;
+      const old = list[row.index];
+      Object.assign(retiredFrom, { privateKey: old.privateKey,
+                                   publicJwk: old.publicJwk });
+      list[row.index] = { alg: row.alg, privateKey: nextEntry.privateKey,
+                          publicJwk: nextEntry.publicJwk };
+    }
+    if (retiredFrom.kind === 'rsa' && retiredFrom.certPem) {
+      retiredFrom.publicJwk = Object.assign(
+        crypto.createPublicKey(retiredFrom.certPem).export({ format: 'jwk' }),
+        { kid: retiredFrom.kid, use: 'sig', alg: 'RS256' });
+    }
+    if (o.emergency) {
+      dropped.push({ unit: row.unit, kid: row.kid, role: 'current',
+                     useCase: row.useCase, slot: row.slot });
+    } else {
+      standby.push(retiredFrom);
+    }
+    copy.generations.rotated[row.unit] = now;
+    rotated.push({ unit: row.unit, from: row.kid, to: nextEntry.kid });
+  });
+  copy.generations.standby = standby;
+  if (!rotated.length) {
+    log.debug("Leaving promoteGenerations(). Nothing rotated.");
+    return { ok: true, rotated: [], dropped: [],
+             generation: Number(keys.generations &&
+                                keys.generations.generation) || 0 };
+  }
+  const answer = replaceGeneration(id, copy, (o.emergency ? 'an EMERGENCY ' +
+    'rotation' : 'a rotation') + ' of ' + rotated.map(function (one) {
+    return one.unit;
+  }).join(', '));
+  if (!answer.ok) {
+    log.debug("Leaving promoteGenerations(). Refused: " + answer.reason);
+    return { ok: false, why: answer.reason, rotated: [], dropped: [] };
+  }
+  // AND ONE ROTATION AHEAD AGAIN: a `next` for every unit just rotated.
+  const again = await ensureNextGenerations(id, { units: rotated.map(
+    function (one) {
+      return one.unit;
+    }) });
+  log.debug("Leaving promoteGenerations(). " + rotated.length + " rotated.");
+  return { ok: true, rotated: rotated, dropped: dropped,
+           generation: again.generation || answer.generation };
+}
+
+// ---------------------------------------------------------------------------
+// RETIRE — drop every retired key whose grace has passed (`signing.retire`,
+// #42). Resolves `{ ok, dropped: [{ unit, kid, useCase, slot }], generation }`;
+// the caller supersedes their certificates.
+// ---------------------------------------------------------------------------
+function retireExpiredGenerations(realmId, nowMs) {
+  log.debug("Entering retireExpiredGenerations(). realm=" + realmId);
+  const id = String(realmId || '');
+  const now = nowMs || Date.now();
+  const keys = stsKeysFor.of(id);
+  const expired = standbyOf(keys).filter(function (one) {
+    return one.role === 'retired' && !standbyLive(one, now);
+  });
+  // And the retired refresh-token encryption keys past theirs (D7).
+  const refreshGone = ((keys.generations &&
+                        keys.generations.retiredRefresh) || [])
+    .filter(function (one) {
+      return Number(one.retiredUntil) > 0 && Number(one.retiredUntil) <= now;
+    });
+  if (!expired.length && !refreshGone.length) {
+    log.debug("Leaving retireExpiredGenerations(). Nothing due.");
+    return { ok: true, dropped: [],
+             generation: Number(keys.generations &&
+                                keys.generations.generation) || 0 };
+  }
+  const copy = plainCopyOf(keys);
+  const gone = expired.map(function (one) {
+    return one.kid;
+  });
+  const refreshKids = refreshGone.map(function (one) {
+    return one.kid;
+  });
+  copy.generations.standby = copy.generations.standby.filter(function (one) {
+    return gone.indexOf(one.kid) < 0;
+  });
+  copy.generations.retiredRefresh = copy.generations.retiredRefresh
+    .filter(function (one) {
+      return refreshKids.indexOf(one.kid) < 0;
+    });
+  const answer = replaceGeneration(id, copy, (gone.length +
+    refreshKids.length) + ' retired key(s) past their grace dropped');
+  log.debug("Leaving retireExpiredGenerations(). " + gone.length +
+            " signing and " + refreshKids.length + " refresh set(s) dropped.");
+  return { ok: answer.ok, generation: answer.generation, why: answer.reason,
+           dropped: answer.ok ? expired.map(function (one) {
+             return { unit: one.unit, kid: one.kid, useCase: one.useCase,
+                      slot: one.slot, role: 'retired' };
+           }).concat(refreshGone.map(function (one) {
+             return { unit: 'refresh:enc', kid: one.kid, useCase: 'refresh',
+                      slot: '', role: 'retired' };
+           })) : [] };
+}
+
+// ---------------------------------------------------------------------------
+// ROTATE THE REFRESH-TOKEN ENCRYPTION KEYS (#42, rcbj's D7). A new set of
+// every kind `oauth-oidc/refresh_token_crypto.ts` seals under, made by the one
+// maker; the set it replaces is RETIRED, kept only to open the refresh tokens
+// already in clients' hands until `graceMs` has passed, and never sealed
+// under again. `generations.rotated['refresh:enc']` records when.
+// ---------------------------------------------------------------------------
+function rotateRefreshTokenKeys(realmId, graceMs, why) {
+  log.debug("Entering rotateRefreshTokenKeys(). realm=" + realmId);
+  const id = String(realmId || '');
+  const keys = stsKeysFor.of(id);
+  const old = refreshTokenKeysFor(keys);
+  const realm = realms.get(id) || realms.get(realms.DEFAULT_ID);
+  const made = realms.run(realm, makeRefreshTokenEncryptionKeys);
+  const now = Date.now();
+  const copy = plainCopyOf(keys, { refreshTokenEncKeys: made });
+  copy.generations.retiredRefresh = copy.generations.retiredRefresh.concat([
+    { kid: old.secretKid, retiredAt: now,
+      retiredUntil: now + Math.max(0, Number(graceMs) || 0), keys: old }]);
+  copy.generations.rotated['refresh:enc'] = now;
+  const answer = replaceGeneration(id, copy, why ||
+                                   'a rotation of the refresh-token keys');
+  log.debug("Leaving rotateRefreshTokenKeys(). " + JSON.stringify(answer));
+  return { ok: answer.ok, why: answer.reason, generation: answer.generation,
+           from: old.secretKid, to: made.secretKid };
+}
+
+// The retired refresh-token key sets still within their grace, newest first.
+function retiredRefreshTokenKeysFor(keySet) {
+  log.debug("Entering retiredRefreshTokenKeysFor().");
+  const keys = keySet || stsKeysFor();
+  const now = Date.now();
+  const out = ((keys.generations && keys.generations.retiredRefresh) || [])
+    .filter(function (one) {
+      return one.keys && !(Number(one.retiredUntil) > 0 &&
+                           Number(one.retiredUntil) <= now);
+    }).sort(function (a, b) {
+      return (Number(b.retiredAt) || 0) - (Number(a.retiredAt) || 0);
+    }).map(function (one) {
+      return one.keys;
+    });
+  log.debug("Leaving retiredRefreshTokenKeysFor(). " + out.length + ".");
+  return out;
+}
 
 // Every document that carries or describes this key is served `Cache-Control:
 // no-store` (the RFC 8414 metadata, the OID4VCI credential issuer metadata, the
@@ -2100,137 +3281,152 @@ function randomId(bytes) {
   return b64u(crypto.randomBytes(bytes || 24));
 }
 
-// One BBS key pair per start, like the RSA one. Generated lazily because key
-// generation is async and the module loads synchronously.
-let bbsKeys = null;
-// The encoded text `bbsKeys` was read from, or made as. `bbsKeyPair()` compares
-// it with the environment variable on every call — see below.
-let bbsKeysText = '';
-// A handed-down text that would not read, so it is refused once and logged
-// once rather than on every proof.
-let bbsRefusedText = '';
+// ---------------------------------------------------------------------------
+// THE REALM'S BBS KEY (2026-09-22, #49 P5, rcbj's answer to D6). The key a
+// bbs-2023 Data Integrity proof is signed with, and the one the realm's DID
+// document and `/bbs/keys/<kid>` publish. It was ONE pair for the whole
+// service — made in the front process, handed down the fork in
+// `STS_BBS_KEYPAIR`, shared across nodes as the cluster secret `bbs-keypair`
+// — which is what made it impossible to rotate while the service ran. It is
+// a member of the REALM's key set now, so it travels exactly as the set does
+// (the sibling channel, the store, the enrichment rule), and it is the unit
+// `bbs:BBS` with generations like every signing key.
+//
+// **MADE ON FIRST USE, THE POST-QUANTUM KEYS' WAY** (`pqKeysForAsync()`): key
+// generation is asynchronous and the set is built synchronously, so the pair
+// is made when a realm first issues, verifies or publishes an ldp_vc — one
+// generation in flight per realm, first writer wins, offered to every other
+// process, and written down only by the process whose set is the realm's. A
+// pair some other process already made for this realm is adopted first.
+// ---------------------------------------------------------------------------
+const BBS_UNIT = 'bbs:BBS';
 
-// ---------------------------------------------------------------------------
-// ONE BBS PAIR ACROSS EVERY PROCESS IN THIS SERVICE (2026-09-07).
-//
-// This is the key a Data Integrity proof is signed with and the key the did:web
-// document PUBLISHES as its verification method. One per process was invisible
-// until the request worker pool existed; with four processes, the document
-// served by one names a key another signed with, and the proof does not verify
-// — which is exactly what `ldp_vc_issuance`, `ldp_vc_refresh` and `vc_did`
-// measured.
-//
-// It travels the way the TLS certificate and the signing keys do: generated
-// once in the front process and handed down the fork's IPC channel, into the
-// environment before this module is loaded. Absent — a service with no pool,
-// which is every ordinary run — one is generated here exactly as before.
-//
-// **IT IS NOT ON `keystore`'s SHARED CHANNEL**, which carries a REALM's key set
-// and is keyed by realm. This pair is one per service and not one per realm, so
-// putting it there would have meant inventing a realm for it.
-//
-// **AND ACROSS NODES SINCE 2026-09-14 (#46 section 1).** The same three jobs
-// failed again in the suite's `cluster` mode, one level up: each CONTAINER
-// generated its own pair, so `/bbs/keys/1` answered a different key on each
-// node. `cluster/cluster_secrets.ts` now declares the pair (`bbs-keypair`):
-// the store keeps the first node's, sealed, and every front process puts it in
-// `STS_BBS_KEYPAIR` before anything issues — the variable this function
-// already read. Its argument for being there rather than in `sts_keys` is at
-// that row.
-//
-// **THE VARIABLE IS COMPARED ON EVERY CALL, NOT ONLY THE FIRST.** A pair this
-// process made before the store's arrived — nothing issues before start(),
-// but "nothing" is a claim about every caller, now and later — would otherwise
-// be held for the life of the process, which is the divergence this exists to
-// remove. One string comparison per proof is the price.
-// ---------------------------------------------------------------------------
-async function bbsKeyPair() {
-  log.debug("Entering bbsKeyPair().");
-  const handed = process.env.STS_BBS_KEYPAIR || '';
-  if (bbsKeys && (!handed || handed === bbsKeysText ||
-                  handed === bbsRefusedText)) {
-    log.debug("Leaving bbsKeyPair().");
-    return bbsKeys;
+function bbsKidOf(publicKey) {
+  log.debug("Entering bbsKidOf().");
+  log.debug("Leaving bbsKidOf().");
+  return 'bbs-' + crypto.createHash('sha256')
+    .update(Buffer.from(publicKey)).digest('base64url').slice(0, 22);
+}
+
+function bbsKeyFor(keys) {
+  log.debug("Entering bbsKeyFor().");
+  const realmId = String(keys.realm || realms.currentId());
+  const held = keystore.bbsKeyHeldFor(realmId);
+  if (keys.bbsKey && keys.bbsKey.publicKey) {
+    // THE HELD KEY WINS OVER ONE THIS PROCESS MADE (2026-09-22), for the
+    // reason the generator below adopts: the key a process generated is its
+    // own until the keystore says otherwise, and without this a process that
+    // made one before another process's key arrived went on signing with it
+    // for the life of the process. Asking here costs a base64 decode of a
+    // blob this process already holds.
+    if (held && held.publicKey &&
+        !Buffer.from(held.publicKey).equals(
+          Buffer.from(keys.bbsKey.publicKey))) {
+      log.info('The "' + realmId + '" realm\'s BBS key is now ' +
+               bbsKidOf(held.publicKey) + ', which another process ' +
+               'published; the one this process made (' +
+               bbsKidOf(keys.bbsKey.publicKey) + ') is dropped.');
+      held.source = 'the keystore, replacing this process\'s own';
+      keys.bbsKey = held;
+    }
+    // WHERE THE PAIR CAME FROM, for the issuer's self-check diagnostic
+    // (2026-09-22). A mismatched public and secret half is the one failure
+    // that names no cause by itself, and which of these four branches
+    // produced the object is the first thing a reader needs.
+    if (!keys.bbsKey.source) {
+      keys.bbsKey.source = 'the realm\'s key set';
+    }
+    log.debug("Leaving bbsKeyFor(). On the set.");
+    return Promise.resolve(keys.bbsKey);
   }
-  if (handed && handed !== bbsRefusedText) {
-    try {
-      bbsKeys = bbsKeyPairFromText(handed);
-      bbsKeysText = handed;
-      log.info('The BBS key pair came from another process in this service, ' +
-               'so every process signs and publishes the same one.');
-      log.debug("Leaving bbsKeyPair().");
-      return bbsKeys;
-    } catch (e) {
-      bbsRefusedText = handed;
-      log.error(errorCodes.tag('STS-CORE-0025') +
-                'The handed-down BBS key pair could not be read (' + e.message +
-                '); generating one, which means this process publishes a ' +
-                'different verification method from its siblings.');
-      if (bbsKeys) {
-        log.debug("Leaving bbsKeyPair(). Keeping the pair already held.");
-        return bbsKeys;
+  if (held) {
+    held.source = 'the keystore (another process made it)';
+    keys.bbsKey = held;
+    log.debug("Leaving bbsKeyFor(). Already made by this service.");
+    return Promise.resolve(keys.bbsKey);
+  }
+  if (keys.bbsKeyPromise) {
+    log.debug("Leaving bbsKeyFor(). One is already in flight.");
+    return keys.bbsKeyPromise;
+  }
+  keys.bbsKeyPromise = bbs2023.generateKeyPair().then(function (made) {
+    if (!keys.bbsKey) {
+      keys.bbsKey = { secretKey: Uint8Array.from(made.secretKey),
+                      publicKey: Uint8Array.from(made.publicKey),
+                      source: 'generated by this process' };
+      const took = keystore.publishShared(realmId, keys);
+      if (took !== false) {
+        keystore.remember(realmId, keys);
+      }
+      // ---------------------------------------------------------------
+      // AND THE WINNER IS ADOPTED (2026-09-22). Every other key in the set
+      // is arbitrated — first writer wins, the losers adopt — and this one
+      // generated, published and then went on using its OWN pair whatever
+      // the answer was. Two processes reaching this at once therefore kept
+      // two BBS keys for one realm: measured in `single-node`, where the
+      // front process and a request worker each made one, so a credential
+      // signed under one was verified against the other (`ldp_vc_refresh`,
+      // `vc_did`) and `/bbs/keys/<kid>` answered "this realm holds no BBS
+      // key" for a kid this service had just signed with
+      // (`ldp_vc_issuance`, in `cluster`, across nodes). Asking the
+      // keystore again is what makes the race decidable: whatever is held
+      // now is what every process must sign with, and a pair this process
+      // made and lost with is dropped.
+      const winner = keystore.bbsKeyHeldFor(realmId);
+      if (winner && winner.publicKey &&
+          !Buffer.from(winner.publicKey).equals(
+            Buffer.from(keys.bbsKey.publicKey))) {
+        log.info('The BBS key this process made for the "' + realmId +
+                 '" realm (' + bbsKidOf(keys.bbsKey.publicKey) + ') lost to ' +
+                 'one another process had already published (' +
+                 bbsKidOf(winner.publicKey) + '); that one is adopted and ' +
+                 'this one is dropped.');
+        winner.source = 'the keystore (this process lost the race)';
+        keys.bbsKey = winner;
+      } else {
+        log.info('A BBS key was made for the "' + realmId + '" realm: ' +
+                 bbsKidOf(keys.bbsKey.publicKey) + '.');
       }
     }
-  }
-  const made = await bbs2023.generateKeyPair();
-  // A concurrent caller may have finished first; the first pair held wins, so
-  // one process never signs with two.
-  if (!bbsKeys) {
-    bbsKeys = made;
-    bbsKeysText = bbsKeyPairText(made);
-  }
+    keys.bbsKeyPromise = null;
+    return keys.bbsKey;
+  }, function (e) {
+    keys.bbsKeyPromise = null;
+    throw e;
+  });
+  log.debug("Leaving bbsKeyFor(). Generating.");
+  return keys.bbsKeyPromise;
+}
+
+// The ambient realm's current BBS pair, `{ secretKey, publicKey }`.
+async function bbsKeyPair() {
+  log.debug("Entering bbsKeyPair().");
+  const pair = await bbsKeyFor(stsKeysFor());
   log.debug("Leaving bbsKeyPair().");
-  return bbsKeys;
+  return pair;
 }
 
-// The pair as the text the fork's IPC channel, the environment variable and
-// the cluster's sealed secret all carry: base64 of a JSON object of two base64
-// members. One encoding for all three, so a value any of them carries is one
-// the other two can read.
-function bbsKeyPairText(pair) {
-  log.debug("Entering bbsKeyPairText().");
-  log.debug("Leaving bbsKeyPairText().");
-  return Buffer.from(JSON.stringify({
-    secret: Buffer.from(pair.secretKey).toString('base64'),
-    public: Buffer.from(pair.publicKey).toString('base64')
-  }), 'utf8').toString('base64');
-}
-
-// The inverse. Throws on anything that is not that shape.
-function bbsKeyPairFromText(text) {
-  log.debug("Entering bbsKeyPairFromText().");
-  const held = JSON.parse(Buffer.from(String(text), 'base64')
-    .toString('utf8'));
-  if (!held || !held.secret || !held.public) {
-    log.debug("Leaving bbsKeyPairFromText(). Not a pair.");
-    throw new Error('the text does not carry a secret and a public key');
-  }
-  log.debug("Leaving bbsKeyPairFromText().");
-  return {
-    secretKey: Uint8Array.from(Buffer.from(held.secret, 'base64')),
-    publicKey: Uint8Array.from(Buffer.from(held.public, 'base64'))
-  };
-}
-
-// A FRESH pair as that text, held by nobody — the OFFER `cluster_secrets.js`
-// makes to the store. Deliberately not `bbsKeyPairForSharing()`: that one
-// caches the pair it makes as this process's, and an offer that loses the
-// race must be thrown away rather than kept.
-async function newBbsKeyPairText() {
-  log.debug("Entering newBbsKeyPairText().");
-  const pair = await bbs2023.generateKeyPair();
-  log.debug("Leaving newBbsKeyPairText().");
-  return bbsKeyPairText(pair);
-}
-
-// The pair as a string the fork's IPC channel can carry. Generates it if this
-// process has not needed one yet, which is the front process's ordinary case:
-// nothing has issued a credential when the pool starts.
-async function bbsKeyPairForSharing() {
-  log.debug("Entering bbsKeyPairForSharing().");
-  const pair = await bbsKeyPair();
-  log.debug("Leaving bbsKeyPairForSharing().");
-  return bbsKeyPairText(pair);
+// EVERY GENERATION OF THE REALM'S BBS KEY THAT STILL VERIFIES, current first,
+// then the next key and the retired ones within their grace, each
+// `{ kid, publicKey, role }` — for the Verifier, the DID document and
+// `/bbs/keys/<kid>`. Public halves only.
+async function bbsGenerations() {
+  log.debug("Entering bbsGenerations().");
+  const keys = stsKeysFor();
+  const current = await bbsKeyFor(keys);
+  const now = Date.now();
+  const out = [{ kid: bbsKidOf(current.publicKey), publicKey: current.publicKey,
+                 role: 'current' }];
+  standbyOf(keys, BBS_UNIT).forEach(function (one) {
+    if (!one.publicKeyB64 || !standbyLive(one, now)) {
+      return;
+    }
+    out.push({ kid: one.kid, role: one.role,
+               publicKey: Uint8Array.from(Buffer.from(one.publicKeyB64,
+                                                      'base64')) });
+  });
+  log.debug("Leaving bbsGenerations(). " + out.length + ".");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -2484,16 +3680,7 @@ function pqKeysFor(keys) {
     pqKeysCount.miss();
     const started = Date.now();
     keys.pqKeys = pqJose.PQ_ALGS.map(function (alg) {
-      const pair = pqJose.generate(alg);
-      const material = Buffer.from(pair.pub).toString('base64');
-      return {
-        alg: alg,
-        privateKey: pair.priv,
-        publicJwk: pqJose.akpPublicJwk(alg, pair.pub,
-          'sts-' + alg.toLowerCase() + '-' +
-          forge.md.sha256.create().update(material).digest().toHex()
-            .slice(0, 8))
-      };
+      return pqKeyFrom(alg, pqJose.generate(alg));
     });
     log.info('The post-quantum signing keys were generated for the "' +
              keys.realm + '" realm: ' + keys.pqKeys.length + ' key(s) in ' +
@@ -2548,15 +3735,7 @@ function pqKeysForAsync(keys) {
   const started = Date.now();
   keys.pqKeysPromise = Promise.all(pqJose.PQ_ALGS.map(function (alg) {
     return pqJose.generateAsync(alg).then(function (pair) {
-      const material = Buffer.from(pair.pub).toString('base64');
-      return {
-        alg: alg,
-        privateKey: pair.priv,
-        publicJwk: pqJose.akpPublicJwk(alg, pair.pub,
-          'sts-' + alg.toLowerCase() + '-' +
-          forge.md.sha256.create().update(material).digest().toHex()
-            .slice(0, 8))
-      };
+      return pqKeyFrom(alg, pair);
     });
   })).then(function (made) {
     if (!keys.pqKeys) {
@@ -2930,7 +4109,16 @@ function publicJwkOfKid(kid) {
     log.debug("Leaving publicJwkOfKid(). The RSA key.");
     return jwk;
   }
+  // THE XML KEY AND EVERY STANDBY KEY TOO (2026-09-22, #42): a header naming
+  // a `next` or retired key is still naming one of this realm's keys.
+  const xml = keys.xmlKey;
+  if (kid && xml && kid === xml.kid) {
+    log.debug("Leaving publicJwkOfKid(). The XML key.");
+    return crypto.createPublicKey(xml.selfSignedCertPem || xml.certPem)
+                 .export({ format: 'jwk' });
+  }
   const entry = (keys.extraKeys || []).concat(keys.pqKeys || [])
+    .concat(standbyOf(keys))
     .filter(function (one) {
       return one && one.publicJwk && one.publicJwk.kid === kid;
     })[0];
@@ -3599,6 +4787,23 @@ function capturedDescription(captured) {
 }
 
 module.exports = {
+  // THE KEY GENERATIONS (2026-09-22, #42): the one lookup every "is this ours"
+  // check asks, the RSA keys that may decrypt, and the three acts a rotation
+  // is made of — see the KEY GENERATIONS block.
+  signingUnitsOf: signingUnitsOf,
+  standbyOf: standbyOf,
+  ownRsaCertificates: ownRsaCertificates,
+  verifyOwnJws: verifyOwnJws,
+  verifyOwnCompactJws: verifyOwnCompactJws,
+  verifyOwnXml: verifyOwnXml,
+  ownRsaDecryptionKeys: ownRsaDecryptionKeys,
+  decryptOwnElement: decryptOwnElement,
+  allVerificationKeys: allVerificationKeys,
+  allVerificationKeysAsync: allVerificationKeysAsync,
+  xmlKeyFor: xmlKeyFor,
+  ensureNextGenerations: ensureNextGenerations,
+  promoteGenerations: promoteGenerations,
+  retireExpiredGenerations: retireExpiredGenerations,
   signingKeyFor: signingKeyFor,
   signingKeyForAsync: signingKeyForAsync,
   allSigningKeys: allSigningKeys,
@@ -3636,10 +4841,10 @@ module.exports = {
   jsonFromB64u: jsonFromB64u,
   nowSec: nowSec,
   randomId: randomId,
-  bbsKeyPairForSharing: bbsKeyPairForSharing,
-  newBbsKeyPairText: newBbsKeyPairText,
-  bbsKeyPairFromText: bbsKeyPairFromText,
   bbsKeyPair: bbsKeyPair,
+  bbsGenerations: bbsGenerations,
+  bbsKidOf: bbsKidOf,
+  BBS_UNIT: BBS_UNIT,
   walletBaseUrl: walletBaseUrl,
   parseBody: parseBody,
   multipartParts: multipartParts,
@@ -3671,6 +4876,8 @@ module.exports = {
   // a key read back from a blob publishes exactly what a generated one does.
   requestEncryptionKeyFor: requestEncryptionKeyFor,
   refreshTokenKeysFor: refreshTokenKeysFor,
+  rotateRefreshTokenKeys: rotateRefreshTokenKeys,
+  retiredRefreshTokenKeysFor: retiredRefreshTokenKeysFor,
   requestObjectKeysFor: requestObjectKeysFor,
   makeRefreshTokenEncryptionKeys: makeRefreshTokenEncryptionKeys,
   requestEncryptionJwkOf: requestEncryptionJwkOf,

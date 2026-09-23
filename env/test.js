@@ -1,5 +1,5 @@
 // Configuration the test launchers select for a run below debug level
-// (docker-run-tests.sh's and run-coverage.sh's THE SERVICE'S LOG LEVEL
+// (run-tests.sh's and run-coverage.sh's THE SERVICE'S LOG LEVEL
 // blocks; local-run-tests.sh had one too until it was removed, 2026-09-16).
 //
 // Identical to env/local.js apart from this comment; the two differed in the

@@ -639,6 +639,18 @@ member NARROWS the subject. A transmitter that accepted a loose subject would
 teach a receiver to send documents nothing else takes, and the sender would
 never find out.
 
+**AND TWO INDEPENDENT GRAMMARS STILL SHARED A MISTAKE, WHICH IS WORTH KNOWING
+(#144, 2026-09-22).** Both copies spelt two format names from the drafts,
+`issuer_subject_id` and `decentralized_identifier`, where RFC 9493 and its IANA
+registry say `iss_sub` and `did`. Both also shaped the complex subject the
+pre-final way, with no `"format": "complex"`. The round trip passed because
+both ends were wrong in the same way. Independence catches a misreading only
+one end makes, and a name both ends copied from the same draft slips through.
+The check that would have caught it is the one #144 used: read the final text
+and the registry, not the other implementation. This file now has the
+registry's names, SSF 1.0 section 3.5's three formats and the final complex
+shape. The debugger's copy is rcbj/id-proto-debugger#300.
+
 ---
 
 ## `ssf_http.ts` IS THE SECOND OUTBOUND REQUEST, AND IT IS A WEAKER CASE THAN
@@ -849,35 +861,112 @@ behaviour. The note says which it was.
 
 ---
 
-## `aud` IS REQUIRED AND IS NOT DEFAULTED TO THE AUTHENTICATED CALLER
+## EACH STREAM IS ITS RECEIVER'S, AND `aud` IS THE TRANSMITTER'S (#144, 2026-09-22)
 
-This is the one place in this directory that is stricter than the rest of the
-service, and defaulting was written first and taken out.
+**Until this date every management call looked a stream up by id alone**, and a
+`GET /ssf/stream` with no id returned every stream in the realm with its
+`authorization_header`. So any caller holding `ssf:read` could read the
+console's and portal's receiver tokens (and, with #117, inject rows into their
+inboxes), and any caller holding `ssf:write` could PATCH another receiver's
+`endpoint_url` to itself or delete its stream. In product mode HTTP Basic is on
+by default and every verified directory person gets both scopes. SSF 1.0
+section 8 says the authorization "MUST associate a Receiver with one or more
+stream IDs and aud values"; nothing here did.
 
-A receiver whose `aud` was invented for it never finds out that the member is
-required, and the first real transmitter it meets refuses every stream it
-creates. Worse, the audience it checks for ITSELF in would then be a name this
-service chose — so an event it ought to refuse with `invalid_audience` would be
-one it accepts.
+* **The owner is `createdBy`**: the identifier the creator authenticated as
+  (`ssf_auth.ts`'s principal: a client's `client_id` in both modes, a person's
+  `sub`, a GNAP client instance, a Basic username). `ssf_streams.ts`'s
+  `ownedBy()` / `streamOwnedBy()` / `streamsOwnedBy()` are the only reading of
+  it, and every `/ssf/*` route that takes a `stream_id` goes through
+  `ssf.ts`'s `ownedStream()`.
+* **Not yours answers exactly as absent: 404, the same sentence.** The
+  specification's own words are "no Event Stream with the given stream_id FOR
+  THIS EVENT RECEIVER", and any other answer tells a caller which ids exist.
+* **This service's own two streams are nobody's.** They are marked
+  `internalSurface` AT CREATION, from the context and never from the body, and
+  `ownedBy()` refuses a marked stream whatever `createdBy` says. `createdBy`
+  alone would not do: they are created as `internal`, and in development any
+  Basic username authenticates, including that one. They are managed on
+  `/admin/ssf` and through `/admin-api` only.
+* **`ssf.maxStreams` is per owner**, and a create past it is a 403 (section
+  8.1.1.1's "not allowed to create a stream"). It was per realm, so one
+  receiver could use up everyone's allowance.
+* **`aud` is Transmitter-Supplied** (section 8.1.1). This file used to argue the
+  opposite: that `aud` was the receiver's, required and never defaulted, because
+  a receiver given a default would never learn it was required. The final text
+  settles it the other way, so `assignAudience()` gives a new stream the
+  identifier its creator authenticated as. A receiver may instead name any of
+  the values it is associated with (`audiencesFor()`: that identifier, and the
+  application identifier and `ssfReceiverId` values on the application entry
+  `applications.ssfAllowedEventsFor()` finds for it), and nothing else. An
+  update may carry `aud`, or any other Transmitter-Supplied member, only
+  unchanged (`transmitterSuppliedMismatch()`, sections 8.1.1.3/8.1.1.4).
+  In-process callers that need a particular audience (the seeded receivers, the
+  in-process tests) pass it as `ctx.audience`, which a remote caller cannot
+  build.
 
-**The permissive posture everywhere else in this service is about CREDENTIALS.**
-This is a protocol member with a consequence at the far end, and inventing one
-teaches a client something false.
+The receivers still CHECK `aud`, and now `iss` and `typ` too (sections 4.1.6 and
+4.1.1): `ssf_receivers.ts`'s `accept()` against the stream's own values, and
+`/ssf/receive` against `ssf.receiveIssuers` / `ssf.receiveAudiences`, which
+default to the only issuer whose key it holds and to the endpoint's own URL.
 
 ---
 
-## A PAUSED STREAM KEEPS QUEUEING AND A DISABLED ONE DROPS
+## STATUS CHANGES, IN THE ORDER SECTION 8.1.5 GIVES (#144)
 
-SSF 1.0 section 7.1.2's three statuses, and the difference between the middle
-one and the last is the whole reason a receiver has a pause: it is "I was not
-listening" against "it did not happen". `setStatus()` drops the queue on a
-disable and says how many went, so that a reader can see it happen rather than
-discovering later that the queue is empty.
+SSF 1.0's three statuses, and the difference between the middle one and the last
+is the whole reason a receiver has a pause: it is "I was not listening" against
+"it did not happen". `setStatus()` drops the queue on a disable and says how
+many went.
 
-A status change also emits a **stream-updated** event ON the stream, if the
-receiver agreed that type. A disabled stream cannot carry one — `enqueue()`
-refuses — and that is correct rather than a gap: there is nowhere for it to go
-and nothing to poll it from.
+**Every door that changes a status goes through `ssf.ts`'s `changeStatus()`**:
+the receiver's `POST /ssf/status`, the console and `/admin-api`, the inactivity
+timeout and a dead stream. Stopping a stream (enabled to paused or disabled)
+transmits the `stream-updated` event FIRST and changes the status once that has
+settled, because section 8.1.5 says the event MUST be sent "before stopping the
+stream". Enabling changes the status first, then transmits, then `drainHeld()`
+pushes what a paused push stream held, in queue order. Until #144 every path set
+the status and transmitted afterwards, so a disable dropped the queue before the
+event could go.
+
+* **A paused PUSH stream holds.** `transmit()` queued the SET and then POSTed it
+  whatever the status was, so a receiver that paused its stream kept receiving
+  (section 8.1.2.1: "MUST NOT transmit"). Now the SET waits on the queue.
+* **A stopped POLL stream hands out its stream-updated events and nothing
+  else**, and a disable keeps them when it drops the rest
+  (`clearQueueFor(id, true)`). On poll, "sent" means "collectable", so dropping
+  that event with everything else would announce the change to nobody.
+* **SSF's own two events are sent whether or not the stream agreed them**
+  (sections 8.1.4 and 8.1.5 both say MAY), because the transmitter MUST send
+  stream-updated when it changes a status and an agreement check would make that
+  impossible.
+* **A DEAD stream is paused** (`pausedForHealth`), with the announcement
+  attempted first (it lands on the dead-letter queue with the rest). A revival
+  (a probe, a delivered push, or Revive) enables it again and announces it,
+  but only when this transmitter was the one that paused it. While paused for
+  health, a verification event is still pushed, because it is the probe.
+
+---
+
+## INACTIVITY AND TRANSMITTER-INITIATED VERIFICATION ARE ONE SCHEDULER JOB (#144)
+
+`ssf.stream-maintenance`: cluster, realm, every `ssf.streamMaintenanceSweepS`,
+off while both of its settings are 0, which is the default. `inactivity_timeout`
+(section 8.1.1) is `ssf.inactivityTimeoutS`. Activity is any management call a
+receiver makes about its stream, and a poll; `noteActivity()` records it. The
+timeout is published on the stream configuration while it is set, and
+`ssf.inactivityAction` chooses pause, disable or delete. **Off by default
+because a push receiver never has to call back after creating its stream**, so
+a timeout that was on by default would pause every healthy push stream.
+`ssf.verificationEveryS` sends each enabled stream a verification event with no
+`state` (section 8.1.4.2 forbids one the receiver did not supply); the console's
+**Send a verification event** and `POST /admin-api/ssf/verify` do it once. Both
+leave the internal streams alone.
+
+`POST /ssf/verify` answers **204 once the event is queued** (section 8.1.4.2:
+receivers "MUST NOT depend on the Verification Event being transmitted
+synchronously"). It waited for the push and answered 400 on a failure until
+#144; a failure is a dead letter now, like any other.
 
 ---
 
@@ -999,6 +1088,20 @@ subtree clock — moves: 2,400 expiries with 300 applications registered take
 344ms. `tests/ssf_allowed_events_cache.js` asserts every change is seen at once,
 the LDAP modify handler's unlocated touch included; two mutants caught.
 
+## A FOURTH VOCABULARY OF ONE EVENT: THIS SERVICE'S OWN (2026-09-22, #42)
+
+`urn:iya:sts:secevent:event-type:signing-key-rotated`, `family: 'sts'`, no
+subject — rcbj's D4. `common/signing_rotation.ts` calls
+`ssf.signingKeyRotated()` after a rotation has happened, and every stream that
+asked for the type gets one SET naming the realm, the units rotated (`<unit>
+<previous kid> -> <kid>`), the reason (`scheduled`, `requested`,
+`emergency`) and the JWKS and crypto metadata addresses. It is a URN of this
+service's own because no specification defines the event; a receiver that
+does not know it ignores it, as SSF says. The refresh-token encryption keys
+rotate in the same act and are never named: they are published nowhere. An
+emergency rotation also sends CAEP `session-revoked` and RISC
+`sessions-revoked` (#48, P4) — those are about PEOPLE, and this is not.
+
 ## WHAT THIS FAMILY DELIBERATELY DOES NOT DO
 
 Each of these is on `GET /ssf` in the same words, because a mock's omissions are
@@ -1039,6 +1142,9 @@ the half a reader cannot discover from a protocol trace.
   still emitted only when asked for.
 * **It does not retry a failed push unless `ssf.pushRetries` says to.** See
   above.
+* **It is not a receiver of anybody else's transmitter** (#153). It discovers
+  no foreign transmitter, creates no stream there, polls none, and fetches no
+  foreign `jwks_uri`, so a SET another party signed never verifies here.
 * **It verifies nothing about a subject.** A stream may name somebody who has
   never been here, which is what a receiver's "I do not know this subject" path
   needs.
@@ -1518,7 +1624,7 @@ and a failed emission must not undo a credential change already written.
 
 **`ssf.ts` gained `emitCredentialChange()` and `emitRiscAccountAct()`**
 (`STS-SSF-0090`, `-0091`). The first builds the SET through `caep.buildPayload`
-and sends it with a complex user subject (`issuer_subject_id`) to the streams
+and sends it with a complex user subject (`iss_sub`) to the streams
 that asked for the type and cover the person; it obeys `caep.autoEmitTypes`
 through `caep.autoEmitActs()`, which gained `credential`. The second goes
 through `risc.observeAct()` — `observe()`'s loop extracted into `dueForActs()`,

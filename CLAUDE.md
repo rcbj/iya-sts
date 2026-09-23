@@ -66,11 +66,11 @@ files did not change; the paths did.
 | `saml/` | The SAML 2.0 and SAML 1.1 assertion builders, each with a SEPARATE browser-facing identity provider rather than one with a version flag. `saml/CLAUDE.md`. |
 | `ws-trust/` | WS-Trust 1.0–1.4. `ws-trust/CLAUDE.md`. |
 | `ws-federation/` | WS-Federation 1.2's passive requestor profile and a mock relying party. `ws-federation/CLAUDE.md`. |
-| `pki/` | `pki_service.ts`: the certificate authority's PUBLIC surface — a CRL and an OCSP responder per CA, each CA's own certificate, and the chain documents at `/pki/chain/`. No gate and no credential, by construction; the authority itself is `common/pki.js`. Its header is its documentation (no `CLAUDE.md`). |
+| `pki/` | `pki_service.ts`: the certificate authority's PUBLIC surface — a CRL and an OCSP responder per CA, each CA's own certificate, and the chain documents at `/pki/chain/`. `crypto_metadata_document.ts` (#42, 2026-09-22): `/crypto/metadata` per realm, every signer GENERATION with its chain, in JSON, XML and signed forms. No gate and no credential, by construction; the authority itself is `common/pki.js`. Each header is its file's documentation (no `CLAUDE.md`). |
 | `federation/` | Federation relationships in either direction, in five protocols; `ou=federations` is the register, and it holds the first and strongest of the outbound requests. `federation/CLAUDE.md`. |
 | `kerberos/` | The KDC, the acceptor, SPNEGO (the negotiation, the page, and the sign-in that turns a ticket into a session), and eight codec modules **VENDORED from the parent project and not editable here**, despite not being under `common/vendored/`. `kerberos/CLAUDE.md`. |
 | `ldap/` | The embedded directory — the store for people, groups, applications and the SPIFFE registry — and the eight `/admin/ldap/*` console pages that show it. `ldap/CLAUDE.md`. |
-| `cluster/` | **Several containers against one postgres store** (#46, 2026-09-14): membership and leases with a fencing token every write transaction checks, the gate in front of `cluster.mode` (active-passive by default in product mode on postgres; active-active refused while a capability is missing), atomic claims, the secrets every node shares, and the cross-node read barrier. Libraries — no route but `/admin/cluster`'s status block. `cluster/CLAUDE.md`. |
+| `cluster/` | **Several containers against one postgres store** (#46, 2026-09-14): membership and leases with a fencing token every write transaction checks, the gate in front of `cluster.mode` (active-passive by default in product mode on postgres; active-active refused while a capability is missing), atomic claims, the secrets every node shares, and the cross-node read barrier — and **the scheduler every periodic job runs on** (#49, `scheduler.ts`). Libraries — no route but `/admin/cluster`'s status block; `/admin/scheduler` is `admin-ui/scheduler_admin.ts`. `cluster/CLAUDE.md`. |
 | `persistence/` | The one place this service writes anything down (`memory`, `ldif`, `postgres`), and the coordination of several processes through one change log — state, not sockets. `persistence/CLAUDE.md`. |
 | `scim/` | `/scim/v2`, its authentication and attribute mapping, and two console pages (`/admin/scim`, `/admin/scim/monitor`). `scim/CLAUDE.md`. |
 | `ssf/` | The Shared Signals Framework — the one family here that TALKS BACK — with CAEP and RISC as the two vocabularies over it and this service's own console and portal as registered receivers. `ssf/CLAUDE.md`. |
@@ -83,7 +83,7 @@ files did not change; the paths did.
 | `tests/` | **The only test directory**: `tests/*.js` is the in-process half (`npm test`), `tests/vendored/` the protocol half driven over HTTP against a container built from this tree, with `MANIFEST.js` the count and the record of which jobs are copies and which are `local: true`; `tools/`, `Dockerfile` and `run-tests-in-container.sh` are tooling, not tests. `tests/CLAUDE.md`. |
 | `xacml/` | XACML 3.0 and ALFA — the engine (held to the vendored OASIS suite, Apache-2.0), the `ou=policies` repository, the PIP, the embedded PEPs that decide this service's own issuance and access, the PAP console, and the PDP side of the remote PEP. `xacml/CLAUDE.md`. |
 | `gnap/` | GNAP (RFC 9635) and its resource server connections (RFC 9767): a key-proofed authorization server per trust realm, issuing tokens in five formats. `gnap/CLAUDE.md`. |
-| `acme/`, `est/`, `scep/` | **CERTIFICATE ENROLLMENT, IN THREE PROTOCOLS (2026-09-13)** — ACME (RFC 8555) at `/enroll/acme`, EST (RFC 7030) at `/.well-known/est` and SCEP (RFC 8894) at `/enroll/scep`, each with an Issuing CA of its own under the realm's Intermediate, a console page under Protocols (in a *Certificate enrollment* group) and one under Monitoring, and `/admin-api` operations declared in `<family>_api.js`. **None of the three decides who may have a certificate for whom or what goes in it**: that is `common/cert_enrollment.ts` (rule 3ag) — yourself, or any person or application in the realm for a holder of Admin Write; the nine leaf profiles of `/admin/pki` and the five refused; names built from the ENTRY, a host name only when registered on it; every certificate kept on the entry it names, and a private key only when this service generated it (EST `/serverkeygen`). Authentication is protocol-native: an ACME account bound FOR LIFE by an External Account Binding key, EST's password, client secret or realm-issued certificate, a SCEP single-use challenge password. A person makes their own EAB key and challenge on `/portal/certificates`. Each directory's `CLAUDE.md` carries its RFC coverage and its documented exceptions. |
+| `acme/`, `est/`, `scep/` | **CERTIFICATE ENROLLMENT, IN THREE PROTOCOLS (2026-09-13)** — ACME (RFC 8555) at `/enroll/acme`, EST (RFC 7030) at `/.well-known/est` and SCEP (RFC 8894) at `/enroll/scep`, each with an Issuing CA of its own under the realm's Intermediate, a console page under Protocols and one under Monitoring, both in a *Cert issuance* group (2026-09-22; the Protocols group holds SPIFFE too, because an X509-SVID is a certificate this realm issues), and `/admin-api` operations declared in `<family>_api.js`. **None of the three decides who may have a certificate for whom or what goes in it**: that is `common/cert_enrollment.ts` (rule 3ag) — yourself, or any person or application in the realm for a holder of Admin Write; the nine leaf profiles of `/admin/pki` and the five refused; names built from the ENTRY, a host name only when registered on it; every certificate kept on the entry it names, and a private key only when this service generated it (EST `/serverkeygen`). Authentication is protocol-native: an ACME account bound FOR LIFE by an External Account Binding key, EST's password, client secret or realm-issued certificate, a SCEP single-use challenge password. A person makes their own EAB key and challenge on `/portal/certificates`. Each directory's `CLAUDE.md` carries its RFC coverage and its documented exceptions. |
 | `xacml-pep/` | **Not part of the mock**: a second container, a remote XACML PEP that pulls policy from `/xacml/pep/policies` and decides with a build-time copy of the engine. `xacml-pep/CLAUDE.md`. |
 | `openbao/` | **Not part of the mock**: the files a secret-store container runs, from which the compose stack reads its key-encryption key and database password with a read-only client certificate. `openbao/CLAUDE.md`. |
 | `deploy/aws/` | **Not part of the mock**: Terraform for a three-node active-active cluster on ECS Fargate behind an NLB, against RDS PostgreSQL 18 with a replica, with the key-encryption key and database password in AWS Secrets Manager — a long-lived `foundation/` (deployer identity, KMS, ECR, logs) and a per-run `environment/`, the schema-init image, the suite runner, and `.github/workflows/aws-cluster.yml`. `deploy/aws/CLAUDE.md`. |
@@ -130,7 +130,8 @@ these protocol families:
 - **XACML 3.0** and **GNAP** (RFC 9635).
 
 It exists to exercise *clients*: in development mode it checks no password,
-validates no access token and **attests no workload**. The surfaces below are
+validates no access token and **attests no Workload API caller over TCP**
+(the Unix socket's are attested, #40). The surfaces below are
 the exceptions, and each is argued where it lives.
 
 | Surface | What it requires | Argued in |
@@ -349,6 +350,47 @@ the front process (`tls/CLAUDE.md`), and the client-certificate truststore took
 a pin (`tls/CLAUDE.md`). **Dispatch without coordination is refused and the
 service does not start**, because it answers WRONGLY rather than slowly.
 
+## Anything periodic is a scheduler job
+
+**rcbj's architectural directive, 2026-09-21: anything that has to be done
+periodically in the background is a job on the central scheduler** (#49,
+`cluster/scheduler.ts`, built 2026-09-22 — `cluster/CLAUDE.md`, *The
+scheduler*), which runs each job on exactly one node, on the serving front
+process and never in a request worker, and hands it to another node when that
+one goes. Monitoring → Scheduler (`/admin/scheduler`) lists every job. **No new module may start a timer of its
+own** — no `setInterval`, no `setTimeout` chain, no sweep armed at require or
+wire time — for work that repeats.
+
+**Cache and store clean-up is included**, and none of it is a job yet: a
+cache here drops an entry only when it is read and found expired, when a size
+cap evicts the oldest on an insert, or when a purge piggy-backs on the next
+request that uses the store (claims, used assertions, rate-limit windows and
+minted tombstones, each at most every 60 s or so). Ejecting expired entries is
+periodic work, so it becomes a job. **Two checks stay where they are, because
+they are correctness rather than housekeeping**: the expiry check at the read
+(an expired entry is never answered, whenever the sweep last ran) and the size
+cap at the insert (a bound cannot wait for a timer).
+
+**So a job is one of two kinds, and the owner says which.** A *cluster* job
+(the default) runs once, on the leader: a rotation, a CRL, a delivery. A
+*per-process* job runs in every process that holds the state it cleans,
+because that state is reachable from no other process (*One front process*,
+above): the ejection from an in-memory cache, a process's own change-log pull,
+its own decrypted-key purge. A per-process job takes no claim, and is still
+registered with, reported by and switched through the scheduler.
+
+What does NOT count: a per-request timeout, a debounce, a retry delay inside
+one operation, and the cluster heartbeat with its lease and origin-claim
+renewals, which are what the scheduler's own leadership stands on.
+
+**Every timer that existed has moved (#49 P1 and P5, 2026-09-22)** — the
+session sweep, the CRL directory refresh, the back-channel logout and SSF
+sweeps, the SAML metadata refresher, the change-log pull and trim, the cache
+report, the LDAP mirror's maintenance — and so have the purges piggy-backed on
+requests (claims, used assertions, rate-limit windows, minted tombstones).
+`cluster/CLAUDE.md` has the table of jobs; `tests/no_periodic_timers.js`
+holds that nothing else repeats, with the permanent exceptions and why.
+
 ## The require order and the route order
 
 **There are two orders, and until 2026-09-16 they were one.** Rule 1 made the
@@ -408,6 +450,7 @@ is and the named file says why.
 | 17 | `kerberos/spnego` | JavaScript, locked: registers at this require. After `krb5_service`: it calls that module's `accept()`. | `kerberos/CLAUDE.md` |
 | 17a | `kerberos/spnego_authn` | After `spnego` AND after `authn/authn`; it lives in `kerberos/` so that `authn` never requires it, which would load the JavaScript `spnego` early and drag its routes ahead of `oauth2`. | `kerberos/CLAUDE.md`, `authn/CLAUDE.md` |
 | 17b | `pki/pki_service` | No constraint: it requires only libraries. Here, ahead of the console, so `/admin/sts-metadata` groups the revocation endpoints with the protocols. | `common/protocol_stack.ts` (17b) |
+| 17c | `pki/crypto_metadata_document` | 17b's reason (#42): libraries only, `pki.js`, `oauth2.ts`'s signer and the revocation module each LAZILY, so it may sit beside the revocation endpoints. | `common/protocol_stack.ts` (17c) |
 | 18 | `admin-ui/admin` | After `oauth2` (rule 5), and before the families whose modules would otherwise have to be required from it — which is why it offers slots (rule 3e). | `admin-ui/CLAUDE.md` |
 | 18-core | `admin-core/*` | No line of its own. Registers nothing, but requires `oauth2`, `saml2`, `saml11` and `federation`, so it may be required at 18 or later and nowhere earlier — since R1 such a require moves no route, but it still runs those modules' load-time code out of order. | `admin-core/CLAUDE.md` |
 | 18a | `admin-ui/pki_admin` | After `admin-ui/admin`, before `mgmt-api/admin_api`, so the API's require of it is a cache hit and it needs no slot (and since R1 that require could register nothing anyway). | `admin-ui/CLAUDE.md` |
@@ -416,6 +459,7 @@ is and the named file says why.
 | 18f | `oauth-oidc/oauth2_monitor_admin` | Beside the other report pages and for 18a's reason: it requires the console's shell and libraries already loaded, and `oauth2.ts` (9) cannot require it without closing a cycle through the console. | `oauth-oidc/CLAUDE.md` |
 | 18g | `admin-ui/caches_admin` | 18a's placement and 18a's reason (#74): the console's shell and libraries already loaded, and `mgmt-api/admin_api` requires it. It reads `common/cache_registry.js` when drawn, so an owner registered later still appears. | `admin-ui/CLAUDE.md` |
 | 18h | `admin-ui/vc_status_admin` | 18a's placement and 18a's reason (2026-09-17): the console's shell and `oid4vc/vc_status` already loaded, and `mgmt-api/admin_api` requires it. | `admin-ui/CLAUDE.md` |
+| 18i | `admin-ui/scheduler_admin` | 18a's placement and 18a's reason (#49): the console's shell and `cluster/scheduler` (a library the job owners above already loaded), and `mgmt-api/admin_api` requires it. A job registered later still appears: the page asks the scheduler when it is drawn. | `cluster/CLAUDE.md` |
 | 19 | `mgmt-api/admin_api` | After `admin-ui/admin` (rule 7). | `mgmt-api/CLAUDE.md` |
 | 19a | `admin-ui/api_explorer` | After `admin-ui/admin` (the shell and gate) and `mgmt-api/admin_api` (the route table its OpenAPI document is built from); a file of its own so `admin.ts` never requires the API. | `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | 20 | `tls/tls_server` | JavaScript: registers its `/tls*` views at this require. Before `ldap/ldap_server`, which serves its certificate on 636. | `tls/CLAUDE.md` |
@@ -424,6 +468,7 @@ is and the named file says why.
 | 22 | `scim/scim` | After `ldap/ldap_server`, as a plain require. | `scim/CLAUDE.md` |
 | 23 | `spiffe/spiffe_server` | After `ldap/ldap_server` and `tls/tls_server`; its registry's store is the directory. | `spiffe/CLAUDE.md` |
 | 23b | `ssf/ssf` | After `admin-ui/admin`, whose slots it fills; also fills `authn.setSessionObserver()`. Starts nothing. | `ssf/CLAUDE.md`, `authn/CLAUDE.md` |
+| 23b-ii | `common/signing_rotation` | After `ssf/ssf`, whose `signingKeyRotated()` it calls (lazily, so the order is for a reader). A library: registers the `signing.rotate` and `signing.retire` scheduler jobs when built and no route. | `common/signing_rotation.ts` (#42) |
 | 23c | `xacml/xacml` | After `admin-ui/admin`, whose slots this family fills; one require for the family, and two `register()` calls — `xacml_admin`, then `xacml`. **Requiring `xacml_role_pep.ts` here is what arms every issuance site** — before this REQUIRE (a load-time effect, not a route) `issuance_gate.js` answers "allowed". | `xacml/CLAUDE.md` |
 | 23d | `gnap/gnap` | After `admin-ui/admin` and `ssf/ssf`; one require for the family, and three `register()` calls — `gnap`, `gnap_interact`, `gnap_admin`. | `gnap/CLAUDE.md` |
 | 23e–g | `acme/acme`, `est/est`, `scep/scep` | **After `admin-ui/admin`** (18), whose shell each family's `_admin.ts` draws its two pages with, and after `ldap/ldap_server` (21), whose slot `common/cert_enrollment.ts` reads entries through. Each requires its own `_admin.ts`, so each family is one require in `common/protocol_stack.ts`, followed by two `register()` calls (the family, then its `_admin`); `mgmt-api/admin_api.ts` spreads each `<family>_api.ts`, which registers no route and requires its view model lazily. No constraint between the three. | `acme/CLAUDE.md`, `est/CLAUDE.md`, `scep/CLAUDE.md` |
@@ -474,7 +519,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3ai | `introspection_jwt.js`, RFC 9701: why a JWT request authenticates in every mode, the Accept reading, what keeps the response from being a token, and refused-never-downgraded | `oauth-oidc/CLAUDE.md` |
 | 3ah | `jwt_access_token.js`, RFC 9068 in every mode: the `at+jwt` header, why `issuerOf()` moved there, section 4 at every resource server, and the audience-and-scope plan behind section 3's refusals | `oauth-oidc/CLAUDE.md` |
 | 3z | `saml_assertion_grant.js`, why RFC 7522 is a SECOND implementation rather than a format flag on 3x, why its two sections are one function where 3x's are two files, why a bare certificate path is not enough here, and the three items of section 3 whose lenient reading is the usual bug | `oauth-oidc/CLAUDE.md` |
-| 3y | `backup_codes.js`, why a set is issued by an ACT and not a request, why ONCE is about the set rather than the account, and why the codes are ENCRYPTED where `userPassword` is hashed | `common/CLAUDE.md` |
+| 3y | `backup_codes.js`, why a set is issued by an ACT and not a request, why ONCE is about the set rather than the account, and why the codes were once ENCRYPTED and are now scrypt-HASHED per code, as `userPassword` is (2026-09-12) | `common/CLAUDE.md` |
 | 3z | `inetorgperson.js`, why the account page draws a FIXED LIST rather than the entry, and the two kinds of attribute `rowFor()` refuses | `common/CLAUDE.md` |
 | 3ac | `error_codes.js`, the three ways a code is recorded, why a returned refusal carries its code under a Symbol, and the three changes it made to `audit.js` | `common/CLAUDE.md` |
 | 3ae | `used_assertions.js`, why an RFC 7523 or RFC 7522 assertion is accepted once EVER — one history for both uses, persisted in every store with one and in both modes, claimed atomically on postgres, and spent only when tokens are issued | `common/CLAUDE.md` |
@@ -836,21 +881,36 @@ copy.
 Those are two claims and keeping them apart is the whole of this section.
 
 ```bash
-./docker-npm-test.sh    # the in-process half, in the tests image (#50)
-./docker-run-tests.sh   # EVERY job, runner and service in containers; what CI runs
-./run-coverage.sh       # coverage, collected by a run of its own
+./docker-npm-test.sh                    # the in-process half, in the tests image (#50)
+./run-tests.sh                          # EVERY job, every mode, in containers; what CI runs
+./run-tests.sh --target=aws:testidp     # the protocol half against an AWS environment
+./run-tests.sh --target=aws-ephemeral   # apply `ci`, run the suite against it from here, destroy it
+./run-coverage.sh                       # coverage, collected by a run of its own
 ```
+
+**`./run-tests.sh` IS THE ONE LAUNCHER FOR THE WHOLE SUITE, WHEREVER THE SERVICE
+IS (2026-09-21).** It was `./docker-run-tests.sh`; `deploy/aws/run-suite.sh`
+and the apply-test-destroy of `aws-cluster.yml` were launchers of their own and
+are its AWS targets' machinery now. Its header argues the targets. **The local
+modes are `memory`, `single-node` and `cluster`, and a bare run runs all
+three** — the baseline, a single-node production deployment (product mode,
+postgres, request workers) and two such nodes behind a balancer, kept apart
+because single-node and multi-node differ in too much to read one failure;
+`tests/tools/modes.sh` argues it and what replaced what. CI runs
+`--modes=memory,single-node` and `--modes=cluster` as two jobs. Every local
+mode runs every job, both halves; an AWS target runs the protocol half only,
+because the in-process files cannot be pointed at a URL.
 
 **`npm test` refuses on a checkout since #50** (the TypeScript is compiled
 only inside an image), so `./docker-npm-test.sh` builds the tests image and
 runs it there. **`./local-run-tests.sh` was removed on 2026-09-16**: it ran
-its jobs on the host, which #50 made impossible, so `./docker-run-tests.sh` is
-the whole suite (`--modes=` narrows it; `tests/CLAUDE.md` has the options).
+its jobs on the host, which #50 made impossible (`--modes=` narrows the local
+run; `tests/CLAUDE.md` has the options).
 
 Where a new test goes, asked in this order:
 
 1. **Is it about this service's own `/admin` or `/admin-api`?** Then `tests/vendored/`, `local: true` — an ownership argument, not a capability one.
-2. **Can it be asserted over HTTP against a running service?** Then `../id-proto-debugger/tests/`.
+2. **Can it be asserted over HTTP against a running service?** Then **`tests/vendored/`, `local: true` — written HERE since 2026-09-21** (rcbj's decision; it was `../id-proto-debugger/tests/`). A protocol job is the only kind an AWS target and the `product` mode can run, so a feature covered only in process is uncovered there.
 3. **Otherwise here**: it chooses how the process starts, needs a second container on the service's network, or needs a socket no stack publishes.
 
 **Never edit a vendored copy** — the next
@@ -875,15 +935,15 @@ the file the row names.
 | Enforce anything by default, **in development mode** — `oauth2.rfc9700` and `oauth2.oauth21` (which turns it on) are the modes, off unless set. **Product mode implies RFC 9700 mode since 2026-09-17**, which is what lets it allow public clients | `oauth-oidc/CLAUDE.md`, `common/mode.js` |
 | Federate with anybody it was not CONFIGURED to federate with — the one place it refuses by default, and not a mode | `federation/CLAUDE.md` |
 | Decrypt an assertion a federation partner encrypted, consume a federated sign-out, or re-check a federated person after the session exists | `federation/CLAUDE.md` |
-| Dial a URL a CALLER supplied to fetch something FROM (`jwks_uri`, `wreqptr`) — the URLs it does dial are addresses somebody asked to be SENT something at. **The one exception is the embedded debugger's api (2026-09-13)**, a separate child process that dials what a console administrator names, allow-listed to this service's own addresses in product mode. **The second is the RFC 9728 import on `/admin/applications/new` (2026-09-13)**, an Admin Write act under the federation outbound policy that refuses internal addresses in product mode. **The third is an RFC 9101 `request_uri` (2026-09-13)** — fetched only when the client REGISTERED that exact address, so a request cannot choose it. **The fourth is a STATUS LIST (2026-09-17)** — an address inside a credential, which is a caller's kind of URL; what makes it the administrator's is where it sits, under a signature that verified against a certificate in `oid4vp.trustedIssuerCertificates`, and it is never fetched for a credential this realm signed (whose list is in its own store). **The fifth is a SAML MDQ lookup (2026-09-17)** — the operator's `saml2.mdqBaseUrl`, with only a request's entityID as its path, never awaited | `federation/CLAUDE.md`, `ssf/CLAUDE.md`, `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `debugger/CLAUDE.md`, `admin-ui/CLAUDE.md`, `saml/CLAUDE.md` |
+| Dial a URL a CALLER supplied to fetch something FROM (`jwks_uri`, `wreqptr`) — the URLs it does dial are addresses somebody asked to be SENT something at. **The one exception is the embedded debugger's api (2026-09-13)**, a separate child process that dials what a console administrator names, allow-listed to this service's own addresses in product mode. **The second is the RFC 9728 import on `/admin/applications/new` (2026-09-13)**, an Admin Write act under the federation outbound policy that refuses internal addresses in product mode. **The third is an RFC 9101 `request_uri` (2026-09-13)** — fetched only when the client REGISTERED that exact address, so a request cannot choose it. **The fourth is a STATUS LIST (2026-09-17)** — an address inside a credential, which is a caller's kind of URL; what makes it the administrator's is where it sits, under a signature that verified against a certificate in `oid4vp.trustedIssuerCertificates`, and it is never fetched for a credential this realm signed (whose list is in its own store). **The fifth is a SAML MDQ lookup (2026-09-17)** — the operator's `saml2.mdqBaseUrl`, with only a request's entityID as its path, never awaited. **The sixth is SPIFFE's `http_challenge` (2026-09-21, #40)** — a host name the attesting agent names, fetched only after it matched the realm's `spiffe.httpChallengeAllowedDnsPatterns` (empty refuses all), internal addresses refused in product mode, no redirect, 64 bytes. **The seventh is an OpenID Connect `sector_identifier_uri` (2026-09-22, #118)** — fetched once, when a client REGISTERS it, through `federation_http.fetchPublished()`, never while issuing | `federation/CLAUDE.md`, `ssf/CLAUDE.md`, `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `debugger/CLAUDE.md`, `admin-ui/CLAUDE.md`, `saml/CLAUDE.md`, `spiffe/CLAUDE.md` |
 | ~~Ask anybody's permission before it issues something~~ — **reversed 2026-09-01**: `/oauth2/consent`, with `oauth2.consentRequired` ON by default | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | Let a page on another origin read an answer (`Access-Control-Allow-Origin: *` until 2026-09-13) — unless the origin is this service's own or an application lists it in `appCorsOrigin`, per client where the request names one; in both modes, on every path | `common/CLAUDE.md` (`cors.js`) |
 | Check an end user's password, **in development mode** — product verifies every presented password; a Kerberos ticket, a TOTP code and a recovery code are verified in BOTH modes | `authn/CLAUDE.md`, `kerberos/CLAUDE.md`, `common/CLAUDE.md` |
-| Check any credential except a registered client's secret, in RFC 9700 mode only — and a caller's at `/oauth2/introspect` (RFC 9701 JWT in every mode, JSON in product) | `oauth-oidc/CLAUDE.md` |
-| Refuse any LDAP bind, **in development mode** | `ldap/CLAUDE.md` |
+| Verify a client's credential, **in development mode outside RFC 9700 and OAuth 2.1 mode** — those modes verify whatever method a client declared, and product mode implies RFC 9700 mode, refuses an unknown `client_id` and allows a declared public client. A caller at `/oauth2/introspect` authenticates for an RFC 9701 JWT in every mode and for JSON in product; `/oauth2/revoke` authenticates nobody in any mode | `oauth-oidc/CLAUDE.md` |
+| Refuse an LDAP bind, **in development mode**, except the reserved password `invalid` and a disabled account | `ldap/CLAUDE.md` |
 | Authorize an LDAP write, **in development mode**; reads are authorized in neither mode | `ldap/CLAUDE.md` |
 | Check a Kerberos password, **in development mode** — though it cannot not check the KEY | `kerberos/CLAUDE.md` |
-| Verify an access token at the three OpenID4VCI endpoints, **in development mode** — product refuses one it cannot verify, and a revoked one (2026-09-18). Every other door that takes a token verifies it in both modes: UserInfo, `/admin-api`, SCIM, Shared Signals, the step-up resource, introspection, token exchange and the RFC 7523 / 7522 client authentication and grants | `oauth-oidc/CLAUDE.md`, `oid4vc/CLAUDE.md` |
+| Verify an access token at the three OpenID4VCI endpoints, **in development mode** — product refuses one it cannot verify, and a revoked one (2026-09-18). Every other door that takes a token verifies it in both modes: UserInfo, `/admin-api`, SCIM, Shared Signals, the step-up resource, introspection and the RFC 7523 / 7522 client authentication and grants. **RFC 8693 token exchange verifies its `subject_token` and `actor_token` in product only (2026-09-21)** — until then it exchanged an unverified token in both modes, and development still does (`mode.exchangesUnverifiedTokens()`) | `oauth-oidc/CLAUDE.md`, `oid4vc/CLAUDE.md` |
 | Accept an RFC 7523 assertion from an issuer nobody DECLARED — a refusal ON by default; a PERSON as issuer may assert only about themselves | `oauth-oidc/CLAUDE.md`, `common/CLAUDE.md` |
 | Accept an RFC 7522 assertion from an `<Issuer>` nobody DECLARED (a separate declaration), or on a certificate that merely chains to the realm's CA | `oauth-oidc/CLAUDE.md`, `common/CLAUDE.md` |
 | ~~Revoke a certificate it issued~~ — **reversed 2026-09-11**: a CRL and OCSP per CA, and consulted for presented certificates since 2026-09-12 | `common/CLAUDE.md`, `admin-ui/CLAUDE.md`, `docs/pki.md` |
@@ -895,7 +955,7 @@ the file the row names.
 | ~~Turn a verified presentation into a sign-on~~ — **reversed 2026-09-17 (#38)**: `/authn/wallet` signs in the entry a holder-bound SD-JWT VC this realm issued was issued for; any other presentation still verifies and signs nobody in | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | ~~Publish a status for a credential it issued~~ — **reversed 2026-09-17**: a Token Status List and two Bitstring Status Lists per realm, a reference in every credential, and the Verifier consults them — this realm's from its own store, a trusted foreign issuer's by fetching the list | `oid4vc/CLAUDE.md` |
 | ~~Deactivate anybody on SCIM `active: false`~~ — **reversed 2026-09-17**: it is `pwdAccountLockedTime` on the entry, the same DISABLED state an administrator writes from `/admin/users`, and every door refuses the person while it is set | `scim/CLAUDE.md`, `common/CLAUDE.md` (3at), `authn/CLAUDE.md` |
-| Attest a workload or a node | `spiffe/CLAUDE.md` |
+| ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)**: all nine of SPIRE's node attestors verify or refuse, and the Workload API's Unix socket attests its caller (`unix`, `docker`, `k8s`) through a native module built into the image. A caller over TCP is still not attested | `spiffe/CLAUDE.md` |
 | Revoke a SPIFFE credential — the directory records who may still be ISSUED one, which is a different claim | `spiffe/CLAUDE.md`, `ldap/CLAUDE.md` |
 | Let a group grant anything BY BEING A GROUP — what a group grants is what a role or a roster names it for: the console rosters, REMOTE_PEPS and XACML_USER, and a configured role's group members; the groups claim grants nothing | `admin-ui/CLAUDE.md`, `common/CLAUDE.md` |
 | Let an authenticator app be a FIRST factor | `common/CLAUDE.md` |

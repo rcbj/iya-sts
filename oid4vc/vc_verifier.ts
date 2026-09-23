@@ -167,6 +167,7 @@ interface VcVerifierDeps {
   randomId: typeof helpers.randomId;
   xmlEscape: typeof helpers.xmlEscape;
   bbsKeyPair: typeof helpers.bbsKeyPair;
+  bbsGenerations?: typeof helpers.bbsGenerations;
   parseBody: typeof helpers.parseBody;
   oauthError: typeof helpers.oauthError;
   signJwt: typeof helpers.signJwt;
@@ -340,6 +341,32 @@ const vpTransactionsCount = cacheRegistry.register({
     return 'oid4vp.presentationRequestTtlS, or oid4vp.signInTtlS for a ' +
       'sign-in; swept when the next request is built.';
   },
+  // What `sweepVpTransactions()` drops, in every realm, WITH the request
+  // each names in `vpRequests` — the two go together (#49 P5).
+  eject: function (now: number): number {
+    let total = 0;
+    realms.list().forEach(function (r: { id: string }): void {
+      const tx = vpTransactions.realmMap(r.id);
+      const reqs = vpRequests.realmMap(r.id);
+      if (!tx) {
+        return;
+      }
+      const gone: Array<[unknown, any]> = [];
+      tx.forEach(function (v: any, k: unknown): void {
+        if (v && v.expires < now) {
+          gone.push([k, v]);
+        }
+      });
+      gone.forEach(function (pair: [unknown, any]): void {
+        if (reqs && pair[1] && pair[1].id) {
+          reqs.delete(pair[1].id);
+        }
+        tx.delete(pair[0]);
+      });
+      total += gone.length;
+    });
+    return total;
+  },
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, vpTransactions,
       function (record: any, state: unknown): object {
@@ -408,6 +435,7 @@ class VcVerifier {
       randomId: helpers.randomId,
       xmlEscape: helpers.xmlEscape,
       bbsKeyPair: helpers.bbsKeyPair,
+      bbsGenerations: helpers.bbsGenerations,
       parseBody: helpers.parseBody,
       oauthError: helpers.oauthError,
       signJwt: helpers.signJwt,
@@ -510,11 +538,19 @@ class VcVerifier {
     }
     const candidates = [];
     const family = stsCrypto.JWS_ALGS[alg].family;
+    // EVERY LIVE GENERATION of this realm's keys (#42): a credential outlives
+    // a rotation, and verifies against the key that signed it until that
+    // key's grace ends.
     if (family === 'rsa' || family === 'rsa-pss' || /^(RS|PS)/.test(alg)) {
-      candidates.push({ label: 'this issuer\'s RSA key', key: STS.certPem });
+      helpers.ownRsaCertificates('jose').forEach((one: any) => {
+        if (!header.kid || kidNamesKey(header.kid, one.kid)) {
+          candidates.push({ label: 'this issuer\'s RSA key (' + one.role +
+                                   ')', key: one.certPem });
+        }
+      });
     } else {
-      (stsKeysFor().extraKeys || []).forEach((one) => {
-        if (one.publicJwk && one.alg === alg &&
+      helpers.allVerificationKeys().forEach((one: any) => {
+        if (one.publicJwk && one.publicJwk.kty !== 'AKP' && one.alg === alg &&
             (!header.kid || kidNamesKey(header.kid, one.publicJwk.kid))) {
           candidates.push({ label: 'this issuer\'s ' + alg + ' key',
                             key: crypto.createPublicKey(
@@ -581,7 +617,8 @@ class VcVerifier {
                 "post-quantum.");
       return this.verifyIssuerSignature(token);
     }
-    const keys = await allSigningKeysAsync();
+    // Every live generation (#42).
+    const keys = await helpers.allVerificationKeysAsync();
     const candidates = keys.filter(function (one) {
       return !!one.publicJwk && one.alg === alg &&
              (!header.kid || kidNamesKey(header.kid, one.publicJwk.kid));
@@ -1308,7 +1345,18 @@ class VcVerifier {
       'canonical statement(s)' + (vp ? ', inside a VerifiablePresentation.' :
                                        ', with no presentation around it.'));
 
-    const keys = await bbsKeyPair();
+    // EVERY LIVE GENERATION OF THE REALM'S BBS KEY (#49 P5): the one the
+    // proof options name first, then the rest — a credential issued before a
+    // rotation still verifies through its grace.
+    const generations = this.deps.bbsGenerations
+      ? await this.deps.bbsGenerations()
+      : [{ kid: '', publicKey: (await bbsKeyPair()).publicKey }];
+    const named = String((envelope.proofOptions || {}).verificationMethod ||
+                         '');
+    generations.sort(function (a: any, b: any): number {
+      return (named && named.indexOf(b.kid) >= 0 ? 1 : 0) -
+             (named && named.indexOf(a.kid) >= 0 ? 1 : 0);
+    });
     let header;
     try {
       header = await bbs2023.headerFor(envelope.proofOptions || {});
@@ -1323,8 +1371,12 @@ class VcVerifier {
     this.vpCheck(checks, 'Proof options', true, 'canonicalized to the ' +
                  'header the base proof was bound to.');
 
-    const ok = await bbs2023.verifyDerived(keys.publicKey, proofBytes, header,
-      Buffer.from(String(record.nonce), 'utf8'), statements, indexes);
+    let ok = false;
+    for (let g = 0; g < generations.length && !ok; g++) {
+      ok = await bbs2023.verifyDerived(generations[g].publicKey, proofBytes,
+        header, Buffer.from(String(record.nonce), 'utf8'), statements,
+        indexes);
+    }
     this.vpCheck(checks, 'Derived proof', ok, ok
       ? "verifies against this issuer's BBS key over exactly the statements " +
         "disclosed, and against this request's nonce — so it was derived for " +
@@ -2139,7 +2191,10 @@ class VcVerifier {
   // or software-secured — which is exactly what is known here: the Key
   // Binding JWT proves the key, and a JWK says nothing about where the key
   // lives. `hwk` or `swk` would be this service claiming knowledge it does not
-  // have, and the issuer accepts no key attestation that could supply it.
+  // have — UNLESS the issuer verified a key attestation when it issued the
+  // credential, which `assuranceOf()` below reads off the register: hardware
+  // storage adds `hwk`, and user authentication attested as well makes `mfa`.
+  // Nothing the presentation says about itself is believed.
   // `user` is not appropriate either: nothing about a presentation proves the
   // holder was present or tested, only that their wallet signed. It is ONE
   // factor, rated as every other one factor here is rated (`"1"`); two are

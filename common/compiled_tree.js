@@ -15,7 +15,7 @@
 // `refuseUncompiledTree()` is called FIRST by `server.js` and `tests/run.js`
 // and says the reason instead: which sources are uncompiled, and that the
 // service and its in-process suite run in containers
-// (`./docker-npm-test.sh`, `./docker-run-tests.sh`). Inside an image built by
+// (`./docker-npm-test.sh`, `./run-tests.sh`). Inside an image built by
 // `build-typescript.sh` every `.ts` has its `.js` (or, in the service image,
 // no `.ts` is left), and this answers nothing.
 //
@@ -105,7 +105,7 @@ function refuseUncompiledTree(what) {
     (answer.found.length > 5 ? ', ...' : '') + '). TypeScript here is ' +
     'compiled only inside an image build (issue #50), so the service and its ' +
     'in-process suite run in containers: ./docker-npm-test.sh for npm test, ' +
-    './docker-run-tests.sh for the whole suite. On the host, ' +
+    './run-tests.sh for the whole suite. On the host, ' +
     '`tests/node_modules/.bin/tsc -p tsconfig.json` checks the types and ' +
     'writes nothing.');
   process.exit(1);

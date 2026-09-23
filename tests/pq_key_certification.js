@@ -548,7 +548,7 @@ function theListener(t, got) {
             'is node 24 — the Dockerfile pins 24.16.0), so the listener half ' +
             'did not run here');
     t.log.warn('NOT CHECKED HERE: the ML-DSA listener certificate. Run ' +
-               './docker-run-tests.sh, or use node 24.');
+               './run-tests.sh, or use node 24.');
     log.debug("Leaving theListener().");
     return;
   }

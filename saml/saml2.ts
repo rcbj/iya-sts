@@ -138,8 +138,9 @@ class Saml2Assertions {
     // a choice no page could report.
     const how = documentSettings.signatureOptions();
     const signed = stsCrypto.signXml(xml, {
-      privateKeyPem: STS.privateKeyPem,
-      certPem: STS.certPem,
+      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key.
+      privateKeyPem: STS.xml.privateKeyPem,
+      certPem: STS.xml.certPem,
       placement: stsCrypto.PLACEMENT.AFTER_ISSUER,
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,

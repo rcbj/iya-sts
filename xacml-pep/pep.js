@@ -203,6 +203,46 @@ const VERSION = APP_VERSION.version;
 // configuration exists to serve a console that can change a setting while the
 // service runs. A PEP has no console.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A TIMER THAT BACKS OFF WHILE THE PDP REFUSES (2026-09-21). The poll and the
+// heartbeat were `setInterval`s, so a PEP pointed at a realm that does not
+// exist yet — the test stack starts it minutes before its job creates one —
+// or one whose PDP has turned remote PEPs off asked every few seconds for as
+// long as it ran, and every refusal was a log line on both sides: about 1,800
+// 404s and 501s in one `single-node` run. `work` answers whether the round
+// SUCCEEDED; each failure doubles the wait up to `capMs`, and the first
+// success puts it back to `baseMs`. A nudge still pulls at once, whatever the
+// wait. It also never overlaps itself, which `setInterval` did for a pull
+// slower than its interval.
+// ---------------------------------------------------------------------------
+function onBackoff(label, baseMs, capMs, work) {
+  log.debug("Entering onBackoff(). " + label);
+  const ceiling = Math.max(baseMs, capMs);
+  let failures = 0;
+  function next() {
+    const wait = Math.min(baseMs * Math.pow(2, failures), ceiling);
+    setTimeout(function () {
+      Promise.resolve().then(work).then(function (ok) {
+        if (ok) {
+          if (failures) {
+            log.info('xacml-pep: ' + label + ' succeeded again; back to ' +
+                     'every ' + baseMs + 'ms.');
+          }
+          failures = 0;
+        } else {
+          failures = Math.min(failures + 1, 30);
+        }
+      }, function (error) {
+        log.debug("Caught in onBackoff(): " + ((error && error.message) ||
+                                               error));
+        failures = Math.min(failures + 1, 30);
+      }).then(next);
+    }, wait).unref();
+  }
+  next();
+  log.debug("Leaving onBackoff().");
+}
+
 function intFromEnv(name, dflt) {
   log.debug("Entering intFromEnv().");
   const raw = process.env[name];
@@ -250,6 +290,10 @@ const options = {
   port: intFromEnv('PEP_PORT', 9090),
   pollIntervalMs: intFromEnv('PEP_POLL_INTERVAL_MS', 15000),
   heartbeatIntervalMs: intFromEnv('PEP_HEARTBEAT_INTERVAL_MS', 60000),
+  // THE LONGEST A POLL OR A HEARTBEAT WAITS WHILE THE PDP REFUSES IT — see
+  // `onBackoff()`. Five minutes shipped; the test stack sets it under the
+  // forty seconds `sts_xacml_remote_pep` waits for a realm to be found.
+  backoffMaxMs: intFromEnv('PEP_BACKOFF_MAX_MS', 300000),
   timeoutMs: intFromEnv('PEP_TIMEOUT_MS', 5000),
   maxBodyBytes: intFromEnv('PEP_MAX_BODY_BYTES', 4 * 1024 * 1024),
   clientCertificate: fileFromEnv('PEP_TLS_CERT'),
@@ -1004,7 +1048,8 @@ async function start() {
   await sync.register(options);
   await sync.pull(options);
 
-  setInterval(function () {
+  onBackoff('the poll', options.pollIntervalMs, options.backoffMaxMs,
+            function pollOnce() {
     // THE REGISTRATION IS RETRIED HERE AND NOWHERE ELSE, on the poll timer
     // rather than a timer of its own — see `sync.js`'s header for why it is
     // retried at all. `registerIfNeeded()` returns immediately once it has
@@ -1016,31 +1061,38 @@ async function start() {
     // reads better on the console — but a registration that fails must never
     // stop a pull, which is the whole doctrine of this file, so the catch is
     // between them rather than around both.
-    sync.registerIfNeeded(options).catch(function (error) {
+    return sync.registerIfNeeded(options).catch(function (error) {
       log.debug(tag('STS-XPEP-0011') +
                 'xacml-pep: the retried registration threw: ' + error.message);
     }).then(function () {
       return sync.pull(options);
+    }).then(function () {
+      return sync.state().held.lastPullOk === true;
     }).catch(function (error) {
       log.warn(tag('STS-XPEP-0010') + 'xacml-pep: the scheduled pull threw: ' +
                error.message);
+      return false;
     });
-  }, options.pollIntervalMs).unref();
+  });
 
-  setInterval(function () {
-    sync.heartbeat(options).then(function (result) {
+  onBackoff('the heartbeat', options.heartbeatIntervalMs, options.backoffMaxMs,
+            function beatOnce() {
+    return sync.heartbeat(options).then(function (result) {
       // A PDP THAT SAYS THIS COPY IS BEHIND GETS A PULL IMMEDIATELY. It is the
       // second path to convergence after the nudge and the poll, and it costs
       // one comparison on a beat that was happening anyway.
       if (result.ok && result.current === false) {
-        return sync.pull(options);
+        return sync.pull(options).then(function () {
+          return true;
+        });
       }
-      return null;
+      return !!result.ok;
     }).catch(function (error) {
       log.warn(tag('STS-XPEP-0012') + 'xacml-pep: the heartbeat threw: ' +
                error.message);
+      return false;
     });
-  }, options.heartbeatIntervalMs).unref();
+  });
 
   server.listen(options.port, function () {
     log.info('xacml-pep: listening on ' + options.port +

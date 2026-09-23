@@ -9,6 +9,11 @@ directory is also the STORE for four other things: people, groups, applications
 the root `CLAUDE.md` for the submodule's placement rules, which have already cost
 something three times.
 
+**636 RE-KEYS WHEN THE LISTENER CERTIFICATE IS RE-ISSUED (2026-09-21)** — `rekeyLdaps()`,
+registered on `tls_server.onServerCertificateChange()`, runs at bind and again after
+every `build-root`; before that a replaced Root left 636 on a dead chain until a
+restart. `tls/CLAUDE.md` (*The sockets this module does not hold*) has the account.
+
 `ldap_server.js` starts **two** of those listeners — plain 389 and LDAPS 636 — and
 they are published SEPARATELY (`listening`/`listenError`, and a `tls` object with its
 own `listening`/`error`) because they bind independently and "389 is up and 636 is

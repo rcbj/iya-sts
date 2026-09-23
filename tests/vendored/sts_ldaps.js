@@ -235,6 +235,24 @@ function presentedFingerprint(host, port) {
   });
 }
 
+// EVERY NODE'S LEAF ON ONE PORT (2026-09-21). In the `cluster` mode the
+// balancer picks a node per connection and each node presents a listener
+// certificate of its own (tests/CLAUDE.md, *Each node presents a leaf of its
+// own*), so one handshake on 8081 and one on 636 could land on two nodes and
+// compare two correct certificates. Handshakes are made until as many
+// distinct leaves as the mode has nodes (STS_TEST_CLUSTER_NODES) have been
+// seen, or a bound is reached — trust.js's readTrust() does the same for the
+// runner's own anchor. With one node this is one handshake, as it was.
+async function presentedFingerprints(host, port, nodes) {
+  log.debug("Entering presentedFingerprints(). " + host + ":" + port);
+  const seen = new Set();
+  for (let i = 0; i < nodes * 20 && seen.size < nodes; i++) {
+    seen.add(await presentedFingerprint(host, port));
+  }
+  log.debug("Leaving presentedFingerprints(). " + seen.size);
+  return Array.from(seen).sort();
+}
+
 async function createThePerson() {
   log.debug("Entering createThePerson().");
   const r = await fetch(base + "/admin-api/users/create", {
@@ -264,18 +282,32 @@ async function test() {
   const httpsPort = Number(new URL(base).port || 443);
   const ldapsHost = hostOf(ldapsUrl());
   const ldapsPort = Number(new URL(ldapsUrl()).port || 636);
-  const onHttps = await presentedFingerprint(hostOf(base), httpsPort);
-  const onLdaps = await presentedFingerprint(ldapsHost, ldapsPort);
+  const nodes = Math.max(1, Number(process.env.STS_TEST_CLUSTER_NODES) || 1);
+  const onHttps = await presentedFingerprints(hostOf(base), httpsPort, nodes);
+  const onLdaps = await presentedFingerprints(ldapsHost, ldapsPort, nodes);
   check("the LDAPS handshake VERIFIES with this runner's trust", function () {
-    assert.ok(onLdaps, "no certificate was presented on " + ldapsUrl());
+    assert.ok(onLdaps.length && onLdaps.every(function (one) {
+      return !!one;
+    }), "no certificate was presented on " + ldapsUrl());
   });
-  check("and 636 presents the same certificate as the HTTPS port", function () {
-    assert.strictEqual(onLdaps, onHttps,
+  check("and 636 presents the same certificate as the HTTPS port" +
+        (nodes > 1 ? ", on every one of the " + nodes + " nodes" : ""),
+        function () {
+    assert.deepStrictEqual(onLdaps, onHttps,
       "the directory's TLS listener and the HTTPS port present different " +
-      "certificates (" + onLdaps + " against " + onHttps + "); they are " +
-      "built from one record, so two means two listeners disagreeing about " +
-      "who this service is.");
+      "certificates (" + onLdaps.join(", ") + " against " +
+      onHttps.join(", ") + "); on one node they are built from one record, " +
+      "so a difference means two listeners disagreeing about who this " +
+      "service is.");
   });
+  if (nodes > 1) {
+    check("and each of the " + nodes + " nodes answered both ports",
+          function () {
+      assert.strictEqual(onHttps.length, nodes,
+        "only " + onHttps.length + " distinct HTTPS leaf/leaves seen in " +
+        (nodes * 20) + " handshakes; the balancer did not reach every node");
+    });
+  }
 
   // --- 2. a person binds and reads their own entry -----------------------
   let client = connect(ldapsUrl());

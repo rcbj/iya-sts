@@ -332,6 +332,13 @@ const seenJtisCount = cacheRegistry.register({
       2 * secondsSetting('oauth2.dpopIatSkewS', IAT_SKEW_SECONDS) +
       ' s) after the proof was seen.';
   },
+  // What `pruneJtis()` drops, in every realm (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, seenJtis,
+    function (seenS: unknown, jti: unknown, now: number): boolean {
+      const windowS = 2 * secondsSetting('oauth2.dpopIatSkewS',
+                                         IAT_SKEW_SECONDS);
+      return Number(seenS) < Math.floor(now / 1000) - windowS;
+    }),
   entries: function (): unknown[] {
     const windowS = 2 * secondsSetting('oauth2.dpopIatSkewS',
                                        IAT_SKEW_SECONDS);
@@ -364,6 +371,12 @@ const issuedNoncesCount = cacheRegistry.register({
       secondsSetting('oauth2.dpopNonceTtlS', NONCE_TTL_SECONDS) +
       ' s) after it was issued.';
   },
+  // What `pruneNonces()` drops, in every realm (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, issuedNonces,
+    function (issuedS: unknown, nonce: unknown, now: number): boolean {
+      const ttlS = secondsSetting('oauth2.dpopNonceTtlS', NONCE_TTL_SECONDS);
+      return Number(issuedS) < Math.floor(now / 1000) - ttlS;
+    }),
   entries: function (): unknown[] {
     const ttlS = secondsSetting('oauth2.dpopNonceTtlS', NONCE_TTL_SECONDS);
     return cacheRegistry.realmMapRows(realms, issuedNonces,
@@ -1183,7 +1196,40 @@ class Dpop {
       return null;
     }
     const auth = String(req.headers['authorization'] || '');
-    const match = /^(Bearer|DPoP)\s+(\S+)\s*$/i.exec(auth);
+    let match = /^(Bearer|DPoP)\s+(\S+)\s*$/i.exec(auth);
+    // -----------------------------------------------------------------------
+    // RFC 6750 SECTION 2.2, THE FORM-ENCODED BODY PARAMETER — for a caller that
+    // asks for it (`options.formBody`), which is the UserInfo endpoint (#118):
+    // OIDC Core section 5.3.1 has it accept the access token "as a Bearer
+    // Token, per OAuth 2.0 Bearer Token Usage", and that document defines this
+    // form beside the header. Only on a POST whose body is
+    // application/x-www-form-urlencoded, and only as a Bearer token. A request
+    // that uses the header AND the body is refused: section 2 says a client
+    // "MUST NOT use more than one method" in one request.
+    // -----------------------------------------------------------------------
+    if (opts.formBody && req.method === 'POST' &&
+        /^application\/x-www-form-urlencoded/i.test(
+          String(req.headers['content-type'] || ''))) {
+      const raw = typeof req.body === 'string' ? req.body
+        : (Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '');
+      const inBody = new URLSearchParams(raw).getAll('access_token');
+      if (inBody.length && (auth || inBody.length > 1)) {
+        res.set('WWW-Authenticate', 'Bearer error="invalid_request"');
+        log.debug("Leaving Dpop.presentedAccessToken(). More than one " +
+                  "token.");
+        errorCodes.mark(res, 'STS-OAUTH-0571');
+        vciError(res, 400, 'invalid_request',
+          'The access token was sent ' + (auth ? 'in the Authorization ' +
+          'header AND in the body' : 'more than once in the body') + '. RFC ' +
+          '6750 section 2: a client MUST NOT use more than one method to ' +
+          'send it in one request.');
+        log.debug("Leaving Dpop.presentedAccessToken().");
+        return null;
+      }
+      if (inBody.length === 1 && !auth) {
+        match = ['Bearer ' + inBody[0], 'Bearer', inBody[0]] as any;
+      }
+    }
     if (!match) {
       // Both schemes are offered in the challenge, since either is acceptable
       // here; RFC 9449 section 7.1 requires DPoP to appear when the server
@@ -1206,7 +1252,8 @@ class Dpop {
     let claims: Json = null;
     let verified = false;
     try {
-      claims = stsCrypto.verifyJws(accessToken, STS.certPem);
+      // Any generation of this realm's key (#42) — helpers.verifyOwnJws().
+      claims = helpers.verifyOwnJws(accessToken);
       verified = true;
     } catch (e) {
       log.debug("Caught in Dpop.presentedAccessToken(): " +

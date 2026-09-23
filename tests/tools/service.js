@@ -44,7 +44,7 @@
 //
 // A launcher brings up a CONTAINER and hands run-report.js its URL, so that
 // the thing under test is the IMAGE rather than this machine's node_modules —
-// ./docker-run-tests.sh does, and ./local-run-tests.sh did (from
+// ./run-tests.sh does, and ./local-run-tests.sh did (from
 // docker-compose.yml) until it was removed on 2026-09-16. This module is what
 // a bare run-report.js uses, what `./run-coverage.sh --no-docker` uses, and
 // what every COVERAGE run uses of necessity: V8 writes its data from inside

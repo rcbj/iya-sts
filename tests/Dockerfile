@@ -169,6 +169,13 @@ RUN wget -q -O chrome-linux64.zip https://storage.googleapis.com/chrome-for-test
 # `main`, and the failure arrives much later as `Cannot find module 'ldapjs'` —
 # a message naming a package rather than a checkout. The guard after the copy
 # is what turns that into a sentence.
+# A C COMPILER FOR build-native.sh (#40, 2026-09-21), in a layer of its own
+# BELOW the source copy and ABOVE nothing that downloads a browser, so that
+# adding it cost no cached Chrome layer. See the service Dockerfile.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
 COPY .npmrc ./
 COPY node-ldapjs ./node-ldapjs
@@ -217,7 +224,8 @@ COPY . /usr/src/sts-source/
 RUN ln -s /usr/src/sts/node_modules /usr/src/sts-source/node_modules \
  && ln -s /usr/src/sts/tests/node_modules \
           /usr/src/sts-source/tests/node_modules \
- && STS_IN_IMAGE_BUILD=1 ./build-typescript.sh
+ && STS_IN_IMAGE_BUILD=1 ./build-typescript.sh \
+ && STS_IN_IMAGE_BUILD=1 ./build-native.sh
 ENV STS_TYPECHECK_ROOT=/usr/src/sts-source
 
 # The report is written here and bind-mounted out by the compose file. Created

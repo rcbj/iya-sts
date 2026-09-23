@@ -78,7 +78,8 @@ is ONE require in the require order — and three `register()` calls, `gnap`,
   `authorizeWithLimits` — Datalog carried in a token is code a holder wrote.
 * **`@digitalbazaar/zcap` and the jsonld-signatures stack are ESM**, loaded by
   dynamic import, with an **offline document loader**: the contexts are
-  vendored and nothing is fetched.
+  vendored and nothing is fetched. Under a JCS suite the loader serves only
+  the root capability.
 * **A ZCAP `invocationTarget` must be an absolute URI and an RS identifier
   usually is not.** Minting refused every zcap token for a resource server
   registered under a plain name; a non-URI audience is carried as
@@ -228,6 +229,54 @@ failure patterns.
 The three jobs share `tests/vendored/gnap_client.js` (an independent client
 written from the RFCs) and `gnap_flow.js` (the resource owner and harness).
 
-**What is not independently verified:** a zcap token's Ed25519Signature2020
-proof needs RDF dataset canonicalization, which the RS job does not write out;
-it resolves the verification method to the published key instead and says so.
+**Every format is independently verified since 2026-09-22 (#43).** A zcap
+token's Ed25519Signature2020 proof needed RDF dataset canonicalization, which
+the RS job does not write out, so it only resolved the verification method to
+the published key. The default suite is now `eddsa-jcs-2022` and the job checks
+the proof itself: RFC 8785, two SHA-256 hashes, node's Ed25519. The
+compatibility suite is still checked only by the service, which is one of the
+reasons it is not the default.
+
+## ZCAP PROOF SUITES (2026-09-22, #43)
+
+`gnap.zcapCryptosuite`, per realm: **`eddsa-jcs-2022` by default**,
+`mldsa44-jcs-2024` and `slhdsa128-jcs-2024` (post-quantum, W3C FPWD), and
+`Ed25519Signature2020` **for compatibility only, with a warning in
+`docs/gnap.md`**. `token_zcap.ts`'s header argues the choice from the texts:
+RFC 9767 names ZCAP-LD v0.3, which requires a Data Integrity proof and pins no
+suite, and ZCAP-LD v0.4.0-rc.6 uses `eddsa-jcs-2022` in every example. Four
+things a reader will otherwise rediscover:
+
+* **The JCS proof is `oid4vc/vc_data_integrity.ts`'s**, the one implementation
+  of the JCS suites here (it gained `signDocument()`, a caller-supplied
+  verification-method resolver, `multikeyOf()` and `slhdsa128-jcs-2024` for
+  this). `token_zcap.ts` wraps it in a jsonld-signatures suite object, so
+  `@digitalbazaar/zcap`'s CapabilityDelegation still does the ZCAP half —
+  chain, root, controller, attenuation. No new signer.
+* **The proof carries the capability's `@context`** (create step 2 of every
+  JCS suite). That is not optional here: the zcap library refuses a proof whose
+  own `@context` does not include `zcap/v1` (`checkProofContext()`), and
+  jsonld-signatures hands a `-jcs-` proof over unmodified.
+* **The controller document is handed to the purpose, not loaded.**
+  `CapabilityDelegation({ controller })` makes jsonld-signatures' controller
+  check read `capabilityDelegation` straight off the document this module
+  built, instead of framing a Controlled Identifiers document whose context
+  nothing here vendors. The JCS loader serves the root capability and nothing
+  else.
+* **A realm verifies only its own suite (STS-GNAP-0336)**, before any
+  signature, so the default realm never falls back to the RDF suite. Changing
+  the setting strands the tokens already issued. The post-quantum keys are the
+  realm's `jose:ML-DSA-44` / `jose:SLH-DSA-SHA2-128s` units, which is why
+  `gnap_tokens.zcapKeys()` is asynchronous (`allSigningKeysAsync()`), and an
+  SLH-DSA-SHA2-128s signature costs about two seconds in the worker pool.
+
+## THE ED25519 KEY ROTATES WITH THE REALM'S SIGNING KEYS (2026-09-22, #49 P5, D6)
+
+Biscuits and ZCAPs are signed with the realm's `jose:EdDSA:Ed25519` unit, so
+`signing.rotate` rotates that key like any other (#42). What changed here is
+verification: `verify()` tries every live generation of the unit — current
+first, then the next key and the retired ones within their grace — and
+answers the current key's refusal when none verifies. `/gnap/keys` adds
+`biscuit.root_public_keys` (non-standard; `root_public_key` is still the
+current one) and the ZCAP controller document lists every generation as a
+verification method.

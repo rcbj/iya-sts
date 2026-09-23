@@ -4,7 +4,7 @@
 // File: tests/tools/run-report.js
 //
 // ===========================================================================
-// THE REPORT GENERATOR. `./docker-run-tests.sh` runs it in the tests container
+// THE REPORT GENERATOR. `./run-tests.sh` runs it in the tests container
 // (tests/run-tests-in-container.sh), and `./run-coverage.sh` runs it too;
 // `./local-run-tests.sh` ran it on the host until it was removed (2026-09-16).
 // Since #50 a host run of it meets common/compiled_tree.js's refusal
@@ -40,7 +40,7 @@
 //   logs/00-test-runner.log        THIS RUNNER'S own output — the jobs it
 //                                  chose, the ones it could not start and why,
 //                                  the reason a job was SKIPPED, the summary.
-//                                  ./docker-run-tests.sh takes it out of
+//                                  ./run-tests.sh takes it out of
 //                                  `docker compose logs tests` (the
 //                                  removed ./local-run-tests.sh tee'd it)
 //
@@ -159,7 +159,7 @@
 // RUNNER STARTS ONLY THE SECOND.
 //
 //   A CONTAINER, brought up by a launcher and handed here as --service-url
-//   (or STS_TEST_SERVICE_URL). ./docker-run-tests.sh's is the `sts` service of
+//   (or STS_TEST_SERVICE_URL). ./run-tests.sh's is the `sts` service of
 //   docker-compose-run-tests.yml; ./local-run-tests.sh's, from 2026-08-28
 //   until that launcher was removed on 2026-09-16, was docker-compose.yml's.
 //   What it buys is that
@@ -407,7 +407,10 @@ function vendoredJobs(options) {
                 docker: !!entry.docker,
                 // A job may raise its own watchdog and may not lower it; see
                 // runJob(), where that rule is enforced rather than trusted.
-                timeoutMs: Number(entry.timeoutMs) || 0 });
+                timeoutMs: Number(entry.timeoutMs) || 0,
+                // Keeps its connections under STS_TEST_FRESH_CONNECTIONS —
+                // see where the preload is decided, below.
+                reuseConnections: !!entry.reuseConnections });
   });
   const browserJobs = jobs.filter(function (j) { return j.browser; });
   if (browserJobs.length) {
@@ -1246,7 +1249,7 @@ async function waitForExternalService(url, log, timeoutMs) {
 //
 // **A LAUNCHER'S ANSWER ALWAYS WINS**, the same precedence `STS_LDAP_URL`
 // above uses: a variable already in this process's environment was put there
-// by a launcher — ./docker-run-tests.sh now, ./local-run-tests.sh until
+// by a launcher — ./run-tests.sh now, ./local-run-tests.sh until
 // 2026-09-16 — which arranged the socket itself and knows where it is. This
 // only answers for the service THIS runner started, and answers nothing at
 // all when it started none — the compose stacks reach this with no
@@ -1299,7 +1302,7 @@ function chosenPorts(instance) {
 // ---------------------------------------------------------------------------
 function pinTheManagementApiSecret() {
   log.debug('Entering pinTheManagementApiSecret().');
-  // A caller who set either name already MEANS it — `./docker-run-tests.sh`
+  // A caller who set either name already MEANS it — `./run-tests.sh`
   // exports the first before it brings its stack up (as `./local-run-tests.sh`
   // did until 2026-09-16), and a person debugging a stack by hand sets the
   // second. Overwriting one here would mint a token
@@ -1667,7 +1670,7 @@ async function main() {
       const why = 'no launcher provided a remote PEP (XACML_PEP_URL), so ' +
                   'this job would have to build an image and start a ' +
                   'container of its own — and no docker daemon answered (' +
-                  dockerHere.why + '). ./docker-run-tests.sh brings one up ' +
+                  dockerHere.why + '). ./run-tests.sh brings one up ' +
                   'as part of its stack and never takes this branch; a ' +
                   'run with no such stack — a bare run-report.js, or a ' +
                   'coverage run — is what does. The ' +
@@ -1784,7 +1787,7 @@ async function main() {
         // docker-compose.yml.
         //
         // THREE WAYS IT CAN BE ANSWERED AND THIS LINE IS THE THIRD.
-        // ./docker-run-tests.sh puts `ldap://sts:389` in the runner
+        // ./run-tests.sh puts `ldap://sts:389` in the runner
         // container's environment (the runner is on the bridge, nothing is
         // published); ./local-run-tests.sh picked a free host port, layered
         // tests/docker-compose-ldap.yml and exported STS_LDAP_URL, until it
@@ -1886,7 +1889,17 @@ async function main() {
       // jobs start exactly as they did. Appended for the reason the token's
       // preload above is.
       // ------------------------------------------------------------------
-      if (process.env.STS_TEST_FRESH_CONNECTIONS === '1') {
+      //
+      // **EXCEPT A JOB THAT SAYS `reuseConnections` (2026-09-21).** Against
+      // an AWS environment a new connection is a TCP and TLS handshake across
+      // the internet — about a second — before EVERY request, and the three
+      // bulk loads and the distribution-point walk make thousands: all four
+      // were killed at their watchdogs on the ci environment with a quarter
+      // to a half of their work done. Their subject is throughput and the
+      // documents, not which node answered, so they keep their connections;
+      // every other job still spreads across the nodes.
+      if (process.env.STS_TEST_FRESH_CONNECTIONS === '1' &&
+          !job.reuseConnections) {
         const fresh = '--require ' +
           path.join(__dirname, 'fresh-connections.js');
         job.env.NODE_OPTIONS = job.env.NODE_OPTIONS

@@ -774,6 +774,7 @@ trust realm. [docs/gnap.md](docs/gnap.md) says what each one changes on the wire
 | `gnap.enabled` | `STS_GNAP_ENABLED` | `true` | yes | Off makes every /gnap endpoint, the RS-facing discovery document and the resource-owner pages answer that GNAP is turned off in this realm. |
 | `gnap.accessTokenFormat` | `STS_GNAP_ACCESS_TOKEN_FORMAT` | `jwt-signed` | yes | The RFC 9767 token format issued when nothing more specific decides. |
 | `gnap.tokenFormats` | `STS_GNAP_TOKEN_FORMATS` | `jwt-signed,jwt-encrypted,macaroon,biscuit,zcap` | yes | RFC 9767 section 3.1's token_formats_supported. |
+| `gnap.zcapCryptosuite` | `STS_GNAP_ZCAP_CRYPTOSUITE` | `eddsa-jcs-2022` | yes | The Data Integrity proof a zcap token is signed with, and the only one accepted back: `eddsa-jcs-2022`, or the post-quantum `mldsa44-jcs-2024` / `slhdsa128-jcs-2024`. **Warning:** `Ed25519Signature2020` is for compatibility only — it signs the RDF canonicalization rather than the JSON, and cannot be verified without a JSON-LD processor ([docs/gnap.md](docs/gnap.md)). |
 | `gnap.accessTokenLifetimeS` | `STS_GNAP_ACCESS_TOKEN_LIFETIME_S` | `3600` | yes | The expires_in of every access token, and the exp of the formats that carry one. |
 | `gnap.interactionLifetimeS` | `STS_GNAP_INTERACTION_LIFETIME_S` | `600` | yes | How long the interaction start URIs and user codes of a pending grant stay usable (RFC 9635 section 3.3's expires_in). |
 | `gnap.continueWaitS` | `STS_GNAP_CONTINUE_WAIT_S` | `5` | yes | The wait of every continuation response. |
@@ -1536,7 +1537,7 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
 | `spiffe.enabled` | `STS_SPIFFE_ENABLED` | `true` | yes | Whether the three SPIFFE surfaces answer. |
-| `spiffe.trustDomain` | `STS_SPIFFE_TRUST_DOMAIN` | `example.org` | **restart**, and **settable on a REALM** — the process's authorities are generated at startup and every certificate they hold names this trust domain; a realm is created with SPIFFE off and builds its own when it is turned on | The trust domain this service is the issuing authority for: the authority part of every SPIFFE ID it mints, so spiffe://example.org/… by default. **It is also the common root every other realm's is built from** — a realm created here is given `<realm>.<this value>`, the way it is given an entityID of its own. Set it on a realm to name that realm's domain outright. Once a realm's authorities are built the name is fixed, and a later change is reported as drift on `/admin/spiffe` rather than acted on. |
+| `spiffe.trustDomain` | `STS_SPIFFE_TRUST_DOMAIN` | `example.org` | **restart**, and **settable on a REALM** — the process's authorities are generated at startup and every certificate they hold names this trust domain; a realm is created with SPIFFE off and builds its own when it is turned on | The trust domain this service is the issuing authority for: the authority part of every SPIFFE ID it mints, so spiffe://example.org/… by default. A realm created here is given **its own DNS domain** as its trust domain (since 2026-09-18; it was `<realm>.<this value>` before), the way it is given an entityID of its own. Set it on a realm to name that realm's trust domain outright. Once a realm's authorities are built the name is fixed, and a later change is reported as drift on `/admin/spiffe` rather than acted on. |
 | `spiffe.x509KeyType` | `STS_SPIFFE_X509_KEY_TYPE` | `ec-p256` | **restart** — the X.509 authority is generated with this key type at startup | The key the trust domain's X.509 authority is generated with, and therefore the key type of every X509-SVID it signs. EC P-256 by default because that is what SPIRE issues and what the X509-SVID specification recommends. |
 | `spiffe.jwtKeyType` | `STS_SPIFFE_JWT_KEY_TYPE` | `ec-p256` | **restart** — the JWT authority is generated with this key type at startup | The key the trust domain's JWT authority is generated with, which decides the `alg` of every JWT-SVID: ES256, ES384, ES512 or RS256. |
 | `spiffe.caTtl` | `STS_SPIFFE_CA_TTL` | `86400` | **restart** — the authority certificate is issued for this long at startup | How long the X.509 authority's own certificate is valid. |
@@ -1558,6 +1559,72 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `spiffe.maxAgents` | `STS_SPIFFE_MAX_AGENTS` | `200` | yes | How many attested agents are held. The agent id comes off whatever the caller sent, so any caller can invent one; past the cap the oldest is dropped rather than the newest refused, because an agent that cannot attest is an agent that cannot do anything at all. |
 | `spiffe.maxFederatedBundles` | `STS_SPIFFE_MAX_FEDERATED_BUNDLES` | `32` | yes | How many foreign trust domains' bundles are held. They are PASTED IN and never fetched — see /spiffe — so this bounds what an operator or the SPIRE Server API can add, not what any polling loop could accumulate. |
 | `spiffe.joinTokenTtl` | `STS_SPIFFE_JOIN_TOKEN_TTL` | `600` | yes | A join token's lifetime when CreateJoinToken names none. |
+| `spiffe.nodeAttestors` | `STS_SPIFFE_NODE_ATTESTORS` | `join_token` | yes | The node attestors AttestAgent accepts in this realm. Each is verified; a type not listed, or not one this server can verify, is refused with FAILED_PRECONDITION. |
+| `spiffe.attestationChallengeTimeout` | `STS_SPIFFE_ATTESTATION_CHALLENGE_TIMEOUT` | `30` | yes | Seconds AttestAgent waits for a challenge_response once an attestor has challenged. |
+| `spiffe.x509popMode` | `STS_SPIFFE_X509POP_MODE` | external_pki | yes | x509pop `mode`: external_pki verifies against `spiffe.x509popCaBundle`; spiffe against this realm's own SPIFFE bundle. |
+| `spiffe.x509popCaBundle` | `STS_SPIFFE_X509POP_CA_BUNDLE` | (empty) | yes | PEM trust anchors for x509pop (SPIRE's ca_bundle_path). Empty refuses every x509pop agent. |
+| `spiffe.x509popSpiffePrefix` | `STS_SPIFFE_X509POP_SPIFFE_PREFIX` | `/spire-exchange/` | yes | spiffe mode: the X509-SVID path must start with it. |
+| `spiffe.x509popAgentPathTemplate` | `STS_SPIFFE_X509POP_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's agent_path_template; empty is SPIRE's default for the mode. Field references and sprig string/hash functions; other Go template syntax is refused. |
+| `spiffe.x509popMaxIntermediates` | `STS_SPIFFE_X509POP_MAX_INTERMEDIATES` | `4` | yes | Most intermediates an x509pop attestation may carry. |
+| `spiffe.x509popMaxRsaKeySize` | `STS_SPIFFE_X509POP_MAX_RSA_KEY_SIZE` | `8192` | yes | Largest RSA key accepted on any x509pop certificate. |
+| `spiffe.x509popVerifyClientIp` | `STS_SPIFFE_X509POP_VERIFY_CLIENT_IP` | `false` | yes | The agent's address must be an IP SAN of its leaf. |
+| `spiffe.x509popGroupTemplate` | `STS_SPIFFE_X509POP_GROUP_TEMPLATE` | (empty) | yes | Renders a `group:` selector when the result is in `spiffe.x509popAllowedGroups`. |
+| `spiffe.x509popAllowedGroups` | `STS_SPIFFE_X509POP_ALLOWED_GROUPS` | (empty) | yes | The groups `spiffe.x509popGroupTemplate` may produce. |
+| `spiffe.sshpopCertAuthorities` | `STS_SPIFFE_SSHPOP_CERT_AUTHORITIES` | (empty) | yes | SSH host CAs in authorized_keys form, one per line. Empty refuses every sshpop agent. |
+| `spiffe.sshpopCanonicalDomain` | `STS_SPIFFE_SSHPOP_CANONICAL_DOMAIN` | (empty) | yes | The first principal must end in it; the Hostname is the principal without it. |
+| `spiffe.sshpopAgentPathTemplate` | `STS_SPIFFE_SSHPOP_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's agent_path_template for sshpop. |
+| `spiffe.sshpopVerifyClientIp` | `STS_SPIFFE_SSHPOP_VERIFY_CLIENT_IP` | `false` | yes | The agent's address must be in the certificate's source-address critical option. |
+| `spiffe.tpmDevidCaBundle` | `STS_SPIFFE_TPM_DEVID_CA_BUNDLE` | (empty) | yes | PEM anchors for tpm_devid DevID certificates. Empty refuses every tpm_devid agent. |
+| `spiffe.tpmEndorsementCaBundle` | `STS_SPIFFE_TPM_ENDORSEMENT_CA_BUNDLE` | (empty) | yes | PEM anchors for TPM endorsement key certificates. Empty refuses every tpm_devid agent. |
+| `spiffe.k8sPsatClusters` | `STS_SPIFFE_K8S_PSAT_CLUSTERS` | (empty) | yes | k8s_psat clusters as JSON: allow list, audience, apiServer, caFile, tokenFile, label keys. The bearer token is always a FILE; no apiServer means in-cluster. |
+| `spiffe.httpChallengeAllowedDnsPatterns` | `STS_SPIFFE_HTTP_CHALLENGE_ALLOWED_DNS_PATTERNS` | (empty) | yes | Regular expressions a host name must match BEFORE it is resolved or dialled. Empty refuses every http_challenge agent (stricter than SPIRE). |
+| `spiffe.httpChallengeRequiredPort` | `STS_SPIFFE_HTTP_CHALLENGE_REQUIRED_PORT` | `0` | yes | The one port allowed; 0 allows any. |
+| `spiffe.httpChallengeAllowNonRootPorts` | `STS_SPIFFE_HTTP_CHALLENGE_ALLOW_NON_ROOT_PORTS` | `true` | yes | Off, only ports below 1024. |
+| `spiffe.httpChallengeTofu` | `STS_SPIFFE_HTTP_CHALLENGE_TOFU` | `true` | yes | A host name attests once until its agent is deleted. |
+| `spiffe.httpChallengeVerifyClientIp` | `STS_SPIFFE_HTTP_CHALLENGE_VERIFY_CLIENT_IP` | `false` | yes | The agent's address must be one its host name resolves to. |
+| `spiffe.awsIidPartition` | `STS_SPIFFE_AWS_IID_PARTITION` | `aws` | yes | The partition for the assume-role ARN. |
+| `spiffe.awsIidAssumeRole` | `STS_SPIFFE_AWS_IID_ASSUME_ROLE` | (empty) | yes | A role name assumed in each node's account. Access keys are never a setting — the SDK chain supplies them. |
+| `spiffe.awsIidSkipBlockDevice` | `STS_SPIFFE_AWS_IID_SKIP_BLOCK_DEVICE` | `false` | yes | Skip the root-volume / first-interface attach-time check. |
+| `spiffe.awsIidDisableInstanceProfileSelectors` | `STS_SPIFFE_AWS_IID_DISABLE_INSTANCE_PROFILE_SELECTORS` | `false` | yes | No iamrole: selectors, and no IAM call. |
+| `spiffe.awsIidLocalValidAccountIds` | `STS_SPIFFE_AWS_IID_LOCAL_VALID_ACCOUNT_IDS` | (empty) | yes | Accounts exempt from the block device check. |
+| `spiffe.awsIidAgentPathTemplate` | `STS_SPIFFE_AWS_IID_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's agent_path_template for aws_iid. |
+| `spiffe.awsIidVerifyOrganization` | `STS_SPIFFE_AWS_IID_VERIFY_ORGANIZATION` | (empty) | yes | JSON: an AWS Organizations check, or an account list. |
+| `spiffe.awsIidEksClusterNames` | `STS_SPIFFE_AWS_IID_EKS_CLUSTER_NAMES` | (empty) | yes | EKS clusters the instance must be a node of. |
+| `spiffe.awsIidEndpoint` | `STS_SPIFFE_AWS_IID_ENDPOINT` | (empty) | yes | An endpoint every AWS client is pointed at instead. |
+| `spiffe.gcpIitProjectIdAllowList` | `STS_SPIFFE_GCP_IIT_PROJECT_ID_ALLOW_LIST` | (empty) | yes | Projects allowed; required. |
+| `spiffe.gcpIitAgentPathTemplate` | `STS_SPIFFE_GCP_IIT_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's agent_path_template for gcp_iit. |
+| `spiffe.gcpIitUseInstanceMetadata` | `STS_SPIFFE_GCP_IIT_USE_INSTANCE_METADATA` | `false` | yes | Read the instance from Compute Engine for tag/label/metadata selectors. |
+| `spiffe.gcpIitAllowedLabelKeys` | `STS_SPIFFE_GCP_IIT_ALLOWED_LABEL_KEYS` | (empty) | yes | Instance labels made selectors. |
+| `spiffe.gcpIitAllowedMetadataKeys` | `STS_SPIFFE_GCP_IIT_ALLOWED_METADATA_KEYS` | (empty) | yes | Instance metadata made selectors. |
+| `spiffe.gcpIitMaxMetadataValueSize` | `STS_SPIFFE_GCP_IIT_MAX_METADATA_VALUE_SIZE` | `128` | yes | Longest allowed metadata value. |
+| `spiffe.gcpIitServiceAccountFile` | `STS_SPIFFE_GCP_IIT_SERVICE_ACCOUNT_FILE` | (empty) | yes | A service account key FILE; empty uses application default credentials. |
+| `spiffe.gcpIitCertsUrl` | `STS_SPIFFE_GCP_IIT_CERTS_URL` | Google's | yes | Where Google publishes the identity-token certificates. |
+| `spiffe.azureImdsTenants` | `STS_SPIFFE_AZURE_IMDS_TENANTS` | (empty) | yes | azure_imds tenants as JSON: tenantId, tokenAuth (a token FILE), allowed VM tags, subscriptions. No app secret is ever a setting. |
+| `spiffe.azureImdsAgentPathTemplate` | `STS_SPIFFE_AZURE_IMDS_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's agent_path_template for azure_imds. |
+| `spiffe.azureImdsAllowedMetadataDomains` | `STS_SPIFFE_AZURE_IMDS_ALLOWED_METADATA_DOMAINS` | `metadata.azure.com` | yes | Domains the attested document's signing certificate must name. |
+| `spiffe.azureImdsTrustBundle` | `STS_SPIFFE_AZURE_IMDS_TRUST_BUNDLE` | (empty) | yes | Extra PEM roots beside the DigiCert roots SPIRE embeds. |
+| `spiffe.azureImdsIntermediateHost` | `STS_SPIFFE_AZURE_IMDS_INTERMEDIATE_HOST` | `www.microsoft.com` | yes | The only host a CA Issuers URL may name. |
+| `spiffe.azureImdsDiscoveryUrl` | `STS_SPIFFE_AZURE_IMDS_DISCOVERY_URL` | Microsoft's | yes | Where a tenant domain's ID is looked up. |
+| `spiffe.workloadAttestors` | `STS_SPIFFE_WORKLOAD_ATTESTORS` | `unix` | yes | Workload attestors run for a Workload API Unix-socket connection: unix, docker, k8s. Once per connection; every call checks the process is unchanged; a failing attestor refuses the connection. TCP callers are never attested. |
+| `spiffe.workloadProcRoot` | `STS_SPIFFE_WORKLOAD_PROC_ROOT` | `/proc` | yes | Where a caller's process is read. A peer in another pid namespace is attested on its kernel uid and gid only. |
+| `spiffe.unixDiscoverWorkloadPath` | `STS_SPIFFE_UNIX_DISCOVER_WORKLOAD_PATH` | `false` | yes | unix: add `path:` and `sha256:` for the caller's executable. |
+| `spiffe.unixWorkloadSizeLimit` | `STS_SPIFFE_UNIX_WORKLOAD_SIZE_LIMIT` | `0` | yes | unix: 0 hashes any size, above 0 refuses a larger executable, -1 emits no `sha256:`. |
+| `spiffe.dockerSocketPath` | `STS_SPIFFE_DOCKER_SOCKET_PATH` | `unix:///var/run/docker.sock` | yes | docker: the Engine API socket. |
+| `spiffe.dockerApiVersion` | `STS_SPIFFE_DOCKER_API_VERSION` | (empty) | yes | docker: the Engine API version; empty is the Engine's default. |
+| `spiffe.k8sKubeletReadOnlyPort` | `STS_SPIFFE_K8S_KUBELET_READ_ONLY_PORT` | `0` | yes | k8s: above 0, the pod list is read over plain HTTP on loopback. |
+| `spiffe.k8sKubeletSecurePort` | `STS_SPIFFE_K8S_KUBELET_SECURE_PORT` | `0` | yes | k8s: the kubelet's secure port, dialled; 0 is its own 10250. |
+| `spiffe.k8sNodeName` | `STS_SPIFFE_K8S_NODE_NAME` | (empty) | yes | k8s: the kubelet host; empty reads the next setting's variable, and with neither the kubelet is 127.0.0.1 checked for its chain only. |
+| `spiffe.k8sNodeNameEnv` | `STS_SPIFFE_K8S_NODE_NAME_ENV` | `MY_NODE_NAME` | yes | k8s: the environment variable holding the node name. |
+| `spiffe.k8sCertificateFile` | `STS_SPIFFE_K8S_CERTIFICATE_FILE` | (empty) | yes | k8s: client certificate FILE for the kubelet; empty uses a token. |
+| `spiffe.k8sPrivateKeyFile` | `STS_SPIFFE_K8S_PRIVATE_KEY_FILE` | (empty) | yes | k8s: its private key FILE. |
+| `spiffe.k8sUseAnonymousAuthentication` | `STS_SPIFFE_K8S_USE_ANONYMOUS_AUTHENTICATION` | `false` | yes | k8s: no token and no certificate. |
+| `spiffe.k8sTokenFile` | `STS_SPIFFE_K8S_TOKEN_FILE` | (empty) | yes | k8s: bearer token FILE; empty is the in-cluster service account's. |
+| `spiffe.k8sSkipKubeletVerification` | `STS_SPIFFE_K8S_SKIP_KUBELET_VERIFICATION` | `false` | yes | k8s: do not verify the kubelet's certificate. |
+| `spiffe.k8sKubeletCaFile` | `STS_SPIFFE_K8S_KUBELET_CA_FILE` | (empty) | yes | k8s: the kubelet's CA FILE; empty is the in-cluster `ca.crt`. |
+| `spiffe.k8sMaxPollAttempts` | `STS_SPIFFE_K8S_MAX_POLL_ATTEMPTS` | `60` | yes | k8s: pod list reads before a missing container fails. |
+| `spiffe.k8sPollRetryIntervalMs` | `STS_SPIFFE_K8S_POLL_RETRY_INTERVAL_MS` | `500` | yes | k8s: between those reads. |
+| `spiffe.k8sDisableContainerSelectors` | `STS_SPIFFE_K8S_DISABLE_CONTAINER_SELECTORS` | `false` | yes | k8s: pod selectors only. |
+| `spiffe.k8sEnableNamespaceLabels` | `STS_SPIFFE_K8S_ENABLE_NAMESPACE_LABELS` | `false` | yes | k8s: add `ns-label:` selectors from the API server. |
 | `spiffe.maxJoinTokens` | `STS_SPIFFE_MAX_JOIN_TOKENS` | `256` | yes | Unspent, unexpired join tokens a realm holds. At the bound a NEW token is refused with RESOURCE_EXHAUSTED; a token already handed to an agent is never evicted. |
 | `spiffe.maxPageSize` | `STS_SPIFFE_MAX_PAGE_SIZE` | `1000` | yes | The cap on `page_size` for every SPIRE Server API `List*` method. |
 | `spiffe.maxRecordedConnections` | `STS_SPIFFE_MAX_RECORDED_CONNECTIONS` | `512` | yes (per process — a realm may not carry it) | How many mTLS connections are remembered so an X509-SVID is one authentication per connection rather than per call. |
@@ -1579,6 +1646,12 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `ssf.deadLetterRetentionS` | `STS_SSF_DEAD_LETTER_RETENTION_S` | `3600` | yes | How long an undeliverable SET is kept on its stream's dead-letter queue, with the reason, for inspection on `/admin/ssf` and counted on Monitoring → Shared Signals → Dead letters (`/admin/ssf/dead-letters`). |
 | `ssf.deadLetterMaxPerStream` | `STS_SSF_DEAD_LETTER_MAX_PER_STREAM` | `1000` | yes | The most dead letters one stream keeps; past it the oldest is deleted. |
 | `ssf.deadLetterSweepS` | `STS_SSF_DEAD_LETTER_SWEEP_S` | `60` | yes | How often each process deletes expired dead letters, probes due dead streams and logs **one** summary line of what could not be delivered — never a line per SET. |
+| `ssf.inactivityTimeoutS` | `STS_SSF_INACTIVITY_TIMEOUT_S` | `0` | yes | SSF 1.0 section 8.1.1's `inactivity_timeout`: a stream whose receiver has made no management call about it (and, for a poll stream, no poll) for this long is dealt with as `ssf.inactivityAction` says. `0`, the default, is no timeout. It is off by default because a push receiver never calls back. |
+| `ssf.inactivityAction` | `STS_SSF_INACTIVITY_ACTION` | `pause` | yes | `pause`, `disable` or `delete`. A pause or disable is announced with a stream-updated event before the stream stops. |
+| `ssf.verificationEveryS` | `STS_SSF_VERIFICATION_EVERY_S` | `0` | yes | Sends every enabled stream a transmitter-initiated verification event (no `state`) when it has had none for this long. `0` sends none on a schedule. |
+| `ssf.streamMaintenanceSweepS` | `STS_SSF_STREAM_MAINTENANCE_SWEEP_S` | `60` | yes | How often the `ssf.stream-maintenance` scheduler job applies the two settings above. |
+| `ssf.receiveAudiences` | `STS_SSF_RECEIVE_AUDIENCES` | *(empty)* | yes | The `aud` values `POST /ssf/receive` accepts. Empty means the endpoint's own URL. Anything else is recorded and refused with `invalid_audience`. |
+| `ssf.receiveIssuers` | `STS_SSF_RECEIVE_ISSUERS` | *(empty)* | yes | The `iss` values `POST /ssf/receive` accepts. Empty means this realm's own transmitter issuer. Anything else is recorded and refused with `invalid_issuer`. |
 | `caep.eventsPerSession` | `STS_CAEP_EVENTS_PER_SESSION` | `25` | yes | How many recent events a CAEP register row lists; the per-type counts beside it never forget. |
 | `caep.historyPerSession` | `STS_CAEP_HISTORY_PER_SESSION` | `10` | yes | How many credential changes a CAEP row keeps. |
 | `risc.eventsPerAccount` | `STS_RISC_EVENTS_PER_ACCOUNT` | `25` | yes | How many recent events a RISC register row lists. |
@@ -2103,8 +2176,9 @@ written *from* Discovery and shares its member registry, so the overlap is real 
 than a coincidence that has to be maintained.
 
 **What it does not say is the part worth reading.**
-`display_values_supported`, the encryption members and `check_session_iframe` are all
-absent (`acr_values_supported` is published since RFC 9470 made the authorization endpoint
+`display_values_supported` and `check_session_iframe` are absent (the encryption
+members — ID Token, UserInfo and request object — are published now that each is
+implemented, ID Token encryption since 2026-09-17, and `acr_values_supported` is published since RFC 9470 made the authorization endpoint
 honour `acr_values` — see *Step-up authentication*), because none is implemented and an invented value is worse than the member's
 absence, which says exactly the right thing. `end_session_endpoint` *is* advertised
 because `/oauth2/logout` really does end the session — but it neither requires nor
@@ -2121,8 +2195,10 @@ reject; the inserted form behaves like its `oauth-authorization-server` twin.
 
 Writing the OIDC document beside the RFC 8414 one made three claims in the older
 document visibly untrue, and they were removed rather than copied across:
-`response_modes_supported` promised `form_post`, which `redirectBack()` has never done —
-it 302s, always — so a client asking for it sat waiting for a POST that could not come;
+`response_modes_supported` promised `form_post`, which `redirectBack()` did not do at
+the time — it 302'd, always — so a client asking for it sat waiting for a POST that
+could not come (`form_post` has since been built and is advertised again: see
+*`response_mode=form_post`, which this service advertised and did not have*, below);
 `ui_locales_supported` named four locales for a login screen that is written in English
 and never reads the parameter; and `scopes_supported` offered `address` and `phone`,
 each of which is a request for a named set of claims (OIDC Core 5.4) that `userFor()`
@@ -4365,7 +4441,8 @@ not. **The ceremony script is a separate resource** (`/authn/webauthn.js`) rathe
 an inline `<script>`, because `app.js` sets `script-src 'none'` on every response and
 that one page relaxes it to `'self'`: an inline script there simply would not run, with
 the button doing nothing and no error anywhere. And **the RP ID is this origin's host
-and is not configurable** — WebAuthn binds a ceremony to the calling origin, and that is
+unless `webauthn.rpId` widens it** to a registrable domain suffix of that host — never
+anything else — because WebAuthn binds a ceremony to the calling origin, and that is
 the whole of its phishing resistance.
 
 What comes out the other side is the point: a key **after a password** records
@@ -4789,8 +4866,8 @@ assertion is verified.
 
 #### Why this one cannot be permissive
 
-This service checks no password, validates no access token and attests no
-workload, and that is the point of it. Three surfaces are already exceptions —
+This service checks no password and validates no access token, and that is
+the point of it. Three surfaces are already exceptions —
 SCIM, the SPIRE Server API, the admin console — and all three are **turnstiles**:
 they refuse a caller so that a client can be made to exercise a refusal, and any
 of them could be opened tomorrow with nothing lost but an error path.
@@ -7187,7 +7264,8 @@ silent disagreement `config.js`'s header warns about.
 
 This service is a **SPIFFE issuing authority** for one trust domain **per trust
 realm** (`spiffe.trustDomain`, `example.org` by default for the process, and
-`<realm>.example.org` for every realm created under it). SPIFFE's server side is
+the realm's own DNS domain for every realm created under it). SPIFFE's server
+side is
 three separate things, and they are worth separating because they have almost
 nothing in common with each other:
 
@@ -7291,11 +7369,22 @@ Four things follow, and each is deliberate:
   carries the caller's *stable* selectors — transport and endpoint, never the
   peer, whose port is ephemeral — so the next caller of the same shape matches it
   instead of inventing another.
-* **Node attestation is taken on trust.** Whatever attestor an agent names and
-  whatever payload it sends are written down as claimed, which is why every agent
-  entry carries a selector valued `unverified:true`: an agent's selectors here
-  are claims, not attested facts. The one exception is a **join token**, which
-  this server minted and therefore checks — see the refusals below.
+* **Node attestation is verified or refused (#40, 2026-09-21).** An agent's
+  attestation type must be one the realm names in `spiffe.nodeAttestors` AND one
+  this server can verify; anything else is refused with FAILED_PRECONDITION, as
+  SPIRE refuses an attestor it has no plugin for. Until that date any type was
+  accepted with its payload unread and marked `unverified:true`; that is gone in
+  every mode. The verifiable types are **`join_token`**, which this server
+  minted and therefore checks — see the refusals below — and **`x509pop`**,
+  **`sshpop`** and **`tpm_devid`**, which prove possession of a key by
+  answering a challenge, each configured by its `spiffe.x509pop*`,
+  `spiffe.sshpop*` or `spiffe.tpm*` settings — and **`k8s_psat`**,
+  **`http_challenge`**, **`aws_iid`**, **`gcp_iit`** and **`azure_imds`**:
+  a cluster's TokenReview, a nonce served from an allowed host name, and each
+  cloud's signed identity document with its API asked for selectors. The
+  cloud SDKs are optional peer dependencies (`npm install` them in a
+  deployment that uses those attestors), and no cloud credential is ever a
+  setting — each SDK's own credential chain supplies it.
 
 #### Who may call the SPIRE Server API
 
@@ -8224,15 +8313,15 @@ service has ever issued.
 ./docker-npm-test.sh              # the in-process suite, in the tests image
 ./docker-npm-test.sh --only=crypto  # ...only the files whose name matches
 ./docker-npm-test.sh --list       # ...name them and run none
-./docker-run-tests.sh             # EVERY job, ENTIRELY IN CONTAINERS: the
+./run-tests.sh             # EVERY job, ENTIRELY IN CONTAINERS: the
                                   # service AND the runner, on a host that has
                                   # docker and nothing else. What CI runs
-./docker-run-tests.sh --modes=memory  # one mode rather than all three
-./docker-run-tests.sh --modes=cluster # a fourth mode, only when named: two
+./run-tests.sh --modes=memory  # one mode rather than all three
+./run-tests.sh --modes=cluster # a fourth mode, only when named: two
                                       # service containers active-active on one
                                       # postgres behind an HAProxy, every job's
                                       # requests alternating between them
-./docker-run-tests.sh --only=crypto --no-browser
+./run-tests.sh --only=crypto --no-browser
                                   # anything else goes to the runner
 ./run-coverage.sh                 # coverage, collected by a run of its own —
                                   # in a container, with the RUNNER in the
@@ -8245,9 +8334,9 @@ TypeScript, compiled only inside an image build, so `npm test` and
 `STS-CORE-0093`) and the in-process suite runs through `./docker-npm-test.sh`.
 **`./local-run-tests.sh` — the host-run development loop, the jobs as node
 processes against a service container — was removed on 2026-09-16 for the
-same reason**, so `./docker-run-tests.sh` is the whole suite.
+same reason**, so `./run-tests.sh` is the whole suite.
 
-`./docker-run-tests.sh` puts the runner in a container — node, the browser and
+`./run-tests.sh` puts the runner in a container — node, the browser and
 this working tree, built from `tests/Dockerfile` — brings it and the service up
 from `docker-compose-run-tests.yml` on a private network, and exits with the
 suite's status. It needs **docker and nothing else**: no node, no
@@ -8255,7 +8344,7 @@ suite's status. It needs **docker and nothing else**: no node, no
 `.github/workflows/tests.yml` runs on every push.
 
 **CI RUNS THE SUITE AND COVERAGE IN TWO JOBS THAT DO NOT DEPEND ON EACH OTHER** —
-`tests` wraps `./docker-run-tests.sh` and `coverage` wraps `./run-coverage.sh`,
+`tests` wraps `./run-tests.sh` and `coverage` wraps `./run-coverage.sh`,
 and three artifacts come out of a run: `test-report` (the plain suite's
 `tests/report/latest`), `coverage-report` (the rendered `coverage/`) and
 `coverage-test-report` (the instrumented run's own report). They are two jobs
@@ -8264,12 +8353,12 @@ symlink, so in one workspace the second run would quietly relabel the first
 run's artifact; two jobs are two workspaces. It also means the coverage pass
 still runs when the suite goes red, which is when its report is worth most, and
 that the two run in parallel. **A third job, `cluster` (2026-09-15), runs
-`./docker-run-tests.sh --modes=cluster`** — the fourth mode, two active-active
+`./run-tests.sh --modes=cluster`** — the fourth mode, two active-active
 nodes behind a load balancer, which no bare run includes — on a runner of its
 own and uploads `cluster-test-report`. All four uploads are `if: always()`.
 
 Neither can disturb a mock you are already running. Each is its own compose
-project with its own container names, and `./docker-run-tests.sh` publishes no
+project with its own container names, and `./run-tests.sh` publishes no
 port at all, so `docker compose up`'s `sts` on 8081 is untouched by both —
 including by their teardowns.
 
@@ -8278,7 +8367,7 @@ The in-process suite (`npm test`, run by `./docker-npm-test.sh`) is what
 this repository's own module contracts, which no caller over HTTP could check.
 `tests/CLAUDE.md` argues where the line is.
 
-**`./docker-run-tests.sh` writes a report** — `tests/report/<mode>/<timestamp>/`
+**`./run-tests.sh` writes a report** — `tests/report/<mode>/<timestamp>/`
 with `report.html`, JUnit `report.xml`, `summary.json` and one log per job, and
 `tests/report/<mode>/latest` pointing at the newest. It runs each test file in a
 process of its own, so a file that hangs is a job that times out rather than a
@@ -8295,7 +8384,7 @@ pin. FOURTEEN jobs live in `tests/vendored/` — nine of them byte-identical
 copies of the parent's, and FIVE this repository's own: the four that drive
 `/admin` and `/admin-api`, ours since 2026-08-28, and the delegated permission
 example added 2026-09-01, which was never over there at all. Every
-`./docker-run-tests.sh` runs the lot: the metadata drift checks, the management
+`./run-tests.sh` runs the lot: the metadata drift checks, the management
 API and every one of its operations, the whole admin console in a real browser,
 the five-application delegated permission example, DPoP, the authorization
 server's endpoints, the DID-named issuer, SAML 1.1, SAML encryption, the

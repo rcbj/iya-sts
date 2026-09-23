@@ -164,6 +164,16 @@ const SUBSYSTEMS = [
           'front of active-passive and active-active mode, atomic claims, ' +
           'the secrets every node shares, and the barrier that makes a ' +
           'request see what other nodes committed before it arrived.' },
+  // THE SCHEDULER (2026-09-22, #49): its own subsystem rather than CLUSTER's,
+  // because a code here is about a JOB — which one, on which node, and what
+  // became of its run — and an operator reading `STS-SCHED-0001` on a run row
+  // wants the job's owner, not the membership table.
+  { id: 'SCHED', label: 'Scheduler',
+    where: 'cluster/scheduler.ts, admin-ui/scheduler_admin.ts',
+    what: 'The one scheduler every periodic job in this service runs on: who ' +
+          'leads it, the claim and fence that make a job run once per slot ' +
+          'in the whole cluster, the runs it records, manual runs and the ' +
+          'planned handover of its leadership.' },
   { id: 'KEYS', label: 'Cryptography, keys and secrets',
     where: 'common/crypto.js, common/pq_jose.js, common/keystore.js, ' +
            'common/secrets.js',
@@ -585,7 +595,7 @@ const CODES = [
   { code: 'STS-CORE-0025',
     summary: 'The BBS key pair handed down from the front process could not ' +
       'be read, so this process generated its own.',
-    spec: '' },
+    spec: '', retired: true },
   { code: 'STS-CORE-0026',
     summary: 'A request declared a JSON body that does not parse; it is read ' +
       'as empty.',
@@ -625,7 +635,7 @@ const CODES = [
     summary: 'The BBS key pair could not be shared with the request workers; ' +
       'each generates its own and a did:web document may name a key ' +
       'its siblings did not sign with.',
-    spec: '' },
+    spec: '', retired: true },
   { code: 'STS-CORE-0035',
     summary: 'The service refused to start because its signing key material ' +
       '(or the key-encryption key that opens it) could not be read.',
@@ -719,6 +729,10 @@ const CODES = [
       'fixed when the realm is created.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   // ===== WORKER ============================================================
+  { code: 'STS-CORE-0102',
+    summary: 'A cache or replay store could not eject its expired entries; ' +
+      'the store still refuses an expired entry where it reads it.',
+    spec: 'none — logged by the caches.eject-expired job' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',
@@ -1297,6 +1311,75 @@ const CODES = [
       'nodes would not share sessions, pending sign-ins, codes or tokens; ' +
       'the service does not start.',
     spec: '' },
+  { code: 'STS-CLUSTER-0041',
+    summary: 'Standing down from a lease early failed in the store; the ' +
+      'lease expires on its own within one node lifetime, and this node does ' +
+      'not renew it.',
+    spec: '' },
+  // ===== SCHED =============================================================
+  { code: 'STS-SCHED-0001',
+    summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +
+      'as failed with the reason, and the job runs again at its next slot.',
+    spec: '' },
+  { code: 'STS-SCHED-0002',
+    summary: 'A job\'s run took longer than its time limit; it is recorded as ' +
+      'failed, its claim is given back, and anything it still does is fenced ' +
+      'out.',
+    spec: '' },
+  { code: 'STS-SCHED-0003',
+    summary: 'A run\'s outcome was fenced out: another attempt took the run ' +
+      'over after this one\'s claim lapsed, so this one\'s result is not ' +
+      'written.',
+    spec: '' },
+  { code: 'STS-SCHED-0004',
+    summary: 'A manual run was refused: no job by that id is registered.',
+    spec: '' },
+  { code: 'STS-SCHED-0005',
+    summary: 'A manual run was refused: the job runs on its schedule only.',
+    spec: '' },
+  { code: 'STS-SCHED-0006',
+    summary: 'A manual run was refused: the job is off (its setting, ' +
+      'scheduler.enabled, or a development-mode predicate), and says why.',
+    spec: '' },
+  { code: 'STS-SCHED-0007',
+    summary: 'A manual run was refused to a realm administrator: the job is ' +
+      'service-scoped, or names another realm.',
+    spec: '' },
+  { code: 'STS-SCHED-0008',
+    summary: 'The claim store could not be asked whether a run was already ' +
+      'taken; the run is not started until it can be, so it never runs ' +
+      'twice.',
+    spec: '' },
+  { code: 'STS-SCHED-0009',
+    summary: 'A job registration was refused whole: a member is missing or ' +
+      'malformed, or the id is taken.',
+    spec: '' },
+  { code: 'STS-SCHED-0010',
+    summary: 'A step-down was refused: this service is not clustered, so ' +
+      'there is no other node to hand the scheduler to.',
+    spec: '' },
+  { code: 'STS-SCHED-0011',
+    summary: 'A run was abandoned: the node running it stopped holding its ' +
+      'claim before it finished, and another attempt took it over.',
+    spec: '' },
+  { code: 'STS-SCHED-0012',
+    summary: 'A manual run was refused: the realm it names does not exist.',
+    spec: '' },
+  { code: 'STS-SCHED-0013',
+    summary: 'The scheduler\'s tick failed unexpectedly; it is tried again ' +
+      'at the next tick.',
+    spec: '' },
+  { code: 'STS-SCHED-0014',
+    summary: 'The scheduler\'s leader could not stand down; its lease expires ' +
+      'on its own.',
+    spec: '' },
+  { code: 'STS-SCHED-0015',
+    summary: 'A per-process job\'s run in this process threw or rejected; its ' +
+      'row for this process says so, and it runs again at its next slot.',
+    spec: '' },
+  { code: 'STS-SCHED-0016',
+    summary: 'A run was asked for that does not exist (an unknown run id).',
+    spec: '' },
   // ===== KEYS ==============================================================
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +
@@ -1563,7 +1646,44 @@ const CODES = [
       'DigestMethod) and saml.allowSha1Signatures is off (the default), so ' +
       'it was refused before any cryptography, on every XML signature path.',
     spec: 'refusal by the calling protocol' },
+  { code: 'STS-KEYS-0063',
+    summary: 'A signing key rotation was refused: the realm\'s key set ' +
+      'could not be replaced (a newer generation was already held, or the ' +
+      'store refused the write).',
+    spec: 'the scheduler run fails with this code; /admin/keys and ' +
+      '/admin-api report it' },
   // ===== PKI ===============================================================
+  { code: 'STS-KEYS-0064',
+    summary: 'After an emergency key rotation the realm\'s sessions could ' +
+      'not be ended; the keys were rotated and their certificates revoked.',
+    spec: 'none — logged; the run still succeeds and its audit row counts ' +
+      'the sessions ended' },
+  { code: 'STS-KEYS-0065',
+    summary: 'A rotation was asked for a signing unit this realm does not ' +
+      'have.',
+    spec: 'HTTP 400 from POST /admin-api/keys/rotate; a refusal on ' +
+      '/admin/keys' },
+  { code: 'STS-KEYS-0066',
+    summary: 'An emergency rotation was asked for without its confirmation ' +
+      '(confirm: "compromised").',
+    spec: 'HTTP 400 from POST /admin-api/keys/emergency; a refusal on ' +
+      '/admin/keys' },
+  { code: 'STS-KEYS-0067',
+    summary: 'A realm\'s signing-key history could not be recorded; the ' +
+      'rotation or retirement itself succeeded.',
+    spec: 'none — logged. The next observation writes the rows, because the ' +
+      'history is derived from the key set rather than from the event' },
+  { code: 'STS-KEYS-0068',
+    summary: 'The signing-key history was asked for a unit this realm has ' +
+      'no record of.',
+    spec: 'HTTP 400 from GET /admin-api/keys/history; a refusal on ' +
+      '/admin/keys/history' },
+  { code: 'STS-KEYS-0069',
+    summary: 'A certificate authority row listed a certificate it still ' +
+      'publishes as revoked; the revocation was dropped rather than ' +
+      'written.',
+    spec: 'none — logged. A row may not publish a certificate its own CRL ' +
+      'calls revoked; the drop is evidence of a tier write that was lost' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -2411,6 +2531,10 @@ const CODES = [
     summary: 'A certificate was not recorded because the Issuing CA that ' +
       'signed it was replaced, repeatedly, while it was being signed.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-PKI-0187',
+    summary: 'The public crypto metadata document (/crypto/metadata) could ' +
+      'not be built.',
+    spec: 'HTTP 500 server_error from /crypto/metadata' },
   // ===== ENROLL ============================================================
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
@@ -3804,6 +3928,14 @@ const CODES = [
       'way in would not be in a log, and generating one would put a working ' +
       'credential there and leave theirs not working.',
     spec: 'none — logged, and the service starts with nobody able to sign in' },
+  { code: 'STS-AUTHN-0206',
+    summary: 'Product mode: a passwordless sign-in named a person who holds ' +
+      'no security key that signs in on its own, and the sign-in screen ' +
+      'does not enrol one — enrolling there would give the account to ' +
+      'whoever claimed the name first. A primary key is added on ' +
+      '/portal/keys, by an activation link or by an operator. Development ' +
+      'enrols on first use (mode.enrolsKeysOnFirstUse()).',
+    spec: 'none — the sign-in screen is drawn again with the reason' },
   // ===== OAUTH =============================================================
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
@@ -5738,7 +5870,83 @@ const CODES = [
       'is refused instead until entries age out (twice ' +
       'oauth2.dpopIatSkewS).',
     spec: 'invalid_dpop_proof (HTTP 400 / 401)' },
+  { code: 'STS-OAUTH-0555',
+    summary: 'Product mode: an RFC 8693 subject_token that did not verify ' +
+      'against this realm\'s signing key (a forged, foreign, expired or ' +
+      'unreadable token) was refused. Development exchanges it unverified ' +
+      '(mode.exchangesUnverifiedTokens()).',
+    spec: 'invalid_request (HTTP 400), RFC 8693 section 2.2.2' },
+  { code: 'STS-OAUTH-0556',
+    summary: 'Product mode: an RFC 8693 actor_token that did not verify ' +
+      'against this realm\'s signing key was refused. Development reads its ' +
+      'sub unverified into the act claim.',
+    spec: 'invalid_request (HTTP 400), RFC 8693 section 2.2.2' },
+  { code: 'STS-OAUTH-0557',
+    summary: 'An RFC 8693 subject_token or actor_token that verified was ' +
+      'refused because this realm has revoked it.',
+    spec: 'invalid_request (HTTP 400), RFC 8693 section 2.2.2' },
   // ===== SAML ==============================================================
+  { code: 'STS-OAUTH-0558',
+    summary: 'A client authenticated with a client_secret past its ' +
+      'expiry (oauthClientSecretExpiresAt, or the registration\'s ' +
+      'client_secret_expires_at), in product mode.',
+    spec: 'invalid_client (RFC 6749 section 5.2)' },
+  { code: 'STS-OAUTH-0559',
+    summary: 'A client authenticated with an expired client_secret and was ' +
+      'accepted, because the service is in development mode.',
+    spec: 'none — logged; the request is answered' },
+  { code: 'STS-OAUTH-0560',
+    summary: 'An authorization request asked for an ID Token without the ' +
+      'openid scope (OIDC Core section 3.1.2.1).',
+    spec: 'redirect: error=invalid_scope' },
+  { code: 'STS-OAUTH-0561',
+    summary: 'An authorization request combined prompt=none with another ' +
+      'prompt value (OIDC Core section 3.1.2.1).',
+    spec: 'redirect: error=invalid_request' },
+  { code: 'STS-OAUTH-0562',
+    summary: 'An implicit-flow authorization request carried no nonce, which ' +
+      'OIDC Core section 3.2.2.1 makes REQUIRED — in every mode.',
+    spec: 'redirect: error=invalid_request' },
+  { code: 'STS-OAUTH-0563',
+    summary: 'An implicit-flow authorization request named an http ' +
+      'redirect_uri that is not a loopback address (OIDC Core section ' +
+      '3.2.2.1).',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0564',
+    summary: 'An authorization request sent with POST was not ' +
+      'application/x-www-form-urlencoded (OIDC Core section 3.1.2.1).',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0565',
+    summary: 'The authorization endpoint failed while reading an ' +
+      'id_token_hint.',
+    spec: 'HTTP 500 {error: server_error}' },
+  { code: 'STS-OAUTH-0566',
+    summary: 'An id_token_hint did not verify as an ID Token this ' +
+      'authorization server issued to this client.',
+    spec: 'redirect: error=invalid_request' },
+  { code: 'STS-OAUTH-0567',
+    summary: 'The person signed in is not the one the id_token_hint names, ' +
+      'and prompt=none (or the person signed in as somebody else ' +
+      'again).',
+    spec: 'redirect: error=login_required' },
+  { code: 'STS-OAUTH-0568',
+    summary: 'A refresh token granted without offline_access was presented ' +
+      'after the sign-on session it came from ended (OIDC Core ' +
+      'section 11).',
+    spec: 'HTTP 400 {error: invalid_grant}' },
+  { code: 'STS-OAUTH-0569',
+    summary: 'A redirect_uri matched none of the redirect URIs the client ' +
+      'registered (OIDC Core section 3.1.2.1), outside RFC 9700 mode.',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0570',
+    summary: 'A client assertion was not signed with the client\'s ' +
+      'registered token_endpoint_auth_signing_alg (OIDC Core section ' +
+      '9).',
+    spec: 'HTTP 401 {error: invalid_client}' },
+  { code: 'STS-OAUTH-0571',
+    summary: 'An access token was sent to the UserInfo endpoint in more than ' +
+      'one place (RFC 6750 section 2).',
+    spec: 'HTTP 400 {error: invalid_request}' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -7922,8 +8130,8 @@ const CODES = [
       'named or the connection carries.',
     spec: 'gRPC NOT_FOUND' },
   { code: 'STS-SPIFFE-0051',
-    summary: 'AttestAgent received a challenge_response when this server ' +
-      'issues no attestation challenge.',
+    summary: 'AttestAgent received a challenge_response with no attestation ' +
+      'challenge outstanding on the stream.',
     spec: 'gRPC INVALID_ARGUMENT' },
   { code: 'STS-SPIFFE-0052',
     summary: 'The agent attesting or renewing is banned on this server.',
@@ -7945,8 +8153,11 @@ const CODES = [
     spec: 'gRPC PERMISSION_DENIED' },
   { code: 'STS-SPIFFE-0057',
     summary: 'A join token created for a named agent was presented by an ' +
-      'attestation producing a different agent.',
-    spec: 'gRPC PERMISSION_DENIED' },
+      'attestation producing a different agent. Retired 2026-09-21 (#40): ' +
+      'the attesting agent is always the join token\'s own, so the check ' +
+      'refused every such token; agent_id now registers an alias entry, as ' +
+      'SPIRE does (STS-SPIFFE-0084).',
+    spec: 'gRPC PERMISSION_DENIED', retired: true },
   { code: 'STS-SPIFFE-0058',
     summary: 'RenewAgent was called on a connection that carries no attested ' +
       'agent\'s X509-SVID.',
@@ -8029,6 +8240,190 @@ const CODES = [
     summary: 'An agent asked for an SVID from a registration entry that is ' +
       'not beneath it (BatchNewX509SVID, NewJWTSVID).',
     spec: 'gRPC PERMISSION_DENIED (per batch item for BatchNewX509SVID)' },
+  { code: 'STS-SPIFFE-0078',
+    summary: 'AttestAgent named a node attestor this realm does not accept: ' +
+      'not in spiffe.nodeAttestors, or not one this server can verify. ' +
+      'Nothing is taken on trust (#40).',
+    spec: 'gRPC FAILED_PRECONDITION' },
+  { code: 'STS-SPIFFE-0079',
+    summary: 'AttestAgent carried no attestation type in params.data.type.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0080',
+    summary: 'A node attestor challenged the agent and no challenge_response ' +
+      'arrived within spiffe.attestationChallengeTimeout.',
+    spec: 'gRPC DEADLINE_EXCEEDED' },
+  { code: 'STS-SPIFFE-0081',
+    summary: 'The message after an attestation challenge carried no ' +
+      'challenge_response.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0082',
+    summary: 'The AttestAgent stream closed or was cancelled while a node ' +
+      'attestor\'s challenge was outstanding.',
+    spec: 'gRPC CANCELLED' },
+  { code: 'STS-SPIFFE-0083',
+    summary: 'An agent already attested with evidence that is not ' +
+      're-attestable (a join token, a trust-on-first-use document) attested ' +
+      'again; the agent must be deleted first, as in SPIRE.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0084',
+    summary: 'CreateJoinToken\'s agent_id could not be registered as the ' +
+      'token\'s alias entry (not in this trust domain, reserved, or the ' +
+      'registry refused it), so no token was issued.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0085',
+    summary: 'A node attestor the realm accepts is not configured: x509pop ' +
+      'in external_pki mode with no spiffe.x509popCaBundle, sshpop with no ' +
+      'spiffe.sshpopCertAuthorities, tpm_devid with no DevID or ' +
+      'endorsement anchors, or a template that does not parse.',
+    spec: 'gRPC FAILED_PRECONDITION' },
+  { code: 'STS-SPIFFE-0086',
+    summary: 'A node attestation payload or challenge response could not be ' +
+      'read: not the attestor\'s JSON, or a certificate, SSH certificate or ' +
+      'TPM structure in it that does not parse.',
+    spec: 'gRPC INVALID_ARGUMENT (INTERNAL for sshpop, as SPIRE answers)' },
+  { code: 'STS-SPIFFE-0087',
+    summary: 'An x509pop attestation carried more intermediate certificates ' +
+      'than spiffe.x509popMaxIntermediates.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0088',
+    summary: 'An x509pop attestation carried an RSA key larger than ' +
+      'spiffe.x509popMaxRsaKeySize.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0089',
+    summary: 'A node attestor\'s certificate did not chain to its configured ' +
+      'trust anchors (x509pop, the tpm_devid DevID or endorsement ' +
+      'certificate).',
+    spec: 'gRPC PERMISSION_DENIED (x509pop), INVALID_ARGUMENT (tpm_devid)' },
+  { code: 'STS-SPIFFE-0090',
+    summary: 'The agent\'s address is not one its certificate allows ' +
+      '(x509pop IP subjectAltNames, sshpop source-address), or the ' +
+      'certificate carries no such restriction.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0091',
+    summary: 'verify_client_ip is on and the agent has no address to verify ' +
+      '(it came in on the Unix socket).',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0092',
+    summary: 'No challenge could be issued for the attesting key: an x509pop ' +
+      'certificate not for digitalSignature, or a key type the attestor ' +
+      'does not sign with.',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0093',
+    summary: 'A node attestor\'s challenge response did not verify: the ' +
+      'signature over the nonces, or the DevID signature.',
+    spec: 'gRPC PERMISSION_DENIED (x509pop), INTERNAL (sshpop), ' +
+      'INVALID_ARGUMENT (tpm_devid)' },
+  { code: 'STS-SPIFFE-0094',
+    summary: 'An x509pop attestation in spiffe mode presented no SPIFFE ID, ' +
+      'or one outside spiffe.x509popSpiffePrefix.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0095',
+    summary: 'An agent path template could not produce a valid agent SPIFFE ' +
+      'ID for this attestation.',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0096',
+    summary: 'An sshpop host certificate was refused: not a host ' +
+      'certificate, no principal, an authority not configured, outside its ' +
+      'validity, an unsupported critical option, a signature that does not ' +
+      'verify, or a first principal outside spiffe.sshpopCanonicalDomain.',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0097',
+    summary: 'A tpm_devid attestation did not prove its DevID key resides in ' +
+      'the TPM: incomplete, an endorsement certificate that does not match ' +
+      'the EK, or a certification the attestation key did not sign.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0098',
+    summary: 'A tpm_devid credential activation returned the wrong secret: ' +
+      'the TPM holding the EK did not decrypt it for this AK.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0099',
+    summary: 'A node attestor could not get an answer from a source it is ' +
+      'configured to ask: a Kubernetes API server (TokenReview, a pod, a ' +
+      'node), Google\'s certificates, Microsoft\'s tenant discovery or ' +
+      'intermediate, or a cloud API.',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0100',
+    summary: 'A k8s_psat token was not authenticated by the cluster\'s ' +
+      'TokenReview, or not for this server\'s audience.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0101',
+    summary: 'A k8s_psat agent\'s service account is not in the cluster\'s ' +
+      'allow list, or the pod the token is bound to is not the pod that ' +
+      'now has that name.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0102',
+    summary: 'A k8s_psat agent named a cluster this realm is not configured ' +
+      'for, or sent no cluster or token.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0103',
+    summary: 'An http_challenge agent\'s port or agent name is not ' +
+      'acceptable (required_port, allow_non_root_ports, the name\'s form).',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0104',
+    summary: 'An http_challenge agent\'s host name matches none of ' +
+      'spiffe.httpChallengeAllowedDnsPatterns (or is localhost), so it was ' +
+      'neither resolved nor dialled.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0105',
+    summary: 'An http_challenge fetch did not return the nonce: the host was ' +
+      'unreachable, internal (product mode), redirected, or served ' +
+      'something else.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0106',
+    summary: 'A cloud node attestor is enabled and the SDK it calls its ' +
+      'cloud with is not installed; the refusal names the package.',
+    spec: 'gRPC FAILED_PRECONDITION' },
+  { code: 'STS-SPIFFE-0107',
+    summary: 'A cloud identity document or token did not verify: an ' +
+      'aws_iid signature against the region\'s AWS certificate, an ' +
+      'azure_imds PKCS#7 signature or its certificate chain, a gcp_iit ' +
+      'token signature.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0108',
+    summary: 'A cloud node is not one this realm admits: a project, tenant ' +
+      'or subscription not allowed, an account outside the organization, ' +
+      'an instance outside the EKS clusters, a gcp_iit token for another ' +
+      'audience or expired.',
+    spec: 'gRPC PERMISSION_DENIED (INTERNAL for the aws_iid organization ' +
+      'and EKS checks, as SPIRE answers)' },
+  { code: 'STS-SPIFFE-0109',
+    summary: 'An aws_iid instance failed the block device check: its root ' +
+      'volume and first network interface were not attached together.',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0110',
+    summary: 'An azure_imds attested document did not carry this ' +
+      'challenge\'s nonce, or lacked a VM or subscription ID.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0111',
+    summary: 'A connection to the Workload API\'s Unix socket could not be ' +
+      'attested — the kernel would not name its peer, or a workload ' +
+      'attestor (unix, docker, k8s) failed — and every call on it is ' +
+      'refused.',
+    spec: 'gRPC UNAVAILABLE' },
+  { code: 'STS-SPIFFE-0112',
+    summary: 'A Workload API call arrived on a connection attested for a ' +
+      'process that has since exited, whose pid was reused, or that ' +
+      'executed a different program.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0113',
+    summary: 'A realm\'s Workload API Unix socket was not bound: this is a ' +
+      'product and the native module workload attestation needs is not ' +
+      'in the image.',
+    spec: '' },
+  { code: 'STS-SPIFFE-0114',
+    summary: 'A realm\'s SPIRE Server API could not take a new certificate ' +
+      'after the service Root was replaced, so it still presents a chain ' +
+      'under the old Root and a client holding the new bundle cannot ' +
+      'verify it until a restart.',
+    spec: '' },
+  { code: 'STS-SPIFFE-0115',
+    summary: 'After the service Root was replaced, a realm\'s certificate ' +
+      'authority branch did not arrive under the new Root within 30 seconds, ' +
+      'so its SPIRE Server API was re-keyed anyway and the branch was ' +
+      'repaired in this process — which may leave the realm with two ' +
+      'Intermediate CAs if the process that replaced the Root rebuilds it ' +
+      'too.',
+    spec: '' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
@@ -8167,6 +8562,12 @@ const CODES = [
     summary: 'The file named by tls.certificateFile holds self-signed ' +
       'certificates, none of which signs the chain the listener presents, ' +
       'so no trust anchor is taken from it.',
+    spec: '' },
+  { code: 'STS-TLS-0033',
+    summary: 'A socket that presents the listener certificate (LDAPS, the ' +
+      'SPIRE Server API) threw while being told the certificate was ' +
+      're-issued; the others were still told, and the main port serves the ' +
+      'new one.',
     spec: '' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
@@ -8544,6 +8945,11 @@ const CODES = [
       'notification) in product mode.',
     spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
   // ===== SSF ===============================================================
+  { code: 'STS-VC-0087',
+    summary: 'A BBS key was asked for at /bbs/keys/<kid> that is not a live ' +
+      'generation of this realm\'s BBS key (current, next, or retired within ' +
+      'its grace).',
+    spec: 'HTTP 404 not_found' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -8604,7 +9010,8 @@ const CODES = [
     spec: 'HTTP 400 {err: invalid_request}' },
   { code: 'STS-SSF-0014',
     summary: 'An SSF request named a stream_id this transmitter does not ' +
-      'hold.',
+      'hold for the authenticated receiver — one that does not exist, or ' +
+      'another receiver\'s, which answers identically (#144).',
     spec: 'HTTP 404 {err: invalid_request}' },
   { code: 'STS-SSF-0015',
     summary: 'A stream update (PUT or PATCH) was refused because the ' +
@@ -8629,9 +9036,9 @@ const CODES = [
       'on.',
     spec: 'HTTP 429 {err: invalid_request} with Retry-After' },
   { code: 'STS-SSF-0020',
-    summary: 'A verification request was answered with a refusal because the ' +
-      'verification event could not be transmitted or delivered; the ' +
-      'transmission\'s own audit row names the cause.',
+    summary: 'A verification request was refused because its stream is ' +
+      'disabled. (Until #144 it also meant a push that failed; delivery is ' +
+      'asynchronous now and a failed one is a dead letter.)',
     spec: 'HTTP 400 {err: invalid_request}' },
   { code: 'STS-SSF-0021',
     summary: 'A poll request named a stream that delivers by push, so there ' +
@@ -8950,6 +9357,42 @@ const CODES = [
       'confirmed unused across the cluster, so the token was refused.',
     spec: 'HTTP 401 {err: invalid_token}' },
   // ===== GNAP ==============================================================
+  { code: 'STS-SSF-0100',
+    summary: 'The signing-key-rotated event (this service\'s own) could not ' +
+      'be transmitted after a rotation; the rotation itself stands.',
+    spec: 'none — logged; nothing is sent to a receiver' },
+  { code: 'STS-SSF-0101',
+    summary: 'A receiver asked to create a stream and already holds ' +
+      'ssf.maxStreams streams — the limit is per receiver (SSF 1.0 section ' +
+      '8.1.1.1, "not allowed to create a stream").',
+    spec: 'HTTP 403 {err: access_denied}' },
+  { code: 'STS-SSF-0102',
+    summary: 'A transmitter-initiated verification event (the console\'s ' +
+      'Verify, or POST /admin-api/ssf/verify) could not be sent on the ' +
+      'stream.',
+    spec: 'HTTP 400 on /admin-api/ssf/verify' },
+  { code: 'STS-SSF-0103',
+    summary: 'The inserted-path form of the transmitter configuration ' +
+      'document was asked for a path no transmitter\'s issuer has (SSF 1.0 ' +
+      'section 7.2).',
+    spec: 'HTTP 404 {err: invalid_request}' },
+  { code: 'STS-SSF-0104',
+    summary: 'A Security Event Token delivered to one of this service\'s ' +
+      'receivers is not explicitly typed secevent+jwt (SSF 1.0 section ' +
+      '4.1.1); it was recorded and refused.',
+    spec: 'HTTP 400 {err: invalid_request}' },
+  { code: 'STS-SSF-0105',
+    summary: 'A Security Event Token delivered to one of this service\'s ' +
+      'receivers carries an iss other than its stream\'s, or one ' +
+      'ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was ' +
+      'recorded and refused.',
+    spec: 'HTTP 400 {err: invalid_issuer}' },
+  { code: 'STS-SSF-0106',
+    summary: 'A Security Event Token pushed at POST /ssf/receive is ' +
+      'addressed to no audience ssf.receiveAudiences lists; it was recorded ' +
+      'and ' +
+      'refused.',
+    spec: 'HTTP 400 {err: invalid_audience}' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -9836,7 +10279,8 @@ const CODES = [
     spec: '' },
   { code: 'STS-GNAP-0330',
     summary: 'ZCAP keys are unusable (no absolute controller URL, a keyId ' +
-      'not under it, or not an Ed25519 KeyObject), or a capability\'s ' +
+      'not under it, not a key of the kind gnap.zcapCryptosuite signs ' +
+      'with, or a suite that is none of the four), or a capability\'s ' +
       'invocationTarget is not an absolute URI.',
     spec: '' },
   { code: 'STS-GNAP-0331',
@@ -9861,6 +10305,12 @@ const CODES = [
   { code: 'STS-GNAP-0335',
     summary: 'The ZCAP libraries refused to sign a capability.',
     spec: '' },
+  { code: 'STS-GNAP-0336',
+    summary: 'A presented ZCAP carries a proof of a suite other than the ' +
+      'one this realm\'s gnap.zcapCryptosuite names, or not exactly one ' +
+      'proof.',
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
+      'demonstration resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0340',
     summary: 'A presented jwt-encrypted GNAP access token is encrypted to ' +
       'a resource server\'s key, which this authorization server does not ' +
@@ -12355,6 +12805,27 @@ const CODES = [
       'inline jwks key of the right type to encrypt to (a jwks_uri is ' +
       'never fetched).',
     spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0166',
+    summary: 'An application\'s client secret has expired, or expires within ' +
+      'oauth2.clientSecretExpiryWarningDays — found by the daily scheduler ' +
+      'job oauth2.client-secret-expiry.',
+    spec: 'none — an audit row and a warning; rotate the secret on ' +
+      '/admin/applications' },
+  { code: 'STS-REG-0167',
+    summary: 'A client registration named a subject_type, ' +
+      'sector_identifier_uri or token_endpoint_auth_signing_alg this ' +
+      'service cannot honour (OIDC Core sections 8 and 9).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0168',
+    summary: 'A console or /admin-api write set oauthSubjectType, ' +
+      'oauthSectorIdentifierUri or oauthTokenEndpointAuthSigningAlg ' +
+      'to a value this service cannot honour.',
+    spec: 'HTTP 400' },
+  { code: 'STS-REG-0169',
+    summary: 'A registered sector_identifier_uri could not be fetched, was ' +
+      'not a JSON array of URIs, or did not list every redirect_uri ' +
+      '(OIDC Core section 8.1).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

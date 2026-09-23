@@ -569,10 +569,10 @@ async function run(t) {
                    '&SigAlg=' + field('SigAlg');
     t.check(stsCrypto.verifyQueryString(octets, {
               signature: field('Signature'), sigAlg: field('SigAlg'),
-              certPem: helpers.STS.certPem }).ok &&
+              certPem: helpers.STS.xml.certPem }).ok &&
             !stsCrypto.verifyQueryString(octets.replace('state 1', 'state 2'),
               { signature: field('Signature'), sigAlg: field('SigAlg'),
-                certPem: helpers.STS.certPem }).ok,
+                certPem: helpers.STS.xml.certPem }).ok,
             'and the Signature verifies over the SimpleSign octets with this ' +
             'service\'s certificate');
 

@@ -293,10 +293,13 @@ function childMain() {
       // =====================================================================
       if (issued.id_token) {
         const idt = payloadOf(issued.id_token);
-        note(idt.name === 'Alice Public' && idt.given_name === 'Alice' &&
-             idt.family_name === 'Public' && idt.email === 'alice@pcp.example',
-             '6a. PRODUCT: the ID Token\'s name, given_name, family_name and ' +
-             'email are the person\'s own cn, givenName, sn and mail',
+        // OIDC Core section 5.4 (#118): a code-flow ID Token carries no
+        // scope claims — they are UserInfo's, which 6d asserts come from the
+        // directory. It carried them, invented or not, until then.
+        note(['name', 'given_name', 'family_name', 'email']
+               .every(function (one) { return !(one in idt); }),
+             '6a. PRODUCT: a code-flow ID Token carries none of the profile ' +
+             'or email claims — section 5.4 puts them at UserInfo',
              JSON.stringify(idt));
         note(!('email_verified' in idt),
              '6b. and it asserts NO email_verified, because nothing verified ' +

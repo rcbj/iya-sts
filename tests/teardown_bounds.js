@@ -69,7 +69,7 @@ const log = require('bunyan').createLogger({ name: 'teardown_bounds',
 const ROOT = path.join(__dirname, '..');
 
 // How a launcher names its compose files on one call: the array every call in
-// ./docker-run-tests.sh has used since the `cluster` mode layered a second
+// ./run-tests.sh has used since the `cluster` mode layered a second
 // file (2026-09-14), or the single `-f` it used before.
 const FILES = '(?:"\\$\\{COMPOSE_FILE_ARGS\\[@\\]\\}"|-f "\\$\\{COMPOSE_FILE\\}")';
 
@@ -127,7 +127,7 @@ function checkTheBoundedHelperExists(t) {
   }),
           'every bounded compose call has COMPOSE_MENU=false and stdin from ' +
           '/dev/null',
-          'without them `docker-run-tests.sh` run from a terminal stops ' +
+          'without them `run-tests.sh` run from a terminal stops ' +
           'compose `up` after `Created` and prints nothing until the mode ' +
           'timeout; found ' + boundedCalls.length + ' bounded call(s)');
 
@@ -148,8 +148,8 @@ function checkTheBoundedHelperExists(t) {
 // ---------------------------------------------------------------------------
 function checkTheLauncherIsBounded(t) {
   log.debug("Entering checkTheLauncherIsBounded().");
-  t.log.info('=== docker-run-tests.sh bounds every wait on docker ===');
-  const launcher = read('docker-run-tests.sh');
+  t.log.info('=== run-tests.sh bounds every wait on docker ===');
+  const launcher = read('run-tests.sh');
 
   t.check(/STS_MODE_TIMEOUT="\$\{STS_MODE_TIMEOUT:-\d+\}"/.test(launcher) &&
           /STS_TEARDOWN_TIMEOUT="\$\{STS_TEARDOWN_TIMEOUT:-\d+\}"/
@@ -227,7 +227,7 @@ function checkTheLauncherIsBounded(t) {
 
   // There was a second launcher here, ./local-run-tests.sh, with the same
   // three `down` calls and its own bound. It was removed on 2026-09-16 (#50):
-  // ./docker-run-tests.sh is the one way the whole suite runs.
+  // ./run-tests.sh is the one way the whole suite runs.
   log.debug("Leaving checkTheLauncherIsBounded().");
 }
 
@@ -238,7 +238,7 @@ function checkTheLauncherIsBounded(t) {
 function checkTheVerdictIsRecovered(t) {
   log.debug("Entering checkTheVerdictIsRecovered().");
   t.log.info('=== a reached bound asks docker what the runner did ===');
-  const launcher = read('docker-run-tests.sh');
+  const launcher = read('run-tests.sh');
 
   t.check(/recoverModeVerdict\s*\(\)/.test(launcher),
           'the launcher has a recoverModeVerdict()',
@@ -311,7 +311,7 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   log.debug("Entering checkTheJobTimeoutIsAboveOurs().");
   t.log.info('=== the CI job\'s timeout is the backstop, not the mechanism ' +
              '===');
-  const launcher = read('docker-run-tests.sh');
+  const launcher = read('run-tests.sh');
   const workflow = read('.github/workflows/tests.yml');
   const modes = read('tests/tools/modes.sh');
 
@@ -366,17 +366,28 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   const clusterAt = workflow.indexOf('\n  cluster:');
   t.check(clusterAt !== -1,
           'the workflow has a `cluster` job',
-          'the fourth mode is in no bare run, so without that job nothing in ' +
-          'CI runs two nodes behind a balancer at all');
+          'the `tests` job names memory and single-node only, so without ' +
+          'that job nothing in CI runs two nodes behind a balancer at all');
   if (clusterAt !== -1) {
     const clusterJob = workflow.slice(clusterAt);
-    t.check(/docker-run-tests\.sh --modes=cluster\b/.test(clusterJob),
-            'the `cluster` job runs ./docker-run-tests.sh --modes=cluster',
+    t.check(/run-tests\.sh --modes=cluster\b/.test(clusterJob),
+            'the `cluster` job runs ./run-tests.sh --modes=cluster',
             'a job of that name running anything else would leave the mode ' +
             'as unrun as having no job');
     const clusterMinutes = Number(
       (/timeout-minutes:\s*(\d+)/.exec(clusterJob) || [])[1]);
-    const clusterWorst = modeBound + teardownBound * 2;
+    // THE CLUSTER MODE'S OWN BOUND since 2026-09-21, read off modes.sh's
+    // stsModeTimeout() rather than the launcher's shared default, which that
+    // mode no longer uses.
+    const clusterBound = Number(
+      (/cluster\)\s*echo "\$\{STS_CLUSTER_MODE_TIMEOUT:-(\d+)\}"/
+        .exec(modes) || [])[1]);
+    t.check(clusterBound > 0,
+            'modes.sh gives the `cluster` mode a bound of its own (' +
+              clusterBound + 's)',
+            'the arithmetic below would otherwise be about a number the ' +
+            'cluster mode does not use');
+    const clusterWorst = (clusterBound || modeBound) + teardownBound * 2;
     t.check(clusterMinutes * 60 > clusterWorst,
             'the `cluster` job timeout (' + clusterMinutes + 'm) is above ' +
               'its one mode plus its teardowns (' +

@@ -948,8 +948,15 @@ class SpiffeCa {
       return { pem: made.certificatePem, der: made.certificateDer,
                serialHex: made.serialHex,
                notBefore: made.notBefore, notAfter: made.notAfter,
-               chainPem: authority.chainPem.slice(),
-               chainDer: authority.chainDer.slice() };
+               // THE CHAIN OF THE CA THAT SIGNED, as issueUnder() read it
+               // AFTER any repair of a stale branch (2026-09-21) — not
+               // `authority`'s, read BEFORE it. After a replaced Root the two
+               // differ: the leaf was signed by the rebuilt SPIFFE Issuing CA
+               // and travelled with the old one, and every client failed with
+               // `unable to verify the first certificate`
+               // (tests/vendored/sts_spiffe_grpc.js section 7).
+               chainPem: made.issuerChainPem.slice(),
+               chainDer: made.issuerChainDer.slice() };
     }
     const type = this.keyTypeById(authority.keyType) || KEY_TYPES[0];
     const issued = await x509.issueCertificate({
@@ -1075,7 +1082,75 @@ class SpiffeCa {
   static wire(instance: SpiffeCa): void {
     helpers.log.debug("Entering SpiffeCa.wire().");
     readyPromise = instance.buildReadyPromise();
+    instance.registerRotationJob();
     helpers.log.debug("Leaving SpiffeCa.wire().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE AUTHORITIES ROTATE ON THE SCHEDULER (#49 P5, rcbj's D6):
+  // `spiffe.authority-rotation`, a realm-scoped CLUSTER job, hourly, deciding
+  // from each authority's own age — the X.509 authority once it is past half
+  // its lifetime, the JWT authority once it is older than half
+  // `spiffe.caTtl`. In BOTH modes, unlike the signing keys: a self-signed
+  // authority lives `spiffe.caTtl` (a day by default), so without this a
+  // development service up for a day would stop issuing SVIDs that verify.
+  // The rotation itself is the one the console's buttons make, which keeps
+  // `spiffe.retainedAuthorities` of the old ones published.
+  // ---------------------------------------------------------------------------
+  registerRotationJob(): void {
+    const { log, config } = this.deps;
+    const self = this;
+    log.debug("Entering SpiffeCa.registerRotationJob().");
+    const scheduler = require('../cluster/scheduler');
+    if (scheduler.job(ROTATION_JOB)) {
+      log.debug("Leaving SpiffeCa.registerRotationJob(). Registered.");
+      return;
+    }
+    scheduler.register({
+      id: ROTATION_JOB,
+      title: 'SPIFFE authority rotation',
+      describe: 'Rotates the realm\'s SPIFFE X.509 authority once it is past ' +
+                'half its lifetime and its JWT authority once it is older ' +
+                'than half spiffe.caTtl; the old ones stay published ' +
+                '(spiffe.retainedAuthorities).',
+      owner: 'spiffe/spiffe_ca.ts',
+      scope: 'realm',
+      everyMs: function (): number {
+        return 3600000;
+      },
+      off: function (): string {
+        return config.value('spiffe.enabled') ? '' : 'spiffe.enabled is off';
+      },
+      run: function (ctx: any): Promise<any> {
+        return self.rotateDue(ctx.realm, ctx.nowMs());
+      }
+    });
+    log.debug("Leaving SpiffeCa.registerRotationJob().");
+  }
+
+  // One realm's due rotations. Resolves `{ x509, jwt }`, each the new
+  // authority's id or ''.
+  async rotateDue(realmId: string, nowMs?: number): Promise<any> {
+    const { log, config } = this.deps;
+    log.debug("Entering SpiffeCa.rotateDue(). realm=" + realmId);
+    const id = this.realmIdOf(realmId);
+    await this.ready(id);
+    const now = Number(nowMs) || Date.now();
+    const out = { x509: '', jwt: '' };
+    const x509 = this.activeX509Authority(id);
+    const from = x509 ? Date.parse(x509.notBefore) : NaN;
+    const to = x509 ? Date.parse(x509.notAfter) : NaN;
+    if (Number.isFinite(from) && Number.isFinite(to) &&
+        now - from >= (to - from) / 2) {
+      out.x509 = String((await this.rotateX509Authority(id)).id || '');
+    }
+    const jwt = this.jwtList(id)[0];
+    const half = Number(config.value('spiffe.caTtl')) * 1000 / 2;
+    if (jwt && half > 0 && now - (Number(jwt.createdAt) || now) >= half) {
+      out.jwt = String((await this.rotateJwtAuthority(id)).id || '');
+    }
+    log.debug("Leaving SpiffeCa.rotateDue(). " + JSON.stringify(out));
+    return out;
   }
 
   async establishOnce(realmId, kind, present, make) {
@@ -2903,6 +2978,8 @@ const slot = new InstanceSlot<SpiffeCa>(
   helpers.log);
 
 const SPIFFE_USE_CASE = 'spiffe';
+// The authorities' scheduler job (#49 P5): see registerRotationJob().
+const ROTATION_JOB = 'spiffe.authority-rotation';
 
 // Built by `SpiffeCa.wire()` when the instance is installed (#50, R2): it
 // starts the instance building its trust material.
@@ -3045,6 +3122,7 @@ export = {
   checkBundleDocument: slot.forward('checkBundleDocument'),
   rotateX509Authority: slot.forward('rotateX509Authority'),
   rotateJwtAuthority: slot.forward('rotateJwtAuthority'),
+  rotateDue: slot.forward('rotateDue'),
   // The realm's active X.509 authority, for a caller that needs to say what
   // signed an SVID without drawing the whole of `state()`.
   activeX509Authority: slot.forward('activeX509Authority'),

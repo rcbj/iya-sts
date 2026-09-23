@@ -1,7 +1,14 @@
 #!/bin/bash
 #
-# docker-run-tests.sh — the WHOLE suite, in containers, on a host that has
-# nothing but docker.
+# run-tests.sh — THE ONE LAUNCHER FOR THE WHOLE SUITE, WHEREVER THE SERVICE IS
+# (2026-09-21; it was ./run-tests.sh, which only knew the first target).
+#
+#   ./run-tests.sh                          a compose stack here, once per mode
+#   ./run-tests.sh --target=aws:testidp     an AWS environment that exists
+#   ./run-tests.sh --target=aws-ephemeral   apply `ci`, test it, destroy it
+#
+# The targets are argued under THE TARGET below. What follows until then is
+# the default, `local`, which is also what CI runs.
 #
 # It builds and brings up docker-compose-run-tests.yml: the `sts` service from
 # this repository's own Dockerfile, and a `tests` container with node, a Chrome
@@ -30,14 +37,18 @@
 # ---------------------------------------------------------------------------
 # WHICH LAUNCHER TO USE, AND WHY THIS IS THE ONLY ONE FOR THE WHOLE SUITE.
 #
-#   ./docker-run-tests.sh  THIS. Every job, everything in containers. Needs
-#                          docker and nothing else — no node, no npm install,
-#                          no Chrome — which is what makes it the CI command.
+#   ./run-tests.sh         THIS. Every job, everything in containers. Needs
+#                          docker and nothing else for `local` — no node, no npm
+#                          install, no Chrome — which is what makes it the CI
+#                          command; the AWS targets add the AWS CLI and your
+#                          credentials.
 #   ./docker-npm-test.sh   the in-process suite alone, in the tests image
 #                          (`--only=<substring>`, `--list`).
 #   ./run-coverage.sh      a coverage run, on its own; see its header.
 #
-# There were two whole-suite launchers until 2026-09-16. The other,
+# deploy/aws/run-suite.sh and deploy/aws/run-suite-in-aws.sh were launchers of
+# their own until 2026-09-21 (the second was deleted that day; see THE TARGET) and are the AWS targets' machinery now — see THE
+# TARGET. There were two whole-suite launchers until 2026-09-16. The other,
 # ./local-run-tests.sh, ran the jobs as node processes on this machine against
 # a service container, and it was removed when #50 made the service partly
 # TypeScript compiled only inside an image build: a job run on a checkout
@@ -56,30 +67,32 @@
 # two runs of THIS script must not share a project.
 #
 # Usage:
-#   ./docker-run-tests.sh
-#   ./docker-run-tests.sh --no-build          # reuse the images already built
-#   ./docker-run-tests.sh --keep-stack        # leave it up to look at
-#   ./docker-run-tests.sh --modes=dispatch    # one mode of tests/tools/modes.sh
-#                                             # rather than all three, in that
+#   ./run-tests.sh
+#   ./run-tests.sh --no-build                 # reuse the images already built
+#   ./run-tests.sh --keep-stack               # leave the LAST mode's stack
+#                                             # running, to look at
+#   ./run-tests.sh --modes=single-node        # one mode of tests/tools/modes.sh
+#                                             # rather than all three (memory,
+#                                             # single-node, cluster), in that
 #                                             # file's own spelling
-#   ./docker-run-tests.sh --modes=cluster     # the fourth, never run unless
-#                                             # named: two nodes behind a load
-#                                             # balancer (2026-09-14)
-#   ./docker-run-tests.sh --only=crypto --no-browser
+#   ./run-tests.sh --modes=memory,single-node # what CI's `tests` job runs; its
+#                                             # `cluster` job runs the third
+#                                             # (2026-09-21)
+#   ./run-tests.sh --only=crypto --no-browser
 #                                             # anything else is passed straight
 #                                             # to tests/tools/run-report.js
-#   STS_LOG_LEVEL=debug ./docker-run-tests.sh # the service's full record back;
+#   STS_LOG_LEVEL=debug ./run-tests.sh        # the service's full record back;
 #                                             # this stack runs it at info. See
 #                                             # below
-#   CONFIG_FILE=./env/docker-tests.js ./docker-run-tests.sh
+#   CONFIG_FILE=./env/docker-tests.js ./run-tests.sh
 #                                             # or name the file, which then
 #                                             # decides the level by itself
-#   STS_MODE_TIMEOUT=2400 ./docker-run-tests.sh
+#   STS_MODE_TIMEOUT=2400 ./run-tests.sh
 #                                             # seconds a single mode may take
 #                                             # before this script stops waiting
 #                                             # on docker (default 3000); see
 #                                             # THE TWO WALL CLOCKS below
-#   STS_TEARDOWN_TIMEOUT=600 ./docker-run-tests.sh
+#   STS_TEARDOWN_TIMEOUT=600 ./run-tests.sh
 #                                             # the same for every `down` and
 #                                             # `logs` (default 300)
 #
@@ -145,8 +158,8 @@ COMPOSE_PROJECT="${STS_DOCKER_TEST_PROJECT:-mock-sts-docker-tests}"
 STS_CONTAINER_NAME="${STS_CONTAINER_NAME:-sts-docker-tests}"
 # THE SECRET STORE AND ITS TWO ONE-SHOT CONTAINERS (2026-09-12). Named for the
 # reason every other container here is: `container_name` is machine-wide, and
-# this one holds the key-encryption key the `dispatch` mode's data is sealed
-# under.
+# this one holds the key-encryption key the production modes' data is sealed
+# under (`single-node` and `cluster`).
 STS_BAO_CONTAINER_NAME="${STS_BAO_CONTAINER_NAME:-sts-docker-tests-openbao}"
 STS_BAO_TLS_CONTAINER_NAME="${STS_BAO_TLS_CONTAINER_NAME:-sts-docker-tests-openbao-tls}"
 STS_BAO_SEED_CONTAINER_NAME="${STS_BAO_SEED_CONTAINER_NAME:-sts-docker-tests-openbao-seed}"
@@ -195,7 +208,10 @@ CONFIG_FILE="${CONFIG_FILE:-}"
 # container logs, keep the report and give the mode the verdict the suite
 # actually reached.
 #
-#   STS_MODE_TIMEOUT      the suite, once, for one mode. The slowest mode ever
+#   STS_MODE_TIMEOUT      the suite, once, for one mode — every mode but
+#                         `cluster`, which has a bound of its own
+#                         (STS_CLUSTER_MODE_TIMEOUT, 100m; tests/tools/modes.sh,
+#                         stsModeTimeout(), says why). The slowest mode ever
 #                         measured here was `dispatch` at 16m when this was
 #                         25m; the suite has grown to 225 jobs since, and on
 #                         2026-09-14 `dispatch` was killed at 25m at job 203
@@ -209,10 +225,15 @@ CONFIG_FILE="${CONFIG_FILE:-}"
 # CI runner is a machine somebody will run this on.
 # ---------------------------------------------------------------------------
 STS_MODE_TIMEOUT="${STS_MODE_TIMEOUT:-3000}"
+# The bound a mode gets unless modes.sh names one of its own; each mode's is
+# set at the top of the loop below.
+STS_BASE_MODE_TIMEOUT="${STS_MODE_TIMEOUT}"
 STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 
 BUILD=1
 KEEP_STACK=0
+TARGET=local
+MODES_GIVEN=0
 STS_TEST_ARGS="${STS_TEST_ARGS:-}"
 DOCKER_SUDO=""
 COMPOSE_CMD=""
@@ -246,7 +267,10 @@ do
     # reproducing it meant running `memory` and `postgres` first every time.
     # It took the other launcher's spelling and meaning. A run with no
     # `--modes=` is unchanged: all three, in order.
-    --modes=*)    IFS=',' read -r -a RUN_MODES <<< "${1#--modes=}" ;;
+    --modes=*)    IFS=',' read -r -a RUN_MODES <<< "${1#--modes=}"
+                  MODES_GIVEN=1 ;;
+    # WHERE THE SUITE RUNS (2026-09-21) — see *THE TARGET* below.
+    --target=*)   TARGET="${1#--target=}" ;;
     --verbose)    set -x ;;
     -h|--help)    usage; exit 0 ;;
     *)            STS_TEST_ARGS="${STS_TEST_ARGS} $1" ;;
@@ -254,6 +278,228 @@ do
   shift
 done
 STS_TEST_ARGS="${STS_TEST_ARGS# }"
+
+# ---------------------------------------------------------------------------
+# THE TARGET: WHERE THE SUITE RUNS (2026-09-21).
+#
+# **THIS IS THE ONE LAUNCHER FOR THE WHOLE SUITE, WHEREVER THE SERVICE IS.**
+# There were three until that day — this file as ./run-tests.sh (a
+# compose stack here, once per mode), deploy/aws/run-suite.sh (an existing AWS
+# environment, driven from this machine) and the apply-test-destroy sequence
+# that only .github/workflows/aws-cluster.yml performed — and rcbj asked for
+# one. `run-suite.sh` is not deleted: it is what BOTH AWS targets run, and it is
+# not a launcher any more; this is. `run-suite-in-aws.sh` — the suite as a task
+# inside the VPC, behind the Terraform image's `suite` action — WAS deleted
+# that day, with `environment/runner.tf`: rcbj asked for one AWS suite for an
+# ephemeral environment and a long-lived one alike, and `run-suite.sh` already
+# ran every job, the two that need a callback in a task of their own.
+#
+#   --target=local          (the default) the compose stack below, once per
+#                           mode of tests/tools/modes.sh. Both halves: the
+#                           in-process files AND every protocol job, in every
+#                           mode — which is what "every mode runs all jobs"
+#                           means and what tests/report/<mode>/ records.
+#   --target=aws:<env>      an AWS environment that already EXISTS, e.g.
+#                           aws:testidp. deploy/aws/run-suite.sh <env>: the
+#                           protocol jobs from here, the two that need the
+#                           service to call back in an ephemeral task in the
+#                           VPC, one merged report in tests/report/aws-<env>.
+#                           Never destroys the environment.
+#   --target=aws-ephemeral[:<env>]
+#                           build and push this tree's images, APPLY <env>
+#                           (default `ci`), run deploy/aws/run-suite.sh against
+#                           it from this machine, and
+#                           DESTROY it — on success, failure or interrupt. It
+#                           refuses an environment that already exists, so it
+#                           can never destroy something it did not create, and
+#                           refuses `testidp` by name.
+#
+# **AN AWS TARGET RUNS THE PROTOCOL HALF ONLY, AND CANNOT DO OTHERWISE.** The
+# in-process files require this tree's modules and start processes of their
+# own; there is nothing in them to point at a URL. And an AWS environment is in
+# the ONE mode Terraform built it in (`testidp` is product), so `--modes=` means
+# nothing there and is refused rather than ignored.
+#
+# **THE SUITE'S OWN OPTIONS DO NOT CROSS TO AN AWS TARGET**, because
+# run-report.js's `--only=` is a substring filter and the AWS runners take a
+# comma-separated list of job FILES. Rather than translate one into the other
+# and be subtly wrong, an AWS target refuses them and names the variables those
+# runners already read: STS_SUITE_ONLY, STS_SUITE_EXCLUDE, STS_SUITE_KEEP_REALMS
+# and STS_SUITE_JOB_TIMEOUT_MS (deploy/aws/CLAUDE.md).
+# ---------------------------------------------------------------------------
+awsTargetRefusals()
+{
+  local problems=()
+  [ "${MODES_GIVEN}" = "1" ] && \
+    problems+=("--modes= (an AWS environment is in the one mode it was built in)")
+  [ "${KEEP_STACK}" = "1" ] && \
+    problems+=("--keep-stack (there is no compose stack; aws:<env> never destroys, and STS_SUITE_KEEP_ENVIRONMENT=1 keeps an ephemeral one)")
+  [ -n "${STS_TEST_ARGS}" ] && \
+    problems+=("'${STS_TEST_ARGS}' (use STS_SUITE_ONLY / STS_SUITE_EXCLUDE, comma-separated job files)")
+  if [ "${#problems[@]}" -gt 0 ];
+  then
+    echo "--target=${TARGET} does not take:" >&2
+    printf '  %s\n' "${problems[@]}" >&2
+    exit 2
+  fi
+}
+
+# The tag an ephemeral run pushes its images under: the commit, and a digest of
+# whatever in the working tree is not committed, so two runs of one tree reuse
+# a tag and a changed tree never does. The same derivation run-suite.sh uses.
+ephemeralTag()
+{
+  local head dirty
+  head="$(git rev-parse --short=12 HEAD)"
+  dirty="$( { git diff HEAD; git ls-files --others --exclude-standard -z | \
+    xargs -0 -r sha256sum; } | sha256sum | cut -c1-8)"
+  echo "eph-${head}-${dirty}"
+}
+
+# The images `environment/` deploys, built from this tree and pushed: the
+# service and its schema-init. The tests, runner and PEP images are
+# run-suite.sh's own to build — it tags them from the same working tree.
+# The build arguments are the ones
+# .github/workflows/aws-cluster.yml's `images` job passes; cert-init is not
+# built, because only an environment with a public name uses it and an
+# ephemeral one has none.
+buildAndPushEphemeralImages()
+{
+  local env="$1" tag="$2" account registry repo commit
+  account="$(aws sts get-caller-identity --query Account --output text)" || return 1
+  registry="${account}.dkr.ecr.${AWS_REGION:-us-west-2}.amazonaws.com"
+  repo="${registry}/mock-sts"
+  commit="$(git rev-parse HEAD)"
+  echo "==> building the ${tag} images from this working tree"
+  docker build -q -t "${repo}:${tag}" \
+    --build-arg STS_CLOUD_SDKS=@aws-sdk/client-secrets-manager \
+    --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+    --build-arg GIT_COMMIT="${commit}" . > /dev/null || return 1
+  docker build -q -t "${repo}:schema-${tag}" \
+    -f deploy/aws/schema-init/Dockerfile . > /dev/null || return 1
+  echo "==> pushing them to ${repo}"
+  deploy/aws/terraform-local.sh "${env}" ecr-password | \
+    docker login -u AWS --password-stdin "${registry}" > /dev/null || return 1
+  local image
+  for image in "${tag}" "schema-${tag}";
+  do
+    docker push -q "${repo}:${image}" > /dev/null || return 1
+  done
+  return 0
+}
+
+# Whether <env> already has an applied environment — `exists` when its outputs
+# name a service, `absent` when they do not, and `unknown` when they could not
+# be read at all. THREE ANSWERS AND NOT TWO, AND THE THIRD IS A REFUSAL: the
+# first version answered a failed read as "absent", and its first test run
+# failed exactly that way — the Terraform image could not be BUILT (apt in the
+# build had no network), so the probe said nothing existed, which is the one
+# answer that lets this target apply and then DESTROY an environment it did not
+# create. A guard that fails open is not a guard.
+awsEnvironmentState()
+{
+  local outputs
+  if ! outputs="$(deploy/aws/terraform-local.sh "$1" output-json 2> /dev/null)";
+  then
+    echo unknown
+    return 0
+  fi
+  if printf '%s' "${outputs}" | grep -q '"service_url"';
+  then
+    echo exists
+  else
+    echo absent
+  fi
+}
+
+runAwsEphemeral()
+{
+  local env="${1:-ci}" tag rc
+  if [ "${env}" = "testidp" ];
+  then
+    echo "--target=aws-ephemeral refuses testidp: it is a deployment, and this" >&2
+    echo "target DESTROYS what it applies. --target=aws:testidp tests it." >&2
+    exit 2
+  fi
+  case "$(awsEnvironmentState "${env}")" in
+    exists)
+      echo "The ${env} environment already exists, and --target=aws-ephemeral" >&2
+      echo "destroys what it ran against — it will not destroy something it did" >&2
+      echo "not create. Test it with --target=aws:${env}, or destroy it first" >&2
+      echo "(deploy/aws/terraform-local.sh ${env} destroy)." >&2
+      exit 2
+      ;;
+    unknown)
+      echo "Could not read ${env}'s Terraform state, so this run cannot tell" >&2
+      echo "whether ${env} already exists — and --target=aws-ephemeral DESTROYS" >&2
+      echo "what it ran against, so it refuses rather than guess. Check that" >&2
+      echo "deploy/aws/terraform-local.sh ${env} output-json works." >&2
+      exit 2
+      ;;
+  esac
+  if [ "${BUILD}" = "1" ];
+  then
+    tag="$(ephemeralTag)"
+    buildAndPushEphemeralImages "${env}" "${tag}" || {
+      echo "The images could not be built or pushed; nothing was applied." >&2
+      exit 1
+    }
+  else
+    tag="${IMAGE_TAG:?--no-build with --target=aws-ephemeral needs IMAGE_TAG, the tag the images were already pushed under}"
+  fi
+  # DESTROYED ON EVERY WAY OUT FROM HERE, because an apply that fails half way
+  # has still created things that bill. `entrypoint.sh`'s destroy takes the
+  # environment's dependent stacks down first (2026-09-21) — the gap that left
+  # testidp standing on 2026-09-20.
+  trap 'ephemeralTeardown "'"${env}"'"' EXIT
+  trap 'exit 130' INT TERM
+  echo "==> applying ${env} with images ${tag}"
+  IMAGE_TAG="${tag}" deploy/aws/terraform-local.sh "${env}" apply || {
+    echo "The apply of ${env} failed; it is destroyed below." >&2
+    exit 1
+  }
+  echo "==> the suite, against ${env}, from this machine"
+  "${CURRENT_DIR}/deploy/aws/run-suite.sh" "${env}"
+  rc=$?
+  exit "${rc}"
+}
+
+ephemeralTeardown()
+{
+  local env="$1"
+  if [ "${STS_SUITE_KEEP_ENVIRONMENT:-0}" = "1" ];
+  then
+    echo "==> ${env} KEPT (STS_SUITE_KEEP_ENVIRONMENT=1). It bills until" >&2
+    echo "    deploy/aws/terraform-local.sh ${env} destroy." >&2
+    return 0
+  fi
+  echo "==> destroying ${env}"
+  deploy/aws/terraform-local.sh "${env}" destroy || {
+    echo "" >&2
+    echo "THE DESTROY OF ${env} FAILED — it may still be running and billing." >&2
+    echo "Run deploy/aws/terraform-local.sh ${env} destroy again." >&2
+  }
+}
+
+case "${TARGET}" in
+  local)
+    ;;
+  aws:?*)
+    awsTargetRefusals
+    [ "${BUILD}" = "1" ] || export STS_SUITE_SKIP_BUILD=1
+    exec "${CURRENT_DIR}/deploy/aws/run-suite.sh" "${TARGET#aws:}"
+    ;;
+  aws-ephemeral|aws-ephemeral:?*)
+    awsTargetRefusals
+    ENV_NAME="${TARGET#aws-ephemeral}"
+    runAwsEphemeral "${ENV_NAME#:}"
+    ;;
+  *)
+    echo "--target=${TARGET}: there is no such target. There are: local," >&2
+    echo "aws:<environment>, aws-ephemeral[:<environment>]." >&2
+    exit 2
+    ;;
+esac
 
 # ---------------------------------------------------------------------------
 # PREFLIGHT. Each of these is a failure this repository has actually had, and
@@ -315,7 +561,7 @@ preflight || exit 1
 # CPU, and on a run that passes the whole record goes into a container that is
 # removed at the end. So `info` is the default of THIS SCRIPT and of nothing
 # else — no appconfig file is edited and a service started any other way is
-# untouched — and `STS_LOG_LEVEL=debug ./docker-run-tests.sh` is the run that
+# untouched — and `STS_LOG_LEVEL=debug ./run-tests.sh` is the run that
 # is being read asking for the record back.
 #
 # THE SECOND KNOB IS THE APPCONFIG FILE, AND WITHOUT IT THIS WOULD LOOK LIKE IT
@@ -397,6 +643,12 @@ ADMIN_API_CLIENT_SECRET="${ADMIN_API_CLIENT_SECRET:-$(head -c 24 /dev/urandom \
   | base64 | tr -d '/+=' | head -c 24)}"
 export ADMIN_API_CLIENT_SECRET
 
+# A secret for one stack's life, in the shape the client secret above uses.
+freshSecret()
+{
+  head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24
+}
+
 # ---------------------------------------------------------------------------
 # THE STACK'S OWN SUBNET (2026-09-12), chosen as ./local-run-tests.sh chose
 # its own until it was removed (2026-09-16) — see freeSubnet() in
@@ -453,7 +705,7 @@ COMPOSE_ENV=(
   "STS_BAO_TLS_CONTAINER_NAME=${STS_BAO_TLS_CONTAINER_NAME}"
   "STS_BAO_SEED_CONTAINER_NAME=${STS_BAO_SEED_CONTAINER_NAME}"
   # The keystore, per mode — see tests/tools/modes.sh. `persisted` in the
-  # `dispatch` mode is what makes the key-encryption key come out of the store.
+  # production modes is what makes the key-encryption key come out of the store.
   "STS_KEYS_SOURCE=${STS_KEYS_SOURCE:-generated}"
   "STS_TESTS_CONTAINER_NAME=${STS_TESTS_CONTAINER_NAME}"
   "STS2_CONTAINER_NAME=${STS2_CONTAINER_NAME}"
@@ -466,7 +718,7 @@ COMPOSE_ENV=(
   # BOTH, because they are two variables in the compose file and a stack where
   # they disagree is a stack where every protocol job fails on a closed
   # socket. The compose file defaults each to the same answer; naming them
-  # here is what makes an operator's `STS_HTTPS=false ./docker-run-tests.sh`
+  # here is what makes an operator's `STS_HTTPS=false ./run-tests.sh`
   # actually reach compose, since `sudo` empties the environment — see
   # tests/tools/compose.sh.
   #
@@ -625,7 +877,7 @@ captureContainerLogs()
 # so a mode whose runner never started wrote its two logs over another run's
 # `00-mock-sts-service.log` and `00-test-runner.log`, destroying that report's
 # evidence and leaving this run's where nobody would look for it.
-MODE_MARKER="${CURRENT_DIR}/tests/report/.docker-run-tests-mode-start"
+MODE_MARKER="${CURRENT_DIR}/tests/report/.run-tests-mode-start"
 
 # Did the runner write a report under tests/report/<mode> after this mode's
 # `up` began? A report directory's `logs` gains an entry per job, so its
@@ -658,6 +910,65 @@ captureOneContainerLog()
   printf '%-12s %s\n' "${label}:" "${dest}"
 }
 
+# ---------------------------------------------------------------------------
+# THE SCHEDULER SURVIVES A CRASHED LEADER (#49, rcbj's D10(a), 2026-09-22).
+#
+# The LAST step of the `cluster` mode, because it removes a node: the runner
+# has finished, the stack is still up (the mode runs detached for this), and
+# `tests/tools/scheduler-takeover.js` names the scheduler's leader, this
+# function `docker kill`s that node's container — a crash, so its lease is not
+# released — and the tool asserts through the balancer that the other node
+# leads within the node lifetime and three ticks, runs a run queued now, and
+# ran every slot of the session-expiry job once. Its output is
+# tests/report/<mode>-99-scheduler-takeover.log. STS_TEST_SCHEDULER_TAKEOVER=0
+# skips it; a kept stack (--keep-stack) is never crashed.
+# ---------------------------------------------------------------------------
+schedulerTakeover()
+{
+  local mode="$1" out leader container rc
+  local dest="${CURRENT_DIR}/tests/report/${mode}-99-scheduler-takeover.log"
+  local tool=(docker run --rm --network "${COMPOSE_PROJECT}_default"
+              -v "${CURRENT_DIR}:/repo:ro"
+              -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}"
+              -e NODE_PATH=/usr/src/sts/node_modules
+              -w /usr/src/sts "${STS_IMAGE:-rcbj/sts}"
+              node /repo/tests/tools/scheduler-takeover.js)
+  mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
+  echo ""
+  echo "Mode ${mode}: the scheduler's crash takeover — the last step, because"
+  echo "it stops a node."
+  if ! out="$("${tool[@]}" before "$(serviceUrl)" 2>&1)";
+  then
+    printf '%s\n' "${out}" > "${dest}"
+    echo "  The scheduler's leader could not be named; see ${dest}." >&2
+    return 1
+  fi
+  printf '%s\n' "${out}" > "${dest}"
+  leader="$(printf '%s' "${out}" | tail -n 1)"
+  case "${leader}" in
+    node-a) container="${STS_CONTAINER_NAME}" ;;
+    node-b) container="${STS2_CONTAINER_NAME}" ;;
+    *)
+      echo "  The leader is \"${leader}\", which is neither node." >&2
+      return 1
+      ;;
+  esac
+  echo "  ${leader} leads; killing ${container}."
+  if ! docker kill "${container}" > /dev/null 2>&1;
+  then
+    echo "  docker kill ${container} failed." >&2
+    return 1
+  fi
+  "${tool[@]}" after "$(serviceUrl)" "${leader}" >> "${dest}" 2>&1
+  rc=$?
+  grep -E '✓|FAILED' "${dest}" | sed 's/^/  /' || true
+  if [ "${rc}" -ne 0 ];
+  then
+    echo "  The scheduler did NOT survive its leader's crash; see ${dest}." >&2
+  fi
+  return "${rc}"
+}
+
 # Always tear the stack down, even when the tests fail, so the next run starts
 # clean. A TRAP rather than a line at the end: an interrupted run (^C, a failing
 # step) would otherwise leave the stack's containers, volumes and network
@@ -667,12 +978,15 @@ teardown()
   if [ "${KEEP_STACK}" = "1" ] && [ "${STACK_UP}" = "1" ];
   then
     echo ""
-    echo "The stack is still up, as asked (--keep-stack):"
-    echo "  logs:    ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} logs -f sts"
-    echo "  a shell: ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} exec sts bash"
+    # EVERY file the kept mode was brought up with: a `cluster` stack is two,
+    # and a command naming one addresses half of it.
+    local files="${COMPOSE_FILE_ARGS[*]}"
+    echo "The last mode's stack is still up, as asked (--keep-stack):"
+    echo "  logs:    ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${files} logs -f sts"
+    echo "  a shell: ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${files} exec sts bash"
     echo "  the port is NOT published — to reach the console, add"
     echo "           --service-ports to a \`run\` of the sts service."
-    echo "  stop it: ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} down -v"
+    echo "  stop it: ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${files} down -v"
     return 0
   fi
   # BOUNDED. This is the EXIT trap, so an unbounded call here can hold a run
@@ -868,11 +1182,28 @@ mintThePepCredential()
        -v "${XACML_PEP_CERT_DIR}:/out" \
        -e MOCK_STS_DIR=/usr/src/sts \
        -e NODE_PATH=/usr/src/sts/node_modules \
+       -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}" \
        -w /usr/src/sts \
        "${STS_IMAGE:-rcbj/sts}" \
-       node /repo/tests/tools/pep-credential.js \
-         --url="$(serviceUrl)" \
-         --out=/out --subject="${XACML_PEP_SUBJECT}" > /dev/null;
+       sh -c '
+         # THE SERVICE'"'"'S OWN CERTIFICATE FIRST (2026-09-21). The gated
+         # door VERIFIES the connection, because it carries the token, and
+         # this one-shot container had no anchor for the per-start
+         # certificate: the handshake was aborted, the tool fell back to the
+         # open POST /tls/trust, product mode refused it, and the PEP ran the
+         # whole mode unverified. This is the fetch run-report.js makes for
+         # every job (tests/tools/trust.js), made here for this child.
+         case "$1" in
+           https:*)
+             node -e "require(\"/repo/tests/tools/trust.js\")
+               .readTrust(process.argv[1]).then(function (t) {
+                 require(\"fs\").writeFileSync(
+                   \"/out/sts-certificate.pem\", t.pem); })" "$1" || exit 1
+             export NODE_EXTRA_CA_CERTS=/out/sts-certificate.pem ;;
+         esac
+         exec node /repo/tests/tools/pep-credential.js \
+           --url="$1" --out=/out --subject="$2"' \
+         sh "$(serviceUrl)" "${XACML_PEP_SUBJECT}" > /dev/null;
   then
     echo "" >&2
     echo "WARNING: the remote PEP's client certificate could not be minted." >&2
@@ -1008,11 +1339,12 @@ fi
 # modes: this launcher's whole point is that the runner is a container too, so
 # two modes cannot share a compose project any more than two runs can.
 #
-# NOTHING IS LEFT UP at the end. ./local-run-tests.sh kept its last stack for
-# debugging until it was removed (2026-09-16); this one is what CI runs, and a
-# CI job that left containers behind would leak them run after run. (The
-# down after each mode below runs whatever --keep-stack says, so that option
-# only spares a stack the EXIT trap finds still up.)
+# NOTHING IS LEFT UP at the end, unless --keep-stack asks. CI never passes
+# it, and a CI job that left containers behind would leak them run after run.
+# With it, the LAST mode runs detached and skips its down (2026-09-21) — until
+# then the option spared only a stack the EXIT trap found still up, and
+# `--abort-on-container-exit` plus this loop's down meant it never found one
+# running.
 # ===========================================================================
 RC=0
 MODES_RUN=()
@@ -1030,6 +1362,7 @@ BASE_COMPOSE_ENV=(${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"})
 for MODE in "${RUN_MODES[@]}";
 do
   MODE_INDEX=$((MODE_INDEX + 1))
+  STS_MODE_TIMEOUT="$(stsModeTimeout "${MODE}")"
   echo ""
   echo "==========================================================="
   echo " MODE ${MODE_INDEX} of ${MODE_COUNT}: ${MODE}"
@@ -1105,6 +1438,41 @@ do
     )
   fi
 
+  # ---- A PRODUCT-MODE MODE: WHAT A DEPLOYMENT IS GIVEN (2026-09-21) ------
+  # (`single-node` and `cluster` since that evening; it was written for the
+  # `product` mode they replaced, and asks the mode's own STS_MODE, so it
+  # needed no change.)
+  #
+  # Product mode refuses the development shortcuts, so a stack running it
+  # needs what `deploy/aws/environment/ecs.tf` hands a product node, and the
+  # first product run here showed which of those this stack lacked:
+  #
+  #   STS_PUBLIC_BASE_URL   the hosted surfaces (/admin, /portal) start their
+  #                         OIDC sign-in only at an address registered on
+  #                         their client, and product mode registers nothing a
+  #                         request names (STS-ADMIN-0002, STS-PORTAL-0011,
+  #                         STS-AUTHN-0114). Pinned to the address this stack
+  #                         is reached at, every console and portal job
+  #                         answered 503 until it was.
+  #   KRB5_KRBTGT_PASSWORD, KRB5_SERVICE_PASSWORD
+  #                         product mode builds no krbtgt and no service
+  #                         account on the passwords published in this
+  #                         repository, so the KDC had no krbtgt at all
+  #                         (KDC_ERR_S_PRINCIPAL_UNKNOWN). Fresh per mode, as
+  #                         AWS generates them into Secrets Manager.
+  #
+  # Only for a mode that is product: the development modes keep the fixture
+  # passwords their Kerberos jobs are written against, and learn their
+  # address as they always did.
+  if printf '%s\n' "${MODE_ENV[@]}" | grep -qx 'STS_MODE=product';
+  then
+    MODE_ENV+=(
+      "STS_PUBLIC_BASE_URL=$(serviceUrl)"
+      "KRB5_KRBTGT_PASSWORD=$(freshSecret)"
+      "KRB5_SERVICE_PASSWORD=$(freshSecret)"
+    )
+  fi
+
   COMPOSE_ENV=(
     ${BASE_COMPOSE_ENV[@]+"${BASE_COMPOSE_ENV[@]}"}
     ${MODE_ENV[@]+"${MODE_ENV[@]}"}
@@ -1125,17 +1493,34 @@ do
     echo "The mock STS never became healthy in mode ${MODE}. Nothing was" >&2
     echo "run — see the container log captured below." >&2
     MODE_RC=1
+  elif ! mintAdminApiToken;
+  then
+    MODE_RC=1
   else
-    # THE PEP'S CERTIFICATE FIRST, because the anchor has to be in this
-    # service's truststore before the container that presents it starts — and
-    # the `up` below is what starts it. See the function's header.
+    COMPOSE_ENV+=("STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN}")
+
+    # -----------------------------------------------------------------------
+    # THE TOKEN FIRST AND THE PEP'S CERTIFICATE SECOND (2026-09-21) — it was
+    # the other way round, and the `product` mode is why it moved. The PEP's
+    # anchor has to be in the service's truststore before the container that
+    # presents it starts, and a PRODUCT-mode service accepts an anchor only
+    # through `POST /admin-api/tls/trust/add`, which wants this token
+    # (tests/tools/pep-credential.js tries that door first whenever it is
+    # handed one — the AWS runner's pep-credential.sh already mints the token
+    # first for exactly this). Minted the old way round, the certificate step
+    # fell back to the open `POST /tls/trust`, which product mode refuses, and
+    # every /xacml/pep call the container made was refused as an unknown
+    # chain. Nothing about the order matters to the development modes: the
+    # token needs only a service that answers, which `waitForStsHealthy`
+    # established.
+    # -----------------------------------------------------------------------
     mintThePepCredential
 
     # THE ROOT CA AS TEXT, SO THAT sts_xacml_remote_pep.js CAN PUT IT BACK.
     #
     # The truststore is a Map in the service's process that ANY job can empty:
     # `POST /tls/trust/clear` needs no credential in development mode (every
-    # mode this launcher runs), and a job exercising the truststore is entitled
+    # mode but `product`, which refuses it), and a job exercising the truststore is entitled
     # to use it. Nothing noticed until 2026-09-06, when
     # a client certificate stopped being a turnstile — this container's pull,
     # its heartbeat and its PIP queries all resolve a VERIFIED chain now, so
@@ -1154,42 +1539,87 @@ do
       COMPOSE_ENV+=("XACML_PEP_CA_PEM=$(cat "${XACML_PEP_CERT_DIR}/ca.crt")")
     fi
 
-    if ! mintAdminApiToken;
+    # THE TWO ONE-SHOT CONTAINERS ARE NOT ATTACHED (2026-09-14), OR THEIR
+    # FINISHING ENDS THE MODE. `openbao-tls` and `openbao-seed` exit 0 by
+    # design. The `up -d sts` above already ran both; this `up` names every
+    # service, so compose STARTS them again, and `--abort-on-container-exit`
+    # counts an ATTACHED container's exit — any container's — as the signal
+    # to stop the stack. So each mode stopped `sts` a few seconds after
+    # starting it, the runner never ran, and the screen showed the OpenBao
+    # containers exiting and nothing after. Not attaching them keeps their
+    # exit out of that rule; the runner's exit is still what ends the mode.
+    # Reproduced with a two-step `up` against a toy stack before this was
+    # written.
+    #
+    # **--keep-stack RUNS THE LAST MODE DETACHED (2026-09-21).** Until then it
+    # kept nothing: `--abort-on-container-exit` STOPS every container the
+    # moment the runner exits, and the loop below ran `down` after every mode
+    # including the last, so the teardown's "the stack is still up" branch was
+    # never reached with anything running. Kept, the stack comes up with
+    # `up -d`, the runner's output is followed, and `wait tests` is its exit
+    # code — the same verdict `--exit-code-from tests` gives, with nothing
+    # stopped. Only the LAST mode is kept: the next mode needs the names.
+    KEEP_THIS_MODE=0
+    if [ "${KEEP_STACK}" = "1" ] && [ "${MODE_INDEX}" -eq "${MODE_COUNT}" ];
     then
-      MODE_RC=1
-    else
-      COMPOSE_ENV+=("STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN}")
-      # THE TWO ONE-SHOT CONTAINERS ARE NOT ATTACHED (2026-09-14), OR THEIR
-      # FINISHING ENDS THE MODE. `openbao-tls` and `openbao-seed` exit 0 by
-      # design. The `up -d sts` above already ran both; this `up` names every
-      # service, so compose STARTS them again, and `--abort-on-container-exit`
-      # counts an ATTACHED container's exit — any container's — as the signal
-      # to stop the stack. So each mode stopped `sts` a few seconds after
-      # starting it, the runner never ran, and the screen showed the OpenBao
-      # containers exiting and nothing after. Not attaching them keeps their
-      # exit out of that rule; the runner's exit is still what ends the mode.
-      # Reproduced with a two-step `up` against a toy stack before this was
-      # written.
+      KEEP_THIS_MODE=1
+    fi
+    # THE `cluster` MODE RUNS DETACHED TOO (#49, 2026-09-22), for the same
+    # reason a kept mode does: `--abort-on-container-exit` stops every
+    # container the moment the runner exits, and the scheduler's crash
+    # takeover below needs the stack still up to kill a node of.
+    DETACHED_MODE="${KEEP_THIS_MODE}"
+    if stsModeIsCluster "${MODE}";
+    then
+      DETACHED_MODE=1
+    fi
+    if [ "${DETACHED_MODE}" = "0" ];
+    then
       docker_compose_bounded "${STS_MODE_TIMEOUT}" "${COMPOSE_FILE_ARGS[@]}" up \
         --no-attach openbao-tls --no-attach openbao-seed \
         --abort-on-container-exit --exit-code-from tests
       MODE_RC=$?
-      if [ "${MODE_RC}" -ge 124 ];
+    else
+      docker_compose_bounded "${STS_MODE_TIMEOUT}" "${COMPOSE_FILE_ARGS[@]}" up -d
+      MODE_RC=$?
+      if [ "${MODE_RC}" -eq 0 ];
       then
-        MODE_RC="$(recoverModeVerdict "${MODE}" "${MODE_RC}")"
+        # Bounded like every other call here: a follow that outlives the
+        # runner would hold the run open (tests/teardown_bounds.js).
+        docker_compose_bounded "${STS_MODE_TIMEOUT}" "${COMPOSE_FILE_ARGS[@]}" \
+          logs -f --no-log-prefix tests &
+        KEEP_LOG_PID=$!
+        docker_compose_bounded "${STS_MODE_TIMEOUT}" "${COMPOSE_FILE_ARGS[@]}" \
+          wait tests
+        MODE_RC=$?
+        wait "${KEEP_LOG_PID}" 2> /dev/null || true
       fi
-      # A MODE WHOSE RUNNER WROTE NO REPORT DID NOT PASS, whatever compose
-      # returned. The stack stopping before the runner started is exactly the
-      # case compose can report as 0, and a green mode that ran no job is the
-      # one verdict this launcher must never give.
-      if [ "${MODE_RC}" -eq 0 ] && ! modeWroteReport "${MODE}";
+    fi
+    if [ "${MODE_RC}" -ge 124 ];
+    then
+      MODE_RC="$(recoverModeVerdict "${MODE}" "${MODE_RC}")"
+    fi
+    # The crash takeover, LAST in the cluster mode, and never on a kept stack.
+    if stsModeIsCluster "${MODE}" && [ "${KEEP_THIS_MODE}" = "0" ] &&
+       [ "${STS_TEST_SCHEDULER_TAKEOVER:-1}" = "1" ] &&
+       modeWroteReport "${MODE}";
+    then
+      if ! schedulerTakeover "${MODE}";
       then
-        echo "" >&2
-        echo "Mode ${MODE}: compose returned 0, but the test runner wrote no" >&2
-        echo "report under tests/report/${MODE} during this mode. Nothing was" >&2
-        echo "run, so the mode is a failure. The runner log below says why." >&2
         MODE_RC=1
       fi
+    fi
+    # A MODE WHOSE RUNNER WROTE NO REPORT DID NOT PASS, whatever compose
+    # returned. The stack stopping before the runner started is exactly the
+    # case compose can report as 0, and a green mode that ran no job is the
+    # one verdict this launcher must never give.
+    if [ "${MODE_RC}" -eq 0 ] && ! modeWroteReport "${MODE}";
+    then
+      echo "" >&2
+      echo "Mode ${MODE}: compose returned 0, but the test runner wrote no" >&2
+      echo "report under tests/report/${MODE} during this mode. Nothing was" >&2
+      echo "run, so the mode is a failure. The runner log below says why." >&2
+      MODE_RC=1
     fi
   fi
   MODES_RUN+=("${MODE}")
@@ -1200,6 +1630,13 @@ do
   fi
 
   captureContainerLogs "${MODE}"
+
+  # KEPT: the last mode under --keep-stack stays up for the teardown trap to
+  # describe, and is the one stack this launcher leaves behind.
+  if [ "${KEEP_THIS_MODE:-0}" = "1" ];
+  then
+    continue
+  fi
 
   # Down between every mode INCLUDING the last — see the header. Bounded, so
   # that a stack which will not come down costs the next mode a warning rather

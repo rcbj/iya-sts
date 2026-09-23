@@ -83,8 +83,7 @@ const app = require('./common/app');
 // below; `realms` for the id of the realm it warms. Both modules are already
 // loaded by this line — app.js requires realms, and helpers is this line —
 // so neither adds a require to the order.
-const { log, PORT, HOST, warmPqKeys, bbsKeyPairForSharing } =
-  require('./common/helpers');
+const { log, PORT, HOST, warmPqKeys } = require('./common/helpers');
 const realms = require('./common/realms');
 const config = require('./common/config');
 // A LIBRARY, rule 3's shape: it registers no route and its position in the
@@ -382,6 +381,51 @@ function announce() {
     log.error(errorCodes.tag('STS-CORE-0030') + 'ldap: the directory could ' +
                                                 'not start: ' + err.message);
   });
+  // WHAT IS ATTESTED ON THE WORKLOAD API, READ RATHER THAN ASSERTED (#40,
+  // 2026-09-21). This banner ended with *NOTHING HERE IS ATTESTED: any caller
+  // that reaches the Workload API gets any identity in the trust domain* —
+  // true until #40's fourth phase, and false afterwards, because the Unix
+  // socket attests its caller the way a SPIRE agent does. A startup line that
+  // OVERSTATES what a service checks is the worse error of the two, so this
+  // one asks `spiffe_server` for the state and says what it finds: the
+  // native peer-credentials module is compiled only in an image build, so a
+  // development process that has none serves the socket unattested and says
+  // exactly that. A caller over TCP has no peer process to ask and is not
+  // attested either way — `spiffe/CLAUDE.md` argues both.
+  function workloadAttestationSentence() {
+    log.debug("Entering workloadAttestationSentence().");
+    let state = null;
+    try {
+      state = spiffeServer.workloadAttestationState();
+    } catch (e) {
+      // An older build, or no instance: the line says less rather than
+      // claiming either answer.
+      log.debug("Caught in workloadAttestationSentence(): " +
+                ((e && e.message) || e));
+      state = null;
+    }
+    if (!state) {
+      log.debug("Leaving workloadAttestationSentence(). Unknown.");
+      return 'What is attested on the Workload API is on that page.';
+    }
+    if (!state.nativeModule) {
+      log.debug("Leaving workloadAttestationSentence(). Unattested.");
+      return 'NOTHING IS ATTESTED on the Workload API here: this build has ' +
+             'no peer-credentials module (' +
+             String(state.problem || 'not built') + '), so any caller that ' +
+             'reaches it gets any identity in the trust domain.';
+    }
+    const on = (state.attestors || []).filter(function (one) {
+      return one && one.enabled;
+    }).map(function (one) {
+      return one.type;
+    });
+    log.debug("Leaving workloadAttestationSentence(). Attested.");
+    return 'A caller on the Workload API\'s UNIX SOCKET is ATTESTED (' +
+           (on.length ? on.join(', ') : 'no attestor enabled') + '); one ' +
+           'over TCP is not, and gets any identity in the trust domain.';
+  }
+
   // The SPIFFE gRPC listeners — the Workload API and the SPIRE Server API, a
   // Unix socket and a TCP port each, per realm that has SPIFFE turned on —
   // started here for the reason the other sockets are. GET /spiffe describes
@@ -403,10 +447,8 @@ function announce() {
                .join('; ') + '), which leaves the rest of this service ' +
                'untouched' : '') +
              '. The trust bundle is at ' + spiffeServer.BUNDLE_PATH +
-             ' and GET /spiffe says what is and is not checked — which is ' +
-             'most of that page, because NOTHING HERE IS ATTESTED: any ' +
-             'caller that reaches the Workload API gets any identity in the ' +
-             'trust domain.');
+             ' and GET /spiffe says what is and is not checked. ' +
+             workloadAttestationSentence());
   }).catch(function (err) {
     // Reported rather than thrown, exactly as the other three are.
     log.error(errorCodes.tag('STS-CORE-0031') +
@@ -451,9 +493,9 @@ function announce() {
   // same day the sockets went; it binds nothing, and still restores the stored
   // trust anchors and re-applies the context to the registered listeners.
   tlsServer.listen();
-  // A timer and not a socket, started here for the same reason: a process
-  // that answers requests is the one that keeps what it answers WITH current.
-  // One per cluster refreshes a given document (a claim; see sp_metadata.ts).
+  // A scheduler job and not a socket (#49 P5), registered here where its
+  // timer used to start: the job saml2.sp-metadata-refresh, once for the
+  // cluster, on the leader (see sp_metadata.ts).
   spMetadata.startRefresher();
   log.info('tls: this port asks every connection for a client certificate ' +
            'and requires none, so presenting one is the client\'s decision. ' +
@@ -517,6 +559,10 @@ function shutdown(signal) {
   // ---------------------------------------------------------------------
   // The debugger's api child first: it is not a worker of either pool and
   // holds nothing worth draining, and an orphan would keep its socket.
+  // The scheduler first of all: no job may start while the process drains.
+  // A run in progress is left to finish or be fenced out; its claim lapses
+  // and the next leader takes it over.
+  require('./cluster/scheduler').stop();
   debuggerServer.close().catch(function (e) {
     log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
   }).then(function () {
@@ -759,24 +805,12 @@ serviceState.start().then(function (both) {
                                      chainPem: tlsMaterial.chainPem,
                                      trustAnchorPem:
                                        tlsMaterial.trustAnchorPem });
-  // AND THE BBS PAIR, for the same reason and on the same channel. Awaited here
-  // because generating one is asynchronous and the pool's start() is not the
-  // place to wait — see request_pool.js's setBbsKeyPair(). A failure is logged
-  // and not fatal: each process then makes its own, which is what it did
-  // before, and only Data Integrity proofs are affected.
-  // The bootstrap first, OUTSIDE the BBS pair's catch: a bootstrap that
-  // throws is fatal at startup, as it was when it ran synchronously above.
+  // THE BBS PAIR IS NOT HANDED OVER HERE ANY MORE (2026-09-22, #49 P5): it is
+  // a member of each realm's key set, so it reaches the workers in the key
+  // sets the pool already sends (`keystore.sharedAll()`), and was made per
+  // realm on first use. The bootstrap is still awaited first — a bootstrap
+  // that throws is fatal at startup.
   return bootstrapped.then(function () {
-    return bbsKeyPairForSharing().then(function (encoded) {
-      requestPool.setBbsKeyPair(encoded);
-    }).catch(function (e) {
-      log.error(errorCodes.tag('STS-CORE-0034') +
-                'sts: the BBS key pair could not be shared with the request ' +
-                'workers (' + e.message + '); each will generate its own and ' +
-                'a did:web document may name a key its siblings did not ' +
-                'sign with.');
-    });
-  }).then(function () {
     return requestPool.start().then(function (pool) {
       if (pool.wanted) {
         log.info('sts: ' + pool.started + ' of ' + pool.wanted + ' request ' +
@@ -796,6 +830,18 @@ serviceState.start().then(function (both) {
                    : '. NOTHING IS DISPATCHED TO THEM — workers.dispatch is ' +
                      'empty, so every request is still handled here') + '.');
       }
+      // -------------------------------------------------------------------
+      // THE SCHEDULER (2026-09-22, #49), AND IT STARTS HERE AND NOWHERE
+      // EARLIER. Every periodic job in this service — the session-expiry
+      // sweep, the CRL directory refresh — is registered with it when its
+      // module loads, and nothing runs until this line: after the store, the
+      // keys, the minted rows, coordination and the certificate authority are
+      // restored, which is the whole of an active-passive standby's reason to
+      // wait, and never in a request worker, which starts it in per-process
+      // mode for itself. A front process campaigns for `ops.scheduler`; with
+      // clustering off it leads at once. See cluster/scheduler.ts.
+      // -------------------------------------------------------------------
+      require('./cluster/scheduler').start('front');
       bind();
     });
   });

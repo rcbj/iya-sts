@@ -2941,8 +2941,8 @@ function seed() {
     description: 'SPIFFE agents that have attested here. A RECORD rather ' +
       'than configuration: everything on these entries was written by this ' +
       'service, and nothing about an agent is editable from the console. ' +
-      'Node attestation is never verified — whatever an agent claimed is ' +
-      'what is written down.'
+      'An agent here was verified by the node attestor its type names; a ' +
+      'type nothing verifies is refused, never recorded.'
   }, { origin: 'seed' });
   // -------------------------------------------------------------------------
   // EVERYTHING BELOW THE CONTAINERS IS DEMONSTRATION DATA, AND PRODUCT MODE
@@ -9100,6 +9100,54 @@ function ldapListenHost() {
 const serverCertificate = tlsServer.serverCertificate();
 
 let secureServer = null;
+
+// ---------------------------------------------------------------------------
+// PUT THE CERTIFICATE tls_server.js HOLDS NOW ON 636 — before binding (see
+// RE-READ THE CERTIFICATE BEFORE BINDING, in listen()) AND EVERY TIME THAT
+// MODULE RE-ISSUES IT (2026-09-21). The second half is new: 636 set its
+// context once and never again, so `POST /admin-api/pki/build-root` left it
+// presenting a leaf under a Root nothing trusted any more while the main port
+// moved on, and an LDAPS client failed with `unable to get local issuer
+// certificate` until a restart (tests/vendored/sts_ldaps.js). Registered on
+// `tlsServer.onServerCertificateChange()`, which fires in the process that
+// holds this socket. `setSecureContext()` applies to the NEXT handshake; a
+// connection already open keeps the context it was made with.
+// ---------------------------------------------------------------------------
+function rekeyLdaps(why) {
+  log.debug("Entering rekeyLdaps(). " + why);
+  if (!secureServer) {
+    log.debug("Leaving rekeyLdaps(). No LDAPS listener.");
+    return;
+  }
+  try {
+    const current = tlsServer.serverCertificate();
+    Object.assign(serverCertificate, current);
+    secureServer.server.setSecureContext(Object.assign({
+      cert: (current.chainPem && current.chainPem.length)
+        ? [current.certPem].concat(current.chainPem).join('')
+        : current.certPem,
+      key: current.privateKeyPem
+    }, tlsProtocolOptions()));
+  } catch (e) {
+    // The listener still has the context it had, so this is a certificate
+    // that verifies against a different anchor rather than a directory that
+    // does not answer. Named rather than swallowed.
+    log.warn(errorCodes.tag('STS-LDAP-0030') +
+             'ldap: LDAPS could not be re-keyed with the certificate this ' +
+             'service ended up with (' + why + ': ' + e.message + '); it is ' +
+             'serving the one it had, which may not be the one the main ' +
+             'port presents.');
+  }
+  log.debug("Leaving rekeyLdaps().");
+}
+
+// A plain `typeof` guard: an older tls_server.js without the hook is a
+// missed re-key, not a directory that fails to load.
+if (typeof tlsServer.onServerCertificateChange === 'function') {
+  tlsServer.onServerCertificateChange(function () {
+    rekeyLdaps('the listener certificate was re-issued');
+  });
+}
 if (serverCertificate && serverCertificate.certPem &&
     serverCertificate.privateKeyPem) {
   // `certificate` and `key` are the option names ldapjs checks for, and it
@@ -10883,7 +10931,8 @@ function publishConnectionsSoon() {
 server.add('', function (req, res, next) {
   log.debug('Entering the LDAP add handler.');
   const dn = req.dn.toString();
-  log.info('ldap: ADD ' + dn);
+  // At debug (2026-09-21): one line per entry, and a bulk load is thousands.
+  log.debug('ldap: ADD ' + dn);
   const addRefusal = directoryWriteRefusal(req, 'add', dn);
   if (addRefusal) {
     log.debug('Leaving the LDAP add handler. Not authorized.');
@@ -15872,25 +15921,7 @@ function listen() {
     // were registered on this server object at require time and a new one
     // would have none of them.
     // -------------------------------------------------------------------
-    try {
-      const current = tlsServer.serverCertificate();
-      Object.assign(serverCertificate, current);
-      secureServer.server.setSecureContext(Object.assign({
-        cert: (current.chainPem && current.chainPem.length)
-          ? [current.certPem].concat(current.chainPem).join('')
-          : current.certPem,
-        key: current.privateKeyPem
-      }, tlsProtocolOptions()));
-    } catch (e) {
-      // The listener still has the context it was built with, so this is a
-      // certificate that verifies against a different anchor rather than a
-      // directory that does not answer. Named rather than swallowed.
-      log.warn(errorCodes.tag('STS-LDAP-0030') +
-               'ldap: LDAPS could not be re-keyed with the certificate this ' +
-               'service ended up with (' + e.message + '); it is serving the ' +
-               'one built at require time, which may not be the one the main ' +
-               'port presents.');
-    }
+    rekeyLdaps('before binding');
     // Before TLS, on the tls.Server ldapjs built — see the plain listener.
     proxyProtocol.install(secureServer.server, {
       label: 'LDAPS (' + LDAPS_PORT + ')', channel: 'ldaps' });

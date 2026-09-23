@@ -186,6 +186,9 @@ import audit = require('../common/audit');
 // it requires `persistence.js` lazily and registers nothing. See
 // sessionEndOnce() below.
 import clusterClaims = require('../cluster/cluster_claims');
+// THE SCHEDULER (#49), for the session-expiry job registered at the foot of
+// this file. A LIBRARY (rule 3) that requires nothing of this one.
+import scheduler = require('../cluster/scheduler');
 // The error codes (common/error_codes.js). A refusal here is marked on the
 // RESPONSE before the page or redirect is sent; a verdict from the credential
 // libraries arrives carrying its own code non-enumerably, and this module
@@ -616,12 +619,24 @@ let sessionObserver = null;
 // else counting sessions, hours after it had expired. That is why this needed
 // a SWEEP and not just a shared function.
 //
-// The sweep is unref'd, so it never holds the process open, and it is started
-// LAZILY — by the first session created — so a process that signs nobody in
-// (the parent project's in-process Kerberos jobs, `npm test`,
-// `node env/generate_defaults.js`) never arms a timer it would only ever have
-// to be shut down for. It is the same shape of decision the worker pool makes
-// about forking nothing until the first post-quantum job.
+// **THE SWEEP IS A SCHEDULER JOB SINCE 2026-09-22 (#49)**, rcbj's directive
+// of the day before: `authn.session-expiry`, a CLUSTER job on
+// `cluster/scheduler.ts`, every `authn.sessionSweepS` (30, and 0 switches it
+// off). It was a `setInterval` of a fixed thirty seconds, armed by the first
+// session a process created, in every process that created one — so with
+// request workers, every worker swept, and the `authn.session-end` claim
+// below was what kept an expiry from being reported once per process. Now
+// the scheduler's leader sweeps, once per slot for the whole cluster, and
+// each other process holds the same sessions by replication (every
+// configuration with more than one process shares the session store: a
+// cluster requires `persistence.minted`, and dispatch without coordination is
+// refused). A process that signs nobody in still arms nothing: the job
+// belongs to the scheduler, which only `server.js` starts.
+//
+// **WHAT DID NOT MOVE.** The lazy check where a session is looked up — a
+// process never honours an expired session, whenever the sweep last ran —
+// and the `authn.session-end` claim, because a lookup, a sign-out and the
+// job can still meet on one session.
 //
 // **IT SWEEPS EVERY REALM AND RUNS INSIDE EACH ONE.** The store is
 // `realms.map()`, so `sessions.forEach` walks the AMBIENT realm's partition —
@@ -631,8 +646,9 @@ let sessionObserver = null;
 // right rather than merely present: the observer builds a subject from the
 // realm's own issuer, and an event naming the wrong one is refused at the far
 // end and reads as a bad signature.
-const SESSION_SWEEP_MS = 30 * 1000;
-let sweepTimer = null;
+// The scheduler job's id, and its interval's setting.
+const SESSION_EXPIRY_JOB = 'authn.session-expiry';
+const SESSION_SWEEP_SETTING = 'authn.sessionSweepS';
 
 // ---------------------------------------------------------------------------
 // A SESSION'S END IS REPORTED ONCE, HOWEVER MANY PROCESSES NOTICE IT
@@ -2005,7 +2021,6 @@ class Authn {
     };
     const cookieValue = this.mintSessionHandle(session);
     store.set(sessionId, session);
-    this.armSessionSweep();
     this.setCookieHeader(spec.res, this.sessionCookieLine(spec.cookie,
                                                           cookieValue));
     // THE AUDIT ROW SAYS WHERE IT CAME FROM, and it is a `session.start` like
@@ -2575,7 +2590,7 @@ class Authn {
     log.debug("Leaving Authn.reportExpiry().");
   }
 
-  private sweepExpiredSessions() {
+  sweepExpiredSessions() {
     const { realms, log } = this.deps;
     const self = this;
     log.debug("Entering Authn.sweepExpiredSessions().");
@@ -2624,28 +2639,7 @@ class Authn {
                'nobody is ever told about.');
     }
     log.debug("Leaving Authn.sweepExpiredSessions(). " + gone + " ended.");
-  }
-
-  // Armed by the first session this process creates, and never before — see the
-  // header. `unref()` so it cannot be the reason a process will not exit.
-  private armSessionSweep() {
-    const { log } = this.deps;
-    log.debug("Entering Authn.armSessionSweep().");
-    if (sweepTimer) {
-      log.debug("Leaving Authn.armSessionSweep().");
-      return;
-    }
-    sweepTimer = setInterval(this.sweepExpiredSessions.bind(this),
-                             SESSION_SWEEP_MS);
-    if (typeof sweepTimer.unref === 'function') {
-      sweepTimer.unref();
-    }
-    log.info('authn: the session sweep is running every ' +
-             (SESSION_SWEEP_MS / 1000) +
-             's. A session that expires is ended, ' +
-             'audited and reported over CAEP whether or not anybody comes ' +
-             'back to look at it.');
-    log.debug("Leaving Authn.armSessionSweep().");
+    return gone;
   }
 
   // ---------------------------------------------------------------------------
@@ -3397,10 +3391,8 @@ class Authn {
     // the correlation and ends the fixation.
     const cookieValue = this.mintSessionHandle(session);
     sessions.set(sessionId, session);
-    // The first session this process holds arms the sweep that will end it if
-    // nobody signs it out. See armSessionSweep(): nothing is armed in a process
-    // that signs nobody in.
-    this.armSessionSweep();
+    // The sweep that ends it if nobody signs it out is the scheduler job
+    // `authn.session-expiry` (see the header); nothing is armed here.
     // `Secure` when — and only when — this port is TLS (global.https, which RFC
     // 9700 mode brings with it). It has to be conditional rather than always
     // on: a browser silently DROPS a Secure cookie that arrives over plain
@@ -3591,11 +3583,27 @@ class Authn {
     // differently. bcp.revokeRefreshOnLogout() still returns false for
     // everything when RFC 9700 mode is off, so the shape of this is unchanged
     // when the mode is.
+    //
+    // EXCEPT A REFRESH TOKEN GRANTED `offline_access` (#118). OIDC Core
+    // section 11 defines that scope as access "even when the End-User is not
+    // present (not logged in)" — outliving the session is the whole of what
+    // it was granted for, and the person agreed to exactly that. The online
+    // ones this revokes are the ones the refresh grant would refuse after the
+    // sign-out anyway; a global sign-out (`/logout`) still disowns everything.
+    // This service's OWN surfaces are not excepted: the relying-party session
+    // that holds each of their tokens ends in this same sign-out's cascade,
+    // so an offline token of theirs would be a live credential nobody holds
+    // (`applications.HOSTED_SURFACE_CLIENT_IDS`).
     if (id) {
       const revoked = stats.revokeWhere(function (record) {
+        const clientId = String(record.client_id || '');
         return record.sessionId === id &&
                String(record.typ || '') === 'Refresh' &&
-               bcp.revokeRefreshOnLogout(String(record.client_id || ''));
+               (String(record.scope || '').split(/\s+/)
+                 .indexOf('offline_access') < 0 ||
+                applications.HOSTED_SURFACE_CLIENT_IDS
+                  .indexOf(clientId) >= 0) &&
+               bcp.revokeRefreshOnLogout(clientId);
       }, 'RFC 9700 section 2.2.2: the sign-on session it was issued on ended');
       if (revoked) {
         log.info('RFC 9700 section 2.2.2: signing out of session ' + id + ' ' +
@@ -3778,6 +3786,38 @@ class Authn {
                                                     'There was ' +
         'no such session.'));
     return session;
+  }
+
+  // END EVERY SESSION OF ONE REALM (#48, an emergency key rotation). Each
+  // through the same door as one (`dropSession()`), so each is an audit row, a
+  // CAEP session-revoked and the back-channel Logout Tokens of its relying
+  // parties. Collected first and ended afterwards, for the sweep's reason.
+  // Answers who was signed out, so the caller can tell RISC about accounts.
+  endEverySessionIn(realmId, via) {
+    const { log, realms } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.endEverySessionIn(). realm=" + realmId);
+    const realm = realms.get(String(realmId || '')) ||
+                  realms.get(realms.DEFAULT_ID);
+    const store = sessions.realmMap(realm.id);
+    const ids = [];
+    if (store) {
+      store.forEach(function (session, id) {
+        if (session) {
+          ids.push({ id: id,
+                     username: String((session.user &&
+                                       session.user.username) || '') });
+        }
+      });
+    }
+    const ended = realms.run(realm, function () {
+      return ids.filter(function (one) {
+        return !!self.dropSession(one.id, via, false);
+      });
+    });
+    log.debug("Leaving Authn.endEverySessionIn(). " + ended.length +
+              " ended.");
+    return ended;
   }
 
   // Clear the session cookie on this response, whatever the session it named.
@@ -5432,13 +5472,24 @@ class Authn {
       this.integratedOptionHtml(record) +
       // AND THE WALLET (#38), last: offered to everybody, like Kerberos.
       this.walletOptionHtml(record) +
-      '<div class="meta"><div>No password is checked. The username you enter ' +
-      'is the identity the issued tokens describe.</div><div>Passwordless: ' +
-      'the password field is not read at all, and the security key becomes ' +
-      'the only factor — a key is enrolled for this username on first use, ' +
-      'so the first person to claim a name here gets it. This service ' +
-      'authenticates nobody; that is the same statement as the line above ' +
-      'and not a weaker one.</div><div>Signing in for: ' +
+      // WHAT THIS SCREEN CHECKS, BY MODE (2026-09-21). It said "no password
+      // is checked" and "a key is enrolled on first use" in product too, where
+      // both have been false — the first since 2026-09-06, the second since
+      // `mode.enrolsKeysOnFirstUse()`.
+      (mode.verifiesCredentials()
+        ? '<div class="meta"><div>Your password is checked against your ' +
+          'account.</div><div>Passwordless: the password field is not read, ' +
+          'and a security key you registered for signing in is the only ' +
+          'factor. A key is added at /portal/keys after signing in, never ' +
+          'here.</div><div>Signing in for: '
+        : '<div class="meta"><div>No password is checked. The username you ' +
+          'enter is the identity the issued tokens describe.</div>' +
+          '<div>Passwordless: the password field is not read at all, and the ' +
+          'security key becomes the only factor — a key is enrolled for this ' +
+          'username on first use, so the first person to claim a name here ' +
+          'gets it. This service authenticates nobody; that is the same ' +
+          'statement as the line above and not a weaker one.</div>' +
+          '<div>Signing in for: ') +
       '<code>' + xmlEscape(record.protocol) + '</code></div>' +
       record.details.map(function (d) {
         return '<div>' + xmlEscape(d.label) + ': <code>' +
@@ -6706,13 +6757,19 @@ class Authn {
       errorCodes.mark(res,
                       errorCodes.codeOf(verdict) ||
                       webauthnPolicy.failureCodeFor(verdict));
+      // A POLICY refusal made before the verifier's list existed — the two
+      // product-mode enrolment refusals (STS-AUTHN-0024, 0206) — carries a
+      // `why` and no `failed`. Reading `failed.join()` off one answered 500
+      // until 2026-09-21, which hid both refusals behind an error page.
+      const failed = Array.isArray(verdict.failed) && verdict.failed.length
+        ? verdict.failed : [String(verdict.why || 'refused')];
       log.debug("Leaving Authn.finishWebauthn(). Refused: " +
-                verdict.failed.join('; '));
+                failed.join('; '));
       return this.sendWebauthnPage(res,
                                    this.webauthnPage(base, String(body.mfa_id),
                            step.username,
                            'The second factor did not verify — ' +
-                           verdict.failed.join('; ') + '.'));
+                           failed.join('; ') + '.'));
     }
 
     pendingMfa.delete(String(body.mfa_id));
@@ -7564,6 +7621,37 @@ class Authn {
       }
 
       // ---------------------------------------------------------------------
+      // NO ENROLMENT ON FIRST USE IN PRODUCT (2026-09-21).
+      //
+      // The passwordless path reads no password, and `webauthnPage()` answers
+      // a person who holds no `primary` key with the ENROL ceremony — so in
+      // product, where the only other check was that the name exists
+      // (`knownUser()` at the registration), anybody who knew a username
+      // could register their own authenticator as that person's primary
+      // credential and be signed in as them. And stay: the key is on the
+      // entry until somebody notices it. Development keeps "the first person
+      // to claim a name gets it", which the screen says.
+      //
+      // Refused HERE, before a step is minted, so the ceremony is never drawn;
+      // the registration branch below asks the same question as well, because
+      // a step minted on one side of a mode change is still a step. **The
+      // sentence is the same whether the name exists or not**, so this is not
+      // a way to find out which usernames do.
+      if (passwordless && !mode.enrolsKeysOnFirstUse() &&
+          credentials.mechanismsFor(username).primaryKeys < 1) {
+        log.info('authn: product mode, so a passwordless sign-in for "' +
+                 username + '", who holds no primary security key, was ' +
+                 'refused rather than enrolling one at the sign-in screen.');
+        log.debug("Leaving the authentication endpoint. No primary key to " +
+                  "sign in with, and product mode enrols none here.");
+        errorCodes.mark(res, 'STS-AUTHN-0206');
+        return this.sendLoginPage(res, this.loginPage(base, record,
+          'There is no security key registered for signing in to this ' +
+          'account. Sign in with your password, then add a key at ' +
+          '/portal/keys.'));
+      }
+
+      // ---------------------------------------------------------------------
       // THE CREDENTIAL (2026-09-06). One call, both modes.
       //
       // **THIS USED TO BE THE RESERVED-PASSWORD CHECK AND NOTHING ELSE**, and
@@ -8176,7 +8264,22 @@ class Authn {
             // creating objects because something referenced them is exactly
             // what product mode removes. Development creates the entry, which
             // is what it does everywhere else.
-            if (!mode.autoCreates() && !stats.knownUser(step.username)) {
+            // AND A PRIMARY KEY IS NOT ENROLLED HERE AT ALL IN PRODUCT
+            // (2026-09-21) — the sign-in handler refuses before the ceremony
+            // is drawn, and this is the same refusal for a step that got past
+            // it. Nothing on the passwordless path proved who is asking.
+            if (step.passwordless && !mode.enrolsKeysOnFirstUse()) {
+              log.info('authn: product mode, so a primary security key was ' +
+                       'NOT enrolled for "' + step.username + '" at the ' +
+                       'sign-in screen.');
+              verdict = errorCodes.mark({ ok: false,
+                          why: 'This service is in product mode, where a ' +
+                               'security key that signs in on its own is ' +
+                               'added at /portal/keys after signing in, ' +
+                               'never at the sign-in screen.' },
+                          'STS-AUTHN-0206');
+            } else if (!mode.autoCreates() &&
+                       !stats.knownUser(step.username)) {
               log.info('authn: product mode, so a WebAuthn key was NOT ' +
                        'enrolled for "' + step.username + '" — there is no ' +
                        'directory entry for them and enrolling would create ' +
@@ -8796,6 +8899,27 @@ const slot = new InstanceSlot<Authn>(
 slot.buildNowUnlessDeferred();
 
 // ---------------------------------------------------------------------------
+// THE SESSION-EXPIRY SWEEP, AS A SCHEDULER JOB (#49, 2026-09-22) — see the
+// header's *THE SWEEP IS A SCHEDULER JOB*. Registered here, at load, and run
+// only by the scheduler's leader; it ends every expired session in every
+// realm through `expireSession()`, so the audit row, CAEP session-revoked and
+// the back-channel Logout Tokens keep coming from the one path.
+// ---------------------------------------------------------------------------
+scheduler.register({
+  id: SESSION_EXPIRY_JOB,
+  title: 'Session expiry',
+  describe: 'Ends every sign-on session whose lifetime or idle timeout has ' +
+            'passed, in every realm: an audit row, CAEP session-revoked and ' +
+            'the back-channel Logout Tokens, once for the whole cluster.',
+  owner: 'authn/authn.ts',
+  everySetting: SESSION_SWEEP_SETTING,
+  everySettingUnit: 's',
+  run: function (): any {
+    return { ended: slot.get().sweepExpiredSessions() };
+  }
+});
+
+// ---------------------------------------------------------------------------
 // What the rest of this service uses.
 //
 // `sessions` is handed out rather than copied because the admin console reports
@@ -8913,6 +9037,7 @@ export = {
   sessionsOf: slot.forward('sessionsOf'),
   sessionById: slot.forward('sessionById'),
   endSessionById: slot.forward('endSessionById'),
+  endEverySessionIn: slot.forward('endEverySessionIn'),
   clearSessionCookie: slot.forward('clearSessionCookie'),
   beginAuthentication: slot.forward('beginAuthentication'),
   // THE SIGN-IN SCREEN'S STYLESHEET, for oauth-oidc/consent_screen.ts. A

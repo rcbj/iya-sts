@@ -429,6 +429,15 @@ async function createTheRealm() {
     "creating the realm " + REALM + " should have worked; it answered " +
     r.status + " " + String(r.text).slice(0, 300));
   log.info("Created the throwaway realm " + REALM + ".");
+  // THE REALM'S CERTIFICATE AUTHORITY, BUILT AND AWAITED HERE (2026-09-21),
+  // because every person this file names is issued an RFC 7523 key pair
+  // (personKey()), and pki.issueSigningKeyPair() refuses a realm with no
+  // branch rather than building one. The realm watcher in common/pki.js does
+  // build it, but without being awaited, so the first issue raced it and lost
+  // in every mode (STS-PKI-0008). sts_jwt_bearer_grant.js and its siblings do
+  // exactly this before their first /pki/issue.
+  await act("pki", "build", { organisation: "Roles", country: "US" },
+            "built a certificate authority in the realm");
   for (const who of [HOLDER, IN_GROUP, OUTSIDER, SCIM_CALLER]) {
     await createPerson(who);
   }

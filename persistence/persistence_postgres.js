@@ -1102,12 +1102,60 @@ function create(options) {
       'AND key = $2 AND reservation = $3 AND expires_at > ' + DB_NOW +
       ' FOR SHARE', [ORIGIN_SCOPE, held.key, held.reservation]
     ).then(function (r) {
-      if (!r.rowCount) {
-        throw fenced('origin', 'this process no longer holds its origin ' +
-                     held.key + ' (the claim lapsed or another process ' +
-                     'took it), so it may not write.');
+      if (r.rowCount) {
+        return null;
       }
-      return null;
+      // -------------------------------------------------------------------
+      // LAPSED IS NOT TAKEN (2026-09-21). The claim's time ran out, but that
+      // alone does not mean another process holds it: a process that TAKES
+      // the claim replaces its reservation, in one statement on this row. So
+      // when the row still carries OUR reservation nobody wrote under this
+      // origin in between, and extending it is exactly as safe as the
+      // renewal that should have happened — which is what this does, inside
+      // the write's own transaction. Only a reservation that is somebody
+      // else's is fenced.
+      //
+      // Found in the suite's first product-mode run: a single process under
+      // the SCIM bulk load could not get one of its 4 pooled connections
+      // for two renewals in a row, the claim lapsed with nobody else
+      // anywhere, the next write was fenced, and the process EXITED saying
+      // another process held its origin (STS-STORE-0061) — which killed the
+      // service for the last three jobs.
+      // -------------------------------------------------------------------
+      return reassertOrigin(client, held).then(function (still) {
+        if (!still) {
+          throw fenced('origin', 'this process no longer holds its origin ' +
+                       held.key + ' (another process took it after the ' +
+                       'claim lapsed), so it may not write.');
+        }
+        return null;
+      });
+    });
+  }
+
+  // The claim extended while the row still carries this process's
+  // reservation, lapsed or not: true when it did, false when another process
+  // has taken the claim (and so replaced the reservation). One statement, so a
+  // claimant racing it either wins first (and this matches nothing) or finds
+  // a live claim and is refused. `runner` is a client inside a transaction, or
+  // the pool.
+  function reassertOrigin(runner, held) {
+    log.debug("Entering reassertOrigin().");
+    log.debug("Leaving reassertOrigin().");
+    return runner.query(
+      'UPDATE sts_cluster_claims SET expires_at = ' + DB_NOW + ' + $4 ' +
+      'WHERE scope = $1 AND realm = \'\' AND key = $2 AND reservation = $3',
+      [ORIGIN_SCOPE, held.key, held.reservation,
+       Math.max(1000, Number(held.ttlMs) || 30000)]
+    ).then(function (r) {
+      // DEBUG, by rcbj's rule (2026-09-21): it is only reached for a claim
+      // that really lapsed, which says renewals are running late — worth
+      // having when somebody asks for the whole record, not at info.
+      if (r.rowCount) {
+        log.debug('persistence: the claim on origin ' + held.key +
+                  ' had lapsed with nobody else taking it, and was extended.');
+      }
+      return r.rowCount > 0;
     });
   }
 
@@ -2594,7 +2642,7 @@ function create(options) {
         }).then(function (answer) {
           if (answer.claimed) {
             processId = key;
-            originClaim = { key: key, reservation: reservation };
+            originClaim = { key: key, reservation: reservation, ttlMs: ttlMs };
             return { adopted: true, origin: key,
                      waitedMs: Date.now() - started };
           }
@@ -2620,16 +2668,31 @@ function create(options) {
         log.debug("Leaving renewOrigin(). No claim.");
         return Promise.resolve(true);
       }
-      const held = originClaim;
       log.debug("Leaving the postgres driver renewOrigin().");
+      // By the RESERVATION, not by the claim still being live (2026-09-21): a
+      // renewal that could not reach the store in time finds the claim
+      // lapsed, and a lapse nobody took is still this process's — see
+      // checkOriginFence(). It asked `AND expires_at > now()` until then, so
+      // one late renewal read as "another process holds it" and the process
+      // exited in a single-process stack.
+      //
+      // **THE LIVE CLAIM FIRST, AND QUIETLY (the same day).** A renewal went
+      // straight to `reassertOrigin()`, whose "had lapsed with nobody else
+      // taking it" line is only true when the claim HAD lapsed — so every
+      // routine renewal logged it: every request worker, every ten seconds,
+      // about a lapse that never happened. The ordinary renewal is the update
+      // that needs the claim still live; only when that matches nothing is
+      // the claim extended by its reservation, and said so.
+      const held = { key: originClaim.key,
+                     reservation: originClaim.reservation, ttlMs: ttlMs };
       return pool.query(
         'UPDATE sts_cluster_claims SET expires_at = ' + DB_NOW + ' + $4 ' +
-        'WHERE scope = $1 AND realm = \'\' AND key = $2 AND ' +
-        'reservation = $3 AND expires_at > ' + DB_NOW,
+        'WHERE scope = $1 AND realm = \'\' AND key = $2 AND reservation = $3 ' +
+        'AND expires_at > ' + DB_NOW,
         [ORIGIN_SCOPE, held.key, held.reservation,
          Math.max(1000, Number(ttlMs) || 30000)]
       ).then(function (r) {
-        return !!r.rowCount;
+        return r.rowCount > 0 ? true : reassertOrigin(pool, held);
       });
     },
 

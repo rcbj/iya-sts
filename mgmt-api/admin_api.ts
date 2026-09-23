@@ -203,6 +203,8 @@ import secretsAdmin = require('../admin-ui/secrets_admin');
 import cachesAdmin = require('../admin-ui/caches_admin');
 // THE STATUS LISTS' PAGE (#38's follow-ups), for its two functions (rule 7).
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
+// The scheduler's page (#49): its view and its two actions, rule 7.
+import schedulerAdmin = require('../admin-ui/scheduler_admin');
 // The embedded protocol debugger's report (2026-09-13). A page module required
 // at 18 like the one above, and it reads the listener's status lazily, so this
 // require moves no route.
@@ -1091,8 +1093,8 @@ class AdminApi {
       { path: '/oid4vci-settings', console: '/admin/oid4vci', tag: 'OpenID4VCI',
         operationId: 'getOid4vciSettings',
         summary: 'The credential issuer\'s own settings',
-        description: 'The nine `oid4vci.*` settings: the wallet an offer ' +
-                     'sends a holder to, the authorization server the ' +
+        description: 'The `oid4vci.*` settings, among them the wallet an ' +
+                     'offer sends a holder to, the authorization server the ' +
                      'credential endpoint will take a token from, the batch ' +
                      'size, the deferred issuance timings, the offer ' +
                      'username, whether a credential request must be ' +
@@ -1164,17 +1166,18 @@ class AdminApi {
                      'recovery code, so `status` has no specification ' +
                      'column: every field in it is a decision this service ' +
                      'made, and `bitsPerCode` is the one worth reading ' +
-                     'first.\n\n**A SET IS ISSUED AUTOMATICALLY AND ONCE**, ' +
-                     'by the act of enrolling a second factor. Nothing on ' +
-                     'this API issues one on request and nothing on it reads ' +
-                     'a code back; `POST /users/clear-backup-codes` deletes ' +
-                     'a set, which is the only route to a second ' +
+                     'first.\n\n**A PERSON GENERATES THEIR OWN SET** on ' +
+                     '/portal/mfa, is shown it once, and it is stored as ' +
+                     'one scrypt hash per code only when they confirm they ' +
+                     'have kept it; generating again replaces it. Nothing ' +
+                     'on this API issues a set and nothing on it reads a ' +
+                     'code back; `POST /users/clear-backup-codes` deletes ' +
                      'one.\n\n**CHANGING THESE AFFECTS NEW SETS ONLY, AND NO ' +
                      'EXISTING SET IS INVALIDATED** — unlike `totp.*`, this ' +
                      'needs no paragraph about enrolments, because nothing ' +
                      'here was told to an app this service cannot reach. A ' +
-                     'recovery code is a string compared against a stored ' +
-                     'string.\n\nWho holds a set is `GET /users`, which ' +
+                     'recovery code is compared against its stored ' +
+                     'hash.\n\nWho holds a set is `GET /users`, which ' +
                      'reports the counts and never the codes.' },
       { path: '/webauthn', console: '/admin/webauthn', tag: 'WebAuthn',
         operationId: 'getWebauthnSettings',
@@ -1364,15 +1367,19 @@ class AdminApi {
                      'with the node answering (`nodes[].agrees`).' },
       { path: '/wstrust', console: '/admin/wstrust', tag: 'WS-Trust',
         operationId: 'getWsTrustSettings',
-        summary: 'The security token service\'s own setting',
-        description: 'One setting — who a WS-Trust token says issued it — ' +
-                     'and it is a different setting from `saml.issuer`, ' +
-                     'which is the Issuer INSIDE the assertion. They share a ' +
-                     'default and were one setting until they had to ' +
-                     'differ.\n\nWhat an assertion CONTAINS is `GET ' +
-                     '/saml-attributes`: WS-Trust here issues SAML ' +
-                     '1.1 and SAML 2.0 assertions through the same two ' +
-                     'builders the SAML profiles use.' },
+        summary: 'The security token service\'s own settings',
+        description: 'The `wstrust.*` settings: who a WS-Trust JWT says ' +
+                     'issued it, the token lifetime and its ceiling, and ' +
+                     'the JWT signing algorithm. `wstrust.issuer` is a ' +
+                     'different setting from `saml.issuer`, which is the ' +
+                     'Issuer INSIDE an assertion; they share a default and ' +
+                     'were one setting until they had to differ.\n\n' +
+                     'WS-Trust here issues a JWT when the request\'s ' +
+                     'TokenType is `urn:ietf:params:oauth:token-type:jwt` ' +
+                     'and a SAML 2.0 assertion for any other TokenType, ' +
+                     'built by the same builder the SAML 2.0 profile uses; ' +
+                     'what that assertion CONTAINS is `GET ' +
+                     '/saml-attributes`.' },
       { path: '/wsfed', console: '/admin/wsfed', tag: 'WS-Federation',
         operationId: 'getWsFedSettings',
         summary: 'The passive requestor profile\'s own setting',
@@ -1841,6 +1848,149 @@ class AdminApi {
         })
       },
 
+      // ---------------------------------------------------------------------
+      // THE SCHEDULER (#49, 2026-09-22). `schedulerAdmin.schedulerView()` —
+      // the function the page's `?format=json` answers — and
+      // `schedulerAdmin.schedulerAction()`, the function its two forms post
+      // to. Nothing here reads the scheduler a second way.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/scheduler', tag: 'Service',
+        operationId: 'getScheduler',
+        summary: 'Every scheduled job, its last run and its next, or one run',
+        description: 'Without `run`: the scheduler\'s `leader` (`node`, ' +
+                     '`nodeName`, `host`, `pid`, `since`, `token`, ' +
+                     '`lastTickAt`, `live`, `clustered`, `thisProcess`), ' +
+                     'and one row in `jobs` for EVERY registered job, ' +
+                     'including one that is off — `id`, `title`, ' +
+                     '`describe`, `owner`, `kind` (`cluster` or ' +
+                     '`per-process`), `scope` (`service` or `realm`) and ' +
+                     '`realm`, `schedule` (`text`, `everyMs`, `setting`, ' +
+                     '`cron`, `manualOnly`), `state` (`enabled` or `off`) ' +
+                     'and `offReason`, `manual` (whether it may be run now), ' +
+                     '`lastRun` and `running` (a run: `runId`, `state`, ' +
+                     '`attempt`, `fenceAt`, `node`, `pid`, `startedAt`, ' +
+                     '`endedAt`, `durationMs`, `errorCode`, `why`), ' +
+                     '`queued` manual runs, `nextRunAt` (absolute, UTC), ' +
+                     '`nextRunInMs` (by the DATABASE\'s clock at the time of ' +
+                     'the request, so every node answers the same figure) ' +
+                     'and `nextRunState` (`scheduled`, `due`, `overdue`, ' +
+                     '`running`, `queued`, `manual-only` or `off`), and for ' +
+                     'a per-process job `processes[]`, one per node and ' +
+                     'process. Then the recent `runs`, newest first, ' +
+                     'filtered by `job` and `outcome` and answered in ' +
+                     '`runsPaging`, and the queued `commands`. With `run`: ' +
+                     'that run, as `detail`, or `found: false`. Everything is ' +
+                     'read from the store, so any node answers the same. A ' +
+                     'realm\'s own administrator sees the service jobs ' +
+                     'read-only and their own realm\'s rows only.',
+        mirrors: 'GET /admin/scheduler',
+        parameters: [
+          { name: 'run', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A run id, to answer that run.' },
+          { name: 'job', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only the runs of this job.' },
+          { name: 'outcome', in: 'query', required: false,
+            schema: { type: 'string', enum: ['succeeded', 'failed',
+                                             'abandoned', 'running',
+                                             'queued'] },
+            description: 'Only the runs in this state.' }
+        ].concat(self.pagingParameters()),
+        responseDescription: 'The scheduler\'s report, or one run.',
+        responseSchema: { type: 'object',
+          description: '`generatedAt`, `nowMs`, `clock`, `answeredBy`, ' +
+                       '`leader`, `tickS`, `enabled`, ' +
+                       '`unknownDisabledIds`, `jobs`, `runs`, ' +
+                       '`runsPaging` and `commands`; or `run`, `found` and ' +
+                       '`detail`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API scheduler endpoint.");
+          // Awaited, and the handler catches: Express 4 does not look at
+          // what a handler returns (the database report's reason).
+          schedulerAdmin.schedulerView(req, req.query).then(function (json) {
+            self.sendJson(res, 200, json);
+            log.debug("Leaving the management API scheduler endpoint.");
+          }).catch(function (e) {
+            errorCodes.mark(res, 'STS-SCHED-0013');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The scheduler report could not be built: ' +
+              (e && e.message ? e.message : String(e))] });
+            log.debug("Leaving the management API scheduler endpoint. It " +
+                      "threw.");
+          });
+          log.debug("Leaving handler().");
+        } },
+
+      { method: 'POST', route: BASE + '/scheduler/:action', tag: 'Service',
+        mirrors: 'POST /admin/scheduler',
+        handler: function (req, res) {
+          log.debug("Entering the management API scheduler action.");
+          const result = schedulerAdmin.schedulerAction(req,
+            self.withAction(req, parseBody(req)),
+            'the management API at /admin-api/scheduler');
+          if (!result.ok) {
+            errorCodes.mark(res, result.errorCode || 'STS-ADMIN-0012');
+            self.sendJson(res, result.status || 400,
+                          { ok: false, errors: result.errors });
+            log.debug("Leaving the management API scheduler action. " +
+                      "Refused.");
+            return;
+          }
+          self.sendJson(res, 202, result);
+          log.debug("Leaving the management API scheduler action.");
+        },
+        actions: [
+          { action: 'run', operationId: 'runSchedulerJob',
+            summary: 'Queue a run of one job now',
+            description: 'Writes a queued run of `job` (in `realm`, for a ' +
+                         'realm-scoped job) that the scheduler\'s leader ' +
+                         'starts at its next tick, wherever this request ' +
+                         'was answered — 202 with its `runId` and `href`. A ' +
+                         'second request while one is queued answers the ' +
+                         'same run (`alreadyQueued`). Refused 404 for an ' +
+                         'unknown job, 400 for a job that runs on its ' +
+                         'schedule only, is off (with the reason: its ' +
+                         'setting, scheduler.enabled, or development mode), ' +
+                         'or names a realm that does not exist; 403 to a ' +
+                         'realm administrator for a service job or another ' +
+                         'realm.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                job: { type: 'string',
+                       description: 'The job `id`, as GET ' +
+                                    '/admin-api/scheduler lists it.' },
+                realm: { type: 'string',
+                         description: 'The realm, for a realm-scoped job; ' +
+                                      'the one the request is in otherwise.' },
+                params: { type: 'object',
+                          description: 'Parameters the job reads, where it ' +
+                                       'reads any.' }
+              },
+              required: ['job'],
+              examples: [{ job: 'pki.crl-directory-refresh' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run.' },
+          { action: 'step-down', operationId: 'stepDownScheduler',
+            summary: 'Ask the scheduler\'s leader to hand over',
+            description: 'Writes a command the leader obeys at its next ' +
+                         'tick: it gives up the `ops.scheduler` lease and ' +
+                         'does not ask for it again for three heartbeats, ' +
+                         'so another node takes the lead. A planned ' +
+                         'handover, and a way to drain a node. 202; 400 ' +
+                         'when the service is not clustered ' +
+                         '(STS-SCHED-0010). A service operation.',
+            requestBodyRequired: false,
+            requestBody: { type: 'object', properties: {},
+                           additionalProperties: false, examples: [{}] },
+            responseDescription: 'The command, and who led when it was ' +
+                                 'asked.' }
+        ]
+      },
+
       { method: 'GET', path: BASE + '/caches', tag: 'Service',
         operationId: 'getCaches',
         summary: 'Every cache this service holds, or one cache\'s entries',
@@ -2166,6 +2316,59 @@ class AdminApi {
           log.debug("Leaving the management API key list endpoint.");
         } },
 
+      { method: 'GET', path: BASE + '/keys/history', tag: 'Service',
+        operationId: 'getKeyHistory',
+        summary: 'Every signing key this realm has ever held',
+        description: 'THE RECORD THAT OUTLIVES THE KEY (#42\'s follow-up). ' +
+                     'A retired signing key is DROPPED once it passes its ' +
+                     'grace and its private half is gone — this is what ' +
+                     'survives: when each key of each unit was minted, ' +
+                     'promoted, retired and dropped, why, and the ' +
+                     'certificate that vouched for it, with its serial, ' +
+                     'subject and validity window. Nothing here is key ' +
+                     'material, and nothing here can produce a ' +
+                     'signature.\n\nWith no `unit` the answer is the index ' +
+                     'of units and their counts; with one it is that ' +
+                     'unit\'s generations, newest first and PAGED (`page`, ' +
+                     '`per`). The history is derived from the realm\'s key ' +
+                     'set, so this read also OBSERVES — idempotent, so in ' +
+                     'the steady state it writes nothing.',
+        mirrors: 'GET /admin/keys/history',
+        parameters: [
+          { name: 'unit', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'One signing unit (`jose:RS256`, `xml:RS256`, ' +
+                         '`jose:ES256:P-256`, `bbs:BBS`, …). Omitted, the ' +
+                         'answer is the index of units and their counts.' }
+        ].concat(self.pagingParameters()),
+        responseDescription: 'The units, and one unit\'s generations.',
+        handler: function (req, res) {
+          log.debug("Entering the management API key history endpoint.");
+          const view = adminViews.signingHistoryView(req.query || {});
+          if (!view.observed) {
+            errorCodes.mark(res, 'STS-API-0011');
+            self.sendJson(res, 503, { ok: false, errors: [
+              'The signing-key history is not available in this process.'] });
+            log.debug("Leaving the management API key history endpoint. " +
+                      "No history.");
+            return;
+          }
+          if (view.unit && !view.found) {
+            errorCodes.mark(res, 'STS-KEYS-0068');
+            self.sendJson(res, 400, { ok: false, errors: [
+              'This realm has no record of a signing unit called "' +
+              view.unit + '".'], units: view.units.map(function (one) {
+                return one.unit;
+              }) });
+            log.debug("Leaving the management API key history endpoint. " +
+                      "Unknown unit.");
+            return;
+          }
+          self.sendJson(res, 200, view);
+          log.debug("Leaving the management API key history endpoint. " +
+                    view.rows.length + " row(s).");
+        } },
+
       // AN ACTION RESOURCE RATHER THAN A BARE POST, and the suite is why. Every
       // other POST here is `/<resource>/:action`, and
       // `sts_admin_api_operations.js` probes each of them with an action nobody
@@ -2174,10 +2377,39 @@ class AdminApi {
       // got a 404 — the route pattern simply did not match. One `export` action
       // today; a second (an import, a rotation) goes in the same list.
       { method: 'POST', route: BASE + '/keys/:action', tag: 'Service',
-        mirrors: 'POST /admin/keys/export',
+        // BOTH console paths (2026-09-22): the rotate and emergency actions
+        // (#48) came in through this handler and the declaration still named
+        // only the export form, so `/admin/keys`'s two Rotate forms mirrored
+        // no operation and `sts_admin_console` reported their POST target as
+        // a route that does not exist (rule 7).
+        mirrors: 'POST /admin/keys/export and POST /admin/keys/rotate',
         handler: function (req, res) {
           log.debug("Entering the management API key export endpoint.");
           const body = self.withAction(req, parseBody(req));
+          // ROTATE AND EMERGENCY (#48): the console's `/admin/keys/rotate`,
+          // through the one action it posts to. `crypto_metadata.ts` is
+          // required HERE, at the request, because it is 20a in the order and
+          // this module is 19.
+          if (body.action === 'rotate' || body.action === 'emergency') {
+            const result = require('../admin-ui/crypto_metadata')
+              .keysAction(req, body, 'the management API at ' +
+                          '/admin-api/keys/' + body.action);
+            if (!result.ok) {
+              errorCodes.mark(res, result.errorCode || 'STS-API-0014');
+              self.sendJson(res, result.status || 400,
+                            { ok: false, errors: result.errors });
+              log.debug("Leaving the management API key endpoint. Refused.");
+              return;
+            }
+            self.sendJson(res, 202, { ok: true, accepted: true,
+              runId: result.runId, emergency: result.emergency,
+              units: result.units, message: result.message,
+              run: BASE + '/scheduler?run=' +
+                   encodeURIComponent(result.runId) });
+            log.debug("Leaving the management API key endpoint. Queued " +
+                      result.runId + ".");
+            return;
+          }
           if (body.action !== 'export') {
             // THE SENTENCE IS THE SHAPE THE SUITE READS, and that is not a
             // formatting preference: `sts_admin_api_operations.js` matches
@@ -2188,7 +2420,7 @@ class AdminApi {
             errorCodes.mark(res, 'STS-API-0014');
             self.sendJson(res, 400, { ok: false, errors: [
               'Unknown action "' + body.action + '". The actions here are: ' +
-              'export.'] });
+              'export, rotate, emergency.'] });
             log.debug("Leaving the management API key export endpoint. " +
                       "Unknown action.");
             return;
@@ -2291,7 +2523,57 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The exported files.',
-            responseSchema: { $ref: '#/components/schemas/KeyExport' } }
+            responseSchema: { $ref: '#/components/schemas/KeyExport' } },
+          // ROTATE AND EMERGENCY (#48, 2026-09-22): /admin/keys/rotate's two
+          // forms. NO EXAMPLE, deliberately: an example is what
+          // `sts_admin_api_operations.js` drives, and an emergency signs a
+          // realm out; `sts_key_rotation.js` drives both, in a realm of its
+          // own, and the operations job's NOT_DRIVEN_HERE says so.
+          { action: 'rotate', operationId: 'rotateSigningKeys',
+            summary: 'Rotate the realm\'s signing keys now',
+            description: 'Queues a run of the scheduler job ' +
+                         '`signing.rotate-now` and answers **202** with its ' +
+                         '`runId` (follow it at `/admin-api/scheduler?run=`). ' +
+                         'Each named unit — or every unit and the ' +
+                         'refresh-token keys, for `units` empty or `"all"` — ' +
+                         'has its next key promoted; the key it replaces goes ' +
+                         'on verifying through its grace. An unknown unit is ' +
+                         '400 (STS-KEYS-0065).',
+            requestBody: {
+              type: 'object',
+              properties: {
+                units: { type: 'array', items: { type: 'string' },
+                         description: 'Units from GET /admin-api/keys ' +
+                                      '`rotation.units`, e.g. `jose:RS256`.' }
+              },
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run: `runId`, `units`, and ' +
+                                 '`run`, the address to follow it at.' },
+          { action: 'emergency', operationId: 'rotateSigningKeysEmergency',
+            summary: 'Rotate the realm\'s signing keys in an EMERGENCY',
+            description: 'For keys presumed compromised. Queues ' +
+                         '`signing.rotate-now` with the emergency flag and ' +
+                         'answers **202**: every key of every named unit ' +
+                         '(or all) is replaced with a NEW key — not the ' +
+                         'published next one — with no grace; their ' +
+                         'certificates are revoked for keyCompromise; the ' +
+                         'refresh-token keys are replaced; and every session ' +
+                         'of the realm is ended, with CAEP session-revoked ' +
+                         'and RISC sessions-revoked. Everything signed before ' +
+                         'it stops verifying at once. `confirm` must be ' +
+                         '`compromised` (STS-KEYS-0066 otherwise).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                confirm: { type: 'string', enum: ['compromised'] },
+                units: { type: 'array', items: { type: 'string' } }
+              },
+              required: ['confirm'],
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run, as for `rotate`.' }
         ] },
 
       // ---------------------------------------------------------------------
@@ -7996,6 +8278,34 @@ class AdminApi {
                                  'one was replaced, and the application as ' +
                                  'it now stands.' },
 
+          // ROTATION WITH AN OVERLAP (#49 P5, 2026-09-22).
+          { action: 'rotate-secret',
+            operationId: 'rotateApplicationClientSecret',
+            summary: 'Mint a new client secret, keeping the old one working ' +
+                     'for an overlap',
+            description: 'Exactly `regenerate-secret`, except that the ' +
+                         'secret it replaces goes on authenticating at the ' +
+                         'token endpoint until ' +
+                         '`oauth2.clientSecretOverlapS` has passed (a week ' +
+                         'by default) — kept on the entry as ' +
+                         '`oauthClientSecretPrevious` and ' +
+                         '`oauthClientSecretPreviousUntil`, and cleared by ' +
+                         'the scheduler job `oauth2.client-secret-expiry` ' +
+                         'after it — so the client can change over without ' +
+                         'an outage. With the overlap at 0 it is a ' +
+                         'regeneration.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' } },
+              required: ['application'],
+              examples: [{ application: 'my-web-app' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The new secret in `clientSecret`, and ' +
+                                 '`overlapUntil`: when the old one stops ' +
+                                 'working (ms).' },
+
           // /admin/applications/new's *Generate Secret* button (2026-09-18).
           { action: 'generate-secret',
             operationId: 'generateClientSecret',
@@ -10618,11 +10928,16 @@ class AdminApi {
                          'and "it did not happen", and it is the whole ' +
                          'reason ' +
                          'a ' +
-                         'Shared Signals receiver has a pause.\n\nA change ' +
-                         'here also emits a **stream updated** event ON the ' +
-                         'stream, if the receiver agreed that type — the one ' +
-                         'event a receiver gets without asking for it, and ' +
-                         'the one whose absence is hardest to notice.',
+                         'Shared Signals receiver has a pause. A paused PUSH ' +
+                         'stream holds its SETs and pushes them, in order, ' +
+                         'when it is enabled again.\n\nA change here also ' +
+                         'emits a **stream-updated** event ON the stream ' +
+                         'whether or not the receiver agreed that type (SSF ' +
+                         '1.0 section 8.1.5), in the order that section ' +
+                         'requires: BEFORE the stream stops when it is ' +
+                         'paused or disabled, and after it starts again when ' +
+                         'it is enabled. Setting the status a stream already ' +
+                         'has announces nothing.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -10757,6 +11072,31 @@ class AdminApi {
             },
             responseDescription: 'Confirmation, or a refusal naming the ' +
                                  'stream_id or saying it is not dead.' },
+
+          { action: 'verify', operationId: 'verifySsfStream',
+            summary: 'Send a transmitter-initiated verification event',
+            description: 'SSF 1.0 section 8.1.4: a transmitter MAY send a ' +
+                         'verification event at any time. This sends one on ' +
+                         'the stream with NO `state` — section 8.1.4.2 ' +
+                         'forbids a state the receiver did not supply — ' +
+                         'whether or not the stream agreed the type. A ' +
+                         'paused push stream holds it until it is enabled; ' +
+                         'a disabled stream refuses it. ' +
+                         '`ssf.verificationEveryS` does the same on a ' +
+                         'schedule.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                stream_id: { type: 'string', description: 'The stream.' }
+              },
+              required: ['stream_id'],
+              examples: [{ stream_id: 'ssf-0123456789ab' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether the event was delivered, queued ' +
+                                 'for polling or held, or a refusal naming ' +
+                                 'the stream_id or why it was not sent.' },
 
           { action: 'clear-dead-letters', operationId: 'clearSsfDeadLetters',
             summary: 'Drop a stream\'s dead letters',
@@ -14810,17 +15150,20 @@ class AdminApi {
                      'trust domain, and whether each of the four gRPC ' +
                      'listeners actually bound — which nothing else can tell ' +
                      'you, because neither this API nor GET ' +
-                     '/admin/sts-metadata can see a socket.\n\nThe reply ' +
+                     '/admin/sts-metadata can see a socket, and ' +
+                     '`workloadAttestation`: what the Workload API\'s Unix ' +
+                     'socket attests.\n\nThe reply ' +
                      'also carries `authentication`: whether the SPIRE ' +
                      'Server API is enforcing mutual TLS, which identities ' +
                      'are administrators, and the whole per-method ' +
                      'authorization table, which is SPIRE\'s own ' +
-                     '`policy_data.json` row for row.\n\n**Nothing here ' +
-                     'attests a workload or a node.** A Workload API caller ' +
-                     'is identified only by the transport it arrived on, the ' +
-                     'endpoint it reached and its peer address — node cannot ' +
-                     'read a Unix socket\'s peer credentials — and an ' +
-                     'agent\'s attestation payload is taken on trust. Where ' +
+                     '`policy_data.json` row for row.\n\nA Workload API ' +
+                     'caller on the Unix socket is attested by the workload ' +
+                     'attestors `spiffe.workloadAttestors` names; one over ' +
+                     'TCP is identified only by the transport, the endpoint ' +
+                     'and its address. An agent\'s attestation is verified ' +
+                     'by the attestor its type names or refused (#40, ' +
+                     '2026-09-21). Where ' +
                      'the SPIRE Server API authenticates nobody, any caller ' +
                      'that reaches its port can create a registration entry ' +
                      'granting any identity here. GET /spiffe carries the ' +
@@ -15226,11 +15569,11 @@ class AdminApi {
                      'than configuration — everything on them was written by ' +
                      'this service — which is why nothing about an agent is ' +
                      'editable and the only write is the ban.\n\n**Node ' +
-                     'attestation is never verified.** Whatever attestor an ' +
-                     'agent names and whatever payload it sends are written ' +
-                     'down as claimed, which is why every agent carries a ' +
-                     'selector valued `unverified:true`: an agent\'s ' +
-                     'selectors here are claims, not attested facts.',
+                     'attestation is verified or refused.** An agent here ' +
+                     'attested with a type the realm accepts ' +
+                     '(spiffe.nodeAttestors) and an attestor verified, and ' +
+                     'its selectors are the ones that attestor derived ' +
+                     '(#40, 2026-09-21).',
         mirrors: 'GET /admin/spiffe/agents',
         parameters: [
           { name: 'agent', in: 'query', required: false,
@@ -15764,9 +16107,10 @@ class AdminApi {
         // ---------------------------------------------------------------------
         let claims = null;
         try {
-          const certPem = realms.run(realms.get(realms.DEFAULT_ID),
-                                     function () { return STS.certPem; });
-          claims = stsCrypto.verifyJws(presented, certPem);
+          // Any generation of the DEFAULT realm's key (#42).
+          claims = realms.run(realms.get(realms.DEFAULT_ID), function () {
+            return helpers.verifyOwnJws(presented);
+          });
         } catch (e) {
           log.debug("Caught in a callback in module scope: " +
                     ((e && e.message) || e));
@@ -15792,7 +16136,7 @@ class AdminApi {
         let tokenRealm = realms.DEFAULT_ID;
         if (!claims && realms.currentId() !== realms.DEFAULT_ID) {
           try {
-            claims = stsCrypto.verifyJws(presented, STS.certPem);
+            claims = helpers.verifyOwnJws(presented);
             tokenRealm = realms.currentId();
           } catch (e) {
             log.debug("Caught in a callback in module scope: " +
@@ -15983,6 +16327,11 @@ class AdminApi {
             return self.sendJson(res, 403, { error: 'forbidden',
                                              errors: [realmRefusal.detail] });
           }
+          // SAID ON THE RESPONSE (#49): a realm's own token is that realm's
+          // administrator, and a view that shows several realms' rows — the
+          // scheduler's — confines itself by this, as it does by a realm
+          // administrator's console session.
+          res.locals.realmTokenOf = tokenRealm;
         }
         const held = roles.rolesOf({ kind: 'application', name: who,
                                      authenticated: true, scopes: scopes });

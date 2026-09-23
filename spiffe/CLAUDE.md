@@ -90,9 +90,11 @@ Six things follow, and each is where to look:
    printable payload on the agent's entry as `payload:<text>` — which for a join
    token was the token itself, in the directory; a join token's selector is
    `token-sha256:<16 hex>` instead, so somebody holding the token can still find
-   the agent it attested and nobody can reconstruct it. Entries written before
-   the change keep the `payload:` selector they were given; the token in one is
-   spent, since only a successful attestation writes it.
+   the agent it attested and nobody can reconstruct it.
+   (`selectorsFromAttestation()` and its `payload:` selectors are gone
+   altogether since 2026-09-21: an
+   attestor returns only the selectors it VERIFIED — see *Node attestation is
+   a table* below.)
    `tests/spiffe_join_token.js` looks for the token in every key and body of the
    store, on the agent's entry and in the audit log.
 
@@ -147,6 +149,12 @@ that up silently.
    the Workload API. Do not "fix" the asymmetry. (`spiffe.authRequired` used to
    be the name of it; `global.mode` replaced it on 2026-09-06 and the
    requirement became unconditional.)
+   **Its server certificate is RE-KEYED ON A NEW ROOT (2026-09-21)**:
+   `refreshServerCredentials()` re-mints each realm's server SVID and hands
+   it to grpc-js's `updateSecureContextOptions()` when `tls_server.js`
+   re-issues the listener certificate — until then a `build-root` left every
+   realm's API presenting a chain under the old Root until a restart
+   (`tls/CLAUDE.md`, *The sockets this module does not hold*).
 
    **NOTHING ATTESTS A WORKLOAD OR A NODE, WHICH IS A DIFFERENT CLAIM FROM
    "NOBODY IS AUTHENTICATED" AND THE TWO MUST STAY APART.** A real agent reads
@@ -456,32 +464,264 @@ that up silently.
 
 ---
 
-## Nothing here is attested, and that is a narrower sentence than it was
+## Node attestation is a table, and nothing is taken on trust (#40, 2026-09-21)
 
-* **NOTHING IN SPIFFE IS ATTESTED, AND THAT IS NOW A NARROWER SENTENCE THAN IT
-  WAS.** No workload and no node: a Workload API caller is identified by its
-  transport, the endpoint it reached and its peer address — node cannot read a
-  Unix socket's peer credentials — so any caller that reaches the socket still
-  gets an identity, and an agent's attestation payload is written down as
-  claimed, which is why every agent entry carries a selector valued
-  `unverified:true`. **What changed is the OTHER half**: the SPIRE Server API's
-  TCP port is MUTUAL TLS, its callers present an X509-SVID verified against the
-  trust bundle, and every method is authorized against SPIRE's own table. Those
-  are two different claims and merging them back into one gets both wrong.
-  Selector matching also DECIDES which entries answer a Workload API caller
+**`AttestAgent` used to accept ANY attestation type.** Only `join_token` was
+checked; every other type was issued an agent SVID under
+`/spire/agent/<type>/<digest of the payload>` with its payload unread and a
+selector `<type>:unverified:true` on the agent's entry — reported honestly on
+every page, and granting that agent everything beneath its id all the same. A
+real SPIRE agent pointed here could join a trust domain with an invented type.
+rcbj's decision on #40: **refuse, in every mode**, and implement SPIRE's
+node attestors instead (`join_token`, `x509pop`, `sshpop`, `tpm_devid`,
+`k8s_psat`, `aws_iid`, `gcp_iit`, `azure_imds`, `http_challenge` — all nine
+are in since phase three).
+
+* **THE TABLE IS `spiffe_node_attestation.ts`** and each attestor is a class in
+  a `spiffe_attestor_<type>.ts` of its own, returning the shapes in
+  `types/spiffe-attestation.d.ts`: the agent's id by SPIRE's template, the
+  selectors IT VERIFIED, `canReattest`, and a `commit()`/`release()` pair.
+  `spiffe.nodeAttestors` (per realm, default `join_token`) names what a realm
+  accepts; a type absent from it, or present and not in the table, is
+  FAILED_PRECONDITION (`STS-SPIFFE-0078`) — SPIRE's answer for an attestor it
+  has no plugin for. There is no fallback attestor and there must not be one.
+* **AN ATTESTOR NEVER RETURNS A SELECTOR IT DID NOT ESTABLISH.** The selector
+  types are SPIRE's, and a registration entry written against SPIRE's
+  documentation trusts them.
+* **EVIDENCE IS SPENT WHEN THE SVID EXISTS, NOT WHEN IT VERIFIED.** The
+  attestor claims what it must (a join token through `cluster_claims`, as
+  #46 required), `AttestAgent` calls `commit()` after the agent is recorded
+  and `release()` on any failure after the attestor returned, so a refusal
+  spends nothing.
+* **EVIDENCE THAT IS NOT RE-ATTESTABLE ATTESTS ONCE.** An agent that exists
+  and whose attestor says `canReattest: false` is refused
+  (`STS-SPIFFE-0083`) until an operator deletes it — SPIRE's rule for a join
+  token and the trust-on-first-use cloud documents. `reattestable` in the
+  answer is the attestor's, no longer `type !== 'join_token'`.
+* **A CHALLENGE IS A CONVERSATION ON THE SAME STREAM.** `spiffe_grpc.ts`'s
+  `bidiStream()` hands the handler `conversation.challenge(message, ms)`,
+  which writes `{ challenge }` and resolves with the client's NEXT message
+  instead of dispatching it as a new request. Timeout
+  (`spiffe.attestationChallengeTimeout`) is DEADLINE_EXCEEDED
+  (`STS-SPIFFE-0080`), a next message without `challenge_response` is
+  INVALID_ARGUMENT (`0081`), the client ending or cancelling with one
+  outstanding is CANCELLED (`0082`).
+* **A CLIENT'S HALF-CLOSE WAITS FOR THE HANDLERS IN FLIGHT.** `bidiStream()`
+  answered `end` with `call.end()` at once, so a client that sent its one
+  message and half-closed got an empty stream while `AttestAgent` went on to
+  SPEND THE JOIN TOKEN — every retry then refused as spent.
+  `tests/vendored/sts_spiffe_grpc.js` recorded it as a service defect and
+  worked round it; the stream now ends once every handler has answered.
+* **`CreateJoinToken`'s `agent_id` IS AN ALIAS ENTRY, AS IN SPIRE.** It was
+  stored and compared with the attesting agent's id, which is always
+  `/spire/agent/join_token/<digest>` — so a token minted for a named agent
+  could never attest (`STS-SPIFFE-0057`, retired). It now registers an entry
+  naming `agent_id`, parented on the token's agent and selecting
+  `spiffe_id:<that agent>`, checked BEFORE the token exists
+  (`STS-SPIFFE-0084`); `entriesAuthorizedFor()` reaches it because it starts
+  from the agent itself.
+* **`GET /spiffe` carries `nodeAttestation`**: every type this build
+  verifies, whether the realm accepts it, and any configured name nothing
+  verifies.
+
+### x509pop, sshpop and tpm_devid: proof of possession (#40 phase two)
+
+Each is SPIRE's server plugin step for step, because a real `spire-agent` is
+the client: `spiffe_attestor_x509pop.ts`, `spiffe_attestor_sshpop.ts`,
+`spiffe_attestor_tpm_devid.ts`.
+
+**NO CERTIFICATE AND NO SIGNATURE IS CHECKED IN THIS DIRECTORY.** What stands
+in for the Go packages SPIRE uses was written here as three libraries on the
+day and MOVED the same day, at rcbj's direction, into the modules that check
+every other certificate and signature in this service: `common/pki.js`
+(`verifyPathToAnchors()` — Go's `x509.Certificate.Verify()` with caller
+roots — and the OpenSSH certificate reader and `checkSshHostCertificate()`)
+and `common/crypto.js` (section 8: `verifyRawSignature()` for RSA, RSA-PSS,
+ECDSA, EdDSA and the post-quantum families, and TPM 2.0 `tpmKdfa()` and
+`tpmMakeCredential()`). What stays here is `spiffe_tpm.ts`, a CODEC for the
+TPM's byte layout that hands every signature and derivation to `crypto.js`,
+and `spiffe_agent_path.ts`, which is SPIRE's template language and no kind of
+crypto. The vendored `x509.js` is where the chain signatures are finally
+checked, and it is not edited here. Six things were decided rather than
+copied, and each is the place to look first:
+
+* **A TRUST ANCHOR IS PEM TEXT IN A SETTING, NOT A FILE PATH.** SPIRE takes
+  `ca_bundle_path`, `devid_ca_path`, `endorsement_ca_path` and
+  `cert_authorities_path`; here they are `spiffe.x509popCaBundle`,
+  `spiffe.tpmDevidCaBundle`, `spiffe.tpmEndorsementCaBundle` and
+  `spiffe.sshpopCertAuthorities`, per realm, as
+  `oid4vp.trustedIssuerCertificates` is — so the console and `/admin-api`
+  (rule 7) can set them. An attestor with none configured refuses every agent
+  with FAILED_PRECONDITION (`STS-SPIFFE-0085`), which is SPIRE's "not
+  configured".
+* **THE STATUS CODES ARE SPIRE'S, EVEN WHERE THEY LOOK WRONG.** x509pop
+  answers a bad path PERMISSION_DENIED; tpm_devid answers the same thing
+  INVALID_ARGUMENT; sshpop answers almost everything INTERNAL, because
+  `handshake.go` wraps it so. A client may branch on the code, and one that
+  works against SPIRE must work here.
+* **THE PATH BUILDER (`pki.js`) FAILS CLOSED WHERE GO WOULD EVALUATE.** An unhandled
+  critical extension is refused (Go refuses them too; tpm_devid allows a
+  critical subjectAltName on the EK certificate, as SPIRE strips it), and a
+  CA with nameConstraints is refused outright, because the constraints are
+  not evaluated here. A path accepted unchecked would be wrong; one refused
+  says why. Signatures are checked by the vendored `x509.verifyChain()`,
+  which reads ML-DSA, SLH-DSA and composite signatures — so a post-quantum
+  CA above an x509pop or DevID leaf verifies.
+* **x509pop CHALLENGES A POST-QUANTUM KEY, BEYOND SPIRE.** SPIRE's challenge
+  has an RSA and an ECDSA member; a leaf with an ML-DSA, SLH-DSA or composite
+  key is challenged here with `pqc_signature` (`{"nonce", "algorithm"}`,
+  answered `{"nonce", "signature"}` over the same SHA-256 of both nonces). A
+  stock agent never holds such a key and never sees the member.
+* **AGENT PATH TEMPLATES ARE A SUBSET OF GO'S, AND SAY WHERE IT ENDS.**
+  `spiffe_agent_path.ts` evaluates field references (`.Subject.CommonName`,
+  `.URISanSelectors.k`), pipelines, and sprig's string, hash and encoding
+  functions from SPIRE's list; `if`, `range`, variables and any other
+  function are refused when the template is parsed — a template rendered
+  differently here from SPIRE would give an agent a different identity.
+* **NOTHING IS CLAIMED.** Each of the three proves possession by answering a
+  challenge this server chose, so its `commit()` and `release()` are empty
+  and all three are re-attestable, as in SPIRE.
+
+`tests/spiffe_attestors.js` drives all three with software clients —
+certificates from the vendored engine, an OpenSSH host certificate assembled
+byte by byte, and a software TPM whose ActivateCredential is written
+independently of `spiffe_tpm.ts` — and asserts every refusal beside each
+acceptance. A real `spire-agent` (and swtpm) is phase five's.
+
+### k8s_psat, http_challenge and the three clouds (#40 phase three)
+
+`spiffe_attestor_k8s_psat.ts`, `spiffe_attestor_http_challenge.ts`,
+`spiffe_attestor_aws_iid.ts`, `spiffe_attestor_gcp_iit.ts` and
+`spiffe_attestor_azure_imds.ts`, each SPIRE's server plugin step for step. The
+certificates and signatures they need are `common/pki.js`'s and
+`common/crypto.js`'s (`verifyPkcs7SignedData()`, `verifyJws()`,
+`verifyPathToAnchors()`, and the AWS and Azure anchors SPIRE embeds, generated
+into `common/pki_cloud_anchors.json`). Five decisions:
+
+* **THEY DIAL, AND TWO DIFFERENT ARGUMENTS COVER IT.** Every Kubernetes API
+  server, Google certificate URL, Microsoft discovery document and AIA
+  intermediate is the ADMINISTRATOR'S kind of URL — a setting, or SPIRE's
+  constant made settable — and goes through `federation_http.ts`'s
+  `requestConfigured()` (`fetchJson()`'s argument: no internal-address
+  refusal, because an API server lives on one; https, with a cluster's own CA
+  as the roots; plain http only for a `signedArtifact`, the intermediate,
+  whose signature is checked before a byte is believed). `http_challenge` is
+  the CALLER'S kind and is the root `CLAUDE.md`'s sixth exception:
+  `fetchHttpChallenge()`, only after the host matched
+  `spiffe.httpChallengeAllowedDnsPatterns` — **empty refuses every agent,
+  stricter than SPIRE**, whose empty list allows any name — with the
+  internal-address refusal and pinning in product mode, no redirect and 64
+  bytes.
+* **NO CREDENTIAL IS EVER A SETTING.** A setting is drawn on the console,
+  returned by `/admin-api` and persisted — and `secret: true` on a row is read
+  by nothing. So where SPIRE takes an access key, an app secret or a
+  kubeconfig, this takes a FILE PATH (`tokenFile`, `caFile`,
+  `spiffe.gcpIitServiceAccountFile`, an Azure `tokenAuth.tokenPath`) or each
+  SDK's own credential chain.
+* **THE CLOUD SDKs ARE OPTIONAL PEER DEPENDENCIES** (rcbj, 2026-09-21),
+  `common/secrets.js`'s arrangement: `@aws-sdk/client-ec2`, `-iam`,
+  `-organizations`, `-eks`, `-auto-scaling`, `@aws-sdk/credential-providers`,
+  `@google-cloud/compute` (only for `spiffe.gcpIitUseInstanceMetadata`),
+  `@azure/identity`, `@azure/arm-resourcegraph`, `@azure/arm-compute`. A realm
+  that enables one of these attestors without its SDK is refused with
+  FAILED_PRECONDITION naming the package (`STS-SPIFFE-0106`). Each attestor
+  takes its SDK through `load` in its constructor dependencies, which is how
+  `tests/spiffe_attestors_cloud.js` hands it fakes.
+* **TRUST ON FIRST USE IS THE PHASE-ONE RULE, NOT A NEW ONE.** aws_iid,
+  gcp_iit, azure_imds and a TOFU http_challenge answer `canReattest: false`,
+  and `AttestAgent` refuses a second attestation of an existing agent
+  (`STS-SPIFFE-0083`) — SPIRE's `AssessTOFU()`, which reads its agent store
+  the same way.
+* **azure_imds CHALLENGES FIRST**: its evidence is a document minted FOR the
+  nonce, so the conversation `bidiStream()` gained in phase one carries it —
+  the initial payload is empty and the attested document arrives as the
+  challenge response.
+
+## Workloads are attested on the Unix socket (#40 phase four, 2026-09-21)
+
+**THIS SERVICE IS THE SPIRE AGENT FOR ITS OWN WORKLOAD API**, so it attests
+the workload that connects the way an agent does. Five modules, each a
+library, wired by `spiffe_server.ts`:
+
+* `native/peercred.c` — an N-API module with five functions and no state:
+  `SO_PEERCRED`, `SO_PEERPIDFD` (Linux 6.5+), `pidfd_open` as the fallback,
+  `pidfd_send_signal(0)` for liveness, `close`. rcbj's decision on #40: a
+  small addon, compiled ONLY in an image build (`build-native.sh`, gcc in the
+  `typescript` stage of `Dockerfile` and in `tests/Dockerfile`), never on the
+  host, and no general FFI in the process. `spiffe/native/*.node` is ignored.
+* `spiffe_peer.ts` — `observe(socket)` at ACCEPT (pid, uid, gid, a pidfd, the
+  process's start time and executable inode) and `stillValid(facts)` on EVERY
+  CALL: the pidfd alive, the start time and the inode unchanged. That refuses
+  the two things SPIRE's per-call attestation exists for — a reused pid and an
+  `exec` — without running the attestors per call.
+* `spiffe_workload_attestation.ts` — the table (`spiffe.workloadAttestors`,
+  default `unix`) and SPIRE's containerinfo extractor over
+  `/proc/<pid>/cgroup`.
+* `spiffe_workload_attestor_unix.ts`, `_docker.ts`, `_k8s.ts` — SPIRE's
+  three plugins' selectors. Docker is asked over `spiffe.dockerSocketPath`
+  (`federation_http.requestLocalSocket()`); the kubelet over its read-only port
+  on loopback or its secure port (`requestConfigured()`), with the token, the
+  client certificate and the CA read from FILES — no credential is a setting,
+  because settings are drawn, returned by `/admin-api` and persisted.
+
+**THE SEAM IS `spiffe_grpc.ts`'s `bindAttestedSocket()`.** grpc-js does not
+expose an accepted connection's file descriptor, so the Workload API's Unix
+socket is bound by a `net.Server` of this module's, each connection is PAUSED,
+attested in the listener's realm, TAGGED (`remoteAddress` =
+`unix:attested-<n>`, which grpc-js carries to `call.getPeer()`) and only then
+handed over through `server.createConnectionInjector()`. **Do not resume the
+socket before the injection**: a resume with no reader emits what the client
+sent while the attestors ran — its HTTP/2 preface — to nobody, and the
+connection dies with nothing refused. The first version did that and passed
+every refusal test, because a refused connection had not yet sent anything.
+
+`prepareCall()` looks the tag up: an attestation that FAILED refuses every call
+(`UNAVAILABLE`, `STS-SPIFFE-0111`), a process that changed refuses it
+(`PERMISSION_DENIED`, `STS-SPIFFE-0112`), and otherwise `caller.attested`
+carries the facts and `spiffe_auth.workloadSelectors()` adds their selectors.
+All of that runs in the FRONT process, which accepted the connection; what
+crosses to a request worker is the caller, already plain.
+
+**What is still not attested, and why each is a sentence rather than a gap:**
+
+* **A caller over TCP** — no peer process to ask. It keeps the `transport:`,
+  `endpoint:` and `peer:` selectors.
+* **A peer in another pid namespace** (pid 0 from `SO_PEERCRED`) — attested on
+  its kernel uid and gid alone; nothing that needs the process is invented.
+* **The socket without the native module** — development serves it
+  unattested and `GET /spiffe`'s `workloadAttestation` says so; **product does
+  not bind it** (`STS-SPIFFE-0113`, `mode.requiresWorkloadAttestation()`).
+  Asserted selectors are not believed in product
+  (`mode.believesAssertedSelectors()`).
+* SPIRE's `systemd` attestor, docker's sigstore checks and Podman sockets, and
+  the Kubernetes broker — follow-ups recorded on #40.
+
+`tests/spiffe_workload_attestation.js` drives a real connection from a child
+process and asserts the child's pid, uid, gid and selectors, the revalidation,
+and a failing attestor's refusal; the attestors over fake `/proc`, Engine and
+kubelet beside it.
+
+**THE SPIRE SERVER API IS THE OTHER HALF**, and it came first: its TCP port is
+MUTUAL TLS, its callers present an X509-SVID verified against the trust bundle,
+and every method is authorized against SPIRE's own table. Those are two
+different claims and merging them back into one gets both wrong.
+
+* Selector matching also DECIDES which entries answer a Workload API caller
   now (`spiffe.attestWorkloads`), which is narrowing without attesting. **AND
   THE DIRECTORY NOW RECORDS WHAT WAS ISSUED, WHICH IS A THIRD DIFFERENT CLAIM.**
   An entry under `ou=users` carrying `x509serialNumber` says this authority
   minted that certificate for that identity — which it knows, because it minted
   it — and says nothing whatever about whether the workload holding it is the
-  one it was meant for. Nothing was attested. `spiffeCredentialStatus` beside it
+  one it was meant for — attestation is on the connection, not the entry.
+  `spiffeCredentialStatus` beside it
   is not a revocation either; see rule 3k.
   What IS refused: a Workload API call with no `workload.spiffe.io: true` header
   (every conforming implementation refuses it, and a client that omits it has a
   bug nothing else will report), a JWT-SVID with no audience, a
   `ValidateJWTSVID` that does not really verify, an entry in another trust
-  domain or under `/spire`, a banned agent, a join token this server did not
-  mint or that has expired or been spent or was minted for another agent, an
+  domain or under `/spire`, a banned agent, an attestation type nothing here
+  verifies, a join token this server did not
+  mint or that has expired or been spent, an
   X509-SVID that no authority here signed or that is outside its validity
   window, every method the caller's entity is not allowed, and a federated
   bundle whose JWKs have no `use`. The old posture is no longer reachable:
@@ -875,3 +1115,16 @@ reads the partition back.
 
 **Left alone and said so**: the `x-sts-workload-selector` metadata key —
 renaming it breaks every client that sends it.
+
+## THE AUTHORITIES ROTATE ON THE SCHEDULER (2026-09-22, #49 P5, rcbj's D6)
+
+`spiffe.authority-rotation`, a realm-scoped cluster job, hourly: the X.509
+authority is rotated once it is past half its lifetime and the JWT authority
+once it is older than half `spiffe.caTtl` — the job decides from each
+authority's own age, never from being called, so a fresh start rotates
+nothing. **In both modes**, unlike the signing keys: a self-signed authority
+lives `spiffe.caTtl` (a day by default), so without it a development service
+up for a day would issue SVIDs under an expired authority. The rotation is
+`rotateX509Authority()` / `rotateJwtAuthority()`, the console's, which keeps
+`spiffe.retainedAuthorities` published — or, under the hierarchy, re-issues
+the SPIFFE Issuing CA under the Root, which leaves the bundle unchanged.

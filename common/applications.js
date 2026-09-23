@@ -950,6 +950,28 @@ const SCHEMA = {
             'this directory can authenticate as this client — which is the ' +
             'honest state of a service that authenticates nobody. It is ' +
             'never written to the audit log.' },
+    // CLIENT-SECRET ROTATION AND EXPIRY (2026-09-22, #49 P5, rcbj's answer).
+    { name: 'oauthClientSecretPrevious', kind: 'single',
+      from: 'a rotation on /admin/applications or /admin-api',
+      sensitive: true,
+      what: 'The secret a ROTATION replaced, still accepted at the token ' +
+            'endpoint until oauthClientSecretPreviousUntil, so a client ' +
+            'can move to the new one without a moment when neither works. ' +
+            'In the clear for oauthClientSecret\'s reason, and cleared by ' +
+            'the scheduler job oauth2.client-secret-expiry once the overlap ' +
+            'has passed.' },
+    { name: 'oauthClientSecretPreviousUntil', kind: 'single',
+      from: 'a rotation on /admin/applications or /admin-api',
+      what: 'When the previous secret stops being accepted, in ' +
+            'milliseconds since the epoch: the rotation\'s instant plus ' +
+            'oauth2.clientSecretOverlapS.' },
+    { name: 'oauthClientSecretExpiresAt', kind: 'single',
+      from: 'POST /oauth2/register, or a rotation',
+      what: 'When the current secret expires, in SECONDS since the epoch — ' +
+            'RFC 7591 section 3.2.1\'s client_secret_expires_at — or 0 for ' +
+            'never. Refused after it in product mode ' +
+            '(mode.refusesExpiredClientSecrets()); administrators are warned ' +
+            'oauth2.clientSecretExpiryWarningDays ahead.' },
     { name: 'oauthRedirectUri', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'Registered redirect URIs from a registration, and any ' +
             'redirect_uri this service has ACCEPTED for the application ' +
@@ -1199,6 +1221,42 @@ const SCHEMA = {
             'client_secret_basic the default when a registration omits it, ' +
             'which is why an omission means CONFIDENTIAL rather than ' +
             'unknown.' },
+    // OPENID CONNECT CORE SECTION 8 AND SECTION 9 (#118, 2026-09-22).
+    { name: 'oauthSubjectType', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oidc'],
+      familyWhy: 'It decides which `sub` an ID Token and a UserInfo response ' +
+        'name this person by, which only an OpenID Connect client is given.',
+      what: 'OIDC Core section 8 `subject_type`: `public` (the default, and ' +
+            'what an empty value means) gives every client the same `sub`; ' +
+            '`pairwise` gives this client one of its own, derived from the ' +
+            'person, the sector and a secret every node shares, so two ' +
+            'clients of different sectors cannot correlate one person.' },
+    { name: 'oauthSectorIdentifierUri', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oidc'],
+      familyWhy: 'It is the sector a pairwise `sub` is computed for.',
+      what: 'OIDC Core section 8.1 `sector_identifier_uri`: an https URL ' +
+            'whose HOST is the sector a pairwise `sub` is derived for, so ' +
+            'several redirect hosts of one organisation see one subject. A ' +
+            'REGISTRATION that names one has it FETCHED and must be listed ' +
+            'in the JSON array it serves, every redirect URI of it; one ' +
+            'written here by an administrator is the administrator\'s ' +
+            'statement and is not fetched. Empty: the sector is the host of ' +
+            'the redirect URIs, which must then all share one.' },
+    { name: 'oauthTokenEndpointAuthSigningAlg', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It decides which signature a private_key_jwt or ' +
+        'client_secret_jwt assertion at the token endpoint must carry.',
+      what: 'OIDC Core section 9 / RFC 7591 ' +
+            '`token_endpoint_auth_signing_alg`: the ONE JWS algorithm this ' +
+            'client\'s authentication assertion must be signed with. An ' +
+            'assertion signed with any other is refused, in every mode. ' +
+            'Empty: any algorithm the method allows.' },
     { name: 'oauthJwks', kind: 'single', from: 'POST /oauth2/register, or by ' +
                                                'hand',
       what: 'THE CLIENT\'S PUBLIC KEYS, as a JWKS document — what ' +
@@ -3006,7 +3064,14 @@ const EDITABLE = {
   // out.
   oauthAudience: 'multi',
   oauthClientSecret: 'set',
+  oauthClientSecretPrevious: 'set',
+  oauthClientSecretPreviousUntil: 'set',
+  oauthClientSecretExpiresAt: 'set',
   oauthTokenEndpointAuthMethod: 'set',
+  // OIDC Core sections 8 and 9 (#118). One answer each.
+  oauthSubjectType: 'set',
+  oauthSectorIdentifierUri: 'set',
+  oauthTokenEndpointAuthSigningAlg: 'set',
   oauthJwks: 'set',
   oauthJwksUri: 'set',
   // RFC 9701's three. `set`, because each holds one algorithm.
@@ -3927,9 +3992,12 @@ function findSsfOwner(backing, wanted) {
   log.debug("Entering findSsfOwner().");
   const answer = function (entry) {
     const indexed = byLowerName(entry.attributes);
+    // `receiverIds` (#144): the other names the receiver is associated
+    // with, which `ssf_streams.ts` offers as a stream's `aud`.
     return { identifier: firstValue(indexed, 'appIdentifier') ||
                          firstValue(indexed, 'cn') || wanted,
-             values: valuesOf(indexed.ssfallowedevents) };
+             values: valuesOf(indexed.ssfallowedevents),
+             receiverIds: valuesOf(indexed.ssfreceiverid) };
   };
   const direct = backing.readApplication(wanted);
   if (direct) {
@@ -4747,6 +4815,150 @@ function requestObjectAttributeProblem(attribute, value, fields) {
 }
 
 // ---------------------------------------------------------------------------
+// OPENID CONNECT CORE SECTIONS 8 AND 9: WHAT A CLIENT MAY REGISTER ABOUT ITS
+// SUBJECT AND ITS ASSERTION ALGORITHM (#118, 2026-09-22).
+//
+// The SHAPE of three members, checked without a network — `subject_type` is
+// `public` or `pairwise`, `sector_identifier_uri` is an https URL, and
+// `token_endpoint_auth_signing_alg` is a JWS algorithm this service verifies
+// that the registered authentication method can use (never `none`, an HMAC
+// only for client_secret_jwt). And one rule about the set: a pairwise client
+// with no sector_identifier_uri must have every redirect URI on ONE host,
+// because that host IS its sector (section 8.1). What the sector URI SERVES
+// is `oauth-oidc/pairwise_subjects.ts`'s, asynchronously, at the registration
+// endpoint. Registration answers STS-REG-0167; a console or API write
+// STS-REG-0168.
+// ---------------------------------------------------------------------------
+const OIDC_SUBJECT_ATTRIBUTES = {
+  subject_type: 'oauthSubjectType',
+  sector_identifier_uri: 'oauthSectorIdentifierUri',
+  token_endpoint_auth_signing_alg: 'oauthTokenEndpointAuthSigningAlg'
+};
+
+function oidcSubjectMetadataProblem(values) {
+  log.debug("Entering oidcSubjectMetadataProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0167', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  const text = {};
+  const members = Object.keys(OIDC_SUBJECT_ATTRIBUTES);
+  for (let i = 0; i < members.length; i++) {
+    const value = asked[members[i]];
+    if (value !== undefined && value !== null && typeof value !== 'string') {
+      log.debug("Leaving oidcSubjectMetadataProblem(). Not a string.");
+      return refusal(members[i], 'must be a string.');
+    }
+    text[members[i]] = String(value || '').trim();
+  }
+  if (text.subject_type &&
+      ['public', 'pairwise'].indexOf(text.subject_type) < 0) {
+    log.debug("Leaving oidcSubjectMetadataProblem(). An unknown type.");
+    return refusal('subject_type', '"' + text.subject_type + '" is not ' +
+                   'one this service supports; subject_types_supported is ' +
+                   '["public", "pairwise"] (OIDC Core section 8).');
+  }
+  if (text.sector_identifier_uri) {
+    let parsed = null;
+    try {
+      parsed = new URL(text.sector_identifier_uri);
+    } catch (e) {
+      log.debug("Caught in oidcSubjectMetadataProblem(): " +
+                ((e && e.message) || e));
+      // Not a URL; refused just below.
+      parsed = null;
+    }
+    if (!parsed || parsed.protocol !== 'https:' || parsed.hash) {
+      log.debug("Leaving oidcSubjectMetadataProblem(). Not an https URL.");
+      return refusal('sector_identifier_uri', '"' +
+                     text.sector_identifier_uri + '" is not an https URL ' +
+                     'with no fragment (OIDC Core section 8.1 and Dynamic ' +
+                     'Client Registration section 5).');
+    }
+  }
+  if (text.subject_type === 'pairwise' && !text.sector_identifier_uri) {
+    const hosts = {};
+    valuesOf(asked.redirect_uris).forEach(function (uri) {
+      try {
+        hosts[new URL(String(uri)).host] = true;
+      } catch (e) {
+        log.debug("Caught in oidcSubjectMetadataProblem(): " +
+                  ((e && e.message) || e));
+        // Refused elsewhere for its shape; it names no host here.
+      }
+    });
+    if (Object.keys(hosts).length > 1) {
+      log.debug("Leaving oidcSubjectMetadataProblem(). Several hosts.");
+      return refusal('sector_identifier_uri', 'a pairwise client whose ' +
+                     'redirect_uris are on ' + Object.keys(hosts).length +
+                     ' hosts (' + Object.keys(hosts).join(', ') + ') must ' +
+                     'register a sector_identifier_uri: with none, the ' +
+                     'sector is the one host they share (OIDC Core ' +
+                     'section 8.1).');
+    }
+  }
+  if (text.token_endpoint_auth_signing_alg) {
+    const alg = text.token_endpoint_auth_signing_alg;
+    const method = String(asked.token_endpoint_auth_method || '').trim();
+    if (stsCrypto.JWS_SIGNING_ALGS.indexOf(alg) < 0) {
+      log.debug("Leaving oidcSubjectMetadataProblem(). Unknown algorithm.");
+      return refusal('token_endpoint_auth_signing_alg', '"' + alg + '" is ' +
+                     'not a JWS algorithm this service verifies (' +
+                     stsCrypto.JWS_SIGNING_ALGS.join(', ') + '); `none` is ' +
+                     'never one (OIDC Core section 9).');
+    }
+    const hmac = /^HS/.test(alg);
+    if ((method === 'client_secret_jwt' && !hmac) ||
+        (method === 'private_key_jwt' && hmac)) {
+      log.debug("Leaving oidcSubjectMetadataProblem(). The wrong family.");
+      return refusal('token_endpoint_auth_signing_alg', '"' + alg + '" ' +
+                     'cannot sign a ' + method + ' assertion: ' +
+                     (hmac ? 'private_key_jwt is asymmetric'
+                           : 'client_secret_jwt is an HMAC (HS256, HS384 ' +
+                             'or HS512)') + '.');
+    }
+  }
+  log.debug("Leaving oidcSubjectMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// The same question about ONE attribute written through the console or
+// `/admin-api`, with the entry's other attributes beside it. A CLEAR is never
+// refused.
+function oidcSubjectAttributeProblem(attribute, value, fields) {
+  log.debug("Entering oidcSubjectAttributeProblem(). attribute=" + attribute);
+  const member = Object.keys(OIDC_SUBJECT_ATTRIBUTES).filter(function (name) {
+    return OIDC_SUBJECT_ATTRIBUTES[name] === attribute;
+  })[0];
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (!member || !text) {
+    log.debug("Leaving oidcSubjectAttributeProblem(). Not asked.");
+    return '';
+  }
+  const beside = fields || {};
+  const values = {
+    token_endpoint_auth_method:
+      String(valuesOf(beside.oauthTokenEndpointAuthMethod)[0] || ''),
+    redirect_uris: valuesOf(beside.oauthRedirectUri)
+  };
+  Object.keys(OIDC_SUBJECT_ATTRIBUTES).forEach(function (name) {
+    const held = valuesOf(beside[OIDC_SUBJECT_ATTRIBUTES[name]])[0];
+    values[name] = held === undefined ? '' : String(held);
+  });
+  values[member] = text;
+  const problem = oidcSubjectMetadataProblem(values);
+  log.debug("Leaving oidcSubjectAttributeProblem().");
+  return problem
+    ? problem.description.replace(problem.member,
+                                  OIDC_SUBJECT_ATTRIBUTES[problem.member])
+    : '';
+}
+
+// ---------------------------------------------------------------------------
 // RFC 9126 SECTION 6: WHAT A CLIENT MAY REGISTER ABOUT PUSHING (2026-09-13).
 //
 // One member, a boolean, and the one check is that it IS one — a string
@@ -5484,6 +5696,13 @@ function normaliseFields(value) {
     if (pushedProblem) {
       errors.push(pushedProblem);
       code = code || 'STS-REG-0121';
+      return;
+    }
+    // OIDC Core sections 8 and 9 (#118), read against the create's others.
+    const subjectProblem = oidcSubjectAttributeProblem(name, values[0], asked);
+    if (subjectProblem) {
+      errors.push(subjectProblem);
+      code = code || 'STS-REG-0168';
       return;
     }
     // RFC 8705's six, read against the create's OTHER subject parameters,
@@ -6446,6 +6665,16 @@ function applyRegistrationFields(record, registration, statement) {
   } else {
     delete record.fields.oauthRequirePushedAuthorizationRequests;
   }
+  // OIDC Core sections 8 and 9 (#118), the same way: an update that omits
+  // one clears it.
+  Object.keys(OIDC_SUBJECT_ATTRIBUTES).forEach(function (member) {
+    const value = String(meta[member] || '').trim();
+    if (value) {
+      setField(record, OIDC_SUBJECT_ATTRIBUTES[member], value);
+    } else {
+      delete record.fields[OIDC_SUBJECT_ATTRIBUTES[member]];
+    }
+  });
   // RFC 9396 section 10, the same way: an update that omits it clears it.
   delete record.fields.oauthAuthorizationDetailsTypes;
   if (Array.isArray(meta.authorization_details_types) &&
@@ -6517,6 +6746,7 @@ function register(clientId, registration, options) {
                      idTokenEncryptionMetadataProblem(registration) ||
                      requestObjectMetadataProblem(registration) ||
                      pushedAuthorizationMetadataProblem(registration) ||
+                     oidcSubjectMetadataProblem(registration) ||
                      mtlsMetadataProblem(registration) ||
                      authorizationDetailsMetadataProblem(registration);
   if (uriProblem) {
@@ -6756,6 +6986,15 @@ function registrationOf(clientId) {
       delete document[member];
     }
   });
+  // OIDC Core sections 8 and 9's three (#118), the same way.
+  Object.keys(OIDC_SUBJECT_ATTRIBUTES).forEach(function (member) {
+    const held = fields[OIDC_SUBJECT_ATTRIBUTES[member]];
+    if (held !== undefined && String(held).trim()) {
+      document[member] = String(held);
+    } else {
+      delete document[member];
+    }
+  });
   // And RFC 9101's five, the same way.
   const requestUris = valuesOf(fields.oauthRequestUri).map(String);
   if (requestUris.length) {
@@ -6870,6 +7109,8 @@ function clientConfigOf(identifier) {
              frontchannel_logout_session_required: false,
              backchannel_logout_uri: '',
              backchannel_logout_session_required: false,
+             subject_type: 'public', sector_identifier_uri: '',
+             token_endpoint_auth_signing_alg: '',
              client_secret: '' };
   }
   const fields = loaded.record.fields;
@@ -6932,6 +7173,15 @@ function clientConfigOf(identifier) {
     token_endpoint_auth_method: method,
     client_secret: fields.oauthClientSecret === undefined
       ? '' : String(fields.oauthClientSecret),
+    // ROTATION AND EXPIRY (#49 P5): the secret a rotation replaced and until
+    // when it is accepted (ms), and when the current one expires (seconds,
+    // 0 for never) — the attribute, or a registration's own
+    // client_secret_expires_at when only that says.
+    client_secret_previous: fields.oauthClientSecretPrevious === undefined
+      ? '' : String(fields.oauthClientSecretPrevious),
+    client_secret_previous_until: Number(valuesOf(
+      fields.oauthClientSecretPreviousUntil)[0]) || 0,
+    client_secret_expires_at: secretExpiryOf(fields),
     // What an ASYMMETRIC method verifies against. Public key material and two
     // certificate facts — none of them a secret, which is the property RFC 9700
     // section 2.5 is recommending them for.
@@ -6986,6 +7236,14 @@ function clientConfigOf(identifier) {
     // registry holds, which need not be the client_id this request presented —
     // an application answers to several.
     identifier: String(loaded.record.identifier || ''),
+    // OIDC Core sections 8 and 9 (#118), spelled as the registration members.
+    // An empty subject_type is `public`, the section 8 default.
+    subject_type: String(fields.oauthSubjectType || '').trim() || 'public',
+    sector_identifier_uri: fields.oauthSectorIdentifierUri === undefined
+      ? '' : String(fields.oauthSectorIdentifierUri),
+    token_endpoint_auth_signing_alg:
+      fields.oauthTokenEndpointAuthSigningAlg === undefined
+      ? '' : String(fields.oauthTokenEndpointAuthSigningAlg),
     certificate_thumbprint:
       fields.oauthTlsClientCertificateThumbprint === undefined
       ? '' : String(fields.oauthTlsClientCertificateThumbprint),
@@ -7558,6 +7816,16 @@ function updateApplication(identifier, change) {
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0121');
     }
   }
+  // OIDC Core sections 8 and 9 (#118), on a SET that carries a value.
+  if (mode === 'set' && value) {
+    const problem = oidcSubjectAttributeProblem(attribute, value,
+                                                loaded.record.fields);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable subject or " +
+                "signing setting.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0168');
+    }
+  }
   // RFC 8705's six, on a SET that carries a value: the value's grammar, and no
   // second certificate subject parameter beside the one the entry holds.
   if (mode === 'set' && value) {
@@ -8013,6 +8281,115 @@ function mintClientSecret() {
 // three doors onto one entry, and minting in one of them would be a second
 // definition of what a client secret looks like.
 // ---------------------------------------------------------------------------
+// When an entry's current secret expires, in seconds since the epoch, or 0
+// for never (#49 P5): its own attribute, or — for a client registered before
+// the attribute existed — the client_secret_expires_at its registration
+// document published.
+function secretExpiryOf(fields) {
+  log.debug("Entering secretExpiryOf().");
+  const own = Number(valuesOf(fields.oauthClientSecretExpiresAt)[0]);
+  if (own > 0) {
+    log.debug("Leaving secretExpiryOf(). The attribute.");
+    return own;
+  }
+  let fromDocument = 0;
+  const text = valuesOf(fields.appRegistrationJson)[0];
+  if (text) {
+    try {
+      fromDocument = Number(JSON.parse(String(text))
+        .client_secret_expires_at) || 0;
+    } catch (e) {
+      // A document that does not parse publishes no expiry.
+      log.debug("Caught in secretExpiryOf(): " + ((e && e.message) || e));
+      fromDocument = 0;
+    }
+  }
+  log.debug("Leaving secretExpiryOf().");
+  return fromDocument > 0 ? fromDocument : 0;
+}
+
+// THE DAILY CLIENT-SECRET SWEEP (#49 P5, rcbj's answer), which the scheduler
+// job `oauth2.client-secret-expiry` runs in each realm: an audit row and a
+// warning for every secret expiring within
+// oauth2.clientSecretExpiryWarningDays, one for every secret that has
+// expired, and the previous secret of every rotation whose overlap has
+// passed CLEARED from its entry. Answers the three lists of identifiers.
+function sweepClientSecrets(nowMs) {
+  log.debug("Entering sweepClientSecrets().");
+  const now = Number(nowMs) || Date.now();
+  const nowS = Math.floor(now / 1000);
+  const warnS = Number(config.value('oauth2.clientSecretExpiryWarningDays')) *
+                86400;
+  const out = { expiring: [], expired: [], cleared: [] };
+  list().forEach(function (row) {
+    const fields = row.fields || {};
+    if (!valuesOf(fields.oauthClientSecret)[0]) {
+      return;
+    }
+    const expiresAt = secretExpiryOf(fields);
+    if (expiresAt > 0 && expiresAt <= nowS) {
+      out.expired.push(row.identifier);
+    } else if (expiresAt > 0 && expiresAt - nowS <= warnS) {
+      out.expiring.push(row.identifier);
+    }
+    const until = Number(valuesOf(fields.oauthClientSecretPreviousUntil)[0]);
+    if (valuesOf(fields.oauthClientSecretPrevious)[0] && until > 0 &&
+        until <= now) {
+      const loaded = load(row.identifier);
+      if (loaded.known) {
+        delete loaded.record.fields.oauthClientSecretPrevious;
+        delete loaded.record.fields.oauthClientSecretPreviousUntil;
+        save(loaded.record);
+        out.cleared.push(row.identifier);
+      }
+    }
+  });
+  out.expiring.forEach(function (id) {
+    audit.audit({ action: 'application.secret-expiring', actor: 'scheduler',
+      protocol: 'console', channel: 'internal', target: String(id),
+      summary: 'Application "' + id + '": its client secret expires within ' +
+               'oauth2.clientSecretExpiryWarningDays; rotate it on ' +
+               '/admin/applications', detail: { identifier: String(id) } });
+  });
+  out.expired.forEach(function (id) {
+    audit.audit({ action: 'application.secret-expired', actor: 'scheduler',
+      protocol: 'console', channel: 'internal', target: String(id),
+      outcome: 'failure', errorCode: 'STS-REG-0166',
+      summary: 'Application "' + id + '": its client secret has expired',
+      detail: { identifier: String(id) } });
+  });
+  out.cleared.forEach(function (id) {
+    audit.audit({ action: 'application.update', actor: 'scheduler',
+      protocol: 'console', channel: 'internal', target: String(id),
+      summary: 'Application "' + id + '": the secret a rotation replaced ' +
+               'stopped being accepted, its overlap having passed',
+      detail: { identifier: String(id),
+                attribute: 'oauthClientSecretPrevious', mode: 'cleared' } });
+  });
+  if (out.expiring.length || out.expired.length) {
+    log.warn(errorCodes.tag('STS-REG-0166') + 'applications: ' +
+             out.expired.length + ' client secret(s) expired (' +
+             out.expired.join(', ') + ') and ' + out.expiring.length +
+             ' expire soon (' + out.expiring.join(', ') + '). Rotate them ' +
+             'on /admin/applications.');
+  }
+  log.debug("Leaving sweepClientSecrets(). " + JSON.stringify({
+    expiring: out.expiring.length, expired: out.expired.length,
+    cleared: out.cleared.length }));
+  return out;
+}
+
+// ROTATE — a new secret, with the old one still accepted for
+// oauth2.clientSecretOverlapS (#49 P5, rcbj's answer). The Admin Write act
+// the console and `POST /admin-api/applications/rotate-secret` share.
+function rotateClientSecret(identifier, options) {
+  log.debug("Entering rotateClientSecret(). identifier=" + identifier);
+  const out = regenerateClientSecret(identifier,
+    Object.assign({}, options || {}, { keepPrevious: true }));
+  log.debug("Leaving rotateClientSecret().");
+  return out;
+}
+
 function regenerateClientSecret(identifier, options) {
   log.debug("Entering regenerateClientSecret(). identifier=" + identifier);
   const opts = options || {};
@@ -8048,6 +8425,20 @@ function regenerateClientSecret(identifier, options) {
   const bytes = clientSecretBytes();
   const secret = mintClientSecret();
   const replaced = !!record.fields.oauthClientSecret;
+  const previous = valuesOf(record.fields.oauthClientSecret)[0];
+  // A ROTATION (#49 P5) keeps the secret it replaces working for
+  // oauth2.clientSecretOverlapS; a regeneration ends it now, and ends any
+  // overlap an earlier rotation left.
+  const overlapMs = Number(config.value('oauth2.clientSecretOverlapS')) * 1000;
+  const keeps = !!opts.keepPrevious && !!previous && overlapMs > 0;
+  if (keeps) {
+    setField(record, 'oauthClientSecretPrevious', String(previous));
+    setField(record, 'oauthClientSecretPreviousUntil',
+             String(Date.now() + overlapMs));
+  } else {
+    delete record.fields.oauthClientSecretPrevious;
+    delete record.fields.oauthClientSecretPreviousUntil;
+  }
   setField(record, 'oauthClientSecret', secret);
   if (record.fields.appRegistrationJson) {
     try {
@@ -8059,6 +8450,8 @@ function regenerateClientSecret(identifier, options) {
             config.value('oauth2.registeredSecretLifetimeS'));
         document.client_secret_expires_at = isFinite(seconds) && seconds > 0
           ? nowSec() + Math.floor(seconds) : 0;
+        setField(record, 'oauthClientSecretExpiresAt',
+                 String(document.client_secret_expires_at));
       }
       setField(record, 'appRegistrationJson', JSON.stringify(document));
     } catch (e) {
@@ -8082,14 +8475,22 @@ function regenerateClientSecret(identifier, options) {
              (replaced ? 'regenerated' : 'generated'),
     // The attribute and never the value — see updateApplication()'s row.
     detail: { identifier: String(identifier), attribute: 'oauthClientSecret',
-              mode: 'regenerate', replaced: replaced }
+              mode: keeps ? 'rotate' : 'regenerate', replaced: replaced,
+              overlapUntil: keeps ? Date.now() + overlapMs : 0 }
   });
   log.info('applications: "' + identifier + '" — the client secret was ' +
            (replaced ? 'regenerated' : 'generated') + '.');
   log.debug("Leaving regenerateClientSecret().");
   return { ok: true, changed: true, replaced: replaced, clientSecret: secret,
            application: viewAfterWrite(identifier, record),
-           message: (replaced
+           overlapUntil: keeps ? Date.now() + overlapMs : 0,
+           message: (keeps
+             ? 'A new client secret replaced the old one, which goes on ' +
+               'authenticating at the token endpoint until ' +
+               new Date(Date.now() + overlapMs).toISOString() +
+               ' (oauth2.clientSecretOverlapS), so the client can change ' +
+               'over.'
+             : replaced
              ? 'A new client secret replaced the old one, which stops ' +
                'authenticating at the token endpoint now.'
              : 'A client secret was generated.') + ' It is ' + bytes +
@@ -8750,6 +9151,27 @@ function list() {
 // The setting's own value is used and the log names the entry, the attribute
 // and the reason, which is the only way somebody finds out that the exception
 // they typed is not in force.
+// THE LARGEST VALUE a per-application setting takes across this realm's
+// entries, or the setting's own value when no entry overrides it higher —
+// for a question about EVERY client at once, such as how long the longest
+// token a key signed can live (`common/signing_rotation.ts`, #42).
+function largestSetting(settingKey, config) {
+  log.debug("Entering largestSetting(). setting=" + settingKey);
+  let most = Number(config.value(settingKey)) || 0;
+  if (!OVERRIDE_ATTRIBUTES[settingKey]) {
+    log.debug("Leaving largestSetting(). Not per-application.");
+    return most;
+  }
+  list().forEach(function (record) {
+    const v = Number(settingFor(record.identifier, settingKey, config)) || 0;
+    if (v > most) {
+      most = v;
+    }
+  });
+  log.debug("Leaving largestSetting(). " + most);
+  return most;
+}
+
 function settingFor(identifier, settingKey, config) {
   log.debug("Entering settingFor(). identifier=" + (identifier || '(none)') +
             ", setting=" + settingKey);
@@ -9667,7 +10089,8 @@ function debuggerApplications() {
                    'debugger at ' + base + ' (debugger.enabled)',
       attributes: {
         oauthDelegatedPermission: [permission],
-        oauthGlobalConsent: ['openid', 'profile', 'email', permission]
+        oauthGlobalConsent: ['openid', 'profile', 'email', 'offline_access',
+                             permission]
       },
       registration: {
         client_id: 'sts-debugger-ui',
@@ -9684,11 +10107,23 @@ function debuggerApplications() {
         post_logout_redirect_uris: [base + '/'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        scope: 'openid profile email ' + permission,
+        scope: 'openid profile email offline_access ' + permission,
         token_endpoint_auth_method: 'client_secret_basic'
       } }
   ];
 }
+
+// THE CLIENTS THIS SERVICE'S OWN HOSTED SURFACES SIGN IN AS — the three rows
+// above and below, by identifier, and `common/oidc_rp.ts`'s SURFACES by
+// clientId (`tests/oidc_core_units.js` holds the two lists equal). Each is
+// granted `offline_access` by the register's own global consent (#118): a
+// surface's session is meant to outlive the sign-on session RUNNING OUT, which
+// is what OIDC Core section 11 says the scope is for. What a SIGN-OUT does is
+// different, and `authn.ts` reads this list to revoke these clients' refresh
+// tokens with the session anyway: the relying-party session holding each one
+// ends in the same cascade, so the token is nobody's any more.
+const HOSTED_SURFACE_CLIENT_IDS = Object.freeze(['sts-admin-console',
+  'sts-user-portal', 'sts-debugger-ui']);
 
 // The two, built fresh on each call because each carries two credentials that
 // are generated rather than declared.
@@ -9728,7 +10163,8 @@ function internalApplications() {
       realmScope: 'every',
       description: 'seeded at startup: this service\'s own admin console at ' +
                    '/admin (applications.seedInternal)',
-      attributes: { oauthGlobalConsent: ['openid', 'profile', 'email'] },
+      attributes: { oauthGlobalConsent: ['openid', 'profile', 'email',
+                                         'offline_access'] },
       registration: {
         client_id: 'sts-admin-console',
         client_name: 'Admin console',
@@ -9743,7 +10179,7 @@ function internalApplications() {
         post_logout_redirect_uris: [base + '/admin'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        scope: 'openid profile email',
+        scope: 'openid profile email offline_access',
         token_endpoint_auth_method: 'client_secret_basic'
       } },
     // THE USER PORTAL, ADDED 2026-09-06 WITH THE MOVE ONTO THE CODE FLOW. It
@@ -9771,7 +10207,8 @@ function internalApplications() {
       // `consent.js`: the entry is the register, so an operator who wants the
       // screen removes the values and gets it, which is what makes this a
       // default rather than a special case.
-      attributes: { oauthGlobalConsent: ['openid', 'profile', 'email'] },
+      attributes: { oauthGlobalConsent: ['openid', 'profile', 'email',
+                                         'offline_access'] },
       registration: {
         client_id: 'sts-user-portal',
         client_name: 'User portal',
@@ -9786,7 +10223,7 @@ function internalApplications() {
         post_logout_redirect_uris: [base + '/portal'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        scope: 'openid profile email',
+        scope: 'openid profile email offline_access',
         token_endpoint_auth_method: 'client_secret_basic'
       } },
     { identifier: 'sts-management-api',
@@ -9946,6 +10383,7 @@ function seedInternalApplications(options) {
 }
 
 module.exports = {
+  HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
   requiredRolesOf: requiredRolesOf,
   requiresNarrowedRoles: requiresNarrowedRoles,
   KINDS: KINDS,
@@ -10025,6 +10463,8 @@ module.exports = {
   // RFC 9101 — the check, its tables, and which attribute holds which member.
   // `oauth-oidc/request_object.ts` and the registration endpoint read them.
   requestObjectMetadataProblem: requestObjectMetadataProblem,
+  oidcSubjectMetadataProblem: oidcSubjectMetadataProblem,
+  OIDC_SUBJECT_ATTRIBUTES: OIDC_SUBJECT_ATTRIBUTES,
   pushedAuthorizationMetadataProblem: pushedAuthorizationMetadataProblem,
   pushedAuthorizationAttributeProblem: pushedAuthorizationAttributeProblem,
   mtlsMetadataProblem: mtlsMetadataProblem,
@@ -10070,6 +10510,9 @@ module.exports = {
   seedInternalApplications: seedInternalApplications,
   updateApplication: updateApplication,
   regenerateClientSecret: regenerateClientSecret,
+  rotateClientSecret: rotateClientSecret,
+  sweepClientSecrets: sweepClientSecrets,
+  secretExpiryOf: secretExpiryOf,
   mintClientSecret: mintClientSecret,
   KEY_SOURCES: KEY_SOURCES,
   KEY_SOURCE_ATTRIBUTES: KEY_SOURCE_ATTRIBUTES,
@@ -10097,6 +10540,7 @@ module.exports = {
   list: list,
   get: get,
   settingFor: settingFor,
+  largestSetting: largestSetting,
   overridableSettings: overridableSettings,
   // The audience lookup, exported for the token endpoint. See its header for
   // why it is a lookup and not a check.

@@ -1199,17 +1199,46 @@ Three things about it are decisions:
   by both lazy lookups and by the sweep. `via` says which noticed it, because
   "it expired and somebody came back" and "it expired and the sweep found it"
   are the same act at different moments and the log should not have to guess.
-* **The sweep is armed by the FIRST session this process creates**, and
-  `unref()`'d. A process that signs nobody in — the parent project's in-process
-  Kerberos jobs, `npm test`, `node env/generate_defaults.js` — never arms a
-  timer it would then have to be shut down for. It is the shape of decision the
-  worker pool makes about forking nothing until the first post-quantum job.
+* **The sweep is a SCHEDULER JOB since 2026-09-22** (below), so nothing is
+  armed by a session any more: it was a `setInterval` armed by the first
+  session a process created, `unref()`'d, and it ran in every process that had
+  created one.
 * **It sweeps every realm and runs INSIDE each one.** The store is
   `realms.map()`, so a bare `forEach` walks the ambient realm's partition and a
   timer has no ambient realm: without `realms.run()` it would sweep the default
   realm's sessions every time and leave every other realm's to accumulate.
   Running in the realm is also what makes the event right rather than merely
   present, since the observer builds a subject from the realm's own issuer.
+
+**THE SWEEP IS A SCHEDULER JOB — rcbj, 2026-09-21; BUILT 2026-09-22** (root
+`CLAUDE.md`, *Anything periodic is a scheduler job*; #49's P1, beside the CRL
+refresh; `cluster/CLAUDE.md`, *The scheduler*). What moved and what did not:
+
+* **What moved:** the periodic half. `authn.session-expiry` is a *cluster* job
+  registered at the foot of `authn.ts`, every `authn.sessionSweepS` seconds (30,
+  and 0 switches it off — read directly, never with `|| n`). It runs on the
+  scheduler's leader, walks every realm inside `realms.run()`, and ends what
+  has expired through `expireSession()` — so the `session.end` audit row, CAEP's
+  `session-revoked` (initiated by the `policy`) and the back-channel Logout
+  Tokens (`oauth2.backchannelLogoutOnExpiry`) still come from that one path.
+  The job adds no path of its own to any of them. `tests/scheduler_jobs.js`
+  holds it to ending each session once.
+* **What stayed:** the two lazy lookups and their synchronous local delete. A
+  process that finds a session expired stops honouring it at once, whenever the
+  job last ran — that is correctness, not housekeeping. The `authn.session-end`
+  claim stays too, because a lazy lookup, a sign-out and the job can still
+  meet on one session. So does its fail-OPEN reporting (a notice that must not
+  be lost).
+* **The first-session arming decision became:** the scheduler starts only from
+  `server.js`, after the state is restored, so the processes that decision
+  protected — in-process Kerberos jobs, `npm test`, `generate_defaults.js` —
+  still never run it.
+* **Confirmed while building it:** a job on ONE node is enough because every
+  configuration with more than one process shares the session store —
+  clustering requires `persistence.minted`, a request pool shares `sts_minted`
+  under the ephemeral key-encryption key `request_pool.js` generates, and
+  dispatch without coordination is refused. A configuration where a process
+  holds sessions nobody else can see would make it a *per-process* job there.
 
 **THE EVENT SAYS `policy` AND NOT `user`.** `caep.ts`'s rule for a `revoked` act
 was `admin` when an administrator did it and `user` otherwise, and an expiry is
@@ -1671,7 +1700,8 @@ the four call sites to it.
 
 ## SEVERAL NODES: A SESSION'S END IS REPORTED ONCE (2026-09-14, #46 section 6)
 
-Every process runs the sweep over its own copy, and `sessionOf()` expires a
+Every process ran the sweep over its own copy until 2026-09-22 (it is one
+scheduler job now), and `sessionOf()` expires a
 session wherever it is next presented, so two processes — a container's
 workers, or two containers — found the same expired session and each wrote
 `session.end` and emitted CAEP `session-revoked`. A sweep led by one elected
@@ -1766,6 +1796,34 @@ knew that person's password could otherwise register a brand new authenticator
 and be signed in — which is the bypass `finishPasswordSignIn()` already argues
 about the checkbox, met again one demand along. Somebody who holds NO second
 factor still enrols one here, as they always did.
+
+## IN PRODUCT THE SIGN-IN SCREEN ENROLS NO PRIMARY KEY (2026-09-21)
+
+**The passwordless path was an account takeover in product mode.** The box
+reads no password, and `webauthnPage()` answers somebody holding no `primary`
+key with the ENROL ceremony. The only product-mode check on that path was
+`knownUser()` at the registration, which asks whether the name EXISTS — the
+guard against creating a person, not against claiming one. So anybody who knew
+a username could register their own authenticator as that person's primary
+credential, be signed in, and keep the key. Development's "the first person to
+claim a name gets it" had been carried into product unchanged.
+
+`mode.enrolsKeysOnFirstUse()` is the switch. In product the sign-in handler
+refuses a passwordless sign-in for somebody holding no primary key BEFORE a step
+is minted (`STS-AUTHN-0206`), with the same sentence whether or not the name
+exists, so the refusal enumerates nobody; and the registration branch refuses a
+passwordless enrolment as well, for a step minted on the other side of a mode
+change. A primary key is added where the person has already proved who they
+are: `/portal/keys` behind a session, an activation link, or an operator. The
+SECOND-factor enrolment at this screen is untouched — it comes after a password
+product verified, and only for somebody holding no second factor, which the
+section above argues. The screen's own sentence about what it checks now reads
+the mode too. `tests/passkey_first_use_product.js` holds both modes with a real
+ceremony — and its first run found that `finishWebauthn()` read
+`verdict.failed.join()` off a policy refusal that carries only a `why`, so this
+refusal AND the older one beside it (`STS-AUTHN-0024`, product enrolling for
+somebody who does not exist) had always answered 500. It falls back to the
+`why` now.
 
 ## A DISABLED ACCOUNT IS REFUSED AT `startSession()` AND AT EVERY SESSION IT ALREADY HAS (2026-09-17)
 

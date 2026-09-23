@@ -24,11 +24,12 @@
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
-const http = require("http");
+const https = require("https");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
+const scep = require("./scep_client.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -540,7 +541,16 @@ async function test() {
   // =========================================================================
   log.info("=== 6. push finish ===");
   const pushed = [];
-  const listener = http.createServer(function (req, res) {
+  const callbackHost = process.env.GNAP_PUSH_HOST || "localhost";
+  // HTTPS (2026-09-21), because product mode refuses a plain-http finish URI
+  // to any host but loopback (STS-GNAP-0103) and GNAP_PUSH_HOST is not
+  // loopback. The certificate is self-signed; gnap.pushAllowInsecure
+  // (section 0) is what lets the service dial it without verifying it.
+  const pushKey = scep.rsaKey();
+  const listener = https.createServer({
+    key: pushKey.privateKeyPem,
+    cert: scep.selfSigned(pushKey, callbackHost)
+  }, function (req, res) {
     let text = "";
     req.on("data", function (c) { text += c; });
     req.on("end", function () {
@@ -553,14 +563,24 @@ async function test() {
   await new Promise(function (resolve) {
     listener.listen(0, "0.0.0.0", resolve);
   });
-  const callbackHost = process.env.GNAP_PUSH_HOST || "localhost";
-  const pushUri = "http://" + callbackHost + ":" + listener.address().port +
-                  "/gnap-push";
-  body = grantBody(es,
+  const pushUri = "https://" + callbackHost + ":" +
+                  listener.address().port + "/gnap-push";
+  // A KEY OF ITS OWN (2026-09-21): product mode uses only a REGISTERED
+  // finish URI (STS-GNAP-0101), the port is known only now, and `es` was
+  // registered in section 2 — so a fresh key, registered on its first request
+  // with the push URI on it, makes this grant request.
+  h.finishUris.push(pushUri);
+  const pusher = new gnap.Client({ key: gnap.newKey("ES256") });
+  body = grantBody(pusher,
                    { interact: { start: ["redirect"],
                                  finish: { method: "push", uri: pushUri,
                                                                     nonce: "push-nonce-1" } } });
-  r = await es.send("POST", GRANT, { json: body });
+  r = await pusher.send("POST", GRANT, { json: body });
+  check("a push-finish grant request is answered with an interaction",
+        function () {
+    assert.ok(r.status === 200 && r.json && r.json.interact,
+              r.text.slice(0, 300));
+  });
   pending = r.json;
   b = browser();
   approval = await reachApproval(b, pending.interact.redirect, OWNER);
@@ -582,11 +602,11 @@ async function test() {
                                                                 message.interact_ref, GRANT));
           pending.pushedRef = message.interact_ref;
         });
-  r = await es.send("POST", pending.continue.uri,
-                    { token: pending.continue.access_token.value,
-                                                    json: {
-                                                      interact_ref:
-                                                        pending.pushedRef } });
+  r = await pusher.send("POST", pending.continue.uri,
+                        { token: pending.continue.access_token.value,
+                                                        json: {
+                                                          interact_ref:
+                                                            pending.pushedRef } });
   check("the pushed interaction reference releases the grant", function () {
     assert.strictEqual(r.status, 200, r.text);
     assert.ok(r.json.access_token);
@@ -885,7 +905,12 @@ async function test() {
     identifier: REF + "-app", kind: "gnap-client", protocols: ["gnap"],
     fields: { gnapKeyReference: REF,
               gnapSymmetricKey: secret.toString("base64url"),
-              gnapKeyProof: "httpsig", gnapSymmetricAlg: "hmac-sha256" } },
+              gnapKeyProof: "httpsig", gnapSymmetricAlg: "hmac-sha256",
+              // THE FINISH URI, REGISTERED HERE (2026-09-21): grantBody()
+              // asks for a redirect finish to FINISH, product mode uses only
+              // a registered one (STS-GNAP-0101), and a key REFERENCE never
+              // reaches the registrar, which needs a key object.
+              gnapFinishUri: h.FINISH } },
     "registered a client with a shared secret");
   const hmacClient = new gnap.Client({ key: gnap.secretKey(REF, secret,
                                                            "HS256") });

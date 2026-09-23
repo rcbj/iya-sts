@@ -710,10 +710,55 @@ class CachesAdmin {
 // below forward to it. A process that never runs the root gets a default
 // instance (see `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// EJECTING WHAT HAS EXPIRED IS A SCHEDULER JOB (#49 P5): `caches.eject-expired`,
+// a QUIET PER-PROCESS job every minute — every process holds its own copy of
+// every store — calling `cacheRegistry.ejectExpired()`, which calls each
+// store's own `eject()`. HERE, beside the page that reports the stores,
+// because `cache_registry.js` is a leaf the parent project loads and may not
+// reach the scheduler. Switched off, like any job, by `scheduler.disabledJobs`.
+// ---------------------------------------------------------------------------
+const EJECT_JOB = 'caches.eject-expired';
+
+function registerEjectJob(): void {
+  helpers.log.debug("Entering registerEjectJob().");
+  const scheduler = require('../cluster/scheduler');
+  if (scheduler.job(EJECT_JOB)) {
+    helpers.log.debug("Leaving registerEjectJob(). Registered.");
+    return;
+  }
+  const registry = require('../common/cache_registry');
+  scheduler.register({
+    id: EJECT_JOB,
+    title: 'Expired cache entries ejection',
+    describe: 'Deletes, in this process, every cache and replay-store entry ' +
+              'whose lifetime has passed — housekeeping only: each store ' +
+              'still refuses an expired entry where it reads it.',
+    owner: 'admin-ui/caches_admin.ts',
+    kind: 'per-process', quiet: true,
+    everyMs: function (): number {
+      return 60000;
+    },
+    run: function (ctx: any): any {
+      const done = registry.ejectExpired(ctx.nowMs());
+      if (done.failed.length) {
+        helpers.log.warn(errorCodes.tag('STS-CORE-0102') + 'caches: ' +
+                         done.failed.length + ' store(s) could not eject ' +
+                         'their expired entries: ' + done.failed.join('; '));
+      }
+      return { ejected: done.ejected, stores: Object.keys(done.byCache)
+        .length, failed: done.failed.length };
+    }
+  });
+  helpers.log.debug("Leaving registerEjectJob().");
+}
+
 const slot = new InstanceSlot<CachesAdmin>(
   'admin-ui/caches_admin',
   () => new CachesAdmin(CachesAdmin.defaultDeps()),
-  null,
+  function (): void {
+    registerEjectJob();
+  },
   helpers.log);
 
 // Standalone, build the default now, as every console module does.

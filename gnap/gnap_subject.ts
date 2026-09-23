@@ -496,8 +496,8 @@ class GnapSubject {
         // Signature only: section 2.4 lets an AS "accept a recently expired
         // assertion in order to help bootstrap a new session", and this AS
         // does, within `gnap.assertionMaxAgeS` of its expiry.
-        claims = stsCrypto.verifyCompactJws(assertion.value, STS.certPem,
-                                            { algorithms: ['RS256'] }).claims;
+        claims = helpers.verifyOwnCompactJws(assertion.value,
+                                             { algorithms: ['RS256'] }).claims;
       } catch (e) {
         log.debug("Caught in GnapSubject.usernameFromAssertion(): " +
                   ((e && e.message) || e));
@@ -506,7 +506,13 @@ class GnapSubject {
         return { ok: false };
       }
       const grace = Number(config.value('gnap.assertionMaxAgeS')) || 0;
-      if (claims.typ !== 'ID' ||
+      // WHAT MAKES IT AN ID TOKEN. Every JWT this service signs is signed
+      // with the same key; an access token carries `typ: 'Bearer'` and a
+      // refresh token `typ: 'Refresh'`, and an ID Token carries NO `typ`
+      // member since #118 (2026-09-22) — it said `typ: 'ID'`, which no
+      // specification defines. So a payload with any `typ`, or without the
+      // `sub` and `aud` OIDC Core section 2 requires, is not one.
+      if (claims.typ !== undefined || !claims.sub || !claims.aud ||
           (ctx.oauthIssuer && claims.iss !== ctx.oauthIssuer) ||
           (claims.exp && claims.exp + grace < helpers.nowSec())) {
         log.debug("Leaving GnapSubject.usernameFromAssertion(). Not a " +
@@ -523,9 +529,8 @@ class GnapSubject {
     if (assertion.format === 'saml2') {
       const xml = Buffer.from(String(assertion.value), 'base64url')
                         .toString('utf8');
-      const result = stsCrypto.verifyXmlSignature(xml,
-                                                  { element: 'Assertion',
-                                                    certPem: STS.certPem });
+      // Any generation of this realm's XML key (#42).
+      const result = helpers.verifyOwnXml(xml, { element: 'Assertion' });
       if (!result.ok) {
         log.debug("Leaving GnapSubject.usernameFromAssertion(). SAML " +
                   "assertion does not verify.");

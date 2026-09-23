@@ -374,8 +374,23 @@ function unwrapAssertion(presented, opts) {
       }
       candidates.push({ privateKey: one.privateKey });
     });
+    // And every live STANDBY key of the same curve (#42): an assertion
+    // encrypted to a key published before a rotation still opens.
+    require('../common/helpers').standbyOf(STS).forEach(function (one) {
+      const jwk = one.publicJwk || {};
+      if (one.kind !== 'curve' || jwk.kty !== 'EC' ||
+          (wanted && jwk.crv !== wanted) ||
+          (header.kid && String(header.kid) !== String(jwk.kid))) {
+        return;
+      }
+      candidates.push({ privateKey: one.privateKey });
+    });
   } else {
-    candidates.push({ privateKey: STS.privateKey });
+    // Every RSA key of this realm, JOSE first — each live generation (#42).
+    require('../common/helpers').ownRsaDecryptionKeys('jose')
+      .forEach(function (one) {
+        candidates.push({ privateKey: one.privateKey });
+      });
   }
   if (!candidates.length) {
     log.debug('Leaving unwrapAssertion(). No key of that kind.');

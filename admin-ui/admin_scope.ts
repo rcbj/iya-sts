@@ -200,6 +200,37 @@ class AdminScope {
         log.debug("Leaving the PKI action rule. Allowed.");
         return '';
       },
+      // THE SCHEDULER (#49): a realm administrator may run their own realm's
+      // row of a realm-scoped job and nothing else — a service job and the
+      // step-down belong to the whole service. The job's scope is asked of
+      // the scheduler LAZILY: it is a library this module must not load
+      // before the composition root has.
+      '/admin/scheduler': function (body, realmId) {
+        log.debug("Entering the scheduler action rule.");
+        const action = String((body && body.action) || '').trim();
+        if (action === 'step-down') {
+          log.debug("Leaving the scheduler action rule. Step-down.");
+          return 'Handing the scheduler to another node is a service ' +
+                 'administrator\'s act.';
+        }
+        if (action === 'run') {
+          const id = String((body && body.job) || '').trim();
+          const job = require('../cluster/scheduler').job(id);
+          if (job && job.scope !== 'realm') {
+            log.debug("Leaving the scheduler action rule. A service job.");
+            return id + ' runs for the whole service, not for one realm.';
+          }
+          const named = String((body && body.realm) || '').trim();
+          if (named && named !== realmId) {
+            log.debug("Leaving the scheduler action rule. Another realm.");
+            return 'That run names the "' + named + '" realm, and a realm ' +
+                   'administrator of "' + realmId + '" may run jobs in that ' +
+                   'realm only.';
+          }
+        }
+        log.debug("Leaving the scheduler action rule. Allowed.");
+        return '';
+      },
       '/admin/keys/export': function (body) {
         return self.tlsServerKeyRule(body);
       },

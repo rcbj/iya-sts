@@ -124,10 +124,79 @@ with a `failInfo`: `badAlg`, `badMessageCheck`, `badRequest`, `badTime` or
 Monitoring → SCEP enrollments (`/admin/scep/monitor`) as an
 [error code](error-codes.md) (`STS-SCEP-…` or `STS-ENROLL-…`).
 
-## Settings
+## Configuration
 
-`scep.enabled`, `scep.allowedProfiles`, `scep.defaultProfile`,
-`scep.certificateLifetimeDays`, `scep.maxRequestBytes`,
-`scep.attemptsPerIdentity`, `scep.attemptsPerAddress`,
-`scep.challengeLifetimeS` and `scep.raKeyAlgorithm`, all per realm, on
-Protocols → SCEP. See [configuration](configuration.md).
+Every `scep.*` setting is runtime and per trust realm, on **Protocols → SCEP**
+(`/admin/scep`).
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `scep.enabled` | `STS_SCEP_ENABLED` | `true` | yes | Off makes every `/enroll/scep` request answer 503 in this realm; certificates already issued are kept. |
+| `scep.allowedProfiles` | `STS_SCEP_ALLOWED_PROFILES` | all nine leaf profiles | yes | The `/admin/pki` profiles a challenge password may be made for; the five CA, OCSP and KDC profiles never are. |
+| `scep.defaultProfile` | `STS_SCEP_DEFAULT_PROFILE` | `tls-client` | yes | The profile preselected when a challenge password is made. |
+| `scep.certificateLifetimeDays` | `STS_SCEP_CERTIFICATE_LIFETIME_DAYS` | `365` | yes | The validity of a SCEP certificate, shortened to the SCEP Issuing CA's own expiry. |
+| `scep.maxRequestBytes` | `STS_SCEP_MAX_REQUEST_BYTES` | `262144` | yes | A pkiMessage larger than this, POSTed or base64 in the GET `message` parameter, is refused before it is decoded. |
+| `scep.attemptsPerIdentity` | `STS_SCEP_ATTEMPTS_PER_IDENTITY` | `10` | yes | Refused PKIOperations one challenge may cause in a web-security window before 429. |
+| `scep.attemptsPerAddress` | `STS_SCEP_ATTEMPTS_PER_ADDRESS` | `60` | yes | Refused requests one client address may make in a web-security window before 429. |
+| `scep.challengeLifetimeS` | `STS_SCEP_CHALLENGE_LIFETIME_S` | `3600` | yes | How long a challenge password may wait before it is redeemed; each is redeemed once. |
+| `scep.raKeyAlgorithm` | `STS_SCEP_RA_KEY_ALGORITHM` | `rsa-2048` | yes | The RA certificate's RSA key size (`rsa-2048`, `rsa-3072`, `rsa-4096`); changing it re-issues the RA certificate on its next use. |
+
+How many certificates one entry may hold across ACME, EST and SCEP is
+`pki.enrollmentMaxCertificatesPerEntry` ([PKI](pki.md#configuration)). See
+[Configuration](configuration.md) for how a value resolves and where it is
+changed — the console page, or `POST /admin-api/config/set`.
+
+## Design decisions
+
+* **The challenge is the authorization, and it names the entry.** A challenge
+  is made for one entry and one profile — by the person on the portal, or by an
+  administrator for anybody in the realm — so whoever redeems it is issued a
+  certificate as that entry and nobody else. The administrator's authority was
+  used when the challenge was made; the device redeeming it is not an
+  administrator.
+* **A challenge is spent by the first request that proves it.** It is used up
+  before the certificate authority rules on the request, so two transactions
+  racing one challenge cannot both be issued. The cost is that a request
+  refused afterwards — an unregistered host name, say — has used its challenge,
+  and another must be made.
+* **The challenge is verified in both modes.** A permissive challenge verifier
+  would be a broken verifier, not a development convenience.
+* **SCEP is not refused over plain HTTP, in either mode.** RFC 8894 section 2.1
+  runs it over HTTP on purpose: the request is signed by the device and
+  encrypted to the RA, and the reply is signed and its certificate encrypted
+  back, so a transport refusal would refuse every conforming device and protect
+  nothing the envelope does not.
+* **A request too malformed to name gets an HTTP error; anything else gets a
+  signed CertRep FAILURE.** Without a transaction id and a sender nonce there
+  is nothing a CertRep could echo — see [above](#when-something-is-refused).
+* **The reason for a refusal is never sent.** `failInfo` is the protocol's
+  word, and this service's code goes to the audit log and the monitor —
+  `failInfoText` is not used.
+* **Only RSA requester keys, because the reply is encrypted with RSA key
+  transport.** Every profile is issued over SCEP for an RSA key; use
+  [EST](est.md) or [ACME](acme.md) for anything else.
+* **Only modern algorithms.** SHA-256/384/512 and AES are accepted; SHA-1, MD5,
+  DES and 3DES are refused `badAlg`, and a failed RSA key unwrap is
+  indistinguishable from a wrong key, so a padding oracle has nothing to read.
+* **A retried transaction gets the certificate it already produced.** Only
+  successes are remembered, by transaction id: the same CSR gets the same
+  certificate without spending another challenge, and a refused request may be
+  corrected and retried under the same id.
+* **One RA certificate for the whole cluster.** It is an RSA leaf of the SCEP
+  Issuing CA, re-issued on demand when it is missing, near expiry, the wrong
+  size or no longer under the current Issuing CA, and several nodes agree on
+  one rather than each issuing its own.
+* **Nothing is approved by hand.** A request is issued or refused when it is
+  made, so PENDING is never answered.
+* **The CA, OCSP-responder and KDC profiles are never issued.** A challenge for
+  one cannot even be created.
+
+## Related
+
+* [PKI](pki.md) — the realm's certificate authority, its profiles, CRLs and
+  OCSP responders
+* [ACME](acme.md) and [EST](est.md) — the other two enrollment protocols, over
+  the same rules
+* [Trust realms](trust-realms.md)
+* [What is not checked](what-is-not-checked.md)
+* [Configuration](configuration.md) and [error codes](error-codes.md)

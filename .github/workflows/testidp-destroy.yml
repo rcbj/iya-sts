@@ -6,7 +6,15 @@ name: testidp destroy
 # `deploy/aws/terraform-local.sh testidp destroy`, run from GitHub, in the
 # Terraform image. The entrypoint retries a failed destroy once after a minute
 # (an ENI a stopped task has not released yet is the usual cause) before
-# failing. Automated database backups go with it (`delete_automated_backups`
+# failing.
+#
+# **IT TAKES THE DEPENDENT STACKS DOWN FIRST (2026-09-21)** — every
+# `spiffe-realm/` state under this environment, and `suite-callbacks/` — because
+# their security-group rules sit on the environment's own groups where the
+# environment's Terraform cannot see them. Without that, `DeleteSecurityGroup`
+# answers `DependencyViolation` for fifteen minutes per group and the
+# environment is left standing and billing; that is this workflow's 2026-09-20
+# run, and re-running it could not fix it (`deploy/aws/CLAUDE.md`). Automated database backups go with it (`delete_automated_backups`
 # in envs/testidp.tfvars), and the four secrets are deleted with no recovery
 # window — nothing of the environment's data survives this. The container log
 # group is `foundation/`'s and keeps its 14 days.

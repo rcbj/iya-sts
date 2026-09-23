@@ -169,6 +169,70 @@ request asked for. The lifetime is `est.certificateLifetimeDays`.
 * An EST credential of its own: EST uses passwords, client secrets and
   certificates the service already has.
 
+## Configuration
+
+Every `est.*` setting is runtime and per trust realm, on **Protocols → EST**
+(`/admin/est`).
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `est.enabled` | `STS_EST_ENABLED` | `true` | yes | Off makes every `/.well-known/est` endpoint answer 503 in this realm; certificates already issued are kept. |
+| `est.allowedProfiles` | `STS_EST_ALLOWED_PROFILES` | all nine leaf profiles | yes | The `/admin/pki` profiles a label may name; the five CA, OCSP and KDC profiles are never issued whatever this says. |
+| `est.defaultProfile` | `STS_EST_DEFAULT_PROFILE` | `tls-client` | yes | What the unlabelled `/.well-known/est/simpleenroll` issues. |
+| `est.certificateLifetimeDays` | `STS_EST_CERTIFICATE_LIFETIME_DAYS` | `365` | yes | The validity of an EST certificate, shortened to the EST Issuing CA's own expiry. |
+| `est.maxRequestBytes` | `STS_EST_MAX_REQUEST_BYTES` | `65536` | yes | A PKCS#10 body larger than this is refused (413) before it is decoded. |
+| `est.attemptsPerIdentity` | `STS_EST_ATTEMPTS_PER_IDENTITY` | `10` | yes | Refused authentications or enrollments one username, `client_id` or certificate may make in a web-security window before 429. |
+| `est.attemptsPerAddress` | `STS_EST_ATTEMPTS_PER_ADDRESS` | `60` | yes | Refused requests one client address may make in a web-security window before 429. |
+| `est.basicAuthentication` | `STS_EST_BASIC_AUTHENTICATION` | `true` | yes | Accepts HTTP Basic with a person's password or an application's `client_id` and secret; whether the password is checked follows `global.mode`. |
+| `est.certificateAuthentication` | `STS_EST_CERTIFICATE_AUTHENTICATION` | `true` | yes | Accepts a TLS client certificate this realm issued, mapped to its entry; required for `/simplereenroll` with no Basic credential. |
+| `est.serverKeyGeneration` | `STS_EST_SERVER_KEY_GENERATION` | `true` | yes | Whether `/serverkeygen` generates the key pair — the one enrollment path in which this service holds a private key, kept sealed on the entry. |
+
+The nine leaf profiles are those in the table under
+[The endpoints](#the-endpoints). How many certificates one entry may hold
+across ACME, EST and SCEP is `pki.enrollmentMaxCertificatesPerEntry`
+([PKI](pki.md#configuration)). See [Configuration](configuration.md) for how a
+value resolves and where it is changed — the console page, or
+`POST /admin-api/config/set`.
+
+## Design decisions
+
+* **A label is a profile, not a CA.** RFC 7030 lets a server label its CAs;
+  here there is one EST Issuing CA per realm, and the label says what kind of
+  certificate is asked for. An unknown label is 404, a refused or disallowed
+  one 403.
+* **Authentication uses credentials the service already has.** A person's
+  password, an application's client secret or a certificate this realm issued —
+  EST gets no credential of its own. See [above](#authenticating).
+* **A Basic username is a person first.** Then an application's `client_id`,
+  so a person and an application sharing a name authenticate as the person.
+* **Nothing is parsed for an unauthenticated client.** The query string,
+  whether EST is on, the transport, the label, the rate limit, the media type
+  and the size are all decided before a credential is read, and the
+  credential before the body, so an unauthenticated client is never why a CSR
+  is decoded and verified.
+* **The certificate is decided by the profile and the entry.** Key usage,
+  extended key usage and basic constraints come from the profile, and a
+  requested name the entry does not own refuses the request rather than being
+  dropped — see [above](#what-the-ca-decides-not-the-request).
+* **A private key is kept only when this service generated it.**
+  `/simpleenroll` never sees one; `/serverkeygen` keeps a sealed copy on the
+  entry the certificate names — see [above](#server-generated-keys).
+* **A re-enrollment must repeat what it renews.** The subject and
+  subjectAltName must match the certificate being renewed (RFC 7030 section
+  4.2.2's "identical"), and the renewed certificate goes on the EST CRL as
+  `superseded`.
+* **A KEM key is certified for `key-encipherment` only.** An ML-KEM key cannot
+  sign a proof of possession, so it comes only from `/serverkeygen`, and never
+  under a profile whose key usage it cannot perform.
+* **A request body is decoded strictly.** RFC 8951 made whitespace legal and no
+  other stray byte, so anything outside the base64 alphabet is refused rather
+  than skipped the way a lenient decoder would.
+* **The CA, OCSP-responder and KDC profiles are never issued.** Each would make
+  its holder an authority over everybody else in the realm.
+* **Refusals are one plain-text sentence, and the code stays behind.** RFC 7030
+  asks for a human-readable message; the `STS-EST-*` code is on the audit row
+  and the monitor, never in the body.
+
 ## Console and management API
 
 * **Protocols → EST** (`/admin/est`): the endpoints and every profile's
@@ -182,3 +246,16 @@ request asked for. The lifetime is `est.certificateLifetimeDays`.
 
 Refusals are recorded under `STS-EST-*` and `STS-ENROLL-*` codes on the audit
 log (see [error codes](error-codes.md)); a client never sees a code.
+
+## Related
+
+* [PKI](pki.md) — the realm's certificate authority, its profiles, CRLs and
+  OCSP responders
+* [ACME](acme.md) and [SCEP](scep.md) — the other two enrollment protocols,
+  over the same rules
+* [TLS and mutual TLS](tls.md) — the client certificate EST accepts, and what
+  it signs in
+* [Trust realms](trust-realms.md)
+* [What is not checked](what-is-not-checked.md) — which passwords are checked
+  in which mode
+* [Configuration](configuration.md) and [error codes](error-codes.md)

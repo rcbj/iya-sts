@@ -351,18 +351,21 @@ async function holderKeys() {
   // of the runtime's OpenSSL — so, unlike `crypto.mlDsaAvailable()`'s
   // certificate path, there is no runtime to skip for. Guarded anyway, so a
   // library that cannot load reports itself rather than taking the file.
-  try {
-    const pq = pqJose.generate('ML-DSA-44');
-    const jwk = pqJose.akpPublicJwk('ML-DSA-44', pq.pub);
-    delete jwk.use;
-    out.push({ label: 'ML-DSA-44',
-               privateKey: Object.assign({ priv: Buffer.from(pq.priv)
-                 .toString('base64url') }, jwk),
-               jwk: jwk });
-  } catch (e) {
-    log.debug("Caught in holderKeys(): " + ((e && e.message) || e));
-    out.push({ label: 'ML-DSA-44', error: (e && e.message) || String(e) });
-  }
+  // SLH-DSA-SHA2-128s (slhdsa128-jcs-2024) since 2026-09-22 (#43).
+  ['ML-DSA-44', 'SLH-DSA-SHA2-128s'].forEach(function (alg) {
+    try {
+      const pq = pqJose.generate(alg);
+      const jwk = pqJose.akpPublicJwk(alg, pq.pub);
+      delete jwk.use;
+      out.push({ label: alg,
+                 privateKey: Object.assign({ priv: Buffer.from(pq.priv)
+                   .toString('base64url') }, jwk),
+                 jwk: jwk });
+    } catch (e) {
+      log.debug("Caught in holderKeys(): " + ((e && e.message) || e));
+      out.push({ label: alg, error: (e && e.message) || String(e) });
+    }
+  });
   log.debug("Leaving holderKeys().");
   return out;
 }
@@ -516,6 +519,24 @@ async function run(t) {
               return k.jwk ? di.cryptosuiteForJwk(k.jwk) : '';
             })[0], 'mldsa44-jcs-2024',
           'B2. an ML-DSA-44 holder key signs mldsa44-jcs-2024');
+  t.equal(keys.filter(function (k) {
+    return k.label === 'SLH-DSA-SHA2-128s';
+  }).map(function (k) {
+    return k.jwk ? di.cryptosuiteForJwk(k.jwk) : '';
+  })[0], 'slhdsa128-jcs-2024',
+          'B2. an SLH-DSA-SHA2-128s holder key signs slhdsa128-jcs-2024');
+  keys.filter(function (k) {
+    return k.label === 'SLH-DSA-SHA2-128s' && k.jwk;
+  }).forEach(function (k) {
+    const did = di.didKeyOf(k.jwk);
+    t.check(/^did:key:u/.test(did) &&
+            Buffer.from(did.slice('did:key:u'.length), 'base64url')
+              .subarray(0, 2).toString('hex') === 'a024' &&
+            JSON.stringify(di.resolveVerificationMethod(did).jwk) ===
+              JSON.stringify(di.publicJwkOf(k.jwk)),
+            'B3. an SLH-DSA-SHA2-128s did:key is base64url with the draft\'s ' +
+            '0xa024 prefix, and resolves back to the key', did);
+  });
 
   // -------------------------------------------------------------------------
   t.log.info('=== C. refusals ===');
@@ -696,8 +717,8 @@ async function run(t) {
             di.unsupportedReason(row[0]));
   });
   t.check(di.SUPPORTED_CRYPTOSUITES.join(',') ===
-          'ecdsa-jcs-2019,eddsa-jcs-2022,mldsa44-jcs-2024',
-          'D8. exactly the three JCS suites are supported',
+          'ecdsa-jcs-2019,eddsa-jcs-2022,mldsa44-jcs-2024,slhdsa128-jcs-2024',
+          'D8. exactly the four JCS suites are supported',
           di.SUPPORTED_CRYPTOSUITES.join(','));
   log.debug("Leaving run().");
 }

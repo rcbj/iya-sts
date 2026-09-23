@@ -1,0 +1,19 @@
+{%- comment -%}
+  The left-hand navigation, drawn from _data/navigation.yml. No script: on a
+  narrow screen the checkbox below is toggled by the header's menu button and
+  CSS shows or hides the list, which is the arrangement minima's own header
+  used.
+{%- endcomment -%}
+<input type="checkbox" id="sidebar-trigger" class="sidebar-trigger" />
+<nav class="sidebar" aria-label="Documentation">
+  {%- for group in site.data.navigation %}
+  <div class="sidebar-section">
+    <p class="sidebar-heading">{{ group.section | escape }}</p>
+    <ul>
+      {%- for item in group.items %}
+      <li><a href="{{ item.url | relative_url }}"{% if page.url == item.url %} class="current" aria-current="page"{% endif %}>{{ item.title | escape }}</a></li>
+      {%- endfor %}
+    </ul>
+  </div>
+  {%- endfor %}
+</nav>

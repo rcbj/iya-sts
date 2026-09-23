@@ -32,6 +32,7 @@
     "body-parser": "^2.2.2",
     "bunyan": "latest",
     "cors": "^2.8.5",
+    "croner": "^10.0.1",
     "express": "^4.22.2",
     "generate-password": "^1.7.1",
     "jsonld": "^9.0.0",
@@ -78,6 +79,15 @@
     "@aws-sdk/client-secrets-manager": "^3.0.0",
     "@azure/identity": "^4.0.0",
     "@azure/keyvault-secrets": "^4.0.0",
+    "@aws-sdk/client-ec2": "^3.0.0",
+    "@aws-sdk/client-iam": "^3.0.0",
+    "@aws-sdk/client-organizations": "^3.0.0",
+    "@aws-sdk/client-eks": "^3.0.0",
+    "@aws-sdk/client-auto-scaling": "^3.0.0",
+    "@aws-sdk/credential-providers": "^3.0.0",
+    "@google-cloud/compute": "^4.0.0",
+    "@azure/arm-resourcegraph": "^4.0.0",
+    "@azure/arm-compute": "^22.0.0",
     "@google-cloud/secret-manager": "^5.0.0",
     "node-vault": "^0.10.0"
   },
@@ -95,6 +105,33 @@
       "optional": true
     },
     "node-vault": {
+      "optional": true
+    },
+    "@aws-sdk/client-ec2": {
+      "optional": true
+    },
+    "@aws-sdk/client-iam": {
+      "optional": true
+    },
+    "@aws-sdk/client-organizations": {
+      "optional": true
+    },
+    "@aws-sdk/client-eks": {
+      "optional": true
+    },
+    "@aws-sdk/client-auto-scaling": {
+      "optional": true
+    },
+    "@aws-sdk/credential-providers": {
+      "optional": true
+    },
+    "@google-cloud/compute": {
+      "optional": true
+    },
+    "@azure/arm-resourcegraph": {
+      "optional": true
+    },
+    "@azure/arm-compute": {
       "optional": true
     }
   }

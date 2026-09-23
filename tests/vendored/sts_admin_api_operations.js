@@ -856,7 +856,11 @@ async function everyDocumentedExampleIsAccepted(doc) {
   for (const row of rows) {
     const reply = await post(row.path, row.example);
     const errors = (reply.body && reply.body.errors) || [];
-    if (reply.status === 200 && reply.body && reply.body.ok !== false) {
+    // 202 IS ACCEPTED TOO (2026-09-22): an operation that QUEUES a run on
+    // the scheduler (`/scheduler/run`, #49) answers 202 with the run's id,
+    // which is RFC 9110's "accepted for processing" and not a refusal.
+    if ((reply.status === 200 || reply.status === 202) && reply.body &&
+        reply.body.ok !== false) {
       accepted++;
       await theResourceReadsBack(row.path, row.operationId);
       continue;
@@ -4063,9 +4067,35 @@ async function theKerberosPrincipalsRoundTrip() {
                     mail: keyPerson + "@admin-api-operations.test" },
       credential: "password", password: MINT_PASSWORD
     }, "created " + keyPerson + " to hold (or not hold) Kerberos keys", true);
+    // READ BACK in the scope it was written in — the root — the way
+    // ensureTokenParties() reads its people back (2026-09-21). This create
+    // arrived on 2026-09-19 without one, and the ledger's last check
+    // (everyAcceptedWriteWasReadBack) failed the whole job in every mode.
+    const keyPersonBack = await get("/users?user=" +
+                                    encodeURIComponent(keyPerson), true);
+    assert.strictEqual(keyPersonBack.status, 200,
+      "GET /users?user=" + keyPerson + " should read the person just " +
+      "created; it answered " + keyPersonBack.status);
     const product = await facts.isProduct(rootApi);
-    const firstClear = await ok("/kerberos/principals/clear-person-keys",
+    // THE WINDOW (kerberos/krb5_person_keys.ts's header): a password set
+    // derives its keys AFTER the act — PBKDF2, up to 32768 iterations — so a
+    // clear sent the moment the create answers can find nothing yet. On
+    // 2026-09-21's first local product run the clear answered before .314
+    // and the keys landed at .328. A clear that finds nothing changes
+    // nothing, so in product mode it is asked again until the keys are there.
+    // (The service's own side of that race — a clear inside the window is
+    // undone by the derivation landing after it — is recorded, not fixed.)
+    const clearDeadline = Date.now() + 8000;
+    let firstClear = await ok("/kerberos/principals/clear-person-keys",
       { username: keyPerson }, "cleared the new person's keys", true);
+    while (product && firstClear.cleared === false &&
+           Date.now() < clearDeadline) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 100);
+      });
+      firstClear = await ok("/kerberos/principals/clear-person-keys",
+        { username: keyPerson }, "cleared the new person's keys", true);
+    }
     assert.strictEqual(firstClear.cleared, product,
       "a person just given a password holds derived Kerberos keys in " +
       "PRODUCT mode and none in development, so the first clear should " +
@@ -4933,7 +4963,17 @@ async function settleThenStatus(previous) {
 // The table stays rather than the constant being deleted, because the next
 // operation that cannot be driven here needs somewhere to say why — and an
 // empty object is a much better prompt for that than no object at all.
-const NOT_DRIVEN_HERE = {};
+const NOT_DRIVEN_HERE = {
+  // SIGNING KEY ROTATION (#48, 2026-09-22). Driven by `sts_key_rotation.js`,
+  // end to end and in a realm of its own: a rotation is checked against the
+  // JWKS, the crypto metadata document and a token signed before it, which a
+  // walk that only asks for a 2xx could not do — and an EMERGENCY signs every
+  // session of its realm out, which is not a call to make in passing here.
+  "POST /keys/rotate": "sts_key_rotation.js drives it, and checks what it " +
+    "did",
+  "POST /keys/emergency": "sts_key_rotation.js drives it in a throwaway " +
+    "realm; an emergency ends every session of the realm it runs in"
+};
 
 function everyDocumentedOperationWasDriven(doc) {
   log.debug("Entering everyDocumentedOperationWasDriven().");

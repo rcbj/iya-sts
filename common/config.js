@@ -774,14 +774,23 @@ const SETTINGS = [
 
   { key: 'global.proxyProtocolTimeoutMs', group: 'Global',
     label: 'PROXY protocol header timeout (ms)',
-    env: 'STS_PROXY_PROTOCOL_TIMEOUT_MS', type: 'int', dflt: 5000,
+    // 30 SECONDS SINCE 2026-09-21, from 5. An AWS NLB writes the header WITH
+    // the client's first data, so the clock runs until the client's TLS hello
+    // arrives — and from a client on the public internet a lost segment and
+    // its TCP retransmissions can take longer than 5s. That cut off one
+    // `sts_est_enrollment` request on the ci environment (STS-PROXY-0007, 0
+    // bytes, then ECONNRESET at the client). Thirty still closes a socket
+    // that never speaks.
+    env: 'STS_PROXY_PROTOCOL_TIMEOUT_MS', type: 'int', dflt: 30000,
     min: 100, max: 60000, runtime: true, perProcess: true,
     description: 'How long a connection from a trusted proxy may take to ' +
                  'send its complete PROXY protocol header before it is ' +
-                 'closed. A balancer writes the header in the first segment, ' +
-                 'so this bounds a slow or stalled sender holding a socket ' +
-                 'open, not a real client. Read only with ' +
-                 'global.proxyProtocol on.' },
+                 'closed. An AWS network load balancer writes the header ' +
+                 'with the client\'s first data, so this is also how long ' +
+                 'a client may take to send its first bytes — generous ' +
+                 'enough for a client on a lossy internet path, short ' +
+                 'enough to bound a stalled sender holding a socket open. ' +
+                 'Read only with global.proxyProtocol on.' },
 
   // Added 2026-09-12. `baseUrlOf()` read the request's Host header and nothing
   // else could pin it, so a caller chose what this service believed its own
@@ -926,6 +935,24 @@ const SETTINGS = [
     description: 'RFC 9767 section 3.1\'s token_formats_supported. A format ' +
                  'not listed is never issued, and a resource set that ' +
                  'accepts only unlisted formats is refused at registration.' },
+  { key: 'gnap.zcapCryptosuite', group: 'GNAP', label: 'ZCAP proof suite',
+    path: 'gnap.zcapCryptosuite', env: 'STS_GNAP_ZCAP_CRYPTOSUITE',
+    type: 'enum',
+    enumValues: ['eddsa-jcs-2022', 'mldsa44-jcs-2024', 'slhdsa128-jcs-2024',
+                 'Ed25519Signature2020'],
+    dflt: 'eddsa-jcs-2022', runtime: true,
+    description: 'The Data Integrity proof a zcap token is signed with, and ' +
+                 'the only one this realm accepts back. eddsa-jcs-2022 (a ' +
+                 'W3C Recommendation) signs the JSON itself, so what is ' +
+                 'signed is what a resource server reads. mldsa44-jcs-2024 ' +
+                 'and slhdsa128-jcs-2024 are post-quantum, from a W3C First ' +
+                 'Public Working Draft. WARNING: Ed25519Signature2020 is for ' +
+                 'compatibility with verifiers that know nothing newer — it ' +
+                 'signs the RDF canonicalization of the capability rather ' +
+                 'than the JSON, is safe here only because the @context is ' +
+                 'pinned, and a resource server cannot verify it without a ' +
+                 'JSON-LD processor. Changing it strands zcap tokens already ' +
+                 'issued.' },
   { key: 'gnap.accessTokenLifetimeS', group: 'GNAP', label: 'Access token ' +
       'lifetime (seconds)',
     path: 'gnap.accessTokenLifetimeS', env: 'STS_GNAP_ACCESS_TOKEN_LIFETIME_S',
@@ -1317,6 +1344,21 @@ const SETTINGS = [
   // FACING SURFACES**, and a session lifetime is the first thing a deployment's
   // security review asks for. The keys say which module reads them.
   // ---------------------------------------------------------------------
+  { key: 'authn.sessionSweepS', group: 'Web security',
+    label: 'How often expired sessions are ended (seconds)',
+    env: 'STS_AUTHN_SESSION_SWEEP_S', type: 'int', dflt: 30, min: 0,
+    max: 86400, runtime: true,
+    description: 'The interval of the scheduler job `authn.session-expiry` ' +
+                 '(Monitoring → Scheduler), which ends every sign-on session ' +
+                 'whose lifetime or idle timeout has passed — the audit row, ' +
+                 'CAEP session-revoked and the back-channel Logout Tokens ' +
+                 'going out ONCE for the whole cluster — whether or not ' +
+                 'anybody comes back to present it. 0 switches the job off: ' +
+                 'an expired session is then still refused whenever it is ' +
+                 'presented, and ended at that moment, but nobody is told of ' +
+                 'one that is never presented again. It was a fixed thirty ' +
+                 'seconds in every process until 2026-09-22 (#49).' },
+
   { key: 'authn.sessionLifetimeS', group: 'Web security',
     label: 'Session lifetime (seconds)',
     env: 'STS_AUTHN_SESSION_LIFETIME_S',
@@ -3668,6 +3710,28 @@ const SETTINGS = [
                  'permits. Changing this does not move a statement already ' +
                  'issued; its `exp` is inside its signature.' },
 
+  // CLIENT-SECRET ROTATION AND EXPIRY (2026-09-22, #49 P5).
+  { key: 'oauth2.clientSecretOverlapS', group: 'OAuth 2.0 / OIDC',
+    label: 'Keep a rotated client secret working for (seconds)',
+    env: 'STS_OAUTH2_CLIENT_SECRET_OVERLAP_S', type: 'int', dflt: 604800,
+    min: 0, max: 31536000, runtime: true,
+    description: 'How long the secret a ROTATION replaced (Rotate secret on ' +
+                 '/admin/applications, or rotate-secret on /admin-api) goes ' +
+                 'on authenticating at the token endpoint beside the new ' +
+                 'one, so a client can change over without an outage. A ' +
+                 'week by default; 0 makes a rotation a regeneration, which ' +
+                 'ends the old secret at once.' },
+  { key: 'oauth2.clientSecretExpiryWarningDays', group: 'OAuth 2.0 / OIDC',
+    label: 'Warn about an expiring client secret this many days ahead',
+    env: 'STS_OAUTH2_CLIENT_SECRET_EXPIRY_WARNING_DAYS', type: 'int',
+    dflt: 14, min: 0, max: 365, runtime: true,
+    description: 'The daily scheduler job oauth2.client-secret-expiry ' +
+                 'writes an audit row and a warning for every application ' +
+                 'whose secret expires within this many days (its ' +
+                 'oauthClientSecretExpiresAt, or its registration\'s ' +
+                 'client_secret_expires_at), and /admin/applications marks ' +
+                 'it. 0 warns only once it has expired.' },
+
   { key: 'oauth2.registeredSecretLifetimeS', group: 'OAuth 2.0 / OIDC',
     label: 'Dynamically registered secret lifetime (s)',
     env: 'STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S', type: 'int', dflt: 0,
@@ -4681,6 +4745,21 @@ const SETTINGS = [
   // client's machine and one is about this one — and a deployment that wants a
   // strict assertion check and a forgiving expiry reading, or the reverse, has
   // to be able to say so.
+  // THE TRACKED TOKENS' RETENTION (#49 P5): how long past its expiry a
+  // token stays on /admin/tokens before oauth2.expired-token-purge deletes
+  // its record.
+  { key: 'oauth2.expiredTokenRetentionS', group: 'OAuth 2.0 / OIDC',
+    label: 'Keep an expired token on /admin/tokens for (seconds)',
+    env: 'STS_OAUTH2_EXPIRED_TOKEN_RETENTION_S', type: 'int', dflt: 86400,
+    min: 0, max: 31536000, runtime: true,
+    description: 'How long a token this service issued stays in the ' +
+                 'register /admin/tokens and /admin-api/tokens read after it ' +
+                 'has expired (its exp plus oauth2.clockSkewS), before the ' +
+                 'hourly scheduler job oauth2.expired-token-purge deletes ' +
+                 'its record. The revocation of an expired token is deleted ' +
+                 'at its expiry, since no verifier accepts it any more. A ' +
+                 'day by default; 0 deletes a record as soon as it expires.' },
+
   { key: 'oauth2.clockSkewS', group: 'OAuth 2.0 / OIDC',
     label: 'Token clock skew (s)',
     env: 'STS_OAUTH2_CLOCK_SKEW_S', type: 'int', dflt: 30,
@@ -5214,7 +5293,8 @@ const SETTINGS = [
     label: 'Back-channel logout sweep interval (seconds)',
     env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_SWEEP_S', type: 'int', dflt: 10,
     min: 1, max: 3600, runtime: true,
-    description: 'How often every process looks for deliveries that are due ' +
+    description: 'How often the scheduler\'s oauth2.backchannel-logout-sweep ' +
+                 'job (on the leader) looks for deliveries that are due ' +
                  '— a retry whose backoff has passed, a lease that lapsed, a ' +
                  'row restored after a restart — and dead-letters any still ' +
                  'pending past the retention. The process that planned a ' +
@@ -8468,8 +8548,10 @@ const SETTINGS = [
     runtime: true,
     description: 'Published as critical_subject_members: the members of a ' +
                  'COMPLEX subject a receiver of this transmitter\'s events ' +
-                 'MUST understand. The six SSF defines are user, device, ' +
-                 'session, tenant, org_unit and group. Naming one here is a ' +
+                 'MUST understand. The seven SSF 1.0 section 3.3 defines are ' +
+                 'user, device, session, application, tenant, org_unit and ' +
+                 'group, and an additional member name may be listed too. ' +
+                 'Naming one here is a ' +
                  'promise, so this service also refuses to ADD a complex ' +
                  'subject that omits it — a transmitter that published a ' +
                  'critical member and then left it out would be producing ' +
@@ -8683,13 +8765,65 @@ const SETTINGS = [
                  'with it off the events queue on the two streams and reach ' +
                  'neither page.' },
 
-  { key: 'ssf.maxStreams', group: 'SSF', label: 'Streams per realm',
+  { key: 'ssf.maxStreams', group: 'SSF', label: 'Streams per receiver',
     env: 'STS_SSF_MAX_STREAMS', type: 'int', dflt: 25, min: 1, max: 1000,
     runtime: true,
-    description: 'How many streams one trust realm may hold. A create past ' +
-                 'it is refused NAMING THIS SETTING, which is the point of ' +
-                 'having a limit on a mock at all: every ceiling here is a ' +
-                 'reachable negative a receiver cannot otherwise exercise.' },
+    description: 'How many streams one RECEIVER — one authenticated owner — ' +
+                 'may hold in a trust realm. It was per realm until ' +
+                 '2026-09-22 (#144), which let one receiver use up every ' +
+                 'other receiver\'s allowance. A create past it is refused ' +
+                 'NAMING THIS SETTING, which is the point of having a limit ' +
+                 'on a mock at all: every ceiling here is a reachable ' +
+                 'negative a receiver cannot otherwise exercise. This ' +
+                 'service\'s own two receiver streams are not counted.' },
+
+  { key: 'ssf.inactivityTimeoutS', group: 'SSF',
+    label: 'Stream inactivity timeout (s)',
+    env: 'STS_SSF_INACTIVITY_TIMEOUT_S', type: 'int', dflt: 0, min: 0,
+    max: 31536000, runtime: true,
+    description: 'SSF 1.0 section 8.1.1\'s inactivity_timeout: after this ' +
+                 'many seconds with no activity from a receiver — any ' +
+                 'management call naming its stream, or a poll of a poll ' +
+                 'stream — the stream is dealt with as ' +
+                 'ssf.inactivityAction says, and the value is published on ' +
+                 'every stream configuration. ZERO, the default, is no ' +
+                 'timeout and publishes nothing: a PUSH receiver never has ' +
+                 'to call back after it creates its stream, so a timeout on ' +
+                 'by default would pause every healthy push stream. This ' +
+                 'service\'s own two receiver streams are never timed out.' },
+
+  { key: 'ssf.inactivityAction', group: 'SSF',
+    label: 'What an inactive stream becomes',
+    env: 'STS_SSF_INACTIVITY_ACTION', type: 'enum',
+    enumValues: ['pause', 'disable', 'delete'], dflt: 'pause', runtime: true,
+    description: 'The three things section 8.1.1 allows. Pause and disable ' +
+                 'send the receiver a stream-updated event BEFORE the ' +
+                 'stream stops, which the specification requires; a paused ' +
+                 'stream keeps queueing and a disabled one drops what is ' +
+                 'waiting. Delete removes the stream and sends nothing, ' +
+                 'because there is no stream left to send it on.' },
+
+  { key: 'ssf.verificationEveryS', group: 'SSF',
+    label: 'Transmitter-initiated verification (s)',
+    env: 'STS_SSF_VERIFICATION_EVERY_S', type: 'int', dflt: 0, min: 0,
+    max: 31536000, runtime: true,
+    description: 'SSF 1.0 section 8.1.4: a transmitter MAY send a ' +
+                 'verification event at any time. With this above zero ' +
+                 'every ENABLED stream is sent one, with no state (section ' +
+                 '8.1.4.2 forbids a state the receiver did not supply), ' +
+                 'when it has had none for this many seconds. Zero, the ' +
+                 'default, sends one only when a receiver asks or an ' +
+                 'operator presses Verify on /admin/ssf.' },
+
+  { key: 'ssf.streamMaintenanceSweepS', group: 'SSF',
+    label: 'Stream maintenance sweep interval (s)',
+    env: 'STS_SSF_STREAM_MAINTENANCE_SWEEP_S', type: 'int', dflt: 60,
+    min: 5, max: 86400, runtime: true,
+    description: 'How often the ssf.stream-maintenance scheduler job looks ' +
+                 'for inactive streams and for streams due a ' +
+                 'transmitter-initiated verification event. It runs on one ' +
+                 'node for the cluster and does nothing while both ' +
+                 'ssf.inactivityTimeoutS and ssf.verificationEveryS are 0.' },
 
   { key: 'ssf.maxSubjectsPerStream', group: 'SSF', label: 'Subjects per stream',
     env: 'STS_SSF_MAX_SUBJECTS_PER_STREAM', type: 'int', dflt: 100, min: 1,
@@ -8760,6 +8894,26 @@ const SETTINGS = [
                  'way, because a receiver that refused an unverifiable ' +
                  'event would be unable to show a person WHY it was ' +
                  'unverifiable. Off answers 501.' },
+
+  { key: 'ssf.receiveAudiences', group: 'SSF',
+    label: 'Audiences POST /ssf/receive answers to',
+    env: 'STS_SSF_RECEIVE_AUDIENCES', type: 'csv', dflt: '', runtime: true,
+    description: 'The `aud` values the debugger-facing receiver at ' +
+                 'POST /ssf/receive accepts. A SET addressed to none of ' +
+                 'them is recorded and refused with invalid_audience, as a ' +
+                 'real receiver refuses it. EMPTY means the endpoint\'s own ' +
+                 'URL in this realm, which is the name a transmitter can ' +
+                 'discover without being told one.' },
+
+  { key: 'ssf.receiveIssuers', group: 'SSF',
+    label: 'Issuers POST /ssf/receive accepts',
+    env: 'STS_SSF_RECEIVE_ISSUERS', type: 'csv', dflt: '', runtime: true,
+    description: 'The `iss` values POST /ssf/receive accepts (SSF 1.0 ' +
+                 'section 4.1.6: a receiver MUST check the issuer). A SET ' +
+                 'from any other issuer is recorded and refused with ' +
+                 'invalid_issuer. EMPTY means this realm\'s own transmitter ' +
+                 'issuer — the only issuer whose SETs this receiver can ' +
+                 'verify, since it holds no other key.' },
 
   { key: 'ssf.receiveRequireSignature', group: 'SSF',
     label: 'Refuse a SET whose signature does not verify',
@@ -9403,8 +9557,11 @@ const SETTINGS = [
                  '— and this one answers a question about THIS service. Two ' +
                  'questions, two documents, so that editing the demo policy ' +
                  'cannot change who may sign in and narrowing a role cannot ' +
-                 'change what /xacml/pdp answers. It is created from the ' +
-                 '`role-issuance` template and seeded on first start.' },
+                 'change what /xacml/pdp answers. The `role-issuance` ' +
+                 'policy is BUILT IN and is never seeded into ou=policies: ' +
+                 'a repository entry with this name, written into a realm\'s ' +
+                 'own ou=policies, overrides it for that realm alone, and ' +
+                 'deleting the entry brings the built-in back.' },
 
   // --- Audit log -----------------------------------------------------------
   //
@@ -9751,6 +9908,553 @@ const SETTINGS = [
     runtime: true,
     description: 'How long a join token from CreateJoinToken lives when the ' +
                  'request names no ttl. A request\'s own ttl still wins.' },
+
+  // #40 (2026-09-21): the node attestors AttestAgent accepts, per realm. A
+  // type not named here — or named and not one this build can verify — is
+  // refused with FAILED_PRECONDITION; nothing is taken on trust in any mode.
+  { key: 'spiffe.nodeAttestors', group: 'SPIFFE', label: 'Node attestors ' +
+      'accepted',
+    env: 'STS_SPIFFE_NODE_ATTESTORS', type: 'csv', dflt: 'join_token',
+    runtime: true,
+    description: 'The attestation types Agent.AttestAgent accepts in this ' +
+                 'realm, comma-separated — SPIRE\'s NodeAttestor plugins. ' +
+                 'Each is VERIFIED: a type not listed, or listed and not one ' +
+                 'this server can verify, is refused with ' +
+                 'FAILED_PRECONDITION, as SPIRE refuses an attestor it has ' +
+                 'no plugin for. join_token, the default, needs nothing but ' +
+                 'a token from CreateJoinToken. GET /spiffe lists the types ' +
+                 'this build verifies.' },
+
+  { key: 'spiffe.attestationChallengeTimeout', group: 'SPIFFE',
+    label: 'Attestation challenge timeout (s)',
+    env: 'STS_SPIFFE_ATTESTATION_CHALLENGE_TIMEOUT', type: 'int', dflt: 30,
+    min: 1, max: 600, runtime: true,
+    description: 'How long AttestAgent waits for an agent\'s ' +
+                 'challenge_response once a node attestor has challenged it. ' +
+                 'Past it the call fails with DEADLINE_EXCEEDED and nothing ' +
+                 'is spent.' },
+
+  // #40 phase two (2026-09-21): the x509pop, sshpop and tpm_devid node
+  // attestors, each configured per realm with SPIRE's own options. A trust
+  // anchor is PEM text here where SPIRE takes a file path, as
+  // oid4vp.trustedIssuerCertificates is, so the console and /admin-api can set
+  // it; an attestor with no anchor configured refuses every agent.
+  { key: 'spiffe.x509popMode', group: 'SPIFFE', label: 'x509pop mode',
+    env: 'STS_SPIFFE_X509POP_MODE', type: 'enum', dflt: 'external_pki',
+    enumValues: ['external_pki', 'spiffe'], runtime: true,
+    description: 'SPIRE\'s x509pop `mode`. external_pki verifies the agent\'s ' +
+                 'certificate against spiffe.x509popCaBundle; spiffe verifies ' +
+                 'it against this realm\'s own SPIFFE trust bundle and names ' +
+                 'the agent after its X509-SVID path below ' +
+                 'spiffe.x509popSpiffePrefix.' },
+
+  { key: 'spiffe.x509popCaBundle', group: 'SPIFFE',
+    label: 'x509pop trust anchors (PEM)',
+    env: 'STS_SPIFFE_X509POP_CA_BUNDLE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'PEM certificates, concatenated — SPIRE\'s ca_bundle_path(s). ' +
+                 'In external_pki mode an agent\'s certificate must chain to ' +
+                 'one of them; empty refuses every x509pop agent. A root ' +
+                 'need not be self-signed, as in SPIRE.' },
+
+  { key: 'spiffe.x509popSpiffePrefix', group: 'SPIFFE',
+    label: 'x509pop SVID path prefix',
+    env: 'STS_SPIFFE_X509POP_SPIFFE_PREFIX', type: 'string',
+    dflt: '/spire-exchange/', runtime: true,
+    description: 'SPIRE\'s spiffe_prefix: in spiffe mode the agent\'s ' +
+                 'X509-SVID path must start with it, and what follows it is ' +
+                 'SVIDPathTrimmed in the agent path template.' },
+
+  { key: 'spiffe.x509popAgentPathTemplate', group: 'SPIFFE',
+    label: 'x509pop agent path template',
+    env: 'STS_SPIFFE_X509POP_AGENT_PATH_TEMPLATE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s agent_path_template. Empty is SPIRE\'s default for ' +
+                 'the mode: /{{ .PluginName }}/{{ .Fingerprint }}, or ' +
+                 '/{{ .PluginName }}/{{ .SVIDPathTrimmed }} in spiffe mode. ' +
+                 'Field references and sprig\'s string, hash and encoding ' +
+                 'functions are evaluated; the rest of Go\'s template ' +
+                 'language is refused rather than rendered differently.' },
+
+  { key: 'spiffe.x509popMaxIntermediates', group: 'SPIFFE',
+    label: 'x509pop intermediates allowed',
+    env: 'STS_SPIFFE_X509POP_MAX_INTERMEDIATES', type: 'int', dflt: 4, min: 1,
+    max: 32, runtime: true,
+    description: 'SPIRE\'s max_intermediates: an attestation carrying more ' +
+                 'intermediate certificates is refused before any is read.' },
+
+  { key: 'spiffe.x509popMaxRsaKeySize', group: 'SPIFFE',
+    label: 'x509pop largest RSA key (bits)',
+    env: 'STS_SPIFFE_X509POP_MAX_RSA_KEY_SIZE', type: 'int', dflt: 8192,
+    min: 1024, max: 16384, runtime: true,
+    description: 'SPIRE\'s max_rsa_key_size: an RSA key larger than this on ' +
+                 'any certificate presented is refused, because verifying ' +
+                 'with a huge key is the expensive half of the protocol.' },
+
+  { key: 'spiffe.x509popVerifyClientIp', group: 'SPIFFE',
+    label: 'x509pop verifies the client address',
+    env: 'STS_SPIFFE_X509POP_VERIFY_CLIENT_IP', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s verify_client_ip: the address the agent connected ' +
+                 'from must be one of the leaf certificate\'s IP ' +
+                 'subjectAltNames. An agent on the Unix socket has no address ' +
+                 'and is refused.' },
+
+  { key: 'spiffe.x509popGroupTemplate', group: 'SPIFFE',
+    label: 'x509pop group template',
+    env: 'STS_SPIFFE_X509POP_GROUP_TEMPLATE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s group_template: rendered over the verified ' +
+                 'certificate, and when the result is one of ' +
+                 'spiffe.x509popAllowedGroups the agent gets the selector ' +
+                 'x509pop:group:<it>. Set both or neither.' },
+
+  { key: 'spiffe.x509popAllowedGroups', group: 'SPIFFE',
+    label: 'x509pop allowed groups',
+    env: 'STS_SPIFFE_X509POP_ALLOWED_GROUPS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s allowed_groups, comma-separated: the only values ' +
+                 'spiffe.x509popGroupTemplate may produce a selector for.' },
+
+  { key: 'spiffe.sshpopCertAuthorities', group: 'SPIFFE',
+    label: 'sshpop host certificate authorities',
+    env: 'STS_SPIFFE_SSHPOP_CERT_AUTHORITIES', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s cert_authorities: SSH public keys in ' +
+                 'authorized_keys form, one per line, whose host ' +
+                 'certificates an sshpop agent may present. Empty refuses ' +
+                 'every sshpop agent.' },
+
+  { key: 'spiffe.sshpopCanonicalDomain', group: 'SPIFFE',
+    label: 'sshpop canonical domain',
+    env: 'STS_SPIFFE_SSHPOP_CANONICAL_DOMAIN', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s canonical_domain: the host certificate\'s first ' +
+                 'principal must end in .<it>, and the Hostname in the agent ' +
+                 'path template is the principal without it. Empty takes the ' +
+                 'principal whole.' },
+
+  { key: 'spiffe.sshpopAgentPathTemplate', group: 'SPIFFE',
+    label: 'sshpop agent path template',
+    env: 'STS_SPIFFE_SSHPOP_AGENT_PATH_TEMPLATE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s agent_path_template for sshpop. Empty is ' +
+                 '/{{ .PluginName }}/{{ .Fingerprint }}; the same subset of ' +
+                 'Go\'s template language as x509pop\'s.' },
+
+  { key: 'spiffe.sshpopVerifyClientIp', group: 'SPIFFE',
+    label: 'sshpop verifies the client address',
+    env: 'STS_SPIFFE_SSHPOP_VERIFY_CLIENT_IP', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s verify_client_ip: the host certificate must carry ' +
+                 'a source-address critical option and the agent\'s address ' +
+                 'must be in it.' },
+
+  { key: 'spiffe.tpmDevidCaBundle', group: 'SPIFFE',
+    label: 'tpm_devid DevID trust anchors (PEM)',
+    env: 'STS_SPIFFE_TPM_DEVID_CA_BUNDLE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s devid_ca_path: PEM certificates a tpm_devid ' +
+                 'agent\'s DevID certificate must chain to. Empty refuses ' +
+                 'every tpm_devid agent.' },
+
+  { key: 'spiffe.tpmEndorsementCaBundle', group: 'SPIFFE',
+    label: 'tpm_devid endorsement trust anchors (PEM)',
+    env: 'STS_SPIFFE_TPM_ENDORSEMENT_CA_BUNDLE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s endorsement_ca_path: PEM certificates of the TPM ' +
+                 'manufacturers whose endorsement key certificates are ' +
+                 'trusted. Empty refuses every tpm_devid agent.' },
+
+  // #40 phase three (2026-09-21): k8s_psat, http_challenge, aws_iid,
+  // gcp_iit and azure_imds. NO CREDENTIAL IS EVER A SETTING HERE — a
+  // setting is drawn on the console, returned by /admin-api and persisted —
+  // so where SPIRE takes an access key, an app secret or a token inline,
+  // this takes a FILE PATH or the SDK's own credential chain (instance role,
+  // workload identity, managed identity, the environment).
+  { key: 'spiffe.k8sPsatClusters', group: 'SPIFFE',
+    label: 'k8s_psat clusters (JSON)',
+    env: 'STS_SPIFFE_K8S_PSAT_CLUSTERS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s k8s_psat `clusters`, as a JSON object from cluster ' +
+                 'name to {"serviceAccountAllowList": ["ns:sa", …], ' +
+                 '"audience": [...] (default ["spire-server"]), ' +
+                 '"apiServer": "https://…" , "caFile": "/path", ' +
+                 '"tokenFile": "/path", "allowedNodeLabelKeys": [...], ' +
+                 '"allowedPodLabelKeys": [...], "usePodUidForAgentId": ' +
+                 'false}. With no apiServer the in-cluster service account ' +
+                 'is used, as SPIRE\'s empty kube_config_file means. The ' +
+                 'bearer token is always read from a FILE. Empty refuses ' +
+                 'every k8s_psat agent.' },
+
+  { key: 'spiffe.httpChallengeAllowedDnsPatterns', group: 'SPIFFE',
+    label: 'http_challenge allowed host names (regular expressions)',
+    env: 'STS_SPIFFE_HTTP_CHALLENGE_ALLOWED_DNS_PATTERNS', type: 'csv',
+    dflt: '', runtime: true,
+    description: 'SPIRE\'s allowed_dns_patterns, comma-separated regular ' +
+                 'expressions. An http_challenge agent\'s host name must ' +
+                 'match one BEFORE this server looks it up or dials it. ' +
+                 'Stricter than SPIRE: empty refuses every http_challenge ' +
+                 'agent, where SPIRE\'s empty list allows any name — this ' +
+                 'attestor is the one place the server dials an address a ' +
+                 'caller named.' },
+
+  { key: 'spiffe.httpChallengeRequiredPort', group: 'SPIFFE',
+    label: 'http_challenge required port',
+    env: 'STS_SPIFFE_HTTP_CHALLENGE_REQUIRED_PORT', type: 'int', dflt: 0,
+    min: 0, max: 65535, runtime: true,
+    description: 'SPIRE\'s required_port. 0 allows any port the next ' +
+                 'setting allows.' },
+
+  { key: 'spiffe.httpChallengeAllowNonRootPorts', group: 'SPIFFE',
+    label: 'http_challenge allows ports above 1023',
+    env: 'STS_SPIFFE_HTTP_CHALLENGE_ALLOW_NON_ROOT_PORTS', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'SPIRE\'s allow_non_root_ports. Off, only a port a process ' +
+                 'must be root to bind is accepted — the proof then says ' +
+                 'root on that host.' },
+
+  { key: 'spiffe.httpChallengeTofu', group: 'SPIFFE',
+    label: 'http_challenge trusts on first use',
+    env: 'STS_SPIFFE_HTTP_CHALLENGE_TOFU', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'SPIRE\'s tofu: on, a host name attests ONCE until its agent ' +
+                 'is deleted. It may be turned off only when ' +
+                 'spiffe.httpChallengeRequiredPort is below 1024 or ' +
+                 'non-root ports are not allowed, as in SPIRE.' },
+
+  { key: 'spiffe.httpChallengeVerifyClientIp', group: 'SPIFFE',
+    label: 'http_challenge verifies the client address',
+    env: 'STS_SPIFFE_HTTP_CHALLENGE_VERIFY_CLIENT_IP', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s verify_client_ip: the address the agent connected ' +
+                 'from must be one its host name resolves to.' },
+
+  { key: 'spiffe.awsIidPartition', group: 'SPIFFE',
+    label: 'aws_iid partition', env: 'STS_SPIFFE_AWS_IID_PARTITION',
+    type: 'enum', enumValues: ['aws', 'aws-cn', 'aws-us-gov'], dflt: 'aws',
+    runtime: true,
+    description: 'SPIRE\'s partition, used to build the assume_role ARN.' },
+
+  { key: 'spiffe.awsIidAssumeRole', group: 'SPIFFE',
+    label: 'aws_iid role to assume in the node\'s account',
+    env: 'STS_SPIFFE_AWS_IID_ASSUME_ROLE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s assume_role: a role NAME assumed in each node\'s ' +
+                 'account before EC2 and IAM are asked about it. Empty uses ' +
+                 'the SDK\'s credential chain directly. Access keys are never ' +
+                 'a setting here — the chain reads them from the environment ' +
+                 'or the instance role.' },
+
+  { key: 'spiffe.awsIidSkipBlockDevice', group: 'SPIFFE',
+    label: 'aws_iid skips the block device check',
+    env: 'STS_SPIFFE_AWS_IID_SKIP_BLOCK_DEVICE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s skip_block_device: off, the root volume and the ' +
+                 'first network interface must have been attached within a ' +
+                 'minute of each other, which is what stops an identity ' +
+                 'document from one instance being replayed by another built ' +
+                 'from its volume.' },
+
+  { key: 'spiffe.awsIidDisableInstanceProfileSelectors', group: 'SPIFFE',
+    label: 'aws_iid skips the IAM role selectors',
+    env: 'STS_SPIFFE_AWS_IID_DISABLE_INSTANCE_PROFILE_SELECTORS',
+    type: 'bool', dflt: false, runtime: true,
+    description: 'SPIRE\'s disable_instance_profile_selectors: on, no ' +
+                 'iamrole: selectors, and no IAM call.' },
+
+  { key: 'spiffe.awsIidLocalValidAccountIds', group: 'SPIFFE',
+    label: 'aws_iid accounts trusted without the block device check',
+    env: 'STS_SPIFFE_AWS_IID_LOCAL_VALID_ACCOUNT_IDS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s account_ids_for_local_validation.' },
+
+  { key: 'spiffe.awsIidAgentPathTemplate', group: 'SPIFFE',
+    label: 'aws_iid agent path template',
+    env: 'STS_SPIFFE_AWS_IID_AGENT_PATH_TEMPLATE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s agent_path_template. Empty is ' +
+                 '/{{ .PluginName }}/{{ .AccountID }}/{{ .Region }}/' +
+                 '{{ .InstanceID }}; .Tags.<key> is available.' },
+
+  { key: 'spiffe.awsIidVerifyOrganization', group: 'SPIFFE',
+    label: 'aws_iid organization check (JSON)',
+    env: 'STS_SPIFFE_AWS_IID_VERIFY_ORGANIZATION', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s verify_organization, as JSON: ' +
+                 '{"managementAccountId", "assumeOrgRole", ' +
+                 '"managementAccountRegion" (us-west-2), "orgAccountMapTtl" ' +
+                 '(seconds, 180, at least 60)} to ask AWS Organizations, or ' +
+                 '{"accountList": ["123456789012", …]} instead. The node\'s ' +
+                 'account must be an ACTIVE member. Empty: no check.' },
+
+  { key: 'spiffe.awsIidEksClusterNames', group: 'SPIFFE',
+    label: 'aws_iid EKS clusters a node must belong to',
+    env: 'STS_SPIFFE_AWS_IID_EKS_CLUSTER_NAMES', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s validate_eks_cluster_membership: the instance must ' +
+                 'be in a node group of one of these clusters. Empty: no ' +
+                 'check.' },
+
+  { key: 'spiffe.awsIidEndpoint', group: 'SPIFFE',
+    label: 'aws_iid API endpoint override',
+    env: 'STS_SPIFFE_AWS_IID_ENDPOINT', type: 'string', dflt: '',
+    runtime: true,
+    description: 'An endpoint every AWS client is pointed at instead of the ' +
+                 'public one — a VPC endpoint, or a test. Empty uses AWS.' },
+
+  { key: 'spiffe.gcpIitProjectIdAllowList', group: 'SPIFFE',
+    label: 'gcp_iit projects allowed',
+    env: 'STS_SPIFFE_GCP_IIT_PROJECT_ID_ALLOW_LIST', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s projectid_allow_list, required: an identity ' +
+                 'token from any other project is refused. Empty refuses ' +
+                 'every gcp_iit agent.' },
+
+  { key: 'spiffe.gcpIitAgentPathTemplate', group: 'SPIFFE',
+    label: 'gcp_iit agent path template',
+    env: 'STS_SPIFFE_GCP_IIT_AGENT_PATH_TEMPLATE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s agent_path_template. Empty is ' +
+                 '/{{ .PluginName }}/{{ .ProjectID }}/{{ .InstanceID }}.' },
+
+  { key: 'spiffe.gcpIitUseInstanceMetadata', group: 'SPIFFE',
+    label: 'gcp_iit reads the instance from Compute Engine',
+    env: 'STS_SPIFFE_GCP_IIT_USE_INSTANCE_METADATA', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s use_instance_metadata: on, the instance is read ' +
+                 'from the Compute Engine API for tag:, label: and metadata: ' +
+                 'selectors (needs @google-cloud/compute).' },
+
+  { key: 'spiffe.gcpIitAllowedLabelKeys', group: 'SPIFFE',
+    label: 'gcp_iit instance labels made selectors',
+    env: 'STS_SPIFFE_GCP_IIT_ALLOWED_LABEL_KEYS', type: 'csv', dflt: '',
+    runtime: true, description: 'SPIRE\'s allowed_label_keys.' },
+
+  { key: 'spiffe.gcpIitAllowedMetadataKeys', group: 'SPIFFE',
+    label: 'gcp_iit instance metadata made selectors',
+    env: 'STS_SPIFFE_GCP_IIT_ALLOWED_METADATA_KEYS', type: 'csv', dflt: '',
+    runtime: true, description: 'SPIRE\'s allowed_metadata_keys.' },
+
+  { key: 'spiffe.gcpIitMaxMetadataValueSize', group: 'SPIFFE',
+    label: 'gcp_iit largest metadata value',
+    env: 'STS_SPIFFE_GCP_IIT_MAX_METADATA_VALUE_SIZE', type: 'int',
+    dflt: 128, min: 1, max: 65536, runtime: true,
+    description: 'SPIRE\'s max_metadata_value_size: a longer allowed value ' +
+                 'refuses the attestation.' },
+
+  { key: 'spiffe.gcpIitServiceAccountFile', group: 'SPIFFE',
+    label: 'gcp_iit service account key file',
+    env: 'STS_SPIFFE_GCP_IIT_SERVICE_ACCOUNT_FILE', type: 'string',
+    dflt: '', runtime: true,
+    description: 'SPIRE\'s service_account_file, a PATH. Empty uses the ' +
+                 'SDK\'s application default credentials.' },
+
+  { key: 'spiffe.gcpIitCertsUrl', group: 'SPIFFE',
+    label: 'gcp_iit Google certificate URL',
+    env: 'STS_SPIFFE_GCP_IIT_CERTS_URL', type: 'string',
+    dflt: 'https://www.googleapis.com/oauth2/v1/certs', runtime: true,
+    description: 'Where Google publishes the certificates its instance ' +
+                 'identity tokens are signed with — SPIRE\'s constant, ' +
+                 'settable for a mirror or a test.' },
+
+  { key: 'spiffe.azureImdsTenants', group: 'SPIFFE',
+    label: 'azure_imds tenants (JSON)',
+    env: 'STS_SPIFFE_AZURE_IMDS_TENANTS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s azure_imds `tenants`, as a JSON object from tenant ' +
+                 'domain to {"tenantId" (looked up when absent), ' +
+                 '"tokenAuth": {"tokenPath", "appId"}, "allowedVmTags": ' +
+                 '[...], "restrictToSubscriptions": [...]}. With no ' +
+                 'tokenAuth the SDK\'s default credential is used. An app ' +
+                 'secret is never a setting here. Empty refuses every ' +
+                 'azure_imds agent.' },
+
+  { key: 'spiffe.azureImdsAgentPathTemplate', group: 'SPIFFE',
+    label: 'azure_imds agent path template',
+    env: 'STS_SPIFFE_AZURE_IMDS_AGENT_PATH_TEMPLATE', type: 'string',
+    dflt: '', runtime: true,
+    description: 'SPIRE\'s agent_path_template. Empty is ' +
+                 '/{{ .PluginName }}/{{ .TenantID }}/{{ .SubscriptionID }}/' +
+                 '{{ .VMID }}.' },
+
+  { key: 'spiffe.azureImdsAllowedMetadataDomains', group: 'SPIFFE',
+    label: 'azure_imds signing certificate domains',
+    env: 'STS_SPIFFE_AZURE_IMDS_ALLOWED_METADATA_DOMAINS', type: 'csv',
+    dflt: 'metadata.azure.com', runtime: true,
+    description: 'SPIRE\'s allowed_metadata_domains: the attested document\'s ' +
+                 'signing certificate must name one of these (or a ' +
+                 'subdomain) in a DNS subjectAltName.' },
+
+  { key: 'spiffe.azureImdsTrustBundle', group: 'SPIFFE',
+    label: 'azure_imds extra roots (PEM)',
+    env: 'STS_SPIFFE_AZURE_IMDS_TRUST_BUNDLE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s trust_bundle_path, as PEM: CA certificates trusted ' +
+                 'beside the DigiCert roots SPIRE embeds, for a sovereign ' +
+                 'cloud or a test.' },
+
+  { key: 'spiffe.azureImdsIntermediateHost', group: 'SPIFFE',
+    label: 'azure_imds intermediate certificate host',
+    env: 'STS_SPIFFE_AZURE_IMDS_INTERMEDIATE_HOST', type: 'string',
+    dflt: 'www.microsoft.com', runtime: true,
+    description: 'The only host the signing certificate\'s CA Issuers URL may ' +
+                 'name — SPIRE\'s constant, settable for a test.' },
+
+  { key: 'spiffe.azureImdsDiscoveryUrl', group: 'SPIFFE',
+    label: 'azure_imds tenant discovery base URL',
+    env: 'STS_SPIFFE_AZURE_IMDS_DISCOVERY_URL', type: 'string',
+    dflt: 'https://login.microsoftonline.com', runtime: true,
+    description: 'Where a tenant domain\'s ID is looked up ' +
+                 '(<this>/<domain>/.well-known/openid-configuration) — ' +
+                 'SPIRE\'s constant, settable for a test.' },
+
+  // ===== SPIFFE WORKLOAD ATTESTATION (#40 phase four, 2026-09-21) ==========
+  // This service is the SPIRE agent for its own Workload API, and these are
+  // the agent's workload attestors. Like the node attestors above, no
+  // credential is a setting: the kubelet's token, certificate and key are
+  // FILE PATHS.
+  { key: 'spiffe.workloadAttestors', group: 'SPIFFE',
+    label: 'Workload attestors', env: 'STS_SPIFFE_WORKLOAD_ATTESTORS',
+    type: 'csv', dflt: 'unix', runtime: true,
+    description: 'Which of SPIRE\'s workload attestors run for a connection ' +
+                 'to the Workload API\'s Unix socket: unix, docker, k8s, ' +
+                 'comma-separated. Each runs once per connection, at ' +
+                 'accept; every call then checks the process is still the ' +
+                 'one attested. An attestor that fails fails the ' +
+                 'connection. A TCP caller is never attested.' },
+
+  { key: 'spiffe.workloadProcRoot', group: 'SPIFFE',
+    label: 'Workload attestation /proc root',
+    env: 'STS_SPIFFE_WORKLOAD_PROC_ROOT', type: 'string', dflt: '/proc',
+    runtime: true,
+    description: 'Where a caller\'s process is read from. A peer in a pid ' +
+                 'namespace this service cannot see is attested on the ' +
+                 'uid and gid the kernel recorded at connect, and nothing ' +
+                 'else.' },
+
+  { key: 'spiffe.unixDiscoverWorkloadPath', group: 'SPIFFE',
+    label: 'unix: attest the executable\'s path and digest',
+    env: 'STS_SPIFFE_UNIX_DISCOVER_WORKLOAD_PATH', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s discover_workload_path: add path: and sha256: ' +
+                 'selectors for the caller\'s executable.' },
+
+  { key: 'spiffe.unixWorkloadSizeLimit', group: 'SPIFFE',
+    label: 'unix: largest executable hashed (bytes)',
+    env: 'STS_SPIFFE_UNIX_WORKLOAD_SIZE_LIMIT', type: 'int', dflt: 0,
+    min: -1, max: 1099511627776, runtime: true,
+    description: 'SPIRE\'s workload_size_limit: 0 hashes any size, a ' +
+                 'positive value refuses a larger executable, -1 emits no ' +
+                 'sha256: selector.' },
+
+  { key: 'spiffe.dockerSocketPath', group: 'SPIFFE',
+    label: 'docker: Engine API socket',
+    env: 'STS_SPIFFE_DOCKER_SOCKET_PATH', type: 'string',
+    dflt: 'unix:///var/run/docker.sock', runtime: true,
+    description: 'SPIRE\'s docker_socket_path. The Engine is asked about the ' +
+                 'container the caller\'s cgroups name.' },
+
+  { key: 'spiffe.dockerApiVersion', group: 'SPIFFE',
+    label: 'docker: Engine API version', env: 'STS_SPIFFE_DOCKER_API_VERSION',
+    type: 'string', dflt: '', runtime: true,
+    description: 'SPIRE\'s docker_version: empty asks the Engine\'s own ' +
+                 'default.' },
+
+  { key: 'spiffe.k8sKubeletReadOnlyPort', group: 'SPIFFE',
+    label: 'k8s: kubelet read-only port',
+    env: 'STS_SPIFFE_K8S_KUBELET_READ_ONLY_PORT', type: 'int', dflt: 0,
+    min: 0, max: 65535, runtime: true,
+    description: 'SPIRE\'s kubelet_read_only_port: above 0, the pod list is ' +
+                 'read over plain HTTP on the loopback address, and the ' +
+                 'secure port is not used.' },
+
+  { key: 'spiffe.k8sKubeletSecurePort', group: 'SPIFFE',
+    label: 'k8s: kubelet secure port',
+    env: 'STS_SPIFFE_K8S_KUBELET_SECURE_PORT', type: 'int', dflt: 0,
+    min: 0, max: 65535, runtime: true,
+    description: 'SPIRE\'s kubelet_secure_port. 0 (the default) is the ' +
+                 'kubelet\'s own 10250 — a port this service DIALS, never ' +
+                 'binds.' },
+
+  { key: 'spiffe.k8sNodeName', group: 'SPIFFE', label: 'k8s: node name',
+    env: 'STS_SPIFFE_K8S_NODE_NAME', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s node_name: the kubelet dialled on the secure ' +
+                 'port. Empty reads the next setting\'s environment ' +
+                 'variable; with neither, the kubelet is 127.0.0.1 and its ' +
+                 'certificate is checked for its chain only.' },
+
+  { key: 'spiffe.k8sNodeNameEnv', group: 'SPIFFE',
+    label: 'k8s: node name environment variable',
+    env: 'STS_SPIFFE_K8S_NODE_NAME_ENV', type: 'string', dflt: 'MY_NODE_NAME',
+    runtime: true,
+    description: 'SPIRE\'s node_name_env.' },
+
+  { key: 'spiffe.k8sCertificateFile', group: 'SPIFFE',
+    label: 'k8s: kubelet client certificate file',
+    env: 'STS_SPIFFE_K8S_CERTIFICATE_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s certificate_path, with the next setting. Empty ' +
+                 'authenticates to the kubelet with a token.' },
+
+  { key: 'spiffe.k8sPrivateKeyFile', group: 'SPIFFE',
+    label: 'k8s: kubelet client key file',
+    env: 'STS_SPIFFE_K8S_PRIVATE_KEY_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s private_key_path.' },
+
+  { key: 'spiffe.k8sUseAnonymousAuthentication', group: 'SPIFFE',
+    label: 'k8s: anonymous to the kubelet',
+    env: 'STS_SPIFFE_K8S_USE_ANONYMOUS_AUTHENTICATION', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s use_anonymous_authentication: no token and no ' +
+                 'certificate on the secure port.' },
+
+  { key: 'spiffe.k8sTokenFile', group: 'SPIFFE',
+    label: 'k8s: kubelet bearer token file',
+    env: 'STS_SPIFFE_K8S_TOKEN_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s token_path. Empty is the in-cluster service ' +
+                 'account\'s token.' },
+
+  { key: 'spiffe.k8sSkipKubeletVerification', group: 'SPIFFE',
+    label: 'k8s: skip kubelet certificate verification',
+    env: 'STS_SPIFFE_K8S_SKIP_KUBELET_VERIFICATION', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s skip_kubelet_verification.' },
+
+  { key: 'spiffe.k8sKubeletCaFile', group: 'SPIFFE',
+    label: 'k8s: kubelet CA file', env: 'STS_SPIFFE_K8S_KUBELET_CA_FILE',
+    type: 'string', dflt: '', runtime: true,
+    description: 'SPIRE\'s kubelet_ca_path. Empty is the in-cluster service ' +
+                 'account\'s ca.crt.' },
+
+  { key: 'spiffe.k8sMaxPollAttempts', group: 'SPIFFE',
+    label: 'k8s: pod list attempts', env: 'STS_SPIFFE_K8S_MAX_POLL_ATTEMPTS',
+    type: 'int', dflt: 60, min: 1, max: 10000, runtime: true,
+    description: 'SPIRE\'s max_poll_attempts: how often the pod list is ' +
+                 'read before a container not yet in it fails the ' +
+                 'attestation.' },
+
+  { key: 'spiffe.k8sPollRetryIntervalMs', group: 'SPIFFE',
+    label: 'k8s: pod list retry interval (ms)',
+    env: 'STS_SPIFFE_K8S_POLL_RETRY_INTERVAL_MS', type: 'int', dflt: 500,
+    min: 0, max: 60000, runtime: true,
+    description: 'SPIRE\'s poll_retry_interval.' },
+
+  { key: 'spiffe.k8sDisableContainerSelectors', group: 'SPIFFE',
+    label: 'k8s: pod selectors only',
+    env: 'STS_SPIFFE_K8S_DISABLE_CONTAINER_SELECTORS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s disable_container_selectors.' },
+
+  { key: 'spiffe.k8sEnableNamespaceLabels', group: 'SPIFFE',
+    label: 'k8s: namespace label selectors',
+    env: 'STS_SPIFFE_K8S_ENABLE_NAMESPACE_LABELS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Add ns-label: selectors, read from the API server with ' +
+                 'the in-cluster service account.' },
 
   { key: 'spiffe.maxJoinTokens', group: 'SPIFFE', label: 'Unspent join ' +
       'tokens held',
@@ -10577,7 +11281,133 @@ const SETTINGS = [
                  'failure. Naming a capability id here accepts THAT failure ' +
                  'and nothing else; the node starts, and says at every start ' +
                  'which ones it is running without. There is no "accept all": ' +
-                 'a list somebody has to write is a list somebody has read.' }
+                 'a list somebody has to write is a list somebody has read.' },
+
+  // -------------------------------------------------------------------------
+  // SIGNER ROTATION (2026-09-22, #42/#48). A REALM carries these: each realm's
+  // keys are its own, and so is how often they are replaced. The rotation
+  // runs on the scheduler (`signing.rotate`, `signing.retire`) and only in
+  // product mode — `mode.rotatesSigningKeys()` — because a development process
+  // makes new keys at every start anyway. `common/helpers.js`, KEY
+  // GENERATIONS, is the model; /admin/keys draws it.
+  // -------------------------------------------------------------------------
+  { key: 'signing.rotationIntervalDays', group: 'Signing keys',
+    label: 'Rotate each signing key every (days)',
+    env: 'STS_SIGNING_ROTATION_INTERVAL_DAYS', type: 'int', dflt: 90, min: 0,
+    max: 3650, runtime: true,
+    description: 'How long a signing key stays CURRENT before the scheduler ' +
+                 'promotes the NEXT key of its unit — (realm, use case, ' +
+                 'algorithm): the JOSE and XML RSA keys, each curve key and ' +
+                 'each post-quantum key — and mints a new next one. The next ' +
+                 'key is published from the moment it is minted (the JWKS, ' +
+                 'the SAML and WS-Federation metadata, /crypto/metadata), so ' +
+                 'a relying party that refreshes its copy at least this often ' +
+                 'already holds it when it starts signing. 0 switches ' +
+                 'scheduled rotation off; a rotation by hand (/admin/keys) ' +
+                 'still works. Product mode only.' },
+
+  // THE CREDENTIAL SIGNER'S OWN INTERVAL (#42, D3). A credential outlives
+  // every token, so the unit `oid4vci.credentialSigningAlgorithm` names is
+  // given a longer life of its own — when no token setting signs with it;
+  // the RSA unit and any unit a token setting names keep the token interval.
+  { key: 'signing.credentialRotationIntervalDays', group: 'Signing keys',
+    label: 'Rotate the credential signing key every (days)',
+    env: 'STS_SIGNING_CREDENTIAL_ROTATION_INTERVAL_DAYS', type: 'int',
+    dflt: 365, min: 0, max: 3650, runtime: true,
+    description: 'How long the key verifiable credentials are signed with ' +
+                 '(oid4vci.credentialSigningAlgorithm) works before its next ' +
+                 'key is promoted, in product mode. It applies only when ' +
+                 'that key signs no tokens: RS256, the default, and any ' +
+                 'algorithm oauth2.signedMetadataAlgorithm, ' +
+                 'ssf.signingAlgorithm or wstrust.jwtAlgorithm names rotate ' +
+                 'on signing.rotationIntervalDays instead. Its retired keys ' +
+                 'go on verifying until the longest credential lifetime has ' +
+                 'passed, whichever interval applies. 0 turns its rotation ' +
+                 'off.' },
+
+  { key: 'signing.retiredKeyGraceDays', group: 'Signing keys',
+    label: 'Keep a retired key verifying for (days)',
+    env: 'STS_SIGNING_RETIRED_KEY_GRACE_DAYS', type: 'int', dflt: 0, min: 0,
+    max: 3650, runtime: true,
+    description: 'How long a key that was just replaced goes on VERIFYING ' +
+                 'what it signed — and, for an RSA key, decrypting what was ' +
+                 'encrypted to it — before `signing.retire` drops it and ' +
+                 'revokes its certificate with reason superseded. 0, the ' +
+                 'default, means the DERIVED minimum: the longest lifetime of ' +
+                 'anything the key could have signed (access tokens, ID ' +
+                 'Tokens, refresh tokens, SAML and WS-Federation assertions). ' +
+                 'A value below that minimum is raised to it, because a ' +
+                 'retirement that stranded a live token would be the outage ' +
+                 'rotation exists to avoid.' },
+
+  // -------------------------------------------------------------------------
+  // THE SCHEDULER (2026-09-22, #49). Every periodic job in this service runs
+  // on it — `cluster/scheduler.ts` argues the design, and /admin/scheduler
+  // (Monitoring) draws what it has done. SERVICE-WIDE, every one: a realm
+  // runs on the same scheduler as every other realm, so a realm carrying its
+  // own tick would be a sentence about a thing that does not exist.
+  // -------------------------------------------------------------------------
+  { key: 'scheduler.enabled', group: 'Scheduler',
+    label: 'Run scheduled jobs',
+    env: 'STS_SCHEDULER_ENABLED', type: 'bool', dflt: true, runtime: true,
+    perProcess: true,
+    description: 'Whether the scheduler runs any job at all. OFF, nothing ' +
+                 'periodic happens anywhere — no session is ended when it ' +
+                 'expires until somebody presents it, no directory copy of a ' +
+                 'CRL is refreshed — and /admin/scheduler says so on every ' +
+                 'row. It is read at every tick, so turning it back on ' +
+                 'resumes at the next one, and a slot missed while it was off ' +
+                 'runs ONCE, not once per slot missed.' },
+
+  { key: 'scheduler.tickS', group: 'Scheduler',
+    label: 'How often the leader looks for due jobs (seconds)',
+    env: 'STS_SCHEDULER_TICK_S', type: 'int', dflt: 15, min: 1, max: 3600,
+    runtime: true, perProcess: true,
+    description: 'The scheduler\'s leader asks, this often, which jobs are ' +
+                 'due and which manual runs are queued. It is the most a job ' +
+                 'is late by, and the most a Run now waits before it starts. ' +
+                 'Read at every tick.' },
+
+  { key: 'scheduler.historyDays', group: 'Scheduler',
+    label: 'How long a finished run is kept (days)',
+    env: 'STS_SCHEDULER_HISTORY_DAYS', type: 'int', dflt: 30, min: 1,
+    max: 3650, runtime: true, perProcess: true,
+    description: 'A run that succeeded, failed or was abandoned is kept this ' +
+                 'long and then removed by the scheduler\'s own history job. ' +
+                 'The last run of every job is kept whatever its age, so a ' +
+                 'job that runs every 90 days still shows when it last ran. ' +
+                 'Queued and running rows are never removed by age.' },
+
+  { key: 'scheduler.maxRuns', group: 'Scheduler',
+    label: 'Most runs kept per realm',
+    env: 'STS_SCHEDULER_MAX_RUNS', type: 'int', dflt: 5000, min: 100,
+    max: 1000000, runtime: true, perProcess: true,
+    description: 'The bound on the run history of one trust realm (the ' +
+                 'service-wide jobs\' runs are the default realm\'s). Past ' +
+                 'it the oldest FINISHED run goes first; a queued or running ' +
+                 'one, and the last run of each job, are never dropped to ' +
+                 'make room.' },
+
+  { key: 'scheduler.disabledJobs', group: 'Scheduler',
+    label: 'Jobs switched off',
+    env: 'STS_SCHEDULER_DISABLED_JOBS', type: 'csv', dflt: '', runtime: true,
+    perProcess: true,
+    description: 'Job ids, comma-separated, that the scheduler does not run — ' +
+                 'on their schedule or by hand. Every registered job is ' +
+                 'listed on /admin/scheduler with its id, and one named here ' +
+                 'is drawn as off with this setting as the reason. An id no ' +
+                 'job has is ignored and listed on that page.' },
+
+  { key: 'scheduler.runTimeoutS', group: 'Scheduler',
+    label: 'The longest a run may take (seconds)',
+    env: 'STS_SCHEDULER_RUN_TIMEOUT_S', type: 'int', dflt: 600, min: 5,
+    max: 86400, runtime: true, perProcess: true,
+    description: 'A run still going after this long is recorded as failed ' +
+                 '(STS-SCHED-0002), its claim is given back, and anything it ' +
+                 'does afterwards is fenced out. A job may state a longer ' +
+                 'limit of its own — signer rotation, whose post-quantum ' +
+                 'keys are slow to make, does — and this is the limit of ' +
+                 'every job that does not.' }
 ];
 
 // Indexed once. A linear scan per read would be invisible on a mock and the

@@ -7,7 +7,7 @@
 # one-shot helpers, the secret store; and `xacml-pep`, the remote enforcement
 # point one job drives the seam to. The tests container drives the
 # service by its compose DNS name and exits with the suite's status;
-# ./docker-run-tests.sh brings the pair up with --exit-code-from tests and takes
+# ./run-tests.sh brings the pair up with --exit-code-from tests and takes
 # them down again.
 #
 # THE HOST NEEDS DOCKER AND NOTHING ELSE — no node, no npm install, no Chrome,
@@ -22,7 +22,7 @@
 #   docker-compose.yml            an operator's mock: the service plus postgres,
 #                                 persisting, on 8081, container `sts`. What
 #                                 `docker compose up` in this directory gives.
-#   THIS FILE                     ./docker-run-tests.sh — service AND tests in
+#   THIS FILE                     ./run-tests.sh — service AND tests in
 #                                 containers. What CI runs. ./run-coverage.sh
 #                                 runs its `tests` service alone.
 #
@@ -90,7 +90,8 @@ services:
   # THE STORE THE TWO PERSISTING MODES RUN ON (2026-09-09).
   #
   # tests/tools/modes.sh runs the suite three times and two of those modes are
-  # defined by having a database: `postgres` persists and coordinates, and
+  # defined by having a database: `product` persists and coordinates (it was
+  # `postgres`, the same minus product mode, until 2026-09-21), and
   # `dispatch` adds request workers that COORDINATE THROUGH IT. Until this
   # service existed both of them brought the mock up with STS_PERSISTENCE_MODE
   # set and nothing to connect to, and the mock refused to start — correctly,
@@ -99,7 +100,7 @@ services:
   # **IT IS docker-compose.yml's POSTGRES SERVICE WITH THE VOLUME TAKEN OFF,
   # AND THAT IS THE ONE DIFFERENCE THAT MATTERS.** There is nowhere for a
   # cluster to survive to: it lives in the container's writable layer, and
-  # ./docker-run-tests.sh runs `down --volumes` between every mode and after
+  # ./run-tests.sh runs `down --volumes` between every mode and after
   # the last, so each mode gets a database that has never been written to. That
   # is what this stack's "the second run cannot start from the first run's
   # leavings" rule means once a mode has a store at all — and it is also the
@@ -321,7 +322,7 @@ services:
       # at debug; STS_LOG_LEVEL=debug asks for the record back.
       #
       # THAT IS THE DEFAULT FOR THIS FILE DRIVEN DIRECTLY, AND NOT WHAT A
-      # ./docker-run-tests.sh RUN GETS: that launcher chooses the file from the
+      # ./run-tests.sh RUN GETS: that launcher chooses the file from the
       # log level and passes it in here, which is `info` and env/test.js unless
       # somebody asks for otherwise. The file has to be chosen rather than the
       # level alone, because the vendored modules under common/vendored/ build
@@ -357,7 +358,7 @@ services:
       # `/admin-api` requires an access token minted by the seeded
       # `sts-management-api` client, whose secret is otherwise generated at
       # every start and readable only THROUGH the API it unlocks. The launcher
-      # generates one per run and passes it here; `./docker-run-tests.sh` then
+      # generates one per run and passes it here; `./run-tests.sh` then
       # mints a token against this container once per mode.
       #
       # BARE, for the reason STS_LOG_LEVEL above is bare — though the stakes
@@ -381,6 +382,34 @@ services:
       # is not: the leavings this is defending against are the PREVIOUS RUN'S,
       # and a database container with no volume in it cannot have any. See the
       # `postgres` service above.
+      #
+      # **`global.mode`, FORWARDED SINCE 2026-09-21 — AND IT WAS NOT BEFORE.**
+      # tests/tools/modes.sh has named `STS_MODE=development` in every arm since
+      # 2026-09-08, and this file never passed it to the container, so that
+      # line was a no-op that happened to agree with the setting's default.
+      # Nothing could notice while every mode wanted development. The `product`
+      # mode is the first that does not, and without this line it would have
+      # run the development service and been reported as product mode passing.
+      # `sts2` in the cluster layer `extends` this service, so it gets it too.
+      - STS_MODE=${STS_MODE:-development}
+      # AND THE OTHER TWO tests/tools/modes.sh NAMED AND THIS FILE DROPPED
+      # (2026-09-21), found the same way: the `product` mode's
+      # STS_CLUSTER_MODE=off never arrived, `cluster.mode` stayed `auto`, and
+      # auto is ACTIVE-PASSIVE in product mode on postgres — so the mode ran
+      # the cluster's membership and fail-stop, and under the SCIM bulk load a
+      # starved heartbeat fenced a write and the node exited (STS-CLUSTER-0011).
+      # The fallbacks are the settings' own defaults, so a hand-run of this file
+      # is unchanged; the cluster layer sets its own values over these.
+      - STS_CLUSTER_MODE=${STS_CLUSTER_MODE:-auto}
+      - STS_PROXY_PROTOCOL=${STS_PROXY_PROTOCOL:-off}
+      # WHAT A PRODUCT-MODE STACK IS GIVEN AND A DEVELOPMENT ONE IS NOT
+      # (2026-09-21) — set by ./run-tests.sh for the `product` mode only; see
+      # its "THE `product` MODE" block. The base URL is empty (learnt from
+      # requests) unless set; the two Kerberos passwords are BARE, so a mode
+      # that does not set them passes nothing and keeps the fixture defaults.
+      - STS_PUBLIC_BASE_URL=${STS_PUBLIC_BASE_URL:-}
+      - KRB5_KRBTGT_PASSWORD
+      - KRB5_SERVICE_PASSWORD
       - STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-memory}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-false}
       - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-0}
@@ -434,7 +463,7 @@ services:
       # fetches it once the service answers and hands every protocol job
       # NODE_EXTRA_CA_CERTS and STS_SPKI_PIN; see tests/tools/trust.js.
       #
-      # A substitution, so `STS_HTTPS=false ./docker-run-tests.sh` runs the
+      # A substitution, so `STS_HTTPS=false ./run-tests.sh` runs the
       # whole suite against a plain port — which is the first thing to try if a
       # job fails with something that names a certificate.
       - STS_HTTPS=${STS_HTTPS:-true}
@@ -556,7 +585,7 @@ services:
         condition: service_healthy
     volumes:
       # The launcher writes pep.crt and pep.key here between bringing the
-      # service up and starting this container — see ./docker-run-tests.sh,
+      # service up and starting this container — see ./run-tests.sh,
       # which does it with `docker run` against the service image so that the
       # host still needs docker and nothing else.
       - ${XACML_PEP_CERT_DIR:-./xacml-pep/common}:/certs:ro
@@ -565,7 +594,7 @@ services:
       # in this stack publishes anything. `sts` is in the certificate's SANs.
       - PEP_PDP_URL=${XACML_PEP_PDP_URL:-https://sts:8081/realm/pep-e2e}
       - PEP_NAME=${XACML_PEP_NAME:-xacml-pep}
-      # THE CLIENT CERTIFICATE ./docker-run-tests.sh MINTS AND MOUNTS. The
+      # THE CLIENT CERTIFICATE ./run-tests.sh MINTS AND MOUNTS. The
       # three /xacml/pep endpoints require a verified one whose DN holds
       # REMOTE_PEPS; without these two this container registers as nothing and
       # is refused, which is what a `docker compose -f this up` by hand gets.
@@ -610,6 +639,12 @@ services:
       # would make that comparison a minute of waiting.
       - PEP_POLL_INTERVAL_MS=${XACML_PEP_POLL_INTERVAL_MS:-5000}
       - PEP_HEARTBEAT_INTERVAL_MS=${XACML_PEP_HEARTBEAT_INTERVAL_MS:-2000}
+      # THE BACKOFF CAP (2026-09-21): the PEP starts minutes before its job
+      # creates the realm it polls, and that job leaves the realm's remote-PEP
+      # endpoints off, so it is refused (404, then 501) for most of a run. It
+      # backs off while refused; the cap is well under the forty seconds the
+      # job waits for the PEP to find its realm once it exists.
+      - PEP_BACKOFF_MAX_MS=${XACML_PEP_BACKOFF_MAX_MS:-15000}
       - PEP_LOG_LEVEL
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get({host:'localhost',port:9090,path:'/healthcheck'},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
@@ -667,7 +702,7 @@ services:
       # container-side port it binds as root.
       - STS_LDAP_URL=${STS_LDAP_URL:-ldap://sts:389}
       # Passed to run-report.js, split by the entrypoint. `STS_TEST_ARGS=
-      # "--only=crypto --no-browser" ./docker-run-tests.sh` is the way to
+      # "--only=crypto --no-browser" ./run-tests.sh` is the way to
       # narrow a containerized run; unset, the whole suite runs.
       - STS_TEST_ARGS=${STS_TEST_ARGS:-}
       # ONE REPORT TREE PER MODE, so three runs do not overwrite each other. The
@@ -716,7 +751,7 @@ services:
       # ---------------------------------------------------------------------
       # THE PEP'S ROOT CA AS TEXT, AND IT NEVER ARRIVED UNTIL 2026-09-09.
       #
-      # `./docker-run-tests.sh` has been putting this in its compose
+      # `./run-tests.sh` has been putting this in its compose
       # environment since the anchor existed, and this file never named it —
       # so compose dropped it and the variable reached the runner in
       # ./local-run-tests.sh alone (removed 2026-09-16), where the runner was
@@ -804,7 +839,7 @@ services:
 # containers share a file.
 #
 # They are per project, like every other volume compose makes, so two runs on
-# one machine do not share a key-encryption key. `docker-run-tests.sh` tears
+# one machine do not share a key-encryption key. `run-tests.sh` tears
 # them down with `--volumes` at the end of a run.
 volumes:
   sts-bao-file:

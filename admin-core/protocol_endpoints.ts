@@ -227,7 +227,7 @@ class ProtocolEndpoints {
         '/.well-known/openid-credential-issuer', '/.well-known/jwt-vc-issuer',
         '/oid4vci/nonce', '/oid4vci/credential', '/oid4vci/deferred_credential',
         '/oid4vci/notification', '/oid4vci/credential-offer/:id', '/issuer',
-        '/issuer/offer', '/bbs/keys/1', '/.well-known/did.json', '/did.json',
+        '/issuer/offer', '/bbs/keys/:id', '/.well-known/did.json', '/did.json',
         '/.well-known/did-configuration.json'
       ].map(route),
       '/admin/vc': ['/.well-known/openid-credential-issuer',

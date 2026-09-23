@@ -58,6 +58,14 @@ FROM ${DEBUGGER_IMAGE} AS debugger
 # ---------------------------------------------------------------------------
 FROM node:24.16.0-bookworm-slim AS typescript
 WORKDIR /usr/src/sts
+# A C COMPILER, IN THIS STAGE ONLY (#40, 2026-09-21): `build-native.sh`
+# compiles the one native module, spiffe/native/peercred.c (SO_PEERCRED and a
+# pidfd, for SPIFFE workload attestation), against this image's own Node
+# headers. The final image copies the .node file out and carries no compiler.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+      gcc libc6-dev \
+ && rm -rf /var/lib/apt/lists/*
 COPY package*.json .npmrc ./
 COPY node-ldapjs ./node-ldapjs
 RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
@@ -65,6 +73,7 @@ COPY tests/package*.json ./tests/
 RUN npm install --prefix ./tests && npm cache clean --force
 COPY . ./
 RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip \
+ && STS_IN_IMAGE_BUILD=1 ./build-native.sh \
  && rm -rf ./node_modules ./tests/node_modules ./node-ldapjs/node_modules
 
 FROM ubuntu:latest
@@ -313,7 +322,7 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 #
 # **AND `.github/workflows/tests.yml` JOINED THEM ON 2026-09-10**, one step
 # further out again: tests/teardown_bounds.js asserts that the CI job's own
-# timeout sits above the sum of the two ./docker-run-tests.sh reaches itself,
+# timeout sits above the sum of the two ./run-tests.sh reaches itself,
 # so the workflow is the subject of a test and has to be in the context. The
 # rest of `.github` is still excluded and nothing here reads any of it.
 #
@@ -321,7 +330,7 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # reason again: tests/error_codes.js reads docs/error-codes.md and
 # docs/_config.yml, and tests/stack_network.js and tests/teardown_bounds.js
 # read the test compose file. Excluded from the context, all three failed with
-# ENOENT in the first ./docker-run-tests.sh run that reached them.
+# ENOENT in the first ./run-tests.sh run that reached them.
 # `deploy/` (2026-09-15) is Terraform and the schema-init image's files, run
 # from a workstation or CI and never by the service.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \

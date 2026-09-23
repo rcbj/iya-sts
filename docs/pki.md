@@ -743,6 +743,85 @@ signed while it was on names a key the JWKS no longer lists until that token
 expires. This service's own checks of its own tokens accept either name whatever
 the setting says. It can be set per realm.
 
+## Signing key generations, and the crypto metadata document
+
+Every signer of a realm is a UNIT — a use case and an algorithm: `jose:RS256`
+(tokens), `xml:RS256` (SAML, WS-Federation and WS-Trust, a key of its own
+since 2026-09-22), one per elliptic curve and one per post-quantum algorithm.
+A unit holds a **current** key, and may hold a **next** key and **retired**
+keys:
+
+* a **next** key is published — in `/oauth2/jwks`, in the SAML 2.0, SAML 1.1
+  and WS-Federation metadata, in the DID document and in `/crypto/metadata` —
+  before it signs anything, so a relying party that refreshes its copy of
+  your keys already holds it on the day it starts being used;
+* when a unit is rotated, its next key becomes current and the old one is
+  **retired**: still published and still accepted for what it signed, until
+  `signing.retiredKeyGraceDays` or the longest lifetime of anything it could
+  have signed, whichever is later;
+* after that the retired key is dropped, its certificate superseded.
+
+Each generation has a certificate of its own from the unit's Issuing CA.
+
+`GET /crypto/metadata` (per realm: `/realm/<id>/crypto/metadata`) lists every
+generation of every unit with its kid, JWK, certificate chain, validity,
+SHA-256 fingerprint and revocation addresses; the algorithms per use case; and
+the rotation policy. It needs no credential, is never cached, and comes as:
+
+| Path | Form |
+|---|---|
+| `/crypto/metadata` | by `Accept`: JSON, XML (`application/xml`) or signed JSON (`application/jwt`) |
+| `/crypto/metadata.json` | JSON |
+| `/crypto/metadata.xml` | XML, namespace `urn:iya:sts:crypto-metadata:1` |
+| `/crypto/metadata.jwt` | the JSON signed as a JWS by the realm's current JOSE key |
+| `/crypto/metadata.signed.xml` | the XML with an enveloped XML Signature by the realm's current XML key |
+| `/crypto/metadata.xsd` | the XML Schema |
+
+OpenID Connect discovery links to it as `crypto_metadata_uri`, and the SAML
+2.0 metadata in an `md:Extensions` element (`cm:CryptoMetadataLocation`). No
+specification defines this document.
+
+In development mode keys are made anew at every start and are not rotated.
+In product mode two scheduler jobs, per realm, do it (`/admin/scheduler`):
+
+* **`signing.rotate`**, hourly: a unit with no next key is given one, and a
+  unit whose next key has been published for a whole
+  `signing.rotationIntervalDays` is promoted. The refresh-token encryption
+  keys rotate on the same interval; the set they replace goes on opening the
+  refresh tokens sealed under it until the longest of them expires.
+* **`signing.retire`**, hourly: drops each retired key past its grace and
+  puts its certificate on its Issuing CA's CRL as `superseded`.
+
+The key verifiable credentials are signed with
+(`oid4vci.credentialSigningAlgorithm`) keeps its retired keys verifying until
+the longest credential lifetime has passed, and rotates on
+`signing.credentialRotationIntervalDays` — when no token is signed with the
+same key. RS256, the default, is the token signer's key, so it rotates on the
+token interval; choose an algorithm of its own (for example ES256K) to give
+credentials a longer-lived key.
+
+**Rotating by hand**, in either mode: the Rotation section of `/admin/keys`
+(Rotate selected, Rotate all), or
+
+```bash
+curl -X POST https://sts.example/admin-api/keys/rotate \
+     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"units": ["jose:RS256"]}'        # [] or omitted: every unit
+```
+
+which answers `202` with a `runId` to follow at
+`/admin-api/scheduler?run=<runId>`. **An emergency**, for keys presumed
+compromised, is `POST /admin-api/keys/emergency` with
+`{"confirm": "compromised"}` (or the Emergency form): every key is replaced
+with a new one — not the published next key — with no grace, the old
+certificates are revoked for `keyCompromise`, the refresh-token keys are
+replaced, and every session of the realm is ended. Everything signed before
+it stops verifying at once.
+
+After each rotation a Shared Signals event of this service's own,
+`urn:iya:sts:secevent:event-type:signing-key-rotated`, goes to every stream
+that asked for it. The settings are the Signing keys group on `/admin/keys`.
+
 ## Where the CA private keys live
 
 They inherit the mode, and both surfaces that report it say which is in force
@@ -1077,21 +1156,149 @@ without issuing), `use-key` (a stored pair back into it) and `remove-object` /
 `clear-store`. **`clear-store` does not touch the hierarchy and `clear` does not
 touch the store**, which is the same rule the two buttons follow.
 
-## The settings
+## Configuration
+
+Thirty-seven `pki.*` settings, in four groups. Two are restart-only
+(`pki.autoBuild` and `pki.httpPort`); the rest take effect at runtime.
+
+### The hierarchy
 
 They are **defaults for a form** rather than policy: what a hierarchy was built
 with is stored on the hierarchy, so a change here reaches the next build and
 never a certificate that exists.
 
-| Setting | Default | What it does |
-|---|---|---|
-| `pki.autoBuild` | `true` | Build the hierarchy at startup and certify every key this service generates under it. **Restart-only**: a key can only be issued by an authority that exists when the key is made, and the keys are made at startup. Off is how this service behaved before 2026-09-11. |
-| `pki.keyAlgorithm` | `rsa-2048` | The key algorithm a build uses when the form names none. RSA 2048 because the leaf signs a client assertion somebody else's OAuth library has to verify. |
-| `pki.signatureAlgorithm` | *(empty)* | Empty means "the right one for the key algorithm". See above. |
-| `pki.organisation` | `sts` | The `O=` every tier carries, and what the tiers are named after when no common name is given. |
-| `pki.leafLifetimeDays` | `365` | How long an issued signing certificate is good for, clamped to the Issuing CA's expiry. |
-| `pki.httpPort` | `8082` | The plain-HTTP listener every certificate names for its CRL, OCSP responder and issuer's certificate. `/pki/` only. **Restart-only**; `0` binds nothing and the addresses then name the main port. |
-| `pki.distributionBaseUrl` | *(empty)* | The whole base of the http addresses, when the service is reached by a name or port it cannot derive. |
-| `pki.distributionPort` | `0` | The published port of those addresses; `0` means the listener's own. |
-| `pki.distributionLdapHost` | *(empty)* | The host of the `ldap://` address; empty means the first of `tls.hostnames`. |
-| `pki.distributionLdapPort` | `0` | The published port of the `ldap://` address; `0` means `ldap.port`. |
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `pki.autoBuild` | `PKI_AUTO_BUILD` | `true` | no (restart) | Build the hierarchy at startup and certify every key this service generates under it. **Restart-only**: a key can only be issued by an authority that exists when the key is made, and the keys are made at startup. Off is how this service behaved before 2026-09-11. |
+| `pki.keyAlgorithm` | `STS_PKI_KEY_ALGORITHM` | `rsa-2048` | yes | The key algorithm a build uses when the form names none. RSA 2048 because the leaf signs a client assertion somebody else's OAuth library has to verify. |
+| `pki.signatureAlgorithm` | `STS_PKI_SIGNATURE_ALGORITHM` | *(empty)* | yes | Empty means "the right one for the key algorithm" — see [above](#the-encoder-is-the-debuggers-own-vendored-byte-identical). |
+| `pki.organisation` | `STS_PKI_ORGANISATION` | `sts` | yes | The `O=` every tier and leaf carries, and what the tiers are named after when no common name is given. |
+| `pki.leafLifetimeDays` | `STS_PKI_LEAF_LIFETIME_DAYS` | `365` | yes | How long an issued signing certificate is good for, clamped to the Issuing CA's expiry. |
+| `pki.rootLifetimeYears` | `STS_PKI_ROOT_LIFETIME_YEARS` | `0` | yes | A new Root CA's lifetime when the build names none; `0` is the profile's twenty years. |
+| `pki.intermediateLifetimeYears` | `STS_PKI_INTERMEDIATE_LIFETIME_YEARS` | `0` | yes | A new Intermediate CA's lifetime; `0` is the profile's ten years, clamped to the Root's expiry. |
+| `pki.issuingLifetimeYears` | `STS_PKI_ISSUING_LIFETIME_YEARS` | `0` | yes | Each new Issuing CA's lifetime; `0` is the profile's five years, clamped to its Intermediate's expiry. |
+| `pki.maxStoredObjects` | `STS_PKI_MAX_STORED_OBJECTS` | `200` | yes | How many objects the Certificate & Key Configuration pane may keep in one realm; a full store refuses the next one rather than discarding the oldest. |
+
+### Publishing revocation
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `pki.crlLifetimeMinutes` | `PKI_CRL_LIFETIME_MINUTES` | `60` | yes | The gap between `thisUpdate` and `nextUpdate` on every CRL, and the `nextUpdate` of every OCSP answer — short on purpose, so a revocation is seen while testing. |
+| `pki.httpPort` | `PKI_HTTP_PORT` | `8082` | no (restart) | The plain-HTTP listener every certificate names for its CRL, OCSP responder and issuer's certificate. `/pki/` only; `0` binds nothing and the addresses then name the main port. |
+| `pki.distributionBaseUrl` | `PKI_DISTRIBUTION_BASE_URL` | *(empty)* | yes | The whole base of the http addresses written into certificates, when the service is reached by a name or port it cannot derive. |
+| `pki.distributionPort` | `PKI_DISTRIBUTION_PORT` | `0` | yes | The published port of those addresses; `0` means the listener's own. |
+| `pki.distributionLdapHost` | `PKI_DISTRIBUTION_LDAP_HOST` | *(empty)* | yes | The host of the `ldap://` CRL address; empty means the first of `tls.hostnames`. |
+| `pki.distributionLdapPort` | `PKI_DISTRIBUTION_LDAP_PORT` | `0` | yes | The published port of the `ldap://` address; `0` means `ldap.port`. |
+| `pki.publishCrlToDirectory` | `PKI_PUBLISH_CRL_TO_DIRECTORY` | `true` | yes | Write each authority's CRL into the embedded directory under `ou=crl`, so the `ldap://` address resolves; off, the address is still written and fetches nothing. |
+
+A change to an address reaches certificates issued afterwards and never one
+that exists.
+
+### Consulting revocation
+
+How a certificate **presented** to this service, or registered and then used,
+is checked — see
+[Revocation is published, and consulted](#revocation-is-published-and-consulted).
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `pki.revocationCheck` | `STS_PKI_REVOCATION_CHECK` | `auto` | yes | `off`, `soft-fail` (refuse only a revoked certificate) or `hard-fail` (also refuse one whose status could not be established); `auto` is hard-fail in product mode and soft-fail in development. |
+| `pki.revocationRequireDistributionPoint` | `STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT` | `false` | yes | Under hard-fail, also refuse a foreign certificate that names no http or https CRL distribution point. |
+| `pki.revocationFetchTimeoutMs` | `STS_PKI_REVOCATION_FETCH_TIMEOUT_MS` | `3000` | yes | How long a fetch of a foreign CRL may take. |
+| `pki.revocationMaxCrlBytes` | `STS_PKI_REVOCATION_MAX_CRL_BYTES` | `1048576` | yes | A distribution point answering more than this is treated as unreachable rather than read into memory. |
+| `pki.revocationCrlCacheEntries` | `STS_PKI_REVOCATION_CRL_CACHE_ENTRIES` | `256` | yes | How many verified foreign CRLs, and remembered failures, are cached; the oldest goes first. |
+| `pki.revocationCrlMaxAgeS` | `STS_PKI_REVOCATION_CRL_MAX_AGE_S` | `3600` | yes | A cached CRL is used until its own `nextUpdate` or this long after it was fetched, whichever is first. |
+| `pki.revocationFailureRetryS` | `STS_PKI_REVOCATION_FAILURE_RETRY_S` | `60` | yes | How long an unreachable or unusable CRL is remembered, so a dead server costs one timeout per window; `0` retries every request. |
+| `pki.revocationOcsp` | `STS_PKI_REVOCATION_OCSP` | `first` | yes | Whether a foreign certificate's OCSP responder is asked before the CRL (`first`), only when the CRL gave no answer (`after-crl`), or never (`off`). |
+| `pki.revocationOcspMaxAgeS` | `STS_PKI_REVOCATION_OCSP_MAX_AGE_S` | `3600` | yes | How long an OCSP response with no `nextUpdate` is fresh, and the most any response is cached. |
+| `pki.revocationOcspRequireNonce` | `STS_PKI_REVOCATION_OCSP_REQUIRE_NONCE` | `false` | yes | Refuse an OCSP response that echoes no nonce; off by default because pre-produced responses cannot carry one. |
+| `pki.revocationClockSkewS` | `STS_PKI_REVOCATION_CLOCK_SKEW_S` | `300` | yes | How far a CRL's or OCSP response's `nextUpdate` may be past, or an OCSP `thisUpdate` in the future, before it is refused. |
+| `pki.revocationCrlIssuersFile` | `STS_PKI_REVOCATION_CRL_ISSUERS_FILE` | *(empty)* | yes | A PEM file of indirect CRL issuers a distribution point may name in `cRLIssuer`; read again when it changes. |
+| `pki.revocationLdap` | `STS_PKI_REVOCATION_LDAP` | `ldaps` | yes | Whether `ldaps:` (verified), also plain `ldap:` (`ldaps-and-ldap`), or no directory address (`off`) is dialled for a CRL or issuer. |
+| `pki.revocationLdapCaFile` | `STS_PKI_REVOCATION_LDAP_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates an `ldaps` directory's certificate may chain to, beside node's own CA store. |
+| `pki.revocationLdapDirectory` | `STS_PKI_REVOCATION_LDAP_DIRECTORY` | *(empty)* | yes | The directory (scheme, host, port) a distribution point named relative to its CRL issuer is looked up in; without it such a name is not dialled. |
+
+### Self-service and limits
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `pki.personSelfService` | `STS_PKI_PERSON_SELF_SERVICE` | `true` | yes | Whether `/portal/signing-key` offers a person an RFC 7523 or RFC 7522 key pair of their own; off takes away no key already held. |
+| `pki.personSelfServicePerIdentity` | `STS_PKI_PERSON_SELF_SERVICE_PER_IDENTITY` | `5` | yes | How often one person may press Generate on `/portal/signing-key` in a `security.rateLimitWindowS` window. |
+| `pki.personSelfServicePerAddress` | `STS_PKI_PERSON_SELF_SERVICE_PER_ADDRESS` | `5` | yes | The same limit counted per client address, for everybody behind one NAT or proxy. |
+| `pki.personTlsClientCertificateMax` | `STS_PKI_PERSON_TLS_CLIENT_CERTIFICATE_MAX` | `5` | yes | Valid TLS client certificates one person may issue themselves on the portal; past it the portal refuses (`STS-PKI-0170`) rather than revoking an older one. |
+| `pki.applicationTlsClientCertificateMax` | `STS_PKI_APPLICATION_TLS_CLIENT_CERTIFICATE_MAX` | `5` | yes | Valid TLS client certificates an administrator may issue one application; past it the issue is refused (`STS-PKI-0180`). |
+| `pki.enrollmentMaxCertificatesPerEntry` | `STS_PKI_ENROLLMENT_MAX_CERTIFICATES_PER_ENTRY` | `20` | yes | Certificates issued over [ACME](acme.md), [EST](est.md) or [SCEP](scep.md) one entry may carry at once; past it a request is refused (`STS-ENROLL-0040`) rather than an older certificate being forgotten. |
+
+Settings this page discusses that are not `pki.*`: the twelve
+`*CertificateHeader` settings ([above](#a-signed-token-names-its-certificate-chain)),
+`keys.kidFormat` ([above](#the-kid-can-be-the-keys-thumbprint-instead)) and the
+`signing.*` rotation settings
+([above](#signing-key-generations-and-the-crypto-metadata-document)). See
+[Configuration](configuration.md) for how a value resolves and where it is
+changed — `/admin/pki`, or `POST /admin-api/config/set`.
+
+## Design decisions
+
+* **One Root for the service; the realm boundary is the Intermediate.** An
+  operator installs one anchor, and a path must still pass through the realm's
+  own Intermediate — see [above](#the-root-is-shared-and-the-intermediate-is-not).
+* **An Issuing CA per use case.** So one surface can be narrowed or rotated
+  without touching the rest, and a relying party that trusts SAML has said
+  nothing about OAuth — see [above](#an-issuing-ca-per-use-case).
+* **Nothing about key generation changed, and the `kid` does not move.** The
+  hierarchy only ever adds a certificate over keys made exactly as before — see
+  [above](#nothing-about-key-generation-changed).
+* **A branch is built whole, or not at all, and building again replaces.** A
+  half-built hierarchy is the state in which a certificate verifies here and
+  nowhere else — see [above](#a-branch-is-built-whole-or-not-at-all).
+* **The issued leaf is a signing certificate, not a TLS one.** One certificate
+  quietly doing both is how a deployment ends up unable to revoke either — see
+  [above](#what-issuing-writes-and-what-it-forgets).
+* **The private key is handed over once and the entry is where it lives,
+  sealed.** This service keeps no second copy — see
+  [above](#what-issuing-writes-and-what-it-forgets).
+* **The RFC 7523 and RFC 7522 key pairs are two.** Neither signs for the other
+  profile, and taking one off leaves the other working — see
+  [SAML assertions](saml-assertions.md#two-key-pairs-one-application).
+* **A lifetime is clamped, not refused.** A certificate that would outlive its
+  Issuing CA is shortened to the CA's expiry.
+* **Revocation addresses are `http://` and `ldap://`, never `https://` or
+  `ldaps://`.** A client that checks revocation before trusting a connection
+  cannot fetch the answer over that connection, so the plain listener on
+  `pki.httpPort` exists — see
+  [above](#revocation-is-published-and-consulted).
+* **A CRL is per authority, not per realm.** A list is signed by an issuer and
+  lists what that issuer minted, so a per-realm list would have no valid
+  issuer.
+* **Presented and registered certificates are checked for revocation, hard-fail
+  in product mode.** `pki.revocationCheck`'s `auto` is soft-fail in
+  development and hard-fail in product, because hard-fail is what stops an
+  attacker who can block the fetch turning revoked into accepted.
+* **The CA private keys follow the mode.** In memory in development, sealed in
+  the persistence store in product, in the same place as the signing keys — see
+  [above](#where-the-ca-private-keys-live).
+* **One encoder, the debugger's own, vendored byte-identical.** A certificate
+  issued here and one issued there are built by one implementation — see
+  [above](#the-encoder-is-the-debuggers-own-vendored-byte-identical).
+* **The page has no script.** Generating keys and issuing certificates are
+  things the process holding the CA keys should do, not a browser — see
+  [above](#the-page-has-no-script-on-it).
+* **A limit refuses rather than forgets.** A full object store, a person's or
+  an application's certificate cap, and the per-entry enrollment cap each
+  refuse the next request instead of discarding something somebody may still
+  be using.
+
+## Related
+
+* [JWT assertions](jwt-assertions.md) and [SAML assertions](saml-assertions.md)
+  — what the issued key pairs are for
+* [ACME](acme.md), [EST](est.md) and [SCEP](scep.md) — certificate enrollment
+  from the realm's Issuing CAs
+* [TLS and mutual TLS](tls.md) — the listener certificate and client
+  certificates
+* [SPIFFE](spiffe.md) — X509-SVIDs from the realm's SPIFFE authority
+* [Remote PEP](remote-pep.md)
+* [Trust realms](trust-realms.md)
+* [Encryption at rest](encryption-at-rest.md)
+* [What is not checked](what-is-not-checked.md)
+* [Configuration](configuration.md) and [error codes](error-codes.md)

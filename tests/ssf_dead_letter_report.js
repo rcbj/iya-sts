@@ -76,10 +76,10 @@ function child() {
 
     const makeStream = function (url, aud) {
       return streams.createStream({
-        aud: aud,
         events_requested: [VERIFY, UPDATED],
         delivery: { method: streams.DELIVERY_PUSH, endpoint_url: url }
-      }, { issuer: 'https://sts.test', principal: 'dlr-probe' }).stream;
+      }, { issuer: 'https://sts.test', principal: 'dlr-probe',
+           audience: aud }).stream;
     };
     const claimsFor = function (jti, type) {
       const out = { jti: jti, iss: 'https://sts.test', aud: 'rx', events: {} };

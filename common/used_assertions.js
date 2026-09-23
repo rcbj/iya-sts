@@ -218,6 +218,16 @@ const historyCount = cacheRegistry.register({
       'when full rather than forgetting one. On a database store the rows ' +
       'are in the database and none is listed here.';
   },
+  // `sweep()`, for every partition this process holds (#49 P5): it never
+  // removes a live row, and marks a snapshot store's realm to be written.
+  eject: function (now) {
+    let removed = 0;
+    Array.from(partitions.keys()).forEach(function (id) {
+      const before = partitions.get(id).size;
+      removed += before - sweep(id, now);
+    });
+    return removed;
+  },
   entries: function () {
     const out = [];
     partitions.forEach(function (rows, id) {
@@ -234,7 +244,9 @@ const historyCount = cacheRegistry.register({
 // Realms whose snapshot has changed since it was last written.
 const dirtyRealms = new Set();
 let writeTimer = null;
-let lastPurgeAt = 0;
+// The database sweep's scheduler job (#49 P5): see ensurePurgeJob().
+const PURGE_JOB = 'oauth2.used-assertion-purge';
+let purgeJobRegistered = false;
 // The last live count each realm's store reported, for the one synchronous
 // reader (`GET /oauth2/rfc9700`). A database store is asked on every claim.
 const lastKnownLive = new Map();
@@ -609,7 +621,7 @@ function claimInMemory(row, cap, now) {
 
 function claimInDatabase(row, cap, now) {
   log.debug("Entering claimInDatabase().");
-  maybePurge(now);
+  ensurePurgeJob();
   log.debug("Leaving claimInDatabase().");
   return Promise.resolve().then(function () {
     return store.driver.claimUsedAssertion(row, { cap: cap, now: now });
@@ -639,26 +651,69 @@ function claimInDatabase(row, cap, now) {
   });
 }
 
-function maybePurge(now) {
-  log.debug("Entering maybePurge().");
-  if (now - lastPurgeAt < PURGE_INTERVAL_MS) {
-    log.debug("Leaving maybePurge(). Not due.");
+// THE DATABASE SWEEP IS A SCHEDULER JOB (#49 P5):
+// `oauth2.used-assertion-purge`, a CLUSTER job every PURGE_INTERVAL_MS — one
+// table every process shares. It was piggy-backed on the next claim in every
+// process. Registered at the first claim against a database, lazily: this
+// file is in the parent project's Kerberos COPY closure and must not load the
+// scheduler there. An expired row is ignored by every read whenever the
+// sweep last ran.
+function ensurePurgeJob(schedulerInstance) {
+  log.debug("Entering ensurePurgeJob().");
+  if (purgeJobRegistered) {
+    log.debug("Leaving ensurePurgeJob(). Registered.");
     return;
   }
-  lastPurgeAt = now;
-  Promise.resolve().then(function () {
-    return store.driver.purgeUsedAssertions(now);
-  }).then(function (count) {
-    if (count) {
-      log.debug('used assertions: swept ' + count + ' expired row(s).');
+  // **REGISTERED WHEN THE SCHEDULER LOADS, IN EVERY PROCESS (2026-09-22)**,
+  // for `cluster/cluster_claims.js`'s reason: it was registered at a
+  // process's first CLAIM, so a process that had claimed nothing did not
+  // list it and the console's two doors — answered by different workers —
+  // disagreed about the job list. `cluster/scheduler.ts` calls this with
+  // ITSELF at the end of its own module; this call stays for a process that
+  // reaches a claim first and finds the job already there.
+  const scheduler = schedulerInstance || require('../cluster/scheduler');
+  // NOT LATCHED BEFORE THE REGISTRATION HAPPENS — see the same guard in
+  // `cluster/cluster_counters.js`: a half-built scheduler reached through the
+  // require above would otherwise mark the job registered while registering
+  // nothing.
+  if (!scheduler || typeof scheduler.register !== 'function') {
+    log.debug("Leaving ensurePurgeJob(). No scheduler yet.");
+    return;
+  }
+  purgeJobRegistered = true;
+  if (scheduler.job(PURGE_JOB)) {
+    log.debug("Leaving ensurePurgeJob(). Registered elsewhere.");
+    return;
+  }
+  scheduler.register({
+    id: PURGE_JOB,
+    title: 'Expired used-assertion sweep',
+    describe: 'Deletes the RFC 7523 and RFC 7522 assertions whose lifetime ' +
+              'has passed from the once-ever history every node shares.',
+    owner: 'common/used_assertions.js',
+    everyMs: function () {
+      return PURGE_INTERVAL_MS;
+    },
+    off: function () {
+      return store.driver &&
+             typeof store.driver.purgeUsedAssertions === 'function' ? ''
+        : 'the used-assertion history is not in a database here';
+    },
+    run: function () {
+      return Promise.resolve().then(function () {
+        return store.driver.purgeUsedAssertions(Date.now());
+      }).then(function (count) {
+        return { removed: Number(count) || 0 };
+      }, function (e) {
+        log.warn(errorCodes.tag('STS-STORE-0047') +
+                 'used assertions: sweeping expired rows failed: ' +
+                 ((e && e.message) || e) + '. They are ignored by every ' +
+                 'read and swept at the next run.');
+        throw e;
+      });
     }
-  }, function (e) {
-    log.warn(errorCodes.tag('STS-STORE-0047') +
-             'used assertions: sweeping expired rows failed: ' +
-             ((e && e.message) || e) + '. They are ignored by every read and ' +
-             'swept on the next attempt.');
   });
-  log.debug("Leaving maybePurge(). Started.");
+  log.debug("Leaving ensurePurgeJob().");
 }
 
 // What a caller holds: enough to settle this one row and nothing it could use
@@ -896,6 +951,9 @@ module.exports = {
   DATABASE_GROUP: DATABASE_GROUP,
   SNAPSHOT_GROUP: SNAPSHOT_GROUP,
   keyOf: keyOf,
+  // Exported for `cluster/scheduler.ts`, which registers this job at its own
+  // load so that every process lists it — see the function's own comment.
+  ensurePurgeJob: ensurePurgeJob,
   setStore: setStore,
   clearStore: clearStore,
   flush: flush,

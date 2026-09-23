@@ -94,7 +94,7 @@
 //   * `./local-run-tests.sh` added `--profile xacml` to the project it
 //     already brought the service up in, on a free host port, and exported
 //     the three — until that launcher was removed on 2026-09-16.
-//   * `./docker-run-tests.sh` declares the service in
+//   * `./run-tests.sh` declares the service in
 //     `docker-compose-run-tests.yml`; the tests container reaches it at
 //     `http://xacml-pep:9090` on the bridge they share.
 //
@@ -604,7 +604,7 @@ function pepLog(lines) {
   // TRIED EVEN FOR A CONTAINER THIS JOB DID NOT CREATE, because under
   // ./local-run-tests.sh (removed 2026-09-16) the launcher's container and
   // this process were on the same machine, and its log is the most useful
-  // thing a failure here can carry. Under ./docker-run-tests.sh there is no
+  // thing a failure here can carry. Under ./run-tests.sh there is no
   // docker to ask, so the fallback names the container and the command
   // rather than pretending.
   const got = dockerQuiet(["logs", "--tail", String(lines || 30), PEP_NAME]);
@@ -631,7 +631,7 @@ function pepLog(lines) {
 // is not the same KIND of thing in each, so the network is discovered rather
 // than assumed:
 //
-//   * `./docker-run-tests.sh` puts the service in a CONTAINER on a compose
+//   * `./run-tests.sh` puts the service in a CONTAINER on a compose
 //     network (as `./local-run-tests.sh` did, with a published port, until it
 //     was removed on 2026-09-16). The PEP joins that
 //     network, dials the service by its container HOSTNAME on the INTERNAL port
@@ -2791,6 +2791,25 @@ function cleanUpTheCertificates() {
 // ---------------------------------------------------------------------------
 // THE RUN.
 // ---------------------------------------------------------------------------
+// THE MEMBERSHIPS PRODUCT MODE DOES NOT SEED (2026-09-21): `xacml-user-1`
+// for section 3's askThePdp, and — when a launcher owns the container — its
+// `remote-pep-1`, which the self-started path provisions for itself
+// (provisionTheContainersIdentity()). sts_xacml_endpoints.js's admit()
+// argues the DN; in development both writes change nothing.
+async function admit(commonName, group) {
+  log.debug("Entering admit(). " + commonName + " " + group);
+  const where = await get(api("/groups"));
+  assert.ok(where.status === 200 && where.body && where.body.usersDn,
+    "GET /admin-api/groups in " + REALM + " answered " + where.status);
+  const member = "cn=" + commonName + "," + where.body.usersDn;
+  const joined = await postJson(api("/groups/add-member"),
+                                { group: group, member: member });
+  assert.ok(joined.status === 200 && joined.body && joined.body.ok,
+    "adding " + member + " to " + group + " answered " + joined.status +
+    " " + String(joined.text).slice(0, 300));
+  log.debug("Leaving admit().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving a REAL remote PEP CONTAINER against " + base);
@@ -2832,6 +2851,10 @@ async function test() {
   await createTheRealm();
   try {
     await createThePeople();
+    await admit("xacml-user-1", "xacml-users");
+    if (LAUNCHER_STARTED_IT) {
+      await admit(PEP_NAME, "remote-peps");
+    }
     // THE TWO THINGS THE CONTAINER NEEDS BEFORE IT CAN SETTLE, in this order
     // and both before anything is asserted about it.
     //

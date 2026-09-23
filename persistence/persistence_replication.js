@@ -138,7 +138,6 @@ let highest = 0;
 // seq -> when this process first saw it missing (Date.now()).
 const holes = new Map();
 
-let timer = null;
 let unwatch = null;
 let running = false;   // one catch-up at a time
 // HOW LONG A HOLE IS ASKED FOR. A hole is a transaction still committing, or
@@ -331,27 +330,50 @@ function start(theDriver, theAppliers) {
   });
 }
 
+// THE PULL IS A SCHEDULER JOB (#49 P5, rcbj's directive of 2026-09-21: "a
+// process's own change-log pull" is its example of a per-process job):
+// `persistence.change-log-pull`, PER-PROCESS — every process holds its own
+// copy and applies what others committed — every `persistence.pollInterval`
+// and QUIET, so its run is recorded in the store when its outcome changes or
+// once a minute, not five times a minute per process: a row per pull would be
+// a write the next pull has to fetch. The scheduler ticks at the next due job
+// rather than every scheduler.tickS, so the poll keeps its own interval. The
+// nudge (`wake()`) still pulls at once, off the schedule. Registered once;
+// off while this process does not coordinate or has stopped.
 function schedule() {
   log.debug("Entering schedule().");
-  if (timer || stopped) {
-    log.debug("Leaving schedule().");
+  const scheduler = require('../cluster/scheduler');
+  if (scheduler.job(PULL_JOB)) {
+    log.debug("Leaving schedule(). Registered.");
     return;
   }
-  timer = setTimeout(function () {
-    timer = null;
-    pull().catch(function (err) {
-      log.error(errorCodes.tag('STS-STORE-0038') +
-                'persistence: a scheduled change pull failed: ' + err.message);
-    }).then(function () {
-      schedule();
-    });
-  }, intervalMs());
-  // Must not hold the process open on its own: a service with nothing else to
-  // do should still be able to exit.
-  if (timer.unref) {
-    timer.unref();
-  }
-  log.debug("Leaving schedule().");
+  scheduler.register({
+    id: PULL_JOB,
+    title: 'Change-log pull',
+    describe: 'Applies, in this process, what every other process has ' +
+              'committed to the change log since this one last looked. The ' +
+              'LISTEN/NOTIFY nudge makes it prompt; this is the contract.',
+    owner: 'persistence/persistence_replication.js',
+    kind: 'per-process', quiet: true,
+    everyMs: intervalMs,
+    off: function () {
+      if (stopped) {
+        return 'this process has stopped coordinating';
+      }
+      return driver ? '' : 'this process\'s store does not coordinate';
+    },
+    run: function () {
+      return pull().then(function () {
+        return { applied: applied };
+      }, function (err) {
+        log.error(errorCodes.tag('STS-STORE-0038') +
+                  'persistence: a scheduled change pull failed: ' +
+                  err.message);
+        throw err;
+      });
+    }
+  });
+  log.debug("Leaving schedule(). On the scheduler.");
 }
 
 // A nudge arrived. Pull NOW rather than at the next tick — and if one is
@@ -1015,10 +1037,12 @@ function origins() {
 // It is not made to exit: a request worker's exit is not a restart here, and
 // a pause that long is already a process nothing else trusts.
 //
-// **ONE TRIM FOR THE CLUSTER**: the lease `ops.change-log-purge`, led by one
-// node (`cluster.lead()`); outside a cluster every FRONT process runs it,
-// which is safe because the bound comes from the reports and not from the
-// trimmer — two trims agree. A request worker never trims.
+// **ONE TRIM FOR THE CLUSTER**: the scheduler job
+// `persistence.change-log-purge` (#49 P5), on the scheduler's leader — which
+// replaced the lease `ops.change-log-purge` this had of its own. Outside a
+// cluster every FRONT process leads its own scheduler and trims, which is
+// safe because the bound comes from the reports and not from the trimmer —
+// two trims agree. A request worker never trims.
 //
 // **WHAT THIS DOES NOT TRIM**: the `merge: 'own'` rows of `sts_minted` that
 // dead origins wrote (their counters and audit rings) — a separate table with
@@ -1028,13 +1052,15 @@ function origins() {
 const REPORT_INTERVAL_MS = 15 * 1000;
 const PURGE_INTERVAL_MS = 5 * 60 * 1000;
 const READER_TTL_FLOOR_MS = 2 * 60 * 1000;
-const PURGE_LEASE = 'ops.change-log-purge';
+// The pull's and the trim's scheduler jobs (#49 P5): see schedule() and
+// startRetention().
+const PULL_JOB = 'persistence.change-log-pull';
+const PURGE_JOB = 'persistence.change-log-purge';
 let lastReportAt = 0;
 let reportedOnce = false;
 let reportInFlight = false;
 let lastReportError = '';
 let declaredGoneAt = null;
-let purgeTimer = null;
 let purging = false;
 let lastPurge = null;
 
@@ -1166,68 +1192,70 @@ function purgeOnce() {
   });
 }
 
-function schedulePurge() {
-  log.debug("Entering schedulePurge().");
-  if (purgeTimer || stopped) {
-    log.debug("Leaving schedulePurge().");
-    return;
+// Does this process run the trim?
+function trimsHere() {
+  log.debug("Entering trimsHere().");
+  let answer = false;
+  try {
+    const scheduler = require('../cluster/scheduler');
+    const job = scheduler.job(PURGE_JOB);
+    answer = !!job && scheduler.scheduler.isLeading() &&
+             !scheduler.scheduler.offReason(job);
+  } catch (e) {
+    log.debug("Caught in trimsHere(): " + ((e && e.message) || e));
+    answer = false;
   }
-  purgeTimer = setTimeout(function () {
-    purgeTimer = null;
-    purgeOnce().then(function () {
-      schedulePurge();
-    });
-  }, PURGE_INTERVAL_MS);
-  if (purgeTimer.unref) {
-    purgeTimer.unref();
-  }
-  log.debug("Leaving schedulePurge().");
+  log.debug("Leaving trimsHere(). " + answer);
+  return answer;
 }
 
-function stopPurging() {
-  log.debug("Entering stopPurging().");
-  if (purgeTimer) {
-    clearTimeout(purgeTimer);
-    purgeTimer = null;
-  }
-  log.debug("Leaving stopPurging().");
-}
-
-// Who trims: see RETENTION. Asked once, at start.
+// Who trims: see RETENTION. Asked once, at start. THE TRIM IS A SCHEDULER JOB
+// (#49 P5): `persistence.change-log-purge`, a CLUSTER job every five minutes
+// on the scheduler's leader. It was a timer of its own on its own lease
+// (`ops.change-log-purge`), which is what the scheduler's leadership is now.
+// A request worker registers it too and never runs it: a cluster job runs on
+// the front process that leads.
 function startRetention() {
   log.debug("Entering startRetention().");
-  if (process.env.STS_REQUEST_WORKER || !driver ||
-      typeof driver.purgeChangeLog !== 'function') {
-    log.debug("Leaving startRetention(). This process does not trim.");
+  if (!driver || typeof driver.purgeChangeLog !== 'function') {
+    log.debug("Leaving startRetention(). This store does not trim.");
     return;
   }
-  clusterModule().lead(PURGE_LEASE, {
-    onGain: function () {
-      log.debug("Entering onGain().");
-      schedulePurge();
-      log.debug("Leaving onGain().");
+  const scheduler = require('../cluster/scheduler');
+  if (scheduler.job(PURGE_JOB)) {
+    log.debug("Leaving startRetention(). Registered.");
+    return;
+  }
+  scheduler.register({
+    id: PURGE_JOB,
+    title: 'Change-log trim',
+    describe: 'Deletes change-log rows below the lowest position every ' +
+              'reader has reported and older than ' +
+              'persistence.changeLogRetentionS, and declares gone the ' +
+              'readers that stopped reporting.',
+    owner: 'persistence/persistence_replication.js',
+    everyMs: function () {
+      return PURGE_INTERVAL_MS;
     },
-    onLose: function () {
-      log.debug("Entering onLose().");
-      stopPurging();
-      log.debug("Leaving onLose().");
+    off: function () {
+      return retentionMs() ? '' : 'persistence.changeLogRetentionS is 0';
+    },
+    run: function () {
+      return purgeOnce().then(function (answer) {
+        return answer || { trimmed: 0 };
+      });
     }
   });
-  log.debug("Leaving startRetention().");
+  log.debug("Leaving startRetention(). On the scheduler.");
 }
 
 function stop() {
   log.debug('Entering stop().');
   stopped = true;
-  if (timer) {
-    clearTimeout(timer);
-    timer = null;
-  }
   if (unwatch) {
     unwatch();
     unwatch = null;
   }
-  stopPurging();
   const leaving = driver && typeof driver.leaveChangeReader === 'function' &&
     reportedOnce ? driver.leaveChangeReader() : null;
   log.debug('Leaving stop().');
@@ -1267,7 +1295,9 @@ function status() {
       reportedAt: lastReportAt ? new Date(lastReportAt).toISOString() : null,
       reportError: lastReportError || null,
       declaredGoneAt: declaredGoneAt,
-      trimming: !!purgeTimer,
+      // Whether THIS process runs the trim: it is the scheduler's leader
+      // and the job is on (#49 P5).
+      trimming: trimsHere(),
       lastTrim: lastPurge
     },
     // Said on the page rather than only in a comment, because it is the one
@@ -1298,10 +1328,6 @@ function reset() {
   runningPull = null;
   pendingWake = false;
   contributions.clear();
-  if (timer) {
-    clearTimeout(timer);
-    timer = null;
-  }
   if (unwatch) {
     unwatch();
     unwatch = null;
@@ -1314,7 +1340,6 @@ function reset() {
   rowsApplied = 0;
   nudges = 0;
   Object.keys(byKind).forEach(function (k) { delete byKind[k]; });
-  stopPurging();
   lastReportAt = 0;
   reportedOnce = false;
   reportInFlight = false;

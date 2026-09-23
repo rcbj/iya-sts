@@ -89,7 +89,8 @@ SSF's **complex** subject rather than a plain one:
 
 ```json
 {
-  "user":    { "format": "issuer_subject_id", "iss": "…", "sub": "…" },
+  "format":  "complex",
+  "user":    { "format": "iss_sub", "iss": "…", "sub": "…" },
   "session": { "format": "opaque", "id": "…" }
 }
 ```

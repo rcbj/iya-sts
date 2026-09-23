@@ -941,8 +941,9 @@ class Saml11Sso {
     // saml/document_settings.ts.
     const how = documentSettings.signatureOptions();
     const signed = stsCrypto.signXml(xml, {
-      privateKeyPem: STS.privateKeyPem,
-      certPem: STS.certPem,
+      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key.
+      privateKeyPem: STS.xml.privateKeyPem,
+      certPem: STS.xml.certPem,
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,
       placement: placement === 'append'
@@ -1865,10 +1866,11 @@ class Saml11Sso {
   // hardest. See decision 4 for why all four request types are answered where
   // the 2.0 module answers one.
   //
-  // It is not authenticated, and on a service that authenticates nobody that is
-  // the ordinary state of affairs rather than a decision about this endpoint.
-  // What stands in for authentication on the artifact path is the
-  // AssertionHandle, which is twenty random bytes, and the one-shot rule.
+  // An artifact request is authenticated since the #37 follow-up — a
+  // signature or a TLS client certificate, by `saml2.requireSignedAuthnRequests`
+  // (`authenticateArtifactCaller()`) — and is resolved only for the relying
+  // party it was issued to. The AssertionHandle's twenty random bytes and the
+  // one-shot rule are still what protect it where no signature is required.
   //
   // **A QUERY, THOUGH, HAS NO SUCH THING**, and that is worth saying out loud
   // rather than leaving inside the sentence above: in DEVELOPMENT mode anybody
@@ -2199,9 +2201,10 @@ class Saml11Sso {
       // release policy for SAML 1.1 relying parties — does not exist here. A
       // query gated on "presented some verified certificate" would answer any
       // holder of any certificate this service trusts about anybody, which is
-      // the same hole with a handshake in front of it. Artifact resolution and
-      // AssertionIDReference are UNCHANGED: each is protected by twenty random
-      // bytes nobody can name without having been handed them.
+      // the same hole with a handshake in front of it. Artifact resolution is
+      // authenticated separately (`authenticateArtifactCaller()`), and it and
+      // AssertionIDReference are protected by twenty random bytes nobody can
+      // name without having been handed them.
       // -----------------------------------------------------------------------
       if (!mode.opensTestControls()) {
         log.info('saml11: refused an ' +
@@ -2411,8 +2414,17 @@ class Saml11Sso {
     const keyDescriptor = (use) => {
       log.debug("Entering keyDescriptor().");
       log.debug("Leaving keyDescriptor().");
+      // One per live generation of the XML key (#42), for signing.
+      if (use === 'signing') {
+        return helpers.ownRsaCertificates('xml').map(function (one: any) {
+          return '<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="' +
+            NS_DS + '"><ds:X509Data><ds:X509Certificate>' +
+            stsCrypto.stripPem(one.certPem) + '</ds:X509Certificate>' +
+            '</ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
+        }).join('');
+      }
       return '<md:KeyDescriptor use="' + use + '"><ds:KeyInfo xmlns:ds="' +
-        NS_DS + '"><ds:X509Data><ds:X509Certificate>' + STS.certB64 +
+        NS_DS + '"><ds:X509Data><ds:X509Certificate>' + STS.xml.certB64 +
         '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
     };
 
@@ -2700,10 +2712,8 @@ class Saml11Sso {
     // function has always been asking, now asked in one place for all four
     // profiles. It also refuses a signature whose reference names a different
     // element, which this file could not previously check at all.
-    const result = stsCrypto.verifyXmlSignature(xml, {
-      element: rootLocalName,
-      certPem: STS.certPem
-    });
+    // Any generation of this realm's XML key (#42): helpers.verifyOwnXml().
+    const result = helpers.verifyOwnXml(xml, { element: rootLocalName });
     log.debug("Leaving Saml11Sso.verifySignature(). ok=" + result.ok);
     return result;
   }

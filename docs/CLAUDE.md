@@ -35,9 +35,25 @@ they come from is the second copy that is wrong within a week. The page is
 committed, so it still reads in the repository and on the site with no build
 step here; what the generator replaces is the typing, not the file.
 
-Adding a page: write the markdown, add it to `header_pages` in `_config.yml` if it
-should appear in the top navigation, and link it from `index.md`. There is no
-index to regenerate.
+Adding a page: write the markdown, add it to the right section of
+`_data/navigation.yml` so it appears in the sidebar, and link it from
+`index.md`. There is no index to regenerate.
+
+**The sidebar is four small overrides of minima 2.5.1, the version GitHub
+Pages ships (2026-09-22)**: `_layouts/default.html` (minima's, with the sidebar
+beside the content), `_includes/header.html` (the title only, and the menu
+button a narrow screen needs), `_includes/sidebar.html` and `assets/main.scss`
+(minima's stylesheet imported, then the layout). No script — the narrow-screen
+menu is a checkbox, as minima's own header was. `header_pages` is gone: it put
+every page across the top, and at twenty-six pages that was not navigation.
+
+**A protocol page has one shape** (2026-09-22): Features, Development and
+product mode, Configuration (a table of every `common/config.js` key for the
+family: setting, environment variable, default, runtime, what it does), Design
+decisions, In the running service, Related. The configuration table is a copy
+of rows in `common/config.js` and will drift when a row changes — the live
+source is the protocol's console page and `GET /admin-api/config`, and the
+table says so; update it when you change a row for that family.
 
 ## The two pages added on 2026-09-04, and the line between them
 

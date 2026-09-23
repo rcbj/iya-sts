@@ -143,7 +143,7 @@ module.exports = {
               ' and ML-DSA needs 3.5, which is node 24 (the Dockerfile pins ' +
               '24.16.0, so the containerized run does check all of it)');
       t.log.warn('NOT CHECKED HERE: every ML-DSA certificate assertion in ' +
-                 'pq_certificates.js. Run ./docker-run-tests.sh, or use ' +
+                 'pq_certificates.js. Run ./run-tests.sh, or use ' +
                  'node 24, to check them. The post-quantum JOSE algorithms ' +
                  'are unaffected and worker_pool.js still covers them — they ' +
                  'come from @noble/post-quantum and need nothing of OpenSSL.');

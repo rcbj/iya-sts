@@ -111,6 +111,7 @@ const { usernameFor } = require("./random_username.js");
 const facts = require("./service_facts.js");
 const registry = require("./sts_applications.js");
 const wire = require("./krb5_wire.js");
+const { declineToRun } = require("./expectation.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -748,6 +749,17 @@ async function asOverProxy(tcp, tcpTgt, spn) {
 
 async function test() {
   log.debug("Entering test().");
+  // NOT PUBLISHED HERE (2026-09-21): a runner that knows the environment it
+  // drives does not publish TCP 88 says so (deploy/aws/run-suite.sh), and the
+  // job declines rather than timing out on a port nobody listens on. The
+  // MS-KKDCP section compares against the TCP ticket, so it goes too.
+  if (String(process.env.STS_TEST_UNPUBLISHED || "").split(",")
+        .indexOf("kerberos") >= 0) {
+    declineToRun(log, "this environment does not publish the KDC's TCP 88 " +
+                      "(STS_TEST_UNPUBLISHED names kerberos).");
+    log.debug("Leaving test(). Skipped.");
+    return;
+  }
   log.info("Driving Kerberos and SPNEGO at " + base);
   await learnTheService();
 

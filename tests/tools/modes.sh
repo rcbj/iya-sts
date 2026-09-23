@@ -1,9 +1,9 @@
 # shellcheck shell=bash
 # ===========================================================================
-# tests/tools/modes.sh — THE CONFIGURATIONS THE SUITE IS RUN IN: THREE BY
-# DEFAULT, AND A FOURTH (`cluster`) ON REQUEST.
+# tests/tools/modes.sh — THE CONFIGURATIONS THE SUITE IS RUN IN: THREE, AND A
+# BARE `./run-tests.sh` RUNS ALL OF THEM (2026-09-21).
 #
-# `./docker-run-tests.sh` runs the whole suite once per mode, and this file is
+# `./run-tests.sh` runs the whole suite once per mode, and this file is
 # the ONE place the modes are defined. It was written when
 # `./local-run-tests.sh` did the same (it was removed on 2026-09-16): two
 # copies would have been two answers to "what does a green run cover", and the
@@ -13,59 +13,58 @@
 # second launcher, if one comes back, reads the same definition.
 #
 # ---------------------------------------------------------------------------
-# WHY THREE, AND WHY THEY ARE NOT INTERCHANGEABLE.
+# WHY THESE THREE (2026-09-21), AND WHAT THEY REPLACED.
 #
-# They differ in what SHARES state between the parts of this service, and each
-# one can be green while another is red — which was not a hypothesis. On
-# 2026-09-07 `sts_admin_api_operations` passed in `memory` and failed in
-# `postgres`, with dispatching off in both; a suite that ran only the first
-# would have called that build good.
+# Until that day there were `memory`, `postgres` (then `product`) and
+# `dispatch` by default and `cluster` on request, each adding ONE axis — the
+# store, product mode, request workers, a second node — so a mode red where
+# the one before it was green named the axis at fault. rcbj replaced them with
+# the two ways this service is actually DEPLOYED, beside the baseline:
 #
-#   memory    THE BASELINE, and what this suite has always run. One process,
-#             nothing persisted, nothing coordinated. It is first because it is
-#             the configuration every other one is a departure from, and a
-#             failure here is a failure in the service rather than in anything
-#             about how it was deployed.
+#   memory       THE BASELINE. One process, development mode, nothing
+#                persisted, nothing coordinated. A failure here is a failure
+#                in the service rather than in anything about how it was
+#                deployed, and it is first so that is reported before the
+#                heavier modes fail for the same reason in more words.
 #
-#   postgres  PERSISTED AND COORDINATING, still one process. This is where a
-#             write goes through the change log and comes back, so it is the
-#             mode that exercises `persistence_replication.js` against every
-#             protocol rather than against `tests/replication.js`'s stubs. A
-#             failure here and a pass in `memory` is a persistence defect.
+#   single-node  A SINGLE-NODE PRODUCTION DEPLOYMENT: `global.mode=product`,
+#                postgres, coordinating, the keystore under OpenBao's KEK, and
+#                request workers — three protocol workers and one for the
+#                console and portal, every path dispatched, read-your-write on.
+#                It is `product` and `dispatch` MERGED, because product mode
+#                with workers is how a node is run, and bugs that need both at
+#                once (a derivation racing a clear across workers) were
+#                reachable only on AWS.
 #
-#   dispatch  THE SAME, PLUS REQUEST WORKERS. The front process proxies and N
-#             children run the handlers, so this is the only mode in which the
-#             routing, the affinity, the certificate forwarding and the read
-#             barrier are exercised by real protocol traffic at all. A failure
-#             here and a pass in `postgres` is a dispatch defect — and that
-#             distinction is the whole reason the three are separate runs
-#             rather than one run with more turned on.
+#   cluster      A MULTI-NODE PRODUCTION DEPLOYMENT: two such nodes —
+#                product, postgres, workers on BOTH — active-active behind an
+#                HAProxy in TCP mode with PROXY protocol v2, on one postgres
+#                and one OpenBao. A separate mode rather than a flag on
+#                `single-node`, because single-node and multi-node differ in
+#                too many ways to read one run's failure: what one node holds
+#                that the other cannot see, two nodes deciding one thing twice,
+#                a balancer between the client and the service.
 #
-#   cluster   TWO CONTAINERS, ACTIVE-ACTIVE, ON ONE POSTGRES AND ONE OPENBAO
-#             (2026-09-14, issue #46), each a single process, behind an HAProxy
-#             in TCP mode that owns every port the suite reaches. Every job's
-#             client opens a new connection per request, so its requests
-#             alternate between the nodes: a write on one and the read-back
-#             on the other is the ordinary case rather than a race. A failure
-#             here and a pass in `postgres` is a CLUSTER defect — something a
-#             node holds that the other cannot see, or two nodes deciding one
-#             thing twice. tests/CLAUDE.md says what it does not cover.
+# **WHAT THE MERGE COSTS, SAID SO NOBODY REDISCOVERS IT.** A failure in
+# `single-node` and not in `memory` can be the store, product mode or the
+# workers, and the job's own log has to say which — the old three-mode split
+# answered that by construction. A failure in `cluster` and not in
+# `single-node` is still a CROSS-NODE defect, which is the comparison worth
+# keeping and why the two production modes are separate.
 #
-#             NOT IN STS_ALL_MODES, and that is a decision about cost rather
-#             than about importance: it is a fourth whole run of the suite and
-#             two services' worth of memory, and a bare run is already an
-#             hour. `--modes=cluster` asks for it; `--modes=memory,postgres,
-#             dispatch,cluster` is everything.
+# **AND THE COST IN TIME.** `cluster` is a whole run on two nodes of five
+# processes each, the heaviest stack this suite starts. CI runs it as a job
+# of its own (`.github/workflows/tests.yml`) beside `memory,single-node`,
+# both through `./run-tests.sh`, so each job's timeout still covers the modes
+# it runs (tests/teardown_bounds.js holds that arithmetic).
 #
 # ---------------------------------------------------------------------------
-# THE ORDER IS DELIBERATE: cheapest and most fundamental first, so that a break
-# in the service itself is reported before twenty minutes of the two modes that
-# would fail for the same reason and say something more complicated about it.
+# THE ORDER IS DELIBERATE: cheapest and most fundamental first.
 # ===========================================================================
 
-# The mode names a bare run runs, in the order they run. `cluster` is defined
-# below and is asked for by name — see the header.
-STS_ALL_MODES=(memory postgres dispatch)
+# The mode names a bare run runs, in the order they run.
+STS_ALL_MODES=(memory single-node cluster)
+
 
 # ---------------------------------------------------------------------------
 # The environment each mode adds to the stack, one `NAME=value` per line.
@@ -119,74 +118,32 @@ STS_TEST_FRESH_CONNECTIONS=0
 STS_TEST_CLUSTER_NODES=1
 EOF
       ;;
-    postgres)
-      # DEVELOPMENT MODE, THOUGH THIS ONE HAS A STORE AND COULD RUN THE OTHER —
-      # and that is a decision about what this suite IS rather than an omission.
-      # Product mode makes every surface that used to decide for itself whether
-      # a credential was required ask `common/mode.js` instead, and the answer
-      # is yes: passwords are checked, activation is required, the permissive
-      # mock stops being permissive. Nearly every protocol job here signs
-      # somebody in under a name it invented with no password, because that is
-      # what a mock identity service is for. A `product` protocol mode would
-      # therefore fail by design and teach nobody anything.
+    single-node)
+      # A SINGLE-NODE PRODUCTION DEPLOYMENT (2026-09-21) — see the header.
       #
-      # PRODUCT MODE IS COVERED, AND IN PROCESS: `tests/keystore.js` and
-      # `tests/minted_persistence.js` flip `global.mode` directly and assert the
-      # things that actually differ — a signing key that survives a restart,
-      # minted rows sealed under the KEK. That is the right place for it. What
-      # is NOT covered by any protocol job is the shipped default stack, and
-      # this comment is where a reader should learn that rather than infer it.
+      # `STS_MODE=product` REACHES THE SERVICE ONLY BECAUSE
+      # docker-compose-run-tests.yml FORWARDS IT, which it did not until the
+      # day `product` became a mode: the `development` every arm had named was
+      # a no-op that matched the setting's default. The launcher adds what a
+      # product node is GIVEN — the pinned base URL and generated Kerberos
+      # passwords — for any mode whose STS_MODE is product (run-tests.sh,
+      # "THE `product` MODE" block).
+      #
+      # THREE PROTOCOL WORKERS rather than one, because one worker cannot show
+      # a routing mistake: every request lands on it whatever the affinity
+      # says. ONE surface worker for the console and portal, because what a
+      # second pool can get wrong is the CROSSING — a console sign-in minted in
+      # a protocol worker and read in a surface worker — and one is enough to
+      # cross on every sign-in. READ-YOUR-WRITE ON, because the suite is full
+      # of write-then-read-it-back assertions by cookie-less API clients that
+      # spread across workers by design.
+      #
+      # THE KEYSTORE UNDER OPENBAO'S KEK (`persisted`), which product mode
+      # requires anyway. CLUSTER OFF, explicitly: product mode on postgres
+      # otherwise defaults `auto` to active-passive, which is `cluster`'s axis
+      # and not this one's. PROXY PROTOCOL OFF: there is no balancer.
       cat <<'EOF'
-STS_MODE=development
-STS_PERSISTENCE_MODE=postgres
-STS_PERSISTENCE_COORDINATE=true
-STS_WORKERS_REQUEST_COUNT=0
-STS_WORKERS_SURFACE_COUNT=0
-STS_WORKERS_DISPATCH=
-STS_WORKERS_READ_YOUR_WRITE=false
-STS_KEYS_SOURCE=generated
-STS_CLUSTER_MODE=off
-STS_PROXY_PROTOCOL=off
-STS_TEST_FRESH_CONNECTIONS=0
-STS_TEST_CLUSTER_NODES=1
-EOF
-      ;;
-    dispatch)
-      # THREE WORKERS rather than one, because one worker cannot show a routing
-      # mistake: every request lands on it whatever the affinity says. Three is
-      # the smallest number where "the wrong worker answered" is a state the
-      # suite can actually reach.
-      #
-      # READ-YOUR-WRITE IS ON HERE AND NOWHERE ELSE. The suite is full of
-      # write-then-read-it-back assertions made by cookie-less API clients,
-      # which spread across workers by design — without the barrier those are
-      # racing the change log, and a suite that raced would fail intermittently
-      # and teach nobody anything.
-      #
-      # AND THE SECRET STORE IS READ HERE (2026-09-12), which is the third axis
-      # this mode carries. `STS_KEYS_SOURCE=persisted` turns the keystore ON
-      # WITHOUT product mode — `tests/keystore.js` records that as the reason
-      # the setting exists — so the key-encryption key is really fetched, from
-      # the OpenBao container the stack brings up, with the client certificate
-      # that store issued and a policy that lets it read and not write.
-      #
-      # The DATABASE PASSWORD comes out of that store in every mode, because
-      # the compose file's connection string no longer carries one at all. What
-      # is particular to this mode is the KEK, which needs a keystore to be on
-      # before anything reads it.
-      #
-      # AND THE CONSOLE AND THE PORTAL ON A POOL OF THEIR OWN (2026-09-13),
-      # which is a fourth axis: `STS_WORKERS_SURFACE_COUNT=1`. ONE worker and
-      # not three, and the argument above for three does not carry over. What
-      # a second pool can get WRONG is the crossing — a console sign-in minted
-      # in a protocol worker and read in a surface worker, and the OIDC back
-      # channel reaching the protocol worker that holds the code — and one
-      # surface worker is enough to cross on every sign-in. Choosing among
-      # several workers WITHIN a pool is the same code the three protocol
-      # workers already exercise, and every extra worker is a whole copy of the
-      # service in a mode that has been killed for memory before.
-      cat <<'EOF'
-STS_MODE=development
+STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_PERSISTENCE_COORDINATE=true
 STS_WORKERS_REQUEST_COUNT=3
@@ -201,32 +158,30 @@ STS_TEST_CLUSTER_NODES=1
 EOF
       ;;
     cluster)
-      # TWO NODES, ACTIVE-ACTIVE, BEHIND A LOAD BALANCER (2026-09-14, #46).
-      # The stack is tests/docker-compose-cluster.yml (or its containerized
-      # twin) layered over the mode's usual one; what follows is what each
-      # NODE is, and both are given exactly the same.
+      # A MULTI-NODE PRODUCTION DEPLOYMENT (2026-09-14, #46; product mode and
+      # workers since 2026-09-21). The stack is
+      # tests/docker-compose-run-tests-cluster.yml layered over the mode's
+      # usual one; what follows is what each NODE is, and both are given
+      # exactly the same — `sts2` extends `sts`, so every value here, and the
+      # launcher's generated product values, reach both.
       #
-      # DEVELOPMENT MODE, for the reason the `postgres` arm gives: the suite
-      # signs people in with no password. That is also why this mode names
-      # `active-active` rather than leaving `cluster.mode=auto` to decide —
-      # auto is `off` outside product mode.
+      # PRODUCT MODE AND WORKERS ON BOTH NODES, BY rcbj's DECISION. It was
+      # development mode with one process per node until that day, to keep
+      # the cluster the one axis it added, and because two nodes of four
+      # processes each had been killed for memory on the machine that runs
+      # this. The mode is a production deployment now; if memory bites again,
+      # that is a finding about the machine or the service, not a reason to
+      # shrink the mode back.
       #
-      # THE KEY-ENCRYPTION KEY FROM OPENBAO (`STS_KEYS_SOURCE=persisted`), as in
-      # `dispatch`, and here it is not optional: active-active refuses to start
-      # without an operator key-encryption key (STS-CLUSTER-0008), because a
-      # key made per container is a different key on every node.
-      #
-      # REQUEST WORKERS OFF ON BOTH NODES. The axis under test is BETWEEN
-      # containers; within one, `dispatch` already covers the workers, and two
-      # nodes of four processes each is a stack this machine has been killed
-      # for memory running before. So each node is one process, and anything
-      # that fails here and passes in `postgres` is a cross-node defect.
+      # `active-active` named rather than left to `cluster.mode=auto`, which
+      # in product on postgres is active-passive. THE KEY-ENCRYPTION KEY FROM
+      # OPENBAO is not optional here: active-active refuses to start without
+      # an operator key-encryption key (STS-CLUSTER-0008).
       #
       # PROXY PROTOCOL v2 ON, as behind the NLB this imitates: the balancer
       # sends a header naming the real peer and both nodes require it from the
       # balancer's address, which the launcher names as the one trusted proxy
-      # (STS_TRUSTED_PROXIES, an address it pins). `off` in the other three
-      # modes, which have no proxy. A launcher run with
+      # (STS_TRUSTED_PROXIES, an address it pins). A launcher run with
       # STS_TEST_CLUSTER_PROXY_PROTOCOL=off turns it off for both halves, to
       # tell a PROXY-protocol failure from a cluster one.
       #
@@ -237,13 +192,13 @@ EOF
       # a new connection per request (tools/fresh-connections.js), and how many
       # nodes `sts_cluster_alternation.js` must see answer.
       cat <<'EOF'
-STS_MODE=development
+STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_PERSISTENCE_COORDINATE=true
-STS_WORKERS_REQUEST_COUNT=0
-STS_WORKERS_SURFACE_COUNT=0
-STS_WORKERS_DISPATCH=
-STS_WORKERS_READ_YOUR_WRITE=false
+STS_WORKERS_REQUEST_COUNT=3
+STS_WORKERS_SURFACE_COUNT=1
+STS_WORKERS_DISPATCH=*
+STS_WORKERS_READ_YOUR_WRITE=true
 STS_KEYS_SOURCE=persisted
 STS_CLUSTER_MODE=active-active
 STS_PROXY_PROTOCOL=v2
@@ -265,9 +220,8 @@ stsModeDescription()
 {
   case "$1" in
     memory)   echo "one process, nothing persisted, nothing coordinated — the baseline" ;;
-    postgres) echo "one process, persisted and coordinating through the change log" ;;
-    dispatch) echo "3 request workers + 1 for the console and portal, every path dispatched, read-your-write on" ;;
-    cluster)  echo "2 single-process nodes active-active on one postgres, behind an L4 load balancer, a new connection per request" ;;
+    single-node) echo "a single-node production deployment: product mode, postgres, 3 request workers + 1 surface worker, read-your-write" ;;
+    cluster)  echo "a multi-node production deployment: 2 such nodes active-active on one postgres, behind an L4 load balancer, a new connection per request" ;;
     *)        echo "unknown" ;;
   esac
 }
@@ -280,6 +234,26 @@ stsModeNeedsPostgres()
   case "$1" in
     memory) return 1 ;;
     *)      return 0 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# How long the launcher lets a mode run before it stops the stack
+# (STS_MODE_TIMEOUT, run-tests.sh), in seconds, per mode (2026-09-21).
+#
+# `cluster` has a bound of its own because a write there is two production
+# nodes coordinating through one postgres, and the three bulk loads are 15,000
+# of them: on 2026-09-21 the SCIM load alone took 22 minutes, and the mode was
+# stopped at job 289 of 290 by the 50-minute bound every mode shared, with
+# nothing failing. 100 minutes is that run's pace (about 80) with room;
+# STS_CLUSTER_MODE_TIMEOUT overrides it, as STS_MODE_TIMEOUT does the others.
+# The CI cluster job's own timeout is held above it by tests/teardown_bounds.js.
+# ---------------------------------------------------------------------------
+stsModeTimeout()
+{
+  case "$1" in
+    cluster) echo "${STS_CLUSTER_MODE_TIMEOUT:-6000}" ;;
+    *)       echo "${STS_BASE_MODE_TIMEOUT:-3000}" ;;
   esac
 }
 

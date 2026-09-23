@@ -1,0 +1,14 @@
+{%- comment -%}
+  Replaces minima's header, which drew every page in `header_pages` across
+  the top. The site's navigation is the sidebar (_includes/sidebar.html); the
+  header keeps the title and, on a narrow screen, the button that opens it.
+{%- endcomment -%}
+<header class="site-header" role="banner">
+  <div class="wrapper site-header-wrapper">
+    <label for="sidebar-trigger" class="sidebar-button" aria-label="Menu">
+      <svg viewBox="0 0 18 15" width="18" height="15" aria-hidden="true"><path d="M0 1.5h18M0 7.5h18M0 13.5h18" stroke="currentColor" stroke-width="2.4"/></svg>
+    </label>
+    <a class="site-title" rel="author" href="{{ "/" | relative_url }}">{{ site.title | escape }}</a>
+    <span class="site-tagline">documentation</span>
+  </div>
+</header>

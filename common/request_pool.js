@@ -130,7 +130,6 @@ let tlsMaterial = null;
 // the fork beside the certificate. It is a member of each realm's key set since
 // 2026-09-12 and travels on the key channel with the rest of it — see
 // `common/helpers.js`'s makeRequestEncryptionKey().)
-let bbsKeyPairB64 = '';
 // Workers announce their own commits (see receiveCommitted()), so proxy()
 // must NOT bump the generation when a response goes out — doing both would
 // move it twice per write and make every worker permanently one behind.
@@ -568,20 +567,6 @@ function awaitCommitConfirmations(servedBy) {
 }
 
 
-// THE BBS PAIR, handed over before the pool forks for setServerCertificate()'s
-// reason: it is one per SERVICE, it is what a did:web document publishes, and a
-// worker that made its own would publish a verification method nothing it
-// signed can be verified against. Generated in server.js because making one is
-// asynchronous and this file's start() is not the place to await.
-function setBbsKeyPair(encoded) {
-  log.debug("Entering setBbsKeyPair().");
-  bbsKeyPairB64 = String(encoded || '');
-  if (bbsKeyPairB64) {
-    process.env.STS_BBS_KEYPAIR = bbsKeyPairB64;
-  }
-  log.debug("Leaving setBbsKeyPair().");
-}
-
 function setServerCertificate(material) {
   log.debug("Entering setServerCertificate().");
   if (!material || !material.certPem || !material.keyPem) {
@@ -736,20 +721,19 @@ function peerOf(req) {
   // leaf alone has no issuer to verify it with. This is the path OpenSSL built
   // in the front process, anchor included, bounded because its shape is
   // somebody else's bytes. The register half of the check needs none of it.
+  //
+  // READ THROUGH `revocation_status.fromSocket()` SINCE 2026-09-21, not by a
+  // walk of this file's own: a RESUMED session gives node the leaf alone, and
+  // that function hands back the chain the full handshake showed this process
+  // (its header argues it). A second walk here lost it for every request
+  // after a client's first connection. Required lazily — this file loads
+  // before the stack.
   const chain = [];
   try {
-    let at = socket.getPeerCertificate(true);
-    at = at && at.issuerCertificate;
-    while (at && at.raw && chain.length < 8) {
-      if (at.raw.equals(cert.raw)) {
-        break;
-      }
-      chain.push(at.raw.toString('base64'));
-      if (!at.issuerCertificate || at.issuerCertificate === at) {
-        break;
-      }
-      at = at.issuerCertificate;
-    }
+    const input = require('./revocation_status').fromSocket(socket);
+    ((input && input.chain) || []).slice(0, 8).forEach(function (der) {
+      chain.push(der.toString('base64'));
+    });
   } catch (e) {
     log.debug("Caught in peerOf(): " + ((e && e.message) || e));
     // A socket that went away between the two reads. The leaf still goes; a
@@ -1704,7 +1688,12 @@ function receivePublishedKeys(entry, published) {
   // and the two arbiters would disagree for as long as they kept exchanging
   // it. The store decides for every node; this channel only carries it.
   // -------------------------------------------------------------------------
-  if (published.confirmed) {
+  // A NEWER KEY GENERATION (2026-09-22, #42) is a rotation, not a race: the
+  // higher generation is the set every process moves to, as the store's own
+  // merge decides (`keystore.js`, decideKeys()).
+  const newer = heldBlob &&
+    keystore.generationOf(published.blob) > keystore.generationOf(heldBlob);
+  if (published.confirmed || newer) {
     keystore.adoptShared(realmId, published.blob);
     log.info('request_pool: the "' + realmId + '" realm\'s key set was ' +
              'confirmed by the store through worker ' + (entry && entry.pid) +
@@ -2263,7 +2252,6 @@ function fork(pool, slot) {
                  // assertions its siblings accept.
                  pki: keystore.pkiAll(),
                  kek: keystore.ephemeralKek(),
-                 bbsKeyPair: bbsKeyPairB64,
                  // WHAT IS BOUND ON THE DIRECTORY RIGHT NOW. A worker that
                  // started with an empty list and was never told otherwise
                  // would answer a sign-out for a connection made before it
@@ -4616,7 +4604,6 @@ module.exports = {
   reset: reset,
   middleware: middleware,
   setServerCertificate: setServerCertificate,
-  setBbsKeyPair: setBbsKeyPair,
   runOperation: runOperation,
   operationDispatched: operationDispatched,
   operationKinds: operationKinds,

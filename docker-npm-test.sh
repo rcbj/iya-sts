@@ -15,7 +15,7 @@
 #   ./docker-npm-test.sh --only=typecheck      the files whose name matches
 #
 # The image is tagged for this script alone, so it never replaces the one
-# `./docker-run-tests.sh` builds, and no compose project is involved: nothing
+# `./run-tests.sh` builds, and no compose project is involved: nothing
 # listens, nothing is left running, and nothing is written to the host.
 # ---------------------------------------------------------------------------
 set -euo pipefail

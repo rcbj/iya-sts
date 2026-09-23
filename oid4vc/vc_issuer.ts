@@ -145,6 +145,8 @@ interface VcIssuerDeps {
   jsonFromB64u: typeof helpers.jsonFromB64u;
   randomId: typeof helpers.randomId;
   bbsKeyPair: typeof helpers.bbsKeyPair;
+  bbsGenerations: typeof helpers.bbsGenerations;
+  bbsKidOf: typeof helpers.bbsKidOf;
   vciError: typeof helpers.vciError;
   signingKeyFor: typeof helpers.signingKeyFor;
   requestEncryptionKeyFor: typeof helpers.requestEncryptionKeyFor;
@@ -229,6 +231,11 @@ const vciNoncesCount = cacheRegistry.register({
   lifetime: function (): string {
     return 'oid4vci.cNonceTtlS after it was issued, or when it is used.';
   },
+  // What the nonce endpoint drops before it issues one (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, vciNonces,
+    function (expires: unknown, nonce: unknown, now: number): boolean {
+      return Number(expires) < now;
+    }),
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, vciNonces,
       function (expires: unknown, nonce: unknown): object {
@@ -374,6 +381,8 @@ class VcIssuer {
       jsonFromB64u: helpers.jsonFromB64u,
       randomId: helpers.randomId,
       bbsKeyPair: helpers.bbsKeyPair,
+      bbsGenerations: helpers.bbsGenerations,
+      bbsKidOf: helpers.bbsKidOf,
       vciError: helpers.vciError,
       signingKeyFor: helpers.signingKeyFor,
       requestEncryptionKeyFor: helpers.requestEncryptionKeyFor,
@@ -1344,10 +1353,11 @@ class VcIssuer {
   // buildCredentialFor and the credential endpoint are async as well.
   //
   // Holder binding differs from the other formats by necessity: there is no
-  // cnf.jwk here. The holder is named by credentialSubject.id, a did:key built
-  // from the key it proved possession of, and what proves possession at
-  // presentation time is the BBS derived proof itself rather than a separate
-  // signature by the holder.
+  // cnf.jwk here. The holder is named by credentialSubject.id, a did:jwk built
+  // from the key it proved possession of, and what proves possession at a
+  // sign-in is a Data Integrity proof by that did:jwk over the presentation
+  // (`vc_data_integrity.ts`, rule 3at). This comment said did:key and "no
+  // separate signature by the holder" until 2026-09-21, both since changed.
   private async buildLdpVc(subjectClaims, holderJwk, credentialIssuer,
                             issuerDid, status) {
     const { log, logArtifact, b64u, bbsKeyPair, bbs2023, VCI_JWT_TYPES
@@ -1358,9 +1368,14 @@ class VcIssuer {
     // dereferenceable https URL.
     log.debug("Entering VcIssuer.buildLdpVc().");
     const issuerId = issuerDid || credentialIssuer;
-    const bbsVerificationMethod = issuerDid ? issuerDid + '#bbs-1'
-                                            : credentialIssuer + '/bbs/keys/1';
     const keys = await bbsKeyPair();
+    // NAMED BY ITS KID (#49 P5): the realm's BBS key rotates, and a method id
+    // that meant "whichever key is current" would resolve, after a rotation,
+    // to a key this credential was not signed with.
+    const bbsKid = this.deps.bbsKidOf(keys.publicKey);
+    const bbsVerificationMethod = issuerDid ? issuerDid + '#' + bbsKid
+                                            : credentialIssuer + '/bbs/keys/' +
+                                              bbsKid;
     const now = Math.floor(Date.now() / 1000);
     // THE HOLDER, as the did:jwk of the key the wallet proved at issuance —
     // the one binding this format has, and what the holder's Data Integrity
@@ -1395,6 +1410,43 @@ class VcIssuer {
     // issuer that cannot verify its own output has no business emitting it.
     const check = await bbs2023.verifyBase(issued.credential, keys.publicKey);
     if (!check.ok) {
+      // WHY IT DID NOT VERIFY, because the two causes need different fixes
+      // and the refusal alone names neither (2026-09-22). `verifyBase()`
+      // re-derives the canonical statements and the header from the SIGNED
+      // document and swallows the library's own error, so a failure is either
+      // the document canonicalising differently than it did at signing — the
+      // statements or the header differ — or the key: same statements, same
+      // header, and a signature that does not verify under this public key.
+      // Both halves are here rather than in the vendored module, which may
+      // not be edited in this repository.
+      const signedStatements = (issued.statements || []) as string[];
+      const checkedStatements = (check.statements || []) as string[];
+      const differing = signedStatements.filter(function (one, i) {
+        return checkedStatements[i] !== one;
+      });
+      const headerSame = Buffer.from(issued.header || []).equals(
+        Buffer.from(check.header || []));
+      log.error(errorCodes.tag('STS-VC-0079') +
+                'vc_issuer: the ldp_vc credential this issuer just built ' +
+                'does not verify under the key that signed it (' + bbsKid +
+                '). ' + signedStatements.length + ' statement(s) signed, ' +
+                checkedStatements.length + ' re-derived, ' + differing.length +
+                ' differing; the proof header is ' +
+                (headerSame ? 'the same' : 'DIFFERENT') + '. ' +
+                (differing.length || !headerSame
+                  ? 'The document does not canonicalise the way it did when ' +
+                    'it was signed: ' +
+                    JSON.stringify(differing.slice(0, 3))
+                  : 'The document canonicalises the same and the proof ' +
+                    'header is the same, so what is left is the SIGNATURE ' +
+                    'or the KEY — which need different fixes, so the pair ' +
+                    'was tried against a control document: ' +
+                    (await this.bbsPairWorks(keys)) + ' Secret ' +
+                    (keys.secretKey ? keys.secretKey.length : 0) +
+                    ' byte(s), public ' +
+                    (keys.publicKey ? keys.publicKey.length : 0) +
+                    ' byte(s), from ' + String(keys.source || 'unrecorded') +
+                    '.'));
       log.debug("Leaving VcIssuer.buildLdpVc(). It does not verify.");
       throw new Error('the ldp_vc credential this issuer just ' +
                       'built does not verify');
@@ -1423,6 +1475,44 @@ class VcIssuer {
   // either — the day this reads `sub` before `preferred_username`, say — would
   // link a DID to a person nothing else here is filed under, and the symptom
   // would be a second directory entry rather than an error.
+  // THE CONTROL FOR THE SELF-CHECK ABOVE (2026-09-22). *The statements and
+  // the header match, therefore the halves are not a pair* is an INFERENCE
+  // and it is not a sound one — a signature can fail for something neither
+  // comparison covers. So on the failure path only, the same pair signs a
+  // FIXED minimal document and verifies it: if that works, the pair is sound
+  // and the fault is in the credential this issuer built; if it does not, the
+  // pair really is broken and the key path is where to look. It costs
+  // nothing in the ordinary case, because it runs only once a credential has
+  // already failed to verify.
+  private async bbsPairWorks(keys): Promise<string> {
+    const { log } = this.deps;
+    log.debug("Entering VcIssuer.bbsPairWorks().");
+    try {
+      const control = { '@context': ['https://www.w3.org/ns/credentials/v2'],
+                        type: ['VerifiableCredential'],
+                        issuer: 'did:example:control',
+                        credentialSubject: { id: 'did:example:subject' } };
+      const made = await bbs2023.issue(control,
+        { verificationMethod: 'did:example:control#bbs',
+          created: new Date().toISOString() },
+        keys.secretKey, keys.publicKey);
+      const ok = await bbs2023.verifyBase(made.credential, keys.publicKey);
+      log.debug("Leaving VcIssuer.bbsPairWorks(). " + !!(ok && ok.ok));
+      return (ok && ok.ok)
+        ? 'the pair SIGNS AND VERIFIES a control document, so the halves ' +
+          'ARE a pair and the fault is in the credential that was built.'
+        : 'the pair FAILS on a control document too, so the public and ' +
+          'secret halves are NOT a pair.';
+    } catch (e) {
+      // Diagnosis must never replace the refusal the caller is raising.
+      log.debug("Caught in VcIssuer.bbsPairWorks(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving VcIssuer.bbsPairWorks(). Threw.");
+      return 'the control document could not be signed at all (' +
+             ((e && e.message) || e) + ').';
+    }
+  }
+
   private holderNameFrom(accessToken) {
     const { log, jsonFromB64u } = this.deps;
     log.debug("Entering VcIssuer.holderNameFrom().");
@@ -1797,7 +1887,7 @@ class VcIssuer {
       // opinion, so a token that introspected active could be refused here
       // seconds before it should have been. The shared verifier applies it by
       // default.
-      claims = stsCrypto.verifyJws(accessToken, STS.certPem);
+      claims = helpers.verifyOwnJws(accessToken);
     } catch (e) {
       log.debug("Caught in VcIssuer.requestedClaimPaths(): " +
                 ((e && e.message) || e));
@@ -1925,7 +2015,7 @@ class VcIssuer {
       // Applies `oauth2.clockSkewS` since 2026-08-27 — see the note in
       // requestedClaimPaths() above; this was the second of the four sites that
       // had drifted away from the rule oauth2.js states.
-      claims = stsCrypto.verifyJws(accessToken, STS.certPem);
+      claims = helpers.verifyOwnJws(accessToken);
     } catch (e) {
       // Not our token (or not valid): nothing was granted by us. The caller
       // still checks the token elsewhere; this only answers "what did we
@@ -2339,16 +2429,35 @@ class VcIssuer {
     // regenerated on every start. Its CORS header is `common/cors.js`'s
     // decision like every other response's; the `*` this route used to set for
     // itself would have overridden it.
-    app.get('/bbs/keys/1', async (req, res) => {
+    // `/bbs/keys/<kid>` for every live generation of the realm's BBS key
+    // (#49 P5), which is what a credential's verificationMethod names; `1` is
+    // kept as the name of the CURRENT one.
+    app.get('/bbs/keys/:id', async (req, res) => {
       log.debug("Entering the BBS key endpoint.");
-      const keys = await bbsKeyPair();
+      void bbsKeyPair;
+      const generations = await this.deps.bbsGenerations();
+      const asked = String(req.params.id || '');
+      const one = asked === '1' ? generations[0]
+        : generations.filter(function (g: any): boolean {
+          return g.kid === asked;
+        })[0];
       res.set('Cache-Control', 'no-store');
+      if (!one) {
+        errorCodes.mark(res, 'STS-VC-0087');
+        res.status(404).type('application/json').send(JSON.stringify({
+          error: 'not_found',
+          error_description: 'this realm holds no BBS key "' + asked + '"'
+        }));
+        log.debug("Leaving the BBS key endpoint. No such key.");
+        return;
+      }
       res.status(200).type('application/json').send(JSON.stringify({
-        id: baseUrlOf(req) + '/bbs/keys/1',
+        id: baseUrlOf(req) + '/bbs/keys/' + asked,
         type: 'Multikey',
         controller: baseUrlOf(req),
         cryptosuite: bbs2023.CRYPTOSUITE,
-        publicKeyMultibase: 'u' + bbs2023.bytesToB64u(keys.publicKey)
+        publicKeyMultibase: 'u' + bbs2023.bytesToB64u(one.publicKey),
+        state: one.role
       }));
       log.debug("Leaving the BBS key endpoint.");
     });

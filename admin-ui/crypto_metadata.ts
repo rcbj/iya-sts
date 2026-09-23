@@ -189,6 +189,11 @@ import realms = require('../common/realms');
 // a console page fold instead of being a wall of text. Nothing about what this
 // page SAYS comes from that module.
 import admin = require('./admin');
+// The console's shared view helpers, for the history sub-page's pager. This
+// module is loaded at 20a, after `admin-ui/admin` (18), so requiring the
+// admin-core layer here is the plain require `admin-core/CLAUDE.md` allows
+// from 18 onwards — it registers no route and moves none.
+import adminViews = require('../admin-core/admin_views');
 // THE ONE PLACE THIS SERVICE SIGNS, VERIFIES, ENCRYPTS AND DECRYPTS, and
 // therefore the source of most of this page. `stsCrypto.xmldsig` is the
 // vendored module re-exported, which is taken from here rather than required
@@ -646,6 +651,7 @@ interface CryptoMetadataDeps {
   errorCodes: typeof errorCodes;
   realms: typeof realms;
   admin: typeof admin;
+  adminViews: typeof adminViews;
   stsCrypto: typeof stsCrypto;
   // `stsCrypto.xmldsig`, the vendored module re-exported.
   xmldsig: typeof stsCrypto.xmldsig;
@@ -728,6 +734,7 @@ class CryptoMetadata {
       errorCodes: errorCodes,
       realms: realms,
       admin: admin,
+      adminViews: adminViews,
       stsCrypto: stsCrypto,
       xmldsig: stsCrypto.xmldsig,
       pqJose: pqJose,
@@ -1145,9 +1152,13 @@ class CryptoMetadata {
       { name: 'GNAP',
         signs: 'THE FIVE ACCESS TOKEN FORMATS, three of which are not JWTs. ' +
                'jwt-signed goes through the same signer as every other JWT ' +
-               'here (`typ: GNAP`); biscuit and zcap are signed with the ' +
-               'realm\'s Ed25519 key (Biscuit\'s own block signature, and ' +
-               'Ed25519Signature2020 over a ZCAP-LD capability); a macaroon ' +
+               'here (`typ: GNAP`); a biscuit is signed with the realm\'s ' +
+               'Ed25519 key (Biscuit\'s own block signature); a ZCAP-LD ' +
+               'capability carries a Data Integrity proof in the suite ' +
+               'gnap.zcapCryptosuite names — eddsa-jcs-2022 by default, ' +
+               'mldsa44-jcs-2024 or slhdsa128-jcs-2024 with the realm\'s ' +
+               'post-quantum key, or Ed25519Signature2020 for ' +
+               'compatibility; a macaroon ' +
                'is an HMAC-SHA256 chain under a key derived per resource ' +
                'server. It also signs an HTTP response with RFC 9421 when a ' +
                'client instance asks for one.',
@@ -1633,10 +1644,10 @@ class CryptoMetadata {
         hashes: 'SHA-256 over the SVID DER wherever one is recorded, and the ' +
                 'certificate signature\'s own digest, which follows the key ' +
                 'type.',
-        whatItDoesNot: 'It attests no workload and no node — what the ' +
-                       'Workload API lacks is ATTESTATION, not ' +
-                       'authentication, and its specification says it MUST ' +
-                       'NOT authenticate. It records no SVID it mints, so ' +
+        whatItDoesNot: 'It attests no Workload API caller over TCP — ' +
+                       'the Unix socket\'s callers and every agent are ' +
+                       'attested, and the Workload API\'s specification ' +
+                       'says it MUST NOT authenticate. It records no SVID it mints, so ' +
                        'one is revoked only by naming its serial by hand; ' +
                        'revoking the realm\'s SPIFFE Issuing CA on ' +
                        '/admin/pki is what refuses every SVID under it at ' +
@@ -3831,7 +3842,7 @@ class CryptoMetadata {
 
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, baseUrlOf, parseBody, errorCodes, admin, certificateDialog,
-            certificateViews } = this.deps;
+            certificateViews, esc } = this.deps;
     const self = this;
     log.debug("Entering CryptoMetadata.registerRoutes().");
     // ------------------------------------------------------------------------
@@ -3899,10 +3910,102 @@ class CryptoMetadata {
     app.get('/admin/keys', function (req, res) {
       log.debug("Entering the key pairs endpoint.");
       const report = self.keysJson(baseUrlOf(req));
+      // The 'Signing keys' settings group (#42) is drawn here, its home in
+      // SETTING_HOMES, beside the public document every generation of every
+      // signer is published in.
       admin.respond(req, res, report, 'Key pairs', '/admin/keys',
-                    self.renderKeyPairs(report));
+                    self.renderRotation(report.rotation,
+                                        admin.mayWrite(req)) +
+                    self.renderKeyPairs(report) +
+                    '<p>Every signer of this realm, each key generation ' +
+                    'with its chain, is published anonymously in the ' +
+                    '<a href="' + esc(baseUrlOf(req) + '/crypto/metadata.json') +
+                    '">crypto metadata document</a> (also as <a href="' +
+                    esc(baseUrlOf(req) + '/crypto/metadata.xml') +
+                    '">XML</a>).</p>' +
+                    '<h2>Settings</h2>' + admin.configFormsFor('/admin/keys'));
       log.debug("Leaving the key pairs endpoint. " + report.keys.length +
                 " key(s).");
+    });
+
+    // ------------------------------------------------------------------------
+    // THE HISTORY SUB-PAGE (2026-09-22, #42's follow-up) and the certificate
+    // one of its rows offers. Both are READS behind the console's gate, so
+    // Admin Read is enough — the certificate is a public document, which is
+    // exactly what makes it the half of a retired key worth keeping.
+    // ------------------------------------------------------------------------
+    app.get('/admin/keys/history', function (req, res) {
+      log.debug("Entering the key history endpoint.");
+      const view = self.historyJson(req);
+      admin.respond(req, res, view, 'Key pair history', '/admin/keys',
+                    self.renderHistory(view, req));
+      log.debug("Leaving the key history endpoint. " + view.rows.length +
+                " row(s).");
+    });
+
+    app.get('/admin/keys/history/certificate', function (req, res) {
+      log.debug("Entering the key history certificate endpoint.");
+      const q = req.query || {};
+      const unit = String(q.unit || '').trim();
+      const kid = String(q.kid || '').trim();
+      // NAMED NOTHING? THE INDEX, NOT A REFUSAL. `/admin/sts-metadata` draws
+      // a link per described endpoint, so this path is reached with no query
+      // by the console's own metadata page — and by the link crawl in
+      // `sts_admin_console`, which requires every link this console draws to
+      // resolve. A 404 there would be the console pointing at nothing. A
+      // certificate that was ASKED FOR by name and is not held is still a
+      // 404, which is the honest answer and is linked by nothing.
+      if (!unit || !kid) {
+        res.redirect(303, '/admin/keys/history');
+        log.debug("Leaving the key history certificate endpoint. The index.");
+        return;
+      }
+      const one = self.historyCertificate(realms.currentId(), unit, kid);
+      if (!one || !one.certificatePem) {
+        errorCodes.mark(res, 'STS-KEYS-0068');
+        res.status(404).type('text/plain').set('Cache-Control', 'no-store')
+           .send('This realm has no certificate recorded for that key.');
+        log.debug("Leaving the key history certificate endpoint. None held.");
+        return;
+      }
+      // The whole chain, leaf first, the way `/pki/chain/{scope}/{sha}.pem`
+      // serves one — a leaf alone is a certificate whose path a reader
+      // cannot rebuild once the branch has been replaced.
+      //
+      // **SERVED INLINE, WITH NO `Content-Disposition`**, and that is a
+      // decision rather than an omission. `/admin/keys/export` is a POST
+      // precisely because its answer is a FILE and a link cannot be one:
+      // `sts_admin_console.js` NAVIGATES every `<a href>` this console draws
+      // and requires a status under 400, and a browser told to download does
+      // not navigate. A certificate chain is text a reader can look at, so
+      // this stays an ordinary GET resource and the browser's own Save As is
+      // the download. Anything here that really is a file belongs on a POST,
+      // with the operation rule 7 then owes it.
+      const pem = [one.certificatePem].concat(one.chainPem || []).join('\n');
+      res.status(200).set('Content-Type', 'application/pem-certificate-chain')
+         .set('Cache-Control', 'no-store').send(pem);
+      log.debug("Leaving the key history certificate endpoint. Sent.");
+    });
+
+    // ROTATE / EMERGENCY (#48). Admin Write; a realm administrator rotates
+    // the realm the console is signed in to and no other, which the realm
+    // being AMBIENT already makes so.
+    app.post('/admin/keys/rotate', function (req, res) {
+      log.debug("Entering the key rotation endpoint.");
+      if (!admin.mayWrite(req)) {
+        errorCodes.mark(res, 'STS-ADMIN-0012');
+        admin.respondToAction(req, res, '/admin/keys', { ok: false, errors: [
+          'Rotating keys needs the Admin Write role.'] });
+        log.debug("Leaving the key rotation endpoint. Read-only.");
+        return;
+      }
+      const result = self.keysAction(req, parseBody(req), 'the admin console');
+      if (!result.ok) {
+        errorCodes.mark(res, result.errorCode || 'STS-ADMIN-0012');
+      }
+      admin.respondToAction(req, res, result.ok ? result.href : '/admin/keys',
+                            result);
+      log.debug("Leaving the key rotation endpoint. " + result.ok);
     });
 
     app.post('/admin/keys/export', function (req, res) {
@@ -4395,6 +4498,319 @@ class CryptoMetadata {
     }
   }
 
+  // `common/signing_rotation.ts`, LAZILY: it is built at 23b-ii, after this
+  // page (20a), and is read only when a page is drawn or a form posted.
+  private rotation(): any {
+    const { log } = this.deps;
+    log.debug("Entering CryptoMetadata.rotation().");
+    log.debug("Leaving CryptoMetadata.rotation().");
+    return require('../common/signing_rotation');
+  }
+
+  // `common/signing_history.ts`, LAZILY and for `rotation()`'s reason: it is
+  // a library nothing here loads at require time, and a process that does not
+  // have it (a test loading this page alone) draws the page without the
+  // history rather than failing to draw it at all.
+  private signingHistory(): any {
+    const { log } = this.deps;
+    log.debug("Entering CryptoMetadata.signingHistory().");
+    log.debug("Leaving CryptoMetadata.signingHistory().");
+    return require('../common/signing_history');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE KEY-PAIR HISTORY SUB-PAGE'S MODEL (2026-09-22, #42's follow-up).
+  //
+  // `/admin/keys/history` with no `unit` is the index — every unit this realm
+  // has a record for — and with one is that unit's generations, newest first,
+  // PAGED (`admin-ui/CLAUDE.md`: *every list that can grow without a bound is
+  // paged*; this one grows by a row per unit per rotation, for ever).
+  //
+  // **IT OBSERVES BEFORE IT READS, AND THAT IS A GET THAT MAY WRITE.** The
+  // history is a projection of the realm's key set, so a node that has just
+  // restarted, or a development-mode service whose keys are new this start and
+  // whose rotation jobs are off, holds keys no row describes yet — and a page
+  // that read the store alone would report a realm as having no history when
+  // what it has is no OBSERVATION. The write is idempotent: `observe()` sets a
+  // row only where one is missing or has changed, so in the steady state this
+  // GET writes nothing at all.
+  // ---------------------------------------------------------------------------
+  historyJson(req) {
+    const { log, adminViews } = this.deps;
+    log.debug("Entering CryptoMetadata.historyJson().");
+    // The model is `admin-core/admin_views.ts`'s, because `GET
+    // /admin-api/keys/history` answers out of the same one — see its header
+    // for the observation this read makes and why.
+    const view = adminViews.signingHistoryView((req && req.query) || {});
+    log.debug("Leaving CryptoMetadata.historyJson(). " + view.rows.length +
+              " of " + view.total + ".");
+    return view;
+  }
+
+  rotationViewOf(realmId) {
+    const { log } = this.deps;
+    log.debug("Entering CryptoMetadata.rotationViewOf().");
+    let view = null;
+    try {
+      view = this.rotation().rotationView(realmId);
+    } catch (e) {
+      // No rotation module in this process (a test that loads this page
+      // alone): the page is drawn without the section.
+      log.debug("Caught in CryptoMetadata.rotationViewOf(): " +
+                ((e && e.message) || e));
+      view = null;
+    }
+    log.debug("Leaving CryptoMetadata.rotationViewOf().");
+    return view;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ROTATE AND EMERGENCY (#48, rcbj's D5) — the ONE action both the console's
+  // two forms and `POST /admin-api/keys/rotate|emergency` call (rule 7). It
+  // queues a run of `signing.rotate-now` on the scheduler and answers its id:
+  // the rotation happens on the leader, once, wherever it was asked.
+  // ---------------------------------------------------------------------------
+  keysAction(req, body, via) {
+    const { log, realms } = this.deps;
+    log.debug("Entering CryptoMetadata.keysAction().");
+    const b = body || {};
+    const action = String(b.action || '').trim();
+    if (action !== 'rotate' && action !== 'emergency') {
+      log.debug("Leaving CryptoMetadata.keysAction(). Unknown action.");
+      return { ok: false, errorCode: 'STS-ADMIN-0012', status: 400,
+               errors: ['The action "' + action + '" is not one of export, ' +
+                        'rotate and emergency.'] };
+    }
+    let actor = '';
+    try {
+      const state = require('../admin-core/admin_views').gateStateFor(req);
+      actor = String((state && state.username) || '');
+    } catch (e) {
+      log.debug("Caught in CryptoMetadata.keysAction(): " +
+                ((e && e.message) || e));
+      actor = '';
+    }
+    // `all` (the Rotate all button, or the API's own spelling) means every
+    // unit, whatever boxes were ticked beside it.
+    const asked = []
+      .concat(b.units === undefined || b.units === null ? [] : b.units)
+      .map(String).filter(Boolean);
+    const units = asked.indexOf('all') >= 0 || b.all === true ? [] : asked;
+    const answer = this.rotation().requestRotation(realms.currentId(), {
+      units: units, emergency: action === 'emergency',
+      confirm: b.confirm, requestedBy: actor, via: via,
+      channel: /management API/.test(via) ? 'http' : 'console' });
+    if (!answer.ok) {
+      log.debug("Leaving CryptoMetadata.keysAction(). Refused.");
+      return { ok: false, errorCode: answer.errorCode,
+               status: answer.status || 400, errors: [answer.why] };
+    }
+    log.debug("Leaving CryptoMetadata.keysAction(). " + answer.runId);
+    return {
+      ok: true, accepted: true, runId: answer.runId,
+      emergency: answer.emergency, units: answer.units,
+      href: '/admin/scheduler?run=' + encodeURIComponent(answer.runId),
+      message: (answer.emergency ? 'An EMERGENCY rotation' : 'A rotation') +
+               ' of ' + (units.length ? units.join(', ') : 'every signing ' +
+               'unit and the refresh-token keys') + ' was queued as run ' +
+               answer.runId + '. It runs on the scheduler\'s leader at its ' +
+               'next tick.'
+    };
+  }
+
+  // The section drawn above the key list: each unit's generations, and the
+  // two forms. No script: checkboxes and a submit button.
+  // ---------------------------------------------------------------------------
+  // THE HISTORY SUB-PAGE'S MARKUP. A table per unit, newest first, with the
+  // certificate offered as a DOWNLOAD rather than printed: a PEM in a cell
+  // makes every other column unreadable, and the whole point of keeping one
+  // is that somebody takes it away to check a signature with.
+  // ---------------------------------------------------------------------------
+  renderHistory(view, req) {
+    const { log, esc, admin, adminViews } = this.deps;
+    log.debug("Entering CryptoMetadata.renderHistory().");
+    const lead = '<p>Every signing key this realm has held, kept for ever: ' +
+      'when it was minted, promoted, retired and dropped, and the ' +
+      'certificate that vouched for it. <strong>The private half is still ' +
+      'thrown away</strong> when a retired key passes its grace ' +
+      '(<code>signing.retire</code>) — what survives here is the record ' +
+      'that the key existed and the public certificate, so a signature or a ' +
+      'chain captured months ago can still be read back. Nothing on this ' +
+      'page can produce a signature.</p>' +
+      '<p><a href="/admin/keys">&larr; Key pairs</a></p>';
+    if (!view.observed) {
+      log.debug("Leaving CryptoMetadata.renderHistory(). No history module.");
+      return lead + '<p class="warn">This process does not hold the ' +
+             'signing-key history module, so no history can be drawn.</p>';
+    }
+    const index = '<h2>Units</h2>' + (view.units.length
+      ? '<table class="data"><thead><tr><th>Unit</th><th>Generations</th>' +
+        '<th>Held now</th><th>Dropped</th><th>With a certificate</th>' +
+        '</tr></thead><tbody>' + view.units.map(function (u) {
+          return '<tr><td><a href="' +
+            esc('/admin/keys/history?unit=' + encodeURIComponent(u.unit)) +
+            '"><code>' + esc(u.unit) + '</code></a></td><td>' +
+            esc(String(u.generations)) + '</td><td>' + esc(String(u.live)) +
+            '</td><td>' + esc(String(u.dropped)) + '</td><td>' +
+            esc(String(u.withCertificate)) + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      : '<p>No key of this realm has been observed yet. A realm records its ' +
+        'keys when this page is opened and whenever one is minted, rotated ' +
+        'or dropped.</p>');
+    if (!view.unit) {
+      log.debug("Leaving CryptoMetadata.renderHistory(). The index.");
+      return lead + index;
+    }
+    if (!view.found) {
+      log.debug("Leaving CryptoMetadata.renderHistory(). Unknown unit.");
+      return lead + '<p class="warn">This realm has no record of a signing ' +
+             'unit called <code>' + esc(view.unit) + '</code>.</p>' + index;
+    }
+    const nav = admin.pageNavPair('/admin/keys/history',
+                                  { unit: view.unit }, view.pagingRaw);
+    const rows = view.rows.map(function (row) {
+      const cert = row.certificate;
+      return '<tr><td><code>' + esc(row.kid) + '</code></td>' +
+        '<td>' + esc(row.role) + '</td>' +
+        '<td>' + esc(row.createdAt || row.firstSeenAt || '') + '</td>' +
+        '<td>' + esc(row.promotedAt || '&mdash;') + '</td>' +
+        '<td>' + esc(row.retiredAt || '&mdash;') +
+        (row.verifiesUntil ? '<br>verified until ' + esc(row.verifiesUntil)
+         : '') + '</td>' +
+        '<td>' + esc(row.droppedAt || '&mdash;') + '</td>' +
+        '<td>' + esc(row.reason || '&mdash;') + '</td>' +
+        '<td>' + (cert
+          ? '<code>' + esc(cert.serialHex) + '</code><br>' +
+            esc(cert.notBefore) + ' &ndash; ' + esc(cert.notAfter) +
+            '<br><a href="' +
+            esc('/admin/keys/history/certificate?unit=' +
+                encodeURIComponent(view.unit) + '&kid=' +
+                encodeURIComponent(row.kid)) + '">The certificate and its ' +
+            'chain (PEM)</a>'
+          : 'none') + '</td></tr>';
+    }).join('');
+    const out = lead + '<h2>' + esc(view.unit) + '</h2>' + nav.head +
+      '<table class="data"><thead><tr><th>Key</th><th>Role</th>' +
+      '<th>Minted</th><th>Promoted</th><th>Retired</th><th>Dropped</th>' +
+      '<th>Why</th><th>Certificate</th></tr></thead><tbody>' + rows +
+      '</tbody></table>' + nav.foot + index;
+    log.debug("Leaving CryptoMetadata.renderHistory(). " + view.rows.length +
+              " row(s).");
+    return out;
+  }
+
+  // One generation's certificate, as a file. The PEM is PUBLIC — it is what
+  // the JWKS and the metadata documents published while the key was live — so
+  // unlike `/admin/keys/export` this needs only Admin Read, which the console
+  // gate has already asked for by the time a handler runs.
+  historyCertificate(realmId, unit, kid) {
+    const { log } = this.deps;
+    log.debug("Entering CryptoMetadata.historyCertificate().");
+    let row = null;
+    try {
+      // OBSERVE FIRST, exactly as the page that drew the link does
+      // (`admin-core/admin_views.ts`'s signingHistoryView()). The rows are a
+      // persisted store, so with request workers the page and the link it
+      // draws are answered by DIFFERENT PROCESSES and the one that gets the
+      // link may not have replicated the other's rows yet — which is a 404
+      // on a link the console itself drew a moment earlier, and is what
+      // `sts_admin_console`'s link crawl found in `single-node`. Observing
+      // rebuilds this process's own rows from the key set, so the answer does
+      // not wait on replication; it writes nothing when they are already
+      // there.
+      this.signingHistory().observe(realmId, { reason: 'observed' });
+      row = this.signingHistory().rowsOf(realmId, String(unit || ''))
+        .filter(function (one) {
+          return String(one.kid) === String(kid || '');
+        })[0] || null;
+    } catch (e) {
+      log.debug("Caught in CryptoMetadata.historyCertificate(): " +
+                ((e && e.message) || e));
+      row = null;
+    }
+    log.debug("Leaving CryptoMetadata.historyCertificate(). " +
+              (row && row.certificate ? "Held." : "None."));
+    return row && row.certificate ? row.certificate : null;
+  }
+
+  renderRotation(view, canWrite) {
+    const { log, esc } = this.deps;
+    log.debug("Entering CryptoMetadata.renderRotation().");
+    if (!view) {
+      log.debug("Leaving CryptoMetadata.renderRotation(). No view.");
+      return '';
+    }
+    const rows = view.units.map(function (u) {
+      return '<tr>' +
+        (canWrite ? '<td><input type="checkbox" name="units" value="' +
+                    esc(u.unit) + '" id="rotate-unit-' + esc(u.unit) +
+                    '"></td>' : '') +
+        '<td><code>' + esc(u.unit) + '</code>' +
+        (u.credentialSigner ? ' <em>(credentials)</em>' : '') + '</td>' +
+        '<td><code>' + esc(u.current) + '</code></td>' +
+        '<td>' + (u.next ? '<code>' + esc(u.next.kid) + '</code><br>since ' +
+                  esc(u.next.since || '') : '—') + '</td>' +
+        '<td>' + (u.retired.length ? u.retired.map(function (r) {
+          return '<code>' + esc(r.kid) + '</code> until ' +
+                 esc(r.verifiesUntil || '');
+        }).join('<br>') : '—') + '</td>' +
+        '<td>' + esc(u.lastRotated || 'never') + '</td>' +
+        '<td>' + esc(String(u.intervalDays)) + ' / ' +
+        esc(String(u.graceDays)) + '</td>' +
+        // EVERY GENERATION THIS UNIT HAS EVER HAD (#42's follow-up). The row
+        // above it says what the realm holds NOW; the private half of
+        // anything older is gone, and this is where the record of it is.
+        '<td><a href="' +
+        esc('/admin/keys/history?unit=' + encodeURIComponent(u.unit)) +
+        '">History</a></td></tr>';
+    }).join('');
+    const table = '<table class="data"><thead><tr>' +
+      (canWrite ? '<th>Rotate</th>' : '') +
+      '<th>Unit</th><th>Current</th><th>Next</th><th>Retired, verifying ' +
+      'until</th><th>Last rotated</th><th>Interval / grace (days)</th>' +
+      '<th>Every generation</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
+    const status = '<p>' + (view.scheduled
+      ? 'Scheduled rotation is <strong>on</strong>: each next key is ' +
+        'promoted once it has been published for a whole interval ' +
+        '(<code>signing.rotate</code>, hourly).'
+      : 'Scheduled rotation is <strong>off</strong>: ' + esc(view.offReason) +
+        '. A rotation by hand still works.') +
+      ' The refresh-token encryption keys rotate with every unit; ' +
+      esc(String(view.refresh.retired)) + ' retired set(s) still open old ' +
+      'refresh tokens (grace ' + esc(String(view.refresh.graceDays)) +
+      ' days).</p>';
+    if (!canWrite) {
+      log.debug("Leaving CryptoMetadata.renderRotation(). Read only.");
+      return '<h2>Rotation</h2>' + status + table;
+    }
+    const out = '<h2>Rotation</h2>' + status +
+      '<form method="post" action="/admin/keys/rotate">' +
+      '<input type="hidden" name="action" value="rotate">' + table +
+      '<p><button type="submit" id="keys-rotate-selected">Rotate ' +
+      'selected</button> ' +
+      '<button type="submit" name="units" value="all" ' +
+      'id="keys-rotate-all">Rotate all</button> — the next key of each ' +
+      'becomes current and the key it replaces goes on verifying through ' +
+      'its grace.</p></form>' +
+      '<h3>Emergency rotation</h3>' +
+      '<p class="warn">For keys presumed <strong>compromised</strong>. ' +
+      'Every key of every unit is replaced with a NEW key — the published ' +
+      'next keys too — with no grace; their certificates are revoked for ' +
+      'keyCompromise; the refresh-token keys are replaced; and EVERY ' +
+      'session of this realm is ended, with CAEP session-revoked and RISC ' +
+      'sessions-revoked sent. Everything already issued stops verifying at ' +
+      'once. It cannot be undone.</p>' +
+      '<form method="post" action="/admin/keys/rotate">' +
+      '<input type="hidden" name="action" value="emergency">' +
+      '<label>Type <code>compromised</code> to confirm: <input type="text" ' +
+      'name="confirm" id="keys-emergency-confirm" autocomplete="off">' +
+      '</label> <button type="submit" id="keys-emergency">Rotate every key ' +
+      'now</button></form>';
+    log.debug("Leaving CryptoMetadata.renderRotation().");
+    return out;
+  }
+
   keysJson(base) {
     const { log, realms, keystore, stsKeystore } = this.deps;
     const self = this;
@@ -4427,6 +4843,9 @@ class CryptoMetadata {
       },
       formats: keystore.keystoreFormats(),
       keys: rows,
+      // THE ROTATION STATE (#42/#48): every signing unit's current, next and
+      // retired keys and the schedule — what the Rotate controls act on.
+      rotation: self.rotationViewOf(realms.currentId()),
       warning: 'THIS RESOURCE LISTS KEYS; the export operation beside it ' +
                'HANDS OVER PRIVATE KEY MATERIAL. ' +
                (store.persisting
@@ -4708,5 +5127,7 @@ export = {
   cryptoJson: slot.forward('cryptoJson'),
   keyInventory: slot.forward('keyInventory'),
   keysJson: slot.forward('keysJson'),
-  exportKey: slot.forward('exportKey')
+  exportKey: slot.forward('exportKey'),
+  // For `mgmt-api/admin_api.ts` (rule 7): the Rotate / Emergency action.
+  keysAction: slot.forward('keysAction')
 };

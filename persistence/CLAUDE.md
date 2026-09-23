@@ -945,9 +945,10 @@ the list merge, the session rank).
   no longer a live member, are declared gone; a change is deleted only below the
   lowest remaining mark AND older than `persistence.changeLogRetentionS` (3600
   by default, 0 turns it off) by the database clock; with no reader, nothing.
-  Every five minutes, by the holder of the `ops.change-log-purge` lease in a
-  cluster, and by every front process outside one — two trims agree, because
-  the bound is the readers' and not the trimmer's.
+  Every five minutes, as the scheduler job `persistence.change-log-purge`
+  (#49 P5) — on the scheduler's leader in a cluster (it replaced the
+  `ops.change-log-purge` lease), and in every front process outside one — two
+  trims agree, because the bound is the readers' and not the trimmer's.
 * **A process declared gone that was only paused** finds its row missing on its
   next report and logs `STS-STORE-0057`: trimmed changes may be missing from what
   it holds, and a restart restores from the store.
@@ -1013,7 +1014,16 @@ where it was:
   before the cluster fence), so a process paused past its claim finds its
   writes refused rather than overwriting its successor's rows; outside a
   cluster it exits (`STS-STORE-0061`), inside one the cluster's fail-stop
-  does. The membership node id is still random per start: a node whose
+  does. **LAPSED IS NOT TAKEN (2026-09-21)**: ownership is the RESERVATION
+  on the row, which a process that takes the claim replaces — so the
+  renewal and the fence's `reassertOrigin()` extend a claim that still
+  carries this process's reservation even after it lapsed, and only a
+  reservation that is somebody else's is fenced. Until then both asked for
+  a LIVE claim, and the suite's first product-mode run killed its own
+  service: under the SCIM bulk load the pool (`max: 4`) had no connection
+  for two renewals, the claim lapsed with no other process anywhere, and
+  the process exited saying another one held it
+  (`tests/persistence_origin.js` section B2). The membership node id is still random per start: a node whose
   membership lapsed must not come back as itself. A platform that gives each
   container a random host name needs `cluster.nodeName` set for any of this
   to apply.

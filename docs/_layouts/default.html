@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+{%- comment -%}
+  minima 2.5's default layout with a sidebar beside the content. Every page and
+  the theme's `page` and `home` layouts inherit it.
+{%- endcomment -%}
+<html lang="{{ page.lang | default: site.lang | default: "en" }}">
+
+  {%- include head.html -%}
+
+  <body>
+
+    {%- include header.html -%}
+
+    <div class="site-body">
+      {%- include sidebar.html -%}
+
+      <main class="page-content" aria-label="Content">
+        <div class="wrapper">
+          {{ content }}
+        </div>
+      </main>
+    </div>
+
+    {%- include footer.html -%}
+
+  </body>
+
+</html>

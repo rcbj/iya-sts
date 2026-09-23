@@ -55,11 +55,12 @@
 // minted row, which is what lets it carry the signed token. Nothing about a delivery lives only in the memory of the process
 // that queued it: its state, its attempt count, when it is next due and the
 // signed token are on the row, so a restarted process — or another node —
-// picks it up where it was left. Every process runs a SWEEP
-// (`oauth2.backchannelLogoutSweepS`) that attempts the rows that are due; the
-// process that planned a row attempts it at once and schedules its own
-// retries too, so the sweep is the safety net and not the delay. Retries back
-// off (`oauth2.backchannelLogoutBackoffMs`, doubling), only what is worth
+// picks it up where it was left. A SWEEP — the scheduler job
+// `oauth2.backchannel-logout-sweep`, on the leader, every
+// `oauth2.backchannelLogoutSweepS` (#49 P5) — attempts the rows that are
+// due; the process that planned a row attempts it at once and schedules its
+// own retries too, so the sweep is the safety net and not the delay. Retries
+// back off (`oauth2.backchannelLogoutBackoffMs`, doubling), only what is worth
 // repeating is retried (a timeout, a connection failure, 5xx, 408, 429 —
 // section 2.5), and a final failure is a DEAD LETTER: `state: 'dead'`, with
 // its code, listed on `/admin/logout` and `GET /admin-api/logout`
@@ -331,8 +332,8 @@ const tallies = new Map<string, Json>();
 // When each realm's last summary line was written.
 const lastSummaryAt = new Map<string, number>();
 
-// The sweep's timer: one per process.
-let sweepTimer: NodeJS.Timeout | null = null;
+// The sweep's scheduler job (#49 P5): see scheduleSweep().
+const SWEEP_JOB = 'oauth2.backchannel-logout-sweep';
 
 // Attempts in flight in this process, and the cap on them.
 let inFlightHere = 0;
@@ -1188,28 +1189,37 @@ class BackchannelLogout {
     return line;
   }
 
-  // Armed once per process, by the composition root's wire step. `unref()`
-  // so it cannot be the reason a process will not exit.
+  // THE SWEEP IS A SCHEDULER JOB (#49 P5, rcbj's directive of 2026-09-21):
+  // `oauth2.backchannel-logout-sweep`, a CLUSTER job — once, on the leader,
+  // every `oauth2.backchannelLogoutSweepS`. It was a timer in every process;
+  // each delivery is a persisted row claimed through a lease, so one sweep
+  // for the cluster finds exactly what every process's sweep found. The
+  // per-delivery retry after a backoff stays where it is, a delay inside one
+  // operation. Registered once per process, by the composition root's wire
+  // step.
   scheduleSweep(): void {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering BackchannelLogout.scheduleSweep().");
-    if (sweepTimer) {
-      clearTimeout(sweepTimer);
+    const scheduler = require('../cluster/scheduler');
+    if (scheduler.job(SWEEP_JOB)) {
+      log.debug("Leaving BackchannelLogout.scheduleSweep(). Registered.");
+      return;
     }
-    const seconds = Math.max(1,
-      this.setting('oauth2.backchannelLogoutSweepS') || 10);
-    sweepTimer = setTimeout(function () {
-      self.sweep().then(function () {
-        self.scheduleSweep();
-      }, function () {
-        self.scheduleSweep();
-      });
-    }, seconds * 1000);
-    if (sweepTimer && typeof sweepTimer.unref === 'function') {
-      sweepTimer.unref();
-    }
-    log.debug("Leaving BackchannelLogout.scheduleSweep(). " + seconds + "s.");
+    scheduler.register({
+      id: SWEEP_JOB,
+      title: 'Back-channel logout sweep',
+      describe: 'Sends every Logout Token delivery that is due — a retry ' +
+                'whose backoff has passed, a lease that lapsed, a row ' +
+                'restored after a restart — and dead-letters any still ' +
+                'pending past oauth2.backchannelLogoutRetentionS.',
+      owner: 'oauth-oidc/backchannel_logout.ts',
+      everySetting: 'oauth2.backchannelLogoutSweepS', everySettingUnit: 's',
+      run: function (): Promise<Json> {
+        return self.sweep();
+      }
+    });
+    log.debug("Leaving BackchannelLogout.scheduleSweep(). On the scheduler.");
   }
 
   // A row as a caller sees it: a COPY without the token, so a page or a JSON
@@ -1386,8 +1396,8 @@ class BackchannelLogout {
 }
 
 // ---------------------------------------------------------------------------
-// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). The wire step arms
-// the sweep — every process that loads the family sweeps (header point 3).
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). The wire step
+// registers the sweep's scheduler job (#49 P5), which runs on the leader.
 // ---------------------------------------------------------------------------
 const slot = new InstanceSlot<BackchannelLogout>(
   'oauth-oidc/backchannel_logout',

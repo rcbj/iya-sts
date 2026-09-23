@@ -61,7 +61,11 @@ function modesFromTheShell() {
   let current = null;
   lines.forEach(function (line) {
     // `cluster` since 2026-09-14 (#46): a fourth block, asked for by name.
-    const arm = /^\s{4}(memory|postgres|dispatch|cluster)\)\s*$/.exec(line);
+    // `single-node` since 2026-09-21 (#89): `product` and `dispatch`
+    // merged, after `product` had replaced `postgres` that morning — a name
+    // this list did not know made that arm's lines invisible, and the file
+    // failed saying modes.sh defined three modes when it defined four.
+    const arm = /^\s{4}(memory|single-node|cluster)\)\s*$/.exec(line);
     if (arm) {
       current = arm[1];
       byMode[current] = [];
@@ -84,8 +88,9 @@ function run(t) {
   log.debug("Entering run().");
   const byMode = modesFromTheShell();
   const modes = Object.keys(byMode);
-  t.check(modes.length === 4,
-          'modes.sh defines four modes, each as a block of NAME=value lines',
+  // Three since 2026-09-21 (memory, single-node, cluster); four before.
+  t.check(modes.length === 3,
+          'modes.sh defines three modes, each as a block of NAME=value lines',
           modes.join(', '));
 
   // ---------------------------------------------------------------------

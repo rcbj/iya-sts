@@ -1559,30 +1559,35 @@ class SpMetadata {
     return Number(config.value('saml2.spMetadataRefreshIntervalS')) * 1000;
   }
 
+  // THE REFRESHER IS A SCHEDULER JOB (#49 P5): `saml2.sp-metadata-refresh`,
+  // a CLUSTER job every `saml2.spMetadataRefreshIntervalS`, on the leader. It
+  // was a timer in every process, each claiming a document before fetching
+  // it so that one node did; the job runs once for the cluster, and the claim
+  // stays as the guard for a refresh asked for by hand at the same moment.
+  // `server.js` still calls this, where the timer was started.
   startRefresher() {
     const { log } = this.deps.helpers;
     const self = this;
     log.debug("Entering SpMetadata.startRefresher().");
-    if (refresher.timer) {
-      log.debug("Leaving SpMetadata.startRefresher(). Already running.");
+    const scheduler = require('../cluster/scheduler');
+    if (scheduler.job(REFRESH_JOB)) {
+      log.debug("Leaving SpMetadata.startRefresher(). Already registered.");
       return false;
     }
-    const tick = function () {
-      log.debug("Entering tick().");
-      refresher.timer = setTimeout(function () {
-        self.sweepOnce().then(tick, function (e) {
-          log.debug("Caught in the metadata refresher: " +
-                    ((e && e.message) || e));
-          tick();
-        });
-      }, self.refreshIntervalMs());
-      if (typeof refresher.timer.unref === 'function') {
-        refresher.timer.unref();
+    scheduler.register({
+      id: REFRESH_JOB,
+      title: 'SAML service provider metadata refresher',
+      describe: 'Fetches again every service provider\'s metadata that is ' +
+                'past its cacheDuration, from its samlSpMetadataUrl or the ' +
+                'MDQ responder; a document past its validUntil is refused.',
+      owner: 'saml/sp_metadata.ts',
+      everySetting: 'saml2.spMetadataRefreshIntervalS', everySettingUnit: 's',
+      run: function () {
+        return self.sweepOnce();
       }
-      log.debug("Leaving tick().");
-    };
-    tick();
-    log.info('saml2: the service provider metadata refresher runs every ' +
+    });
+    log.info('saml2: the service provider metadata refresher is the ' +
+             'scheduler job ' + REFRESH_JOB + ', every ' +
              (this.refreshIntervalMs() / 1000) + 's ' +
              '(saml2.spMetadataRefreshIntervalS): a document past its ' +
              'cacheDuration is fetched again from its samlSpMetadataUrl or ' +
@@ -1591,13 +1596,11 @@ class SpMetadata {
     return true;
   }
 
+  // Nothing to stop: the scheduler owns the job, and `scheduler.stop()` in
+  // the shutdown stops every job at once. Kept for its callers.
   stopRefresher() {
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.stopRefresher().");
-    if (refresher.timer) {
-      clearTimeout(refresher.timer);
-      refresher.timer = null;
-    }
     log.debug("Leaving SpMetadata.stopRefresher().");
   }
 
@@ -1755,8 +1758,10 @@ class SpMetadata {
   refresherRunning(): boolean {
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.refresherRunning().");
+    const scheduler = require('../cluster/scheduler');
+    const job = scheduler.job(REFRESH_JOB);
     log.debug("Leaving SpMetadata.refresherRunning().");
-    return !!refresher.timer;
+    return !!job && !scheduler.scheduler.offReason(job);
   }
 
   // The first value of a single- or multi-valued field, trimmed.
@@ -1792,12 +1797,14 @@ class SpMetadata {
 // built from `defaultDeps()` when the module loads (see
 // `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-// THE REFRESHER'S STATE, per process: its timer, when it last summarised,
+// The refresher's scheduler job (#49 P5): see startRefresher().
+const REFRESH_JOB = 'saml2.sp-metadata-refresh';
+
+// THE REFRESHER'S STATE, per process: when it last summarised,
 // what each background refresh last found (realm \0 entity), and the MDQ
 // lookups a request started. Process state, not a store: another node's
 // refresher keeps its own, and a restart begins with nothing tried.
-const refresher: { timer: any; summaryAt: number } =
-  { timer: null, summaryAt: 0 };
+const refresher: { summaryAt: number } = { summaryAt: 0 };
 const refreshStates = new Map<string, any>();
 const mdqLookups = new Map<string, any>();
 

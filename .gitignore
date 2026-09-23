@@ -23,7 +23,7 @@ node_modules
 data/
 
 # THE TEST REPORT and the coverage report, both generated and both timestamped.
-# `./docker-run-tests.sh` writes tests/report/<mode>/<run>/ and points
+# `./run-tests.sh` writes tests/report/<mode>/<run>/ and points
 # tests/report/<mode>/latest at it (`./local-run-tests.sh` wrote there too until
 # it was removed on 2026-09-16); `./run-coverage.sh` writes its own run under
 # tests/report/ and writes coverage/, including coverage/raw/ — V8's own JSON,
@@ -53,3 +53,7 @@ coverage/
 # instead. It is the other repository's build output — its own node_modules
 # included — and never this one's source.
 debugger/embedded/
+
+# The one native module (#40): compiled inside an image build only, by
+# build-native.sh, and never committed or sent from a host.
+spiffe/native/*.node

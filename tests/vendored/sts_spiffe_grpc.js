@@ -550,6 +550,18 @@ async function test() {
            grpcHost + " (Workload API " + workloadPort + ", SPIRE Server " +
            "API " + serverPort + ").");
   assert.ok(trustDomain, "spiffe.trustDomain is set");
+  // NOT PUBLISHED HERE (2026-09-21): an AWS environment publishes SPIFFE's
+  // ports only through the spiffe-realm stack, and a runner that knows it
+  // does not says so (deploy/aws/run-suite.sh) rather than letting this job
+  // wait out a port nobody listens on.
+  if (String(process.env.STS_TEST_UNPUBLISHED || "").split(",")
+        .indexOf("spiffe") >= 0) {
+    declineToRun(log, "this environment does not publish the SPIFFE " +
+                      "Workload API or SPIRE Server API ports " +
+                      "(STS_TEST_UNPUBLISHED names spiffe).");
+    log.debug("Leaving test(). Skipped.");
+    return;
+  }
   if (settings["spiffe.enabled"] !== true) {
     declineToRun(log, "spiffe.enabled is off in the default realm, so both " +
                       "gRPC surfaces answer Unavailable by design; this job " +
@@ -585,8 +597,17 @@ async function test() {
   // The selectors a TCP caller of THIS port is seen by — the realm's own bind
   // address and port, not the address this job dialled (which, behind a load
   // balancer, is a different string entirely).
-  const tcpSelectors = "transport:tcp, endpoint:" + grpcHost + ":" +
-                       workloadPort;
+  //
+  // **UNLESS THE LAUNCHER NAMED THE SOCKET (2026-09-21).** In the `cluster`
+  // mode the settings are read through the balancer and may be node B's —
+  // its own `spiffe.grpcHost` — while the socket this job dials is node A's,
+  // which attests a caller by ITS bind address; the selector then named an
+  // endpoint no workload is at, and the Workload API answered no SVID. A named
+  // socket is the endpoint.
+  const tcpSelectors = "transport:tcp, endpoint:" +
+                       (process.env.STS_SPIFFE_WORKLOAD_URL
+                         ? workloadTarget
+                         : grpcHost + ":" + workloadPort);
   const W = tdId + "/sts-test/spiffe-grpc/" + RUN + "/workload";
   const A = tdId + "/sts-test/spiffe-grpc/" + RUN + "/admin";
   const N = tdId + "/sts-test/spiffe-grpc/" + RUN + "/unix-only";
@@ -1130,7 +1151,9 @@ async function test() {
     // attestation then completed on the server, SPENT THE TOKEN and recorded
     // the agent, and the client received an empty stream: every retry was
     // refused as spent. Recorded as a service defect rather than worked around
-    // silently; this is the conforming client shape either way.
+    // silently, and FIXED on 2026-09-21 (#40): the stream now ends only once
+    // the handler has answered (`tests/spiffe_node_attestation.js` holds it).
+    // This stays the conforming client shape either way.
     function attest(token, csrDer) {
       log.debug("Entering attest().");
       const client = server(svc.Agent, null);

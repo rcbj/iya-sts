@@ -628,10 +628,14 @@ class PkiAdmin {
     // EVERY realm, not the ones this page draws — see `everyRealmId()`.
     const scopes = [pki.PROCESS_SCOPE].concat(self.everyRealmId());
     let done = 0;
+    // REPAIRED, NOT BUILT (2026-09-21): a branch another process already
+    // rebuilt under this Root is adopted, not built a second time — which
+    // left a realm with two Intermediate CAs of one name when another worker
+    // repaired it first (`common/pki.js`, `repairBranch()`).
     for (let i = 0; i < scopes.length; i++) {
-      const built = await pki.buildScope(scopes[i],
-                                         { organisation: config.value(
-                                             'pki.organisation') });
+      const built = await pki.repairBranch(scopes[i],
+                                           { organisation: config.value(
+                                               'pki.organisation') });
       if (built.ok) {
         done += 1;
         await self.recertifyScope(scopes[i]);

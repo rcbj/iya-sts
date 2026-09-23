@@ -8,19 +8,18 @@ Dockerfile removes this directory from the image.
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the S3 state bucket `mock-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
 | `foundation/` | long-lived | the deployer IAM user, the role it assumes, the permissions boundary, the KMS key, the ECR repository, the container log group, the test report bucket `mock-sts-test-reports-<account>` | an administrator |
-| `environment/` | per run | VPC, NLB (443, 389, 636, and the plain-HTTP CRL/OCSP port — 8082, or 80 in `testidp` — plus TCP 88 for the KDC in `testidp`), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, three services, and the suite runner's subnet, NAT gateway and task definition (`runner.tf`) | the deployer role |
+| `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, three services | the deployer role |
 | `spiffe-realm/` | per realm | one trust realm's two SPIFFE ports (Workload API, SPIRE Server API) on an existing environment's NLB: two listeners, two target groups with the nodes registered BY ADDRESS, and the security-group rules — state at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
 | `cert-init/` | per image | an `aws-cli` image that exports the public ACM certificate into the task before the node starts, so the NODE presents it (only where `public_hostname` is set) | built by CI |
 | `runner/` | per image | the suite runner image (the tests image plus the S3 client) and the two scripts its task runs | built by CI |
-| `Dockerfile`, `entrypoint.sh` | per run | the Terraform image (AWS CLI v2, Terraform 1.16.2, node): one stack, one environment, one action — `init`, `validate`, `plan`, `apply`, `destroy`, `output`, `suite`, `ecr-password` — the parent project's `infra/` arrangement | the workflow, and `terraform-local.sh` |
+| `Dockerfile`, `entrypoint.sh` | per run | the Terraform image (AWS CLI v2, Terraform 1.16.2, node): one stack, one environment, one action — `init`, `validate`, `plan`, `apply`, `destroy`, `output`, `output-json`, `ecr-password` (`suite` was removed on 2026-09-21) — the parent project's `infra/` arrangement | the workflow, and `terraform-local.sh` |
 | `terraform-local.sh` | per run | runs that image on a developer machine, with the credentials in the environment or the AWS CLI's session | a person |
-| `run-suite-in-aws.sh` | per run | starts the suite task in the VPC, waits, downloads the report — **every job** | CI, or a person |
 | `reset-environment.js` | per run | removes every realm but the default one and clears the default realm's runtime overrides before a run, so an environment can be reused | both runners |
-| `run-suite.sh` | per run | **the whole suite against any environment, from this machine** (2026-09-18): every job runs here against the load balancer except the two the nodes must call back to, which run in an ephemeral `suite-callbacks/` task; one merged report (*Running the suite from this machine*, below) | a person |
+| `run-suite.sh` | per run | **the whole suite against any environment, from this machine** (2026-09-18): every job runs here against the load balancer except the two the nodes must call back to, which run in an ephemeral `suite-callbacks/` task; one merged report (*Running the suite from this machine*, below). **Not a launcher since 2026-09-21, and the ONE AWS suite**: `../../run-tests.sh --target=aws:<env>` and `--target=aws-ephemeral` both run it, and so does `aws-cluster.yml` | `./run-tests.sh` |
 | `suite-callbacks/` | per run | the callback task for one `run-suite.sh` run — a subnet, a NAT gateway the load balancer admits, a task role and a task definition (credential step, remote PEP, the two callback jobs) — applied at the start of the run and DESTROYED at its end, pass, fail or interrupt; state at `environment/<env>/suite-callbacks.tfstate` | `run-suite.sh` |
-| `../../.github/workflows/aws-cluster.yml` | per run | ordered jobs — images, terraform, suite, teardown — in the Terraform image; actions `apply-and-test`, `apply`, `test`, `plan`, `destroy` | GitHub Actions (dispatch only) |
+| `../../.github/workflows/aws-cluster.yml` | per run | ordered jobs — images, terraform, suite, teardown — in the Terraform image, the suite through `./run-tests.sh --target=aws:<env>` after re-applying `allowed_cidrs` with the suite runner's own address; actions `apply-and-test`, `apply`, `test`, `plan`, `destroy` | GitHub Actions (dispatch only) |
 | `../../.github/workflows/testidp-deploy.yml`, `testidp-destroy.yml` | per deployment | build `testidp`'s two images and apply it, admitting only the address(es) given as `allowed_ip`; destroy it (typed confirmation) | GitHub Actions (dispatch only) |
 
 ## The decisions, and what each costs
@@ -41,23 +40,24 @@ makes one-node-per-AZ true by construction, and lets `node-a` reach steady
 state before `node-b` and `node-c` are created — the deterministic first start
 `cluster/CLAUDE.md` records.
 
-**No NAT gateway for the nodes; one for the suite runner.** Nodes sit in public
-subnets with a public IP and a security group that accepts only the NLB's group
-on the published ports. The suite task sits in a subnet of its own behind one
-NAT gateway, because its Elastic IP is a FIXED address the NLB's security group
-can admit before the task exists — a Fargate public IP is new every run.
-`suite_runner = false` removes all of it (about $0.05 an hour).
+**No NAT gateway for the nodes.** Nodes sit in public subnets with a public IP
+and a security group that accepts only the NLB's group on the published ports.
 
-**The suite runs inside the VPC** (`runner.tf`, `run-suite-in-aws.sh`). Two jobs
-need the service to call the runner: `sts_gnap_core`'s push finish method and
-`sts_xacml_remote_pep`'s nudge to a PEP that shares a certificate directory with
-the job. Neither a developer machine nor a GitHub-hosted runner can be dialled.
-The task is three containers sharing localhost and a volume — the credential
-minter, the PEP, the suite — the shape `./docker-run-tests.sh` gives the same
-jobs. The nodes reach the task directly; the task reaches the NLB through the
-NAT gateway like any client, so every address it follows is the public one. The
-report goes to the foundation's bucket, because the environment is destroyed at
-the end of the run that wrote it.
+**THE SUITE RUNS FROM OUTSIDE, AND THERE IS ONE OF IT (2026-09-21).** Until that
+day `dev` and `ci` ran the suite as a task INSIDE the VPC (`environment/runner.tf`,
+`run-suite-in-aws.sh`, the Terraform image's `suite` action) while `testidp`
+ran `run-suite.sh` from a developer's machine — two suites for one job. rcbj
+asked for one, and chose `run-suite.sh`: it already ran every job, the two
+that need the service to call back (`sts_gnap_core`'s push, `sts_xacml_remote_pep`'s
+nudge) in its per-run `suite-callbacks/` task. The in-VPC runner, its subnet,
+NAT gateway, Elastic IP, task definition, the `suite_runner` variable and the
+four `runner_*` outputs were deleted. **The price is admission**: the suite now
+reaches the load balancer from wherever it runs, so that address has to be in
+`allowed_cidrs`. A person's run admits the building host (`ALLOWED_CIDR`
+unset); `aws-cluster.yml`'s suite job, on a runner of its own, RE-APPLIES the
+environment with its own address at the image tag already deployed (the
+`image_tag` output) — rcbj's choice over running the suite in the apply's job
+or letting the suite admit itself.
 
 **An environment is reusable, so each run starts by removing the previous
 run's realms** (`reset-environment.js`, from both runners). Creating an environment
@@ -81,7 +81,7 @@ reported as an unencrypted UserInfo response.
 **Four published ports.** 443 → 8081; 389 (the directory in the clear) and
 **636 (the same directory behind TLS, since 2026-09-17)** on the same numbers
 inside and out; and the plain-HTTP CRL/OCSP listener, **8082 inside and
-`var.pki_listener_port` outside** — 8082 in `dev` and `ci`, 80 in `testidp`.
+`var.pki_listener_port` outside** — 80 in every environment since 2026-09-21 (it was 8082 everywhere but `testidp`).
 The service writes the OUTSIDE number into what it publishes:
 `PKI_DISTRIBUTION_BASE_URL` is built from `published_ports.pki.listener` and
 `PKI_DISTRIBUTION_LDAP_HOST` names the NLB, so a certificate's CRL address is
@@ -100,7 +100,7 @@ certificate for that name, with no second certificate to issue, rotate or
 trust. Measured on a real handshake: both ports present the same SHA-256.
 **No suite job dials 636 yet** — it is published because a directory ought to
 be reachable over TLS, and a job that wants it needs an `STS_LDAPS_URL` beside
-the two LDAP variables in `environment/runner.tf`.
+the two LDAP variables `run-suite.sh` hands the jobs.
 
 **AND TCP 88 IN `testidp` (2026-09-18, `var.publish_kerberos`)** — the KDC,
 as a fifth row merged into the same map, so it costs what the others do and
@@ -109,10 +109,13 @@ target group behind PROXY v2 (which `server.js` installs on the KDC's TCP
 socket) and a TCP-connect health check — nothing on it is HTTP. **UDP 88 is
 not published, by rcbj's decision**: Kerberos over UDP does not do well across
 the open internet, and a datagram could not carry the PROXY header anyway; a
-client is pointed at TCP (`udp_preference_limit = 1`). Gated by a variable
-rather than added for every environment because `dev` and `ci` have no job that
-speaks raw Kerberos to the load balancer — the suite uses MS-KKDCP on 443 — and
-they render the four rows they always did.
+client is pointed at TCP (`udp_preference_limit = 1`). **Published in every
+environment since 2026-09-21** (`publish_kerberos` defaults true), by rcbj's
+decision that a temporary test environment publishes exactly the ports
+`testidp` does, so the two cannot drift: until then only `testidp` had it,
+and `sts_kerberos_spnego`, which does speak raw Kerberos to the load balancer,
+timed out on `ci`. The variable stays, to take the port away; `run-suite.sh`
+then tells the job, which declines.
 
 **Adding it re-deploys `dev` and `ci` once.** Every listener, target group,
 security-group rule pair and container port mapping iterates
@@ -273,11 +276,12 @@ plan against its state showed two new empty outputs and nothing else.
   publicly trusted name. `cert-init` is what puts the certificate in the task
   (*TLS passes through the NLB*, above). `STS_PUBLIC_BASE_URL`, the first
   `STS_TLS_HOSTNAMES` entry and the CRL/OCSP addresses use the public name.
-* **`pki_listener_port = 80`** (2026-09-17): the plain-HTTP CRL/OCSP/caIssuers
-  listener is published on 80 rather than 8082, so what a relying party reads
-  out of a certificate is `http://test-idp.iyasec.io/pki/…` — the port an
-  http:// address is expected on. The container is still 8082, and `dev` and
-  `ci` keep 8082 on both sides. See *Four published ports* above.
+* **Its ports are every environment's since 2026-09-21.** The CRL/OCSP
+  listener on 80 (so a certificate names `http://test-idp.iyasec.io/pki/…`,
+  the port an http:// address is expected on) and the KDC on TCP 88 were set
+  in `testidp.tfvars` until then; they are the variables' defaults now, so a
+  temporary test environment publishes what this one does. See *Four
+  published ports* above.
 * **Product mode with the dispatcher**: `tests/tools/modes.sh`'s `dispatch`
   row (three request workers, one surface worker, `*`, read-your-write) with
   `sts_mode = "product"`, from four `workers_*` variables. The bootstrap
@@ -377,8 +381,9 @@ said loudly** — the NAT gateway bills until
 `TF_STACK=suite-callbacks deploy/aws/terraform-local.sh <env> destroy` runs.
 `STS_SUITE_CALLBACKS=0` skips that half.
 
-`run-suite-in-aws.sh` and `environment/runner.tf` are still what the
-`aws-cluster.yml` workflow uses for `dev` and `ci`.
+It is the one suite for every environment since 2026-09-21: `run-suite-in-aws.sh`
+and `environment/runner.tf`, which `aws-cluster.yml` used for `dev` and `ci`,
+were deleted that day.
 
 ## A realm's SPIFFE ports: `spiffe-realm/` (2026-09-18)
 
@@ -428,12 +433,30 @@ ports are exactly as open as the main port; a new `allowed_ip` on the
 environment reaches them at this stack's next apply. Target groups are named
 `<prefix>-sp-<port>`, since a realm id can be 31 characters.
 
-**DESTROY EVERY REALM'S STACK BEFORE THE ENVIRONMENT.** Its security-group
-rules cross-reference the environment's two groups, and a group that another
-group's rule still names cannot be deleted, so `environment` destroy (and
-`testidp-destroy.yml`) would stop on the security groups with this stack's
-rules still in place, while its target groups would outlive the load balancer.
-Nothing enforces the order.
+**EVERY REALM'S STACK COMES DOWN BEFORE THE ENVIRONMENT, AND SINCE
+2026-09-21 THE ENTRYPOINT DOES IT** (`destroy_dependent_stacks()`). Its
+security-group rules cross-reference the environment's two groups, and a
+group that another group's rule still names cannot be deleted — the rules
+belong to THIS state, so the environment's Terraform cannot see them and
+does not remove them.
+
+**The day the order was not enforced cost 33 minutes and left the
+environment standing: `testidp`, 2026-09-20.** The workflow destroyed
+everything else, then spent fifteen minutes per group watching
+`DeleteSecurityGroup` answer `DependencyViolation` — the default realm's
+8092 and 8181 rules — retried once on the entrypoint's own rule, failed the
+same way, and stopped with both groups, the VPC and this stack's state still
+there. Re-running it could not help: the second run had the first run's
+blind spot. The remains were removed by hand on 2026-09-21.
+
+**An `environment` destroy now enumerates the dependent stacks from their
+STATE KEYS and destroys each one first** — every
+`environment/<env>/spiffe-realm/*.tfstate` and
+`environment/<env>/suite-callbacks.tfstate` — so nothing has to be told
+which realms an environment was given, and a dependent that will not destroy
+stops the environment's destroy instead of being discovered afterwards. It
+runs while the environment still EXISTS, which this stack requires: it reads
+the environment's remote state and finds the load balancer by name.
 
 ## The deployer's permissions, and how to extend them
 
@@ -516,20 +539,14 @@ docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS=@aws-sdk/client-secrets-
   --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem .
 docker build -t <repo>:schema-<tag> -f deploy/aws/schema-init/Dockerfile .
 docker build -t <repo>:cert-<tag> -f deploy/aws/cert-init/Dockerfile .   # only with a public name
-docker build -t mock-sts-tests -f tests/Dockerfile .
-docker build -t <repo>:runner-<tag> --build-arg TESTS_IMAGE=mock-sts-tests \
-  -f deploy/aws/runner/Dockerfile deploy/aws/runner
-docker build -t <repo>:pep-<tag> -f xacml-pep/Dockerfile .
-# push all four
+# push both (run-suite.sh builds and pushes the tests, runner and PEP images)
 terraform -chdir=deploy/aws/environment init -backend-config=bucket=… -backend-config=key=environment/dev.tfstate
 terraform -chdir=deploy/aws/environment apply -var environment=dev -var image_tag=<tag> \
   -var 'allowed_cidrs=["<your ip>/32"]'
-deploy/aws/run-suite-in-aws.sh dev      # every job, inside the VPC
-deploy/aws/run-suite.sh dev             # or from here, less gnap_core and remote_pep
+./run-tests.sh --target=aws:dev         # every job, from here
 
 # or the same through the container, with nothing installed but docker:
 IMAGE_TAG=<tag> deploy/aws/terraform-local.sh dev apply
-deploy/aws/terraform-local.sh dev suite
 deploy/aws/terraform-local.sh dev destroy
 terraform -chdir=deploy/aws/environment destroy -var environment=dev -var image_tag=<tag> \
   -var 'allowed_cidrs=["<your ip>/32"]'

@@ -2215,6 +2215,46 @@ async function thePipAnswersInXacmlsOwnXml() {
 // ---------------------------------------------------------------------------
 // THE RUN.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE TWO CERTIFICATE IDENTITIES, ADMITTED BY THE WRITE A DEPLOYMENT MAKES
+// (2026-09-21). They were admitted by a SEED: development puts
+// `cn=xacml-user-1` in `xacml-users` and `cn=remote-pep-1` in `remote-peps` in
+// every realm, and product mode seeds both groups EMPTY — so in the first
+// local product run every certificate here verified, resolved and held
+// nothing: section 0 passed, because it asserts refusals, and the first door
+// that had to OPEN answered 403 (STS-XACML-0005). The member is the DN
+// certificatePlan() files the certificate under — `cn=<CN>,` and the realm's
+// usersDn, READ from GET /admin-api/groups rather than assembled — and a
+// membership names a DN, so no entry has to exist yet. In development the seed
+// already lists it and the write changes nothing. The DEFAULT realm is written
+// too, because sections 9 and 10 read it with the same certificate; that
+// brings product to the state development starts in.
+// ---------------------------------------------------------------------------
+async function admit(prefix, commonName, group) {
+  log.debug("Entering admit(). " + prefix + " " + commonName + " " + group);
+  const where = await get(base + prefix + "/admin-api/groups");
+  assert.ok(where.status === 200 && where.body && where.body.usersDn,
+    "GET " + prefix + "/admin-api/groups should name the realm's usersDn; " +
+    "it answered " + where.status + " " + String(where.text).slice(0, 200));
+  const member = "cn=" + commonName + "," + where.body.usersDn;
+  const joined = await postJson(base + prefix + "/admin-api/groups/add-member",
+                                { group: group, member: member });
+  assert.ok(joined.status === 200 && joined.body && joined.body.ok,
+    "POST " + prefix + "/admin-api/groups/add-member should put " + member +
+    " in " + group + "; it answered " + joined.status + " " +
+    String(joined.text).slice(0, 300) + ". Without it the certificate " +
+    "verifies, resolves and holds no role.");
+  log.debug("Leaving admit().");
+}
+
+async function admitTheCertificates() {
+  log.debug("Entering admitTheCertificates().");
+  await admit("/realm/" + REALM, XACML_USER_CN, "xacml-users");
+  await admit("", XACML_USER_CN, "xacml-users");
+  await admit("/realm/" + REALM, PEP_CN, "remote-peps");
+  log.debug("Leaving admitTheCertificates().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving the mock STS's XACML endpoints at " + base + "/xacml");
@@ -2235,6 +2275,7 @@ async function test() {
   await createTheRealm();
   try {
     await createThePeople();
+    await admitTheCertificates();
     await theGateSplitsOnTheRole();
     await theSurfaceDescribesItself();
     await anEmptyRepositoryDecidesNothing();

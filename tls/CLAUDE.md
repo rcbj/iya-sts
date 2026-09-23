@@ -889,6 +889,47 @@ node's record at a time, and only a CONCURRENT displacement is kept in the
 issued register (`common/pki_merge.js`) — a node's listener serial written over
 sequentially is not, which is a slot-per-node question this work did not take.
 
+## THE SOCKETS THIS MODULE DOES NOT HOLD ARE TOLD TOO (2026-09-21)
+
+**`build-root` re-keyed the main port and the debugger and left two sockets
+behind.** `applyAnchors()` reaches only the listeners registered through
+`trustClientCertificatesOn()`. LDAPS 636 (`ldap/ldap_server.js`) and every
+realm's SPIRE Server API (`spiffe/spiffe_server.ts`) set their context ONCE,
+when they bound, so after a Root replacement both presented a chain under a
+Root nothing held, and `tests/vendored/sts_ldaps.js` and `sts_spiffe_grpc.js`
+failed with `unable to get local issuer certificate` in every mode, until a
+restart. This module's own log line said "one anchor covers LDAPS 636" the
+whole time.
+
+**`onServerCertificateChange(fn)` is an observer, not a rule-3e slot**: both
+owners already require this module in the ordinary direction and load after
+it. `takeIssuedCertificate()` notifies it after `applyAnchors()`, in whichever
+process adopts the re-issued certificate — which is the process holding the
+sockets in all three arrangements (one process; the front process reconciling
+after a worker's `build-root`; a cluster node adopting another's hierarchy).
+LDAPS calls `setSecureContext()` with the current certificate and chain;
+SPIFFE re-mints its server SVID and hands it to grpc-js's
+`updateSecureContextOptions()`, whose watcher calls `setSecureContext()` on the
+bound http2 server. Both apply to the NEXT handshake. An observer that throws
+is `STS-TLS-0033`; a realm whose SPIFFE socket could not be re-keyed is
+`STS-SPIFFE-0114`. **A new socket that presents this certificate owes a
+registration here**, or it has the same bug.
+
+**THE EVENT FIRES BEFORE THE REALM BRANCHES ARE REBUILT, AND ITS FIRST RUN
+FOUND TWO OLDER DEFECTS THAT ORDER EXPOSED.** `build-root`'s
+`rebuildEveryScope()` rebuilds the process branch first — which re-issues this
+listener certificate and fires the observers — and each realm's branch after.
+So the SPIFFE re-key minted an SVID while the default realm's branch still hung
+from the old Root: `issueUnder()` repaired it, and (1) `spiffe_ca.ts` returned
+the chain of the authority it had read BEFORE that repair, so the socket
+presented a leaf with the wrong issuer beside it (`unable to verify the first
+certificate`); (2) the repair queued behind the deliberate rebuild and built
+the branch AGAIN, leaving two Intermediates of one name and one CRL address
+(`sts_pki_distribution_points`). Both fixed at the source, 2026-09-21: the
+chain comes from what `issueUnder()` returns, and `common/pki.js`'s
+`repairBranch()` re-asks "is it stale?" inside the build queue. **An observer
+that ISSUES must not assume the realm branches are current when it runs.**
+
 ## THE TRUSTSTORE IS A TEST CONTROL ONLY IN DEVELOPMENT MODE (2026-09-12)
 
 `POST /tls/trust` and `POST /tls/trust/clear` answered anybody who could reach the port,

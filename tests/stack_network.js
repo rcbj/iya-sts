@@ -83,7 +83,7 @@ function read(rel) {
 // launcher is a row rather than a rewrite.
 const LAUNCHERS = [
   {
-    script: 'docker-run-tests.sh',
+    script: 'run-tests.sh',
     compose: 'docker-compose-run-tests.yml',
     base: '172.30'
   }

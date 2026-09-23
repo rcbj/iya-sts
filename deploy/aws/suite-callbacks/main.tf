@@ -294,6 +294,9 @@ resource "aws_ecs_task_definition" "callbacks" {
         { name = "PEP_BIAS", value = "deny-biased" },
         { name = "PEP_PIP", value = "true" },
         { name = "PEP_POLL_INTERVAL_MS", value = "5000" },
+        # Backs off while refused, capped under the job's 40 s wait for the
+        # realm it polls to be found (docker-compose-run-tests.yml says why).
+        { name = "PEP_BACKOFF_MAX_MS", value = "15000" },
         { name = "PEP_HEARTBEAT_INTERVAL_MS", value = "2000" },
       ]
       healthCheck = {

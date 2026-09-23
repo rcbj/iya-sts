@@ -77,10 +77,10 @@ function child() {
 
     const makeStream = function (url) {
       return streams.createStream({
-        aud: 'https://receiver.test/dlq',
         events_requested: [VERIFY, events.SSF_PREFIX + 'stream-updated'],
         delivery: { method: streams.DELIVERY_PUSH, endpoint_url: url }
-      }, { issuer: 'https://sts.test', principal: 'dlq-probe' }).stream;
+      }, { issuer: 'https://sts.test', principal: 'dlq-probe',
+           audience: 'https://receiver.test/dlq' }).stream;
     };
     const entry = function (jti) {
       return { jti: jti, token: 'token-' + jti, claims: { jti: jti },

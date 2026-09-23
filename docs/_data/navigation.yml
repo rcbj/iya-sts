@@ -1,0 +1,88 @@
+# The left-hand navigation of the documentation site, drawn by
+# _includes/sidebar.html on every page. It replaced `header_pages` in
+# _config.yml on 2026-09-22, when twenty-six links across the top of every page
+# had stopped being navigable. A page that is not listed here is still built
+# and still reachable by a link; it simply has no place in the sidebar.
+#
+# `url` is the page's built address: `foo.md` is served as `/foo.html`.
+- section: Start here
+  items:
+    - { title: Overview, url: / }
+    - { title: Getting started, url: /getting-started.html }
+    - { title: Architecture, url: /architecture.html }
+    - { title: Configuration, url: /configuration.html }
+    - { title: Endpoints, url: /endpoints.html }
+    - { title: Trust realms, url: /trust-realms.html }
+    - { title: What is not checked, url: /what-is-not-checked.html }
+    - { title: Accepted tokens, url: /accepted-tokens.html }
+    - { title: Token samples, url: /token-samples.html }
+    - { title: Error codes, url: /error-codes.html }
+
+- section: OAuth 2.0 and OpenID Connect
+  items:
+    - { title: OAuth 2.0 and OpenID Connect, url: /oauth-oidc.html }
+    - { title: "Security profiles: RFC 9700, OAuth 2.1, DPoP, mTLS", url: /oauth-security.html }
+    - { title: JWT assertions (RFC 7523), url: /jwt-assertions.html }
+    - { title: SAML assertions (RFC 7522), url: /saml-assertions.html }
+    - { title: GNAP, url: /gnap.html }
+
+- section: SAML and WS-*
+  items:
+    - { title: SAML 2.0 Web Browser SSO, url: /saml2-sso.html }
+    - { title: SAML 1.1, url: /saml11.html }
+    - { title: WS-Trust, url: /ws-trust.html }
+    - { title: WS-Federation, url: /ws-federation.html }
+    - { title: Federation, url: /federation.html }
+
+- section: Sign-in and sessions
+  items:
+    - { title: "Authentication: WebAuthn, TOTP, recovery codes", url: /authentication.html }
+    - { title: Kerberos and SPNEGO, url: /kerberos.html }
+    - { title: TLS and mutual TLS, url: /tls.html }
+    - { title: Sessions, url: /sessions.html }
+    - { title: Signing out, url: /signing-out.html }
+
+- section: Verifiable credentials
+  items:
+    - { title: OpenID4VCI and status lists, url: /oid4vci.html }
+    - { title: OpenID4VP and wallet sign-in, url: /oid4vp.html }
+
+- section: Directory and provisioning
+  items:
+    - { title: LDAP, url: /ldap.html }
+    - { title: SCIM 2.0, url: /scim.html }
+
+- section: Authorization policy
+  items:
+    - { title: XACML 3.0 and ALFA, url: /xacml.html }
+    - { title: Remote PEP, url: /remote-pep.html }
+
+- section: Shared Signals
+  items:
+    - { title: "Shared Signals: SSF, CAEP, RISC", url: /shared-signals.html }
+    - { title: CAEP events, url: /caep-events.html }
+    - { title: Signals received, url: /signals-received.html }
+
+- section: Certificates and workloads
+  items:
+    - { title: PKI, url: /pki.html }
+    - { title: ACME, url: /acme.html }
+    - { title: EST, url: /est.html }
+    - { title: SCEP, url: /scep.html }
+    - { title: SPIFFE, url: /spiffe.html }
+
+- section: Administration
+  items:
+    - { title: Management API, url: /management-api.html }
+
+- section: Operating it
+  items:
+    - { title: Persistence, url: /persistence.html }
+    - { title: Encryption at rest, url: /encryption-at-rest.html }
+    - { title: Caches, url: /caches.html }
+    - { title: A cluster in AWS, url: /aws-cluster.html }
+
+- section: For contributors
+  items:
+    - { title: Repository layout, url: /layout.html }
+    - { title: Parent project migration, url: /parent-project-migration.html }

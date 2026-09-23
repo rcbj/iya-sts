@@ -194,8 +194,9 @@ class Saml11Assertions {
     // signXml(). The configured algorithms (2026-09-12), for saml2.ts's reason.
     const how = documentSettings.signatureOptions();
     const signed = stsCrypto.signXml(xml, {
-      privateKeyPem: STS.privateKeyPem,
-      certPem: STS.certPem,
+      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key.
+      privateKeyPem: STS.xml.privateKeyPem,
+      certPem: STS.xml.certPem,
       placement: stsCrypto.PLACEMENT.LAST,
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,

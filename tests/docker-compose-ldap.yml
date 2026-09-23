@@ -3,7 +3,7 @@
 #
 # ONE JOB NEEDS THIS AND IT IS `tests/vendored/sts_directory_bulk_load_ldap.js`,
 # which creates five thousand people, fifty groups and five thousand
-# memberships over RFC 4511 on the raw socket. Under `./docker-run-tests.sh` it
+# memberships over RFC 4511 on the raw socket. Under `./run-tests.sh` it
 # needs nothing: the runner is a container on the bridge with the service and
 # reaches `ldap://sts:389` with no port published anywhere. Under
 # `./local-run-tests.sh` the runner was a HOST PROCESS and the service a

@@ -163,6 +163,30 @@ function verifiesCredentials() {
   return isProduct();
 }
 
+// May a SPIFFE Workload API caller's OWN claims about itself be matched as
+// selectors (`spiffe.acceptAssertedSelectors`, the `x-sts-workload-selector`
+// header)? (#40, 2026-09-21.) Development says yes when that setting is on:
+// it is how a client's "these selectors matched" path is exercised without a
+// real attestor. Product says no whatever the setting says — a selector the
+// caller wrote is a claim nothing checked, and a registration entry written
+// for `unix:uid:0` must not be had by typing it into a header.
+function believesAssertedSelectors() {
+  log.debug("Entering believesAssertedSelectors().");
+  log.debug("Leaving believesAssertedSelectors().");
+  return !isProduct();
+}
+
+// Must the SPIFFE Workload API's Unix socket be ATTESTED to be served at all?
+// (#40, 2026-09-21.) Product says yes: without the native module that reads a
+// caller's credentials, every process that can reach the socket would get
+// whatever the transport selectors match, so the socket is not served.
+// Development serves it and says, on GET /spiffe, that nothing is attested.
+function requiresWorkloadAttestation() {
+  log.debug("Entering requiresWorkloadAttestation().");
+  log.debug("Leaving requiresWorkloadAttestation().");
+  return isProduct();
+}
+
 // May a user, application, service principal or authorization server be created
 // because something NAMED it? Development says yes and that is most of what
 // makes it a mock: a client can point at this service with any client_id and
@@ -247,6 +271,30 @@ function seedsDemoData() {
   log.debug("Entering seedsDemoData().");
   log.debug("Leaving seedsDemoData().");
   return !isProduct();
+}
+
+// Does this service ROTATE its signing keys on a schedule? (2026-09-22, #42.)
+// Product keeps a key set for as long as the store does, so a key that is
+// never replaced is a key whose compromise never ends; each unit gets a
+// `next` key, published before it signs anything, promoted by `signing.rotate`
+// and kept verifying through its grace after. Development makes its keys anew
+// at every start and has nothing to rotate — a rotation there would only
+// churn the documents a client is being pointed at.
+function rotatesSigningKeys() {
+  log.debug("Entering rotatesSigningKeys().");
+  log.debug("Leaving rotatesSigningKeys().");
+  return isProduct();
+}
+
+// Is an EXPIRED client secret refused? (2026-09-22, #49 P5.) Product refuses
+// it at the token endpoint wherever a secret is checked; development accepts
+// it and says so, because a test fixture registered with a short
+// oauth2.registeredSecretLifetimeS must not stop working half-way through a
+// run nobody meant to be about secrets.
+function refusesExpiredClientSecrets() {
+  log.debug("Entering refusesExpiredClientSecrets().");
+  log.debug("Leaving refusesExpiredClientSecrets().");
+  return isProduct();
 }
 
 // Does the realm chooser in front of `/admin` and `/portal` LIST the realms?
@@ -461,6 +509,38 @@ function acceptsUnverifiedIssuerTokens() {
   return !isProduct();
 }
 
+// Does the RFC 8693 token exchange accept a `subject_token` or `actor_token`
+// this realm CANNOT VERIFY (2026-09-21)? Development says yes: it reads the
+// name out of a token from anywhere and exchanges it, which is what lets a
+// client under test drive the grant with a token some other issuer minted.
+// Product says no. The subject_token is the WHOLE of what the grant asks for —
+// there is no browser, password or consent anywhere in it — so an unverified
+// one is a token for whoever the caller wrote into a JWT it signed itself, or
+// did not sign at all. Until this predicate existed product exchanged exactly
+// that, and the page saying every door verifies its tokens was wrong about
+// this one. `oauth-oidc/oauth2.ts`'s token-exchange branch asks it.
+function exchangesUnverifiedTokens() {
+  log.debug("Entering exchangesUnverifiedTokens().");
+  log.debug("Leaving exchangesUnverifiedTokens().");
+  return !isProduct();
+}
+
+// Does the sign-in screen ENROL a security key for a passwordless sign-in that
+// names somebody holding none (2026-09-21)? Development says yes — "enrol on
+// first use", so a tester can reach a passkey sign-in with no set-up — and the
+// first person to claim a name gets it, which the screen says. Product says
+// no. Nothing on that path proves who is asking: no password is read, and the
+// only other check was that the name EXISTS, so anybody who knew a username
+// could register their own authenticator as that person's primary credential
+// and be signed in as them, for good. In product a primary key is added only
+// where the person has already proved who they are — `/portal/keys` behind a
+// session, an activation link, or an operator. `authn/authn.ts` asks it.
+function enrolsKeysOnFirstUse() {
+  log.debug("Entering enrolsKeysOnFirstUse().");
+  log.debug("Leaving enrolsKeysOnFirstUse().");
+  return !isProduct();
+}
+
 // May a request object be UNSIGNED — `alg: none` — at the authorization
 // endpoint (2026-09-13)? RFC 9101 section 4 says a request object is signed, or
 // signed and then encrypted, and nothing else; OpenID Connect Core section 6.1
@@ -669,8 +749,8 @@ const REQUIREMENTS = [
     product: 'Verified against the hashed `userPassword` on the person\'s ' +
              'directory entry, at every one of those doors. A person with no ' +
              '`userPassword` set cannot sign in at all. The OAuth 2.0 ' +
-             'password grant is one of those doors, and refuses a person ' +
-             'holding a second factor, which that grant cannot carry. ' +
+             'password grant does not exist in product mode, which implies ' +
+             'RFC 9700 mode (section 2.4). ' +
              'WS-Trust requires a credential, and accepts an assertion only ' +
              'when this realm signed it and it is inside its Conditions.',
     where: 'common/credentials.ts, ws-trust/wstrust.ts, oauth-oidc/oauth2.ts' },
@@ -686,6 +766,26 @@ const REQUIREMENTS = [
              'key, or that this realm revoked, is refused invalid_token ' +
              '(HTTP 401) before anything is issued.',
     where: 'oid4vc/vc_issuer.ts, oauth-oidc/dpop.ts' },
+  { id: 'token-exchange-tokens',
+    what: 'An RFC 8693 token exchange accepts only a subject_token and ' +
+          'actor_token this realm can verify',
+    development: 'A subject_token this realm cannot verify is read for its ' +
+                 'name and exchanged anyway, and an actor_token is read and ' +
+                 'never verified, so a client can drive the grant with a ' +
+                 'token from any issuer.',
+    product: 'Both must verify against this realm\'s signing key, be ' +
+             'unexpired and not revoked, or the exchange is refused ' +
+             'invalid_request (HTTP 400, RFC 8693 section 2.2.2).',
+    where: 'oauth-oidc/oauth2.ts' },
+  { id: 'passkey-first-use',
+    what: 'The sign-in screen does not enrol a security key for somebody ' +
+          'who has not proved who they are',
+    development: 'A passwordless sign-in naming somebody who holds no ' +
+                 'primary key enrols one on the spot, with no password read ' +
+                 '— the first person to claim a name gets it.',
+    product: 'It is refused. A primary key is added on /portal/keys behind ' +
+             'a session, by an activation link, or by an operator.',
+    where: 'authn/authn.ts' },
   { id: 'resource-metadata-import',
     what: 'An RFC 9728 protected resource metadata import is held to the ' +
           'rules a client of the document follows',
@@ -1014,6 +1114,26 @@ const REQUIREMENTS = [
     product: 'The same, over a registry that no longer mints an entry for ' +
              'whoever asks.',
     where: 'spiffe/spiffe_auth.ts' },
+  // #40 (2026-09-21): what node and workload attestation check, by mode.
+  { id: 'spiffe-node-attestation',
+    what: 'SPIFFE node attestation (AttestAgent)',
+    development: 'Every type is VERIFIED by its attestor or refused — ' +
+                 'join_token, x509pop, sshpop, tpm_devid, k8s_psat, ' +
+                 'http_challenge, aws_iid, gcp_iit, azure_imds — as the ' +
+                 'realm lists in spiffe.nodeAttestors.',
+    product: 'The same; nothing about node attestation differs by mode.',
+    where: 'spiffe/spiffe_node_attestation.ts' },
+  { id: 'spiffe-workload-attestation',
+    what: 'SPIFFE workload attestation (the Workload API Unix socket)',
+    development: 'A caller\'s kernel credentials and process are read at ' +
+                 'connect (spiffe.workloadAttestors: unix, docker, k8s) where ' +
+                 'the native module is built; without it the socket is served ' +
+                 'on transport selectors alone and says so. Asserted ' +
+                 'selectors are believed when spiffe.acceptAssertedSelectors ' +
+                 'is on.',
+    product: 'Without the native module the Workload API socket is NOT ' +
+             'served. Asserted selectors are never believed.',
+    where: 'spiffe/spiffe_peer.ts, spiffe/spiffe_auth.ts' },
   // 2026-09-12. The one row here whose two columns differ in what is REFUSED
   // for a reason that is not "development checks nothing": both modes consult
   // the register, and the difference is what an UNREACHABLE foreign CRL costs.
@@ -1049,7 +1169,34 @@ const REQUIREMENTS = [
              'handed an ALLOW-LIST — this service\'s own addresses and ' +
              'debugger.allowedDestinations — and refuses every other ' +
              'destination, raw sockets included.',
-    where: 'debugger/debugger_server.ts, debugger/debugger_api_process.ts' }
+    where: 'debugger/debugger_server.ts, debugger/debugger_api_process.ts' },
+  // 2026-09-22 (#49 P5).
+  { id: 'client-secret-expiry',
+    what: 'An expired client secret',
+    development: 'ACCEPTED where a secret is checked, with an audit row ' +
+                 'saying it had expired.',
+    product: 'REFUSED at the token endpoint (invalid_client, ' +
+             'STS-OAUTH-0558) once oauthClientSecretExpiresAt — or the ' +
+             'registration\'s client_secret_expires_at — has passed. A ' +
+             'rotated secret\'s predecessor is accepted in both modes until ' +
+             'oauth2.clientSecretOverlapS has passed.',
+    where: 'oauth-oidc/client_auth.js, common/applications.js' },
+  // 2026-09-22 (#42). It was NOT_YET's `key-overlap` — "a rotation has NO
+  // OVERLAP" — until key GENERATIONS gave every unit a next key published
+  // before it signs and retired keys that verify through their grace.
+  { id: 'signing-key-rotation',
+    what: 'Signing keys are rotated, with an overlap',
+    development: 'NOT ROTATED: the keys are made anew at every start. Every ' +
+                 'unit still carries its generations, so a next or retired ' +
+                 'key made by hand is published and verifies as in product.',
+    product: 'Every unit (realm, use case, algorithm) holds a NEXT key, ' +
+             'published in the JWKS, the SAML and WS-Federation metadata ' +
+             'and /crypto/metadata before it signs anything, promoted every ' +
+             'signing.rotationIntervalDays by the signing.rotate job; the key ' +
+             'it replaces goes on verifying for signing.retiredKeyGraceDays ' +
+             'or the longest token lifetime, whichever is longer.',
+    where: 'common/helpers.js, common/keystore.js, common/pki.js, ' +
+           'pki/crypto_metadata_document.ts' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be
@@ -1113,13 +1260,6 @@ const NOT_YET = [
           'pki.revocationLdapDirectory set and every RDN single-valued; and ' +
           'LDAPS 636 asks for no client certificate, so nothing there is ' +
           'consulted.' },
-  { id: 'key-overlap',
-    what: 'A rotation has NO OVERLAP. This service publishes one key per ' +
-          'realm per algorithm, so everything signed with the old key stops ' +
-          'verifying the moment the new one is in use. A product deployment ' +
-          'wants both keys in JWKS for a window, which needs the old private ' +
-          'key kept — the thing rotation is for getting rid of — so it is a ' +
-          'design rather than a setting.' },
   // **THE SPIFFE HALF OF THIS ROW NARROWED ON 2026-09-11.** It said "the TLS
   // server certificate and the SPIFFE authorities, which belong to their own
   // modules and are shared across realms" — and the SPIFFE X.509 authority is
@@ -1242,11 +1382,15 @@ module.exports = {
   isDevelopment: isDevelopment,
   verifiesCredentials: verifiesCredentials,
   autoCreates: autoCreates,
+  believesAssertedSelectors: believesAssertedSelectors,
+  requiresWorkloadAttestation: requiresWorkloadAttestation,
   requiresConfidentialClientAuthentication:
     requiresConfidentialClientAuthentication,
   enforcesOauthSecurityBcp: enforcesOauthSecurityBcp,
   gatesManagementApi: gatesManagementApi,
   seedsDemoData: seedsDemoData,
+  rotatesSigningKeys: rotatesSigningKeys,
+  refusesExpiredClientSecrets: refusesExpiredClientSecrets,
   listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
@@ -1262,6 +1406,8 @@ module.exports = {
   requiresEnrollmentTls: requiresEnrollmentTls,
   opensIntrospection: opensIntrospection,
   acceptsUnverifiedIssuerTokens: acceptsUnverifiedIssuerTokens,
+  exchangesUnverifiedTokens: exchangesUnverifiedTokens,
+  enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
   acceptsLooseRequestUris: acceptsLooseRequestUris,
   acceptsUnsignedSamlRequests: acceptsUnsignedSamlRequests,

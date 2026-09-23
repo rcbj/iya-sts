@@ -84,6 +84,18 @@ open it.
 
 ---
 
+## Expired entries are cleared every minute
+
+Each store refuses an expired entry whenever it is asked for one, whatever
+else happens. On top of that, the scheduler job `caches.eject-expired`
+(`/admin/scheduler`) runs every minute in every process and deletes the
+expired entries of every store that has them, so an idle store does not hold
+dead rows until its next lookup. What it removed is counted in each store's
+**Evictions** on `/admin/caches`. Two stores are cleared by other means: the
+back-channel Logout Token deliveries (their own sweep, which dead-letters a
+delivery before removing it) and the decrypted signing keys (dropped
+`keys.plaintextTtlS` after their last use, to the second).
+
 ## Certificates and revocation
 
 When a client certificate or a signed assertion names a CRL, an OCSP responder
@@ -97,6 +109,7 @@ answer.
 | Issuer certificates | certificates fetched from an Authority Information Access address | per process | as for CRLs | `pki.revocationCrlMaxAgeS` |
 | Failed fetches | an address that did not answer, so it is not asked again at once | per process | the setting; 0 means a failure is not remembered | `pki.revocationFailureRetryS` (60) |
 | Certificate files | trust anchors read from a file named in a setting | per process | until the file's path or modification time changes; one entry per setting that names a file (two) | — |
+| Client certificate chains | the chain a verified client certificate built on a full TLS handshake, handed back when that session is resumed (a resumed session carries the leaf alone) | per process | no expiry; 1024 leaves, the oldest dropped first | — |
 
 The first three share one size limit, `pki.revocationCrlCacheEntries` (256);
 the oldest entry is dropped first.

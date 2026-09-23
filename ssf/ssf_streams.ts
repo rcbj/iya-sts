@@ -270,7 +270,8 @@ interface StreamDelivery {
 // `common/applications.js`, as far as this module reads it.
 interface ApplicationsReader {
   ssfAllowedEventsFor(name: string): { identifier: string;
-                                       values: string[] } | null;
+                                       values: string[];
+                                       receiverIds?: string[] } | null;
 }
 
 // `persistence/persistence.js`, as far as this module reads it.
@@ -333,17 +334,24 @@ class SsfStreams {
     const errors = [];
     const store = streams;
 
-    const max = this.limit('ssf.maxStreams', 25);
-    if (store.size >= max) {
-      errors.push('This transmitter is holding ' + store.size + ' stream(s) ' +
-          'and ssf.maxStreams is ' + max + '. Delete one, or raise the ' +
-          'setting on /admin/ssf.');
-      log.debug("Leaving SsfStreams.createStream(). At the stream limit.");
-      return { ok: false, stream: null, errors: errors };
+    // PER RECEIVER (#144, 2026-09-22). It counted every stream in the realm,
+    // so one receiver could use up every other receiver's allowance. This
+    // service's own two streams are not counted against anybody.
+    const internal = !!ctx.internalSurface;
+    if (!internal) {
+      const max = this.limit('ssf.maxStreams', 25);
+      const held = this.streamsOwnedBy(ctx.principal).length;
+      if (held >= max) {
+        errors.push('This receiver already holds ' + held + ' stream(s) ' +
+            'and ssf.maxStreams, the limit per receiver, is ' + max +
+            '. Delete one, or raise the setting on /admin/ssf.');
+        log.debug("Leaving SsfStreams.createStream(). At the stream limit.");
+        return { ok: false, stream: null, errors: errors, limit: true };
+      }
     }
 
     const delivery = this.normaliseDelivery(body.delivery, errors);
-    const audience = this.normaliseAudience(body.aud, ctx, errors);
+    const audience = this.assignAudience(body, ctx, errors);
     const requested = this.normaliseEventList(body.events_requested);
     const supported = events.supportedEventUris();
     const offered = requested.length
@@ -369,10 +377,10 @@ class SsfStreams {
     });
 
     const format = String(body.format || '');
-    if (format && subjects.FORMAT_NAMES.indexOf(format) < 0) {
-      errors.push('"format" is "' + format + '", which is not one of RFC ' +
-          '9493\'s eight Subject Identifier formats: ' +
-          subjects.FORMAT_NAMES.join(', ') + '. It is the format this ' +
+    if (format && subjects.PERSON_FORMATS.indexOf(format) < 0) {
+      errors.push('"format" is "' + format + '", which is not a Subject ' +
+          'Identifier format a person can be named in: ' +
+          subjects.PERSON_FORMATS.join(', ') + '. It is the format this ' +
           'transmitter will name a DEFAULT subject in.');
     }
 
@@ -424,6 +432,16 @@ class SsfStreams {
       createdAt: now,
       updatedAt: now,
       createdBy: String(ctx.principal || '(unauthenticated)'),
+      // THIS SERVICE'S OWN RECEIVER, marked AT CREATION from the context and
+      // never from the body (#144). Ownership is decided by this and not by
+      // `createdBy`: in development any Basic username authenticates, so a
+      // caller could present itself as whatever string the internal streams
+      // were created under. A marked stream is owned by no remote receiver.
+      internalSurface: internal ? String(ctx.internalSurface) : undefined,
+      // SSF 1.0 section 8.1.1's "eligible Receiver activity", in epoch
+      // seconds: set here, on every management call naming the stream and on
+      // every poll. What the inactivity timeout counts from.
+      lastActivityAt: Math.floor(Date.now() / 1000),
       subjects: [],
       // NO `queue` MEMBER: the SETs waiting on this stream are rows in `queued`
       // above, read through queueOf(). See the header on that store.
@@ -537,9 +555,13 @@ class SsfStreams {
       return null;
     }
     const allowed = {};
-    events.SSF_EVENTS.forEach((row) => {
-      allowed[row.uri] = true;
-    });
+    // SSF's own two, and this service's own signing-key event (#42, D4),
+    // which is about the transmitter rather than anybody an entry could be
+    // limiting a stream about.
+    (events.SSF_EVENTS as any[]).concat(events.STS_EVENTS)
+      .forEach((row: any) => {
+        allowed[row.uri] = true;
+      });
     values.forEach((value) => {
       const word = String(value).trim();
       const lower = word.toLowerCase();
@@ -714,48 +736,147 @@ class SsfStreams {
     return out;
   }
 
-  // The `aud` of every SET on this stream. A string or an array, exactly as the
-  // receiver sent it, because RFC 8417's `aud` is JWT's `aud` and a receiver
-  // that registered an array checks for itself in an array.
+  // ---------------------------------------------------------------------------
+  // THE `aud` OF EVERY SET ON THIS STREAM, AND IT IS THE TRANSMITTER'S
+  // (#144, 2026-09-22).
   //
-  // **IT IS REQUIRED AND IT IS NOT DEFAULTED TO THE AUTHENTICATED CALLER**,
-  // which is a decision rather than an omission and it is the one place this
-  // module is stricter than the rest of this service. Defaulting was written
-  // first and taken out: a receiver whose `aud` was invented for it never finds
-  // out that the member is required, and the first real transmitter it meets
-  // refuses every stream it creates. Worse, the audience a receiver checks for
-  // ITSELF in would then be a name this service chose — so an event it should
-  // refuse with `invalid_audience` would be one it accepts.
+  // SSF 1.0 section 8.1.1 lists `aud` as TRANSMITTER-SUPPLIED — "this property
+  // cannot be updated" — and section 8 says the transmitter's authorization
+  // "MUST associate a Receiver with one or more stream IDs and aud values".
+  // Until this date the RECEIVER chose it: it was required on a create, taken
+  // as sent, and replaceable by a PATCH, so a receiver could have its events
+  // addressed to any name at all, including another receiver's.
   //
-  // The permissive posture everywhere else in this service is about
-  // CREDENTIALS. This is a protocol member with a consequence at the far end,
-  // and inventing one teaches a client something false.
-  private normaliseAudience(asked?, context?, errors?) {
+  // **WHAT A RECEIVER IS ASSOCIATED WITH** is the identifier it authenticated
+  // as, and — where that identifier is a registered application's, found the
+  // way `ssfAllowedEvents` finds it — the application's identifier and every
+  // `ssfReceiverId` on its entry. That set is this service's side of the
+  // association, and it is what an operator widens by adding an
+  // `ssfReceiverId` (a web and a mobile client of one application are
+  // section 4.1.8's own example of a legitimate array).
+  //
+  //   * A create that sends no `aud` gets the authenticated identifier.
+  //   * A create that sends one — a string or an array — gets it only if
+  //     every value is in that set, and is refused naming the set otherwise.
+  //     Sending it is not part of the specification's create request; it is
+  //     accepted so that a receiver with several associated names can choose
+  //     which, and never so it can choose one it is not.
+  //   * An update may carry `aud` only if it equals what the stream already
+  //     has (section 8.1.1.3: a Transmitter-Supplied property "MUST match the
+  //     expected value") — see transmitterSuppliedMismatch().
+  //
+  // THIS SERVICE'S OWN TWO RECEIVERS pass their audience on the CONTEXT
+  // (`ctx.audience`), which only in-process code can build.
+  // ---------------------------------------------------------------------------
+  audiencesFor(principal?) {
     const { log } = this.deps;
-    log.debug("Entering SsfStreams.normaliseAudience().");
-    if (typeof asked === 'string' && asked !== '') {
-      log.debug("Leaving SsfStreams.normaliseAudience(). One string.");
-      return asked;
+    log.debug("Entering SsfStreams.audiencesFor().");
+    const name = String(principal || '');
+    if (!name || name === '(unauthenticated)') {
+      log.debug("Leaving SsfStreams.audiencesFor(). Nobody.");
+      return [];
     }
-    if (Array.isArray(asked)) {
-      const list = asked.map((one) => {
-        return String(one);
-      }).filter(Boolean);
-      if (!list.length) {
-        errors.push('"aud" is an empty array. Every SET on this stream would ' +
-            'be addressed to nobody.');
+    const out = [name];
+    const entry = this.applicationFor(name);
+    if (entry) {
+      [entry.identifier].concat(entry.receiverIds || []).forEach((one) => {
+        const value = String(one || '');
+        if (value && out.indexOf(value) < 0) {
+          out.push(value);
+        }
+      });
+    }
+    log.debug("Leaving SsfStreams.audiencesFor(). " + out.length + '.');
+    return out;
+  }
+
+  private assignAudience(body?, context?, errors?) {
+    const { log } = this.deps;
+    log.debug("Entering SsfStreams.assignAudience().");
+    const ctx = context || {};
+    if (ctx.audience) {
+      log.debug("Leaving SsfStreams.assignAudience(). From the context.");
+      return ctx.audience;
+    }
+    const allowed = this.audiencesFor(ctx.principal);
+    if (!allowed.length) {
+      errors.push('This stream has no authenticated receiver to address its ' +
+          'events to. "aud" is Transmitter-Supplied (SSF 1.0 section 8.1.1): ' +
+          'it is the identifier the receiver authenticated as.');
+      log.debug("Leaving SsfStreams.assignAudience(). Nobody.");
+      return '';
+    }
+    const has = !!body && Object.prototype.hasOwnProperty.call(body, 'aud');
+    if (!has || body.aud === null || body.aud === '') {
+      log.debug("Leaving SsfStreams.assignAudience(). The receiver's own.");
+      return allowed[0];
+    }
+    const asked = Array.isArray(body.aud) ? body.aud.map(String)
+      : (typeof body.aud === 'string' ? [body.aud] : null);
+    if (!asked || !asked.length) {
+      errors.push('"aud" is a string or a non-empty array of strings.');
+      log.debug("Leaving SsfStreams.assignAudience(). Malformed.");
+      return '';
+    }
+    const foreign = asked.filter((one) => {
+      return allowed.indexOf(one) < 0;
+    });
+    if (foreign.length) {
+      errors.push('"aud" names ' + foreign.map((one) => {
+        return JSON.stringify(one);
+      }).join(', ') + ', which this receiver is not associated with. ' +
+          '"aud" is Transmitter-Supplied (SSF 1.0 section 8.1.1): it is ' +
+          'the identifier the receiver authenticated as (' +
+          JSON.stringify(allowed[0]) + ')' + (allowed.length > 1
+            ? ' or one of the others its application is registered under (' +
+              allowed.slice(1).map((one) => {
+                return JSON.stringify(one);
+              }).join(', ') + ')'
+            : '') + '. Leave it out to be given the first; an operator ' +
+          'associates another name by adding an ssfReceiverId to the ' +
+          'application.');
+      log.debug("Leaving SsfStreams.assignAudience(). Not associated.");
+      return '';
+    }
+    log.debug("Leaving SsfStreams.assignAudience(). " + asked.length +
+              ' value(s) the receiver chose among its own.');
+    return Array.isArray(body.aud) ? asked : asked[0];
+  }
+
+  // SSF 1.0 sections 8.1.1.3 and 8.1.1.4: "Transmitter-Supplied properties
+  // besides the stream_id MAY be present, but they MUST match the expected
+  // value". Answers the sentence naming the first that does not, or ''.
+  private transmitterSuppliedMismatch(record?, body?) {
+    const { log } = this.deps;
+    log.debug("Entering SsfStreams.transmitterSuppliedMismatch().");
+    const same = (a, b) => {
+      log.debug("Entering same().");
+      const norm = (v) => {
+        log.debug("Entering norm().");
+        log.debug("Leaving norm().");
+        return JSON.stringify(Array.isArray(v) ? v.slice().map(String).sort()
+                                               : v);
+      };
+      log.debug("Leaving same().");
+      return norm(a) === norm(b);
+    };
+    const expected = this.streamConfiguration(record, {});
+    const members = ['iss', 'aud', 'events_supported', 'events_delivered',
+                     'min_verification_interval', 'inactivity_timeout'];
+    for (let i = 0; i < members.length; i++) {
+      const name = members[i];
+      if (!Object.prototype.hasOwnProperty.call(body, name)) {
+        continue;
       }
-      log.debug("Leaving SsfStreams.normaliseAudience(). " + list.length +
-                ' value(s).');
-      return list;
+      if (!same(body[name], (expected as any)[name])) {
+        log.debug("Leaving SsfStreams.transmitterSuppliedMismatch(). " + name);
+        return '"' + name + '" is Transmitter-Supplied and does not match ' +
+            'this stream\'s value, ' + JSON.stringify((expected as any)[name]) +
+            '. SSF 1.0 section 8.1.1.3 lets an update carry it only ' +
+            'unchanged; leave it out to leave it alone.';
+      }
     }
-    errors.push('"aud" is required — it is who the SETs on this stream are ' +
-        'addressed to, and a receiver checks for ITSELF in it. It is not ' +
-        'defaulted to whoever authenticated: an audience this transmitter ' +
-        'invented would be one the receiver never learns it has to send, and ' +
-        'an event it ought to refuse with invalid_audience would be one it ' +
-        'accepts.');
-    log.debug("Leaving SsfStreams.normaliseAudience(). Missing.");
+    log.debug("Leaving SsfStreams.transmitterSuppliedMismatch(). None.");
     return '';
   }
 
@@ -791,6 +912,92 @@ class SsfStreams {
     });
     log.debug("Leaving SsfStreams.listStreams(). " + out.length + '.');
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHOSE STREAM IS IT (#144, 2026-09-22).
+  //
+  // SSF 1.0 section 8: the transmitter's authorization "MUST associate a
+  // Receiver with one or more stream IDs ... such that only authorized
+  // Receivers are able to access or modify the details of the associated
+  // Event Streams"; section 8.1.1.2: a read with no stream_id returns "the
+  // stream configurations available to this Receiver". Until this date every
+  // management call looked a stream up by id alone and a list returned every
+  // stream in the realm — `authorization_header` included — so any caller
+  // holding `ssf:read` could read this service's own receiver tokens and any
+  // holding `ssf:write` could point another receiver's stream at itself.
+  //
+  // **THE OWNER IS THE IDENTIFIER THE CREATOR AUTHENTICATED AS** — a client's
+  // client_id, a person's `sub`, a GNAP client instance, a Basic username —
+  // recorded as `createdBy`, and the one thing a remote caller can own. A
+  // stream this service seeded for itself (`internalSurface`) is owned by NO
+  // remote caller whatever `createdBy` says, and is managed only on /admin
+  // and through /admin-api. A stream that is not the caller's answers exactly
+  // as a stream that does not exist (404): the specification's own wording is
+  // "no Event Stream with the given stream_id FOR THIS EVENT RECEIVER", and a
+  // different answer would let a caller learn which ids exist.
+  // ---------------------------------------------------------------------------
+  isInternal(record?) {
+    const { log } = this.deps;
+    log.debug("Entering SsfStreams.isInternal().");
+    log.debug("Leaving SsfStreams.isInternal().");
+    return !!(record && record.internalSurface);
+  }
+
+  ownedBy(record?, principal?) {
+    const { log } = this.deps;
+    log.debug("Entering SsfStreams.ownedBy().");
+    const name = String(principal || '');
+    const owned = !!record && !!name && name !== '(unauthenticated)' &&
+                  !this.isInternal(record) &&
+                  String(record.createdBy || '') === name;
+    log.debug("Leaving SsfStreams.ownedBy(). " + owned);
+    return owned;
+  }
+
+  // The stream `id`, if it is `principal`'s; otherwise null, exactly as for a
+  // stream that does not exist.
+  streamOwnedBy(id?, principal?) {
+    const { log } = this.deps;
+    log.debug("Entering SsfStreams.streamOwnedBy(). " + id);
+    const record = this.getStream(id);
+    const out = this.ownedBy(record, principal) ? record : null;
+    log.debug("Leaving SsfStreams.streamOwnedBy(). " +
+              (out ? 'theirs' : 'not theirs, or none'));
+    return out;
+  }
+
+  streamsOwnedBy(principal?) {
+    const { log } = this.deps;
+    log.debug("Entering SsfStreams.streamsOwnedBy().");
+    const out = this.listStreams().filter((record) => {
+      return this.ownedBy(record, principal);
+    });
+    log.debug("Leaving SsfStreams.streamsOwnedBy(). " + out.length + '.');
+    return out;
+  }
+
+  // Eligible receiver activity (SSF 1.0 section 8.1.1): restarts the
+  // inactivity timeout. Written through `touch()` so every process sees it.
+  noteActivity(record?) {
+    const { log } = this.deps;
+    log.debug("Entering SsfStreams.noteActivity().");
+    if (!record) {
+      log.debug("Leaving SsfStreams.noteActivity(). No record.");
+      return;
+    }
+    record.lastActivityAt = Math.floor(Date.now() / 1000);
+    this.touch(record);
+    log.debug("Leaving SsfStreams.noteActivity().");
+  }
+
+  // The inactivity timeout this transmitter publishes, in seconds; 0 is none.
+  inactivityTimeout() {
+    const { log, config } = this.deps;
+    log.debug("Entering SsfStreams.inactivityTimeout().");
+    const value = Number(config.value('ssf.inactivityTimeoutS'));
+    log.debug("Leaving SsfStreams.inactivityTimeout().");
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -892,20 +1099,30 @@ class SsfStreams {
       log.debug("Leaving has().");
       return Object.prototype.hasOwnProperty.call(body, name);
     };
-
-    if (replace || has('delivery')) {
-      const delivery = this.normaliseDelivery(body.delivery, errors);
-      record.delivery = delivery;
+    // CHECKED BEFORE ANYTHING IS CHANGED: a refused update changes nothing.
+    const mismatch = this.transmitterSuppliedMismatch(record, body);
+    if (mismatch) {
+      log.debug("Leaving SsfStreams.updateStream(). A Transmitter-Supplied " +
+                'member does not match.');
+      return { ok: false, stream: null, errors: [mismatch] };
     }
-    if (replace || has('aud')) {
-      record.aud = this.normaliseAudience(body.aud, context, errors);
+    // THE RECEIVER-SUPPLIED MEMBERS ARE DELIVERY, EVENTS_REQUESTED AND
+    // DESCRIPTION (section 8.1.1), plus this service's own `format`. A PUT that
+    // omits one asks for it to be deleted (section 8.1.1.4); `aud` is not
+    // among them and neither form changes it.
+    //
+    // Validated into locals first and written only when everything passed, so
+    // a PATCH refused for one member leaves the stream as it was.
+    const next: any = {};
+    if (replace || has('delivery')) {
+      next.delivery = this.normaliseDelivery(body.delivery, errors);
     }
     if (replace || has('events_requested')) {
       const requested = this.normaliseEventList(body.events_requested);
       const supported = events.supportedEventUris();
-      record.events_requested = requested;
-      record.events_supported = supported.slice();
-      record.events_delivered = this.narrowByApplication(record,
+      next.events_requested = requested;
+      next.events_supported = supported.slice();
+      next.events_delivered = this.narrowByApplication(null,
           requested.length
         ? requested.filter((uri) => {
             return supported.indexOf(uri) >= 0;
@@ -914,15 +1131,16 @@ class SsfStreams {
     }
     if (replace || has('format')) {
       const format = String(body.format || '');
-      if (format && subjects.FORMAT_NAMES.indexOf(format) < 0) {
-        errors.push('"format" is "' + format + '", which is not one of RFC ' +
-            '9493\'s eight Subject Identifier formats.');
+      if (format && subjects.PERSON_FORMATS.indexOf(format) < 0) {
+        errors.push('"format" is "' + format + '", which is not a Subject ' +
+            'Identifier format a person can be named in: ' +
+            subjects.PERSON_FORMATS.join(', ') + '.');
       } else {
-        record.format = format;
+        next.format = format;
       }
     }
     if (replace || has('description')) {
-      record.description = String(body.description || '');
+      next.description = String(body.description || '');
     }
 
     if (errors.length) {
@@ -930,6 +1148,9 @@ class SsfStreams {
                 ' problem(s).');
       return { ok: false, stream: null, errors: errors };
     }
+    Object.keys(next).forEach((name) => {
+      record[name] = next[name];
+    });
     record.updatedAt = iso();
     this.note(record, 'updated', (replace ? 'Replaced' : 'Merged') +
          ' — now delivering ' + record.events_delivered.length +
@@ -969,16 +1190,25 @@ class SsfStreams {
     record.status = status;
     record.statusReason = String(reason || '');
     record.updatedAt = iso();
-    const waiting = this.queueOf(record).length;
+    const waiting = this.queueOf(record).filter((one) => {
+      return !this.isStreamUpdated(one);
+    }).length;
     if (status === 'disabled' && waiting) {
       // Deliberate, and the sentence above is why. A disabled stream is not a
       // paused one: what was waiting is dropped, and the count is reported so
       // that a reader can see it happen rather than discovering later that the
       // queue is empty.
+      //
+      // **EXCEPT THE STREAM-UPDATED EVENT THAT ANNOUNCES IT** (#144). SSF 1.0
+      // section 8.1.5 says it MUST be sent "before stopping the stream", and
+      // on a POLL stream "sent" is "queued for the receiver to collect" — so
+      // dropping it with everything else would announce the change to nobody.
+      // poll() hands a stopped stream its stream-updated events and nothing
+      // else.
       this.note(record, 'status', 'Disabled — ' + waiting +
            ' queued event(s) were DROPPED. A paused stream would have kept ' +
            'them; that is the whole difference between the two.');
-      this.clearQueueFor(record.stream_id);
+      this.clearQueueFor(record.stream_id, true);
     } else {
       this.note(record, 'status', before + ' -> ' + status +
            (reason ? ' (' + reason + ')' : ''));
@@ -1149,19 +1379,20 @@ class SsfStreams {
       //
       // A receiver adds the PERSON to a stream — that is the subject it has,
       // and the only one it can name in advance. A CAEP event about that
-      // person names a SESSION of theirs, which SSF 1.0 section 4 expresses as
-      // a complex subject whose `user` member is exactly the identifier the
+      // person names a SESSION of theirs, which SSF 1.0 section 3.3 expresses
+      // as a complex subject whose `user` member is exactly the identifier the
       // receiver added. Those two are different `subjectKey()`s, so an
       // exact-match test refuses every session event to the receiver that
       // asked for the person — silently, because a transmitter's refusal to
       // send is not a message anybody receives.
       //
-      // It is deliberately ONE LEVEL and not recursive: a complex subject may
-      // not nest another (SSF section 4), so a member is always a plain
-      // identifier and there is nothing below it to walk.
+      // It is deliberately ONE LEVEL and not recursive: each member of a
+      // complex subject is a SIMPLE identifier (SSF 1.0 section 3.3), so
+      // there is nothing below it to walk. Every member counts, the
+      // additional names section 3.3 allows included.
       // -------------------------------------------------------------------
-      if (!subject.format) {
-        const members = subjects.COMPLEX_MEMBER_NAMES.filter((name) => {
+      if (subjects.isComplex(subject)) {
+        const members = subjects.complexMembers(subject).filter((name) => {
           return subject[name] && typeof subject[name] === 'object';
         });
         const viaMember = members.some((name) => {
@@ -1269,13 +1500,25 @@ class SsfStreams {
 
   // Everything waiting on a stream, dropped: a disable, and a removal. Returns
   // how many went.
-  private clearQueueFor(streamId?) {
+  // Whether a queued SET is SSF's stream-updated event — the one a stopped
+  // stream still carries. See setStatus() and poll().
+  isStreamUpdated(entry?) {
+    const { log, events } = this.deps;
+    log.debug("Entering SsfStreams.isStreamUpdated().");
+    const types = Object.keys(((entry || {}).claims || {}).events || {});
+    log.debug("Leaving SsfStreams.isStreamUpdated().");
+    return types.indexOf(events.SSF_PREFIX + 'stream-updated') >= 0;
+  }
+
+  // `keepStreamUpdated`: leave the stream-updated SETs, for a disable.
+  private clearQueueFor(streamId?, keepStreamUpdated?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.clearQueueFor(). " + streamId);
     const prefix = this.queueKey(streamId, '');
     const keys = [];
     queued.forEach((entry, key) => {
-      if (String(key).indexOf(prefix) === 0) {
+      if (String(key).indexOf(prefix) === 0 &&
+          !(keepStreamUpdated && this.isStreamUpdated(entry))) {
         keys.push(key);
       }
     });
@@ -1753,18 +1996,19 @@ class SsfStreams {
     });
     this.touch(record);
 
-    if (record.status !== 'enabled') {
-      log.debug("Leaving SsfStreams.poll(). The stream is " + record.status +
-                '.');
-      return { sets: {}, moreAvailable: false, status: record.status };
-    }
-
+    // A PAUSED OR DISABLED STREAM TRANSMITS NOTHING (SSF 1.0 section
+    // 8.1.2.1) — except the stream-updated event that told the receiver so,
+    // which section 8.1.5 requires to be sent BEFORE the stream stops and
+    // which, on a poll stream, is only ever sent by being collected here.
+    const stopped = record.status !== 'enabled';
     const cap = this.limit('ssf.pollMaxEvents', 20);
     const wanted = Number(asked.maxEvents);
     const take = (Number.isFinite(wanted) && wanted >= 0)
       ? Math.min(wanted, cap) : cap;
     const sets = {};
-    const waiting = this.queueOf(record);
+    const waiting = this.queueOf(record).filter((one) => {
+      return !stopped || this.isStreamUpdated(one);
+    });
     const shared = this.sharesAcrossNodes();
     waiting.slice(0, take).forEach((one) => {
       sets[one.jti] = one.token;
@@ -1899,7 +2143,7 @@ class SsfStreams {
     } else {
       delivery.endpoint_url = settings.pollEndpoint || '';
     }
-    const out = {
+    const out: Record<string, any> = {
       stream_id: record.stream_id,
       iss: record.iss,
       aud: record.aud,
@@ -1914,6 +2158,13 @@ class SsfStreams {
       format: record.format,
       description: record.description
     };
+    // SSF 1.0 section 8.1.1, Transmitter-Supplied and OPTIONAL: published
+    // while there is one to publish. Never on this service's own receivers,
+    // which are never timed out.
+    const timeout = this.inactivityTimeout();
+    if (timeout && !this.isInternal(record)) {
+      out.inactivity_timeout = timeout;
+    }
     log.debug("Leaving SsfStreams.streamConfiguration().");
     return out;
   }
@@ -1978,6 +2229,14 @@ export = {
   addSubject: slot.forward('addSubject'),
   removeSubject: slot.forward('removeSubject'),
   streamCoversSubject: slot.forward('streamCoversSubject'),
+  audiencesFor: slot.forward('audiencesFor'),
+  isInternal: slot.forward('isInternal'),
+  ownedBy: slot.forward('ownedBy'),
+  streamOwnedBy: slot.forward('streamOwnedBy'),
+  streamsOwnedBy: slot.forward('streamsOwnedBy'),
+  noteActivity: slot.forward('noteActivity'),
+  inactivityTimeout: slot.forward('inactivityTimeout'),
+  isStreamUpdated: slot.forward('isStreamUpdated'),
   allowedEventsFor: slot.forward('allowedEventsFor'),
   deliversEvent: slot.forward('deliversEvent'),
   effectiveDelivered: slot.forward('effectiveDelivered'),

@@ -529,7 +529,7 @@ class RiscRegister {
     }
     const format = String(body.format || body.subject_type || '');
     let candidate = '';
-    if (format === 'issuer_subject_id') {
+    if (format === 'iss_sub') {
       candidate = String(body.sub || '');
     } else if (format === 'email') {
       candidate = String(body.email || '');
@@ -562,7 +562,7 @@ class RiscRegister {
       log.debug("Leaving RiscRegister.matchAccount(). By account id.");
       return value;
     }
-    // A PERSON'S SUBJECT (2026-09-14): an issuer_subject_id carries
+    // A PERSON'S SUBJECT (2026-09-14): an iss_sub carries
     // `urn:uuid:<entryUUID>` now, and the register is keyed on the name. The
     // directory says whose it is; a row that recorded the subject — which is
     // the only way to recognise an account already deleted — is matched below.

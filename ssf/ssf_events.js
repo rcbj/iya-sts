@@ -1050,11 +1050,73 @@ const RISC_EVENTS = [
   }
 ];
 
-// THE THREE VOCABULARIES IN ONE TABLE. SSF's own first, because they are about
+// ---------------------------------------------------------------------------
+// THIS SERVICE'S OWN VOCABULARY (2026-09-22, #42, rcbj's D4): one event, sent
+// after every rotation of a realm's signing keys, so a receiver can refresh
+// its copy of the keys at once rather than on its next poll of the JWKS.
+// A URN of this service's own, because no specification defines the event;
+// `family: 'sts'` keeps it off the CAEP and RISC pages, which read theirs by
+// family. It has NO SUBJECT: it is about the ISSUER's keys, not anybody.
+// ---------------------------------------------------------------------------
+const STS_PREFIX = 'urn:iya:sts:secevent:event-type:';
+
+const STS_EVENTS = [
+  {
+    uri: STS_PREFIX + 'signing-key-rotated',
+    family: 'sts',
+    name: 'Signing Key Rotated',
+    subject: 'none',
+    members: [
+      { name: 'realm', required: true, type: 'string',
+        what: 'The trust realm whose keys rotated.' },
+      { name: 'rotated', required: true, type: 'string',
+        what: 'The units rotated, each as "<unit> <previous kid> -> <kid>".' },
+      { name: 'reason', required: true, type: 'enum',
+        values: ['scheduled', 'requested', 'emergency'],
+        what: 'Why: the schedule, an administrator, or a key presumed ' +
+              'compromised — in which case the previous key no longer ' +
+              'verifies anything.' },
+      { name: 'jwks_uri', required: false, type: 'string',
+        what: 'Where the realm\'s current keys are.' },
+      { name: 'crypto_metadata_uri', required: false, type: 'string',
+        what: 'The realm\'s crypto metadata document, which lists every ' +
+              'generation of every key.' },
+      { name: 'event_timestamp', required: false, type: 'number',
+        what: 'When the rotation happened, in seconds since the epoch.' }
+    ],
+    required: ['realm', 'rotated', 'reason'],
+    what: 'NON-SPEC, this service\'s own. A realm\'s signing keys rotated: ' +
+          'the next key of each unit named is current now, and the key it ' +
+          'replaced is retired (or, for an emergency, gone). A receiver that ' +
+          'caches this issuer\'s keys fetches them again.',
+    generate: function (values) {
+      log.debug("Entering generate().");
+      const v = values || {};
+      const reasons = ['scheduled', 'requested', 'emergency'];
+      const payload = {
+        realm: String(v.realm || 'default'),
+        rotated: String(v.rotated || ''),
+        reason: reasons.indexOf(v.reason) >= 0 ? v.reason : 'requested',
+        event_timestamp: Number(v.event_timestamp) ||
+                         Math.floor(Date.now() / 1000)
+      };
+      if (typeof v.jwks_uri === 'string' && v.jwks_uri) {
+        payload.jwks_uri = v.jwks_uri;
+      }
+      if (typeof v.crypto_metadata_uri === 'string' && v.crypto_metadata_uri) {
+        payload.crypto_metadata_uri = v.crypto_metadata_uri;
+      }
+      log.debug("Leaving generate().");
+      return payload;
+    }
+  }
+];
+
+// THE FOUR VOCABULARIES IN ONE TABLE. SSF's own first, because they are about
 // the pipe every one of the others travels on; then CAEP's eight about a
-// SESSION, then RISC's fourteen about an ACCOUNT.
+// SESSION, then RISC's fourteen about an ACCOUNT, then this service's own.
 const EVENTS = /** @type {any[]} */ (SSF_EVENTS).concat(CAEP_EVENTS)
-  .concat(RISC_EVENTS);
+  .concat(RISC_EVENTS).concat(STS_EVENTS);
 
 const CAEP_EVENT_URIS = CAEP_EVENTS.map(function (row) {
   return row.uri;
@@ -1100,7 +1162,13 @@ function supportedEventUris() {
   const risc = config.value('risc.enabled')
     ? chooseFrom('risc.eventsSupported', RISC_EVENTS, 'risc.eventsSupported')
     : [];
-  const out = chosen.concat(caep).concat(risc);
+  // This service's own (D4), ALWAYS offered: it is about the transmitter's
+  // keys, which every receiver verifies SETs with, so there is no deployment
+  // for which advertising it would be a promise nothing can keep.
+  const own = STS_EVENTS.map(function (row) {
+    return row.uri;
+  });
+  const out = chosen.concat(caep).concat(risc).concat(own);
   log.debug('Leaving supportedEventUris(). ' + out.length + ' type(s).');
   return out;
 }
@@ -1388,12 +1456,11 @@ function subjectAdvice(uri, subject) {
     return warnings;
   }
   const format = String((subject || {}).format || '');
-  if (!format) {
+  if (format === 'complex') {
     warnings.push('"' + uri + '" wants a subject in one of these formats: ' +
-        row.subjectFormats.join(', ') + '. This one is a COMPLEX subject — ' +
-        'it has no `format` of its own — which names a person and possibly ' +
-        'a session, and this event is about an IDENTIFIER rather than about ' +
-        'either.');
+        row.subjectFormats.join(', ') + '. This one is a COMPLEX subject, ' +
+        'which names a person and possibly a session, and this event is ' +
+        'about an IDENTIFIER rather than about either.');
     log.debug('Leaving subjectAdvice(). Complex subject.');
     return warnings;
   }
@@ -1636,20 +1703,27 @@ function publicKeyForHeader(header) {
   // for the key, or its RFC 9278 thumbprint URI, which is what a SET carries
   // under `keys.kidFormat: jwk-thumbprint-uri` — whatever the setting says now
   // (common/jose_kid.js).
-  if (kid ? kidNamesKey(kid, STS.kid) : alg === 'RS256') {
+  // EVERY LIVE GENERATION of the RSA key (#42): a SET signed a moment before
+  // a rotation names the key that is now `retired`, and it is still ours.
+  const ownRsa = require('../common/helpers').ownRsaCertificates('jose')
+    .filter(function (one) {
+      return kid ? kidNamesKey(kid, one.kid) : one.role === 'current';
+    })[0];
+  if (ownRsa && (kid || alg === 'RS256')) {
     // The RSA key is not in the list below — it is `STS.privateKey`/`STS.kid`,
     // where eight modules already read it — so it is resolved separately from
     // the certificate this service publishes for it.
     try {
       log.debug('Leaving publicKeyForHeader(). The service RSA key.');
-      return { key: nodeCrypto.createPublicKey(STS.certPem), pq: false };
+      return { key: nodeCrypto.createPublicKey(ownRsa.certPem), pq: false };
     } catch (e) {
       log.debug('Leaving publicKeyForHeader(). The certificate would not ' +
                 'load: ' + e.message);
       return null;
     }
   }
-  const list = allSigningKeys();
+  // Every live generation of the other keys too (#42).
+  const list = require('../common/helpers').allVerificationKeys();
   const found = list.filter(function (one) {
     return kid ? kidNamesKey(kid, one.publicJwk.kid) : one.alg === alg;
   })[0];
@@ -1757,6 +1831,9 @@ module.exports = {
   subjectAdvice: subjectAdvice,
   EVENT_URIS: EVENT_URIS,
   EVENT_BY_URI: EVENT_BY_URI,
+  STS_PREFIX: STS_PREFIX,
+  STS_EVENTS: STS_EVENTS,
+  SIGNING_KEY_ROTATED: STS_PREFIX + 'signing-key-rotated',
   STATUSES: STATUSES,
   supportedEventUris: supportedEventUris,
   validateEvent: validateEvent,

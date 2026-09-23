@@ -101,7 +101,7 @@
 
 const assert = require("assert");
 const { Command, Option } = require("commander");
-const { Builder, By } = require("selenium-webdriver");
+const { Builder, By, until } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const browserFlags = require("./browser_flags.js");
 const names = require("./random_username.js");
@@ -585,6 +585,17 @@ async function submitForm(driver, index, values) {
       "button, input[type='submit']"));
   assert.ok(buttons.length, "form " + index + " has no submit button");
   await buttons[0].click();
+  // THE OLD PAGE GONE FIRST (2026-09-21). Straight after the click the page
+  // that holds the button is still the document, and its readyState is
+  // already "complete" — so the wait below could pass before the browser had
+  // even begun the navigation, and the survey read the OLD page's URL, with
+  // neither `error=` nor `notice=` on it. That is the "came back with no
+  // outcome at all" this file failed with twice on 2026-09-21, in memory and
+  // single-node, for a refusal the service had made correctly. The pressed
+  // button going stale is the old document being replaced.
+  await driver.wait(until.stalenessOf(buttons[0]), 15000,
+                    "form " + index + " was submitted and the page it was " +
+                    "on was never replaced");
   await driver.wait(async function () {
     return (await driver.executeScript("return document.readyState;")) ===
            "complete";
@@ -1650,6 +1661,25 @@ async function theRealmIsLeftBehind() {
 // ---------------------------------------------------------------------------
 // THE RUN.
 // ---------------------------------------------------------------------------
+// THE CERTIFICATE'S ROLE, WRITTEN RATHER THAN SEEDED (2026-09-21) — product
+// mode seeds `xacml-users` empty, so the policy read-back was a 403 and the
+// repository's `root` came back undefined. sts_xacml_endpoints.js's admit()
+// argues the DN and why the write changes nothing in development.
+async function admitTheCertificate() {
+  log.debug("Entering admitTheCertificate().");
+  const where = await json(api("/groups"));
+  assert.ok(where.status === 200 && where.body && where.body.usersDn,
+    "GET /admin-api/groups in " + REALM + " answered " + where.status);
+  const member = "cn=xacml-user-1," + where.body.usersDn;
+  const joined = await apiPost("/realm/" + REALM +
+                               "/admin-api/groups/add-member",
+                               { group: "xacml-users", member: member });
+  assert.ok(joined.status === 200 && joined.body && joined.body.ok,
+    "adding " + member + " to xacml-users answered " + joined.status + " " +
+    String(joined.text).slice(0, 300));
+  log.debug("Leaving admitTheCertificate().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving the mock STS's XACML policy editor at " + base +
@@ -1676,6 +1706,7 @@ async function test() {
     await createTheRealm();
     try {
       await createThePeople();
+      await admitTheCertificate();
       await signIn(driver, CONSOLE_USER);
       // BEFORE ANY POLICY EXISTS — this is the only moment that page can be
       // seen, and creating the policies first would lose it for ever.

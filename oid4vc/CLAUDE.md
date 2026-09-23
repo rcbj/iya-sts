@@ -15,7 +15,7 @@ DID Core with DIF domain linkage.
 | `vc_signin.ts` | Signing in with a wallet: `/authn/wallet`, `/authn/wallet/wait`, the Digital Credentials API answer at `/authn/wallet/dc-api` and the one script at `/authn/wallet.js`. |
 | `vc_status.ts` | The status lists every issued credential names, and the check the Verifier makes against them (rule 3as). A library and four routes. |
 | `vc_status_codec.ts` | Their encodings: the compressed byte array, CBOR, COSE_Sign1, the JWT and CWT tokens, and the W3C bitstring (rule 3as). A pure library. |
-| `vc_data_integrity.ts` | The holder's Data Integrity proof on a presentation (`ecdsa-jcs-2019`, `eddsa-jcs-2022`, `mldsa44-jcs-2024`), `did:jwk` and `did:key` (rule 3at). A pure library. |
+| `vc_data_integrity.ts` | The holder's Data Integrity proof on a presentation (`ecdsa-jcs-2019`, `eddsa-jcs-2022`, `mldsa44-jcs-2024`, `slhdsa128-jcs-2024`), `did:jwk` and `did:key` (rule 3at). A pure library — and since 2026-09-22 (#43) also the signer and verifier of a GNAP zcap token's JCS proof (`gnap/token_zcap.ts`), through `signDocument()`, `multikeyOf()` and a caller-supplied `resolveVerificationMethod`. |
 | `vc_did.ts` | `did:web`, `did:jwk`, and the domain linkage document. |
 
 **`vc_configs.ts` and `vc_offers.ts` exist to break require cycles, not to group
@@ -364,11 +364,13 @@ name ML-DSA, SLH-DSA or a composite and the Verifier accepts the result as this
 realm's (`verifyIssuerSignatureAsync()` finds the realm's AKP key by `alg` and
 `kid` and hands the check to the worker pool); a holder may bind a credential
 to an ML-DSA-44 key and prove a Key Binding JWT, a VP JWT or — through
-`mldsa44-jcs-2024`, the one quantum-resistant JCS suite the W3C draft defines —
-a Data Integrity proof with it. What is NOT possible: a trusted issuer
-CERTIFICATE with a post-quantum key (node reads no ML-DSA certificate into a
-`KeyObject` here), and an ldp_vc holder key of any other post-quantum kind,
-because no cryptosuite defines one.
+`mldsa44-jcs-2024` — a Data Integrity proof with it; and since 2026-09-22 an
+SLH-DSA-SHA2-128s key through `slhdsa128-jcs-2024`, the draft's other JCS suite
+for an algorithm this service holds (its FALCON-512 and SQIsign-I suites have
+multicodec codes the draft itself calls preliminary and unregistered). What is
+NOT possible: a trusted issuer CERTIFICATE with a post-quantum key (node reads
+no ML-DSA certificate into a `KeyObject` here), and an ldp_vc holder key of any
+other post-quantum kind, because no cryptosuite defines one.
 
 ### A wallet is a factor
 
@@ -623,4 +625,25 @@ waiting browser is signed in as, and `/authn/wallet/wait` claims the state befor
 starts a session, so two polls on two nodes cannot both sign somebody in
 (`STS-VC-0062`; a store that cannot be asked, `STS-VC-0063`). The bar door's
 behaviour is unchanged.
+
+## THE BBS KEY IS THE REALM'S, AND ROTATES (2026-09-22, #49 P5, rcbj's D6 answer)
+
+The key bbs-2023 proofs are signed with was one pair for the whole service (a
+cluster secret, handed to workers in an environment variable at fork), so it
+could never change while the service ran. It is a member of each realm's key
+set now — `helpers.bbsKeyPair()` makes it on first use, the post-quantum
+keys' way — and the signing unit `bbs:BBS`: a next key published ahead, a
+promotion, and retired keys verifying through their grace. Because it signs
+only credentials it rotates on `signing.credentialRotationIntervalDays` and
+its grace outlasts every credential lifetime (`common/signing_rotation.ts`).
+
+**AN ldp_vc NAMES ITS KEY BY KID** — `#bbs-<kid>` in the DID document,
+`/bbs/keys/<kid>` without a DID — where it named `#bbs-1` and `/bbs/keys/1`,
+which after a rotation would have resolved to a key the credential was not
+signed with. The DID document and `/bbs/keys/<kid>` publish every live
+generation; `/bbs/keys/1` is kept as the name of the current one. The
+Verifier tries the generation the proof options name first, then the rest.
+**Realms no longer share one BBS key**, which the header note in
+`vc_verifier.ts` about the issuer being disclosed already assumed was not
+needed to tell them apart.
 

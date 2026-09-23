@@ -457,22 +457,37 @@ const SPECS: Spec[] = [
     url:
       'https://openid.net/specs/openid-sharedsignals-framework-1_0-final.html',
     coverage: 'partial: the transmitter half in full — the configuration ' +
-              'metadata at /.well-known/ssf-configuration, the stream ' +
+              'metadata at /.well-known/ssf-configuration and at the ' +
+              'section 7.2 inserted-path form for a realm issuer, the stream ' +
               'management API (create, read, replace, merge, delete), the ' +
               'status endpoint with all three statuses, add and remove ' +
-              'subject, the verification endpoint, both delivery methods, ' +
-              'and both of the two event types SSF defines of its own ' +
-              '(verification and stream updated). Complex subjects and ' +
-              'critical_subject_members are implemented. Section 8 ' +
-              'authorization is two schemes rather than an open list — an ' +
-              'OAuth 2.0 access token with ssf:read or ssf:write, and HTTP ' +
-              'Basic — published in authorization_schemes. NOT covered, each ' +
-              'deliberately and each on /ssf: a failed push is never ' +
-              'retried, because a client that answers 500 then 202 would ' +
-              'look from its own logs like a client that works; streams are ' +
-              'in memory and die with the process; and nothing is verified ' +
-              'about a subject, so a stream may name somebody who has never ' +
-              'been here.' },
+              'subject, the verification endpoint (answering 204 and ' +
+              'delivering asynchronously, section 8.1.4.2), both delivery ' +
+              'methods, and both of SSF\'s own event types — verification, ' +
+              'also sent on the transmitter\'s own initiative ' +
+              '(ssf.verificationEveryS, or Verify on /admin/ssf), and stream ' +
+              'updated, sent before a stream stops and after it starts again ' +
+              'on every change of status. Every stream belongs to the ' +
+              'receiver that created it (section 8): another receiver\'s ' +
+              'stream answers 404, a list is the caller\'s own streams, aud ' +
+              'is Transmitter-Supplied from the receiver\'s identity, and ' +
+              'ssf.maxStreams is per receiver. A paused push stream holds ' +
+              'its ' +
+              'SETs and pushes them in order when enabled; a dead one is ' +
+              'paused and announced. inactivity_timeout (off by default), ' +
+              'txn on every SET, complex subjects with "format": "complex" ' +
+              'and the seven section 3.3 members plus additional ones, ' +
+              'critical_subject_members, and section 3.5\'s jwt_id, ' +
+              'saml_assertion_id and ip-addresses formats are implemented. ' +
+              'Section 8 authorization is three schemes — an OAuth 2.0 ' +
+              'access token with ssf:read or ssf:write, HTTP Basic and ' +
+              'GNAP — ' +
+              'published in authorization_schemes. Failed pushes are retried ' +
+              'ssf.pushRetries times (0 by default, deliberately) and then ' +
+              'dead-lettered, and streams are persisted in product mode. NOT ' +
+              'covered: this service as a RECEIVER of a foreign transmitter ' +
+              '(#153), and nothing is verified about a subject, so a stream ' +
+              'may name somebody who has never been here.' },
   { id: 'rfc8417', name: 'RFC 8417 — Security Event Token (SET)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc8417',
@@ -490,8 +505,8 @@ const SPECS: Spec[] = [
                          'Tokens',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc9493',
-    coverage: 'full: all eight formats — account, email, issuer_subject_id, ' +
-              'opaque, phone_number, decentralized_identifier, uri and ' +
+    coverage: 'full: all eight formats under their registered names — ' +
+              'account, email, iss_sub, opaque, phone_number, did, uri and ' +
               'aliases — with each format\'s CLOSED member set enforced, ' +
               'which is the half implementations get wrong: a subject ' +
               'carrying an extra member is one a conforming receiver MUST ' +
@@ -508,8 +523,11 @@ const SPECS: Spec[] = [
               '{err, description} as the receiver REFUSING — which is a ' +
               'different outcome from a network failure and is recorded as ' +
               'one. It also RECEIVES on that profile at POST /ssf/receive, ' +
-              'the roles reversed, so a client can be the transmitter. NOT ' +
-              'covered: retries, deliberately — see ssf/ssf_http.ts.' },
+              'the roles reversed, so a client can be the transmitter, ' +
+              'checking the typ, iss and aud of what arrives. A failed push ' +
+              'is retried ssf.pushRetries times — 0 by default, ' +
+              'deliberately, see ssf/ssf_http.ts — and then goes to the ' +
+              'stream\'s dead-letter queue.' },
   { id: 'caep', name: 'OpenID Continuous Access Evaluation Profile 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-caep-1_0-final.html',
@@ -669,11 +687,14 @@ const SPECS: Spec[] = [
                          '(ZCAP-LD) v0.3',
     where: 'W3C Credentials Community Group',
     url: 'https://w3c-ccg.github.io/zcap-spec/',
-    coverage: 'partial: root and delegated capabilities signed with ' +
-              'Ed25519Signature2020, verified against a controller document ' +
-              'this service publishes, with an offline document loader. ' +
-              'Capability invocation over HTTP is not implemented; the ' +
-              'capability is presented as a GNAP access token instead.' },
+    coverage: 'partial: root and delegated capabilities with a Data ' +
+              'Integrity delegation proof — eddsa-jcs-2022 by default, ' +
+              'mldsa44-jcs-2024 or slhdsa128-jcs-2024 (post-quantum), or ' +
+              'Ed25519Signature2020 for compatibility, per realm ' +
+              '(gnap.zcapCryptosuite) — verified against a controller ' +
+              'document this service publishes, with an offline document ' +
+              'loader. Capability invocation over HTTP is not implemented; ' +
+              'the capability is presented as a GNAP access token instead.' },
   { id: 'rfc7642', name: 'SCIM: Definitions, Overview, Concepts, and ' +
                          'Requirements (RFC 7642)',
     where: 'IETF',
@@ -1236,8 +1257,11 @@ const SPECS: Spec[] = [
   { id: 'rfc6750', name: 'RFC 6750 — Bearer Token Usage',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc6750',
     coverage: 'partial: bearer tokens are read from the Authorization ' +
-              'header. Credential endpoints check that a token is PRESENT ' +
-              'but cannot validate one issued by a separate authorization ' +
+              'header (section 2.1) everywhere, and from a form-encoded body ' +
+              '(section 2.2) at the UserInfo endpoint, never both in one ' +
+              'request; the query form (section 2.3) is refused in RFC 9700 ' +
+              'mode. Credential endpoints check that a token is PRESENT but ' +
+              'cannot validate one issued by a separate authorization ' +
               'server.' },
   { id: 'rfc7009', name: 'RFC 7009 — Token Revocation',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7009',
@@ -1509,6 +1533,20 @@ const SPECS: Spec[] = [
               'service issued. Not implemented: encrypted access tokens, and ' +
               'the roles and entitlements claims; a foreign token at the ' +
               'credential endpoints is still accepted unverified.' },
+  { id: 'oauth-multiple-response-types',
+    name: 'OAuth 2.0 Multiple Response Type Encoding Practices',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html',
+    coverage: 'partial: the combined response types code id_token, code ' +
+              'token, code id_token token and id_token token, and section ' +
+              '2.1\'s default response modes — the query for code alone and ' +
+              'the fragment for every type that returns a token — for a ' +
+              'successful response AND an error (#118; errors went in the ' +
+              'query until then). An explicit response_mode=fragment is ' +
+              'honoured for any type; an explicit query is honoured only ' +
+              'for code alone. NOT covered: response_type=none, and refusing ' +
+              'rather than overriding an explicit query for a token-bearing ' +
+              'type (#125).' },
   { id: 'oauth-form-post', name: 'OAuth 2.0 Form Post Response Mode',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/oauth-v2-form-post-response-mode-1_0.html',
@@ -1784,25 +1822,40 @@ const SPECS: Spec[] = [
   { id: 'oidc', name: 'OpenID Connect Core 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-core-1_0.html',
-    coverage: 'partial: id_token with nonce, at_hash and c_hash, the three ' +
-              'authentication flows, the section 5.3 UserInfo endpoint — ' +
-              'which is the one place a scope changes what comes back, since ' +
-              'the id_token carries every claim whatever was asked for — ' +
-              'and, since 2026-08-26, SECTION 5.5\'s claims request: both ' +
-              'members, parsed, refused by name at the authorization ' +
-              'endpoint when malformed, carried inside the access token, and ' +
-              'answered off the person\'s entry under ou=users, with section ' +
-              '5.2 language tags. What it does NOT do there is enforce ' +
-              '`value`/`values` or treat `essential` as more than a hint, ' +
-              'which section 5.5.1 permits and /admin/userinfo-claims states ' +
-              'out loud. Section 10.2\'s ENCRYPTED ID Token (2026-09-17): a ' +
-              'client that registered id_token_encrypted_response_alg (and ' +
-              '_enc, A128CBC-HS256 by default) with a key in an inline jwks ' +
-              'gets a Nested JWT — signed as registered, then encrypted with ' +
-              'RSA-OAEP, RSA-OAEP-256 or ECDH-ES(+A*KW); the symmetric ' +
-              'families and a jwks_uri alone are refused at registration, ' +
-              'and no ML-KEM key encapsulation is offered. Section 6\'s ' +
-              'request object and request_uri are RFC 9101\'s row.' },
+    coverage: 'partial: the three flows (code, implicit, hybrid) at an ' +
+              'authorization endpoint that takes GET and POST; an ID Token ' +
+              'with nonce, auth_time only when it is known, amr, acr, sid, ' +
+              'and at_hash and c_hash hashed with the hash of the ID ' +
+              'Token\'s own alg (SHA-384 for RS384 and so on; where the ' +
+              'specification names none — EdDSA, ML-DSA, SLH-DSA, the ' +
+              'composites — the hash of the same security level, documented ' +
+              'in common/crypto.js). openid is required for any response ' +
+              'returning an ID Token; prompt none, login, consent and ' +
+              'select_account (none alone); id_token_hint verified and ' +
+              'honoured; max_age, acr_values and an essential acr claims ' +
+              'request as requirements (RFC 9470); nonce REQUIRED for the ' +
+              'implicit flow in every mode; errors returned in the fragment ' +
+              'for implicit and hybrid requests. Section 5.4\'s four scopes ' +
+              '(profile, email, address, phone) at the UserInfo endpoint, ' +
+              'which also takes the access token in a form body, and in the ' +
+              'ID Token only for response_type id_token. Section 5.5\'s ' +
+              'claims request with section 5.2 language tags; claims_locales ' +
+              'and ui_locales accepted, answered in English. Section 8\'s ' +
+              'pairwise subject identifiers with a validated ' +
+              'sector_identifier_uri. Section 9\'s client authentication ' +
+              'with token_endpoint_auth_signing_alg enforced; a code bound ' +
+              'to its client and redirect_uri and exact redirect_uri ' +
+              'matching for a registered client in every mode. Section ' +
+              '10.2\'s encrypted ID Token. Section 11\'s offline_access: ' +
+              'ignored without a code and without prompt=consent or a ' +
+              'recorded consent, and a refresh token without it ends with ' +
+              'the sign-on session. Section 12\'s refresh keeps auth_time, ' +
+              'amr and acr. Section 6\'s request object is RFC 9101\'s row. ' +
+              'NOT covered: aggregated and distributed claims (section ' +
+              '5.6.2, #147), a Self-Issued OP (section 7, #129), ' +
+              '`value`/`values` on a claims request other than acr, and a ' +
+              'client in development mode that registered no redirect URI is ' +
+              'not held to one.' },
   { id: 'oidc-fclogout', name: 'OpenID Connect Front-Channel Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-frontchannel-1_0.html',
@@ -1863,10 +1916,30 @@ const SPECS: Spec[] = [
               'document so the two cannot disagree about the twenty members ' +
               'they share. Served at the well-known path, at the section 4 ' +
               'issuer-with-path form, and at the RFC 8414 inserted-path ' +
-              'form. The acr, display and encryption members are ABSENT ' +
-              'because none of them is implemented, and an invented value ' +
-              'would be worse than the silence. WebFinger issuer discovery ' +
-              '(section 2) is not implemented.' },
+              'form. Since #118 it publishes subject_types_supported public ' +
+              'and pairwise, all four prompt values, ' +
+              'display_values_supported, ' +
+              'claims_locales_supported, the address and phone scopes and ' +
+              'every claim they name. check_session_iframe is absent (#121); ' +
+              'WebFinger issuer discovery (section 2) is not implemented ' +
+              '(#119).' },
+  { id: 'oidc-registration',
+    name: 'OpenID Connect Dynamic Client Registration 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-registration-1_0.html',
+    coverage: 'partial: /oauth2/register and RFC 7592 management accept and ' +
+              'honour the OpenID Connect client metadata this service ' +
+              'implements — subject_type and sector_identifier_uri (fetched ' +
+              'and required to list every redirect_uri; section 5), ' +
+              'token_endpoint_auth_signing_alg, ' +
+              'id_token_signed_response_alg, ' +
+              'id_token_encrypted_response_alg/enc, ' +
+              'userinfo_signed_response_alg and its encryption members, the ' +
+              'request object members, and the front- and back-channel ' +
+              'logout members. NOT covered (#120): default_max_age, ' +
+              'require_auth_time, default_acr_values, initiate_login_uri, ' +
+              'enforcing grant_types and response_types, and RFC 7592\'s ' +
+              '401 for an unknown client.' },
   { id: 'oidc-logout', name: 'OpenID Connect RP-Initiated Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-rpinitiated-1_0.html',
@@ -1928,13 +2001,17 @@ const SPECS: Spec[] = [
     coverage: 'partial: the VC-JWT encoding of VCDM 1.1 (jwt_vc_json) and ' +
               'VCDM 2.0 credentials with an embedded proof (ldp_vc).' },
   { id: 'di-jcs', name: 'W3C Data Integrity — ecdsa-jcs-2019, ' +
-                        'eddsa-jcs-2022 and mldsa44-jcs-2024',
+                        'eddsa-jcs-2022, mldsa44-jcs-2024 and ' +
+                        'slhdsa128-jcs-2024',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-di-ecdsa/',
     coverage: 'partial: verification (and signing, for tests) of a ' +
               'holder\'s proof on a VerifiablePresentation — P-256 and ' +
-              'P-384, Ed25519, and ML-DSA-44 from the Quantum-Resistant ' +
-              'Cryptosuites draft — with did:jwk and did:key verification ' +
-              'methods. No RDF-canonicalized suites, no proof chains.' },
+              'P-384, Ed25519, and ML-DSA-44 and SLH-DSA-SHA2-128s from the ' +
+              'Quantum-Resistant Cryptosuites draft — with did:jwk and ' +
+              'did:key verification methods; and signing and verification ' +
+              'of a GNAP zcap token\'s delegation proof in Ed25519, ML-DSA-44 ' +
+              'or SLH-DSA-SHA2-128s against a Multikey controller document. ' +
+              'No RDF-canonicalized suites, no proof chains.' },
   { id: 'token-status-list',
     name: 'Token Status List (draft-ietf-oauth-status-list-21)',
     where: 'IETF',
@@ -2541,18 +2618,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'with existing_access_token.' },
   { path: '/gnap/keys', group: 'GNAP', name: 'Verification material for the ' +
                                              'token formats',
-    specs: ['rfc9767', 'biscuit', 'zcap-ld'],
+    specs: ['rfc9767', 'biscuit', 'zcap-ld', 'di-jcs'],
     what: 'NOT A SPECIFICATION ENDPOINT: the public keys a resource server ' +
           'needs to verify the self-contained formats without introspection ' +
-          '— the JWKS for jwt-signed, and the Ed25519 public key for biscuit ' +
-          'and zcap. Macaroons are symmetric and never appear here. Served ' +
-          'no-store.' },
+          '— the JWKS for jwt-signed, the Ed25519 public key for biscuit, ' +
+          'and for zcap the controller document\'s URL and the one proof ' +
+          'suite this realm signs and accepts. Macaroons are symmetric and ' +
+          'never appear here. Served no-store.' },
   { path: '/gnap/zcap/controller', group: 'GNAP', name: 'The ZCAP controller ' +
                                                         'document',
-    specs: ['zcap-ld'],
+    specs: ['zcap-ld', 'di-jcs'],
     what: 'NOT A GNAP ENDPOINT: the controller document a zcap access ' +
           'token\'s root capability names, carrying the verification method ' +
-          'its signature is checked against. Served no-store.' },
+          'its signature is checked against — a Multikey in a Controlled ' +
+          'Identifiers v1.0 document under the JCS suites, an ' +
+          'Ed25519VerificationKey2020 under Ed25519Signature2020. Served ' +
+          'no-store.' },
   { path: '/gnap/rs/resource', group: 'GNAP', name: 'The demonstration ' +
                                                     'resource server',
     specs: ['rfc9635', 'rfc9767', 'macaroons'],
@@ -2820,6 +2901,90 @@ const ENDPOINTS: EndpointEntry[] = [
           'rather than a chain over a different key. `no-store`, like every ' +
           'document publishing this service\'s key material. Ungated, ' +
           'because what it returns is already named by the token.' },
+  { path: '/crypto/metadata', group: 'PKI',
+    name: 'The crypto metadata document, by Accept',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC: no specification defines such a document. By `Accept`: ' +
+          'JSON by default, XML for application/xml, the signed JSON for ' +
+          'application/jwt. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.json', group: 'PKI',
+    name: 'The crypto metadata document, as JSON',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The model itself. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.xml', group: 'PKI',
+    name: 'The crypto metadata document, as XML',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The same model, in the namespace ' +
+          'urn:iya:sts:crypto-metadata:1, validating against ' +
+          '/crypto/metadata.xsd. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.jwt', group: 'PKI',
+    name: 'The crypto metadata document, signed as a JWS',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The JSON as the claims of a JWS signed by the realm\'s ' +
+          'current JOSE signer, through the one signer RFC 8414\'s ' +
+          'signed_metadata uses (oauth2.signedMetadataAlgorithm), `sub` ' +
+          'the issuer. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.signed.xml', group: 'PKI',
+    name: 'The crypto metadata document, as signed XML',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The XML with an enveloped XML Signature first in the ' +
+          'root, by the realm\'s current XML signer and the algorithm ' +
+          'saml2.signatureAlgorithm selects. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.xsd', group: 'PKI',
+    name: 'The crypto metadata document\'s XML Schema',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC: the XSD of urn:iya:sts:crypto-metadata:1, which the ' +
+          'signed and the unsigned XML both validate against.' },
   { path: '/pki/revocation', group: 'PKI',
     name: 'Every CRL and OCSP responder this service publishes',
     specs: ['rfc5280', 'rfc6960'],
@@ -2932,6 +3097,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'bootstrap against. It also answers while ssf.enabled is OFF, so a ' +
           'receiver can tell "this service does not speak SSF" from "the ' +
           'path is wrong".' },
+  { path: '/.well-known/ssf-configuration/*', group: 'Shared Signals',
+    name: 'Transmitter configuration metadata, inserted-path form',
+    specs: ['ssf'],
+    what: 'The same document for an issuer WITH A PATH, at the place SSF ' +
+          '1.0 section 7.2 puts it: "/.well-known/ssf-configuration" ' +
+          'inserted between the host and the issuer\'s path — so a trust ' +
+          'realm\'s transmitter, whose issuer is https://host/realm/acme, is ' +
+          'discovered at /.well-known/ssf-configuration/realm/acme. The ' +
+          'realm is found by asking each one for its issuer, so an ' +
+          'ssf.issuer configured with a path of its own is found too; a path ' +
+          'no issuer has answers 404. Never gated, like the other form.' },
   { path: '/ssf', group: 'Shared Signals', name: 'What the Shared Signals ' +
                                                  'surface is',
     specs: ['ssf', 'rfc8417', 'rfc9493', 'rfc8935', 'rfc8936'],
@@ -3120,16 +3296,17 @@ const ENDPOINTS: EndpointEntry[] = [
                                                      'replace, modify, delete',
     specs: ['rfc7644', 'rfc7643', 'rfc4511'],
     effect: 'PUT and PATCH rewrite an entry under ou=users; DELETE removes it',
-    what: 'THE id IS THE ENTRY\'S DN, percent-encoded — RFC 7643 section 3.1 ' +
-          'wants an opaque server-assigned identifier and the DN already is ' +
-          'one. PUT replaces ONLY THE MAPPED ATTRIBUTES and leaves the rest ' +
+    what: 'THE id IS THE ENTRY\'S entryUUID (the DN until 2026-09-14) — RFC ' +
+          '7643 section 3.1 wants an identifier that is never reassigned, and ' +
+          'a rename reassigns a DN; a DN presented as an id still resolves. ' +
+          'PUT replaces ONLY THE MAPPED ATTRIBUTES and leaves the rest ' +
           'of the entry alone: read strictly, a SCIM PUT would delete ' +
           'schacDateOfBirth, authnMethod and every x509 attribute the moment ' +
           'a client updated a phone number, and those are facts SCIM never ' +
           'knew about and cannot restore. PATCH is section 3.5.2 in full, ' +
-          'value-filter paths included. DELETE leaves the DN behind in every ' +
-          'group that lists it, because this directory does no referential ' +
-          'integrity on purpose.' },
+          'value-filter paths included. DELETE leaves the member behind in ' +
+          'every group that lists it, because this directory does no ' +
+          'referential integrity on purpose.' },
   { path: '/scim/v2/Groups', group: 'SCIM', name: 'Groups: list and create',
     specs: ['rfc7644', 'rfc7643', 'rfc4519'],
     effect: 'POST creates an entry under ou=groups',
@@ -3148,9 +3325,9 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['rfc7644', 'rfc7643', 'rfc4519'],
     effect: 'PUT and PATCH rewrite a group entry; DELETE removes it',
     what: 'READ resolves member, uniqueMember and memberUid alike and ' +
-          'returns each member as the DN — treating the three differently is ' +
-          'how every posixGroup membership silently disappears. WRITE puts ' +
-          'new values in member, since a SCIM member id is a DN, and clears ' +
+          'returns each member by its id — treating the three differently is ' +
+          'how every posixGroup membership silently disappears. WRITE turns ' +
+          'each member id into its DN and puts it in member, and clears ' +
           'the other two so that a client which removed everybody does not ' +
           'find the group still populated. A member naming nothing is ' +
           'ACCEPTED and logged: a dangling member is a state worth being ' +
@@ -3397,8 +3574,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'SURFACES, and the only one that can report the two invisible ' +
           'ones. This service is the issuing authority for one trust domain ' +
           'per trust realm (spiffe.trustDomain, `example.org` by default; a ' +
-          'realm created at runtime is seeded `<realm>.<that>` and binds ' +
-          'sockets of its own only when its spiffe.enabled is on — what ' +
+          'realm created at runtime is seeded with its own DNS domain and ' +
+          'binds sockets of its own only when its spiffe.enabled is on — ' +
+          'what ' +
           'follows describes the default realm\'s): the BUNDLE ' +
           'ENDPOINT below is plain HTTPS; the SPIFFE WORKLOAD API (the gRPC ' +
           'service SpiffeWorkloadAPI, five of seven methods) is on a UNIX ' +
@@ -3412,8 +3590,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'SOCKETS, all four: this page is built by walking the Express ' +
           'router and cannot see one, so their state is reported by GET ' +
           '/spiffe and on /admin/spiffe rather than here. MOST OF THAT PAGE ' +
-          'IS WHAT IS AND IS NOT CHECKED — no workload attestation and no ' +
-          'node attestation (a Workload API caller is identified by its ' +
+          'IS WHAT IS AND IS NOT CHECKED — no workload attestation (node ' +
+          'attestation is verified or refused since 2026-09-21, #40; a ' +
+          'Workload API caller is identified by its ' +
           'transport, endpoint and peer address and nothing else, because ' +
           'node cannot read a socket\'s peer credentials), no revocation ' +
           'anywhere — the directory does record a `spiffeCredentialStatus` ' +
@@ -3478,6 +3657,51 @@ const ENDPOINTS: EndpointEntry[] = [
           'ready" would be a page with nothing on it. A REFUSAL is still a ' +
           'page, so a bad password or an impossible format reads like every ' +
           'other refusal here. Needs Admin Write.' },
+  { path: '/admin/keys/history', group: 'Admin',
+    name: 'The signing-key history',
+    specs: [],
+    what: 'NON-SPEC (#42\'s follow-up). EVERY SIGNING KEY THIS REALM HAS ' +
+          'EVER HELD, kept for ever: when each was minted, promoted, retired ' +
+          'and dropped, and the certificate that vouched for it. The ' +
+          'PRIVATE half is still thrown away when a retired key passes its ' +
+          'grace — this is the record that it existed, and the public ' +
+          'certificate, so a signature captured months ago can still be ' +
+          'read back. With no `unit` it is the index of units; with one it ' +
+          'is that unit\'s generations, newest first, PAGED. Needs Admin ' +
+          'Read. It also OBSERVES: the history is derived from the realm\'s ' +
+          'key set, so opening the page records any key no row describes ' +
+          'yet — idempotent, so in the steady state it writes nothing.' },
+  { path: '/admin/keys/history/certificate', group: 'Admin',
+    name: 'A recorded certificate',
+    specs: [],
+    what: 'NON-SPEC (#42\'s follow-up). One generation\'s certificate and ' +
+          'its chain, leaf first, as PEM — `unit` and `kid` name it, and it ' +
+          'is served INLINE like /pki/chain/{scope}/{sha256}.pem rather ' +
+          'than as an attachment, because the console crawl navigates every ' +
+          'link this console draws and a browser told to download does not ' +
+          'navigate. '  +
+          'Unlike /admin/keys/export this needs only Admin Read, because a ' +
+          'certificate is a PUBLIC document: it is what the JWKS and the ' +
+          'metadata documents published while that key was live, which is ' +
+          'exactly what makes it the half of a retired key worth keeping. ' +
+          'Asked with no `unit` and `kid` — which is how the link on this ' +
+          'page reaches it — it answers 303 to the history index rather ' +
+          'than a refusal; a key NAMED and not held is 404 with ' +
+          'STS-KEYS-0068.' },
+  { path: '/admin/keys/rotate', group: 'Admin',
+    name: 'Rotate signing keys, or rotate them in an emergency',
+    specs: [],
+    what: 'NON-SPEC (#42/#48). The two forms in the Rotation section of ' +
+          '/admin/keys. `action=rotate` with the units ticked (or all): each ' +
+          'next key becomes current and the key it replaces goes on ' +
+          'verifying through its grace. `action=emergency`, confirmed by ' +
+          'typing `compromised`: every key of every unit is replaced with no ' +
+          'grace, their certificates are revoked for keyCompromise, the ' +
+          'refresh-token keys are replaced and every session of the realm ' +
+          'is ended (CAEP session-revoked, RISC sessions-revoked). Either ' +
+          'queues a run of signing.rotate-now on the scheduler and lands on ' +
+          'that run\'s page. Needs Admin Write; a realm administrator ' +
+          'rotates the realm they signed in to.' },
   { path: '/admin/crypto-metadata', group: 'Admin', name: 'Cryptography',
     specs: [],
     what: 'NON-SPEC. The companion to this page, one layer down: what this ' +
@@ -3788,10 +4012,10 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Every agent that has called AttestAgent, filtered and paged, with ' +
           'a drill-down per agent (?agent=). These entries are a RECORD ' +
           'rather than configuration, so the only writes are ban, unban and ' +
-          'delete. NODE ATTESTATION IS NEVER VERIFIED: whatever attestor an ' +
-          'agent names and whatever payload it sends are written down as ' +
-          'claimed, which is why every agent carries a selector valued ' +
-          '`unverified:true`. The BAN is enforced — one of the few refusals ' +
+          'delete. NODE ATTESTATION IS VERIFIED OR REFUSED (#40): an agent ' +
+          'here attested with a type its realm accepts and an attestor ' +
+          'verified, and its selectors are that attestor\'s. The BAN is ' +
+          'enforced — one of the few refusals ' +
           'in this service, and what keeps the button from being a lie — ' +
           'while DELETE is forgetting rather than revoking: the agent ' +
           'reappears the moment it attests again. Add ?format=json.' },
@@ -5084,6 +5308,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'and status — computed from what was set here, an administrator\'s ' +
           'revocation on /admin/tokens and a global sign-out\'s disown — ' +
           'with Suspend, Reinstate and Revoke. Add ?format=json.' },
+  { path: '/admin/scheduler', group: 'Admin',
+    name: 'Every scheduled job, its last run and its next',
+    specs: [],
+    what: 'NON-SPEC (#49). Filed under Monitoring. Every job registered ' +
+          'with cluster/scheduler.ts — the session-expiry sweep, the CRL ' +
+          'directory refresh, the scheduler\'s own history, and every one ' +
+          'after them — including the ones that are off, with the reason; ' +
+          'which process leads the scheduler and since when; each job\'s ' +
+          'last run (succeeded, failed with its code, abandoned, running) ' +
+          'and its time to next run as a duration and an absolute UTC time ' +
+          'by the database clock; a per-process job\'s row per process; ' +
+          'and the recent runs, filtered by job and outcome (?job=, ' +
+          '?outcome=), with ?run=<id> for one. POST: Run now (action=run, ' +
+          'job, realm) and Step down (action=step-down), Admin Write. Read ' +
+          'from the store, so every node draws the same. Add ?format=json.' },
   { path: '/admin/caches', group: 'Admin',
     name: 'Every cache this service holds, and one cache\'s entries',
     specs: [],
@@ -5742,9 +5981,26 @@ const ENDPOINTS: EndpointEntry[] = [
           'the process, what it is used for, and which keystore formats it ' +
           'can be exported as. A LIST AND NEVER KEY MATERIAL. Mirrors GET ' +
           '/admin/keys.' },
+  { path: '/admin-api/keys/history', group: 'Management API',
+    name: 'The signing-key history',
+    specs: [],
+    what: 'NON-SPEC (#42\'s follow-up). Mirrors /admin/keys/history: every ' +
+          'signing key this realm has ever held — when each was minted, ' +
+          'promoted, retired and dropped, why, and the certificate that ' +
+          'vouched for it. A retired key\'s PRIVATE half is still dropped ' +
+          'at its grace; this is the record that it existed, and nothing ' +
+          'here can produce a signature. `unit` names one signing unit and ' +
+          'the answer is its generations, newest first and PAGED (`page`, ' +
+          '`per`); with none it is the index of units and their counts. 400 ' +
+          'with STS-KEYS-0068 for a unit this realm has no record of.' },
   { path: '/admin-api/keys/:action', group: 'Management API',
-    name: 'Export a key pair', specs: [],
-    what: 'NON-SPEC. THIS OPERATION RETURNS PRIVATE KEY MATERIAL, base64 in ' +
+    name: 'Export a key pair, or rotate the signing keys', specs: [],
+    what: 'NON-SPEC. `rotate` and `emergency` (#48) are /admin/keys/rotate\'s ' +
+          'two forms: `{ "units": [...] }` (empty or "all" for every unit) ' +
+          'and, for an emergency, `"confirm": "compromised"`; each answers ' +
+          '202 with the runId of the queued signing.rotate-now run, to ' +
+          'follow at /admin-api/scheduler?run=. `export`: ' +
+          'THIS OPERATION RETURNS PRIVATE KEY MATERIAL, base64 in ' +
           'a JSON reply because this API answers JSON everywhere else. Takes ' +
           'a key id, a format (pem, der, jwk, pkcs12) and a password — ' +
           'required for pkcs12, optional elsewhere, where it encrypts the ' +
@@ -5873,6 +6129,20 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Credential status actions', specs: ['openapi'],
     what: 'NON-SPEC. suspend, reinstate and revoke, with { idx }: the ' +
           'console\'s three buttons.' },
+  { path: '/admin-api/scheduler', group: 'Management API',
+    name: 'Scheduler', specs: ['openapi'],
+    what: 'NON-SPEC (#49). Everything /admin/scheduler draws, as JSON: the ' +
+          'leader, every registered job with its schedule, state, last run, ' +
+          'nextRunAt, nextRunInMs (by the database clock) and nextRunState, ' +
+          'per-process rows, the recent runs (job, outcome, page, per) and ' +
+          'the queued commands; ?run=<id> for one run. Mirrors GET ' +
+          '/admin/scheduler.' },
+  { path: '/admin-api/scheduler/:action', group: 'Management API',
+    name: 'Scheduler actions', specs: ['openapi'],
+    what: 'NON-SPEC (#49). run, with { job, realm?, params? }: a queued run ' +
+          'the leader starts at its next tick, 202 with its runId; and ' +
+          'step-down: the leader gives up ops.scheduler at its next tick and ' +
+          'another node takes it. The console\'s two buttons.' },
   { path: '/admin-api/caches', group: 'Management API',
     name: 'Caches', specs: [],
     what: 'NON-SPEC (#74). Everything /admin/caches draws, as JSON: every ' +
@@ -7661,10 +7931,13 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Authorization ' +
       'endpoint',
     specs: ['rfc6749', 'oidc', 'rfc7636', 'rfc9396', 'rfc9207',
-            'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470'], effect: 'needs ' +
+            'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470',
+            'oauth-multiple-response-types'], effect: 'needs ' +
         'client_id and redirect_uri — answers 400 when followed bare, then ' +
         'redirects to the sign-in screen once they are supplied',
-    what: 'Redirects to the authentication service when there is no ' +
+    what: 'GET, or POST with the request form-serialized (OIDC Core ' +
+          'section 3.1.2.1, since #118). ' +
+          'Redirects to the authentication service when there is no ' +
           'session — or, since RFC 9470, when the session does not meet the ' +
           'request\'s acr_values or max_age, refusing ' +
           'unmet_authentication_requirements if the sign-in did not meet ' +
@@ -8353,7 +8626,7 @@ const ENDPOINTS: EndpointEntry[] = [
                               'then reports inactive.' },
   { path: '/oauth2/register', group: 'OAuth 2.0 / OIDC', name: 'Dynamic ' +
       'client registration',
-    specs: ['rfc7591', 'rfc9700'],
+    specs: ['rfc7591', 'rfc9700', 'oidc-registration'],
     what: 'Registers a client and returns its credentials plus a ' +
           'registration access token. The registration IS the application ' +
           'entry under ou=applications — there is no second store — so ' +
@@ -8476,11 +8749,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'renders a QR code. ?mode=cross-device (H.2) and ?mode=deferred ' +
           '(H.3) select the pre-authorized code grant with a Transaction ' +
           'Code.' },
-  { path: '/bbs/keys/1', group: 'VC Issuance (OID4VCI)', name: 'BBS public key',
+  { path: '/bbs/keys/:id', group: 'VC Issuance (OID4VCI)',
+    name: 'BBS public key',
     specs: ['di-bbs'],
     what: 'The BLS12-381 key an ldp_vc proof is verified with, as a ' +
-          'Multikey. This is what a plain ldp_vc credential\'s ' +
-          'verificationMethod dereferences to.' },
+          'Multikey. `/bbs/keys/<kid>` is what a plain ldp_vc credential\'s ' +
+          'verificationMethod dereferences to, for every live generation of ' +
+          'the realm\'s BBS key (current, next, and retired ones within ' +
+          'their grace — the key rotates with the realm\'s signing keys, ' +
+          '#49); `/bbs/keys/1` is the current one. 404 for any other.' },
 
   // --- DIDs ---
   { path: '/.well-known/did.json', group: 'Decentralized Identifiers',

@@ -267,6 +267,66 @@ has its own *Generate* and *Take off*, the private key is shown once with the
 it off leaves their RFC 7523 key working. `pki.personSelfService` turns the
 self-service door off for both profiles; it takes away no key already held.
 
+## Configuration
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `oauth2.saml2BearerGrant` | `STS_OAUTH2_SAML2_BEARER_GRANT` | `true` | yes | Whether the token endpoint performs the §2.1 grant; the metadata advertises it only while it is on. It does **not** affect §2.2 client authentication. |
+| `oauth2.saml2BearerRequireRegisteredIssuer` | `STS_OAUTH2_SAML2_BEARER_REQUIRE_REGISTERED_ISSUER` | `true` | yes | Whether a §2.1 assertion whose `<Issuer>` no application declares on `oauthSamlAssertionIssuer` is refused. Turning it off does not make the grant accept an unsigned assertion or a merely chaining certificate. |
+| `oauth2.saml2BearerMaxLifetimeS` | `STS_OAUTH2_SAML2_BEARER_MAX_LIFETIME_S` | `300` | yes | The most seconds between `IssueInstant` and the expiry (the `<Conditions>` one, else the `<SubjectConfirmationData>` one). Zero switches the check off. |
+| `oauth2.clientAssertionSkewS` | `STS_OAUTH2_CLIENT_ASSERTION_SKEW_S` | `60` | yes | How far out the asserting party's clock may be, for both instants of item 6, and how long past expiry an assertion is remembered. Shared with the JWT profile. |
+| `oauth2.assertionReplayCacheSize` | `STS_OAUTH2_ASSERTION_REPLAY_CACHE_SIZE` | `1000` | yes | Unexpired rows the used-assertion history holds per realm, for RFC 7522 and RFC 7523 together; a full history refuses the next assertion rather than forgetting a live one. |
+| `pki.personSelfService` | `STS_PKI_PERSON_SELF_SERVICE` | `true` | yes | Whether `/portal/signing-key` lets a person issue their own key pair, for both profiles; off takes away no key already held. |
+| `pki.personSelfServicePerIdentity` | `STS_PKI_PERSON_SELF_SERVICE_PER_IDENTITY` | `5` | yes | How often one person may press Generate there in a `security.rateLimitWindowS` window. |
+| `pki.personSelfServicePerAddress` | `STS_PKI_PERSON_SELF_SERVICE_PER_ADDRESS` | `5` | yes | The same limit counted per client address. |
+
+Whether the registered certificate is checked for revocation is
+`pki.revocationCheck`, and the hierarchy that issues the key pairs is
+configured on [PKI](pki.md#configuration). See
+[Configuration](configuration.md) for how a value resolves and where it is
+changed — the console page, or `POST /admin-api/config/set`.
+
+## Design decisions
+
+* **RFC 7522 is a second implementation, not a format flag on RFC 7523.** The
+  framework is shared and nothing else is: an XML document with an enveloped
+  signature, `<Conditions>` and a `Recipient` has checks a JWT has no
+  equivalent for, and a shared implementation would be a switch in every one.
+* **Its two sections are one verification.** XML Signature over a shared
+  secret is something no SAML implementation emits, so the only difference
+  between client authentication and the grant is what the `<Subject>` has to
+  be.
+* **The `<Issuer>` must be declared, on an attribute of its own.** Being
+  trusted to assert in one format is not being trusted in the other — see
+  [above](#the-issuer-must-be-declared).
+* **A certificate that merely chains to the realm is not enough.** A chain is
+  evidence about the realm, not the application, so the verifier uses only a
+  certificate registered under the RFC 7522 attributes. This is the one place
+  the service is stricter than for RFC 7523 — see
+  [above](#a-certificate-that-merely-chains-is-not-enough).
+* **Two key pairs per application, sharing no attribute.** Neither can sign for
+  the other profile, and taking one off leaves the other working — see
+  [above](#two-key-pairs-one-application).
+* **The three lenient readings of section 3 are implemented as written.** An
+  expiry on either element satisfies item 4, an expired
+  `<SubjectConfirmation>` is discarded rather than voiding the assertion (item
+  6), and an unknown `<Condition>` makes the assertion invalid (item 11) — see
+  [above](#what-is-checked).
+* **A signature is required, and encryption does not stand in for one.** An
+  unsigned assertion is refused by name — it is this profile's `alg: "none"`.
+* **One replay history with the JWT profile.** An assertion is accepted once,
+  ever, survives a restart in the persisted stores, and is spent only when
+  tokens are issued.
+* **`saml2_bearer` is published as this service's own name.** RFC 7522
+  registers no token endpoint authentication method, so the name is invented
+  and advertised in the metadata; nothing on the wire is invented.
+* **A person may be the issuer, only about themselves.** A party that may
+  assert about other people is an application an operator declared — see
+  [above](#a-person-can-be-the-issuer-too-2026-09-13).
+* **Standard base64 is accepted and logged.** RFC 7522 asks for base64url, but
+  widely deployed stacks send base64, and refusing it would send a client
+  author to look at their signature code.
+
 ## What it still does not do
 
 * ~~**Revocation is published and never consulted.**~~ **Consulted since
@@ -280,3 +340,18 @@ self-service door off for both profiles; it takes away no key already held.
 * **A `<Response>` is not accepted**, nor is a SAML 1.1 assertion: RFC 7522 is
   the SAML 2.0 profile and says so, and this service refuses a `Version` that is
   not `2.0` by name rather than failing somewhere in the `<Conditions>`.
+
+## Related
+
+* [JWT assertions](jwt-assertions.md) — the RFC 7523 profile, and what "used"
+  means for the shared replay history
+* [PKI](pki.md) — where the key pairs and their certificates come from
+* [OAuth 2.0 and OpenID Connect](oauth-oidc.md) — the token endpoint these are
+  presented at
+* [SAML 2.0 Web Browser SSO](saml2-sso.md) — the browser profile, whose
+  `<Response>` this grant does not accept
+* [Federation](federation.md) — a foreign SAML identity provider signing people
+  in, rather than authorizing a token
+* [Trust realms](trust-realms.md)
+* [What is not checked](what-is-not-checked.md)
+* [Configuration](configuration.md) and [error codes](error-codes.md)

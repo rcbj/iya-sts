@@ -801,8 +801,16 @@ function report(log, summaries, meta) {
   log.debug("Leaving report().");
 }
 
+// HOW OFTEN A LOAD SAYS HOW FAR IT HAS GOT (2026-09-21): every hundred
+// people, in all three jobs, from here so they cannot drift apart. It was five
+// hundred, and the progress was hard to see; the log VOLUME of these runs was
+// never these lines (fifty a job) but the service's own, per request, which
+// were demoted the same day.
+const PROGRESS_EVERY = 100;
+
 module.exports = {
   SIZES: SIZES,
+  PROGRESS_EVERY: PROGRESS_EVERY,
   checkSizes: checkSizes,
   stampFor: stampFor,
   Stopwatch: Stopwatch,

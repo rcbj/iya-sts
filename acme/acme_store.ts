@@ -96,6 +96,12 @@ const usedNoncesCount = cacheRegistry.register({
     return 'Until the nonce expires; expired ones are cleared when the ' +
       'limit is reached.';
   },
+  // The spends `spendNonce()`'s makeRoom() already treats as expired — a
+  // nonce past its own expiry is refused before it is spent (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, usedNonces,
+    function (expiresS: unknown, id: unknown, now: number): boolean {
+      return Number(expiresS) <= Math.floor(now / 1000);
+    }),
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, usedNonces,
       function (expiresS: unknown, id: unknown): object {

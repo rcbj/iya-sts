@@ -31,15 +31,18 @@
 // SELECTORS, and answers with the SVIDs of the registration entries whose
 // selectors are a subset of those.
 //
-// **This service attests what node can see, which is less, and says so.** Node
-// has no portable way to read `SO_PEERCRED`, so there is no uid here, no pid,
-// no container and no pod. What there is: the transport a call arrived on, the
-// endpoint it reached, its peer address, and — only with
-// `spiffe.acceptAssertedSelectors` on — whatever the caller SAID about itself.
-// `spiffe_auth.workloadSelectors()` builds that list and its header explains
-// why the types are spelt `transport:`, `endpoint:` and `peer:` rather than
-// `unix:`: writing `unix:uid:1000` for a uid nothing read would be inventing an
-// attested fact.
+// **ON THE UNIX SOCKET THIS SERVICE DOES THE SAME SINCE 2026-09-21 (#40).**
+// `spiffe_peer.ts` asks the kernel (SO_PEERCRED, through a native module
+// built into the image) and `spiffe_workload_attestation.ts` runs the `unix`,
+// `docker` and `k8s` attestors, once per connection at accept; every call
+// then checks the process is still the one attested (`spiffe_grpc.ts`'s
+// `prepareCall()`), and `spiffe_auth.workloadSelectors()` adds what they
+// established. **OVER TCP IT ATTESTS WHAT NODE CAN SEE, WHICH IS LESS, AND
+// SAYS SO**: the transport a call arrived on, the endpoint it reached, its
+// peer address, and — only with `spiffe.acceptAssertedSelectors` on, and
+// never in product — whatever the caller SAID about itself. Those types are
+// spelt `transport:`, `endpoint:` and `peer:` rather than `unix:`: writing
+// `unix:uid:1000` for a uid nothing read would be inventing an attested fact.
 //
 // Four consequences, all deliberate and all stated on `GET /spiffe` rather than
 // left to be discovered:
@@ -52,8 +55,10 @@
 //     There is now. `spiffe.attestWorkloads` off restores the old answer —
 //     every entry to every caller.
 //
-//   * **Any caller that can reach the socket can still obtain an identity.**
-//     Nothing proves who it is; matching narrows WHICH entries answer, and
+//   * **Any caller that can reach the TCP port can still obtain an
+//     identity** (and, on the socket, any process when the native module is
+//     missing in development). Nothing proves who it is; matching narrows
+//     WHICH entries answer, and
 //     `spiffe.autoCreateEntries` still invents one for a caller that matches
 //     none. So the socket's filesystem permissions are still the only thing
 //     standing between a process and an SVID here, which is the same statement

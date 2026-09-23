@@ -408,11 +408,10 @@ function subjects(t) {
           'development still invents where nothing is known');
   inMode('product', function () {
     const none = subj.subjectForUser('alice', 'email', 'https://i');
-    t.equal(none.format, 'issuer_subject_id',
+    t.equal(none.format, 'iss_sub',
             'product with no mail falls back to the issuer/subject pair');
-    const did = subj.subjectForUser('alice', 'decentralized_identifier',
-                                    'https://i');
-    t.equal(did.format, 'issuer_subject_id', 'and invents no did:example');
+    const did = subj.subjectForUser('alice', 'did', 'https://i');
+    t.equal(did.format, 'iss_sub', 'and invents no did:example');
     const aliases = subj.subjectForUser('alice', 'aliases', 'https://i');
     t.equal(aliases.identifiers.length, 1, 'aliases carry no invented address');
     const kept = subj.subjectForUser('alice', 'email', 'https://i',

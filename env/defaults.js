@@ -48,15 +48,15 @@ var config = {
 
   // --- Global ----------------------------------------------------------
   global: {
-    host: "0.0.0.0",              // HTTP bind address; restart to apply
-    port: 8081,                   // HTTP port; restart to apply
-    domain: "example.com",        // Domain; restart to apply
-    trustProxy: false,            // Trust forwarded headers
-    trustedProxies: "",           // Trusted proxy addresses
-    proxyProtocol: "off",         // PROXY protocol on the TCP listeners; restart to apply
-    proxyProtocolTimeoutMs: 5000, // PROXY protocol header timeout (ms)
-    publicBaseUrl: "",            // Public base URL
-    corsOrigins: ""               // Origins treated as this service's own
+    host: "0.0.0.0",               // HTTP bind address; restart to apply
+    port: 8081,                    // HTTP port; restart to apply
+    domain: "example.com",         // Domain; restart to apply
+    trustProxy: false,             // Trust forwarded headers
+    trustedProxies: "",            // Trusted proxy addresses
+    proxyProtocol: "off",          // PROXY protocol on the TCP listeners; restart to apply
+    proxyProtocolTimeoutMs: 30000, // PROXY protocol header timeout (ms)
+    publicBaseUrl: "",             // Public base URL
+    corsOrigins: ""                // Origins treated as this service's own
   },
 
   // --- Admin console ---------------------------------------------------
@@ -73,6 +73,7 @@ var config = {
     enabled: true,                                                         // Run the GNAP authorization server
     accessTokenFormat: "jwt-signed",                                       // Default access token format
     tokenFormats: "jwt-signed,jwt-encrypted,macaroon,biscuit,zcap",        // Token formats offered
+    zcapCryptosuite: "eddsa-jcs-2022",                                     // ZCAP proof suite
     accessTokenLifetimeS: 3600,                                            // Access token lifetime (seconds)
     interactionLifetimeS: 600,                                             // Interaction lifetime (seconds)
     continueWaitS: 5,                                                      // Continuation wait (seconds)
@@ -146,6 +147,7 @@ var config = {
 
   // --- Web security ----------------------------------------------------
   authn: {
+    sessionSweepS: 30,              // How often expired sessions are ended (seconds)
     sessionLifetimeS: 3600,         // Session lifetime (seconds)
     sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
@@ -287,6 +289,8 @@ var config = {
     softwareStatementOpensRegistration: true,    // A trusted software statement opens a closed registration endpoint
     softwareStatementRequired: false,            // Require a software statement on every registration
     softwareStatementLifetimeS: 31536000,        // Issued software statement lifetime (s)
+    clientSecretOverlapS: 604800,                // Keep a rotated client secret working for (seconds)
+    clientSecretExpiryWarningDays: 14,           // Warn about an expiring client secret this many days ahead
     registeredSecretLifetimeS: 0,                // Dynamically registered secret lifetime (s)
     registeredClientIdPrefix: "sts-client-",     // Dynamically registered client_id prefix
     registeredClientIdBytes: 8,                  // Dynamically registered client_id random bytes
@@ -310,6 +314,7 @@ var config = {
     accessTokenTtlS: 3600,                       // Access token lifetime (s)
     idTokenTtlS: 3600,                           // ID Token lifetime (s)
     refreshTokenTtlS: 86400,                     // Refresh token lifetime (s)
+    expiredTokenRetentionS: 86400,               // Keep an expired token on /admin/tokens for (seconds)
     clockSkewS: 30,                              // Token clock skew (s)
     redirectUris: "",                            // Registered redirect URIs
     loopbackPortWildcard: true,                  // Loopback port wildcard
@@ -732,7 +737,11 @@ var config = {
     deadLetterSweepS: 60,                                                                                                                                 // Dead-letter sweep interval (seconds)
     authBasic: true,                                                                                                                                      // Offer HTTP Basic
     internalReceivers: true,                                                                                                                              // Register the console and the portal as receivers; restart to apply
-    maxStreams: 25,                                                                                                                                       // Streams per realm
+    maxStreams: 25,                                                                                                                                       // Streams per receiver
+    inactivityTimeoutS: 0,                                                                                                                                // Stream inactivity timeout (s)
+    inactivityAction: "pause",                                                                                                                            // What an inactive stream becomes
+    verificationEveryS: 0,                                                                                                                                // Transmitter-initiated verification (s)
+    streamMaintenanceSweepS: 60,                                                                                                                          // Stream maintenance sweep interval (s)
     maxSubjectsPerStream: 100,                                                                                                                            // Subjects per stream
     maxQueuedEvents: 200,                                                                                                                                 // Queued events per stream
     pollMaxEvents: 20,                                                                                                                                    // Events per poll
@@ -741,6 +750,8 @@ var config = {
     authScopeRead: "ssf:read",                                                                                                                            // Scope to read a stream
     authScopeWrite: "ssf:write",                                                                                                                          // Scope to change a stream
     receiveEnabled: true,                                                                                                                                 // Accept pushed events
+    receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
+    receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
     legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim
     breakSetSignature: false                                                                                                                              // Sign every SET badly
@@ -818,40 +829,106 @@ var config = {
 
   // --- SPIFFE ----------------------------------------------------------
   spiffe: {
-    enabled: true,                                           // Enable SPIFFE
-    trustDomain: "example.org",                              // Trust domain; restart to apply
-    x509KeyType: "ec-p256",                                  // X.509 authority key; restart to apply
-    jwtKeyType: "ec-p256",                                   // JWT authority key; restart to apply
-    caTtl: 86400,                                            // Authority lifetime (seconds); restart to apply
-    svidTtl: 3600,                                           // X509-SVID lifetime (seconds)
-    jwtSvidTtl: 300,                                         // JWT-SVID lifetime (seconds)
-    refreshHint: 300,                                        // Bundle refresh hint (seconds)
-    svidSubject: "C=US,O=SPIRE",                             // SVID subject DN
-    caSubject: "CN=sts SPIFFE {kind} ({trustDomain}),O=sts", // CA subject DN template
-    retainedAuthorities: 4,                                  // Authorities kept published after a rotation
-    agentSvidTtl: 0,                                         // Agent SVID lifetime (seconds)
-    joinTokenTtl: 600,                                       // Join token lifetime (seconds)
-    maxJoinTokens: 256,                                      // Unspent join tokens held
-    maxPageSize: 1000,                                       // Largest page a List* returns
-    maxRecordedConnections: 512,                             // mTLS connections remembered
-    autoCreateEntries: true,                                 // Invent a registration entry on first sight
-    requireSecurityHeader: true,                             // Require the workload.spiffe.io header
-    trustLocalSocket: true,                                  // Trust the SPIRE Server API socket as local
-    adminIds: "",                                            // Administrator SPIFFE IDs
-    clockSkew: 60,                                           // Clock skew (s)
-    attestWorkloads: true,                                   // Match Workload API callers on selectors
-    acceptAssertedSelectors: false,                          // Believe selectors a workload asserts
-    maxEntries: 500,                                         // Maximum registration entries
-    maxAgents: 200,                                          // Maximum attested agents
-    maxFederatedBundles: 32,                                 // Maximum federated bundles
-    bundlePath: "/spiffe/bundle",                            // Bundle endpoint path; restart to apply
-    workloadSocketEnabled: true,                             // Workload API on a Unix socket; restart to apply
-    workloadSocket: "/tmp/spire-agent/public/api.sock",      // Workload API socket path; restart to apply
-    workloadPort: 8092,                                      // Workload API TCP port; restart to apply
-    serverPort: 8181,                                        // SPIRE Server API TCP port; restart to apply
-    serverSocketEnabled: false,                              // SPIRE Server API on a Unix socket; restart to apply
-    serverSocket: "/tmp/spire-server/private/api.sock",      // SPIRE Server API socket path; restart to apply
-    grpcHost: "0.0.0.0"                                      // gRPC bind address; restart to apply
+    enabled: true,                                                // Enable SPIFFE
+    trustDomain: "example.org",                                   // Trust domain; restart to apply
+    x509KeyType: "ec-p256",                                       // X.509 authority key; restart to apply
+    jwtKeyType: "ec-p256",                                        // JWT authority key; restart to apply
+    caTtl: 86400,                                                 // Authority lifetime (seconds); restart to apply
+    svidTtl: 3600,                                                // X509-SVID lifetime (seconds)
+    jwtSvidTtl: 300,                                              // JWT-SVID lifetime (seconds)
+    refreshHint: 300,                                             // Bundle refresh hint (seconds)
+    svidSubject: "C=US,O=SPIRE",                                  // SVID subject DN
+    caSubject: "CN=sts SPIFFE {kind} ({trustDomain}),O=sts",      // CA subject DN template
+    retainedAuthorities: 4,                                       // Authorities kept published after a rotation
+    agentSvidTtl: 0,                                              // Agent SVID lifetime (seconds)
+    joinTokenTtl: 600,                                            // Join token lifetime (seconds)
+    nodeAttestors: "join_token",                                  // Node attestors accepted
+    attestationChallengeTimeout: 30,                              // Attestation challenge timeout (s)
+    x509popMode: "external_pki",                                  // x509pop mode
+    x509popCaBundle: "",                                          // x509pop trust anchors (PEM)
+    x509popSpiffePrefix: "/spire-exchange/",                      // x509pop SVID path prefix
+    x509popAgentPathTemplate: "",                                 // x509pop agent path template
+    x509popMaxIntermediates: 4,                                   // x509pop intermediates allowed
+    x509popMaxRsaKeySize: 8192,                                   // x509pop largest RSA key (bits)
+    x509popVerifyClientIp: false,                                 // x509pop verifies the client address
+    x509popGroupTemplate: "",                                     // x509pop group template
+    x509popAllowedGroups: "",                                     // x509pop allowed groups
+    sshpopCertAuthorities: "",                                    // sshpop host certificate authorities
+    sshpopCanonicalDomain: "",                                    // sshpop canonical domain
+    sshpopAgentPathTemplate: "",                                  // sshpop agent path template
+    sshpopVerifyClientIp: false,                                  // sshpop verifies the client address
+    tpmDevidCaBundle: "",                                         // tpm_devid DevID trust anchors (PEM)
+    tpmEndorsementCaBundle: "",                                   // tpm_devid endorsement trust anchors (PEM)
+    k8sPsatClusters: "",                                          // k8s_psat clusters (JSON)
+    httpChallengeAllowedDnsPatterns: "",                          // http_challenge allowed host names (regular expressions)
+    httpChallengeRequiredPort: 0,                                 // http_challenge required port
+    httpChallengeAllowNonRootPorts: true,                         // http_challenge allows ports above 1023
+    httpChallengeTofu: true,                                      // http_challenge trusts on first use
+    httpChallengeVerifyClientIp: false,                           // http_challenge verifies the client address
+    awsIidPartition: "aws",                                       // aws_iid partition
+    awsIidAssumeRole: "",                                         // aws_iid role to assume in the node's account
+    awsIidSkipBlockDevice: false,                                 // aws_iid skips the block device check
+    awsIidDisableInstanceProfileSelectors: false,                 // aws_iid skips the IAM role selectors
+    awsIidLocalValidAccountIds: "",                               // aws_iid accounts trusted without the block device check
+    awsIidAgentPathTemplate: "",                                  // aws_iid agent path template
+    awsIidVerifyOrganization: "",                                 // aws_iid organization check (JSON)
+    awsIidEksClusterNames: "",                                    // aws_iid EKS clusters a node must belong to
+    awsIidEndpoint: "",                                           // aws_iid API endpoint override
+    gcpIitProjectIdAllowList: "",                                 // gcp_iit projects allowed
+    gcpIitAgentPathTemplate: "",                                  // gcp_iit agent path template
+    gcpIitUseInstanceMetadata: false,                             // gcp_iit reads the instance from Compute Engine
+    gcpIitAllowedLabelKeys: "",                                   // gcp_iit instance labels made selectors
+    gcpIitAllowedMetadataKeys: "",                                // gcp_iit instance metadata made selectors
+    gcpIitMaxMetadataValueSize: 128,                              // gcp_iit largest metadata value
+    gcpIitServiceAccountFile: "",                                 // gcp_iit service account key file
+    gcpIitCertsUrl: "https://www.googleapis.com/oauth2/v1/certs", // gcp_iit Google certificate URL
+    azureImdsTenants: "",                                         // azure_imds tenants (JSON)
+    azureImdsAgentPathTemplate: "",                               // azure_imds agent path template
+    azureImdsAllowedMetadataDomains: "metadata.azure.com",        // azure_imds signing certificate domains
+    azureImdsTrustBundle: "",                                     // azure_imds extra roots (PEM)
+    azureImdsIntermediateHost: "www.microsoft.com",               // azure_imds intermediate certificate host
+    azureImdsDiscoveryUrl: "https://login.microsoftonline.com",   // azure_imds tenant discovery base URL
+    workloadAttestors: "unix",                                    // Workload attestors
+    workloadProcRoot: "/proc",                                    // Workload attestation /proc root
+    unixDiscoverWorkloadPath: false,                              // unix: attest the executable's path and digest
+    unixWorkloadSizeLimit: 0,                                     // unix: largest executable hashed (bytes)
+    dockerSocketPath: "unix:///var/run/docker.sock",              // docker: Engine API socket
+    dockerApiVersion: "",                                         // docker: Engine API version
+    k8sKubeletReadOnlyPort: 0,                                    // k8s: kubelet read-only port
+    k8sKubeletSecurePort: 0,                                      // k8s: kubelet secure port
+    k8sNodeName: "",                                              // k8s: node name
+    k8sNodeNameEnv: "MY_NODE_NAME",                               // k8s: node name environment variable
+    k8sCertificateFile: "",                                       // k8s: kubelet client certificate file
+    k8sPrivateKeyFile: "",                                        // k8s: kubelet client key file
+    k8sUseAnonymousAuthentication: false,                         // k8s: anonymous to the kubelet
+    k8sTokenFile: "",                                             // k8s: kubelet bearer token file
+    k8sSkipKubeletVerification: false,                            // k8s: skip kubelet certificate verification
+    k8sKubeletCaFile: "",                                         // k8s: kubelet CA file
+    k8sMaxPollAttempts: 60,                                       // k8s: pod list attempts
+    k8sPollRetryIntervalMs: 500,                                  // k8s: pod list retry interval (ms)
+    k8sDisableContainerSelectors: false,                          // k8s: pod selectors only
+    k8sEnableNamespaceLabels: false,                              // k8s: namespace label selectors
+    maxJoinTokens: 256,                                           // Unspent join tokens held
+    maxPageSize: 1000,                                            // Largest page a List* returns
+    maxRecordedConnections: 512,                                  // mTLS connections remembered
+    autoCreateEntries: true,                                      // Invent a registration entry on first sight
+    requireSecurityHeader: true,                                  // Require the workload.spiffe.io header
+    trustLocalSocket: true,                                       // Trust the SPIRE Server API socket as local
+    adminIds: "",                                                 // Administrator SPIFFE IDs
+    clockSkew: 60,                                                // Clock skew (s)
+    attestWorkloads: true,                                        // Match Workload API callers on selectors
+    acceptAssertedSelectors: false,                               // Believe selectors a workload asserts
+    maxEntries: 500,                                              // Maximum registration entries
+    maxAgents: 200,                                               // Maximum attested agents
+    maxFederatedBundles: 32,                                      // Maximum federated bundles
+    bundlePath: "/spiffe/bundle",                                 // Bundle endpoint path; restart to apply
+    workloadSocketEnabled: true,                                  // Workload API on a Unix socket; restart to apply
+    workloadSocket: "/tmp/spire-agent/public/api.sock",           // Workload API socket path; restart to apply
+    workloadPort: 8092,                                           // Workload API TCP port; restart to apply
+    serverPort: 8181,                                             // SPIRE Server API TCP port; restart to apply
+    serverSocketEnabled: false,                                   // SPIRE Server API on a Unix socket; restart to apply
+    serverSocket: "/tmp/spire-server/private/api.sock",           // SPIRE Server API socket path; restart to apply
+    grpcHost: "0.0.0.0"                                           // gRPC bind address; restart to apply
   },
 
   // --- Persistence -----------------------------------------------------
@@ -884,6 +961,23 @@ var config = {
     heartbeatMs: 2000,             // Heartbeat interval (ms); restart to apply
     nodeTtlMs: 30000,              // Node lifetime (ms); restart to apply
     acceptMissingCapabilities: ""  // Capabilities accepted as missing; restart to apply
+  },
+
+  // --- Signing keys ----------------------------------------------------
+  signing: {
+    rotationIntervalDays: 90,            // Rotate each signing key every (days)
+    credentialRotationIntervalDays: 365, // Rotate the credential signing key every (days)
+    retiredKeyGraceDays: 0               // Keep a retired key verifying for (days)
+  },
+
+  // --- Scheduler -------------------------------------------------------
+  scheduler: {
+    enabled: true,    // Run scheduled jobs
+    tickS: 15,        // How often the leader looks for due jobs (seconds)
+    historyDays: 30,  // How long a finished run is kept (days)
+    maxRuns: 5000,    // Most runs kept per realm
+    disabledJobs: "", // Jobs switched off
+    runTimeoutS: 600  // The longest a run may take (seconds)
   },
 };
 

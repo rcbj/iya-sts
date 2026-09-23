@@ -11,12 +11,13 @@ more than one family needs it, not because it felt general.
 | `config_file.js` | The one place that decides what `CONFIG_FILE` means. Requires nothing at all. |
 | `config.js` | Every setting this service has, and the refusal to start without one. The only module `helpers.js` depends on. |
 | `helpers.js` | Log, keys, `signJwt()`, `userFor()`, the cross-protocol parsers. |
-| `crypto.js` | **EVERY SIGNATURE AND EVERY CIPHER IN THIS SERVICE, since 2026-08-27.** XML Signature and XML Encryption, JWS, JWE, key and certificate generation, thumbprints, constant-time comparison. A LEAF — it sits UNDER `helpers.js` and may never require it back. See below. |
+| `crypto.js` | **EVERY SIGNATURE AND EVERY CIPHER IN THIS SERVICE, since 2026-08-27.** XML Signature and XML Encryption, JWS, JWE, key and certificate generation, thumbprints, constant-time comparison — and since 2026-09-21 (#40) signatures over raw bytes and TPM 2.0 KDFa / MakeCredential (section 8). A LEAF — it sits UNDER `helpers.js` and may never require it back. See below. |
 | `app.js` | The express app and every middleware. Requiring it is how a protocol module gets somewhere to register. |
 | `admin_stats.js` | The counters, the revocation set, and `recordAuthentication()` — the single authentication funnel. |
 | `audit.js` | What happened, when, and to whom, as discrete events. Sits BESIDE `admin_stats.js`, not under it. |
 | `error_codes.js` | **THE ONE TABLE OF EVERY FAILURE CONDITION (2026-09-12)** — `STS-<SUBSYSTEM>-<NNNN>`, by subsystem, with what the client sees beside each. `mark()`, `tag()`, and the generator for `docs/error-codes.md`. A LEAF that requires nothing. See below. |
 | `used_assertions.js` | **EVERY RFC 7523 JWT AND RFC 7522 SAML ASSERTION ACCEPTED, SO NONE IS ACCEPTED TWICE, EVER (2026-09-13).** One history for client authentication and the grant, both profiles, per realm; persisted in every store with one and in BOTH modes; claimed atomically on postgres; spent only when the token request issues tokens. A LIBRARY (rule 3ae) with its own logger, installed by `persistence.js`. |
+| `signing_history.ts` | **EVERY SIGNING KEY A REALM HAS EVER HELD (2026-09-22, #42's follow-up)** — the record that outlives the key. `signing.retire` drops a retired key past its grace and its private half is gone; this keeps the metadata and the CERTIFICATE, so a signature captured months ago can still be read back. Append-only, never swept, and DERIVED from the key set rather than from the rotation events — see below. A LIBRARY over `realms` and `error_codes`, with `helpers` and `pki` reached lazily. |
 | `applications.js` | Every application this service has been asked about, stored in the directory under `ou=applications`. |
 | `delegation.js` | Who acted on whose behalf, through what, to reach what — eight mechanisms across three protocol families in ONE model. What HAPPENED. |
 | `app_permissions.ts` | **Who MAY reach what, decided in advance** — delegated permissions between two OAuth application entries, in Microsoft Entra ID's shape. The CONFIGURED twin of the file above it, and never to be drawn as one register with it. |
@@ -28,7 +29,7 @@ more than one family needs it, not because it felt general.
 | `pqc_support.ts` | **DOES THIS KEY PAIR USE A POST-QUANTUM ALGORITHM — ONE ANSWER (2026-09-13).** Behind the icon on `/admin/pki` and `/admin/keys`, the `pqc` member on those pages' JSON, and the mark in the certificate details dialog. It reads every spelling the two pages hold a key in — a JOSE `alg`, a key-material id, a node key type, an OID, a certificate's SubjectPublicKeyInfo — and answers one of FOUR kinds, because "PQC" is four claims: `pq` (ML-DSA, SLH-DSA), `composite` (one key with a post-quantum and a classical half), `kem` (ML-KEM, which signs nothing), and `hybrid` (a CLASSICAL key whose certificate carries an alternative post-quantum key under X.509 (2019) clause 9.8 — the key itself is not post-quantum). **The key decides, never the signature on its certificate**: an ML-DSA key under an RSA CA is marked and an EC key under an ML-DSA CA is not. A classical key is `null`. A LEAF over `pq_jose.js` and the vendored registry. |
 | `certificate_details.ts` | **ONE CERTIFICATE, EVERY FIELD, AND THE PATH IT BUILDS (2026-09-13)** — the model behind the certificate details dialog on `/admin/pki` and `/admin/crypto-metadata` and `GET /admin-api/certificates`: the tbsCertificate in RFC 5280 section 4.1's order (both signature algorithms, every RDN with its OID, each validity bound's ASN.1 time type, the key's parameters and bytes, both unique identifiers, every extension decoded) and a trust chain BUILT by matching each issuer's name AND verifying its signature, because a stored chain is a snapshot and a replaced Root has the same subject as the one it replaced. Built on the vendored inspector (`describeCertificate()`, `verifyChain()`); fingerprints are node's, and a post-quantum key is named from the PQC registry because the inspector summarises a composite by its classical half. A LEAF: it reads no caller's PEM and decides nothing about where a certificate came from — `admin-core/certificate_views.ts` does. |
 | `pki_merge.js` | **ONE CERTIFICATE AUTHORITY ROW WRITTEN BY SEVERAL NODES AT ONCE (2026-09-14, #46).** The three-way merge `keystore.js` applies under the row's lock: revocations and issued serials are unions, a CA tier or certificate slot is first writer wins, the register's CRL number adds. Pure JSON in, JSON out; a LEAF over config and bunyan. Its header argues why a merge and not a row per revocation. |
-| `pki.js` | **A CERTIFICATE AUTHORITY, since 2026-09-10 — ONE ROOT FOR THE SERVICE AND AN INTERMEDIATE PER TRUST REALM since 2026-09-11 (3w)** — Root, Intermediate, an Issuing CA per use case, and the leaves it issues (signing key pairs, TLS certificates, enrolled certificates). **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms`, `error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules. |
+| `pki.js` | **A CERTIFICATE AUTHORITY, since 2026-09-10 — ONE ROOT FOR THE SERVICE AND AN INTERMEDIATE PER TRUST REALM since 2026-09-11 (3w)** — Root, Intermediate, an Issuing CA per use case, and the leaves it issues (signing key pairs, TLS certificates, enrolled certificates). **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). **And since 2026-09-21 (#40) SOMEBODY ELSE'S certificates**: `verifyPathToAnchors()` — a path to a caller's trust anchors, Go's `x509.Certificate.Verify()` as SPIRE's node attestors use it, failing closed on an unhandled critical extension and on any CA with nameConstraints — and OpenSSH certificates (`parseSshPublicKey()`, `parseSshAuthorizedKey()`, `checkSshHostCertificate()`), moved here from `spiffe/` the day they were written at rcbj's direction; their signatures are `crypto.js`'s section 8. The AWS and Azure certificates SPIRE embeds for its cloud attestors are here too, GENERATED into `pki_cloud_anchors.json` (`awsIidCertificate()`, `azureImdsRoots()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms`, `error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules. |
 | `cert_enrollment.ts` | **WHO MAY BE ISSUED A CERTIFICATE FOR WHOM, AND WHAT GOES IN IT (2026-09-13)** — the core ACME (`acme/`), EST (`est/`) and SCEP (`scep/`) issue through, so none of the three decides any of it: the identity rule (yourself, or any person or application in the realm for a holder of Admin Write), the nine issued `/admin/pki` profiles and the five refused by design, the PKCS#10 proof of possession for every key family, names built from the DIRECTORY ENTRY with an unowned name refusing the request, every certificate kept on the entry it names (and a private key only when this service made it), and the two entry-bound credentials — an ACME EAB key and a SCEP challenge. A LIBRARY (rule 3ag) whose store is the entry, through a slot `ldap/ldap_server.js` fills. |
 | `enrollment_monitor.ts` | **WHAT THE THREE ENROLLMENT PROTOCOLS HAVE DONE (2026-09-13)** — one vocabulary of counters for `/admin/{acme,est,scep}/monitor`, per realm, merged across processes in `gnap_monitor.js`'s shape, and unable to throw into the request it counts. |
 | `jose_certificate_header.js` | **WHICH `x5c` OR `x5u` A SIGNED TOKEN CARRIES (2026-09-13)** — twelve use cases, one setting each in its protocol's group (`none`/`x5c`/`x5u`/`both`, `x5u` by default, per realm), the chain of the certified key that signed (leaf to service Root), and the `x5u` resource behind `GET /pki/chain/{scope}/{sha256}.pem`. A LIBRARY over `config`, `realms` and `error_codes`; `pki` and `helpers` lazily. See *3af* below. |
@@ -204,6 +205,32 @@ What `crypto.js` adds is what is true of THIS service — which placements its
 documents use, that a verifier must be TOLD which element it is checking, that a
 decryption answers rather than throws, that a token read back against our own
 certificate gets the configured clock skew.
+
+**SECTION 8: SIGNATURES OVER RAW BYTES, AND THE TPM (2026-09-21, #40).**
+SPIFFE's node attestors prove possession of a key in four formats that are
+neither a JWS nor an XML signature — SPIRE's x509pop (RSA-PSS over a digest,
+ECDSA as big-endian r and s), OpenSSH signatures, a TPM's TPMT_SIGNATURE and a
+DevID's X.509 signature. They were written beside the attestors and moved here
+the same day at rcbj's direction, which is this file's whole argument applied
+again. **`verifyRawSignature(scheme, key, data, signature)` is the one
+primitive**: the caller names what the protocol did (`family`, `hash`,
+`encoding`, `saltLength`), a key of the wrong kind is `false`, and the
+post-quantum family — ML-DSA, SLH-DSA, composite ML-DSA — goes through the
+vendored `pqc_x509.js`, because node reads those keys only from version 24 and
+composite never. `publicKeyFromSpki()` describes a key node may not read, and
+`ecdsaIntegersToP1363()` pads Go's `big.Int.Bytes()` or an SSH mpint to the
+curve. **`tpmKdfa()` and `tpmMakeCredential()`** are TPM 2.0 Part 1's key
+derivation and credential protection (go-tpm's `credactivation.Generate()`,
+which SPIRE calls): an OAEP encryption, two HMAC derivations, an AES-CFB
+encryption and an HMAC — this file's kinds of thing — while the TPM structures
+they are fed stay a codec in `spiffe/spiffe_tpm.ts`. `pqc_x509.js` requires
+only noble, asn1js and other vendored files, so this is still a leaf.
+`verifyPkcs7SignedData()` (phase three) checks a CMS SignedData with its
+content attached — AWS's RSA-2048 identity-document signature, Azure's
+attested document — and nothing about the signer's certificate, which is
+`pki.js`'s question. `tests/spiffe_attestors.js` and
+`tests/spiffe_attestors_cloud.js` exercise all of it with clients written from
+the other side, the TPM one and the PKCS#7 signer independently of this file.
 
 **IT IS A LEAF AND MUST STAY ONE.** It requires npm packages, the vendored
 signer and `config.js` — which requires nothing here — so the require is
@@ -6437,6 +6464,87 @@ define them. The twenty-seven are defined across five documents, and the
 citation on each row is the document that DEFINES the attribute rather than the
 one whose MAY list it is met in — because the citation is there to be followed.
 
+## `signing_history.ts`: THE RECORD THAT OUTLIVES THE KEY (2026-09-22)
+
+#42 gave a realm's signing keys GENERATIONS and #42's `signing.retire` job
+DROPS a retired key once it passes its grace — which is the security rule and
+is not negotiable. What nothing did was remember that the key had existed, so
+*which key signed the token in this log line, and when was it live?* had no
+answer a minute after the grace elapsed.
+
+**rcbj chose option B (2026-09-22): go on throwing the private key away, and
+keep the certificates for later inspection.** So a row here says a key
+existed, which unit it belonged to, when it was minted, promoted, retired and
+dropped, why, and — because a certificate is a PUBLIC document, the one this
+service published in its JWKS and its metadata while that key was live — the
+certificate that vouched for it. **Nothing in a row can produce a signature**,
+and `tests/signing_history.js` searches every row and every view for the PEM,
+the `KeyObject` and the BBS secret key at every stage.
+
+### It is a PROJECTION of the key set, and that is the whole design
+
+The obvious implementation records at each site that changes a key — mint,
+promote, retire, drop — which is four call sites in two files and a fifth the
+day somebody adds a rotation path. **A site that forgets leaves a hole nothing
+can see**, because a missing row and a key that never existed look identical.
+
+So `observe(realmId, { reason })` walks the realm's CURRENT set and its
+standby entries, writes what it finds, and marks DROPPED every row of that
+realm whose key the set no longer holds. It is idempotent — a row is written
+only where one is missing or has changed — so a caller that forgets to call it
+loses only the PROMPTNESS of the record.
+
+Three consequences are decisions rather than mechanics:
+
+* **A READ OBSERVES, so a GET may write.** `/admin/keys/history` and
+  `GET /admin-api/keys/history` both go through
+  `admin-core/admin_views.ts`'s `signingHistoryView()`, which observes first:
+  a node that has just restarted, or a development-mode service whose keys are
+  new this start and whose rotation jobs are off (`mode.rotatesSigningKeys()`),
+  holds keys no row describes yet, and a door that read the store alone would
+  report a realm as having no history when what it has is no OBSERVATION. In
+  the steady state neither door writes anything.
+* **A PROCESS HOLDING NO KEY SET FOR THE REALM MARKS NOTHING DROPPED.** It
+  asks `helpers.stsKeysFor.existing()` and never `.of()`, which GENERATES —
+  the key-agreement storm of 2026-09-12 (*THE REALM WATCHER ASKS AND DOES NOT
+  TAKE*, above) was one caller reading keys through a factory that makes them,
+  and a history page must never be the thing that mints a realm's signing
+  keys. Not holding a realm's keys is the ordinary state of a node that has
+  never answered a request in it, and is no evidence that its keys are gone.
+* **THE ONE WINDOW THE RULE CANNOT CLOSE IS AN EMERGENCY ROTATION**, which
+  drops a unit's retired keys and its `next` outright (#48) — so
+  `signing_rotation.ts` observes BEFORE it revokes as well as after.
+
+### What is kept, and what is never restamped
+
+The timestamps only ever move FORWARD from absent to set: an observation that
+sees a key in a role it was already in must not restamp it, or every read
+would report the key as promoted a moment ago. The certificate is captured
+ONCE and never replaced — a re-certification issues a new certificate over the
+same key, and what the row is for is what vouched for that key WHILE IT WAS
+LIVE. A unit with no certificate at all (the BBS key: bbs-2023 keys are not
+X.509 subjects) records none, and is still a row.
+
+**THE STORE IS NEVER SWEPT.** `realms.map({ persist: 'signing.history' })`
+takes `retain`'s default of `keep`, which is the one store here whose whole
+point is to outlive what it describes. It grows by a row per unit per
+rotation — twelve a year per unit at a thirty-day interval — which is why both
+doors PAGE it (`admin-ui/CLAUDE.md`, *every list that can grow without a bound
+is paged*). Two codes: `STS-KEYS-0067` (a row could not be recorded — logged,
+and the rotation still stands, because the next observation writes it) and
+`STS-KEYS-0068` (a unit this realm has no record of).
+
+**Eight mutants, seven caught**; the eighth is recorded as equivalent AT ITS
+LAYER and is worth knowing about — a standby entry's private fields carried
+into `keysOfSet()` never reach a row, because `rowFor()` builds from a FIXED
+FIELD LIST rather than spreading what it was handed. The combined mutant that
+IS observable — the entry copied wholesale at both layers — is caught by the
+leak assertions. Two more survived the first round and both were the FIXTURE,
+this directory's standing lesson: a fake `signingUnitsOf()` that threw on a
+null set made the held-keys guard unreachable, and the re-certification check
+ran after the key had been dropped, where a dropped key is never looked at
+again.
+
 ## `mode.js`: WHERE `development` AND `product` ARE TOLD APART (2026-09-06)
 
 **This moved here from the root `CLAUDE.md` when that file was broken up** —
@@ -7631,3 +7739,28 @@ is a SNAPSHOT** (`snapshot()`, 2026-09-18): each front process puts its stores'
 sizes and counters — never a row — on its cluster membership row, refreshed
 every thirty seconds on a timer of its own, and `/admin/caches` draws every
 snapshot that is not its own process's. `cluster/CLAUDE.md` has the channel.
+
+### Ejecting expired entries (#49 P5, 2026-09-22)
+
+A descriptor whose entries expire carries `eject(nowMs)`, which deletes them
+and answers how many; `ejectExpired()` calls every one, counts what each
+removed as evictions on its row, and reports one that throws without stopping
+the rest. The scheduler job `caches.eject-expired` (quiet, per-process,
+every minute, registered by `admin-ui/caches_admin.ts` because this file is a
+leaf the parent project loads) is what calls it. **It is housekeeping, never
+correctness**: each owner still refuses an expired entry where it reads it
+and bounds its store where it inserts. So an ejector is the owner's OWN
+expiry test, the one its reader or its `makeRoom()` already applies, never a
+new one — `mapEjector()` and `realmMapEjector()` take that test, and the
+latter asks it inside each realm (`realms.run()`), because a lifetime is
+usually a realm's setting. Where a store has a companion (an OpenID4VP
+transaction's request, a SCIM digest nonce's counts, a HOBA triple's
+challenge), the ejector removes both, as the reader does.
+
+Twenty-four stores eject; `tests/cache_eject.js` holds the list. **Two that
+expire deliberately do not**: `oauth2.backchannelDeliveries`, whose sweep job
+dead-letters a pending delivery before its retention ends and would be
+bypassed; and `keys.plaintext`, whose decrypted key is dropped by a one-shot
+deadline re-armed at each use — to the second, where a minute-long job would
+leave it decrypted up to a minute longer than `keys.plaintextTtlS` says.
+

@@ -178,6 +178,12 @@ const issuedCount = cacheRegistry.register({
     return 'until the last credential on the row expires; a disowned row ' +
       'is kept until then too, so that it goes on refusing.';
   },
+  // What `sweep()` drops, in every realm: a row whose last credential has
+  // expired (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, issued,
+    function (row: any, key: unknown, now: number): boolean {
+      return !!(row && row.expiresAt && row.expiresAt <= now);
+    }),
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, issued,
       function (row: any, key: unknown): object {

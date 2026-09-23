@@ -113,7 +113,7 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 //   * `./local-run-tests.sh` added `--profile xacml` to the project it already
 //     started the service in and published the PEP on a free host port, until
 //     it was removed on 2026-09-16;
-//   * `./docker-run-tests.sh` declares an `xacml-pep` service in
+//   * `./run-tests.sh` declares an `xacml-pep` service in
 //     `docker-compose-run-tests.yml`, on the bridge the tests container shares
 //     with the service.
 //
@@ -266,6 +266,32 @@ const JOBS = [
   // attribute is this repository's own and the assertion spans an /admin-api
   // write and a protocol delivery.
   { file: 'sts_ssf_allowed_events.js',   browser: false, local: true },
+  // SSF 1.0 FINAL OVER THE WIRE (#144, 2026-09-22): stream ownership (another
+  // receiver's stream is a 404 on all ten endpoints), a Transmitter-Supplied
+  // aud, the RFC 9493 names and the final complex subject, the inserted-path
+  // discovery form, verification, status in section 8.1.5's order, and
+  // /ssf/receive's typ, iss and aud checks. `local: true`: this repository's
+  // own transmitter, in a throwaway realm it leaves behind.
+  { file: 'sts_ssf_conformance.js',      browser: false, local: true },
+  // OPENID CONNECT CORE OVER THE WIRE (#118, 2026-09-22): the ID Token's
+  // hashes by its alg, errors in the fragment, POST at the authorization
+  // endpoint, openid/prompt/nonce rules, id_token_hint, section 5.4's claims,
+  // the code's bindings in every mode, pairwise subjects and offline_access.
+  // `local: true`: this repository's own authorization server, in a throwaway
+  // realm it leaves behind.
+  { file: 'sts_oidc_core.js',            browser: false, local: true },
+  // THE SCHEDULER (#49, 2026-09-22): Monitoring → Scheduler and GET
+  // /admin-api/scheduler agree, Run now runs once on the leader, a realm's
+  // token is confined, and in the `cluster` mode both nodes name one leader
+  // and a step-down hands it over. `local: true`: this repository's own
+  // /admin and /admin-api.
+  { file: 'sts_scheduler.js',            browser: false, local: true },
+  // SIGNING KEY ROTATION OVER HTTP (#42/#48, 2026-09-22): the refusals, a
+  // rotation keeping the retired key verifying, the /admin/keys Rotate form,
+  // and an emergency after which an earlier token is refused — in a
+  // throwaway realm, so the emergency signs nobody else out. `local: true`:
+  // this repository's own /admin and /admin-api.
+  { file: 'sts_key_rotation.js',         browser: false, local: true },
   // THE CONSOLE AND THE PORTAL RENEW THEIR TOKENS INSIDE THE SAME SESSION
   // (2026-09-12). Both surfaces are this repository's own, and section 5 waits
   // out a sixty-second sign-on session, which is why the watchdog is raised.
@@ -393,7 +419,8 @@ const JOBS = [
   // hand and was green while every certificate named a port nothing answered
   // on; this one rewrites nothing, and holds each CRL, OCSP answer and
   // caIssuers certificate to RFC 5280, RFC 4516/4523, RFC 5019 and RFC 6960.
-  { file: 'sts_pki_distribution_points.js', browser: false, local: true },
+  { file: 'sts_pki_distribution_points.js', browser: false, local: true,
+    reuseConnections: true },
   // THE POSTGRESQL METRICS PAGE (2026-09-11). `local: true` on the first of
   // `tests/CLAUDE.md`'s two questions — it drives `/admin/database` and
   // `/admin-api/database`, and the tree that adds a page to that console is
@@ -505,7 +532,13 @@ const JOBS = [
   { file: 'sts_roles.js',              browser: false, local: true },
   { file: 'sts_roles_builtin.js',        browser: false, local: true },
   { file: 'sts_saml11.js',               browser: false },
-  { file: 'sts_saml_encryption.js',      browser: false },
+  // OWNED HERE SINCE 2026-09-21, when it was a byte-identical copy of the
+  // parent's: its no-certificate case had to stop registering a signing
+  // certificate in development (the service encrypts to one, so the in-clear
+  // check could not pass), and rcbj's rule that day moved the writing of
+  // protocol jobs here. The parent's copy is no longer the source of truth.
+  // The body is still in the parent's style, not this repository's.
+  { file: 'sts_saml_encryption.js',      browser: false, local: true },
   // Signs a UserInfo response and an ID Token with every advertised
   // algorithm, and one SLH-DSA-SHAKE-128s signature takes 190-310s under the
   // coverage run's instrumentation (2026-09-15). The job took 434s on a run
@@ -564,7 +597,7 @@ const JOBS = [
   //
   // **THE LDAP ONE NEEDS THE DIRECTORY'S OWN SOCKET**, which
   // `docker-compose.yml` deliberately does not publish. The launchers arrange
-  // it and hand the job `STS_LDAP_URL` — `./docker-run-tests.sh` by putting
+  // it and hand the job `STS_LDAP_URL` — `./run-tests.sh` by putting
   // the runner on the bridge with the service, and `./local-run-tests.sh`
   // (removed 2026-09-16) by layering `tests/docker-compose-ldap.yml` with a
   // free host port. It is NOT
@@ -572,11 +605,14 @@ const JOBS = [
   // one needs a port. Run by hand with neither, it FAILS naming the variable
   // rather than reporting green having driven nothing.
   { file: 'sts_directory_bulk_load_scim.js', browser: false, local: true,
-    timeoutMs: 1800000 },
+    timeoutMs: 1800000,
+    reuseConnections: true },
   { file: 'sts_directory_bulk_load_ldap.js', browser: false, local: true,
-    timeoutMs: 1800000 },
+    timeoutMs: 1800000,
+    reuseConnections: true },
   { file: 'sts_directory_bulk_load_api.js',  browser: false, local: true,
-    timeoutMs: 1800000 },
+    timeoutMs: 1800000,
+    reuseConnections: true },
   // FIFTY THOUSAND OVER LDAP, and LAST — it leaves the directory an order of
   // magnitude larger than the three above found it, so every job that walks a
   // page or reads a register has run before it. It drives

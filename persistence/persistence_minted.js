@@ -1121,7 +1121,7 @@ function flush() {
   const saving = driver.saveMinted(upserts, deletes).then(function (result) {
     committedAt = Math.max(committedAt, takenAt);
     settleDecided(result);
-    maybePurgeTombstones();
+    ensureTombstoneJob();
     writes++;
     rowsWritten += upserts.length;
     rowsDeleted += deletes.length;
@@ -1273,7 +1273,8 @@ function flushThrough(target) {
 //
 // A tombstone expires with `persistence.mintedRetention` — longer than every
 // lifetime this service issues, which is how long a copy could be written
-// back — through `maybePurgeTombstones()`. 0 keeps them with everything else.
+// back — through the scheduler job `persistence.tombstone-purge`. 0 keeps
+// them with everything else.
 // ---------------------------------------------------------------------------
 function mergerFor(row, handle, key, mine) {
   log.debug("Entering mergerFor().");
@@ -1346,29 +1347,60 @@ function settleDecided(result) {
 }
 
 const TOMBSTONE_SWEEP_MS = 10 * 60 * 1000;
-let lastTombstoneSweep = 0;
+// The sweep's scheduler job (#49 P5): see ensureTombstoneJob().
+const TOMBSTONE_JOB = 'persistence.tombstone-purge';
+let tombstoneJobRegistered = false;
 
-function maybePurgeTombstones() {
-  log.debug("Entering maybePurgeTombstones().");
-  const now = Date.now();
-  if (!driver || typeof driver.purgeTombstones !== 'function' ||
-      !retentionMs() || now - lastTombstoneSweep < TOMBSTONE_SWEEP_MS) {
-    log.debug("Leaving maybePurgeTombstones(). Not due.");
+// THE SWEEP IS A SCHEDULER JOB (#49 P5): `persistence.tombstone-purge`, a
+// CLUSTER job every TOMBSTONE_SWEEP_MS — the tombstones are rows every
+// process shares. It was piggy-backed on the next flush in every process.
+// Registered at the first flush, lazily: the scheduler loads after this.
+function ensureTombstoneJob() {
+  log.debug("Entering ensureTombstoneJob().");
+  if (tombstoneJobRegistered) {
+    log.debug("Leaving ensureTombstoneJob(). Registered.");
     return;
   }
-  lastTombstoneSweep = now;
-  Promise.resolve().then(function () {
-    return driver.purgeTombstones(now - retentionMs());
-  }).then(function (removed) {
-    if (removed) {
-      log.info('persistence: ' + removed + ' expired tombstone(s) of ended ' +
-               'minted rows swept.');
+  tombstoneJobRegistered = true;
+  const scheduler = require('../cluster/scheduler');
+  if (scheduler.job(TOMBSTONE_JOB)) {
+    log.debug("Leaving ensureTombstoneJob(). Registered elsewhere.");
+    return;
+  }
+  scheduler.register({
+    id: TOMBSTONE_JOB,
+    title: 'Expired tombstones sweep',
+    describe: 'Deletes the tombstones of ended minted rows older than ' +
+              'persistence.mintedRetention from the shared store.',
+    owner: 'persistence/persistence_minted.js',
+    everyMs: function () {
+      return TOMBSTONE_SWEEP_MS;
+    },
+    off: function () {
+      if (!driver || typeof driver.purgeTombstones !== 'function') {
+        return 'this store keeps no tombstones';
+      }
+      return retentionMs() ? '' : 'the minted-row retention is 0';
+    },
+    run: function () {
+      const now = Date.now();
+      return Promise.resolve().then(function () {
+        return driver.purgeTombstones(now - retentionMs());
+      }).then(function (removed) {
+        if (removed) {
+          log.info('persistence: ' + removed + ' expired tombstone(s) of ' +
+                   'ended minted rows swept.');
+        }
+        return { removed: Number(removed) || 0 };
+      }, function (e) {
+        log.warn(errorCodes.tag('STS-STORE-0055') + 'persistence: sweeping ' +
+                 'expired tombstones failed: ' + ((e && e.message) || e) +
+                 '.');
+        throw e;
+      });
     }
-  }).catch(function (e) {
-    log.warn(errorCodes.tag('STS-STORE-0055') + 'persistence: sweeping ' +
-             'expired tombstones failed: ' + ((e && e.message) || e) + '.');
   });
-  log.debug("Leaving maybePurgeTombstones(). Started.");
+  log.debug("Leaving ensureTombstoneJob().");
 }
 
 capabilities.provide('sessions.no-resurrection');
@@ -1676,7 +1708,6 @@ function reset() {
   observational.clear();
   committedAt = 0;
   inFlightTakenAt = 0;
-  lastTombstoneSweep = 0;
   lastWriteAt = null;
   lastError = '';
   writes = 0;

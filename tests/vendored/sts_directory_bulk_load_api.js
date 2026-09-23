@@ -207,9 +207,13 @@ async function createThePeople(catalogue) {
       failures.push(person.username + " -> " + reply.status + " " +
                     String(reply.text).slice(0, 300));
     }
-    if (i % 500 === 0) {
+    if (i % bulk.PROGRESS_EVERY === 0) {
       const so_far = bulk.summaryOf(watch);
-      log.info("  " + i + "/" + SIZES.USERS + " created — mean " +
+      // ATTEMPTED AND LOADED, both: a refusal is collected in `failures`
+      // rather than stopping the loop, so a count of attempts alone would
+      // read as progress while nothing was being created.
+      log.info("  " + i + "/" + SIZES.USERS + " attempted, " +
+               (i - failures.length) + " created — mean " +
                bulk.ms(so_far.meanMs) + ", median " +
                bulk.ms(so_far.medianMs) + ", " +
                so_far.perSecond.toFixed(1) + "/s");
@@ -426,12 +430,26 @@ async function itReadsBackWhatItWrote(people, groups, catalogue, expected) {
   log.debug("Entering itReadsBackWhatItWrote().");
   log.info("=== Reading back a sample of the people, and every group ===");
 
-  // SCIM needs a credential (RFC 7644 section 2). In development mode any
-  // username and any password but one is accepted, so this is a turnstile
-  // rather than a lock — and reading back through a DIFFERENT door from the one
-  // that wrote is the rule `sts_admin_api_operations.js` states.
-  const auth = "Basic " + Buffer.from("bulk-load-" + STAMP.run +
-                                      ":not-checked-in-development")
+  // SCIM needs a credential (RFC 7644 section 2), and reading back through a
+  // DIFFERENT door from the one that wrote is the rule
+  // `sts_admin_api_operations.js` states. THE CALLER IS A PERSON WITH A REAL
+  // PASSWORD (2026-09-21): product mode verifies it, and a name nobody created
+  // was refused 401 (STS-AUTHN-0052) — the SCIM job's createTheCaller()
+  // arrangement. Made after everything timed, outside this run's names.
+  const scimUser = "bulk-load-" + STAMP.run;
+  const scimPassword = "bulk-load-api-Passw0rd!-" + STAMP.run;
+  const made = await http.postJson(http.api("/users/create"), {
+    username: scimUser, invent: false,
+    attributes: { cn: "Bulk Load API Reader", givenName: "Bulk",
+                  sn: "API Reader", displayName: "Bulk Load API Reader",
+                  mail: scimUser + "@bulk-load.test" },
+    credential: "password", password: scimPassword
+  });
+  assert.ok(made.status === 200 && made.body && made.body.ok,
+    "POST /admin-api/users/create should create the SCIM reader " +
+    scimUser + " with a password; it answered " + made.status + " " +
+    JSON.stringify(made.body).slice(0, 300));
+  const auth = "Basic " + Buffer.from(scimUser + ":" + scimPassword)
                                 .toString("base64");
   function scimGet(path) {
     log.debug("Entering scimGet().");

@@ -268,8 +268,12 @@ interface SharedSignalsDeps {
   loadCapabilities(): Capabilities;
 }
 
-// The dead-letter sweep's timer: one per process. See scheduleSweep().
-let sweepTimer = null;
+// The dead-letter sweep's scheduler job (#49 P5). See scheduleSweep().
+const SWEEP_JOB = 'ssf.dead-letter-sweep';
+
+// The inactivity timeout and transmitter-initiated verification (#144). See
+// scheduleMaintenance().
+const MAINTENANCE_JOB = 'ssf.stream-maintenance';
 
 class SharedSignals {
   // The well-known suffix RFC 8414's registry carries for this document. It
@@ -277,9 +281,9 @@ class SharedSignals {
   // `/openid-configuration` either — a receiver fetches this exact path.
   static readonly WELL_KNOWN = '/.well-known/ssf-configuration';
 
-  // The six actions of the signals slot; see consoleAction().
+  // The seven actions of the signals slot; see consoleAction().
   static readonly CONSOLE_ACTIONS: string[] = ['status', 'delete', 'transmit',
-    'clear-received', 'revive', 'clear-dead-letters'];
+    'clear-received', 'revive', 'clear-dead-letters', 'verify'];
 
   // The three actions of the CAEP slot; see caepAction().
   static readonly CAEP_CONSOLE_ACTIONS: string[] = ['emit', 'reset-session',
@@ -367,11 +371,21 @@ class SharedSignals {
       if (!name) {
         return false;
       }
-      if (subjects.COMPLEX_MEMBER_NAMES.indexOf(name) < 0) {
+      // The seven SSF 1.0 section 3.3 defines, or an additional name of the
+      // shape that section allows. `format` is the discriminator, not a
+      // member, and critical-ising it would be meaningless.
+      if (subjects.COMPLEX_MEMBER_NAMES.indexOf(name) < 0 &&
+          !subjects.MEMBER_NAME.test(name)) {
         log.warn('ssf.criticalSubjectMembers names "' + name + '", which is ' +
-                 'not one of the six complex subject members SSF defines. It ' +
-                 'is not published — a critical member a receiver cannot ' +
-                 'recognise would make every complex subject refusable.');
+                 'not a complex subject member name. It is not published — a ' +
+                 'critical member no subject could carry would make every ' +
+                 'complex subject refusable.');
+        return false;
+      }
+      if (name === 'format') {
+        log.warn('ssf.criticalSubjectMembers names "format", which is a ' +
+                 'complex subject\'s discriminator and not a member. It is ' +
+                 'not published.');
         return false;
       }
       return true;
@@ -516,6 +530,16 @@ class SharedSignals {
     return report;
   }
 
+  // A `txn` (SSF 1.0 section 4.1.9, SHOULD): unique to the underlying event,
+  // and the same on every SET that event becomes. A caller emitting one event
+  // to several streams makes one and passes it to each transmit().
+  newTxn(): string {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.newTxn().');
+    log.debug('Leaving SharedSignals.newTxn().');
+    return this.deps.helpers.randomId(16);
+  }
+
   transmit(record: Json, options?: Json): Promise<TransmitReport> {
     const { log, audit, events, streams, subjects, transport,
             errorCodes } = this.deps;
@@ -523,7 +547,15 @@ class SharedSignals {
     log.debug('Entering SharedSignals.transmit(). ' + record.stream_id);
     const asked = options || {};
     const uri = String(asked.uri || '');
-    if (record.events_delivered.indexOf(uri) < 0) {
+    // SSF'S OWN TWO EVENTS ARE ABOUT THE PIPE, AND THE SPECIFICATION LETS THE
+    // TRANSMITTER SEND THEM WHETHER OR NOT THEY WERE AGREED (#144): a
+    // verification event "even if the event is not present in the
+    // events_supported, events_requested and / or events_delivered fields"
+    // (section 8.1.4), and a stream-updated event the same (section 8.1.5) —
+    // which it MUST send when it stops a stream, so refusing it for want of an
+    // agreement would make that MUST impossible to keep.
+    const pipeEvent = this.isPipeEvent(uri);
+    if (!pipeEvent && record.events_delivered.indexOf(uri) < 0) {
       log.debug('Leaving SharedSignals.transmit(). Not an agreed type.');
       return Promise.resolve(this.transmitRefused('STS-SSF-0026', record, uri,
         {
@@ -536,7 +568,7 @@ class SharedSignals {
     }
     // THE OWNER'S ENTRY, asked at the moment of delivery rather than only when
     // the stream was agreed — see ssf_streams.ts's allowedEventsFor().
-    if (!streams.deliversEvent(record, uri)) {
+    if (!pipeEvent && !streams.deliversEvent(record, uri)) {
       log.debug('Leaving SharedSignals.transmit(). Not allowed by the ' +
                 'owning application.');
       return Promise.resolve(this.transmitRefused('STS-SSF-0081', record, uri,
@@ -612,13 +644,23 @@ class SharedSignals {
                'transmitter publishes as default_subjects.' }));
     }
 
+    // SSF'S OWN TWO EVENTS NAME THE STREAM (#144). Sections 8.1.4.1 and 8.1.5:
+    // their top-level sub_id "MUST always be set to have a simple value of type
+    // opaque" whose id is the stream_id, and section 3.1 makes a top-level
+    // sub_id REQUIRED on every SSF event. They went out with none until
+    // 2026-09-22. It is added here, after the subject-list check above,
+    // because "the subject that identifies a stream itself is always
+    // implicitly added to the stream".
+    const subject = asked.subject ||
+      (pipeEvent ? { format: 'opaque', id: String(record.stream_id) } : null);
     const claims: Json = events.buildSet({
       issuer: record.iss,
       audience: record.aud,
       uri: uri,
       payload: asked.payload || {},
-      subject: asked.subject || null,
-      txn: asked.txn || '',
+      subject: subject,
+      // Every SET carries one (#144): an automatic emission never set it.
+      txn: asked.txn || this.newTxn(),
       toe: typeof asked.toe === 'number' ? asked.toe : undefined
     });
 
@@ -711,64 +753,37 @@ class SharedSignals {
           why: 'Queued. This is a poll stream, so nothing is sent until the ' +
                'receiver asks at ' + '/ssf/poll.' };
       }
-      record.counters.pushCalls += 1;
-      // Through the retrying door, which with `ssf.pushRetries` at its default
-      // of 0 is exactly one push — see ssf_http.ts.
-      return transport.pushSetWithRetries(record.delivery.endpoint_url, token,
-        {
-          authorizationHeader: record.delivery.authorization_header
-        }).then((result: Json): TransmitReport => {
-        // The push was a network round trip, so the same reason as above.
-        record = streams.liveRecord(record);
-        record.lastPushAt = iso();
-        if (result.ok) {
-          record.counters.delivered += 1;
-          entry.counted = true;
-          entry.deliveredAt = iso();
-          // Off the queue as ONE ROW'S DELETE — see ssf_streams.ts's `queued`.
-          streams.dequeue(record, entry.jti);
-          record.lastPushError = '';
-          streams.note(record, 'push', 'Delivered ' + claims.jti + ' to ' +
-            record.delivery.endpoint_url +
-            (result.why ? ' — ' + result.why : ''));
-          if (streams.notePushSuccess(record)) {
-            this.streamRevived(record, 'a push of ' + claims.jti +
-                                       ' was delivered');
-          }
-          log.debug('Leaving SharedSignals.transmit(). Pushed.');
-          return { ok: true, delivered: true, jti: claims.jti, token: token,
-            claims: claims, status: result.status, why: result.why };
-        }
-        record.counters.failed += 1;
-        record.lastPushError = result.why;
-        // -------------------------------------------------------------------
-        // UNDELIVERABLE: OFF THE LIVE QUEUE AND ONTO THE DEAD-LETTER QUEUE
-        // (2026-09-14), WITH NO LOG LINE AND NO AUDIT ROW OF ITS OWN.
-        //
-        // It stayed on the live queue "until somebody asks for it again", and
-        // nobody did; and every failure wrote an `ssf.event.refused` audit row
-        // whose code put a line in the service log — 30,698 of them in one
-        // second on the run this was built for, when a sweep of expired
-        // sessions revoked 1,398 sessions to twenty dead streams. The dead
-        // letter carries the reason, the code and the receiver's status for
-        // inspection, and the sweep logs ONE summary line of how many there
-        // were. `ssf.pushRetries` has already been spent: a final failure.
-        // -------------------------------------------------------------------
-        streams.dequeue(record, entry.jti);
-        streams.addDeadLetter(record, entry, { why: result.why,
-          errorCode: result.errorCode || 'STS-SSF-0032',
-          status: result.status });
-        const verdict: Json = streams.notePushFailure(record, result);
-        if (verdict.declaredDead) {
-          this.streamDeclaredDead(record, verdict.moved);
-        }
-        log.debug('Leaving SharedSignals.transmit(). The push failed; ' +
-                  'dead-lettered.');
-        return { ok: false, delivered: false, deadLettered: true,
-          jti: claims.jti, token: token,
-          claims: claims, status: result.status, err: result.err,
-          why: result.why };
-      });
+      // -------------------------------------------------------------------
+      // A PAUSED PUSH STREAM HOLDS WHAT IT IS GIVEN (#144, SSF 1.0 section
+      // 8.1.2.1): "The Transmitter MUST NOT transmit events over the stream"
+      // and "SHOULD hold any events it would have transmitted while paused".
+      // Until 2026-09-22 a paused push stream was pushed to exactly like an
+      // enabled one — the queue was kept and then POSTed anyway — so a
+      // receiver that paused its stream went on receiving. The SET stays on
+      // the queue and `drainHeld()` pushes it, in order, when the stream is
+      // enabled again.
+      //
+      // The one exception is a verification event on a stream THIS
+      // TRANSMITTER paused because its pushes were failing: that push is the
+      // probe that finds out whether the receiver is back (see transmit()'s
+      // dead-stream branch above), and holding it would keep the stream
+      // paused for ever.
+      // -------------------------------------------------------------------
+      if (record.status !== 'enabled' &&
+          !(record.pausedForHealth &&
+            uri === events.SSF_PREFIX + 'verification')) {
+        streams.note(record, 'held', 'Held ' + claims.jti + ': the stream ' +
+          'is ' + record.status + ', and it is pushed when the stream is ' +
+          'enabled again.');
+        log.debug('Leaving SharedSignals.transmit(). Held on a ' +
+                  record.status + ' push stream.');
+        return { ok: true, delivered: false, held: true, jti: claims.jti,
+          token: token, claims: claims,
+          why: 'Held. This push stream is ' + record.status + ', so the ' +
+               'event is kept and pushed when the stream is enabled ' +
+               'again.' };
+      }
+      return this.pushEntry(record, entry);
     }).catch((e): TransmitReport => {
       log.debug('Caught in SharedSignals.transmit(): ' +
                 ((e && e.message) || e));
@@ -781,6 +796,239 @@ class SharedSignals {
         why: 'The event could not be signed with ' +
              events.signingAlgorithm() + ': ' + e.message +
              '. Check ssf.signingAlgorithm.' }, 'error');
+    });
+  }
+
+  // Whether `uri` is one of SSF's own two events. See transmit().
+  isPipeEvent(uri: string): boolean {
+    const { log, events } = this.deps;
+    log.debug('Entering SharedSignals.isPipeEvent().');
+    log.debug('Leaving SharedSignals.isPipeEvent().');
+    return uri === events.SSF_PREFIX + 'verification' ||
+           uri === events.SSF_PREFIX + 'stream-updated';
+  }
+
+  // -------------------------------------------------------------------------
+  // PUSH ONE QUEUED SET. What transmit() does after queueing, and what
+  // drainHeld() does for each SET a paused stream held. The entry is on the
+  // queue already; a delivery takes it off, a failure moves it to the
+  // dead-letter queue. Never rejects.
+  // -------------------------------------------------------------------------
+  private pushEntry(record: Json, entry: Json): Promise<TransmitReport> {
+    const { log, streams, transport } = this.deps;
+    const { iso } = this.deps.helpers;
+    log.debug('Entering SharedSignals.pushEntry(). ' + entry.jti);
+    const claims = entry.claims;
+    const token = entry.token;
+    record.counters.pushCalls += 1;
+    log.debug('Leaving SharedSignals.pushEntry().');
+    // Through the retrying door, which with `ssf.pushRetries` at its default
+    // of 0 is exactly one push — see ssf_http.ts.
+    return transport.pushSetWithRetries(record.delivery.endpoint_url, token,
+      {
+        authorizationHeader: record.delivery.authorization_header
+      }).then((result: Json): TransmitReport => {
+      // The push was a network round trip, so the same reason as above.
+      record = streams.liveRecord(record);
+      record.lastPushAt = iso();
+      if (result.ok) {
+        record.counters.delivered += 1;
+        entry.counted = true;
+        entry.deliveredAt = iso();
+        // Off the queue as ONE ROW'S DELETE — see ssf_streams.ts's `queued`.
+        streams.dequeue(record, entry.jti);
+        record.lastPushError = '';
+        streams.note(record, 'push', 'Delivered ' + claims.jti + ' to ' +
+          record.delivery.endpoint_url +
+          (result.why ? ' — ' + result.why : ''));
+        if (streams.notePushSuccess(record)) {
+          this.streamRevived(record, 'a push of ' + claims.jti +
+                                     ' was delivered');
+        }
+        log.debug('SharedSignals.pushEntry(): pushed ' + claims.jti + '.');
+        return { ok: true, delivered: true, jti: claims.jti, token: token,
+          claims: claims, status: result.status, why: result.why };
+      }
+      record.counters.failed += 1;
+      record.lastPushError = result.why;
+      // ---------------------------------------------------------------------
+      // UNDELIVERABLE: OFF THE LIVE QUEUE AND ONTO THE DEAD-LETTER QUEUE
+      // (2026-09-14), WITH NO LOG LINE AND NO AUDIT ROW OF ITS OWN.
+      //
+      // It stayed on the live queue "until somebody asks for it again", and
+      // nobody did; and every failure wrote an `ssf.event.refused` audit row
+      // whose code put a line in the service log — 30,698 of them in one
+      // second on the run this was built for, when a sweep of expired
+      // sessions revoked 1,398 sessions to twenty dead streams. The dead
+      // letter carries the reason, the code and the receiver's status for
+      // inspection, and the sweep logs ONE summary line of how many there
+      // were. `ssf.pushRetries` has already been spent: a final failure.
+      // ---------------------------------------------------------------------
+      streams.dequeue(record, entry.jti);
+      streams.addDeadLetter(record, entry, { why: result.why,
+        errorCode: result.errorCode || 'STS-SSF-0032',
+        status: result.status });
+      const verdict: Json = streams.notePushFailure(record, result);
+      if (verdict.declaredDead) {
+        this.streamDeclaredDead(record, verdict.moved);
+      }
+      log.debug('SharedSignals.pushEntry(): the push of ' + claims.jti +
+                ' failed; dead-lettered.');
+      return { ok: false, delivered: false, deadLettered: true,
+        jti: claims.jti, token: token,
+        claims: claims, status: result.status, err: result.err,
+        why: result.why };
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // PUSH WHAT A PAUSED STREAM HELD, IN THE ORDER IT WAS QUEUED (#144).
+  //
+  // SSF 1.0 section 8.1.2.1: held events are transmitted "in the order of time
+  // that they were generated". One at a time, so the order on the wire is the
+  // queue's; a failure dead-letters that SET and the rest still go, which is
+  // what an individual push does too. Nothing happens on a poll stream — its
+  // receiver collects what is waiting — or on a stream that is not enabled or
+  // is dead.
+  // -------------------------------------------------------------------------
+  drainHeld(record: Json): Promise<Json> {
+    const { log, streams } = this.deps;
+    log.debug('Entering SharedSignals.drainHeld(). ' + record.stream_id);
+    const live: Json = streams.liveRecord(record);
+    if (live.delivery.method !== streams.DELIVERY_PUSH ||
+        live.status !== 'enabled' || streams.isDead(live)) {
+      log.debug('Leaving SharedSignals.drainHeld(). Nothing to push.');
+      return Promise.resolve({ pushed: 0, failed: 0 });
+    }
+    const waiting: Json[] = streams.queueOf(live);
+    let pushed = 0;
+    let failed = 0;
+    let chain: Promise<unknown> = Promise.resolve();
+    waiting.forEach((entry) => {
+      chain = chain.then(() => {
+        const now: Json = streams.liveRecord(live);
+        if (now.status !== 'enabled' || streams.isDead(now)) {
+          return null;
+        }
+        return this.pushEntry(now, entry).then(function (report) {
+          if (report.delivered) {
+            pushed += 1;
+          } else {
+            failed += 1;
+          }
+        });
+      });
+    });
+    log.debug('Leaving SharedSignals.drainHeld(). ' + waiting.length +
+              ' held.');
+    return chain.then(function () {
+      return { pushed: pushed, failed: failed };
+    });
+  }
+
+  // A verification event this transmitter decided to send (section 8.1.4),
+  // with no state (8.1.4.2). The console's Verify and the scheduler's
+  // `ssf.verificationEveryS` both come here. Never rejects.
+  transmitterVerification(record: Json): Promise<TransmitReport> {
+    const { log, events, streams } = this.deps;
+    log.debug('Entering SharedSignals.transmitterVerification(). ' +
+              record.stream_id);
+    record.lastTransmitterVerificationAt = Math.floor(Date.now() / 1000);
+    streams.touch(record);
+    log.debug('Leaving SharedSignals.transmitterVerification().');
+    return this.transmit(record, { uri: events.SSF_PREFIX + 'verification',
+                                   payload: {} });
+  }
+
+  // -------------------------------------------------------------------------
+  // CHANGE A STREAM'S STATUS, AND TELL ITS RECEIVER IN THE ORDER SSF 1.0
+  // SECTION 8.1.5 REQUIRES (#144, 2026-09-22).
+  //
+  // "If a Transmitter decides to change the status of an Event Stream from
+  // enabled to either paused or disabled, then the Transmitter MUST send this
+  // event to the Receiver BEFORE stopping the stream"; from paused or disabled
+  // to enabled it "MUST send this event to the Receiver UPON RE-ENABLING the
+  // stream". Until this date every path set the status first and transmitted
+  // afterwards — so a disable dropped the queue before the event could go, and
+  // a pause held (or, on push, wrongly pushed) the event that announced it.
+  //
+  // So: stopping (to paused or disabled, from whatever it was) transmits first
+  // and changes the status once that transmission has settled; enabling
+  // changes the status first, then transmits, then
+  // pushes what a paused push stream held. Every door that changes a status —
+  // the receiver's POST /ssf/status, the console and /admin-api, the
+  // inactivity timeout and a dead stream — comes through here, so none of them
+  // can get the order wrong. A change to the status the stream already has
+  // sends nothing: there is no update to announce.
+  //
+  // Resolves `{ ok, errors, stream, report }`; never rejects.
+  // -------------------------------------------------------------------------
+  changeStatus(record: Json, status: string, reason: string,
+               options?: Json): Promise<Json> {
+    const { log, events, streams } = this.deps;
+    log.debug('Entering SharedSignals.changeStatus(). ' + record.stream_id +
+              ' -> ' + status);
+    const opts = options || {};
+    if (events.STATUSES.indexOf(status) < 0) {
+      log.debug('Leaving SharedSignals.changeStatus(). Unknown status.');
+      return Promise.resolve({ ok: false, stream: null, report: null,
+        errors: ['"' + String(status) + '" is not a stream status. SSF 1.0 ' +
+          'section 8.1.2 defines ' + events.STATUSES.join(', ') + '.'] });
+    }
+    const before = record.status;
+    const announce = (stream: Json): Promise<TransmitReport> => {
+      log.debug('Entering announce().');
+      log.debug('Leaving announce().');
+      return this.transmit(stream, {
+        uri: events.SSF_PREFIX + 'stream-updated',
+        payload: { status: status,
+          reason: reason || 'set at ' + this.deps.helpers.iso() } });
+    };
+    const apply = (): Json => {
+      log.debug('Entering apply().');
+      const changed: Json = streams.setStatus(record.stream_id, status,
+                                              reason);
+      if (changed.ok) {
+        changed.stream.pausedForHealth = !!opts.forHealth &&
+                                         status !== 'enabled';
+        streams.touch(changed.stream);
+      }
+      log.debug('Leaving apply().');
+      return changed;
+    };
+    if (before === status) {
+      const same: Json = apply();
+      log.debug('Leaving SharedSignals.changeStatus(). Unchanged.');
+      return Promise.resolve({ ok: same.ok, errors: same.errors,
+        stream: same.stream, report: null });
+    }
+    // TOWARDS A STOP — from enabled, which section 8.1.5 requires, and from
+    // paused to disabled as well, since a disabled stream queues nothing and
+    // could never carry the announcement afterwards.
+    if (status !== 'enabled') {
+      log.debug('Leaving SharedSignals.changeStatus(). Announcing, then ' +
+                'stopping.');
+      return announce(record).then(function (report) {
+        const changed: Json = apply();
+        return { ok: changed.ok, errors: changed.errors,
+                 stream: changed.stream, report: report };
+      });
+    }
+    const changed: Json = apply();
+    if (!changed.ok) {
+      log.debug('Leaving SharedSignals.changeStatus(). Refused.');
+      return Promise.resolve({ ok: false, errors: changed.errors,
+        stream: null, report: null });
+    }
+    log.debug('Leaving SharedSignals.changeStatus(). Changed, then ' +
+              'announcing.');
+    return announce(changed.stream).then((report) => {
+      const done = status === 'enabled' ? this.drainHeld(changed.stream)
+                                        : Promise.resolve(null);
+      return done.then(function () {
+        return { ok: true, errors: [], stream: changed.stream,
+                 report: report };
+      });
     });
   }
 
@@ -801,6 +1049,27 @@ class SharedSignals {
     const streamId = record.stream_id;
     ssfCluster.transitionOnce('dead', streamId, () => {
       this.reportStreamDead(streamId, realmId, endpoint, moved, reason);
+      // A DEAD STREAM IS PAUSED, AND THE RECEIVER IS TOLD (#144). Its SETs
+      // were already going to the dead-letter queue rather than to it, which
+      // is this transmitter stopping updates "independently of an update
+      // request from a Receiver" — and SSF 1.0 section 8.1.2 says that MUST
+      // be announced with a stream-updated event. So it is a status change
+      // like any other, through changeStatus(): the announcement is attempted
+      // first (and, the stream being dead, lands on the dead-letter queue
+      // with the rest), then the stream is paused. `pausedForHealth` says it
+      // was this and not the receiver, so a revival enables it again and an
+      // operator's or receiver's own pause is never undone by one.
+      const live: Json = this.deps.streams.getStream(streamId);
+      if (live && live.status === 'enabled') {
+        this.changeStatus(live, 'paused', 'The transmitter cannot deliver to ' +
+          'this stream: its pushes have all failed for ' +
+          this.deps.config.value('ssf.deadStreamTimeoutS') + 's (' + reason +
+          ')', { forHealth: true }).then(function (changed: Json) {
+          log.debug('SharedSignals.streamDeclaredDead(): ' + streamId +
+                    (changed.ok ? ' paused' : ' not paused: ' +
+                     changed.errors.join(' ')));
+        });
+      }
     });
     log.debug('Leaving SharedSignals.streamDeclaredDead().');
   }
@@ -830,7 +1099,7 @@ class SharedSignals {
     const streamId = record.stream_id;
     const realmId = realms.currentId();
     // Once for the cluster, for streamDeclaredDead()'s reason.
-    ssfCluster.transitionOnce('revived', streamId, function () {
+    ssfCluster.transitionOnce('revived', streamId, () => {
       audit.audit({ action: 'ssf.stream.revived', category: 'signals',
         protocol: 'SSF', channel: 'http', outcome: 'success',
         target: streamId,
@@ -838,6 +1107,19 @@ class SharedSignals {
       log.info('ssf: stream ' + streamId + ' in the "' + realmId +
                '" realm is alive again (' + how + ') and is pushed to as ' +
                'before.');
+      // ENABLED AGAIN, AND ANNOUNCED (section 8.1.5: "MUST send this event to
+      // the Receiver upon re-enabling the stream") — but only a stream THIS
+      // TRANSMITTER paused for its health. What it held while paused is then
+      // pushed, in order.
+      const live: Json = this.deps.streams.getStream(streamId);
+      if (live && live.status === 'paused' && live.pausedForHealth) {
+        this.changeStatus(live, 'enabled', 'The receiver is reachable ' +
+          'again (' + how + ')').then(function (changed: Json) {
+          log.debug('SharedSignals.streamRevived(): ' + streamId +
+                    (changed.ok ? ' enabled' : ' not enabled: ' +
+                     changed.errors.join(' ')));
+        });
+      }
     });
     log.debug('Leaving SharedSignals.streamRevived().');
   }
@@ -991,24 +1273,153 @@ class SharedSignals {
     });
   }
 
+  // THE SWEEP IS A SCHEDULER JOB (#49 P5): `ssf.dead-letter-sweep`, a
+  // PER-PROCESS job every `ssf.deadLetterSweepS` — each process still sweeps,
+  // as it did on a timer of its own, because what it reports is its OWN: the
+  // SETs this process dead-lettered since its last sweep, and the monitoring
+  // page's sweep history. The part that must happen once — probing a dead
+  // stream — was already gated to one node (`ssfCluster.leadsProbes()`), and
+  // deleting an expired dead letter is idempotent. Registered by the wire
+  // step, once per process.
   scheduleSweep(): void {
-    const { log, config } = this.deps;
+    const { log } = this.deps;
     log.debug('Entering SharedSignals.scheduleSweep().');
-    const seconds = Math.max(5,
-                             Number(config.value('ssf.deadLetterSweepS')) ||
-                             60);
-    const again = () => {
-      this.scheduleSweep();
-    };
-    sweepTimer = setTimeout(() => {
-      this.sweepSignals().then(again, again);
-    }, seconds * 1000);
-    // A sweep must not keep a process that has finished everything else alive
-    // — `npm test` loads this file and would otherwise wait out the interval.
-    if (sweepTimer.unref) {
-      sweepTimer.unref();
+    const scheduler = require('../cluster/scheduler');
+    if (scheduler.job(SWEEP_JOB)) {
+      log.debug('Leaving SharedSignals.scheduleSweep(). Registered.');
+      return;
     }
-    log.debug('Leaving SharedSignals.scheduleSweep(). ' + seconds + 's.');
+    scheduler.register({
+      id: SWEEP_JOB,
+      title: 'Shared Signals dead-letter sweep',
+      describe: 'Deletes this process\'s expired dead letters, probes dead ' +
+                'streams that are due (one node only) and logs the summary ' +
+                'of what was dead-lettered since the last sweep.',
+      owner: 'ssf/ssf.ts',
+      kind: 'per-process',
+      everySetting: 'ssf.deadLetterSweepS', everySettingUnit: 's',
+      run: () => {
+        return this.sweepSignals().then(function () {
+          return { swept: true };
+        });
+      }
+    });
+    log.debug('Leaving SharedSignals.scheduleSweep(). On the scheduler.');
+  }
+
+
+  // -------------------------------------------------------------------------
+  // STREAM MAINTENANCE (#144, 2026-09-22): SSF 1.0 section 8.1.1's
+  // `inactivity_timeout` and section 8.1.4's transmitter-initiated
+  // verification, as ONE scheduler job — rcbj's rule that anything periodic
+  // is a job on `cluster/scheduler.ts` and nothing starts a timer of its own.
+  //
+  // A CLUSTER job, per REALM: a stream is shared by every node, so pausing
+  // it or verifying it is done once for the cluster, and each realm's streams
+  // are its own. Off while both settings are 0, which is the default — see
+  // `ssf.inactivityTimeoutS` for why a timeout is not on by default.
+  //
+  // This service's own two receiver streams are left alone by both halves:
+  // they have no remote receiver whose activity could be observed, and a
+  // verification event to one lands in an inbox page as noise.
+  // -------------------------------------------------------------------------
+  maintainStreams(nowSecOverride?: number): Promise<Json> {
+    const { log, config, streams } = this.deps;
+    log.debug('Entering SharedSignals.maintainStreams().');
+    const now = typeof nowSecOverride === 'number' ? nowSecOverride
+      : Math.floor(Date.now() / 1000);
+    const timeout = streams.inactivityTimeout();
+    const everyValue = Number(config.value('ssf.verificationEveryS'));
+    const every = Number.isFinite(everyValue) && everyValue > 0
+      ? Math.floor(everyValue) : 0;
+    const action = String(config.value('ssf.inactivityAction') || 'pause');
+    const summary: Json = { inactive: 0, verified: 0, streams: 0 };
+    const work: Promise<unknown>[] = [];
+    streams.listStreams().forEach((record: Json) => {
+      if (streams.isInternal(record)) {
+        return;
+      }
+      summary.streams += 1;
+      const idle = now - Number(record.lastActivityAt ||
+        Math.floor(Date.parse(record.createdAt || '') / 1000) || now);
+      if (timeout && idle >= timeout) {
+        if (action === 'delete') {
+          summary.inactive += 1;
+          streams.removeStream(record.stream_id);
+          this.deps.audit.audit({ action: 'ssf.stream.delete',
+            category: 'signals', protocol: 'SSF', channel: 'internal',
+            target: record.stream_id,
+            summary: 'A Shared Signals stream was deleted after ' + idle +
+              's with no activity from its receiver ' +
+              '(ssf.inactivityTimeoutS)' });
+          return;
+        }
+        const target = action === 'disable' ? 'disabled' : 'paused';
+        if (record.status === 'enabled' ||
+            (target === 'disabled' && record.status !== 'disabled')) {
+          summary.inactive += 1;
+          work.push(this.changeStatus(record, target, 'No activity from ' +
+            'the receiver for ' + idle + 's; the stream\'s ' +
+            'inactivity_timeout is ' + timeout + 's').then((changed: Json) => {
+            this.deps.audit.audit({ action: 'ssf.stream.status',
+              category: 'signals', protocol: 'SSF', channel: 'internal',
+              target: record.stream_id,
+              summary: 'The stream is now ' + target + ': inactive for ' +
+                idle + 's (ssf.inactivityTimeoutS)',
+              detail: { ok: changed.ok } });
+          }));
+        }
+        return;
+      }
+      if (every && record.status === 'enabled') {
+        const last = Number(record.lastTransmitterVerificationAt ||
+          Math.floor(Date.parse(record.createdAt || '') / 1000) || 0);
+        if (now - last >= every) {
+          summary.verified += 1;
+          work.push(this.transmitterVerification(record));
+        }
+      }
+    });
+    log.debug('Leaving SharedSignals.maintainStreams(). ' +
+              JSON.stringify(summary));
+    return Promise.all(work).then(function () {
+      return summary;
+    });
+  }
+
+  scheduleMaintenance(): void {
+    const { log, config } = this.deps;
+    log.debug('Entering SharedSignals.scheduleMaintenance().');
+    const scheduler = require('../cluster/scheduler');
+    if (scheduler.job(MAINTENANCE_JOB)) {
+      log.debug('Leaving SharedSignals.scheduleMaintenance(). Registered.');
+      return;
+    }
+    scheduler.register({
+      id: MAINTENANCE_JOB,
+      title: 'Shared Signals stream maintenance',
+      describe: 'Pauses, disables or deletes a stream whose receiver has ' +
+                'been inactive for ssf.inactivityTimeoutS (SSF 1.0 section ' +
+                '8.1.1), announcing a pause or disable with a stream-updated ' +
+                'event first, and sends a verification event to every ' +
+                'enabled stream that has had none from this transmitter for ' +
+                'ssf.verificationEveryS (section 8.1.4).',
+      owner: 'ssf/ssf.ts',
+      kind: 'cluster',
+      scope: 'realm',
+      everySetting: 'ssf.streamMaintenanceSweepS', everySettingUnit: 's',
+      off: function () {
+        return !Number(config.value('ssf.inactivityTimeoutS')) &&
+               !Number(config.value('ssf.verificationEveryS'))
+          ? 'ssf.inactivityTimeoutS and ssf.verificationEveryS are both 0'
+          : '';
+      },
+      run: () => {
+        return this.maintainStreams();
+      }
+    });
+    log.debug('Leaving SharedSignals.scheduleMaintenance(). On the ' +
+              'scheduler.');
   }
 
   // -------------------------------------------------------------------------
@@ -1048,7 +1459,10 @@ class SharedSignals {
     log.debug('Entering SharedSignals.metadata().');
     const base = this.ssfBase(req);
     const doc = {
-      spec_version: '1_0-final',
+      // SSF 1.0 section 7.1, whose example for the final specification is
+      // exactly this. It was '1_0-final' until 2026-09-22, a value no version
+      // of the specification uses.
+      spec_version: '1_0',
       issuer: this.issuerFor(req),
       // baseUrlOf() carries the realm prefix already; see issuerFor().
       jwks_uri: baseUrlOf(req) + '/oauth2/jwks',
@@ -1105,6 +1519,46 @@ class SharedSignals {
     return view;
   }
 
+  // -------------------------------------------------------------------------
+  // THE STREAM THIS CALLER NAMED, IF IT IS THEIRS (#144). Answers the 404 and
+  // returns null otherwise — the same 404, word for word, as for a stream that
+  // does not exist, because SSF 1.0's own sentence for it is "no Event Stream
+  // with the given stream_id FOR THIS EVENT RECEIVER", and two answers would
+  // tell a caller which ids exist. A stream that IS theirs has just seen
+  // receiver activity (section 8.1.1), which restarts its inactivity timeout.
+  // -------------------------------------------------------------------------
+  private ownedStream(res: Res, decision: Json, id: string,
+                      hint?: string): Json | null {
+    const { log, streams, errorCodes } = this.deps;
+    log.debug('Entering SharedSignals.ownedStream(). ' + id);
+    const record: Json = streams.streamOwnedBy(id, decision.principal);
+    if (!record) {
+      errorCodes.mark(res, 'STS-SSF-0014');
+      this.fail(res, 404, 'invalid_request',
+        'No stream with stream_id "' + id + '" for this receiver.' +
+        (hint ? ' ' + hint : ''));
+      log.debug('Leaving SharedSignals.ownedStream(). Not theirs, or none.');
+      return null;
+    }
+    streams.noteActivity(record);
+    log.debug('Leaving SharedSignals.ownedStream().');
+    return record;
+  }
+
+  // A csv setting read as a list, with `fallback` when it is empty — what
+  // `/ssf/receive`'s issuer and audience checks accept.
+  private receiveList(key: string, fallback: string): string[] {
+    const { log, config } = this.deps;
+    log.debug('Entering SharedSignals.receiveList(). ' + key);
+    const asked = config.value(key);
+    const list = (Array.isArray(asked) ? asked : String(asked || '')
+      .split(',')).map(function (one) {
+      return String(one).trim();
+    }).filter(Boolean);
+    log.debug('Leaving SharedSignals.receiveList().');
+    return list.length ? list : [fallback];
+  }
+
   private updateRoute(req: Req, res: Res, mode: string): void {
     const { log, audit, streams, errorCodes } = this.deps;
     log.debug('Entering SharedSignals.updateRoute(). ' + mode);
@@ -1125,12 +1579,9 @@ class SharedSignals {
       return;
     }
     const id = String(body.stream_id || req.query.stream_id || '');
-    const record: Json = streams.getStream(id);
+    const record: Json = this.ownedStream(res, decision, id,
+      'The id goes in the body as stream_id, or in the query string.');
     if (!record) {
-      errorCodes.mark(res, 'STS-SSF-0014');
-      this.fail(res, 404, 'invalid_request',
-        'No stream with stream_id "' + id + '". The id goes in the body as ' +
-        'stream_id, or in the query string.');
       log.debug('Leaving SharedSignals.updateRoute(). No such stream.');
       return;
     }
@@ -1171,6 +1622,68 @@ class SharedSignals {
          .set('Cache-Control', 'no-store')
          .send(JSON.stringify(this.metadata(req), null, 2));
       log.debug('Leaving GET ' + WELL_KNOWN + '.');
+    });
+
+    // -----------------------------------------------------------------------
+    // THE PATH-INSERTED FORM (#144, SSF 1.0 section 7.2): the document is at
+    // the issuer with "/.well-known/ssf-configuration" INSERTED between the
+    // host and the path — so a realm's transmitter, whose issuer is
+    // `https://host/realm/acme`, is discovered at
+    // `/.well-known/ssf-configuration/realm/acme`. Only the other form was
+    // served until 2026-09-22, and a receiver following the specification
+    // found a 404 for every realm but the default one.
+    //
+    // WHICH REALM is found by asking each one for its issuer and comparing
+    // paths, rather than by parsing `/realm/<id>` out of the URL: an operator
+    // may set `ssf.issuer` to a URL with a path of its own, and the document
+    // has to be where THAT issuer puts it. Section 7.2.4 then holds by
+    // construction — the `issuer` in what is returned is the one whose path
+    // was asked for.
+    // -----------------------------------------------------------------------
+    app.get(WELL_KNOWN + '/*', (req, res) => {
+      log.debug('Entering GET ' + WELL_KNOWN + '/* (the inserted-path form).');
+      const asked = '/' + String(req.params[0] || '').replace(/^\/+|\/+$/g,
+                                                                '');
+      const pathOf = (issuer: string): string => {
+        log.debug('Entering pathOf().');
+        let path = '';
+        try {
+          path = new URL(issuer).pathname;
+        } catch (e) {
+          log.debug('Caught in pathOf(): ' + ((e && e.message) || e));
+          // Not a URL; it matches nothing.
+          path = '';
+        }
+        log.debug('Leaving pathOf().');
+        return path.replace(/\/+$/, '');
+      };
+      const candidates = this.deps.realms.list();
+      let found: Json = null;
+      candidates.some((realm: Json) => {
+        return this.deps.realms.run(realm, () => {
+          const doc: Json = this.metadata(req);
+          if (pathOf(doc.issuer) === asked) {
+            found = doc;
+            return true;
+          }
+          return false;
+        });
+      });
+      if (!found) {
+        errorCodes.mark(res, 'STS-SSF-0103');
+        this.fail(res, 404, 'invalid_request',
+          'No transmitter here has an issuer whose path is "' + asked +
+          '". The document for an issuer with a path is at ' + WELL_KNOWN +
+          ' followed by that path (SSF 1.0 section 7.2); the default ' +
+          'realm\'s is ' + WELL_KNOWN + ' itself, and a realm\'s is ' +
+          WELL_KNOWN + '/realm/<id>.');
+        log.debug('Leaving GET ' + WELL_KNOWN + '/*. No such issuer.');
+        return;
+      }
+      res.status(200).type('application/json')
+         .set('Cache-Control', 'no-store')
+         .send(JSON.stringify(found, null, 2));
+      log.debug('Leaving GET ' + WELL_KNOWN + '/*. ' + found.issuer);
     });
 
     app.post('/ssf/stream', ssfCluster.spendGnapProof, (req, res) => {
@@ -1215,8 +1728,13 @@ class SharedSignals {
                                                  this.contextOf(req,
                                                                 decision));
       if (!created.ok) {
-        errorCodes.mark(res, 'STS-SSF-0013');
-        this.fail(res, 400, 'invalid_request', created.errors.join(' '));
+        // AT THE LIMIT IS A 403 (SSF 1.0 section 8.1.1.1, "if the Event
+        // Receiver is not allowed to create a stream"); anything else about
+        // the request is the 400 that section gives an unparseable one.
+        errorCodes.mark(res, created.limit ? 'STS-SSF-0101' : 'STS-SSF-0013');
+        this.fail(res, created.limit ? 403 : 400,
+                  created.limit ? 'access_denied' : 'invalid_request',
+                  created.errors.join(' '));
         log.debug('Leaving POST /ssf/stream. Refused.');
         return;
       }
@@ -1260,21 +1778,24 @@ class SharedSignals {
       }
       const id = String(req.query.stream_id || '');
       if (!id) {
-        const list = streams.listStreams().map((record) => {
-          return this.streamView(req, record, decision);
-        });
+        // "The stream configurations AVAILABLE TO THIS RECEIVER" (section
+        // 8.1.1.2) — its own, and an empty list when it has none. Until #144
+        // this was every stream in the realm, each with its
+        // authorization_header.
+        const list = streams.streamsOwnedBy(decision.principal)
+          .map((record) => {
+            streams.noteActivity(record);
+            return this.streamView(req, record, decision);
+          });
         res.status(200).type('application/json')
            .set('Cache-Control', 'no-store')
            .send(JSON.stringify(list, null, 2));
         log.debug('Leaving GET /ssf/stream. ' + list.length + ' stream(s).');
         return;
       }
-      const record: Json = streams.getStream(id);
+      const record: Json = this.ownedStream(res, decision, id,
+        'A GET with no stream_id lists every stream this receiver holds.');
       if (!record) {
-        errorCodes.mark(res, 'STS-SSF-0014');
-        this.fail(res, 404, 'invalid_request',
-          'No stream with stream_id "' + id + '". A GET with no stream_id ' +
-          'lists every stream this transmitter holds.');
         log.debug('Leaving GET /ssf/stream. No such stream.');
         return;
       }
@@ -1310,10 +1831,7 @@ class SharedSignals {
       }
       const body = this.jsonBody(req) || {};
       const id = String(body.stream_id || req.query.stream_id || '');
-      if (!streams.getStream(id)) {
-        errorCodes.mark(res, 'STS-SSF-0014');
-        this.fail(res, 404, 'invalid_request',
-          'No stream with stream_id "' + id + '".');
+      if (!this.ownedStream(res, decision, id)) {
         log.debug('Leaving DELETE /ssf/stream. No such stream.');
         return;
       }
@@ -1351,11 +1869,8 @@ class SharedSignals {
         return;
       }
       const id = String(req.query.stream_id || '');
-      const record: Json = streams.getStream(id);
+      const record: Json = this.ownedStream(res, decision, id);
       if (!record) {
-        errorCodes.mark(res, 'STS-SSF-0014');
-        this.fail(res, 404, 'invalid_request',
-          'No stream with stream_id "' + id + '".');
         log.debug('Leaving GET /ssf/status. No such stream.');
         return;
       }
@@ -1386,39 +1901,37 @@ class SharedSignals {
         return;
       }
       const id = String(body.stream_id || '');
-      const changed: Json = streams.setStatus(id, String(body.status || ''),
-                                              String(body.reason || ''));
-      if (!changed.ok) {
-        const status = streams.getStream(id) ? 400 : 404;
-        errorCodes.mark(res, status === 404 ? 'STS-SSF-0014' : 'STS-SSF-0016');
-        this.fail(res, status, 'invalid_request', changed.errors.join(' '));
-        log.debug('Leaving POST /ssf/status. Refused.');
+      const record: Json = this.ownedStream(res, decision, id);
+      if (!record) {
+        log.debug('Leaving POST /ssf/status. No such stream.');
         return;
       }
-      audit.audit({ action: 'ssf.stream.status', category: 'signals',
-        protocol: 'SSF', channel: 'http', actor: decision.principal,
-        target: id,
-        summary: 'The stream is now ' + changed.stream.status,
-        detail: { reason: changed.stream.statusReason } });
-      const answer = { stream_id: changed.stream.stream_id,
-        status: changed.stream.status, reason: changed.stream.statusReason };
-      // Tell the receiver IN BAND as well, if it agreed the type. A disabled
-      // stream cannot carry it — enqueue() refuses — and that is correct
-      // rather than a gap: there is nowhere for it to go and nothing to poll
-      // it from.
-      this.transmit(changed.stream, {
-        uri: events.SSF_PREFIX + 'stream-updated',
-        payload: { status: changed.stream.status,
-          reason: changed.stream.statusReason || 'set at ' + iso() }
-      }).then(function (report) {
-        log.debug('POST /ssf/status: the stream-updated event was ' +
-                  (report.ok ? 'transmitted'
-                             : 'not transmitted: ' + report.why));
+      // THROUGH changeStatus(), which sends the stream-updated event in the
+      // order section 8.1.5 requires: before the stream stops, and after it
+      // starts again. The answer waits for that, so what it reports is the
+      // status the stream really has.
+      this.changeStatus(record, String(body.status || ''),
+                        String(body.reason || '')).then((changed: Json) => {
+        if (!changed.ok) {
+          errorCodes.mark(res, 'STS-SSF-0016');
+          this.fail(res, 400, 'invalid_request', changed.errors.join(' '));
+          log.debug('Leaving POST /ssf/status. Refused.');
+          return;
+        }
+        audit.audit({ action: 'ssf.stream.status', category: 'signals',
+          protocol: 'SSF', channel: 'http', actor: decision.principal,
+          target: id,
+          summary: 'The stream is now ' + changed.stream.status,
+          detail: { reason: changed.stream.statusReason,
+            streamUpdated: changed.report
+              ? (changed.report.ok ? 'sent' : changed.report.why) : 'none' } });
+        res.status(200).type('application/json')
+           .set('Cache-Control', 'no-store')
+           .send(JSON.stringify({ stream_id: changed.stream.stream_id,
+             status: changed.stream.status,
+             reason: changed.stream.statusReason }, null, 2));
+        log.debug('Leaving POST /ssf/status. ' + changed.stream.status);
       });
-      res.status(200).type('application/json')
-         .set('Cache-Control', 'no-store')
-         .send(JSON.stringify(answer, null, 2));
-      log.debug('Leaving POST /ssf/status. ' + changed.stream.status);
     });
 
     // -----------------------------------------------------------------------
@@ -1454,10 +1967,7 @@ class SharedSignals {
         return;
       }
       const id = String(body.stream_id || '');
-      if (!streams.getStream(id)) {
-        errorCodes.mark(res, 'STS-SSF-0014');
-        this.fail(res, 404, 'invalid_request',
-          'No stream with stream_id "' + id + '".');
+      if (!this.ownedStream(res, decision, id)) {
         log.debug('Leaving POST /ssf/subjects/add. No such stream.');
         return;
       }
@@ -1501,10 +2011,7 @@ class SharedSignals {
         return;
       }
       const id = String(body.stream_id || '');
-      if (!streams.getStream(id)) {
-        errorCodes.mark(res, 'STS-SSF-0014');
-        this.fail(res, 404, 'invalid_request',
-          'No stream with stream_id "' + id + '".');
+      if (!this.ownedStream(res, decision, id)) {
         log.debug('Leaving POST /ssf/subjects/remove. No such stream.');
         return;
       }
@@ -1563,11 +2070,8 @@ class SharedSignals {
         return;
       }
       const id = String(body.stream_id || '');
-      const record: Json = streams.getStream(id);
+      const record: Json = this.ownedStream(res, decision, id);
       if (!record) {
-        errorCodes.mark(res, 'STS-SSF-0014');
-        this.fail(res, 404, 'invalid_request',
-          'No stream with stream_id "' + id + '".');
         log.debug('Leaving POST /ssf/verify. No such stream.');
         return;
       }
@@ -1586,29 +2090,47 @@ class SharedSignals {
         log.debug('Leaving POST /ssf/verify. Too soon.');
         return;
       }
+      if (record.status === 'disabled') {
+        // The one thing known now: a disabled stream "will not hold" events
+        // (section 8.1.2.1), so this request can never be honoured — which is
+        // section 8.1.4.2's "otherwise invalid".
+        errorCodes.mark(res, 'STS-SSF-0020');
+        this.fail(res, 400, 'invalid_request',
+          'Stream ' + id + ' is disabled, so no verification event can be ' +
+          'sent on it. Enable it with POST /ssf/status first.');
+        log.debug('Leaving POST /ssf/verify. Disabled.');
+        return;
+      }
       record.lastVerificationAt = nowSec();
       // Reported to the journal: `ssf.verificationRateLimit` reads it back,
       // and a worker that never learnt of it would let a receiver verify as
       // often as the pool had workers.
       streams.touch(record);
+      // -------------------------------------------------------------------
+      // 204 NOW, AND DELIVERY IS ASYNCHRONOUS (#144, SSF 1.0 section
+      // 8.1.4.2): a successful response "does not indicate that the
+      // Verification Event was transmitted successfully, only that the Event
+      // Transmitter has transmitted the event or will do so at some point in
+      // the future", and receivers "MUST NOT depend on the Verification Event
+      // being transmitted synchronously". Until 2026-09-22 this waited for
+      // the push and answered 400 when it failed, which is a receiver being
+      // taught to depend on exactly that. A failure now goes where every
+      // other failed push goes — the stream's dead-letter queue, its log and
+      // /admin/ssf — and a paused stream holds the event until it is
+      // enabled.
+      // -------------------------------------------------------------------
       this.transmit(record, {
         uri: events.SSF_PREFIX + 'verification',
         payload: typeof body.state === 'string' && body.state !== ''
           ? { state: body.state } : {}
-      }).then((report) => {
-        if (!report.ok) {
-          // A 202 was already the wrong answer here: the receiver asked
-          // whether the pipe works and the answer is no. The refusal names
-          // why, which is the whole value of the request.
-          errorCodes.mark(res, 'STS-SSF-0020');
-          this.fail(res, 400, 'invalid_request',
-            'The verification event was not delivered: ' + report.why);
-          log.debug('Leaving POST /ssf/verify. Not delivered.');
-          return;
-        }
-        res.status(204).set('Cache-Control', 'no-store').end();
-        log.debug('Leaving POST /ssf/verify. ' + report.jti);
+      }).then(function (report) {
+        log.debug('POST /ssf/verify: the verification event was ' +
+                  (report.delivered ? 'delivered'
+                    : (report.ok ? 'queued' : 'not delivered: ' +
+                                              report.why)));
       });
+      res.status(204).set('Cache-Control', 'no-store').end();
+      log.debug('Leaving POST /ssf/verify. Accepted.');
     });
 
     // -----------------------------------------------------------------------
@@ -1650,15 +2172,12 @@ class SharedSignals {
         return;
       }
       const id = String(body.stream_id || req.query.stream_id || '');
-      const record: Json = streams.getStream(id);
+      const record: Json = this.ownedStream(res, decision, id,
+        'RFC 8936 has no stream_id member — a real poll endpoint is per ' +
+        'stream, and this transmitter publishes one URL, so the id goes in ' +
+        'the body or the query string. The stream configuration says so in ' +
+        'delivery.endpoint_url.');
       if (!record) {
-        errorCodes.mark(res, 'STS-SSF-0014');
-        this.fail(res, 404, 'invalid_request',
-          'No stream with stream_id "' + id + '". RFC 8936 has no ' +
-          'stream_id member — a real poll endpoint is per stream, and this ' +
-          'transmitter publishes one URL, so the id goes in the body or the ' +
-          'query string. The stream configuration says so in ' +
-          'delivery.endpoint_url.');
         log.debug('Leaving POST /ssf/poll. No such stream.');
         return;
       }
@@ -1754,6 +2273,30 @@ class SharedSignals {
         log.debug('Leaving POST /ssf/receive. Signature required.');
         return;
       }
+      // ---------------------------------------------------------------------
+      // WHAT A RECEIVER MUST CHECK, AND THIS ONE DID NOT (#144): the explicit
+      // type (SSF 1.0 section 4.1.1), the issuer (section 4.1.6) and the
+      // audience (RFC 8417 section 2.2, SSF section 4.1.8). There is no
+      // stream behind this endpoint to read an issuer or an audience off, so
+      // they are settings — `ssf.receiveIssuers` and `ssf.receiveAudiences` —
+      // and each defaults to the one value this receiver can stand behind:
+      // this realm's own transmitter issuer (the only issuer whose key it
+      // holds) and this endpoint's own URL. Each failure is RECORDED and then
+      // refused, because what arrived is still the question a person at
+      // /admin/ssf is asking.
+      // ---------------------------------------------------------------------
+      const claims: Json = read.claims || {};
+      const acceptedIssuers = this.receiveList('ssf.receiveIssuers',
+                                               this.issuerFor(req));
+      const acceptedAudiences = this.receiveList('ssf.receiveAudiences',
+        this.ssfBase(req) + '/receive');
+      const typOk = !read.problem && receivers.isSetTyp(read.header);
+      const issuerOk = !read.problem &&
+        acceptedIssuers.indexOf(String(claims.iss || '')) >= 0;
+      const audienceOk = !read.problem &&
+        receivers.audienceNames(claims.aud).some(function (one: string) {
+          return acceptedAudiences.indexOf(one) >= 0;
+        });
       const entry = {
         at: iso(),
         token: token,
@@ -1764,13 +2307,19 @@ class SharedSignals {
         problem: read.problem,
         verified: verified,
         verificationNote: verificationNote,
+        typOk: typOk,
+        issuerOk: issuerOk,
+        audienceOk: audienceOk,
         summary: read.claims ? events.describeSet(read.claims) : null
       };
       streams.recordReceived(entry);
       audit.audit({ action: 'ssf.event.receive', category: 'signals',
         protocol: 'SSF', channel: 'http',
-        outcome: read.problem ? 'failure' : 'success',
-        errorCode: read.problem ? 'STS-SSF-0025' : '',
+        outcome: (read.problem || !typOk || !issuerOk || !audienceOk)
+          ? 'failure' : 'success',
+        errorCode: read.problem ? 'STS-SSF-0025'
+          : (!typOk ? 'STS-SSF-0104' : (!issuerOk ? 'STS-SSF-0105'
+            : (!audienceOk ? 'STS-SSF-0106' : ''))),
         target: String((read.claims || {}).jti || ''),
         summary: 'A Security Event Token was pushed at this service' +
           (verified ? ' and verified' : ''),
@@ -1782,6 +2331,37 @@ class SharedSignals {
           ' It has been recorded anyway and is on /admin/ssf, because what ' +
           'arrived is the question being asked.');
         log.debug('Leaving POST /ssf/receive. Malformed.');
+        return;
+      }
+      if (!typOk) {
+        errorCodes.mark(res, 'STS-SSF-0104');
+        this.fail(res, 400, 'invalid_request', 'The header\'s typ is ' +
+          JSON.stringify((read.header || {}).typ || null) + '; SSF 1.0 ' +
+          'section 4.1.1 requires "secevent+jwt". It has been recorded and ' +
+          'is on /admin/ssf.');
+        log.debug('Leaving POST /ssf/receive. Not explicitly typed.');
+        return;
+      }
+      if (!issuerOk) {
+        errorCodes.mark(res, 'STS-SSF-0105');
+        this.fail(res, 400, 'invalid_issuer', 'The iss is ' +
+          JSON.stringify(claims.iss || null) + ', and this receiver accepts ' +
+          acceptedIssuers.map(function (one) {
+            return JSON.stringify(one);
+          }).join(', ') + ' (ssf.receiveIssuers). It has been recorded and ' +
+          'is on /admin/ssf.');
+        log.debug('Leaving POST /ssf/receive. Wrong issuer.');
+        return;
+      }
+      if (!audienceOk) {
+        errorCodes.mark(res, 'STS-SSF-0106');
+        this.fail(res, 400, 'invalid_audience', 'The aud is ' +
+          JSON.stringify(claims.aud || null) + ', and this receiver answers ' +
+          'to ' + acceptedAudiences.map(function (one) {
+            return JSON.stringify(one);
+          }).join(', ') + ' (ssf.receiveAudiences). It has been recorded and ' +
+          'is on /admin/ssf.');
+        log.debug('Leaving POST /ssf/receive. Wrong audience.');
         return;
       }
       // 202 with an EMPTY body, which is what RFC 8935 section 2.3 says. A
@@ -2266,30 +2846,64 @@ class SharedSignals {
         errors: [] });
     }
     if (name === 'status') {
-      const changed: Json = streams.setStatus(id, String(asked.status || ''),
-                                        String(asked.reason || ''));
-      if (!changed.ok) {
-        log.debug('Leaving SharedSignals.consoleAction(). Refused.');
-        return this.actionRefused(streams.getStream(id) ? 'STS-SSF-0046'
-          : 'STS-SSF-0045', 'SSF', name, { ok: false, errors: changed.errors });
+      const record: Json = streams.getStream(id);
+      if (!record) {
+        log.debug('Leaving SharedSignals.consoleAction(). No such stream.');
+        return this.actionRefused('STS-SSF-0045', 'SSF', name, { ok: false,
+          errors: ['No stream with stream_id "' + id + '".'] });
       }
-      audit.audit({ action: 'ssf.stream.status', category: 'signals',
-        protocol: 'SSF', channel: 'http', target: id,
-        summary: 'The stream is now ' + changed.stream.status });
+      // A TRANSMITTER-INITIATED CHANGE, which is the case section 8.1.2 says
+      // MUST be announced — through changeStatus(), in the order 8.1.5 gives.
       log.debug("Leaving SharedSignals.consoleAction().");
-      return this.transmit(changed.stream, {
-        uri: events.SSF_PREFIX + 'stream-updated',
-        payload: { status: changed.stream.status,
-          reason: changed.stream.statusReason || 'set from the console' }
-      }).then((report) => {
-        log.debug('Leaving SharedSignals.consoleAction(). Status set.');
-        return { ok: true, errors: [],
-          message: 'Stream ' + id + ' is now ' + changed.stream.status + '. ' +
-            (report.ok
-              ? 'A stream-updated event was ' + (report.delivered
-                ? 'delivered.' : 'queued for the receiver to poll.')
-              : 'No stream-updated event went with it: ' + report.why),
-          report: report };
+      return this.changeStatus(record, String(asked.status || ''),
+        String(asked.reason || '') || 'set by an administrator')
+        .then((changed: Json) => {
+          if (!changed.ok) {
+            log.debug('Leaving SharedSignals.consoleAction(). Refused.');
+            return this.actionRefused('STS-SSF-0046', 'SSF', name,
+                                      { ok: false, errors: changed.errors });
+          }
+          audit.audit({ action: 'ssf.stream.status', category: 'signals',
+            protocol: 'SSF', channel: 'http', target: id,
+            summary: 'The stream is now ' + changed.stream.status });
+          const report: Json = changed.report;
+          log.debug('Leaving SharedSignals.consoleAction(). Status set.');
+          return { ok: true, errors: [],
+            message: 'Stream ' + id + ' is now ' + changed.stream.status +
+              '. ' + (!report ? 'It already was, so nothing was announced.'
+                : report.ok
+                  ? 'A stream-updated event was ' + (report.delivered
+                    ? 'delivered' + (changed.stream.status === 'enabled'
+                      ? '.' : ' before the stream stopped.')
+                    : 'queued for the receiver to poll.')
+                  : 'No stream-updated event went with it: ' + report.why),
+            report: report };
+        });
+    }
+    // A TRANSMITTER-INITIATED VERIFICATION EVENT (#144, SSF 1.0 section
+    // 8.1.4: "A Transmitter MAY send a Verification Event at any time"). No
+    // state: section 8.1.4.2 says a transmitter-initiated one MUST NOT carry
+    // one. `ssf.verificationEveryS` does the same on the scheduler.
+    if (name === 'verify') {
+      const record: Json = streams.getStream(id);
+      if (!record) {
+        log.debug('Leaving SharedSignals.consoleAction(). No such stream.');
+        return this.actionRefused('STS-SSF-0045', 'SSF', name, { ok: false,
+          errors: ['No stream with stream_id "' + id + '".'] });
+      }
+      log.debug("Leaving SharedSignals.consoleAction().");
+      return this.transmitterVerification(record).then((report: Json) => {
+        if (!report.ok) {
+          log.debug('Leaving SharedSignals.consoleAction(). Not sent.');
+          return this.actionRefused('STS-SSF-0102', 'SSF', name,
+            { ok: false, errors: [report.why], report: report });
+        }
+        log.debug('Leaving SharedSignals.consoleAction(). Verified.');
+        return { ok: true, errors: [], report: report,
+          message: 'A verification event with no state was ' +
+            (report.delivered ? 'delivered on ' : report.held
+              ? 'held (the stream is paused) on '
+              : 'queued for the receiver to poll on ') + id + '.' };
       });
     }
     if (name === 'transmit') {
@@ -2485,16 +3099,22 @@ class SharedSignals {
       return Promise.resolve({ sent: 0, streams: 0 });
     }
     log.debug("Leaving SharedSignals.caepAutoEmit().");
+    // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
+    const txn = this.newTxn();
     return Promise.all(candidates.map((record) => {
-      return this.transmit(record, { uri: due.uri, payload: due.payload,
+      return this.transmit(record, { txn: txn, uri: due.uri,
+        payload: due.payload,
         subject: due.subject, toe: due.payload.event_timestamp });
     })).then((reports) => {
       const sent = reports.filter((one) => {
         return one.ok;
       }).length;
-      log.info('caep: ' + due.uri.slice(events.CAEP_PREFIX.length) + ' for ' +
-               'session ' + due.row.sessionId + ' went to ' + sent + ' of ' +
-               candidates.length + ' stream(s).');
+      // AT debug (2026-09-21): one line per SESSION EVENT, and every SCIM
+      // request is a session — a bulk load wrote ten thousand of these. A
+      // stream that stops taking them is reported by the dead-letter summary.
+      log.debug('caep: ' + due.uri.slice(events.CAEP_PREFIX.length) + ' for ' +
+                'session ' + due.row.sessionId + ' went to ' + sent + ' of ' +
+                candidates.length + ' stream(s).');
       log.debug('Leaving SharedSignals.caepAutoEmit(). ' + sent + ' sent.');
       return { sent: sent, streams: candidates.length, reports: reports };
     }).catch((e) => {
@@ -2507,6 +3127,71 @@ class SharedSignals {
       log.error(errorCodes.tag('STS-SSF-0056') +
                 'caep: automatic emission failed: ' + e.message);
       log.debug('Leaving SharedSignals.caepAutoEmit(). Failed.');
+      return { sent: 0, streams: candidates.length, why: e.message };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A REALM'S SIGNING KEYS ROTATED (#42, rcbj's D4) — this service's own event,
+  // to every stream that delivers it, from `common/signing_rotation.ts` after
+  // the rotation has happened. It has no subject, so every stream that asked
+  // for the type gets it. Never throws: the rotation stands whatever happens
+  // to the notice of it.
+  // ---------------------------------------------------------------------------
+  signingKeyRotated(notice?: Json): Promise<EmitResult> {
+    const { log, events, streams, errorCodes, helpers } = this.deps;
+    log.debug('Entering SharedSignals.signingKeyRotated().');
+    if (!this.enabled()) {
+      log.debug('Leaving SharedSignals.signingKeyRotated(). SSF is off.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    const n = notice || {};
+    const uri = events.SIGNING_KEY_ROTATED;
+    let base = '';
+    try {
+      base = helpers.baseUrlOf(null);
+    } catch (e) {
+      // No public base URL outside a request: the two links are optional
+      // members, and the event goes without them.
+      log.debug('Caught in SharedSignals.signingKeyRotated(): ' +
+                ((e && e.message) || e));
+      base = '';
+    }
+    const payload = events.EVENT_BY_URI[uri].generate({
+      realm: n.realm, reason: n.reason,
+      rotated: (n.rotated || []).map(function (r: Json): string {
+        return r.unit + ' ' + r.from + ' -> ' + r.to;
+      }).join(', '),
+      jwks_uri: base ? base + '/oauth2/jwks' : '',
+      crypto_metadata_uri: base ? base + '/crypto/metadata.json' : ''
+    });
+    const candidates = streams.listStreams().filter((record: Json) => {
+      return streams.deliversEvent(record, uri);
+    });
+    if (!candidates.length) {
+      log.debug('Leaving SharedSignals.signingKeyRotated(). No stream ' +
+                'takes it.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    log.debug('Leaving SharedSignals.signingKeyRotated().');
+    // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
+    const txn = this.newTxn();
+    return Promise.all(candidates.map((record: Json) => {
+      return this.transmit(record, { txn: txn, uri: uri, payload: payload,
+        toe: payload.event_timestamp });
+    })).then((reports) => {
+      const sent = reports.filter((one) => {
+        return one.ok;
+      }).length;
+      log.info('ssf: signing-key-rotated for the "' + payload.realm + '" ' +
+               'realm went to ' + sent + ' of ' + candidates.length +
+               ' stream(s).');
+      return { sent: sent, streams: candidates.length, reports: reports };
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.signingKeyRotated(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-SSF-0100') + 'ssf: the ' +
+                'signing-key-rotated event could not be sent: ' + e.message);
       return { sent: 0, streams: candidates.length, why: e.message };
     });
   }
@@ -2609,18 +3294,19 @@ class SharedSignals {
       summary: 'A CAEP ' + row.name + ' was emitted for ' + protocol,
       detail: { type: uri, streams: candidates.length, via: protocol } });
     log.debug("Leaving SharedSignals.emitProtocolEvent().");
+    // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
+    const txn = this.newTxn();
     return Promise.all(candidates.map((record) => {
-      return this.transmit(record, { uri: uri, payload: payload,
+      return this.transmit(record, { txn: txn, uri: uri, payload: payload,
         subject: subject,
         toe: payload.event_timestamp });
     })).then((reports) => {
       const sent = reports.filter((one) => {
         return one.ok;
       }).length;
-      log.info('ssf: ' + row.name + ' from ' + protocol + ' went to ' + sent +
-          ' ' +
-          'of ' +
-               candidates.length + ' stream(s).');
+      // AT debug (2026-09-21), for the reason caepAutoEmit() gives.
+      log.debug('ssf: ' + row.name + ' from ' + protocol + ' went to ' + sent +
+                ' of ' + candidates.length + ' stream(s).');
       log.debug('Leaving SharedSignals.emitProtocolEvent(). ' +
                 '' + sent + ' sent.');
       return { sent: sent, streams: candidates.length, reports: reports };
@@ -2659,15 +3345,14 @@ class SharedSignals {
   // question an operator actually arrives with once more than one receiver
   // exists: **is the receiver I am testing getting anything, and what.**
   //
-  // **THE JOIN IS `createdBy` AND NOT `aud`, AND THAT IS WORTH KNOWING BECAUSE
-  // THE OBVIOUS ONE IS WRONG.** A stream's `aud` is what the RECEIVER asked its
-  // SETs to be addressed to — required, never defaulted, and deliberately not
-  // taken from whoever authenticated (see `normaliseAudience()`). The
-  // application entry is created from the principal that CREATED the stream, so
-  // `createdBy` is the field that names the same thing the registry does. They
-  // are usually the same string, and a receiver that sends a different `aud` is
-  // doing something legitimate that this table then shows: the row carries
-  // both.
+  // **THE JOIN IS `createdBy` AND NOT `aud`.** A stream's `aud` is assigned by
+  // this transmitter from the receiver's identity (#144, `assignAudience()`):
+  // the identifier it authenticated as, or another name its application is
+  // registered under. The application entry is created from the principal
+  // that CREATED the stream, so `createdBy` is the field that names the same
+  // thing the registry does. They are usually the same string, and a receiver
+  // that chose one of its other names is doing something legitimate that this
+  // table then shows: the row carries both.
   //
   // **AN APPLICATION WITH NO STREAM IS A ROW AND NOT AN OMISSION.** It is the
   // commonest state a receiver under test is in — declared here, nothing agreed
@@ -2946,8 +3631,10 @@ class SharedSignals {
           : applied.errors.join(' ') });
     }
     log.debug("Leaving SharedSignals.caepEmit().");
+    // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
+    const txn = this.newTxn();
     return Promise.all(candidates.map((record) => {
-      return this.transmit(record, { uri: uri, payload: payload,
+      return this.transmit(record, { txn: txn, uri: uri, payload: payload,
         subject: subject,
         toe: payload.event_timestamp });
     })).then((reports) => {
@@ -3117,8 +3804,11 @@ class SharedSignals {
       return Promise.resolve({ sent: 0, streams: 0, uri: due.uri });
     }
     log.debug("Leaving SharedSignals.sendOneRiscEvent().");
+    // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
+    const txn = this.newTxn();
     return Promise.all(candidates.map((record) => {
-      return this.transmit(record, { uri: due.uri, payload: due.payload,
+      return this.transmit(record, { txn: txn, uri: due.uri,
+        payload: due.payload,
         subject: due.subject, toe: due.payload.event_timestamp });
     })).then((reports) => {
       const sent = reports.filter((one) => {
@@ -3251,9 +3941,9 @@ class SharedSignals {
                                why: verdict.errors.join(' ') });
     }
     // The person's own subject, as every token names them (2026-09-14).
-    const subject = { user: { format: 'issuer_subject_id',
+    const subject = subjects.complexSubject({ user: { format: 'iss_sub',
       iss: this.issuerFor(null),
-      sub: helpersSubjectFor(username) || username } };
+      sub: helpersSubjectFor(username) || username } });
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
              streams.streamCoversSubject(record, subject);
@@ -3274,8 +3964,10 @@ class SharedSignals {
       return Promise.resolve({ sent: 0, streams: 0 });
     }
     log.debug('Leaving SharedSignals.emitCredentialChange().');
+    // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
+    const txn = this.newTxn();
     return Promise.all(candidates.map((record) => {
-      return this.transmit(record, { uri: uri, payload: payload,
+      return this.transmit(record, { txn: txn, uri: uri, payload: payload,
         subject: subject,
         toe: payload.event_timestamp });
     })).then((reports) => {
@@ -3613,8 +4305,10 @@ class SharedSignals {
           : applied.errors.join(' ') });
     }
     log.debug("Leaving SharedSignals.riscEmit().");
+    // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
+    const txn = this.newTxn();
     return Promise.all(candidates.map((record) => {
-      return this.transmit(record, { uri: uri, payload: payload,
+      return this.transmit(record, { txn: txn, uri: uri, payload: payload,
         subject: subject,
         toe: payload.event_timestamp });
     })).then((reports) => {
@@ -3875,6 +4569,7 @@ class SharedSignals {
   static wire(instance: SharedSignals): void {
     helpers.log.debug('Entering SharedSignals.wire().');
     instance.scheduleSweep();
+    instance.scheduleMaintenance();
     instance.provideCapability();
     instance.installHooks();
     instance.seedOwnReceivers();
@@ -3912,11 +4607,18 @@ export = {
   metadata: slot.forward('metadata'),
   description: slot.forward('description'),
   transmit: slot.forward('transmit'),
+  // #144: every status change in section 8.1.5's order, the held-SET drain,
+  // and the stream-maintenance job's body.
+  changeStatus: slot.forward('changeStatus'),
+  drainHeld: slot.forward('drainHeld'),
+  maintainStreams: slot.forward('maintainStreams'),
+  transmitterVerification: slot.forward('transmitterVerification'),
   sweepSignals: slot.forward('sweepSignals'),
   consoleReport: slot.forward('consoleReport'),
   consoleAction: slot.forward('consoleAction'),
   CONSOLE_ACTIONS: SharedSignals.CONSOLE_ACTIONS,
   caepAutoEmit: slot.forward('caepAutoEmit'),
+  signingKeyRotated: slot.forward('signingKeyRotated'),
   emitProtocolEvent: slot.forward('emitProtocolEvent'),
   caepReport: slot.forward('caepReport'),
   caepAction: slot.forward('caepAction'),

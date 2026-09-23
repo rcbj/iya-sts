@@ -1402,9 +1402,9 @@ const SECTIONS = [
                'href="/admin/users">Users</a>.' },
       { path: '/admin/backup-codes', label: 'Recovery codes',
         blurb: 'The way back in when the second factor is not to hand ' +
-               '&mdash; a set of single-use codes issued AUTOMATICALLY, and ' +
-               'ONCE, the first time somebody enrols an authenticator app or ' +
-               'a security key in the <code>mfa</code> role. <strong>The ' +
+               '&mdash; a set of single-use codes a person generates for ' +
+               'themselves, standing in for an authenticator app or a ' +
+               'security key in the <code>mfa</code> role. <strong>The ' +
                'only mechanism on this console that no specification ' +
                'defines</strong>: there is no RFC for a recovery code, so ' +
                'every decision behind it is this service\'s own and ' +
@@ -1480,7 +1480,7 @@ const SECTIONS = [
                '<a href="/admin/groups">Groups</a>; this page is the ' +
                'directory itself.' },
       { path: '/admin/wstrust', label: 'WS-Trust',
-        blurb: 'The security token service at <code>/wstrust</code>, ' +
+        blurb: 'The security token service at <code>/sts</code>, ' +
                'WS-Trust 1.0 to 1.4, and the one setting it has of its own — ' +
                'who its tokens say issued them. What an assertion CONTAINS ' +
                'is the SAML pages next door, because the assertion is built ' +
@@ -1529,16 +1529,24 @@ const SECTIONS = [
                'project\'s own PKI code, vendored byte-identical, so a ' +
                'certificate issued here and one issued on its PKI / X.509 ' +
                'page are built by one encoder.' },
-      // CERTIFICATE ENROLLMENT (2026-09-13): the three protocols a device, a
-      // person or an application asks the certificate authority above for a
-      // certificate over. Grouped, because the three pages answer one
-      // question for three wire formats; each is drawn by its own family
-      // module (acme/, est/, scep/) and each has a Monitoring twin.
-      { title: 'Certificate enrollment',
-        what: 'ACME, EST and SCEP issue from this realm\'s certificate ' +
-              'authority to the person or application that authenticated — ' +
-              'or, for a holder of Admin Write, to any entry in the realm — ' +
-              'and keep every certificate on the entry it names.',
+      // CERT ISSUANCE (2026-09-13 as *Certificate enrollment*; RENAMED AND
+      // WIDENED 2026-09-22 at rcbj's ask): every protocol by which something
+      // asks the certificate authority above for a certificate. It was the
+      // three enrollment protocols, with SPIFFE a group of its own beneath
+      // them; SPIFFE is IN it now, because an X509-SVID is a certificate this
+      // realm's SPIFFE Issuing CA issues (`common/pki.js`) and a reader who
+      // has just read PKI is looking for every way this service hands one
+      // out, not for three of the four. Each page is still drawn by its own
+      // family module (acme/, est/, scep/, spiffe/); the three enrollment
+      // pages have a Monitoring twin, grouped there under the same heading.
+      { title: 'Cert issuance',
+        what: 'ACME, EST, SCEP and SPIFFE all issue from this realm\'s ' +
+              'certificate authority. The three enrollment protocols issue ' +
+              'to the person or application that authenticated — or, for a ' +
+              'holder of Admin Write, to any entry in the realm — and keep ' +
+              'every certificate on the entry it names; SPIFFE issues an ' +
+              'X509-SVID to a WORKLOAD, against a registration entry rather ' +
+              'than a directory identity.',
         items: [
           // ===== ACME section row (acme/acme_admin.ts) =====
           { path: '/admin/acme', label: 'ACME',
@@ -1557,18 +1565,8 @@ const SECTIONS = [
             blurb: 'Simple Certificate Enrolment Protocol (RFC 8894): ' +
                    'GetCACaps, GetCACert and PKIOperation over CMS, the RA ' +
                    'certificate, and single-use challenge passwords issued ' +
-                   'for one entry and one profile.' }
-        ] },
-      // SPIFFE, BESIDE THE OTHER CERTIFICATE PROTOCOLS (moved 2026-09-13, at
-      // rcbj's ask, from between Verifiable Credentials and XACML). An
-      // X509-SVID is a certificate this realm's SPIFFE Issuing CA issues
-      // (common/pki.js), so the reader who has just read PKI and the three
-      // enrollment protocols is looking for the fourth way this service
-      // hands out a certificate, and the TLS pages below verify them.
-      { title: 'SPIFFE',
-        what: 'Workload identity: the trust domain, the entries that decide ' +
-              'what a workload gets, and the agents that ask for it.',
-        items: [
+                   'for one entry and one profile.' },
+          // ===== SPIFFE's three pages (spiffe/spiffe_server.ts) =====
           { path: '/admin/spiffe', label: 'SPIFFE',
             blurb: 'The trust domain, the signing authority behind every ' +
                    'X509-SVID and JWT-SVID, the four sockets the Workload ' +
@@ -1576,9 +1574,9 @@ const SECTIONS = [
                    'at the Workload API is identified — the ' +
                    '<code>transport:</code>, <code>endpoint:</code> and ' +
                    '<code>peer:</code> selectors, and whether an ASSERTED ' +
-                   'one is believed. This service attests no workload and no ' +
-                   'node; that is the one thing on this page that no setting ' +
-                   'turns on.' },
+                   'one is believed. A caller on the Unix socket is ' +
+                   'ATTESTED (unix, docker, k8s) and a caller over TCP is ' +
+                   'not; an agent is attested by its node attestor.' },
           { path: '/admin/spiffe/entries', label: 'Registration entries',
             blurb: 'Which workload gets which SPIFFE ID, and what an SVID ' +
                    'issued against that entry carries. The store is the ' +
@@ -1593,7 +1591,8 @@ const SECTIONS = [
                    'and when. These entries are a RECORD rather than ' +
                    'configuration — this service wrote all of it when the ' +
                    'agent attested — which is why nothing on an agent is ' +
-                   'editable and the ban is the only control.' } ] },
+                   'editable and the ban is the only control.' },
+        ] },
       { path: '/admin/tls', label: 'TLS / mutual TLS',
         blurb: 'The certificate the main port and LDAPS 636 present, ' +
                'regenerated on every start, and what this service makes of a ' +
@@ -1608,15 +1607,16 @@ const SECTIONS = [
       // Beside the certificate it configures, and UNGROUPED: a `TLS` heading
       // over `TLS / mutual TLS` would say the label twice.
       { path: '/admin/tls/trust', label: 'Client-certificate truststore',
-        blurb: 'Every anchor LDAPS 636 and the main port verify ' +
-               'a client certificate against — which, since a verified ' +
-               'certificate is an identity here, is the list of whose ' +
-               'certificates this service believes. Each row says whether it ' +
-               'came from <code>tls.trustAnchorsFile</code> or was added ' +
-               'while the process was running; add PEM certificates or ' +
-               'remove one row at a time, in either mode. Nothing here is ' +
-               'persisted, and there is deliberately no button that empties ' +
-               'it.' }
+        blurb: 'Every anchor the main port verifies a client ' +
+               'certificate against (LDAPS 636 asks for none) — which, since ' +
+               'a verified certificate is an identity here, is the list of ' +
+               'whose certificates this service believes. Each row says ' +
+               'whether it came from <code>tls.trustAnchorsFile</code> or was ' +
+               'added while the process was running; add PEM certificates or ' +
+               'remove one row at a time, in either mode. An anchor added ' +
+               'here is kept in the directory (<code>ou=trustAnchors</code>), ' +
+               'so it survives a restart and reaches every process, and there ' +
+               'is deliberately no button that empties it.' }
     ] },
   { title: 'Directory',
     what: 'The embedded LDAP directory, and the identities this service has ' +
@@ -2192,26 +2192,40 @@ const SECTIONS = [
                'revocations, failed key proofs, introspections and ' +
                'registrations, and the GNAP error codes it was answered ' +
                'with. No reset: the durable record is the Audit log.' },
-      // CERTIFICATE ENROLLMENT TRAFFIC (2026-09-13): filed here by the
-      // question each page answers, beside the other protocol traffic pages.
-      // ===== ACME monitoring row =====
-      { path: '/admin/acme/monitor', label: 'ACME enrollments',
-        blurb: 'What the ACME server has done in this realm: requests by ' +
-               'operation, certificates issued and revoked, refusals by ' +
-               'error code, the profiles asked for, the accounts and EAB ' +
-               'keys that asked, and the most recent requests.' },
-      // ===== EST monitoring row =====
-      { path: '/admin/est/monitor', label: 'EST enrollments',
-        blurb: 'What the EST server has done in this realm: requests by ' +
-               'operation, certificates issued (and server-generated keys), ' +
-               'refusals by error code, the profiles asked for, who ' +
-               'authenticated and how, and the most recent requests.' },
-      // ===== SCEP monitoring row =====
-      { path: '/admin/scep/monitor', label: 'SCEP enrollments',
-        blurb: 'What the SCEP server has done in this realm: GetCACaps, ' +
-               'GetCACert and PKIOperation counts, certificates issued, ' +
-               'challenges created and redeemed, refusals by error code and ' +
-               'failInfo, and the most recent requests.' },
+      // CERT ISSUANCE TRAFFIC (2026-09-13; GROUPED 2026-09-22 at rcbj's ask,
+      // under the heading its Protocols counterpart carries). Three flat rows
+      // sat here beside the other traffic pages, which read as three
+      // unrelated protocols rather than as one question — *what has been
+      // issued, and to whom* — asked over three wire formats. **SPIFFE is
+      // NOT in this group**, unlike the Protocols one: it has no monitoring
+      // page, and a heading listing three of four families is the drift a
+      // reader cannot see. Adding one puts it here.
+      { title: 'Cert issuance',
+        what: 'What each enrollment protocol has done in this realm — the ' +
+              'requests, the certificates issued, and the refusals with the ' +
+              'code each was answered with. The durable record is the Audit ' +
+              'log; these counters are this process\'s own.',
+        items: [
+          // ===== ACME monitoring row =====
+          { path: '/admin/acme/monitor', label: 'ACME enrollments',
+            blurb: 'What the ACME server has done in this realm: requests ' +
+                   'by operation, certificates issued and revoked, refusals ' +
+                   'by error code, the profiles asked for, the accounts and ' +
+                   'EAB keys that asked, and the most recent requests.' },
+          // ===== EST monitoring row =====
+          { path: '/admin/est/monitor', label: 'EST enrollments',
+            blurb: 'What the EST server has done in this realm: requests by ' +
+                   'operation, certificates issued (and server-generated ' +
+                   'keys), refusals by error code, the profiles asked for, ' +
+                   'who authenticated and how, and the most recent ' +
+                   'requests.' },
+          // ===== SCEP monitoring row =====
+          { path: '/admin/scep/monitor', label: 'SCEP enrollments',
+            blurb: 'What the SCEP server has done in this realm: GetCACaps, ' +
+                   'GetCACert and PKIOperation counts, certificates issued, ' +
+                   'challenges created and redeemed, refusals by error code ' +
+                   'and failInfo, and the most recent requests.' }
+        ] },
       // THE AUTHORIZATION SERVER'S OWN TRAFFIC (2026-09-13), filed here and
       // not under Protocols beside `/admin/oauth2` for the XACML monitor's
       // reason: that page is what the server is CONFIGURED to do and this is
@@ -2385,6 +2399,21 @@ const SECTIONS = [
                'and no control: a cache is emptied by the settings that ' +
                'bound it, not by a button. The figures are the answering ' +
                'process\'s own.' },
+      // THE SCHEDULER (2026-09-22, #49), after the caches and before the
+      // audit log: the last page whose subject is the process itself, and the
+      // one that says whether the background work is being DONE. Drawn by
+      // `admin-ui/scheduler_admin.ts` out of `cluster/scheduler.ts`.
+      { path: '/admin/scheduler', label: 'Scheduler',
+        blurb: 'Every periodic job this service runs &mdash; the ' +
+               'session-expiry sweep, the CRL directory refresh, and every ' +
+               'job registered after them &mdash; with its schedule, its ' +
+               'last run and how it ended, and the time to its next run as ' +
+               'a duration and an absolute time in UTC by the database\'s ' +
+               'clock. <strong>A cluster job runs once for the whole ' +
+               'service</strong>, on the scheduler\'s leader, which the ' +
+               'page names; a per-process job has a row per process. ' +
+               'Admin Write may run a job now, and on a cluster may ask ' +
+               'the leader to hand the scheduler to another node.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +
@@ -14267,7 +14296,8 @@ class AdminConsole {
     const back = named
       ? '/admin/applications' + queryWith(listView, { application: named }) +
         // Back to the section the button was in, which is four screens down.
-        (String(body.action || '') === 'regenerate-secret' ? '#credentials'
+        (String(body.action || '') === 'regenerate-secret' ||
+         String(body.action || '') === 'rotate-secret' ? '#credentials'
           : (String(body.action || '') === 'issue-software-statement'
             ? '#software-statements'
             : (String(body.action || '') === 'revoke-tls-client-certificate' ||
@@ -14490,6 +14520,33 @@ class AdminConsole {
                    'application is seen.' };
   }
 
+  // THE LIST'S EXPIRING-SECRET MARK (#49 P5): a client secret that has
+  // expired, or expires within oauth2.clientSecretExpiryWarningDays — the
+  // same two the daily job oauth2.client-secret-expiry warns about.
+  secretExpiryMark(row) {
+    const { log, applications, config } = this.deps;
+    log.debug("Entering AdminConsole.secretExpiryMark().");
+    const record = applications.get(row.identifier);
+    const fields = (record && record.fields) || {};
+    const expiresAt = fields.oauthClientSecret
+      ? applications.secretExpiryOf(fields) : 0;
+    if (!expiresAt) {
+      log.debug("Leaving AdminConsole.secretExpiryMark(). None.");
+      return '';
+    }
+    const nowS = Math.floor(Date.now() / 1000);
+    const warnS = Number(config.value('oauth2.clientSecretExpiryWarningDays')) *
+                  86400;
+    log.debug("Leaving AdminConsole.secretExpiryMark().");
+    return expiresAt <= nowS
+      ? '<div class="sub warn">Client secret EXPIRED ' +
+        this.esc(new Date(expiresAt * 1000).toISOString()) + '</div>'
+      : expiresAt - nowS <= warnS
+        ? '<div class="sub warn">Client secret expires ' +
+          this.esc(new Date(expiresAt * 1000).toISOString()) + '</div>'
+        : '';
+  }
+
   applicationsListPage(req) {
     const { log, adminViews, queryWith, applications } = this.deps;
     const self = this;
@@ -14525,7 +14582,8 @@ class AdminConsole {
           (row.identifier === row.dnLabel ? '' :
             ' &mdash; the identifier is too long for a readable RDN, so the ' +
             '<code>cn</code> is a digest of it') + '</div>' : '') +
-        '</td><td>' + self.esc(row.name) + '</td>' +
+        '</td><td>' + self.esc(row.name) + self.secretExpiryMark(row) +
+        '</td>' +
         '<td>' + self.applicationKindCells(row) + '</td>' +
         // BOTH PROTOCOL LISTS IN ONE CELL, and the declared half is labelled
         // rather than run in with the other. An application created by hand has
@@ -15292,7 +15350,25 @@ class AdminConsole {
                    : 'Generate a client secret') + '</button>' +
       '<span class="sub">' + (secret.held
         ? 'The current secret stops working immediately.'
-        : 'This application holds none yet.') + '</span></div></form>';
+        : 'This application holds none yet.') + '</span></div></form>' +
+      // ROTATION WITH AN OVERLAP (#49 P5): the one to use for a client in
+      // service — the old secret keeps working while it changes over.
+      (secret.held
+        ? '<form method="post" action="/admin/applications">' + carryBack +
+          '<div class="formrow">' + hidden('action', 'rotate-secret') +
+          hidden('application', id) +
+          '<button type="submit">Rotate the client secret</button>' +
+          '<span class="sub">A new secret; the current one goes on working ' +
+          'for oauth2.clientSecretOverlapS so the client can change over.' +
+          (secret.previousUntil
+            ? ' The secret an earlier rotation replaced works until ' +
+              this.esc(new Date(secret.previousUntil).toISOString()) + '.'
+            : '') +
+          (secret.expiresAt
+            ? ' The current secret expires at ' +
+              this.esc(new Date(secret.expiresAt * 1000).toISOString()) + '.'
+            : '') + '</span></div></form>'
+        : '');
 
     const algOptions = state.ca.keyAlgorithms.map(function (one) {
       return '<option value="' + self.esc(one.id) + '">' + self.esc(one.label) +
@@ -22064,6 +22140,18 @@ class AdminConsole {
           '<button class="secondary">Drop its dead letters</button>' +
           '</div></form>'
         : '') +
+      // A TRANSMITTER-INITIATED VERIFICATION EVENT (#144, SSF 1.0 section
+      // 8.1.4), with no state — the receiver did not ask, so there is none to
+      // echo. The same act as POST /admin-api/ssf/verify.
+      (row.status !== 'disabled'
+        ? '<form method="post" action="/admin/ssf"><div class="formrow">' +
+          '<input type="hidden" name="stream_id" value="' +
+          this.esc(row.stream_id) +
+          '">' +
+          '<input type="hidden" name="action" value="verify">' +
+          '<button class="secondary">Send a verification event</button>' +
+          '</div></form>'
+        : '') +
       '<form method="post" action="/admin/ssf"><div class="formrow">' +
       '<input type="hidden" name="stream_id" value="' +
       this.esc(row.stream_id) +
@@ -23923,8 +24011,9 @@ class AdminConsole {
       'its peer address, and nothing else. Those DO now decide which entries ' +
       'answer (<code>spiffe.attestWorkloads</code>), and they prove nothing ' +
       'about who is calling: anybody who can reach the socket can still get ' +
-      'an identity. Node attestation is taken on trust too, which is why ' +
-      'every agent below carries an <code>unverified:true</code> selector.') +
+      'an identity. Node attestation is not: an agent below attested with a ' +
+      'type its realm accepts and an attestor here verified, or it was ' +
+      'refused.') +
       '<div class="' + (enforced ? 'note' : 'warn') + '">' +
       (enforced
         ? '<strong>The SPIRE Server API is the exception.</strong> Its TCP ' +
@@ -23944,6 +24033,57 @@ class AdminConsole {
           'bound.') +
       ' <a href="/spiffe">GET /spiffe</a> has the whole table and the full ' +
       'list of what is and is not checked.</div>';
+  }
+
+  // WORKLOAD ATTESTATION ON THE UNIX SOCKET (#40 phase four): whether the
+  // kernel can be asked at all, which attestors run, and each connection
+  // open now with what it was attested as.
+  spiffeWorkloadAttestation(state) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.spiffeWorkloadAttestation().");
+    if (!state) {
+      log.debug("Leaving AdminConsole.spiffeWorkloadAttestation(). None.");
+      return '';
+    }
+    const kernel = state.nativeModule
+      ? 'The native module is loaded: each connection to the Workload ' +
+        'API\'s Unix socket is attested when it is accepted, and every call ' +
+        'on it checks that the process is still the one attested.'
+      : (state.unattestedSocketServed
+        ? '<strong>The native module is not loaded, so the Unix socket is ' +
+          'served UNATTESTED</strong> (development): ' +
+          this.esc(state.problem)
+        : '<strong>The native module is not loaded, so the Unix socket is ' +
+          'NOT SERVED</strong> (product): ' + this.esc(state.problem));
+    const out = '<h2>Workload attestation</h2>' + this.note(kernel +
+      ' A TCP caller is never attested. Which attestors run is ' +
+      '<code>spiffe.workloadAttestors</code>' +
+      (state.unknownConfigured.length
+        ? '; it names ' + state.unknownConfigured.map(function (t) {
+            return '<code>' + self.esc(t) + '</code>';
+          }).join(', ') + ', which nothing here implements'
+        : '') + '.') +
+      '<table><tr><th>Attestor</th><th>Runs</th><th>What it verifies</th>' +
+      '</tr>' + state.attestors.map(function (a) {
+        return '<tr><td><code>' + self.esc(a.type) + '</code></td><td>' +
+          (a.enabled ? 'yes' : 'no') + '</td><td>' + self.esc(a.verifies) +
+          '</td></tr>';
+      }).join('') + '</table>' +
+      (state.connections.length
+        ? '<table><tr><th>Connection</th><th>pid</th><th>uid</th>' +
+          '<th>gid</th><th>Selectors</th><th>State</th></tr>' +
+          state.connections.map(function (c) {
+            return '<tr><td><code>' + self.esc(c.tag) + '</code></td><td>' +
+              self.esc(String(c.pid)) + '</td><td>' + self.esc(String(c.uid)) +
+              '</td><td>' + self.esc(String(c.gid)) + '</td><td>' +
+              self.esc(String(c.selectors)) + '</td><td>' +
+              self.esc(c.error ? 'refused: ' + c.error
+                               : (c.note || 'attested')) + '</td></tr>';
+          }).join('') + '</table>'
+        : this.note('No connection is open on the socket now.'));
+    log.debug("Leaving AdminConsole.spiffeWorkloadAttestation().");
+    return out;
   }
 
   // A listener row, and the fourth column is WHAT A CALLER HAS TO PRESENT ON
@@ -24146,6 +24286,8 @@ class AdminConsole {
       this.spiffeListenerRows(json.listeners.serverApi, 'SPIRE Server API') +
       '</table>' +
 
+      this.spiffeWorkloadAttestation(json.workloadAttestation) +
+
       '<h2>Who may call the SPIRE Server API</h2>' +
       '<p>' + this.esc(json.authentication.what || '') + '</p>' +
       this.note('A caller may be several of these at once and the check asks ' +
@@ -24171,8 +24313,10 @@ class AdminConsole {
       'page</a>; SPIRE has both, and neither is cached, so either takes ' +
       'effect on the next call.') +
       this.note('Workload API selectors: a caller there is identified as ' +
-      '<code>transport:</code>, <code>endpoint:</code> and ' +
-      '<code>peer:</code>, and ' + (json.authentication.attestWorkloads
+      '<code>transport:</code>, <code>endpoint:</code>, ' +
+      '<code>peer:</code> over TCP, and on the Unix socket by what the ' +
+      'workload attestors established (above), and ' +
+      (json.authentication.attestWorkloads
         ? 'those decide which entries answer it ' +
           '(<code>spiffe.attestWorkloads</code>).'
         : 'that decides nothing at the moment &mdash; ' +
@@ -24517,11 +24661,10 @@ class AdminConsole {
       'than configuration &mdash; everything on them was written by this ' +
       'service when an agent attested &mdash; which is why nothing about an ' +
       'agent is editable and only the ban is.') +
-      this.warn('<strong>Node attestation is never verified.</strong> ' +
-      'Whatever attestor an agent names and whatever payload it sends are ' +
-      'written down as claimed. That is why every agent carries a selector ' +
-      'valued <code>unverified:true</code>: an agent\'s selectors here are ' +
-      'claims, not attested facts.') +
+      this.note('<strong>Node attestation is verified or refused.</strong> ' +
+      'An agent here attested with a type its realm names in ' +
+      '<code>spiffe.nodeAttestors</code> and an attestor verified, and its ' +
+      'selectors are the ones that attestor derived.') +
       '<form method="get" action="/admin/spiffe/agents"><div class="formrow">' +
       '<label for="q">Search</label>' +
       '<input id="q" name="q" value="' + this.esc(json.filter.q) +
@@ -37455,6 +37598,13 @@ const SETTING_HOMES = [
   // `cluster.acceptMissingCapabilities` read anywhere but beside the list of
   // what is missing would be a list of ids with no meaning.
   { group: 'Cluster', pages: ['/admin/cluster'] },
+  // SIGNER ROTATION (2026-09-22, #42/#48), on /admin/keys — the page that
+  // shows every unit's current, next and retired keys and carries the
+  // Rotate controls (rcbj's D5).
+  { group: 'Signing keys', pages: ['/admin/keys'] },
+  // THE SCHEDULER'S SETTINGS (2026-09-22, #49), on the page that shows the
+  // jobs they switch and the ticks they time.
+  { group: 'Scheduler', pages: ['/admin/scheduler'] },
   { group: 'SCIM', pages: ['/admin/scim'] },
   // Shared Signals. A page of its own rather than a section of anything, for
   // the reason /admin/federation is ungrouped: SSF is not a variant of another
@@ -39572,13 +39722,14 @@ const PROTOCOL_SETTINGS_PAGES = [
   // -------------------------------------------------------------------------
   { path: '/admin/backup-codes', title: 'Recovery codes',
     lead: '<strong>The way back in when the second factor is not to ' +
-          'hand.</strong> A set of single-use codes, issued AUTOMATICALLY ' +
-          'and ONCE the first time a person enrols an authenticator app or a ' +
-          'security key in the <code>mfa</code> role. There is no control ' +
-          'anywhere — here, on <code>/admin-api</code>, or on ' +
-          '<code>/portal</code> — that issues a set on request. Who holds ' +
-          'one is <a href="/admin/users">Users</a>, and clearing a set is on ' +
-          'that person\'s own row.',
+          'hand.</strong> A set of single-use codes that a person generates ' +
+          'for themselves on <code>/portal/mfa</code>, is shown once, and ' +
+          'which is stored — one scrypt hash per code — only when they ' +
+          'confirm they have kept it. Generating again REPLACES the set. ' +
+          'There is no control here or on <code>/admin-api</code> that ' +
+          'issues a set or shows a code. Who holds one is <a ' +
+          'href="/admin/users">Users</a>, and clearing a set is on that ' +
+          'person\'s own row.',
     also: ['<strong>THIS IS THE ONLY MECHANISM ON THIS CONSOLE THAT NO ' +
            'SPECIFICATION DEFINES.</strong> Everything else here implements ' +
            'somebody\'s document and can be checked against it; there is no ' +
@@ -39587,42 +39738,34 @@ const PROTOCOL_SETTINGS_PAGES = [
            'accepted once — and the decisions that are left are this ' +
            'service\'s own. <code>common/backup_codes.ts</code> argues each ' +
            'of them, and the four settings below are what it leaves open.',
-           '<strong>THEY ARE ENCRYPTED AND NOT HASHED, AND THAT IS A PRODUCT ' +
-           'DECISION RATHER THAN A CRYPTOGRAPHIC ONE.</strong> This ' +
-           'repository\'s own rule is that a secret this service VERIFIES is ' +
-           'hashed and a secret it must PRESENT cannot be — which is why ' +
-           '<code>userPassword</code> is scrypt. A recovery code is both, ' +
-           'and what decides it is whether a person may look at their ' +
-           'remaining codes again. <strong>This service says yes</strong>, ' +
-           'because a list shown exactly once at the end of an enrolment ' +
-           'somebody is rushing through is a list most people close without ' +
-           'reading — and the moment it matters is months later, when the ' +
-           'phone is gone. The cost is said out loud: anybody holding the ' +
-           'key-encryption key can read somebody\'s codes, exactly as they ' +
-           'can read a <a href="/admin/totp">TOTP</a> shared secret, which ' +
-           'is why both are SECOND factors here and neither can be made a ' +
-           'first one.',
-           '<strong>A SET IS ISSUED ONCE.</strong> Not once per enrolment — ' +
-           'once. Enrolling a different second factor does not reissue, ' +
-           'because somebody who printed a list and later replaced their ' +
-           'authenticator app would otherwise be holding strings that had ' +
-           'stopped working with nothing anywhere having said so. A recovery ' +
-           'credential that silently expires is worse than none, because the ' +
-           'person believes they have a way back. An operator\'s Clear is ' +
-           'the only route to a second set.',
+           '<strong>THEY ARE HASHED, ONE SCRYPT HASH PER CODE, AS ' +
+           '<code>userPassword</code> IS (SINCE 2026-09-11).</strong> This ' +
+           'repository\'s own rule is that a secret this service only ' +
+           'VERIFIES is hashed. Until 2026-09-11 the codes were encrypted ' +
+           'instead, so that a person could read their remaining codes back; ' +
+           'the set is now shown exactly once, when it is generated, and ' +
+           'nothing — the person included — can see a stored code again.',
+           '<strong>A PERSON GENERATES THEIR OWN SET, AND GENERATING AGAIN ' +
+           'REPLACES IT.</strong> Until 2026-09-11 a set was issued ' +
+           'automatically, once, the first time a second factor was ' +
+           'enrolled. Now it is generated on <code>/portal/mfa</code>, held ' +
+           'apart from the entry until the person confirms they have kept ' +
+           'it, and REPLACES any earlier set whole — a set is never topped ' +
+           'up. A person who holds a second factor and no set is prompted ' +
+           'to generate one. An operator\'s Clear deletes a set.',
            '<strong>CHANGING THESE SETTINGS AFFECTS NEW SETS ONLY, AND ' +
            'NOTHING HERE SAYS "NEW ENROLMENTS ONLY" THE WAY <a ' +
            'href="/admin/totp">TOTP</a> DOES.</strong> That page has to, ' +
            'because its parameters were TOLD TO AN APP this service cannot ' +
-           'reach. Nothing here is told to anybody: a recovery code is a ' +
-           'string compared against a stored string, so shortening the ' +
+           'reach. Nothing here is told to anybody: a recovery code is ' +
+           'compared against its stored hash, so shortening the ' +
            'length changes what the next set looks like and leaves an ' +
            'existing set matching exactly as it did.'],
     status: slot.forward('backupCodesMechanismBlock'),
     links: [['/admin/totp', 'one of the two factors these stand in for'],
             ['/admin/webauthn', 'the other'],
             ['/admin/users', 'who holds a set, and how to clear one'],
-            ['/portal/mfa', 'where a person reads their own set back']] },
+            ['/portal/mfa', 'where a person generates their own set']] },
 
   { path: '/admin/webauthn', title: 'WebAuthn',
     lead: '<strong>Security keys — W3C WebAuthn Level 3 over FIDO CTAP2 — as ' +

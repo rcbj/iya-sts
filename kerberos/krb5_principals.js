@@ -2151,6 +2151,18 @@ cacheRegistry.register({
       'seen. Refuses new authenticators when full rather than forgetting ' +
       'one.';
   },
+  // What the acceptor's own pruneReplayCache() drops — an Authenticator
+  // seen more than twice the clock skew ago — in every realm (#49 P5). The
+  // acceptor is the parent project's and may not be edited here; its map is
+  // exported, and this is the same test it applies.
+  eject: function (now) {
+    const service = require('./krb5_service.js');
+    return cacheRegistry.realmMapEjector(realms, service.replayCache,
+      function (seenAt, key, at) {
+        const windowMs = 2 * Number(config.value('krb5.clockSkew')) * 1000;
+        return at - Number(seenAt) > windowMs;
+      })(now);
+  },
   entries: function () {
     const service = require('./krb5_service.js');
     const windowMs = 2 * Number(config.value('krb5.clockSkew')) * 1000;
