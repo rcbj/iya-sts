@@ -3826,6 +3826,55 @@ class SharedSignals {
   // carries them. The work after those checks runs on a promise, so a write
   // that affected a thousand members returns before any of it.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // A PERSON'S RISK LEVEL CHANGED (#62 P4, 2026-09-22) — CAEP
+  // risk-level-change, sent when `risk/risk_engine.ts` saw the change and the
+  // `risk-response` policy permitted announcing it. `notice`: `username`,
+  // `sub`, `previous` and `current` (LOW, MEDIUM, HIGH — CAEP's three; a
+  // first assessment has no previous, and UNSCORED is not a level CAEP
+  // knows, so it is sent as none), and `reason` — the signals, which is what
+  // lets a receiver tell "impossible travel" from "a password being
+  // guessed". The subject names the PERSON (`principal` USER): the standing
+  // moved, not one session. `claimsAutoEmit()`'s shape, and never rejects.
+  // ---------------------------------------------------------------------------
+  riskAutoEmit(notice?: Json): Promise<EmitResult> {
+    const { log, caep, subjects } = this.deps;
+    log.debug('Entering SharedSignals.riskAutoEmit().');
+    const asked = notice || {};
+    const levels = ['LOW', 'MEDIUM', 'HIGH'];
+    const current = String(asked.current || '');
+    if (!this.enabled() || !asked.sub || levels.indexOf(current) < 0) {
+      log.debug('Leaving SharedSignals.riskAutoEmit(). SSF is off, nobody ' +
+                'is named, or the level is not one CAEP knows.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    if (caep.autoEmitActs().indexOf('risk') < 0) {
+      log.debug('Leaving SharedSignals.riskAutoEmit(). Not an emitted act.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+    }
+    const values: Json = { principal: 'USER', current_level: current };
+    if (levels.indexOf(String(asked.previous || '')) >= 0) {
+      values.previous_level = String(asked.previous);
+    }
+    if (asked.reason) {
+      values.risk_reason = String(asked.reason);
+    }
+    log.debug('Leaving SharedSignals.riskAutoEmit().');
+    return this.emitProtocolEvent({
+      req: null, protocol: 'Risk scoring', type: 'risk-level-change',
+      subject: subjects.complexSubject({ user: { format: 'iss_sub',
+        iss: this.issuerFor(null), sub: String(asked.sub) } }),
+      values: values, initiatingEntity: 'system',
+      reasonAdmin: String(asked.username || 'A person') + '\'s risk level ' +
+                   'went from ' + (values.previous_level || 'none') + ' to ' +
+                   current + (asked.reason ? ' (' + asked.reason + ')' : '') +
+                   '.',
+      reasonUser: current === 'HIGH'
+        ? 'Sign-ins to your account looked unusually risky, and your ' +
+          'sessions have been ended as a precaution.'
+        : 'The risk this service sees in your sign-ins changed.' });
+  }
+
   claimsAutoEmit(notice?: Json): Promise<EmitResult> {
     const { log, caep, events, streams, stats, subjects } = this.deps;
     const { subjectForName } = this.deps.helpers;
@@ -4799,6 +4848,8 @@ export = {
   // through `ssf/account_signals.ts`.
   emitRiscAccountAct: slot.forward('emitRiscAccountAct'),
   emitCredentialChange: slot.forward('emitCredentialChange'),
+  // A person's risk level changed (#62 P4): `risk/risk_engine.ts` sends it.
+  riskAutoEmit: slot.forward('riskAutoEmit'),
   riscReport: slot.forward('riscReport'),
   riscAction: slot.forward('riscAction'),
   RISC_CONSOLE_ACTIONS: SharedSignals.RISC_CONSOLE_ACTIONS,

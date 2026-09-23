@@ -29,8 +29,9 @@
 //      password `invalid`, refused in every mode) is recorded for the door,
 //      under a digest of a name that matched nobody — and the typed name is
 //      nowhere in the answer.
-//   7. SIGN-INS ARE ASSESSED (P2): the console sign-in this job made is an
-//      assessment — observed, deciding nothing — with its person's standing.
+//   7. SIGN-INS ARE ASSESSED (P2), AND THE ISSUANCE POLICY DECIDED ON THEM
+//      (P3): the console sign-in this job made is an assessment, with the
+//      decision it met written on it and its person's standing kept.
 //
 // Every list here is the default realm's own operator deny list, and each
 // run's content differs (the stamp is in a comment), so a run against a
@@ -383,7 +384,7 @@ async function theFailureHistory() {
 
 async function signInsAreAssessed(cookie) {
   log.debug("Entering signInsAreAssessed().");
-  log.info("=== 7. sign-ins are assessed (#62 P2) ===");
+  log.info("=== 7. sign-ins are assessed and decided on (#62 P2, P3) ===");
   if (!cookie) {
     log.info("  (the console gate is off in this stack: nobody signed in " +
              "through the sign-in screen, so there is nothing assessed to " +
@@ -397,10 +398,13 @@ async function signInsAreAssessed(cookie) {
     const rows = (r.body.assessments && r.body.assessments.rows) || [];
     return rows.length ? r.body : null;
   });
-  check("the console sign-in above was assessed — observed, deciding " +
-        "nothing — and its standing kept", function () {
+  check("the console sign-in above was assessed, the issuance policy's " +
+        "decision is written on it, and its standing kept", function () {
           const a = found.assessments.rows[0];
-          assert.strictEqual(a.decision, "observe", JSON.stringify(a));
+          // permit (or, in development, `observe:` what a risk rule would
+          // have done); `observe` alone for a door assessed after the fact.
+          assert.ok(/^(permit|observe)/.test(String(a.decision)),
+                    JSON.stringify(a));
           assert.ok(a.level, JSON.stringify(a));
           assert.ok(found.subjects.length > 0, JSON.stringify(found.subjects));
         });

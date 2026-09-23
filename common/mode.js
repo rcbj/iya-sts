@@ -855,6 +855,20 @@ function gatesSpireServerApi() {
   return true;
 }
 
+// Does a risk decision only OBSERVE (#62 P3, 2026-09-22)? Development says
+// yes unless `risk.enforceInDevelopment` is set: the issuance policy is asked
+// with the risk facts and what it decides is recorded, and the roles alone
+// decide the issuance — a client under test from a fresh container, a new
+// address and an unfamiliar TLS stack would otherwise be asked for a second
+// factor it has never heard of. Product says no: a Deny the policy's risk
+// obligation carries is kept. The RULES are policy (`ou=policies`); this is
+// only whether their risk Deny is kept. `risk/risk_engine.ts` asks it.
+function observesRiskOnly() {
+  log.debug("Entering observesRiskOnly().");
+  log.debug("Leaving observesRiskOnly().");
+  return !isProduct();
+}
+
 // ---------------------------------------------------------------------------
 // WHAT THE MODE CHANGES, as data rather than as prose — so that /admin/mode,
 // GET /admin-api/mode and this file cannot come to disagree about what product
@@ -889,6 +903,23 @@ const REQUIREMENTS = [
              'key, or that this realm revoked, is refused invalid_token ' +
              '(HTTP 401) before anything is issued.',
     where: 'oid4vc/vc_issuer.ts, oauth-oidc/dpop.ts' },
+  { id: 'risk-decisions',
+    what: 'The issuance policy\'s decisions on the RISK of an ' +
+          'authentication are enforced',
+    development: 'Every sign-in is assessed and the issuance policy is ' +
+                 'asked with its risk facts, and what it decides is recorded ' +
+                 'on the assessment — but a risk Deny is set aside and the ' +
+                 'roles alone decide, unless risk.enforceInDevelopment is on.',
+    product: 'A risk Deny is kept: an authentication the policy refuses on ' +
+             'risk (HIGH, by default) is refused, and one it asks a step-up ' +
+             'of (MEDIUM) is asked for a second factor or a security key ' +
+             'where the door can ask, and refused where it cannot. When a ' +
+             'person\'s risk changes, the reactions the risk-response ' +
+             'policy permits are taken — ending everything at HIGH, RISC ' +
+             'credential-compromise; development announces the change and ' +
+             'records the rest as observed.',
+    where: 'risk/risk_engine.ts, xacml/xacml_role_pep.ts, ' +
+           'common/issuance_gate.js, authn/authn.ts' },
   { id: 'token-exchange-tokens',
     what: 'An RFC 8693 token exchange accepts only a subject_token and ' +
           'actor_token this realm can verify',
@@ -1659,6 +1690,7 @@ module.exports = {
   gatesScim: gatesScim,
   gatesSharedSignals: gatesSharedSignals,
   gatesSpireServerApi: gatesSpireServerApi,
+  observesRiskOnly: observesRiskOnly,
   REQUIREMENTS: REQUIREMENTS,
   NOT_YET: NOT_YET,
   report: report

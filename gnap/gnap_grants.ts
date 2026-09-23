@@ -825,7 +825,7 @@ class GnapGrants {
                                   true } : { kind: 'application', name:
                                              grant.client.identifier,
                                              authenticated: true }, claims:
-            null });
+            null, session: this.sessionOfGrant(grant) });
       if (!allowed.allowed) {
         log.info('gnap: the issuance policy refused a token for grant ' +
                  grant.id + ': ' + allowed.why);
@@ -965,6 +965,34 @@ class GnapGrants {
   }
 
   // Subject information for an approved grant with a known RO (section 3.4).
+  // -------------------------------------------------------------------------
+  // THE SIGN-ON SESSION A GRANT'S RESOURCE OWNER INTERACTED ON (#62 P3), or
+  // null: what the issuance gate reads the risk of the authentication from,
+  // so a GNAP token rests on the same decision a session would. Required
+  // LAZILY — the sign-in service is loaded long before this family, and a
+  // process without it (a test of this file) has no session to find.
+  // -------------------------------------------------------------------------
+  private sessionOfGrant(grant: any): any {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.sessionOfGrant().");
+    const id = grant && grant.ro ? String(grant.ro.sessionId || '') : '';
+    if (!id) {
+      log.debug("Leaving GnapGrants.sessionOfGrant(). None named.");
+      return null;
+    }
+    try {
+      log.debug("Leaving GnapGrants.sessionOfGrant().");
+      return require('../authn/authn').sessionById(id) || null;
+    } catch (e) {
+      log.debug("Caught in GnapGrants.sessionOfGrant(): " +
+                ((e && e.message) || e));
+      // No sign-in service in this process: no session, and the gate finds
+      // the person's standing or nothing.
+      log.debug("Leaving GnapGrants.sessionOfGrant(). None held.");
+      return null;
+    }
+  }
+
   private async releaseSubject(req, grant) {
     const { log, nowSec, gate, subject, monitor } = this.deps;
     log.debug("Entering GnapGrants.releaseSubject().");
@@ -992,13 +1020,15 @@ class GnapGrants {
     if (ids.length) {
       out.sub_ids = ids;
     }
+    const heldSession = this.sessionOfGrant(grant);
     const wanted = assertionFormats.filter(function (format) {
       const kind = format === 'id_token' ? gate.ISSUANCE.ID_TOKEN :
                    gate.ISSUANCE.SAML_ASSERTION;
       return gate.check({ application: grant.client.identifier, kind: kind,
                           subject: { kind: 'user', name: grant.ro.username,
                                      authenticated: true },
-                          claims: null }).allowed;
+                          claims: null,
+                          session: heldSession }).allowed;
     });
     if (wanted.length) {
       out.assertions = await subject.assertionsFor(grant.ro.username, wanted, {

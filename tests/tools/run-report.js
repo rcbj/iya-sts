@@ -1906,6 +1906,19 @@ async function main() {
           ? job.env.NODE_OPTIONS + ' ' + fresh : fresh;
       }
       // ------------------------------------------------------------------
+      // A BROWSER'S USER-AGENT, FOR EVERY JOB IN EVERY MODE (#62 P3,
+      // 2026-09-22). Product mode refuses a first sign-in from an automated
+      // client (the issuance policy on the risk of the authentication), and
+      // node's fetch() says `node` and Selenium's Chrome says
+      // `HeadlessChrome` — `tools/browser-user-agent.js` argues it. In every
+      // mode rather than only product's, so the risk history a run builds is
+      // the same shape wherever it runs. Appended for the token's reason.
+      // ------------------------------------------------------------------
+      const browserAgent = '--require ' +
+        path.join(__dirname, 'browser-user-agent.js');
+      job.env.NODE_OPTIONS = job.env.NODE_OPTIONS
+        ? job.env.NODE_OPTIONS + ' ' + browserAgent : browserAgent;
+      // ------------------------------------------------------------------
       // AND THE CLIENT SECRET, FOR THE ONE JOB THAT MINTS TOKENS OF ITS OWN.
       //
       // `sts_admin_api_auth.js` asserts the gate's refusals, which means

@@ -406,7 +406,10 @@ class RiskAdmin {
   // ---------------------------------------------------------------------------
   // THE ASSESSMENTS (#62 P2): every sign-in scored in the last week, newest
   // first, with what went in and what came out — and the people by current
-  // standing. Observe only: the Decision column says `observe` until P3.
+  // standing. The Decision column is what the issuance policy decided on
+  // the assessment (#62 P3): permit, step-up, refuse, or `observe:` one of
+  // those where development set it aside; `observe` alone for a sign-in
+  // assessed after its session.
   // The providers whose data a row shows are credited under the table, as
   // DB-IP's licence asks of every page that displays its results.
   // ---------------------------------------------------------------------------
@@ -459,8 +462,8 @@ class RiskAdmin {
         '</small></p>';
     });
     log.debug("Leaving RiskAdmin.assessmentsHtml().");
-    return '<h3>Sign-ins assessed <small>(the last 7 days; observe only)' +
-      '</small></h3><p>' + (view.assessmentsInDatabase
+    return '<h3>Sign-ins assessed <small>(the last 7 days, and what the ' +
+      'issuance policy decided)</small></h3><p>' + (view.assessmentsInDatabase
         ? 'Held in the database.'
         : 'Held in this process: there is no database with a key to seal ' +
           'them under.') + ' ' + view.assessments.total +
