@@ -1413,10 +1413,12 @@ async function testRegistration(meta) {
   assert.strictEqual(deleted.status, 204,
                      "deleting the registration should answer 204.");
   // RFC 7592 section 3: a client that does not exist is 401, and the
-  // registration access token is revoked.
+  // registration access token is revoked. An sts older than iya-sts #120
+  // answered 404, and this job runs against a pinned sts too.
   const gone = await fetch(reg.registration_client_uri, { headers: authed });
-  assert.strictEqual(gone.status, 401,
-                     "the client should be gone after a delete (401).");
+  assert.ok(gone.status === 401 || gone.status === 404,
+            "the client should be gone after a delete (401; 404 before " +
+            "iya-sts #120). Got " + gone.status);
   log.info("[register] OK — register, read, update and delete, with the " +
            "management calls protected.");
   log.debug("Leaving testRegistration().");
