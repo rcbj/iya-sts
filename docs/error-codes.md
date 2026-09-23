@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3035** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3038** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 101
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 21
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 24
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 276
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
@@ -2526,6 +2526,9 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0019` | In development mode (observe only) the issuance policy would have refused on risk, and did not: the decision is recorded on the assessment and the issuance went ahead. risk.enforceInDevelopment turns enforcement on. | — |
 | `STS-RISK-0020` | A person's risk level changed and no reaction could be decided: the risk-response policy is disabled or does not load. The change is recorded; nothing is announced, ended or disabled. | — |
 | `STS-RISK-0021` | A reaction the risk-response policy permitted (announce, end sessions, RISC credential-compromise, disable) failed part-way. The others were still taken; the change of risk is recorded. | — |
+| `STS-RISK-0022` | A FIDO MDS3 BLOB was refused: it is not a JWT carrying an x5c chain, the chain does not end at the FIDO root (or the configured risk.mdsTrustAnchors), or its signature does not verify. Nothing was loaded. | FIDO Metadata Service v3.0, section 3.1.8 |
+| `STS-RISK-0023` | A FIDO MDS3 BLOB was refused because a certificate in its signing chain is revoked, or its status is unknown and the revocation policy refuses unknown. Nothing was loaded. | FIDO Metadata Service v3.0, section 3.1.8 |
+| `STS-RISK-0024` | A FIDO MDS3 BLOB was refused because its serial number (no) is not greater than one already processed — a rollback. Nothing was loaded. | FIDO Metadata Service v3.0, section 3.1.8 |
 
 ## STS-GNAP
 

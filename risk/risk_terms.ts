@@ -114,12 +114,14 @@ const PROVIDERS: Record<string, Json> = {
     licence: 'FIDO Alliance metadata terms', licenceName: '',
     licenceUrl: '', attribution: '',
     url: 'https://fidoalliance.org/metadata/',
-    termsUrl: 'https://fidoalliance.org/metadata/', supported: false,
+    termsUrl: 'https://fidoalliance.org/metadata/', supported: true,
     terms: 'Contractual terms, not open data: use is for enabling FIDO ' +
            'authentication, the latest valid BLOB must be used and a ' +
            'statement no longer in it deleted, and copying or ' +
            'redistributing the metadata is restricted. Fetched by the ' +
-           'deployment (P5); never shipped, and tested with a synthetic ' +
+           'deployment (the install-time loader, or an upload), verified ' +
+           'against the FIDO root before anything is kept, and only the ' +
+           'latest BLOB kept; never shipped, and tested with a synthetic ' +
            'BLOB.' },
   'hibp-pwned-passwords': { title: 'Pwned Passwords (Have I Been Pwned)',
     licence: 'HIBP Pwned Passwords terms', licenceName: '', licenceUrl: '',

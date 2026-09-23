@@ -3994,6 +3994,28 @@ function create(options) {
           'ON CONFLICT DO NOTHING';
         params = [realm || '', dataset, version, col('start'), col('end'),
                   col('category', ''), col('note', '')];
+      } else if (kind === 'fido') {
+        // One FIDO MDS3 entry per row (#62 P5): an authenticator model by
+        // its AAGUID, AAID or attestation key identifier, with its status
+        // reports and a copy of its metadata statement for the page.
+        statement =
+          'INSERT INTO sts_risk_fido_authenticators (dataset, version, ' +
+          'key_kind, authenticator_key, description, protocol_family, ' +
+          'certification_level, latest_status, latest_status_at, ' +
+          'compromised, status_reports, metadata_statement) SELECT $1, $2, ' +
+          'u.* FROM unnest($3::text[], $4::text[], $5::text[], $6::text[], ' +
+          '$7::text[], $8::text[], $9::bigint[], $10::bool[], ' +
+          '$11::jsonb[], $12::jsonb[]) AS u ON CONFLICT DO NOTHING';
+        params = [dataset, version, col('keyKind', ''), col('key', ''),
+                  col('description', ''), col('protocolFamily', ''),
+                  col('certificationLevel', ''), col('latestStatus', ''),
+                  col('latestStatusAt', 0), col('compromised', false),
+                  rows.map(function (row) {
+                    return JSON.stringify(row.statusReports || []);
+                  }),
+                  rows.map(function (row) {
+                    return JSON.stringify(row.metadataStatement || {});
+                  })];
       } else {
         log.debug("Leaving riskInsertRows(). Unknown kind.");
         return Promise.reject(new Error(errorCodes.tag('STS-RISK-0006') +
@@ -4097,7 +4119,8 @@ function create(options) {
                 " " + version);
       const table = { geo: 'sts_risk_geo_ranges',
                       asn: 'sts_risk_asn_ranges',
-                      iplist: 'sts_risk_ip_lists' }[kind];
+                      iplist: 'sts_risk_ip_lists',
+                      fido: 'sts_risk_fido_authenticators' }[kind];
       if (!table) {
         log.debug("Leaving riskDeleteRows(). Unknown kind.");
         return Promise.resolve(0);
@@ -4138,6 +4161,30 @@ function create(options) {
     // no IPv6 range beneath it finds an IPv4 range whose end is below it and
     // answers nothing, which is right.
     // -------------------------------------------------------------------------
+    // One authenticator model in a version of the FIDO MDS3 dataset (#62
+    // P5), by the kind of key it is listed under and the key; or null.
+    riskLookupFido: function (dataset, version, keyKind, key) {
+      log.debug("Entering riskLookupFido(). " + keyKind);
+      log.debug("Leaving riskLookupFido().");
+      return pool.query(
+        'SELECT key_kind, authenticator_key, description, protocol_family, ' +
+        'certification_level, latest_status, latest_status_at, compromised, ' +
+        'status_reports FROM sts_risk_fido_authenticators WHERE dataset = ' +
+        '$1 AND version = $2 AND key_kind = $3 AND authenticator_key = $4',
+        [dataset, version, keyKind, String(key || '').toLowerCase()]
+      ).then(function (r) {
+        const row = r.rows[0];
+        return row ? { keyKind: row.key_kind, key: row.authenticator_key,
+                       description: row.description,
+                       protocolFamily: row.protocol_family,
+                       certificationLevel: row.certification_level,
+                       latestStatus: row.latest_status,
+                       latestStatusAt: Number(row.latest_status_at) || 0,
+                       compromised: !!row.compromised,
+                       statusReports: row.status_reports || [] } : null;
+      });
+    },
+
     riskLookupRange: function (kind, realm, dataset, version, address) {
       log.debug("Entering riskLookupRange(). kind=" + kind);
       const table = { geo: 'sts_risk_geo_ranges',
