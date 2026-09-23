@@ -584,8 +584,9 @@ USED** — the same sources and the same policy, refused as `STS-PKI-0129`:
 A registered certificate usually arrives with nothing above it, so its issuer is
 **fetched from its own caIssuers address**, hop by hop, each certificate
 believed only because its key verifies the one below. One naming no such address
-is refused only under `pki.revocationRequireDistributionPoint`; one naming an
-address that did not answer is refused under hard-fail.
+is refused where `pki.revocationRequireDistributionPoint` says — `auto`, in
+product mode; one naming an address that did not answer is refused under
+hard-fail.
 
 **Where the answer comes from depends on who signed the certificate.** One of
 this service's own authorities is answered from the REGISTER — the list this
@@ -605,6 +606,34 @@ issuer** is looked up in the directory `pki.revocationLdapDirectory` names, when
 every RDN of the whole name is single-valued. **A URL is dialled only for a chain that VERIFIED
 against this service's truststore** — an unverified certificate can name
 anything.
+
+**An address this service will not dial is not the same as no address
+(#174).** A plain `ldap:` list under the default `pki.revocationLdap=ldaps`,
+any LDAP address with it `off`, a relative name without
+`pki.revocationLdapDirectory` (or with a multi-valued RDN), a scheme that is
+never dialled, an OCSP responder that is not http(s), and any responder with
+`pki.revocationOcsp=off` are **not dialled** — and when that is all a
+certificate names, the issuer published a list that this service's own policy
+kept it from reading. Its status could not be established: hard-fail refuses it
+as `STS-PKI-0188`, with the reason naming the setting that would dial it, and
+soft-fail accepts it and reports it. The verdict lists every such address
+(`notDialled`), and the policy report on this page lists them apart from what
+names none.
+
+**A certificate that names NOTHING — no CRL, no OCSP responder — can never be
+revoked (#174).** `pki.revocationRequireDistributionPoint` decides it: `auto`
+(the default) is `mode.refusesUnrevocableCertificates()`, which refuses one
+issued by a CA this service does not hold in **product** mode
+(`STS-PKI-0190`) and accepts it in development; `on` refuses it in both. **`off`
+accepts certificates nobody can ever revoke** — a stolen key under such an
+authority is good until it expires — and is there for a private CA you know
+publishes nothing; giving that CA a distribution point is better. A self-signed
+certificate is untouched (the walk stops at it as an anchor). A certificate
+carrying **RFC 9608 `noRevAvail`** is not checked in either mode — section 4
+skips the check, its issuer having declared that no revocation information
+exists — and one carrying it beside `cA` TRUE, `cRLDistributionPoints`,
+`freshestCRL` or an OCSP responder is **invalid** (section 3) and refused under
+every policy but `off` (`STS-PKI-0189`).
 
 **Whose signature is believed:**
 
@@ -629,14 +658,15 @@ anything.
 |---|---|
 | `off` | nothing |
 | `soft-fail` | a certificate that is revoked |
-| `hard-fail` | that, and one whose status could not be fetched, did not verify, was stale, or that its issuer's responder does not know. A certificate naming **no** CRL and **no** responder is still accepted unless `pki.revocationRequireDistributionPoint` is on — there is nothing an attacker could block |
+| `hard-fail` | that, and one whose status could not be fetched, did not verify, was stale, or that its issuer's responder does not know — and one whose only list or responder is at an address this service is configured not to dial (`STS-PKI-0188`). A certificate naming **no** CRL and **no** responder is refused where `pki.revocationRequireDistributionPoint` says: `auto` refuses it in product mode (`STS-PKI-0190`) |
 | `auto` (default) | `hard-fail` in product mode, `soft-fail` in development |
 
 **What remains are limits, and `common/mode.js` carries them**: a bare registered
 key names no list, so only taking it off stops it verifying; plain `ldap:` is
-dialled only when allowed; a relative distribution point needs
-`pki.revocationLdapDirectory` and single-valued RDNs; LDAPS 636 asks for no client
-certificate. The verdict for a
+dialled only when allowed, and a relative distribution point needs
+`pki.revocationLdapDirectory` and single-valued RDNs — refused under hard-fail
+when nothing else answers; a certificate naming nothing is accepted in
+development; LDAPS 636 asks for no client certificate. The verdict for a
 certificate you present is in `GET /tls/sign-in`'s answer — it was on
 `GET /tls/whoami` until the two TLS listeners were deleted on 2026-09-16, and
 that page went with them; the policy is on `GET /tls` and
@@ -1203,7 +1233,7 @@ is checked — see
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `pki.revocationCheck` | `STS_PKI_REVOCATION_CHECK` | `auto` | yes | `off`, `soft-fail` (refuse only a revoked certificate) or `hard-fail` (also refuse one whose status could not be established); `auto` is hard-fail in product mode and soft-fail in development. |
-| `pki.revocationRequireDistributionPoint` | `STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT` | `false` | yes | Under hard-fail, also refuse a foreign certificate that names no http or https CRL distribution point. |
+| `pki.revocationRequireDistributionPoint` | `STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT` | `auto` | yes | Under hard-fail, whether a CA-issued foreign certificate that names no CRL and no OCSP responder (and no RFC 9608 `noRevAvail`) is refused. `auto` refuses it in product mode; `on` in both; **`off` accepts certificates nobody can ever revoke**. |
 | `pki.revocationFetchTimeoutMs` | `STS_PKI_REVOCATION_FETCH_TIMEOUT_MS` | `3000` | yes | How long a fetch of a foreign CRL may take. |
 | `pki.revocationMaxCrlBytes` | `STS_PKI_REVOCATION_MAX_CRL_BYTES` | `1048576` | yes | A distribution point answering more than this is treated as unreachable rather than read into memory. |
 | `pki.revocationCrlCacheEntries` | `STS_PKI_REVOCATION_CRL_CACHE_ENTRIES` | `256` | yes | How many verified foreign CRLs, and remembered failures, are cached; the oldest goes first. |
@@ -1214,7 +1244,7 @@ is checked — see
 | `pki.revocationOcspRequireNonce` | `STS_PKI_REVOCATION_OCSP_REQUIRE_NONCE` | `false` | yes | Refuse an OCSP response that echoes no nonce; off by default because pre-produced responses cannot carry one. |
 | `pki.revocationClockSkewS` | `STS_PKI_REVOCATION_CLOCK_SKEW_S` | `300` | yes | How far a CRL's or OCSP response's `nextUpdate` may be past, or an OCSP `thisUpdate` in the future, before it is refused. |
 | `pki.revocationCrlIssuersFile` | `STS_PKI_REVOCATION_CRL_ISSUERS_FILE` | *(empty)* | yes | A PEM file of indirect CRL issuers a distribution point may name in `cRLIssuer`; read again when it changes. |
-| `pki.revocationLdap` | `STS_PKI_REVOCATION_LDAP` | `ldaps` | yes | Whether `ldaps:` (verified), also plain `ldap:` (`ldaps-and-ldap`), or no directory address (`off`) is dialled for a CRL or issuer. |
+| `pki.revocationLdap` | `STS_PKI_REVOCATION_LDAP` | `ldaps` | yes | Whether `ldaps:` (verified), also plain `ldap:` (`ldaps-and-ldap`), or no directory address (`off`) is dialled for a CRL or issuer. An address not dialled is not "no address": under hard-fail a certificate whose only list is there is refused (`STS-PKI-0188`). |
 | `pki.revocationLdapCaFile` | `STS_PKI_REVOCATION_LDAP_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates an `ldaps` directory's certificate may chain to, beside node's own CA store. |
 | `pki.revocationLdapDirectory` | `STS_PKI_REVOCATION_LDAP_DIRECTORY` | *(empty)* | yes | The directory (scheme, host, port) a distribution point named relative to its CRL issuer is looked up in; without it such a name is not dialled. |
 

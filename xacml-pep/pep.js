@@ -298,6 +298,14 @@ const options = {
   maxBodyBytes: intFromEnv('PEP_MAX_BODY_BYTES', 4 * 1024 * 1024),
   clientCertificate: fileFromEnv('PEP_TLS_CERT'),
   clientKey: fileFromEnv('PEP_TLS_KEY'),
+  // WHERE THIS PEP'S OWN CREDENTIAL'S CRLs ARE, served at GET /crl/<name>
+  // (#174) — see `crlDocument()`. Beside the certificate by default, which is
+  // where `tests/tools/pep-credential.js --crl-base` writes them.
+  crlDir: process.env.PEP_CRL_DIR ||
+          (process.env.PEP_TLS_CERT
+            ? require('path').join(require('path')
+                .dirname(process.env.PEP_TLS_CERT), 'crl')
+            : ''),
   pdpCa: fileFromEnv('PEP_TLS_CA'),
   insecure: process.env.PEP_TLS_INSECURE === 'true',
   // ---------------------------------------------------------------------
@@ -714,6 +722,35 @@ async function protectedResource(query) {
   return { status: outcome.allowed ? 200 : 403, body: body };
 }
 
+// THE CRLs OF THIS PEP'S OWN CREDENTIAL (#174, 2026-09-23). A product-mode PDP
+// refuses, under hard-fail, a client certificate from an authority it does
+// not hold that names no CRL — nobody could ever revoke it — so the
+// credential the launchers mint names its CAs' lists, and something has to
+// answer at that address after the tool that signed them has exited. This
+// container is up for exactly as long as the credential is presented, and is
+// already dialled by the PDP (`/notify`). The lists are PUBLIC, SIGNED
+// documents; nothing here can sign one, and a name outside `<word>.crl` is
+// never looked up, so no request reaches any other file.
+function crlDocument(name) {
+  log.debug("Entering crlDocument().");
+  if (!options.crlDir || !/^[a-z0-9-]+\.crl$/i.test(name)) {
+    log.debug("Leaving crlDocument(). Not served.");
+    return null;
+  }
+  try {
+    const body = fs.readFileSync(require('path').join(options.crlDir, name));
+    log.debug("Leaving crlDocument().");
+    return body;
+  } catch (error) {
+    log.debug("Caught in crlDocument(): " + ((error && error.message) ||
+                                             error));
+    // Absent is a 404, which is what a distribution point that has nothing
+    // says; the PDP reports the list as unreachable.
+    log.debug("Leaving crlDocument(). Absent.");
+    return null;
+  }
+}
+
 // ONE HANDLER FOR BOTH LISTENERS. The HTTPS listener serves exactly the four
 // endpoints the HTTP one does, decided by exactly this code: a PEP whose two
 // ports answered differently would be two enforcement points sharing a process,
@@ -769,6 +806,18 @@ function handle(req, res) {
     });
     return;
   }
+  if (req.method === 'GET' && path.indexOf('/crl/') === 0) {
+    const document = crlDocument(path.slice('/crl/'.length));
+    if (!document) {
+      log.info(tag('STS-XPEP-0009') + 'xacml-pep: no such CRL: ' + path);
+      send(res, 404, { error: 'not_found' });
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/pkix-crl',
+                         'Content-Length': String(document.length) });
+    res.end(document);
+    return;
+  }
   if (req.method === 'POST' && path === '/notify') {
     // THE NUDGE. Answered 204 IMMEDIATELY and the pull happens after, which
     // matters: the PDP times this request out in two seconds by default and
@@ -798,7 +847,8 @@ function handle(req, res) {
   send(res, 404, {
     error: 'not_found',
     error_description: 'This PEP answers GET /, GET /protected, ' +
-                       'POST /notify and GET /healthcheck.'
+                       'POST /notify, GET /healthcheck and GET /crl/<name> ' +
+                       'for its own credential\'s lists.'
   });
 }
 

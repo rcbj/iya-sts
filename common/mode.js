@@ -660,6 +660,29 @@ function refusesUnknownRevocationStatus() {
   return isProduct();
 }
 
+// Is a certificate NOBODY CAN REVOKE refused (#174, 2026-09-23)? One issued by
+// an authority this service does not hold — by a CA, not self-signed, and
+// without RFC 9608's noRevAvail — that names no CRL distribution point and no
+// OCSP responder. This is what `pki.revocationRequireDistributionPoint=auto`
+// resolves to: product answers yes, development answers no.
+//
+// **IT IS NOT `refusesUnknownRevocationStatus()` AGAIN**, and the difference is
+// the argument. That one is about a status that could not be FETCHED, where an
+// attacker who blocks the fetch is the threat. This one is about a certificate
+// with nothing to fetch at all, where no attacker is needed: a stolen key under
+// such an authority is good until the certificate expires, whatever its issuer
+// or this service does. RFC 5280 section 4.2.1.13 only RECOMMENDS the
+// extension, which is the cost — a private CA that publishes nothing is
+// refused in product until it does, or until an operator sets the setting to
+// `off`, whose description carries the warning. Development accepts it because
+// what a client author points a stack here to watch is their own flow, and a
+// test CA with no list is the usual first thing they build.
+function refusesUnrevocableCertificates() {
+  log.debug("Entering refusesUnrevocableCertificates().");
+  log.debug("Leaving refusesUnrevocableCertificates().");
+  return isProduct();
+}
+
 // Must an ACME or EST request arrive over TLS (2026-09-13)? RFC 8555 section
 // 6.1 says ACME MUST be HTTPS and RFC 7030 section 3.2 puts EST on TLS by
 // definition, so product answers yes and refuses a request that reached the
@@ -1863,12 +1886,36 @@ const REQUIREMENTS = [
              'foreign certificate whose status cannot be fetched, verified ' +
              'or trusted as fresh — or that its issuer\'s responder does not ' +
              'know — is REFUSED too: an attacker who can block a fetch ' +
-             'cannot turn "revoked" into "accepted". One whose issuer names ' +
-             'no list and no responder at all is accepted unless ' +
-             'pki.revocationRequireDistributionPoint is on.',
+             'cannot turn "revoked" into "accepted". So is one whose only ' +
+             'list or responder is at an address this service is ' +
+             'configured not to dial (plain ldap: under pki.revocationLdap' +
+             '=ldaps, any ldap with it off, a relative name without ' +
+             'pki.revocationLdapDirectory; STS-PKI-0188): the issuer ' +
+             'published a list and this service\'s own policy is what ' +
+             'stopped it being read.',
     where: 'common/revocation_status.js, tls/tls_server.js, ' +
            'oauth-oidc/mtls.js, oauth-oidc/client_auth.js, ' +
            'scim/scim_auth.ts, spiffe/spiffe_auth.ts, common/pki.js' },
+  // #174, 2026-09-23. A row of its own rather than a sentence on the one
+  // above, because it is a different predicate answering a different question:
+  // not "what if the status could not be fetched" but "what if there is
+  // nothing to fetch at all".
+  { id: 'revocation-unrevocable',
+    what: 'A foreign certificate whose issuer names no CRL and no OCSP ' +
+          'responder',
+    development: 'ACCEPTED (pki.revocationRequireDistributionPoint=auto), ' +
+                 'and the verdict says it could not be checked: there is ' +
+                 'no fetch an attacker could block, and a client author\'s ' +
+                 'test CA with no list is the usual first thing they build.',
+    product: 'REFUSED under hard-fail (pki.revocationRequireDistributionPoint' +
+             '=auto, STS-PKI-0190): a certificate issued by a CA — not ' +
+             'self-signed — that names no distribution point and no ' +
+             'responder can never be revoked, so a stolen key under it is ' +
+             'good until it expires. One carrying RFC 9608 noRevAvail is ' +
+             'accepted, because its issuer declared that no revocation ' +
+             'information exists (section 4 skips the check). Setting ' +
+             'the setting to off accepts the rest, with a warning.',
+    where: 'common/revocation_status.js' },
   // 2026-09-13. The embedded protocol debugger. Its GATE is not on this page
   // because it does not move: an access token carrying the debugger
   // permission, issued only to a console administrator, in both modes.
@@ -2297,6 +2344,7 @@ module.exports = {
   limitsDirectoryBindFailures: limitsDirectoryBindFailures,
   sendsWeakerThanAsked: sendsWeakerThanAsked,
   refusesUnknownRevocationStatus: refusesUnknownRevocationStatus,
+  refusesUnrevocableCertificates: refusesUnrevocableCertificates,
   requiresEnrollmentTls: requiresEnrollmentTls,
   opensIntrospection: opensIntrospection,
   opensRevocation: opensRevocation,

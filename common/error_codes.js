@@ -2582,6 +2582,32 @@ const CODES = [
     summary: 'The public crypto metadata document (/crypto/metadata) could ' +
       'not be built.',
     spec: 'HTTP 500 server_error from /crypto/metadata' },
+  { code: 'STS-PKI-0188',
+    summary: 'A presented certificate chain was refused under ' +
+      'pki.revocationCheck=hard-fail because a certificate in it names ' +
+      'revocation addresses this service is configured NOT TO DIAL and no ' +
+      'other it could use — a plain ldap: CRL under pki.revocationLdap=' +
+      'ldaps, any ldap with it off, a name relative to the CRL issuer ' +
+      'without pki.revocationLdapDirectory, a scheme that is never ' +
+      'dialled, or an OCSP responder that is not http(s) — so its status ' +
+      'could not be established. Distinct from STS-PKI-0119 so that a ' +
+      'policy refusal is not read as an unreachable server; also logged, ' +
+      'once per address per process, naming the setting that would dial it.',
+    spec: 'The same refusals as STS-PKI-0118, per door' },
+  { code: 'STS-PKI-0189',
+    summary: 'A presented certificate carries RFC 9608 noRevAvail beside ' +
+      'something section 3 forbids with it — cA TRUE, cRLDistributionPoints, ' +
+      'freshestCRL, or an OCSP responder in its Authority Information ' +
+      'Access — and is refused as INVALID under every policy but off.',
+    spec: 'The same refusals as STS-PKI-0118, per door' },
+  { code: 'STS-PKI-0190',
+    summary: 'A presented certificate chain was refused under ' +
+      'pki.revocationCheck=hard-fail because a certificate in it, issued by ' +
+      'an authority this service does not hold, names no CRL distribution ' +
+      'point and no OCSP responder, carries no RFC 9608 noRevAvail, and ' +
+      'pki.revocationRequireDistributionPoint (auto, in product mode, or ' +
+      'on) refuses a certificate nobody can revoke.',
+    spec: 'The same refusals as STS-PKI-0118, per door' },
   { code: 'STS-PKI-0191',
     summary: 'A certificate authority build, or a key pair issued under ' +
       'one, named a SHA-1 signature algorithm (sha1-rsa or sha1-ecdsa) in a ' +
