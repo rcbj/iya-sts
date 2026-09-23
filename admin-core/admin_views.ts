@@ -6307,7 +6307,10 @@ class AdminViews {
                           { name: 'federationLinks', noun: 'links' });
   }
 
-  userDetailJson(req, key) {
+  // `risk` is the person's current standing (#62), read by `riskFor()`
+  // before this synchronous view runs and handed in, because a view reads
+  // nothing off the request but its query.
+  userDetailJson(req, key, risk?: any) {
     const { log, subjectForName, stats } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.userDetailJson(). key=" + key);
@@ -6458,6 +6461,9 @@ class AdminViews {
           // first thing somebody matching a relying party's records to this
           // page needs.
           subject: subjectForName(key),
+          // THE PERSON'S CURRENT RISK (#62) — null for a person never
+          // assessed.
+          risk: risk || null,
           // WHAT THEY CAN SIGN IN WITH, and what they are asked for as a second
           // factor (2026-09-10). It is `factors` here and on every row of the
           // list, so a caller reads one member name whichever view it fetched.
@@ -6519,7 +6525,37 @@ class AdminViews {
   // person does not exist". The page was right and the resource was wrong,
   // which is the exact shape of disagreement this whole directory exists to
   // prevent.
-  usersJson(req) {
+  // -------------------------------------------------------------------------
+  // THE PERSON'S CURRENT RISK, READ FIRST (#62). The user views are
+  // synchronous and a person's standing is a row in the risk store, which is
+  // not; so the console's route and the management API's both await this,
+  // from the same query the view is drawn from, and hand the answer in.
+  // Undefined when no person is named; null when never assessed or the store
+  // could not say. Never rejects.
+  // -------------------------------------------------------------------------
+  async riskFor(query: any): Promise<any> {
+    const { log, subjectForName } = this.deps;
+    log.debug("Entering AdminViews.riskFor().");
+    const wanted = String((query || {}).user || '').trim();
+    if (!wanted) {
+      log.debug("Leaving AdminViews.riskFor(). No person named.");
+      return undefined;
+    }
+    try {
+      const standing = await require('../risk/risk_engine').standingFor(
+        realms.currentId(), String(subjectForName(wanted) || ''));
+      log.debug("Leaving AdminViews.riskFor().");
+      return standing;
+    } catch (e) {
+      log.debug("Caught in AdminViews.riskFor(): " +
+                ((e && e.message) || e));
+      // No risk engine in this process: the page says the risk is unknown.
+      log.debug("Leaving AdminViews.riskFor(). Unknown.");
+      return null;
+    }
+  }
+
+  usersJson(req, risk?: any) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.usersJson().");
     const wanted = String((req.query || {}).user || '').trim();
@@ -6527,7 +6563,7 @@ class AdminViews {
       log.debug("Leaving AdminViews.usersJson().");
       return this.usersListJson(req).json;
     }
-    const detail = this.userDetailJson(req, wanted);
+    const detail = this.userDetailJson(req, wanted, risk);
     if (!detail) {
       log.debug("Leaving AdminViews.usersJson().");
       return { user: wanted, known: false };
@@ -7030,6 +7066,7 @@ export = {
   appPasswordsJson: slot.forward('appPasswordsJson'),
   passwordOnlyDoorsFor: slot.forward('passwordOnlyDoorsFor'),
   userDetailJson: slot.forward('userDetailJson'),
+  riskFor: slot.forward('riskFor'),
   personCredentialsState: slot.forward('personCredentialsState'),
   usersJson: slot.forward('usersJson'),
   peopleRows: slot.forward('peopleRows'),

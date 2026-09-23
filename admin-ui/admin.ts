@@ -2427,6 +2427,15 @@ const SECTIONS = [
                'about an address, import a list, activate, roll back. ' +
                'Below, every refused password in the realm, attributed to a ' +
                'person and a network and never to a typed name.' },
+      // The scoring itself measured (#62): drawn by the same file.
+      { path: '/admin/risk-scoring', label: 'Risk scoring',
+        blurb: 'The risk scoring system measured over a window: ' +
+               'assessments over time by level, how scores and levels ' +
+               'fell, every signal beside its factor and how often it ' +
+               'fired, decisions, doors and countries, what people said ' +
+               'about their own sign-ins, and &mdash; for this process ' +
+               '&mdash; how long an assessment takes and the reactions ' +
+               'taken.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +
@@ -12499,12 +12508,61 @@ class AdminConsole {
     return heading + state + signalsNote + account + reset + passkeys + mfa;
   }
 
-  userDetailPage(req, key) {
+  // -------------------------------------------------------------------------
+  // THE PERSON'S CURRENT RISK, LARGE AND IN COLOUR (#62; rcbj asked for it
+  // exactly so): the first thing on their page, the level in the colour an
+  // administrator reads at a glance — green, amber, red, grey for nobody
+  // assessed yet — with the score, the level it came from, when it moved,
+  // what moved it, and a link to the assessments behind it. No script: a
+  // styled block, as every tile on this page is.
+  // -------------------------------------------------------------------------
+  private riskBadge(standing: any): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.riskBadge().");
+    const level = standing ? String(standing.level || 'UNSCORED')
+                           : 'UNKNOWN';
+    const palette: Record<string, string[]> = {
+      LOW: ['#188038', '#ffffff'], MEDIUM: ['#f9ab00', '#202124'],
+      HIGH: ['#d93025', '#ffffff'], UNSCORED: ['#5f6368', '#ffffff'],
+      UNKNOWN: ['#dadce0', '#202124'] };
+    const colours = palette[level] || palette.UNKNOWN;
+    const when = function (ms: number): string {
+      return ms ? new Date(ms).toISOString().replace('T', ' ').slice(0, 16) +
+                  ' UTC' : '';
+    };
+    const facts = standing
+      ? 'score ' + this.esc(Number(standing.score).toPrecision(3)) +
+        (standing.previousLevel ? ' &middot; was ' +
+          this.esc(standing.previousLevel) : '') +
+        (standing.crossedAt ? ' &middot; since ' +
+          this.esc(when(standing.crossedAt)) : '') +
+        (standing.reason ? '<br>because: ' + this.esc(standing.reason) : '')
+      : 'This person has not been assessed: nobody has signed in as them ' +
+        'since risk scoring began, or it is off.';
+    log.debug("Leaving AdminConsole.riskBadge(). " + level + ".");
+    return '<div class="risk-badge" style="display:flex;align-items:center;' +
+      'gap:28px;margin:14px 0 18px;padding:20px 28px;border-radius:14px;' +
+      'background:' + colours[0] + ';color:' + colours[1] + '">' +
+      '<div style="font-size:3em;font-weight:800;letter-spacing:.05em;' +
+      'line-height:1">' + this.esc(level) + '</div>' +
+      '<div style="font-size:1.05em;line-height:1.5"><div style="font-size:' +
+      '1.3em;font-weight:700">Current risk</div>' + facts +
+      '<div style="margin-top:6px"><a style="color:inherit;font-weight:600" ' +
+      'href="' + this.esc(standing && standing.subject
+        ? '/admin/risk?subject=' + encodeURIComponent(standing.subject) +
+          '#risk-assessments'
+        : '/admin/risk') + '">Assessments &rarr;</a></div>' +
+      '</div></div>';
+  }
+
+  // `risk` as `userDetailJson()` takes it; undefined draws no badge, because
+  // nobody read the standing.
+  userDetailPage(req, key, risk?: any) {
     const { log, adminViews, gateStateFor, queryWith, DEFAULT_BLOCKS_PER_PAGE,
             DEFAULT_PER_PAGE } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.userDetailPage(). key=" + key);
-    const view = adminViews.userDetailJson(req, key);
+    const view = adminViews.userDetailJson(req, key, risk);
     if (!view) {
       log.debug("Leaving AdminConsole.userDetailPage(). Nothing known.");
       return null;
@@ -12558,6 +12616,7 @@ class AdminConsole {
                                          artifactPage.paging);
 
     const inner = this.messagesOf(req) +
+      (risk === undefined ? '' : this.riskBadge(risk)) +
       '<div class="tiles">' +
         this.tile(row.authentications, 'authentications') +
         this.tile(row.protocols.length, 'protocols') +
@@ -13237,12 +13296,12 @@ class AdminConsole {
     };
   }
 
-  usersView(req) {
+  usersView(req, risk?: any) {
     const { log, stats, queryWith } = this.deps;
     log.debug("Entering AdminConsole.usersView().");
     const wantedUser = String(req.query.user || '').trim();
     if (wantedUser) {
-      const detail = this.userDetailPage(req, wantedUser);
+      const detail = this.userDetailPage(req, wantedUser, risk);
       if (!detail) {
         // Not a 404: this service has simply never seen the name, or has
         // forgotten it to the cap since the link was drawn. Both are answers
@@ -31699,10 +31758,13 @@ class AdminConsole {
 
     app.get('/admin/users', function (req, res) {
       log.debug("Entering the admin users page.");
-      const view = self.usersView(req);
-      self.respond(req, res, view.json, view.title, '/admin/users', view.inner,
-                   view.up);
-      log.debug("Leaving the admin users page. " + view.title + ".");
+      // A person's current risk is read before the page is drawn (#62).
+      adminViews.riskFor(req.query).then(function (risk) {
+        const view = self.usersView(req, risk);
+        self.respond(req, res, view.json, view.title, '/admin/users',
+                     view.inner, view.up);
+        log.debug("Leaving the admin users page. " + view.title + ".");
+      });
     });
 
     app.post('/admin/users', function (req, res, next) {
@@ -32313,7 +32375,12 @@ class AdminConsole {
         'written about anybody</strong> &mdash; so removing a row here asks ' +
         'everybody again, including the people who would have said yes. That ' +
         'is the whole difference from the table below it, where removing a ' +
-        'row asks one person.<br><br>It is keyed on the PAIR and not on the ' +
+        'row asks one person. Removing a row also revokes every token of ' +
+        'that application carrying the scope, except for people who agreed ' +
+        'to it themselves, and this is the only door that removes one ' +
+        '&mdash; on this service\'s own console, portal or debugger too, ' +
+        'whose sessions standing on it then end at their next renewal.' +
+        '<br><br>It is keyed on the PAIR and not on the ' +
         'scope alone: consenting <code>read</code> here consents it for this ' +
         'application, and an application registered five minutes from now ' +
         'that spells the same word is still asked. It is an ordinary ' +
@@ -32361,12 +32428,17 @@ class AdminConsole {
         'sixth alone &mdash; which is what the screen shows and what these ' +
         'rows have to be able to express. The timestamp is when they pressed ' +
         'Allow.<br><br>Revoking a row asks that one person again the next ' +
-        'time that one application requests that one scope. It does NOT ' +
-        'touch anything already issued: an access token minted before the ' +
-        'revoke is still valid, exactly as taking a delegated permission ' +
-        'away does not re-judge a grant already made. <a ' +
-        'href="/admin/tokens">Tokens</a> is where something already issued ' +
-        'is revoked.') +
+        'time that one application requests that one scope, and it ' +
+        '<strong>WITHDRAWS</strong> it: every access and refresh token that ' +
+        'application holds for them carrying the scope is revoked on every ' +
+        'node, and the instant is written onto their entry as <code>' +
+        self.esc(consent.WITHDRAWN_ATTRIBUTE) + '</code>, so a refresh ' +
+        'token granted before it is refused at the token endpoint even after ' +
+        'they agree again. Withdrawing one scope revokes the whole refresh ' +
+        'token. Removing a global consent above does the same for everybody ' +
+        'it covered, and <code>oauth2.refreshRequiresConsent</code> refuses ' +
+        'a refresh token from the authorization endpoint that no recorded ' +
+        'consent covers.') +
         self.sectionSearchForm({
           path: '/admin/consent', query: req.query, param: 'q',
           // The list this search narrows, so that a new search starts at page 1
@@ -32393,6 +32465,27 @@ class AdminConsole {
                 'asked for is under global consent above, because an ' +
                 'override writes nothing down.')) +
         consentsNav.foot +
+
+        '<h4>Withdraw everything one person agreed to for one ' +
+        'application</h4>' +
+        self.note('Every recorded consent between one person and one ' +
+        'application, in one act &mdash; what the person can do themselves ' +
+        'from <code>/portal/consents</code>. Every token that application ' +
+        'holds for them under those scopes is revoked.') +
+        '<form method="post" action="/admin/consent">' +
+        self.consentBack(listView) +
+          '<input type="hidden" name="from" value="recorded">' +
+          '<div class="formrow">' +
+          '<input type="hidden" name="action" ' +
+            'value="revoke-application-consent">' +
+          '<label for="ac-username">Person</label>' +
+          '<input type="text" id="ac-username" name="username" size="24" ' +
+            'placeholder="alice">' +
+          '<label for="ac-client">Application</label>' +
+          '<select id="ac-client" name="client">' + applicationOptions +
+          '</select>' +
+          '<button type="submit" class="danger">Withdraw</button>' +
+        '</div></form>' +
 
         '<h4>Forget everything one person agreed to</h4>' +
         self.note('Every recorded consent for one person, in one act, so ' +
@@ -35011,6 +35104,17 @@ class AdminConsole {
                        'the transmitter\'s pedantry — and it is said out ' +
                        'loud rather than passed over.') +
                        '">media type</div>') +
+          // WHAT THIS CONSOLE DID WITH IT (#62): the signal-response
+          // policy's reactions, taken, observed or failed.
+          (row.reactions || []).map(function (r) {
+            return '<div class="signal-reaction ' +
+              (r.failed ? 'state-invalid' : 'sub') + '">' + (r.failed
+                ? 'could not end its sessions'
+                : (r.observed ? 'would end this console\'s sessions ' +
+                                '(development observes)'
+                              : 'ended ' + self.esc(String(r.ended)) +
+                                ' console session(s)')) + '</div>';
+          }).join('') +
           '</td>' +
           '<td class="sub"><code>' + self.esc(row.jti) + '</code>' +
           '<div><code>' + self.esc(row.stream || '') + '</code></div></td>' +

@@ -139,16 +139,25 @@ Three things about it are worth knowing:
 
 * **The answer is a record, not a permission.** It is written to `oauthConsent`
   on the person's own entry — one value per (person, application, scope) — and
-  read by exactly one thing: the authorization endpoint, deciding whether to
-  draw the screen again.
-* **Nothing already issued is re-judged.** The token endpoint asks nobody
-  anything, so a refresh of a code obtained before the setting was turned on
-  still works, and revoking somebody's consent leaves a token already minted
-  valid.
+  read by two things: the authorization endpoint, deciding whether to draw the
+  screen again, and the refresh grant, deciding whether the grant still
+  stands.
+* **Withdrawn means withdrawn** (#172). Revoking a consent — at
+  `/admin/consent`, through `/admin-api`, or by the person themselves on
+  `/portal/consents` — revokes every access and refresh token that application
+  holds for them carrying the scope, on every node, and records the instant as
+  `oauthConsentWithdrawn` on their entry. The refresh grant asks again at every
+  refresh, in both modes: a refresh token granted before a withdrawal is
+  refused even after the person consents again, and withdrawing one scope
+  revokes the whole refresh token. With `oauth2.refreshRequiresConsent` (on by
+  default) a refresh token from the authorization endpoint that no recorded
+  consent covers — one obtained while consent was off — is refused as well.
 * **`oauthGlobalConsent` on an application's entry turns the asking off for
   everybody who signs in to it**, without writing anything about anybody — so
-  taking it away asks everybody again. It is keyed on (application, scope) and
-  never on the scope alone.
+  taking it away asks everybody again, and revokes the tokens it covered for
+  everybody who did not agree to the scope themselves. It is keyed on
+  (application, scope) and never on the scope alone, and
+  `revoke-global-consent` is the only way to take it away.
 
 Turning the setting off means nothing is asked and nothing recorded. It does
 **not** mean everybody consented, so turning it back on asks again.

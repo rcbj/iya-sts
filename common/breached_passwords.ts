@@ -130,6 +130,12 @@ const verdictsCount = cacheRegistry.register({
   }
 });
 
+// What this process has screened, for Monitoring → Risk Scoring (#62): per
+// process and since it started, like every count on that page that is not a
+// row in the store.
+const tally = { since: Date.now(), screened: 0, breached: 0, unanswered: 0,
+                fromCache: 0 };
+
 interface BreachedPasswordsDeps {
   log: { debug(m: string): void; info(m: string): void; warn(m: string): void };
   config: { value(key: string): any };
@@ -161,6 +167,14 @@ class BreachedPasswords {
                                                                        opts);
       }
     };
+  }
+
+  // The counts above, and whether screening is on.
+  metrics(): Json {
+    const { log } = this.deps;
+    log.debug("Entering BreachedPasswords.metrics().");
+    log.debug("Leaving BreachedPasswords.metrics().");
+    return Object.assign({ enabled: this.enabled() }, tally);
   }
 
   // Whether a password is screened at all: the setting, in product mode.
@@ -200,6 +214,7 @@ class BreachedPasswords {
     let range = ranges.get(prefix);
     if (range && now() - Number(range.at) <= ttl) {
       rangesCount.hit();
+      tally.fromCache++;
     } else {
       rangesCount.miss();
       const base = String(config.value('risk.breachApiUrl') || '');
@@ -217,6 +232,7 @@ class BreachedPasswords {
                  'the range API at ' + base + ' did not answer (' +
                  String((answer && answer.why) || 'no answer') + '); the ' +
                  'password is set unscreened.');
+        tally.unanswered++;
         log.debug("Leaving BreachedPasswords.screen(). No answer.");
         return { checked: false, breached: false, count: 0,
                  why: 'the breached-password service did not answer' };
@@ -244,6 +260,8 @@ class BreachedPasswords {
     cacheRegistry.makeRoom(verdicts, MAX_VERDICTS,
       { name: 'passwords.breach-verdicts', counter: verdictsCount });
     verdicts.set(digest, verdict);
+    tally.screened++;
+    tally.breached += verdict.breached ? 1 : 0;
     log.debug("Leaving BreachedPasswords.screen(). " +
               (verdict.breached ? 'Breached.' : 'Not found.'));
     return { checked: true, breached: verdict.breached, count: count,
@@ -296,6 +314,7 @@ export = {
   screen: slot.forward('screen'),
   screenAll: slot.forward('screenAll'),
   verdictOf: slot.forward('verdictOf'),
+  metrics: slot.forward('metrics'),
   // For the tests: forget every range and verdict.
   forget: function (): void {
     log.debug("Entering forget().");

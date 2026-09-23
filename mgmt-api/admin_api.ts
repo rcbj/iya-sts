@@ -1904,7 +1904,8 @@ class AdminApi {
                        '`failures`.' },
         handler: function (req, res) {
           log.debug("Entering the management API risk endpoint.");
-          riskAdmin.riskView(req.query).then(function (view) {
+          const realmOnly = riskAdmin.realmOnly(req);
+          riskAdmin.riskView(req.query, realmOnly).then(function (view) {
             self.sendJson(res, 200, view);
             log.debug("Leaving the management API risk endpoint.");
           }).catch(function (e) {
@@ -1915,6 +1916,57 @@ class AdminApi {
                                       errors: [String((e && e.message) ||
                                                       e)] });
             log.debug("Leaving the management API risk endpoint. Failed.");
+          });
+        } },
+
+      // Monitoring → Risk Scoring (#62): `riskAdmin.metricsView()`.
+      { method: 'GET', path: BASE + '/risk/metrics', tag: 'Risk',
+        operationId: 'getRiskMetrics',
+        summary: 'The risk scoring system measured',
+        description: 'The realm\'s assessments over `window`, counted in ' +
+                     'the store (`database` says which): `assessments` ' +
+                     'with its `total`, `subjects`, `bots`, `meanScore`, ' +
+                     '`maxScore`, counts `byLevel`, `byDoor`, ' +
+                     '`byDecision`, `byPhase`, `byCountry`, `byBand` (the ' +
+                     'score in decades), `bySignal`, the `feedback` people ' +
+                     'gave, and a `series` of levels per `bucketMs`; the ' +
+                     'people at each level now in `standings`; every ' +
+                     'signal with its `factor` and how often it `fired`; ' +
+                     'the level `thresholds`; and, for THIS process since ' +
+                     'it started, `process` — assessments made and ' +
+                     'failed, the time to assess, the reactions taken, ' +
+                     'observed and failed, the live-session re-checks and ' +
+                     'the breached-password screening.',
+        mirrors: 'GET /admin/risk-scoring',
+        parameters: [
+          { name: 'realm', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The realm counted; the default realm when ' +
+                         'absent.' },
+          { name: 'window', in: 'query', required: false,
+            schema: { type: 'string', enum: ['1h', '24h', '7d', '30d'] },
+            description: 'How far back the assessments are counted; 24h ' +
+                         'when absent.' }
+        ],
+        responseDescription: 'The scoring system\'s metrics.',
+        responseSchema: { type: 'object',
+          description: '`assessments`, `standings`, `signals`, ' +
+                       '`thresholds`, `process`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API risk metrics endpoint.");
+          const realmOnly = riskAdmin.realmOnly(req);
+          riskAdmin.metricsView(req.query, realmOnly).then(function (view) {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API risk metrics endpoint.");
+          }).catch(function (e) {
+            log.warn(errorCodes.tag('STS-RISK-0025') + 'risk: the metrics ' +
+                     'failed: ' + ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-RISK-0025');
+            self.sendJson(res, 500, { ok: false,
+                                      errors: [String((e && e.message) ||
+                                                      e)] });
+            log.debug("Leaving the management API risk metrics endpoint. " +
+                      "Failed.");
           });
         } },
 
@@ -2968,7 +3020,11 @@ class AdminApi {
         ] },
         handler: function (req, res) {
           log.debug("Entering the management API users endpoint.");
-          self.sendJson(res, 200, adminViews.usersJson(req));
+          // The person's current risk, read first (#62) — the console's
+          // route does the same, so the two answers agree.
+          return adminViews.riskFor(req.query).then(function (risk) {
+            self.sendJson(res, 200, adminViews.usersJson(req, risk));
+          });
           log.debug("Leaving the management API users endpoint.");
         } },
 
@@ -15594,10 +15650,29 @@ class AdminApi {
                          'about the people it covers. Somebody who agreed to ' +
                          'it personally is unaffected — their answer is on ' +
                          'their own entry and `revoke-consent` is what takes ' +
-                         'that away.\n\nNothing already ISSUED is touched. ' +
-                         'An access token minted while the override stood is ' +
-                         'still valid, exactly as revoking a delegated ' +
-                         'permission does not re-judge a grant already made.',
+                         'that away.\n\n**What was issued under it is ' +
+                         'revoked (#172).** Every access and refresh token ' +
+                         'of ' +
+                         'this application carrying the scope, for everybody ' +
+                         'but the people who agreed to it themselves, goes ' +
+                         'on ' +
+                         'the revocation register every node reads — so it ' +
+                         'introspects inactive at once — and the instant is ' +
+                         'written onto the application\'s entry as ' +
+                         '`oauthGlobalConsentWithdrawn`, so a refresh token ' +
+                         'granted before it is refused even if the override ' +
+                         'is added back. `revoked` is how many tokens this ' +
+                         'call revoked. **This is the only way to take a ' +
+                         'global consent away**: the generic ' +
+                         '`applications/remove` of `oauthGlobalConsent` is ' +
+                         'refused (`STS-REG-0191`). On one of this ' +
+                         'service\'s ' +
+                         'own surfaces (`sts-admin-console`, ' +
+                         '`sts-user-portal`, `sts-debugger-ui`) it is not ' +
+                         'refused either: every session of that surface ' +
+                         'standing on the override ends at its next token ' +
+                         'renewal and the person signs in again and is ' +
+                         'asked.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15611,7 +15686,9 @@ class AdminApi {
               examples: [{ client: 'webapp1', scope: 'openid' }],
               additionalProperties: false
             },
-            responseDescription: 'What was removed, and who is asked again.' },
+            responseDescription: 'What was removed, who is asked again, ' +
+                                 'how many tokens were revoked (`revoked`) ' +
+                                 'and when (`withdrawnAt`).' },
 
           { action: 'revoke-consent', operationId: 'revokeConsent',
             summary: 'Take back one answer one person gave',
@@ -15629,8 +15706,16 @@ class AdminApi {
                          'nothing here to remove and this refuses rather ' +
                          'than pretending: `revoke-global-consent` ' +
                          'is the operation for that, and ' +
-                         'the refusal says so. Nothing already issued is ' +
-                         'touched.',
+                         'the refusal says so.\n\n**What was issued under it ' +
+                         'is revoked (#172)**: every access and refresh ' +
+                         'token ' +
+                         'this application holds for this person carrying ' +
+                         'the scope — a refresh token with its whole grant, ' +
+                         'since withdrawing one scope revokes the whole ' +
+                         'refresh token — and the instant goes onto their ' +
+                         'entry as `oauthConsentWithdrawn`, so a refresh ' +
+                         'token granted before it is refused even after they ' +
+                         'consent again.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15653,7 +15738,45 @@ class AdminApi {
                            scope: 'openid' }],
               additionalProperties: false
             },
-            responseDescription: 'What was removed, and what is asked again.' },
+            responseDescription: 'What was removed, what is asked again, ' +
+                                 'how many tokens were revoked (`revoked`) ' +
+                                 'and when (`withdrawnAt`).' },
+
+          { action: 'revoke-application-consent',
+            operationId: 'revokeApplicationConsent',
+            summary: 'Withdraw everything one person agreed to for one ' +
+                     'application',
+            description: 'Every `oauthConsent` value naming this person and ' +
+                         'this application, in one act (#172) — the ' +
+                         'console\'s and the API\'s counterpart of the ' +
+                         'Withdraw button a person has for each application ' +
+                         'on `/portal/consents`. They are asked again the ' +
+                         'next time that application requests anything; ' +
+                         'every access and refresh token it holds for them ' +
+                         'under those scopes is revoked; and the instant ' +
+                         'goes onto their entry, so a refresh token granted ' +
+                         'before it is refused even after they consent ' +
+                         'again. Refused when nothing is recorded for the ' +
+                         'pair — a scope under GLOBAL consent is not on ' +
+                         'anybody\'s entry.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                username: { type: 'string',
+                            description: 'The person, exactly as ' +
+                                         '/admin/users names them.' },
+                client: { type: 'string',
+                          description: 'The application whose every ' +
+                                       'consent is withdrawn.' }
+              },
+              required: ['username', 'client'],
+              examples: [{ username: 'alice', client: 'webapp1' }],
+              additionalProperties: false
+            },
+            responseDescription: 'How many consents were withdrawn ' +
+                                 '(`removed`), how many tokens were revoked ' +
+                                 '(`revoked`) and when (`withdrawnAt`).' },
 
           { action: 'forget-user-consent', operationId: 'forgetUserConsent',
             summary: 'Forget everything one person agreed to',
@@ -15668,8 +15791,11 @@ class AdminApi {
                          'consent, because there is nothing on their entry ' +
                          'to reach — a scope they were never asked about ' +
                          'leaves no record, which is what lets the ' +
-                         'register tell the two apart at all. Nothing ' +
-                         'already issued is touched.',
+                         'register tell the two apart at all.\n\n**What ' +
+                         'was issued under those consents is revoked ' +
+                         '(#172)**, per application, and each withdrawal ' +
+                         'instant is written onto their entry — see ' +
+                         '`revoke-consent`.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15682,7 +15808,8 @@ class AdminApi {
               examples: [{ username: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'How many answers were forgotten.' }
+            responseDescription: 'How many answers were forgotten, and how ' +
+                                 'many tokens were revoked (`revoked`).' }
         ] },
 
       // -----------------------------------------------------------------------

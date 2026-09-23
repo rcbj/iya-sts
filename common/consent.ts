@@ -103,7 +103,10 @@
 // and `admin_stats.js` (for `identityKeyOf()`, so that `alice`,
 // `urn:uuid:<entryUUID>` and `alice@REALM` are one person here exactly as they
 // are one entry in the directory), and NOTHING requires it back — so it closes
-// no cycle and moves no route.
+// no cycle and moves no route. Since #172 it reaches `oauth-oidc/oauth2_bcp.js`
+// LAZILY (`defaultDeps()`'s `grants`), when a withdrawal follows a refresh
+// token's grant — see the block above `withdrawnStamp()`, which is also where
+// WITHDRAWN MEANS WITHDRAWN is argued.
 //
 // **THE DIRECTORY ARRIVES THROUGH `setDirectory()`, WHICH `ldap_server.js`
 // FILLS AT ITS OWN REQUIRE TIME.** That is the same inversion
@@ -170,7 +173,8 @@ import fapi = require('../oauth-oidc/fapi');
 const USER_ATTRIBUTE = 'oauthConsent';
 const GLOBAL_ATTRIBUTE = 'oauthGlobalConsent';
 
-// The directory slot: four functions, validated whole.
+// The directory slot: seven functions, validated whole. The last three are
+// the WITHDRAWALS (#172), `oauthConsentWithdrawn` on the same entry.
 interface ConsentDirectory {
   consentsOf(key: string): { values?: string[] } | null | undefined;
   addConsent(key: string, values: string[]):
@@ -180,6 +184,21 @@ interface ConsentDirectory {
   listConsents():
     Array<{ username: string; dn: string; values?: string[] }> |
     null | undefined;
+  withdrawalsOf(key: string): { values?: string[] } | null | undefined;
+  addWithdrawal(key: string, values: string[]):
+    { ok?: boolean; dn?: string; reason?: string } | null | undefined;
+  removeWithdrawal(key: string, values: string[]):
+    { dn?: string } | null | undefined;
+}
+
+// What revoking a grant's tokens needs from `oauth-oidc/oauth2_bcp.js` — the
+// #102 bookkeeping of what one grant issued. Reached LAZILY (see
+// `defaultDeps()`), because that module is an OAuth library with stores of
+// its own and this one is required long before it.
+interface GrantBookkeeping {
+  familyOfRefresh(claims: { jti?: string }): string;
+  grantMembersOf(familyId: string, alsoJti?: string): string[];
+  revokeFamily(familyId: string, clientId: string): Promise<boolean>;
 }
 
 // What a consent needs from the rest of the service.
@@ -190,10 +209,26 @@ interface ConsentDeps {
   errorCodes: typeof errorCodes;
   stats: typeof stats;
   fapi: typeof fapi;
+  grants: () => GrantBookkeeping;
 }
 
 // A GeneralizedTime stamp's exact shape — see `parseConsentValue()`.
 const CONSENT_STAMP = /^\d{14}Z$/;
+
+// A WITHDRAWAL's stamp (#172): the same GeneralizedTime WITH MILLISECONDS
+// (RFC 4517 section 3.3.13 allows the fraction). A consent is compared with
+// nothing finer than a second; a withdrawal is compared with the instant a
+// grant was made, and two acts in one second must still be told apart.
+const WITHDRAWN_STAMP = /^\d{14}\.\d{3}Z$/;
+
+// The attribute a withdrawal is written into, on the person's entry and on
+// the application's.
+const WITHDRAWN_ATTRIBUTE = 'oauthConsentWithdrawn';
+const GLOBAL_WITHDRAWN_ATTRIBUTE = 'oauthGlobalConsentWithdrawn';
+
+// The token kinds a withdrawal revokes: what a grant under consent issued
+// and a client can present again. An ID Token is presented to nobody here.
+const GRANT_TOKEN_KINDS = ['access_token', 'refresh_token'];
 
 class Consent {
   static readonly USER_ATTRIBUTE = USER_ATTRIBUTE;
@@ -217,7 +252,17 @@ class Consent {
       applications: applications,
       errorCodes: errorCodes,
       stats: stats,
-      fapi: fapi
+      fapi: fapi,
+      // LAZILY, and it is the one module here that is: `oauth2_bcp.js` is
+      // loaded by the OAuth modules at 9, this one at 8a, and a require at
+      // the top of this file would run that module's store declarations
+      // before the ones it expects to find — for a function asked only when
+      // somebody withdraws a consent.
+      grants: function grants(): GrantBookkeeping {
+        log.debug("Entering grants().");
+        log.debug("Leaving grants().");
+        return require('../oauth-oidc/oauth2_bcp');
+      }
     };
   }
 
@@ -238,17 +283,21 @@ class Consent {
   // ---------------------------------------------------------------------------
   // THE DIRECTORY SLOT.
   //
-  // Four functions, and it is validated WHOLE for `setLogoutReader()`'s reason:
+  // Seven functions, and it is validated WHOLE for `setLogoutReader()`'s
+  // reason:
   // a filler that installed the two READS and neither WRITE would leave a
   // service that draws the consent screen, records nothing, and draws it again
   // on the next request — a loop with a button in it, and every part of it
-  // working.
+  // working. And one that installed the four consent hooks without the three
+  // WITHDRAWAL hooks (#172) could take a consent away without saying when, so
+  // a re-consent would revive every refresh token granted before it.
   // ---------------------------------------------------------------------------
   setDirectory(hooks: ConsentDirectory | null | undefined): boolean {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Consent.setDirectory().");
     const needed = ['consentsOf', 'addConsent', 'removeConsent',
-                    'listConsents'];
+                    'listConsents', 'withdrawalsOf', 'addWithdrawal',
+                    'removeWithdrawal'];
     const missing = needed.filter(function (name) {
       return !hooks || typeof hooks[name] !== 'function';
     });
@@ -505,28 +554,81 @@ class Consent {
     });
   }
 
+  // WITHDRAW ONE. **THE ONE DOOR THAT TAKES `oauthGlobalConsent` OFF AN
+  // ENTRY** (#172): `applications.updateApplication()` refuses the generic
+  // remove unless it is told this register is the caller
+  // (`consentRegister`), because a value taken off there would leave every
+  // token issued under it working — the gap this ticket closed.
+  //
+  // WHAT IT REVOKES: every access and refresh token of this application
+  // carrying the scope, for EVERYBODY — except the people who agreed to it
+  // themselves, whose tokens were issued under their own consent as much as
+  // under the override and still are. The withdrawal instant goes on the
+  // APPLICATION's entry (`oauthGlobalConsentWithdrawn`), so re-adding the
+  // override covers new grants and revives no old one.
+  //
+  // **THE HOSTED SURFACES ARE NOT EXEMPT, AND THAT IS DELIBERATE.** The
+  // console, the portal and the debugger hold `offline_access` through this
+  // override (#118), and their seed says why it is an attribute rather than
+  // an exemption: an operator who wants the screen removes the value and gets
+  // it. Withdrawing one of them here does what it does to any client: every
+  // session of that surface that stood on it cannot renew its tokens and is
+  // ended at its next renewal (`oidc_rp.ts`), and the next page runs the code
+  // flow — which, the override gone, asks the person. Nobody is locked out.
+  // The reply names the surface so an operator is not surprised by it.
   revokeGlobal(clientId, scope, actor?) {
-    const { log, applications } = this.deps;
+    const { log, applications, errorCodes } = this.deps;
+    const self = this;
     log.debug("Entering Consent.revokeGlobal(). clientId=" + clientId);
     const who = String(clientId == null ? '' : clientId).trim();
     const leaf = String(scope == null ? '' : scope).trim();
     const result = applications.updateApplication(who, {
       attribute: GLOBAL_ATTRIBUTE, mode: 'remove', value: leaf,
-      actor: String(actor || '')
+      actor: String(actor || ''), consentRegister: true
     });
     if (!result.ok) {
       log.debug("Leaving Consent.revokeGlobal(). Refused.");
       return result;
     }
+    const stamp = self.withdrawnStamp();
+    const noted = applications.noteGlobalConsentWithdrawn(who, leaf, stamp);
+    if (!noted) {
+      log.error(errorCodes.tag('STS-REG-0192') + 'consent: the withdrawal of ' +
+                'the global consent to "' + leaf + '" for "' + who + '" ' +
+                'could not be written onto its entry. Its tokens are ' +
+                'revoked; re-adding the override before they expire would ' +
+                'let a refresh token the walk did not reach renew.');
+    }
+    const revoked = self.revokeIssuedUnder({
+      clientId: who, scopes: [leaf],
+      spare: function (holder) {
+        return self.consentsOf(holder).some(function (one) {
+          return one.client === who && one.scope === leaf;
+        });
+      }
+    }, 'the global consent to ' + leaf + ' was withdrawn' +
+       (actor ? ' by ' + actor : ''));
+    const surface = applications.HOSTED_SURFACE_CLIENT_IDS.indexOf(who) >= 0;
+    log.info('consent: "' + who + '" no longer consents "' + leaf + '" for ' +
+             'everybody; ' + revoked + ' token(s) issued under it were ' +
+             'revoked.' + (surface ? ' It is one of this service\'s own ' +
+               'surfaces, whose sessions standing on it end at their next ' +
+               'renewal.' : ''));
     log.debug("Leaving Consent.revokeGlobal(). ok.");
     return Object.assign({}, result, {
+      revoked: revoked, withdrawnAt: stamp,
       message: '"' + who + '" no longer consents <code>' + leaf +
         '</code> for everybody. The next person to sign in asking for it ' +
         'is PROMPTED — ' +
         'including anybody who was covered by this override, because an ' +
         'override records nothing about the people it covered. Somebody who ' +
         'agreed to it personally, before or after, still has that on their ' +
-        'entry and is not asked.'
+        'entry and is not asked. ' + self.revokedSentence(revoked) +
+        ' Tokens of people who agreed to it themselves were left alone.' +
+        (surface ? ' <strong>This is one of this service\'s own ' +
+          'surfaces</strong>: every session of it that held this scope ' +
+          'through the override is ended at its next token renewal, and the ' +
+          'person signs in again and is asked.' : '')
     });
   }
 
@@ -738,22 +840,21 @@ class Consent {
         'entry and is removed at /admin/consent instead — that is the ' +
         'difference between an override and a record.'] }, 'STS-REG-0032');
     }
-    const removed = this.directory.removeConsent(key,
-      held.map(function (one) {
-        return one.raw;
-      })) || {};
+    // WITHDRAWN, NOT ONLY FORGOTTEN (#172): the instant on the entry, then
+    // every token issued under it revoked — see the block above
+    // `withdrawnStamp()`.
+    const outcome = self.withdrawHeld(key, held, actor);
     log.info('consent: "' + key + '" no longer consents "' + leaf + '" for "' +
              who + '". They are asked again the next time that application ' +
-             'requests it.');
+             'requests it, and ' + outcome.revoked + ' token(s) issued under ' +
+             'it were revoked.');
     log.debug("Leaving Consent.revoke(). ok.");
-    return { ok: true, removed: held.length, dn: removed.dn || '',
+    return { ok: true, removed: held.length, dn: outcome.dn,
+             revoked: outcome.revoked, withdrawnAt: outcome.at,
              message: '"' + key + '" no longer consents <code>' + leaf +
                '</code> for "' + who + '". The next authorization request ' +
                'from that application naming that scope draws the consent ' +
-               'screen again. Nothing already ISSUED was touched — an access ' +
-               'token minted before this is still valid, exactly as a ' +
-               'revoked delegated permission does not re-judge a grant ' +
-               'already made.' };
+               'screen again. ' + self.revokedSentence(outcome.revoked) };
   }
 
   // FORGET everything one person agreed to. A separate action rather than a
@@ -786,21 +887,503 @@ class Consent {
         'what makes this page able to say the difference.'] },
         'STS-REG-0032');
     }
-    const removed = this.directory.removeConsent(key,
-      held.map(function (one) {
-        return one.raw;
-      })) || {};
+    const outcome = self.withdrawHeld(key, held, actor);
     log.info('consent: every consent "' + key + '" had agreed to (' +
              held.length +
-             ') was forgotten. They are asked again by every application.');
+             ') was withdrawn. They are asked again by every application, ' +
+             'and ' + outcome.revoked + ' token(s) issued under those ' +
+             'consents were revoked.');
     log.debug("Leaving Consent.forget(). " + held.length + " removed.");
-    return { ok: true, removed: held.length, dn: removed.dn || '',
+    return { ok: true, removed: held.length, dn: outcome.dn,
+             revoked: outcome.revoked, withdrawnAt: outcome.at,
              message: held.length + ' consent(s) were removed from "' + key +
                '". ' +
                'Every application that asks them for a scope now draws the ' +
                'consent screen again — except for the scopes under GLOBAL ' +
-               'consent, which were never on their entry to begin with.' };
+               'consent, which were never on their entry to begin with. ' +
+               self.revokedSentence(outcome.revoked) };
   }
+
+  // ---------------------------------------------------------------------------
+  // WITHDRAWN MEANS WITHDRAWN, NOT "ASKED AGAIN NEXT TIME" (#172, 2026-09-23).
+  //
+  // Until this date a revoke, a forget and a global revoke each edited the
+  // record and said, in as many words, that nothing already ISSUED was
+  // touched. So a person who withdrew an application's `offline_access`
+  // watched it keep refreshing for the refresh token's whole lifetime — and
+  // with `offline_access` it did so while they were absent, which is the one
+  // thing OpenID Connect Core section 11 says that scope is consented FOR.
+  // RFC 6749 section 1.5 makes a refresh token "a string representing the
+  // authorization granted to the client by the resource owner"; once the
+  // authorization is withdrawn it represents nothing.
+  //
+  // THREE THINGS, AND EACH ONE CLOSES A GAP THE OTHER TWO LEAVE:
+  //
+  //   1. **A WITHDRAWAL INSTANT IS RECORDED**, per (person, application,
+  //      scope) as `oauthConsentWithdrawn` on the person's entry and per
+  //      (application, scope) as `oauthGlobalConsentWithdrawn` on the
+  //      application's. The grammar is the consent's own with the instant to
+  //      the millisecond (`WITHDRAWN_STAMP`). Without it a RE-CONSENT would
+  //      revive every refresh token minted before the withdrawal, because
+  //      the record would say "consented" again and nothing would say since
+  //      when. One value per pair: a later withdrawal replaces an earlier
+  //      one, since only the latest can matter.
+  //   2. **EVERY TOKEN ISSUED UNDER THE CONSENT IS REVOKED** at the moment it
+  //      is withdrawn (`revokeIssuedUnder()`), through `stats.revoke()` —
+  //      the ONE revocation register `/oauth2/revoke`, the console and the
+  //      introspection endpoint share, persisted and replicated, so an access
+  //      token dies on every node rather than only on the one that took the
+  //      click. A refresh token takes its whole grant with it, #102's way
+  //      (`grantMembersOf()`, `revokeFamily()`), so the access token minted
+  //      beside it goes too even where its own scope was narrowed.
+  //   3. **THE REFRESH GRANT RE-CHECKS** (`refreshRefusal()`), against the
+  //      directory, in every mode. That is the ENFORCEMENT: it is stateless,
+  //      so a refresh token the walk above never saw — minted on another node
+  //      in the same instant, forgotten to a cap, issued before a restart —
+  //      is refused at its first use. The walk is the prompt clean-up, and
+  //      the only thing that reaches an access token before it expires.
+  //
+  // **WITHDRAWING ONE SCOPE REVOKES THE WHOLE REFRESH TOKEN** (the decision
+  // on #172). RFC 6749 section 6 would allow the next refresh to be narrowed
+  // to what is left; this service refuses instead, because the refresh
+  // token's scope is fixed at the grant and a grant the person has taken part
+  // of back is not the grant they gave.
+  // ---------------------------------------------------------------------------
+
+  // A withdrawal instant, in `WITHDRAWN_STAMP`'s spelling.
+  withdrawnStamp(when?: number | Date): string {
+    const { log } = this.deps;
+    log.debug("Entering Consent.withdrawnStamp().");
+    const d = when === undefined ? new Date() : new Date(when);
+    const seconds = this.generalizedTime(d);
+    log.debug("Leaving Consent.withdrawnStamp().");
+    return seconds.slice(0, 14) + '.' +
+      String(d.getUTCMilliseconds()).padStart(3, '0') + 'Z';
+  }
+
+  // Either stamp as a millisecond epoch, or NaN for anything else. A
+  // consent's stamp has no fraction and reads as the start of its second.
+  stampMs(stamp: unknown): number {
+    const { log } = this.deps;
+    log.debug("Entering Consent.stampMs().");
+    const text = String(stamp == null ? '' : stamp);
+    if (!CONSENT_STAMP.test(text) && !WITHDRAWN_STAMP.test(text)) {
+      log.debug("Leaving Consent.stampMs(). Not a stamp.");
+      return NaN;
+    }
+    const ms = text.length > 15 ? Number(text.slice(15, 18)) : 0;
+    log.debug("Leaving Consent.stampMs().");
+    return Date.UTC(Number(text.slice(0, 4)), Number(text.slice(4, 6)) - 1,
+                    Number(text.slice(6, 8)), Number(text.slice(8, 10)),
+                    Number(text.slice(10, 12)), Number(text.slice(12, 14)),
+                    ms);
+  }
+
+  // A withdrawal value, parsed. The consent grammar, with the withdrawal
+  // stamp in front: `<stamp> <scope> <client_id>` on a person's entry and
+  // `<stamp> <scope>` on an application's (`global`), the client_id last for
+  // `parseConsentValue()`'s reason. Anything else has an empty `scope`.
+  parseWithdrawalValue(value: unknown, global?: boolean) {
+    const { log } = this.deps;
+    log.debug("Entering Consent.parseWithdrawalValue().");
+    const text = String(value == null ? '' : value).trim();
+    const empty = { at: '', atMs: NaN, scope: '', client: '', raw: text };
+    const first = text.indexOf(' ');
+    const at = first < 0 ? '' : text.slice(0, first);
+    if (!WITHDRAWN_STAMP.test(at)) {
+      log.debug("Leaving Consent.parseWithdrawalValue(). Not a withdrawal.");
+      return empty;
+    }
+    const rest = text.slice(first + 1);
+    const second = global ? -1 : rest.indexOf(' ');
+    if (!global && second < 0) {
+      log.debug("Leaving Consent.parseWithdrawalValue(). No client.");
+      return empty;
+    }
+    const scope = global ? rest : rest.slice(0, second);
+    if (!scope || /\s/.test(scope)) {
+      log.debug("Leaving Consent.parseWithdrawalValue(). No scope.");
+      return empty;
+    }
+    log.debug("Leaving Consent.parseWithdrawalValue().");
+    return { at: at, atMs: this.stampMs(at), scope: scope,
+             client: global ? '' : rest.slice(second + 1), raw: text };
+  }
+
+  // Every withdrawal recorded on one person's entry, parsed.
+  withdrawalsOf(username: unknown) {
+    const { log, stats } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.withdrawalsOf().");
+    const key = stats.identityKeyOf(username);
+    if (!this.directory || !key) {
+      log.debug("Leaving Consent.withdrawalsOf(). No directory or no " +
+                "identity.");
+      return [];
+    }
+    const found = this.directory.withdrawalsOf(key) || {};
+    const rows = (found.values || []).map(function (value) {
+      return self.parseWithdrawalValue(value);
+    }).filter(function (one) {
+      return !!one.scope;
+    });
+    log.debug("Leaving Consent.withdrawalsOf(). " + rows.length + ".");
+    return rows;
+  }
+
+  // Every withdrawal of an application's global consent, parsed.
+  globalWithdrawalsOf(clientId: unknown) {
+    const { log, applications } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.globalWithdrawalsOf().");
+    const entry = applications.get(String(clientId || '').trim());
+    const raw = entry ? (entry.fields || {})[GLOBAL_WITHDRAWN_ATTRIBUTE] : [];
+    const rows = (Array.isArray(raw) ? raw : (raw ? [raw] : []))
+      .map(function (value) {
+        return self.parseWithdrawalValue(value, true);
+      }).filter(function (one) {
+        return !!one.scope;
+      });
+    log.debug("Leaving Consent.globalWithdrawalsOf(). " + rows.length + ".");
+    return rows;
+  }
+
+  // RECORD that one person withdrew these (application, scope) pairs, at one
+  // instant. A value already there for a pair is REPLACED: only the latest
+  // withdrawal can refuse anything, and an attribute that grew by one value
+  // per click would be a list nobody could read.
+  noteWithdrawn(username: unknown,
+                pairs: Array<{ client: string; scope: string }>,
+                when?: number) {
+    const { log, errorCodes, stats } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.noteWithdrawn().");
+    const key = stats.identityKeyOf(username);
+    if (!this.directory || !key || !pairs.length) {
+      log.debug("Leaving Consent.noteWithdrawn(). Nothing to write.");
+      return { ok: false, stored: false };
+    }
+    const stamp = self.withdrawnStamp(when);
+    const earlier = self.withdrawalsOf(key).filter(function (one) {
+      return pairs.some(function (pair) {
+        return pair.client === one.client && pair.scope === one.scope;
+      });
+    }).map(function (one) {
+      return one.raw;
+    });
+    if (earlier.length) {
+      this.directory.removeWithdrawal(key, earlier);
+    }
+    const written = this.directory.addWithdrawal(key, pairs.map(function (p) {
+      return stamp + ' ' + p.scope + ' ' + p.client;
+    })) || {};
+    if (!written.ok) {
+      // The record is gone and its tokens are revoked; what is lost is the
+      // instant, so a RE-CONSENT could revive a refresh token the walk did
+      // not reach. Loud, and coded, because that is a withdrawal half done.
+      log.error(errorCodes.tag('STS-REG-0192') + 'consent: the withdrawal ' +
+                'of ' + pairs.length + ' consent(s) by "' + key + '" could ' +
+                'not be written down (' + (written.reason || 'no entry') +
+                '). Their tokens were revoked; a refresh token minted on ' +
+                'another node at this instant is refused only while the ' +
+                'consent stays withdrawn.');
+    }
+    log.debug("Leaving Consent.noteWithdrawn(). stored=" + !!written.ok);
+    return { ok: !!written.ok, stored: !!written.ok, at: stamp };
+  }
+
+  // WHETHER A GRANT STILL STANDS, for the refresh grant. `grantAt` is the
+  // instant the grant was made (the refresh token's `grant_at`), `grantType`
+  // the grant it came from, and a refusal names its code. Null means go on.
+  //
+  // For each scope the token carries:
+  //
+  //   * the PERSON withdrew it for this application at or after the grant —
+  //     refused, whatever else holds (`STS-OAUTH-0615`);
+  //   * the application's GLOBAL consent to it was withdrawn at or after the
+  //     grant, and the person had not agreed to it themselves by the time
+  //     of the grant — refused (`STS-OAUTH-0615`). Re-adding the override
+  //     does not revive it, and nor does a personal consent given later;
+  //   * nothing covers it — no consent of the person's that predates the
+  //     grant and no global consent in force — for a grant made at the
+  //     AUTHORIZATION ENDPOINT, which is where consent is asked, while
+  //     consent is required and `oauth2.refreshRequiresConsent` is on:
+  //     refused (`STS-OAUTH-0616`). That is a token minted while
+  //     `oauth2.consentRequired` was off, or before the directory could
+  //     hold the answer. The other grants never ask anybody, so they are
+  //     held to explicit withdrawals only.
+  //
+  // `at <= grantAt` for a personal consent, because a consent stamp is to the
+  // second and was written before the code was minted; a withdrawal in the
+  // SAME millisecond as the grant refuses it (`>=`), the safe side of a tie.
+  refreshRefusal(asked: { username?: string; clientId?: string;
+                          scope?: string; grantAt?: unknown;
+                          grantType?: string }) {
+    const { log, config, fapi } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.refreshRefusal().");
+    const username = String(asked.username || '');
+    const clientId = String(asked.clientId || '').trim();
+    if (!username || !clientId) {
+      log.debug("Leaving Consent.refreshRefusal(). No person behind it.");
+      return null;
+    }
+    // A token with no grant instant is judged as the oldest grant there
+    // could be, which is the safe reading of a token this code did not mint.
+    const at = Number(asked.grantAt);
+    const grantAt = isFinite(at) && at > 0 ? at : 0;
+    const scopes = self.scopesOf(asked.scope);
+    const held = self.consentsOf(username).filter(function (one) {
+      return one.client === clientId;
+    });
+    const withdrawn = self.withdrawalsOf(username).filter(function (one) {
+      return one.client === clientId;
+    });
+    const globalWithdrawn = self.globalWithdrawalsOf(clientId);
+    const globals = fapi.honoursGlobalConsent()
+      ? self.globalConsentsOf(clientId) : [];
+    const recordedRequired = asked.grantType === 'authorization_code' &&
+      self.required() && !!config.value('oauth2.refreshRequiresConsent');
+    for (const scope of scopes) {
+      const mine = withdrawn.filter(function (one) {
+        return one.scope === scope && one.atMs >= grantAt;
+      });
+      if (mine.length) {
+        log.debug("Leaving Consent.refreshRefusal(). The person withdrew " +
+                  scope + ".");
+        return { errorCode: 'STS-OAUTH-0615', scope: scope,
+                 reason: 'withdrawn',
+                 description: 'The person this refresh token was issued ' +
+                   'for withdrew their consent to "' + scope + '" for this ' +
+                   'client after it was granted, so the grant it represents ' +
+                   'no longer exists (RFC 6749 section 1.5). A new ' +
+                   'authorization request asks them again.' };
+      }
+      const personal = held.some(function (one) {
+        return one.scope === scope && self.stampMs(one.at) <= grantAt;
+      });
+      const overrideGone = globalWithdrawn.some(function (one) {
+        return one.scope === scope && one.atMs >= grantAt;
+      });
+      if (overrideGone && !personal) {
+        log.debug("Leaving Consent.refreshRefusal(). The global consent to " +
+                  scope + " was withdrawn.");
+        return { errorCode: 'STS-OAUTH-0615', scope: scope,
+                 reason: 'withdrawn',
+                 description: 'This client\'s consent to "' + scope + '" ' +
+                   'for everybody was withdrawn after this refresh token ' +
+                   'was granted, and the person had not agreed to it ' +
+                   'themselves, so the grant it represents no longer ' +
+                   'exists (RFC 6749 section 1.5).' };
+      }
+      const global = !overrideGone && globals.indexOf(scope) >= 0;
+      if (recordedRequired && !personal && !global) {
+        log.debug("Leaving Consent.refreshRefusal(). No recorded consent " +
+                  "to " + scope + ".");
+        return { errorCode: 'STS-OAUTH-0616', scope: scope,
+                 reason: 'unconsented',
+                 description: 'Consent is required here and nothing records ' +
+                   'the person agreeing to "' + scope + '" for this client ' +
+                   'before this refresh token was granted, so it is not ' +
+                   'renewed (oauth2.refreshRequiresConsent). A new ' +
+                   'authorization request asks them.' };
+      }
+    }
+    log.debug("Leaving Consent.refreshRefusal(). The grant stands.");
+    return null;
+  }
+
+  // REVOKE WHAT WAS ISSUED UNDER A CONSENT: every access and refresh token of
+  // `clientId` whose scope names one of `scopes` — for one person where
+  // `username` is given, for everybody otherwise, less the people `spare`
+  // answers true for (a global withdrawal spares those who agreed
+  // themselves). A refresh token takes its grant with it (#102). Returns the
+  // count newly revoked. Synchronous in what it revokes; the family marks,
+  // which reach a member minted on another node this instant, are claimed
+  // behind it and logged if the claim store cannot be asked.
+  revokeIssuedUnder(asked: { username?: string; clientId: string;
+                             scopes: string[];
+                             spare?: (holder: string) => boolean },
+                    via: string): number {
+    const { log, stats, errorCodes } = this.deps;
+    log.debug("Entering Consent.revokeIssuedUnder(). client=" +
+              asked.clientId);
+    const clientId = String(asked.clientId || '').trim();
+    const wanted = (asked.scopes || []).filter(Boolean);
+    const person = asked.username ? stats.identityKeyOf(asked.username) : '';
+    if (!clientId || !wanted.length) {
+      log.debug("Leaving Consent.revokeIssuedUnder(). Nothing named.");
+      return 0;
+    }
+    const spared: Record<string, boolean> = {};
+    const refreshes: string[] = [];
+    let count = stats.revokeWhere(function (record) {
+      if (GRANT_TOKEN_KINDS.indexOf(record.kind) < 0 ||
+          String(record.client_id || '') !== clientId) {
+        return false;
+      }
+      const holder = stats.holderKeyOf(record.username, record.sub);
+      if (!holder || (person && holder !== person)) {
+        return false;
+      }
+      const carried = String(record.scope || '').split(/\s+/)
+        .concat(record.kind === 'access_token'
+          ? String(record.audience || '').split(/\s+/) : []);
+      if (!wanted.some(function (one) {
+        return carried.indexOf(one) >= 0;
+      })) {
+        return false;
+      }
+      if (asked.spare) {
+        if (!(holder in spared)) {
+          spared[holder] = !!asked.spare(holder);
+        }
+        if (spared[holder]) {
+          return false;
+        }
+      }
+      if (record.kind === 'refresh_token') {
+        refreshes.push(String(record.jti));
+      }
+      return true;
+    }, via);
+    if (refreshes.length) {
+      let grants: GrantBookkeeping | null = null;
+      try {
+        grants = this.deps.grants();
+      } catch (e) {
+        // A process without the OAuth modules has no grants to follow; the
+        // tokens the walk found are revoked all the same.
+        log.debug("Caught in Consent.revokeIssuedUnder(): " +
+                  ((e && e.message) || e));
+        grants = null;
+      }
+      refreshes.forEach(function (jti) {
+        if (!grants) {
+          return;
+        }
+        const family = grants.familyOfRefresh({ jti: jti });
+        grants.grantMembersOf(family, jti).forEach(function (member) {
+          if (stats.revoke(member, via + ', with the refresh token of its ' +
+                                   'grant')) {
+            count += 1;
+          }
+        });
+        if (family) {
+          grants.revokeFamily(family, clientId).then(function (ok) {
+            if (!ok) {
+              log.debug("revokeIssuedUnder(): the family mark for " + family +
+                        " was not written; oauth2_bcp.js logged why.");
+            }
+          }, function (e) {
+            log.error(errorCodes.tag('STS-OAUTH-0617') + 'consent: the ' +
+                      'refresh family ' + family + ' of a withdrawn ' +
+                      'consent could not be revoked by id: ' +
+                      ((e && e.message) || e) + '. Its members known here ' +
+                      'are revoked, and the refresh grant refuses any ' +
+                      'other at its first use.');
+          });
+        }
+      });
+    }
+    log.info('consent: ' + count + ' token(s) of "' + clientId + '" issued ' +
+             'under ' + wanted.join(', ') + (person ? ' for "' + person + '"'
+               : '') + ' were revoked (' + via + ').');
+    log.debug("Leaving Consent.revokeIssuedUnder(). " + count + ".");
+    return count;
+  }
+
+  // WITHDRAW EVERY SCOPE ONE PERSON AGREED TO FOR ONE APPLICATION — the
+  // portal's "withdraw this application" and the console's and the API's
+  // `revoke-application-consent`. `revoke()` per scope would be one
+  // withdrawal instant per scope and one walk per scope for what the person
+  // did in one press.
+  revokeApplication(username: unknown, clientId: unknown, actor?: string) {
+    const { log, errorCodes, stats } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.revokeApplication().");
+    const key = stats.identityKeyOf(username);
+    const who = String(clientId || '').trim();
+    if (!this.directory) {
+      log.debug("Leaving Consent.revokeApplication(). No directory.");
+      return errorCodes.mark({ ok: false, errors: ['This service has no ' +
+        'directory installed, so there is nothing to withdraw.'] },
+        'STS-REG-0029');
+    }
+    if (!key || !who) {
+      log.debug("Leaving Consent.revokeApplication(). Under-specified.");
+      return errorCodes.mark({ ok: false, errors: ['Send `username` and ' +
+        '`client`: the person and the application whose every consent is ' +
+        'withdrawn.'] }, 'STS-REG-0031');
+    }
+    const held = self.consentsOf(key).filter(function (one) {
+      return one.client === who;
+    });
+    if (!held.length) {
+      log.debug("Leaving Consent.revokeApplication(). Nothing held.");
+      return errorCodes.mark({ ok: false, errors: ['"' + key + '" has ' +
+        'consented nothing for "' + who + '" that is written down, so there ' +
+        'is nothing to withdraw. A scope under GLOBAL consent is not on ' +
+        'anybody\'s entry.'] }, 'STS-REG-0032');
+    }
+    const outcome = self.withdrawHeld(key, held, actor);
+    log.debug("Leaving Consent.revokeApplication(). ok.");
+    return Object.assign({ ok: true, removed: held.length, dn: outcome.dn,
+                           revoked: outcome.revoked,
+                           withdrawnAt: outcome.at },
+      { message: '"' + key + '" no longer consents anything for "' + who +
+        '" (' + held.length + ' scope(s)). ' + self.revokedSentence(
+          outcome.revoked) });
+  }
+
+  // THE COMMON TAIL OF revoke(), forget() and revokeApplication(): the
+  // records off the entry, the instant on it, and the tokens revoked, per
+  // application, in that order — the instant BEFORE the walk, so that a
+  // refresh racing the walk on another node is already refused.
+  private withdrawHeld(key: string,
+                       held: Array<{ client: string; scope: string;
+                                     raw: string }>,
+                       actor?: string) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.withdrawHeld(). " + held.length + ".");
+    if (!this.directory) {
+      log.debug("Leaving Consent.withdrawHeld(). No directory.");
+      return { dn: '', revoked: 0, at: '' };
+    }
+    const noted = self.noteWithdrawn(key, held.map(function (one) {
+      return { client: one.client, scope: one.scope };
+    }));
+    const removed = this.directory.removeConsent(key,
+      held.map(function (one) {
+        return one.raw;
+      })) || {};
+    const byClient: Record<string, string[]> = {};
+    held.forEach(function (one) {
+      (byClient[one.client] = byClient[one.client] || []).push(one.scope);
+    });
+    let revoked = 0;
+    Object.keys(byClient).forEach(function (client) {
+      revoked += self.revokeIssuedUnder({ username: key, clientId: client,
+                                          scopes: byClient[client] },
+        'consent withdrawn' + (actor && actor !== key ? ' by ' + actor
+                                                       : ' by the person'));
+    });
+    log.debug("Leaving Consent.withdrawHeld(). " + revoked + " revoked.");
+    return { dn: removed.dn || '', revoked: revoked, at: noted.at || '' };
+  }
+
+  // What a withdrawal did to what was already issued, in one sentence.
+  revokedSentence(count: number): string {
+    const { log } = this.deps;
+    log.debug("Entering Consent.revokedSentence().");
+    log.debug("Leaving Consent.revokedSentence().");
+    return (count ? count + ' token(s) issued under it were revoked, '
+                  : 'No live token had been issued under it; ') +
+      'and every refresh token granted before now is refused at the token ' +
+      'endpoint even if consent is given again.';
+  }
+
 
   // ---------------------------------------------------------------------------
   // THE REGISTER, BOTH HALVES, FROM ONE WALK OF EACH CONTAINER.
@@ -902,7 +1485,11 @@ class Consent {
       storable: this.storable(),
       attribute: USER_ATTRIBUTE,
       globalAttribute: GLOBAL_ATTRIBUTE,
-      settings: ['oauth2.consentRequired']
+      withdrawnAttribute: WITHDRAWN_ATTRIBUTE,
+      globalWithdrawnAttribute: GLOBAL_WITHDRAWN_ATTRIBUTE,
+      refreshRequiresConsent:
+        !!this.deps.config.value('oauth2.refreshRequiresConsent'),
+      settings: ['oauth2.consentRequired', 'oauth2.refreshRequiresConsent']
     };
     log.debug("Leaving Consent.state(). required=" + out.required);
     return out;
@@ -935,6 +1522,8 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   USER_ATTRIBUTE: USER_ATTRIBUTE,
   GLOBAL_ATTRIBUTE: GLOBAL_ATTRIBUTE,
+  WITHDRAWN_ATTRIBUTE: WITHDRAWN_ATTRIBUTE,
+  GLOBAL_WITHDRAWN_ATTRIBUTE: GLOBAL_WITHDRAWN_ATTRIBUTE,
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),
   storable: slot.forward('storable'),
@@ -952,6 +1541,15 @@ export = {
   record: slot.forward('record'),
   revoke: slot.forward('revoke'),
   forget: slot.forward('forget'),
+  revokeApplication: slot.forward('revokeApplication'),
+  withdrawnStamp: slot.forward('withdrawnStamp'),
+  stampMs: slot.forward('stampMs'),
+  parseWithdrawalValue: slot.forward('parseWithdrawalValue'),
+  withdrawalsOf: slot.forward('withdrawalsOf'),
+  globalWithdrawalsOf: slot.forward('globalWithdrawalsOf'),
+  noteWithdrawn: slot.forward('noteWithdrawn'),
+  refreshRefusal: slot.forward('refreshRefusal'),
+  revokeIssuedUnder: slot.forward('revokeIssuedUnder'),
   register: slot.forward('register'),
   state: slot.forward('state')
 };

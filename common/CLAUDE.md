@@ -2987,7 +2987,9 @@ with `Cannot find module` naming a file the operator never mentioned.
      this service reading their own profile — a question with one sensible
      answer, in front of every sign-in, whose Deny button makes the surface
      unreachable. It is an ATTRIBUTE rather than an exemption in `consent.ts`,
-     so an operator who wants the screen removes the values and gets it.
+     so an operator who wants the screen removes the values and gets it —
+     through `revoke-global-consent`, which since #172 also revokes the
+     surface's tokens under it, so its sessions end at their next renewal.
    * **The redirect URI on the entry is LEARNT as well as seeded — in
      DEVELOPMENT, with `global.publicBaseUrl` empty, up to
      `oidcRp.maxRedirectUris`.** The seeded value names `localhost:<port>`,
@@ -3895,7 +3897,11 @@ URI.
 It requires `helpers.js`, `config.js`, `applications.js`, `error_codes.js` and
 `admin_stats.js` (for `identityKeyOf()`, so that `alice`, `alice@EXAMPLE.COM` and her
 `urn:uuid:<entryUUID>` — or the retired `urn:sts:user:alice` — are one person
-here exactly as they are one entry in the directory), and nothing requires it back. **The directory arrives through
+here exactly as they are one entry in the directory, and for `revokeWhere()`),
+and nothing requires it back. **`oauth-oidc/oauth2_bcp.js` is reached LAZILY**
+(the `grants` dependency, #172), only when a withdrawal follows a refresh
+token's grant: that module is built at 9 with stores of its own, and a require
+at the top of this file would run them first. **The directory arrives through
 `setDirectory()`, which `ldap_server.js` fills at ITS require time** — the same
 inversion `group_claims.ts`, `applications.js`, `federation.js`,
 `spiffe_registry.js`, `vc_claims.js` and `admin_rbac.js` all use, and for their
@@ -3966,6 +3972,54 @@ what somebody gets wrong:
   service-wide list of harmless scopes would be shorter to configure and would
   mean an application registered five minutes ago inheriting a decision made
   about a different one.
+
+### Withdrawn means withdrawn (#172, 2026-09-23)
+
+Until this date a revoke, a forget and a global revoke edited the record and
+said that nothing already issued was touched — so an application a person had
+taken `offline_access` back from went on refreshing, while they were away, for
+the refresh token's whole life. Three things now, and each closes a gap the
+other two leave:
+
+* **THE INSTANT IS RECORDED.** `oauthConsentWithdrawn` on the person (`<stamp>
+  <scope> <client_id>`, the consent grammar with the stamp to the MILLISECOND,
+  `\d{14}\.\d{3}Z`, so a consent value can never parse as one) and
+  `oauthGlobalConsentWithdrawn` on the application (`<stamp> <scope>`, a schema
+  row that is NOT editable, written by `applications.noteGlobalConsentWithdrawn()`
+  alone). One value per pair; a later withdrawal replaces an earlier one.
+  Without it a RE-CONSENT would revive every refresh token granted before the
+  withdrawal. The directory slot grew three hooks for it
+  (`withdrawalsOf`, `addWithdrawal`, `removeWithdrawal`), validated whole with
+  the other four: a store that could hold the consent and not its withdrawal
+  would be that revival.
+* **WHAT WAS ISSUED UNDER IT IS REVOKED**, by `revokeIssuedUnder()` through
+  `stats.revokeWhere()` — the one persisted, replicated revocation register —
+  so an access token introspects inactive on every node. Tokens of this client
+  and person carrying the scope (an access token's audience counts); a refresh
+  token takes its grant with it, #102's `grantMembersOf()` and
+  `revokeFamily()`. A GLOBAL withdrawal reaches everybody but the people who
+  agreed to the scope themselves.
+* **THE REFRESH GRANT ASKS** `refreshRefusal()`, against the directory, in every
+  mode. A refresh token carries `grant_at` (ms) and `grant_type`, carried
+  unchanged through every refresh. A personal withdrawal at or after `grant_at`
+  refuses (`STS-OAUTH-0615`; a tie refuses); so does a global withdrawal at or
+  after it unless the person's own consent predates the grant. A grant from the
+  authorization endpoint that no recorded consent covered refuses while consent
+  is required and `oauth2.refreshRequiresConsent` is on (`STS-OAUTH-0616`); the
+  other grants never ask anybody and are held to withdrawals only. It is the
+  ENFORCEMENT — stateless, so it holds for a token the walk never saw; the walk
+  is the prompt clean-up and the only thing that reaches an access token.
+
+**Withdrawing one scope revokes the whole refresh token** (the decision on
+#172): RFC 6749 section 6 would allow a narrowed refresh, and the grant's scope
+was fixed when it was made. **`revoke-global-consent` is the only door that
+removes an `oauthGlobalConsent` value** — `updateApplication()` refuses the
+generic remove without `consentRegister` (`STS-REG-0191`), because it cannot
+require this module to do the rest. **The hosted surfaces are not exempt**:
+withdrawing `offline_access` from the console's, portal's or debugger's global
+consent revokes their sessions' tokens, each ends at its next renewal, and the
+person signs in again and is asked — nobody is locked out, and the reply says
+which surface it was.
 
 ### Two more things
 

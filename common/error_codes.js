@@ -6319,6 +6319,23 @@ const CODES = [
     summary: 'The revocation endpoint failed with an unexpected error ' +
       'outside every refusal it makes (#102).',
     spec: 'server_error (HTTP 500)' },
+  { code: 'STS-OAUTH-0615',
+    summary: 'A refresh was refused because a consent its grant stood on — ' +
+      'the person\'s own, or the application\'s global consent that the ' +
+      'person had not given themselves — was withdrawn at or after the ' +
+      'grant was made (#172). The refresh token\'s grant is revoked.',
+    spec: 'HTTP 400 {error: invalid_grant}' },
+  { code: 'STS-OAUTH-0616',
+    summary: 'A refresh of a grant made at the authorization endpoint was ' +
+      'refused because no recorded consent covered one of its scopes when it ' +
+      'was granted, while consent is required and ' +
+      'oauth2.refreshRequiresConsent is on (#172).',
+    spec: 'HTTP 400 {error: invalid_grant}' },
+  { code: 'STS-OAUTH-0617',
+    summary: 'Withdrawing a consent could not revoke a refresh family by id; ' +
+      'its members known on this node were revoked, and the refresh grant ' +
+      'refuses any other at its first use (#172).',
+    spec: 'none — logged' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -10202,6 +10219,16 @@ const CODES = [
       'verifies the receiver\'s certificate whatever it says. Logged once ' +
       'per process (#171).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-SSF-0110',
+    summary: 'No reaction to a signal this service\'s own console or portal ' +
+      'received could be decided: the signal-response policy is disabled, ' +
+      'missing or does not load. The event is recorded and nothing is ended.',
+    spec: '' },
+  { code: 'STS-SSF-0111',
+    summary: 'A reaction the signal-response policy permitted to a received ' +
+      'signal failed: the receiving surface\'s sessions for the person could ' +
+      'not be ended.',
+    spec: '' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -10327,6 +10354,16 @@ const CODES = [
       'is not greater than one already processed — a rollback. Nothing was ' +
       'loaded.',
     spec: 'FIDO Metadata Service v3.0, section 3.1.8' },
+  { code: 'STS-RISK-0025',
+    summary: 'Monitoring → Risk Scoring, or GET /admin-api/risk/metrics, ' +
+      'could not be answered: the risk store failed to count the window\'s ' +
+      'assessments.',
+    spec: '' },
+  { code: 'STS-RISK-0026',
+    summary: 'An entry of risk.signalFactors was ignored: it names no known ' +
+      'signal, or its factor is not a positive number. The signal keeps its ' +
+      'built-in factor; logged once for each value the setting is given.',
+    spec: '' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -13410,6 +13447,11 @@ const CODES = [
     summary: 'A POST to /portal/sign-ins named a sign-in that is not the ' +
       'person\'s own, is too old, or has already been answered (#62 P6).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0085',
+    summary: 'A POST to /portal/consents named no consent of the signed-in ' +
+      'person\'s own to withdraw — none held for that application and ' +
+      'scope, or no scope named (#172).',
+    spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
@@ -13996,6 +14038,18 @@ const CODES = [
       'every delivery would be dead-lettered, so it is refused where it is ' +
       'written (#123).',
     spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0191',
+    summary: 'A generic application edit tried to remove a value of ' +
+      'oauthGlobalConsent. A global consent is withdrawn only through the ' +
+      'consent register (revoke-global-consent), which also revokes what ' +
+      'was issued under it and records when (#172).',
+    spec: 'HTTP 400 page / {ok: false}' },
+  { code: 'STS-REG-0192',
+    summary: 'A consent was withdrawn and its tokens revoked, but the ' +
+      'withdrawal instant could not be written onto the person\'s or the ' +
+      'application\'s entry, so a re-consent could revive a refresh token ' +
+      'the revocation did not reach (#172).',
+    spec: 'none — logged' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

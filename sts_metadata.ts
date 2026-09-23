@@ -5077,6 +5077,27 @@ const ENDPOINTS: EndpointEntry[] = [
           'compromised. The identity is the session\'s; the assessment ' +
           'named must be the person\'s own. Real submit buttons and no ' +
           'script.' },
+  { path: '/portal/consents', group: 'User portal',
+    name: 'What you have agreed applications may ask for, and withdrawing it',
+    specs: ['rfc6749', 'oidc'],
+    effect: 'withdraws one of the signed-in person\'s own consents, or ' +
+            'everything they agreed to for one application, and revokes ' +
+            'every token issued under it',
+    what: 'NON-SPEC page for a spec behaviour (#172). The signed-in ' +
+          'person\'s own recorded consents — oauthConsent on their entry — ' +
+          'one card per application, each scope with a Withdraw form and ' +
+          'the application with a Withdraw-everything form. A withdrawal is ' +
+          'what /admin/consent\'s revoke-consent and ' +
+          'revoke-application-consent do, through the same functions: the ' +
+          'tokens the application holds for them under it are revoked on ' +
+          'every node, and the instant is recorded, so a refresh token ' +
+          'granted before it is refused even after they agree again (RFC ' +
+          '6749 sections 1.5 and 6, OIDC Core section 11 for ' +
+          'offline_access). A scope under global consent is not theirs to ' +
+          'withdraw and is not listed. The identity is the session\'s; the ' +
+          'form names only an application and a scope, checked against the ' +
+          'person\'s own entry. Paged by application. Real submit buttons ' +
+          'and no script.' },
   { path: '/portal/signing-key', group: 'User portal',
     name: 'Your own RFC 7523 signing key',
     specs: ['rfc7521', 'rfc7523', 'rfc5280'],
@@ -5327,13 +5348,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'anybody — so removing one asks EVERYBODY again, including the ' +
           'people who would have said yes. It is keyed on (application, ' +
           'scope) and never on the scope alone, so consenting `read` for one ' +
-          'application leaves every other one asking. Four controls: consent ' +
+          'application leaves every other one asking. Five controls: consent ' +
           'a scope for everybody, stop consenting it, revoke one person\'s ' +
-          'answer, and forget everything one person agreed to. NOTHING HERE ' +
-          'TOUCHES WHAT WAS ALREADY ISSUED — an access token minted before a ' +
-          'revoke is still valid, exactly as taking a delegated permission ' +
-          'away does not re-judge a grant already made; /admin/tokens is ' +
-          'where an issued credential is revoked. Both attributes are ' +
+          'answer, withdraw everything one person agreed to for one ' +
+          'application, and forget everything one person agreed to. EVERY ' +
+          'WITHDRAWAL REVOKES WHAT WAS ISSUED UNDER IT (#172): the access ' +
+          'and refresh tokens carrying the scope go on the revocation ' +
+          'register every node reads, and the instant is written ' +
+          '(oauthConsentWithdrawn on the person, ' +
+          'oauthGlobalConsentWithdrawn on the application) so a refresh ' +
+          'token granted before it is refused even after consent is given ' +
+          'again. Stop consenting is the only way a global consent comes ' +
+          'off an entry. Both attributes are ' +
           'ordinary attributes on ordinary entries, so an ldapmodify reaches ' +
           'them and they persist wherever the directory does. Searched over ' +
           'the person, the application and the scope; both tables paged; ' +
@@ -5673,6 +5699,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'every version loaded or refused; a lookup of one address; and the ' +
           'realm\'s refused passwords, attributed to a person or a name\'s ' +
           'digest and a network, never an address. Add ?format=json.' },
+  { path: '/admin/risk-scoring', group: 'Admin',
+    name: 'Risk scoring',
+    specs: [],
+    what: 'NON-SPEC (#62). The risk scoring system measured over a window ' +
+          '(?window=1h|24h|7d|30d): assessments over time by level, the ' +
+          'score bands, people by standing, every signal with its factor ' +
+          'and how often it fired, decisions, doors, phases, countries and ' +
+          'what people said; and this process\'s time to assess, reactions ' +
+          'and live-session re-checks. Add ?format=json, or GET ' +
+          '/admin-api/risk/metrics.' },
   { path: '/admin/vc-status', group: 'Admin',
     name: 'Credential status',
     specs: ['token-status-list', 'bitstring-status-list'],
@@ -6503,6 +6539,9 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Risk', specs: ['openapi'],
     what: 'NON-SPEC (#62). GET /admin/risk over JSON: the datasets, a lookup ' +
           'with ?address=, and a page of the realm\'s refused passwords.' },
+  { path: '/admin-api/risk/metrics', group: 'Management API',
+    name: 'Risk scoring metrics', specs: ['openapi'],
+    what: 'NON-SPEC (#62). GET /admin/risk-scoring over JSON.' },
   { path: '/admin-api/risk/:action', group: 'Management API',
     name: 'Risk actions', specs: ['openapi'],
     what: 'NON-SPEC (#62). import, activate, rollback, delete and ' +
@@ -7337,8 +7376,9 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/consent/:action', group: 'Management API',
     name: 'Grant and revoke consent',
     specs: ['openapi', 'rfc6749'],
-    what: 'grant-global-consent, revoke-global-consent, revoke-consent and ' +
-          'forget-user-consent — the same four the console\'s forms post to ' +
+    what: 'grant-global-consent, revoke-global-consent, revoke-consent, ' +
+          'revoke-application-consent and forget-user-consent — the same ' +
+          'five the console\'s forms post to ' +
           '/admin/consent, through the same functions, so neither door can ' +
           'enforce a rule the other does not. THE TWO REVOKES ARE NOT ' +
           'INTERCHANGEABLE and the names say which is which: ' +
@@ -7351,8 +7391,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'a legal RFC 6749 section 3.3 scope token and need NOT name a ' +
           'permission any application defines — most scopes are not ' +
           'permissions, and refusing an unrecognised one would make it ' +
-          'impossible to consent openid. NONE OF THE FOUR TOUCHES WHAT WAS ' +
-          'ALREADY ISSUED.' },
+          'impossible to consent openid. EVERY REVOKE AND THE FORGET ' +
+          'REVOKES WHAT WAS ISSUED UNDER THE CONSENT (#172) and records ' +
+          'when, ' +
+          'so the refresh grant refuses a refresh token granted before it; ' +
+          '`revoked` in the reply is how many tokens went.' },
   { path: '/admin-api/used-assertions', group: 'Management API',
     name: 'Used assertions',
     specs: ['rfc7521', 'rfc7522', 'rfc7523'],

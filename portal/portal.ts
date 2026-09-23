@@ -480,7 +480,13 @@ const NAV = [
       // belongs there, saying whether each was them. Drawn by
       // `portal_sign_ins.ts`.
       { path: BASE + '/sign-ins', label: 'Recent sign-ins',
-        heading: 'Your recent sign-ins' }
+        heading: 'Your recent sign-ins' },
+      // CONSENTS (#172, 2026-09-23), under *Your account* for Security
+      // activity's reason: not a credential, but what this person has let
+      // each application ask for — with the one control that belongs there,
+      // taking it back. Drawn by `portal_consents.ts`.
+      { path: BASE + '/consents', label: 'Consents',
+        heading: 'What you have agreed applications may do' }
     ] },
   { title: 'How you sign in',
     what: 'The credentials on your own entry, one page each.',
@@ -4019,7 +4025,19 @@ class Portal {
             (row.verified
               ? 'signed by this identity provider and verified'
               : 'NOT VERIFIED — ' + self.esc(row.verificationNote)) +
-            '</span></td></tr>';
+            '</span>' +
+            // WHAT THIS PORTAL DID WITH IT (#62): signed you out here, if
+            // the signal-response policy said to.
+            (row.reactions || []).map(function (r) {
+              return '<span class="ident signal-reaction">' +
+                (r.failed ? 'this portal could not sign you out here'
+                  : (r.observed ? 'this portal would sign you out here ' +
+                                  '(development mode records it only)'
+                    : (Number(r.ended) > 0
+                        ? 'this portal signed you out here'
+                        : 'this portal had no session of yours to end'))) +
+                '</span>';
+            }).join('') + '</td></tr>';
         }).join('') + '</table>'
       : '<p class="note">Nothing has been reported about your account' +
         (st.held ? ' yet' : ' yet') + '. This list fills when this identity ' +
@@ -6102,6 +6120,8 @@ const portalAppPasswords = require('./portal_app_passwords');
 const portalKerberos = require('./portal_kerberos');
 // /portal/sign-ins (#62 P6), the same arrangement, registered after that.
 const portalSignIns = require('./portal_sign_ins');
+// /portal/consents (#172), the same arrangement, registered after that.
+const portalConsents = require('./portal_consents');
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
@@ -6149,6 +6169,19 @@ export = {
       audit: audit, errorCodes: errorCodes, config: config
     });
     portalSignIns.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalConsents.register({
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
