@@ -512,6 +512,18 @@ async function test() {
     assert.ok(back && back.params.get("error") === "invalid_request",
               r.status + " " + r.location);
   });
+  r = await authorize(alice, { response_type: "code id_token",
+    client_id: plain.client_id, redirect_uri: REDIRECT, scope: "openid",
+    state: "s" });
+  back = atClient(r);
+  check("AND SO IS THE HYBRID code id_token WITHOUT ONE (OIDC Core 3.3.2.1: " +
+        "nonce is REQUIRED when an ID Token comes back from the " +
+        "authorization endpoint; #187, the conformance suite's hybrid plan)",
+        function () {
+    assert.ok(back && back.where === "fragment" &&
+              back.params.get("error") === "invalid_request",
+              r.status + " " + r.location);
+  });
 
   log.info("=== f. id_token_hint and select_account ===");
   const own = await codeTokens(alice, plain, {}, ALICE);

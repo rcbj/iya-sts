@@ -632,7 +632,6 @@ var config = {
     txCodeLength: 5,                                       // Transaction Code length (digits)
     txCodeMaxAttempts: 5,                                  // Wrong Transaction Codes before the code is spent (product)
     offerTtlS: 600,                                        // Credential Offer lifetime (s)
-    preAuthorizedPollIntervalS: 5,                         // Pre-authorized grant: interval (s)
     walletIssuancePath: "/vc-issuance-1.html",             // Wallet issuance page
     allowedWalletUrls: "",                                 // Other wallet URLs an offer link may name (product)
     requestEncryptionKeyBits: 2048,                        // Request encryption key size (bits)

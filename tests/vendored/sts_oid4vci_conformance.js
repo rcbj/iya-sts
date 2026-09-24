@@ -82,7 +82,15 @@ const PLANS = [
                                "issuer_initiated",
                              vci_grant_type: "pre_authorization_code" }, VCI),
     offer: "cross-device" },
+  // HAIP's issuer plan authenticates every wallet with OAuth 2.0
+  // Attestation-Based Client Authentication (`attest_jwt_client_auth`,
+  // draft-ietf-oauth-attestation-based-client-auth), which this
+  // authorization server does not implement: every module stops at its
+  // first token request. It is listed so the gap is in the run's own
+  // output, and runs once the method exists (#187's report names it).
   { key: "haip", name: "oid4vci-1_0-issuer-haip-test-plan",
+    pending: "this authorization server does not implement " +
+             "attest_jwt_client_auth, which HAIP requires of every wallet",
     variant: { credential_format: "sd_jwt_vc", grant_management: "disabled",
                vci_authorization_code_flow_variant: "wallet_initiated" } }
 ];
@@ -110,7 +118,15 @@ const KNOWN_FAILURES = {
   VCIValidateProofSigningAlgValuesSupported: "the suite's JWS algorithm " +
     "table lacks SLH-DSA and the composite ML-DSA algorithms",
   ValidateServerJWKs: "the suite's JOSE library cannot parse the realm's " +
-    "post-quantum (kty AKP) keys"
+    "post-quantum (kty AKP) keys",
+  // Outside HAIP the suite verifies a Token Status List's signature only
+  // with a `jwk` in its header or keys it already holds, and this realm's
+  // names its key as every token here does, by `kid` and an `x5u` to the
+  // certificate chain — both of which draft-ietf-oauth-status-list allows.
+  // A `jwk` in the header would be a key the token vouches for itself.
+  VerifyStatusListTokenSignatureUsingEmbeddedJwk: "the suite resolves a " +
+    "status list token's key only from a header jwk, and this realm names " +
+    "it by kid and x5u"
 };
 
 let checks = 0;
@@ -127,7 +143,13 @@ async function prepare(plan) {
   const alias = "iya-" + plan.key + "-" + TAG;
   const offerEndpoint = oidf.SUITE + "test/a/" + alias + "/credential_offer";
   const id = ("vci-" + plan.key + "-" + TAG).slice(0, 31).replace(/-+$/, "");
+  // A key attester of the suite's, made here: the suite signs key
+  // attestations with it, and the realm believes them
+  // (`oid4vci.keyAttestationTrustedCertificates`).
+  const attester = await oidf.selfSignedKey("conformance key attester " +
+                                            TAG);
   const realm = await oidf.makeRealm(root, id, "Conformance " + plan.name, [
+    ["oid4vci.keyAttestationTrustedCertificates", attester.pem],
     ["oauth2.fapi", "2-security"], ["oauth2.openRegistration", true],
     ["oid4vci.walletUrl", offerEndpoint],
     ["oid4vci.walletIssuancePath", ""],
@@ -141,7 +163,11 @@ async function prepare(plan) {
     const registered = await oidf.send(realm.base + "/oauth2/register", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        redirect_uris: [redirect],
+        // The suite sends the second client's requests to its callback with
+        // a query of its own (RFC 6749 section 3.1.2), and exact matching
+        // means it is registered that way — the FAPI job's arrangement.
+        redirect_uris: [n === 1 ? redirect
+                                : redirect + "?dummy1=lorem&dummy2=ipsum"],
         token_endpoint_auth_method: "private_key_jwt",
         token_endpoint_auth_signing_alg: "ES256",
         jwks: keys.publicJwks,
@@ -161,7 +187,16 @@ async function prepare(plan) {
     description: "iya-sts " + plan.name + " " + STAMP,
     server: { allow_unexpected_metadata_fields: oidf.EXTENSION_METADATA },
     vci: { credential_issuer_url: realm.base,
-           credential_configuration_id: CONFIGURATION_ID },
+           credential_configuration_id: CONFIGURATION_ID,
+           // This issuer's own two members (`issuer_did`, and
+           // `issuer_identifier` per configuration: which identifier a
+           // configuration's credentials carry, docs/oid4vci.md), and the
+           // members of its ldp_vc configurations (Appendix A.1.2), a
+           // format the suite's schema does not know.
+           allow_unexpected_credential_issuer_metadata_fields: [
+             "issuer_did", "issuer_identifier", "credential_definition",
+             "credential_signing_alg_values_supported"] },
+    client_attestation: { key_attestation_jwks: { keys: [attester.jwk] } },
     client: clients[0],
     client2: clients[1],
     browser: [{
@@ -198,23 +233,39 @@ async function prepare(plan) {
 // ---------------------------------------------------------------------------
 function operatorFor(plan, prepared) {
   log.debug("Entering operatorFor(). " + plan.key);
-  let txCode = "";
+  // What has been served, per module: how many offers and codes. The suite
+  // logs a VCIWaitForCredentialOffer or VCIWaitForTxCode each time it
+  // starts waiting for one, and a multiple-clients module waits for an
+  // offer per client, so the count, not a flag, says whether it is owed.
+  const served = {};
   log.debug("Leaving operatorFor().");
   return async function (id) {
     log.debug("Entering the offer operator. " + id);
-    const wants = await oidf.exposed(id);
-    if (wants.tx_code_endpoint && txCode) {
-      const url = String(wants.tx_code_endpoint)
-        .replace("your_tx_code", encodeURIComponent(txCode));
-      const r = await oidf.suite("GET", url.slice(oidf.SUITE.length));
-      log.info("  handed the suite the transaction code: " + r.status);
+    const mine = served[id] || (served[id] = { offers: 0, codes: 0,
+                                               txCode: "" });
+    const logs = (await oidf.suite("GET", "api/log/" + id)).body || [];
+    const waits = function (src) {
+      return logs.filter(function (e) {
+        return e.src === src;
+      }).length;
+    };
+    if (waits("VCIWaitForTxCode") > mine.codes && mine.txCode) {
+      const wants = await oidf.exposed(id);
+      const url = String(wants.tx_code_endpoint || "")
+        .replace("your_tx_code", encodeURIComponent(mine.txCode));
+      if (url.indexOf(oidf.SUITE) === 0) {
+        mine.codes += 1;
+        const r = await oidf.suite("GET", url.slice(oidf.SUITE.length));
+        log.info("  handed the suite the transaction code: " + r.status);
+      }
       log.debug("Leaving the offer operator. tx_code.");
       return;
     }
-    if (!wants.credential_offer_endpoint || !plan.offer) {
-      log.debug("Leaving the offer operator. Not waiting on an offer.");
+    if (!plan.offer || waits("VCIWaitForCredentialOffer") <= mine.offers) {
+      log.debug("Leaving the offer operator. Nothing owed.");
       return;
     }
+    mine.offers += 1;
     const page = await oidf.send(prepared.realm.base + "/issuer/offer?" +
       new URLSearchParams({ mode: plan.offer, by: "reference",
                             credential_configuration_ids:
@@ -226,13 +277,13 @@ function operatorFor(plan, prepared) {
       const decoded = page.raw.replace(/&amp;/g, "&");
       link = (decoded.match(/id="open_in_wallet" href="([^"]+)"/) ||
               [])[1] || "";
-      txCode = (decoded.match(/id="tx_code">([^<]*)</) || [])[1] || "";
+      mine.txCode = (decoded.match(/id="tx_code">([^<]*)</) || [])[1] || "";
     }
     assert.ok(link.indexOf(oidf.SUITE) === 0, "the offer page named no link " +
               "to the suite: " + page.status + " " + page.raw.slice(0, 300));
     const r = await oidf.suite("GET", link.slice(oidf.SUITE.length));
     log.info("  delivered a " + plan.offer + " credential offer: " + r.status +
-             (txCode ? " (a transaction code is held)" : ""));
+             (mine.txCode ? " (a transaction code is held)" : ""));
     log.debug("Leaving the offer operator. Offer.");
   };
 }
@@ -244,6 +295,11 @@ async function test() {
   const unexpected = [];
   for (const plan of PLANS) {
     if (!oidf.selected(plan.key)) {
+      continue;
+    }
+    if (plan.pending) {
+      log.warn("=== " + plan.name + " (" + plan.key + "): NOT RUN — " +
+               plan.pending + " ===");
       continue;
     }
     log.info("=== " + plan.name + " " + JSON.stringify(plan.variant) +

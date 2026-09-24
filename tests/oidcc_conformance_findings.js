@@ -23,6 +23,8 @@
 //      no OP to).
 //   4. OpenID Federation 1.1 section 12.1.1.1's claims, asked of every
 //      request object from a relying party registered automatically.
+//   5. ECDH-ES's Concat KDF with the header's apu and apv (RFC 7518 section
+//      4.6.2), which the JWE decryption left out.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -203,6 +205,52 @@ function checkFederationRequestObject(t) {
   log.debug("Leaving checkFederationRequestObject().");
 }
 
+// ---------------------------------------------------------------------------
+// 5. ECDH-ES WITH apu AND apv (RFC 7518 section 4.6.2), against Appendix C's
+// own worked example: Bob's key opens a JWE whose content key is the one the
+// appendix derives with PartyUInfo "Alice" and PartyVInfo "Bob".
+// ---------------------------------------------------------------------------
+function checkEcdhPartyInfo(t) {
+  log.debug("Entering checkEcdhPartyInfo().");
+  t.log.info('=== 5. ECDH-ES honours apu and apv ===');
+  const nodeCrypto = require('crypto');
+  const stsCrypto = require('../common/crypto');
+  const aliceEpk = { kty: 'EC', crv: 'P-256',
+    x: 'gI0GAILBdu7T53akrFmMyGcsF3n5dO7MmwNBHKW5SV0',
+    y: 'SLW_xSffzlPWrHEVI30DHM_4egVwt3NQqeUD7nMFpps' };
+  const bob = { kty: 'EC', crv: 'P-256',
+    x: 'weNJy2HscCSM6AEDTDg04biOvhFhyyWvOHQfeF_PxMQ',
+    y: 'e8lnCO-AlStT-NJVX-crhB7QRYhiix03illJOVAOyck',
+    d: 'VEmDZpDXXK8p8N0Cndsxs924q6nS1RXFASRl6BfUqdw' };
+  // RFC 7518 Appendix C's derived key.
+  const cek = Buffer.from('VqqN6vgjbSBcIijNcacQGg', 'base64url');
+  const header = Buffer.from(JSON.stringify({
+    alg: 'ECDH-ES', enc: 'A128GCM', apu: 'QWxpY2U', apv: 'Qm9i',
+    epk: aliceEpk })).toString('base64url');
+  const iv = nodeCrypto.randomBytes(12);
+  const cipher = nodeCrypto.createCipheriv('aes-128-gcm', cek, iv);
+  cipher.setAAD(Buffer.from(header, 'ascii'));
+  const ciphertext = Buffer.concat([cipher.update('{"vp_token":{}}', 'utf8'),
+                                    cipher.final()]);
+  const compact = [header, '', iv.toString('base64url'),
+                   ciphertext.toString('base64url'),
+                   cipher.getAuthTag().toString('base64url')].join('.');
+  let opened = null;
+  try {
+    opened = stsCrypto.decryptJweCompact(compact, {
+      privateKey: nodeCrypto.createPrivateKey({ key: bob, format: 'jwk' }),
+      allowedAlg: ['ECDH-ES'], allowedEnc: ['A128GCM'] });
+  } catch (e) {
+    log.debug("Caught in checkEcdhPartyInfo(): " + ((e && e.message) || e));
+    opened = { plaintext: 'refused: ' + e.message };
+  }
+  t.equal(opened.plaintext, '{"vp_token":{}}',
+          '5a. a JWE whose header carries apu and apv is opened with the ' +
+          'key RFC 7518 Appendix C derives (the conformance suite\'s ' +
+          'direct_post.jwt modules)');
+  log.debug("Leaving checkEcdhPartyInfo().");
+}
+
 function removeRealms() {
   log.debug("Entering removeRealms().");
   MADE.splice(0).forEach(function (id) {
@@ -218,6 +266,7 @@ function run(t) {
     checkCodeSingleUse(t);
     checkFragmentSetting(t);
     checkFederationRequestObject(t);
+    checkEcdhPartyInfo(t);
   } finally {
     removeRealms();
   }

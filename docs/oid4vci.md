@@ -34,7 +34,19 @@ which is an extension: see *The issuer named by a DID* below.
 
 The `claims` each configuration advertises are built from the same selection
 the credentials are built from (`/admin/vc`), so the metadata cannot describe a
-credential this issuer no longer mints.
+credential this issuer no longer mints. As OpenID4VCI 1.0 section 12.2.4 has
+it, a configuration's `display` and `claims` sit inside its
+`credential_metadata` object, not at the top of the configuration.
+
+A realm's issuer is `https://host/realm/<id>`, and its metadata is at the
+path-inserted form section 12.2.2 gives,
+`/.well-known/openid-credential-issuer/realm/<id>` (and likewise
+`/.well-known/jwt-vc-issuer/realm/<id>`); the document at that path is the
+realm's own, whose `credential_issuer` is exactly that identifier.
+
+An issued credential's `nbf` is rounded down to the hour and its `exp` up to
+the hour, so the credentials of one batch do not share a precise issuance
+instant that would let verifiers link them (RFC 9901 section 10.1).
 
 ### Five credential configurations, three formats
 
@@ -101,6 +113,10 @@ means the whole configured set.
 * `POST /oid4vci/credential` takes the access token as a Bearer or DPoP token
   and a `credential_configuration_id` or a granted `credential_identifier`.
   A batch of up to `oid4vci.batchSize` proofs returns that many credentials.
+  The errors are section 8.3.1.2's: `unknown_credential_configuration`,
+  `unknown_credential_identifier`, `invalid_proof`, and `invalid_nonce` for a
+  proof whose `c_nonce` this issuer does not hold (the wallet fetches a new
+  one).
 * **Proofs** (section 8.2.1, Appendix F): the `jwt` proof type
   (`openid4vci-proof+jwt`, every asymmetric algorithm this service signs with,
   post-quantum included) and the `attestation` proof type. A `c_nonce` is spent
@@ -263,7 +279,6 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.authorizationServer` | `OID4VCI_AUTHORIZATION_SERVER` | *(empty)* | yes | A separate authorization server to advertise; empty means this service. |
 | `oid4vci.offerUsername` | `OID4VCI_OFFER_USERNAME` | `diploma.student` | yes | Whose credential the issuer-initiated offer pages build (development). |
 | `oid4vci.offerTtlS` | `OID4VCI_OFFER_TTL_S` | `600` | yes | How long an offer, its `issuer_state`, its pre-authorized code and a `notification_id` stay usable. |
-| `oid4vci.preAuthorizedPollIntervalS` | `OID4VCI_PRE_AUTHORIZED_POLL_INTERVAL_S` | `5` | yes | The `interval` a pre-authorized code grant in an offer names. |
 | `oid4vci.txCodeLength` | `OID4VCI_TX_CODE_LENGTH` | `5` | yes | Digits in the Transaction Code. |
 | `oid4vci.txCodeMaxAttempts` | `OID4VCI_TX_CODE_MAX_ATTEMPTS` | `5` | yes | In product mode, how many wrong Transaction Codes a pre-authorized code survives. |
 | `oid4vci.batchSize` | `OID4VCI_BATCH_SIZE` | `4` | yes | How many proofs, and so credentials, one request may carry. |

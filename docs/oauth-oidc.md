@@ -156,7 +156,9 @@ is one a conforming client must reject. The inserted form behaves like its
   with no scope gets no scope; it is not given `openid`.
 * **The implicit flow** (`id_token`, `id_token token`) requires a `nonce` and
   refuses an `http` redirect URI that is not a loopback address, in every mode
-  (OpenID Connect Core section 3.2.2.1).
+  (OpenID Connect Core section 3.2.2.1). The hybrid `code id_token` and
+  `code id_token token` require a `nonce` too (section 3.3.2.1); `code token`
+  does not.
 * **`id_token_hint`** is verified as an ID Token this authorization server
   issued to the client, with any of its signing algorithms; an expired one is
   still a valid hint, and an encrypted one is refused. If the person signed in

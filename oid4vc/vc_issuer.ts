@@ -709,6 +709,23 @@ class VcIssuer {
       const entry = meta.credential_configurations_supported[id];
       if (entry) {
         entry.issuer_identifier = issuerDidFor(id, req) || base;
+        // OPENID4VCI 1.0 SECTION 12.2.4 (#187): a configuration's `display`
+        // and `claims` are members of its `credential_metadata` object in
+        // the final specification, where the drafts had them at the top of
+        // the configuration; the OpenID conformance suite's metadata schema
+        // flagged them there. Built above at the top level (the DID
+        // variants copy their sibling, display name and all) and moved here,
+        // once, for every configuration.
+        const moved: Record<string, any> = {};
+        ['display', 'claims'].forEach(function (name) {
+          if (entry[name] !== undefined) {
+            moved[name] = entry[name];
+            delete entry[name];
+          }
+        });
+        if (Object.keys(moved).length) {
+          entry.credential_metadata = moved;
+        }
       }
     });
 
@@ -780,6 +797,36 @@ class VcIssuer {
     }
     realms.run(found, send);
     log.debug("Leaving VcIssuer.inInsertedPathRealm().");
+  }
+
+  // -------------------------------------------------------------------------
+  // A CREDENTIAL'S TIME CLAIMS, ROUNDED TO THE HOUR (#187). RFC 9901 section
+  // 10.1: a precise issuance instant in `nbf` and in an `exp` derived from
+  // it lets verifiers correlate the credentials of one batch — every one was
+  // issued in the same second — and so link a holder's presentations. `nbf`
+  // goes down to the hour and `exp` up to one, so a credential is never
+  // valid before it was issued nor for less than its lifetime. The OpenID
+  // conformance suite's batch-issuance module failed the precise values.
+  // -------------------------------------------------------------------------
+  unlinkableTimes(nowSec: number): { nbf: number; exp: number } {
+    const { log } = this.deps;
+    log.debug("Entering VcIssuer.unlinkableTimes().");
+    const hour = 3600;
+    const nbf = Math.floor(nowSec / hour) * hour;
+    const exp = Math.ceil((nowSec + this.credentialLifetimeSeconds()) /
+                          hour) * hour;
+    log.debug("Leaving VcIssuer.unlinkableTimes().");
+    return { nbf: nbf, exp: exp };
+  }
+
+  // An Error the credential endpoint answers with `invalid_nonce` rather
+  // than `invalid_proof` (OpenID4VCI 1.0 section 8.3.1.2, #187).
+  static nonceError(message: string): Error {
+    helpers.log.debug("Entering VcIssuer.nonceError().");
+    const e: any = new Error(message);
+    e.vciError = 'invalid_nonce';
+    helpers.log.debug("Leaving VcIssuer.nonceError().");
+    return e;
   }
 
   private sendVciMetadata(req, res) {
@@ -998,8 +1045,9 @@ class VcIssuer {
       // nonce is the c_nonce (Appendix F.3).
       const expires = vciNonces.get(claims.nonce);
       if (!expires || expires < Date.now()) {
-        throw new Error('the key attestation\'s nonce is not a c_nonce this ' +
-                        'issuer handed out (or it was already used).');
+        throw VcIssuer.nonceError('the key attestation\'s nonce is not a ' +
+                                  'c_nonce this issuer handed out (or it ' +
+                                  'was already used).');
       }
     }
     const levels = function (v: unknown): string[] {
@@ -1079,8 +1127,8 @@ class VcIssuer {
       vciNoncesCount.miss();
     }
     if (!expires) {
-      throw new Error('the proof nonce is not one this issuer ' +
-                      'handed out (or was already used).');
+      throw VcIssuer.nonceError('the proof nonce is not one this issuer ' +
+                                'handed out (or was already used).');
     }
 
     // The c_nonce belongs to the REQUEST, not to a single proof: a batch
@@ -1091,7 +1139,7 @@ class VcIssuer {
     // uncovered.
     if (expires < Date.now()) {
       vciNonces.delete(claims.nonce);
-      throw new Error('the proof nonce has expired.');
+      throw VcIssuer.nonceError('the proof nonce has expired.');
     }
 
     // Delegated to the one verifier in common/crypto.js, with the algorithm
@@ -1184,10 +1232,14 @@ class VcIssuer {
                                .sort();
 
     const signer = await this.credentialSignerAsync();
+    const times = this.unlinkableTimes(now);
     const payload: Record<string, any> = {
       iss: issuerId,
-      nbf: now,
-      exp: now + this.credentialLifetimeSeconds(),
+      // `iat` too, rounded with the rest: the signer adds a precise one only
+      // where the payload carries none (#187, RFC 9901 section 10.1).
+      iat: times.nbf,
+      nbf: times.nbf,
+      exp: times.exp,
       vct: VCI_VCT,
       sub: subjectClaims.sub || 'urn:uuid:' + crypto.randomUUID(),
       cnf: { jwk: holderJwk },
@@ -1209,8 +1261,8 @@ class VcIssuer {
                   }),
                   decoyDigest: decoy });
 
-    // iat is added by the signer (jsonwebtoken drops a payload iat when it is
-    // told not to timestamp, so it is left to do it).
+    // iat is set above, rounded like nbf (#187); the signer adds one only to
+    // a payload that has none.
     // `oid4vci.credentialCertificateHeader` decides the `x5c` / `x5u` — and
     // SD-JWT VC section 3.5 names `x5c` as one of the ways a verifier may find
     // the issuer's key, which is the case this setting exists for.
@@ -1265,8 +1317,9 @@ class VcIssuer {
     logArtifact('jwt_vc_json credential', 'the claims it will assert',
                 { subjectClaims: subjectClaims, holderJwk: holderJwk,
                   credentialIssuer: credentialIssuer });
-    const now = Math.floor(Date.now() / 1000);
-    const exp = now + this.credentialLifetimeSeconds();
+    const rounded = this.unlinkableTimes(Math.floor(Date.now() / 1000));
+    const now = rounded.nbf;
+    const exp = rounded.exp;
     const signer = await this.credentialSignerAsync();
     const subjectId = subjectClaims.sub || ('urn:uuid:' + crypto.randomUUID());
 
@@ -1298,6 +1351,7 @@ class VcIssuer {
     const payload: Record<string, any> = {
       iss: issuerId,
       sub: subjectId,
+      iat: now,
       nbf: now,
       exp: exp,
       jti: 'urn:uuid:' + crypto.randomUUID(),
@@ -2555,15 +2609,18 @@ class VcIssuer {
       }
       if (identifier) {
         if (!granted.length) {
+          // No identifier was granted, so this one is unknown: section
+          // 8.3.1.2's unknown_credential_identifier (#187).
           errorCodes.mark(res, 'STS-VC-0010');
-          return vciError(res, 400, 'invalid_credential_request',
+          return vciError(res, 400, 'unknown_credential_identifier',
             'credential_identifier may only be used when the token ' +
             'response granted credential_identifiers (this authorization ' +
             'used a scope, so send credential_configuration_id instead).');
         }
         if (granted.indexOf(identifier) === -1) {
           errorCodes.mark(res, 'STS-VC-0011');
-          return vciError(res, 400, 'invalid_credential_request',
+          // OpenID4VCI 1.0 section 8.3.1.2's name for it (#187).
+          return vciError(res, 400, 'unknown_credential_identifier',
             'credential_identifier "' + identifier + '" was not granted by ' +
             'the token response. Granted: ' +
             granted.join(', '));
@@ -2578,7 +2635,9 @@ class VcIssuer {
         }
         if (!VCI_CONFIGS[configId]) {
           errorCodes.mark(res, 'STS-VC-0013');
-          return vciError(res, 400, 'unsupported_credential_type',
+          // OpenID4VCI 1.0 section 8.3.1.2's name for it; the drafts'
+          // unsupported_credential_type is gone from the final text (#187).
+          return vciError(res, 400, 'unknown_credential_configuration',
             'This issuer offers credential_configuration_id ' +
             vciConfigIds().map((id) => {
               return '"' + id + '"';
@@ -2699,8 +2758,13 @@ class VcIssuer {
                   ((e && e.message) || e));
         log.error(errorCodes.tag('STS-VC-0019') +
                   'the proof of possession was refused: ' + e.message);
+        // A proof whose c_nonce is not one this issuer holds is
+        // invalid_nonce, which tells the wallet to fetch a new one
+        // (OpenID4VCI 1.0 section 8.3.1.2); anything else about it is
+        // invalid_proof (#187).
         errorCodes.mark(res, 'STS-VC-0019');
-        return vciError(res, 400, 'invalid_proof', e.message);
+        return vciError(res, 400, (e && e.vciError) || 'invalid_proof',
+                        e.message);
       }
       // Every proof in this request quoted the same c_nonce, and it is single
       // use: spend it now that they have all been accepted, so replaying the
@@ -2713,7 +2777,8 @@ class VcIssuer {
                   "refused at its spend.");
         // STS-VC-0050 (spent elsewhere) or STS-VC-0051 (the store).
         errorCodes.mark(res, nonceSpent.errorCode);
-        return vciError(res, 400, 'invalid_proof', nonceSpent.description);
+        return vciError(res, 400, nonceSpent.errorCode === 'STS-VC-0050'
+          ? 'invalid_nonce' : 'invalid_proof', nonceSpent.description);
       }
       // AN ldp_vc IS BOUND TO A KEY ITS HOLDER CAN PROVE AT PRESENTATION, and
       // the only proof that format has is a Data Integrity one: a key no

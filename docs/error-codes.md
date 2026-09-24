@@ -1596,7 +1596,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0559` | A client authenticated with an expired client_secret and was accepted, because the service is in development mode. | none — logged; the request is answered |
 | `STS-OAUTH-0560` | An authorization request asked for an ID Token without the openid scope (OIDC Core section 3.1.2.1). | redirect: error=invalid_scope |
 | `STS-OAUTH-0561` | An authorization request combined prompt=none with another prompt value (OIDC Core section 3.1.2.1). | redirect: error=invalid_request |
-| `STS-OAUTH-0562` | An implicit-flow authorization request carried no nonce, which OIDC Core section 3.2.2.1 makes REQUIRED — in every mode. | redirect: error=invalid_request |
+| `STS-OAUTH-0562` | An authorization request whose response_type returns an ID Token from the authorization endpoint (implicit, or hybrid code id_token [token]) carried no nonce, which OIDC Core sections 3.2.2.1 and 3.3.2.1 make REQUIRED — in every mode (hybrid since #187). | redirect: error=invalid_request |
 | `STS-OAUTH-0563` | An implicit-flow authorization request named an http redirect_uri that is not a loopback address (OIDC Core section 3.2.2.1). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0564` | An authorization request sent with POST was not application/x-www-form-urlencoded (OIDC Core section 3.1.2.1). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0565` | The authorization endpoint failed while reading an id_token_hint. | HTTP 500 {error: server_error} |
@@ -2630,16 +2630,16 @@ Raised from: oid4vc/.
 | `STS-VC-0007` | A plain Credential or Deferred Credential Request body is not JSON. | invalid_request (HTTP 400) |
 | `STS-VC-0008` | An encrypted (application/jwt) Credential or Deferred Credential Request could not be decrypted or its plaintext is not JSON. | invalid_encryption_parameters (HTTP 400) |
 | `STS-VC-0009` | A Credential Request sent both credential_identifier and credential_configuration_id. | invalid_credential_request (HTTP 400) |
-| `STS-VC-0010` | A Credential Request used credential_identifier although the token response granted no credential_identifiers. | invalid_credential_request (HTTP 400) |
-| `STS-VC-0011` | A Credential Request named a credential_identifier the token response did not grant. | invalid_credential_request (HTTP 400) |
+| `STS-VC-0010` | A Credential Request used credential_identifier although the token response granted no credential_identifiers. | unknown_credential_identifier (HTTP 400; invalid_credential_request until #187) |
+| `STS-VC-0011` | A Credential Request named a credential_identifier the token response did not grant. | unknown_credential_identifier (HTTP 400; invalid_credential_request until #187) |
 | `STS-VC-0012` | A Credential Request used credential_configuration_id although the token response granted credential_identifiers. | invalid_credential_request (HTTP 400) |
-| `STS-VC-0013` | A Credential Request named a credential_configuration_id this issuer does not offer. | unsupported_credential_type (HTTP 400) |
+| `STS-VC-0013` | A Credential Request named a credential_configuration_id this issuer does not offer. | unknown_credential_configuration (HTTP 400; unsupported_credential_type until #187) |
 | `STS-VC-0014` | A Credential Request named no credential at all (neither credential_identifier nor credential_configuration_id). | invalid_credential_request (HTTP 400) |
 | `STS-VC-0015` | A Credential Request carried no credential_response_encryption while the issuer requires an encrypted response. | invalid_encryption_parameters (HTTP 400) |
 | `STS-VC-0016` | A Credential Request's credential_response_encryption parameters are unusable (key, alg, enc or zip). | invalid_encryption_parameters (HTTP 400) |
 | `STS-VC-0017` | A Credential Request carried no JWT proof of possession. | invalid_proof (HTTP 400) |
 | `STS-VC-0018` | A Credential Request carried more proofs than the issuer's batch size allows. | invalid_credential_request (HTTP 400) |
-| `STS-VC-0019` | A proof of possession in a Credential Request was refused (malformed, wrong typ, alg, audience, iat, nonce, or signature). | invalid_proof (HTTP 400) |
+| `STS-VC-0019` | A proof of possession in a Credential Request was refused (malformed, wrong typ, alg, audience, iat, nonce, or signature). | invalid_proof, or invalid_nonce for a c_nonce this issuer does not hold (HTTP 400, #187) |
 | `STS-VC-0020` | A Deferred Credential Request named a transaction_id this issuer never issued, has expired, or was already redeemed. | invalid_transaction_id (HTTP 400) |
 | `STS-VC-0021` | A Notification Request body is not JSON. | invalid_notification_request (HTTP 400) |
 | `STS-VC-0022` | A Notification Request named a notification_id this issuer never issued or that has expired. | invalid_notification_id (HTTP 400) |
@@ -2670,7 +2670,7 @@ Raised from: oid4vc/.
 | `STS-VC-0047` | The embedded directory threw while being read for a person's credential claims; the credential is built without directory values. | — |
 | `STS-VC-0048` | Populating the embedded directory for the current credential claim set threw. | — |
 | `STS-VC-0049` | A pre-authorized code this process still held was already redeemed by another process against the same store (the cluster claim, #46). | invalid_grant (HTTP 400) |
-| `STS-VC-0050` | A c_nonce every proof verified against was already spent by another process against the same store (the cluster claim, #46). | invalid_proof (HTTP 400) |
+| `STS-VC-0050` | A c_nonce every proof verified against was already spent by another process against the same store (the cluster claim, #46). | invalid_nonce (HTTP 400, #187) |
 | `STS-VC-0051` | The cluster claim store could not be asked about an OpenID4VCI single-use value — a pre-authorized code, a c_nonce or a Transaction Code attempt — so the request was refused rather than accepted unproven. | invalid_grant or invalid_proof (HTTP 400) |
 | `STS-VC-0052` | A wallet sign-in was refused because oid4vp.signIn is off. | HTTP 403 page |
 | `STS-VC-0053` | A wallet sign-in named no pending authentication — never started, expired, or already used — so there was nothing to sign in to. | HTTP 400 page |

@@ -711,9 +711,12 @@ class VcOffers {
             description: 'Type the ' + txCodeValue.length + '-digit code ' +
                 'shown by the issuer.'
           },
-          // `oid4vci.preAuthorizedPollIntervalS`, 5 by default (2026-09-12).
-          interval:
-            Number(config.value('oid4vci.preAuthorizedPollIntervalS')) || 5
+          // No `interval` (#187): the drafts put a polling interval in the
+          // grant; OpenID4VCI 1.0 section 4.1.1 defines pre-authorized_code,
+          // tx_code and authorization_server only, and the OpenID
+          // conformance suite's offer schema flagged it. A wallet waiting on
+          // a deferred credential is told its interval by the Deferred
+          // Credential endpoint.
         }
       };
     } else {

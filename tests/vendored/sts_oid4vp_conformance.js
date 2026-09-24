@@ -27,8 +27,6 @@
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
-const path = require("path");
-const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
@@ -100,48 +98,11 @@ function check(what, fn) {
   log.debug("Leaving check().");
 }
 
-// The suite's issuer key, as the JWK (with its private half and an `x5c`)
-// the suite signs the credential with, and the certificate the Verifier
-// trusts. Made with this repository's own encoder (the service image's
-// `common/vendored/x509.js`, which the tests image carries).
-async function issuerKey() {
-  log.debug("Entering issuerKey().");
-  const repo = path.join(__dirname, "..", "..");
-  const x509 = require(path.join(repo, "common", "vendored", "x509"));
-  const keyMaterial = require(path.join(repo, "common", "vendored",
-                                        "key_material"));
-  const pair = await keyMaterial.generateKeyPair("ec-p256");
-  const issued = await x509.issueCertificate({
-    subject: [{ name: "CN", value: "conformance issuer " + TAG },
-              { name: "O", value: "iya-sts conformance" }],
-    subjectPublicKey: pair.publicPem,
-    issuerPrivateKey: pair.privatePem,
-    signatureAlg: "sha256-ecdsa",
-    serial: nodeCrypto.randomBytes(8).toString("hex"),
-    notBefore: new Date(Date.now() - 60000).toISOString(),
-    notAfter: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-    extensions: {
-      basicConstraints: { present: true, critical: true, ca: false },
-      keyUsage: { present: true, critical: true,
-                  usages: ["digitalSignature"] },
-      subjectKeyIdentifier: { present: true }
-    }
-  });
-  const jwk = nodeCrypto.createPrivateKey(pair.privatePem)
-    .export({ format: "jwk" });
-  jwk.kid = "conformance-issuer-" + TAG;
-  jwk.alg = "ES256";
-  jwk.use = "sig";
-  jwk.x5c = [issued.pem.replace(/-----[^-]+-----|\s+/g, "")];
-  log.debug("Leaving issuerKey().");
-  return { jwk: jwk, pem: issued.pem };
-}
-
 async function prepare(plan) {
   log.debug("Entering prepare(). " + plan.key);
   const alias = "iya-" + plan.key + "-" + TAG;
   const wallet = oidf.SUITE + "test/a/" + alias + "/authorize";
-  const key = await issuerKey();
+  const key = await oidf.selfSignedKey("conformance issuer " + TAG);
   const id = ("vp-" + plan.key + "-" + TAG).slice(0, 31).replace(/-+$/, "");
   const realm = await oidf.makeRealm(root, id, "Conformance " + plan.name, [
     ["oid4vp.walletUrl", wallet], ["oid4vp.walletPresentationPath", ""],

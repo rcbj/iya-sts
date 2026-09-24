@@ -6365,8 +6365,10 @@ const CODES = [
       'prompt value (OIDC Core section 3.1.2.1).',
     spec: 'redirect: error=invalid_request' },
   { code: 'STS-OAUTH-0562',
-    summary: 'An implicit-flow authorization request carried no nonce, which ' +
-      'OIDC Core section 3.2.2.1 makes REQUIRED — in every mode.',
+    summary: 'An authorization request whose response_type returns an ID Token ' +
+      'from the authorization endpoint (implicit, or hybrid code id_token ' +
+      '[token]) carried no nonce, which OIDC Core sections 3.2.2.1 and ' +
+      '3.3.2.1 make REQUIRED — in every mode (hybrid since #187).',
     spec: 'redirect: error=invalid_request' },
   { code: 'STS-OAUTH-0563',
     summary: 'An implicit-flow authorization request named an http ' +
@@ -10594,11 +10596,13 @@ const CODES = [
   { code: 'STS-VC-0010',
     summary: 'A Credential Request used credential_identifier although the ' +
       'token response granted no credential_identifiers.',
-    spec: 'invalid_credential_request (HTTP 400)' },
+    spec: 'unknown_credential_identifier (HTTP 400; ' +
+      'invalid_credential_request until #187)' },
   { code: 'STS-VC-0011',
     summary: 'A Credential Request named a credential_identifier the token ' +
       'response did not grant.',
-    spec: 'invalid_credential_request (HTTP 400)' },
+    spec: 'unknown_credential_identifier (HTTP 400; ' +
+      'invalid_credential_request until #187)' },
   { code: 'STS-VC-0012',
     summary: 'A Credential Request used credential_configuration_id although ' +
       'the token response granted credential_identifiers.',
@@ -10606,7 +10610,8 @@ const CODES = [
   { code: 'STS-VC-0013',
     summary: 'A Credential Request named a credential_configuration_id this ' +
       'issuer does not offer.',
-    spec: 'unsupported_credential_type (HTTP 400)' },
+    spec: 'unknown_credential_configuration (HTTP 400; ' +
+      'unsupported_credential_type until #187)' },
   { code: 'STS-VC-0014',
     summary: 'A Credential Request named no credential at all (neither ' +
       'credential_identifier nor credential_configuration_id).',
@@ -10630,7 +10635,8 @@ const CODES = [
     summary: 'A proof of possession in a Credential Request was refused ' +
       '(malformed, wrong typ, alg, audience, iat, nonce, or ' +
       'signature).',
-    spec: 'invalid_proof (HTTP 400)' },
+    spec: 'invalid_proof, or invalid_nonce for a c_nonce this issuer ' +
+      'does not hold (HTTP 400, #187)' },
   { code: 'STS-VC-0020',
     summary: 'A Deferred Credential Request named a transaction_id this ' +
       'issuer never issued, has expired, or was already redeemed.',
@@ -10759,7 +10765,7 @@ const CODES = [
   { code: 'STS-VC-0050',
     summary: 'A c_nonce every proof verified against was already spent by ' +
       'another process against the same store (the cluster claim, #46).',
-    spec: 'invalid_proof (HTTP 400)' },
+    spec: 'invalid_nonce (HTTP 400, #187)' },
   { code: 'STS-VC-0051',
     summary: 'The cluster claim store could not be asked about an OpenID4VCI ' +
       'single-use value — a pre-authorized code, a c_nonce or a Transaction ' +

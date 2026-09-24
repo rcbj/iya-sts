@@ -7919,9 +7919,14 @@ class OAuth2Server {
     //   * THE IMPLICIT FLOW (response_type `id_token` or `id_token token`):
     //     section 3.2.2.1 makes `nonce` REQUIRED and forbids an http
     //     redirect_uri unless it is a native client's loopback. Both were RFC
-    //     9700 mode's alone; they are Core's in every mode now. The hybrid flow
-    //     keeps nonce optional, as section 3.3.2.1 does, and RFC 9700 mode
-    //     still requires it for any id_token.
+    //     9700 mode's alone; they are Core's in every mode now.
+    //   * THE HYBRID FLOW NEEDS nonce TOO when an ID Token comes back from the
+    //     authorization endpoint (#187): section 3.3.2.1 makes it "REQUIRED if
+    //     the Response Type of the request is code id_token or code id_token
+    //     token and OPTIONAL when the Response Type of the request is code
+    //     token". This comment said the hybrid flow kept it optional until
+    //     the OpenID conformance suite's hybrid plan sent code id_token with
+    //     no nonce and was answered.
     // -----------------------------------------------------------------------
     const idTokenAsked = types.indexOf('id_token') >= 0;
     if (idTokenAsked && !hasScope(q.scope, 'openid')) {
@@ -7943,14 +7948,16 @@ class OAuth2Server {
         'prompt the others ask for.');
     }
     const implicit = idTokenAsked && types.indexOf('code') < 0;
-    if (implicit && !q.nonce) {
-      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). The " +
-                "implicit " +
-                "flow with no nonce.");
+    if (idTokenAsked && !q.nonce) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). An ID " +
+                "Token from the authorization endpoint with no nonce.");
       return redirectable('STS-OAUTH-0562', 'invalid_request',
-        'response_type "' + q.response_type + '" is the implicit flow, and ' +
-        'OIDC Core section 3.2.2.1 makes nonce REQUIRED for it — it is what ' +
-        'the client checks the ID Token against to detect a replay.');
+        'response_type "' + q.response_type + '" returns an ID Token from ' +
+        'the authorization endpoint, and OIDC Core makes nonce REQUIRED for ' +
+        'it (section ' + (implicit ? '3.2.2.1, the implicit flow'
+                                   : '3.3.2.1, the hybrid flow') +
+        ') — it is what the client checks the ID Token against to detect a ' +
+        'replay.');
     }
     if (implicit) {
       let parsedRedirect: Json = null;

@@ -300,7 +300,11 @@ class SigningRotation {
                     DAY_MS;
     let derived = this.longest(TOKEN_LIFETIMES);
     if (unit === this.credentialUnit(keys) || unit === 'bbs:BBS') {
-      derived = Math.max(derived, this.longest(CREDENTIAL_LIFETIMES));
+      // Plus an hour: an issued credential's `exp` is rounded UP to the hour
+      // (`oid4vc/vc_issuer.ts` unlinkableTimes(), #187), so it may outlive
+      // its lifetime by as much.
+      derived = Math.max(derived, this.longest(CREDENTIAL_LIFETIMES) +
+                                  3600000);
     }
     const answer = Math.max(setting, derived + SKEW_MS);
     log.debug("Leaving SigningRotation.graceMs(). " + answer + "ms.");

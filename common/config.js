@@ -7640,13 +7640,6 @@ const SETTINGS = [
     description: 'How long a Credential Offer, its issuer_state, its ' +
                  'pre-authorized code and a notification_id stay usable.' },
 
-  { key: 'oid4vci.preAuthorizedPollIntervalS', group: 'OID4VCI',
-    label: 'Pre-authorized grant: interval (s)',
-    env: 'OID4VCI_PRE_AUTHORIZED_POLL_INTERVAL_S', type: 'int', dflt: 5,
-    min: 1, max: 3600, runtime: true,
-    description: 'The `interval` a pre-authorized_code grant in an offer ' +
-                 'names — the seconds a wallet waits between token requests.' },
-
   { key: 'oid4vci.walletIssuancePath', group: 'OID4VCI',
     label: 'Wallet issuance page',
     env: 'OID4VCI_WALLET_ISSUANCE_PATH', type: 'string',

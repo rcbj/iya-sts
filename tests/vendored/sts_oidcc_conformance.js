@@ -164,8 +164,18 @@ const PLANS = [
 const EXPECTED = {};
 
 // Conditions whose WARNING this service keeps, and why — the same sentences
-// as `oauth-oidc/CLAUDE.md` 3bg.
-const KNOWN_WARNINGS = {};
+// as `oauth-oidc/CLAUDE.md` 3bh.
+const KNOWN_WARNINGS = {
+  WarnOnUnusableJwksKeys: "the realm's JWKS carries post-quantum keys " +
+    "(kty AKP, ML-DSA and SLH-DSA) the suite cannot parse; rcbj " +
+    "(2026-09-24): PQC support matters more than a clean run (3bg)",
+  // The `profile` scope's claims no directory attribute answers —
+  // middle_name, profile, picture, gender, zoneinfo — are absent from
+  // UserInfo, which Core 5.4 allows ("claims ... when available"). 3bg's
+  // open item: map them or stop listing them in claims_supported.
+  VerifyScopesReturnedInUserInfoClaims: "five profile-scope claims have " +
+    "no directory attribute; rcbj's call (3bg) whether to map them"
+};
 
 let checks = 0;
 function check(what, fn) {

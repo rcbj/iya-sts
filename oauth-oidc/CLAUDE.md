@@ -3945,6 +3945,107 @@ though the comments in `oauth2.ts` credit RFC 7521 and RFC 7522, which define
 no metadata; whether they stay is rcbj's call.
 None is a failure; the suite says so itself.
 
+## 3bh. WHAT THE REST OF THE CONFORMANCE SUITE FOUND (2026-09-24, #187)
+
+#176's four FAPI plans were one job; #187 runs every other plan of the suite
+that applies — OpenID Connect (the certification profiles, `oidcc-test-plan`
+per client authentication and response mode, the four logout plans,
+Identity Assurance), the FAPI variant matrix, Shared Signals, OpenID
+Federation, OpenID4VCI and OpenID4VP — as five more jobs and a longer FAPI
+table (`tests/CLAUDE.md`, *The other plans*). Each finding was a departure
+from a specification and is fixed in EVERY mode unless the row says
+otherwise; each carries its regression check.
+
+**OAuth 2.0 and OpenID Connect** (`tests/oidcc_conformance_findings.js`,
+`tests/vendored/sts_oidc_core.js`):
+* **RFC 6749 section 6's client binding and scope check** lived behind RFC
+  9700 mode (`oauth2_bcp.js`), as if they were that BCP's refinements; the
+  suite's oidcc-refresh-token redeemed client 2's refresh token as client 1
+  and was given tokens. `coreRefreshRefusal()` now refuses a DIFFERENT
+  client's token (STS-OAUTH-0141) and a widened scope (0142) in every mode;
+  a refresh naming NO client stays the mode's refusal (0140), since outside
+  it there is nobody to compare.
+* **RFC 6749 section 4.1.2's single-use code.** An identical repeat was
+  answered with the same tokens outside the mode (the courtesy argued at 3a
+  above). It is refused and what the code bought revoked in every mode
+  (STS-OAUTH-0143); the courtesy survives as `oauth2.codeReplayIdempotent`,
+  off by default, a documented weaker option, on in `env/docker-tests.js`
+  ONLY because the parent's vendored `oauth2_sts_endpoints.js` still asserts
+  it in development — the parent owes that job's update, after which the
+  appconfig line goes.
+* **The hybrid flow's nonce.** OIDC Core 3.3.2.1 makes `nonce` REQUIRED for
+  `code id_token` and `code id_token token` — this file said the hybrid flow
+  kept it optional. STS-OAUTH-0562 now covers every response type that
+  returns an ID Token from the authorization endpoint.
+* **UserInfo's `updated_at`** is the entry's `modifyTimestamp`, and
+  **`phone_number_verified`** is `false` beside a `phone_number` (nothing
+  here verifies a telephone number, and Core 5.1 says "otherwise, false").
+* **A `request_uri` is fetched through the federation outbound policy's TLS**
+  (`federation.outboundCaFile`), so a host a private CA certifies can be
+  verified; it used node's store alone.
+* **`oauth2.requestUriFragmentCheck`** (on by default): Core 6.2 gives the
+  fragment as a cache-version signal and asks no OP to verify it; this OP
+  verifies a SHA-256-shaped fragment as an integrity check, which the
+  suite's request_uri modules (a fragment hashed from random bytes, the
+  suite's own FIXME) cannot pass. The OpenID Connect realms turn it off;
+  the default stays the stricter reading. rcbj's call whether to keep it.
+
+**FAPI** (`tests/fapi_advanced_units.js`): under 1.0 Advanced, `code`
+without JARM is `invalid_request` (the MODE is wrong, STS-OAUTH-0678, which
+RFC 9126 section 2.3 answers at PAR), and a request naming no scope is
+refused rather than given a default (STS-OAUTH-0679; RFC 6749 3.3 permits
+either, and a signed request object carrying none is usually a client that
+put scope outside it). Message Signing KEEPS JARM: section 5.4.1 has an AS
+implementing response signing "require use of" it, so the plan's
+`plain_response` variant is not run.
+
+**Shared Signals** (`tests/vendored/sts_ssf_conformance.js`): a poll
+stream's `delivery.endpoint_url` names its stream (`?stream_id=`); Add
+Subject answers an empty 200 (8.1.3.2; remove stays 204);
+`critical_subject_members` is omitted rather than `[]`.
+
+**OpenID Federation** (`tests/oidcc_conformance_findings.js` section 4):
+section 12.1.1.1's request object claims are asked of EVERY request object
+from an automatically registered RP (STS-OIDFED-0067), not only the one
+that registered it.
+
+**OpenID4VCI**: the path-inserted `/.well-known/openid-credential-issuer`
+and `/.well-known/jwt-vc-issuer` answer the realm whose issuer has that path
+(they answered the default realm's, STS-VC-0095); `display` and `claims` sit
+in `credential_metadata` (12.2.4); `invalid_nonce`,
+`unknown_credential_configuration` and `unknown_credential_identifier` are
+the final text's error codes (8.3.1.2); `nbf` and `exp` are rounded to the
+hour (RFC 9901 10.1, batch unlinkability), and the signing-key grace grew
+by the hour that rounding can add.
+
+**OpenID4VP**: the Verifier speaks `direct_post.jwt` (8.3.1, an ephemeral
+ECDH-ES key per transaction named by the JWE kid, STS-VC-0096), and its
+requests' `client_metadata` carries only section 5.1's parameters.
+
+**What stays, and why** (each a known warning or a condition-keyed known
+failure in its driver):
+* `WarnOnUnusableJwksKeys`, and FAILURE conditions that check an algorithm
+  list against the suite's JWS table (`ValidateRequestAuthenticationSigning
+  AlgValuesSupported`, `VCIValidateProofSigningAlgValuesSupported`,
+  `VP1FinalValidateVpFormatsSupportedInClientMetadata`, `ValidateServerJWKs`):
+  post-quantum keys and algorithms (SLH-DSA, composite ML-DSA) the suite does
+  not know. rcbj on #176: PQC support over a clean run.
+* `VerifyStatusListTokenSignatureUsingEmbeddedJwk`: outside HAIP the suite
+  resolves a status list token's key only from a header `jwk`; this realm's
+  names it by `kid` and `x5u`, which draft-ietf-oauth-status-list allows.
+* The OpenID Federation Leaf's `ValidateAbsenceOfAuthorityHints`: the suite
+  decides "is this the Trust Anchor" by string prefix, and a realm's URL
+  begins with its Trust Anchor's.
+* SSF: this service's own two event types in `events_supported`, and CAEP
+  events about a session using a complex subject (the suite accepts it,
+  openid/sharedsignals#351).
+* `VCIValidateFormatOfCredentialConfigurationsInMetadata`: the ldp_vc
+  configurations, a format the suite does not test.
+* 3bg's open items stand: `claims_supported` names five `profile` claims no
+  attribute answers (`middle_name`, `profile`, `picture`, `gender`,
+  `zoneinfo`), which is also why `VerifyScopesReturnedInUserInfoClaims`
+  warns — rcbj's call, map them or stop listing them.
+
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 
 The review on #45 found Core bugs that no test had asked about. What changed, and

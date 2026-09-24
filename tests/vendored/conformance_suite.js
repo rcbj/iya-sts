@@ -210,8 +210,8 @@ async function waitForSuite() {
 // One module: created in the plan, then waited on until it finishes. A
 // module left WAITING past MODULE_SECONDS is stopped and counted as the
 // failure it is. Answers its FAILURE and WARNING log entries as well.
-// `onWaiting(id, info)`, when given, is awaited each time the module goes
-// WAITING — for a module that waits on this service's OPERATOR (a credential
+// `onWaiting(id, info)`, when given, is awaited on each poll that finds the
+// module WAITING — for a module that waits on this service's OPERATOR (a credential
 // offer to be sent, a transaction code to be typed), which the driver then
 // plays.
 async function runModule(planId, module, onWaiting) {
@@ -226,13 +226,16 @@ async function runModule(planId, module, onWaiting) {
   const id = created.body.id;
   let info = null;
   const deadline = Date.now() + MODULE_SECONDS * 1000;
-  let wasWaiting = false;
   while (true) {
     info = (await suite("GET", "api/info/" + id)).body || {};
     if (info.status === "FINISHED" || info.status === "INTERRUPTED") {
       break;
     }
-    if (onWaiting && info.status === "WAITING" && !wasWaiting) {
+    // On EVERY poll while it waits, not once per transition: a module can
+    // go from waiting on one thing (an offer) to waiting on the next (its
+    // transaction code) between two polls. The operator knows what it has
+    // already done.
+    if (onWaiting && info.status === "WAITING") {
       try {
         await onWaiting(id, info);
       } catch (e) {
@@ -242,7 +245,6 @@ async function runModule(planId, module, onWaiting) {
                  " failed: " + ((e && e.message) || e));
       }
     }
-    wasWaiting = info.status === "WAITING";
     if (Date.now() > deadline) {
       await suite("DELETE", "api/runner/" + id);
       info = Object.assign({}, info, { status: "TIMED OUT" });
@@ -343,6 +345,46 @@ function suiteCaFile() {
   return file;
 }
 
+// An EC P-256 key and a self-signed certificate for it, made HERE at run
+// time with this repository's own encoder (`common/vendored/x509.js`, which
+// the tests image carries): the private JWK with an `x5c`, for a key the
+// suite signs with — a credential issuer's, a key attester's — and the PEM
+// the realm is told to trust. No key material in git.
+async function selfSignedKey(label) {
+  log.debug("Entering selfSignedKey(). " + label);
+  const repo = require("path").join(__dirname, "..", "..");
+  const x509 = require(require("path").join(repo, "common", "vendored",
+                                            "x509"));
+  const keyMaterial = require(require("path").join(repo, "common",
+                                                   "vendored",
+                                                   "key_material"));
+  const pair = await keyMaterial.generateKeyPair("ec-p256");
+  const issued = await x509.issueCertificate({
+    subject: [{ name: "CN", value: label },
+              { name: "O", value: "iya-sts conformance" }],
+    subjectPublicKey: pair.publicPem,
+    issuerPrivateKey: pair.privatePem,
+    signatureAlg: "sha256-ecdsa",
+    serial: nodeCrypto.randomBytes(8).toString("hex"),
+    notBefore: new Date(Date.now() - 60000).toISOString(),
+    notAfter: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+    extensions: {
+      basicConstraints: { present: true, critical: true, ca: false },
+      keyUsage: { present: true, critical: true,
+                  usages: ["digitalSignature"] },
+      subjectKeyIdentifier: { present: true }
+    }
+  });
+  const jwk = nodeCrypto.createPrivateKey(pair.privatePem)
+    .export({ format: "jwk" });
+  jwk.kid = label.replace(/[^A-Za-z0-9_-]/g, "-");
+  jwk.alg = "ES256";
+  jwk.use = "sig";
+  jwk.x5c = [issued.pem.replace(/-----[^-]+-----|\s+/g, "")];
+  log.debug("Leaving selfSignedKey().");
+  return { jwk: jwk, pem: issued.pem };
+}
+
 // ---------------------------------------------------------------------------
 // THE LEDGER. `expected` is `<label>/<module>` -> reason (a FAILED module
 // that is argued), `knownWarnings` is `<condition>` -> reason (a WARNING the
@@ -424,5 +466,6 @@ module.exports = {
   selected: selected,
   makeRealm: makeRealm,
   makePerson: makePerson,
-  suiteCaFile: suiteCaFile
+  suiteCaFile: suiteCaFile,
+  selfSignedKey: selfSignedKey
 };
