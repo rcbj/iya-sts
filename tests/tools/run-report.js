@@ -1812,8 +1812,9 @@ async function main() {
         // THE DIRECTORY'S PORT UNDER THE NAME A JOB LOOKS IT UP BY, AND THAT
         // IS NOT THE NAME THE SERVICE READS IT FROM.
         //
-        // The service takes `LDAP_PORT` (README.md's *Configuration* table is
-        // the authority, and `service.js`'s PORT_VARS uses those spellings);
+        // The service takes `LDAP_PORT` (docs/configuration.md's settings
+        // table is the authority, and `service.js`'s PORT_VARS uses those
+        // spellings);
         // `sts_global_logout.js` reads **`STS_LDAP_PORT`**. Every other
         // listener in that block is spelt the same on both sides, so the loop
         // below covers it — this one has to be said, and saying it is what the

@@ -7,7 +7,7 @@ nav_order: 12
 
 This service is a Shared Signals **transmitter**: something happens, it builds a
 Security Event Token, and it delivers it to whichever receivers agreed a stream
-that covers it. Since 2026-09-10 two of those receivers are **this service's own
+that covers it. Two of those receivers are **this service's own
 two applications** — the admin console at `/admin` and the user portal at
 `/portal`.
 

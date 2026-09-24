@@ -18,8 +18,12 @@ POST /scim/v2/Users {"userName": "dave"}
     -> uid=dave,ou=users,dc=example,dc=com     the directory entry itself
     -> ldapsearch -b ou=users '(uid=dave)'     finds it
     -> /admin/users?user=dave                  shows it
+    -> /admin/vc's selection sweeps it         so a credential has something to assert
     -> an access token for dave                carries its attributes
 ```
+
+That is the whole design: the interesting property of a SCIM endpoint is that
+what it writes is what everything else then reads.
 
 ## Features
 
@@ -75,6 +79,16 @@ check and the refusals are the same at every door:
 * The `userName` `invalid` is refused `400 invalidValue`, the same reserved
   value every other protocol here refuses.
 * A full directory (`ldap.maxEntries`) is a `500`.
+* A name carrying RFC 4514's reserved characters is refused. One rule decides
+  that for SCIM, the console and `/admin-api`, users and groups alike, so the
+  doors cannot drift apart on which names are usable in a DN.
+
+Because a create goes through the directory's own door, it also gets the
+directory's *fold*: a new name lands on the entry that is already this person's
+under a different naming attribute (a client certificate's `cn=rcbj,ou=users`,
+say) rather than creating a second object for one person. The create writes one
+`user.create` audit row naming SCIM as the protocol; SCIM itself records only
+updates and deletes, so one act is never counted twice.
 
 A created group gets an entry under `ou=groups` with a `groupOfNames` object
 class. A group list includes everything the directory counts as a group: entries
@@ -102,7 +116,10 @@ and extension for each row, is published live at `GET /scim` and on
 mapping is left alone: `schacDateOfBirth`, `authnMethod`, `mfaAuthenticated` and
 the `x509*` attributes, for example. A client removes a mapped value by omitting
 it. `entryDN`, `createTimestamp` and `modifyTimestamp` are never written back.
-`meta.created` and `meta.lastModified` come from the timestamps.
+`meta.created` and `meta.lastModified` come from the timestamps. (The DN is
+synthesised from where the entry is stored, RFC 5020, and the timestamps belong
+to the entry rather than to whoever wrote it, so writing them back would store a
+copy of what is meant to be computed.)
 
 ### `active: false` disables the account
 
@@ -121,6 +138,15 @@ disabled. On the way out `active` is always present.
 
 ### Authentication: all six schemes of RFC 7644 section 2
 
+RFC 7644 section 2 defines no SCIM credential of its own: "The SCIM protocol is
+based upon HTTP and does not itself define a SCIM-specific scheme for
+authentication and authorization." It *names* six ways — TLS client
+authentication, HOBA, bearer tokens, proof-of-possession tokens, cookies, and
+HTTP Basic, which it discourages — and states two normative sentences, both
+honoured here: a provider **SHALL** indicate its supported schemes in
+`WWW-Authenticate`, and **MUST** be able to map the authenticated client to an
+access control policy (the policy is below).
+
 Every endpoint needs a credential, except the three discovery documents while
 `scim.authDiscovery` is off. A request with no credential gets `401` with one
 `WWW-Authenticate` header per offered scheme. The ServiceProviderConfig's
@@ -136,6 +162,15 @@ disappears from both.
 | HOBA ([RFC 7486](https://www.rfc-editor.org/rfc/rfc7486)) | `hoba` | An RSA/SHA-256 signature over the server's challenge, by a key registered at `POST /.well-known/hoba/register` |
 | Session cookie | `httpcookie` | The browser sign-on session from `/authn/login`, consulted only when there is no `Authorization` header |
 | TLS client certificate | `tlsclientauth` | A certificate that verified against the client truststore on the main port (needs `global.https`) |
+
+The ServiceProviderConfig publishes all seven rows, and three of them have no
+canonical `type`: RFC 7643 section 5 gives `authenticationSchemes.type` five
+values (`oauth`, `oauth2`, `oauthbearertoken`, `httpbasic`, `httpdigest`), and
+there is none for a client certificate, a cookie or HOBA. Those three are
+published with a type of their own (`tlsclientauth`, `httpcookie`, `hoba`)
+rather than left out — a ServiceProviderConfig listing four of the seven ways
+in would be the most misleading document this service publishes, and it is the
+first thing a SCIM client reads.
 
 **The access policy.** Only the OAuth schemes carry scopes. `scim:read` reads
 and `scim:write` writes, and **neither implies the other**. A wrong scope is
@@ -155,6 +190,16 @@ A HOBA challenge may be reused until it expires, so a replay is a repeated
 (key id, challenge, nonce) triple. On a cluster a nonce count or a HOBA triple
 is spent once across every node.
 
+HOBA's signature is RSA with SHA-256 over RFC 7486 section 5's length-prefixed
+blob. The key is registered at `POST /.well-known/hoba/register` — in
+development unauthenticated, for the reason `POST /tls/trust` is: it is how a
+caller **gets** a credential — and it lands on the person's own directory entry
+as `hobaPublicKey`, so an `ldapsearch` and `/admin/users` show it. A HOBA
+credential names its key by id alone, which is why a key id already registered
+to another account is refused in every mode. In development the shared Digest
+password defaults to `password!`, the same value as `krb5.userPassword`, so
+there is one fact to remember rather than two.
+
 An accepted SCIM credential starts a [session](sessions.md) keyed on the scheme
 and the principal, never on the credential. Basic, Digest and HOBA present a
 credential on every request and are recorded as authentications, so their
@@ -168,21 +213,23 @@ certificate continues an authentication already recorded elsewhere.
 | create a user named `invalid` | `400 invalidValue` |
 | create a duplicate `userName` | `409 uniqueness` |
 | ask for an id that names nothing | `404` |
-| send a filter the server cannot evaluate | `400 invalidFilter` |
+| send a filter the server cannot evaluate | `400 invalidFilter` — "no results" and "I could not read your filter" are different answers, and a client can only act on the second |
 | send nothing | `401` with every offered challenge |
 | use a token with the wrong scope | `403 insufficient_scope` |
-| use a token this service did not issue, or a revoked one | `401` |
+| use a token this service did not issue, or a revoked one | `401` — a scope on a token nobody verified is a permission its holder wrote for themselves |
 | use Basic with the password `invalid` | `401` |
 | use Digest with a wrong password, a stale nonce or a repeated `nc` | `401`, three ways |
 | use a HOBA signature that does not verify, or a repeated triple | `401` |
-| `GET /Me` with no credential, or any `POST /Me` | `501` |
+| `GET /Me` with no credential, or any `POST /Me` | `501` — the alias is unavailable (an anonymous caller has no subject, and a POST would create one that already exists); a credential naming nobody here gets `404` |
 | POST to `.search` without the SearchRequest URN | `400 invalidSyntax` |
 | send a Bulk request over `scim.bulkMaxOperations` | `413 payloadTooLarge` |
 
 ### Not implemented
 
 * **ETag** versioning. A version built over a one-second timestamp would be a
-  concurrency control a client trusts and that is wrong.
+  concurrency control a client trusts and that is wrong. Responses carry no
+  ETag header at all — not even the weak one a web framework would add by
+  default — so they do not contradict the ServiceProviderConfig.
 * **`changePassword`**. SCIM carries no password here.
 * A scheme that RFC 7644 section 2 does not name, such as an API key header.
 
@@ -209,6 +256,13 @@ with `POST /admin-api/applications/add`
 Verifying a Basic password costs about 70 ms of
 CPU per request in product mode, so a bulk provisioning client should use a
 `scim:write` access token. See [what is not checked](what-is-not-checked.md).
+
+**In development mode the credential is a turnstile, not a lock.** Any password
+but `invalid` passes Basic, any username passes Digest with the shared
+password, and anybody can register a HOBA key for any name. Nothing decides that
+a caller *should* be allowed to delete an account — only that they said who
+they were first. Do not put a development-mode SCIM endpoint on a public
+address on the strength of it.
 
 ## Configuration
 
@@ -282,6 +336,35 @@ how a value is resolved.
   be reassigned, and a rename reassigns a DN.
 * **ETag and `changePassword` are advertised as unsupported** rather than
   half-implemented.
+* **The published limits are read per request.** The ServiceProviderConfig is
+  rebuilt from the current settings each time it is fetched, so a runtime change
+  to `scim.maxResults` is both enforced and advertised at once, never enforced
+  while the document still shows the old number.
+
+## The SCIM library, and two defects routed around
+
+The schema, filter and PATCH-path handling come from `scimmy` (MIT, no runtime
+dependencies). It brings the three things that are hard about SCIM and boring
+to get right: the RFC 7643 schema definitions with their attribute
+characteristics and coercion, the section 3.4.2.2 filter grammar, and the
+section 3.5.2 PATCH path grammar — where hand-rolled servers are usually subtly
+wrong: `emails[type eq "work"].value` is a *path*, and treating it as a property
+name makes a provisioning client's updates land somewhere else.
+
+Two things it does *not* do look as though they are handled:
+
+* **Reading a resource does not apply the filter it parsed.** A handler that
+  ignored the filter would return everybody for every query, which looks like a
+  working server until somebody filters. This service applies it; sorting and
+  pagination are the library's.
+* **Its filter matcher throws on a nested attribute the resource lacks.** A
+  filter naming any sub-attribute (`emails.value co "@example.com"`,
+  `name.familyName sw "Sm"`) would blow up on the first person with no email —
+  in a directory the ordinary case — surfacing as
+  `400 invalidValue: Cannot convert undefined or null to object`. This service
+  pads every multi-valued and complex member to at least an empty array or
+  object before matching, and takes the padding off again before the resource
+  goes on the wire.
 
 ## In the running service
 
@@ -293,7 +376,13 @@ how a value is resolved.
   scheme (including schemes at zero), one row per authenticated principal, and
   the last fifty requests. A caller the gate refused is counted as refused, not
   as a client. There is no reset. One Bulk request carrying five creates counts
-  as one `bulk` and five `create`s.
+  as one `bulk` and five `create`s, because each of the five really is
+  performed — the column is not meant to add up. `/admin/scim` draws every
+  operation and resource type including those at zero, because "does this
+  server do PATCH" is the question somebody arrives with.
+* The `scim.*` settings are drawn on `/admin/scim` and saved through
+  `POST /admin-api/config/set`; there is no SCIM-specific write operation beside
+  `GET /admin-api/scim`.
 * `GET /scim`: a description of the surface, the mapping table and the schemes,
   with `?format=json`. It is not a SCIM endpoint.
 * The management API: `GET /admin-api/scim` and `GET /admin-api/scim/monitor`.

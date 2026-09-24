@@ -640,7 +640,7 @@ class LdapClusterConnections {
     }
     const row: Instruction = { key: wanted, at: this.now(),
                                node: this.ownNode(),
-                               nonce: randomBytes(6).toString('base64url') };
+                               nonce: randomBytes(16).toString('base64url') };
     signOuts.set(wanted, row);
     // A request's barrier commits this before the answer; a sign-out that is
     // not a request (none today) must not wait for somebody else's write.

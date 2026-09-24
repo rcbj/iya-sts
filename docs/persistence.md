@@ -5,9 +5,9 @@ nav_order: 13
 
 # Persistence
 
-Until 2026-08-27 this service wrote nothing down and everything was gone on
-restart. Three things are not, now, when a store is configured — and the list of
-what still is not matters just as much.
+Without a store this service writes nothing down and everything is gone on
+restart. Three things are not when a store is configured — and the list of what
+still is not matters just as much.
 
 **Encryption is a page of its own.** What this service seals before a value
 reaches a store, and what encrypts the rest of the database underneath it —
@@ -20,14 +20,14 @@ string.
 
 ## What survives, and what never can
 
-**This section had two columns until 2026-09-06 and now has three, because the
-answer stopped being the same in every configuration.**
+**This section has three columns, because the answer is not the same in every
+configuration.**
 
 | Survives with any store | Also survives in **product** mode on **postgres** | Never does |
 |---|---|---|
 | the embedded **LDAP directory** — every entry under every realm's base | sessions, access tokens, ID Tokens, refresh tokens | nothing, beyond two caches that are re-derivable |
 | …which is also the **applications registry**, the **federation register**, the **SPIFFE registry** and the **group roster**, because in this service those *are* directory entries | authorization codes, pre-authorized codes, SAML artifacts | |
-| the **trust realm registry** — names, descriptions, per-realm settings | Kerberos principals and tickets, the replay caches (per trust realm since 2026-09-15) | |
+| the **trust realm registry** — names, descriptions, per-realm settings | Kerberos principals and tickets, the replay caches (per trust realm) | |
 | the **used-assertion history** — every RFC 7523 and RFC 7522 assertion accepted and not yet expired, and every RFC 9101 request object `jti` spent, so none is accepted twice across a restart (both modes; its own table on postgres, a file per realm on ldif) | | |
 | **runtime setting changes** — what the console and `POST /admin-api/config/set` write | the statistics, the counters and the audit log | |
 | the **signing keys**, encrypted (product mode only) | | |
@@ -113,7 +113,9 @@ data/
 was chosen over a JSON dump: `ldapadd -f`, `slapadd` and `ldifde` will all load
 them into a real directory, and a diff of one is readable. A
 `# sts-origin:` comment above a record is this service's own marker for how the
-entry came to exist; every other reader ignores it.
+entry came to exist; every other reader ignores it. LDIF has no home for that
+marker, and a comment is the right one: an invented attribute would come back
+real on reload, searchable, and matchable by a filter.
 
 Editing a file by hand is fine **while the service is stopped**. While it is
 running, the next change rewrites the whole file and your edit is gone.
@@ -180,6 +182,11 @@ needs no privilege to. If you point it at an *empty* database with the
 restricted role it refuses to start and says so, naming the script — that is the
 one arrangement this split cannot paper over.
 
+Issuing no `CREATE` when there is nothing to create is not a tidying. `CREATE
+TABLE IF NOT EXISTS` checks `CREATE` on the schema *before* it checks whether the
+table exists, so a least-privileged role would otherwise be refused on every
+start by statements that had nothing to do.
+
 **The compose stack below does all of this for you**, on the start that creates
 the database volume. See the warning there about an older volume.
 
@@ -193,7 +200,7 @@ host.
 The database container runs `postgres/schema.sql` itself, once, on the start
 that creates its volume — so the stack comes up with the schema built and with
 this service connecting as the restricted `sts_app` rather than as the owner.
-**A volume created before 2026-09-06 has the tables and no such role**, and the
+**A volume created by an earlier version has the tables and no such role**, and the
 service container then restart-loops with `password authentication failed for
 user "sts_app"`. `docker compose down -v` is the fix, and what it removes is the
 directory, the realm registry and the appconfig overrides — never anything this
@@ -207,7 +214,7 @@ docker compose down -v       # stop and throw the data away
 
 ### The compose database is TLS, and requires it
 
-Since 2026-08-30 the Postgres container generates a server key pair on its first
+The Postgres container generates a server key pair on its first
 start and every `host` rule in its `pg_hba.conf` is `hostssl`, so a plaintext
 client is refused by the database with `no pg_hba.conf entry for host …, no
 encryption`. The connection string carries `?sslmode=require` to match.
@@ -254,9 +261,13 @@ with the reason. The next change recomputes the same difference and tries again,
 so a failure loses nothing.
 
 That is deliberate: a database outage taking down seventeen protocol families that
-do not need a database is the one failure mode a mock must not have. The same
-applies at startup — a store that cannot be opened leaves this service running
-with its seeded directory and says so, rather than refusing to start.
+do not need a database is the one failure mode a mock must not have.
+
+**Startup is the opposite, and that is not an inconsistency.** A store that was
+configured and cannot be *opened* stops the service from starting, rather than
+letting it run as something it is not. So the configured mode and the mode in
+force can never disagree in a running process; what the status pages report is
+a store that broke afterwards, which is recorded and is not fatal.
 
 ### A restored person has not signed in
 
@@ -282,22 +293,23 @@ writes.
 
 Only a runtime-changeable setting can be saved at all, which is what makes
 applying them that late safe — no saved value can reach a bound port, the base
-DN, or the scheme this service answers on.
+DN, the scheme this service answers on (`global.https`) or a mode such as
+`oauth2.rfc9700`. That is safe by construction rather than by luck: a runtime
+setting is by definition one that is read per call rather than captured at
+startup, so restoring it after every module has loaded changes nothing a module
+already holds.
 
-### Realm keys never come back
+### Realm keys come back only in product mode
 
-A trust realm's row, its settings and its own directory are restored. **Its
-signing key is not** — every realm's key is regenerated on every start, exactly
-like the default realm's, so a token minted in a realm today verifies against
-nothing tomorrow.
+A trust realm's row, its settings and its own directory are restored. **In
+development mode its signing key is not** — every realm's key is regenerated on
+every start, exactly like the default realm's, so a token minted in a realm today
+verifies against nothing tomorrow. In product mode the keys are kept in the store,
+sealed, like the default realm's.
 
 ### Processes against one store coordinate
 
-**This section said the opposite until 2026-09-06** — *"persistence is not
-coordination… one process per store"* — and that was the honest description of
-what existed.
-
-Every change is now written to a monotonic log, `sts_changes`, **inside the
+Every change is written to a monotonic log, `sts_changes`, **inside the
 transaction that made it**. Each process remembers the highest entry it has
 applied and asks for everything after it — the directory, the realm registry, the
 runtime settings and the minted rows alike. A `LISTEN`/`NOTIFY` nudge wakes that
@@ -337,6 +349,28 @@ the JSON.
 
 `/admin/persistence` in the console, `GET /admin-api/persistence` over JSON, and
 `GET /admin/ldap/service` — which carries the same object and is not behind the console's
-sign-in — all report which mode is in force, whether it fell back to memory
-because the store could not be opened, where it writes, how much it holds, when
-it last wrote, and what went wrong if that failed.
+sign-in — all report which mode is in force, where it writes, how much it holds,
+when it last wrote, and what went wrong if that failed.
+
+## Design decisions
+
+### The store is this service's own, not node-ldapjs's
+
+**There is no persistence option in node-ldapjs, and there could not be.**
+`ldapjs` is a protocol library — a BER codec, a client, and a `Server` that
+routes a parsed operation to a handler you wrote — and it ships no storage of any
+kind. (`lib/persistent_search.js` is the LDAP *persistent search*
+change-notification control; the name is a trap.) The store here is this
+service's own. Proxying to a real OpenLDAP instead would have given persistence
+for free and ended the service: this directory is schemaless on purpose, in
+development mode accepts any bind and creates a person on first sight of a name,
+and is written into directly by other modules as ordinary function calls.
+
+### The whole write path is one function
+
+Every writer in the directory already has to call `touchDirectory()` — a rule
+that exists for a group index — so persistence hangs off that single choke point
+and computes a difference against a shadow of what it last wrote. A new writer
+that forgets it produces a stale groups claim, which is noticed; a new writer
+that forgot a separate `persist()` call would produce an entry that exists until
+the process restarts and then does not, which is not.

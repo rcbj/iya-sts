@@ -7,7 +7,7 @@ title: OpenID4VP
 iya-sts is a **Verifier** for
 [OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html),
 using DCQL queries. It verifies what a wallet presents, check by check, in all
-three credential formats its [issuer](oid4vci.md) mints. Since 2026-09-17 a
+three credential formats its [issuer](oid4vci.md) mints. A
 verified presentation is also **a way to sign in**: *Sign in with a wallet* on
 the sign-in screen, including through the
 [W3C Digital Credentials API](https://www.w3.org/TR/digital-credentials/). The
@@ -177,7 +177,10 @@ trusted to name somebody. In order, a sign-in needs:
 5. the account is not disabled, and the issuance policy allows the session.
 
 A credential from another realm, a trusted partner, a foreign token, or a
-deleted entry still verifies and signs nobody in. The page says why.
+deleted entry still verifies and is recorded as before, and signs nobody in.
+The page says why, and the refusal is recorded under its error code
+(`STS-VC-0058` to `STS-VC-0060`, `STS-VC-0066`; a presentation that did not
+verify at all is `STS-VC-0061`).
 
 **Every format signs in**, each with its own proof of the holder key:
 
@@ -200,7 +203,9 @@ key made for this one sign-in; `oid4vp.signInDcApiResponseMode` can ask for
 `dc_api` in the clear). For this path the audience is `origin:<origin>`, so a
 presentation made for another path does not sign in here.
 `/authn/wallet/dc-api` also requires the `Origin` header to be this service's
-own (`STS-VC-0074`).
+own (`STS-VC-0074`). A wallet on another device is reached by the platform over
+a transport that proves it is near that browser, which is what a relayed QR
+code cannot be.
 
 **The page has one script**, `/authn/wallet.js`, because no markup can make a
 browser ask a wallet. The form has a real submit button. With the script
@@ -210,8 +215,20 @@ link.
 **A plain QR code for a wallet on another device is off by default**
 (`oid4vp.signInCrossDevice`). The QR code is the one path that can be relayed:
 an attacker shows their own code to a victim, the victim scans it, and the
-attacker's browser is signed in. Where it is turned on, the QR page has no
-script and polls with a `<meta>` refresh every `oid4vp.signInPollS` seconds.
+attacker's browser is signed in. Where it is turned on, the page says so, and
+the QR page has no script and polls with a `<meta>` refresh every
+`oid4vp.signInPollS` seconds:
+
+```
+GET  /authn/wallet?authn={id}                Set-Cookie: sts_wallet_binding=…
+  303 -> /authn/wallet/wait?authn={id}&state=…
+GET  /authn/wallet/wait?…                    "Open your wallet" + QR code,
+                                             <meta http-equiv="refresh">
+     wallet: GET /oid4vp/request/{id}        the signed request, by reference
+     wallet: POST /oid4vp/response           verified; whom it signs in decided
+GET  /authn/wallet/wait?…[&response_code=…]  Set-Cookie: sts_session=…
+  303 -> the original request
+```
 
 **The session goes to the browser that started it.** An `sts_wallet_binding`
 cookie (HttpOnly, SameSite=Lax) is bound to the transaction and compared in

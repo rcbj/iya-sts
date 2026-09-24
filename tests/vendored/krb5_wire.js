@@ -537,7 +537,7 @@ async function apRequest(ticket, opts) {
   const at = new Date(Date.now() + Number(options.ctimeOffsetMs || 0));
   const ctime = new Date(Math.floor(at.getTime() / 1000) * 1000);
   const cusec = (at.getMilliseconds() * 1000 +
-                 Math.floor(Math.random() * 1000)) % 1000000;
+                 require('crypto').randomInt(1000)) % 1000000;
   // `opts.subkeyEtype`: an initiator subkey of another enctype than the
   // ticket's session key — rc4-hmac, which product refuses (#182).
   const subkeyEtype = options.subkeyEtype || ticket.etype;
@@ -907,7 +907,7 @@ async function fastAsExchange(transport, realm, username, armor, inner,
   const now = new Date();
   const authenticator = msgs.encAuthenticator({
     crealm: armor.realm, cname: armor.client,
-    cusec: (now.getMilliseconds() * 1000 + Math.floor(Math.random() * 1000)) %
+    cusec: (now.getMilliseconds() * 1000 + require('crypto').randomInt(1000)) %
            1000000,
     ctime: new Date(Math.floor(now.getTime() / 1000) * 1000),
     subkey: subkey });

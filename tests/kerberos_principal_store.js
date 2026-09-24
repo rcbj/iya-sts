@@ -107,7 +107,8 @@ function theRuleAtTheBoundary(t) {
   const wasSignedOut = web.signedOutAt;
   const wasHorizon = web.signOutHorizon;
   const wasCleared = web.signOutClearedAt;
-  const suffix = String(process.pid) + Math.random().toString(36).slice(2, 6);
+  const suffix = String(process.pid) +
+    require('crypto').randomBytes(2).toString('hex');
   const autoKey = 'store-probe-auto-' + suffix + '@EXAMPLE.COM';
   const personKey = 'store-probe-person-' + suffix + '@EXAMPLE.COM';
   const retiredKey = 'HTTP/retired-' + suffix + '.example.com@EXAMPLE.COM';
@@ -530,7 +531,8 @@ function theDoorsInProductMode(t) {
 function theRidIsTheNames(t) {
   log.debug("Entering theRidIsTheNames().");
   t.log.info('=== C. an on-demand RID is derived from the name ===');
-  const suffix = String(process.pid) + Math.random().toString(36).slice(2, 6);
+  const suffix = String(process.pid) +
+    require('crypto').randomBytes(2).toString('hex');
   const names = ['rid-a-' + suffix, 'rid-b-' + suffix, 'Rid-A-' + suffix];
   const here = names.map(function (name) {
     return principals.autoRidFor([name]);

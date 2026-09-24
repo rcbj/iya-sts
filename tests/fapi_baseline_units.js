@@ -452,7 +452,8 @@ function childMain() {
 function run(t) {
   log.debug("Entering run().");
   const out = path.join(os.tmpdir(), 'fapi-baseline-units-' + process.pid +
-                        '-' + Math.random().toString(36).slice(2) + '.json');
+                        '-' + require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|CONFIG_FILE$)/.test(key)) {

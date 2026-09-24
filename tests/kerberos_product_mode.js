@@ -69,7 +69,8 @@ const ROOT = path.join(__dirname, '..');
 function inAChild(env, body) {
   log.debug("Entering inAChild().");
   const out = path.join(os.tmpdir(), 'krb5-product-' + process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(KRB5_|STS_|LDAP_|CONFIG_FILE$)/.test(key)) {
@@ -314,7 +315,8 @@ function etypesAndKvnoAreSettings(t) {
 function autoRidsDoNotCollide(t) {
   log.debug("Entering autoRidsDoNotCollide().");
   t.log.info('=== an on-demand RID steps past a RID already held ===');
-  const suffix = String(process.pid) + Math.random().toString(36).slice(2, 6);
+  const suffix = String(process.pid) +
+    require('crypto').randomBytes(2).toString('hex');
   const first = principals.findOrCreateUser(['rid-probe-a-' + suffix]);
   t.check(!!first && first.pac.rid >= principals.AUTO_RID_BASE &&
           first.pac.rid < principals.AUTO_RID_LIMIT,

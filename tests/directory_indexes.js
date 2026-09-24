@@ -52,7 +52,7 @@ const log = require('bunyan').createLogger({ name: 'directory_indexes',
 
 // A distinct prefix per run, because nothing in this suite deletes anything and
 // two runs in one process would otherwise meet each other's people.
-const RUN = 'idx' + Math.random().toString(36).slice(2, 8);
+const RUN = 'idx' + require('crypto').randomBytes(3).toString('hex');
 const person = function (n) {
   log.debug("Entering person().");
   log.debug("Leaving person().");

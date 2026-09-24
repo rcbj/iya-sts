@@ -1884,7 +1884,12 @@ function receivePublishedPki(entry, published) {
     return;
   }
   const realmId = String(published.realm);
-  keystore.adoptPki(realmId, published.chain || null);
+  // A COPY FROM BEFORE A REBUILD is refused (keystore.js, adoptPki()), and is
+  // not passed on: this process has asserted what it holds instead.
+  if (!keystore.adoptPki(realmId, published.chain || null)) {
+    log.debug("Leaving receivePublishedPki(). A stale copy, not forwarded.");
+    return;
+  }
   log.info('request_pool: the "' + realmId + '" realm\'s certificate ' +
            'authority was ' + (published.chain ? 'built' : 'removed') +
            ' by worker ' + (entry && entry.pid) + '; every process here now ' +

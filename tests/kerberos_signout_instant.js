@@ -154,7 +154,7 @@ async function theArithmetic(t) {
   t.equal(principals.signOutBoundary(null), null, 'no stamp, no boundary');
 
   const name = 'signout-arith-' + process.pid +
-               Math.random().toString(36).slice(2, 6);
+               require('crypto').randomBytes(2).toString('hex');
   const probe = principals.findOrCreateUser([name]);
   const key = name + '@' + principals.REALM;
   try {
@@ -262,7 +262,7 @@ function theMerge(t) {
   const T2 = '2026-05-06T07:08:09.000Z';
   const FAR = new Date(Date.now() + 86400000).toISOString();
   const autoName = 'signout-merge-' + process.pid +
-                   Math.random().toString(36).slice(2, 6);
+                   require('crypto').randomBytes(2).toString('hex');
   const autoKey = autoName + '@' + principals.REALM;
   const row = function (base, fields) {
     log.debug("Entering row().");
@@ -357,7 +357,7 @@ async function theExchanges(t, offsetSeconds) {
   const transport = inProcess();
   const realm = principals.REALM;
   const name = 'signout-wire-' + process.pid +
-               Math.random().toString(36).slice(2, 6);
+               require('crypto').randomBytes(2).toString('hex');
   const krbtgt = { type: 2, name: ['krbtgt', realm] };
   const spn = String(config.value('krb5.servicePrincipal')).split('/');
   const service = { type: 3, name: spn };

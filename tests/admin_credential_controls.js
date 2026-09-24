@@ -544,7 +544,8 @@ function inAChild(t) {
   log.debug("Entering inAChild().");
   const out = path.join(os.tmpdir(), 'admin-credential-controls-' +
                         process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|ADMIN_|CONFIG_FILE$)/

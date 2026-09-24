@@ -5830,7 +5830,7 @@ const ENDPOINTS: EndpointEntry[] = [
           '/admin-api, /portal/password, /portal/activate and an LDAP add or ' +
           'modify of userPassword, all through credentials.js. Development ' +
           'records the history and applies no rule. A GENERATED password is ' +
-          'drawn by the generate-password package until it satisfies the ' +
+          'drawn uniformly from node\'s CSPRNG until it satisfies the ' +
           'profile, in both modes. It is NOT the XACML policy repository.' },
   { path: '/admin/consent', group: 'Admin', name: 'Consent',
     // Two specifications and not the delegation page's four. Nothing here has

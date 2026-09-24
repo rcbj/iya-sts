@@ -102,7 +102,7 @@ function tokenFor(port, overrides, header) {
       headers: { host: '127.0.0.1:' + port } }),
     sub: 'alice', username: 'alice', aud: access.PERMISSION_BASE,
     scope: access.PERMISSION_NAME, iat: now, exp: now + 300,
-    jti: 'test-' + Math.random().toString(36).slice(2)
+    jti: 'test-' + require('crypto').randomBytes(8).toString('hex')
   }, overrides || {});
   log.debug("Leaving tokenFor().");
   return inDefault(function () {

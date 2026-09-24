@@ -1,7 +1,7 @@
 # The left-hand navigation of the documentation site, drawn by
-# _includes/sidebar.html on every page. It replaced `header_pages` in
-# _config.yml on 2026-09-22, when twenty-six links across the top of every page
-# had stopped being navigable. A page that is not listed here is still built
+# _includes/sidebar.html on every page, in place of `header_pages` in
+# _config.yml, because twenty-six links across the top of every page are not
+# navigable. A page that is not listed here is still built
 # and still reachable by a link; it simply has no place in the sidebar.
 #
 # `url` is the page's built address: `foo.md` is served as `/foo.html`.
@@ -77,6 +77,8 @@
 
 - section: Administration
   items:
+    - { title: Admin console, url: /admin-console.html }
+    - { title: Applications, url: /applications.html }
     - { title: Management API, url: /management-api.html }
 
 - section: Operating it

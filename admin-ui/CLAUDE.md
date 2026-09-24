@@ -4647,8 +4647,8 @@ tooltip and nowhere else on the page. `configRow()` used to draw it as a fold
 with the setting's short label as the summary; that fold is gone.
 
 What pays for it is that a setting's description has **three other doors** —
-`/admin/config?format=json`, `GET /admin-api/config`, and README.md's table —
-so the text is reachable without a mouse even though this page no longer draws
+`/admin/config?format=json`, `GET /admin-api/config`, and
+`docs/configuration.md`'s table — so the text is reachable without a mouse even though this page no longer draws
 it. Both were checked rather than assumed. **A field whose prose has NO other
 door does not get this treatment**, which is why the derived tooltips above add
 a title and remove nothing.

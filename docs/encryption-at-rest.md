@@ -25,9 +25,9 @@ process — this service encrypts a specific list of values with **AES-256-GCM**
 before they reach the persistence store: its own signing keys, the certificate
 authority's key pairs, the private key of every assertion key pair it issues to
 an application or to a person, authenticator-app shared secrets, the Kerberos
-long-term keys it stores for directory people and service principals (since
-2026-09-12 — password-equivalent, and withheld from every page and search even
-as ciphertext), and every row it mints (sessions, tokens, codes, artifacts, the
+long-term keys it stores for directory people and service principals
+(password-equivalent, and withheld from every page and search even as
+ciphertext), and every row it mints (sessions, tokens, codes, artifacts, the
 audit log).
 
 **`/admin/encryption` is the list and this page is deliberately not a second
@@ -77,7 +77,7 @@ Three operational consequences, which are the reason this section exists:
 
 ## The stack ships with a secret store
 
-Since 2026-09-12, `docker compose up` brings up **OpenBao** beside the service
+`docker compose up` brings up **OpenBao** beside the service
 and the database, and the service reads BOTH secrets out of it. Nothing is
 configured for that: it is what the stack does.
 
@@ -117,7 +117,7 @@ stanza, same behaviour, key somewhere the stack cannot read.
 
 ## Seeing the state of it: `/admin/secrets`
 
-Under **Monitoring** in the admin console, since 2026-09-12. It answers the
+Under **Monitoring** in the admin console. It answers the
 question none of the settings pages can: *did this service actually get its
 secrets, and is the thing holding them healthy?*
 
@@ -159,7 +159,7 @@ working.
 
 ## The database password comes from the same place, if you want it to
 
-Since 2026-09-12. `persistence.databaseUrl` carries its password in plain text
+`persistence.databaseUrl` carries its password in plain text
 — right for a throwaway database of mock identities, wrong for anything you
 would call a deployment — and **`persistence.databasePasswordProvider` reads it
 from a secret store instead**, using the same five providers and the same code

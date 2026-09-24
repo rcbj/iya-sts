@@ -149,6 +149,13 @@ every page that shows it agrees. Four things change it: a suspension,
 reinstatement or revocation on `/admin/vc-status`, a revocation or restore on
 `/admin/tokens`, a global sign-out, and a disabled account.
 
+`oid4vci.statusListTtlS` is how long a verifier may keep a list (it is also the
+HTTP `max-age`), and `oid4vci.statusListLifetimeS` how long the list says it is
+valid. This realm's own [Verifier](oid4vp.md#status-checks) consults the lists
+for every presentation — this realm's from its own store, a trusted foreign
+issuer's by fetching it and verifying it against the certificate that verified
+the credential — and refuses a credential whose status cannot be established.
+
 ### The issued-credentials register
 
 When a credential is issued for a person, the realm records it in a register:
@@ -168,9 +175,61 @@ issued on any other token is still issued, but it signs nobody in.
 Two configurations name the issuer by `did:web`. The DID document, the DIF
 domain linkage and `/did/generate` are on the [OpenID4VP](oid4vp.md#did-core-and-domain-linkage)
 page. `oid4vci.sdJwtIssuerDid` and `oid4vci.ldpVcIssuerDid` move the **plain**
-configurations to the DID as well. Both are off: SD-JWT VC defines no DID-based
+configurations to the DID as well — what a deployment that had gone to DIDs
+throughout would look like. Both are off: SD-JWT VC defines no DID-based
 issuer key resolution, so for `dc+sd-jwt` the DID route is an extension, and
 the specification's own route has to go on being exercised.
+
+**The two formats stand differently.** `ldp_vc` is DID-native: VC Data Model
+2.0 and Data Integrity assume a DID issuer. `dc+sd-jwt` is not:
+draft-ietf-oauth-sd-jwt-vc says that "a DID-based mechanism is not explicitly
+provided herein but still possible via profile/extension", and defines only
+`/.well-known/jwt-vc-issuer` and inline x509. So for SD-JWT VC a DID issuer is
+an **extension, and is labelled as one everywhere it appears**. The DID
+identifies the **issuer only**: holder binding stays `cnf.jwk`, because a DID
+there would be nobody's convention. (RFC 9101 is JWT-Secured Authorization
+Request and has nothing to do with DIDs; it is used here only for OpenID4VP's
+request by reference.)
+
+One decision per configuration says which identifier its credentials carry, and
+both the metadata and the credential read it, so they cannot disagree about
+who issued a credential. The `…Did` configurations are cloned from their plain
+siblings when the metadata is built, so a claim or proof type added to one
+cannot go missing from the other.
+
+**Three documents make the DID discoverable rather than merely asserted**, and
+they answer different questions:
+
+| Document | Member | Answers |
+|---|---|---|
+| `/.well-known/openid-credential-issuer` | `issuer_did`, and `issuer_identifier` per configuration | which DID this issuer answers to, and which identifier *this* configuration's credentials carry. Both are **extensions**; OpenID4VCI registers neither |
+| `/.well-known/jwt-vc-issuer` | `issuer_did` beside `jwks_uri` | the same DID, named from SD-JWT VC's own key-resolution document. Its `issuer` **stays the https identifier**: a verifier inserts the well-known path into the credential's `iss` and requires this document's `issuer` to equal what it started from, and a DID cannot be the subject of that rule — which is exactly why the DID route is an extension |
+| `/.well-known/did-configuration.json` | the DIF Well Known DID Configuration | why the DID should be believed to be the same entity as the origin. The only one of the three that is a real specification and is *checkable* |
+
+The third is the point. For `did:web` the other two only look like an answer:
+resolving `did:web:example.com` means fetching from `example.com`, so reading a
+DID document off that origin to decide whether the DID belongs to it is
+**circular**. The Domain Linkage Credential is not: the DID signs, with its own
+key, a credential naming the origin, and a verifier resolves the DID
+independently, checks the signature against the keys the DID authorises to
+**assert**, and requires `credentialSubject.origin` to be the origin the
+document came from. A verifier must also insist the linkage is for **the DID
+it asked about**: an origin that links its own DID has not vouched for anybody
+else's, and without that check "linked" would be a property of the file
+existing rather than of what it says. (That consumer-side check is the parent
+project's wallet's; this service publishes a document that survives it.)
+
+**The Domain Linkage Credential is served in the JWT form**, not the Linked
+Data Proof form (the specification allows either): it is signed with the same
+key and algorithm as the credentials (`oid4vci.credentialSigningAlgorithm`) and
+verifies against the same keys, where the LD form would need
+JsonWebSignature2020 over URDNA2015 canonicalization for nothing more learned.
+Two details of the JWT form are what a JWT library gets wrong *for* you, and
+both produce a document that looks right: the header **must not** carry `typ`
+(it carries only `alg` and a `kid` that is a DID URL, so no `x5c` or `x5u`
+either), and the payload permits **no member beyond `iss`, `sub`, `nbf`, `exp`
+and `vc`** — no `iat`. A verifier meeting an LD-proof entry should report it as
+unverifiable, not invalid: it is somebody else's conforming document.
 
 ### Not implemented
 

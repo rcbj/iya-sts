@@ -127,7 +127,13 @@ fetcher refuses everything, so it answers only for:
 - what the `oidfed.resolutions` cache holds.
 
 The cache is per process and per realm, bounded, ejected by
-`caches.eject-expired`, and cleared whenever the register changes. What fills
+`caches.eject-expired`, and cleared whenever the register changes. **Cleared
+in EVERY process**, which a per-process clear is not: each entry carries the
+realm's register generation (`oidfed.registerGeneration`, a persisted and
+replicated store), every act that changes the register replaces it, and an
+entry made under an older one is not answered. Before that, a Trust Mark
+issued on one request worker was missing from the resolve response another
+worker answered from its cache (`sts_oidfed`, single-node, 2026-09-24). What fills
 it is an administrator's `resolve` act. #134's automatic registration will be
 the second thing.
 

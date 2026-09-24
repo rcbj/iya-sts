@@ -320,7 +320,8 @@ async function childBody() {
 function runChild() {
   log.debug("Entering runChild().");
   const out = path.join(os.tmpdir(), 'truststore-admin-' + process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   // The launchers export the stack's mode into the runner; a child that
   // inherited `STS_WORKERS_DISPATCH` or `STS_PERSISTENCE_MODE` would be asking

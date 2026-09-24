@@ -5,9 +5,7 @@ nav_order: 17
 
 # Repository layout
 
-For contributors. Until 2026-08-23 every module sat in the package root — 84
-files, no grouping. They are now in directories by protocol family, and the files
-themselves did not change; the paths did.
+For contributors. The modules are in directories by protocol family.
 
 ```
 server.js            the shell: requires the modules and listens

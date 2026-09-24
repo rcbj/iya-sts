@@ -704,7 +704,8 @@ class Saml2Sso {
         const binding = kind.binding;
         const built = self.spAuthnRequest(base, spEntityId, acsUrl, binding,
                                           destination);
-        const relayState = 'sp-' + randomId(12);
+        // 128 bits (#65), section 13's floor for a value that looks up state.
+        const relayState = 'sp-' + randomId(16);
         spContexts.set(relayState, { requestId: built.id, binding: binding,
                                      expires: Date.now() +
                                        self.spContextTtlMs() });

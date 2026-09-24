@@ -104,8 +104,9 @@ registered and is therefore required last.
 not summaries — the reasoning is in them, and most of it is the record of
 something having gone wrong once.
 
-`README.md` is the substantive document and is still at the root. `docs/` is the
-user-facing half; this file and the directory files are the maintainer-facing
+`README.md` is a short landing page: the protocol families, how to build and
+run the service, the ports and the tests. `docs/` is the user-facing
+documentation; this file and the directory files are the maintainer-facing
 half.
 
 ## Overview
@@ -184,8 +185,8 @@ nothing.
 `STS_HTTPS=false` is the supported way back (`env/CLAUDE.md`). **The selected
 file is a layer, not the whole configuration**, and a setting with no value
 anywhere stops the service from starting: `common/CLAUDE.md` argues the five
-levels, `env/CLAUDE.md` lists the files, and README.md's *Configuration* lists
-every setting.
+levels, `env/CLAUDE.md` lists the files, and `docs/configuration.md`'s *Every
+setting* lists every setting.
 
 ## Architecture, and the rules that hold it together
 
@@ -698,7 +699,8 @@ argue its own case.
 `GET /admin/sts-metadata` reads the endpoint list **from the running Express router**, so
 it cannot go stale — but it reports two kinds of drift and this repository's own
 `tests/vendored/sts_metadata.js` fails on both: a route registered and undescribed, and a
-description whose path is not registered (what a rename produces). See README.md.
+description whose path is not registered (what a rename produces). See
+`docs/endpoints.md`.
 
 It is a **console page** since 2026-08-24 (it was `/sts-metadata`), so it is
 behind the console gate and is drawn by `admin.js`'s `page()`: this module

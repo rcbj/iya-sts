@@ -454,7 +454,8 @@ function runMode(t, modeName) {
   log.debug("Entering runMode(). " + modeName);
   const out = path.join(os.tmpdir(), 'federation-encryption-' + process.pid +
                         '-' + modeName + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|CONFIG_FILE$)/.test(key)) {

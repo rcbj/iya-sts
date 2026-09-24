@@ -78,6 +78,17 @@
 
 const nodeCrypto = require('crypto');
 const forge = require('node-forge');
+// FORGE'S GENERATOR IS NODE'S (#65, section 13). forge keeps a Fortuna DRBG
+// of its own and draws from it INSIDE the library — the blinding of every
+// RSA private-key operation (every XML signature `vendored/xmldsig.js` makes
+// with forge's `pk.sign()`, every certificate forge signs), OAEP seeds,
+// PKCS#1 v1.5 padding, PKCS#7 content keys. Calling node here instead of
+// `forge.random` at our own call sites stopped none of that. forge is one
+// module instance, so pointing its default generator at node's once, on
+// load, covers every caller — the vendored ones included, which may not be
+// edited here. `createInstance()` answers the same, so no forge generator of
+// forge's own exists in this process; `tests/random_values.js` holds it.
+installForgeRandom(forge);
 // The DER writer for the post-quantum certificate below. node-forge cannot
 // represent an ML-DSA key at all, so that one certificate is built by hand.
 const asn1js = require('asn1js');
@@ -1504,20 +1515,6 @@ function transportByUri(uri) {
   return name ? Object.assign({ name: name }, KEY_TRANSPORTS[name]) : null;
 }
 
-// The forge options for a key transport. RSA-OAEP here is SHA-1/MGF1-SHA1,
-// which is what `rsa-oaep-mgf1p` MEANS. The newer `rsa-oaep` URI carries its
-// digest in a child element and goes through node instead (#168) — see
-// KEY_TRANSPORTS — so it never reaches here.
-function transportOptions(transport) {
-  log.debug("Entering transportOptions().");
-  if (transport.scheme === 'RSA-OAEP') {
-    log.debug("Leaving transportOptions().");
-    return { md: forge.md.sha1.create(), mgf1: { md: forge.md.sha1.create() } };
-  }
-  log.debug("Leaving transportOptions().");
-  return undefined;
-}
-
 // ---------------------------------------------------------------------------
 // ENCRYPT ONE ELEMENT, wrapped in whatever the caller says.
 //
@@ -1666,9 +1663,17 @@ function encryptElement(xml, certPem, opts) {
         oaepHash: transport.hash
       }, contentKey).toString('base64');
     } else {
-      const cert = forge.pki.certificateFromPem(certPem);
-      wrappedKey = forge.util.encode64(cert.publicKey.encrypt(key,
-        transport.scheme, transportOptions(transport)));
+      // rsa-oaep-mgf1p (SHA-1, MGF1-SHA1 — what the URI MEANS) and rsa-1_5,
+      // through node's OpenSSL as well since #65: forge drew the OAEP seed
+      // and the PKCS#1 v1.5 padding from a generator of its own, in
+      // JavaScript. The bytes on the wire are the same scheme either way.
+      wrappedKey = nodeCrypto.publicEncrypt({
+        key: recipient,
+        padding: transport.scheme === 'RSA-OAEP'
+          ? nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING
+          : nodeCrypto.constants.RSA_PKCS1_PADDING,
+        oaepHash: transport.scheme === 'RSA-OAEP' ? 'sha1' : undefined
+      }, contentKey).toString('base64');
     }
     encryptedKey =
       '<xenc:EncryptedKey>' +
@@ -2081,9 +2086,20 @@ function decryptElement(xml, privateKeyPem, opts) {
         oaepHash: oaepHash
       }, wrappedBytes).toString('binary');
     } else {
-      const priv = forge.pki.privateKeyFromPem(String(privateKeyPem));
-      key = priv.decrypt(wrappedBytes.toString('binary'), transport.scheme,
-                         transportOptions(transport));
+      // rsa-oaep-mgf1p and rsa-1_5 through node's OpenSSL since #65, where
+      // forge's JavaScript RSA drew its blinding from a generator of its own
+      // and was not constant-time. RSA-1_5 is OpenSSL's IMPLICIT REJECTION
+      // (node refuses PKCS#1 v1.5 decryption without it): a padding that
+      // does not check unwraps to a deterministic random value instead of
+      // throwing, so the length check below is still what names a wrong
+      // key, and the timing no longer tells a caller which it was.
+      key = nodeCrypto.privateDecrypt({
+        key: privateKeyObject(privateKeyPem),
+        padding: transport.scheme === 'RSA-OAEP'
+          ? nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING
+          : nodeCrypto.constants.RSA_PKCS1_PADDING,
+        oaepHash: transport.scheme === 'RSA-OAEP' ? 'sha1' : undefined
+      }, wrappedBytes).toString('binary');
     }
     if (!key || key.length !== cipher.keyBytes) {
       // A WRONG KEY IS THE ORDINARY FAILURE and it is worth naming: this
@@ -6860,13 +6876,22 @@ function dkimVerify(raw, publicKeyPem) {
 //      JavaScript, seeded from node's but with its own state on the heap,
 //      outside FIPS mode, and fifty times slower (about 91 µs for 32 bytes
 //      against 1.7 µs). It drew the content key and IV of every encrypted
-//      SAML assertion and the ID of every SAML and WS-Federation document.
+//      SAML assertion and the ID of every SAML and WS-Federation document —
+//      and, until a second pass the same day, it went on drawing INSIDE
+//      forge after those two call sites were gone: the blinding of every
+//      RSA XML signature, the older key transports' OAEP seed and padding,
+//      the SCEP key unwrap. `installForgeRandom()` below points forge's own
+//      generator at node's, so no caller, vendored or not, can reach
+//      Fortuna; the key transports and the unwrap moved to node's
+//      `publicEncrypt()` / `privateDecrypt()` as well.
 //   3. **A SHORT SECRET.** `randomToken()` refuses fewer than 128 bits, so a
 //      bearer value cannot be made guessable by a length typed in a hurry.
 //
-// `tests/random_values.js` holds all three: the distribution, and a reading of
-// the service's source that fails on `Math.random`, `forge.random` or a
-// random byte taken modulo an alphabet's length.
+// `tests/random_values.js` holds all three: the distribution, forge's
+// generator answering with node's bytes, and a reading of the service's
+// source that fails on `Math.random`, `forge.random`, forge's own RSA
+// encrypt and decrypt, a second generator package, or a random byte taken
+// modulo anything.
 //
 // No Entering/Leaving pair on the four below: they are called several times
 // in a single request (every ID, every nonce, every code), and a pair per
@@ -6878,6 +6903,43 @@ function dkimVerify(raw, publicKeyPem) {
 // look-up secret and RFC 6749 section 10.10 128 of a token an attacker could
 // guess at; this section takes the larger for everything it makes.
 const RANDOM_TOKEN_MIN_BITS = 128;
+
+// forge's `random` context, answering from node's generator in forge's
+// binary-string shape (the header of this file, where it is called, and
+// reason 2 above). `getBytes()` keeps its optional callback. It runs while
+// this module is loading, BEFORE the logger below exists, so it has no
+// Entering/Leaving pair — `common/config_file.js`'s situation — and it
+// cannot fail: every member it sets is a plain function.
+function installForgeRandom(forgeModule) {
+  const ctx = forgeModule.random;
+  const draw = function (count) {
+    return nodeCrypto.randomBytes(Number(count) || 0).toString('binary');
+  };
+  const generate = function (count, callback) {
+    const bytes = draw(count);
+    if (typeof callback === 'function') {
+      process.nextTick(callback, null, bytes);
+      return undefined;
+    }
+    return bytes;
+  };
+  ctx.generate = generate;
+  ctx.getBytes = generate;
+  ctx.getBytesSync = draw;
+  // Seeding means nothing to node's DRBG; accepted and dropped rather than
+  // left feeding a Fortuna pool nothing reads any more.
+  ctx.collect = function () {
+    return undefined;
+  };
+  ctx.collectInt = function () {
+    return undefined;
+  };
+  ctx.createInstance = function () {
+    return ctx;
+  };
+  ctx.drawsFromNode = true;
+  return ctx;
+}
 
 // `n` bytes from node's CSPRNG. The one spelling, so the source test has one
 // thing to allow.
@@ -6931,6 +6993,7 @@ function randomString(alphabet, length) {
 module.exports = {
   // --- section 13: random values (#65) ---
   RANDOM_TOKEN_MIN_BITS: RANDOM_TOKEN_MIN_BITS,
+  installForgeRandom: installForgeRandom,
   randomBytes: randomBytes,
   randomInt: randomInt,
   randomUuid: randomUuid,

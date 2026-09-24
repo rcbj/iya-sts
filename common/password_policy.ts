@@ -72,18 +72,24 @@
 // hands somebody a password its own policy would refuse.
 //
 // ---------------------------------------------------------------------------
-// THE GENERATOR IS `generate-password`, AND ITS ONE JOB HERE IS THE DRAW.
+// THE GENERATOR IS `crypto.js`'s `randomString()`, AND ITS ONE JOB HERE IS
+// THE DRAW (#65, 2026-09-23). It was the `generate-password` package, which
+// rejection-samples correctly but pre-draws 256 random bytes into a buffer
+// that lives at module scope between passwords, and is a dependency on the
+// path of a secret for twenty lines — section 13's argument for not taking
+// nanoid. `randomString()` draws each character with node's `randomInt()`,
+// rejection-sampled inside node, so every character of the pool is equally
+// likely and nothing is held between draws.
 //
-// Chosen after reading it rather than for its download count: it draws from
-// `crypto.randomBytes` and REJECTS a byte that would bias the modulus (a byte
-// at or above `256 - 256 % poolSize` is thrown away and another drawn), so
-// every character of the pool is equally likely. It has no dependencies.
-//
-// What it does NOT do is count symbols — its `strict` option asks for at
-// least one of each pool and no more. So this file draws with all four pools
-// on and `strict` set, and REJECTS WHOLE PASSWORDS that fail the profile until
-// one passes. Rejection at the password level keeps the result uniform over
-// the passwords that pass, where "patch in another symbol" would not.
+// `PasswordGenerator.generate()` keeps that package's option shape (the
+// injected `generator` dependency is unchanged, so a test can still hand in
+// a stub) and its `strict` meaning — at least one of each pool and no more.
+// Symbol COUNTS are the profile's, so this file draws with all four pools on
+// and REJECTS WHOLE PASSWORDS that fail the profile until one passes.
+// Rejection at the password level keeps the result uniform over the
+// passwords that pass, where "patch in another symbol" would not. A strict
+// draw that misses a pool is one of the MAX_DRAWS below, where the package
+// recursed without a bound.
 //
 // Every pool is on whatever the profile requires: a profile not REQUIRING an
 // uppercase letter is not a profile forbidding one, and a smaller alphabet is
@@ -94,7 +100,7 @@
 //
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3) AND A LEAF. It requires `helpers.js`, `mode.js`,
-// `error_codes.js` and an npm package, registers no route, and reaches the
+// `crypto.js` and `error_codes.js`, registers no route, and reaches the
 // directory through a slot `ldap/ldap_server.js` fills — `common/roles.js`'s
 // arrangement exactly, and for its reason: that module is required at 21, so a
 // require from here would drag every `/ldap` route to the front of the router.
@@ -115,7 +121,8 @@
 
 import helpers = require('./helpers');
 import mode = require('./mode');
-import generator = require('generate-password');
+// The one random-value section (#65): every generated password's characters.
+import stsCrypto = require('./crypto');
 // The error codes. A LEAF that requires nothing, so it cannot close a cycle
 // from here. A refusal this module RETURNS carries its code non-enumerably,
 // under the Symbol `mark()` uses, so a caller reads it with `codeOf()` and
@@ -177,6 +184,49 @@ const DEFAULT_PROFILE = 'default';
 // The two characters the generator leaves out of its symbol pool. See the
 // header.
 const GENERATOR_EXCLUDES = '"`';
+
+// The four pools, with `generate-password`'s symbol set so a generated
+// password reads as it always did. `GENERATOR_EXCLUDES` comes out of it.
+const GENERATOR_POOLS: Record<string, string> = {
+  lowercase: 'abcdefghijklmnopqrstuvwxyz',
+  uppercase: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  numbers: '0123456789',
+  symbols: '!@#$%^&*()+_-=}{[]|:;"/?.><,`~'
+};
+
+// THE DRAW, as a static utility (the header). `options` is the package's
+// shape: `length`, a boolean per pool, `strict`, `exclude`. A strict draw
+// that misses a pool answers '' — which fails every profile — rather than
+// drawing again here, so the caller's MAX_DRAWS bounds it. Called once per
+// generated password, so it logs like any other function.
+class PasswordGenerator {
+  static generate(options: Record<string, unknown>): string {
+    log.debug('Entering PasswordGenerator.generate().');
+    const exclude = String(options.exclude || '');
+    const pools = Object.keys(GENERATOR_POOLS).filter(function (name) {
+      return options[name] === true;
+    }).map(function (name) {
+      return Array.from(GENERATOR_POOLS[name]).filter(function (ch) {
+        return exclude.indexOf(ch) < 0;
+      }).join('');
+    }).filter(function (pool) {
+      return pool.length > 0;
+    });
+    const length = Number(options.length);
+    const drawn: string = String(stsCrypto.randomString(pools.join(''),
+                                                        length));
+    if (options.strict && !pools.every(function (pool: string) {
+      return Array.from(drawn).some(function (ch: string) {
+        return pool.indexOf(ch) >= 0;
+      });
+    })) {
+      log.debug('Leaving PasswordGenerator.generate(). A pool is missing.');
+      return '';
+    }
+    log.debug('Leaving PasswordGenerator.generate().');
+    return drawn;
+  }
+}
 
 // Drawing stops here rather than looping forever. With the limits below —
 // a generated length of at least twice the symbol count plus two — the chance
@@ -326,7 +376,7 @@ class PasswordPolicy {
     return {
       log: log,
       mode: mode,
-      generator: generator,
+      generator: PasswordGenerator,
       errorCodes: errorCodes
     };
   }
@@ -866,6 +916,10 @@ slot.buildNowUnlessDeferred();
 
 export = {
   PasswordPolicy: PasswordPolicy,
+  // The draw itself, for `tests/random_values.js`'s distribution check.
+  PasswordGenerator: PasswordGenerator,
+  GENERATOR_POOLS: GENERATOR_POOLS,
+  GENERATOR_EXCLUDES: GENERATOR_EXCLUDES,
   installInstance: (instance: PasswordPolicy): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   DEFAULT_PROFILE: PasswordPolicy.DEFAULT_PROFILE,

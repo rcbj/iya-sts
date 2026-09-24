@@ -555,17 +555,21 @@ class EntityCollection {
     log.debug("Leaving EntityCollection.scheduleJobs(). On the scheduler.");
   }
 
-  // What the in-process collection depends on, as one digest: the realms
-  // (each a subordinate in the default topology) and the realm's active
-  // subordinates with their last change. A cached collection is used only
-  // under the digest it was made with, so a new realm or a suspension is
-  // never hidden behind the cache's lifetime.
+  // What the in-process collection depends on, as one digest: the realm's
+  // REGISTER GENERATION (`oidfed.ts` — replaced, and replicated, by every
+  // act that changes what a chain resolves to, a Trust Mark included), the
+  // realms (each a subordinate in the default topology) and the realm's
+  // active subordinates with their last change. A cached collection is used
+  // only under the digest it was made with, so a new realm, a suspension or
+  // a mark is never hidden behind the cache's lifetime — in this process or
+  // in any other.
   private fingerprint(entity: Json, req: Req): string {
     const { log, realms } = this.deps;
     log.debug("Entering EntityCollection.fingerprint().");
     const parts: string[] = realms.list().map(function (r: Json): string {
       return String(r.id) + ':' + String(r.createdAt || '');
     });
+    parts.push('generation:' + String(entity.generation()));
     entity.activeSubordinates(req).forEach(function (s: Json): void {
       parts.push(String(s.key) + '@' + String(s.updatedAt || 0));
     });

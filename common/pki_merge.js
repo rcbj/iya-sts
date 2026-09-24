@@ -425,6 +425,34 @@ function liveAgain(row) {
   return dropped;
 }
 // ---------------------------------------------------------------------------
+// THE LIVE TIERS OF `row` THAT `lists` CALL SUPERSEDED (2026-09-24). A
+// supersession is what a rebuild writes when it replaces a tier, it is
+// permanent (RFC 5280 section 5.3.1: only `certificateHold` is undone), and
+// so a row publishing a tier some other row supersedes is a copy made BEFORE
+// that rebuild. `keystore.js`'s adoptPki() refuses such a copy arriving over
+// the request pool's channel. `lists` is one or more `revoked` members.
+// Answers the serials, normalised.
+// ---------------------------------------------------------------------------
+function supersededLiveTiers(row, lists) {
+  log.debug("Entering supersededLiveTiers().");
+  const live = liveTierSerials(row || {});
+  const found = [];
+  (lists || []).forEach(function (revoked) {
+    Object.keys(revoked || {}).forEach(function (ca) {
+      (revoked[ca] || []).forEach(function (one) {
+        const serial = one && one.serialHex ? normalSerial(one.serialHex) : '';
+        if (serial && live[serial] && String(one.reason) === 'superseded' &&
+            found.indexOf(serial) < 0) {
+          found.push(serial);
+        }
+      });
+    });
+  });
+  log.debug("Leaving supersededLiveTiers(). " + found.length + " found.");
+  return found;
+}
+
+// ---------------------------------------------------------------------------
 // THE MERGE. Returns `{ row, lost, displaced }`: the row to write, the tier
 // members `mine` changed and did not get (`root`, `intermediate`,
 // `issuing.<use case>`, `certs.<slot>`), and how many displaced certificate
@@ -518,6 +546,7 @@ module.exports = {
   // has, and a certificate the row publishes may not be on its own CRL
   // either way. See liveAgain()'s own block.
   dropRevocationsOfLiveTiers: liveAgain,
+  supersededLiveTiers: supersededLiveTiers,
   canonical: canonical,
   normalSerial: normalSerial,
   // The issued-register record for a certificate a slot no longer holds, for

@@ -836,7 +836,8 @@ function inAChild(t, material) {
   log.debug("Entering inAChild().");
   t.log.info('=== 3. the endpoints, over HTTPS with client certificates ===');
   const out = path.join(os.tmpdir(), 'rfc8705-' + process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|LDAPS_|KRB5_|CONFIG_FILE$)/

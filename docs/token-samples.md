@@ -6,7 +6,7 @@ nav_order: 16
 # Token samples
 
 One real example of every kind of token, assertion and certificate this
-service issues, decoded. They were captured on 2026-09-22 from a
+service issues, decoded. They were captured from a running
 development-mode container reached at `https://127.0.0.1:38081`, so
 `127.0.0.1:38081` in a value below is the address the request arrived on.
 That address becomes the issuer, and yours will differ. Every value was
@@ -140,7 +140,7 @@ Issued beside the access token above, from the same token response. Its
 `typ` header is `JWT`.
 
 **This sample was captured before
-[#118](https://github.com/rcbj/iya-sts/issues/118) (2026-09-22) and shows
+[#118](https://github.com/rcbj/iya-sts/issues/118) and shows
 the earlier shape.** An ID Token from the authorization code flow no longer
 carries:
 

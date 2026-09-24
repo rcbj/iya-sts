@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3414** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3416** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -56,12 +56,12 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 74
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 75
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 179
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
-* [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
+* [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 248
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 541
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
@@ -467,6 +467,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0072` | An rsa-oaep EncryptedKey named a digest and mask generation function this service cannot unwrap with: an unknown one, or two that differ (node derives MGF1 from the OAEP digest). | the caller's refusal |
 | `STS-KEYS-0073` | An XML element's key is agreed by an AgreementMethod other than ECDH-ES. | the caller's refusal |
 | `STS-KEYS-0074` | An XML element encrypted by ECDH-ES key agreement was handed to a recipient whose private key is not an EC key. | the caller's refusal |
+| `STS-KEYS-0075` | A certificate authority another process in this service sent publishes a tier this process holds as superseded — a copy from before a rebuild — so it was refused, and the hierarchy held here was asserted again where it is itself consistent. | none — logged. A supersession is permanent; adopting the copy put a replaced Intermediate back in every process |
 
 ## STS-PKI
 
@@ -885,6 +886,7 @@ Raised from: scep/.
 | `STS-SCEP-0063` | A SCEP certificate revocation from the console or /admin-api named an unknown RFC 5280 reason. | the console redirect with error=, or HTTP 400 { ok: false, errors } |
 | `STS-SCEP-0064` | A SCEP message was refused because another request with the same transactionID was still being answered, on this node or another, when the wait ran out. | SCEP CertRep FAILURE badRequest |
 | `STS-SCEP-0065` | A SCEP message was refused because its transaction could not be claimed: the cluster store could not be asked. | SCEP CertRep FAILURE badRequest |
+| `STS-SCEP-0066` | This node runtime refuses PKCS#1 v1.5 private decryption (its OpenSSL has no implicit rejection), so no SCEP request whose content key is wrapped with rsaEncryption can be decrypted. Logged once per process; node 24 or later is required. | SCEP CertRep FAILURE badMessageCheck (the content does not decrypt) |
 
 ## STS-AUTHN
 

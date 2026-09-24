@@ -39,9 +39,14 @@ curl -k -X POST https://localhost:8081/admin-api/realms/create \
 Or on **`/admin/realms`** in the console, which is also where a realm's settings,
 its four discovery URLs and the identifier of its signing key are.
 
-Realms live in memory like everything else in this service and die with the
-process, so whatever starts your stack should create them — which is why the API
-call above exists rather than a config-file section.
+**A realm survives a restart when `persistence.realms` has a store under it**:
+its name, its description, its per-realm settings and its own directory all come
+back. In the default `persistence.mode=memory` it does not, so whatever starts
+your stack should create its realms — which is why the API call above exists
+rather than a config-file section. A realm's **signing keys** follow the mode,
+exactly like the default realm's: in development mode they are regenerated on
+every start, so a token minted in a realm today verifies against nothing
+tomorrow; in product mode they are kept, sealed, in the store.
 
 The id becomes a path segment: lower-case letters, digits and hyphens, starting
 with a letter or a digit, at most 31 characters. It may not be `default`, and it
@@ -126,8 +131,8 @@ before you build a test on it.
 | | |
 |---|---|
 | **The signing key** | Each realm generates its own. A token minted in one does not verify against another's JWKS. Each realm's `kid` is on `/admin/realms`. |
-| **The OpenID4VCI request-encryption key** | Part of the same per-realm key set since 2026-09-12. Each realm's credential issuer metadata publishes its own key in `credential_request_encryption.jwks`, and a Credential Request encrypted to one realm's key is refused by every other realm — in every process of a service running request workers, and, in product mode, across a restart. Until that date a service with request workers gave every realm one shared key. |
-| **Shared Signals registers** | The CAEP session register and the RISC account register behind `/admin/caep-sessions` and `/admin/risc-accounts`, since 2026-09-12. Until then every realm's page listed every realm's rows. |
+| **The OpenID4VCI request-encryption key** | Part of the same per-realm key set. Each realm's credential issuer metadata publishes its own key in `credential_request_encryption.jwks`, and a Credential Request encrypted to one realm's key is refused by every other realm — in every process of a service running request workers, and, in product mode, across a restart. |
+| **Shared Signals registers** | The CAEP session register and the RISC account register behind `/admin/caep-sessions` and `/admin/risc-accounts`: each realm's page lists only that realm's rows. |
 | **Every setting** | Per realm, above whatever the process is configured with. Every settings form in the console — each protocol's page, and `/admin/config` — and `POST /admin-api/config/set` reached under a realm's prefix read *and write* that realm. |
 | **Sessions** | Signing in to one realm signs you in to that realm only. **The admin console is the one exception**: its gate resolves your session cookie in whichever realm minted it, so the realm switcher switches rather than asking you to sign in again — the browser has only one session cookie, and before this a switch overwrote it. Every protocol endpoint is unchanged: in the realm you switched to, `/oauth2/authorize`, `/wsfed` and the two SAML profiles see no session. The console's banner names the realm your session belongs to whenever it is not the one you are looking at. |
 | **Everything in flight** | Authorization codes, access and refresh tokens, refresh families, DPoP replay and nonce state, the RFC 7523 / RFC 7522 used-assertion history, named authorization servers, credential offers, pre-authorized codes, deferred transactions and the access tokens that mark a deferred issuance, issuance nonces, presentation transactions, SAML 2.0 and 1.1 request state and artifacts, SCIM Digest nonces and HOBA challenges, and the SPIRE Server API connections an X509-SVID was recorded for (a gRPC connection belongs to the realm whose listener accepted it). |
@@ -152,11 +157,10 @@ SPIFFE containers under each. So:
 - the same name signing in to two realms is **two entries**, one per realm;
 - an **OAuth client** registered under one realm is unknown to every other;
 - a **SAML service provider** entry belongs to the realm it was created in;
-- the **SPIFFE registry** is per realm, and **so is the X.509 signing authority
-  since 2026-09-11** — each realm has a SPIFFE Issuing CA of its own on
-  [`/admin/pki`](pki.md) — and **so is the trust domain itself since
-  2026-09-12**: a realm is created with its domain as its
-  `spiffe.trustDomain`, so `acme` issues `spiffe://acme.example.com/…`.
+- the **SPIFFE registry** is per realm, and **so is the X.509 signing
+  authority** — each realm has a SPIFFE Issuing CA of its own on
+  [`/admin/pki`](pki.md) — and **so is the trust domain itself**: a realm is
+  created with its domain as its `spiffe.trustDomain`, so `acme` issues `spiffe://acme.example.com/…`.
   See *SPIFFE* below, which is no longer on the not-separated list;
 - and a realm is reachable over LDAP: `ldapsearch -b "dc=acme,dc=example,dc=com"`.
 
@@ -188,7 +192,7 @@ directories, so that is the truth rather than a borrowed error code.
 With no realms defined there is one naming context and one container, and every
 byte of every answer is what it was before realms existed.
 
-### Separated, and confined — the admin console roles (2026-09-14)
+### Separated, and confined — the admin console roles
 
 Every realm has two administrator rosters that matter to it:
 
@@ -207,7 +211,7 @@ A realm's own administrators are **confined to their realm**. Everything about
 the whole process is hidden from them and refused if asked for: the persistence
 store, the database, encryption, the secret store, the TLS certificate and client
 truststore, the LDAP service page, the embedded debugger and the API explorer.
-(Kerberos left that list on 2026-09-15: a realm has a KDC of its own, so its
+(Kerberos is not on that list: a realm has a KDC of its own, so its
 principals and keytabs are its administrator's — what stays service-wide is the
 two Kerberos sockets and the development-mode trust.) So are creating or removing a realm, reading or editing another realm,
 replacing the service Root, exporting the TLS certificate's key, and every setting
@@ -232,11 +236,9 @@ accepts a token that realm's own `sts-management-api` client was issued, with
 the realm's issuer and audience, and refuses that token the same service-wide
 operations the console refuses the realm's administrators.
 
-### Separated — SPIFFE, by ADDRESS (2026-09-12)
+### Separated — SPIFFE, by ADDRESS
 
-SPIFFE was on the not-separated list until this date: one trust domain, one set
-of four sockets, answering in the default realm. It is separated now, and the
-discriminator is neither a path nor a name but the **endpoint address**.
+SPIFFE is separated per realm, and the discriminator is neither a path nor a name but the **endpoint address**.
 
 A realm is created with SPIFFE **off** and with a trust domain of its own —
 its domain, `acme.example.com` — and with Unix socket paths of its own. Turning
@@ -269,16 +271,13 @@ domain.
 What is still shared is the **default realm's own four sockets**, which are
 bound when the process starts and stay bound with `spiffe.enabled` off (they
 answer `Unavailable`; a socket that vanished would read as a service that had
-stopped). **Federated bundles are a realm's own** since 2026-09-12, and no
-realm may register one under a trust domain any realm of this service serves —
-until then a bundle one realm registered was trusted in every realm, including
-under another realm's name.
+stopped). **Federated bundles are a realm's own**, and no realm may register one
+under a trust domain any realm of this service serves.
 
-### Separated — Kerberos, by REALM NAME (2026-09-15)
+### Separated — Kerberos, by REALM NAME
 
-Kerberos was on the not-separated list until this date: one KDC, one principal
-database and one `krb5.realm` for the whole process, answering in the default
-realm. It is separated now, and the discriminator is neither a path nor an
+Kerberos is separated per realm — a KDC, a principal database and a
+`krb5.realm` each — and the discriminator is neither a path nor an
 address but the **Kerberos realm name inside every request** — which the
 protocol has always carried, because Kerberos has realms of its own.
 
@@ -355,12 +354,10 @@ settings stay service-wide.
 The certificate a handshake presents, and the client certificate it carries. A
 socket has no path in it, so neither can name a realm; a session started by
 `GET /tls/sign-in` goes in the realm of the authority that signed the
-certificate. The 8443 and 9443 listeners were on this list until they were
-deleted on 2026-09-16. LDAP's 389 and 636
-were on this list until the directory was partitioned — the sockets are still
-shared, but what they serve is told apart by DN — SPIFFE's four left it on
-2026-09-12 by giving each realm sockets of its own, and Kerberos left it on
-2026-09-15 by routing on the realm name in the request.
+certificate. LDAP's 389 and 636 are not on this list — the sockets are shared,
+but what they serve is told apart by DN — nor are SPIFFE's sockets, of which
+each realm has its own, nor Kerberos, which routes on the realm name in the
+request.
 
 ### Not separated — the key-encryption key
 
@@ -390,6 +387,11 @@ select that navigates on change, because the console runs no script at all
 forbids. It submits to `GET /admin/realm-switch`, which builds the target from
 the realm registry and a path it has checked is rooted and single-slashed —
 never from the query string as given.
+
+Every root-relative link in an HTML response is rewritten on the way out to
+carry the current realm's prefix, which is what makes the console work inside a
+realm without a link being edited. The chooser is the one control whose job is
+to leave the realm, so the links it builds are absolute and are left alone.
 
 `/admin-api` is realm-scoped by the same prefix, so `/realm/acme/admin-api/config`
 is that realm's configuration and every one of its operations works per realm.

@@ -13,10 +13,7 @@ that page used to answer badly: **will a token this service did not issue get
 through?**
 
 The short answer is **no, except at the three OpenID4VCI endpoints in
-development mode.** Until 2026-09-18 the documentation said "except at
-UserInfo". That meant UserInfo was the one door that *refused* a foreign token,
-and it read as though UserInfo were the one door that accepted one. Neither is
-true now: every door below verifies.
+development mode.** Every other door below verifies.
 
 "Verifies" here means the signature verifies against the realm's own signing
 key (the one published at `/oauth2/jwks`, or the realm's own under
@@ -28,8 +25,8 @@ token. An access token also meets RFC 9068 section 4 wherever it is presented:
 an `at+jwt` header, an issuer this service publishes at the address the request
 arrived on, and this resource server in `aud`.
 
-This list was made by reading the code on 2026-09-21. It is not generated, and a
-door added after that date is not on it. The live list of endpoints is
+This list was made by reading the code. It is not generated, and a door added
+since may not be on it. The live list of endpoints is
 [`/admin/sts-metadata`](endpoints.md).
 
 ## Access tokens at a resource

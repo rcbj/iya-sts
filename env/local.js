@@ -28,7 +28,8 @@
 // fires on a file like this one: a setting with no value in EITHER appconfig
 // file and no environment variable stops the service, and env/defaults.js is
 // generated from the same table this file was, so it is never the one short.
-// See README.md's *Configuration*, which lists every setting and its variable.
+// See docs/configuration.md's *Every setting*, which lists every setting and
+// its variable.
 var config = {
   // Bunyan log level (trace|debug|info|warn|error|fatal). INFO SINCE
   // 2026-09-12, like every appconfig file in this directory: every function now

@@ -35,7 +35,7 @@ docker build -t iya-sts .
 docker run --rm -p 8081:8081 -e CONFIG_FILE=./env/local.js iya-sts
 ```
 
-**From an image, not from a checkout (since 2026-09-16).** Part of the service
+**From an image, not from a checkout.** Part of the service
 is written in TypeScript and is compiled only while the image is built, so
 `node server.js` on a checkout stops and says so. Every setting below that is
 shown as an environment variable is passed with `-e`.
@@ -76,7 +76,7 @@ cannot — and each listener publishes its own result, because "389 is up and 63
 is not" is the ordinary outcome and one flag could only report one of them:
 
 - `GET /admin/ldap/service` — `listening` / `listenError`, and a `tls` object with its own pair
-  (an admin console page since 2026-09-01, so it needs a session; `GET
+  (an admin console page, so it needs a session; `GET
   /admin-api/ldap/service` is the same object and is not gated)
 - `GET /spiffe` — all four SPIFFE sockets, separately
 - `GET /krb5/principals` — the KDC
@@ -84,7 +84,7 @@ is not" is the ordinary outcome and one flag could only report one of them:
 So a page answering 200 is not evidence that the listener behind it came up. Read
 the flag.
 
-**Two TLS ports left this table on 2026-09-16.** 8443 (`tls.port`) asked for a
+**Two TLS ports have left this table.** 8443 (`tls.port`) asked for a
 client certificate and never required one; 9443 (`tls.mutualPort`) required one
 at the handshake. Both listeners and both settings were deleted, and neither
 setting has a replacement — a deployment that still sets one gets an "unknown
@@ -162,8 +162,7 @@ session it answers a 302 to the sign-in screen, which is why the `-L` is there
 and why what comes back is that screen rather than the page. Open it in a
 browser and sign in — any username, since this service checks no password in
 its default `development` mode. There is no setting that opens the console;
-`admin.authRequired` was removed on 2026-09-06 when `global.mode` took over the
-question. `/admin-api` reads the same service for a program, and takes an OAuth
+`admin.authRequired` is gone; `global.mode` answers that question. `/admin-api` reads the same service for a program, and takes an OAuth
 2.0 access token of its own.
 
 A protocol you can drive end to end in a browser with nothing else installed is

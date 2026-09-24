@@ -1764,6 +1764,13 @@ const CODES = [
     summary: 'An XML element encrypted by ECDH-ES key agreement was handed ' +
       'to a recipient whose private key is not an EC key.',
     spec: 'the caller\'s refusal' },
+  { code: 'STS-KEYS-0075',
+    summary: 'A certificate authority another process in this service sent ' +
+      'publishes a tier this process holds as superseded — a copy from ' +
+      'before a rebuild — so it was refused, and the hierarchy held here ' +
+      'was asserted again where it is itself consistent.',
+    spec: 'none — logged. A supersession is permanent; adopting the copy ' +
+      'put a replaced Intermediate back in every process' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -3245,6 +3252,13 @@ const CODES = [
     summary: 'A SCEP message was refused because its transaction could not ' +
       'be claimed: the cluster store could not be asked.',
     spec: 'SCEP CertRep FAILURE badRequest' },
+  { code: 'STS-SCEP-0066',
+    summary: 'This node runtime refuses PKCS#1 v1.5 private decryption (its ' +
+      'OpenSSL has no implicit rejection), so no SCEP request whose content ' +
+      'key is wrapped with rsaEncryption can be decrypted. Logged once per ' +
+      'process; node 24 or later is required.',
+    spec: 'SCEP CertRep FAILURE badMessageCheck (the content does not ' +
+      'decrypt)' },
   // ===== AUTHN =============================================================
   { code: 'STS-AUTHN-0001',
     summary: 'A request to the sign-in screen or the federation chooser ' +
