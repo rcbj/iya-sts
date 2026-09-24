@@ -769,6 +769,8 @@ const JOBS = [
   // identity providers, and these jobs are written here.
   { file: 'sts_saml_interop_shibboleth.js', browser: false, local: true,
     samlPeer: 'shibboleth', timeoutMs: 900000 },
+  { file: 'sts_saml_interop_pysaml2.js', browser: false, local: true,
+    samlPeer: 'pysaml2', timeoutMs: 900000 },
   // OPENID FEDERATION 1.1 (#132, 2026-09-23): the default realm a Trust
   // Anchor and a throwaway realm its subordinate — Entity Configurations,
   // fetch, list, resolve, Trust Marks, a registered subordinate and the
