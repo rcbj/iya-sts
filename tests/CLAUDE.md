@@ -1273,6 +1273,7 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/vendored/sts_fapi2.js` **(ours)** | **THE FAPI 2.0 SECURITY PROFILE OVER THE WIRE** (#140, 2026-09-22), in a throwaway realm on `2-security`: the report; discovery (code alone, PAR required, PS256/ES256/EdDSA, no public or secret method); registration refusing a public client, client_secret_jwt, code id_token and RS256; an unpushed request, an unauthenticated push, a push without PKCE or redirect_uri, an array aud and an assertion two minutes ahead refused; the pushed flow with the global consent counting, an unbound token refused and a DPoP-bound PS256 one issued; the refresh token redeemed twice (no rotation); the portal signing in under 2.0; and the BCP 195 handshakes — TLS 1.3 preferred, a TLS 1.2 GCM suite accepted, a CBC suite refused. 22 checks |
 | `tests/vendored/sts_fapi2_message_signing.js` **(ours)** | **FAPI 2.0 MESSAGE SIGNING OVER THE WIRE** (#141, 2026-09-22), in a throwaway realm on `2-message-signing`: the report's rows; discovery with JARM's modes only and a signed request object and PAR required; a plain push, a signed push asking for no JARM mode, and one with no nbf refused; a signed push answered with a PS256 JARM response verified here and redeemed for a DPoP-bound token; an RFC 9701 introspection response signed PS256 and verified; the portal signing in under the profile. 10 checks |
 | `tests/vendored/sts_fapi_conformance.js` **(ours)** | **THE OPENID FOUNDATION'S CONFORMANCE SUITE** (#176, 2026-09-24) — the independent check the four rows above are not. FAPI 2.0 Security Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced and FAPI-CIBA, one plan each in a throwaway realm under the profile it tests, every module run through the suite's API; a FAILED or timed-out module fails the job unless `EXPECTED` names it with its reason (empty). `conformance: true`: SKIPPED with the reason where the launcher brought no suite up. See *The OpenID conformance suite*, below |
+| `tests/vendored/sts_xml_schema_validation.js` **(ours)** | **EVERY SAML 2.0, SAML 1.1, WS-TRUST AND WS-FEDERATION DOCUMENT THIS SERVICE EMITS, AGAINST THE PUBLISHED OASIS AND W3C XML SCHEMAS** (#188, 2026-09-24), in a development realm and a product realm it creates and a third realm federating to the first, all left standing: metadata (SAML 2.0 unscoped and per service provider, SAML 1.1, WS-Federation, every federation relationship's); the SAML 2.0 Response on HTTP-POST, HTTP-Redirect, POST-SimpleSign and HTTP-Artifact, with an EncryptedAssertion, the ArtifactResponse, two error Responses, logout in both directions with an EncryptedID, the mock service provider's AuthnRequests; the SAML 1.1 Browser/POST Response and the responder's six answers; WS-Trust 2004/04, 2005/02 and 1.3 over SOAP 1.1 and 1.2 (Issue, Renew, Validate, Cancel; SAML 2.0 and JWT), encrypted, ActAs, OnBehalfOf and the faults; the WS-Federation sign-in response in all four token/wrapper pairs; the federation module's outbound AuthnRequest and LogoutRequest and the partner's answers. Valid means `xmllint --nonet` passes it with no error or warning AND every namespace it uses is loaded AND every element is declared in its namespace's schema (lax wildcards skip the rest silently). Four self-checks prove the validator refuses. See *The published XML Schemas*, below |
 | `tests/vendored/sts_frontchannel_logout.js` **(ours)** | **OPENID CONNECT FRONT-CHANNEL LOGOUT OVER THE WIRE** (#122, 2026-09-22), in a throwaway realm with registration opened: discovery's `frontchannel_logout_session_supported` (and not the registration member it used to publish) and `sid` in claims_supported; section 2's origin rule refusing another host and another port at registration and at `/admin-api`; a person signed in through a NAMED authorization server and signed out at the realm's own `/oauth2/logout`, whose iframe carries the named server's `iss` and the session's `sid`, with `frame-src` naming the relying party and `frame-ancestors` kept; section 4's return as a `<meta>` refresh after `oauth2.frontchannelLogoutWaitS`, and no refresh at 0; a stored URI whose redirect URI was removed skipped and reported rather than framed |
 | `tests/vendored/sts_caep_credential_changes.js` **(ours)** | **CAEP FROM EVERY DOOR OVER THE WIRE** (#145, 2026-09-22), in a throwaway realm with a poll stream covering everybody: `credential-change` (`password`, `create`, `admin`) for a person created with a password; `session-established` whose `fp_ua` is the base64url SHA-256 of the sign-in's `User-Agent`; `token-claims-change` carrying `family_name` after a SCIM `PATCH`, and the groups claim as the whole list after a group join, about the person; none for a person holding nothing live; `credential-change` `x509` with `x509_issuer` and `x509_serial` for a signing key pair issued on `/admin-api/pki` |
 | `tests/vendored/sts_risc_acts.js` **(ours)** | **RISC ON ITS OWN OVER THE WIRE** (#146, 2026-09-22), in a throwaway realm with a poll stream covering everybody: an administrator's reset link marked compromised sends `account-credential-change-required`, `recovery-activated` and `credential-compromise` (`password`), each `iss_sub`; a disable with a RISC `reason` carries it, one without carries none, and an invented reason is refused; an address a SCIM-deleted account held, given to a new account, sends `identifier-recycled` about the address; the account holder's opt-out on `/portal/signals` — initiated, a refused out-of-diagram move (409), cancelled, initiated again, made effective by running `risc.opt-out-effective` with the delay at 0, and opted back in |
@@ -1640,6 +1641,62 @@ job from the tests image on that network with `CONFORMANCE_SUITE_URL`,
 `CONFORMANCE_PLANS=fapi2sp,fapi2ms,fapi1adv,fapiciba` to choose. The suite's
 own pages at `https://localhost.emobix.co.uk:8443/plan-detail.html?plan=<id>`
 (the job logs the id) show every module's log.
+
+## THE PUBLISHED XML SCHEMAS (#188, 2026-09-24)
+
+The job is `tests/vendored/sts_xml_schema_validation.js`. OASIS publishes no
+conformance tool for SAML, WS-Trust or WS-Federation — only the schemas — so
+the schemas ARE the official machine check, and until this job nothing here
+validated a single emitted document against them.
+
+* **Fetched when the tests image is built, never vendored.**
+  `tests/xml-schemas/SCHEMAS` names thirty-one files (SAML 2.0 and 1.1,
+  WS-Trust 2004/04, 2005/02, 1.3 and 1.4, WS-Security 1.0/1.1, WS-Federation
+  1.2 and WS-Authorization, WS-SecurityPolicy, WS-Policy, WS-Addressing in
+  three vintages, SOAP 1.1 and 1.2, MEX, XML Signature 1.0/1.1, XML
+  Encryption 1.0/1.1, `xml.xsd` and the two DTDs `xmldsig-core-schema.xsd`
+  names) with the sha256 of each; `tests/tools/fetch-xml-schemas.sh` fetches
+  them into `/opt/xml-schemas` in `tests/Dockerfile` and FAILS THE BUILD on a
+  single differing byte. www.w3.org answers a scripted https fetch with a
+  Cloudflare challenge (429), so the W3C files are named over http, and any
+  file whose publisher refuses is asked of the Internet Archive's raw capture
+  of the same URL — accepted only at the same digest.
+* **`catalog.xml` and `all.xsd` are this repository's.** The catalogue maps
+  every schemaLocation the published files import each other by to the local
+  copy, so the job runs `xmllint --nonet`; `all.xsd` imports every namespace,
+  because the containers of these formats hold their content in
+  `processContents="lax"` wildcards, which skip an element whose namespace is
+  not loaded. The job adds this service's own `/crypto/metadata.xsd` at run
+  time for the one extension element the SAML metadata carries.
+* **Valid is three things**: xmllint passes it with no error and no warning
+  (the schema set's own "Skipping import" notes are set aside by name); every
+  namespace an element or attribute uses is loaded (`coverageProblems()`); and
+  every element's local name is declared in its namespace's schema — lax
+  content would pass a misspelled element otherwise. The job's first four
+  checks prove each refusal fires.
+* **ONE DERIVED FILE, recorded on #188 as a schema/specification conflict**:
+  the OASIS Standard's `ws-trust-1.3.xsd` declares its targetNamespace with a
+  trailing slash (`.../ws-trust/200512/`) that the specification's namespace,
+  the 1.4 schema's own `xmlns:wst` and every implementation do not have. The
+  fetch keeps the original (the digest is of it) and writes
+  `ws-trust-1.3-ns.xsd` with that one string changed, which `all.xsd` imports.
+* **A scenario that yields no document FAILS** (`capturedOne()`), and the
+  job asserts a floor on how many were validated: a flow that silently
+  stopped emitting its message would otherwise take its coverage with it.
+* **What the first run found**, each fixed in the module that owns it: the
+  WS-Trust 2004/04 answers used three elements that version does not have
+  (`ws-trust/CLAUDE.md`); the federation module's WS-Federation relationship
+  metadata lacked the required `fed:ApplicationServiceEndpoint`
+  (`federation/CLAUDE.md`); and `cm:CryptoMetadataLocation`, in the SAML 2.0
+  metadata's Extensions, was declared by no schema, the service's own
+  included (`pki/crypto_metadata_document.ts`).
+
+**By hand**: `tests/tools/fetch-xml-schemas.sh <dir>`, then the job with
+`STS_XML_SCHEMA_DIR=<dir>` and the usual `--url`, token and CA — or inside
+the tests image, where the directory is already there.
+
+**A new document type in these four families owes a scenario here** in the
+change that adds it.
 
 ## THREE CI-ONLY FAILURES, AND WHAT EACH ONE TEACHES (2026-08-30, 2026-09-10)
 
