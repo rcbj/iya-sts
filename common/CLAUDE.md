@@ -5618,7 +5618,7 @@ this module — plus OpenSSL. The inventory, and what drives each:
 | `verifySignerChain()` — `registered-root` built by the above; `realm` is `verifyLeaf()` | RFC 7523 / 7522 grants and client auth, JAR, software statements, the hosted surfaces' ID Tokens | `signer`, every case |
 | `verifyLeaf()`, `registerCertificate()` | a presented `x5c`, cert enrollment, an upload | same `authorityProblem()` → `pathRuleProblem()`; its anchor is the service Root, so no limbo case can reach it |
 | `verifyIssuedDirectly()` — the synchronous one-hop door (#201) | `spiffe/spiffe_auth.ts` (SPIRE Server / Broker API callers), `oid4vc/vc_issuer.ts` (key attestation `x5c`) | `direct`, every case |
-| `revocation_status.crlInHandVerdict()` — the CRL reader | every foreign CRL answer | `crl`, the 17 `crl::` cases |
+| `revocation_status.crlInHandVerdict()` — the CRL route with the lists in hand | every foreign CRL answer | `crl`, the 17 `crl::` cases; and every PKITS path, per certificate |
 | OpenSSL + `peerChainProblem()` on the main port (`tls_server.js` `holdToPathRules()`) | certificate sign-in, RFC 8705, the XACML gate, SCIM, the portal | `inbound`, the CLIENT cases with a key |
 | OpenSSL + `OutboundTls.checkServerIdentity()` (`common/outbound_tls.ts`) | GNAP push, SSF push, federation back channels and `fetchPublished()`, the XACML PEP nudge | `outbound`, the SERVER cases with a key |
 
@@ -5635,19 +5635,46 @@ URI, iPAddress and directoryName — a leaf's host-like CN counted as a dNSName 
 it has no SAN at all, a wildcard refused where it reaches into an excluded subtree
 (CVE-2025-61727), unevaluated forms refused where the certificate has a name of
 that form, a malformed constraint refusing the path, and 2^20 comparisons the most
-one path may cost. The validity instant is floored to whole seconds.
+one path may cost. The validity instant is floored to whole seconds. **And
+CERTIFICATE POLICIES, whole (RFC 5280 sections 6.1.3(d)-(f), 6.1.4(a)-(j),
+6.1.5; `pathPolicyOutcome()`)**: the valid_policy_tree, explicit_policy,
+inhibit_anyPolicy and policy_mapping, certificatePolicies, policyMappings,
+policyConstraints and inhibitAnyPolicy read (so understood when critical —
+the stopgap that refused a critical policy extension as unimplemented is
+gone), anyPolicy mapped refused, 10,000 tree nodes the most one path may make
+(CVE-2023-0464), and the user-constrained-policy-set returned in the anchor's
+policy domain. `opts.policy` carries the four inputs; no caller sets one, so
+the defaults run and a path is refused (STS-PKI-0199) only where its own
+certificates require an explicit policy and none survives.
 
-**Codes**: STS-PKI-0194 (name constraints), 0195 (critical extension), 0196
+**NIST PKITS (`tests/nist_pkits.js`)** holds all of it to the 224 tests /
+249 subparts of PKITS.pdf, fetched from csrc.nist.gov with BoringSSL's
+transcription of the table: `verifyPathToAnchors()` with each subpart's policy
+inputs and every certificate's revocation through the CRL route with the lists
+in hand, and `verifySignerChain()` with the defaults. It found, and #201 fixed,
+beyond the policy processing: a CRL signed by another key of the issuer (a
+rollover, a separate CRL key) was never accepted, and that key's own
+revocation never asked (6.3.3(f), `crlSignerStatusProblem()`); a point served
+by several lists covering different reasons answered from one; a negative
+serial and its positive twin were one serial (`serialKeyOf()`); and names
+differing only in case or spacing did not chain at the signer door
+(`namesChain()`).
+
+**Codes**: STS-PKI-0199 (certificate policy), 0194 (name constraints), 0195 (critical extension), 0196
 (malformed), 0197 (broken hash), 0198 (a chain OpenSSL verified that breaks the
 rules — the main port demotes it to unverified, an outbound request fails);
 STS-SPIFFE-0144 (an SVID whose path breaks them, or not a leaf SVID per X509-SVID
 4.3). The three issuer checks keep 0158 / 0151.
 
 **What is deliberately NOT applied** — the Web PKI's rules, issuer-profile MUSTs
-section 6 does not ask of a relying party, EKU as a path rule, policy processing,
-a caller-set depth — is `tests/x509_limbo.js`'s `EXCEPTIONS`, each with its
-reason; that list fails its test when an entry stops excusing anything. NIST PKITS
-is not in x509-limbo at the pinned commit.
+section 6 does not ask of a relying party, EKU as a path rule, a caller-set
+depth, DSA — is the `EXCEPTIONS` of `tests/x509_limbo.js` and
+`tests/nist_pkits.js`, each with its reason; each list fails its test when an
+entry stops excusing anything. **The CRL driver scores `unknown` as a refusal**,
+which is hard-fail (product's `auto`): a realm on `pki.revocationCheck=
+soft-fail` would ACCEPT those cases — a list that could not be used, a signer
+whose status could not be established — which is that policy's documented
+trade-off, not the reader's answer.
 
 ### THE LEAF IS A SIGNING CERTIFICATE AND DELIBERATELY NOT A TLS ONE
 
@@ -5963,8 +5990,10 @@ outside.
   administrator installed — and never for an unverified one. http/https only, no
   redirects, a timeout and a size cap, a cache honouring `nextUpdate` capped by
   `pki.revocationCrlMaxAgeS`, failures remembered for
-  `pki.revocationFailureRetryS`, one fetch per URL at a time. https is not
-  certificate-checked: the CRL's own signature is the authentication.
+  `pki.revocationFailureRetryS`, one fetch per URL at a time. **https is
+  certificate-checked since #201** (`OutboundTls.verifiedOptions()`, node's
+  store plus `pki.revocationHttpsCaFile`, RFC 9525's host check and the path
+  rules); the list's own signature is still what is believed.
 * **`auto` IS `mode.refusesUnknownRevocationStatus()`**: hard-fail in product,
   soft-fail in development. Development checks too, because the register cannot
   make a good certificate fail. **A certificate naming no list and no
@@ -7145,9 +7174,28 @@ SSF and XACML not requiring the federation module for their transport).
   (`pki.peerChainProblem()`, `STS-PKI-0198`), because x509-limbo found OpenSSL
   accepting chains those rules refuse. Where OpenSSL is STRICTER — one path, no
   backtracking, only a self-signed anchor without `X509_V_FLAG_PARTIAL_CHAIN` —
-  it fails closed, and `tests/x509_limbo.js` records it. Not asked by the
-  dialers outside this module (SMTP, SPIRE's kubelet, a CRL or OCSP fetch, whose
-  https is not the authentication).
+  it fails closed, and `tests/x509_limbo.js` records it.
+* **EVERY OTHER DIALER ASKS IT TOO (#201's second pass, the owner's
+  decision).** `verifiedOptions(ca)` is the ONE helper for a verified
+  connection outside the four families — SMTP (`mail_transports.ts`), a CRL or
+  OCSP server over https and an LDAPS directory (`revocation_status.js`, with
+  the new `pki.revocationHttpsCaFile` beside node's store; https there was
+  unverified until then), the risk dataset installer — and `checkChainOnly()`
+  is SPIRE's kubelet with its own CA (`chainOnly`: the path rules, no name).
+  `fetchPublished()` and `requestConfigured()` — the metadata, JWKS, SIOP,
+  OpenID Federation, MDS, Pwned Passwords, sigstore and TUF fetches — carry
+  the family policy's check already. **And `installProcessWide()`**, called
+  first by `common/protocol_stack.ts` in the front process and every worker,
+  replaces node's `tls.checkServerIdentity`, which `tls.connect()` reads when
+  a caller names none — so node-postgres, nodemailer, the cloud SDKs (SES,
+  Secrets Manager, Key Vault, Secret Manager, Gmail, ACS), a secret store's
+  client and anything added later get the RFC 9525 check and the path rules
+  without a copy. A caller naming its own check keeps it (the hosted
+  surfaces' pinned token endpoint, SSF's pin to this service's own
+  receiver); `rejectUnauthorized: false` only marks the socket unauthorized,
+  as node always did. **Not covered, and argued**: the embedded debugger's
+  forked api and the remote XACML PEP container are other programs with a
+  process of their own.
 
 **THE WRITE IS REFUSED IN `config.js`, NOT HERE.** A row carrying
 `onlyWhile: '<mode predicate>'` may be set to anything but its DEFAULT only

@@ -177,6 +177,11 @@ class ProtocolStack {
     // Every module loaded from here on waits for `installInstance()` instead of
     // building its own instance at the end of its load (#50, R2).
     InstanceSlot.deferToRoot();
+    // EVERY TLS CLIENT IN THE PROCESS (#201): RFC 9525's host check and the
+    // path rules under every connection that takes node's default check —
+    // `common/outbound_tls.ts` argues it. First, so nothing below dials out
+    // before it. A library; it registers nothing.
+    require('./outbound_tls').installProcessWide();
     // Which LDAP attributes the four claim sets carry. A LIBRARY — it registers
     // no route, so this line adds nothing to /admin/sts-metadata and its
     // position in the route order is not a position at all. It is required

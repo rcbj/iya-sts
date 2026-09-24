@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3456** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3457** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 77
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 185
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 186
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
@@ -664,6 +664,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0196` | A certificate on a signer's or an uploaded path breaks a rule of RFC 5280 section 4 a relying party holds it to: an extension twice, an unreadable basicConstraints, keyUsage, extKeyUsage, subjectAltName or nameConstraints, an empty subject without a critical subjectAltName, a CA with an empty subject, keyCertSign or nameConstraints on a certificate that is not a CA, or an ML-DSA key with a keyUsage RFC 9881 does not permit (pki.pathRuleProblem, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
 | `STS-PKI-0197` | A certificate on a path below its anchor is signed with a broken hash — MD2 or MD5 on every path, SHA-1 on every path but this service's own hierarchy in a development realm (#181) — and the path is refused (pki.pathRuleProblem, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
 | `STS-PKI-0198` | A certificate chain OpenSSL verified in a TLS handshake breaks the path rules every other path here is held to (pki.peerChainProblem, #201): on the main port the client certificate is treated as unverified (authorized false); on an outbound request the request fails as a TLS error. Also logged when the rules could not be asked. | none on the wire: an unverified client certificate, or the family's own failure for an outbound request |
+| `STS-PKI-0199` | RFC 5280 section 6.1's certificate policy processing refuses a path: a certificate on it requires an explicit policy (policyConstraints) and no acceptable policy remains in the valid_policy_tree, a policyMappings maps anyPolicy, or the policies and mappings make a tree too large to evaluate (pki.pathPolicyOutcome, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
 
 ## STS-ENROLL
 

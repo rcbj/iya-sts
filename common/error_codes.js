@@ -2725,6 +2725,15 @@ const CODES = [
       'the rules could not be asked.',
     spec: 'none on the wire: an unverified client certificate, or the ' +
       'family\'s own failure for an outbound request' },
+  { code: 'STS-PKI-0199',
+    summary: 'RFC 5280 section 6.1\'s certificate policy processing refuses ' +
+      'a path: a certificate on it requires an explicit policy ' +
+      '(policyConstraints) and no acceptable policy remains in the ' +
+      'valid_policy_tree, a policyMappings maps anyPolicy, or the policies ' +
+      'and mappings make a tree too large to evaluate ' +
+      '(pki.pathPolicyOutcome, #201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

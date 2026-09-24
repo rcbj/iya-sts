@@ -249,6 +249,81 @@ class OutboundTls {
   }
 
   // -------------------------------------------------------------------------
+  // THE PATH RULES WITHOUT A NAME (#201): for a request that verifies the
+  // chain against a CA it was handed and deliberately not the host — SPIRE's
+  // kubelet with its own CA (`chainOnly`). The chain OpenSSL verified is
+  // still held to `pki.pathRuleProblem()`.
+  // -------------------------------------------------------------------------
+  static checkChainOnly(host: string, cert: any): Error | undefined {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.checkChainOnly(). " + host);
+    const problem = pki.peerChainProblem(cert);
+    log.debug("Leaving OutboundTls.checkChainOnly().");
+    return problem ? OutboundTls.rulesError(host, problem) : undefined;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE OPTIONS FOR A VERIFIED OUTBOUND CONNECTION THAT IS NOT ONE OF THE
+  // FAMILIES (#201) — SMTP, a CRL or OCSP server over https, LDAPS for a CRL,
+  // the risk dataset installer: verification on, `ca` (a PEM text or list)
+  // BESIDE node's store when given, and the host check above. The one helper
+  // every such dialer asks, so none of them carries a copy.
+  // -------------------------------------------------------------------------
+  static verifiedOptions(ca?: string | string[] | null):
+      { rejectUnauthorized: true; ca?: string[];
+        checkServerIdentity: (host: string, cert: any) => Error | undefined } {
+    helpers.log.debug("Entering OutboundTls.verifiedOptions().");
+    const extra = Array.isArray(ca) ? ca
+      : (ca ? String(ca).match(CERTIFICATE) || [] : []);
+    const out: any = { rejectUnauthorized: true,
+                       checkServerIdentity: OutboundTls.checkServerIdentity };
+    if (extra.length) {
+      out.ca = tls.rootCertificates.concat(extra);
+    }
+    helpers.log.debug("Leaving OutboundTls.verifiedOptions().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // EVERY TLS CLIENT IN THIS PROCESS (#201). Node's `tls.connect()` reads
+  // `tls.checkServerIdentity` when a caller names none, so replacing it here
+  // puts RFC 9525's host check and the path rules under every client that
+  // takes node's default: node-postgres, nodemailer, a cloud provider's SDK,
+  // a secret store's client, gRPC — the dialers this module is not handed
+  // options for, and any added later. A caller that names its own check (a
+  // pinned receiver, the hosted surfaces' own token endpoint) keeps it; a
+  // connection made with `rejectUnauthorized: false` is only marked
+  // unauthorized, as node always did. Installed once, by
+  // `common/protocol_stack.ts`, in the front process and every request
+  // worker. Idempotent.
+  // -------------------------------------------------------------------------
+  private static installed = false;
+
+  static installProcessWide(): void {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.installProcessWide().");
+    if (!OutboundTls.installed) {
+      OutboundTls.installed = true;
+      (tls as any).checkServerIdentity = OutboundTls.checkServerIdentity;
+      log.info('outbound: every TLS client in this process checks the host ' +
+               'as RFC 9525 does and holds the verified chain to the ' +
+               'path rules (#201).');
+    }
+    log.debug("Leaving OutboundTls.installProcessWide().");
+  }
+
+  private static rulesError(host: string, problem: any): Error {
+    helpers.log.debug("Entering OutboundTls.rulesError().");
+    helpers.log.warn(errorCodes.tag('STS-PKI-0198') + 'outbound: the ' +
+                     'certificate chain ' + host + ' presented verified and ' +
+                     'is refused: ' + problem.why + '.');
+    helpers.log.debug("Leaving OutboundTls.rulesError().");
+    return Object.assign(new Error('the certificate chain of ' + host +
+                                   ' breaks RFC 5280: ' + problem.why),
+                         { code: 'ERR_STS_PATH_RULES' });
+  }
+
+  // -------------------------------------------------------------------------
   // IS `host` A NAME THE CERTIFICATE HOLDS, AS RFC 9525 READS IT (#201)?
   // '' when it is, a sentence when it is not. Node's own
   // `tls.checkServerIdentity()` implements RFC 6125, and x509-limbo found the
@@ -337,13 +412,8 @@ class OutboundTls {
     }
     const problem = pki.peerChainProblem(cert);
     if (problem) {
-      log.warn(errorCodes.tag('STS-PKI-0198') + 'outbound: the certificate ' +
-               'chain ' + host + ' presented verified and is refused: ' +
-               problem.why + '.');
       log.debug("Leaving OutboundTls.checkServerIdentity(). The rules.");
-      return Object.assign(new Error('the certificate chain of ' + host +
-                                     ' breaks RFC 5280: ' + problem.why),
-                           { code: 'ERR_STS_PATH_RULES' });
+      return OutboundTls.rulesError(host, problem);
     }
     log.debug("Leaving OutboundTls.checkServerIdentity().");
     return undefined;

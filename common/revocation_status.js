@@ -93,14 +93,19 @@
 //      `pki.revocationMaxCrlBytes`. A CRL server that answers slowly is a
 //      request to this service hanging; one that answers forever is this
 //      process's memory.
-//   4. **https IS NOT CERTIFICATE-CHECKED, AND THAT IS ARGUED RATHER THAN
-//      FORGOTTEN.** A CRL is authenticated by its own signature against the
-//      issuer, which this file verifies; the transport adds a second, UNRELATED
-//      trust decision — the Web PKI — and a CRL server's certificate commonly
-//      chains to the very CA being checked, which is the circularity RFC 5280
-//      warns about when it recommends http for distribution points. A forged or
-//      replayed list fails the signature or the `nextUpdate` check whatever the
-//      transport said.
+//   4. ~~**https IS NOT CERTIFICATE-CHECKED**~~ — **VERIFIED SINCE #201, by
+//      the owner's rule (most secure by default).** The argument was that a
+//      CRL is authenticated by its own signature against the issuer, which
+//      this file verifies, and that the Web PKI is a second, unrelated trust
+//      decision. The signature is still what is BELIEVED; but an https
+//      address is a claim about who answers, and an unchecked one is no claim
+//      at all, so the server's certificate is verified against node's store
+//      and `pki.revocationHttpsCaFile`, its host checked as RFC 9525 does and
+//      its chain held to the path rules (`OutboundTls.verifiedOptions()`).
+//      A server that fails that is unreachable — unknown, and hard-fail
+//      refuses. Plain http, which RFC 5280 recommends for distribution points
+//      precisely to avoid the circularity of a CRL server certified by the CA
+//      being checked, is untouched.
 //   5. **A FAILURE IS CACHED TOO**, for `pki.revocationFailureRetryS`, so an
 //      unreachable server costs one timeout per window rather than one per
 //      request.
@@ -269,6 +274,15 @@ const { URL } = require('url');
 const asn1js = require('asn1js');
 const pkijs = require('pkijs');
 const config = require('./config');
+// The one helper for a verified outbound connection (#201), required LAZILY
+// where a list is fetched: this module is in the parent project's Kerberos
+// COPY closure (kerberos/CLAUDE.md), and a load-time require would add
+// `outbound_tls.js` to it.
+function outboundTls() {
+  log.debug("Entering outboundTls().");
+  log.debug("Leaving outboundTls().");
+  return require('./outbound_tls');
+}
 
 const log = bunyan.createLogger({
   name: 'revocation_status',
@@ -359,6 +373,25 @@ function normalSerial(text) {
   log.debug("Entering normalSerial().");
   log.debug("Leaving normalSerial().");
   return pkiRevocation.normalSerial(text);
+}
+
+// A certificate serial as the SIGNED INTEGER it is (#201), for matching a
+// foreign certificate to a CRL entry or an OCSP CertID: the DER content bytes
+// in hex, with only a NON-MINIMAL leading byte removed (00 before a byte under
+// 0x80, ff before one at or above it). `normalSerial()` strips every leading
+// zero and drops a sign, so 255 (DER 00 ff) and -1 (DER ff) were the same
+// serial and a CRL revoking one revoked the other (NIST PKITS 4.4.14 and
+// 4.4.15). RFC 5280 section 4.1.2.2 allows a relying party to meet a
+// negative serial and asks it to handle one gracefully.
+function serialKeyOf(bytes) {
+  log.debug("Entering serialKeyOf().");
+  let b = Buffer.from(bytes || []);
+  while (b.length > 1 && ((b[0] === 0 && b[1] < 0x80) ||
+                          (b[0] === 0xff && b[1] >= 0x80))) {
+    b = b.subarray(1);
+  }
+  log.debug("Leaving serialKeyOf().");
+  return b.toString('hex') || '00';
 }
 
 // An ArrayBuffer holding EXACTLY these bytes, for pkijs. `buf.buffer` is node's
@@ -1319,9 +1352,16 @@ function fetchBytes(url, options) {
         path: target.pathname + target.search,
         method: opts.body ? 'POST' : 'GET',
         headers: headers,
-        // See the header, point 4: the document's own signature is the check.
-        rejectUnauthorized: false,
-        agent: false
+        agent: false,
+        // VERIFIED SINCE #201. The header's point 4 held that a CRL's or an
+        // OCSP response's own signature is the whole check, and so an https
+        // server's certificate went unchecked. The signature still is what
+        // is believed; the transport is verified too — node's store and
+        // `pki.revocationHttpsCaFile`, RFC 9525's host check and the path
+        // rules (`OutboundTls.verifiedOptions()`) — because an https address
+        // is a claim about who answers, and a claim unchecked is none.
+        ...outboundTls().verifiedOptions(
+          pemFileOf('pki.revocationHttpsCaFile').pems)
       }, function (response) {
         const status = response.statusCode || 0;
         if (status >= 300 && status < 400) {
@@ -1595,9 +1635,14 @@ function fetchLdap(url, want) {
       done({ ok: false, why: 'it did not answer within ' + timeout + 'ms ' +
                              '(pki.revocationFetchTimeoutMs)' });
     }, timeout);
-    const tlsOptions = { rejectUnauthorized: true,
-                         ca: tls.rootCertificates.concat(
-                             pemFileOf('pki.revocationLdapCaFile').pems) };
+    // Verified, host checked and the chain held to the path rules (#201).
+    // `any`: the helper's type names what IT sets, and `servername` is set
+    // below.
+    const tlsOptions = /** @type {any} */ (Object.assign({},
+      outboundTls().verifiedOptions(
+      pemFileOf('pki.revocationLdapCaFile').pems)));
+    // Node's store even when the file adds nothing: `ca` names the anchors.
+    tlsOptions.ca = tlsOptions.ca || tls.rootCertificates.slice(0);
     if (!net.isIP(parsed.host)) {
       tlsOptions.servername = parsed.host;
     }
@@ -2114,8 +2159,7 @@ function entriesOf(crl, crlIssuerKey, indirect) {
       }
       attributed = nameKey(dn.value);
     }
-    const serial = normalSerial(Buffer.from(entry.userCertificate.valueBlock
-      .valueHexView).toString('hex'));
+    const serial = serialKeyOf(entry.userCertificate.valueBlock.valueHexView);
     // THE SAME CERTIFICATE TWICE (#201) makes the list ambiguous — which
     // entry's reason and date is the answer? — so the list is unusable
     // rather than answered by whichever entry was read last (x509-limbo
@@ -2251,7 +2295,11 @@ async function readCrl(der, context) {
       crlNumber: integerExtensionOf(find(OID.CRL_NUMBER)),
       baseCrlNumber: integerExtensionOf(find(OID.DELTA_CRL_INDICATOR)),
       idp: readIssuingDistributionPoint(find(OID.ISSUING_DISTRIBUTION_POINT)),
-      freshest: pointsOfExtension(find(OID.FRESHEST_CRL)).fetchable
+      freshest: pointsOfExtension(find(OID.FRESHEST_CRL)).fetchable,
+      // Whether it names a freshest CRL at all, in any form — what a list
+      // held in hand is asked (`crlInHandVerdict()`), where nothing is
+      // fetched and a directory name is as good an answer as a URL.
+      freshestNamed: pointsOfExtension(find(OID.FRESHEST_CRL)).points.length
     };
   } catch (e) {
     log.debug('Leaving readCrl(). An extension could not be read.');
@@ -2448,9 +2496,7 @@ function certIdMatches(certId, target) {
     log.debug("Leaving certIdMatches().");
     return false;
   }
-  const serial =
-      normalSerial(Buffer.from(certId.serialNumber.valueBlock.valueHexView)
-    .toString('hex'));
+  const serial = serialKeyOf(certId.serialNumber.valueBlock.valueHexView);
   log.debug("Leaving certIdMatches().");
   return serial === target.serial &&
     Buffer.from(certId.issuerNameHash.valueBlock.valueHexView)
@@ -3000,7 +3046,8 @@ function targetOf(link) {
   return { link: link, cert: link.cert, parsed: parsed,
            issuerCert: link.issuerCert,
            issuerParsed: issuerParsed, issuerKey: nameKey(parsed.issuer),
-           serial: normalSerial(link.serialHex), isCa: isCaCertificate(parsed),
+           serial: serialKeyOf(parsed.serialNumber.valueBlock.valueHexView),
+           isCa: isCaCertificate(parsed),
            offered: offered, above: above };
 }
 
@@ -3060,8 +3107,33 @@ function crlSignerAuthorised(candidate, target, pool) {
 function crlContextFor(target, point) {
   log.debug('Entering crlContextFor().');
   if (!point.crlIssuerNamed) {
-    log.debug('Leaving crlContextFor(). Direct.');
-    return { ok: true, indirect: false, signers: [target.issuerCert],
+    // THE ISSUER'S LIST, SIGNED BY THE ISSUER'S CERTIFICATE — OR BY ANOTHER
+    // CERTIFICATE OF THE SAME ISSUER (#201). RFC 5280 section 6.3.3(f) lets
+    // a CA sign its CRLs with a key other than the one that signed the
+    // certificate (a separate CRL-signing key, or the other key of a
+    // rollover), provided that certificate is validated to the same anchor.
+    // Such a certificate among those presented, held or configured is a
+    // candidate when it carries the issuer's name and `crlSignerAuthorised()`
+    // chains it to the path above the certificate; the one fetched from a
+    // list's caIssuers address stays the fall-back (NIST PKITS 4.4.19,
+    // 4.5.x).
+    const issuerName = nameKey(target.parsed.issuer);
+    const seenDirect = new Set([target.issuerCert.fingerprint256]);
+    const pool = target.offered.concat(heldCertificates(),
+                                       configuredCrlIssuers());
+    const others = pool.filter(function (one) {
+      if (seenDirect.has(one.fingerprint256)) {
+        return false;
+      }
+      seenDirect.add(one.fingerprint256);
+      const parsed = pkijsOf(one);
+      return !!parsed && nameKey(parsed.subject) === issuerName &&
+             crlSignerAuthorised(one, target, pool);
+    });
+    log.debug('Leaving crlContextFor(). Direct, ' + (1 + others.length) +
+              ' signer(s).');
+    return { ok: true, indirect: false,
+             signers: [target.issuerCert].concat(others),
              expectName: target.parsed.issuer, target: target };
   }
   if (!point.crlIssuer) {
@@ -3358,9 +3430,152 @@ function crlNoPointResult(points, target) {
                 'distribution point' };
 }
 
-async function crlRoute(target) {
-  log.debug('Entering crlRoute().');
+// Every list in hand `readCrl()` accepts under `context` that covers `point`
+// (`scopeProblem()`), each shaped as `listFrom()` answers: `{ url, list }`.
+// Delta lists are never a base. Problems are appended to `problems`.
+async function inHandLists(inHand, context, target, point, problems) {
+  log.debug('Entering inHandLists().');
+  const out = [];
+  for (let i = 0; i < inHand.length; i++) {
+    const read = await readCrl(Buffer.from(inHand[i]),
+                               Object.assign({ purpose: 'base' }, context,
+                                             { target: null }));
+    if (!read.ok) {
+      continue;
+    }
+    const outOfScope = scopeProblem(read, target, point);
+    if (outOfScope) {
+      problems.push('list ' + i + ' in hand: ' + outOfScope);
+      continue;
+    }
+    out.push({ url: 'list ' + i + ' in hand', list: read, fromCache: false });
+  }
+  if (!out.length) {
+    problems.push('no list in hand is signed by the issuer and covers it');
+  }
+  log.debug('Leaving inHandLists(). ' + out.length + '.');
+  return out;
+}
+
+// The delta in hand that applies to `got` (`deltaProblem()`), merged, as
+// `deltaFor()` answers.
+async function inHandDelta(inHand, context, got) {
+  log.debug('Entering inHandDelta().');
+  const problems = [];
+  for (let i = 0; i < inHand.length; i++) {
+    const read = await readCrl(Buffer.from(inHand[i]),
+                               Object.assign({}, context,
+                                             { target: null,
+                                               purpose: 'delta' }));
+    if (!read.ok || !read.isDelta) {
+      continue;
+    }
+    const why = deltaProblem(got.list, read);
+    if (why) {
+      problems.push('list ' + i + ' in hand: ' + why);
+      continue;
+    }
+    log.debug('Leaving inHandDelta(). List ' + i + '.');
+    return { ok: true, url: 'list ' + i + ' in hand',
+             entries: mergedEntries(got.list.entries, read.entries) };
+  }
+  log.debug('Leaving inHandDelta(). None.');
+  return { ok: false, why: 'no delta CRL in hand applies' +
+                           (problems.length ? ' — ' + problems.join('; ')
+                                            : '') };
+}
+
+// ---------------------------------------------------------------------------
+// THE LIST'S SIGNER MUST NOT BE REVOKED ITSELF (#201). RFC 5280 section
+// 6.3.3(f): the certificate that signed a CRL is validated — status
+// included — when it is not the certificate's own issuer certificate (a
+// separate CRL-signing key, a rollover's other key, an indirect CRL issuer).
+// Its status is asked through this same route, at most CRL_SIGNER_DEPTH
+// levels down — a self-issued rollover (NIST PKITS 4.6.17, 4.12.9) or an
+// indirect CRL issuer whose own list is signed by another of its keys (4.14.30)
+// needs two or three — and a deeper or circular arrangement is unknown
+// rather than walked. The issuer's own certificate is not asked here
+// — the path above answers for it — and neither is a certificate this
+// service holds (the register does) or one fetched from a caIssuers address
+// (`crlSignerFromCaIssuers()` authorised it against the path).
+// '' when it may sign, otherwise why not.
+// ---------------------------------------------------------------------------
+const CRL_SIGNER_DEPTH = 3;
+
+async function crlSignerStatusProblem(got, context, target, inHand, depth) {
+  log.debug('Entering crlSignerStatusProblem().');
+  const fingerprint = got.list.signerFingerprint;
+  if (!fingerprint || fingerprint === target.issuerCert.fingerprint256) {
+    log.debug('Leaving crlSignerStatusProblem(). The issuer\'s own.');
+    return '';
+  }
+  // A CRL issuer's list that covers the CRL issuer's own certificate: what
+  // that list says about it IS its status, and the route reads the entry
+  // next (NIST PKITS 4.14.30). Asking again would ask the same list.
+  if (fingerprint === target.cert.fingerprint256) {
+    log.debug('Leaving crlSignerStatusProblem(). It covers itself.');
+    return '';
+  }
+  const signer = (context.signers || []).filter(function (one) {
+    return one.fingerprint256 === fingerprint;
+  })[0];
+  const held = heldCertificates().some(function (one) {
+    return one.fingerprint256 === fingerprint;
+  });
+  if (!signer || held) {
+    log.debug('Leaving crlSignerStatusProblem(). Held or fetched.');
+    return '';
+  }
+  if (depth >= CRL_SIGNER_DEPTH) {
+    log.debug('Leaving crlSignerStatusProblem(). Too deep.');
+    return 'the certificates that sign its lists vouch for each other more ' +
+           'than ' + CRL_SIGNER_DEPTH + ' deep, which is not followed further';
+  }
+  const issuer = target.offered.concat(heldCertificates())
+    .filter(function (one) {
+      return one.fingerprint256 !== signer.fingerprint256 &&
+             signedBy(signer, one);
+    })[0];
+  if (!issuer) {
+    log.debug('Leaving crlSignerStatusProblem(). No issuer.');
+    return 'the certificate that signed it has no issuer here to establish ' +
+           'its status against';
+  }
+  const signerTarget = targetOf({ cert: signer, issuerCert: issuer,
+                                  depth: 0, serialHex: signer.serialNumber,
+                                  offered: target.offered,
+                                  subject: String(signer.subject || '') });
+  const status = signerTarget
+    ? await crlRoute(signerTarget, inHand, depth + 1)
+    : { status: 'unknown', why: 'it could not be read' };
+  // A CRL signer that names no list and no responder is held to the rule
+  // every certificate is (#174): accepted unless
+  // `pki.revocationRequireDistributionPoint` says otherwise (`auto`: product
+  // refuses). Anything else unknown leaves the list unusable.
+  if (status.none && !policy().requireDistributionPoint) {
+    log.debug('Leaving crlSignerStatusProblem(). Names no list.');
+    return '';
+  }
+  log.debug('Leaving crlSignerStatusProblem(). ' + status.status);
+  return status.status === 'good' ? ''
+    : 'the certificate that signed it is ' + status.status + ' (' +
+      String(status.why || '') + ')';
+}
+
+// `inHand` (#201): CRLs already held — DER buffers — to be used IN PLACE OF
+// fetching, for `crlInHandVerdict()`. The route is the same: the same points,
+// contexts, readers, scope checks and delta rules, with a point's lists being
+// the ones in hand that `readCrl()` accepts for it rather than the ones at its
+// URLs, and a certificate that names no point answered by a complete list of
+// its issuer's.
+async function crlRoute(target, inHand, depth) {
+  log.debug('Entering crlRoute().' + (inHand ? ' In hand.' : ''));
   const points = distributionPointsOf(target.cert);
+  if (inHand && !points.points.length) {
+    points.points.push({ urls: [], other: [], keys: [], reasons: ALL_REASONS,
+                         relative: false, relativeRdn: null, crlIssuer: null,
+                         crlIssuerNamed: false });
+  }
   points.points.forEach(function (point) {
     if (!point.relative) {
       return;
@@ -3371,7 +3586,7 @@ async function crlRoute(target) {
     }
     if (address.url) {
       point.urls.push(address.url);
-    } else {
+    } else if (!inHand) {
       log.warn(errorCodes.tag('STS-PKI-0128') + 'revocation: a distribution ' +
                                                 'point of "' +
                target.link.subject + '" is not dialled: ' + address.why + '.');
@@ -3381,14 +3596,14 @@ async function crlRoute(target) {
                         ')');
     }
   });
-  const usable =
-      points.points.filter(function (one) { return one.urls.length > 0; });
+  const usable = inHand ? points.points
+    : points.points.filter(function (one) { return one.urls.length > 0; });
   if (!usable.length) {
     log.debug('Leaving crlRoute(). Nothing fetchable.');
     return crlNoPointResult(points, target);
   }
-  const certificateDeltas = distributionPointsOf(target.cert,
-                                                 OID.FRESHEST_CRL).fetchable;
+  const freshest = distributionPointsOf(target.cert, OID.FRESHEST_CRL);
+  const certificateDeltas = freshest.fetchable;
   const key = target.issuerKey + '|' + target.serial;
   const problems = [];
   let covered = 0;
@@ -3400,8 +3615,14 @@ async function crlRoute(target) {
       problems.push(context.why);
       continue;
     }
+    // The lists at this point: in hand, every one `readCrl()` accepts that
+    // covers it — a point may be served by several lists that each cover
+    // some reasons (section 6.3.3's reasons_mask; NIST PKITS 4.14.18); fetched,
+    // the first of its URLs that answers.
+    const gots = inHand
+      ? await inHandLists(inHand, context, target, point, problems) : [];
     let got = null;
-    for (let u = 0; u < point.urls.length && !got; u++) {
+    for (let u = 0; !inHand && u < point.urls.length && !got; u++) {
       const one = await listFrom(point.urls[u],
                                  Object.assign({ purpose: 'base' }, context));
       if (one.ok) {
@@ -3410,58 +3631,75 @@ async function crlRoute(target) {
         problems.push(point.urls[u] + ': ' + one.why);
       }
     }
-    if (!got) {
-      continue;
+    if (got) {
+      gots.push(got);
     }
-    const outOfScope = scopeProblem(got.list, target, point);
-    if (outOfScope) {
-      log.warn(errorCodes.tag('STS-PKI-0121') + 'revocation: the CRL at ' +
-               got.url +
-               ' does not cover "' + target.link.subject + '": ' + outOfScope +
-               '.');
-      problems.push(got.url + ': ' + outOfScope);
-      continue;
-    }
-    const baseEntry = got.list.entries.get(key) || null;
-    const deltaUrls = certificateDeltas.concat(got.list.freshest)
-                                       .filter(function (url, at, all) {
-      return all.indexOf(url) === at;
-    });
-    let entry = baseEntry;
-    let delta = null;
-    if (deltaUrls.length) {
-      delta = await deltaFor(context, Object.assign({ url: got.url }, got.list),
-                             deltaUrls);
-      if (delta.ok) {
-        entry = delta.entries.get(key) || null;
-      } else if (!baseEntry ||
-                 baseEntry.reasonCode === REASON_CERTIFICATE_HOLD ||
-                 baseEntry.reasonCode === REASON_REMOVE_FROM_CRL) {
-        problems.push(got.url + ': ' + delta.why);
+    for (let g = 0; g < gots.length; g++) {
+      got = gots[g];
+      const outOfScope = scopeProblem(got.list, target, point);
+      if (outOfScope) {
+        log.warn(errorCodes.tag('STS-PKI-0121') + 'revocation: the CRL at ' +
+                 got.url +
+                 ' does not cover "' + target.link.subject + '": ' +
+                 outOfScope +
+                 '.');
+        problems.push(got.url + ': ' + outOfScope);
         continue;
       }
-    }
-    if (entry && entry.reasonCode !== REASON_REMOVE_FROM_CRL) {
-      log.debug('Leaving crlRoute(). Revoked.');
-      return crlRevokedResult(target, got, context, delta, entry);
-    }
-    covered |= (point.reasons & got.list.idp.reasons);
-    answered = { got: got, delta: delta, context: context };
-    if ((covered & ALL_REASONS) === ALL_REASONS) {
-      log.debug('Leaving crlRoute(). Good.');
-      return {
-        status: 'good', answeredBy: 'crl', crlUrl: got.url,
-        crlNextUpdate: got.list.nextUpdate, crlFromCache: !!got.fromCache,
-        deltaUrl: delta && delta.ok ? delta.url : '',
-        indirect: context.indirect,
-        why: 'the CRL at ' + got.url + (delta && delta.ok ? ' with its delta ' +
-            'at ' + delta.url : '') +
-             ', signed by ' + (context.indirect ? 'the CRL issuer the ' +
-                                                  'certificate names'
-                                                : 'its issuer') +
-             ' and fresh until ' + (got.list.nextUpdate || 'an unstated time') +
-             ', does not list it'
-      };
+      const signerStatus = await crlSignerStatusProblem(got, context, target,
+                                                        inHand, depth || 0);
+      if (signerStatus) {
+        problems.push(got.url + ': ' + signerStatus);
+        continue;
+      }
+      const baseEntry = got.list.entries.get(key) || null;
+      const deltaUrls = certificateDeltas.concat(got.list.freshest)
+                                         .filter(function (url, at, all) {
+        return all.indexOf(url) === at;
+      });
+      let entry = baseEntry;
+      let delta = null;
+      const wantsDelta = inHand
+        ? (freshest.points.length > 0 || got.list.freshestNamed > 0)
+        : deltaUrls.length > 0;
+      if (wantsDelta) {
+        delta = inHand
+          ? await inHandDelta(inHand, context, got)
+          : await deltaFor(context, Object.assign({ url: got.url }, got.list),
+                           deltaUrls);
+        if (delta.ok) {
+          entry = delta.entries.get(key) || null;
+        } else if (!baseEntry ||
+                   baseEntry.reasonCode === REASON_CERTIFICATE_HOLD ||
+                   baseEntry.reasonCode === REASON_REMOVE_FROM_CRL) {
+          problems.push(got.url + ': ' + delta.why);
+          continue;
+        }
+      }
+      if (entry && entry.reasonCode !== REASON_REMOVE_FROM_CRL) {
+        log.debug('Leaving crlRoute(). Revoked.');
+        return crlRevokedResult(target, got, context, delta, entry);
+      }
+      covered |= (point.reasons & got.list.idp.reasons);
+      answered = { got: got, delta: delta, context: context };
+      if ((covered & ALL_REASONS) === ALL_REASONS) {
+        log.debug('Leaving crlRoute(). Good.');
+        return {
+          status: 'good', answeredBy: 'crl', crlUrl: got.url,
+          crlNextUpdate: got.list.nextUpdate, crlFromCache: !!got.fromCache,
+          deltaUrl: delta && delta.ok ? delta.url : '',
+          indirect: context.indirect,
+          why: 'the CRL at ' + got.url +
+               (delta && delta.ok ? ' with its delta ' +
+              'at ' + delta.url : '') +
+               ', signed by ' + (context.indirect ? 'the CRL issuer the ' +
+                                                    'certificate names'
+                                                  : 'its issuer') +
+               ' and fresh until ' +
+               (got.list.nextUpdate || 'an unstated time') +
+               ', does not list it'
+        };
+      }
     }
   }
   if (answered && !problems.length) {
@@ -3885,19 +4123,23 @@ function summarise(links, checked) {
 // ---------------------------------------------------------------------------
 // A LIST IN HAND (#201): what `crlRoute()` concludes about one certificate
 // from CRLs it already holds, for lists that did not come from a fetch —
-// C2SP x509-limbo's CRL cases carry the list beside the chain and name no
-// distribution point, and `tests/x509_limbo.js` drives them through here.
+// C2SP x509-limbo's and NIST PKITS's CRL cases carry the lists beside the
+// chain, and `tests/x509_limbo.js` and `tests/nist_pkits.js` drive them
+// through here.
 //
-// **IT IS THE SAME READER, NOT A SECOND ONE.** `readCrl()` verifies the
-// list's signature against the certificate's issuer, its cRLSign, its
-// critical extensions, its freshness and every entry, exactly as for a
-// fetched list; `scopeProblem()` asks whether it covers the certificate, as
-// for a distribution point naming no CRL issuer and no reasons (a complete
-// list for every reason, RFC 5280 section 6.3.3); an entry is looked up
-// under the issuer's name and the serial as `crlRoute()` looks it up.
-// Nothing is dialled: a list the issuer's certificate does not verify is not
-// retried against a caIssuers address it names, because a list in hand has
-// no fetch to borrow the authorisation of.
+// **IT IS THE SAME ROUTE, NOT A SECOND ONE.** `crlRoute(target, inHand)`:
+// every distribution point the certificate names (or one complete point when
+// it names none), each point's CRL issuer resolved by `crlContextFor()` —
+// an indirect list's signer among the certificates in hand
+// (`input.others`), this service's authorities and the configured file —
+// `readCrl()` verifying signature, cRLSign, critical extensions, cRLNumber,
+// freshness and every entry, `scopeProblem()` matching the issuing
+// distribution point and the reasons, and a delta merged under
+// `deltaProblem()`'s rules. The only difference is where a point's lists
+// come from: the ones in hand `readCrl()` accepts, never a fetch — so a list
+// the issuer's certificate does not verify is not retried against a
+// caIssuers address, because a list in hand has no fetch to borrow the
+// authorisation of.
 //
 // `input.certificate` and `input.issuer` in any spelling `x509Of()` reads;
 // `input.crls` DER or PEM buffers. Resolves `{ status, why }`, `status`
@@ -3907,9 +4149,14 @@ async function crlInHandVerdict(input) {
   log.debug('Entering crlInHandVerdict().');
   const cert = x509Of(input && input.certificate);
   const issuer = x509Of(input && input.issuer);
+  // Every other certificate in hand may be an indirect CRL's issuer, as a
+  // presented chain's may (`crlContextFor()`), and the path above the
+  // issuer is what such a signer has to chain to.
+  const offered = ((input && input.others) || []).map(x509Of)
+    .filter(Boolean);
   const target = cert && issuer
     ? targetOf({ cert: cert, issuerCert: issuer, depth: 0,
-                 serialHex: cert.serialNumber, offered: [],
+                 serialHex: cert.serialNumber, offered: offered,
                  subject: String(cert.subject || '') })
     : null;
   if (!target) {
@@ -3917,41 +4164,12 @@ async function crlInHandVerdict(input) {
     return { status: 'unknown',
              why: 'the certificate or its issuer could not be read' };
   }
-  const point = { crlIssuerNamed: false, keys: [], reasons: ALL_REASONS };
-  const context = Object.assign({}, crlContextFor(target, point),
-                                { target: null, purpose: 'base' });
-  const key = target.issuerKey + '|' + target.serial;
-  const problems = [];
-  let covered = 0;
-  const lists = (input && input.crls) || [];
-  for (let i = 0; i < lists.length; i++) {
-    const read = await readCrl(Buffer.from(lists[i]), context);
-    if (!read.ok) {
-      problems.push('list ' + i + ': ' + read.why);
-      continue;
-    }
-    const outOfScope = scopeProblem(read, target, point);
-    if (outOfScope) {
-      problems.push('list ' + i + ': ' + outOfScope);
-      continue;
-    }
-    const entry = read.entries.get(key) || null;
-    if (entry && entry.reasonCode !== REASON_REMOVE_FROM_CRL) {
-      log.debug('Leaving crlInHandVerdict(). Revoked.');
-      return { status: 'revoked',
-               why: 'list ' + i + ' lists it as revoked since ' +
-                    entry.revokedAt + ' (' + entry.reason + ')' };
-    }
-    covered |= (point.reasons & read.idp.reasons);
-  }
-  if ((covered & ALL_REASONS) === ALL_REASONS) {
-    log.debug('Leaving crlInHandVerdict(). Good.');
-    return { status: 'good', why: 'no list names it' };
-  }
-  log.debug('Leaving crlInHandVerdict(). Unknown.');
-  return { status: 'unknown',
-           why: problems.length ? problems.join('; ')
-                                : 'the lists cover only some reasons' };
+  const lists = ((input && input.crls) || []).map(function (one) {
+    return Buffer.from(one);
+  });
+  const result = await crlRoute(target, lists);
+  log.debug('Leaving crlInHandVerdict(). ' + result.status);
+  return { status: result.status, why: result.why || '' };
 }
 
 // ---------------------------------------------------------------------------

@@ -137,6 +137,7 @@ const SERVICE_SETTING_PREFIXES = [
 const SERVICE_SETTING_KEYS = [
   'global.logLevel', 'global.mode', 'global.trustProxy', 'global.publicBaseUrl',
   'pki.revocationCrlIssuersFile', 'pki.revocationLdapCaFile',
+  'pki.revocationHttpsCaFile',
   // The four outbound CA files (#171) name a file on the SERVICE'S host, as
   // `pki.revocationLdapCaFile` does, and what they trust is the operator's.
   'gnap.pushCaFile', 'ssf.pushCaFile', 'federation.outboundCaFile',

@@ -231,6 +231,13 @@ RUN npm install --prefix ./tests && npm cache clean --force
 COPY tests/tools/fetch-x509-limbo.sh /usr/src/corpora/fetch-x509-limbo.sh
 RUN /usr/src/corpora/fetch-x509-limbo.sh /usr/src/corpora/x509-limbo
 ENV STS_X509_LIMBO_DIR=/usr/src/corpora/x509-limbo
+# NIST PKITS FOR tests/nist_pkits.js (#201), from csrc.nist.gov, with the test
+# table BoringSSL transcribed from PKITS.pdf — each pinned by SHA-256, never
+# committed (the data carries a PKCS #12 of every private key; only certs/
+# and crls/ are unpacked).
+COPY tests/tools/fetch-nist-pkits.sh /usr/src/corpora/fetch-nist-pkits.sh
+RUN /usr/src/corpora/fetch-nist-pkits.sh /usr/src/corpora/nist-pkits
+ENV STS_NIST_PKITS_DIR=/usr/src/corpora/nist-pkits
 
 # THE W3C XML SIGNATURE AND XML ENCRYPTION INTEROP CASES (#193), for
 # tests/w3c_xmlsec.js. They carry PRIVATE KEYS, so they are never committed:

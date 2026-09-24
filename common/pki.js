@@ -2321,16 +2321,18 @@ async function issueSigningKeyPair(realmId, opts) {
 //     or a subtree with a minimum or maximum) refuses a certificate that
 //     carries a name of that form, which is what 4.2.1.10 requires of an
 //     application that cannot process it. A malformed extension is refused.
+//   * CERTIFICATE POLICIES (6.1.3(d)-(f), 6.1.4(a)-(j), 6.1.5), whole: the
+//     valid_policy_tree, explicit_policy, inhibit_anyPolicy and
+//     policy_mapping, with certificatePolicies, policyMappings,
+//     policyConstraints and inhibitAnyPolicy read and so understood when
+//     critical (`pathPolicyOutcome()`; NIST PKITS section 4.8-4.12 holds it).
 //
 // What it does NOT answer is argued where it is not: a signature and the
 // issuer-to-subject link are the path BUILDER's (a path is only ever made of
 // certificates that verified each other); the clock is `pathValidityProblem()`;
-// POLICY processing (6.1.3(d)-(f), 6.1.4(a)-(j)) is not implemented — no caller
-// asks for an initial policy set or an explicit policy, and a critical
-// policy extension is refused as unimplemented rather than skipped; revocation
-// is `revocation_status.js`'s; the purpose of the leaf (extKeyUsage, a
-// digitalSignature bit) is each CALLER's, because an attestation EK and a
-// JWS signing key are asked different things.
+// revocation is `revocation_status.js`'s; the purpose of the leaf
+// (extKeyUsage, a digitalSignature bit) is each CALLER's, because an
+// attestation EK and a JWS signing key are asked different things.
 //
 // Everything here is SYNCHRONOUS, pkijs and asn1js only, so a synchronous door
 // (`verifyIssuedDirectly()`) asks the same rules as the asynchronous ones.
@@ -2343,8 +2345,20 @@ const PATH_EXTENSION_OIDS = {
   basicConstraints: '2.5.29.19',
   nameConstraints: '2.5.29.30',
   authorityKeyIdentifier: '2.5.29.35',
-  extKeyUsage: '2.5.29.37'
+  extKeyUsage: '2.5.29.37',
+  // RFC 5280 section 6.1's policy processing (#201): read, and so understood
+  // when critical.
+  certificatePolicies: '2.5.29.32',
+  policyMappings: '2.5.29.33',
+  policyConstraints: '2.5.29.36',
+  inhibitAnyPolicy: '2.5.29.54'
 };
+const ANY_POLICY = '2.5.29.32.0';
+// The most nodes one path's valid_policy_tree may hold. A tree grows with
+// the product of the policies and mappings along the path, and an unbounded
+// one is a denial of service (CVE-2023-0464 in OpenSSL); a path past it is
+// refused rather than evaluated.
+const PATH_MAX_POLICY_NODES = 10000;
 // Every extension this module reads and so may accept marked critical. The
 // purpose extensions (keyUsage, extKeyUsage) are the caller's to ask about,
 // and understanding them is what lets a caller ask.
@@ -2801,7 +2815,9 @@ function pathFactsOf(one) {
                   hasSan: false, selfIssued: false, spkiOid: '',
                   keyIdentifier: '', authorityKeyIdentifier: '',
                   notBefore: 0, notAfter: 0, pk: null, commonNames: [],
-                  weakSignature: '' };
+                  weakSignature: '', policies: null, policyMappings: null,
+                  requireExplicitPolicy: null, inhibitPolicyMapping: null,
+                  inhibitAnyPolicy: null };
   try {
     const pk = pkijs.Certificate.fromBER(new Uint8Array(one.der));
     facts.pk = pk;
@@ -2913,6 +2929,21 @@ function pathFactsOf(one) {
         });
       } else if (oid === PATH_EXTENSION_OIDS.nameConstraints) {
         facts.nameConstraints = nameConstraintsOf(bytes);
+      } else if (oid === PATH_EXTENSION_OIDS.certificatePolicies) {
+        facts.policies = certificatePoliciesOf(bytes);
+      } else if (oid === PATH_EXTENSION_OIDS.policyMappings) {
+        facts.policyMappings = policyMappingsOf(bytes);
+      } else if (oid === PATH_EXTENSION_OIDS.policyConstraints) {
+        const pc = policyConstraintsOf(bytes);
+        facts.requireExplicitPolicy = pc.requireExplicitPolicy;
+        facts.inhibitPolicyMapping = pc.inhibitPolicyMapping;
+      } else if (oid === PATH_EXTENSION_OIDS.inhibitAnyPolicy) {
+        const node = derValueOf(bytes);
+        if (!(node instanceof asn1js.Integer) ||
+            node.valueBlock.isHexOnly || node.valueBlock.valueDec < 0) {
+          throw new Error('inhibitAnyPolicy is not a SkipCerts INTEGER');
+        }
+        facts.inhibitAnyPolicy = node.valueBlock.valueDec;
       } else if (oid === PATH_EXTENSION_OIDS.subjectKeyIdentifier) {
         const node = derValueOf(bytes);
         facts.keyIdentifier = node instanceof asn1js.OctetString
@@ -3042,6 +3073,374 @@ function constraintProblem(ca, below, isLeaf, budget) {
   return '';
 }
 
+// ---------------------------------------------------------------------------
+// CERTIFICATE POLICIES (RFC 5280 sections 4.2.1.4-4.2.1.14 and 6.1, #201).
+// ---------------------------------------------------------------------------
+
+// certificatePolicies: the policy OIDs, in order. A policy named twice is
+// refused (section 4.2.1.4: "MUST NOT appear more than once"); qualifiers
+// are read as present and not interpreted — section 6.1 carries them and
+// decides nothing on them.
+function certificatePoliciesOf(bytes) {
+  log.debug("Entering certificatePoliciesOf().");
+  const node = derValueOf(bytes);
+  if (!(node instanceof asn1js.Sequence) || !node.valueBlock.value.length) {
+    throw new Error('certificatePolicies is not a non-empty SEQUENCE');
+  }
+  const out = [];
+  node.valueBlock.value.forEach(function (info) {
+    const parts = info instanceof asn1js.Sequence
+      ? info.valueBlock.value : null;
+    if (!parts || !parts.length || parts.length > 2 ||
+        !(parts[0] instanceof asn1js.ObjectIdentifier)) {
+      throw new Error('a PolicyInformation is not a policy and qualifiers');
+    }
+    const oid = parts[0].getValue();
+    if (out.indexOf(oid) >= 0) {
+      throw new Error('certificatePolicies names ' + oid + ' twice (RFC ' +
+                      '5280 section 4.2.1.4)');
+    }
+    out.push(oid);
+  });
+  log.debug("Leaving certificatePoliciesOf(). " + out.length + ".");
+  return out;
+}
+
+// policyMappings: `[{ issuer, subject }]`.
+function policyMappingsOf(bytes) {
+  log.debug("Entering policyMappingsOf().");
+  const node = derValueOf(bytes);
+  if (!(node instanceof asn1js.Sequence) || !node.valueBlock.value.length) {
+    throw new Error('policyMappings is not a non-empty SEQUENCE');
+  }
+  const out = node.valueBlock.value.map(function (pair) {
+    const parts = pair instanceof asn1js.Sequence ? pair.valueBlock.value
+                                                  : null;
+    if (!parts || parts.length !== 2 ||
+        !(parts[0] instanceof asn1js.ObjectIdentifier) ||
+        !(parts[1] instanceof asn1js.ObjectIdentifier)) {
+      throw new Error('a policy mapping is not two policy OIDs');
+    }
+    return { issuer: parts[0].getValue(), subject: parts[1].getValue() };
+  });
+  log.debug("Leaving policyMappingsOf(). " + out.length + ".");
+  return out;
+}
+
+// policyConstraints: `{ requireExplicitPolicy, inhibitPolicyMapping }`, each
+// a SkipCerts or null. "Conforming CAs MUST NOT issue certificates where
+// policy constraints is an empty sequence" (section 4.2.1.11).
+function policyConstraintsOf(bytes) {
+  log.debug("Entering policyConstraintsOf().");
+  const node = derValueOf(bytes);
+  if (!(node instanceof asn1js.Sequence) || !node.valueBlock.value.length) {
+    throw new Error('policyConstraints is not a non-empty SEQUENCE');
+  }
+  const out = { requireExplicitPolicy: null, inhibitPolicyMapping: null };
+  node.valueBlock.value.forEach(function (field) {
+    const tag = field.idBlock.tagNumber;
+    const raw = Buffer.from(
+      /** @type {any} */ (field.valueBlock).valueHexView || []);
+    if (field.idBlock.tagClass !== 3 || (tag !== 0 && tag !== 1) ||
+        field.idBlock.isConstructed || !raw.length || raw.length > 4 ||
+        (raw[0] & 0x80)) {
+      throw new Error('policyConstraints holds something other than two ' +
+                      'SkipCerts');
+    }
+    const key = tag === 0 ? 'requireExplicitPolicy' : 'inhibitPolicyMapping';
+    if (out[key] !== null) {
+      throw new Error('policyConstraints names ' + key + ' twice');
+    }
+    out[key] = raw.readUIntBE(0, raw.length);
+  });
+  log.debug("Leaving policyConstraintsOf().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// RFC 5280 SECTION 6.1's POLICY PROCESSING, WHOLE (#201).
+//
+// The valid_policy_tree, explicit_policy, inhibit_anyPolicy and
+// policy_mapping, exactly as sections 6.1.2-6.1.5 define them, over `path`
+// (leaf first, anchor last — the anchor is not processed, section 6.1:
+// certificates 1..n run from the one the anchor issued down to the leaf).
+// `opts` carries the four inputs a caller may set; none of this service's
+// callers sets one, so the defaults — initial-policy-set {anyPolicy} and the
+// three indicators clear — are what runs, and a path is refused only where
+// its own certificates demand an explicit policy (requireExplicitPolicy)
+// and the tree came out empty, or where a mapping names anyPolicy.
+//
+// Answers `{ ok, why, userConstrainedPolicySet, explicitPolicy }`. The
+// qualifiers are carried by no node: nothing here reads them, and section
+// 6.1 decides nothing on them.
+// ---------------------------------------------------------------------------
+function pathPolicyOutcome(path, opts) {
+  log.debug("Entering pathPolicyOutcome().");
+  const options = opts || {};
+  const n = path.length - 1;
+  const initial = (options.initialPolicySet && options.initialPolicySet.length)
+    ? options.initialPolicySet.slice(0) : [ANY_POLICY];
+  if (n < 1) {
+    log.debug("Leaving pathPolicyOutcome(). Nothing below the anchor.");
+    return { ok: true, why: '', userConstrainedPolicySet: initial,
+             explicitPolicy: false };
+  }
+  let explicitPolicy = options.initialExplicitPolicy ? 0 : n + 1;
+  let inhibitAnyPolicy = options.initialInhibitAnyPolicy ? 0 : n + 1;
+  let policyMapping = options.initialPolicyMappingInhibit ? 0 : n + 1;
+  let count = 1;
+  const nodeOf = function (policy, expected, parent) {
+    log.debug("Entering nodeOf().");
+    const node = { policy: policy, expected: expected.slice(0),
+                   parent: parent, children: [],
+                   depth: parent ? parent.depth + 1 : 0 };
+    if (parent) {
+      parent.children.push(node);
+    }
+    count++;
+    log.debug("Leaving nodeOf().");
+    return node;
+  };
+  let root = nodeOf(ANY_POLICY, [ANY_POLICY], null);
+  const atDepth = function (depth) {
+    log.debug("Entering atDepth().");
+    const out = [];
+    const walk = function (node) {
+      if (node.depth === depth) {
+        out.push(node);
+        return;
+      }
+      node.children.forEach(walk);
+    };
+    if (root) {
+      walk(root);
+    }
+    log.debug("Leaving atDepth().");
+    return out;
+  };
+  const remove = function (node) {
+    log.debug("Entering remove().");
+    if (!node.parent) {
+      root = null;
+    } else {
+      node.parent.children = node.parent.children.filter(function (one) {
+        return one !== node;
+      });
+    }
+    log.debug("Leaving remove().");
+  };
+  // Delete every node shallower than `depth` that has no children, until
+  // none is left; the root going makes the tree NULL.
+  const prune = function (depth) {
+    log.debug("Entering prune().");
+    for (let d = depth - 1; d >= 0 && root; d--) {
+      atDepth(d).forEach(function (node) {
+        if (!node.children.length) {
+          remove(node);
+        }
+      });
+    }
+    log.debug("Leaving prune().");
+  };
+  const refuse = function (why) {
+    log.debug("Entering refuse().");
+    log.debug("Leaving refuse().");
+    return { ok: false, why: why, userConstrainedPolicySet: [],
+             explicitPolicy: true };
+  };
+  for (let i = 1; i <= n; i++) {
+    const cert = path[n - i];
+    const facts = pathFactsOf(cert);
+    // (d) the certificate's policies.
+    if (facts.policies && root) {
+      const parents = atDepth(i - 1);
+      facts.policies.forEach(function (policy) {
+        if (policy === ANY_POLICY) {
+          return;
+        }
+        let matched = false;
+        parents.forEach(function (parent) {
+          if (parent.expected.indexOf(policy) >= 0) {
+            nodeOf(policy, [policy], parent);
+            matched = true;
+          }
+        });
+        if (!matched) {
+          parents.filter(function (parent) {
+            return parent.policy === ANY_POLICY;
+          }).forEach(function (parent) {
+            nodeOf(policy, [policy], parent);
+          });
+        }
+      });
+      if (facts.policies.indexOf(ANY_POLICY) >= 0 &&
+          (inhibitAnyPolicy > 0 || (i < n && facts.selfIssued))) {
+        parents.forEach(function (parent) {
+          parent.expected.forEach(function (policy) {
+            const has = parent.children.some(function (child) {
+              return child.policy === policy;
+            });
+            if (!has) {
+              nodeOf(policy, [policy], parent);
+            }
+          });
+        });
+      }
+      prune(i);
+      if (count > PATH_MAX_POLICY_NODES) {
+        log.debug("Leaving pathPolicyOutcome(). Too many nodes.");
+        return refuse('the certificate policies and mappings along the ' +
+                      'path make more than ' + PATH_MAX_POLICY_NODES +
+                      ' policy tree nodes');
+      }
+    } else {
+      // (e) no certificatePolicies: the tree is NULL.
+      root = null;
+    }
+    // (f)
+    if (explicitPolicy <= 0 && !root) {
+      log.debug("Leaving pathPolicyOutcome(). Explicit policy, no tree.");
+      return refuse('"' + pathSubjectOf(cert) + '" leaves no acceptable ' +
+                    'certificate policy and the path requires an explicit ' +
+                    'one (RFC 5280 section 6.1.3(f))');
+    }
+    if (i === n) {
+      break;
+    }
+    // Preparation for certificate i+1 (section 6.1.4).
+    const mappings = facts.policyMappings || [];
+    if (mappings.some(function (m) {
+      return m.issuer === ANY_POLICY || m.subject === ANY_POLICY;
+    })) {
+      log.debug("Leaving pathPolicyOutcome(). anyPolicy mapped.");
+      return refuse('"' + pathSubjectOf(cert) + '" maps anyPolicy, which ' +
+                    'RFC 5280 section 6.1.4(a) refuses');
+    }
+    if (mappings.length && root) {
+      const issuers = [];
+      mappings.forEach(function (m) {
+        if (issuers.indexOf(m.issuer) < 0) {
+          issuers.push(m.issuer);
+        }
+      });
+      issuers.forEach(function (issuerPolicy) {
+        const mapped = mappings.filter(function (m) {
+          return m.issuer === issuerPolicy;
+        }).map(function (m) { return m.subject; })
+          .filter(function (p, at, all) { return all.indexOf(p) === at; });
+        const level = atDepth(i);
+        const holders = level.filter(function (node) {
+          return node.policy === issuerPolicy;
+        });
+        if (policyMapping > 0) {
+          if (holders.length) {
+            holders.forEach(function (node) {
+              node.expected = mapped.slice(0);
+            });
+          } else {
+            const any = level.filter(function (node) {
+              return node.policy === ANY_POLICY;
+            })[0];
+            if (any && any.parent) {
+              nodeOf(issuerPolicy, mapped, any.parent);
+            }
+          }
+        } else {
+          holders.forEach(remove);
+          prune(i);
+        }
+      });
+    }
+    // (h) (i) (j)
+    if (!facts.selfIssued) {
+      explicitPolicy = explicitPolicy > 0 ? explicitPolicy - 1 : 0;
+      policyMapping = policyMapping > 0 ? policyMapping - 1 : 0;
+      inhibitAnyPolicy = inhibitAnyPolicy > 0 ? inhibitAnyPolicy - 1 : 0;
+    }
+    if (facts.requireExplicitPolicy !== null) {
+      explicitPolicy = Math.min(explicitPolicy, facts.requireExplicitPolicy);
+    }
+    if (facts.inhibitPolicyMapping !== null) {
+      policyMapping = Math.min(policyMapping, facts.inhibitPolicyMapping);
+    }
+    if (facts.inhibitAnyPolicy !== null) {
+      inhibitAnyPolicy = Math.min(inhibitAnyPolicy, facts.inhibitAnyPolicy);
+    }
+  }
+  // Wrap-up (section 6.1.5).
+  const leafFacts = pathFactsOf(path[0]);
+  if (explicitPolicy > 0) {
+    explicitPolicy--;
+  }
+  if (leafFacts.requireExplicitPolicy === 0) {
+    explicitPolicy = 0;
+  }
+  // (g) the intersection with the initial-policy-set.
+  if (root && initial.indexOf(ANY_POLICY) < 0) {
+    const boundary = [];
+    const collect = function (node) {
+      node.children.forEach(function (child) {
+        if (node.policy === ANY_POLICY) {
+          boundary.push(child);
+        }
+        if (child.policy === ANY_POLICY) {
+          collect(child);
+        }
+      });
+    };
+    collect(root);
+    boundary.forEach(function (node) {
+      if (node.policy !== ANY_POLICY && initial.indexOf(node.policy) < 0) {
+        remove(node);
+      }
+    });
+    const leafAny = atDepth(n).filter(function (node) {
+      return node.policy === ANY_POLICY;
+    })[0];
+    if (leafAny) {
+      const present = boundary.map(function (node) { return node.policy; });
+      initial.forEach(function (policy) {
+        if (present.indexOf(policy) < 0) {
+          nodeOf(policy, [policy], leafAny.parent);
+        }
+      });
+      remove(leafAny);
+    }
+    prune(n);
+  }
+  if (explicitPolicy <= 0 && !root) {
+    log.debug("Leaving pathPolicyOutcome(). No policy in the end.");
+    return refuse('no certificate policy acceptable to the path and to ' +
+                  'this service remains, and the path requires an explicit ' +
+                  'one (RFC 5280 section 6.1.5(g))');
+  }
+  // The user-constrained-policy-set (section 6.1.6), in the ANCHOR's policy
+  // domain: the valid_policy of every node whose parent is anyPolicy — the
+  // nodes step (g)(iii) calls the valid_policy_node_set — and anyPolicy only
+  // where it reaches the leaf. The leaf level's own policies are mapped
+  // ones, named in the subject's domain after a policyMappings, and are not
+  // the answer (NIST PKITS 4.10, 4.11).
+  const user = [];
+  const gather = function (node) {
+    node.children.forEach(function (child) {
+      if (node.policy === ANY_POLICY &&
+          (child.policy !== ANY_POLICY || child.depth === n) &&
+          user.indexOf(child.policy) < 0) {
+        user.push(child.policy);
+      }
+      if (child.policy === ANY_POLICY) {
+        gather(child);
+      }
+    });
+  };
+  if (root) {
+    gather(root);
+  }
+  log.debug("Leaving pathPolicyOutcome(). " + user.join(','));
+  return { ok: true, why: '', userConstrainedPolicySet: user,
+           explicitPolicy: explicitPolicy <= 0 };
+}
+
 // A name for a sentence.
 function describePathName(name) {
   log.debug("Entering describePathName().");
@@ -3075,6 +3474,9 @@ function describePathName(name) {
 //   key-cert-sign   one whose keyUsage does not permit keyCertSign
 //   path-len        a pathLenConstraint exceeded (`pathLen`, `below`)
 //   name-constraints  a name outside what a CA above it permits
+//   policy          RFC 5280 section 6.1's certificate policy processing
+//                   refuses it (`pathPolicyOutcome()`, `opts.policy` its
+//                   four inputs)
 //
 // in that order along the path from the leaf: the first certificate with a
 // problem is the one reported.
@@ -3201,6 +3603,12 @@ function pathRuleProblem(path, opts) {
       }
     }
   }
+  // Certificate policies (section 6.1), once the rules above hold.
+  const policy = pathPolicyOutcome(path, options.policy);
+  if (!policy.ok) {
+    log.debug("Leaving pathRuleProblem(). Policy.");
+    return { check: 'policy', index: 0, why: policy.why };
+  }
   log.debug("Leaving pathRuleProblem(). The path holds.");
   return null;
 }
@@ -3322,7 +3730,8 @@ function authorityCode(problem, issuerCode) {
   log.debug("Entering authorityCode(). check=" + problem.check);
   const codes = { 'name-constraints': 'STS-PKI-0194',
                   critical: 'STS-PKI-0195', malformed: 'STS-PKI-0196',
-                  unusable: 'STS-PKI-0196', 'weak-signature': 'STS-PKI-0197' };
+                  unusable: 'STS-PKI-0196', 'weak-signature': 'STS-PKI-0197',
+                  policy: 'STS-PKI-0199' };
   const code = codes[problem.check] || issuerCode;
   log.debug("Leaving authorityCode(). " + code);
   return code;
@@ -3878,7 +4287,7 @@ function uploadedJwsAlg(publicKey) {
 // pretending the issuer was not supplied.
 function issuedBy(cert, issuer) {
   log.debug("Entering issuedBy().");
-  if (cert.issuer !== issuer.subject) {
+  if (!namesChain(cert, issuer)) {
     log.debug("Leaving issuedBy(). The names differ.");
     return 0;
   }
@@ -3897,9 +4306,28 @@ function issuedBy(cert, issuer) {
   return 1;
 }
 
+// Does `cert` name `issuer` as its issuer? The two names compared as RFC
+// 5280 section 7.1 compares them (`rdnsOfName()`: case, and leading,
+// trailing and repeated spaces, do not count), not as node spells them —
+// until #201 a chain whose names differed only in capitalisation or
+// whitespace did not chain here (NIST PKITS 4.3.3-4.3.5, 4.3.11). Node's
+// string comparison stands where the names cannot be read.
+function namesChain(cert, issuer) {
+  log.debug("Entering namesChain().");
+  const a = certificateFromDer(cert.raw);
+  const b = issuer === cert ? a : certificateFromDer(issuer.raw);
+  const fa = a ? pathFactsOf(a) : null;
+  const fb = b ? pathFactsOf(b) : null;
+  const same = fa && fb && !fa.problem && !fb.problem
+    ? fa.issuerRdns.join(',') === fb.subjectRdns.join(',')
+    : cert.issuer === issuer.subject;
+  log.debug("Leaving namesChain(). " + same);
+  return same;
+}
+
 function selfSignedCert(cert) {
   log.debug("Entering selfSignedCert().");
-  if (cert.subject !== cert.issuer) {
+  if (!namesChain(cert, cert)) {
     log.debug("Leaving selfSignedCert(). No.");
     return false;
   }
@@ -4735,7 +5163,7 @@ async function verifySignerChain(realmId, material) {
   }
   log.debug('Leaving verifySignerChain(). Anchored at a registered root.');
   return { ok: true, anchor: 'registered-root', links: links,
-           path: chainSubjects };
+           path: chainSubjects, chain: chainPems };
 }
 
 // A short sentence for a door's log line and audit detail.
@@ -8139,7 +8567,7 @@ function subjectText(one) {
 // used twice in one path, so a loop of cross-certificates ends.
 /**
  * @returns {Promise<{ ok: boolean, chain?: any[], reason?: string,
- *                     check?: string }>}
+ *                     check?: string, policies?: string[] }>}
  */
 async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
   log.debug("Entering verifyPathToAnchors().");
@@ -8176,6 +8604,9 @@ async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
   // What the path has to hold before it is accepted: the rules, then the
   // clock. The first failure met is kept for the refusal when nothing holds.
   let firstFailure = null;
+  // The user-constrained-policy-set of the path accepted (RFC 5280 section
+  // 6.1.6), for a caller that asked for policies.
+  let acceptedPolicies = [];
   const accept = function (path) {
     log.debug("Entering accept(). " + path.length + " certificate(s).");
     const problem = pathRuleProblem(path, options) ||
@@ -8185,6 +8616,8 @@ async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
       log.debug("Leaving accept(). " + problem.check);
       return false;
     }
+    acceptedPolicies = pathPolicyOutcome(path, options.policy)
+      .userConstrainedPolicySet;
     log.debug("Leaving accept().");
     return true;
   };
@@ -8192,7 +8625,7 @@ async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
   if (isAnchor(leaf)) {
     const alone = accept([leaf]);
     log.debug("Leaving verifyPathToAnchors(). The leaf is an anchor.");
-    return alone ? { ok: true, chain: [leaf] }
+    return alone ? { ok: true, chain: [leaf], policies: acceptedPolicies }
                  : { ok: false, check: firstFailure.check,
                      reason: firstFailure.why };
   }
@@ -8290,7 +8723,7 @@ async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
   if (chain) {
     log.debug("Leaving verifyPathToAnchors(). " + chain.length +
               " certificate(s).");
-    return { ok: true, chain: chain };
+    return { ok: true, chain: chain, policies: acceptedPolicies };
   }
   if (firstFailure) {
     log.debug("Leaving verifyPathToAnchors(). " + firstFailure.check);
@@ -9305,6 +9738,7 @@ module.exports = {
   verifyIssuedDirectly: verifyIssuedDirectly,
   peerChainProblem: peerChainProblem,
   pathFactsOf: pathFactsOf,
+  pathPolicyOutcome: pathPolicyOutcome,
   pathRuleProblem: pathRuleProblem,
   // --- WebAuthn attestation certificates (#105) ---
   attestationCertificateFacts: attestationCertificateFacts,
