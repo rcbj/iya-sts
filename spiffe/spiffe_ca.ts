@@ -1219,6 +1219,51 @@ class SpiffeCa {
     }
   }
 
+  // Whether the realm's SPIFFE Issuing CA is here, or arrives within the
+  // bound — each look pulls the realm's row from the store first
+  // (`keystore.refreshPki()`), so a branch another node wrote is adopted
+  // rather than waited out. A delay inside one operation, not a timer.
+  private async awaitSpiffeIssuer(id: string): Promise<boolean> {
+    const { log, pki } = this.deps;
+    const self = this;
+    log.debug('Entering SpiffeCa.awaitSpiffeIssuer(). realm=' +
+              (id || 'default'));
+    const deadline = Date.now() + SPIFFE_BRANCH_WAIT_MS;
+    let waited = false;
+    for (;;) {
+      try {
+        const keystore = self.deps.loadKeystore();
+        if (keystore && typeof keystore.refreshPki === 'function') {
+          await keystore.refreshPki(id);
+        }
+      } catch (e) {
+        log.debug('Caught in SpiffeCa.awaitSpiffeIssuer(): ' +
+                  ((e && e.message) || e));
+        // No store to pull from (a test, development): what is held is
+        // all there is, and the look below decides.
+      }
+      if (pki.describeIssuer(id, SPIFFE_USE_CASE)) {
+        if (waited) {
+          log.info('spiffe: the "' + (id || 'default') + '" realm\'s ' +
+                   'certificate authority branch arrived from another ' +
+                   'process, so its SPIFFE Issuing CA is the X.509 ' +
+                   'authority.');
+        }
+        log.debug('Leaving SpiffeCa.awaitSpiffeIssuer(). Present.');
+        return true;
+      }
+      if (Date.now() >= deadline) {
+        log.debug('Leaving SpiffeCa.awaitSpiffeIssuer(). Not within the ' +
+                  'bound.');
+        return false;
+      }
+      waited = true;
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 250).unref();
+      });
+    }
+  }
+
   async buildTrustMaterial(realmId) {
     const { log, spiffeId, pki } = this.deps;
     const self = this;
@@ -1309,6 +1354,21 @@ class SpiffeCa {
     if (this.x509List(id).length) {
       log.debug('Leaving SpiffeCa.buildTrustMaterial(). A self-signed ' +
                 'authority is held.');
+      return;
+    }
+    // THE BRANCH MAY STILL BE ON ITS WAY (2026-09-24). A service with a Root
+    // gives every realm a branch when the realm is created — but on the node
+    // that CREATED it. The other node learns of the realm from the change log
+    // and binds its SPIFFE sockets at once, a few hundred milliseconds before
+    // the branch reaches it, and so built a SELF-SIGNED authority of its own
+    // that no bundle publishes: `sts_spiffe_broker` in `cluster` was refused
+    // `self-signed certificate in certificate chain` by node A's Broker
+    // endpoint. So where a Root exists the branch is waited for, pulled from
+    // the store, for a bounded time; the self-signed fallback is for a realm
+    // that really has none.
+    if (pki.hasRoot() && await this.awaitSpiffeIssuer(id)) {
+      log.debug('Leaving SpiffeCa.buildTrustMaterial(). The branch arrived, ' +
+                'and the PKI holds the authority.');
       return;
     }
     let x509Authority = null;
@@ -2978,6 +3038,11 @@ const slot = new InstanceSlot<SpiffeCa>(
   helpers.log);
 
 const SPIFFE_USE_CASE = 'spiffe';
+// How long a realm's SPIFFE start waits for a branch another node is still
+// writing before it falls back to a self-signed authority. A branch is built
+// in well under a second; this is room for a slow key algorithm and a busy
+// store.
+const SPIFFE_BRANCH_WAIT_MS = 20000;
 // The authorities' scheduler job (#49 P5): see registerRotationJob().
 const ROTATION_JOB = 'spiffe.authority-rotation';
 

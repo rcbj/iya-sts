@@ -369,6 +369,17 @@ that up silently.
    working. `tests/spiffe_authority.js` holds that path, in a child process
    because the suite builds a hierarchy before it runs.
 
+   **A FOURTH WAY TO REACH IT WAS A RACE, AND IS NOT ONE ANY MORE
+   (2026-09-24).** In `cluster`, the node that did not create a realm binds the
+   realm's SPIFFE sockets from the change log a few hundred milliseconds before
+   the realm's branch reaches it — so it found no SPIFFE Issuing CA and built a
+   self-signed authority no bundle publishes, and its Broker endpoint was
+   refused `self-signed certificate in certificate chain`
+   (`sts_spiffe_broker`). Where a Root exists, `buildTrustMaterial()` now waits
+   (`awaitSpiffeIssuer()`, pulling the realm's row from the store each look,
+   `SPIFFE_BRANCH_WAIT_MS`) before falling back.
+   `tests/spiffe_authority_waits_for_branch.js` holds it.
+
    The X.509 authority is **EC P-256 by
    default** — what SPIRE issues — which is why the four PKI modules are
    VENDORED from the debugger: `node-forge`, which `helpers.js` and
