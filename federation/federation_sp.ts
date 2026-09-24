@@ -3777,9 +3777,41 @@ class FederationSp {
       const amr = this.federatedAmr(payload.amr);
       const finish = (extra) => {
         log.debug("Entering finish().");
+        // AGGREGATED AND DISTRIBUTED CLAIMS (#147, OIDC Core 5.6.2) from the
+        // ID Token and UserInfo together: gathered, taken out of the bag —
+        // they are references, never attributes about the person — and
+        // resolved by `claims_providers.ts`, which honours a source only
+        // when it names a Claims Provider THIS realm registered and its keys
+        // verify it. A resolved value fills a claim the partner did not send
+        // itself; a source that cannot be honoured is logged and skipped.
+        const names = Object.assign({}, bag['_claim_names'] || {},
+                                    (extra && extra._claim_names) || {});
+        const sources = Object.assign({}, bag['_claim_sources'] || {},
+                                      (extra && extra._claim_sources) || {});
+        delete bag['_claim_names'];
+        delete bag['_claim_sources'];
         Object.keys(extra || {}).forEach((name) => {
+          if (name === '_claim_names' || name === '_claim_sources') return;
           if (bag[name] === undefined) bag[name] = extra[name];
         });
+        if (Object.keys(sources).length) {
+          log.debug("Leaving finish(). Resolving " +
+                    Object.keys(sources).length + " claim source(s).");
+          return Promise.resolve().then(() => {
+            return require('../oauth-oidc/claims_providers').resolve({
+              _claim_names: names, _claim_sources: sources });
+          }).then((resolved) => {
+            Object.keys(resolved.claims || {}).forEach((name) => {
+              if (bag[name] === undefined) bag[name] = resolved.claims[name];
+            });
+            return finish(null);
+          }, (e) => {
+            log.warn(errorCodes.tag('STS-OAUTH-0683') + 'federation: the ' +
+                     'claim sources ' + record.fedId + ' sent could not be ' +
+                     'resolved: ' + ((e && e.message) || e));
+            return finish(null);
+          });
+        }
         log.debug("Leaving finish().");
         // The key that verified the ID Token is checked for revocation here,
         // on the one path into the sign-in, whether or not UserInfo was asked.

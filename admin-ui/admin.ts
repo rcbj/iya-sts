@@ -1356,6 +1356,16 @@ const SECTIONS = [
                'trusts, the Trust Marks it issues and carries, resolving ' +
                'another entity\'s Trust Chain, and the ' +
                '<code>oidfed.*</code> settings.' },
+      // CLAIMS PROVIDERS (#147, 2026-09-24), beside the two above for the same
+      // reason: another party this realm is configured to trust, here for
+      // claims about a person — OpenID Connect aggregated and distributed
+      // claims. Drawn by oauth-oidc/claims_providers_admin.ts.
+      { path: '/admin/claim-providers', label: 'Claims Providers',
+        blurb: 'The OpenID Providers this realm fetches claims from for a ' +
+               'person who linked one on the portal, passed to a relying ' +
+               'party as aggregated or distributed claims (OpenID Connect ' +
+               'Core 5.6.2): the register, the redirect URI to register at ' +
+               'each, every person\'s link, and revoking one.' },
 
       // FIVE PAGES ADDED ON 2026-08-27, AND EVERY ONE OF THEM EXISTS BECAUSE
       // ITS FAMILY HAD SETTINGS AND NO PAGE. Kerberos has nineteen appconfig

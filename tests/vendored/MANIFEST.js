@@ -740,6 +740,11 @@ const JOBS = [
   // CIBA under a FAPI profile.
   { file: 'sts_grant_management.js',     browser: false, local: true },
   { file: 'sts_fapi_ciba.js',            browser: false, local: true },
+  // OPENID CONNECT CLAIMS AGGREGATION (#147, 2026-09-24): a realm of this
+  // service as the Claims Provider of another — the register, linking on the
+  // portal, aggregated and distributed claims, revocation. `local: true`:
+  // this repository's authorization server, portal and API.
+  { file: 'sts_claims_aggregation.js',   browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
   // each plan a throwaway realm, every module run, and a FAILED module a

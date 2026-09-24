@@ -410,6 +410,7 @@ interface AdminApiDeps {
   loadOidfedApi(): typeof import('../oidfed/oidfed_api');
   loadOauth2MonitorApi(): typeof import('../oauth-oidc/oauth2_monitor_api');
   loadGrantManagementApi(): typeof import('../oauth-oidc/grant_management_api');
+  loadClaimsProvidersApi(): typeof import('../oauth-oidc/claims_providers_api');
 }
 
 type RouteApp = typeof app;
@@ -487,6 +488,9 @@ class AdminApi {
       },
       loadOauth2MonitorApi: function () {
         return require('../oauth-oidc/oauth2_monitor_api');
+      },
+      loadClaimsProvidersApi: function () {
+        return require('../oauth-oidc/claims_providers_api');
       },
       loadGrantManagementApi: function () {
         return require('../oauth-oidc/grant_management_api');
@@ -1694,7 +1698,7 @@ class AdminApi {
             realms, stats, resourceMetadata, applications, loadGnapConsole, pki,
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
-            loadGrantManagementApi } = this.deps;
+            loadGrantManagementApi, loadClaimsProvidersApi } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
     const ROUTES: any[] = [
@@ -17469,7 +17473,10 @@ class AdminApi {
       // required lazily inside each handler.
       ...loadOauth2MonitorApi().ROUTES,
       // GRANT MANAGEMENT (#142): /admin/grants' twin, in the same shape.
-      ...loadGrantManagementApi().ROUTES
+      ...loadGrantManagementApi().ROUTES,
+      // CLAIMS PROVIDERS (#147): /admin/claim-providers' twin, in the same
+      // shape.
+      ...loadClaimsProvidersApi().ROUTES
     ];
     log.debug("Leaving AdminApi.buildRoutes().");
     return ROUTES;

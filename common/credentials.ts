@@ -4380,6 +4380,26 @@ class Credentials {
     return answer;
   }
 
+  // THE CLAIMS PROVIDER REGISTER AND A PERSON'S TOKENS AT EACH (#147), for
+  // `oauth-oidc/claims_providers.ts`: the directory function of that name,
+  // or an empty answer where no directory is loaded (`oidfedStore()`'s
+  // arrangement).
+  claimsAggregationStore(operation: string, args: any[]): any {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.claimsAggregationStore(). ' + operation);
+    const empty = operation === 'listClaimProviderEntries' ||
+      operation === 'claimSourceTokenHolders' ? [] :
+      (operation === 'readClaimSourceTokens' ? '' : false);
+    if (!directory || typeof directory[operation] !== 'function') {
+      log.debug('Leaving Credentials.claimsAggregationStore(). No store.');
+      return empty;
+    }
+    const answer = directory[operation].apply(null, args);
+    log.debug('Leaving Credentials.claimsAggregationStore().');
+    return answer;
+  }
+
   // A PERSON'S CIBA USER CODE (#131), for `oauth-oidc/ciba.ts`: the stored
   // hash ('' for none or no store), and the hash written ('' removes it).
   readCibaUserCode(username) {
@@ -6345,6 +6365,7 @@ export = {
   selfIssuedSubjectOwner: slot.forward('selfIssuedSubjectOwner'),
   deviceStore: slot.forward('deviceStore'),
   oidfedStore: slot.forward('oidfedStore'),
+  claimsAggregationStore: slot.forward('claimsAggregationStore'),
   readCibaUserCode: slot.forward('readCibaUserCode'),
   writeCibaUserCode: slot.forward('writeCibaUserCode'),
   installInstance: (instance: Credentials): void => slot.install(instance),
