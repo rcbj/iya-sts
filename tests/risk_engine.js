@@ -58,7 +58,8 @@ function signIn(address, userAgent, extra) {
   log.debug("Leaving signIn().");
   return riskEngine.assess({
     realm: REALM, subject: e.subject || ALICE,
-    sessionId: e.sessionId || 'session-' + Math.random(),
+    sessionId: e.sessionId ||
+      'session-' + require('crypto').randomBytes(8).toString('hex'),
     door: 'the sign-in screen', clientId: 'a-client',
     context: { address: address, uaFingerprint: 'fp-' + userAgent.length,
                ja4: e.ja4 || '', credential: { kind: 'password' } },

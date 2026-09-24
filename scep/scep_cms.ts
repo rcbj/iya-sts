@@ -48,17 +48,21 @@
 //    `badAlg` for the same reason (`sscep -E aes`). The reply is encrypted
 //    with the cipher the request used, which is always an AES here.
 //
-// 3. **KEY TRANSPORT IS RSA — PKCS#1 v1.5 OR OAEP — AND THE v1.5 HALF IS
-//    DECRYPTED WITH node-forge, NOT NODE.** Node 22 refuses
-//    `privateDecrypt()` with `RSA_PKCS1_PADDING` outright ("no longer
-//    supported for private decryption", CVE-2023-46809, the Marvin attack),
-//    and PKCS#1 v1.5 is what every SCEP client in the field sends. So the
-//    unwrap goes through forge's pure-javascript RSAES-PKCS1-v1_5, the same
-//    one `crypto.js` uses for an XML Encryption `rsa-1_5` key. **A failed
-//    unwrap is not reported as such**: it is replaced with random bytes of the
-//    right length and decryption continues, so a padding error and a wrong
-//    key both end as one "the content did not decrypt" — an answer that tells
-//    a Bleichenbacher-style guesser nothing about the padding. RFC 3218
+// 3. **KEY TRANSPORT IS RSA — PKCS#1 v1.5 OR OAEP — AND BOTH ARE NODE'S.**
+//    PKCS#1 v1.5 is what every SCEP client in the field sends, and its
+//    decryption is the Marvin attack's target (CVE-2023-46809). It was
+//    node-forge's pure-javascript RSA until #65, because node 22 refused
+//    `privateDecrypt()` with `RSA_PKCS1_PADDING` outright; that JavaScript
+//    was not constant-time and drew its blinding from a generator of its
+//    own. Node 24, which both images run, has OpenSSL's IMPLICIT REJECTION
+//    and allows it: a padding that does not check unwraps to a deterministic
+//    random value instead of throwing, in the same time. A runtime without
+//    it still refuses, and that is logged once (`STS-SCEP-0066`) because it
+//    fails every v1.5 request. **A failed unwrap is not reported as such**:
+//    a value of the wrong length is replaced with random bytes of the right
+//    length and decryption continues, so a padding error and a wrong key
+//    both end as one "the content did not decrypt" — an answer that tells a
+//    Bleichenbacher-style guesser nothing about the padding. RFC 3218
 //    section 2.3.2's countermeasure, and the reason `openEnvelope()` has one
 //    refusal where it could have had three.
 //
@@ -83,10 +87,10 @@
 import nodeCrypto = require('crypto');
 import asn1js = require('asn1js');
 import pkijs = require('pkijs');
-import forge = require('node-forge');
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import errorCodes = require('../common/error_codes');
 const { log } = helpers;
 
 // ---------------------------------------------------------------------------
@@ -195,11 +199,14 @@ interface ScepCmsDeps {
   nodeCrypto: typeof nodeCrypto;
   asn1js: typeof asn1js;
   pkijs: typeof pkijs;
-  forge: typeof forge;
   log: typeof log;
 }
 
 class ScepCms {
+  // Set once the runtime has refused PKCS#1 v1.5 decryption (decision 3),
+  // so the log says it once per process rather than per request.
+  static warnedNoImplicitRejection = false;
+
   constructor(private readonly deps: ScepCmsDeps) {
     deps.log.debug("Entering ScepCms.constructor().");
     deps.log.debug("Leaving ScepCms.constructor().");
@@ -214,7 +221,6 @@ class ScepCms {
       nodeCrypto: nodeCrypto,
       asn1js: asn1js,
       pkijs: pkijs,
-      forge: forge,
       log: log
     };
   }
@@ -780,21 +786,33 @@ class ScepCms {
   // OPEN THE pkcsPKIEnvelope with the RA's certificate and private key.
   // ---------------------------------------------------------------------------
   unwrapKey(algorithmNode, encryptedKey, raPrivateKeyPem, keyBytes) {
-    const { log, forge, nodeCrypto } = this.deps;
+    const { log, nodeCrypto } = this.deps;
     log.debug("Entering ScepCms.unwrapKey().");
     const algParts = this.children(algorithmNode);
     const algorithm = this.oidOf(algParts[0]);
     if (algorithm === OID.rsaEncryption) {
       let key = null;
       try {
-        const forgeKey = forge.pki.privateKeyFromPem(raPrivateKeyPem);
-        key = Buffer.from(forgeKey.decrypt(encryptedKey.toString('binary'),
-                                           'RSAES-PKCS1-V1_5'), 'binary');
+        key = nodeCrypto.privateDecrypt({
+          key: raPrivateKeyPem,
+          padding: nodeCrypto.constants.RSA_PKCS1_PADDING
+        }, encryptedKey);
       } catch (e) {
         // THE IMPLICIT REJECTION — see the header, decision 3. The error is not
-        // reported: random bytes of the right length take the key's place and
-        // the content simply fails to decrypt, like a wrong key would.
+        // reported to the client: random bytes of the right length take the
+        // key's place and the content simply fails to decrypt, like a wrong
+        // key would. A runtime that refuses the padding altogether is said
+        // once, because then no v1.5 request can ever succeed.
         log.debug("Caught in ScepCms.unwrapKey(): " + ((e && e.message) || e));
+        if (e && e.code === 'ERR_INVALID_ARG_VALUE' &&
+            !ScepCms.warnedNoImplicitRejection) {
+          ScepCms.warnedNoImplicitRejection = true;
+          log.error(errorCodes.tag('STS-SCEP-0066') + 'scep: this node ' +
+                    'runtime refuses PKCS#1 v1.5 decryption (no OpenSSL ' +
+                    'implicit rejection), so every SCEP request using ' +
+                    'rsaEncryption will fail to decrypt. Run node 24 or ' +
+                    'later.');
+        }
         key = null;
       }
       if (!key || key.length !== keyBytes) {

@@ -463,7 +463,8 @@ function binds(t, dns) {
 function inAChild(mode) {
   log.debug("Entering inAChild(). " + mode);
   const out = path.join(os.tmpdir(), 'readauth-' + process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(KRB5_|STS_|LDAP_|LDAPS_|CONFIG_FILE$)/.test(key)) {

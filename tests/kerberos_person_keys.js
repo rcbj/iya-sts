@@ -223,7 +223,7 @@ async function developmentIsUnchanged(t) {
   t.check(report.ok === true, 'a development AS-REQ for alice with ' +
                               'krb5.userPassword gets a TGT',
           JSON.stringify(report));
-  const fresh = 'devprobe' + Math.random().toString(36).slice(2, 8);
+  const fresh = 'devprobe' + require('crypto').randomBytes(3).toString('hex');
   const onDemand = await driveAsExchange(principals.USER_PASSWORD, fresh);
   t.check(onDemand.ok === true, 'a name nobody configured is still created ' +
                                 'on demand',

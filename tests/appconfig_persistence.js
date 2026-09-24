@@ -111,7 +111,7 @@ function run(t) {
   t.log.info('Entering run().');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-appconfig-test-'));
   const saved = saveEnvironment();
-  const realmId = 'persist' + Math.random().toString(36).slice(2, 8);
+  const realmId = 'persist' + require('crypto').randomBytes(3).toString('hex');
 
   log.debug("Leaving run().");
   return Promise.resolve()

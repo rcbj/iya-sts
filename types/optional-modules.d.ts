@@ -16,7 +16,3 @@ declare module 'node-vault';
 declare module '@aws-sdk/client-sesv2';
 declare module '@azure/communication-email';
 declare module '@googleapis/gmail';
-
-// `admin-core/admin_views.ts` reads the password generator's version out of its
-// package.json, which the package's own declarations do not cover.
-declare module 'generate-password/package.json';

@@ -383,6 +383,42 @@ are correct; they move to section 13 when their files are next touched, not
 in a sweep. `tests/random_values.js` holds the distribution and reads the
 source for all three shapes.
 
+**THE SECOND PASS, THE SAME DAY: `forge.random` HAD ONLY LEFT THE CALL
+SITES.** forge went on drawing from its own Fortuna inside the library — the
+blinding of every RSA signature `vendored/xmldsig.js` makes with `pk.sign()`
+(every SAML, WS-Trust and WS-Federation RSA signature, and every Redirect
+binding signature), forge's RSA-OAEP seed and PKCS#1 v1.5 padding, and the
+SCEP key unwrap's blinding. A source check cannot see a library's insides, so
+four changes:
+
+* **`installForgeRandom()`** points forge's default generator (and
+  `createInstance()`) at node's when `crypto.js` loads. forge is one module
+  instance, so this reaches the vendored callers that may not be edited here.
+  The parent project owes the real fix: `xmldsig.js` signing RSA with node's
+  `crypto.sign()` rather than forge's JavaScript RSA.
+* **`rsa-oaep-mgf1p` and `rsa-1_5` wrap and unwrap through node's
+  `publicEncrypt()` / `privateDecrypt()`**, and `transportOptions()` is gone.
+  RSA-1_5 decryption needs OpenSSL's implicit rejection, which node 24 has
+  (both images run 24.16).
+* **`scep/scep_cms.ts`'s PKCS#1 v1.5 unwrap is node's `privateDecrypt()`**,
+  where it was forge's non-constant-time JavaScript (the Marvin attack's
+  target); a runtime without implicit rejection logs `STS-SCEP-0066` once.
+* **`generate-password` is gone**: `password_policy.ts`'s `PasswordGenerator`
+  draws through `randomString()` (3ac above).
+
+And the handles below section 13's floor were raised to 128 bits (the
+OID4VCI `credential_offer_uri` id, the mock SP's `RelayState` and the mock
+RP's `wctx`), the LDAP cluster instruction's nonce to 16 bytes, and
+`admin_stats.js`'s `ARTIFACT_TAG` takes four random bytes where it took the
+start time. `krb5_service.js`'s sequence number (7 random bits) is in a locked
+file and RFC 4121 does not require it to be random.
+
+**AND THE TESTS.** GitHub's code scanning (CodeQL `js/insecure-randomness`)
+had sixteen open alerts on `ldap/ldap_server.js` whose SOURCE was a test's
+`Math.random()` — a realm id or username suffix handed to the directory.
+Every test now draws from `crypto`, and `tests/random_values.js` holds the
+tests' own files (the parent's copies excepted) to the `Math.random` rule.
+
 ## `applications.js` GREW A FOURTH ATTRIBUTE ROLE, AND THE NAME IS THE ARGUMENT
 
 `declarationAttributes()` walks the `PROTOCOLS` table for an `identifier`, a
@@ -6159,8 +6195,8 @@ reads, and `pwdInHistory` keeps the draft's meaning: PREVIOUS passwords, with th
 current one refused beside them. The draft defines no composition rule, so those
 are `stsPwd*` and nobody mistakes them for the draft's.
 
-**IT IS A LEAF (rule 3)** requiring `helpers.js`, `mode.js` and the
-`generate-password` package, and its directory arrives through a slot
+**IT IS A LEAF (rule 3)** requiring `helpers.js`, `mode.js` and `crypto.js`,
+and its directory arrives through a slot
 `ldap_server.js` fills — `roles.js`'s arrangement exactly. **`FIELDS` is one
 table read five ways**: the schema, the console's form, the management API's
 request schema, the validation and the parse. Three decisions in it:
@@ -6177,12 +6213,17 @@ request schema, the validation and the parse. Three decisions in it:
   loosen a policy. The console form is told apart so that an unticked checkbox
   (which posts nothing) reads as "no".
 
-**THE GENERATOR IS `generate-password` AND ITS JOB IS THE DRAW.** It draws from
-`crypto.randomBytes` with rejection sampling (no modulo bias) and has no
-dependencies; it cannot count symbols, so this file draws whole passwords with
+**THE GENERATOR IS `crypto.js`'s `randomString()` AND ITS JOB IS THE DRAW**
+(`PasswordGenerator`; the `generate-password` package until #65, which sampled
+correctly but held 256 pre-drawn random bytes at module scope between
+passwords, and was a dependency on the path of a secret for twenty lines). Each
+character is a `randomInt()` over the four pools, so no character is likelier
+than another; it cannot count symbols, so this file draws whole passwords with
 all four pools on and REJECTS any that fail the profile, which keeps the result
-uniform over the passwords that pass. `"` and a backtick are left out because a
-generated password is pasted into shells and JSON bodies.
+uniform over the passwords that pass. A strict draw missing a pool counts
+against `MAX_DRAWS`, where the package recursed with no bound. `"` and a
+backtick are left out because a generated password is pasted into shells and
+JSON bodies.
 
 **`credentials.ts` IS WHERE IT IS ASKED.** `preparePassword()` decides
 everything — composition, history, the hash, the history to leave — and writes

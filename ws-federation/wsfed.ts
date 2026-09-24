@@ -2152,7 +2152,8 @@ class WsFederation {
       // A fresh wctx per attempt, held for `wsfed.mockRpContextTtlMin` (thirty
       // minutes by default) so the round-trip check can be made on the way
       // back. This is the only state this relying party keeps.
-      const wctx = 'rp-' + randomId(12);
+      // 128 bits (#65), section 13's floor for a value that looks up state.
+      const wctx = 'rp-' + randomId(16);
       rpContexts.set(wctx,
                      { realm: realm, expires: Date.now() +
                       this.rpContextTtlMs() });

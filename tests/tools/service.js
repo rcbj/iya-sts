@@ -156,7 +156,7 @@ async function findPortBlock(preferredBase, log) {
   // A spread of candidates well above the service's own defaults (8081, 8082,
   // 88, 8888, 389, 636, 8092, 8181) so a plain local stack is never touched.
   for (let i = 0; i < 40; i++) {
-    bases.push(18100 + Math.floor(Math.random() * 400) * 10);
+    bases.push(18100 + require('crypto').randomInt(400) * 10);
   }
   for (const base of bases) {
     let allFree = true;

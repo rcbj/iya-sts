@@ -553,7 +553,8 @@ function inAChild(t) {
   log.debug("Entering inAChild().");
   const out = path.join(os.tmpdir(), 'cluster-signout-signals-' +
                         process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_CLUSTER_|STS_MODE$|STS_PERSISTENCE_|STS_REQUEST_WORKER|LOGOUT_|CONFIG_FILE$)/

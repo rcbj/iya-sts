@@ -349,8 +349,8 @@ const CREDENTIAL_CHOICES = [
           'Typed twice, because a mistyped password that nobody can read ' +
           'back is a person who cannot sign in and nobody who can say why.' },
   { id: 'generate', label: 'A password generated for me (the default)',
-    what: 'Drawn from a cryptographically secure source by the ' +
-          '<code>generate-password</code> package until it satisfies this ' +
+    what: 'Drawn from node\'s cryptographically secure generator, each ' +
+          'character uniformly, until it satisfies this ' +
           'realm\'s <a href="/admin/policies">password policy</a>, set the ' +
           'same way, and <strong>shown to you exactly once</strong> on the ' +
           'page that comes back. This service cannot produce it a second ' +
@@ -1278,22 +1278,15 @@ class AdminViews {
   private passwordGeneratorFacts() {
     const { log } = this.deps;
     log.debug("Entering AdminViews.passwordGeneratorFacts().");
-    let version = '';
-    try {
-      version = require('generate-password/package.json').version;
-    } catch (e) {
-      log.debug("Caught in AdminViews.passwordGeneratorFacts(): " + ((e &&
-          e.message) || e));
-      // Not installed, or a build that stripped package.json files. The page
-      // says "unknown version" rather than failing to draw; generate() would
-      // already have thrown at require time if the module itself were missing.
-      version = '';
-    }
     log.debug("Leaving AdminViews.passwordGeneratorFacts().");
+    // `module` names where the draw is made. It was the generate-password
+    // package, with its version, until #65 put the draw in crypto.js's
+    // section 13; there is no version of this service's own to print, so
+    // the member is empty rather than gone, for a reader that expects it.
     return {
-      module: 'generate-password',
-      version: version,
-      source: 'crypto.randomBytes, with rejection sampling so that no ' +
+      module: 'common/crypto.js randomString()',
+      version: '',
+      source: 'node\'s crypto.randomInt, rejection-sampled so that no ' +
               'character of the pool is likelier than another',
       pools: ['lowercase letters', 'uppercase letters', 'digits', 'symbols'],
       excluded: ['"', '`'],

@@ -1110,7 +1110,8 @@ class Credentials {
   // same rule the header above states about hashing one.
   //
   // **IT IS DRAWN AGAINST THE PASSWORD POLICY SINCE 2026-09-12**, by
-  // `common/password_policy.ts` over the `generate-password` package. Until
+  // `common/password_policy.ts` over `crypto.js`'s `randomString()` (the
+  // `generate-password` package until #65). Until
   // then it was 32 bytes of `randomBytes` as base64url — 43 characters of
   // letters, digits, `-` and `_`, which is a perfectly strong password and one
   // a profile requiring an uppercase letter refuses about one time in a few

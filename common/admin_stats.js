@@ -679,9 +679,16 @@ const artifacts = realms.arr({ persist: 'admin_stats.artifacts',
 // one row acts on the other. A per-process tag makes the handle mean one row
 // again. It is opaque to every caller — nothing parses it, and the console and
 // the management API both take it from the list they were given.
+//
+// **THE TAG'S TAIL IS RANDOM SINCE #65 (2026-09-23).** It was the last four
+// base-36 digits of the start time, and in a cluster every container's node
+// tends to have the same pid — so two nodes started a multiple of about
+// twenty-eight minutes apart minted one tag. Four random bytes make that a
+// one-in-four-billion coincidence instead. `crypto.js` is a leaf, so this
+// require closes no cycle.
 // ---------------------------------------------------------------------------
 const ARTIFACT_TAG = process.pid.toString(36) +
-                     Date.now().toString(36).slice(-4);
+                     require('./crypto').randomBytes(4).toString('hex');
 
 // ---------------------------------------------------------------------------
 // AND A REGISTER OF WHAT HAS BEEN REVOKED, WHICH THE COMMENT BELOW USED TO

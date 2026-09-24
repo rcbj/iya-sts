@@ -481,9 +481,10 @@ async function test() {
   const receiveUrl = issuer + "/ssf/receive";
   const claims = function (iss, aud) {
     log.debug("Entering claims().");
-    const out = { jti: "conf-" + Math.random().toString(36).slice(2),
-                  iss: iss, aud: aud, iat: now,
-                  sub_id: { format: "opaque", id: "x" }, events: {} };
+    const out = {
+      jti: "conf-" + require('crypto').randomBytes(8).toString('hex'),
+      iss: iss, aud: aud, iat: now,
+      sub_id: { format: "opaque", id: "x" }, events: {} };
     out.events[VERIFICATION] = {};
     log.debug("Leaving claims().");
     return out;

@@ -3252,6 +3252,13 @@ const CODES = [
     summary: 'A SCEP message was refused because its transaction could not ' +
       'be claimed: the cluster store could not be asked.',
     spec: 'SCEP CertRep FAILURE badRequest' },
+  { code: 'STS-SCEP-0066',
+    summary: 'This node runtime refuses PKCS#1 v1.5 private decryption (its ' +
+      'OpenSSL has no implicit rejection), so no SCEP request whose content ' +
+      'key is wrapped with rsaEncryption can be decrypted. Logged once per ' +
+      'process; node 24 or later is required.',
+    spec: 'SCEP CertRep FAILURE badMessageCheck (the content does not ' +
+      'decrypt)' },
   // ===== AUTHN =============================================================
   { code: 'STS-AUTHN-0001',
     summary: 'A request to the sign-in screen or the federation chooser ' +
