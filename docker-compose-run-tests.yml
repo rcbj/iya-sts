@@ -825,6 +825,94 @@ services:
         aliases:
           - localhost.emobix.co.uk
 
+  # -------------------------------------------------------------------------
+  # THE SAML INTEROPERABILITY PEERS (#189-#192, 2026-09-24): four independent
+  # SAML service providers — the Shibboleth SP 3 (the Consortium's packages),
+  # pysaml2 (PyPI), SimpleSAMLphp (its release tarball, sha256-pinned) and
+  # Keycloak's SAML broker (its official image) — each built from
+  # tests/saml-peers/<peer>, each driven by a job of its own
+  # (tests/vendored/sts_saml_interop_*.js) against throwaway realms of the
+  # service above. tests/CLAUDE.md, *THE SAML PEERS*, argues all of it.
+  #
+  # BEHIND THE `saml-peers` COMPOSE PROFILE, for #176's reason: ./run-tests.sh
+  # sets COMPOSE_PROFILES and the four SAML_PEER_*_URL variables for the modes
+  # in STS_TEST_SAML_PEERS_MODES, and in every other mode the jobs report
+  # themselves SKIPPED with that reason.
+  #
+  # NOTHING IS A KEY: each peer makes its own key pair (and Keycloak its admin
+  # password) when it STARTS. Each writes its log to a directory of the
+  # volume the runner shares (`sts-test-shared`, #171), which is where its job
+  # reads it — the peer's own log is the harness's error-and-warning source.
+  # Plain HTTP on this bridge, under their service names; nothing published.
+  #
+  # PINNED ADDRESSES, `.43` to `.46`, for the conformance suite's reason: the
+  # service adds `.11` to `.13` to its own interface, which docker's allocator
+  # cannot see.
+  # -------------------------------------------------------------------------
+  saml-shib:
+    container_name: ${STS_SAML_SHIB_CONTAINER_NAME:-sts-docker-tests-saml-shib}
+    image: ${SAML_SHIB_IMAGE:-rcbj/sts-saml-shibboleth}
+    build:
+      context: tests/saml-peers/shibboleth
+    profiles: ["saml-peers"]
+    environment:
+      - SAML_PEER_HOST=saml-shib
+      - SAML_PEER_LOG_DIR=/run/sts-test/saml-peers/shibboleth
+    volumes:
+      - sts-test-shared:/run/sts-test
+    networks:
+      default:
+        ipv4_address: ${SAML_SHIB_ADDRESS:-172.30.0.43}
+
+  saml-ssp:
+    container_name: ${STS_SAML_SSP_CONTAINER_NAME:-sts-docker-tests-saml-ssp}
+    image: ${SAML_SSP_IMAGE:-rcbj/sts-saml-simplesamlphp}
+    build:
+      context: tests/saml-peers/simplesamlphp
+    profiles: ["saml-peers"]
+    environment:
+      - SAML_PEER_HOST=saml-ssp
+      - SAML_PEER_LOG_DIR=/run/sts-test/saml-peers/simplesamlphp
+    volumes:
+      - sts-test-shared:/run/sts-test
+    networks:
+      default:
+        ipv4_address: ${SAML_SSP_ADDRESS:-172.30.0.44}
+
+  saml-pysaml2:
+    container_name: ${STS_SAML_PYSAML2_CONTAINER_NAME:-sts-docker-tests-saml-pysaml2}
+    image: ${SAML_PYSAML2_IMAGE:-rcbj/sts-saml-pysaml2}
+    build:
+      context: tests/saml-peers/pysaml2
+    profiles: ["saml-peers"]
+    environment:
+      - SAML_PEER_HOST=saml-pysaml2
+      - SAML_PEER_PORT=8000
+      - SAML_PEER_LOG_DIR=/run/sts-test/saml-peers/pysaml2
+    volumes:
+      - sts-test-shared:/run/sts-test
+    networks:
+      default:
+        ipv4_address: ${SAML_PYSAML2_ADDRESS:-172.30.0.45}
+
+  # KEYCLOAK WAITS FOR ITS JOB: its truststore is read once, at start, and the
+  # anchor it needs (this run's service Root, for the back-channel logout it
+  # POSTs) is handed over by the job — tests/saml-peers/keycloak/entrypoint.sh.
+  saml-keycloak:
+    container_name: ${STS_SAML_KEYCLOAK_CONTAINER_NAME:-sts-docker-tests-saml-keycloak}
+    image: ${SAML_KEYCLOAK_IMAGE:-rcbj/sts-saml-keycloak}
+    build:
+      context: tests/saml-peers/keycloak
+    profiles: ["saml-peers"]
+    environment:
+      - SAML_PEER_HOST=saml-keycloak
+      - SAML_PEER_LOG_DIR=/run/sts-test/saml-peers/keycloak
+    volumes:
+      - sts-test-shared:/run/sts-test
+    networks:
+      default:
+        ipv4_address: ${SAML_KEYCLOAK_ADDRESS:-172.30.0.46}
+
   tests:
     container_name: ${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}
     image: ${STS_TESTS_IMAGE:-rcbj/mock-sts-tests}
@@ -978,6 +1066,14 @@ services:
       - CONFORMANCE_SUITE_URL=${CONFORMANCE_SUITE_URL:-}
       - CONFORMANCE_CALLBACK_HOST=${CONFORMANCE_CALLBACK_HOST:-tests}
       - CONFORMANCE_PLANS=${CONFORMANCE_PLANS:-}
+      # The SAML peers, when the mode brought them up (#189-#192). Empty
+      # otherwise, which each job's runner entry reads as "skipped, and why";
+      # their logs are in the shared volume below.
+      - SAML_PEER_SHIBBOLETH_URL=${SAML_PEER_SHIBBOLETH_URL:-}
+      - SAML_PEER_SSP_URL=${SAML_PEER_SSP_URL:-}
+      - SAML_PEER_PYSAML2_URL=${SAML_PEER_PYSAML2_URL:-}
+      - SAML_PEER_KEYCLOAK_URL=${SAML_PEER_KEYCLOAK_URL:-}
+      - SAML_PEERS_LOG_DIR=${SAML_PEERS_LOG_DIR:-/run/sts-test/saml-peers}
     # Chrome crashes tabs on heavy pages when limited to Docker's default 64MB
     # /dev/shm. The console job also passes --disable-dev-shm-usage; this raises
     # the cap as well, because the two mitigations fail differently and the

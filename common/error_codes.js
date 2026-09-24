@@ -7126,8 +7126,10 @@ const CODES = [
     spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
   { code: 'STS-SAML-0039',
     summary: 'A SAML 1.1 AttributeQuery or AuthenticationQuery was refused ' +
-      'because the realm is in product mode and nothing authenticates ' +
-      'the caller.',
+      'in product mode: it names no registered relying party (Resource or ' +
+      'the path segment), or its caller did not authenticate as that ' +
+      'relying party (a signed Request or its registered certificate at the ' +
+      'TLS handshake). Until #189 every query was refused in product.',
     spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
   { code: 'STS-SAML-0040',
     summary: 'A SAML 1.1 query carries no <saml:Subject> with a ' +
@@ -7363,6 +7365,64 @@ const CODES = [
       'in product mode and has no saml2.metadataTrustAnchors, so the answer ' +
       'could not be verified, and saml2.mdqImportWithoutAnchors is off.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0085',
+    summary: 'A SAML 2.0 AuthnRequest or LogoutRequest was refused: its ' +
+      'Destination is not the URL it arrived at (saml-core-2.0-os section ' +
+      '3.2.1), or it is signed and names no Destination ' +
+      '(saml-bindings-2.0-os sections 3.4.5.2 and 3.5.5.2). #190.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0086',
+    summary: 'A SAML 2.0 AuthnRequest or LogoutRequest was refused: its ' +
+      'IssueInstant is missing, not a dateTime, more than a minute in the ' +
+      'future, or older than saml2.requestTtlMin (plus a minute). #190.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0087',
+    summary: 'A SAML 2.0 AuthnRequest or LogoutRequest was refused: its ' +
+      'Version is not "2.0" (saml-core-2.0-os section 3.2.2.1). #190.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0088',
+    summary: 'A SAML 2.0 AuthnRequest was refused as a REPLAY: its issuer ' +
+      'and ID arrived before, inside the freshness window (the claim ' +
+      'scope saml2.authnrequest). #190.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0089',
+    summary: 'A SAML 2.0 AuthnRequest was refused because the claim store ' +
+      'that records which requests were answered could not be asked (fail ' +
+      'closed). #190.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0090',
+    summary: 'A SAML 2.0 LogoutRequest with no session cookie (a ' +
+      'back-channel logout) named a SessionIndex whose session did not sign ' +
+      'into that service provider, or was issued another NameID there. ' +
+      'Nothing was ended. #192.',
+    spec: 'a LogoutResponse with StatusCode Requester / UnknownPrincipal' },
+  { code: 'STS-SAML-0091',
+    summary: 'An identity-provider-initiated sign-in (/saml2/unsolicited) ' +
+      'was refused: saml2.unsolicitedSso is off in the realm. #189.',
+    spec: 'an HTTP 403 page' },
+  { code: 'STS-SAML-0092',
+    summary: 'An identity-provider-initiated sign-in (/saml2/unsolicited) ' +
+      'named no service provider (providerId or the path segment). #189.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0093',
+    summary: 'An identity-provider-initiated sign-in asked for a binding a ' +
+      'Response does not go on (anything but HTTP-POST, POST-SimpleSign or ' +
+      'HTTP-Artifact). #189.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0094',
+    summary: 'A SAML 2.0 AttributeQuery named a subject no live session here ' +
+      'gave the asking service provider (by the NameID it was issued), or ' +
+      'that session has ended. #189.',
+    spec: 'SOAP samlp:Response, Requester / UnknownPrincipal (HTTP 200)' },
+  { code: 'STS-SAML-0095',
+    summary: 'The SAML 2.0 attribute authority received no ' +
+      '<samlp:AttributeQuery>, or one naming no Issuer. #189.',
+    spec: 'SOAP samlp:Response, Requester (HTTP 200)' },
+  { code: 'STS-SAML-0096',
+    summary: 'A SAML 1.1 AttributeQuery or AuthenticationQuery in product ' +
+      'mode named a subject no live session here gave the asking relying ' +
+      'party (by the NameIdentifier it was issued). #189.',
+    spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +

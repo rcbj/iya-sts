@@ -6882,6 +6882,23 @@ const SETTINGS = [
                  'recorded as not verified, which counts as UNSIGNED when ' +
                  'this is on.' },
 
+  { key: 'saml2.unsolicitedSso', group: 'SAML 2.0',
+    label: 'Identity-provider-initiated sign-in',
+    env: 'STS_SAML2_UNSOLICITED_SSO', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether /saml2/unsolicited[/{sp}] sends an UNSOLICITED ' +
+                 'Response (saml-profiles-2.0-os section 4.1.5) — a sign-in ' +
+                 'started at this identity provider, for a service provider ' +
+                 'that did not ask: `providerId` (or the path segment) ' +
+                 'names it, `shire` one of its registered assertion ' +
+                 'consumer services, `target` the RelayState. The service ' +
+                 'provider must be registered in product, the address must ' +
+                 'be one its metadata or its entry registered, and the ' +
+                 'issuance policy is asked as for any sign-in. The ' +
+                 'assertion carries no InResponseTo, so a service provider ' +
+                 'decides for itself whether it accepts one; turn this off ' +
+                 'for a realm whose providers should only ever be answered.' },
+
   { key: 'saml2.defaultSingleLogoutService', group: 'SAML 2.0',
     label: 'Fallback logout return address',
     env: 'STS_SAML2_DEFAULT_SLO_SERVICE', type: 'string', dflt: '',
@@ -7169,6 +7186,23 @@ const SETTINGS = [
                  'consumer, so it is the one that works when somebody points ' +
                  'this at a URL and watches. A request naming `profile` or ' +
                  'carrying `SAMLart` overrides it.' },
+
+  { key: 'saml11.doNotCacheCondition', group: 'SAML 1.1 assertions',
+    label: 'Mark a Browser/POST assertion DoNotCache',
+    env: 'STS_SAML11_DO_NOT_CACHE_CONDITION', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Put a <saml:DoNotCacheCondition/> in the Conditions of ' +
+                 'an assertion sent on the Browser/POST profile. The ' +
+                 'profile does not ask for one — its single-use policy ' +
+                 '(oasis-sstc-saml-bindings-1.1 section 4.1.2) is the ' +
+                 'RELYING PARTY\'s to keep — and saml-core 1.1 section ' +
+                 '2.3.2.1 makes an assertion whose condition a relying ' +
+                 'party does not understand Indeterminate. WARNING: the ' +
+                 'Shibboleth SP refuses such an assertion with its stock ' +
+                 'security-policy.xml ("DoNotCacheCondition not ' +
+                 'successfully validated by policy", #189): turn this off ' +
+                 'for a realm whose SAML 1.1 relying parties are Shibboleth ' +
+                 'service providers.' },
 
   { key: 'saml11.artifactTtlS', group: 'SAML 1.1 assertions',
     label: 'Artifact ' +
