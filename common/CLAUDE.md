@@ -419,6 +419,71 @@ had sixteen open alerts on `ldap/ldap_server.js` whose SOURCE was a test's
 Every test now draws from `crypto`, and `tests/random_values.js` holds the
 tests' own files (the parent's copies excepted) to the `Math.random` rule.
 
+## `crypto.js` HELD TO THE W3C INTEROP CASES (#193, 2026-09-24)
+
+**Until #193 nothing held the XML half of this file to anybody's reading but
+the parent project's**, whose engine is the one vendored here — so a shared
+misunderstanding was invisible by construction. `tests/w3c_xmlsec.js` now runs
+the W3C working groups' own interop cases against it: XML Signature 1.1
+(ECDSA on three curves, SHA-2, DEREncodedKeyValue, KeyInfoReference,
+X509Digest), the second-round merlin and Phaos signature sets, the Exclusive
+C14N sets with their published canonical forms, the Second Edition's C14N 1.1
+cases, and XML Encryption 1.1 plus merlin-xmlenc-five and Phaos's xmlenc-3 —
+each signature case in development, development with SHA-1 allowed, and
+product; each encryption case in both modes. The files carry private keys and
+are fetched into the tests image, never committed
+(`tests/tools/W3C-XMLSEC-PROVENANCE.md`). The run found five things here, all
+fixed in this file:
+
+* **AES-192 was not read** (`aes192-gcm`, `aes192-cbc`, both OPTIONAL in XML
+  Encryption 1.1 section 5.2), while `kw-aes192` was — so a 192-bit key was
+  unwrapped and then its content refused. Both are in `BLOCK_CIPHERS` now;
+  `saml2.encryptionAlgorithm`'s enum does not offer them, so nothing encrypts
+  with one unless a caller names it.
+* **`rsa-oaep-mgf1p`'s DigestMethod was ignored** and the key unwrapped under
+  SHA-1 whatever it said, failing as a wrong certificate (STS-KEYS-0024). Its
+  MGF is fixed at MGF1-SHA-1 and node derives MGF1 from the OAEP digest, so a
+  non-SHA-1 digest there is now refused BY NAME, STS-KEYS-0072 — the same
+  refusal `rsa-oaep`'s differing pair always had.
+* **`<xenc:OAEPparams>` (the PSource label) was ignored**, so a key
+  transported with one could only fail. It is passed as node's `oaepLabel`
+  now, for both OAEP transports; the harness re-wraps a published case with
+  a label to hold it (no published case both carries one and names a digest
+  pair node can unwrap).
+* **An ECDH-ES agreement this file does not perform** — PBKDF2 (the W3C
+  AGRMNT.9), a SHA-1 ConcatKDF, an unknown curve — surfaced from inside
+  `agreedKey()`'s throw as a key encrypted to another certificate.
+  `agreementRefusal()` asks first, before any key operation, and refuses under
+  **STS-KEYS-0090** with `refused: true`.
+* **Binary plaintext** (octets that are not UTF-8) made forge's
+  `decodeUtf8()` throw "URI malformed", reported as STS-KEYS-0025. It is
+  decoded strictly now and refused as not-XML, STS-KEYS-0023.
+
+**What it found in the vendored engine and left there** (the parent project's
+to fix, recorded on #193): a bare-name or empty Reference URI under a
+`#WithComments` method keeps the comments XMLDSig core 4.3.3.3 removes — on
+the signing side as well as the verifying one, so fixing only this file's
+verifier would break every round trip with the parent; `#xpointer(/)` and
+`#xpointer(id('x'))` are not resolved; the document node is not canonicalized
+(an element apex only); inclusive C14N 1.0 does not render the `xml:*`
+attributes an apex inherits (section 2.4 — merlin-c14n-three's SignedInfo
+under an `xml:lang` ancestor; the harness confirms that adding them is the
+whole difference); and C14N 1.1 and the XPath transform are absent. **The
+`xml:*` and comment defects are in the engine's SIGNER as well as its
+canonicalizer**, which is why neither was patched in this file: a
+verifier-only correction would refuse this service's own inclusive or
+`#WithComments` signatures the day a document carried an `xml:lang` root or a
+comment.
+
+**What stays refused, deliberately, and is counted as an exception rather
+than a failure**: HMAC (a relying party registers a certificate, not a
+secret — which also refuses the truncated HMACs the specification says must
+fail), SHA-1 while `saml.allowSha1Signatures` is off and always in product,
+3DES, DH and DH-ES, `rsa-1_5` in product, symmetric keys known out of band,
+external references (this service fetches nothing a signed document names),
+XSLT, and the Decryption Transform. `tests/w3c_xmlsec.js`'s `EXCEPTIONS`
+names each.
+
 ## `applications.js` GREW A FOURTH ATTRIBUTE ROLE, AND THE NAME IS THE ARGUMENT
 
 `declarationAttributes()` walks the `PROTOCOLS` table for an `identifier`, a

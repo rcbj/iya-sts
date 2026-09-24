@@ -1347,6 +1347,16 @@ const BLOCK_CIPHERS = {
   'aes256-cbc': { uri: XENC_NS + 'aes256-cbc', keyBytes: 32, mode: 'AES-CBC',
                   ivBytes: 16, tagBytes: 0 },
   'aes128-cbc': { uri: XENC_NS + 'aes128-cbc', keyBytes: 16, mode: 'AES-CBC',
+                  ivBytes: 16, tagBytes: 0 },
+  // AES-192 IN BOTH MODES JOINED ON 2026-09-24 (#193). XML Encryption 1.1
+  // section 5.2 lists both as OPTIONAL, and this service unwrapped a 192-bit
+  // key (kw-aes192) and then refused the content it protected: the W3C
+  // interop set's P-384 and RSA-3072 cases are exactly that pair. It is a
+  // cipher this service READS; nothing encrypts with it unless a caller
+  // asks by name — `saml2.encryptionAlgorithm`'s enum does not offer it.
+  'aes192-gcm': { uri: XENC11_NS + 'aes192-gcm', keyBytes: 24, mode: 'AES-GCM',
+                  ivBytes: 12, tagBytes: 16 },
+  'aes192-cbc': { uri: XENC_NS + 'aes192-cbc', keyBytes: 24, mode: 'AES-CBC',
                   ivBytes: 16, tagBytes: 0 }
 };
 
@@ -1903,6 +1913,49 @@ function agreedKey(agreement, privateKey, keyBytes) {
   return xmlConcatKdf(z, keyBytes, hash, otherInfo);
 }
 
+// ---------------------------------------------------------------------------
+// WHAT AN ECDH-ES AGREEMENT ASKS FOR, BEFORE ANY KEY OPERATION (#193). A key
+// derivation this service does not perform (PBKDF2, a SHA-1 ConcatKDF, none)
+// or an originator key on a curve it does not agree over is a property of
+// the DOCUMENT, and until 2026-09-24 it surfaced from inside agreedKey()'s
+// throw — reported, under STS-KEYS-0024, as a key encrypted to a different
+// certificate. The W3C interop set's AGRMNT.9 (ECDH-ES with PBKDF2) is the
+// case that showed it. '' when the agreement is one agreedKey() performs.
+// ---------------------------------------------------------------------------
+function agreementRefusal(agreement) {
+  log.debug("Entering agreementRefusal().");
+  const kdf = agreement.getElementsByTagNameNS('*', 'KeyDerivationMethod')[0];
+  const kdfUri = kdf ? String(kdf.getAttribute('Algorithm') || '') : '';
+  if (kdfUri !== CONCAT_KDF_URI) {
+    log.debug("Leaving agreementRefusal(). Not ConcatKDF.");
+    return 'the ECDH-ES agreement derives its key with ' +
+      (kdfUri || 'no KeyDerivationMethod') + ', and this service derives ' +
+      'with ConcatKDF only (XML Encryption 1.1 section 5.4.1)';
+  }
+  const params = kdf.getElementsByTagNameNS('*', 'ConcatKDFParams')[0];
+  const digestEl = params ? params.getElementsByTagNameNS('*',
+    'DigestMethod')[0] : null;
+  const hash = nameOfUri(OAEP_DIGESTS,
+                         digestEl ? digestEl.getAttribute('Algorithm') : '');
+  if (!params || !hash || hash === 'sha1') {
+    log.debug("Leaving agreementRefusal(). An unusable KDF digest.");
+    return 'the ConcatKDF names ' + (digestEl
+      ? digestEl.getAttribute('Algorithm') : 'no digest') + ', and this ' +
+      'service derives with SHA-256, SHA-384 or SHA-512 only';
+  }
+  const originator = agreement.getElementsByTagNameNS('*',
+    'OriginatorKeyInfo')[0];
+  const curveEl = originator ? originator.getElementsByTagNameNS('*',
+    'NamedCurve')[0] : null;
+  if (!curveEl || !XML_EC_CURVES[curveEl.getAttribute('URI')]) {
+    log.debug("Leaving agreementRefusal(). No usable originator curve.");
+    return 'the agreement carries no originator ECKeyValue on a curve this ' +
+      'service agrees over (' + Object.keys(XML_EC_OIDS).join(', ') + ')';
+  }
+  log.debug("Leaving agreementRefusal(). Usable.");
+  return '';
+}
+
 function decryptElement(xml, privateKeyPem, opts) {
   log.debug("Entering decryptElement().");
   const options = opts || {};
@@ -1990,6 +2043,12 @@ function decryptElement(xml, privateKeyPem, opts) {
                   ', and this service agrees only with ECDH-ES' },
                            'STS-KEYS-0073');
   }
+  const agreementWhy = agreement ? agreementRefusal(agreement) : '';
+  if (agreementWhy) {
+    log.debug("Leaving decryptElement(). " + agreementWhy);
+    return errorCodes.mark({ ok: false, refused: true, algorithm: 'ecdh-es',
+                             why: agreementWhy }, 'STS-KEYS-0090');
+  }
   const managementName = transport ? transport.name : 'ecdh-es';
   const managementRefused = refusedAlgorithm(options, 'allowedKeyManagement',
                                              managementName,
@@ -2017,10 +2076,25 @@ function decryptElement(xml, privateKeyPem, opts) {
              'to it with rsa-oaep' }, 'STS-KEYS-0070');
   }
   // rsa-oaep's digest and MGF, each SHA-1 where absent (section 5.5.2).
+  //
+  // **rsa-oaep-mgf1p NAMES A DIGEST TOO (#193)**, and until 2026-09-24 this
+  // read it as SHA-1 whatever the EncryptedKey said: section 5.5.1 lets its
+  // DigestMethod be any digest while its mask generation function is FIXED
+  // at MGF1 with SHA-1. A SHA-256 one (the W3C interop set's WRAP.2) was
+  // unwrapped under the wrong digest and reported as a key encrypted to a
+  // different certificate. Node derives MGF1 from the OAEP digest, so that
+  // pair is refused BY NAME here, exactly as rsa-oaep's differing pair is.
+  //
+  // **AND THE PSource LABEL IS READ (#193).** `<xenc:OAEPparams>` is the
+  // OAEP encoding parameter (section 5.5.1/5.5.2), base64; it was ignored,
+  // so a key transported with one could only ever fail — as a wrong key.
   let oaepHash = '';
-  if (transport && transport.name === 'rsa-oaep') {
+  let oaepLabel;
+  if (transport && (transport.name === 'rsa-oaep' ||
+                    transport.name === 'rsa-oaep-mgf1p')) {
+    const mgf1p = transport.name === 'rsa-oaep-mgf1p';
     const digestEl = childByLocal(keyMethod, 'DigestMethod');
-    const mgfEl = childByLocal(keyMethod, 'MGF');
+    const mgfEl = mgf1p ? null : childByLocal(keyMethod, 'MGF');
     const digest = digestEl ? nameOfUri(OAEP_DIGESTS,
                                         digestEl.getAttribute('Algorithm'))
                             : 'sha1';
@@ -2029,23 +2103,31 @@ function decryptElement(xml, privateKeyPem, opts) {
     if (!digest || !mgf || digest !== mgf) {
       log.debug("Leaving decryptElement(). An unusable OAEP digest.");
       return errorCodes.mark({ ok: false, refused: true,
-               algorithm: 'rsa-oaep',
-               why: 'the rsa-oaep key transport names ' +
+               algorithm: transport.name,
+               why: 'the ' + transport.name + ' key transport names ' +
                     (digestEl ? digestEl.getAttribute('Algorithm') : 'SHA-1') +
                     ' as its digest and ' +
                     (mgfEl ? mgfEl.getAttribute('Algorithm') : 'MGF1-SHA-1') +
-                    ' as its mask generation function; this service ' +
-                    'unwraps only a matching pair of SHA-1, SHA-256, ' +
-                    'SHA-384 or SHA-512' }, 'STS-KEYS-0072');
+                    ' as its mask generation function' +
+                    (mgf1p ? ' (rsa-oaep-mgf1p fixes MGF1 at SHA-1)' : '') +
+                    '; this service unwraps only a matching pair of ' +
+                    'SHA-1, SHA-256, SHA-384 or SHA-512' }, 'STS-KEYS-0072');
     }
-    const digestRefused = refusedAlgorithm(options, 'allowedOaepDigests',
-                                           digest, 'OAEP digest');
-    if (digestRefused) {
-      log.debug("Leaving decryptElement(). The caller does not take the " +
-                "OAEP digest " + digest + ".");
-      return digestRefused;
+    if (!mgf1p) {
+      const digestRefused = refusedAlgorithm(options, 'allowedOaepDigests',
+                                             digest, 'OAEP digest');
+      if (digestRefused) {
+        log.debug("Leaving decryptElement(). The caller does not take the " +
+                  "OAEP digest " + digest + ".");
+        return digestRefused;
+      }
     }
     oaepHash = digest;
+    const paramsEl = childByLocal(keyMethod, 'OAEPparams');
+    if (paramsEl) {
+      oaepLabel = Buffer.from(String(paramsEl.textContent || '')
+        .replace(/\s+/g, ''), 'base64');
+    }
   }
   // The data's CipherValue: the EncryptedData's own CipherData, never one
   // inside a key.
@@ -2083,7 +2165,8 @@ function decryptElement(xml, privateKeyPem, opts) {
       key = nodeCrypto.privateDecrypt({
         key: privateKeyObject(privateKeyPem),
         padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
-        oaepHash: oaepHash
+        oaepHash: oaepHash,
+        oaepLabel: oaepLabel
       }, wrappedBytes).toString('binary');
     } else {
       // rsa-oaep-mgf1p and rsa-1_5 through node's OpenSSL since #65, where
@@ -2098,7 +2181,8 @@ function decryptElement(xml, privateKeyPem, opts) {
         padding: transport.scheme === 'RSA-OAEP'
           ? nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING
           : nodeCrypto.constants.RSA_PKCS1_PADDING,
-        oaepHash: transport.scheme === 'RSA-OAEP' ? 'sha1' : undefined
+        oaepHash: transport.scheme === 'RSA-OAEP' ? 'sha1' : undefined,
+        oaepLabel: transport.scheme === 'RSA-OAEP' ? oaepLabel : undefined
       }, wrappedBytes).toString('binary');
     }
     if (!key || key.length !== cipher.keyBytes) {
@@ -2145,7 +2229,24 @@ function decryptElement(xml, privateKeyPem, opts) {
           'wrong' },
                              'STS-KEYS-0022');
     }
-    const plain = forge.util.decodeUtf8(decipher.output.getBytes());
+    // The plaintext as UTF-8, STRICTLY (#193). forge's decodeUtf8() throws
+    // "URI malformed" on octets that are not UTF-8, which the catch below
+    // reported as an element that "could not be read" (STS-KEYS-0025).
+    // Binary plaintext is a document that is not XML, and is refused as
+    // one — the W3C interop set's binary ECDH-ES cases are what showed it.
+    let plain;
+    try {
+      plain = new TextDecoder('utf-8', { fatal: true }).decode(
+        Buffer.from(decipher.output.getBytes(), 'binary'));
+    } catch (e) {
+      log.debug("Caught in decryptElement(): " + ((e && e.message) || e));
+      log.debug("Leaving decryptElement(). The plaintext is not UTF-8.");
+      return errorCodes.mark({ ok: false, why: 'the decryption produced ' +
+               'octets that are not UTF-8 text, so not an XML element — ' +
+               'binary data, which this service does not decrypt' +
+               (cipher.tagBytes ? '' : ', or an altered ' + cipher.name +
+                ' ciphertext') }, 'STS-KEYS-0023');
+    }
     // ---------------------------------------------------------------------
     // DOES IT PARSE? A cipher that finished is not a document that survived,
     // and the gap between those two is CBC's whole problem.
