@@ -3664,7 +3664,20 @@ class OAuth2Server {
                   undefined,
       iat: iat, nbf: iat, exp: iat + self.refreshTokenTtl(opts.client_id),
       // RFC 9449 section 5: a refresh token issued to a PUBLIC client alongside
-      // a DPoP-bound access token is itself bound to the same key. A wallet is
+      // a DPoP-bound access token is itself bound to the same key — and one
+      // issued to a CONFIDENTIAL client is NOT: "they are already
+      // sender-constrained with a different existing mechanism", its client
+      // authentication, and the client may prove a new key when it refreshes.
+      // Until 2026-09-24 this bound both, and the OpenID conformance suite's
+      // FAPI 2.0 refresh module, which refreshes with a fresh DPoP key, was
+      // refused (#176). Confidential here means the client AUTHENTICATED on
+      // the Token Request that minted this token — a credential verified,
+      // which the token endpoint records on the request — so a client that
+      // merely declared a method and proved nothing keeps the binding. And
+      // an operator who turned `oauth2.refreshTokenRequireDpop` on asked for
+      // MORE than section 5 (#34): every refresh token bound, a confidential
+      // client's too, which is what that setting's redemption check reads. A
+      // wallet is
       // a public client and cannot authenticate, so without this the long-lived
       // half of the grant would stay a bearer credential and binding the
       // short-lived half would buy very little. The refresh grant enforces it,
@@ -3674,7 +3687,10 @@ class OAuth2Server {
       // leaving it a bearer credential while binding the short-lived half buys
       // very little. The certificate confirmation is added below, after the
       // payload exists, for the same reason the access token's is.
-      cnf: opts.jkt ? { jkt: opts.jkt } : undefined,
+      cnf: opts.jkt &&
+           (!(opts.request && opts.request.stsClientAuthenticated) ||
+            senderConstraints.refreshDpopRequired())
+        ? { jkt: opts.jkt } : undefined,
       // What this grant authorized in OID4VCI terms — the Credential Dataset
       // identifiers and, where the wallet asked for one, its claims selection.
       // Carried here because the refresh grant reads it back off this token:
@@ -10976,6 +10992,10 @@ class OAuth2Server {
       strictAudience: strictAudience,
       registered: registeredClient
     });
+    // Recorded on the Token Request for refreshToken(), which decides from it
+    // whether the refresh token it mints is DPoP-bound (RFC 9449 section 5,
+    // #176). `authenticated` is true only when a credential VERIFIED here.
+    req.stsClientAuthenticated = !!clientObservation.authenticated;
     // THE SECRET RATE LIMIT'S LAST HALF: a success clears this client's bucket
     // at this address, and leaves the address bucket alone.
     if (clientObservation.authenticated && client.client_id) {

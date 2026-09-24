@@ -339,8 +339,8 @@ function childMain() {
                 oauthGrantType: ['password', 'refresh_token'] } });
 
     const key = oidcRp2.dpopKey();
-    const proofFor = function (method, url) {
-      return oidcRp2.dpopProof(key, method, url, {});
+    const proofFor = function (method, url, other) {
+      return oidcRp2.dpopProof(other || key, method, url, {});
     };
     const issue = function (headers) {
       return request(port, 'POST', '/oauth2/token', Object.assign({
@@ -402,6 +402,24 @@ function childMain() {
     note(r.status === 200 && r.json && r.json.access_token,
          '3h. and the bound one with its own proof is redeemed', r.status);
     config2.setOverride('oauth2.refreshTokenRequireDpop', 'false');
+
+    // A CONFIDENTIAL client ROTATES its DPoP key at a refresh (#176): with
+    // the setting off, RFC 9449 section 5 leaves a refresh token issued to a
+    // client that authenticated unbound — its authentication constrains it
+    // — so a proof from a NEW key is accepted and the tokens minted bind to
+    // that key. The OpenID conformance suite's FAPI 2.0 refresh module does
+    // exactly this.
+    r = await issue({ dpop: proofFor('POST', base + '/oauth2/token') });
+    const confidential = r.json || {};
+    const rotatedKey = oidcRp2.dpopKey();
+    r = await request(port, 'POST', '/oauth2/token', Object.assign({
+      grant_type: 'refresh_token', refresh_token: confidential.refresh_token },
+      client), { dpop: proofFor('POST', base + '/oauth2/token', rotatedKey) });
+    note(r.status === 200 && r.json && r.json.access_token &&
+         String(r.json.token_type).toLowerCase() === 'dpop',
+         '3h-ii. an authenticated client refreshing with a NEW key is issued ' +
+         'a DPoP token set (RFC 9449 section 5)',
+         r.status + ' ' + r.text.slice(0, 200));
 
     // --- 3i: the resource side --------------------------------------------
     config2.setOverride('oauth2.accessTokenRequireDpop', 'true');
