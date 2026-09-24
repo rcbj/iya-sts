@@ -175,6 +175,7 @@ interface SpiffeGrpcDeps {
   // given where each is called.
   loadRequestPool(): typeof import('../common/request_pool');
   loadRequestWorker(): typeof import('../common/request_worker');
+  loadClusterBarrier(): typeof import('../cluster/cluster_barrier');
 }
 
 // The accepting listeners of attested sockets, by the gRPC server they feed.
@@ -225,6 +226,9 @@ class SpiffeGrpc {
       },
       loadRequestWorker: function () {
         return require('../common/request_worker');
+      },
+      loadClusterBarrier: function () {
+        return require('../cluster/cluster_barrier');
       }
     };
   }
@@ -686,16 +690,71 @@ class SpiffeGrpc {
     return found ? found[1] : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // AND EVERY CALL WAITS FOR THE CLUSTER'S READ BARRIER FIRST (2026-09-24).
+  //
+  // `cluster_barrier.js`'s first rule — a request is served after its node
+  // has applied everything committed before it arrived — is HTTP middleware,
+  // and a gRPC call never passes through `app.js`. So a change committed on
+  // one node reached a call on the other only at that node's next change
+  // pull: `sts_spiffe_broker` in `cluster` mode removed a broker through the
+  // balancer (node B, 19:25:30.086) and the broker's next call, on node A's
+  // listener, was still answered — "a broker removed is PERMISSION_DENIED on
+  // its next call" is the Broker API's allow-only policy (section 4.1), and
+  // `spiffe.brokers`' own description promises it. The same gap held for the
+  // SPIRE Server API's admin IDs and registration entries.
+  //
+  // `syncShared()` is the barrier the HTTP side uses — one pull shared by
+  // every request that arrived before it started — and it is asked only
+  // where the barrier is active (active-active). A handler that throws after
+  // the wait can no longer reach grpc-js, so it is logged, and a unary call
+  // is answered INTERNAL rather than left open.
+  // ---------------------------------------------------------------------------
+  clusterBarrier() {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.clusterBarrier().");
+    let barrier = null;
+    try {
+      barrier = typeof this.deps.loadClusterBarrier === 'function' ?
+                this.deps.loadClusterBarrier() : null;
+    } catch (e) {
+      log.debug("Caught in SpiffeGrpc.clusterBarrier(): " +
+                ((e && e.message) || e));
+      barrier = null;
+    }
+    const active = !!(barrier && barrier.isActive());
+    log.debug("Leaving SpiffeGrpc.clusterBarrier(). " + active);
+    return active ? barrier : null;
+  }
+
   fromCaller(handler) {
-    const { log, audit } = this.deps;
+    const { log, audit, errorCodes, grpc } = this.deps;
     const self = this;
     log.debug("Entering SpiffeGrpc.fromCaller().");
     log.debug("Leaving SpiffeGrpc.fromCaller().");
     return function (call, callback?) {
-      return audit.withSource({ address: self.callerAddressOf(call) },
-                              function () {
-        return handler(call, callback);
+      const run = function () {
+        log.debug("Entering run().");
+        log.debug("Leaving run().");
+        return audit.withSource({ address: self.callerAddressOf(call) },
+                                function () {
+          return handler(call, callback);
+        });
+      };
+      const barrier = self.clusterBarrier();
+      if (!barrier) {
+        return run();
+      }
+      barrier.syncShared().then(run, run).catch(function (e) {
+        log.error(errorCodes.tag('STS-SPIFFE-0143') + 'spiffe: a gRPC ' +
+                  'handler threw after the cluster read barrier: ' +
+                  ((e && e.message) || e));
+        if (typeof callback === 'function') {
+          callback({ code: grpc.status.INTERNAL,
+                     details: 'The call failed inside the service.' });
+        }
       });
+      return undefined;
     };
   }
 
