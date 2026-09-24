@@ -1529,7 +1529,8 @@ const CODES = [
     spec: 'refusal by the calling protocol' },
   { code: 'STS-KEYS-0023',
     summary: 'An XML-encrypted element decrypted to something that is not ' +
-      'well-formed XML.',
+      'well-formed XML — or, since #193, to octets that are not UTF-8 at ' +
+      'all (binary data).',
     spec: 'refusal by the calling protocol' },
   { code: 'STS-KEYS-0024',
     summary: 'An XML-encrypted element\'s key could not be unwrapped with ' +
@@ -1752,9 +1753,11 @@ const CODES = [
       'key operation (#168).',
     spec: 'the caller\'s refusal — federation answers STS-FED-0139' },
   { code: 'STS-KEYS-0072',
-    summary: 'An rsa-oaep EncryptedKey named a digest and mask generation ' +
-      'function this service cannot unwrap with: an unknown one, or two ' +
-      'that differ (node derives MGF1 from the OAEP digest).',
+    summary: 'An rsa-oaep or rsa-oaep-mgf1p EncryptedKey named a digest ' +
+      'and mask generation function this service cannot unwrap with: an ' +
+      'unknown one, or two that differ (node derives MGF1 from the OAEP ' +
+      'digest; rsa-oaep-mgf1p fixes MGF1 at SHA-1, so any other digest ' +
+      'there, since #193).',
     spec: 'the caller\'s refusal' },
   { code: 'STS-KEYS-0073',
     summary: 'An XML element\'s key is agreed by an AgreementMethod other ' +
@@ -1779,6 +1782,13 @@ const CODES = [
     spec: 'none — logged. The evidence of a certification that crossed a ' +
       'rebuild; the row would otherwise publish a certificate no published ' +
       'authority signed' },
+  { code: 'STS-KEYS-0090',
+    summary: 'An XML element encrypted by ECDH-ES key agreement derives its ' +
+      'key with something other than a SHA-256/384/512 ConcatKDF (PBKDF2, ' +
+      'a SHA-1 digest, none), or names its originator key on a curve this ' +
+      'service does not agree over; refused before any key operation ' +
+      '(#193 — it was reported as a key encrypted to another certificate).',
+    spec: 'the caller\'s refusal' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

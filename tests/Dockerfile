@@ -201,6 +201,18 @@ RUN npm install --omit=dev && npm cache clean --force
 COPY tests/package*.json ./tests/
 RUN npm install --prefix ./tests && npm cache clean --force
 
+# THE W3C XML SIGNATURE AND XML ENCRYPTION INTEROP CASES (#193), for
+# tests/w3c_xmlsec.js. They carry PRIVATE KEYS, so they are never committed:
+# the script downloads a fixed list, each file pinned by sha256, and FAILS
+# THE BUILD on a mismatch. Above the source copy, with only its two inputs
+# copied first, so that editing a test does not fetch ~340 paced requests
+# again. tests/tools/W3C-XMLSEC-PROVENANCE.md says where they come from.
+COPY tests/tools/fetch-w3c-xmlsec.sh tests/tools/w3c-xmlsec.sha256 \
+     /usr/src/corpora/
+RUN /usr/src/corpora/fetch-w3c-xmlsec.sh /usr/src/corpora/w3c-xmlsec.sha256 \
+      /usr/src/corpora/w3c-xmlsec
+ENV STS_W3C_XMLSEC_DIR=/usr/src/corpora/w3c-xmlsec
+
 # The repository. The root .dockerignore decides what is in it — see the header
 # — and the guard is what a context missing the suite says instead of failing
 # eighty lines later inside node with a message about a module.

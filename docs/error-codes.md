@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3436** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3437** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -56,7 +56,7 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 76
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 77
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 180
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
@@ -415,7 +415,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0020` | An XML-encrypted element is missing one of its two xenc:CipherValue elements. | refusal by the calling protocol |
 | `STS-KEYS-0021` | An XML-encrypted element's wrapped key unwrapped to the wrong length: it was encrypted to a different certificate. | refusal by the calling protocol |
 | `STS-KEYS-0022` | An XML-encrypted element failed its AES-GCM authentication tag or AES-CBC padding check. | refusal by the calling protocol |
-| `STS-KEYS-0023` | An XML-encrypted element decrypted to something that is not well-formed XML. | refusal by the calling protocol |
+| `STS-KEYS-0023` | An XML-encrypted element decrypted to something that is not well-formed XML — or, since #193, to octets that are not UTF-8 at all (binary data). | refusal by the calling protocol |
 | `STS-KEYS-0024` | An XML-encrypted element's key could not be unwrapped with this service's private key. | refusal by the calling protocol |
 | `STS-KEYS-0025` | An XML-encrypted element could not be read for a reason other than the key. | refusal by the calling protocol |
 | `STS-KEYS-0026` | The keystore was handed a store without both loadKeys and saveKeys, and refused it whole. | — |
@@ -464,11 +464,12 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0069` | A certificate authority row listed a certificate it still publishes as revoked; the revocation was dropped rather than written. | none — logged. A row may not publish a certificate its own CRL calls revoked; the drop is evidence of a tier write that was lost |
 | `STS-KEYS-0070` | An XML element encrypted to this realm wrapped its key with rsa-1_5 (RSAES-PKCS1-v1_5), and the realm is in product mode, where that key transport is never unwrapped — XML Encryption 1.1 section 6.1.2 (#181). | the caller's refusal: a LogoutRequest's EncryptedID that cannot be read is answered as the SAML binding says |
 | `STS-KEYS-0071` | An XML element's block cipher, key management or OAEP digest is one the caller's allow-list excludes; refused before any key operation (#168). | the caller's refusal — federation answers STS-FED-0139 |
-| `STS-KEYS-0072` | An rsa-oaep EncryptedKey named a digest and mask generation function this service cannot unwrap with: an unknown one, or two that differ (node derives MGF1 from the OAEP digest). | the caller's refusal |
+| `STS-KEYS-0072` | An rsa-oaep or rsa-oaep-mgf1p EncryptedKey named a digest and mask generation function this service cannot unwrap with: an unknown one, or two that differ (node derives MGF1 from the OAEP digest; rsa-oaep-mgf1p fixes MGF1 at SHA-1, so any other digest there, since #193). | the caller's refusal |
 | `STS-KEYS-0073` | An XML element's key is agreed by an AgreementMethod other than ECDH-ES. | the caller's refusal |
 | `STS-KEYS-0074` | An XML element encrypted by ECDH-ES key agreement was handed to a recipient whose private key is not an EC key. | the caller's refusal |
 | `STS-KEYS-0075` | A certificate authority another process in this service sent publishes a tier this process holds as superseded — a copy from before a rebuild — so it was refused, and the hierarchy held here was asserted again where it is itself consistent. | none — logged. A supersession is permanent; adopting the copy put a replaced Intermediate back in every process |
 | `STS-KEYS-0076` | A certificate authority merged with a copy another process had written publishes certificates its own Issuing CAs did not sign — keys certified from the branch a rebuild replaced — and each is certified again from the live Issuing CA. | none — logged. The evidence of a certification that crossed a rebuild; the row would otherwise publish a certificate no published authority signed |
+| `STS-KEYS-0090` | An XML element encrypted by ECDH-ES key agreement derives its key with something other than a SHA-256/384/512 ConcatKDF (PBKDF2, a SHA-1 digest, none), or names its originator key on a curve this service does not agree over; refused before any key operation (#193 — it was reported as a key encrypted to another certificate). | the caller's refusal |
 
 ## STS-PKI
 

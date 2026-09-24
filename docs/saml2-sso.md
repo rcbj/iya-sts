@@ -353,6 +353,15 @@ application says, refuses to set it, and refuses an `rsa-1_5` key sent to it
 in an `EncryptedID` before unwrapping it (`STS-KEYS-0070`) — XML Encryption 1.1
 section 6.1.2, and 6.1.3's warning about a key that both decrypts and signs.
 
+What this service READS is wider than what it offers: an EncryptedID sent
+to it may also be encrypted with `aes192-gcm` or `aes192-cbc`
+(XML Encryption 1.1's optional ciphers, since #193), with `rsa-oaep` or
+`rsa-oaep-mgf1p` carrying an `OAEPparams` label, or by ECDH-ES with a SHA-2
+ConcatKDF. An `rsa-oaep-mgf1p` naming a digest other than SHA-1, or an
+ECDH-ES derivation other than ConcatKDF, is refused by name before any key
+is used (`STS-KEYS-0072`, `STS-KEYS-0090`). A federation relationship still
+accepts only what it published (`docs/federation.md`).
+
 ### The mock service provider
 
 `/saml2/sp` is the default assertion consumer service and a test harness. It
