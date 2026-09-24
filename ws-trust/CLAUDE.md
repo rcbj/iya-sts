@@ -187,6 +187,37 @@ what to present:**
 
 `tests/saml_family_hardcoded.js` section E pins all of it in process.
 
+## EACH VERSION ANSWERS IN ITS OWN SCHEMA'S ELEMENTS (#188, 2026-09-24)
+
+The answer echoes the request's trust namespace, and until #188 it answered
+every version in 1.3's vocabulary. Validating each answer against its own
+version's published schema (`tests/vendored/sts_xml_schema_validation.js`)
+found three elements the **2004/04** member submission does not have:
+
+* **Issue is answered with the RSTR itself.** That version's
+  `RequestSecurityTokenResponseCollection` holds `minOccurs='2'` responses —
+  it is for several tokens at once — so a collection of one was invalid.
+  The action is `.../RSTR/Issue`. 2005/02 (`minOccurs='1'`) and 1.3 (the
+  collection is REQUIRED for an Issue's final response) are unchanged.
+* **The reference is `wst:RequestedTokenReference`**, the element 2005/02
+  renamed `RequestedAttachedReference`.
+* **Cancel is refused** with that namespace's `wst:InvalidRequest` fault
+  (`STS-WSTRUST-0021`): 2004/04 has no `CancelTarget` and no
+  `RequestedTokenCancelled`, and answering in elements the version does not
+  define is worse than saying it does not define the operation.
+
+What is left in 2004/04 and is NOT a schema error, stated rather than
+changed: the `wsp:AppliesTo` and `wsa:EndpointReference` in the answer are
+the 2004/09 policy and 2005/08 addressing namespaces for every version (the
+2004/04 schema imports 2002/12 and 2004/03), which its lax wildcard admits.
+
+**The published 1.3 schema's own namespace is wrong**, and that is recorded
+on #188 rather than worked around here: `ws-trust-1.3.xsd` declares
+`http://docs.oasis-open.org/ws-sx/ws-trust/200512/` with a trailing slash,
+which is not the specification's namespace and not what this endpoint (or
+any other) speaks. The job validates against a copy with that one string
+changed (`tests/tools/fetch-xml-schemas.sh`).
+
 ## What is tested, and what is not
 
 The parent project has `tests/wstrust.js` and

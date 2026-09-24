@@ -7415,6 +7415,12 @@ const CODES = [
       'allowed was refused because the issuance policy answered Deny for ' +
       'action-id `delegate` (#108). Product mode only.',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
+  { code: 'STS-WSTRUST-0021',
+    summary: 'A Cancel request in the WS-Trust 2004/04 namespace, which ' +
+      'defines no Cancel binding (no CancelTarget, no ' +
+      'RequestedTokenCancelled); it was added in 2005/02 (#188).',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), in the request\'s ' +
+      'trust namespace' },
   // ===== WSFED =============================================================
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +

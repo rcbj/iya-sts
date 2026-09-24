@@ -191,6 +191,20 @@ interface RouteRegistrar {
 
 const WST_NS = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
 
+// THE MAY 2004 MEMBER SUBMISSION'S NAMESPACE (#188, 2026-09-24). The answer
+// echoes the request's trust namespace, and three of the elements this
+// endpoint answered with are not in that version's schema
+// (schemas.xmlsoap.org/ws/2004/04/trust/ws-trust.xsd): its
+// RequestSecurityTokenResponseCollection holds AT LEAST TWO responses, so an
+// Issue is answered with the RSTR itself; the reference to the issued token
+// is `RequestedTokenReference` (2005/02 renamed it
+// `RequestedAttachedReference`); and there is no Cancel at all — no
+// CancelTarget and no RequestedTokenCancelled — so a Cancel is refused with
+// the version's own InvalidRequest fault rather than answered in elements
+// the version does not have. tests/vendored/sts_xml_schema_validation.js
+// validates each version's answers against its own published schema.
+const WST_2004_04_NS = 'http://schemas.xmlsoap.org/ws/2004/04/trust';
+
 const SOAP12_NS = 'http://www.w3.org/2003/05/soap-envelope';
 
 const SOAP11_NS = 'http://schemas.xmlsoap.org/soap/envelope/';
@@ -1123,6 +1137,17 @@ class WsTrust {
                                    rstr) };
     }
 
+    if (op === 'cancel' && trustNs === WST_2004_04_NS) {
+      log.debug("Leaving WsTrust.handleRst(). Cancel is not in WS-Trust " +
+                "2004/04.");
+      return { status: 500, version: version, errorCode: 'STS-WSTRUST-0021',
+               body: this.soapFault(version, 'WS-Trust 2004/04 defines no ' +
+                                    'Cancel binding (no CancelTarget and no ' +
+                                    'RequestedTokenCancelled); it was ' +
+                                    'added in the 2005/02 version.',
+                                    'InvalidRequest', trustNs) };
+    }
+
     if (op === 'cancel') {
       const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs +
                    '"><wst:RequestedTokenCancelled/>' +
@@ -1546,7 +1571,11 @@ class WsTrust {
       '<wsu:Created>' + iso(0) + '</wsu:Created><wsu:Expires>' +
       iso(lifetimeMin) + '</wsu:Expires></wst:Lifetime><wst:KeyType>' +
       keyTypeReq + '</wst:KeyType>' +
-      tok.ref;
+      // 2004/04 spells the reference RequestedTokenReference (#188).
+      (trustNs === WST_2004_04_NS
+        ? tok.ref.split('wst:RequestedAttachedReference')
+            .join('wst:RequestedTokenReference')
+        : tok.ref);
 
     // ---------------------------------------------------------------------
     // WHAT THIS EXCHANGE SIGNED IN, for the caller to act on (2026-09-05).
@@ -1602,7 +1631,16 @@ class WsTrust {
     }
 
     // Issue -> RSTR Collection (WS-Trust 1.3+; pre-OASIS clients tolerate it
-    // too).
+    // too) — except in 2004/04, whose collection holds at least two
+    // responses, so an Issue there is answered with the one RSTR (#188).
+    if (trustNs === WST_2004_04_NS) {
+      const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs +
+                   '">' + rstrInner + '</wst:RequestSecurityTokenResponse>';
+      log.debug("Leaving WsTrust.handleRst(). Issue answered with an RSTR " +
+                "(2004/04).");
+      return { status: 200, version: version, signIn: signIn,
+               body: this.envelope(version, trustNs + '/RSTR/Issue', rstr) };
+    }
     const rstrc = '<wst:RequestSecurityTokenResponseCollection xmlns:wst="' +
                   trustNs + '"><wst:RequestSecurityTokenResponse>' + rstrInner +
                   '</wst:RequestSecurityTokenResponse>' +

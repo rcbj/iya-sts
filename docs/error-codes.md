@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3436** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3437** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -65,7 +65,7 @@ is an ordinary outcome.
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 248
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 557
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 133
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 66
@@ -1834,6 +1834,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0018` | An OnBehalfOf or ActAs request was refused by the delegation policy (#108): the subject may not be delegated, the requester is not trusted to impersonate or may not act for this subject, or no attribute allows the AppliesTo. Product mode only; development records what would have been refused. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0019` | An OnBehalfOf or ActAs request was refused because its requester authenticated as a PERSON (or as a name with no application entry): in product mode only an application entry may delegate (#108). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0020` | An OnBehalfOf or ActAs request the delegation attributes allowed was refused because the issuance policy answered Deny for action-id `delegate` (#108). Product mode only. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0021` | A Cancel request in the WS-Trust 2004/04 namespace, which defines no Cancel binding (no CancelTarget, no RequestedTokenCancelled); it was added in 2005/02 (#188). | SOAP Fault wst:InvalidRequest (HTTP 500), in the request's trust namespace |
 
 ## STS-WSFED
 
