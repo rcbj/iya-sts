@@ -315,8 +315,14 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   const workflow = read('.github/workflows/tests.yml');
   const modes = read('tests/tools/modes.sh');
 
-  const modeBound = Number(
+  // THE LARGEST BOUND THE `tests` JOB'S MODES GET: the launcher's shared
+  // default, or `single-node`'s own in modes.sh (2026-09-24) when it has one.
+  const sharedBound = Number(
     /STS_MODE_TIMEOUT="\$\{STS_MODE_TIMEOUT:-(\d+)\}"/.exec(launcher)[1]);
+  const singleNodeBound = Number(
+    (/single-node\)\s*echo "\$\{STS_SINGLE_NODE_MODE_TIMEOUT:-(\d+)\}"/
+      .exec(modes) || [])[1]) || 0;
+  const modeBound = Math.max(sharedBound, singleNodeBound);
   const teardownBound = Number(
     /STS_TEARDOWN_TIMEOUT="\$\{STS_TEARDOWN_TIMEOUT:-(\d+)\}"/
       .exec(launcher)[1]);
