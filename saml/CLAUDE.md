@@ -1288,7 +1288,9 @@ cannot use the artifact profile at all (it sends an artifact-ProtocolBinding
 request over the artifact binding and publishes no ArtifactResolutionService
 — #191); SimpleSAMLphp's SOAP client pins the back channel's TLS certificate
 to the metadata's signing keys, which this service's listener certificate is
-not (an owner decision on #191); ECP is not claimed (#190).
+not (whether the metadata should carry the listener's key is an owner decision,
+recorded on #189 — the Shibboleth SP trusts it here through its own StaticPKIX
+option); ECP is not claimed (#190).
 
 ## EVERY DOCUMENT HERE IS VALIDATED AGAINST THE PUBLISHED SCHEMAS (#188, 2026-09-24)
 
