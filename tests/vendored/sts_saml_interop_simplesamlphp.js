@@ -16,8 +16,9 @@
 //     validation (its METADATA VALIDATOR: /peer/configure.php answers what
 //     it said, and a problem fails the realm);
 //   * SP-initiated SSO: the AuthnRequest on HTTP-Redirect (SimpleSAMLphp's
-//     choice), the Response on HTTP-POST, the assertion encrypted to the
-//     SP's key — which it insists on. NOT HTTP-Artifact: a SimpleSAMLphp SP
+//     choice) and on HTTP-POST (configured to use only that binding), the
+//     Response on HTTP-POST, the assertion encrypted to the SP's key — which
+//     it insists on. NOT HTTP-Artifact: a SimpleSAMLphp SP
 //     cannot ask for it (authsources.php in its peer directory says why);
 //   * ForceAuthn, IsPassive with and without a session, and NameIDPolicy
 //     asking for persistent, transient and emailAddress;
@@ -98,6 +99,7 @@ async function makeWorld(realmMode) {
     w.sp[source] = { entityId: entityId,
                      idp: (/entityID="([^"]+)"/.exec(idpXml) || [])[1] };
     idpDocs.push(idpXml);
+    w.idpXml = idpXml;
   }
   for (const [i, doc] of idpDocs.entries()) {
     const r = await fetch(PEER + "/peer/configure.php", {
@@ -219,6 +221,34 @@ async function spInitiated(w) {
       });
     });
   }
+  // THE AuthnRequest ON HTTP-POST: SimpleSAMLphp configured to use only the
+  // identity provider's POST SingleSignOnService (it prefers Redirect).
+  await scenario(w, "SP-initiated SSO, AuthnRequest on HTTP-POST",
+                 async function () {
+    const onlyPost = await fetch(PEER + "/peer/configure.php", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idpMetadata: w.idpXml,
+        ssoBinding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" }) });
+    const b = kit.browser();
+    const walked = await walkIn(w, b, loginUrl(w, "sp"));
+    const env = await sessionAt(b, "sp");
+    await fetch(PEER + "/peer/configure.php", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idpMetadata: w.idpXml }) });
+    await kit.check(w.mode + ": the AuthnRequest went on HTTP-POST, signed, " +
+                    "and the SP holds a session", async function () {
+      kit.assert(onlyPost.status === 200, "configure answered " +
+                 onlyPost.status);
+      const req = walked.captured.find(function (m) {
+        return m.field === "SAMLRequest";
+      });
+      kit.assert(req && req.binding === "post" &&
+                 /<ds:Signature/.test(req.xml),
+                 "no signed POST-binding AuthnRequest: " +
+                 kit.describeWalk(walked));
+      expectSession(w, "sp", walked, env);
+    });
+  });
   log.debug("Leaving spInitiated().");
 }
 

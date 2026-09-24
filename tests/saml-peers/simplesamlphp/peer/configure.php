@@ -1,5 +1,6 @@
 <?php
-// POST {"idpMetadata": "<md:EntityDescriptor …>", "append": bool}: the
+// POST {"idpMetadata": "<md:EntityDescriptor …>", "append": bool,
+// "ssoBinding": optional}: the
 // identity provider this
 // peer trusts, read by SimpleSAMLphp's own SAMLParser and its schema
 // validation, and written where saml20-idp-remote.php loads it. The answer
@@ -23,6 +24,17 @@ try {
     foreach (\SimpleSAML\Metadata\SAMLParser::parseDescriptorsString($xml)
              as $entity) {
         $idp = $entity->getMetadata20IdP();
+        // `ssoBinding`: this SP configured to send its AuthnRequest on one
+        // binding only — SimpleSAMLphp picks HTTP-Redirect first whenever the
+        // identity provider offers it, so this is how its HTTP-POST request
+        // is reached. The operator's choice, not the metadata's.
+        $only = (string) ($spec['ssoBinding'] ?? '');
+        if ($idp !== null && $only !== '' &&
+            isset($idp['SingleSignOnService'])) {
+            $idp['SingleSignOnService'] = array_values(array_filter(
+                $idp['SingleSignOnService'],
+                fn ($e) => ($e['Binding'] ?? '') === $only));
+        }
         if ($idp !== null) {
             $out[$idp['entityid']] = $idp;
             $added[] = $idp['entityid'];
