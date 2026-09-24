@@ -9,7 +9,8 @@
 // logout plans (RP-Initiated, Front-Channel, Back-Channel, Session
 // Management) — the plans #176's `sts_fapi_conformance.js` did not run, on
 // the same three containers (`tests/CLAUDE.md`, *The OpenID conformance
-// suite*).
+// suite*) — and Identity Assurance's `ekyc-test-plan-oidccore`, which is an
+// OpenID Provider plan of the same shape.
 //
 //   1. For each plan below, a throwaway trust realm (left behind) with open
 //      registration and whatever the plan tests switched on, and a person the
@@ -63,10 +64,6 @@ var root = String(process.env.OID4VCI_ISSUER_URL ||
 const STAMP = names.runStamp();
 const TAG = STAMP.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 10);
 const PASSWORD = "Conf-Passw0rd!-" + String(Date.now()).slice(-6);
-// The directory the service reads CA files from, shared with this job
-// (#171's OUTBOUND_TEST_CA_DIR): the suite's own certificate is written there
-// so a back-channel Logout Token reaches the suite with verification ON.
-const SHARED_DIR = process.env.OUTBOUND_TEST_CA_DIR || "/run/sts-test";
 
 const DYNAMIC = { server_metadata: "discovery",
                   client_registration: "dynamic_client" };
@@ -143,7 +140,21 @@ const PLANS = [
   { key: "session", name: "oidcc-session-management-certification-test-plan",
     variant: { response_type: "code",
                client_registration: "dynamic_client" },
-    settings: [["oauth2.sessionManagement", true]] }
+    settings: [["oauth2.sessionManagement", true]] },
+  // --- OpenID Connect for Identity Assurance 1.0 (#127) ----------------------
+  // The plan the suite's own CI runs against a provider: a dynamic
+  // private_key_jwt client, the code flow, verified claims asked for in the
+  // ID Token and at UserInfo.
+  { key: "ekyc", name: "ekyc-test-plan-oidccore",
+    variant: { client_auth_type: "private_key_jwt",
+               server_metadata: "discovery", response_type: "code",
+               client_registration: "dynamic_client",
+               response_mode: "default", security_profile: "none",
+               auth_request_method: "http_query",
+               auth_request_non_repudiation_method: "unsigned",
+               sender_constrain: "none", fapi_response_mode: "plain_response",
+               ekyc_profile: "plain_ekyc",
+               ekyc_verified_claims_response_support: "id_token_userinfo" } }
 ];
 
 // ---------------------------------------------------------------------------
@@ -174,14 +185,13 @@ function browserFor(base, person) {
   return [{
     match: base + "/oauth2/authorize*",
     tasks: [
+      // No photograph here: a module whose placeholder is an ERROR page
+      // (an invalid redirect_uri the server may equally honour) would have
+      // it filled by the sign-in page and finish before its callback came.
+      // The modules that want the sign-in page photographed say so in
+      // overridesFor().
       { task: "Sign in", optional: true, match: base + "/authn/login*",
-        commands: [
-          // prompt=login and max_age modules photograph the sign-in page.
-          ["wait", "id", "username", 10, ".*",
-           "update-image-placeholder-optional"],
-          ["text", "id", "username", person, "optional"],
-          ["text", "id", "password", PASSWORD, "optional"],
-          ["click", "id", "kc-login"]] },
+        commands: signInCommands(person) },
       { task: "Consent", optional: true, match: base + "/oauth2/consent*",
         commands: [["click", "id", "consent-allow"]] },
       // A refused authorization request shows this service's error page
@@ -214,6 +224,56 @@ function browserFor(base, person) {
         match: oidf.SUITE + "test/*/post_logout_redirect*" }
     ]
   }];
+}
+
+function signInCommands(person) {
+  log.debug("Entering signInCommands().");
+  log.debug("Leaving signInCommands().");
+  return [["text", "id", "username", person, "optional"],
+          ["text", "id", "password", PASSWORD, "optional"],
+          ["click", "id", "kc-login"]];
+}
+
+// The modules that ask for the sign-in page itself as their evidence: a
+// second sign-in forced by prompt=login or max_age, and the three
+// registration modules that expect the client's logo, policy or terms to be
+// shown there. The suite merges `override[<module>]` over the configuration.
+function overridesFor(base, person) {
+  log.debug("Entering overridesFor().");
+  const photographed = {
+    match: base + "/oauth2/authorize*",
+    tasks: [
+      { task: "Sign in, photographed", optional: true,
+        match: base + "/authn/login*",
+        commands: [["wait", "id", "username", 10, ".*",
+                    "update-image-placeholder-optional"]]
+          .concat(signInCommands(person)) },
+      { task: "Consent", optional: true, match: base + "/oauth2/consent*",
+        commands: [["click", "id", "consent-allow"]] },
+      { task: "Verify complete", optional: true,
+        match: oidf.SUITE + "test/*/callback*",
+        commands: [["wait", "id", "submission_complete", 10]] }
+    ]
+  };
+  const onlyPhotographed = {
+    match: base + "/oauth2/authorize*",
+    tasks: [
+      { task: "The sign-in page, photographed",
+        match: base + "/authn/login*",
+        commands: [["wait", "id", "username", 10, ".*",
+                    "update-image-placeholder"]] }
+    ]
+  };
+  const out = {};
+  ["oidcc-prompt-login", "oidcc-max-age-1"].forEach(function (name) {
+    out[name] = { browser: [photographed] };
+  });
+  ["oidcc-registration-logo-uri", "oidcc-registration-policy-uri",
+   "oidcc-registration-tos-uri"].forEach(function (name) {
+    out[name] = { browser: [onlyPhotographed] };
+  });
+  log.debug("Leaving overridesFor().");
+  return out;
 }
 
 // Two clients registered here, for the static variants.
@@ -280,7 +340,7 @@ async function prepare(plan) {
   // Logout Token) goes through the federation outbound policy, verified
   // against the suite's own certificate (#171).
   settings.push(["federation.outboundCaFile",
-                 await oidf.suiteCertificateFile(SHARED_DIR, TAG)]);
+                 oidf.suiteCaFile()]);
   for (let i = 0; i < settings.length; i++) {
     await oidf.ok(api + "/config/set", { key: settings[i][0],
                                          value: settings[i][1] },
@@ -296,7 +356,8 @@ async function prepare(plan) {
     description: "iya-sts " + plan.name + " " + STAMP,
     server: { discoveryUrl: base + "/.well-known/openid-configuration",
               allow_unexpected_metadata_fields: oidf.EXTENSION_METADATA },
-    browser: browserFor(base, person)
+    browser: browserFor(base, person),
+    override: overridesFor(base, person)
   };
   const keys1 = oidf.keyPair("conf-" + plan.key + "-1");
   const keys2 = oidf.keyPair("conf-" + plan.key + "-2");

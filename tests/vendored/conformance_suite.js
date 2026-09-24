@@ -25,7 +25,6 @@
 const assert = require("assert");
 const fs = require("fs");
 const https = require("https");
-const tls = require("tls");
 const nodeCrypto = require("crypto");
 const os = require("os");
 const bunyan = require("bunyan");
@@ -134,13 +133,26 @@ async function clientCertificate(api, clientId) {
 }
 
 // ---------------------------------------------------------------------------
-// THE SUITE'S API. Its nginx serves a self-signed certificate made when its
-// image was built, for a name that is an alias on this network; there is
-// nothing to anchor it to, so this one agent does not verify it (the FAPI
-// driver's reasoning, unchanged).
+// THE SUITE'S API, VERIFIED (#187). The FAPI driver could not anchor the
+// certificate the suite's image shipped; conformance-tls now mints one for
+// the suite's own name, so these calls verify it. A run without that file
+// (a suite started by hand from its own compose file) falls back to the FAPI
+// driver's unverified agent and says so.
 // ---------------------------------------------------------------------------
-const SUITE_AGENT = new https.Agent({ rejectUnauthorized: false,
-                                      keepAlive: true });
+let suiteCa = null;
+try {
+  suiteCa = fs.readFileSync(process.env.CONFORMANCE_SUITE_CA_FILE ||
+                            "/run/sts-test/conformance/server.crt", "utf8");
+} catch (e) {
+  log.debug("Caught reading the suite's certificate: " +
+            ((e && e.message) || e));
+  log.warn("The conformance suite's certificate is not in the shared " +
+           "directory, so its API is called without verifying it.");
+  suiteCa = null;
+}
+const SUITE_AGENT = new https.Agent(suiteCa
+  ? { ca: suiteCa, keepAlive: true }
+  : { rejectUnauthorized: false, keepAlive: true });
 
 function suite(method, path, body) {
   log.debug("Entering suite(). " + method + " " + path);
@@ -290,29 +302,19 @@ async function makePerson(api, username, password, extra) {
   log.debug("Leaving makePerson().");
 }
 
-// The suite's own certificate, as its nginx presents it, written into the
-// directory the service reads CA files from (#171's OUTBOUND_TEST_CA_DIR,
-// shared with this job): whatever the service sends the suite — a Logout
-// Token, a Security Event Token — goes with verification ON.
-async function suiteCertificateFile(sharedDir, tag) {
-  log.debug("Entering suiteCertificateFile().");
-  const url = new URL(SUITE);
-  const pem = await new Promise(function (resolve, reject) {
-    const socket = tls.connect({ host: url.hostname,
-                                 port: Number(url.port) || 443,
-                                 servername: url.hostname,
-                                 rejectUnauthorized: false }, function () {
-      const der = socket.getPeerCertificate().raw;
-      socket.end();
-      resolve("-----BEGIN CERTIFICATE-----\n" +
-              der.toString("base64").replace(/(.{64})/g, "$1\n")
-                .replace(/\n$/, "") + "\n-----END CERTIFICATE-----\n");
-    });
-    socket.on("error", reject);
-  });
-  const file = sharedDir + "/conformance-suite-" + tag + ".crt";
-  fs.writeFileSync(file, pem);
-  log.debug("Leaving suiteCertificateFile(). " + file);
+// The suite's listener certificate, as conformance-tls minted it into the
+// directory the service reads CA files from (#171's shared directory): what
+// the service sends the suite — a Logout Token, a pushed Security Event
+// Token — and what it fetches there go with verification ON, against the
+// name the suite answers to. Answers the path, which the realm settings name.
+function suiteCaFile() {
+  log.debug("Entering suiteCaFile().");
+  const file = process.env.CONFORMANCE_SUITE_CA_FILE ||
+               "/run/sts-test/conformance/server.crt";
+  assert.ok(fs.existsSync(file), "the conformance suite's certificate is " +
+            "not at " + file + " (conformance-tls in " +
+            "docker-compose-run-tests.yml makes it)");
+  log.debug("Leaving suiteCaFile(). " + file);
   return file;
 }
 
@@ -384,5 +386,5 @@ module.exports = {
   selected: selected,
   makeRealm: makeRealm,
   makePerson: makePerson,
-  suiteCertificateFile: suiteCertificateFile
+  suiteCaFile: suiteCaFile
 };

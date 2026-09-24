@@ -177,6 +177,8 @@ STS_LB_CONTAINER_NAME="${STS_LB_CONTAINER_NAME:-sts-docker-tests-lb}"
 STS_CONFORMANCE_MONGO_CONTAINER_NAME="${STS_CONFORMANCE_MONGO_CONTAINER_NAME:-sts-docker-tests-conformance-mongo}"
 STS_CONFORMANCE_SERVER_CONTAINER_NAME="${STS_CONFORMANCE_SERVER_CONTAINER_NAME:-sts-docker-tests-conformance-server}"
 STS_CONFORMANCE_NGINX_CONTAINER_NAME="${STS_CONFORMANCE_NGINX_CONTAINER_NAME:-sts-docker-tests-conformance-nginx}"
+# And the one that mints the suite's listener certificate (#187).
+STS_CONFORMANCE_TLS_CONTAINER_NAME="${STS_CONFORMANCE_TLS_CONTAINER_NAME:-sts-docker-tests-conformance-tls}"
 # ---------------------------------------------------------------------------
 # AND THE IMAGE TAGS, WHEN A PROJECT IS NAMED (2026-09-14). A tag is
 # machine-wide like a container name: this launcher builds once and then
@@ -748,6 +750,7 @@ COMPOSE_ENV=(
   "STS_CONFORMANCE_MONGO_CONTAINER_NAME=${STS_CONFORMANCE_MONGO_CONTAINER_NAME}"
   "STS_CONFORMANCE_SERVER_CONTAINER_NAME=${STS_CONFORMANCE_SERVER_CONTAINER_NAME}"
   "STS_CONFORMANCE_NGINX_CONTAINER_NAME=${STS_CONFORMANCE_NGINX_CONTAINER_NAME}"
+  "STS_CONFORMANCE_TLS_CONTAINER_NAME=${STS_CONFORMANCE_TLS_CONTAINER_NAME}"
   # The conformance suite's three, pinned above the service's extra
   # addresses (`.11` to `.13`), which docker's allocator cannot see.
   "CONFORMANCE_MONGO_ADDRESS=${STS_NETWORK_PREFIX}.40"
@@ -1543,7 +1546,8 @@ do
     )
     UP_NO_ATTACH+=(--no-attach conformance-mongo
                    --no-attach conformance-server
-                   --no-attach conformance-nginx)
+                   --no-attach conformance-nginx
+                   --no-attach conformance-tls)
     STS_MODE_TIMEOUT=$(( STS_MODE_TIMEOUT + STS_CONFORMANCE_TIMEOUT ))
     echo " The OpenID conformance suite runs in this mode (#176); its bound" \
          "is ${STS_MODE_TIMEOUT}s."

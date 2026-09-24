@@ -1524,7 +1524,8 @@ class SharedSignals {
     const { baseUrlOf } = this.deps.helpers;
     log.debug('Entering SharedSignals.metadata().');
     const base = this.ssfBase(req);
-    const doc = {
+    const critical = this.criticalMembers();
+    const doc: Json = {
       // SSF 1.0 section 7.1, whose example for the final specification is
       // exactly this. It was '1_0-final' until 2026-09-22, a value no version
       // of the specification uses.
@@ -1538,11 +1539,17 @@ class SharedSignals {
       add_subject_endpoint: base + '/subjects/add',
       remove_subject_endpoint: base + '/subjects/remove',
       verification_endpoint: base + '/verify',
-      critical_subject_members: this.criticalMembers(),
       default_subjects: String(config.value('ssf.defaultSubjects') || 'ALL')
         .toUpperCase(),
       authorization_schemes: ssfAuth.schemesForMetadata()
     };
+    // OPTIONAL (section 7.1), and ABSENT rather than an empty array when
+    // `ssf.criticalSubjectMembers` names none (#187): the OpenID conformance
+    // suite's transmitter-metadata module refuses an empty array member, and
+    // an empty list says nothing a missing member does not.
+    if (critical.length) {
+      doc.critical_subject_members = critical;
+    }
     log.debug('Leaving SharedSignals.metadata().');
     return doc;
   }
@@ -2054,7 +2061,11 @@ class SharedSignals {
         summary: 'A subject was added to ' + id,
         detail: { subject: subjects.describeSubject(body.subject),
           verified: body.verified !== false } });
-      res.status(204).set('Cache-Control', 'no-store').end();
+      // SSF 1.0 section 8.1.3.2: an EMPTY "200 OK" — removal is the one of
+      // the two that answers 204 (section 8.1.3.3). It was 204 here too
+      // until the OpenID conformance suite's subject-control module said so
+      // (#187).
+      res.status(200).set('Cache-Control', 'no-store').end();
       log.debug('Leaving POST /ssf/subjects/add.');
     });
 

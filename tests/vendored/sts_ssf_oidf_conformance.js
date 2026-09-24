@@ -64,7 +64,6 @@ var root = String(process.env.OID4VCI_ISSUER_URL ||
 const STAMP = names.runStamp();
 const TAG = STAMP.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 10);
 const PASSWORD = "Conf-Passw0rd!-" + String(Date.now()).slice(-6);
-const SHARED_DIR = process.env.OUTBOUND_TEST_CA_DIR || "/run/sts-test";
 
 const COMMON = { server_metadata: "discovery",
                  client_registration: "static_client",
@@ -85,7 +84,21 @@ const PLANS = [
 ];
 
 const EXPECTED = {};
-const KNOWN_WARNINGS = {};
+// Conditions whose WARNING this service keeps, and why — the same sentences
+// as `oauth-oidc/CLAUDE.md` 3bh.
+const KNOWN_WARNINGS = {
+  WarnOnUnusableJwksKeys: "the realm's JWKS carries post-quantum keys " +
+    "(kty AKP, ML-DSA and SLH-DSA) the suite cannot parse; rcbj " +
+    "(2026-09-24): PQC support matters more than a clean run (3bg)",
+  OIDSSFCheckSupportedEventsForStream: "events_supported names this " +
+    "service's own two event types (urn:iya:sts:secevent:event-type:" +
+    "signing-key-rotated and :kerberos-tickets-invalidated); SSF 1.0's " +
+    "events_supported is an open list of event type URIs",
+  OIDSSFWarnCaepInteropEventUsesComplexSubject: "a CAEP event about a " +
+    "session names the session AND its user, which only a complex subject " +
+    "can (CAEP 1.0 section 3); the suite accepts it and says the interop " +
+    "profile is expected to permit it (openid/sharedsignals#351)"
+};
 
 let checks = 0;
 function check(what, fn) {
@@ -101,7 +114,7 @@ async function prepare(plan) {
   const id = ("ssf-" + plan.key + "-" + TAG).slice(0, 31).replace(/-+$/, "");
   const realm = await oidf.makeRealm(root, id, "Conformance " + plan.name, [
     ["oauth2.openRegistration", true],
-    ["ssf.pushCaFile", await oidf.suiteCertificateFile(SHARED_DIR, TAG)]]);
+    ["ssf.pushCaFile", oidf.suiteCaFile()]]);
   const person = names.usernameFor("conf-" + plan.key);
   await oidf.makePerson(realm.api, person, PASSWORD);
   const registered = await oidf.send(realm.base + "/oauth2/register", {

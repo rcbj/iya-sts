@@ -83,7 +83,7 @@ metadata and discovers every endpoint from it:
 | `GET /.well-known/ssf-configuration/realm/{id}` | the same document for a trust realm's transmitter, at the path SSF 1.0 section 7.2 builds from an issuer with a path |
 | `/ssf/stream` | stream management: `POST` creates, `GET` reads, `PUT` and `PATCH` update, `DELETE` deletes |
 | `/ssf/status` | read (`GET`) or change (`POST`) a stream's status |
-| `POST /ssf/subjects/add`, `POST /ssf/subjects/remove` | add or remove a subject |
+| `POST /ssf/subjects/add`, `POST /ssf/subjects/remove` | add (an empty 200) or remove (204) a subject, SSF 1.0 sections 8.1.3.2 and 8.1.3.3 |
 | `POST /ssf/verify` | ask for a verification event |
 | `POST /ssf/poll` | RFC 8936 poll delivery and acknowledgement |
 | `POST /ssf/receive`, `GET /ssf/received` | this service as a **receiver** (below) |
@@ -148,7 +148,9 @@ covers nobody until a subject is added.
 
 ### Push and poll delivery
 
-* **Poll (RFC 8936).** The receiver calls `POST /ssf/poll`, and nothing is
+* **Poll (RFC 8936).** The receiver calls `POST /ssf/poll` — the stream's
+  `delivery.endpoint_url`, which names the stream in its query
+  (`?stream_id=…`), since RFC 8936's poll endpoint is per stream — and nothing is
   dialled. One poll returns at most `ssf.pollMaxEvents` SETs and sets
   `moreAvailable` when more are waiting. An acknowledged SET is never handed
   out again. Until it is acknowledged, it may be returned again, as RFC 8936

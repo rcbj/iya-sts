@@ -262,6 +262,12 @@ async function test() {
                     r.json.issuer.slice(-REALM.length) === REALM, r.text);
         });
   const issuer = r.json.issuer;
+  check("an OPTIONAL array with nothing in it is left out rather than sent " +
+        "empty — critical_subject_members with ssf.criticalSubjectMembers " +
+        "unset (#187, the OpenID conformance suite)", function () {
+          assert.ok(!Object.prototype.hasOwnProperty.call(
+            r.json, "critical_subject_members"), r.text.slice(0, 400));
+        });
   check("spec_version is \"1_0\", section 7.1's value for the final " +
         "specification", function () {
           assert.strictEqual(r.json.spec_version, "1_0");
@@ -287,6 +293,18 @@ async function test() {
           assert.strictEqual(r.json.iss, issuer);
         });
   const aliceStream = r.json.stream_id;
+  const pollAt = String((r.json.delivery || {}).endpoint_url || "");
+  check("a poll stream's delivery.endpoint_url names the stream (RFC 8936's " +
+        "poll endpoint is per stream; #187)", function () {
+          assert.ok(new URL(pollAt).searchParams.get("stream_id") ===
+                    aliceStream, pollAt);
+        });
+  r = await call("POST", pollAt, { returnImmediately: true, maxEvents: 0 },
+                 { Authorization: "Bearer " + (await tokenFor(ALICE)) });
+  check("and a poll of exactly that URL, with no stream_id in the body, is " +
+        "answered", function () {
+          assert.strictEqual(r.status, 200, r.text.slice(0, 300));
+        });
   r = await alice.send("POST", "/ssf/stream", { delivery: { method: POLL },
                                                 aud: [ALICE_WEB] });
   check("one naming an ssfReceiverId of the receiver's application is " +
@@ -389,10 +407,11 @@ async function test() {
     return alice.send("POST", "/ssf/subjects/add",
                       { stream_id: aliceSecond, subject: subject });
   };
+  // An empty 200 (SSF 1.0 section 8.1.3.2; it was 204 until #187).
   r = await add({ format: "iss_sub", iss: issuer, sub: "someone" });
   check("an iss_sub subject is added (RFC 9493's registered name)",
         function () {
-          assert.strictEqual(r.status, 204, r.text);
+          assert.strictEqual(r.status, 200, r.text);
         });
   r = await add({ format: "issuer_subject_id", iss: issuer, sub: "someone" });
   check("the drafts' issuer_subject_id is refused", function () {
@@ -409,11 +428,11 @@ async function test() {
     application: { format: "opaque", id: "app" } });
   check("one with it, carrying the seventh member (application), is added",
         function () {
-          assert.strictEqual(r.status, 204, r.text);
+          assert.strictEqual(r.status, 200, r.text);
         });
   r = await add({ format: "ip-addresses", "ip-addresses": ["192.0.2.1"] });
   check("section 3.5's ip-addresses format is added", function () {
-    assert.strictEqual(r.status, 204, r.text);
+    assert.strictEqual(r.status, 200, r.text);
   });
 
   log.info("=== 5. verification ===");

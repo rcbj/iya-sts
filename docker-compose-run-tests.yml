@@ -812,6 +812,31 @@ services:
         aliases:
           - server
 
+  # THE SUITE'S LISTENER CERTIFICATE, MADE AT RUN TIME (#187). The nginx
+  # image carries a self-signed certificate for `CN=localhost` with no
+  # subject alternative name, so nothing the SERVICE sends the suite — a
+  # back-channel Logout Token, a Security Event Token pushed to a receiver,
+  # a request_uri or jwks_uri it fetches — could be verified: the name it
+  # dials is `localhost.emobix.co.uk`. mailpit-tls's arrangement instead: a
+  # certificate for that name minted by this repository's own encoder into
+  # the shared directory, which the service reads as its CA file
+  # (`federation.outboundCaFile`, `ssf.pushCaFile`) and the drivers anchor
+  # their own calls to. Nothing is committed.
+  conformance-tls:
+    container_name: ${STS_CONFORMANCE_TLS_CONTAINER_NAME:-sts-docker-tests-conformance-tls}
+    image: ${STS_IMAGE:-rcbj/sts}
+    profiles: ["conformance"]
+    restart: "no"
+    environment:
+      - STS_BAO_TLS_DIR=/run/sts-test/conformance
+      - STS_BAO_RAFT_DIR=/tmp/conformance-unused
+      - STS_BAO_TLS_NAMES=localhost.emobix.co.uk,localhost
+      - STS_BAO_TLS_IPS=127.0.0.1
+    volumes:
+      - sts-test-shared:/run/sts-test
+      - ./openbao/generate-tls.js:/usr/src/sts/openbao/generate-tls.js:ro
+    command: ["node", "openbao/generate-tls.js"]
+
   conformance-nginx:
     container_name: ${STS_CONFORMANCE_NGINX_CONTAINER_NAME:-sts-docker-tests-conformance-nginx}
     image: registry.gitlab.com/openid/conformance-suite/nginx:${CONFORMANCE_SUITE_TAG:-release-v5.3.1}
@@ -819,6 +844,16 @@ services:
     depends_on:
       conformance-server:
         condition: service_started
+      conformance-tls:
+        condition: service_completed_successfully
+    # The image's own paths, filled from the pair conformance-tls made.
+    command: >
+      sh -c 'cp /run/sts-test/conformance/server.crt /etc/ssl/certs/nginx-selfsigned.crt &&
+      cp /run/sts-test/conformance/server.key /etc/ssl/private/nginx-selfsigned.key &&
+      exec /docker-entrypoint.sh nginx -g "daemon off;"'
+    entrypoint: []
+    volumes:
+      - sts-test-shared:/run/sts-test:ro
     networks:
       default:
         ipv4_address: ${CONFORMANCE_NGINX_ADDRESS:-172.30.0.42}
@@ -978,6 +1013,8 @@ services:
       - CONFORMANCE_SUITE_URL=${CONFORMANCE_SUITE_URL:-}
       - CONFORMANCE_CALLBACK_HOST=${CONFORMANCE_CALLBACK_HOST:-tests}
       - CONFORMANCE_PLANS=${CONFORMANCE_PLANS:-}
+      # The suite's listener certificate conformance-tls made (#187).
+      - CONFORMANCE_SUITE_CA_FILE=${CONFORMANCE_SUITE_CA_FILE:-/run/sts-test/conformance/server.crt}
     # Chrome crashes tabs on heavy pages when limited to Docker's default 64MB
     # /dev/shm. The console job also passes --disable-dev-shm-usage; this raises
     # the cap as well, because the two mitigations fail differently and the
