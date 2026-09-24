@@ -6890,6 +6890,11 @@ const CODES = [
       'there is no registered client to verify it against (RFC 7523 ' +
       'section 3 item B, #176).',
     spec: 'invalid_client (HTTP 401), RFC 6749 section 5.2' },
+  { code: 'STS-OAUTH-0676',
+    summary: 'A request object carried `request` or `request_uri` as a ' +
+      'claim, which RFC 9101 section 4 forbids; refused at the ' +
+      'authorization endpoint and at PAR (#176).',
+    spec: 'invalid_request_object, RFC 9101 sections 4 and 6.2' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

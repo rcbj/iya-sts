@@ -926,8 +926,8 @@ class RequestObject {
   // object itself, as the endpoint reads a query: a string stays a string, a
   // number or a boolean becomes its text, `resource` keeps its array (RFC 8707
   // repeats it), and an object — `claims`, `authorization_details` — is the
-  // JSON a query would have carried. `request` and `request_uri` inside an
-  // object are dropped: a request object does not refer to another one.
+  // JSON a query would have carried. `request` and `request_uri` never reach
+  // here: `verifyObject()` refuses an object carrying either (section 4).
   // ---------------------------------------------------------------------------
   parametersFrom(claims: Json, outer: Json, clientId: Json): Json {
     const { log } = this.deps;
@@ -1171,6 +1171,26 @@ class RequestObject {
         'the query parameter is "' + clientId + '". RFC 9101 section 6.3 ' +
           'says ' +
         'the two MUST be identical.');
+    }
+    // RFC 9101 section 4: "The request and request_uri parameters MUST NOT
+    // be included in Request Objects." Refused rather than dropped, which is
+    // what `parametersFrom()` did until 2026-09-24: a pushed object carrying
+    // a request_uri was answered 201, where RFC 9126 section 2.1 says a push
+    // MUST NOT provide one, and the OpenID conformance suite's FAPI 2.0
+    // Message Signing plan expects `invalid_request_object` (#176). In every
+    // mode, at every endpoint that takes an object.
+    const nested = ['request', 'request_uri'].filter(function (name) {
+      return claims[name] !== undefined;
+    });
+    if (nested.length) {
+      log.debug("Leaving RequestObject.verifyObject(). A nested " +
+                nested.join(' and ') + ".");
+      return self.refusal('STS-OAUTH-0676', 'invalid_request_object',
+        'the request object carries ' + nested.map(function (name) {
+          return '`' + name + '`';
+        }).join(' and ') + ' as a claim. RFC 9101 section 4: the request ' +
+        'and request_uri parameters MUST NOT be included in a request ' +
+        'object.');
     }
     if (query.response_type !== undefined &&
         claims.response_type !== undefined &&

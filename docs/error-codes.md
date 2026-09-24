@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3431** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3432** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 248
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 555
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 556
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1708,6 +1708,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0673` | The grant management API was asked about a grant_id nobody holds (#142). | HTTP 404 |
 | `STS-OAUTH-0674` | The grant management endpoint failed unexpectedly (#142). | server_error (HTTP 500) |
 | `STS-OAUTH-0675` | A token request carried a client_assertion that names no client: no client_id in the body and no sub in the assertion, so there is no registered client to verify it against (RFC 7523 section 3 item B, #176). | invalid_client (HTTP 401), RFC 6749 section 5.2 |
+| `STS-OAUTH-0676` | A request object carried `request` or `request_uri` as a claim, which RFC 9101 section 4 forbids; refused at the authorization endpoint and at PAR (#176). | invalid_request_object, RFC 9101 sections 4 and 6.2 |
 
 ## STS-SAML
 
