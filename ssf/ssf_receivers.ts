@@ -1000,6 +1000,22 @@ class SsfReceivers {
       const revokedSession = family === 'caep' &&
         short === 'session-revoked' && subjectSession &&
         typeof subjectSession.id === 'string' ? subjectSession.id : '';
+      // A SESSION THAT BEGAN AFTER THE EVENT IS NOT ABOUT IT (2026-09-24).
+      // Delivery is asynchronous — across nodes, by a push another node
+      // makes — so an administrator's password change could arrive after
+      // the person had already signed in again with the NEW password, and
+      // end that session too (`sts_portal_directory_attributes`, cluster).
+      // What is compared is the session's `authTime` — the `auth_time` of
+      // the ID Token it was made from, whole seconds like `event_timestamp`
+      // — so only a person who AUTHENTICATED in a later second is kept; the
+      // same second is ended, which is the side to err on. No timestamp on
+      // either side, no narrowing.
+      const eventAt = Number(body.event_timestamp);
+      const beganAfterEvent = function (session: Loose): boolean {
+        const authenticatedAt = Number(session && session.authTime);
+        return eventAt > 0 && authenticatedAt > 0 &&
+          Math.floor(authenticatedAt) > Math.floor(eventAt);
+      };
       let skip = '';
       if (family === 'caep' && short === 'session-revoked' &&
           initiator === 'policy') {
@@ -1027,6 +1043,9 @@ class SsfReceivers {
                 // Only what the ended sign-on session was the parent of.
                 return !!session &&
                   String(session.derivedFrom || '') === revokedSession;
+              }
+              if (beganAfterEvent(session)) {
+                return false;
               }
               return self.isAbout(entry, { username: user.username,
                                            sub: user.sub || '',

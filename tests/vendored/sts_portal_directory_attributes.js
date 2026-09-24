@@ -569,7 +569,16 @@ async function theRefusalsHold(b) {
   assert.ok(set.status === 200,
     "setting a password answered " + set.status);
 
-  const page = await b.go("GET", "/portal");
+  // AN ADMINISTRATOR'S PASSWORD CHANGE ENDS THE PERSON'S PORTAL SESSIONS in
+  // product (#62's signal-response), and it arrives ASYNCHRONOUSLY — so the
+  // session `b` holds may be ended before or after the page below is read
+  // (in `cluster` it was ended first, and the page was a sign-in). The owner
+  // signs in again with the password just set, after the change's own
+  // second, because the portal keeps a session begun after the event's
+  // `event_timestamp` second and ends one begun within it.
+  await new Promise(function (resolve) { setTimeout(resolve, 1100); });
+  const signedIn = await signIn(OWNER, PROBE_PASSWORD);
+  const page = await signedIn.go("GET", "/portal");
   const drawn = attributesOn(page.text);
 
   check("`userPassword` IS ON THE PAGE — it is on the `person` MAY list, and " +
@@ -610,6 +619,7 @@ async function theRefusalsHold(b) {
     });
   });
   log.debug("Leaving theRefusalsHold().");
+  return signedIn;
 }
 
 // ===========================================================================
@@ -779,12 +789,9 @@ async function test() {
   log.info("Running the /portal directory-attribute checks against " + base);
   const b = await itDrawsTheDirectory();
   await itReadsTheEntryAndNotTheSession(b);
-  await theRefusalsHold(b);
-  // The password section 3 sets is an ADMINISTRATOR'S credential change, and
-  // in product the portal's signal-response ends the person's portal sessions
-  // on one (#62). So the owner signs in again, with the password it set,
-  // before section 5 drives the portal.
-  const again = await signIn(OWNER, PROBE_PASSWORD);
+  // Section 3 signs in again after its administrator's password change,
+  // and section 5 drives the portal with that session.
+  const again = await theRefusalsHold(b);
   await theCredentialsAreNotOnIt(again);
   await oneUserCannotReadAnother();
   log.info(checks + " assertion(s).");

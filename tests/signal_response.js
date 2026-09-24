@@ -251,6 +251,25 @@ function childMain() {
     note(endedOf(byAdmin) === 1,
          'E4. an administrator\'s credential-change still ends the ' +
          'person\'s console session', JSON.stringify(byAdmin.entry.reactions));
+    // E5 (2026-09-24): a session begun AFTER the event's second is not
+    // about it — delivery is asynchronous, and the person may already have
+    // signed in again with the new password. One begun within it is still
+    // ended.
+    derived('sr-erin', 'sso-parent-3');
+    const late = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'update',
+        event_timestamp: Math.floor(Date.now() / 1000) - 10 });
+    const current = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'update',
+        event_timestamp: Math.floor(Date.now() / 1000) });
+    note(endedOf(late) === 0 && endedOf(current) === 1,
+         'E5. an administrator\'s credential-change from BEFORE a session ' +
+         'began leaves it, and one from the second it began ends it',
+         JSON.stringify([late.entry.reactions, current.entry.reactions]));
 
     // --- D. a disabled policy ----------------------------------------------
     const written = xacmlStore.write('signal-response',
