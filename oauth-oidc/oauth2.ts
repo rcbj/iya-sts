@@ -3306,6 +3306,35 @@ class OAuth2Server {
   // is where the value those checks compare comes from. It is read for every
   // request either way, because a function that returned the secret only in one
   // mode would be two functions with one name.
+  // The `iss` and `sub` of a JWT client_assertion, read UNVERIFIED for the
+  // one use the token endpoint makes of them: refusing an assertion whose
+  // names disagree (#176). Null for no assertion, a SAML one (RFC 7522
+  // names its client once, in the Subject) or one that is not a readable
+  // JWT, which is refused on its own merits later.
+  private assertionNames(body: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.assertionNames().");
+    if (!body.client_assertion ||
+        String(body.client_assertion_type || '') ===
+          clientAuth.SAML_ASSERTION_TYPE) {
+      log.debug("Leaving OAuth2Server.assertionNames(). None to read.");
+      return null;
+    }
+    try {
+      const part = String(body.client_assertion).split('.')[1];
+      const claims = JSON.parse(Buffer.from(part, 'base64url')
+                                      .toString('utf8'));
+      log.debug("Leaving OAuth2Server.assertionNames().");
+      return { iss: String((claims && claims.iss) || ''),
+               sub: String((claims && claims.sub) || '') };
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.assertionNames(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving OAuth2Server.assertionNames(). Unreadable.");
+      return null;
+    }
+  }
+
   private clientFrom(req: Req, body: Json): Json {
     const { log, STS, clientAuth, samlAssertionGrant, errorCodes } = this.deps;
     log.debug("Entering OAuth2Server.clientFrom().");
@@ -10457,6 +10486,39 @@ class OAuth2Server {
         'client_assertion names no client: it carries no sub, and the ' +
         'request no client_id (RFC 7523 section 3).');
     }
+    // AND AN ASSERTION WHOSE NAMES DISAGREE, for the same reason (#176). For
+    // client authentication RFC 7523 section 3 item B makes `sub` the
+    // client_id, and OpenID Connect Core section 9 makes `iss` the client_id
+    // too — so an `iss` and a `sub` naming two clients, or either naming
+    // another client than the request's client_id, is an authentication
+    // that failed, whichever client's key signed it. Read unverified, which
+    // is safe for a refusal: nothing is believed, a disagreement is only
+    // turned away. Development mode OBSERVES an assertion that does not
+    // verify rather than refusing it, and this is not that: it is a
+    // malformed authentication, refused in every mode, where the suite's
+    // FAPI 1.0 wrong-sub module found it answered as `invalid_grant` about
+    // the authorization code.
+    const assertedNames = self.assertionNames(body);
+    if (assertedNames) {
+      const named = [assertedNames.iss, assertedNames.sub,
+                     String(body.client_id || '')].filter(Boolean);
+      const disagree = named.some(function (name) {
+        return name !== named[0];
+      });
+      if (disagree) {
+        log.debug("Leaving the token endpoint. The client_assertion's " +
+                  "names disagree.");
+        errorCodes.mark(res, 'STS-OAUTH-0677');
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 401, 'invalid_client', 'The ' +
+          'client_assertion names more than one client: iss "' +
+          assertedNames.iss + '", sub "' + assertedNames.sub + '"' +
+          (body.client_id ? ', and the request\'s client_id "' +
+           body.client_id + '"' : '') + '. For client authentication ' +
+          'each MUST be the client_id (RFC 7523 section 3, OpenID Connect ' +
+          'Core section 9).');
+      }
+    }
     const presented = self.presentedClientAuthentication(req, body);
     let registeredClient = applications.clientConfigOf(client.client_id);
     // A KEY WRITTEN BY ANOTHER PROCESS A MOMENT AGO (2026-09-23). The console
@@ -16503,6 +16565,34 @@ class OAuth2Server {
         // ensureFor() never rejects; the request goes on regardless.
         next();
       });
+    });
+
+    // -------------------------------------------------------------------------
+    // `x-fapi-interaction-id` ON THIS SERVICE'S PROTECTED RESOURCES (#176).
+    // FAPI 1.0 Baseline section 6.2.1 items 11 and 13: a resource server
+    // "shall set the response header x-fapi-interaction-id to the value
+    // received from the corresponding FAPI client request header or to a
+    // RFC4122 UUID value if the request header was not provided". UserInfo,
+    // Grant Management's `/oauth2/grants/{id}` and the step-up stand-in are
+    // the resources this service serves, and the OpenID conformance suite's
+    // FAPI 1.0 plans read the header off UserInfo. In EVERY mode rather than
+    // under a FAPI profile: the header is a correlation id that carries
+    // nothing, and asking a named server's profile here, before its route has
+    // entered it, would be the one place that could get it wrong. A value the
+    // client sent is echoed only when it has the UUID's shape, so this never
+    // reflects arbitrary text into a header.
+    // -------------------------------------------------------------------------
+    app.use(['/oauth2/userinfo', '/oauth2/grants', '/oauth2/step-up/resource',
+             '/:as/oauth2/userinfo', '/:as/oauth2/grants',
+             '/:as/oauth2/step-up/resource'],
+            function (req: Req, res: Res, next: () => void): void {
+      log.debug("Entering the x-fapi-interaction-id middleware.");
+      const sent = String(req.headers['x-fapi-interaction-id'] || '');
+      res.set('x-fapi-interaction-id',
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+                .test(sent) ? sent : crypto.randomUUID());
+      log.debug("Leaving the x-fapi-interaction-id middleware.");
+      next();
     });
 
     app.get('/.well-known/oauth-authorization-server',

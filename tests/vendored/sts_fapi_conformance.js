@@ -326,7 +326,13 @@ async function prepare(plan) {
       grant_types: plan.ciba
         ? ["urn:openid:params:grant-type:ciba", "refresh_token"]
         : ["authorization_code", "refresh_token"],
-      response_types: plan.ciba ? [] : ["code"],
+      // FAPI 1.0 Advanced's plain response is the hybrid `code id_token`
+      // (section 5.2.2 item 2), and a client is held to the response types
+      // it registered (#120).
+      response_types: plan.ciba ? []
+        : (plan.variant.fapi_response_mode === "plain_response" &&
+           plan.fapi === "1-advanced")
+          ? ["code id_token"] : ["code"],
       scope: "openid profile email",
       id_token_signed_response_alg: "PS256"
     };
