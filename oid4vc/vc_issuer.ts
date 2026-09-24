@@ -728,6 +728,60 @@ class VcIssuer {
   // a copy of it. That module is required LAZILY, inside the handler
   // (`VcIssuer.loadOauth2()`): it requires this module's siblings
   // for their stores, and a top-level require back would be a cycle (rule 2).
+  // -------------------------------------------------------------------------
+  // THE PATH-INSERTED FORM, ANSWERED FOR THE ISSUER WHOSE PATH IT IS (#187).
+  // OpenID4VCI 1.0 section 12.2.2 (and draft-ietf-oauth-sd-jwt-vc's
+  // jwt-vc-issuer the same way) puts an issuer's document at the well-known
+  // path INSERTED between host and path — so a realm's issuer,
+  // `https://host/realm/acme`, is discovered at
+  // `/.well-known/openid-credential-issuer/realm/acme`. That path answered the
+  // DEFAULT realm's document, whose `credential_issuer` then failed section
+  // 12.2.3's byte-for-byte comparison in the OpenID conformance suite. The
+  // realm is found as SSF finds it (`ssf/ssf.ts`, the inserted-path form): by
+  // asking each for its issuer and comparing paths, so an operator's own
+  // issuer URL is honoured too. A path no issuer here has is a 404.
+  // -------------------------------------------------------------------------
+  private inInsertedPathRealm(req: any, res: any, wellKnown: string,
+                              issuerOf: (r: any) => string,
+                              send: () => void): void {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering VcIssuer.inInsertedPathRealm(). " + wellKnown);
+    const asked = '/' + String((req.params || {})[0] || '')
+      .replace(/^\/+|\/+$/g, '');
+    const pathOf = function (issuer: string): string {
+      log.debug("Entering pathOf().");
+      let path = '';
+      try {
+        path = new URL(issuer).pathname;
+      } catch (e) {
+        log.debug("Caught in pathOf(): " + ((e && e.message) || e));
+        // Not a URL; it matches nothing.
+        path = '';
+      }
+      log.debug("Leaving pathOf().");
+      return path.replace(/\/+$/, '');
+    };
+    const found = realms.list().filter(function (realm: any): boolean {
+      return realms.run(realm, function (): boolean {
+        return pathOf(issuerOf(req)) === asked;
+      });
+    })[0];
+    if (!found) {
+      errorCodes.mark(res, 'STS-VC-0095');
+      res.status(404).type('application/json')
+         .set('Cache-Control', 'no-store')
+         .send(JSON.stringify({ error: 'not_found', error_description:
+           'No credential issuer here has an identifier whose path is "' +
+           asked + '". Its document is at ' + wellKnown + ' followed by ' +
+           'that path (OpenID4VCI 1.0 section 12.2.2); a realm\'s is ' +
+           wellKnown + '/realm/<id>.' }));
+      log.debug("Leaving VcIssuer.inInsertedPathRealm(). No such issuer.");
+      return;
+    }
+    realms.run(found, send);
+    log.debug("Leaving VcIssuer.inInsertedPathRealm().");
+  }
+
   private sendVciMetadata(req, res) {
     const { log, logArtifact, errorCodes, loadOauth2 } = this.deps;
     log.debug("Entering VcIssuer.sendVciMetadata().");
@@ -2364,14 +2418,20 @@ class VcIssuer {
     app.get('/.well-known/openid-credential-issuer',
             this.sendVciMetadata.bind(this));
 
-    app.get('/.well-known/openid-credential-issuer/*',
-            this.sendVciMetadata.bind(this));
+    app.get('/.well-known/openid-credential-issuer/*', (req, res) => {
+      this.inInsertedPathRealm(req, res, '/.well-known/openid-credential-' +
+        'issuer', (r: any): string => this.vciMetadata(r).credential_issuer,
+        () => this.sendVciMetadata(req, res));
+    });
 
     app.get('/.well-known/jwt-vc-issuer',
             this.sendJwtVcIssuerMetadata.bind(this));
 
-    app.get('/.well-known/jwt-vc-issuer/*',
-            this.sendJwtVcIssuerMetadata.bind(this));
+    app.get('/.well-known/jwt-vc-issuer/*', (req, res) => {
+      this.inInsertedPathRealm(req, res, '/.well-known/jwt-vc-issuer',
+        (r: any): string => this.deps.baseUrlOf(r),
+        () => this.sendJwtVcIssuerMetadata(req, res));
+    });
 
     // --- Nonce Endpoint ------------------------------------------------------
     app.post('/oid4vci/nonce', (req, res) => {

@@ -284,6 +284,9 @@ const DC_API_RESPONSE_MODES = ['dc_api.jwt', 'dc_api'];
 // default a wallet assumes, the others are offered in
 // `encrypted_response_enc_values_supported`.
 const DC_API_ENC_VALUES = ['A128GCM', 'A256GCM'];
+// The `kid` prefix of a direct_post.jwt transaction's response key; the rest
+// of the kid is the transaction's state (#187).
+const DIRECT_POST_JWT_KID = 'dpj-';
 
 // The N-Quads IRIs an ldp_vc's disclosed statements are read by.
 const CRED = 'https://www.w3.org/2018/credentials#';
@@ -425,7 +428,7 @@ const OID4VC_QUERY = validation.z.looseObject({
   response_type: validation.types.opt(validation.types.oneOf(
     ['vp_token', 'id_token', 'vp_token id_token'])),
   response_mode: validation.types.opt(validation.types.oneOf(
-    ['direct_post', 'form_post']))
+    ['direct_post', 'direct_post.jwt', 'form_post']))
 });
 
 class VcVerifier {
@@ -1025,8 +1028,15 @@ class VcVerifier {
     const responseType = String(opts.responseType || 'vp_token');
     const selfIssued = responseType.split(' ').indexOf('id_token') >= 0;
     const wantsVp = responseType.split(' ').indexOf('vp_token') >= 0;
-    const responseMode = !signIn && opts.responseMode === 'form_post'
-      ? 'form_post' : 'direct_post';
+    // OpenID4VP 1.0 section 8.3.1's `direct_post.jwt` (#187): the bar door
+    // asks for an ENCRYPTED response when told to, to an ephemeral ECDH-ES
+    // key of this transaction's own — the Digital Credentials API door's
+    // arrangement (dcApiRequest()), over the Response URI. The OpenID
+    // conformance suite's verifier plan has a variant for it, and the start
+    // page refused the mode until then.
+    const responseMode = !signIn && (opts.responseMode === 'form_post' ||
+                                     opts.responseMode === 'direct_post.jwt')
+      ? String(opts.responseMode) : 'direct_post';
     const signed = byReference ? this.signedClientId(req) : null;
     const clientId = signed ? signed.clientId :
                      ('redirect_uri:' + responseUri);
@@ -1040,10 +1050,12 @@ class VcVerifier {
       response_mode: responseMode,
       nonce: nonce,
       state: state,
-      client_metadata: {
-        client_name: signIn ? 'Sign-in with a wallet' :
-                     'Mock Verifier (bar door)'
-      }
+      // OpenID4VP 1.0 section 5.1: client_metadata carries jwks,
+      // encrypted_response_enc_values_supported and vp_formats_supported,
+      // and "other metadata parameters MUST be ignored" — so the
+      // `client_name` it carried was sent to be ignored, and the OpenID
+      // conformance suite warned of it (#187). It is filled in below.
+      client_metadata: {}
     };
     if (responseMode === 'form_post') {
       request.redirect_uri = responseUri;
@@ -1066,7 +1078,30 @@ class VcVerifier {
       Object.assign(request.client_metadata,
                     this.deps.siop.clientMetadata());
     }
+    let encKey: any = null;
+    if (responseMode === 'direct_post.jwt') {
+      const pair = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+      // The kid NAMES the transaction: the encrypted response carries no
+      // readable `state`, and its JWE header's `kid` is how the Response URI
+      // finds whose key opens it.
+      const kid = DIRECT_POST_JWT_KID + state;
+      const publicJwk = Object.assign(pair.publicKey.export({ format: 'jwk' }),
+        { use: 'enc', alg: 'ECDH-ES', kid: kid });
+      const privatePem = String(pair.privateKey.export(
+        { type: 'pkcs8', format: 'pem' }));
+      const sealed = this.deps.keystore.seal(privatePem,
+                                             'oid4vp direct_post.jwt key');
+      encKey = { kid: kid, sealed: sealed || '',
+                 plain: sealed ? '' : privatePem };
+      request.client_metadata.jwks = { keys: [publicJwk] };
+      request.client_metadata.encrypted_response_enc_values_supported =
+        DC_API_ENC_VALUES;
+    }
+    if (!Object.keys(request.client_metadata).length) {
+      delete request.client_metadata;
+    }
     const record: Record<string, any> = {
+      encKey: encKey,
       id: id, nonce: nonce, state: state, clientId: clientId,
       responseMode: responseMode, request: request,
       responseType: responseType,
@@ -1221,8 +1256,8 @@ class VcVerifier {
       config.value('oid4vp.signInDcApiResponseMode') || 'dc_api.jwt');
     const responseMode = DC_API_RESPONSE_MODES.indexOf(configured) >= 0 ?
       configured : 'dc_api.jwt';
+    // No `client_name`: section 5.1's parameters only (#187).
     const clientMetadata: any = {
-      client_name: 'Sign-in with a wallet',
       vp_formats_supported: this.vpFormatsSupported()
     };
     let encKey: any = null;
@@ -2918,6 +2953,63 @@ class VcVerifier {
     return { ok: true, status: 200, errorCode: outcome.errorCode, why: '' };
   }
 
+  // -------------------------------------------------------------------------
+  // A DIRECT_POST.JWT RESPONSE, OPENED (#187, OpenID4VP 1.0 section 8.3.1):
+  // `{ ok, body, encrypted }` — the decrypted parameters for an encrypted
+  // answer, the form as it came for any other, or `{ ok: false, why }` when
+  // a `response` is there and cannot be opened. The transaction is named by
+  // the JWE's `kid` (see buildVpRequest()); only its own key, sealed on the
+  // transaction, opens it, and only by ECDH-ES with the encryption the
+  // request offered.
+  // -------------------------------------------------------------------------
+  private openEncryptedResponse(form: any): any {
+    const { log, keystore, stsCrypto, vpTransactions } = this.deps;
+    log.debug("Entering VcVerifier.openEncryptedResponse().");
+    if (!form || typeof form.response !== 'string' || form.vp_token ||
+        form.error) {
+      log.debug("Leaving VcVerifier.openEncryptedResponse(). Plain.");
+      return { ok: true, body: form || {}, encrypted: false };
+    }
+    let kid = '';
+    try {
+      kid = String(JSON.parse(Buffer.from(String(form.response)
+        .split('.')[0], 'base64url').toString('utf8')).kid || '');
+    } catch (e) {
+      log.debug("Caught in VcVerifier.openEncryptedResponse(): " +
+                ((e && e.message) || e));
+      kid = '';
+    }
+    const record = kid.indexOf(DIRECT_POST_JWT_KID) === 0
+      ? vpTransactions.get(kid.slice(DIRECT_POST_JWT_KID.length)) : null;
+    if (!record || !record.encKey || record.encKey.kid !== kid) {
+      log.debug("Leaving VcVerifier.openEncryptedResponse(). No key.");
+      return { ok: false, why: 'the encrypted response names no key of an ' +
+               'Authorization Request outstanding here (its JWE kid is "' +
+               kid + '").' };
+    }
+    try {
+      const pem = record.encKey.sealed
+        ? keystore.open(record.encKey.sealed, 'oid4vp direct_post.jwt key')
+        : record.encKey.plain;
+      const plain = stsCrypto.decryptJweCompact(String(form.response), {
+        privateKey: crypto.createPrivateKey(String(pem || '')),
+        allowedAlg: ['ECDH-ES'],
+        allowedEnc: DC_API_ENC_VALUES,
+        expectedKid: kid
+      });
+      const body = JSON.parse(plain.plaintext);
+      log.debug("Leaving VcVerifier.openEncryptedResponse(). Opened.");
+      return { ok: true, encrypted: true,
+               body: Object.assign({ state: record.state }, body) };
+    } catch (e) {
+      log.debug("Caught in VcVerifier.openEncryptedResponse(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving VcVerifier.openEncryptedResponse(). Unopened.");
+      return { ok: false, why: 'the encrypted response could not be ' +
+               'opened: ' + ((e && e.message) || e) };
+    }
+  }
+
   // Did a failed verification fail on its audience alone, naming this one?
   private audienceWas(verified: any, aud: string): boolean {
     const { log } = this.deps;
@@ -3427,9 +3519,28 @@ class VcVerifier {
     // Authorization Response arrives as a form POST rather than in a URL.
     app.post('/oid4vp/response', async (req, res) => {
       log.debug("Entering the OID4VP response endpoint.");
-      const body = parseBody(req);
+      let body = parseBody(req);
+      // A `direct_post.jwt` answer (section 8.3.1): one `response`, a JWE to
+      // the transaction's own key, which its header's `kid` names (#187).
+      const opened = this.openEncryptedResponse(body);
+      if (!opened.ok) {
+        errorCodes.mark(res, 'STS-VC-0096');
+        return oauthError(res, 400, 'invalid_request', opened.why);
+      }
+      body = opened.body;
       const state = String(body.state || '');
       let record = vpTransactions.get(state);
+      if (record && !record.signIn &&
+          (record.responseMode === 'direct_post.jwt') !== opened.encrypted) {
+        log.debug("Leaving the OID4VP response endpoint. The response " +
+                  "mode was not the one asked for.");
+        errorCodes.mark(res, 'STS-VC-0096');
+        return oauthError(res, 400, 'invalid_request',
+          'This Authorization Request asked for response_mode ' +
+          record.responseMode + ', and the response ' +
+          (opened.encrypted ? 'is' : 'is not') + ' encrypted (OpenID4VP ' +
+          'section 8.3.1).');
+      }
       // A SIGN-IN'S TRANSACTION EXPIRES WHEN IT SAYS (#38). The bar door's
       // are swept only when the next one is built, so a late answer to one
       // is still verified as it always was; a sign-in's lifetime is a

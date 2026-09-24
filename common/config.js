@@ -5506,6 +5506,22 @@ const SETTINGS = [
                  'keys is picked up quickly and a stream of invented kids ' +
                  'cannot make this service fetch on every request.' },
 
+  { key: 'oauth2.requestUriFragmentCheck', group: 'OAuth 2.0 / OIDC',
+    label: 'Check a request_uri\'s SHA-256 fragment against its content',
+    env: 'STS_OAUTH2_REQUEST_URI_FRAGMENT_CHECK', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'OpenID Connect Core section 6.2 gives a request_uri\'s ' +
+                 'fragment as the base64url SHA-256 of its content, a signal ' +
+                 'that a cached copy is out of date. ON (the default) treats ' +
+                 'a fragment of that shape as an integrity check too, and ' +
+                 'refuses content that does not hash to it (STS-OAUTH-0349). ' +
+                 'The section does not require an OP to verify it, and the ' +
+                 'OpenID conformance suite\'s request_uri modules send a ' +
+                 'fragment hashed from random bytes (its content is not ' +
+                 'known when it makes the URI), so its OpenID Connect realms ' +
+                 'turn this off (#187). Off, the fragment only names a ' +
+                 'version of the content for oauth2.requestUriCacheS.' },
+
   { key: 'oauth2.requestUriCacheS', group: 'OAuth 2.0 / OIDC',
     label: 'request_uri content cache (s)',
     env: 'STS_OAUTH2_REQUEST_URI_CACHE_S', type: 'int', dflt: 0,

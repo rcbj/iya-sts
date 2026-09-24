@@ -44,6 +44,7 @@ const os = require("os");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const oidf = require("./conformance_suite.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -106,6 +107,45 @@ const PLANS = [
     fapi: "1-advanced", mtls: true, ciba: true, developmentOnly: true,
     variant: { client_registration: "static_client", ciba_mode: "poll",
                client_auth_type: "private_key_jwt",
+               fapi_ciba_profile: "plain_fapi" } },
+  // -------------------------------------------------------------------------
+  // THE VARIANT MATRIX (#187): each profile once more with the axes the four
+  // above do not take — mutual TLS as client authentication and as the
+  // sender constraint, JARM where FAPI 1.0 Advanced took a plain response,
+  // a pushed request, Grant Management under Message Signing, and CIBA's
+  // ping mode. The
+  // suite (release-v5.3.1) publishes no push-mode FAPI-CIBA plan: its own CI
+  // has `fapi-ciba-id1-push-with-mtls-test-plan` commented out, and the
+  // plan's `ciba_mode` offers poll and ping only.
+  // -------------------------------------------------------------------------
+  { key: "fapi2sp-mtls", name: "fapi2-security-profile-final-test-plan",
+    fapi: "2-security", mtls: true,
+    variant: { fapi_profile: "plain_fapi", authorization_request_type:
+               "simple", client_auth_type: "mtls",
+               grant_management: "disabled", openid: "openid_connect",
+               sender_constrain: "mtls" } },
+  // Message Signing keeps JARM: FAPI 2.0 Message Signing section 5.4.1 says
+  // an authorization server implementing response signing "shall support,
+  // require use of" JARM, and this one implements it — so the plan's
+  // `plain_response` variant, which tests one that does not, is refused at
+  // PAR by design (#187, oauth-oidc/CLAUDE.md 3bh).
+  { key: "fapi2ms-mtls", name: "fapi2-message-signing-final-test-plan",
+    fapi: "2-message-signing", mtls: true,
+    variant: { fapi_profile: "plain_fapi", authorization_request_type:
+               "simple", client_auth_type: "mtls",
+               fapi_request_method: "signed_non_repudiation",
+               fapi_response_mode: "jarm",
+               grant_management: "enabled", openid: "openid_connect",
+               sender_constrain: "mtls" } },
+  { key: "fapi1adv-par-jarm", name: "fapi1-advanced-final-test-plan",
+    fapi: "1-advanced", mtls: true,
+    variant: { fapi_profile: "plain_fapi", client_auth_type: "mtls",
+               fapi_auth_request_method: "pushed",
+               fapi_response_mode: "jarm" } },
+  { key: "fapiciba-ping", name: "fapi-ciba-id1-test-plan",
+    fapi: "1-advanced", mtls: true, ciba: true, developmentOnly: true,
+    variant: { client_registration: "static_client", ciba_mode: "ping",
+               client_auth_type: "mtls",
                fapi_ciba_profile: "plain_fapi" } }
 ];
 
@@ -302,6 +342,12 @@ async function prepare(plan) {
   if (plan.ciba) {
     settings.push(["oauth2.ciba", true]);
   }
+  if (plan.variant.ciba_mode === "ping") {
+    // The ping is a request this service makes to the suite, through the
+    // federation outbound policy, verified against the certificate
+    // conformance-tls minted (#187).
+    settings.push(["federation.outboundCaFile", oidf.suiteCaFile()]);
+  }
   for (let i = 0; i < settings.length; i++) {
     await ok(api + "/config/set", { key: settings[i][0],
                                     value: settings[i][1] },
@@ -324,8 +370,6 @@ async function prepare(plan) {
       // (RFC 6749 section 3.1.2), and exact matching means it is registered
       // that way.
       redirect_uris: [n === 1 ? redirect : redirect + CLIENT2_QUERY],
-      token_endpoint_auth_method: "private_key_jwt",
-      token_endpoint_auth_signing_alg: "ES256",
       jwks: keys.publicJwks,
       grant_types: plan.ciba
         ? ["urn:openid:params:grant-type:ciba", "refresh_token"]
@@ -340,8 +384,22 @@ async function prepare(plan) {
       scope: "openid profile email",
       id_token_signed_response_alg: "PS256"
     };
+    // RFC 8705 section 2.1's tls_client_auth for the matrix's mutual TLS
+    // variants (the certificate issued below is the client's by the implicit
+    // mapping, 3an); private_key_jwt, with the key above, otherwise.
+    if (plan.variant.client_auth_type === "mtls") {
+      metadata.token_endpoint_auth_method = "tls_client_auth";
+    } else {
+      metadata.token_endpoint_auth_method = "private_key_jwt";
+      metadata.token_endpoint_auth_signing_alg = "ES256";
+    }
     if (plan.ciba) {
-      metadata.backchannel_token_delivery_mode = "poll";
+      metadata.backchannel_token_delivery_mode =
+        plan.variant.ciba_mode || "poll";
+      if (plan.variant.ciba_mode === "ping") {
+        metadata.backchannel_client_notification_endpoint = SUITE +
+          "test/a/" + alias + "/ciba-notification-endpoint";
+      }
       // The algorithm of the keys made above: FAPI allows PS256 and ES256.
       metadata.backchannel_authentication_request_signing_alg = "ES256";
     }

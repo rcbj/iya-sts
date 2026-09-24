@@ -332,8 +332,13 @@ async function prepare(plan) {
   // The OpenID plans test the default: the test stack's appconfig turns the
   // code-replay courtesy on for a parent job (env/docker-tests.js), so each
   // realm here turns it back off.
+  // And the request_uri modules send a fragment hashed from random bytes
+  // (the suite's content is not known when it makes the URI), which this
+  // OP checks by default: OpenID Connect Core 6.2 asks no OP to, so these
+  // realms do not (`oauth2.requestUriFragmentCheck`, #187).
   const settings = [["oauth2.openRegistration", true],
-                    ["oauth2.codeReplayIdempotent", false]]
+                    ["oauth2.codeReplayIdempotent", false],
+                    ["oauth2.requestUriFragmentCheck", false]]
     .concat(plan.settings || []);
   // What the service fetches from the suite (a registered request_uri, a
   // client's jwks_uri, a sector_identifier_uri) and what it sends there (a

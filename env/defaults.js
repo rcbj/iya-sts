@@ -369,6 +369,7 @@ var config = {
     requestObjectJtiRetentionS: 3600,            // How long a request object's jti is kept without exp (s)
     clientJwksCacheS: 300,                       // Client jwks_uri cache (s)
     clientJwksRefetchS: 30,                      // Client jwks_uri refetch interval (s)
+    requestUriFragmentCheck: true,               // Check a request_uri's SHA-256 fragment against its content
     requestUriCacheS: 0,                         // request_uri content cache (s)
     requestObjectEncryptionKeyBits: 2048,        // Request object encryption: RSA key size (bits)
     requestObjectEncryptionCurve: "P-256",       // Request object encryption: EC curve

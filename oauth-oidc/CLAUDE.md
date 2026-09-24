@@ -1559,7 +1559,8 @@ so must `admin-ui/admin.ts`.
    `request_parameter_supported`/`request_uri_parameter_supported` false 0342 /
    0343 — a PAR URN is exempt from 0343, RFC 9126 section 5 — no `client_id`
    0344); for a reference, registered 0345, still a usable address 0346, the
-   fetch 0347 and media type 0348, the fragment digest 0349; decryption (plain
+   fetch 0347 and media type 0348, the fragment digest 0349 (while
+   `oauth2.requestUriFragmentCheck` is on, #187); decryption (plain
    where encryption is registered and the registered pair 0350, the profile's
    lists 0351, the key or secret 0352, the unwrap 0353, not a nested JWS 0354);
    the JWS (header 0355, `typ` 0356/0368, unsigned refused 0357 — BEFORE the

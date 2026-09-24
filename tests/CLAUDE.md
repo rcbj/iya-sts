@@ -1273,6 +1273,11 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/vendored/sts_fapi2.js` **(ours)** | **THE FAPI 2.0 SECURITY PROFILE OVER THE WIRE** (#140, 2026-09-22), in a throwaway realm on `2-security`: the report; discovery (code alone, PAR required, PS256/ES256/EdDSA, no public or secret method); registration refusing a public client, client_secret_jwt, code id_token and RS256; an unpushed request, an unauthenticated push, a push without PKCE or redirect_uri, an array aud and an assertion two minutes ahead refused; the pushed flow with the global consent counting, an unbound token refused and a DPoP-bound PS256 one issued; the refresh token redeemed twice (no rotation); the portal signing in under 2.0; and the BCP 195 handshakes — TLS 1.3 preferred, a TLS 1.2 GCM suite accepted, a CBC suite refused. 22 checks |
 | `tests/vendored/sts_fapi2_message_signing.js` **(ours)** | **FAPI 2.0 MESSAGE SIGNING OVER THE WIRE** (#141, 2026-09-22), in a throwaway realm on `2-message-signing`: the report's rows; discovery with JARM's modes only and a signed request object and PAR required; a plain push, a signed push asking for no JARM mode, and one with no nbf refused; a signed push answered with a PS256 JARM response verified here and redeemed for a DPoP-bound token; an RFC 9701 introspection response signed PS256 and verified; the portal signing in under the profile. 10 checks |
 | `tests/vendored/sts_fapi_conformance.js` **(ours)** | **THE OPENID FOUNDATION'S CONFORMANCE SUITE** (#176, 2026-09-24) — the independent check the four rows above are not. FAPI 2.0 Security Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced and FAPI-CIBA, one plan each in a throwaway realm under the profile it tests, every module run through the suite's API; a FAILED or timed-out module fails the job unless `EXPECTED` names it with its reason (empty). `conformance: true`: SKIPPED with the reason where the launcher brought no suite up. See *The OpenID conformance suite*, below |
+| `tests/vendored/sts_oidcc_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID CONNECT PLANS** (#187, 2026-09-24): the nine OP certification profiles (basic twice, dynamic and static clients; implicit, hybrid, config, dynamic, the three form_post ones, 3rd-party-initiated login), `oidcc-test-plan` once per client authentication (`client_secret_basic`, `_post`, `_jwt`, `private_key_jwt`, mutual TLS) across query, fragment and form_post, the four logout plans (RP-Initiated, Front-Channel, Back-Channel, Session Management) and Identity Assurance's `ekyc-test-plan-oidccore`. A FAILED module, or a WARNING from a condition `KNOWN_WARNINGS` does not name, fails the job. `conformance: true`. See *The OpenID conformance suite*, below |
+| `tests/vendored/sts_ssf_oidf_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S SHARED SIGNALS PLANS** (#187): the SSF transmitter plan and the CAEP interop transmitter plan, each by push and by poll; the job emits the CAEP events the interop module waits for. Not `sts_ssf_conformance.js` (#144, this repository's own SSF checks). `conformance: true` |
+| `tests/vendored/sts_oidfed_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID FEDERATION PLANS** (#187): the deployed-entity plan for a Leaf realm and for the default realm as Trust Anchor, and the plan in which the suite plays a federation (Trust Anchor and RP, keys made by the job) that a realm's OP has joined, registering the RP automatically. `conformance: true` |
+| `tests/vendored/sts_oid4vci_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID4VCI ISSUER PLANS** (#187): the issuer plan (`vci` profile, SD-JWT VC) wallet-initiated, offered by this issuer and pre-authorized with a transaction code, and the HAIP issuer plan; the job plays the issuer's operator, delivering the offer and the code. `conformance: true` |
+| `tests/vendored/sts_oid4vp_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID4VP VERIFIER PLAN** (#187): SD-JWT VC, the `redirect_uri` prefix, by `direct_post` and `direct_post.jwt`; the suite's issuer key is made at run time and trusted by the realm, and the job plays the End-User the Verifier sends to the wallet. `conformance: true` |
 | `tests/vendored/sts_frontchannel_logout.js` **(ours)** | **OPENID CONNECT FRONT-CHANNEL LOGOUT OVER THE WIRE** (#122, 2026-09-22), in a throwaway realm with registration opened: discovery's `frontchannel_logout_session_supported` (and not the registration member it used to publish) and `sid` in claims_supported; section 2's origin rule refusing another host and another port at registration and at `/admin-api`; a person signed in through a NAMED authorization server and signed out at the realm's own `/oauth2/logout`, whose iframe carries the named server's `iss` and the session's `sid`, with `frame-src` naming the relying party and `frame-ancestors` kept; section 4's return as a `<meta>` refresh after `oauth2.frontchannelLogoutWaitS`, and no refresh at 0; a stored URI whose redirect URI was removed skipped and reported rather than framed |
 | `tests/vendored/sts_caep_credential_changes.js` **(ours)** | **CAEP FROM EVERY DOOR OVER THE WIRE** (#145, 2026-09-22), in a throwaway realm with a poll stream covering everybody: `credential-change` (`password`, `create`, `admin`) for a person created with a password; `session-established` whose `fp_ua` is the base64url SHA-256 of the sign-in's `User-Agent`; `token-claims-change` carrying `family_name` after a SCIM `PATCH`, and the groups claim as the whole list after a group join, about the person; none for a person holding nothing live; `credential-change` `x509` with `x509_issuer` and `x509_serial` for a signing key pair issued on `/admin-api/pki` |
 | `tests/vendored/sts_risc_acts.js` **(ours)** | **RISC ON ITS OWN OVER THE WIRE** (#146, 2026-09-22), in a throwaway realm with a poll stream covering everybody: an administrator's reset link marked compromised sends `account-credential-change-required`, `recovery-activated` and `credential-compromise` (`password`), each `iss_sub`; a disable with a RISC `reason` carries it, one without carries none, and an invented reason is refused; an address a SCIM-deleted account held, given to a new account, sends `identifier-recycled` about the address; the account holder's opt-out on `/portal/signals` — initiated, a refused out-of-diagram move (409), cancelled, initiated again, made effective by running `risc.opt-out-effective` with the delay at 0, and opted back in |
@@ -1631,13 +1636,63 @@ profile, pinned by tag (`CONFORMANCE_SUITE_TAG`, `release-v5.3.1`).
   carries post-quantum keys the suite cannot parse. `oauth-oidc/CLAUDE.md` 3bg
   lists what the first runs found in the service and the warnings that stay.
 
+### THE OTHER PLANS (#187, 2026-09-24)
+
+rcbj's #187: every other plan of the suite that applies. Five jobs beside
+the FAPI one, one per specification family, rather than one table, because
+each family's plans need a different OPERATOR — the FAPI job's CIBA
+approver was the first — and a job is the unit the runner's watchdog,
+report and `--only=` work in: the OpenID Connect plans take the better part
+of two hours on their own. What they share is
+`tests/vendored/conformance_suite.js` (LOCAL_HELPERS): the suite's API, a
+plan run module by module with an `onWaiting` hook for the operator steps,
+the throwaway realm and person, and THE LEDGER. The FAPI job keeps its own
+copy of the API client, so its four plans' behaviour did not move; its
+PLANS table grew the variant matrix (mutual TLS as client authentication
+and sender constraint, PAR with JARM under FAPI 1.0 Advanced, Grant
+Management under Message Signing, CIBA ping).
+
+* **The ledger is stricter than the FAPI job's.** A WARNING fails the job
+  unless its condition is in the driver's `KNOWN_WARNINGS` with a reason, and
+  a FAILED module passes only when EVERY failure in it is from a condition in
+  `KNOWN_FAILURES` (or, for one module, `<plan>/<module>/<condition>`) —
+  keyed by the suite's condition and not by the module, so one argued
+  difference cannot hide the next failure in the same module.
+  `oauth-oidc/CLAUDE.md` 3bh carries the same reasons.
+* **The suite's certificate is minted at run time** (`conformance-tls`, a
+  fourth service in the `conformance` profile, mailpit-tls's arrangement):
+  the image's own is `CN=localhost` with no subject alternative name, so
+  nothing the SERVICE sends the suite — a Logout Token, a pushed SET, a CIBA
+  ping, a request_uri or jwks_uri fetch — could be verified. The realms name
+  `/run/sts-test/conformance/server.crt` as `federation.outboundCaFile` and
+  `ssf.pushCaFile`, and the drivers verify the suite's API against it.
+* **The operators**: SSF's CAEP interop module waits for events the
+  transmitter's operator triggers (the job signs the person in and emits
+  them through `/admin-api/caep/emit`); an issuer-initiated OpenID4VCI module
+  waits for an offer and a pre-authorized one for its transaction code (the
+  job reads both off the realm's own offer page, whose wallet URL is the
+  suite's offer endpoint); the OpenID4VP verifier plan waits for the
+  Verifier to send the End-User to the wallet (the job follows the realm's
+  start page).
+* **Realm settings that differ from the default, each argued in its
+  driver**: `oauth2.codeReplayIdempotent` off (the test stack's appconfig
+  turns it on for the parent's `oauth2_sts_endpoints.js`),
+  `oauth2.requestUriFragmentCheck` off (the suite's request_uri fragments are
+  hashes of random bytes), `oauth2.sessionManagement` on for its plan.
+* **Not run**: the relying-party plans (this service is nobody's RP but its
+  own), the Brazil and panva plans, the superseded drafts, AuthZEN, and the
+  SSF receiver plans (#153). The suite publishes no push-mode FAPI-CIBA plan.
+
 **By hand, beside a service of your own**: start the three images on one
 docker network with the aliases above (`mongodb`, `server`,
 `localhost.emobix.co.uk`; the server wants the placeholder
 `OIDC_GOOGLE_*`/`OIDC_GITLAB_*` values the compose file passes), then run the
 job from the tests image on that network with `CONFORMANCE_SUITE_URL`,
 `CONFORMANCE_CALLBACK_HOST` (its own name there, for the CIBA approver) and
-`CONFORMANCE_PLANS=fapi2sp,fapi2ms,fapi1adv,fapiciba` to choose. The suite's
+`CONFORMANCE_PLANS=fapi2sp,fapi2ms,fapi1adv,fapiciba` to choose (a key, or a
+prefix ending `*`, in the #187 jobs: `CONFORMANCE_PLANS='t-*,logout-*'`),
+and mint the suite a certificate for its name the way `conformance-tls`
+does. The suite's
 own pages at `https://localhost.emobix.co.uk:8443/plan-detail.html?plan=<id>`
 (the job logs the id) show every module's log.
 
