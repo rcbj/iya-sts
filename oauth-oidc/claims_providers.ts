@@ -1089,9 +1089,11 @@ class ClaimsProviders {
       message = 'The link of "' + body.username + '" to "' + body.provider +
                 '" was revoked.';
     } else {
-      return refuse('STS-OAUTH-0686', 'unknown action "' + action + '": ' +
-                    'add-provider, update-provider, remove-provider, ' +
-                    'revoke-link');
+      // The sentence `tests/vendored/admin_api.js` reads to check that every
+      // console action has an operation: it names them, with their count.
+      return refuse('STS-OAUTH-0686', 'Unknown action "' + action + '". ' +
+                    'The four are: add-provider, update-provider, ' +
+                    'remove-provider and revoke-link.');
     }
     try {
       audit().record({ category: 'admin',
