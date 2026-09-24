@@ -419,6 +419,11 @@ class ProtocolStack {
     // #131: OpenID Connect CIBA's requests, approvals and notifications — a
     // library whose wire step registers the `oauth2.ciba-sweep` job.
     this.build('oauth-oidc/ciba', require('../oauth-oidc/ciba'), 'Ciba');
+    // Grant Management (#142): a library `oauth2` reads at every issuance,
+    // whose wire step registers the `oauth2.grant-management-purge` job; its
+    // routes (/oauth2/grants/{id}) are registered just after `oauth2`'s.
+    this.build('oauth-oidc/grant_management',
+               require('../oauth-oidc/grant_management'), 'GrantManagement');
     this.build('oauth-oidc/refresh_token_crypto',
                require('../oauth-oidc/refresh_token_crypto'),
                'RefreshTokenCrypto');
@@ -449,6 +454,8 @@ class ProtocolStack {
     // below, where the module is nominally required, would move them.
     this.register(app, require('../oid4vc/vc_offers'), 'oid4vc/vc_offers');
     this.register(app, require('../oauth-oidc/oauth2'), 'oauth-oidc/oauth2');
+    this.register(app, require('../oauth-oidc/grant_management'),
+                  'oauth-oidc/grant_management');
     // WS-Federation's passive requestor profile. It must come AFTER authn.js
     // and the order is a dependency and not a preference: it signs users in to
     // the session that service owns (startSession/sessionOf), so that single
@@ -984,6 +991,16 @@ class ProtocolStack {
                'MailAdmin');
     this.register(app, require('../admin-ui/mail_admin'),
                   'admin-ui/mail_admin');
+    // 18m. GRANT MANAGEMENT (#142): Monitoring → Grants, beside Consent. 18a's
+    // placement and 18a's reason: the console's shell and the grant register
+    // (built at 9) already loaded, and `mgmt-api/admin_api` reads the API's
+    // routes out of `grant_management_api`, built below.
+    require('../oauth-oidc/grant_management_admin');
+    this.build('oauth-oidc/grant_management_admin',
+               require('../oauth-oidc/grant_management_admin'),
+               'GrantManagementAdmin');
+    this.register(app, require('../oauth-oidc/grant_management_admin'),
+                  'oauth-oidc/grant_management_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module
@@ -1005,6 +1022,9 @@ class ProtocolStack {
     this.build('oauth-oidc/oauth2_monitor_api',
                require('../oauth-oidc/oauth2_monitor_api'),
                'OAuth2MonitorApi');
+    this.build('oauth-oidc/grant_management_api',
+               require('../oauth-oidc/grant_management_api'),
+               'GrantManagementApi');
     this.build('mgmt-api/admin_api', require('../mgmt-api/admin_api'),
                'AdminApi');
     this.register(app, require('../mgmt-api/admin_api'), 'mgmt-api/admin_api');

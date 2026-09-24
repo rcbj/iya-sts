@@ -6829,6 +6829,61 @@ const CODES = [
       'issuance policy refused, or the person is gone — and the client is ' +
       'sent transaction_failed (#131).',
     spec: 'none — pushed as transaction_failed' },
+  { code: 'STS-OAUTH-0662',
+    summary: 'FAPI-CIBA: a client registered for the push delivery mode ' +
+      'asked for backchannel authentication under a FAPI profile, which ' +
+      'allows poll and ping only (#142).',
+    spec: 'unauthorized_client' },
+  { code: 'STS-OAUTH-0663',
+    summary: 'FAPI-CIBA: a backchannel authentication request under a FAPI ' +
+      'profile carried no binding_message (#142).',
+    spec: 'invalid_request' },
+  { code: 'STS-OAUTH-0664',
+    summary: 'A backchannel authentication request\'s request_context was ' +
+      'not a JSON object of at most 4096 characters (FAPI-CIBA section 5.3, ' +
+      '#142).',
+    spec: 'invalid_request' },
+  { code: 'STS-OAUTH-0665',
+    summary: 'Grant Management: grant_management_action was unknown, or ' +
+      'grant_id came with no action or with create, or merge or replace ' +
+      'named no grant_id (#142).',
+    spec: 'invalid_request' },
+  { code: 'STS-OAUTH-0666',
+    summary: 'Grant Management was asked for by a public client; it is for ' +
+      'confidential clients only (#142).',
+    spec: 'invalid_request' },
+  { code: 'STS-OAUTH-0667',
+    summary: 'Grant Management was asked for with a response_type that ' +
+      'returns an access token from the authorization endpoint (#142).',
+    spec: 'invalid_request' },
+  { code: 'STS-OAUTH-0668',
+    summary: 'A grant_id names no grant of this client, or not the ' +
+      'signed-in person\'s (#142).',
+    spec: 'invalid_grant_id' },
+  { code: 'STS-OAUTH-0669',
+    summary: 'The grant a code or CIBA request was to merge or replace was ' +
+      'revoked before its tokens were claimed (#142).',
+    spec: 'invalid_grant' },
+  { code: 'STS-OAUTH-0670',
+    summary: 'A refresh token\'s grant was revoked, or merged or replaced ' +
+      'since it was issued (#142).',
+    spec: 'invalid_grant' },
+  { code: 'STS-OAUTH-0671',
+    summary: 'The grant management API was called with no access token this ' +
+      'service issued, or a revoked one (#142).',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-OAUTH-0672',
+    summary: 'The grant management API was called without the ' +
+      'grant_management_query or grant_management_revoke scope a declaring ' +
+      'client holds, or for another client\'s grant (#142).',
+    spec: 'insufficient_scope (HTTP 403)' },
+  { code: 'STS-OAUTH-0673',
+    summary: 'The grant management API was asked about a grant_id nobody ' +
+      'holds (#142).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OAUTH-0674',
+    summary: 'The grant management endpoint failed unexpectedly (#142).',
+    spec: 'server_error (HTTP 500)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -15488,6 +15543,10 @@ const CODES = [
       'backchannel_token_delivery_mode, no https notification endpoint for ' +
       'ping or push, a signing algorithm that is not asymmetric, or a user ' +
       'code parameter that is not a boolean (#131).',
+    spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0198',
+    summary: 'FAPI-CIBA: a registration under a FAPI profile asked for the ' +
+      'push delivery mode, which the profile does not allow (#142).',
     spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +

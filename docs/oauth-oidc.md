@@ -1110,6 +1110,69 @@ detail naming a configuration the Credential Offer did not is refused, and the
 refresh grant carries the granted details forward. See
 [OpenID4VCI](oid4vci.md).
 
+### Lodging an intent (the FAPI lodging intent pattern)
+
+The lodging intent pattern keeps a large or sensitive authorization request —
+a payment, a consent to share accounts — off the browser: the client lodges
+it with the authorization server first, and the browser carries only a
+reference. Here that is **rich authorization requests pushed through PAR**,
+and there is no separate intent endpoint:
+
+1. The client POSTs its `authorization_details` (and the rest of the request)
+   to `/oauth2/par`, authenticating as it does at the token endpoint. The
+   details are validated against the type the resource application declared.
+2. The answer is a `request_uri` — the lodged intent's reference.
+3. The browser goes to `/oauth2/authorize?client_id=…&request_uri=…`. The
+   person sees each detail on the consent screen and approves it.
+4. The token is addressed to the type's resource, and the token response
+   carries the approved `authorization_details` back.
+
+```
+POST /oauth2/par
+client_id=bank-app&response_type=code&redirect_uri=https%3A%2F%2Fapp.example%2Fcb
+&code_challenge=…&code_challenge_method=S256
+&authorization_details=[{"type":"payment_initiation","actions":["initiate"],
+  "locations":["https://pay.bank.example/"],
+  "instructedAmount":{"currency":"EUR","amount":"12.50"}}]
+```
+
+### Grant management (Grant Management for OAuth 2.0)
+
+A **confidential** client can name and manage what a person let it do
+([Grant Management for OAuth 2.0](https://github.com/openid/fapi/blob/main/oauth-v2-grant-management.md),
+draft 03). It is on in every mode.
+
+* **Creating, merging and replacing.** An authorization request (or a pushed
+  or signed one, or a CIBA request) carries `grant_management_action`:
+  `create` makes a new grant; `merge` adds this request's permissions to the
+  grant named by `grant_id`; `replace` makes that grant hold only this
+  request's. The token response carries `grant_id`.
+* **A grant exists once its tokens are claimed** at the token endpoint. An
+  authorization nobody redeems leaves nothing behind.
+* **Merge and replace invalidate the refresh tokens issued before**, on every
+  node. A merge carries the grant's earlier scopes forward only while the
+  person's consent still covers them.
+* **Reading and revoking.** `GET /oauth2/grants/{grant_id}` answers the
+  grant: its `scopes` (with their `resource`s), `claims`,
+  `authorization_details`, `created_at`, `last_updated`, `expires_at` and
+  `updated_by`. `DELETE` revokes it (204): every refresh token issued under it
+  is refused from then on, and every token this realm recorded under it is
+  revoked. Both need an access token of **the client that holds the grant**,
+  carrying `grant_management_query` or `grant_management_revoke`. These are
+  protected scopes: the client must declare them (`oauthAllowedScope`).
+* **A grant expires with its last token.** The hourly
+  `oauth2.grant-management-purge` job removes it then.
+* **Refusals.** `invalid_request` for an unknown action, a `grant_id` with
+  `create` or without an action, `merge` or `replace` without a `grant_id`, a
+  public client, or a response type that returns an access token from the
+  authorization endpoint; `invalid_grant_id` for a grant this client and this
+  person do not hold.
+
+The console lists every grant on **Monitoring → Grants** (`/admin/grants`,
+`GET /admin-api/grants`), with a Revoke button each
+(`POST /admin-api/grants/revoke-grant`). What the person agreed to is
+**Consent**, beside it.
+
 ### Introspection and revocation
 
 `POST /oauth2/introspect` answers as

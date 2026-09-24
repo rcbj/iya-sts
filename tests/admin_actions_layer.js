@@ -461,6 +461,10 @@ function checkNothingRequiresItEarly(t) {
                    // for the gate state only — who acted — required LAZILY
                    // in the request; the page is 23g-ii, after the console.
                    'oidfed/oidfed_admin.ts',
+                   // The Grants page (#142, 2026-09-24), for the gate state
+                   // only — who revoked — required LAZILY in the request;
+                   // the page is 18m, after the console.
+                   'oauth-oidc/grant_management_admin.ts',
                    // The composition root (#50, R2), which builds every
                    // converted module's instance — these two layers
                    // included — after the require step that loaded them,

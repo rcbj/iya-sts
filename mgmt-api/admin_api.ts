@@ -409,6 +409,7 @@ interface AdminApiDeps {
   loadScepApi(): typeof import('../scep/scep_api');
   loadOidfedApi(): typeof import('../oidfed/oidfed_api');
   loadOauth2MonitorApi(): typeof import('../oauth-oidc/oauth2_monitor_api');
+  loadGrantManagementApi(): typeof import('../oauth-oidc/grant_management_api');
 }
 
 type RouteApp = typeof app;
@@ -486,6 +487,9 @@ class AdminApi {
       },
       loadOauth2MonitorApi: function () {
         return require('../oauth-oidc/oauth2_monitor_api');
+      },
+      loadGrantManagementApi: function () {
+        return require('../oauth-oidc/grant_management_api');
       }
     };
   }
@@ -1689,7 +1693,8 @@ class AdminApi {
             cachesAdmin, parseBody, loadApiExplorer, admin, adminActions, rbac, helpers,
             realms, stats, resourceMetadata, applications, loadGnapConsole, pki,
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
-            loadScepApi, loadOidfedApi, loadOauth2MonitorApi } = this.deps;
+            loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
+            loadGrantManagementApi } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
     const ROUTES: any[] = [
@@ -17462,7 +17467,9 @@ class AdminApi {
       // THE OAUTH 2.0 / OIDC MONITORING PAGE (2026-09-13), declared beside its
       // family in the same shape: no route registered there, and its view model
       // required lazily inside each handler.
-      ...loadOauth2MonitorApi().ROUTES
+      ...loadOauth2MonitorApi().ROUTES,
+      // GRANT MANAGEMENT (#142): /admin/grants' twin, in the same shape.
+      ...loadGrantManagementApi().ROUTES
     ];
     log.debug("Leaving AdminApi.buildRoutes().");
     return ROUTES;

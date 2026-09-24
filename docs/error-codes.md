@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3416** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3430** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 248
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 541
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 554
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -85,7 +85,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 70
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 130
+* [Registries (`STS-REG`)](#sts-reg) — 131
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -1694,6 +1694,19 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0659` | The person denied the CIBA request (#131). | access_denied (HTTP 400) |
 | `STS-OAUTH-0660` | A CIBA request's tokens had already been issued (#131). | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0661` | The tokens for an approved CIBA push could not be minted — the issuance policy refused, or the person is gone — and the client is sent transaction_failed (#131). | none — pushed as transaction_failed |
+| `STS-OAUTH-0662` | FAPI-CIBA: a client registered for the push delivery mode asked for backchannel authentication under a FAPI profile, which allows poll and ping only (#142). | unauthorized_client |
+| `STS-OAUTH-0663` | FAPI-CIBA: a backchannel authentication request under a FAPI profile carried no binding_message (#142). | invalid_request |
+| `STS-OAUTH-0664` | A backchannel authentication request's request_context was not a JSON object of at most 4096 characters (FAPI-CIBA section 5.3, #142). | invalid_request |
+| `STS-OAUTH-0665` | Grant Management: grant_management_action was unknown, or grant_id came with no action or with create, or merge or replace named no grant_id (#142). | invalid_request |
+| `STS-OAUTH-0666` | Grant Management was asked for by a public client; it is for confidential clients only (#142). | invalid_request |
+| `STS-OAUTH-0667` | Grant Management was asked for with a response_type that returns an access token from the authorization endpoint (#142). | invalid_request |
+| `STS-OAUTH-0668` | A grant_id names no grant of this client, or not the signed-in person's (#142). | invalid_grant_id |
+| `STS-OAUTH-0669` | The grant a code or CIBA request was to merge or replace was revoked before its tokens were claimed (#142). | invalid_grant |
+| `STS-OAUTH-0670` | A refresh token's grant was revoked, or merged or replaced since it was issued (#142). | invalid_grant |
+| `STS-OAUTH-0671` | The grant management API was called with no access token this service issued, or a revoked one (#142). | invalid_token (HTTP 401) |
+| `STS-OAUTH-0672` | The grant management API was called without the grant_management_query or grant_management_revoke scope a declaring client holds, or for another client's grant (#142). | insufficient_scope (HTTP 403) |
+| `STS-OAUTH-0673` | The grant management API was asked about a grant_id nobody holds (#142). | HTTP 404 |
+| `STS-OAUTH-0674` | The grant management endpoint failed unexpectedly (#142). | server_error (HTTP 500) |
 
 ## STS-SAML
 
@@ -3825,6 +3838,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0195` | A write of gnapMtlsTrust on an application was refused: the value is neither pki nor pinned (#107). | console: the page's error list; /admin-api: HTTP 400 |
 | `STS-REG-0196` | A write of gnapMtlsTrust=pinned on an application was refused because the realm holds GNAP mutual TLS to a PKI (gnap.mtlsTrust resolves to pki); an entry may be stricter than the realm, never weaker (#107). | console: the page's error list; /admin-api: HTTP 400 |
 | `STS-REG-0197` | A registration's CIBA metadata was refused: an unknown backchannel_token_delivery_mode, no https notification endpoint for ping or push, a signing algorithm that is not asymmetric, or a user code parameter that is not a boolean (#131). | invalid_client_metadata (HTTP 400) |
+| `STS-REG-0198` | FAPI-CIBA: a registration under a FAPI profile asked for the push delivery mode, which the profile does not allow (#142). | invalid_client_metadata (HTTP 400) |
 
 ## STS-DBG
 

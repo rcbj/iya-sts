@@ -1779,8 +1779,11 @@ const SPECS: Spec[] = [
   { id: 'rfc8705', name: 'RFC 8705 — Mutual-TLS Client Authentication and ' +
                          'Certificate-Bound Access Tokens',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8705',
-    coverage: 'partial — sections 2, 3 and 4 in full, section 5\'s ' +
-              'mtls_endpoint_aliases not published. SECTION 2: ' +
+    coverage: 'full — sections 2 to 5. SECTION 5 (#139): where the main ' +
+              'port asks for a client certificate every endpoint that ' +
+              'reads one is its own alias, so mtls_endpoint_aliases names ' +
+              'the token, revocation, introspection, PAR and UserInfo ' +
+              'endpoints at their own addresses. SECTION 2: ' +
               'tls_client_auth authenticates a certificate whose chain ' +
               'verified, issued by this realm to the application ' +
               '(urn:sts:application:) or carrying the one of the five ' +
@@ -2153,6 +2156,43 @@ const SPECS: Spec[] = [
               'guidance, answered in docs/oauth-security.md. The console, ' +
               'portal and debugger conform. RFC 9421 HTTP signatures are NOT ' +
               'part of the final specification and are #178.' },
+  { id: 'fapi-ciba', name: 'FAPI: Client Initiated Backchannel ' +
+                          'Authentication Profile',
+    where: 'OpenID Foundation',
+    url: 'https://github.com/openid/fapi/blob/main/fapi-ciba.md',
+    coverage: 'full for the authorization server (#142), wherever a FAPI ' +
+              'profile (oauth2.fapi) and CIBA (oauth2.ciba) are both on — ' +
+              'no setting of its own: confidential clients authenticated ' +
+              'as the profile allows, a client assertion in its algorithms ' +
+              'and FAPI 2.0\'s timestamps; a binding_message required; ' +
+              'poll and ping only — push dropped from the metadata and ' +
+              'refused at registration and at the endpoint; signed and ' +
+              'unsigned requests, a signed one lasting at most 60 minutes ' +
+              'and signed with the profile\'s algorithms; request_context ' +
+              'accepted and shown to the person approving; tokens ' +
+              'sender-constrained at the token endpoint as for every grant ' +
+              'under the profile. MISSING: ' +
+              'backchannel_endpoint_login_hint_token_types (both OPTIONAL).' },
+  { id: 'oauth-grant-management', name: 'Grant Management for OAuth 2.0 ' +
+                                        '(draft 03)',
+    where: 'OpenID Foundation (FAPI)',
+    url: 'https://github.com/openid/fapi/blob/main/' +
+         'oauth-v2-grant-management.md',
+    coverage: 'full (#142), in every mode: grant_management_action create, ' +
+              'merge and replace, and grant_id, at the authorization ' +
+              'endpoint (PAR and JAR included) and the CIBA endpoint; ' +
+              'grant_id in the token response; confidential clients only; ' +
+              'invalid_grant_id and invalid_request as the draft names ' +
+              'them; a grant written when its tokens are claimed and never ' +
+              'before; merge and replace invalidating the earlier refresh ' +
+              'tokens by generation, on every node; GET and DELETE ' +
+              '/oauth2/grants/{grant_id} under grant_management_query and ' +
+              'grant_management_revoke, protected scopes a client must ' +
+              'declare; DELETE revoking the grant and every token recorded ' +
+              'under it; grant_management_actions_supported and ' +
+              'grant_management_endpoint. A grant expires with its last ' +
+              'token. MISSING: grant_management_action_required (OPTIONAL, ' +
+              'false here); sharing a grant between client ids.' },
   { id: 'jarm', name: 'JWT Secured Authorization Response Mode for OAuth ' +
                      '2.0 (JARM)',
     where: 'OpenID Foundation',
@@ -9908,9 +9948,29 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'delete-pushed-request: a request_uri removed from the realm\'s ' +
           'store and refused invalid_request_uri at the authorization ' +
           'endpoint afterwards, through the same function as the console.' },
+  { path: '/oauth2/grants/:grantId', group: 'OAuth 2.0 / OIDC',
+    name: 'Grant Management API', specs: ['oauth-grant-management'],
+    what: 'GET or DELETE (#142): the grant resource a client\'s grant_id ' +
+          'names — scopes and resources, claims, authorization_details, ' +
+          'created_at, last_updated, expires_at, updated_by — or its ' +
+          'revocation (204), which revokes every token under it. An ' +
+          'access token of the client, with grant_management_query or ' +
+          'grant_management_revoke. no-store.' },
+  { path: '/admin/grants', group: 'OAuth 2.0 / OIDC',
+    name: 'The Grants console page', specs: ['oauth-grant-management'],
+    what: 'Monitoring > Grants (#142): every grant the realm holds, with a ' +
+          'Revoke button each.' },
+  { path: '/admin-api/grants', group: 'OAuth 2.0 / OIDC',
+    name: 'The Grants console page over JSON',
+    specs: ['oauth-grant-management'],
+    what: 'What GET /admin/grants draws, out of the same call.' },
+  { path: '/admin-api/grants/:action', group: 'OAuth 2.0 / OIDC',
+    name: 'Revoke a grant', specs: ['oauth-grant-management'],
+    what: 'revoke-grant: what a client\'s DELETE does, done by an ' +
+          'administrator.' },
   { path: '/oauth2/bc-authorize', group: 'OAuth 2.0 / OIDC',
     name: 'Backchannel Authentication Endpoint (CIBA)',
-    specs: ['oidc-ciba'],
+    specs: ['oidc-ciba', 'fapi-ciba', 'oauth-grant-management'],
     what: 'OpenID Connect CIBA section 7 (#131): a client that cannot show ' +
           'the person a browser asks to authenticate them elsewhere; the ' +
           'person approves on /portal/ciba. Answers the acknowledgement ' +
@@ -10562,7 +10622,7 @@ const PROTOCOLS: Protocol[] = [
   { name: 'OAuth2 / OIDC', groups: ['OAuth 2.0 / OIDC'],
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
             'oidc-session', 'oidc-ida-claims', 'oidc-ida', 'oidc-native-sso',
-            'oidc-ciba'],
+            'oidc-ciba', 'fapi-ciba', 'oauth-grant-management'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +

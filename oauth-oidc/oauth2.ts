@@ -308,6 +308,7 @@ import devices = require('../common/devices');
 // notifications — a library over `common/` and `federation_http`; it reaches
 // this file back only lazily, for a push.
 import ciba = require('./ciba');
+import grantManagement = require('./grant_management');
 import usedAssertions = require('../common/used_assertions');
 // THE ROLE GATE. A LEAF (rule 3): it registers nothing, requires `helpers`,
 // `config` and `error_codes` and nothing else here, and answers "allowed" in
@@ -465,6 +466,7 @@ interface OAuth2ServerDeps {
   identityAssurance: typeof identityAssurance;
   devices: typeof devices;
   ciba: typeof ciba;
+  grantManagement: typeof grantManagement;
   // OpenID Federation client registration (#134), LAZILY: `oidfed/` is
   // loaded after this module (14b) and reaches it back for its metadata.
   federatedRegistration: () => Json;
@@ -1028,6 +1030,9 @@ const AUTHORIZE_QUERY = vz.looseObject({
   // RFC 9449 section 10, RFC 9396, and OpenID4VCI's issuer_state.
   dpop_jkt: vt.opt(vt.base64url),
   authorization_details: vz.string().max(validation.CAP.TEXT).optional(),
+  // Grant Management for OAuth 2.0 (#142).
+  grant_id: vz.string().max(128).optional(),
+  grant_management_action: vz.string().max(16).optional(),
   issuer_state: vt.opt(vt.opaque),
 
   // This service's own round-trip fields, put in the URL by its OWN screens and
@@ -1400,6 +1405,11 @@ const CIBA_FORM = vz.looseObject({
   user_code: vz.string().max(256).optional(),
   requested_expiry: vz.string().max(16).optional(),
   request: vz.string().max(validation.CAP.TEXT).optional(),
+  // FAPI-CIBA section 5.3 (#142): a JSON object, as its text in a form.
+  request_context: vz.string().max(4096).optional(),
+  // Grant Management for OAuth 2.0 (#142), which a CIBA request may carry.
+  grant_id: vz.string().max(128).optional(),
+  grant_management_action: vz.string().max(16).optional(),
   client_id: vt.opt(vt.identifier),
   client_secret: vz.string().max(1024).optional()
 });
@@ -1590,6 +1600,7 @@ class OAuth2Server {
       identityAssurance: identityAssurance,
       devices: devices,
       ciba: ciba,
+      grantManagement: grantManagement,
       federatedRegistration: function (): Json {
         return require('../oidfed/oidfed_registration');
       },
@@ -2036,6 +2047,10 @@ class OAuth2Server {
       });
       (metadata as Json).mtls_endpoint_aliases = aliases;
     }
+    // GRANT MANAGEMENT (#142), in every mode: the actions and the API. The
+    // API is the REALM's (`/oauth2/grants`), whichever of its authorization
+    // servers issued the grant.
+    Object.assign(metadata, this.deps.grantManagement.metadata(base));
     // RFC 9700 mode, when it is on, narrows three of the members above:
     // response_types_supported loses everything that would issue an access
     // token from the authorization endpoint, grant_types_supported loses
@@ -2877,6 +2892,20 @@ class OAuth2Server {
     // went on answering with its own would leave two documents from one process
     // disagreeing about who issued the tokens they describe.
     if (issuer && !config.value('oauth2.issuer')) metadata.issuer = issuer;
+    // OPENID CONNECT CIBA section 4 (#131), where it is on: a
+    // grant_types_supported member is a promise. BEFORE the profile is
+    // applied again below (#142): FAPI-CIBA takes push out of the modes and
+    // narrows the request's signing algorithms, and members added after the
+    // profile ran were published whole under it.
+    if (this.deps.ciba.enabled()) {
+      metadata.backchannel_authentication_endpoint = base +
+        '/oauth2/bc-authorize';
+      metadata.backchannel_token_delivery_modes_supported =
+        ['poll', 'ping', 'push'];
+      metadata.backchannel_authentication_request_signing_alg_values_supported =
+        this.deps.stsCrypto.JWS_ASYMMETRIC_ALGS.slice(0);
+      metadata.backchannel_user_code_parameter_supported = true;
+    }
     // FAPI, AGAIN (#139), for the profile's reason below: the merge above put
     // back the OIDC members Advanced narrows — the ID Token and UserInfo
     // algorithm lists — and UserInfo reads a client certificate too. Inside a
@@ -2905,17 +2934,6 @@ class OAuth2Server {
                   this.deps.identityAssurance.discoveryMetadata());
     // OPENID CONNECT NATIVE SSO section 5 (#130).
     metadata.native_sso_supported = true;
-    // OPENID CONNECT CIBA section 4 (#131), where it is on: a
-    // grant_types_supported member is a promise.
-    if (this.deps.ciba.enabled()) {
-      metadata.backchannel_authentication_endpoint = base +
-        '/oauth2/bc-authorize';
-      metadata.backchannel_token_delivery_modes_supported =
-        ['poll', 'ping', 'push'];
-      metadata.backchannel_authentication_request_signing_alg_values_supported =
-        this.deps.stsCrypto.JWS_ASYMMETRIC_ALGS.slice(0);
-      metadata.backchannel_user_code_parameter_supported = true;
-    }
     // THE PROFILE, AGAIN, and it has to be applied twice.
     //
     // asMetadata() applied it already — and then the Object.assign above
@@ -3698,7 +3716,13 @@ class OAuth2Server {
       // every other grant is the root of its own.
       grant_at: Number(opts.grant_at) > 0 ? Number(opts.grant_at) :
                 Date.now(),
-      grant_type: String(opts.origin_grant || opts.grant || '') || undefined
+      grant_type: String(opts.origin_grant || opts.grant || '') || undefined,
+      // GRANT MANAGEMENT (#142), inside the JWE: the grant this token was
+      // issued under and its generation, which the refresh grant holds
+      // against the register — a grant revoked, or merged or replaced since,
+      // refuses it on every node.
+      grant_id: opts.grant_id ? String(opts.grant_id) : undefined,
+      grant_gen: opts.grant_id ? Number(opts.grant_gen) || 1 : undefined
     };
     if (opts.request) {
       payload.cnf = mtls.confirmationFor(opts.request, payload.cnf);
@@ -3738,6 +3762,12 @@ class OAuth2Server {
     // two expires.
     bcp.noteGrantTokens(familyId, refreshJti, opts.access_jti, opts.client_id,
                         Math.max(payload.exp, Number(opts.access_exp) || 0));
+    // And under its Grant Management grant (#142), for a DELETE to reach.
+    if (opts.grant_id) {
+      self.deps.grantManagement.noteIssued(String(opts.grant_id),
+        Number(opts.grant_gen) || 1, refreshJti, 'refresh_token',
+        payload.exp);
+    }
     log.debug("Leaving OAuth2Server.refreshToken().");
     return token;
   }
@@ -4392,6 +4422,16 @@ class OAuth2Server {
     };
     if (opts.authorization_details) body.authorization_details =
         opts.authorization_details;
+    // GRANT MANAGEMENT (#142): the grant these tokens were issued under —
+    // required in the response to an authorization that named an action,
+    // and handed back on its refreshes too. The access token is recorded
+    // under it, for a DELETE to reach.
+    if (opts.grant_id) {
+      body.grant_id = String(opts.grant_id);
+      this.deps.grantManagement.noteIssued(String(opts.grant_id),
+        Number(opts.grant_gen) || 1, String(self.jtiOf(access) || ''),
+        'access_token', this.deps.nowSec() + Number(body.expires_in || 0));
+    }
     if (opts.withRefresh !== false) {
       // THE REFRESH TOKEN KEEPS THE WHOLE SCOPE, and that is the one place the
       // two halves of a grant deliberately disagree. The access token's scope
@@ -6391,6 +6431,44 @@ class OAuth2Server {
                   claimsRequest);
     }
 
+    // GRANT MANAGEMENT (#142): the person is known and has agreed, so this is
+    // where a merge or replace is checked to be THEIR grant, and where what
+    // the grant will hold is fixed — the code carries the plan, and the
+    // grant is written only when its tokens are claimed. A merge carries the
+    // grant's earlier scopes forward only while the person's consent still
+    // covers them (a withdrawn one is not issued again unasked).
+    const consentRegister = self.deps.consent;
+    const grantPlan = self.deps.grantManagement.planFor({
+      params: query, clientId: String(query.client_id), sub: user.sub,
+      scope: scope, resources: resources,
+      authorizationDetails: authorizationDetails, claims: claimsRequest,
+      stillConsented: function (earlier: string): string {
+        log.debug("Entering stillConsented().");
+        if (!consentRegister.required()) {
+          log.debug("Leaving stillConsented(). Consent is not required.");
+          return earlier;
+        }
+        const gone = (consentRegister.outstanding({
+          clientId: String(query.client_id), username: user.username,
+          scope: earlier }) || {}).names || [];
+        log.debug("Leaving stillConsented(). " + gone.length + " withdrawn.");
+        return earlier.split(/\s+/).filter(function (one: string) {
+          return one && gone.indexOf(one) < 0;
+        }).join(' ');
+      }
+    });
+    if (!grantPlan.ok) {
+      log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). Grant " +
+                "management: not this person's grant.");
+      errorCodes.mark(res, grantPlan.refusal.code);
+      return self.redirectBack(res, base, redirectUri, query.state,
+        { error: grantPlan.refusal.error,
+          error_description: grantPlan.refusal.description },
+        self.usesFragment(types, query.response_mode),
+        query.response_mode);
+    }
+    const plan = grantPlan.plan;
+
     // RFC 9700 section 2.1.1 — the code_challenge and the nonce must be
     // transaction-specific. Checked HERE, immediately before anything is
     // minted, and nowhere else: this same request runs through the
@@ -6545,7 +6623,10 @@ class OAuth2Server {
       const code = randomId(24);
       authzCodes.set(code, {
         client_id: String(query.client_id), redirect_uri: redirectUri,
-        scope: scope,
+        // A merged grant's whole scope (#142), the request's otherwise.
+        scope: plan ? plan.scope : scope,
+        // What the grant will be once this code's tokens are claimed.
+        grant_management: plan,
         nonce: query.nonce, user: user, auth_time: authTime, amr: amr, acr: acr,
         // Carried on the code so that the tokens the code is redeemed for can
         // name the session it was issued on. It is the only route between the
@@ -6571,8 +6652,9 @@ class OAuth2Server {
         // process serving several must not let a credential leak between them.
         authorization_server: self.profileOf(req),
         // RFC 8707: what the authorization request asked the token to be for.
-        // The token endpoint may narrow this and may not widen it.
-        resources: resources,
+        // The token endpoint may narrow this and may not widen it. A merged
+        // grant's whole set (#142).
+        resources: plan ? plan.resources : resources,
         code_challenge: query.code_challenge,
         code_challenge_method: query.code_challenge_method || 'plain',
         // RFC 9449 section 10: the JWK Thumbprint of the DPoP key the client
@@ -6582,13 +6664,16 @@ class OAuth2Server {
         dpop_jkt: query.dpop_jkt ? String(query.dpop_jkt) : '',
         // What the wallet asked to be authorized for, if it used
         // authorization_details rather than a scope. The token response has to
-        // echo it back with the credential_identifiers it grants.
-        authorization_details: authorizationDetails,
+        // echo it back with the credential_identifiers it grants. A merged
+        // grant's whole set (#142).
+        authorization_details: plan ? plan.authorizationDetails
+                                    : authorizationDetails,
         // OIDC Core 5.5's claims request, carried on the code for the same
         // reason everything else here is: the token endpoint has the client and
         // not the browser, so this is the only route between the request that
-        // was made and the tokens it is redeemed for.
-        claims: claimsRequest,
+        // was made and the tokens it is redeemed for. A merged grant's whole
+        // request (#142).
+        claims: plan ? plan.claims : claimsRequest,
         // OAUTH 2.1: whether this code was issued without PKCE under section
         // 7.5.1.1's OpenID Connect nonce exemption. The token endpoint then
         // requires the client to authenticate and still requires redirect_uri.
@@ -7728,6 +7813,25 @@ class OAuth2Server {
         }).join(', ') +
         ' cannot be an acr value — a value is printable ASCII ' +
         'with no double quote or backslash.');
+    }
+    // GRANT MANAGEMENT (#142): the two parameters' own rules, a
+    // confidential client, a flow that ends at the token endpoint, and a
+    // grant_id this client holds. Whose grant it is — the person's — is
+    // asked once they are known, in `issueAuthorizationResponse()`.
+    const grantProblem = self.deps.grantManagement.requestRefusal(q, {
+      clientId: String(q.client_id),
+      // Known, and declaring a method that authenticates: an unknown
+      // client_id and an entry declaring none are not confidential.
+      confidential: !!(registeredClient && registeredClient.known) &&
+        ['', 'none'].indexOf(String(
+          registeredClient.token_endpoint_auth_method || '')) < 0,
+      responseTypes: types
+    });
+    if (grantProblem) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). Grant " +
+                "management refused the request.");
+      return redirectable(grantProblem.code, grantProblem.error,
+                          grantProblem.description);
     }
     // -----------------------------------------------------------------------
     // OPENID CONNECT CORE'S OWN RULES ABOUT THE REQUEST, IN EVERY MODE (#118,
@@ -11442,6 +11546,18 @@ class OAuth2Server {
         return self.oauthError(res, 400, 'invalid_authorization_details',
                           detailsProblem);
       }
+      // GRANT MANAGEMENT (#142): a merge or replace whose grant was revoked
+      // since the code was issued has nothing left to change.
+      const grantGone = self.deps.grantManagement.redemptionRefusal(
+        record.grant_management);
+      if (grantGone) {
+        log.debug("Leaving the token endpoint. The grant is gone.");
+        errorCodes.mark(res, grantGone.code);
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        // error-code: none — marked above with the refusal's STS-OAUTH-0669.
+        return self.oauthError(res, 400, grantGone.error,
+                               grantGone.description);
+      }
       // SPENT HERE, below every refusal and above the mint — see the block
       // above `refuseConcurrentRedemption()` (#46). The in-memory lookup at the
       // top of this branch stays as the fast refusal; this is the one that
@@ -11500,8 +11616,15 @@ class OAuth2Server {
         // Off the code as well. What the client asked for at the authorization
         // endpoint is what the UserInfo endpoint honours, and the access token
         // is the only thing that reaches it.
-        claims: record.claims || null
+        claims: record.claims || null,
+        // The grant these tokens are claimed under (#142).
+        grant_id: record.grant_management ? record.grant_management.id
+                                          : undefined,
+        grant_gen: record.grant_management ? record.grant_management.gen
+                                           : undefined
       });
+      // THE GRANT IS WRITTEN NOW, its tokens claimed (#142) — never before.
+      self.deps.grantManagement.apply(record.grant_management || null);
       // Single use — and remembered as used, with what it bought, so that the
       // same request arriving again gets that answer back instead of a sentence
       // about a code nobody can look up any more.
@@ -11740,6 +11863,22 @@ class OAuth2Server {
         return self.oauthError(res, 400, 'invalid_grant',
                                'The refresh token was ' +
                                'revoked.');
+      }
+      // GRANT MANAGEMENT (#142): a token issued under a grant is refused once
+      // the grant is revoked, and once a merge or replace moved it to a new
+      // generation — the register is persisted, so on every node.
+      const grantProblem = self.deps.grantManagement.refreshRefusal(
+        claims.grant_id, claims.grant_gen, claims.client_id);
+      if (grantProblem) {
+        stats.revoke(String(claims.jti || ''), 'its grant is ' +
+                     'revoked or superseded');
+        log.debug("Leaving the token endpoint. Grant Management refused the " +
+                  "refresh.");
+        errorCodes.mark(res, grantProblem.code);
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        // error-code: none — marked above with the refusal's STS-OAUTH-0670.
+        return self.oauthError(res, 400, grantProblem.error,
+                               grantProblem.description);
       }
       // -------------------------------------------------------------------
       // THE CONSENT THIS GRANT STOOD ON, ASKED AGAIN (#172), in every mode.
@@ -12049,8 +12188,17 @@ class OAuth2Server {
         // unchanged, so a withdrawal is judged against when the person
         // granted it rather than when the client last renewed it.
         grant_at: claims.grant_at,
-        origin_grant: String(claims.grant_type || '')
+        origin_grant: String(claims.grant_type || ''),
+        // Still under the same grant and generation (#142), which the check
+        // above established is the grant's current one.
+        grant_id: claims.grant_id || undefined,
+        grant_gen: claims.grant_id ? claims.grant_gen : undefined
       });
+      // And the grant lives as long as what was just minted under it.
+      if (claims.grant_id) {
+        self.deps.grantManagement.extend(claims.grant_id,
+          self.deps.nowSec() + self.refreshTokenTtl(claims.client_id));
+      }
       // RFC 9700 section 2.2.2 — ROTATION. The token just redeemed is retired:
       // marked as rotated here (which is what makes a later presentation of it
       // a detectable REPLAY rather than an ordinary revocation) and revoked
@@ -12730,18 +12878,31 @@ class OAuth2Server {
       }
       const record = polled.record;
       const person = self.provisionedPerson(record.username);
+      const cibaGrantGone = self.deps.grantManagement.redemptionRefusal(
+        record.grantManagement || null);
+      if (cibaGrantGone) {
+        log.debug("Leaving OAuth2Server.tokenGrant(). CIBA: the grant is " +
+                  "gone.");
+        return cibaRefuse(cibaGrantGone.code, cibaGrantGone.error,
+                          cibaGrantGone.description);
+      }
       if (!person || !(await ciba.redeem(record))) {
         log.debug("Leaving OAuth2Server.tokenGrant(). CIBA: redeemed " +
                   "elsewhere, or nobody.");
         return cibaRefuse('STS-OAUTH-0660', 'invalid_grant', 'The tokens ' +
                           'for this request have already been issued.');
       }
+      const cibaPlan = record.grantManagement || null;
       const cibaIssued = await issue({
         jkt: dpopJkt, user: person, client_id: client.client_id,
-        scope: record.scope, auth_time: record.approval.authTime,
+        scope: cibaPlan ? cibaPlan.scope : record.scope,
+        auth_time: record.approval.authTime,
         amr: record.approval.amr, acr: record.approval.acr || undefined,
-        grant: 'ciba'
+        grant: 'ciba',
+        grant_id: cibaPlan ? cibaPlan.id : undefined,
+        grant_gen: cibaPlan ? cibaPlan.gen : undefined
       });
+      self.deps.grantManagement.apply(cibaPlan);
       log.debug("Leaving OAuth2Server.tokenGrant(). CIBA tokens issued.");
       return respond(cibaIssued);
     }
@@ -14688,7 +14849,7 @@ class OAuth2Server {
   }
 
   private async backchannelAuthentication(req: Req, res: Res): Promise<Json> {
-    const { log, parseBody, validation, errorCodes, applications, ciba,
+    const { log, parseBody, validation, errorCodes, applications, ciba, fapi,
             stepUp } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.backchannelAuthentication().");
@@ -14736,6 +14897,32 @@ class OAuth2Server {
       return undefined;
     }
     const clientId = String(caller.clientId);
+    // FAPI-CIBA section 5.2.2 (#142): the client authenticates as the
+    // profile allows, and a client assertion is signed with its algorithms
+    // and dated no later than it may be — the token endpoint's own checks.
+    const fapiAuth = fapi.clientAuthenticationRefusal(caller.method);
+    if (fapiAuth) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). FAPI " +
+                "refused the client's authentication method.");
+      return refuse(fapiAuth.errorCode || 'STS-OAUTH-0580', 401,
+                    fapiAuth.error, fapiAuth.description);
+    }
+    const assertion = self.clientFrom(req, body).assertion;
+    if (assertion) {
+      const fapiAlg = fapi.signingAlgRefusal(self.headerAlgOf(assertion),
+                                             'the client assertion');
+      const ahead = fapi.futureTimestampRefusal(
+        self.unverifiedClaimsOf(assertion), 'the client assertion');
+      const problem = fapiAlg || ahead;
+      if (problem) {
+        log.debug("Leaving OAuth2Server.backchannelAuthentication(). FAPI " +
+                  "refused the client assertion.");
+        return refuse(problem.errorCode || 'STS-OAUTH-0586',
+                      fapiAlg ? 401 : 400,
+                      fapiAlg ? 'invalid_client' : problem.error,
+                      problem.description);
+      }
+    }
     const registered = applications.cibaOf(clientId);
     if (!registered.mode) {
       log.debug("Leaving OAuth2Server.backchannelAuthentication(). Not a " +
@@ -14743,6 +14930,14 @@ class OAuth2Server {
       return refuse('STS-OAUTH-0642', 400, 'unauthorized_client', 'client "' +
                     clientId + '" registered no backchannel_token_delivery_' +
                     'mode, so it may not use CIBA (section 4).');
+    }
+    const fapiPush = fapi.cibaRefusal({ mode: registered.mode,
+                                        bindingMessage: 'checked below' });
+    if (fapiPush) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). " +
+                "FAPI-CIBA: push.");
+      return refuse(fapiPush.errorCode, 400, fapiPush.error,
+                    fapiPush.description);
     }
     const base = self.asBaseOf(req);
     const issuer = self.issuerOf(base);
@@ -14793,6 +14988,14 @@ class OAuth2Server {
       return refuse(hinted.code, 400, hinted.error, hinted.why);
     }
     const binding = String(params.binding_message || '');
+    const fapiBinding = fapi.cibaRefusal({ mode: registered.mode,
+                                           bindingMessage: binding });
+    if (fapiBinding) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). " +
+                "FAPI-CIBA: no binding message.");
+      return refuse(fapiBinding.errorCode, 400, fapiBinding.error,
+                    fapiBinding.description);
+    }
     if (binding.length > 200 || /[\u0000-\u001f\u007f]/.test(binding)) {
       log.debug("Leaving OAuth2Server.backchannelAuthentication(). The " +
                 "binding message.");
@@ -14833,9 +15036,74 @@ class OAuth2Server {
                     'client_notification_token is required of a ' +
                     registered.mode + ' client (section 7.1).');
     }
+    // FAPI-CIBA section 5.3 (#142): request_context, a JSON object — its
+    // text in a form, the object itself in a signed request.
+    let requestContext: Json = null;
+    if (params.request_context !== undefined && params.request_context !== '') {
+      let parsed: Json = params.request_context;
+      if (typeof parsed === 'string') {
+        try {
+          parsed = JSON.parse(parsed);
+        } catch (e) {
+          log.debug("Caught in OAuth2Server.backchannelAuthentication(): " +
+                    ((e && e.message) || e));
+          parsed = null;
+        }
+      }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+          JSON.stringify(parsed).length > 4096) {
+        log.debug("Leaving OAuth2Server.backchannelAuthentication(). " +
+                  "request_context.");
+        return refuse('STS-OAUTH-0664', 400, 'invalid_request',
+                      'request_context must be a JSON object of at most ' +
+                      '4096 characters (FAPI-CIBA section 5.3).');
+      }
+      requestContext = parsed;
+    }
+    // GRANT MANAGEMENT (#142): a CIBA request is an authorization request
+    // too (the draft names it). The client authenticated above and is
+    // confidential; the person is the hinted one, so the plan is made here
+    // and carried on the request to its redemption.
+    const grantProblem = self.deps.grantManagement.requestRefusal(params, {
+      clientId: clientId, confidential: true, responseTypes: [] });
+    if (grantProblem) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). Grant " +
+                "management.");
+      return refuse(grantProblem.code, 400, grantProblem.error,
+                    grantProblem.description);
+    }
+    const hintedPerson = self.provisionedPerson(hinted.username);
+    const consentRegister = self.deps.consent;
+    const grantPlan = self.deps.grantManagement.planFor({
+      params: params, clientId: clientId,
+      sub: hintedPerson ? hintedPerson.sub : '', scope: scope,
+      resources: [], authorizationDetails: null, claims: null,
+      stillConsented: function (earlier: string): string {
+        log.debug("Entering stillConsented().");
+        if (!consentRegister.required()) {
+          log.debug("Leaving stillConsented(). Consent is not required.");
+          return earlier;
+        }
+        const gone = (consentRegister.outstanding({
+          clientId: clientId, username: hinted.username,
+          scope: earlier }) || {}).names || [];
+        log.debug("Leaving stillConsented(). " + gone.length + " withdrawn.");
+        return earlier.split(/\s+/).filter(function (one: string) {
+          return one && gone.indexOf(one) < 0;
+        }).join(' ');
+      }
+    });
+    if (!grantPlan.ok) {
+      log.debug("Leaving OAuth2Server.backchannelAuthentication(). Not the " +
+                "person's grant.");
+      return refuse(grantPlan.refusal.code, 400, grantPlan.refusal.error,
+                    grantPlan.refusal.description);
+    }
     const acrValues = params.acr_values
       ? (stepUp.parseAcrValues(String(params.acr_values)).values || []) : [];
     const made = ciba.create({
+      grantManagement: grantPlan.plan,
+      requestContext: requestContext,
       clientId: clientId,
       clientName: ((applications.registrationOf(clientId) || {}) as Json)
         .client_name,
@@ -14898,6 +15166,12 @@ class OAuth2Server {
                     'this client registered "' + registered.signingAlg +
                     '".');
     }
+    // FAPI-CIBA (#142): the profile's algorithms, whatever was registered.
+    const fapiAlg = this.deps.fapi.signingAlgRefusal(header.alg,
+      'the signed authentication request');
+    if (fapiAlg) {
+      return refuse(String(fapiAlg.description) + '.');
+    }
     const verified = await requestObject.verifyObject({
       client: applications.clientConfigOf(clientId) || {}, profile: {},
       clientId: clientId, jwt: compact, issuer: issuer, asBase: base,
@@ -14926,6 +15200,11 @@ class OAuth2Server {
         Number(claims.exp) - Number(claims.nbf) > 3600) {
       return refuse('the signed request is expired, not yet valid, or ' +
                     'valid for more than an hour.');
+    }
+    const ahead = this.deps.fapi.futureTimestampRefusal(claims,
+      'the signed authentication request', now);
+    if (ahead) {
+      return refuse(String(ahead.description) + '.');
     }
     const spent: Json = await usedAssertions.claim({
       format: 'jwt', use: 'ciba-request', issuer: clientId,
@@ -15007,14 +15286,25 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.cibaPushTokens(). Nobody.");
       throw new Error('the person approving is no longer in the directory');
     }
+    // Grant Management (#142): a push claims its grant as a poll does.
+    const plan = record.grantManagement || null;
+    const gone = this.deps.grantManagement.redemptionRefusal(plan);
+    if (gone) {
+      log.debug("Leaving OAuth2Server.cibaPushTokens(). The grant is gone.");
+      throw new Error(gone.description);
+    }
     const opts: Json = {
-      user: user, client_id: record.clientId, scope: record.scope,
+      user: user, client_id: record.clientId,
+      scope: plan ? plan.scope : record.scope,
       auth_time: record.approval.authTime, amr: record.approval.amr,
       acr: record.approval.acr || undefined, grant: 'ciba',
-      ciba_auth_req_id: record.id
+      ciba_auth_req_id: record.id,
+      grant_id: plan ? plan.id : undefined,
+      grant_gen: plan ? plan.gen : undefined
     };
     this.checkIssuance(opts);
     const body = await this.tokenSet(record.base, opts);
+    this.deps.grantManagement.apply(plan);
     log.debug("Leaving OAuth2Server.cibaPushTokens().");
     return body;
   }

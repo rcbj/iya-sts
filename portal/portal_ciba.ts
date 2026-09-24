@@ -127,6 +127,12 @@ class PortalCibaPage {
           ? '<p>It says: <strong id="ciba-binding">' +
             esc(one.bindingMessage) + '</strong> — check that this is what ' +
             'the other device shows.</p>' : '') +
+        (one.requestContext
+          ? '<p class="sub" id="ciba-context">Where it was asked from: ' +
+            Object.keys(one.requestContext).slice(0, 12).map(function (k) {
+              return esc(k) + ' <code>' + esc(JSON.stringify(
+                one.requestContext[k]).slice(0, 200)) + '</code>';
+            }).join('; ') + '</p>' : '') +
         '<p class="sub">Access: <code>' + esc(one.scope) + '</code>' +
         (one.acrValues.length ? '; needs sign-in level <code>' +
           esc(one.acrValues.join(' ')) + '</code>' : '') + '. Expires ' +

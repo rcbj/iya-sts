@@ -248,6 +248,13 @@ class Ciba {
       scope: String(spec.scope || 'openid'),
       acrValues: (spec.acrValues || []).slice(0),
       bindingMessage: String(spec.bindingMessage || ''),
+      // FAPI-CIBA section 5.3 (#142): what the client said about the
+      // consumption device, shown to the person beside the binding message.
+      requestContext: spec.requestContext && typeof spec.requestContext ===
+                      'object' ? spec.requestContext : null,
+      // Grant Management (#142): what the grant will be when this request's
+      // tokens are claimed — `grant_management.ts`'s plan, or null.
+      grantManagement: spec.grantManagement || null,
       mode: String(spec.mode),
       notificationToken: String(spec.notificationToken || ''),
       notificationEndpoint: String(spec.notificationEndpoint || ''),

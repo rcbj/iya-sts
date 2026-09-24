@@ -2180,6 +2180,16 @@ const SECTIONS = [
                'on an application\'s entry, which skips the prompt for ' +
                'everybody and writes nothing about anybody, so taking one ' +
                'away asks everybody again.' },
+      // AFTER CONSENT, AND THE PAIR IS THE ARGUMENT (#142): consent is what a
+      // person agreed to, a grant what a client holds on the strength of it.
+      // Drawn by `oauth-oidc/grant_management_admin.ts`.
+      { path: '/admin/grants', label: 'Grants',
+        blurb: 'The OAuth grants clients hold through Grant Management for ' +
+               'OAuth 2.0 — each named by a grant_id, created, merged and ' +
+               'replaced by ordinary authorization requests, and readable ' +
+               'and revocable by its client at /oauth2/grants/{grant_id}. ' +
+               'Revoke one here and every refresh token under it is ' +
+               'refused on every node.' },
       // AFTER CONSENT AND BEFORE SIGN-OUT, and the pair either side is the
       // argument. Consent is what a person AGREED an application may ask for;
       // this is what the policy DECIDED when something asked. Both are records
