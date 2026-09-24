@@ -453,10 +453,50 @@ function supersededLiveTiers(row, lists) {
 }
 
 // ---------------------------------------------------------------------------
-// THE MERGE. Returns `{ row, lost, displaced }`: the row to write, the tier
-// members `mine` changed and did not get (`root`, `intermediate`,
-// `issuing.<use case>`, `certs.<slot>`), and how many displaced certificate
-// records were kept in the issued register.
+// THE CERTIFICATE SLOTS OF `row` THAT ITS OWN ISSUING CAs DID NOT SIGN
+// (2026-09-24). The other half of the tier rule above, and the half a
+// three-way merge cannot see: a TIER and the CERTIFICATES under it are
+// different members, so a write that replaced a realm's Issuing CAs and a
+// write that certified a key from the ones it replaced each win the member
+// only they changed — and the row publishes a certificate from an authority
+// it no longer holds, which nothing publishes either.
+// `sts_pki_distribution_points` found it in `cluster` mode: *CN=XML signing
+// (RS256) … with no authority found*, from a realm whose keys one worker
+// certified from its first branch while another worker's `POST …/pki/build`
+// rebuilt it. The rebuild's re-mint only re-issues what ITS copy recorded, and
+// the slot the other worker wrote reached the row through this merge.
+//
+// **REPORTED, NOT DROPPED**: a slot the row lacks falls back to the key's
+// self-signed certificate, which is a worse thing to publish than one a
+// re-issue is about to replace. `keystore.js` hands the list to `pki.js`,
+// which certifies each slot's key again from the live Issuing CA. The test is
+// `certifyStandbyKeys()`'s: the first certificate of a record's chain is the
+// Issuing CA that signed it. A record with no chain (none is written without
+// one) and a use case the row holds no Issuing CA for are left alone.
+// ---------------------------------------------------------------------------
+function orphanedSlots(row) {
+  log.debug("Entering orphanedSlots().");
+  const certs = (row && row.certs) || {};
+  const issuing = (row && row.issuing) || {};
+  const out = Object.keys(certs).filter(function (slot) {
+    const record = certs[slot];
+    const ca = record && issuing[record.useCase];
+    const signer = record && Array.isArray(record.chainPem)
+      ? record.chainPem[0] : '';
+    return !!(ca && ca.certificatePem && signer &&
+              signer !== ca.certificatePem);
+  });
+  log.debug("Leaving orphanedSlots(). " + out.length + " found.");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE MERGE. Returns `{ row, lost, displaced, published, orphaned }`: the row
+// to write, the tier members `mine` changed and did not get (`root`,
+// `intermediate`, `issuing.<use case>`, `certs.<slot>`), how many displaced
+// certificate records were kept in the issued register, the revocations of a
+// live tier dropped, and the certificate slots the row's own Issuing CAs did
+// not sign (`orphanedSlots()`).
 // ---------------------------------------------------------------------------
 function merge(base, mine, theirs, options) {
   log.debug("Entering merge().");
@@ -532,11 +572,13 @@ function merge(base, mine, theirs, options) {
                                      displaced, nowMs);
   }
   const published = liveAgain(row);
+  const orphaned = orphanedSlots(row);
   log.debug("Leaving merge(). " + lost.length + " member(s) lost, " +
             displaced.length + " displaced, " + published.length +
-            " revocation(s) of a live tier dropped.");
+            " revocation(s) of a live tier dropped, " + orphaned.length +
+            " orphaned slot(s).");
   return { row: row, lost: lost, displaced: displaced.length,
-           published: published };
+           published: published, orphaned: orphaned };
 }
 
 module.exports = {
@@ -547,6 +589,7 @@ module.exports = {
   // either way. See liveAgain()'s own block.
   dropRevocationsOfLiveTiers: liveAgain,
   supersededLiveTiers: supersededLiveTiers,
+  orphanedSlots: orphanedSlots,
   canonical: canonical,
   normalSerial: normalSerial,
   // The issued-register record for a certificate a slot no longer holds, for

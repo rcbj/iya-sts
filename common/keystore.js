@@ -2178,6 +2178,24 @@ function setPkiPublisher(fn) {
   log.debug("Leaving setPkiPublisher().");
 }
 
+// ---------------------------------------------------------------------------
+// FILLED BY `pki.js`: "certify these slots' keys again from the live Issuing
+// CA" (2026-09-24). A merged row can publish a certificate its own Issuing
+// CAs did not sign — `pki_merge.js`'s orphanedSlots() argues how — and only
+// `pki.js` can issue a certificate. It cannot be a require from here: `pki.js`
+// requires this file at load, so the require would close a cycle, and a lazy
+// one would make the keystore, which knows nothing of certificates, the
+// module that decides to issue them. `onAdopt()`'s shape: one listener, told
+// the scope and the slot keys, by the process whose write made the row.
+// ---------------------------------------------------------------------------
+let orphanListener = null;
+
+function onOrphanedCertificates(fn) {
+  log.debug("Entering onOrphanedCertificates().");
+  orphanListener = typeof fn === 'function' ? fn : null;
+  log.debug("Leaving onOrphanedCertificates().");
+}
+
 // What another process built, adopted whole. The sender is the authority: see
 // the paragraph above on why there is no arbitration here — WITH ONE
 // EXCEPTION, a copy from before a rebuild (2026-09-24).
@@ -2767,7 +2785,8 @@ function writePki(rowKey, payload) {
       const theirs = current ? openBlob(current, 'pki-hierarchy') : {};
       const answer = pkiMerge.merge(base, JSON.parse(text), theirs);
       decided = { merged: true, lost: answer.lost,
-                  displaced: answer.displaced, row: answer.row };
+                  displaced: answer.displaced, row: answer.row,
+                  orphaned: answer.orphaned || [] };
       log.debug("Leaving the hierarchy merge. Merged.");
       return crypto.encryptWithKek(kek, JSON.stringify(answer.row),
                                    'pki-hierarchy');
@@ -2798,6 +2817,27 @@ function writePki(rowKey, payload) {
         pkiPublisher(id, decided.row);
       }
       notifyHierarchyAdopted(id);
+      // AND WHAT THE MERGE LEFT UNDER AN AUTHORITY THE ROW NO LONGER HOLDS
+      // is certified again here, by the one process whose write made the row
+      // — every other process only adopts it (orphanedSlots()'s block). Not
+      // where this process attached again meanwhile (`newer`): that write
+      // merges next and reports whatever is still orphaned then.
+      if (decided.orphaned.length) {
+        log.warn(errorCodes.tag('STS-KEYS-0076') + 'keystore: the "' + id +
+                 '" certificate authority, merged with a copy another ' +
+                 'process had written, publishes ' + decided.orphaned.length +
+                 ' certificate(s) its own Issuing CAs did not sign (' +
+                 decided.orphaned.join(', ') + ') — a key certified from ' +
+                 'the branch a rebuild replaced. Each is certified again ' +
+                 'from the live one.');
+        if (orphanListener) {
+          try {
+            orphanListener(id, decided.orphaned.slice());
+          } catch (e) {
+            log.debug("Caught in writePki(): " + ((e && e.message) || e));
+          }
+        }
+      }
     }
     if (decided.lost.length) {
       log.warn(errorCodes.tag('STS-KEYS-0057') + 'keystore: the "' + id +
@@ -3014,6 +3054,7 @@ module.exports = {
   hasEphemeralKek: hasEphemeralKek,
   ephemeralKek: ephemeralKek,
   onAdopt: onAdopt,
+  onOrphanedCertificates: onOrphanedCertificates,
   // THE KEY GENERATIONS (2026-09-22, #42).
   replaceKeySet: replaceKeySet,
   generationOf: generationOf,

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3430** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3432** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -56,8 +56,8 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 75
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 179
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 76
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 180
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
@@ -468,6 +468,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0073` | An XML element's key is agreed by an AgreementMethod other than ECDH-ES. | the caller's refusal |
 | `STS-KEYS-0074` | An XML element encrypted by ECDH-ES key agreement was handed to a recipient whose private key is not an EC key. | the caller's refusal |
 | `STS-KEYS-0075` | A certificate authority another process in this service sent publishes a tier this process holds as superseded — a copy from before a rebuild — so it was refused, and the hierarchy held here was asserted again where it is itself consistent. | none — logged. A supersession is permanent; adopting the copy put a replaced Intermediate back in every process |
+| `STS-KEYS-0076` | A certificate authority merged with a copy another process had written publishes certificates its own Issuing CAs did not sign — keys certified from the branch a rebuild replaced — and each is certified again from the live Issuing CA. | none — logged. The evidence of a certification that crossed a rebuild; the row would otherwise publish a certificate no published authority signed |
 
 ## STS-PKI
 
@@ -656,6 +657,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0190` | A presented certificate chain was refused under pki.revocationCheck=hard-fail because a certificate in it, issued by an authority this service does not hold, names no CRL distribution point and no OCSP responder, carries no RFC 9608 noRevAvail, and pki.revocationRequireDistributionPoint (auto, in product mode, or on) refuses a certificate nobody can revoke. | The same refusals as STS-PKI-0118, per door |
 | `STS-PKI-0191` | A certificate authority build, or a key pair issued under one, named a SHA-1 signature algorithm (sha1-rsa or sha1-ecdsa) in a realm that is in product mode, where SHA-1 is never used (#181). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-PKI-0192` | An encryption key pair was asked for in a key type this service does not issue one of (rsa-3072 and ec-p256, #168). | the caller's refusal |
+| `STS-PKI-0193` | A certificate a merged certificate authority published from an Issuing CA it no longer holds could not be certified again from the live one. | none — logged. The key still signs; its certificate chains to an authority nothing publishes until the slot is certified again |
 
 ## STS-ENROLL
 
