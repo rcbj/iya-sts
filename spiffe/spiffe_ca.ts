@@ -1245,8 +1245,8 @@ class SpiffeCa {
       if (pki.describeIssuer(id, SPIFFE_USE_CASE)) {
         if (waited) {
           log.info('spiffe: the "' + (id || 'default') + '" realm\'s ' +
-                   'certificate authority branch arrived from another ' +
-                   'process, so its SPIFFE Issuing CA is the X.509 ' +
+                   'certificate authority branch arrived while its SPIFFE ' +
+                   'start waited, so its SPIFFE Issuing CA is the X.509 ' +
                    'authority.');
         }
         log.debug('Leaving SpiffeCa.awaitSpiffeIssuer(). Present.');

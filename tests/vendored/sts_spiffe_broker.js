@@ -388,10 +388,23 @@ async function oneRealm(o) {
       return b.id === "spiffe://" + BROKER_TD + "/pod-broker";
     }), r.text.slice(0, 600));
   });
-  const listening = ((r.json && r.json.listeners) || []).filter(function (b) {
-    return b.listening && /:\d+$/.test(b.address) &&
-           b.address.split(":").pop() === String(o.port);
-  })[0];
+  // THE ENDPOINT IS BOUND ONCE THE REALM'S BRANCH EXISTS (2026-09-24). A
+  // realm's SPIFFE start waits for its certificate authority branch rather
+  // than inventing a self-signed authority no bundle publishes, and a branch
+  // built at realm creation takes up to a second or two (an RSA key) — so the
+  // listener is asked for again until it is listening, for a bounded time.
+  const listenerOf = function (reply) {
+    return ((reply.json && reply.json.listeners) || []).filter(function (b) {
+      return b.listening && /:\d+$/.test(b.address) &&
+             b.address.split(":").pop() === String(o.port);
+    })[0];
+  };
+  let listening = listenerOf(r);
+  for (let waited = 0; !listening && waited < 30000; waited += 250) {
+    await new Promise(function (resolve) { setTimeout(resolve, 250); });
+    r = await call("GET", api + "/spiffe/brokers");
+    listening = listenerOf(r);
+  }
   check(o.mode + ": the realm's Broker endpoint is bound, mutual TLS",
         function () {
     assert.ok(listening && listening.tls, r.text.slice(0, 600));
