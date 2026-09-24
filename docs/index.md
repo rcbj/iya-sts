@@ -208,7 +208,7 @@ future token and assertion, and create people in the directory. Do not put a
 development-mode instance on a public address.
 [Admin console](admin-console.md) has the rest.
 
-**`/admin-api` requires an OAuth 2.0 access token** since 2026-09-09 —
+**`/admin-api` requires an OAuth 2.0 access token** —
 audienced to this API, carrying `admin:read` to read and `admin:write` to
 change anything. Ask the token endpoint for one with the client-credentials
 grant as the seeded `sts-management-api` client, whose secret is

@@ -7,7 +7,7 @@ title: OpenID4VP
 iya-sts is a **Verifier** for
 [OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html),
 using DCQL queries. It verifies what a wallet presents, check by check, in all
-three credential formats its [issuer](oid4vci.md) mints. Since 2026-09-17 a
+three credential formats its [issuer](oid4vci.md) mints. A
 verified presentation is also **a way to sign in**: *Sign in with a wallet* on
 the sign-in screen, including through the
 [W3C Digital Credentials API](https://www.w3.org/TR/digital-credentials/). The

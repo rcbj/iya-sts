@@ -88,14 +88,12 @@ at the same instant as one nobody has touched — set
 last used, whichever limit comes first. The idle timeout is checked whenever a
 session is read, so it applies to sessions that already exist, and a request to
 the admin console or the user portal counts as use of the sign-on session behind
-it. Until 2026-09-12 both were constants in `authn/authn.ts` and neither could
-be changed.
+it.
 
-**An expiry ends the session properly**, and until 2026-09-04 it did not: the
-record was deleted with no audit row and no event, and only *lazily* — when
-something next looked the session up — so somebody who closed their browser was
-never looked up again and the session sat in the map, counted as live, for as
-long as the process ran. A sweep now runs every 30 seconds, inside every trust
+**An expiry ends the session properly**, not *lazily* when something next
+looks the session up — somebody who closed their browser would never be looked
+up again, and the session would sit in the map, counted as live, for as long as
+the process ran. A sweep runs every 30 seconds, inside every trust
 realm, and an expiry writes the same `session.end` audit row and the same CAEP
 `session-revoked` any other ending writes. See
 [CAEP events](caep-events.md#session-revoked) for what a receiver is told.

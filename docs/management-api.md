@@ -238,7 +238,7 @@ calling a prefix that no longer exists.
 | A realm's own token | `/realm/<id>/oauth2/token` as that realm's `sts-management-api`, with `resource=<base>/realm/<id>/admin-api` | `/realm/<id>/admin-api` only | that realm's operations only |
 
 **Either token must have been issued to a client that declares the scope it
-uses** (#110, 2026-09-22). `admin:read` and `admin:write` are issued only to a
+uses** (#110). `admin:read` and `admin:write` are issued only to a
 client whose `oauthAllowedScope` lists them, in both modes — any other client is
 refused `invalid_scope` at the token endpoint — and the API asks again on every
 call, in the realm that issued the token: a token whose client no longer
@@ -366,11 +366,8 @@ them on the console or with `POST /admin-api/config/set`.
   credential, anybody who could create a realm could mint a token for
   everything. A realm's own token is therefore believed only in that realm.
 * **`admin:*` is tied to the client, in both realms and both modes (#110).**
-  Until 2026-09-22 the default realm's gate accepted the scopes from any
-  client — the token endpoint did not restrict who could ask for them, so any
-  client that could use `client_credentials` minted Admin Write — and only a
-  realm's gate required `sts-management-api`. Now the token endpoint issues
-  them only to a client whose `oauthAllowedScope` declares them, a registration
+  Otherwise any client that could use `client_credentials` could mint Admin
+  Write. The token endpoint issues them only to a client whose `oauthAllowedScope` declares them, a registration
   cannot declare them, and the gate asks the same question of every token
   (`STS-API-0123`).
 * **The secret is a configuration setting, not an action.** A secret

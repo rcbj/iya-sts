@@ -601,8 +601,8 @@ be changed with `POST /admin-api/config/set`.
 * **The code screens refuse wrong codes by name.** The person has already
   given a first factor, so there is nothing to enumerate, and "already used"
   and "wrong" call for different actions.
-* **In product the sign-in screen enrols no primary key.** Before 2026-09-21 it
-  did, and anybody who knew a username could take an account that had no key.
+* **In product the sign-in screen enrols no primary key.** If it
+  did, anybody who knew a username could take an account that had no key.
 * **A disabled account is refused everywhere, not only at the password.** The
   lock is `pwdAccountLockedTime`, which LDAP tooling already understands, and
   it is enforced more widely than the draft requires, which is the safe

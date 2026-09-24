@@ -21,7 +21,7 @@ stays in the leader, including when worker pools are turned on.
 |---|---|
 | 88 TCP / UDP | The Kerberos KDC |
 | 389, 636 | The embedded directory, over plain LDAP and over LDAPS |
-| 8081 HTTPS | The main port: every path-based protocol, `/admin`, `/portal` and `/admin-api`. It asks every connection for a client certificate and requires none; `GET /tls/sign-in` signs the holder of a verified one in (the separate 8443 and 9443 TLS endpoints were removed on 2026-09-16) |
+| 8081 HTTPS | The main port: every path-based protocol, `/admin`, `/portal` and `/admin-api`. It asks every connection for a client certificate and requires none; `GET /tls/sign-in` signs the holder of a verified one in (there are no separate 8443 and 9443 TLS endpoints) |
 | 8888 TCP | The Kerberized test service that accepts an AP-REQ |
 | 8092, 8181 gRPC | The SPIFFE Workload API, and the SPIRE Server API (always mutual TLS) |
 | Domain sockets | The Workload API at `/tmp/spire-agent/public/api.sock` (on), and the SPIRE Server API's private socket at `/tmp/spire-server/private/api.sock` (off by default) |

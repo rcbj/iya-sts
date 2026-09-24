@@ -321,7 +321,7 @@ SAML `SessionNotOnOrAfter` ends the session when it passes, as an expiry. See
 
 ## A session that simply runs out
 
-It ends the same way, and says so the same way. Since 2026-09-04 an expiry
+It ends the same way, and says so the same way. An expiry
 writes the `session.end` audit row and emits CAEP's `session-revoked` like any
 other ending — with `initiating_entity: policy`, because nobody signed out: a
 lifetime ran out. A sweep runs every 30 seconds so that this happens whether or

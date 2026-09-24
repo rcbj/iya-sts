@@ -5,9 +5,9 @@ nav_order: 13
 
 # Persistence
 
-Until 2026-08-27 this service wrote nothing down and everything was gone on
-restart. Three things are not, now, when a store is configured — and the list of
-what still is not matters just as much.
+Without a store this service writes nothing down and everything is gone on
+restart. Three things are not when a store is configured — and the list of what
+still is not matters just as much.
 
 **Encryption is a page of its own.** What this service seals before a value
 reaches a store, and what encrypts the rest of the database underneath it —
@@ -20,14 +20,14 @@ string.
 
 ## What survives, and what never can
 
-**This section had two columns until 2026-09-06 and now has three, because the
-answer stopped being the same in every configuration.**
+**This section has three columns, because the answer is not the same in every
+configuration.**
 
 | Survives with any store | Also survives in **product** mode on **postgres** | Never does |
 |---|---|---|
 | the embedded **LDAP directory** — every entry under every realm's base | sessions, access tokens, ID Tokens, refresh tokens | nothing, beyond two caches that are re-derivable |
 | …which is also the **applications registry**, the **federation register**, the **SPIFFE registry** and the **group roster**, because in this service those *are* directory entries | authorization codes, pre-authorized codes, SAML artifacts | |
-| the **trust realm registry** — names, descriptions, per-realm settings | Kerberos principals and tickets, the replay caches (per trust realm since 2026-09-15) | |
+| the **trust realm registry** — names, descriptions, per-realm settings | Kerberos principals and tickets, the replay caches (per trust realm) | |
 | the **used-assertion history** — every RFC 7523 and RFC 7522 assertion accepted and not yet expired, and every RFC 9101 request object `jti` spent, so none is accepted twice across a restart (both modes; its own table on postgres, a file per realm on ldif) | | |
 | **runtime setting changes** — what the console and `POST /admin-api/config/set` write | the statistics, the counters and the audit log | |
 | the **signing keys**, encrypted (product mode only) | | |
@@ -200,7 +200,7 @@ host.
 The database container runs `postgres/schema.sql` itself, once, on the start
 that creates its volume — so the stack comes up with the schema built and with
 this service connecting as the restricted `sts_app` rather than as the owner.
-**A volume created before 2026-09-06 has the tables and no such role**, and the
+**A volume created by an earlier version has the tables and no such role**, and the
 service container then restart-loops with `password authentication failed for
 user "sts_app"`. `docker compose down -v` is the fix, and what it removes is the
 directory, the realm registry and the appconfig overrides — never anything this
@@ -214,7 +214,7 @@ docker compose down -v       # stop and throw the data away
 
 ### The compose database is TLS, and requires it
 
-Since 2026-08-30 the Postgres container generates a server key pair on its first
+The Postgres container generates a server key pair on its first
 start and every `host` rule in its `pg_hba.conf` is `hostssl`, so a plaintext
 client is refused by the database with `no pg_hba.conf entry for host …, no
 encryption`. The connection string carries `?sslmode=require` to match.
@@ -309,11 +309,7 @@ sealed, like the default realm's.
 
 ### Processes against one store coordinate
 
-**This section said the opposite until 2026-09-06** — *"persistence is not
-coordination… one process per store"* — and that was the honest description of
-what existed.
-
-Every change is now written to a monotonic log, `sts_changes`, **inside the
+Every change is written to a monotonic log, `sts_changes`, **inside the
 transaction that made it**. Each process remembers the highest entry it has
 applied and asks for everything after it — the directory, the realm registry, the
 runtime settings and the minted rows alike. A `LISTEN`/`NOTIFY` nudge wakes that

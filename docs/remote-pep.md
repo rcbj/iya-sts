@@ -464,7 +464,7 @@ change anything here:
 - **`tests/vendored/sts_xacml_remote_pep.js`** holds the *deployment*: this
   container on the mock's own docker network, registering, pulling, converging,
   being nudged, reporting its counters, and going on deciding after the PDP is
-  taken away — and, since 2026-09-13, being issued its listener certificate,
+  taken away — and being issued its listener certificate,
   picking it up without a restart, and answering a client that trusts only the
   service Root.
 - **`tests/pep_listener_certificate.js`** holds the listener certificate's

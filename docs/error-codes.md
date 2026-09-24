@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3404** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3405** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -61,7 +61,7 @@ is an ordinary outcome.
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
-* [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
+* [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 248
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 541
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
@@ -885,6 +885,7 @@ Raised from: scep/.
 | `STS-SCEP-0063` | A SCEP certificate revocation from the console or /admin-api named an unknown RFC 5280 reason. | the console redirect with error=, or HTTP 400 { ok: false, errors } |
 | `STS-SCEP-0064` | A SCEP message was refused because another request with the same transactionID was still being answered, on this node or another, when the wait ran out. | SCEP CertRep FAILURE badRequest |
 | `STS-SCEP-0065` | A SCEP message was refused because its transaction could not be claimed: the cluster store could not be asked. | SCEP CertRep FAILURE badRequest |
+| `STS-SCEP-0066` | This node runtime refuses PKCS#1 v1.5 private decryption (its OpenSSL has no implicit rejection), so no SCEP request whose content key is wrapped with rsaEncryption can be decrypted. Logged once per process; node 24 or later is required. | SCEP CertRep FAILURE badMessageCheck (the content does not decrypt) |
 
 ## STS-AUTHN
 

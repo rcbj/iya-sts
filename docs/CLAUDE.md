@@ -40,14 +40,14 @@ Adding a page: write the markdown, add it to the right section of
 `index.md`. There is no index to regenerate.
 
 **The sidebar is four small overrides of minima 2.5.1, the version GitHub
-Pages ships (2026-09-22)**: `_layouts/default.html` (minima's, with the sidebar
+Pages ships**: `_layouts/default.html` (minima's, with the sidebar
 beside the content), `_includes/header.html` (the title only, and the menu
 button a narrow screen needs), `_includes/sidebar.html` and `assets/main.scss`
 (minima's stylesheet imported, then the layout). No script — the narrow-screen
 menu is a checkbox, as minima's own header was. `header_pages` is gone: it put
 every page across the top, and at twenty-six pages that was not navigation.
 
-**A protocol page has one shape** (2026-09-22): Features, Development and
+**A protocol page has one shape**: Features, Development and
 product mode, Configuration (a table of every `common/config.js` key for the
 family: setting, environment variable, default, runtime, what it does), Design
 decisions, In the running service, Related. The configuration table is a copy
@@ -55,7 +55,7 @@ of rows in `common/config.js` and will drift when a row changes — the live
 source is the protocol's console page and `GET /admin-api/config`, and the
 table says so; update it when you change a row for that family.
 
-## The two pages added on 2026-09-04, and the line between them
+## `sessions.md` and `caep-events.md`, and the line between them
 
 `sessions.md` and `caep-events.md` are close enough together that the split
 needs stating, or the next person to add to either will add to the wrong one:

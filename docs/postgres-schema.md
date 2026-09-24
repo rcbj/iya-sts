@@ -9,7 +9,7 @@ each column, and why the tables are shaped that way. [Persistence](persistence.m
 covers turning the store on, the compose stack and what survives a restart.
 This page covers only what is in the database.
 
-**Schema version 9** (2026-09-23): 26 tables in a schema of their own, `sts`.
+**Schema version 9**: 26 tables in a schema of their own, `sts`.
 
 ## Where the schema is written down
 
@@ -36,16 +36,16 @@ older database, run `schema.sql` again as the owner. Nothing is renamed or
 dropped, and nothing is rewritten. The version row in `sts_schema` records
 which shape is on disk.
 
-| Version | Date | What it added |
-|---|---|---|
-| 1 | 2026-08-27 | `sts_ldap_entries`, `sts_realms`, `sts_appconfig` |
-| 2 | 2026-09-06 | `sts_keys`, then `sts_minted` and `sts_changes` for minted persistence and coordination between processes |
-| 4 | 2026-09-13 | `sts_used_assertions` |
-| 5 | 2026-09-14 | `sts_cluster_nodes`, `_leases`, `_claims`, `_secrets`, `_counters`, `_windows`, `sts_change_readers` (#46) |
-| 6 | 2026-09-18 | the column `sts_realms.domain`, the first column added to an existing table |
-| 7 | 2026-09-22 | the thirteen `sts_risk_*` tables of risk scoring (#62) |
-| 8 | 2026-09-23 | `sts_risk_terms_acceptances` |
-| 9 | 2026-09-23 | the columns `sts_risk_assessments.feedback` and `.feedback_at` |
+| Version | What it added |
+|---|---|
+| 1 | `sts_ldap_entries`, `sts_realms`, `sts_appconfig` |
+| 2 | `sts_keys`, then `sts_minted` and `sts_changes` for minted persistence and coordination between processes |
+| 4 | `sts_used_assertions` |
+| 5 | `sts_cluster_nodes`, `_leases`, `_claims`, `_secrets`, `_counters`, `_windows`, `sts_change_readers` (#46) |
+| 6 | the column `sts_realms.domain`, the first column added to an existing table |
+| 7 | the thirteen `sts_risk_*` tables of risk scoring (#62) |
+| 8 | `sts_risk_terms_acceptances` |
+| 9 | the columns `sts_risk_assessments.feedback` and `.feedback_at` |
 
 ### The application role
 

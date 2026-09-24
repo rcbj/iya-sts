@@ -100,7 +100,7 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 |---|---|---|
 | `stsWebauthnCredential` | registered WebAuthn public keys | public by design |
 | `stsTotpCredential` | the RFC 6238 shared secret | **sealed** under the key-encryption key in product mode. Withheld from reads |
-| `stsBackupCodes` | JSON: each code's scrypt hash and `usedAt`, plus counts | hashed per code since 2026-09-11 (older sealed sets are still read). The comment in `OWN_NAMES` saying "encrypted" is out of date |
+| `stsBackupCodes` | JSON: each code's scrypt hash and `usedAt`, plus counts | hashed per code (older sealed sets are still read). The comment in `OWN_NAMES` saying "encrypted" is out of date |
 | `stsAppPassword` | JSON per app password: name, the doors it is scoped to, scrypt hash, last use (#101) | withheld |
 | `stsActivationToken`, `stsActivationExpires` | an activation link's hash and expiry | hashed |
 | `stsPasswordResetToken`, `stsPasswordResetExpires` | a reset link's hash and expiry | withheld |
@@ -237,7 +237,7 @@ draws it with a description of every field.
 ## Roles: `ou=roles`
 
 `objectClass: top, stsRole`, named `cn=<role>`, with `roleName`, `description` and the three kinds of
-holder: `roleMemberUser`, `roleMemberGroup` and `roleMemberApplication`. A role saved before 2026-09-23 was written with
+holder: `roleMemberUser`, `roleMemberGroup` and `roleMemberApplication`. A role saved by an earlier version was written with
 no object class and gains one on its next save.
 `common/roles.js` keeps apart who **holds** a role and what **requires** one
 (`appRequiredRole` on an application). It also computes ten built-in roles that are not stored: EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS, ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIONS, ADMIN_READ, ADMIN_WRITE, REMOTE_PEPS and XACML_USER.

@@ -276,8 +276,7 @@ at the moment a stolen one constrained itself. The message says to sign in again
 for a bound one.
 
 **Nothing is exempt from this setting, and nothing needs to be.** `/admin` and
-`/portal` are OpenID Connect clients of this service, and since 2026-09-15 they
-carry a DPoP key of their own and prove it on every back-channel token call — so
+`/portal` are OpenID Connect clients of this service, and they carry a DPoP key of their own and prove it on every back-channel token call — so
 turning this on does not lock an operator out of either. The two clients named
 under the next setting are exempt from **that setting only**.
 
@@ -347,10 +346,9 @@ certificate.
 does, and it is refused with the same `STS-OAUTH-0527` where a certificate
 cannot be asked for.
 
-**The debugger's listener began asking for a client certificate on 2026-09-15**
-so that a bound token can be presented there at all — `requestCert` with
-`rejectUnauthorized: false`, the posture the main port already takes (as 8443
-did, until that listener was deleted on 2026-09-16), so the handshake succeeds either way and what a certificate is worth is decided per
+**The debugger's listener asks for a client certificate** so that a bound token can be presented there at all — `requestCert` with
+`rejectUnauthorized: false`, the posture the main port already takes, so the
+handshake succeeds either way and what a certificate is worth is decided per
 request. A listener that never asked would have made this setting an exemption
 dressed up as a refusal.
 
@@ -358,7 +356,7 @@ dressed up as a refusal.
 
 Off by default, runtime, and settable on a trust realm. **It matters in
 development only**: product mode refuses an ungranted permission whatever it
-says (#110, 2026-09-22).
+says (#110).
 
 It refuses an authorization or token request that asks for a **delegated
 permission** the client has not been granted. A resource application exposes an
@@ -557,7 +555,7 @@ which entry carries what, and the service-wide setting decides.
 
 ### `global.https` — TLS on the main port
 
-**ON in every appconfig file this repository ships, since 2026-08-30.** That is
+**ON in every appconfig file this repository ships.** That is
 a statement about `env/local.js`, `env/test.js` and `env/docker-tests.js`, which
 each carry `global.https: true`, and NOT about the setting's own default — that
 still derives from `oauth2.rfc9700` and is still `false`, which is what a
@@ -569,7 +567,7 @@ Why it was turned on: 8443, 9443 and LDAPS 636 were TLS and the main port —
 the one every one of the seventeen protocol families actually answers on — was
 not, so a caller who had already trusted this service's key for three sockets
 still met an unencrypted fourth. One certificate, one trust decision, every
-port. **The first two of those listeners were deleted on 2026-09-16**, which
+port. **The first two of those listeners have since been deleted**, which
 makes the argument shorter rather than weaker: the port every protocol answers
 on is also the port a client certificate is presented to, so it is the last
 place that should be in the clear.
@@ -624,7 +622,7 @@ carrying `admin-write` still does nothing a token without it cannot.
 ### `global.mode` — and the four gate settings it replaced
 
 **`scim.authRequired`, `spiffe.authRequired`, `admin.authRequired` and
-`ssf.authRequired` are gone**, removed on 2026-09-06. They were one question
+`ssf.authRequired` are gone**. They were one question
 with four answers, and a deployment that required a credential at SCIM and not
 at the console was not partly secured — it was unsecured with a longer
 configuration file.
@@ -660,7 +658,7 @@ The console's two roles are two ordinary groups in the embedded directory —
 membership. **Write implies read.**
 
 `admin.bootstrapUsername` (`admin`) names the default realm's bootstrap
-administrator — and, since 2026-09-14, every trust realm's, where the account
+administrator — and every trust realm's, where the account
 and the two groups belong to that realm and administer it alone (see
 [trust realms](trust-realms.md)). Startup creates it if it is absent and makes
 it a member of both groups. A realm created at runtime gets one at once, and in
@@ -677,7 +675,7 @@ the bootstrap administrator keeps the older rule: open while *neither* group
 has a member.
 
 **Product mode never opens the console to anybody**, whatever this setting
-says (since 2026-09-22): only the roster decides, which at first is the
+says: only the roster decides, which at first is the
 bootstrap administrator alone. Until that account has claimed the console, its
 roles are honoured only from a **password** sign-in through its own realm, and
 only such a sign-in claims it — a federation partner asserting `admin`, a
@@ -690,13 +688,13 @@ If the console is ever closed to everybody, `/admin-api` is the way back out:
 it is gated by a credential of its own (`adminApi.authRequired`, an OAuth 2.0
 access token rather than a console session), so getting back in means holding
 that token and calling `POST /admin-api/rbac/grant`. In development, turning
-that one setting off restores the open API this had until 2026-09-09; in
+that one setting off restores an open API; in
 product it gates `/admin-api` by the console's own session and roles instead.
 
 Renaming a role group does not move anybody: the members stay in the old group,
 which stops granting anything the moment the name changes.
 
-All four are process-wide since 2026-09-14: a trust realm cannot carry its own
+All four are process-wide: a trust realm cannot carry its own
 value, because they decide who administers the service.
 
 ### The federation settings, and the one that is stricter than a mock usually is
@@ -750,7 +748,7 @@ under `ou=federations`, configured at `/admin/federation`, through `POST
 
 ### Persistence
 
-Since 2026-08-27 three things can survive a restart. **Nothing this service
+Three things can survive a restart. **Nothing this service
 mints ever does**, in any mode, and that is deliberate rather than unfinished:
 the signing key is regenerated on every start, so a token or an assertion that
 outlived it would verify against nothing.
@@ -787,8 +785,7 @@ out of memory, and `/admin/persistence` and `GET /admin/ldap/service` both carry
 The next change recomputes the same difference and tries again, so a failure
 loses nothing.
 
-**Processes against one Postgres store coordinate, since 2026-09-06.** This
-paragraph said the opposite before it. Every change goes into a monotonic log
+**Processes against one Postgres store coordinate.** Every change goes into a monotonic log
 inside the transaction that made it, and each process applies what the others
 committed; a `LISTEN`/`NOTIFY` nudge only makes that prompt, so a missed
 notification costs latency and never a change. `persistence.coordinate` turns it
@@ -849,9 +846,8 @@ recovery code. What every identity provider does converges anyway — a handful 
 random strings, each accepted once — so the decisions that are left are this
 service's own and `common/backup_codes.ts` argues each.
 
-**A person generates their own set, on `/portal/mfa`** (since 2026-09-11; until
-then a set was issued automatically the first time a second factor was
-enrolled). The set is shown ONCE, and stored only when the person confirms they
+**A person generates their own set, on `/portal/mfa`** — a set is not issued
+automatically when a second factor is enrolled. The set is shown ONCE, and stored only when the person confirms they
 have kept it. Until they do it waits apart from their entry for
 `backupCodes.pendingTtlS`, and one that expires changes nothing about a set they
 already held. A person who holds a second factor and no set is prompted to
@@ -891,12 +887,10 @@ written refuses the sign-in.
 ### The WebAuthn settings, and the one of thirteen this service enforces
 
 Thirteen `webauthn.*` rows, drawn on `/admin/webauthn` under Protocols.
-**There were none of these until 2026-09-10**, and this page said so: WebAuthn
-had *no settings at all — what a ceremony does is decided by the specification
-and by the browser.* That is true of the cryptography and false of the ceremony.
-The RP name, the algorithms offered, the user verification requirement, the
-attestation conveyance and the timeout were literals in a string, so there was
-no way to ask this service for a ceremony shaped any other way.
+The specification and the browser decide the cryptography, not the ceremony:
+the RP name, the algorithms offered, the user verification requirement, the
+attestation conveyance and the timeout are this service's choices, and these
+rows are how to ask for a ceremony shaped another way.
 
 They are three kinds of thing and the page says which each is, because the kind
 decides what it means:
@@ -1059,8 +1053,8 @@ a token. It is a different setting from `oauth2.clientAssertionSkewS`, which is
 how far out a *client's* assertion may be (RFC 7523): one is somebody else's
 clock, the other is this service's own.
 
-> **`oauth2.refreshTokenTtlS` changed on 2026-08-24**, from thirty days to
-> twenty-four hours. Set it to `2592000` for the old behaviour. It is not
+> **`oauth2.refreshTokenTtlS` is twenty-four hours**, not thirty days. Set it
+> to `2592000` for thirty. It is not
 > `oauth2.refreshIdleSeconds`, which is RFC 9700 mode's inactivity timeout on a
 > refresh *chain* and is measured from the last redemption rather than from
 > issuance.
@@ -1127,7 +1121,7 @@ already issued changes, because a token is a signed document.
 
 **Whether it survives a restart is `persistence.appconfig`.** In the default
 `persistence.mode=memory` it does not — the override is in memory and is gone
-with the process, which is what this service did until 2026-08-27. With a store
+with the process. With a store
 turned on it is written down and applied again at the next start, through the
 same `setOverride()` a caller uses, so nothing about the layering changes: it is
 still a runtime override sitting above the environment and the appconfig file,

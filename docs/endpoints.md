@@ -17,8 +17,7 @@ curl -s localhost:8081/admin/sts-metadata            # a page
 curl -s 'localhost:8081/admin/sts-metadata?format=json' | jq
 ```
 
-Both are **behind the console gate** since the page moved into `/admin` on
-2026-08-24: with no browser sign-on session the first is a 302 to the sign-in
+Both are **behind the console gate**: with no browser sign-on session the first is a 302 to the sign-in
 screen and the second is a `401 login_required`, because a redirect to an HTML
 login screen is not an answer a program can read. The gate cannot be turned
 off; sign in at `/authn/login` (any username in development mode, where no
@@ -109,8 +108,8 @@ it goes unlisted with nothing failing.
 is.** It had two listeners of its own, 8443 and 9443, which spoke HTTP and so
 looked as though they belonged on the main listener, while `/admin/sts-metadata`
 — walking that listener's router — could not see them; their rows there were the
-plain-HTTP views only and the listeners were described in the text. Both were
-deleted on 2026-09-16. Everything that family answers is now a route on the
+plain-HTTP views only and the listeners were described in the text. Both have
+been deleted. Everything that family answers is now a route on the
 router the page walks: `/tls`, `/tls/sign-in`, `/tls/server-certificate`,
 `/tls/forwarded` and the two truststore controls.
 
@@ -174,7 +173,7 @@ them can drift from what the service does:
 | `GET /oauth2/oauth21` | Every OAuth 2.1 requirement the mode adds, which it inherits from RFC 9700 mode, and what it exempts |
 | `GET /oauth2/fapi` | The FAPI profile in force (`oauth2.fapi`, or a named authorization server's own at `/{id}/oauth2/fapi`) and every FAPI 1.0 Baseline requirement with how it is enforced |
 | `GET /admin-api/openapi.json` | The management API, generated from its operation table |
-| `GET /admin/api-explorer` | The same, in a small explorer that also shows the `curl` line. A page of the **admin console** since 2026-09-09, behind its session and roles — it was `GET /admin-api/docs` until that API began requiring an access token a browser cannot carry |
+| `GET /admin/api-explorer` | The same, in a small explorer that also shows the `curl` line. A page of the **admin console**, behind its session and roles — not under `/admin-api`, which requires an access token a browser cannot carry |
 | `GET /spiffe` | The trust domain, every socket this process has bound — the default realm's four and two more for each realm whose SPIFFE is turned on, each row naming its realm — and all 42 SPIRE methods with a reason for each of the six that are unimplemented. Reached under a realm prefix it is that realm's answer |
 | `GET /admin/ldap/service` | The directory's state, both listeners separately, and the fact that it is schemaless |
 | `GET /federation` | Every configured federation relationship in both directions, and the URL to give each partner |
@@ -192,8 +191,8 @@ them can drift from what the service does:
 
 **Two rows in that table are behind the console's gate, and their `/admin-api`
 twins are not.** `GET /admin/ldap/service` and `GET /admin/ldap/federations`
-became admin console pages on 2026-09-01 — they were `/ldap` and
-`/ldap/federations` — along with `/admin/ldap/directory`,
+are admin console pages — they were `/ldap` and `/ldap/federations` —
+along with `/admin/ldap/directory`,
 `/admin/ldap/applications` and `/admin/ldap/spiffe`. They need a sign-on session
 and a console role, because a dump of every attribute of every entry prints
 `oauthClientSecret` and `fedClientSecret` in the clear. Every one of them is
