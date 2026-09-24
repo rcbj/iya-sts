@@ -765,6 +765,21 @@ const JOBS = [
   // poll, the CAEP events emitted by the job as the module asks for them.
   { file: 'sts_ssf_oidf_conformance.js', browser: false, local: true,
     conformance: true, timeoutMs: 3600000 },
+  // OpenID Federation 1.1 (#187): the deployed-entity plan for a Leaf realm
+  // and for the Trust Anchor, and the plan in which the suite plays a whole
+  // federation and a realm is the OpenID Provider that joined it.
+  { file: 'sts_oidfed_conformance.js',   browser: false, local: true,
+    conformance: true, timeoutMs: 3600000 },
+  // OpenID4VCI 1.0 (#187): the issuer plan wallet-initiated, offered and
+  // pre-authorized, and the HAIP issuer plan; the job plays the issuer's
+  // operator, delivering the offer and the transaction code.
+  { file: 'sts_oid4vci_conformance.js',  browser: false, local: true,
+    conformance: true, timeoutMs: 3600000 },
+  // OpenID4VP 1.0 (#187): the verifier plan, by direct_post and
+  // direct_post.jwt; the job plays the End-User the Verifier sends to the
+  // wallet, and makes the suite's issuer key at run time.
+  { file: 'sts_oid4vp_conformance.js',   browser: false, local: true,
+    conformance: true, timeoutMs: 3600000 },
   // OPENID FEDERATION 1.1 (#132, 2026-09-23): the default realm a Trust
   // Anchor and a throwaway realm its subordinate — Entity Configurations,
   // fetch, list, resolve, Trust Marks, a registered subordinate and the

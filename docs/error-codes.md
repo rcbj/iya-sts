@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3436** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3441** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -63,18 +63,18 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 248
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 557
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 559
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 133
-* [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 66
+* [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 74
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 143
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 94
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 96
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 27
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
@@ -1712,6 +1712,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0675` | A token request carried a client_assertion that names no client: no client_id in the body and no sub in the assertion, so there is no registered client to verify it against (RFC 7523 section 3 item B, #176). | invalid_client (HTTP 401), RFC 6749 section 5.2 |
 | `STS-OAUTH-0676` | A request object carried `request` or `request_uri` as a claim, which RFC 9101 section 4 forbids; refused at the authorization endpoint and at PAR (#176). | invalid_request_object, RFC 9101 sections 4 and 6.2 |
 | `STS-OAUTH-0677` | A token request's JWT client_assertion named more than one client: its iss, its sub and the request's client_id did not all agree, and for client authentication each must be the client_id (RFC 7523 section 3, OpenID Connect Core section 9, #176). | invalid_client (HTTP 401), RFC 6749 section 5.2 |
+| `STS-OAUTH-0678` | Under FAPI 1.0 Advanced, an authorization request asked for response_type code with a response mode that is not JARM (Part 2 section 5.2.2 item 2, #187). | invalid_request |
+| `STS-OAUTH-0679` | Under FAPI 1.0 Advanced, an authorization request (its signed request object) named no scope; RFC 6749 section 3.3's refusal rather than a default (#187). | invalid_request |
 
 ## STS-SAML
 
@@ -2076,6 +2078,7 @@ Raised from: oidfed/.
 | `STS-OIDFED-0064` | A Subordinate Events request named an entity that is not, and never was, a subordinate of this realm (#137). | not_found (HTTP 404) |
 | `STS-OIDFED-0065` | A subordinate's event could not be written to the realm's register; the act that caused it stands (#137). | — |
 | `STS-OIDFED-0066` | An Entity Collection crawl failed, or its result could not be kept in the realm's register (#136). | — |
+| `STS-OIDFED-0067` | A request object from a relying party registered automatically through an OpenID Federation failed section 12.1.1.1: aud not this OP alone, iss or client_id not the RP, a sub, or no jti or exp (#187). | invalid_request_object (HTTP 400) |
 
 ## STS-KRB
 
@@ -2712,6 +2715,8 @@ Raised from: oid4vc/.
 | `STS-VC-0092` | oid4vp.verifierAttestation cannot be used — unreadable, not typ verifier-attestation+jwt, no sub, expired, or its cnf is not this realm's request-signing key — so no signed request with the verifier_attestation prefix was built (#129). | HTTP 500 |
 | `STS-VC-0093` | A SIOPv2 enrolment was started or collected by a browser holding no sign-on session, or for a person other than the one now signed in; or a self-issued ID was asked for as a second factor, which it is not offered as (#129). | HTTP 403 / 400 page |
 | `STS-VC-0094` | A key proved by a SIOPv2 enrolment was not enrolled: it is already enrolled for somebody, or the person holds the most they may (#129). | HTTP 400 page |
+| `STS-VC-0095` | A credential issuer's well-known document was asked for at an inserted path no issuer here has (OpenID4VCI 1.0 section 12.2.2, #187). | HTTP 404 {error: not_found} |
+| `STS-VC-0096` | A presentation to the Verifier's Response URI was not in the response mode its request asked for, or its direct_post.jwt response named no outstanding request's key or could not be opened (OpenID4VP 1.0 section 8.3.1, #187). | invalid_request (HTTP 400) |
 
 ## STS-SSF
 

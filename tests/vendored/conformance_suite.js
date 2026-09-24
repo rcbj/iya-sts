@@ -210,7 +210,11 @@ async function waitForSuite() {
 // One module: created in the plan, then waited on until it finishes. A
 // module left WAITING past MODULE_SECONDS is stopped and counted as the
 // failure it is. Answers its FAILURE and WARNING log entries as well.
-async function runModule(planId, module) {
+// `onWaiting(id, info)`, when given, is awaited each time the module goes
+// WAITING — for a module that waits on this service's OPERATOR (a credential
+// offer to be sent, a transaction code to be typed), which the driver then
+// plays.
+async function runModule(planId, module, onWaiting) {
   log.debug("Entering runModule(). " + module.testModule);
   const q = "test=" + encodeURIComponent(module.testModule) + "&plan=" +
             encodeURIComponent(planId) +
@@ -222,11 +226,23 @@ async function runModule(planId, module) {
   const id = created.body.id;
   let info = null;
   const deadline = Date.now() + MODULE_SECONDS * 1000;
+  let wasWaiting = false;
   while (true) {
     info = (await suite("GET", "api/info/" + id)).body || {};
     if (info.status === "FINISHED" || info.status === "INTERRUPTED") {
       break;
     }
+    if (onWaiting && info.status === "WAITING" && !wasWaiting) {
+      try {
+        await onWaiting(id, info);
+      } catch (e) {
+        // Reported, and the module is left to time out or fail on its own:
+        // the suite's log is the record of what it was not sent.
+        log.warn("The operator step for " + module.testModule +
+                 " failed: " + ((e && e.message) || e));
+      }
+    }
+    wasWaiting = info.status === "WAITING";
     if (Date.now() > deadline) {
       await suite("DELETE", "api/runner/" + id);
       info = Object.assign({}, info, { status: "TIMED OUT" });
@@ -248,8 +264,17 @@ async function runModule(planId, module) {
            warnings: entries("WARNING") };
 }
 
+// What a running module has EXPOSED — the endpoints it waits on — from the
+// runner's own view of it (`GET /api/runner/{id}`).
+async function exposed(id) {
+  log.debug("Entering exposed(). " + id);
+  const r = await suite("GET", "api/runner/" + id);
+  log.debug("Leaving exposed(). " + r.status);
+  return (r.body && r.body.exposed) || {};
+}
+
 // A whole plan: created with its configuration, every module run in turn.
-async function runPlan(planName, variant, configuration, label) {
+async function runPlan(planName, variant, configuration, label, onWaiting) {
   log.debug("Entering runPlan(). " + planName);
   const created = await suite("POST", "api/plan?planName=" +
     encodeURIComponent(planName) +
@@ -261,7 +286,7 @@ async function runPlan(planName, variant, configuration, label) {
   const results = [];
   const modules = created.body.modules || [];
   for (let i = 0; i < modules.length; i++) {
-    const got = await runModule(created.body.id, modules[i]);
+    const got = await runModule(created.body.id, modules[i], onWaiting);
     log.info("  " + label + " " + got.module + ": " +
              (got.result || got.status) +
              (got.failures.length ? " — " + got.failures[0].src + ": " +
@@ -321,18 +346,30 @@ function suiteCaFile() {
 // ---------------------------------------------------------------------------
 // THE LEDGER. `expected` is `<label>/<module>` -> reason (a FAILED module
 // that is argued), `knownWarnings` is `<condition>` -> reason (a WARNING the
-// service keeps, and why). Answers the counts and the unexplained lines.
+// service keeps, and why), and `knownFailures` is `<condition>` (or, for a
+// difference in one module only, `<label>/<module>/<condition>`) -> reason: a
+// FAILURE from that condition alone is argued, and a module that fails on it
+// AND on anything else is still a failure — which is why it is keyed by the
+// suite's condition and not by the module, so one argued difference cannot
+// hide the next. Answers the counts and the unexplained lines.
 // ---------------------------------------------------------------------------
-function judge(label, ran, expected, knownWarnings) {
+function judge(label, ran, expected, knownWarnings, knownFailures) {
   log.debug("Entering judge(). " + label);
   const counts = {};
   const unexplained = [];
   const warned = {};
+  const failureKnown = knownFailures || {};
   ran.results.forEach(function (r) {
     const k = r.result || r.status;
     counts[k] = (counts[k] || 0) + 1;
-    const argued = expected[label + "/" + r.module] ||
-                   expected["*/" + r.module];
+    const onlyKnown = r.status === "FINISHED" && r.failures.length > 0 &&
+      r.failures.every(function (f) {
+        return !!(failureKnown[f.src] ||
+                  failureKnown[label + "/" + r.module + "/" + f.src]);
+      });
+    const moduleArgued = expected[label + "/" + r.module] ||
+                         expected["*/" + r.module];
+    const argued = moduleArgued || onlyKnown;
     if ((r.result === "FAILED" || r.status !== "FINISHED") && !argued) {
       unexplained.push(label + "/" + r.module + " (" + k + "): " +
         r.failures.slice(0, 3).map(function (f) {
@@ -340,7 +377,7 @@ function judge(label, ran, expected, knownWarnings) {
         }).join(" | "));
     }
     r.warnings.forEach(function (w) {
-      if (!knownWarnings[w.src] && !argued) {
+      if (!knownWarnings[w.src] && !moduleArgued) {
         const key = w.src + ": " + w.msg.slice(0, 200);
         warned[key] = (warned[key] || []).concat([r.module]);
       }
@@ -381,6 +418,7 @@ module.exports = {
   suite: suite,
   waitForSuite: waitForSuite,
   runModule: runModule,
+  exposed: exposed,
   runPlan: runPlan,
   judge: judge,
   selected: selected,

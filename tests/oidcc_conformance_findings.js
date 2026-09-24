@@ -18,6 +18,11 @@
 //      refused and what it bought is revoked, unless the realm opts back in
 //      to the old courtesy with `oauth2.codeReplayIdempotent` — which RFC
 //      9700 mode ignores.
+//   3. A request_uri's SHA-256 fragment is checked only while
+//      `oauth2.requestUriFragmentCheck` is on (OpenID Connect Core 6.2 asks
+//      no OP to).
+//   4. OpenID Federation 1.1 section 12.1.1.1's claims, asked of every
+//      request object from a relying party registered automatically.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -141,6 +146,63 @@ function checkCodeSingleUse(t) {
   log.debug("Leaving checkCodeSingleUse().");
 }
 
+// ---------------------------------------------------------------------------
+// 3. OPENID CONNECT CORE 6.2's FRAGMENT, CHECKED ONLY WHILE ASKED.
+// ---------------------------------------------------------------------------
+function checkFragmentSetting(t) {
+  log.debug("Entering checkFragmentSetting().");
+  t.log.info('=== 3. a request_uri fragment is checked while the realm ' +
+             'says so ===');
+  const ro = require('../oauth-oidc/request_object');
+  throwaway('occf-fragment', {});
+  throwaway('occf-no-fragment', { 'oauth2.requestUriFragmentCheck':
+                                    'false' });
+  // A fragment of the right shape that is the digest of something else —
+  // what the suite's request_uri modules send.
+  const other = require('crypto').createHash('sha256')
+    .update('random bytes').digest('base64url');
+  const uri = 'https://c.example/ro#' + other;
+  t.check(/SHA-256 of a different/.test(inRealm('occf-fragment', function () {
+    return ro.fragmentProblem(uri, 'eyJhbGciOiJub25lIn0.eyJhIjoxfQ.');
+  })), '3a. by default a digest fragment of other content is refused');
+  t.equal(inRealm('occf-no-fragment', function () {
+    return ro.fragmentProblem(uri, 'eyJhbGciOiJub25lIn0.eyJhIjoxfQ.');
+  }), '', '3b. with oauth2.requestUriFragmentCheck off it is only a ' +
+          'version name (oidcc-request-uri-*)');
+  log.debug("Leaving checkFragmentSetting().");
+}
+
+// ---------------------------------------------------------------------------
+// 4. OPENID FEDERATION 1.1 SECTION 12.1.1.1 ON EVERY REQUEST OBJECT.
+// ---------------------------------------------------------------------------
+function checkFederationRequestObject(t) {
+  log.debug("Entering checkFederationRequestObject().");
+  t.log.info('=== 4. an automatic RP\'s request object, every time ===');
+  const reg = require('../oidfed/oidfed_registration').OidfedRegistration;
+  const now = Math.floor(Date.now() / 1000);
+  const rp = 'https://rp.example.org';
+  const op = 'https://op.example.org';
+  const good = { aud: op, iss: rp, client_id: rp, jti: 'j1', exp: now + 60 };
+  t.equal(reg.proofClaimsProblem(good, 'request', rp, op, now, 0), '',
+          '4a. the claims section 12.1.1.1 asks for pass');
+  const cases = [
+    ['a sub', Object.assign({}, good, { sub: rp }), /no sub/],
+    ['no jti', Object.assign({}, good, { jti: undefined }), /no jti/],
+    ['no exp', Object.assign({}, good, { exp: undefined }), /no exp/],
+    ['no iss', Object.assign({}, good, { iss: undefined }), /iss must/],
+    ['no aud', Object.assign({}, good, { aud: undefined }), /aud must/],
+    ['another aud', Object.assign({}, good, { aud: [op, rp] }), /aud must/]
+  ];
+  cases.forEach(function (c, i) {
+    t.check(c[2].test(reg.proofClaimsProblem(c[1], 'request', rp, op, now,
+                                             0)),
+            '4' + String.fromCharCode(98 + i) + '. a request object with ' +
+            c[0] + ' is refused (openid-federation-automatic-client-' +
+            'registration-invalid-*)');
+  });
+  log.debug("Leaving checkFederationRequestObject().");
+}
+
 function removeRealms() {
   log.debug("Entering removeRealms().");
   MADE.splice(0).forEach(function (id) {
@@ -154,6 +216,8 @@ function run(t) {
   try {
     checkRefreshBinding(t);
     checkCodeSingleUse(t);
+    checkFragmentSetting(t);
+    checkFederationRequestObject(t);
   } finally {
     removeRealms();
   }

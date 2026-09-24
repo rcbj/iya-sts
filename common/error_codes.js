@@ -6917,6 +6917,16 @@ const CODES = [
       'agree, and for client authentication each must be the client_id ' +
       '(RFC 7523 section 3, OpenID Connect Core section 9, #176).',
     spec: 'invalid_client (HTTP 401), RFC 6749 section 5.2' },
+  { code: 'STS-OAUTH-0678',
+    summary: 'Under FAPI 1.0 Advanced, an authorization request asked for ' +
+      'response_type code with a response mode that is not JARM (Part 2 ' +
+      'section 5.2.2 item 2, #187).',
+    spec: 'invalid_request' },
+  { code: 'STS-OAUTH-0679',
+    summary: 'Under FAPI 1.0 Advanced, an authorization request (its ' +
+      'signed request object) named no scope; RFC 6749 section 3.3\'s ' +
+      'refusal rather than a default (#187).',
+    spec: 'invalid_request' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -8408,6 +8418,12 @@ const CODES = [
     summary: 'An Entity Collection crawl failed, or its result could not be ' +
       'kept in the realm\'s register (#136).',
     spec: '' },
+  { code: 'STS-OIDFED-0067',
+    summary: 'A request object from a relying party registered ' +
+      'automatically through an OpenID Federation failed section ' +
+      '12.1.1.1: aud not this OP alone, iss or client_id not the RP, a sub, ' +
+      'or no jti or exp (#187).',
+    spec: 'invalid_request_object (HTTP 400)' },
 
   // ===== KRB ===============================================================
   { code: 'STS-KRB-0001',
@@ -10957,6 +10973,17 @@ const CODES = [
       'already enrolled for somebody, or the person holds the most they may ' +
       '(#129).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0095',
+    summary: 'A credential issuer\'s well-known document was asked for at ' +
+      'an inserted path no issuer here has (OpenID4VCI 1.0 section ' +
+      '12.2.2, #187).',
+    spec: 'HTTP 404 {error: not_found}' },
+  { code: 'STS-VC-0096',
+    summary: 'A presentation to the Verifier\'s Response URI was not in the ' +
+      'response mode its request asked for, or its direct_post.jwt ' +
+      'response named no outstanding request\'s key or could not be ' +
+      'opened (OpenID4VP 1.0 section 8.3.1, #187).',
+    spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
