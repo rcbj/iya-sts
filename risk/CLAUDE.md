@@ -14,9 +14,11 @@ what is not here yet.
 | `risk_engine.ts` | **Assessing one sign-in**: enrichment, the device, the history read before it is moved, the model, the evaluators, the level, and every row it writes. Since P3 also the FACTS the issuance policy decides on (`factsOf()`, `factsForIssuance()`), the step-ups an authentication meets (`satisfiedBy()`), whether a risk Deny is enforced, each person's standing per process, and the decision written back onto the assessment (`settle()`). **It decides nothing itself**: the issuance policy does. |
 | `risk_terms.ts` | **Whose data, on what terms, and who accepted them**: the provider table, each provider's credit as its licence asks (`attributionOf()`), and the recorded acceptance without which no provider's data is imported. |
 | `risk_install.ts` | **The install-time loader**: an operator's CLI, not part of the running service, that pulls each dataset into the database under the provider terms the operator accepts by name. |
+| `risk_upload.ts` | **A dataset file uploaded** (#215): the console's multipart form and `POST /admin-api/risk/upload`, streamed to `risk.uploadDirectory`, hashed on the way, handed to `importVersion()` by path; the per-process `risk.upload-cleanup` job. |
+| `risk_expand.ts` | **The one expansion path** (#215): gzip and zip told apart by content and expanded as `importVersion()` reads them — an upload, the dataset directory and the loader alike — with the decompression-bomb and one-entry refusals. A utility class of static methods; no slot. |
 
-`admin-ui/risk_admin.ts` is Monitoring → Risk; `/admin-api/risk` and
-`/admin-api/risk/:action` are its rule 7 twins. **Since P3 (2026-09-22) the
+`admin-ui/risk_admin.ts` is Monitoring → Risk; `/admin-api/risk`,
+`/admin-api/risk/:action` and `/admin-api/risk/upload` are its rule 7 twins. **Since P3 (2026-09-22) the
 issuance policy decides on the score**: see *Risk is decided by the issuance
 policy*, below.
 
@@ -85,8 +87,9 @@ What each provider's terms change here:
 risk/risk_install.js --manifest datasets.json --accept-terms
 dbip-lite,tor-project` with `STS_DATABASE_URL` set. A dataset whose provider
 is not named in `--accept-terms` is refused and its terms printed; a URL is
-fetched over HTTPS only (`.gz` gunzipped) and imported exactly as the console
-imports one. It is an operator's tool, run by an init container or a deploy
+fetched over HTTPS only, kept as it arrived, and imported exactly as an
+upload is — a `.gz` or `.zip` expanded by `risk_expand.ts` as it is read
+(#215; the loader gunzipped by the address's NAME until then). It is an operator's tool, run by an init container or a deploy
 step — **for the datasets it loads, the running service dials nobody**. The
 one exception is the FIDO MDS3 BLOB since #105: MDS3 section 3.2 says a FIDO
 server MUST be able to download it, so `risk.mdsUrl` (empty by default) is
@@ -168,8 +171,8 @@ imported into memory costs memory; postgres is where that belongs.
 `risk_datasets.ts`'s header has the four rules. What they cost to get right:
 
 * **The service fetches nothing.** A version is pulled in at install time
-  (`risk_install.ts`), uploaded (a list you can paste, on the page or the
-  API), or dropped in `risk.datasetsDirectory` with a JSON manifest by an
+  (`risk_install.ts`), uploaded as a file or pasted as a list (on the page or
+  the API), or dropped in `risk.datasetsDirectory` with a JSON manifest by an
   operator pipeline.
 * **A refused version is kept.** A SHA-256 that does not match
   (`STS-RISK-0002`), a file with no row (`STS-RISK-0004`), a version that
@@ -194,6 +197,71 @@ lose their rows, and failures past `risk.failureRetentionDays` are deleted.
 Batched `DELETE`, because the application role has no `TRUNCATE` and cannot
 create a partition. **The directory import is the other job**,
 `risk.dataset-directory`, off while `risk.datasetsDirectory` is empty.
+
+## A DATASET FILE IS UPLOADED, STREAMED, AND EXPANDED AS IT IS READ (#215)
+
+rcbj (2026-09-24): pasting a DB-IP city file into a text box does not work,
+so Monitoring → Risk takes a FILE — `POST /admin/risk/upload`, a plain
+multipart form with no script — and `POST /admin-api/risk/upload` takes the
+same file as its body with the fields as query parameters. `risk_upload.ts`'s
+header has the six rules; what they cost to get right:
+
+* **THE BODY PARSERS SKIP EXACTLY THESE TWO PATHS.** `common/app.js` drains
+  every body into memory at 5 MB, and a handler reading a drained stream
+  waits for ever. `app.isStreamedUpload()` is the one predicate — method and
+  path after the realm prefix, case-insensitive with an optional trailing
+  slash, because that is how express routes — and it reads `baseUrl` too,
+  since the console gate asks it from inside `app.use('/admin', …)` where
+  express has taken the mount off `req.path`, and a predicate reading
+  `req.path` alone would leave the gate checking a token it cannot see. A
+  body that reaches the
+  handler already read is refused, STS-RISK-0031, rather than waited on.
+* **AUTHENTICATION IS ON THE HEADERS, THE REST IS IN THE FIELDS.** The gate
+  (session, role, policy) and the API's token gate run before the route. The
+  console's CSRF token and a realm administrator's reach are in the form, so
+  the gate leaves the token to the upload (the same predicate), and the form
+  sends its FIELDS BEFORE ITS FILE — the token first, as `withCsrf()` puts it
+  — and `receiveForm()` checks the token, the realm (`admin_scope.ts`'s
+  `/admin/risk` rule) and `datasets.precheck()` (dataset, format, realm,
+  provider, terms) when the file part begins, before it writes a byte. A
+  field after the file is refused, but only after the fields before it
+  passed, so a forged form is refused as forged. A declared length over
+  `risk.uploadMaxBytes` (STS-RISK-0028) and a directory with no room
+  (`statfs`, STS-RISK-0029) are refused before the body is read at all.
+* **A REFUSAL NEVER DESTROYS THE REQUEST.** `stream.pipeline()` would, and
+  its first stream is the request whose socket the 413 still has to go out
+  on. The request is unpiped and drained, and the route answers
+  `Connection: close`.
+* **THE DISPATCH PATH ALREADY STREAMS**: `request_pool.js`'s `proxy()` pipes
+  the body to its worker, and the parsers — and this exemption — run there.
+  The import runs in the process that received the upload.
+* **EXPANDED BY CONTENT, NEVER ONTO DISK** (`risk_expand.ts`): gzip by
+  1f 8b, zip by `PK\x03\x04`, plain otherwise, streamed into
+  `importVersion()`'s line reader — so the disk an upload needs is its own
+  size. A zip holds one data entry (directories and `__MACOSX/` aside) or is
+  refused as ambiguous (STS-RISK-0033). The expanded bytes are counted and
+  refused at `min(risk.expandedMaxBytes, max(16 MiB, risk.expansionMaxRatio
+  × stored))` (STS-RISK-0032); a zip entry's declared size is held to the
+  same before it is read. A corrupt stream is STS-RISK-0034. The dataset
+  directory and the loader share it, so **a `sha256` anywhere is of the file
+  as delivered**, compressed.
+* **ASYNCHRONOUS**: `importVersion()`'s `onBegun` answers the upload (202)
+  the moment the version is recorded `loading`; a refusal before that is the
+  answer. The upload hands its streamed digest in (`fileSha256`) rather
+  than have the file read twice.
+* **CRASH LEFTOVERS HAVE TWO JOBS AND NO TIMER.** Every batch stamps the
+  version's `progressAt` through `store.touchVersion()`, which writes only
+  while the row is still `loading`; `risk.stalled-imports` (cluster) refuses
+  a version with no stamp for `risk.importStallMinutes` (STS-RISK-0035), and
+  the importer, finding its stamp refused, stops rather than write `ready`
+  over it. `risk.upload-cleanup` (per process, quiet) touches the files its
+  process holds, removes its own unheld ones and another process's untouched
+  for the same time (STS-RISK-0036), and never a file whose name is not an
+  upload's. In the cluster stack each node has its own upload volume.
+* **NODE'S 300 s `requestTimeout` BOUNDS AN UPLOAD**, which the docs say:
+  a very large file over a slow link goes through the loader or the
+  directory. The cluster stack's balancer is L4 and needs nothing
+  (`tests/cluster/haproxy.cfg` says why).
 
 ## THE FAILURE HISTORY IS WRITTEN WHERE EVERY PASSWORD DOOR MEETS
 
@@ -627,7 +695,8 @@ saying why.
 
 ## THE REQUIRE ORDER, AND THE TRAP IT HIT
 
-The four libraries and the page are built at **18j** in
+The five libraries (the store, the terms, the datasets, the failures and,
+since #215, the upload) and the page are built at **18j** in
 `common/protocol_stack.ts`, after the scheduler page. **Nothing may require
 them before the root does**: a module on the `InstanceSlot` pattern that is
 loaded before `deferToRoot()` builds its own default instance, and the root's
@@ -642,6 +711,14 @@ hit the same trap through `request_pool.js` in P0.
   arithmetic, every format, the refusals, activation, rollback, deletion,
   retention, staleness, per-realm lists, the directory, the failure history,
   the page's actions.
+* `tests/risk_upload.js` (#215) — in process: gzip, zip and plain through
+  both doors to `active`, the bombs, the ambiguous and corrupt archives, the
+  cap and a full disk, the form's CSRF and field order and the route's role
+  check, the API's body types, the exemption predicate, both crash jobs, and
+  a `.gz` and `.zip` by path. `tests/vendored/sts_admin_risk_upload.js`
+  (`local: true`) — the same over HTTP in every mode: a `.gz` through the
+  API and a `.zip` through the console with a real session and token, a
+  realm's upload, and the refusals.
 * `tests/vendored/sts_admin_risk.js` (`local: true`) — over HTTP in every mode,
   so the postgres driver's SQL answers in `single-node` and `cluster`, and in
   `cluster` a version activated on one node is answered by both.

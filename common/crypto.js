@@ -5575,6 +5575,31 @@ async function verifyPkcs7SignedData(der, options) {
   };
 }
 
+// A SHA-256 FED AS BYTES ARRIVE (#215): `update(chunk)` for each chunk, then
+// `hex()` once, lowercase. A dataset upload (`risk/risk_upload.ts`) is hashed
+// on its way to disk rather than read a second time afterwards — a file of
+// several hundred megabytes read twice is the cost this saves. `update()` is
+// a hot path (one call per chunk of the upload), so it logs nothing.
+function sha256Digester() {
+  log.debug("Entering sha256Digester().");
+  const hash = nodeCrypto.createHash('sha256');
+  let digest = '';
+  log.debug("Leaving sha256Digester().");
+  return {
+    update: function (chunk) {
+      hash.update(chunk);
+    },
+    hex: function () {
+      log.debug("Entering sha256Digester().hex().");
+      if (!digest) {
+        digest = hash.digest('hex');
+      }
+      log.debug("Leaving sha256Digester().hex().");
+      return digest;
+    }
+  };
+}
+
 // The SHA-256 of a file, streamed, lowercase hex — refusing one larger than
 // `limit` bytes when `limit` is above 0 (SPIRE's `util.GetSHA256Digest()`,
 // which the unix workload attestor hashes an executable with, #40). Rejects
@@ -7141,6 +7166,7 @@ module.exports = {
   tpmMakeCredential: tpmMakeCredential,
   verifyPkcs7SignedData: verifyPkcs7SignedData,
   sha256OfFile: sha256OfFile,
+  sha256Digester: sha256Digester,
   // --- section 9: the Kerberos PRF and KRB-FX-CF2 (#173) ---
   KRB5_PRF_ETYPES: KRB5_PRF_ETYPES,
   krb5Nfold: krb5Nfold,

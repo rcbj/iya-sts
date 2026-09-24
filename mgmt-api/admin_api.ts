@@ -2156,6 +2156,115 @@ class AdminApi {
           });
         } },
 
+      // THE DATASET UPLOAD (#215): `POST /admin/risk/upload`'s twin (rule 7).
+      // The body is the FILE — never parsed: `common/app.js` exempts this
+      // path from its body parsers, and `risk/risk_upload.ts` streams it to
+      // disk — and the fields are query parameters, which the handler
+      // checks by name. ABOVE `/risk/:action`, which would otherwise take
+      // `upload` as an action it does not know.
+      { method: 'POST', path: BASE + '/risk/upload', tag: 'Risk',
+        operationId: 'uploadRiskDataset',
+        summary: 'Upload a risk dataset file, and import it',
+        description: 'The request body is the dataset file as its provider ' +
+                     'publishes it — gzip, a zip holding exactly one file, ' +
+                     'or plain text, told apart by its first bytes and ' +
+                     'expanded as it is read, never onto disk — sent as ' +
+                     '`application/octet-stream`, `application/gzip` or ' +
+                     '`application/zip`. The fields are query parameters, ' +
+                     'as `POST /admin-api/risk/import` takes them in its ' +
+                     'body; `sha256` is of the file as sent. Refused ' +
+                     'before a byte is read when the declared length is ' +
+                     'over risk.uploadMaxBytes (413) or the upload ' +
+                     'directory\'s free space cannot hold it (507), and ' +
+                     'stopped where the body passes the cap. **Answers ' +
+                     '202 as soon as the file is stored** and the version ' +
+                     'is recorded `loading`; `GET /admin-api/risk` then ' +
+                     'shows it `active`, or `refused` with its reason (a ' +
+                     'decompression bomb past risk.expandedMaxBytes or ' +
+                     'risk.expansionMaxRatio, a zip of more than one ' +
+                     'file, a SHA-256 that does not match, no row, a ' +
+                     'shrink). A refusal found before the version is ' +
+                     'recorded — the dataset, format, realm or provider, ' +
+                     'terms not accepted — is the answer (400), as is a ' +
+                     'version already recorded (200, `duplicate: true`). ' +
+                     'Send a `Content-Length`: without one the whole of ' +
+                     'risk.uploadMaxBytes must be free.',
+        mirrors: 'POST /admin/risk/upload',
+        handlerOwnsBody: true,
+        parameters: [
+          { name: 'dataset', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The dataset, as GET /admin-api/risk lists them.' },
+          { name: 'format', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The format of the file once expanded.' },
+          { name: 'realm', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The realm, for an operator list only.' },
+          { name: 'version', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The version\'s name; its SHA-256 by default.' },
+          { name: 'sha256', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The SHA-256 of the file AS SENT (compressed, if ' +
+                         'it is), which the provider publishes; a ' +
+                         'mismatch refuses the version.' },
+          { name: 'publishedAt', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'An ISO 8601 date.' },
+          { name: 'provider', in: 'query', required: false,
+            schema: { type: 'string' } },
+          { name: 'licence', in: 'query', required: false,
+            schema: { type: 'string' } },
+          { name: 'attribution', in: 'query', required: false,
+            schema: { type: 'string' } },
+          { name: 'activate', in: 'query', required: false,
+            schema: { type: 'string', enum: ['true', 'false'] },
+            description: '`false` loads without activating.' },
+          { name: 'acceptTerms', in: 'query', required: false,
+            schema: { type: 'string', enum: ['true', 'false'] },
+            description: 'Accept the provider\'s current terms as part of ' +
+                         'this import.' }
+        ],
+        requestBodyTypes: ['application/octet-stream', 'application/gzip',
+                           'application/zip'],
+        responseDescription: 'The version already recorded ' +
+                             '(`duplicate: true`), or the import\'s outcome ' +
+                             'where it ended before the answer.',
+        extraResponses: {
+          '202': 'Stored and loading: `state`, `dataset`, `realm`, ' +
+                 '`version`, `sha256`, `bytes` and `kind` (gzip, zip or ' +
+                 'plain).',
+          '413': 'Larger than risk.uploadMaxBytes.',
+          '415': 'Not one of the three body types.',
+          '507': 'The upload directory has no room for it.'
+        },
+        handler: function (req, res) {
+          log.debug("Entering the management API risk upload.");
+          riskAdmin.receiveUpload(req, 'the management API at ' +
+                                  '/admin-api/risk/upload')
+            .then(function (answer) {
+              if (answer.close) {
+                res.set('Connection', 'close');
+              }
+              if (answer.code) {
+                errorCodes.mark(res, answer.code);
+              }
+              self.sendJson(res, answer.status, answer.body);
+              log.debug("Leaving the management API risk upload. " +
+                        answer.status);
+            }).catch(function (e) {
+              log.warn(errorCodes.tag('STS-RISK-0037') + 'risk: an upload ' +
+                       'failed: ' + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-RISK-0037');
+              res.set('Connection', 'close');
+              self.sendJson(res, 500, { ok: false,
+                                        errors: [String((e && e.message) ||
+                                                        e)] });
+              log.debug("Leaving the management API risk upload. Threw.");
+            });
+        } },
+
       { method: 'POST', route: BASE + '/risk/:action', tag: 'Risk',
         mirrors: 'POST /admin/risk',
         handler: function (req, res) {

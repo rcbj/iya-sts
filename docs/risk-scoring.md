@@ -324,6 +324,13 @@ the container images or the tests: the test fixtures are synthetic, and
 the provider's terms and imports them into its own database. There are three
 ways in:
 
+- **Uploaded, on the console or the API.** Choose the file on Monitoring →
+  Risk's *Upload a file* form, or send it as the body of
+  `POST /admin-api/risk/upload`. Upload the file exactly as the provider
+  publishes it — `.gz`, a `.zip` holding the one file, or plain text. It is
+  expanded as it is read, and nothing expanded is written to disk. See
+  [Uploading a file](#uploading-a-file). A short list can also be pasted on
+  the same page, or sent as `content` to `POST /admin-api/risk/import`.
 - **At install time, with the loader.** Run it inside the image, with
   `STS_DATABASE_URL` set:
 
@@ -338,14 +345,14 @@ ways in:
 
   `datasets.json` lists the datasets, each with `dataset`, `format`, and
   either a `url` or a `file`. Each can also carry `version`, `publishedAt`
-  and `sha256`. The loader downloads over HTTPS only. It gunzips a `.gz` file
-  and imports each dataset the same way the console does.
+  and `sha256`. The loader downloads over HTTPS only, keeps the file as it
+  arrived, and imports each dataset the same way an upload is imported: a
+  `.gz` or `.zip` is expanded as it is read. A `sha256` is of the file as
+  downloaded.
 - **Through a watched directory.** Set `risk.datasetsDirectory` and put each
   file beside a JSON manifest with the same fields, `file` naming the file.
-  The `risk.dataset-directory` job imports each manifest once.
-- **Through the console or the API.** Paste a list on Monitoring → Risk, or
-  send `POST /admin-api/risk/import`. This suits small lists; a file of
-  millions of rows belongs in the loader or the directory.
+  The `risk.dataset-directory` job imports each manifest once. A `.gz` or
+  `.zip` file there is expanded in the same way.
 
 The running service never fetches a dataset. It does fetch the CRLs of a
 FIDO BLOB's signing chain when a BLOB is uploaded to it, as it does for any
@@ -360,6 +367,62 @@ certificate chain presented to it.
 | `iplist.reputation` | an IP reputation list | the same |
 | `iplist.operator-deny`, `iplist.operator-allow` | your own lists, one per realm | the same |
 | `fido.mds3` | every FIDO-certified authenticator model and its status reports, by AAGUID | the MDS3 BLOB exactly as FIDO publishes it: one signed JWT |
+
+### Uploading a file
+
+Monitoring → Risk's *Upload a file* form takes the dataset, the format, the
+realm (for an operator list), and optionally a version name, the SHA-256 of
+the file as you downloaded it, and your acceptance of the provider's terms.
+It needs Admin Write. The same upload for a script is
+`POST /admin-api/risk/upload`, with the file as the body and the same fields
+as query parameters:
+
+```bash
+curl -X POST "https://sts.example.com/admin-api/risk/upload?dataset=geo.city&format=dbip-city-csv&acceptTerms=true" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/gzip" \
+  --data-binary @dbip-city-lite-2026-09.csv.gz
+```
+
+The body type can be `application/octet-stream`, `application/gzip` or
+`application/zip`. Whichever you send, the service decides how to read the
+file from its first bytes:
+
+- **gzip** is expanded as it is read.
+- **zip** must hold exactly one file. Folders, and the `__MACOSX` entries a
+  Mac adds, are ignored. An archive with two files is refused, because the
+  service would have to guess which one you meant.
+- **Anything else** is read as plain text.
+
+**The answer comes as soon as the file is stored.** The version then shows
+as *loading* on the page (reload to follow it) and in `GET /admin-api/risk`,
+and becomes *active*, or *refused* with the reason. A city file of a few
+million rows takes minutes to load into the database. A refusal found before
+the file is stored, such as terms nobody has accepted, is the answer itself.
+
+The upload is written to `risk.uploadDirectory` while it is imported, and
+deleted when the import ends. Every stack this repository ships mounts a
+volume there. Give it room for the largest file you will upload, as
+compressed. Several limits apply:
+
+| Setting | Default | What it refuses |
+|---|---|---|
+| `risk.uploadMaxBytes` | 2 GiB | A larger file. A declared length over it is refused before anything is read. |
+| (free space) | | An upload the directory has no room for. Send a `Content-Length`: without one, the whole of `risk.uploadMaxBytes` must be free. |
+| `risk.expandedMaxBytes` | 8 GiB | A compressed file that expands past it. |
+| `risk.expansionMaxRatio` | 100 | A compressed file that expands more than this many times its size, past 16 MiB. Real datasets compress 5 to 20 times; a decompression bomb, a thousand. |
+
+The two expansion limits apply to a `.gz` or `.zip` from the watched
+directory and the loader too.
+
+The whole upload has to arrive within five minutes, the service's request
+timeout. On a slow link, use the loader or the watched directory for a very
+large file.
+
+If the service stops part-way through an import, the version is left
+*loading*. The `risk.stalled-imports` job marks it *refused* once it has made
+no progress for `risk.importStallMinutes` (15). The `risk.upload-cleanup` job,
+which runs in every process, deletes a file left behind in the same way.
 
 ### Loading datasets on a new deployment
 
@@ -377,8 +440,28 @@ accept on Monitoring → Risk or with `POST /admin-api/risk/accept-terms`. The
 provider names are `dbip-lite`, `ipinfo-lite`, `tor-project`, `firehol` and
 `fido-mds3`. Your own allow and deny lists need no acceptance.
 
-**2. Write a manifest.** This one loads DB-IP Lite's city and ASN data, the Tor
-exit list, FireHOL's level 1 reputation list and the FIDO metadata:
+**2. Download the files.** DB-IP Lite's city and ASN data, the Tor exit list,
+FireHOL's level 1 reputation list and the FIDO metadata are published at the
+addresses in the manifest below. Keep each file as it downloads: there is no
+need to unpack a `.gz`.
+
+**3. Upload each file on Monitoring → Risk.** This is the easy way. For each
+file, choose its dataset and format, tick the box accepting the provider's
+terms if you have not accepted them yet, choose the file, and press *Upload
+and import*. See [Uploading a file](#uploading-a-file) for what happens next.
+To script the same thing, use `POST /admin-api/risk/upload`.
+
+| File | Dataset | Format |
+|---|---|---|
+| `dbip-city-lite-YYYY-MM.csv.gz` | `geo.city` | `dbip-city-csv` |
+| `dbip-asn-lite-YYYY-MM.csv.gz` | `asn` | `dbip-asn-csv` |
+| `torbulkexitlist` | `iplist.tor-exit` | `ip-list` |
+| `firehol_level1.netset` | `iplist.reputation` | `ip-list` |
+| the FIDO MDS3 BLOB | `fido.mds3` | `fido-mds3-jwt` |
+
+**Or run the install-time loader instead.** It downloads and imports every
+file in one command, which suits an automated installation. It reads a
+manifest like this one:
 
 ```json
 { "datasets": [
@@ -401,8 +484,8 @@ file name. Use the current month's, from
 needed if you load no city data. Add `"sha256"` to an entry to have the file
 checked before it is imported.
 
-**3. Run the loader where it can reach the database.** The loader is in the
-service image, so run it in a container of that image:
+Run the loader where it can reach the database. The loader is in the service
+image, so run it in a container of that image:
 
 ```bash
 docker cp datasets.json sts:/tmp/datasets.json
@@ -437,8 +520,8 @@ limit counts for nothing (see
 
 | Dataset | Stale after | How to keep it current |
 |---|---|---|
-| Tor exits, reputation list | `risk.ipListStaleAfterHours` (24 hours) | Re-run the loader, or feed the watched directory, at least daily. |
-| Geolocation and ASN | `risk.geoStaleAfterDays` (45 days) | Load each monthly release. |
+| Tor exits, reputation list | `risk.ipListStaleAfterHours` (24 hours) | Upload them again, re-run the loader, or feed the watched directory, at least daily. |
+| Geolocation and ASN | `risk.geoStaleAfterDays` (45 days) | Upload each monthly release. |
 | FIDO metadata | its own `nextUpdate`, plus `risk.mdsStaleGraceDays` | Set `risk.mdsUrl` to `https://mds3.fidoalliance.org/`, and the `risk.mds-refresh` job downloads it daily. |
 
 For the lists, the watched directory is usually easier than re-running the
