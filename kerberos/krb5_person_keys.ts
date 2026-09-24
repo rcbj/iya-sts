@@ -963,7 +963,9 @@ class Krb5PersonKeys {
     const queue = this.inFlightKey(name);
     const previous = inFlight.get(queue) || Promise.resolve();
     const next = previous.then(function () {
-      return self.derive(name, password, event);
+      return self.derive(name, password, event,
+                         (info && typeof info.hash === 'string' &&
+                          info.hash) || null);
     }).catch(function (e) {
       log.error(errorCodes.tag('STS-KRB-0107') + 'krb5-keys: deriving the ' +
                 'Kerberos keys for ' + name + ' failed: ' +
@@ -998,7 +1000,7 @@ class Krb5PersonKeys {
   }
 
   private async derive(name: string, password: string,
-                       event: string): Promise<Json> {
+                       event: string, hash: string | null): Promise<Json> {
     const { log, principals, config, errorCodes, audit,
             kcrypto } = this.deps;
     const directory = this.directory;
@@ -1010,6 +1012,22 @@ class Krb5PersonKeys {
                'so no Kerberos keys were derived.');
       log.debug('Leaving Krb5PersonKeys.derive(). Nothing to key.');
       return { derived: false, why: 'no-password' };
+    }
+    // BOUND TO THE HASH THE PASSWORD WAS CHECKED AGAINST, not to the one on
+    // the entry now. This derivation may have waited behind another in the
+    // queue, and a password SET in the meantime — here or, through the change
+    // log, on another node — leaves the entry holding a hash `password` does
+    // not produce. Stamping that hash on these keys wrote the OLD password's
+    // keys as the NEW one's, and the KDC then refused the new password's
+    // keytab (sts_kerberos_keytab on the cluster stack, 2026-09-24). The
+    // superseded check below catches a change DURING the derivation; this
+    // catches one BEFORE it started.
+    if (hash && current.passwordHash !== hash) {
+      log.info('krb5-keys: the password for ' + name + ' changed before its ' +
+               'queued derivation started, so none was made from it; the ' +
+               'newer password\'s derivation writes its own.');
+      log.debug('Leaving Krb5PersonKeys.derive(). Superseded before it ran.');
+      return { derived: false, why: 'superseded' };
     }
     const stamp = this.stampOf(current.passwordHash);
     const wanted = principals.KDC_ETYPES.slice();

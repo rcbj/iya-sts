@@ -522,12 +522,30 @@ class Credentials {
   // handler AFTER it has committed, for setPassword()'s reason.
   passwordWritten(name, password) {
     const { log } = this.deps;
+    const directory = this.directory;
     log.debug("Entering Credentials.passwordWritten().");
-    this.notifyPassword(name, password, 'set');
+    // The hash is read back rather than handed in: the handler committed it
+    // a line ago with no await between, so this is the one it wrote.
+    let hash = null;
+    try {
+      hash = directory && directory.readPassword(name) || null;
+    } catch (e) {
+      log.debug('Caught in Credentials.passwordWritten(): ' +
+                ((e && e.message) || e));
+      // No hash to bind the derivation to; the observer then derives as it
+      // did before the hash was passed, which is the old behaviour.
+    }
+    this.notifyPassword(name, password, 'set', hash);
     log.debug("Leaving Credentials.passwordWritten().");
   }
 
-  private notifyPassword(name, password, event) {
+  // `hash` is the stored value this plaintext was VERIFIED against or has
+  // just been WRITTEN as. An observer that works asynchronously must bind
+  // its result to it, not to whatever the entry holds when it gets round to
+  // the work: a derivation queued for the old password and started after a
+  // reset landed would otherwise stamp the old password's keys as the new
+  // one's (seen on the cluster stack, 2026-09-24 — sts_kerberos_keytab).
+  private notifyPassword(name, password, event, hash?) {
     const { log } = this.deps;
     log.debug("Entering Credentials.notifyPassword().");
     if (!this.passwordObserver || !name || !password) {
@@ -535,7 +553,8 @@ class Credentials {
       return;
     }
     try {
-      this.passwordObserver(name, String(password), { event: event });
+      this.passwordObserver(name, String(password),
+                            { event: event, hash: hash || null });
     } catch (e) {
       // Swallowed with a reason: see the header. What is lost is whatever the
       // observer derives, and the log says so; the credential act it observed
@@ -864,7 +883,7 @@ class Credentials {
       this.secondFactorRefusal(finished, ready.name, opts) || finished;
     if (answer.ok && answer.reason === 'verified') {
       // The plaintext was just CONFIRMED — see the password observer above.
-      this.notifyPassword(ready.name, password, 'verified');
+      this.notifyPassword(ready.name, password, 'verified', ready.stored);
     }
     this.noteRefusal(username, opts, answer);
     log.debug('Leaving Credentials.verify().');
@@ -905,7 +924,8 @@ class Credentials {
           const answer = this.resetRefusal(finished, ready.name, opts) ||
             this.secondFactorRefusal(finished, ready.name, opts) || finished;
           if (answer.ok && answer.reason === 'verified') {
-            this.notifyPassword(ready.name, password, 'verified');
+            this.notifyPassword(ready.name, password, 'verified',
+                                ready.stored);
           }
           this.noteRefusal(username, opts, answer);
           return answer;
@@ -1421,7 +1441,7 @@ class Credentials {
     // The plaintext was just WRITTEN — see the password observer above. After
     // the write and not before it, so an observer reading the stored hash back
     // reads the one this password produced.
-    this.notifyPassword(name, password, 'set');
+    this.notifyPassword(name, password, 'set', prepared.hash);
     log.debug('Leaving Credentials.setPassword(). Written.');
     return { ok: true, username: name,
              message: 'The password for ' + name + ' is set. It is stored as ' +

@@ -533,7 +533,16 @@ async function productChild() {
   const toAlice3 = await asReq('kpbob', PW, ['kpalice']);
   out.toAlice3 = brief(toAlice3);
   const PW2 = 'Another-Strong-Pass-42?';
+  const hashBefore = String(entryOf('kpalice').attributes.userpassword[0]);
   credentials.setPassword('kpalice', PW2);
+  await personKeys.idle();
+  // A DERIVATION OF THE OLD PASSWORD THAT STARTS AFTER THE CHANGE LANDED — a
+  // verify queued behind another derivation, or run on another node. It
+  // carries the hash the old password was checked against, and must write
+  // nothing: stamping the entry's NEW hash on the OLD password's keys made the
+  // new password's keytab refused on the cluster stack (2026-09-24).
+  personKeys.observePassword('kpalice', PW, { event: 'set',
+                                              hash: hashBefore });
   await personKeys.idle();
   // AFTER THE CHANGE: both old tickets still open at the KDC, and what it
   // issues for alice now is under kvno 4.
