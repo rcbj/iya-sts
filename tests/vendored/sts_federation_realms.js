@@ -46,8 +46,8 @@
 //     https://test-idp.iyasec.io times out. A local stack cannot dial itself
 //     either — its certificate is issued under a Root generated at start that
 //     the service's own outbound client does not trust, and
-//     `federation.outboundAllowInsecure` is a setting this job may not turn
-//     on.
+//     `federation.outboundSkipTlsVerification` is a setting this job may not
+//     turn on (and product mode refuses it since #171).
 //   * THE AUTHORIZATION CODE RELATIONSHIP IS STILL DRIVEN (section 5), because
 //     everything up to the back channel is assertable anywhere — PKCE, the
 //     state, the nonce, the code arriving at the ACS — and a back channel that
@@ -66,7 +66,9 @@
 //      `federated` first in the amr; the relationship counts it.
 //   2. PROVISIONING, AS CONFIGURED: the relationship's `fedAutocreateUsers` is
 //      READ, not set, and a person the SP realm has never heard of is either
-//      created (the switch on and a service that creates entries) or refused
+//      created (the switch on and a service that creates entries; named
+//      `<relationship>~<name>` and linked to the partner's subject since
+//      #109) or refused
 //      403 "has not been provisioned" with nothing created — product mode
 //      never creates, `mode.autoCreates()`.
 //   3. OIDC NEGATIVES: an ID Token signed by a key the relationship does not
@@ -822,6 +824,10 @@ async function setUp() {
 
   // --- the three OIDC relationships and their clients at the partner -------
   const oidcCommon = {
+    // THE PARTNER HERE SIGNS AND DOES NOT ENCRYPT (#168): product mode
+    // refuses a plaintext assertion unless the relationship allows it, and
+    // encryption is sts_federation_encryption.js's to cover.
+    fedAllowUnencrypted: "TRUE",
     fedSsoUrl: partner.discovery.authorization_endpoint,
     fedScope: "openid profile email",
     fedUsernameSource: "preferred_username"
@@ -900,7 +906,8 @@ async function setUp() {
     // provider refuses an unsigned AuthnRequest
     // (saml2.requireSignedAuthnRequests), and this service signs only on the
     // POST binding.
-    fedBinding: "HTTP-POST", fedSignRequest: "TRUE" };
+    fedBinding: "HTTP-POST", fedSignRequest: "TRUE",
+    fedAllowUnencrypted: "TRUE" };
   for (const field of Object.keys(samlSettings)) {
     const set = await api(SP, "POST", "/federation/set",
       { id: REL.saml, field: field, value: samlSettings[field] });
@@ -915,12 +922,36 @@ async function setUp() {
   // The same partner, the same key and issuer: only the service provider
   // differs. And the same again, never enabled.
   await createRelationship(REL.samlOther, "saml2", idpSaml.entityId,
-    { fedSsoUrl: idpSaml.sso, fedSigningCertificate: idpSaml.certificate },
+    { fedSsoUrl: idpSaml.sso, fedSigningCertificate: idpSaml.certificate,
+      fedAllowUnencrypted: "TRUE" },
     true);
   const off = await createRelationship(REL.samlOff, "saml2",
     idpSaml.entityId,
-    { fedSsoUrl: idpSaml.sso, fedSigningCertificate: idpSaml.certificate },
+    { fedSsoUrl: idpSaml.sso, fedSigningCertificate: idpSaml.certificate,
+      fedAllowUnencrypted: "TRUE" },
     false);
+
+  // THE PRE-PROVISIONED PERSON IS LINKED TO THE PARTNER (#109). A partner
+  // signs in only the person its subject is linked to, and PERSON has no
+  // password in the service provider's realm to link at first sign-in with —
+  // the pre-provisioned shape this job exercises is the one where an operator
+  // links them, through the management API: the OpenID Connect relationships
+  // by the partner's `sub`, the SAML one by the NameID it sends.
+  const partnerView = await api(IDP, "GET", "/users?user=" +
+                                              encodeURIComponent(PERSON));
+  const partnerSub = (partnerView.body && partnerView.body.subject) || "";
+  must(partnerSub, "the partner realm holds no subject for " + PERSON + ": " +
+       partnerView.text.slice(0, 200));
+  for (const [rel, subject] of [[REL.front, partnerSub],
+                                [REL.code, partnerSub],
+                                [REL.saml, PERSON]]) {
+    const linked = await api(SP, "POST", "/users/federation-link",
+                             { user: PERSON, relationship: rel,
+                               subject: subject });
+    must(linked.status === 200 && linked.body && linked.body.ok,
+         "linking " + PERSON + " through " + rel + " answered " +
+         linked.status + " " + linked.text.slice(0, 300));
+  }
 
   log.debug("Leaving setUp().");
   return { partner: partner, attacker: attacker, idpSaml: idpSaml,
@@ -1072,7 +1103,10 @@ async function provisioning() {
            ", ldap.autocreateUsers=" + ldapOn + ", mode=" +
            (isProduct ? "product" : "development") + " — so the SP realm " +
            (creates ? "SHOULD create" : "should NOT create") + " an entry.");
-  const before = (await spView(STRANGER)).entry;
+  // An entry a sign-in CREATES is namespaced to the relationship (#109).
+  const CREATED = REL.front + "~" + STRANGER;
+  const before = (await spView(STRANGER)).entry ||
+                 (await spView(CREATED)).entry;
   await check("precondition: the SP realm has no entry for " + STRANGER,
               async function () {
     assert.strictEqual(before, null);
@@ -1086,8 +1120,8 @@ async function provisioning() {
                 "entry in the SP realm and signs them in", async function () {
       assert.strictEqual(r.status, 200, squash(r.body));
       assert.ok(startsSession(r), "no session cookie");
-      const view = await sessionCountReaches(STRANGER, 1);
-      assert.ok(view.entry, "no entry was created");
+      const view = await sessionCountReaches(CREATED, 1);
+      assert.ok(view.entry, "no entry was created at " + CREATED);
       assert.ok(view.sessionCount >= 1, "no session");
       assert.deepStrictEqual(view.entry.mail, [STRANGER + "@" + IDP_MAIL]);
       assert.ok((view.entry.federationRelationship || [])
@@ -1100,7 +1134,7 @@ async function provisioning() {
                         "creates nobody", r, 403, /not been provisioned/,
                         STRANGER, 0);
     await check("and nothing was created for them", async function () {
-      const view = await spView(STRANGER);
+      const view = await spView(CREATED);
       assert.strictEqual(view.entry, null,
         "an entry exists: " + JSON.stringify(view.entry));
     });

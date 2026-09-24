@@ -34,10 +34,8 @@ you (allowed CIDRs) ──443──▶ NLB ──8081, PROXY v2──▶ node-a 
 **What is reachable**: `https://<nlb-dns-name>` on 443, and the same name on
 389 (LDAP) and 8082 (the plain-HTTP CRL and OCSP listener), because the service
 writes those addresses into what it publishes. Kerberos and LDAPS are bound
-inside the nodes but not published. **The 9443 mutual-TLS listener was
-published as a fourth port until 2026-09-16**, for the certificate sign-in; it
-and the 8443 listener beside it were deleted from the service, and a
-certificate is presented to 443 like everything else — the main port asks
+inside the nodes but not published. **There is no separate mutual-TLS
+port** for the certificate sign-in: a certificate is presented to 443 like everything else — the main port asks
 every connection for one and requires none (`GET /tls/sign-in`).
 
 **Cost**: about $0.35 for an idle hour and $0.53 for an hour with a suite run

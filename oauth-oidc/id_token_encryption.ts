@@ -38,11 +38,12 @@
 //     encrypted TO it, and an ID Token is encrypted to a key the CLIENT holds.
 //     A client registering `dir` or `A128KW` is refused at registration with
 //     `invalid_client_metadata`, naming the list.
-//   * **AN INLINE `jwks` ONLY.** A `jwks_uri` is never fetched while answering
-//     a request — the root CLAUDE.md's non-goal about dialling a URL a caller
-//     supplied — so a client that registers an algorithm and only a
-//     `jwks_uri` is refused at registration, by name, rather than accepted and
-//     then failed at every authorization response.
+//   * **AN INLINE `jwks`, OR A FETCHED `jwks_uri` (#120).** The reference
+//     is fetched by `client_jwks.js` — at registration, and before each
+//     endpoint that answers the client — and `recipientKey()` reads the set
+//     from its cache. A registration whose `jwks_uri` gives no usable key is
+//     refused, by name, rather than accepted and then failed at every
+//     authorization response.
 //   * **REFUSED, NEVER DOWNGRADED.** A registration this service cannot honour
 //     is refused where it is made; one that became unusable afterwards (a key
 //     removed by hand) fails the issuance with the sentence, because an ID

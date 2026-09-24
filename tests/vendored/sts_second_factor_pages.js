@@ -263,22 +263,37 @@ async function theSettingsAreOnTheirPages() {
   // two SAML pages. So "every row is the mechanism's own" became "every row is
   // the mechanism's own or that policy", and the policy's PRESENCE on both is
   // asserted, because a reader of either page must see it is in force.
-  const SHARED_POLICY = "authn.mfaRequired";
+  //
+  // THE GROUP GREW THREE ROWS ON 2026-09-22 (#101): what the requirement does
+  // at the five password-only doors (`authn.passwordAloneDoors`) and the app
+  // passwords a person uses there instead (`appPasswords.*`). They are the
+  // same policy's, so they are drawn on both pages with it; each is a named
+  // member of the group rather than a pattern, so a row that wandered into
+  // the group by accident still fails here.
+  // THE REQUIREMENT ITSELF LEFT THE GROUP ON 2026-09-23 (#64): it is the
+  // authentication policy's `requireSecondFactor` on Directory > Policies,
+  // and `totp.enabled` went with it. What is left of the group is still drawn
+  // on both pages, so the doors setting now stands for it here.
+  const SHARED_POLICY = "authn.passwordAloneDoors";
+  const SHARED_GROUP = [SHARED_POLICY,
+                        "appPasswords.enabled", "appPasswords.maxPerPerson"];
 
   const totp = await get("/totp");
-  check("GET /admin-api/totp carries the eight totp.* settings and the " +
+  check("GET /admin-api/totp carries the seven totp.* settings and the " +
         "second-factor requirement both mechanism pages draw", function () {
     assert.strictEqual(totp.status, 200,
       "it answered " + totp.status + " " + String(totp.raw).slice(0, 200));
     const keys = keysOf(totp.body);
     const own = keys.filter(function (k) { return /^totp\./.test(k); });
-    assert.ok(own.length >= 8,
+    // SEVEN since #64: `totp.enabled` became a row of the authentication
+    // policy.
+    assert.ok(own.length >= 7,
       "it drew " + own.length + " totp.* setting(s): " + keys.join(", "));
     assert.ok(keys.every(function (k) {
-      return /^totp\./.test(k) || k === SHARED_POLICY;
+      return /^totp\./.test(k) || SHARED_GROUP.indexOf(k) !== -1;
     }),
-      "and a setting that is neither a totp.* row nor " + SHARED_POLICY +
-      " is drawn on it: " + keys.join(", "));
+      "and a setting that is neither a totp.* row nor one of the " +
+      "second-factor requirement's is drawn on it: " + keys.join(", "));
     assert.ok(keys.indexOf(SHARED_POLICY) !== -1,
       SHARED_POLICY + " is not drawn on it: " + keys.join(", "));
   });
@@ -294,10 +309,10 @@ async function theSettingsAreOnTheirPages() {
     assert.ok(own.length >= 13,
       "it drew " + own.length + " webauthn.* setting(s): " + keys.join(", "));
     assert.ok(keys.every(function (k) {
-      return /^webauthn\./.test(k) || k === SHARED_POLICY;
+      return /^webauthn\./.test(k) || SHARED_GROUP.indexOf(k) !== -1;
     }),
-      "and a setting that is neither a webauthn.* row nor " + SHARED_POLICY +
-      " is drawn on it: " + keys.join(", "));
+      "and a setting that is neither a webauthn.* row nor one of the " +
+      "second-factor requirement's is drawn on it: " + keys.join(", "));
     assert.ok(keys.indexOf(SHARED_POLICY) !== -1,
       SHARED_POLICY + " is not drawn on it: " + keys.join(", "));
   });

@@ -30,6 +30,8 @@ A LIBRARY with six routes on the main app. Nothing here binds anything.
   below about it is unchanged by the deletion.
 * **The sighting.** `observeConnectionsOn()`, which `server.js` installs on the
   main port.
+* **The JA4 reader** (`client_hello.ts`, #62 P0) — see *THE CLIENT'S JA4
+  FINGERPRINT*, below.
 * **Six routes**, all on the main app and all visible to
   `GET /admin/sts-metadata`: `GET /tls` (what this service presents, what it
   trusts and what it does with a client certificate), `GET /tls/sign-in`,
@@ -1015,8 +1017,14 @@ and `sts_admin_console` drive both doors over HTTP with a CA they mint and remov
 socket this process owns** — it rides in `secureContextOptions()`, so every truststore
 change re-applies it to every registered listener (the main port among them),
 `server.js` passes it when creating the main port, and
-`ldap_server.js` asks for it for LDAPS. The defaults are node's own written down, so an
-unedited service negotiates exactly what it did. **A cipher list that builds no context is
+`ldap_server.js` asks for it for LDAPS. **The cipher list is BCP 195 by default since #140
+(2026-09-22, rcbj's decision)** — the TLS 1.3 suites first, then RFC 9325 section 4.2's four
+ECDHE AES-GCM suites for TLS 1.2 — with `honorCipherOrder`, so the server's order wins and
+TLS 1.3 is what a modern client gets. It is the FAPI 2.0 Security Profile's section 5.2.2,
+made every listener's default rather than a FAPI switch, because a cipher suite belongs to
+the socket and a profile to a realm; `tests/vendored/sts_fapi2.js` proves the handshakes (TLS
+1.3 preferred, a TLS 1.2 GCM suite accepted, a CBC suite refused). The floor is still node's
+TLSv1.2, which FAPI 2.0 allows. **A cipher list that builds no context is
 FATAL at require time**: found later it would be a TypeError from `createServer()`, or a
 listener silently keeping its old context after a `setSecureContext()` throws.
 **This module created two of those sockets until 2026-09-16 and creates none
@@ -1054,6 +1062,45 @@ the listeners**: what the header carried, the balancer's own address (`via`)
 included, is no longer published by anything in this directory. This is what
 makes an AWS Network Load Balancer with TLS passthrough a
 supported front for the main port — the balancer never terminates.
+
+## THE CLIENT'S JA4 FINGERPRINT IS READ OFF THE MAIN PORT (2026-09-22, #62 P0)
+
+`client_hello.ts` — the first TypeScript file in this directory, and a library
+(rule 3). Risk scoring needs to know what TLS stack a sign-in came from,
+because a `User-Agent` is a string anybody can type and a ClientHello is what
+their library actually sends. JA4 (FoxIO, the TLS client part only,
+BSD-3-Clause) is the published reduction of a ClientHello to a comparable
+string; the rest of JA4+ is under a non-commercial licence and is not computed.
+**It is written here rather than taken from `read-tls-client-hello`**, which is
+Apache-2.0, because #62's plan takes MIT dependencies where it can; the
+specification's own worked example is the test (`tests/tls_client_hello.js`).
+
+* **HOW IT READS WITHOUT DISTURBING THE HANDSHAKE.** `install(server)` shadows
+  the server's `connection` emit, reads the raw socket until one whole
+  ClientHello has arrived (fragmented or not), UNSHIFTS every byte back and
+  only then emits the event for real — the PROXY protocol's technique, one
+  layer in. It refuses nothing: a connection that is not TLS, a hello over
+  64 KiB, or one not finished within ten seconds is handed over as it stands
+  with no fingerprint.
+* **IT IS INSTALLED BEFORE THE PROXY PROTOCOL**, in `server.js`, so that
+  wrapper is the outer one and this reads a socket whose header is gone.
+  **And it RESUMES that socket (2026-09-23)**: the PROXY protocol hands it
+  on paused, as a tls.Server needs, and a `data` listener alone never makes an
+  explicitly paused socket flow — so for a week every connection through the
+  `cluster` mode's balancer waited out the ten-second wait above before its
+  handshake began, and the mode ran at ten seconds a request (6000 s spent by
+  job ~298). `tests/proxy_protocol.js` 3j-ii installs both in this order.
+* **THE ANSWER IS HELD BY CONNECTION**, peer address and port, until
+  `secureConnection` hands over the TLS socket, and is put on that socket
+  then. Node's private `_parent` link from the TLS socket to the raw one
+  would have been shorter, and is not an interface.
+* **A REQUEST WORKER IS TOLD**, in `x-sts-tls-client-hello`, which
+  `request_pool.js` strips from what a client sent before writing its own —
+  the client certificate's arrangement — and `request_worker.ts` puts on the
+  REQUEST rather than the kept-alive socket. `adoptForwarded()` checks the
+  shape anyway.
+* **`authn/` is the reader**: every authentication event records the JA4 of
+  the connection it came over (`authn/CLAUDE.md`).
 
 ## A RUNTIME ANCHOR SURVIVES A RESTART (2026-09-12)
 

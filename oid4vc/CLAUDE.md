@@ -46,7 +46,8 @@ consumers of that definition, not co-owners of it.
    plus the invented, DETERMINISTIC persona that fills what an entry lacks.
    `vc_issuer.ts` (early), `admin.js` (late) and `ldap_server.js` (later) all read it,
    so it must stay a library: it registers no route and requires only `helpers.js`,
-   three leaves (`realms.js`, `mode.js`, `error_codes.js`)
+   four leaves (`realms.js`, `mode.js`, `error_codes.js`, and since #128
+   `country_codes.js`)
    and `admin_stats.js` (for `identityKeyOf()`, so that `alice`,
    `alice@REALM` and her `urn:uuid:<entryUUID>` — or the retired
    `urn:sts:user:alice` — are one invented person and one entry). The DIRECTORY half is inverted the usual way — `setDirectory()` is filled
@@ -60,6 +61,24 @@ consumers of that definition, not co-owners of it.
    undefined term does not go missing, it THROWS inside a cryptosuite at issuance
    time. `buildLdpVc()` filters against the context it actually loaded rather than
    trusting the hand-kept list.
+
+   **THE IDENTITY ASSURANCE CLAIMS REGISTRATION (#128, 2026-09-23)** lives in
+   the catalogue, and brought two new kinds of row. rcbj's answers: the JOB
+   title is `job_title` and `title` is the registration's honorific
+   (`schacPersonalTitle`); `nationality` was REPLACED by `nationalities`; the
+   birth names, `also_known_as`, `salutation` and the three `place_of_birth`
+   members are this service's own attribute types. `mobile_phone_number`
+   became the registered `msisdn` (E.164 digits). **`multi`** makes a claim
+   an ARRAY of every value the attribute holds (`nationalities`, each an ICAO
+   Doc 9303 code — `common/country_codes.js`, where Germany is `D` rather
+   than ISO's `DEU`). **`also`** makes one attribute a SECOND claim — `c` is
+   `address.country` as it always was and `address.country_code` (ISO 3166-1
+   Alpha-3) — because the catalogue is keyed by attribute and a second row
+   for `c` would be a second selection of one fact.
+   `common/claim_attributes.ts` resolves a request for the second claim
+   through `ALSO_PATH`; `federation/federation_map.ts` maps `place_of_birth`
+   by DOTTED member, so its `country` and `locality` are not taken from the
+   address's. `tests/ida_claims_registration.js`.
 
 3a-ii. **`vc_verifier_config.ts` is the same kind of library, and it holds the
    OTHER end of that catalogue.** `vc_claims.ts` says what an issued credential
@@ -454,12 +473,46 @@ certificate that verified the credential, and cached for its `ttl` (bounded by
 NO STATEMENT CAN BE MADE, and the credential is refused (`STS-VC-0072`) rather
 than let through.
 
+**A CREDENTIAL WITH NO REFERENCE AT ALL IS A POLICY QUESTION, AND THE ANSWER
+IS NO (#165, 2026-09-23).** Section 8.3 of the Token Status List draft starts
+from "the existence of a `status` claim" and leaves its absence to the relying
+party; the Bitstring Status List says nothing about a missing
+`credentialStatus`. Until #165 a FOREIGN credential with none was accepted, and
+— the worse half — an `ldp_vc` whose derived proof did not disclose its
+`credentialStatus` returned from `statusCheck()` before anything was asked, so
+a revoked `ldp_vc` of THIS realm passed the bar door by withholding its entry.
+Now:
+
+* `oid4vp.requireStatusReference` — `all` (default, both modes), `own-only`,
+  `off` — read through `mode.valueInForce()`; `off` is development only
+  (`mode.acceptsCredentialsWithoutStatus()`, the `onlyWhile` marker with
+  `onlyWhileValues: ['off']`, because `own-only` is allowed in product). A
+  foreign credential with no reference is refused under `all`
+  (`STS-VC-0088`, from `checkPresented()`); one of this realm's with none
+  is refused under anything but `off`.
+* `oid4vp.statusOptionalIssuers` exempts one trusted issuer by the SHA-256
+  thumbprint of the CERTIFICATE that verified the credential (any of
+  `certificateThumbprint()`'s three spellings) — not by `iss`, which the
+  credential asserts about itself. It covers a MISSING reference only.
+* The bar door's `ldp_vc` DCQL query asks for `credentialStatus`
+  (`vc_verifier_config.ts`), and a presentation that did not disclose it is
+  refused (`STS-VC-0089`) unless the rule is `off`. A bbs-2023 proof cannot
+  tell "absent" from "withheld", and every `ldp_vc` issued here carries the
+  entries, so the Verifier asks and refuses. **The sign-in door keeps its
+  exception**: it asks for the entry too, and reads that credential's status
+  from the register (`disownedReason()`) whether or not it was disclosed.
+
+The response endpoint marks the refusal with `verified.statusErrorCode`
+(0088, 0089, or 0072 for a status that is not VALID or cannot be read).
+
 ### Settings
 
 `oid4vp.signIn` (on), `oid4vp.signInTtlS` (300), `oid4vp.signInPollS` (3),
 `oid4vp.signInCrossDevice` (**OFF**, in both modes: the relayable path),
 `oid4vp.signInFormats` (all three), `oid4vp.signInDcApiResponseMode`
-(`dc_api.jwt`) and `oid4vp.statusListMaxCacheS` (3600) — group OID4VP; and
+(`dc_api.jwt`), `oid4vp.statusListMaxCacheS` (3600),
+`oid4vp.requireStatusReference` (`all`; `off` development only) and
+`oid4vp.statusOptionalIssuers` (empty) — group OID4VP; and
 `oid4vci.statusListTtlS` (300), `oid4vci.statusListLifetimeS` (86400),
 `oid4vci.keyAttestationRequired` (off) and
 `oid4vci.keyAttestationTrustedCertificates` (empty) — group OID4VCI. So
@@ -493,6 +546,51 @@ DCQL credential query (so it answers the first format
 `direct_post` — no Digital Credentials API, and no `ldp_vc` holder proof.
 
 ---
+
+## 3ba. `siop.ts`: SIOPv2, THE RELYING PARTY'S HALF (#129, 2026-09-23)
+
+rcbj's four answers: **the relying party only** (this service is never the
+Self-Issued OP); a self-issued subject — a DID or an RFC 9278 JWK thumbprint
+URI — is **ENROLLED on the person's entry** (`stsSelfIssuedSubject`, withheld
+from LDAP reads), by the person or by an administrator; **an unenrolled
+subject is refused in BOTH modes**, so there is no `mode.js` predicate; and a
+signed request may use **all four Client Identifier prefixes**.
+
+* **The person enrols by PROVING the key.** `/portal/self-issued`'s *Enrol a
+  wallet* is `/authn/wallet?siop=1&enrol=1`: `vc_signin.ts` starts a SIOPv2
+  transaction for the person the browser's sign-on session names
+  (`tx.signIn.enrol`), `vc_verifier.ts`'s `answerSelfIssued()` accepts any
+  VERIFIED subject for it, and `finish()` enrols it (`siop.enrol()` refuses one
+  held by somebody else) and goes back to the portal — no session is started.
+  A pasted DID could be somebody else's; a proved one cannot. The admin door
+  enrols by value (Admin Write), as it creates any other credential.
+* **`answerSelfIssued()` is one handler for `direct_post` and `form_post`**:
+  the body is the same form either way; only the reply differs. A sign-in is
+  always `direct_post`, because its binding cookie is SameSite=Lax and a form
+  posted from the wallet's page would not carry it. With `vp_token id_token`
+  the ID Token's key must be the presentation's holder key
+  (`siop.sameHolder()`), and the person is the credential's.
+* **A did:web is fetched only when it is enrolled** (`didKey()` asks
+  `ownerOf()` first): it is the presenter's kind of URL, and the enrolment is
+  what makes it the person's or the administrator's — the root `CLAUDE.md`'s
+  row of URLs this service dials carries it.
+* **The prefixes live in `signedClientId()`**: the DID URL `kid`
+  (`helpers.signJwt()`'s `kidDid`), the Verifier Attestation in the `jwt`
+  header (a configured one is checked against this realm's key and refused
+  with `STS-VC-0092` rather than sent), and the realm's Entity Identifier
+  for `openid_federation:`. **The Entity Configuration moved to `oidfed/` on
+  2026-09-23 (#132)**, when the realm became a federation entity in every
+  role: `vc_verifier.ts` now contributes only its entity type,
+  `federationVerifierMetadata()` — the `openid_credential_verifier` metadata
+  naming the request-signing key, a PROTOCOL key, never the Federation Entity
+  Key (`oidfed/CLAUDE.md`).
+* **Not built, by argument**: the `fragment` response mode (a Verifier
+  chooses its mode, and a fragment needs a script on a page here) and dynamic
+  discovery of a Self-Issued OP (the static `siopv2:` configuration).
+
+`tests/siop.js` holds the library and the request builder in process;
+`tests/vendored/sts_siop.js` (local) drives the sign-in, both enrolments, the
+refusals and the bar door's `form_post` over HTTP.
 
 ## THE 2026-09-12 HARD-CODED-VALUE SWEEP
 

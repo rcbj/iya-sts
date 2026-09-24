@@ -241,7 +241,17 @@ const CATEGORIES = [
     what: 'Failures of something this service does on its own rather than ' +
           'in answer to one request: persistence, coordination between ' +
           'processes, the worker pools, key and secret handling, background ' +
-          'tasks and outbound requests. Every row carries an error code.' }
+          'tasks and outbound requests. Every row carries an error code.' },
+  // THE MAIL CHANNEL (#63, 2026-09-22). Its own layer because what an
+  // auditor asks of it is its own question — "what did this service tell
+  // whom, and when" — and a row names the recipient and the category and
+  // NEVER the body: a reset link in the audit log would be a credential in
+  // the audit log.
+  { category: 'mail', label: 'Mail',
+    what: 'A message was queued, sent, captured, dead-lettered or refused ' +
+          '(a rate ceiling, an opt-out, no address), and the mail ' +
+          'channel\'s own acts: a retry, a test message, a template saved. ' +
+          'A row names the recipient and the category, never the body.' }
 ];
 
 const ACTIONS = [
@@ -388,6 +398,30 @@ const ACTIONS = [
   // THE SCHEDULER (2026-09-22, #49). A row per run when it finishes —
   // succeeded, failed or abandoned — and one when a run is queued by hand;
   // never one per tick. `cluster/scheduler.ts`.
+  // THE MAIL CHANNEL (#63). One row when a message is QUEUED and one when it
+  // reaches its final state — sent, captured or dead — never one per
+  // attempt; and one per message the channel REFUSED to queue.
+  // `common/mail.ts`.
+  { action: 'mail.queued', category: 'mail',
+    label: 'A message was queued for a recipient' },
+  { action: 'mail.sent', category: 'mail',
+    label: 'A message was accepted by the transport, or captured' },
+  { action: 'mail.dead', category: 'mail',
+    label: 'A message was not delivered and is a dead letter' },
+  { action: 'mail.refused', category: 'mail',
+    label: 'A message was not queued (rate ceiling, opt-out, no address, ' +
+           'no transport)' },
+  { action: 'mail.reset-requested', category: 'mail',
+    label: 'A person asked for a self-service password reset link; the row ' +
+           'says whether one was sent, and the form never does' },
+  { action: 'mail.retry', category: 'mail',
+    label: 'A dead letter was queued again by an administrator' },
+  { action: 'mail.template', category: 'mail',
+    label: 'A realm\'s message template was saved or reset' },
+  { action: 'mail.verified', category: 'mail',
+    label: 'A person verified the address on their entry' },
+  { action: 'mail.preferences', category: 'mail',
+    label: 'A person changed which optional messages they receive' },
   { action: 'scheduler.run', category: 'service',
     label: 'A scheduled job ran, was queued by hand, or was taken over' },
   { action: 'scheduler.step-down', category: 'service',
@@ -406,6 +440,44 @@ const ACTIONS = [
     label: 'An application\'s client secret has expired' },
   { action: 'keys.retire', category: 'service',
     label: 'Retired signing keys past their grace were dropped' },
+
+  // OPENID FEDERATION (#132, 2026-09-23): a realm's Federation Entity Keys
+  // (`oidfed/federation_keys.ts`) and its register (`oidfed/oidfed.ts`).
+  { action: 'oidfed.key-minted', category: 'service',
+    label: 'A realm\'s first Federation Entity Key was made' },
+  { action: 'oidfed.key-rotated', category: 'service',
+    label: 'A realm\'s Federation Entity Key was rotated' },
+  { action: 'oidfed.key-revoked', category: 'service',
+    label: 'A Federation Entity Key was revoked' },
+  { action: 'oidfed.subordinate-set', category: 'admin',
+    label: 'An entity was registered as a federation subordinate' },
+  { action: 'oidfed.subordinate-removed', category: 'admin',
+    label: 'A federation subordinate was removed' },
+  { action: 'oidfed.anchor-set', category: 'admin',
+    label: 'A federation Trust Anchor was configured' },
+  { action: 'oidfed.anchor-removed', category: 'admin',
+    label: 'A federation Trust Anchor was removed' },
+  { action: 'oidfed.mark-type-set', category: 'admin',
+    label: 'A Trust Mark type was registered for issuing' },
+  { action: 'oidfed.remove-mark-type', category: 'admin',
+    label: 'A Trust Mark type stopped being issued' },
+  { action: 'oidfed.mark-policy-set', category: 'admin',
+    label: 'A Trust Anchor\'s policy for a Trust Mark type was set' },
+  { action: 'oidfed.remove-mark-policy', category: 'admin',
+    label: 'A Trust Anchor\'s policy for a Trust Mark type was removed' },
+  { action: 'oidfed.mark-issued', category: 'admin',
+    label: 'A Trust Mark was issued' },
+  { action: 'oidfed.mark-revoked', category: 'admin',
+    label: 'A Trust Mark was revoked' },
+  { action: 'oidfed.held-mark-added', category: 'admin',
+    label: 'A Trust Mark issued to the realm was added to its Entity ' +
+           'Configuration' },
+  { action: 'oidfed.held-mark-removed', category: 'admin',
+    label: 'A carried Trust Mark was removed' },
+  { action: 'oidfed.act-refused', category: 'admin',
+    label: 'An OpenID Federation act was refused for its input' },
+  { action: 'oidfed.resolved', category: 'admin',
+    label: 'An administrator resolved an entity\'s Trust Chain' },
 
   // The four the request that started this feature named, plus the two that
   // fall out of the same operations on something that is not a person. The
@@ -475,6 +547,12 @@ const ACTIONS = [
 
   { action: 'application.delete', category: 'application',
     label: 'An application was deleted from the registry' },
+  // OpenID Federation client registration (#134): an application that came
+  // to exist because a Trust Anchor vouched for it, and one that tried.
+  { action: 'oidfed.registered', category: 'application',
+    label: 'A relying party was registered through an OpenID Federation' },
+  { action: 'oidfed.registration-refused', category: 'application',
+    label: 'A registration through an OpenID Federation was refused' },
 
   { action: 'admin.view', category: 'admin',
     label: 'A console page was viewed' },
@@ -529,6 +607,10 @@ const ACTIONS = [
   // somebody who has lost their authenticator, so it is expected traffic rather
   // than an anomaly — the row says who cleared whose, and it is the pairing of
   // those two names over time that is worth reading.
+  // AN ADMINISTRATOR SET A PERSON'S ADDRESS (#64): verified, because an
+  // administrator is a trusted source.
+  { action: 'admin.mail.set', category: 'admin',
+    label: 'A person\'s address was set by an administrator' },
   { action: 'admin.mfa.totp.cleared', category: 'admin',
     label: 'An operator cleared somebody\'s authenticator app' },
   { action: 'admin.mfa.key.cleared', category: 'admin',
@@ -548,6 +630,15 @@ const ACTIONS = [
     label: 'An operator required a second factor of somebody' },
   { action: 'admin.mfa.unrequired', category: 'admin',
     label: 'An operator stopped requiring a second factor of somebody' },
+  // WHO MAY ACT FOR A PERSON (#108): the two person-side delegation flags,
+  // from /admin/users (the operator) and /portal/delegate (the person).
+  { action: 'admin.delegation.not-delegated', category: 'admin',
+    label: 'An operator marked somebody as one who cannot be delegated, or ' +
+           'cleared it' },
+  { action: 'admin.delegation.may-act', category: 'admin',
+    label: 'An operator named or cleared the party who may act for somebody' },
+  { action: 'portal.delegation.may-act', category: 'authentication',
+    label: 'A person named or cleared the party who may act for them' },
 
   // A PASSWORD POLICY PROFILE WAS SAVED OR PUT BACK (2026-09-12). The SUBSTANCE
   // of the change, for `claims.change`'s reason: the `admin.change` row says a
@@ -557,6 +648,25 @@ const ACTIONS = [
   // eight, and who dropped it" is the question this row exists to answer.
   { action: 'admin.password-policy.change', category: 'admin',
     label: 'A password policy profile was changed' },
+
+  // AN AUTHENTICATION POLICY PROFILE WAS SAVED OR PUT BACK (#64), for the row
+  // above's reason: which ways in a realm accepts, before and after.
+  { action: 'admin.authn-policy.change', category: 'admin',
+    label: 'An authentication policy profile was changed' },
+
+  // A PERSON'S EMAILED SECOND FACTOR WAS TURNED ON OR OFF (#64): by them on
+  // /portal/mfa, by an administrator, or by this service at the failure
+  // limit. The kind, never a code.
+  { action: 'authn.mail-factor.change', category: 'authentication',
+    label: 'An emailed second factor was turned on or off' },
+  // AN EMAILED CODE OR LINK WAS SENT, AND ONE WAS REFUSED OR ACCEPTED (#64).
+  // The step and the outcome, never the secret.
+  { action: 'authn.mail-factor.sent', category: 'authentication',
+    label: 'An emailed sign-in code or link was sent' },
+  { action: 'authn.mail-factor.accepted', category: 'authentication',
+    label: 'An emailed sign-in code or link was accepted' },
+  { action: 'authn.mail-factor.refused', category: 'authentication',
+    label: 'An emailed sign-in code or link was refused' },
 
   // A CLIENT-CERTIFICATE TRUST ANCHOR WAS ADDED OR REMOVED (2026-09-12),
   // through /admin/tls/trust or /admin-api/tls/trust. The SUBSTANCE, for
@@ -595,6 +705,13 @@ const ACTIONS = [
 
   { action: 'protocol.call', category: 'protocol',
     label: 'A protocol endpoint was called' },
+  // RFC 7009 (#102, 2026-09-22): the funnel's row for /oauth2/revoke says a
+  // request was answered, and cannot say WHICH client revoked WHOSE token —
+  // which is the question an operator reading a revocation, or a refused one,
+  // is asking.
+  { action: 'oauth.token.revoke', category: 'protocol',
+    label: 'A client revoked an OAuth 2.0 token at /oauth2/revoke, or was ' +
+           'refused another client\'s' },
   // A REFUSAL OR FAILURE ON A SOCKET THAT IS NOT HTTP — a KRB-ERROR on port 88,
   // a gRPC status on the SPIRE Server API — or inside an HTTP request where the
   // funnel's own row cannot say which condition it was. It always carries an
@@ -949,6 +1066,17 @@ function ambientAddress() {
   }
   log.debug("Leaving ambientAddress().");
   return source.resolved;
+}
+
+// The express request of the source this code is running inside, or null
+// (#62 P0, 2026-09-22): for `authn/`'s authentication event, which has to say
+// which browser and which TLS stack a sign-in came from at every door —
+// including the ones that do not hand `startSession()` their request.
+function ambientRequest() {
+  log.debug("Entering ambientRequest().");
+  const source = sources.getStore();
+  log.debug("Leaving ambientRequest().");
+  return (source && source.req) || null;
 }
 
 function setActorResolver(fn) {
@@ -1628,6 +1756,7 @@ module.exports = {
   setActorResolver: setActorResolver,
   withSource: withSource,
   currentAddress: ambientAddress,
+  currentRequest: ambientRequest,
   list: list,
   summary: summary
 };

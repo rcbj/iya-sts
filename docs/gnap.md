@@ -60,7 +60,8 @@ Everything the two specifications define on the authorization server's side:
   **Finish methods:** `redirect` and `push`, with the section 4.2.3 interaction
   hash in any Named Information hash method (`sha-256` by default).
 * **Key proofing:** `httpsig` (RFC 9421 HTTP message signatures with an RFC
-  9530 `Content-Digest`), `mtls`, `jwsd` and `jws`. **Key formats:** `jwk`,
+  9530 `Content-Digest`), `mtls` (pinned or held to a PKI — see
+  [mutual TLS trust](#mutual-tls-trust)), `jwsd` and `jws`. **Key formats:** `jwk`,
   `cert`, `cert#S256`, and a key **reference** to a key registered on an
   application entry, including a shared symmetric key.
 * **Grants:** single and multiple access tokens, `bearer` tokens, subject
@@ -158,6 +159,8 @@ kinds: `gnap-client` or `gnap-resource-server`. The attributes:
 | `gnapJweKey` | the public key `jwt-encrypted` tokens are encrypted to |
 | `gnapMacaroonKey` | the macaroon root key, written by this service — **sealed at rest** |
 | `gnapScopedSignals` | `FALSE` lets this application's streams hear about everybody |
+| `gnapMtlsTrust` | `pki` holds this client's mutual TLS key to a PKI where the realm pins; `pinned` where the realm requires a PKI is refused — see [mutual TLS trust](#mutual-tls-trust) |
+| `oauthTlsClientAuthSubjectDn`, `oauthTlsClientAuthSan*` | RFC 8705's certificate subject, shared with OAuth: under a PKI, a certificate carrying it is this client's |
 | `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri` | what the approval page shows |
 
 **An unknown key** is given an entry on first sight in development mode. In
@@ -165,6 +168,43 @@ product mode it is refused `invalid_client` until it is registered.
 
 The two sealed attributes are encrypted under the process key-encryption key
 whenever keys persist — see [encryption at rest](encryption-at-rest.md).
+
+## Mutual TLS trust
+
+A key proved by mutual TLS (RFC 9635 section 7.3.2) is the TLS client
+certificate the connection was made with. The main port asks every connection
+for one and requires none. How that certificate is trusted is
+`gnap.mtlsTrust`:
+
+| Model | What is required | Default in |
+|---|---|---|
+| `pki` (section 11.4) | the certificate chains to the client truststore (this realm's TLS client authority, or an anchor installed at `/tls/trust`) **and** is bound to the client's application entry: issued to it by this realm, or carrying the one RFC 8705 subject parameter the entry registers (`oauthTlsClientAuthSubjectDn` or an `oauthTlsClientAuthSan*` attribute) | product (`auto`) |
+| `pinned` (section 7.3.2) | the certificate is the one the key names, by thumbprint or public key; self-signed is allowed and no chain is built | development (`auto`) |
+
+**A revoked certificate is refused in both models**, under
+`pki.revocationCheck`: one this service issued is looked up in its own
+register, one from another authority against the list it names.
+
+**Under `pki` a certificate can be rotated at the authority.** A client
+presents a new certificate from the authority and no registration changes. The
+certificate is found by the entry it is bound to, never by its thumbprint, and
+its thumbprint is then recorded on the entry (`gnapKeyIdentity`). A client
+that sends its instance identifier or key reference proves the certificate on
+its connection rather than the one pinned in `gnapKey`. A key sent by value
+must still be the certificate on the connection.
+
+**An application may be stricter than its realm, never weaker.** Set
+`gnapMtlsTrust=pki` on its entry in a pinned realm. `pinned` in a realm that
+requires a PKI is refused when written (`STS-REG-0196`), and a value written
+earlier is ignored.
+
+> **Warning:** `pinned` gives up chain validation and rotation at a
+> certificate authority. A stolen self-signed key stays good until the entry
+> that pins it is edited. Revocation still applies, but only to a certificate
+> some authority issued.
+
+A certificate forwarded by a TLS-terminating proxy (RFC 9440 `Client-Cert`) is
+not read. Only this service's own socket counts.
 
 ## The resource owner
 
@@ -196,7 +236,10 @@ with a sentence saying what was wrong.
 * A **grant modified** sends `token-claims-change` carrying the new `access`.
 * A GNAP web application can **own a stream**: it presents its GNAP access token
   to `/ssf/stream` with the `GNAP` scheme and a proof, with `ssf:read` or
-  `ssf:write` in the token's access. The transmitter metadata lists
+  `ssf:write` in the token's access. Those rights are this service's own
+  protected scopes: a grant asking for them is refused `request_denied`
+  (`STS-GNAP-0719`) unless the application's `oauthAllowedScope` declares them,
+  and the transmitter asks again on every call. The transmitter metadata lists
   `urn:ietf:rfc:9635` for it.
 * A stream a GNAP web application owns is **scoped**: it hears only about
   people who approved a grant to that application.
@@ -240,6 +283,7 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.interactionStartModes` | `STS_GNAP_INTERACTION_START_MODES` | `redirect,app,user_code,user_code_uri` | yes | `interaction_start_modes_supported`; a client may narrow it with `gnapInteractionStartModes`. |
 | `gnap.finishMethods` | `STS_GNAP_FINISH_METHODS` | `redirect,push` | yes | `interaction_finish_methods_supported`; `push` is also switched by `gnap.pushFinish`. |
 | `gnap.keyProofs` | `STS_GNAP_KEY_PROOFS` | `httpsig,mtls,jwsd,jws` | yes | `key_proofs_supported`; `mtls` needs the main port on HTTPS so a client certificate can arrive. |
+| `gnap.mtlsTrust` | `STS_GNAP_MTLS_TRUST` | `auto` | yes | How a key proved by mutual TLS is trusted: `pki` or `pinned` ([mutual TLS trust](#mutual-tls-trust)). `auto` is `pki` in product and `pinned` in development. **Warning:** `pinned` gives up chain validation and rotation at the authority. |
 | `gnap.subIdFormats` | `STS_GNAP_SUB_ID_FORMATS` | `opaque,iss_sub,email,account,uri,phone_number,aliases` | yes | `sub_id_formats_supported` in RFC 9493's spellings; a format is released only when the entry holds the fact it needs. |
 | `gnap.assertionFormats` | `STS_GNAP_ASSERTION_FORMATS` | `id_token,saml2` | yes | `assertion_formats_supported`, built by the same code the OIDC and SAML families use. |
 | `gnap.assertionMaxAgeS` | `STS_GNAP_ASSERTION_MAX_AGE_S` | `300` | yes | How long past its `exp` an assertion this realm signed is still accepted as a user hint (section 2.4). |
@@ -259,7 +303,9 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.resourceRegistration` | `STS_GNAP_RESOURCE_REGISTRATION` | `true` | yes | RFC 9767 section 3.4 resource set registration. |
 | `gnap.tokenDerivation` | `STS_GNAP_TOKEN_DERIVATION` | `true` | yes | RFC 9767 section 4: a resource server exchanges a token it was given for one to a downstream resource server. |
 | `gnap.pushFinish` | `STS_GNAP_PUSH_FINISH` | `true` | yes | The section 4.2.2 push finish; off makes no outbound request at all and stops advertising `push`. |
-| `gnap.pushAllowInsecure` | `STS_GNAP_PUSH_ALLOW_INSECURE` | `false` | yes | Allows a push to a plain `http` URI or to an `https` one whose certificate does not verify, logging each as a warning. |
+| `gnap.pushAllowHttp` | `STS_GNAP_PUSH_ALLOW_HTTP` | `false` | yes | Allows a push to a plain `http` URI, logged as a warning: any host in development, a loopback address only in product (RFC 9635 section 2.5.2.1). |
+| `gnap.pushSkipTlsVerification` | `STS_GNAP_PUSH_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only — a warning.** Pushes to an `https` URI whose certificate does not verify, logged on every push. Ignored in product mode, and refused on write there. |
+| `gnap.pushCaFile` | `STS_GNAP_PUSH_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates a client's push listener may chain to, beside node's own store — how product reaches a privately certified client. |
 | `gnap.pushAllowedHosts` | `STS_GNAP_PUSH_ALLOWED_HOSTS` | *(empty)* | yes | Host names a push may go to; empty means any host a finish URI names (product mode already restricts these to registered URIs). |
 | `gnap.pushTimeoutMs` | `STS_GNAP_PUSH_TIMEOUT_MS` | `5000` | yes | How long a push finish may take. |
 | `gnap.jweEnc` | `STS_GNAP_JWE_ENC` | `A256GCM` | yes | The `enc` of a `jwt-encrypted` token encrypted to a resource server's own key; one encrypted to this server is always `dir` with `A256GCM`. |
@@ -268,7 +314,7 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.caepEvents` | `STS_GNAP_CAEP_EVENTS` | `true` | yes | Sends CAEP `session-revoked` on a revoked grant or token and `token-claims-change` on a modified grant. |
 | `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | Scopes a GNAP web application's Shared Signals stream to people who approved a grant to it; `gnapScopedSignals` FALSE opts one out. |
 
-Every setting is on `/admin/gnap` and in the README's settings table. See
+Every setting is on `/admin/gnap` and in [*Every setting*](configuration.md#every-setting). See
 [Configuration](configuration.md) for how a value resolves and where it is
 changed — the console page, or `POST /admin-api/config/set`.
 
@@ -282,6 +328,11 @@ changed — the console page, or `POST /admin-api/config/set`.
   identity here maps to a directory entry, so a GNAP client is registered,
   listed, monitored and scoped for signals exactly as any other application is
   — see [above](#clients-and-resource-servers-are-applications).
+* **Mutual TLS is pinned or held to a PKI, by mode.** Section 7.3.2 allows a
+  pinned certificate and section 11.4 a PKI. Only the PKI lets a key be revoked
+  and rotated at an authority, so product uses it and development pins, so a
+  client can bring the self-signed certificate it just made. Revocation is
+  consulted in both. See [mutual TLS trust](#mutual-tls-trust).
 * **An unknown client key is mode-gated.** Development mode creates an
   application entry on first sight so a client can be exercised with nothing
   registered; product mode refuses `invalid_client` until the key is

@@ -31,7 +31,23 @@ baseurl: "/iya-sts"
 exclude:
   - CLAUDE.md
 
+# WHAT GITHUB PAGES DOES FOR US, SAID HERE SO A LOCAL BUILD DOES IT TOO.
+# The Pages build loads `jekyll-default-layout`, which wraps a
+# page with no `layout:` in `default`, and `jekyll-relative-links`, which turns
+# a link to `foo.md` into `foo.html`. A plain `jekyll build` loads neither, and
+# every page came out as a bare fragment: no <head>, so no
+# `<meta charset="utf-8">` and every non-ASCII character rendered as gibberish;
+# no sidebar; and every `.md` link a 404. Both lines below restate what Pages
+# already does, so the published site is unchanged.
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+plugins:
+  - jekyll-relative-links
+
 # The navigation is the sidebar, drawn from _data/navigation.yml by
 # _layouts/default.html and _includes/sidebar.html (overrides of minima's own).
-# `header_pages` listed every page across the top until 2026-09-22, when there
-# were twenty-six of them; the header now carries only the title.
+# There is no `header_pages`: at twenty-six pages a row across the top was not
+# navigation, so the header carries only the title.

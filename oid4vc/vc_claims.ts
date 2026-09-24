@@ -107,6 +107,9 @@ import stats = require('../common/admin_stats');
 // `generatedFor()`, the two places the persona reaches anything outside this
 // file.
 import mode = require('../common/mode');
+// ISO 3166-1 alpha-3 and ICAO nationality codes (#128). A LEAF: `helpers`
+// only.
+import countryCodes = require('../common/country_codes');
 // The error codes (common/error_codes.js). A LEAF that requires nothing, so it
 // adds nothing to the short list of what this library may require.
 import errorCodes = require('../common/error_codes');
@@ -121,6 +124,13 @@ interface CatalogueRow {
   ldpTerm: string | null;
   byDefault: boolean;
   toClaim?: (value: unknown) => string;
+  // #128: the claim is an ARRAY of every value the attribute holds, each
+  // through `toClaim` — `nationalities` is the one.
+  multi?: boolean;
+  // #128: a SECOND claim the same attribute becomes, converted —
+  // `address.country_code` from `c`. A row, not a second row, because the
+  // catalogue is keyed by attribute and one attribute is one selection.
+  also?: { claim: string[]; toClaim: (value: unknown) => string };
 }
 
 // What `ldap_server.js` installs through `setDirectory()`.
@@ -196,11 +206,21 @@ const VC_ATTRIBUTES: CatalogueRow[] = [
       return digits.slice(0, 4) + '-' + digits.slice(4, 6) + '-' +
              digits.slice(6, 8);
     } },
-  { ldap: 'schacCountryOfCitizenship', claim: ['nationality'],
-    label: 'Nationality',
+  // `nationalities` (#128, OpenID Connect for Identity Assurance Claims
+  // Registration 1.0 section 4.1): every citizenship the entry holds, as ICAO
+  // Doc 9303 three-letter codes. It REPLACED `nationality`, a single ISO
+  // alpha-2 string that was this service's own invention (rcbj, no
+  // back-compat). The directory keeps SCHAC's two letters.
+  { ldap: 'schacCountryOfCitizenship', claim: ['nationalities'],
+    label: 'Nationalities',
     schema: 'SCHAC 1.5.0 (not RFC 4519)', from: 'country', ldpTerm:
                                                              'nationality',
-    byDefault: true },
+    byDefault: true, multi: true,
+    toClaim: function (value) {
+      helpers.log.debug("Entering toClaim().");
+      helpers.log.debug("Leaving toClaim().");
+      return countryCodes.icaoNationality(value);
+    } },
   { ldap: 'street', claim: ['address', 'street_address'], label: 'Street ' +
       'address',
     schema: 'RFC 4519 2.34', from: 'street', ldpTerm: 'streetAddress',
@@ -216,7 +236,15 @@ const VC_ATTRIBUTES: CatalogueRow[] = [
     byDefault: true },
   { ldap: 'c', claim: ['address', 'country'], label: 'Country',
     schema: 'RFC 4519 2.2', from: 'country', ldpTerm: 'country',
-    byDefault: true },
+    byDefault: true,
+    // The Claims Registration's `address.country_code` (section 4.2): the
+    // same country as ISO 3166-1 Alpha-3 (#128).
+    also: { claim: ['address', 'country_code'],
+            toClaim: function (value) {
+              helpers.log.debug("Entering toClaim().");
+              helpers.log.debug("Leaving toClaim().");
+              return countryCodes.alpha3(value);
+            } } },
 
   // --- not selected on a fresh start ---------------------------------------
   { ldap: 'postalAddress', claim: ['address', 'formatted'],
@@ -239,10 +267,62 @@ const VC_ATTRIBUTES: CatalogueRow[] = [
     byDefault: false },
   { ldap: 'telephoneNumber', claim: ['phone_number'], label: 'Telephone number',
     schema: 'RFC 4519 2.35', from: 'phone', ldpTerm: null, byDefault: false },
-  { ldap: 'mobile', claim: ['mobile_phone_number'], label: 'Mobile number',
-    schema: 'RFC 4524 2.18', from: 'mobile', ldpTerm: null, byDefault: false },
-  { ldap: 'title', claim: ['title'], label: 'Title',
+  // `msisdn` (#128, the Claims Registration section 4.1): the mobile number
+  // as E.164 digits with no `+`. It replaced `mobile_phone_number`, this
+  // service's own name for the same attribute.
+  { ldap: 'mobile', claim: ['msisdn'], label: 'Mobile number (MSISDN)',
+    schema: 'RFC 4524 2.18', from: 'mobile', ldpTerm: null, byDefault: false,
+    toClaim: function (value) {
+      helpers.log.debug("Entering toClaim().");
+      helpers.log.debug("Leaving toClaim().");
+      return String(value).replace(/[^0-9]/g, '');
+    } },
+  // THE JOB TITLE IS `job_title` (#128, rcbj): the Claims Registration
+  // defines `title` as an honorific ("Dr", "Prof"), which is the row below.
+  { ldap: 'title', claim: ['job_title'], label: 'Job title',
     schema: 'RFC 4519 2.38', from: 'title', ldpTerm: null, byDefault: false },
+  { ldap: 'schacPersonalTitle', claim: ['title'],
+    label: 'Title (honorific)', schema: 'SCHAC 1.5.0 (not RFC 4519)',
+    from: 'honorific', ldpTerm: null, byDefault: false },
+  // The rest of the Claims Registration's section 4.1 (#128). No standard
+  // attribute type exists for any of them, so they are this service's own,
+  // like `employeeStatus`.
+  { ldap: 'salutation', claim: ['salutation'], label: 'Salutation',
+    schema: "this service's own (no standard type)", from: 'salutation',
+    ldpTerm: null, byDefault: false },
+  { ldap: 'birthFamilyName', claim: ['birth_family_name'],
+    label: 'Family name at birth',
+    schema: "this service's own (no standard type)", from: 'family',
+    ldpTerm: null, byDefault: false },
+  { ldap: 'birthGivenName', claim: ['birth_given_name'],
+    label: 'Given name at birth',
+    schema: "this service's own (no standard type)", from: 'given',
+    ldpTerm: null, byDefault: false },
+  { ldap: 'birthMiddleName', claim: ['birth_middle_name'],
+    label: 'Middle name at birth',
+    schema: "this service's own (no standard type)", from: null,
+    ldpTerm: null, byDefault: false },
+  { ldap: 'alsoKnownAs', claim: ['also_known_as'], label: 'Also known as',
+    schema: "this service's own (no standard type)", from: null,
+    ldpTerm: null, byDefault: false },
+  { ldap: 'placeOfBirthCountry', claim: ['place_of_birth', 'country'],
+    label: 'Country of birth',
+    schema: "this service's own (no standard type)", from: 'country',
+    ldpTerm: null, byDefault: false,
+    // ISO 3166-1 Alpha-3, one of the three forms section 4.1 allows.
+    toClaim: function (value) {
+      helpers.log.debug("Entering toClaim().");
+      helpers.log.debug("Leaving toClaim().");
+      return countryCodes.alpha3(value);
+    } },
+  { ldap: 'placeOfBirthRegion', claim: ['place_of_birth', 'region'],
+    label: 'Region of birth',
+    schema: "this service's own (no standard type)", from: 'region',
+    ldpTerm: null, byDefault: false },
+  { ldap: 'placeOfBirthLocality', claim: ['place_of_birth', 'locality'],
+    label: 'Locality of birth',
+    schema: "this service's own (no standard type)", from: 'locality',
+    ldpTerm: null, byDefault: false },
   { ldap: 'o', claim: ['organization'], label: 'Organization',
     schema: 'RFC 4519 2.19', from: 'organization', ldpTerm: null,
     byDefault: false },
@@ -405,6 +485,9 @@ const TITLES = ['Principal Engineer', 'Support Analyst', 'Directory ' +
     'Administrator',
                 'Field Technician', 'Product Manager', 'Security Architect',
                 'Staff Researcher', 'Service Desk Lead'];
+// Honorifics and salutations (#128), invented as the rest is.
+const HONORIFICS = ['Dr', 'Prof', 'Dr', 'Prof Dr'];
+const SALUTATIONS = ['Mx', 'Ms', 'Mr'];
 const DEPARTMENTS = ['0001', '0042', '1120', '3300', '7250', '8800'];
 const UNITS = ['Engineering', 'Operations', 'Research', 'Support', 'Security'];
 const EMPLOYEE_TYPES = ['Full time', 'Contractor', 'Intern', 'Part time'];
@@ -718,7 +801,11 @@ class VcClaims {
       employeeType: this.pick(random, EMPLOYEE_TYPES),
       employeeStatus: this.pick(random, EMPLOYEE_STATUSES),
       locale: this.pick(random, LOCALES),
-      website: 'https://www.example.com/~' + username.toLowerCase()
+      website: 'https://www.example.com/~' + username.toLowerCase(),
+      // Drawn LAST (#128), so every value above is what it was for every
+      // person before these two existed.
+      honorific: this.pick(random, HONORIFICS),
+      salutation: this.pick(random, SALUTATIONS)
     };
     log.debug("Leaving VcClaims.personaFor(). " + username + " is " +
               persona.display +
@@ -930,10 +1017,23 @@ class VcClaims {
         typeof tokenClaims[row.claim[0]] === 'string' &&
         tokenClaims[row.claim[0]] !== '') {
       log.debug("Leaving VcClaims.valueFor().");
-      return { value: tokenClaims[row.claim[0]], source: 'access token',
+      return { value: tokenClaims[row.claim[0]],
+               raw: tokenClaims[row.claim[0]], source: 'access token',
                flat: flat };
     }
     const stored = attributes ? attributes[row.ldap.toLowerCase()] : null;
+    // A MULTI row (#128) is every value, converted, in the entry's order.
+    if (row.multi && stored && stored.length) {
+      const values = stored.map(String).filter(function (one: string) {
+        return one !== '';
+      });
+      if (values.length) {
+        log.debug("Leaving VcClaims.valueFor(). Every value.");
+        return { value: values.map(function (one: string) {
+          return row.toClaim ? row.toClaim(one) : one;
+        }), raw: values[0], source: 'directory', flat: flat };
+      }
+    }
     if (stored && stored.length && String(stored[0]) !== '') {
       // The FIRST value. LDAP attributes are multi-valued and claims are not,
       // and picking the first is the only rule that does not depend on
@@ -941,8 +1041,8 @@ class VcClaims {
       // a real directory.
       const raw = String(stored[0]);
       log.debug("Leaving VcClaims.valueFor().");
-      return { value: row.toClaim ? row.toClaim(raw) : raw, source: 'directory',
-               flat: flat };
+      return { value: row.toClaim ? row.toClaim(raw) : raw, raw: raw,
+               source: 'directory', flat: flat };
     }
     if (!row.from) {
       log.debug("Leaving VcClaims.valueFor().");
@@ -980,7 +1080,8 @@ class VcClaims {
       return null;
     }
     log.debug("Leaving VcClaims.valueFor().");
-    return { value: row.toClaim ? row.toClaim(String(raw)) : String(raw),
+    const converted = row.toClaim ? row.toClaim(String(raw)) : String(raw);
+    return { value: row.multi ? [converted] : converted, raw: String(raw),
              source: 'generated', flat: flat };
   }
 
@@ -1014,6 +1115,13 @@ class VcClaims {
       this.setPath(claims, row.claim, found.value);
       report.push({ ldap: row.ldap, claim: found.flat, value: found.value,
                     source: found.source, ldpTerm: this.ldpTermFor(row) });
+      // The second claim the attribute becomes (#128), from the same value.
+      if (row.also && found.raw !== undefined) {
+        const second = row.also.toClaim(found.raw);
+        this.setPath(claims, row.also.claim, second);
+        report.push({ ldap: row.ldap, claim: row.also.claim.join('.'),
+                      value: second, source: found.source, ldpTerm: null });
+      }
     });
     log.debug("Leaving VcClaims.subjectClaimsFor(). " + report.length + " " +
               "claim(s), " +

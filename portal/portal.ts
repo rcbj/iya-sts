@@ -245,6 +245,11 @@ import signals = require('../ssf/ssf_receivers');
 // that requires only the logger and reads `ssf/ssf.ts` out of the require cache
 // when an event is due, so it moves no route from here — see its header.
 import accountSignals = require('../ssf/account_signals');
+// RISC section 2.8's register, for the account holder's own opt-out choice on
+// /portal/signals (#146). A library that registers no route; the portal is
+// loaded after the composition root defers instance building, so the require
+// builds nothing early.
+import risc = require('../ssf/risc');
 const APP_VERSION = version.load();
 const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 
@@ -381,6 +386,8 @@ const CSS =
   // underline removed — which reads as a link that has been visited.
   '.grid td strong .home{color:#2c5cc5}' +
   '.grid td strong .unlinked{color:#8a8a96;cursor:help}' +
+  '.grid td strong a.launch{font-size:.85em;font-weight:normal;' +
+  'margin-left:.5em}' +
   // A BLOCK, because two of them follow the application's name in one cell —
   // the identifier and the description — and inline they run together into
   // one line that reads as a single fact.
@@ -466,7 +473,27 @@ const NAV = [
       // to this portal, over the Shared Signals Framework. A reader arrives at
       // it asking what happened rather than asking to change something.
       { path: BASE + '/signals', label: 'Security activity',
-        heading: 'Your security activity' }
+        heading: 'Your security activity' },
+      // RECENT SIGN-INS (#62 P6, 2026-09-22), beside Security activity and
+      // for its reason: not a control over a credential, but what this
+      // service made of the person's sign-ins — with the one control that
+      // belongs there, saying whether each was them. Drawn by
+      // `portal_sign_ins.ts`.
+      { path: BASE + '/sign-ins', label: 'Recent sign-ins',
+        heading: 'Your recent sign-ins' },
+      // CONSENTS (#172, 2026-09-23), under *Your account* for Security
+      // activity's reason: not a credential, but what this person has let
+      // each application ask for — with the one control that belongs there,
+      // taking it back. Drawn by `portal_consents.ts`.
+      { path: BASE + '/consents', label: 'Consents',
+        heading: 'What you have agreed applications may do' },
+      // EMAIL (#63, 2026-09-22): the address this service writes to, whether
+      // it is verified, which messages may be declined, and what was sent.
+      // Under *Your account* for Security activity's reason — it is what this
+      // service SAYS to the person, not a credential. Drawn by
+      // `portal_mail.ts`.
+      { path: BASE + '/email', label: 'Email',
+        heading: 'Your email address and messages' }
     ] },
   { title: 'How you sign in',
     what: 'The credentials on your own entry, one page each.',
@@ -505,7 +532,48 @@ const NAV = [
       // password are credentials on this person's own entry, and so are the
       // certificates they obtain. Drawn by `portal_certificates.ts`.
       { path: BASE + '/certificates', label: 'Certificates',
-        heading: 'Your certificates' }
+        heading: 'Your certificates' },
+      // APP PASSWORDS (#101, 2026-09-22), in this section for the signing
+      // keys' reason: a credential on this person's own entry. The doors
+      // that take only a password refuse a second-factor person's own
+      // password in product mode, and this is what they use there. Drawn by
+      // `portal_app_passwords.ts`.
+      { path: BASE + '/app-passwords', label: 'App passwords',
+        heading: 'Your app passwords' },
+      // KERBEROS (#59, 2026-09-22), in this section for the signing keys'
+      // reason: the principal is this person's own entry, and a keytab is a
+      // credential derived from their own password. Drawn by
+      // `portal_kerberos.ts`.
+      { path: BASE + '/kerberos', label: 'Kerberos',
+        heading: 'Your Kerberos principal and keytab' },
+      // WHO MAY ACT FOR YOU (#108, 2026-09-23), in this section for the
+      // signing keys' reason: `stsMayAct` is on this person's own entry, and
+      // it is what their access tokens' `may_act` claim says. Drawn by
+      // `portal_delegate.ts`.
+      { path: BASE + '/delegate', label: 'Who may act for you',
+        heading: 'Who may act for you' },
+      // SELF-ISSUED IDs (#129, 2026-09-23), in this section for the signing
+      // keys' reason: the wallet keys enrolled on this person's own entry,
+      // each of which signs them in by SIOPv2. Drawn by
+      // `portal_self_issued.ts`.
+      { path: BASE + '/self-issued', label: 'Self-issued IDs',
+        heading: 'Your self-issued IDs' },
+      // DEVICES (#130, 2026-09-23), in this section for the signing keys'
+      // reason: each device holds a credential — a Native SSO secret — that
+      // signs this person's apps in. Drawn by `portal_devices.ts`.
+      { path: BASE + '/devices', label: 'Devices',
+        heading: 'Your devices' },
+      // SIGN-IN REQUESTS (#131, 2026-09-23), in this section for the signing
+      // keys' reason: an approval here signs this person in to an
+      // application elsewhere (OpenID Connect CIBA), and the user code is a
+      // credential on their own entry. Drawn by `portal_ciba.ts`.
+      { path: BASE + '/ciba', label: 'Sign-in requests',
+        heading: 'Sign-in requests' },
+      // CONNECTED CLAIM SOURCES (#147, 2026-09-24), in this section for the
+      // same reason: a link hands this service a token at another provider
+      // that vouches for this person. Drawn by `portal_claim_sources.ts`.
+      { path: BASE + '/claim-sources', label: 'Claim sources',
+        heading: 'Connected claim sources' }
     ] }
 ];
 
@@ -661,8 +729,9 @@ const LINK_SPENT = Symbol('portal.linkSpent');
 // ---------------------------------------------------------------------------
 const RESET_REFUSAL =
   'This password reset link is not valid. It may have expired, it may ' +
-  'already have been used, or it may never have been issued. Ask whoever ' +
-  'manages your account for a new one.';
+  'already have been used, or it may never have been issued. Ask for a new ' +
+  'one on the "Forgot your password?" page where it is offered, or ask ' +
+  'whoever manages your account.';
 
 const RESET_QUERY = vz.object({
   user: vt.opt(vt.name),
@@ -735,7 +804,11 @@ const MFA_FORM = vz.object({
                           // is gone with the read-back it named: a set is
                           // hashed now and there is nothing to show.
                           'generate-codes', 'confirm-codes',
-                          'discard-codes'])),
+                          'discard-codes',
+                          // #64: the emailed second factor, on and off.
+                          'email-factor-on', 'email-factor-off'])),
+  // #64: which emailed factor, for `email-factor-on`.
+  kind: vt.opt(vt.oneOf(['code', 'link'])),
   // A STRING AND NOT AN INTEGER. `007123` is a code and 7123 is not: parsing a
   // one-time password as a number loses the leading zeros that one code in ten
   // has. The digit count is checked in `common/totp.ts`, where the person's own
@@ -903,6 +976,14 @@ const SIGNALS_QUERY = vz.object({
   page: vt.opt(vt.integer(1, 100000))
 });
 
+// THE ACCOUNT HOLDER'S RISC PARTICIPATION (#146): one of section 2.8's three
+// moves a person may make. opt-out-effective is not among them — only the
+// scheduler job makes that move, after risc.optOutDelayHours.
+const PARTICIPATION_FORM = vz.object({
+  move: vz.enum(['optOutInitiated', 'optOutCancelled', 'optIn']).optional(),
+  csrf_token: vt.opt(vt.token)
+});
+
 // What `ldap/ldap_server.js` hands `setDirectory()`: the one function this
 // portal reads a directory entry through.
 interface DirectoryHooks {
@@ -940,6 +1021,7 @@ interface PortalDeps {
   gate: typeof gate;
   signals: typeof signals;
   accountSignals: typeof accountSignals;
+  risc: typeof risc;
   log: typeof helpers.log;
   parseBody: typeof helpers.parseBody;
   baseUrlOf: typeof helpers.baseUrlOf;
@@ -986,6 +1068,7 @@ class Portal {
       gate: gate,
       signals: signals,
       accountSignals: accountSignals,
+      risc: risc,
       log: helpers.log,
       parseBody: helpers.parseBody,
       baseUrlOf: helpers.baseUrlOf
@@ -1336,7 +1419,7 @@ class Portal {
       // answers — it is a SECOND factor beside whichever of them was
       // chosen, so it is an independent box.
       //
-      // It appears whether or not `totp.enabled` is on and the DOOR
+      // It appears whether or not the TOTP row is on and the DOOR
       // decides, exactly as the sign-in screen's anonymous button does...
       // no: it is DRAWN only when the mechanism is offered, because this
       // is a form somebody is filling in once and a tickbox that silently
@@ -1538,6 +1621,26 @@ class Portal {
              (password ? 'password' : 'no password') + ', security key: ' +
              keyRole + ', authenticator app: ' + (withTotp ? 'yes' : 'no') +
              '). The activation link is now spent.');
+    // CAEP credential-change for what setup created (#145): the first
+    // password and the authenticator app, each a credential the person now
+    // holds. A security key is enrolled later, by its own door.
+    if (password) {
+      self.deps.accountSignals.credentialChanged({ username: username,
+        credentialType: 'password', changeType: 'create',
+        initiatingEntity: 'user', via: 'portal activation',
+        reasonAdmin: username + ' set a password when activating their ' +
+                     'account.',
+        reasonUser: 'You set a password for your new account.' });
+    }
+    if (withTotp) {
+      self.deps.accountSignals.credentialChanged({ username: username,
+        credentialType: self.deps.accountSignals.TOTP_CREDENTIAL_TYPE,
+        changeType: 'create', initiatingEntity: 'user',
+        via: 'portal activation',
+        reasonAdmin: username + ' set up an authenticator app when ' +
+                     'activating their account.',
+        reasonUser: 'You set up an authenticator app.' });
+    }
 
     // **THEY ARE SENT TO THE SIGN-IN SCREEN AND NOT SIGNED IN.** Spending an
     // activation link proves possession of a link, which is not the credential
@@ -1639,6 +1742,17 @@ class Portal {
       '<p><a href="' + self.esc(next) + '">Sign in</a></p></div>'));
   }
 
+  // A PAGE WITH NO NAVIGATION COLUMN, for the pages nobody is signed in to —
+  // the forgot-password form and the address verification link
+  // (`portal_mail.ts`, #63), beside the reset and activation pages that use
+  // `page()` directly.
+  bare(title, inner) {
+    const { log } = this.deps;
+    log.debug("Entering Portal.bare().");
+    log.debug("Leaving Portal.bare().");
+    return this.page(title, inner);
+  }
+
   private resetPasswordForm(base, username, token, error) {
     const self = this;
     const { log } = this.deps;
@@ -1649,9 +1763,8 @@ class Portal {
       '<h1>Choose a new password</h1>' +
       '<p class="sub">You are choosing the password <strong>' +
       self.esc(username) +
-      '</strong> signs in to <code>' + self.esc(base) + '</code> with. Your ' +
-
-      'old password no longer works.</p>' +
+      '</strong> signs in to <code>' + self.esc(base) + '</code> with. ' +
+      'Once it is set, no password you had before works.</p>' +
       (error ? '<div class="err">' + self.esc(error) + '</div>' : '') +
       '<form method="post" action="' + RESET_PASSWORD + '">' +
       // THE TOKEN RIDES IN THE FORM, for the activation form's reason: nobody
@@ -1807,11 +1920,32 @@ class Portal {
       log.debug("Leaving Portal.requireSignIn(). The realm chooser.");
       return null;
     }
-    const started = oidcRp.beginSignIn(req, res, 'portal', {
+    const begun = oidcRp.beginSignIn(req, res, 'portal', {
       returnTo: returnTo || BASE,
       fallback: BASE
     });
-    if (!started.ok) {
+    // A promise under FAPI 1.0 Advanced (#139), where the request is signed
+    // and pushed before the browser is sent; a value otherwise, answered in
+    // the same tick as it always was.
+    if (begun && typeof begun.then === 'function') {
+      begun.then(function (started: any) {
+        self.startedSignIn(res, started);
+      });
+      log.debug("Leaving Portal.requireSignIn(). Pushing.");
+      return null;
+    }
+    self.startedSignIn(res, begun);
+    log.debug("Leaving Portal.requireSignIn().");
+    return null;
+  }
+
+  // What `requireSignIn()` does with the answer: nothing when the browser was
+  // sent on, and the refusal page when it could not be.
+  startedSignIn(res, started) {
+    const self = this;
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering Portal.startedSignIn().");
+    if (!started.ok && !res.headersSent) {
       // The client entry is gone or has no secret. A refusal with the reason on
       // it rather than a redirect into a flow that cannot complete — and it
       // names the entry, because that is where somebody has to look.
@@ -1840,8 +1974,7 @@ class Portal {
           : ' &mdash; which is what has happened.') +
         '</p></div>'));
     }
-    log.debug("Leaving Portal.requireSignIn().");
-    return null;
+    log.debug("Leaving Portal.startedSignIn().");
   }
 
   // ---------------------------------------------------------------------------
@@ -2201,6 +2334,26 @@ class Portal {
   // own keys — see the file header, where that is argued as the case that looks
   // like the rule's exception and is not.
   // ---------------------------------------------------------------------------
+  // WHAT THE ATTESTATION PROVED ABOUT ONE OF THE PERSON'S OWN KEYS (#105),
+  // in their words: the model the FIDO metadata names where the statement
+  // chained to an anchor, "verified" where it was checked and anchored
+  // nowhere, and "claimed" where nothing was checked — `/admin/users` draws
+  // the same record for an operator.
+  private attestationText(att) {
+    const { log } = this.deps;
+    log.debug('Entering Portal.attestationText().');
+    let text = 'not verified (the authenticator\'s own claim)';
+    if (att && att.verified && att.trusted) {
+      text = (att.model ? att.model + ' — ' : '') + 'verified and trusted';
+    } else if (att && att.verified) {
+      text = att.type === 'none' || att.type === 'self'
+        ? 'no attestation sent (' + att.type + ')'
+        : 'verified, from an authenticator no trusted root vouches for';
+    }
+    log.debug('Leaving Portal.attestationText().');
+    return this.esc(text);
+  }
+
   private keysPage(session, message, error, base) {
     const self = this;
     const { credentials, log, websecurity } = this.deps;
@@ -2219,12 +2372,13 @@ class Portal {
             : 'None of them is marked as a second factor.')
         : 'You have no security keys enrolled.') + '</p>' +
       (keys.length
-        ? '<table class="grid"><tr><th>Key</th><th>Role</th><th>Enrolled</th>' +
-          '<th></th></tr>' +
+        ? '<table class="grid"><tr><th>Key</th><th>Role</th>' +
+          '<th>Authenticator</th><th>Enrolled</th><th></th></tr>' +
           keys.map(function (one) {
             return '<tr><td>' +
               self.esc(one.label || 'security key') + '</td>' +
               '<td>' + self.esc(one.role) + '</td>' +
+              '<td>' + self.attestationText(one.attestation) + '</td>' +
               '<td>' +
               self.esc(new Date(one.enrolledAt || 0).toISOString()
                 .slice(0, 10)) +
@@ -2495,6 +2649,77 @@ class Portal {
   // `backupCodesCard()`). It is passed IN rather than read here, for the reason
   // `enrolment` is: the list is a live credential and a page builder that
   // fetched it would draw it on every GET.
+  // ---------------------------------------------------------------------------
+  // THE EMAILED SECOND FACTOR (#64), ON THIS PAGE BECAUSE IT IS A SECOND
+  // FACTOR. rcbj's D8: a person OPTS IN, rather than holding it because an
+  // address happens to be verified. Drawn in every realm, with the reason it
+  // cannot be turned on where it cannot — the realm's policy, mail, or an
+  // unverified address — DISABLED rather than left out, so a person reading
+  // it learns what is missing.
+  // ---------------------------------------------------------------------------
+  private emailFactorCard(session) {
+    const self = this;
+    const { log, websecurity } = this.deps;
+    log.debug('Entering Portal.emailFactorCard().');
+    const mailFactor = require('../common/mail_factor');
+    const policy = require('../common/authn_policy');
+    const username = session.user.username;
+    const status = mailFactor.status(username);
+    const csrf = websecurity.field(session.id);
+    const allowed = {
+      code: policy.allows('emailCode', 'second-factor'),
+      link: policy.allows('emailLink', 'second-factor')
+    };
+    if (!allowed.code && !allowed.link && !status.optedIn) {
+      log.debug('Leaving Portal.emailFactorCard(). Not offered here.');
+      return '';
+    }
+    const blocked = !status.offered.code && !status.offered.link
+      ? 'This service cannot send mail just now.'
+      : (!status.verified
+        ? 'Your address is not verified. Verify it on the Email page first.'
+        : '');
+    const option = function (kind, label) {
+      log.debug('Entering option().');
+      const off = !allowed[kind] || !status.offered[kind] || !!blocked;
+      log.debug('Leaving option().');
+      return '<form method="post" action="' + BASE + '/mfa" class="inline">' +
+        csrf + '<input type="hidden" name="action" value="email-factor-on">' +
+        '<input type="hidden" name="kind" value="' + kind + '">' +
+        '<button id="email-factor-' + kind + '"' +
+        (status.optedIn === kind ? ' class="secondary"' : '') +
+        (off || status.optedIn === kind ? ' disabled' : '') + '>' +
+        self.esc(label) + '</button></form> ';
+    };
+    const out = '<div class="card" id="email-factor">' +
+      '<h2>Email as a second factor</h2>' +
+      '<p class="sub">' + self.esc(status.optedIn
+        ? (status.usable
+            ? 'On: after your password, a ' + (status.kind === 'code'
+                ? 'six-digit code' : 'sign-in link') + ' is sent to ' +
+              mailFactor.masked(status.address) + '.'
+            : 'You chose an emailed ' + status.optedIn + ', but it is not ' +
+              'being used: ' + status.why + '.')
+        : 'Off.') + '</p>' +
+      (blocked ? '<p class="note">' + self.esc(blocked) + '</p>' : '') +
+      (allowed.code ? option('code', 'Email me a code') : '') +
+      (allowed.link ? option('link', 'Email me a sign-in link') : '') +
+      (status.optedIn
+        ? '<form method="post" action="' + BASE + '/mfa" class="inline">' +
+          csrf + '<input type="hidden" name="action" ' +
+          'value="email-factor-off"><button class="danger" ' +
+          'id="email-factor-off">Turn it off</button></form>'
+        : '') +
+      '<p class="note"><strong>Email is the weakest second factor this ' +
+      'service offers.</strong> Anybody who can read your mailbox — with ' +
+      'your email password alone, often — can finish signing in as you, ' +
+      'which is why NIST SP 800-63B-4 does not count email as an ' +
+      'authenticator. An authenticator app or a security key is better where ' +
+      'you have one; you are asked for those first.</p></div>';
+    log.debug('Leaving Portal.emailFactorCard().');
+    return out;
+  }
+
   private mfaPage(session, message, error, enrolment, fresh?, revealed?) {
     const self = this;
     const { credentials, log, totp, websecurity } = this.deps;
@@ -2523,6 +2748,19 @@ class Portal {
                   'An administrator has to clear it before you can set one ' +
                   'up again.'))
         : self.esc('No authenticator app is set up.')) + '</p>' +
+      // THE PASSWORD-ONLY DOORS (#101): where a second factor cannot be
+      // asked for, their own password is refused, and this says where to get
+      // what those clients take instead.
+      (function () {
+        const doors = credentials.passwordOnlyDoors(username);
+        return doors.applies && doors.refused.length
+          ? '<p class="note">' + self.esc('While you use a second factor, ' +
+              'your password alone is refused at the doors that cannot ask ' +
+              'for one (' + doors.refused.join(', ') + '). ') +
+            '<a href="' + BASE + '/app-passwords">Make an app password</a>' +
+            self.esc(' for a client that uses one of them.') + '</p>'
+          : '';
+      })() +
       (mechanisms.totp && mechanisms.totpDetail
         ? '<table class="grid">' +
           '<tr><th>Set up</th><td>' +
@@ -2616,7 +2854,7 @@ class Portal {
       : '<div class="card"><h2>Not available</h2>' +
         '<p class="sub">' +
         self.esc('Authenticator apps are turned off on this service. An ' +
-            'operator turns them on with the totp.enabled setting.') +
+            'operator turns them on in the authentication policy.') +
         '</p></div>';
 
     const aboutCard =
@@ -2648,7 +2886,8 @@ class Portal {
                                               mechanisms);
 
     const html = self.shell(BASE + '/mfa', session, message, error,
-      enrolledCard + setupCard + startCard + recoveryCard + aboutCard);
+      enrolledCard + setupCard + startCard + self.emailFactorCard(session) +
+      recoveryCard + aboutCard);
     log.debug('Leaving Portal.mfaPage().');
     return html;
   }
@@ -2836,7 +3075,7 @@ class Portal {
            '"><h2>Recovery codes</h2>' + body +
       (!live.enabled
         ? '<p class="note">' + self.esc('Recovery codes are turned off on ' +
-            'this service (backupCodes.enabled), so no new set can be ' +
+            'this realm\'s authentication policy, so no new set can be ' +
             'generated. A set already saved goes on working — a setting that ' +
             'took away the only way back into an account whose phone is lost ' +
             'would be the worst switch here.') + '</p>'
@@ -3568,6 +3807,8 @@ class Portal {
         // a link. An entry with no home page is drawn with its name greyed out
         // and the foot of the page says who can fix that.
         homePage: applications.homePageOf(one),
+        // OpenID Connect Core section 4's `initiate_login_uri`, or '' (#120).
+        initiateLogin: applications.initiateLoginUriOf(one),
         // The first description on the entry, if it carries one. An application
         // registered by a client has none; one an operator created usually
         // does.
@@ -3635,7 +3876,9 @@ class Portal {
   // who can make it one. `title` carries that sentence for a reader who hovers,
   // because a grey name with no explanation reads as something broken.
   //
-  // **IT IS STILL NOT A LAUNCH BUTTON**, and the card below the table keeps
+  // **IT IS STILL NOT A LAUNCH BUTTON** (the one launch is
+  // `initiateLoginLink()`, OpenID Connect Core section 4, #120), and the card
+  // below the table keeps
   // that argument: this service implements identity-provider-initiated sign-on
   // in none of the four browser profiles, so a link that STARTED a sign-in
   // would have to invent a request the application never asked for. This link
@@ -3664,10 +3907,48 @@ class Portal {
       self.esc(row.name) + '</a>';
   }
 
-  private applicationsPage(session, message, error, wanted) {
+  // ---------------------------------------------------------------------------
+  // THE ONE LAUNCH THERE IS: OPENID CONNECT CORE SECTION 4 (#120, rcbj's
+  // decision). A relying party that REGISTERED `initiate_login_uri` has asked
+  // for a third party to start its sign-in, so this link is not an invented
+  // request: it is a GET to the address the application gave, with section
+  // 4's `iss` (this realm's issuer, which the relying party must know and
+  // must check) and `login_hint` (the person looking at the page, who chose
+  // to click). The relying party then sends an ordinary authorization request
+  // here. `target_link_uri` is not sent — this page has no deep link to name.
+  // ---------------------------------------------------------------------------
+  private initiateLoginLink(row, issuer, username) {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering Portal.initiateLoginLink().");
+    if (!row.initiateLogin || !issuer) {
+      log.debug("Leaving Portal.initiateLoginLink(). None registered.");
+      return '';
+    }
+    const url = new URL(row.initiateLogin);
+    url.searchParams.set('iss', issuer);
+    url.searchParams.set('login_hint', username);
+    log.debug("Leaving Portal.initiateLoginLink().");
+    return '<a class="launch" rel="noopener" href="' +
+      self.esc(url.toString()) + '">Sign in</a>';
+  }
+
+  private applicationsPage(session, message, error, wanted, base) {
     const self = this;
     const { log } = this.deps;
     log.debug('Entering Portal.applicationsPage().');
+    let issuer = '';
+    try {
+      // Lazily, `common/oidc_rp.ts`'s arrangement: this module is required
+      // (8a) before the authorization server's libraries are wired.
+      issuer = base ? require('../oauth-oidc/jwt_access_token')
+        .issuerFor(base) : '';
+    } catch (e) {
+      log.debug("Caught in Portal.applicationsPage(): " +
+                ((e && e.message) || e));
+      // No issuer: no section 4 link is drawn.
+      issuer = '';
+    }
     const found = self.applicationsFor(session.user.username);
     const pages = Math.max(1, Math.ceil(found.rows.length / PER_PAGE));
     const at = Math.min(Math.max(1, wanted || 1), pages);
@@ -3677,7 +3958,10 @@ class Portal {
       ? '<table class="grid"><tr><th>Application</th><th>Sign-in</th>' +
         '<th>You would be issued</th></tr>' +
         shown.map(function (row) {
+          const launch = self.initiateLoginLink(row, issuer,
+                                                session.user.username);
           return '<tr><td><strong>' + self.linkedName(row) + '</strong>' +
+            (launch ? ' ' + launch : '') +
             '<span class="ident"><code>' + self.esc(row.identifier) +
             '</code></span>' +
             (row.description
@@ -3752,12 +4036,15 @@ class Portal {
       'yourself, and a sign-in starts there. A name in grey means this ' +
       'identity provider has not been told where that application lives; ' +
       'whoever administers this service can set a home page on its entry, ' +
-      'and until then there is nothing to link to. Neither is a button that ' +
-      'starts a sign-in for you: this service implements no ' +
-      'identity-provider-initiated sign-on in any of the four browser ' +
-      'profiles — <code>/saml2</code> says so on its own page — so a link ' +
-      'that began one would have to invent a request the application never ' +
-      'asked for and is not expecting.</p></div>');
+      'and until then there is nothing to link to. <strong>Sign in</strong> ' +
+      'appears only beside an OpenID Connect application that registered ' +
+      'an <code>initiate_login_uri</code>: it asks that application to start ' +
+      'a sign-in here, naming this identity provider and you (OpenID ' +
+      'Connect Core section 4). Nothing else starts a sign-in for you: this ' +
+      'service implements no identity-provider-initiated sign-on in the ' +
+      'browser profiles — <code>/saml2</code> says so on its own page — so ' +
+      'such a link would have to invent a request the application never ' +
+      'asked for.</p></div>');
     log.debug('Leaving Portal.applicationsPage(). Page ' + at + ' ' +
       'of ' + pages + '.');
     return html;
@@ -3779,6 +4066,58 @@ class Portal {
     };
     log.debug('Leaving Portal.personOf(). ' + out.username);
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHETHER SECURITY EVENTS ABOUT THIS ACCOUNT ARE SHARED (#146, RISC 1.0
+  // section 2.8), which the specification makes the ACCOUNT HOLDER's choice.
+  // Opting out is not immediate: it enters opt-out-initiated, receivers keep
+  // being told everything, and after risc.optOutDelayHours it becomes
+  // effective — the delay exists so that somebody who has just taken an
+  // account over cannot silence the events that would report them. Only the
+  // move the state diagram allows from where the account is gets a button.
+  // ---------------------------------------------------------------------------
+  private participationCard(session): string {
+    const self = this;
+    const { log, risc, config, websecurity } = this.deps;
+    log.debug('Entering Portal.participationCard().');
+    if (!risc.enabled()) {
+      log.debug('Leaving Portal.participationCard(). RISC is off.');
+      return '';
+    }
+    const username = session.user.username;
+    const now = risc.optOutOf(username);
+    const hours = Number(config.value('risc.optOutDelayHours'));
+    const said = now.state === 'opt-in'
+      ? 'Security events about your account <strong>are shared</strong> ' +
+        'with the applications that receive them.'
+      : now.state === 'opt-out-initiated'
+        ? 'You asked to <strong>stop sharing</strong> security events ' +
+          (now.since ? 'on ' + self.esc(now.since) + ' ' : '') +
+          'and it takes effect ' + self.esc(String(hours)) + ' hour(s) ' +
+          'after you asked. Until then they are still shared, and you can ' +
+          'cancel.'
+        : 'Security events about your account are <strong>not ' +
+          'shared</strong>, apart from the notice that you opted out.';
+    const labels = { optOutInitiated: 'Stop sharing security events',
+                     optOutCancelled: 'Cancel: keep sharing them',
+                     optIn: 'Share security events again' };
+    const buttons = now.moves.map(function (move) {
+      return '<form method="post" action="' + self.esc(BASE + '/signals') +
+        '">' + websecurity.field(session.id) +
+        '<input type="hidden" name="move" value="' + self.esc(move) + '">' +
+        '<button' + (move === 'optOutInitiated' ? ' class="danger"' : '') +
+        '>' + self.esc(labels[move]) + '</button></form>';
+    }).join('');
+    log.debug('Leaving Portal.participationCard(). ' + now.state);
+    return '<div class="card"><h2>Sharing security events about your ' +
+      'account</h2><p>' + said + '</p>' + buttons +
+      '<p class="note">These are OpenID RISC events: an account disabled, a ' +
+      'password that must be changed, a contact detail changed. Applications ' +
+      'you use receive them to protect your account there. Stopping them is ' +
+      'your choice (RISC section 2.8), and it waits ' +
+      self.esc(String(hours)) + ' hour(s) so that somebody who has taken ' +
+      'your account over cannot silence them at once.</p></div>';
   }
 
   private signalsPage(session, message, error, wanted) {
@@ -3829,7 +4168,21 @@ class Portal {
             (row.verified
               ? 'signed by this identity provider and verified'
               : 'NOT VERIFIED — ' + self.esc(row.verificationNote)) +
-            '</span></td></tr>';
+            '</span>' +
+            // WHAT THIS PORTAL DID WITH IT (#62): signed you out here, if
+            // the signal-response policy said to.
+            (row.reactions || []).map(function (r) {
+              return '<span class="ident signal-reaction">' +
+                (r.failed ? 'this portal could not sign you out here'
+                  : r.skipped ? 'this portal left you signed in here (' +
+                                self.esc(r.skipped) + ')'
+                  : (r.observed ? 'this portal would sign you out here ' +
+                                  '(development mode records it only)'
+                    : (Number(r.ended) > 0
+                        ? 'this portal signed you out here'
+                        : 'this portal had no session of yours to end'))) +
+                '</span>';
+            }).join('') + '</td></tr>';
         }).join('') + '</table>'
       : '<p class="note">Nothing has been reported about your account' +
         (st.held ? ' yet' : ' yet') + '. This list fills when this identity ' +
@@ -3855,6 +4208,7 @@ class Portal {
       : '';
 
     const html = self.shell(BASE + '/signals', session, message, error,
+      self.participationCard(session) +
       '<div class="card">' +
       '<h2>What has been reported about your account</h2>' +
       '<p class="sub">This portal is a registered receiver of this identity ' +
@@ -3872,10 +4226,12 @@ class Portal {
       'an account &mdash; a phone number, for instance &mdash; it is left ' +
       'out rather than guessed at, so it is possible for something about you ' +
       'to be missing from this list. It is never possible for something ' +
-      'about somebody else to be on it.</p><p class="note"><strong>This is a ' +
-      'record and not a control.</strong> Nothing here can be edited or ' +
-      'removed, including by you: a list of what was said about your account ' +
-      'would be worth nothing if the account\'s owner could empty it. To end ' +
+      'about somebody else to be on it.</p><p class="note"><strong>This list ' +
+      'is a record and not a control</strong> (the one control on this page ' +
+      'is whether events are shared at all, above). Nothing in it can be ' +
+      'edited or removed, including by you: a list of what was said about ' +
+      'your account would be worth nothing if the account\'s owner could ' +
+      'empty it. To end ' +
       'a session, use <a href="/logout">sign out of everything</a>; to ' +
       'change a credential, use the pages in <em>How you sign in</em>.</p><p ' +
       'class="note">The notices are OpenID CAEP (what happened to a ' +
@@ -3935,7 +4291,9 @@ class Portal {
       // the router against its own descriptions, and a route registered and
       // undescribed fails the suite.
       .concat([ACTIVATE, BASE + '/callback', BASE + '/remove-key',
-               BASE + '/signout', BASE + '/signals/receive']);
+               BASE + '/signout', BASE + '/signals/receive',
+               // The mail channel's two pages nobody is signed in to (#63).
+               BASE + '/forgot-password', BASE + '/verify-email']);
   }
 
   registerRoutes(app: typeof import('../common/app')): void {
@@ -4156,6 +4514,9 @@ class Portal {
               'one. You need at least one way to sign in.'));
       }
       if (password) {
+        // Screened against Pwned Passwords first (#62 P6), so the password
+        // rules find the verdict waiting.
+        await require('../common/breached_passwords').screen(password);
         const set = credentials.setPassword(username, password);
         if (!set.ok) {
           errorCodes.mark(res, self.innerCode(set) || 'STS-PORTAL-0008');
@@ -4335,6 +4696,8 @@ class Portal {
                                'Password reset link');
       }
       self.holdLinkClaim(res, spent.handle);
+      // Screened against Pwned Passwords first (#62 P6).
+      await require('../common/breached_passwords').screen(password);
       const set = credentials.setPassword(username, password);
       if (!set.ok) {
         errorCodes.mark(res, self.innerCode(set) || 'STS-PORTAL-0073');
@@ -4481,7 +4844,7 @@ class Portal {
                 session.user.username + '.');
       return self.send(res, 200, self.applicationsPage(session,
         asked.value.done ? String(asked.value.done) : null, null,
-        asked.value.page || 1));
+        asked.value.page || 1, baseUrlOf(req)));
     });
 
     // -------------------------------------------------------------------------
@@ -4543,6 +4906,73 @@ class Portal {
                 session.user.username + '.');
       return self.send(res, 200, self.signalsPage(session, null, null,
                                         asked.value.page || 1));
+    });
+
+    // THE ACCOUNT HOLDER'S RISC CHOICE (#146). See participationCard().
+    app.post(BASE + '/signals', async function (req, res) {
+      log.debug('Entering POST ' + BASE + '/signals.');
+      const session = self.requireSignIn(req, res, BASE + '/signals',
+                                         accessGate.ACTION.MANAGE_OWN);
+      if (!session) {
+        log.debug('Leaving POST ' + BASE + '/signals. Not signed in.');
+        return undefined;
+      }
+      const username = session.user.username;
+      const posted = validation.checkParsed(parseBody(req), 'body',
+                                            PARTICIPATION_FORM);
+      if (!posted.ok) {
+        errorCodes.mark(res, self.innerCode(posted) || 'STS-PORTAL-0001');
+        return self.refuseShape(res, posted);
+      }
+      const csrf = websecurity.checkCsrf(session.id, posted.value);
+      if (!csrf.ok) {
+        log.debug('Leaving POST ' + BASE + '/signals. CSRF.');
+        errorCodes.mark(res, self.innerCode(csrf) || 'STS-PORTAL-0017');
+        return self.send(res, 403, self.signalsPage(session, null,
+                                                    csrf.detail, 1));
+      }
+      const { risc } = self.deps;
+      const move = String(posted.value.move || '');
+      if (!risc.enabled() || !risc.optOutMoveAllowed(username, move)) {
+        log.debug('Leaving POST ' + BASE + '/signals. Not a move from ' +
+                  'here.');
+        errorCodes.mark(res, 'STS-PORTAL-0075');
+        return self.send(res, 409, self.signalsPage(session, null,
+          'That is not a change your account can make now: it is ' +
+          risc.optOutOf(username).state + '.', 1));
+      }
+      const before = risc.optOutOf(username).state;
+      await self.deps.accountSignals.optOutMoved({ username: username,
+        act: move, via: 'portal',
+        reasonAdmin: username + ' changed their RISC participation on the ' +
+                     'portal.' });
+      const after = risc.optOutOf(username).state;
+      if (after === before) {
+        // Nothing recorded it — Shared Signals is off in this process, so
+        // there is no register to move and no receiver to tell.
+        log.warn(errorCodes.tag('STS-PORTAL-0076') + 'portal: ' + username +
+                 '\'s RISC ' + move + ' was not recorded.');
+        errorCodes.mark(res, 'STS-PORTAL-0076');
+        return self.send(res, 503, self.signalsPage(session, null,
+          'Your choice could not be recorded: this service is not ' +
+          'sending security events at the moment.', 1));
+      }
+      audit.record({
+        category: 'signals', action: 'portal.risc.' + move,
+        actor: username, outcome: 'success',
+        summary: username + ' moved their RISC participation from ' + before +
+                 ' to ' + after,
+        detail: { address: websecurity.addressOf(req) }
+      });
+      log.debug('Leaving POST ' + BASE + '/signals. ' + before + ' -> ' +
+                after + '.');
+      return self.send(res, 200, self.signalsPage(session,
+        after === 'opt-out-initiated'
+          ? 'You asked to stop sharing security events. It takes effect ' +
+            'after the waiting period, and you can cancel until then.'
+          : after === 'opt-in'
+            ? 'Security events about your account are shared.'
+            : 'Done.', null, 1));
     });
 
     // THE PAGE BEHIND THE POST BELOW. Same path, different method: the form has
@@ -4706,6 +5136,12 @@ class Portal {
           summary: username + ' removed their own authenticator app',
           detail: { address: websecurity.addressOf(req) }
         });
+        // CAEP credential-change (#145), as the console's clear-totp sends.
+        self.deps.accountSignals.credentialChanged({ username: username,
+          credentialType: self.deps.accountSignals.TOTP_CREDENTIAL_TYPE,
+          changeType: 'delete', initiatingEntity: 'user', via: 'portal',
+          reasonAdmin: username + ' removed their authenticator app.',
+          reasonUser: 'You removed your authenticator app.' });
         log.info('portal: ' + username + ' removed their authenticator app. ' +
                  'That account is down to one factor.');
         log.debug('Leaving POST ' + BASE + '/mfa. Removed.');
@@ -4714,11 +5150,34 @@ class Portal {
         return undefined;
       }
 
+      // THE EMAILED SECOND FACTOR (#64). `common/mail_factor.ts` decides, and
+      // refuses anything it could not honour at the next sign-in.
+      if (action === 'email-factor-on' || action === 'email-factor-off') {
+        const mailFactor = require('../common/mail_factor');
+        const done = action === 'email-factor-on'
+          ? mailFactor.optIn(username, body.kind, username, 'portal')
+          : mailFactor.clear(username, username, 'portal');
+        if (!done.ok) {
+          log.debug('Leaving POST ' + BASE + '/mfa. Email factor refused.');
+          errorCodes.mark(res, self.innerCode(done) || 'STS-PORTAL-0092');
+          return self.send(res, 400, self.mfaPage(session, null,
+            (done.errors || ['That could not be done.'])[0],
+            await self.pendingEnrolmentFor(username, base)));
+        }
+        log.debug('Leaving POST ' + BASE + '/mfa. Email factor changed.');
+        res.status(303).set('Location', BASE + '/mfa?done=' +
+          encodeURIComponent(action === 'email-factor-on'
+            ? 'Email is now your second factor, after your password.'
+            : 'Email is no longer a second factor for you.') +
+          '#email-factor').end();
+        return undefined;
+      }
+
       if (action === 'start') {
         // **THE SETTING IS CHECKED AT THE DOOR AND NOT ONLY ON THE PAGE**,
         // which is `authn.js`'s rule about the anonymous button read again: the
         // page is markup and this is the door, so a form posted by hand while
-        // `totp.enabled` is off must not mint a secret.
+        // the TOTP row is off must not mint a secret.
         const begun = credentials.beginTotpEnrolment(username, { base: base });
         if (!begun.ok) {
           log.debug('Leaving POST ' + BASE + '/mfa. Refused to start.');
@@ -4780,6 +5239,11 @@ class Portal {
           summary: username + ' set up an authenticator app as a second factor',
           detail: { address: websecurity.addressOf(req) }
         });
+        self.deps.accountSignals.credentialChanged({ username: username,
+          credentialType: self.deps.accountSignals.TOTP_CREDENTIAL_TYPE,
+          changeType: 'create', initiatingEntity: 'user', via: 'portal',
+          reasonAdmin: username + ' set up an authenticator app.',
+          reasonUser: 'You set up an authenticator app.' });
         await websecurity.succeededShared('mfa-code', req, username);
         log.info('portal: ' + username + ' set up an authenticator app. A ' +
                  'password alone will no longer sign them in.');
@@ -4870,6 +5334,13 @@ class Portal {
       if (action === 'confirm-codes') {
         const stored = credentials.confirmBackupCodes(
           username, String(body.handle || ''));
+        // RECOVERY CODES ARE RECOVERY INFORMATION (#145): CAEP names no
+        // credential type for them, and RISC's recovery-information-changed
+        // is the event the console's clear already sends.
+        if (stored.ok) {
+          self.deps.accountSignals.recoveryInformationChanged({
+            username: username, via: 'portal' });
+        }
         audit.record({
           category: 'authentication',
           action: 'portal.mfa.backup-codes.confirmed',
@@ -5137,7 +5608,8 @@ class Portal {
       if (action === 'remove') {
         // ONE PROFILE AT A TIME: taking the RFC 7522 key pair off leaves the
         // RFC 7523 one working, and the reverse.
-        const removed = personAssertions.clear(username, profile.id);
+        const removed = personAssertions.clear(username, profile.id,
+          { initiatingEntity: 'user', via: 'portal' });
         if (!removed.ok) {
           log.debug('Leaving POST ' + BASE + '/signing-key. Nothing to ' +
                                              'remove.');
@@ -5225,7 +5697,7 @@ class Portal {
         }
         const record = issued.issued;
         const written = personAssertions.write(username, record,
-                                               { purpose: profile.id });
+          { purpose: profile.id, initiatingEntity: 'user', via: 'portal' });
         if (!written.ok) {
           // THE KEY PAIR IS GONE AND THE PAGE SAYS SO. `common/pki.js` hands
           // one over ONCE and keeps no copy, so a failed write is not a state
@@ -5339,8 +5811,12 @@ class Portal {
       // there — which is correct: development checks no password anywhere, and
       // a portal that was the one exception would be a surprise rather than a
       // control.
+      // `session-held` (#101): this session already met whatever second
+      // factor the account asks for, so re-proving the password here is not
+      // a password alone. No `door`, so no app password.
       const checked = credentials.verify(username, current,
-                                         { via: 'the portal password change' });
+                                         { via: 'the portal password change',
+                                           secondFactor: 'session-held' });
       if (!checked.ok) {
         log.info('portal: a password change for ' + username +
                  ' was refused (' + checked.reason + ').');
@@ -5364,6 +5840,8 @@ class Portal {
           next ? 'The two new passwords do not match.' : 'Give a new ' +
             'password.'));
       }
+      // Screened against Pwned Passwords first (#62 P6).
+      await require('../common/breached_passwords').screen(next);
       const set = credentials.setPassword(username, next);
       if (!set.ok) {
         errorCodes.mark(res, self.innerCode(set) || 'STS-PORTAL-0008');
@@ -5378,6 +5856,12 @@ class Portal {
         detail: { address: websecurity.addressOf(req) }
       });
       log.info('portal: ' + username + ' changed their own password.');
+      // CAEP credential-change (#145), as the console's set-password sends.
+      self.deps.accountSignals.credentialChanged({ username: username,
+        credentialType: 'password', changeType: 'update',
+        initiatingEntity: 'user', via: 'portal',
+        reasonAdmin: username + ' changed their own password.',
+        reasonUser: 'You changed your password.' });
       log.debug('Leaving POST ' + BASE + '/password. Changed.');
       // BACK TO THE PAGE IT WAS POSTED FROM, and not to the overview. It used
       // to be the overview because the form was on it; now that the form has a
@@ -5445,7 +5929,7 @@ class Portal {
       if (action === 'begin') {
         // THE POLICY IS CHECKED AT THE DOOR AND NOT ONLY ON THE PAGE, which is
         // `authn.js`'s rule about the anonymous button and `/portal/mfa`'s
-        // about `totp.enabled`: the page is markup and this is the door, so a
+        // about the TOTP row: the page is markup and this is the door, so a
         // form posted by hand while `webauthn.primaryAllowed` is off must not
         // arm a ceremony that `addKey()` would then refuse after somebody had
         // touched their key. `beginKeyEnrolment()` makes every one of those
@@ -5534,6 +6018,19 @@ class Portal {
               (done.errors || ['The security key could not be registered.'])[0],
               base));
           }
+          // CAEP credential-change (#145), the key described by what its
+          // enrolment recorded: attachment and AAGUID.
+          const enrolled = credentials.keysOf(username).filter(function (one) {
+            return one.credentialId === String(done.credentialId || '');
+          })[0] || null;
+          self.deps.accountSignals.credentialChanged({ username: username,
+            credentialType: self.deps.accountSignals.keyCredentialType(
+              enrolled),
+            fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
+            friendlyName: String((enrolled && enrolled.label) || ''),
+            changeType: 'create', initiatingEntity: 'user', via: 'portal',
+            reasonAdmin: username + ' enrolled a security key.',
+            reasonUser: 'You enrolled a security key.' });
           audit.record({
             category: 'authentication', action: 'portal.key.enrolled',
             actor: username, outcome: 'success',
@@ -5597,6 +6094,10 @@ class Portal {
       // among THIS PERSON'S keys, so an id belonging to somebody else matches
       // nothing. An implementation that took both from the request would be the
       // A01 vulnerability this file exists to avoid.
+      // The key as it was, read first: the event describes what was removed.
+      const going = credentials.keysOf(username).filter(function (one) {
+        return one.credentialId === String(body.credentialId || '');
+      })[0] || null;
       const removed = credentials.removeKey(username,
                                             String(body.credentialId || ''));
       if (!removed.ok) {
@@ -5606,6 +6107,13 @@ class Portal {
           (removed.errors || ['The key could not be removed.'])[0],
           baseUrlOf(req)));
       }
+      self.deps.accountSignals.credentialChanged({ username: username,
+        credentialType: self.deps.accountSignals.keyCredentialType(going),
+        fido2Aaguid: String((going && going.aaguid) || ''),
+        friendlyName: String((going && going.label) || ''),
+        changeType: 'delete', initiatingEntity: 'user', via: 'portal',
+        reasonAdmin: username + ' removed a security key.',
+        reasonUser: 'You removed a security key.' });
       audit.record({
         category: 'authentication', action: 'portal.key.removed',
         actor: username, outcome: 'success',
@@ -5752,7 +6260,8 @@ const slot = new InstanceSlot<Portal>(
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
-// Here that is the portal's pages, then /portal/certificates.
+// Here that is the portal's pages, then /portal/certificates, then
+// /portal/app-passwords.
 
 helpers.log.info('The User Portal is at ' + BASE + ': a person\'s own ' +
                  'account, in ' + NAV_PAGES.length + ' pages behind a ' +
@@ -5775,6 +6284,26 @@ helpers.log.info('The User Portal is at ' + BASE + ': a person\'s own ' +
 // `register()` rather than a require that registers at its top level.
 // ---------------------------------------------------------------------------
 const portalCertificates = require('./portal_certificates');
+// /portal/app-passwords (#101), the same arrangement, registered after it.
+const portalAppPasswords = require('./portal_app_passwords');
+// /portal/kerberos (#59), the same arrangement, registered after that.
+const portalKerberos = require('./portal_kerberos');
+// /portal/sign-ins (#62 P6), the same arrangement, registered after that.
+const portalSignIns = require('./portal_sign_ins');
+// /portal/consents (#172), the same arrangement, registered after that.
+const portalConsents = require('./portal_consents');
+// /portal/delegate (#108), the same arrangement, registered after that.
+const portalDelegate = require('./portal_delegate');
+// /portal/email, /portal/verify-email and /portal/forgot-password (#63),
+// the same arrangement, registered after that.
+const portalMail = require('./portal_mail');
+// /portal/self-issued (#129), the same arrangement, registered after that.
+const portalSelfIssued = require('./portal_self_issued');
+// /portal/devices (#130), the same arrangement, registered after that.
+const portalDevices = require('./portal_devices');
+// /portal/ciba (#131), the same arrangement, registered after that.
+const portalCiba = require('./portal_ciba');
+const portalClaimSources = require('./portal_claim_sources');
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
@@ -5783,6 +6312,137 @@ export = {
   registerRoutes: (target: any): void => {
     slot.get().registerRoutes(target);
     portalCertificates.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalAppPasswords.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalKerberos.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalSignIns.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalConsents.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalDelegate.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalMail.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      bare: slot.forward('bare'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalSelfIssued.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalDevices.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalCiba.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalClaimSources.register({
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),

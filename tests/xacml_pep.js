@@ -975,12 +975,12 @@ async function run(t) {
   // out.
   // -------------------------------------------------------------------------
   t.log.info('--- The nudge, refused ---');
-  const wasInsecure = config.value('xacml.pepNotifyAllowInsecure');
+  const wasInsecure = config.value('xacml.pepNotifyAllowHttp');
   const wasHosts = config.value('xacml.pepNotifyAllowedHosts');
-  config.setOverride('xacml.pepNotifyAllowInsecure', false);
+  config.setOverride('xacml.pepNotifyAllowHttp', false);
   config.setOverride('xacml.pepNotifyAllowedHosts', '');
   t.check(!!pepHttp.urlProblem('http://pep/notify'),
-          'plain http is refused while pepNotifyAllowInsecure is off');
+          'plain http is refused while pepNotifyAllowHttp is off');
   t.equal(pepHttp.urlProblem('https://pep.example.com/notify'), null,
           'and https with an empty allowlist is fine — empty means ANY, ' +
           'which is the default and the one deliberate looseness here');
@@ -995,13 +995,13 @@ async function run(t) {
           'while the allowed host is fine at ANY path — hosts rather than ' +
           'URLs, because a component legitimately moves its path and does ' +
           'not legitimately move to another host');
-  config.setOverride('xacml.pepNotifyAllowInsecure', true);
+  config.setOverride('xacml.pepNotifyAllowHttp', true);
   t.equal(pepHttp.urlProblem('http://allowed.example.com/notify'), null,
           'and http is allowed once the setting says so');
   t.check(!!pepHttp.urlProblem('ftp://allowed.example.com/notify'),
           'a scheme that is neither http nor https is refused whatever the ' +
           'settings say');
-  config.setOverride('xacml.pepNotifyAllowInsecure', wasInsecure);
+  config.setOverride('xacml.pepNotifyAllowHttp', wasInsecure);
   config.setOverride('xacml.pepNotifyAllowedHosts', wasHosts);
 
   // TURNED OFF, NOTHING IS DIALLED, and the answer says so rather than

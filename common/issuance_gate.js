@@ -131,7 +131,15 @@ function deciderInstalled() {
 //     claims        the claims of a token the caller presented, if any, so
 //                   that a roles claim in it can be read back.
 //     realm         for the log line only; the decision runs in the ambient
-//                   realm like everything else. }
+//                   realm like everything else.
+//     risk          (#62 P3) the RISK of the authentication this issuance
+//                   rests on, as `risk/risk_engine.ts`'s `factsOf()` states
+//                   it — or null for "none". A caller that names none has
+//                   it found (`riskFactsOf()` below).
+//     session       (#62 P3) the session the issuance rests on, where the
+//                   caller holds it: its `risk` and its `amr`/`acr` are the
+//                   facts, so every token on a session is decided on the
+//                   risk its sign-in established. }
 //
 // The answer is `{ allowed, decision, why, roles, required, policy }` — the
 // XACML decision and the reason, kept apart on purpose: `allowed` is what an
@@ -177,19 +185,39 @@ function check(request) {
     return allow('The XACML role subsystem is not loaded in this process, ' +
                  'so issuance is not gated.');
   }
-  if (config.value('roles.enforceIssuance') === false) {
+  // -------------------------------------------------------------------------
+  // THE TWO SHORTCUTS WAIVE THE ROLE QUESTION AND NOTHING ELSE (#62 P3,
+  // 2026-09-22). `roles.enforceIssuance` off and a call that names no
+  // application both used to answer "allowed" without asking — which was
+  // right while the policy asked only about roles, and would be a way round
+  // every RISK decision now that the same policy asks about both. So the
+  // policy is still asked whenever there are risk facts, told the role
+  // question is waived, and only a Deny about risk refuses.
+  // -------------------------------------------------------------------------
+  const risk = riskFactsOf(asked);
+  // THE AUTHENTICATION A SESSION STANDS ON (#64) rides along whenever the
+  // policy IS asked, and does not make it asked: a sign-in that names no
+  // application and carries no risk facts is not put to the policy, as it
+  // never was. A rule refusing an emailed factor therefore reaches every
+  // session an application is being signed in to, and every assessed one.
+  const enforceRoles = config.value('roles.enforceIssuance') !== false;
+  if (!enforceRoles && !risk) {
     log.debug('Leaving check(). Enforcement is switched off.');
     return allow('roles.enforceIssuance is off, so the decision was not ' +
                  'asked for.');
   }
-  if (!asked.application) {
+  if (!asked.application && !risk) {
     log.debug('Leaving check(). No application to decide about.');
     return allow('Nothing named an application, so there is no requirement ' +
                  'to check.');
   }
+  const question = Object.assign({}, asked, {
+    risk: risk,
+    rolesWaived: !enforceRoles || !asked.application
+  });
   let answer;
   try {
-    answer = decider(asked);
+    answer = decider(question);
   } catch (error) {
     // THE ONE PLACE THIS FAILS OPEN ON AN ERROR, and it is deliberate and
     // narrow. A THROW here is a defect in the PEP or the engine — not a Deny,
@@ -215,6 +243,99 @@ function check(request) {
 // Whether a subject name is a disabled account. Never throws: a reader that
 // cannot be loaded disables nobody, which is what a process without the
 // directory has always meant.
+// ---------------------------------------------------------------------------
+// THE RISK FACTS OF AN ISSUANCE (#62 P3). The caller's own, where it named
+// them — `startSession()` does, from the assessment it was handed, and an
+// explicit null means none. Otherwise `risk/risk_engine.ts` finds them: the
+// session's, where the caller passed it, or the person's standing held in
+// this process. Required LAZILY: the risk modules are built by the
+// composition root (18j) long after this leaf, and a process without them —
+// a test that loads the gate alone — has no facts, which decides on roles
+// alone. Synchronous, as `check()` must be.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE DELEGATION QUESTION (#108, 2026-09-23): action-id `delegate`, asked by
+// `common/delegation_policy.ts` AFTER its attribute rule has allowed a
+// WS-Trust OnBehalfOf / ActAs or an RFC 8693 exchange.
+//
+// **DENY-ONLY, AND THAT IS THE WHOLE DIFFERENCE FROM `check()`.** The
+// attributes on the entries are the policy and stay readable on their own —
+// Kerberos's model — and this is an administrator's layer ON TOP of them: a
+// Permit, a NotApplicable and an Indeterminate all leave the attribute rule's
+// answer standing, and only an explicit Deny refuses. So the built-in issuance
+// policy, which says nothing about `delegate`, changes nothing, and an
+// operator who writes a rule denying one intermediary, one subject or one
+// target gets exactly that and no more.
+//
+// NOT A MEMBER OF `ISSUANCE`: delegating is not an issuance of its own — the
+// token the act produces is still issued through the ordinary site and asked
+// about there — and every reader of `KINDS` lists issuances.
+//
+// `delegation`: { intermediary, subject, target, mode, protocol }.
+// ---------------------------------------------------------------------------
+const DELEGATE = 'delegate';
+
+function checkDelegation(delegation) {
+  log.debug('Entering checkDelegation().');
+  const asked = delegation || {};
+  if (!decider) {
+    log.debug('Leaving checkDelegation(). No decider is installed.');
+    return allow('The XACML role subsystem is not loaded in this process, ' +
+                 'so the delegation is not put to it.');
+  }
+  let answer;
+  try {
+    answer = decider({
+      kind: DELEGATE,
+      denyOnly: true,
+      application: String(asked.target || ''),
+      subject: { kind: 'user', name: String(asked.subject || ''),
+                 authenticated: true },
+      claims: null,
+      risk: null,
+      rolesWaived: true,
+      delegation: {
+        intermediary: String(asked.intermediary || ''),
+        subject: String(asked.subject || ''),
+        target: String(asked.target || ''),
+        mode: String(asked.mode || ''),
+        protocol: String(asked.protocol || '')
+      }
+    });
+  } catch (error) {
+    log.error(errorCodes.tag('STS-XACML-0052') +
+              'issuance_gate: the decider threw on a delegation question and ' +
+              'the attribute rule\'s answer stands; this is a defect in the ' +
+              'embedded PEP rather than a decision. ' + error.message);
+    log.debug("Leaving checkDelegation().");
+    return allow('The embedded PEP threw, which is a defect rather than a ' +
+                 'decision: ' + error.message);
+  }
+  const result = answer || allow('The embedded PEP answered nothing.');
+  log.debug('Leaving checkDelegation(). ' + (result.allowed ? 'Allowed.'
+    : 'DENIED: ' + result.why));
+  return result;
+}
+
+function riskFactsOf(asked) {
+  log.debug("Entering riskFactsOf().");
+  if (Object.prototype.hasOwnProperty.call(asked, 'risk')) {
+    log.debug("Leaving riskFactsOf(). The caller's.");
+    return asked.risk || null;
+  }
+  let facts = null;
+  try {
+    facts = require('../risk/risk_engine').factsForIssuance(Object.assign({
+      realm: require('./realms').currentId() }, asked));
+  } catch (e) {
+    log.debug("Caught in riskFactsOf(): " + ((e && e.message) || e));
+    // No risk engine in this process: no facts, and the roles decide.
+    facts = null;
+  }
+  log.debug("Leaving riskFactsOf(). " + (facts ? facts.level : 'None.'));
+  return facts;
+}
+
 function disabledSubject(name) {
   log.debug("Entering disabledSubject().");
   let disabled = false;
@@ -240,5 +361,7 @@ module.exports = {
   KINDS: KINDS,
   setDecider: setDecider,
   deciderInstalled: deciderInstalled,
-  check: check
+  check: check,
+  DELEGATE: DELEGATE,
+  checkDelegation: checkDelegation
 };

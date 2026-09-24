@@ -505,16 +505,18 @@ function ssfBasic(t) {
 // ---------------------------------------------------------------------------
 function scimDigest(t) {
   log.debug("Entering scimDigest().");
-  t.log.info('=== SCIM Digest is not offered in product mode; MD5 can be ' +
-             'dropped ===');
+  t.log.info('=== SCIM Digest is not offered in product mode; MD5 is off ' +
+             'unless turned on (#182) ===');
   const scimAuth = require('../scim/scim_auth');
   const req = { headers: {}, method: 'GET', originalUrl: '/scim/v2/Users' };
   const devChallenges = scimAuth.challenges(req).join('\n');
   t.check(/Digest /.test(devChallenges), 'development offers Digest');
-  config.setOverride('scim.digestMd5', false);
+  t.check(devChallenges.indexOf('algorithm=MD5') < 0,
+          'scim.digestMd5 is off by default, so no MD5 challenge (#182)');
+  config.setOverride('scim.digestMd5', true);
   try {
-    t.check(scimAuth.challenges(req).join('\n').indexOf('algorithm=MD5') < 0,
-            'scim.digestMd5 off drops the MD5 challenge');
+    t.check(scimAuth.challenges(req).join('\n').indexOf('algorithm=MD5') >= 0,
+            'scim.digestMd5 on adds the MD5 challenge, in development');
   } finally {
     config.clearOverride('scim.digestMd5');
   }

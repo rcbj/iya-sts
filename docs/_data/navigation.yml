@@ -1,7 +1,7 @@
 # The left-hand navigation of the documentation site, drawn by
-# _includes/sidebar.html on every page. It replaced `header_pages` in
-# _config.yml on 2026-09-22, when twenty-six links across the top of every page
-# had stopped being navigable. A page that is not listed here is still built
+# _includes/sidebar.html on every page, in place of `header_pages` in
+# _config.yml, because twenty-six links across the top of every page are not
+# navigable. A page that is not listed here is still built
 # and still reachable by a link; it simply has no place in the sidebar.
 #
 # `url` is the page's built address: `foo.md` is served as `/foo.html`.
@@ -25,6 +25,7 @@
     - { title: JWT assertions (RFC 7523), url: /jwt-assertions.html }
     - { title: SAML assertions (RFC 7522), url: /saml-assertions.html }
     - { title: GNAP, url: /gnap.html }
+    - { title: OpenID Federation, url: /oidfed.html }
 
 - section: SAML and WS-*
   items:
@@ -41,6 +42,8 @@
     - { title: TLS and mutual TLS, url: /tls.html }
     - { title: Sessions, url: /sessions.html }
     - { title: Signing out, url: /signing-out.html }
+    - { title: Risk scoring, url: /risk-scoring.html }
+    - { title: "Mail: reset, verification, notices", url: /mail.html }
 
 - section: Verifiable credentials
   items:
@@ -50,6 +53,7 @@
 - section: Directory and provisioning
   items:
     - { title: LDAP, url: /ldap.html }
+    - { title: LDAP schema, url: /ldap-schema.html }
     - { title: SCIM 2.0, url: /scim.html }
 
 - section: Authorization policy
@@ -73,11 +77,14 @@
 
 - section: Administration
   items:
+    - { title: Admin console, url: /admin-console.html }
+    - { title: Applications, url: /applications.html }
     - { title: Management API, url: /management-api.html }
 
 - section: Operating it
   items:
     - { title: Persistence, url: /persistence.html }
+    - { title: PostgreSQL schema, url: /postgres-schema.html }
     - { title: Encryption at rest, url: /encryption-at-rest.html }
     - { title: Caches, url: /caches.html }
     - { title: A cluster in AWS, url: /aws-cluster.html }

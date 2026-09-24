@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  tests/xml-schemas/catalog.xml (#188): every schemaLocation the published
+  schemas import each other by, mapped to the copy
+  tests/tools/fetch-xml-schemas.sh fetched and verified beside this file, so
+  that xmllint compiles the whole set without dialling anything (its nonet option).
+  Both the http and the https spelling of each address are listed, because
+  the publications use both.
+
+  ONE SUBSTITUTION, and it is a comment: the undated
+  .../TR/xmldsig-core/xmldsig-core-schema.xsd (imported by WS-Security 1.0
+  and SAML 1.1) is mapped to the dated 2002 Recommendation. The two differ
+  only in the $Revision$ comment on line 14 (compared 2026-09-24), and a
+  namespace is imported once whichever address names it.
+-->
+<catalog xmlns="urn:oasis:names:tc:entity:xmlns:xml:catalog" prefer="system">
+  <system systemId="http://www.w3.org/2001/xml.xsd" uri="xml.xsd"/>
+  <uri name="http://www.w3.org/2001/xml.xsd" uri="xml.xsd"/>
+  <system systemId="https://www.w3.org/2001/xml.xsd" uri="xml.xsd"/>
+  <uri name="https://www.w3.org/2001/xml.xsd" uri="xml.xsd"/>
+  <system systemId="http://www.w3.org/2001/XMLSchema.dtd" uri="XMLSchema.dtd"/>
+  <uri name="http://www.w3.org/2001/XMLSchema.dtd" uri="XMLSchema.dtd"/>
+  <system systemId="https://www.w3.org/2001/XMLSchema.dtd" uri="XMLSchema.dtd"/>
+  <uri name="https://www.w3.org/2001/XMLSchema.dtd" uri="XMLSchema.dtd"/>
+  <system systemId="http://www.w3.org/2001/datatypes.dtd" uri="datatypes.dtd"/>
+  <uri name="http://www.w3.org/2001/datatypes.dtd" uri="datatypes.dtd"/>
+  <system systemId="https://www.w3.org/2001/datatypes.dtd" uri="datatypes.dtd"/>
+  <uri name="https://www.w3.org/2001/datatypes.dtd" uri="datatypes.dtd"/>
+  <system systemId="http://www.w3.org/TR/2002/REC-xmldsig-core-20020212/xmldsig-core-schema.xsd" uri="xmldsig-core-schema.xsd"/>
+  <uri name="http://www.w3.org/TR/2002/REC-xmldsig-core-20020212/xmldsig-core-schema.xsd" uri="xmldsig-core-schema.xsd"/>
+  <system systemId="https://www.w3.org/TR/2002/REC-xmldsig-core-20020212/xmldsig-core-schema.xsd" uri="xmldsig-core-schema.xsd"/>
+  <uri name="https://www.w3.org/TR/2002/REC-xmldsig-core-20020212/xmldsig-core-schema.xsd" uri="xmldsig-core-schema.xsd"/>
+  <system systemId="http://www.w3.org/TR/xmldsig-core/xmldsig-core-schema.xsd" uri="xmldsig-core-schema.xsd"/>
+  <uri name="http://www.w3.org/TR/xmldsig-core/xmldsig-core-schema.xsd" uri="xmldsig-core-schema.xsd"/>
+  <system systemId="https://www.w3.org/TR/xmldsig-core/xmldsig-core-schema.xsd" uri="xmldsig-core-schema.xsd"/>
+  <uri name="https://www.w3.org/TR/xmldsig-core/xmldsig-core-schema.xsd" uri="xmldsig-core-schema.xsd"/>
+  <system systemId="http://www.w3.org/TR/2013/REC-xmldsig-core1-20130411/xmldsig11-schema.xsd" uri="xmldsig11-schema.xsd"/>
+  <uri name="http://www.w3.org/TR/2013/REC-xmldsig-core1-20130411/xmldsig11-schema.xsd" uri="xmldsig11-schema.xsd"/>
+  <system systemId="https://www.w3.org/TR/2013/REC-xmldsig-core1-20130411/xmldsig11-schema.xsd" uri="xmldsig11-schema.xsd"/>
+  <uri name="https://www.w3.org/TR/2013/REC-xmldsig-core1-20130411/xmldsig11-schema.xsd" uri="xmldsig11-schema.xsd"/>
+  <system systemId="http://www.w3.org/TR/2002/REC-xmlenc-core-20021210/xenc-schema.xsd" uri="xenc-schema.xsd"/>
+  <uri name="http://www.w3.org/TR/2002/REC-xmlenc-core-20021210/xenc-schema.xsd" uri="xenc-schema.xsd"/>
+  <system systemId="https://www.w3.org/TR/2002/REC-xmlenc-core-20021210/xenc-schema.xsd" uri="xenc-schema.xsd"/>
+  <uri name="https://www.w3.org/TR/2002/REC-xmlenc-core-20021210/xenc-schema.xsd" uri="xenc-schema.xsd"/>
+  <system systemId="http://www.w3.org/TR/2013/REC-xmlenc-core1-20130411/xenc-schema-11.xsd" uri="xenc-schema-11.xsd"/>
+  <uri name="http://www.w3.org/TR/2013/REC-xmlenc-core1-20130411/xenc-schema-11.xsd" uri="xenc-schema-11.xsd"/>
+  <system systemId="https://www.w3.org/TR/2013/REC-xmlenc-core1-20130411/xenc-schema-11.xsd" uri="xenc-schema-11.xsd"/>
+  <uri name="https://www.w3.org/TR/2013/REC-xmlenc-core1-20130411/xenc-schema-11.xsd" uri="xenc-schema-11.xsd"/>
+  <system systemId="http://www.w3.org/2003/05/soap-envelope/" uri="soap-envelope-1.2.xsd"/>
+  <uri name="http://www.w3.org/2003/05/soap-envelope/" uri="soap-envelope-1.2.xsd"/>
+  <system systemId="https://www.w3.org/2003/05/soap-envelope/" uri="soap-envelope-1.2.xsd"/>
+  <uri name="https://www.w3.org/2003/05/soap-envelope/" uri="soap-envelope-1.2.xsd"/>
+  <system systemId="http://www.w3.org/2003/05/soap-envelope" uri="soap-envelope-1.2.xsd"/>
+  <uri name="http://www.w3.org/2003/05/soap-envelope" uri="soap-envelope-1.2.xsd"/>
+  <system systemId="https://www.w3.org/2003/05/soap-envelope" uri="soap-envelope-1.2.xsd"/>
+  <uri name="https://www.w3.org/2003/05/soap-envelope" uri="soap-envelope-1.2.xsd"/>
+  <system systemId="http://www.w3.org/2006/03/addressing/ws-addr.xsd" uri="ws-addr.xsd"/>
+  <uri name="http://www.w3.org/2006/03/addressing/ws-addr.xsd" uri="ws-addr.xsd"/>
+  <system systemId="https://www.w3.org/2006/03/addressing/ws-addr.xsd" uri="ws-addr.xsd"/>
+  <uri name="https://www.w3.org/2006/03/addressing/ws-addr.xsd" uri="ws-addr.xsd"/>
+  <system systemId="http://docs.oasis-open.org/security/saml/v2.0/saml-schema-assertion-2.0.xsd" uri="saml-schema-assertion-2.0.xsd"/>
+  <uri name="http://docs.oasis-open.org/security/saml/v2.0/saml-schema-assertion-2.0.xsd" uri="saml-schema-assertion-2.0.xsd"/>
+  <system systemId="https://docs.oasis-open.org/security/saml/v2.0/saml-schema-assertion-2.0.xsd" uri="saml-schema-assertion-2.0.xsd"/>
+  <uri name="https://docs.oasis-open.org/security/saml/v2.0/saml-schema-assertion-2.0.xsd" uri="saml-schema-assertion-2.0.xsd"/>
+  <system systemId="http://docs.oasis-open.org/security/saml/v2.0/saml-schema-protocol-2.0.xsd" uri="saml-schema-protocol-2.0.xsd"/>
+  <uri name="http://docs.oasis-open.org/security/saml/v2.0/saml-schema-protocol-2.0.xsd" uri="saml-schema-protocol-2.0.xsd"/>
+  <system systemId="https://docs.oasis-open.org/security/saml/v2.0/saml-schema-protocol-2.0.xsd" uri="saml-schema-protocol-2.0.xsd"/>
+  <uri name="https://docs.oasis-open.org/security/saml/v2.0/saml-schema-protocol-2.0.xsd" uri="saml-schema-protocol-2.0.xsd"/>
+  <system systemId="http://docs.oasis-open.org/security/saml/v2.0/saml-schema-metadata-2.0.xsd" uri="saml-schema-metadata-2.0.xsd"/>
+  <uri name="http://docs.oasis-open.org/security/saml/v2.0/saml-schema-metadata-2.0.xsd" uri="saml-schema-metadata-2.0.xsd"/>
+  <system systemId="https://docs.oasis-open.org/security/saml/v2.0/saml-schema-metadata-2.0.xsd" uri="saml-schema-metadata-2.0.xsd"/>
+  <uri name="https://docs.oasis-open.org/security/saml/v2.0/saml-schema-metadata-2.0.xsd" uri="saml-schema-metadata-2.0.xsd"/>
+  <system systemId="http://schemas.xmlsoap.org/soap/envelope/" uri="soap-envelope-1.1.xsd"/>
+  <uri name="http://schemas.xmlsoap.org/soap/envelope/" uri="soap-envelope-1.1.xsd"/>
+  <system systemId="https://schemas.xmlsoap.org/soap/envelope/" uri="soap-envelope-1.1.xsd"/>
+  <uri name="https://schemas.xmlsoap.org/soap/envelope/" uri="soap-envelope-1.1.xsd"/>
+  <system systemId="http://schemas.xmlsoap.org/ws/2004/08/addressing/" uri="addressing-2004-08.xsd"/>
+  <uri name="http://schemas.xmlsoap.org/ws/2004/08/addressing/" uri="addressing-2004-08.xsd"/>
+  <system systemId="https://schemas.xmlsoap.org/ws/2004/08/addressing/" uri="addressing-2004-08.xsd"/>
+  <uri name="https://schemas.xmlsoap.org/ws/2004/08/addressing/" uri="addressing-2004-08.xsd"/>
+  <system systemId="http://schemas.xmlsoap.org/ws/2004/08/addressing" uri="addressing-2004-08.xsd"/>
+  <uri name="http://schemas.xmlsoap.org/ws/2004/08/addressing" uri="addressing-2004-08.xsd"/>
+  <system systemId="https://schemas.xmlsoap.org/ws/2004/08/addressing" uri="addressing-2004-08.xsd"/>
+  <uri name="https://schemas.xmlsoap.org/ws/2004/08/addressing" uri="addressing-2004-08.xsd"/>
+  <system systemId="http://schemas.xmlsoap.org/ws/2004/03/addressing" uri="addressing-2004-03.xsd"/>
+  <uri name="http://schemas.xmlsoap.org/ws/2004/03/addressing" uri="addressing-2004-03.xsd"/>
+  <system systemId="https://schemas.xmlsoap.org/ws/2004/03/addressing" uri="addressing-2004-03.xsd"/>
+  <uri name="https://schemas.xmlsoap.org/ws/2004/03/addressing" uri="addressing-2004-03.xsd"/>
+  <system systemId="http://schemas.xmlsoap.org/ws/2004/09/policy/ws-policy.xsd" uri="ws-policy-2004-09.xsd"/>
+  <uri name="http://schemas.xmlsoap.org/ws/2004/09/policy/ws-policy.xsd" uri="ws-policy-2004-09.xsd"/>
+  <system systemId="https://schemas.xmlsoap.org/ws/2004/09/policy/ws-policy.xsd" uri="ws-policy-2004-09.xsd"/>
+  <uri name="https://schemas.xmlsoap.org/ws/2004/09/policy/ws-policy.xsd" uri="ws-policy-2004-09.xsd"/>
+  <system systemId="http://schemas.xmlsoap.org/ws/2002/12/policy" uri="ws-policy-2002-12.xsd"/>
+  <uri name="http://schemas.xmlsoap.org/ws/2002/12/policy" uri="ws-policy-2002-12.xsd"/>
+  <system systemId="https://schemas.xmlsoap.org/ws/2002/12/policy" uri="ws-policy-2002-12.xsd"/>
+  <uri name="https://schemas.xmlsoap.org/ws/2002/12/policy" uri="ws-policy-2002-12.xsd"/>
+  <system systemId="http://schemas.xmlsoap.org/ws/2002/07/utility" uri="utility-2002-07.xsd"/>
+  <uri name="http://schemas.xmlsoap.org/ws/2002/07/utility" uri="utility-2002-07.xsd"/>
+  <system systemId="https://schemas.xmlsoap.org/ws/2002/07/utility" uri="utility-2002-07.xsd"/>
+  <uri name="https://schemas.xmlsoap.org/ws/2002/07/utility" uri="utility-2002-07.xsd"/>
+  <system systemId="http://schemas.xmlsoap.org/ws/2004/09/mex/MetadataExchange.xsd" uri="MetadataExchange.xsd"/>
+  <uri name="http://schemas.xmlsoap.org/ws/2004/09/mex/MetadataExchange.xsd" uri="MetadataExchange.xsd"/>
+  <system systemId="https://schemas.xmlsoap.org/ws/2004/09/mex/MetadataExchange.xsd" uri="MetadataExchange.xsd"/>
+  <uri name="https://schemas.xmlsoap.org/ws/2004/09/mex/MetadataExchange.xsd" uri="MetadataExchange.xsd"/>
+  <system systemId="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" uri="oasis-200401-wss-wssecurity-secext-1.0.xsd"/>
+  <uri name="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" uri="oasis-200401-wss-wssecurity-secext-1.0.xsd"/>
+  <system systemId="https://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" uri="oasis-200401-wss-wssecurity-secext-1.0.xsd"/>
+  <uri name="https://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" uri="oasis-200401-wss-wssecurity-secext-1.0.xsd"/>
+  <system systemId="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" uri="oasis-200401-wss-wssecurity-utility-1.0.xsd"/>
+  <uri name="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" uri="oasis-200401-wss-wssecurity-utility-1.0.xsd"/>
+  <system systemId="https://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" uri="oasis-200401-wss-wssecurity-utility-1.0.xsd"/>
+  <uri name="https://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" uri="oasis-200401-wss-wssecurity-utility-1.0.xsd"/>
+  <system systemId="http://docs.oasis-open.org/wss/oasis-wss-wssecurity-secext-1.1.xsd" uri="oasis-wss-wssecurity-secext-1.1.xsd"/>
+  <uri name="http://docs.oasis-open.org/wss/oasis-wss-wssecurity-secext-1.1.xsd" uri="oasis-wss-wssecurity-secext-1.1.xsd"/>
+  <system systemId="https://docs.oasis-open.org/wss/oasis-wss-wssecurity-secext-1.1.xsd" uri="oasis-wss-wssecurity-secext-1.1.xsd"/>
+  <uri name="https://docs.oasis-open.org/wss/oasis-wss-wssecurity-secext-1.1.xsd" uri="oasis-wss-wssecurity-secext-1.1.xsd"/>
+  <system systemId="http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702/ws-securitypolicy-1.2.xsd" uri="ws-securitypolicy-1.2.xsd"/>
+  <uri name="http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702/ws-securitypolicy-1.2.xsd" uri="ws-securitypolicy-1.2.xsd"/>
+  <system systemId="https://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702/ws-securitypolicy-1.2.xsd" uri="ws-securitypolicy-1.2.xsd"/>
+  <uri name="https://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702/ws-securitypolicy-1.2.xsd" uri="ws-securitypolicy-1.2.xsd"/>
+  <system systemId="http://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation.xsd" uri="ws-federation.xsd"/>
+  <uri name="http://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation.xsd" uri="ws-federation.xsd"/>
+  <system systemId="https://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation.xsd" uri="ws-federation.xsd"/>
+  <uri name="https://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation.xsd" uri="ws-federation.xsd"/>
+</catalog>

@@ -59,15 +59,24 @@ const log = require('bunyan').createLogger({ name: 'issued_sets',
 // test that pushed a record into the store directly would be asserting against
 // a shape nothing produces. `context` is the third parameter that function
 // offers, and `setId` is the member under test.
+//
+// `'ID'` mints an ID Token the way `oauth2.ts`'s idToken() does since #118
+// (2026-09-22): no `typ` claim, and the kind stated in the context.
 function mint(typ, jti, setId, extra) {
   log.debug("Entering mint().");
   const now = Math.floor(Date.now() / 1000);
-  helpers.signJwt(Object.assign({
+  const idToken = typ === 'ID';
+  const payload = Object.assign({
     typ: typ, jti: jti, sub: 'urn:sts:user:alice', username: 'alice',
     client_id: 'webapp', scope: 'openid profile',
     iat: now, nbf: now, exp: now + 900
-  }, extra || {}), { sessionId: 'sess-1', grant: 'authorization_code',
-                     setId: setId || '' });
+  }, extra || {});
+  if (idToken) {
+    delete payload.typ;
+  }
+  helpers.signJwt(payload, Object.assign({ sessionId: 'sess-1',
+    grant: 'authorization_code', setId: setId || '' },
+    idToken ? { kind: 'id_token' } : {}));
   log.debug("Leaving mint().");
 }
 

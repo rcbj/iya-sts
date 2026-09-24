@@ -226,6 +226,22 @@ class AccountState {
              message: String((result && result.message) || '') };
   }
 
+  // THE PERSON IS TOLD BY MAIL (#63): `common/mail_uses.ts`'s security
+  // notice, which they cannot decline. `bySystem` — risk scoring disabled
+  // them, not an administrator — tells the realm's administrators too.
+  // Lazily required, and never allowed to throw into the disable.
+  private mailNotice(name: string, why: string, bySystem: boolean): void {
+    const { log } = this.deps;
+    log.debug("Entering AccountState.mailNotice().");
+    try {
+      require('./mail_uses').accountDisabled(name, why, bySystem);
+    } catch (e) {
+      log.debug("Caught in AccountState.mailNotice(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving AccountState.mailNotice().");
+  }
+
   // -------------------------------------------------------------------------
   // DISABLE OR ENABLE — the administrator's act, from `/admin/users` and
   // `POST /admin-api/users/{disable|enable}`. `opts`: `actor`, `via`
@@ -251,7 +267,10 @@ class AccountState {
                  'instead.'] }, 'STS-ADMIN-0792');
     }
     const was = this.isDisabled(name);
-    const door = o.via === 'api' ? '/admin-api/users' : 'the admin console';
+    // `door` names an actor that is not an administrator at either surface
+    // — risk scoring (#62 P4) disables where its policy says to.
+    const door = o.door ? String(o.door)
+      : (o.via === 'api' ? '/admin-api/users' : 'the admin console');
     if (was === !!disabled) {
       log.debug("Leaving AccountState.setDisabled(). No change.");
       return { ok: true, username: name, disabled: !!disabled,
@@ -260,7 +279,10 @@ class AccountState {
                         (disabled ? 'disabled' : 'enabled') + '; nothing ' +
                         'was changed.' };
     }
-    const written: Json = credentials.setAccountDisabled(name, !!disabled);
+    // RISC's reason, when the administrator gave one of section 2.2's two
+    // (#146); `o.reason` stays the free text the audit row keeps.
+    const written: Json = credentials.setAccountDisabled(name, !!disabled,
+      { riscReason: String(o.riscReason || '') });
     if (!written || !written.ok) {
       log.debug("Leaving AccountState.setDisabled(). Not written.");
       return written;
@@ -268,7 +290,8 @@ class AccountState {
     const ended = disabled
       ? this.endEverything(name, {
           actor: o.actor || '', channel: o.via || 'http',
-          by: 'the account was disabled by an administrator (' + door + ')' })
+          by: o.by ? String(o.by)
+            : 'the account was disabled by an administrator (' + door + ')' })
       : null;
     audit.audit({
       action: disabled ? 'account.disable' : 'account.enable',
@@ -290,6 +313,9 @@ class AccountState {
     });
     log.info('account state: ' + name + ' was ' +
              (disabled ? 'DISABLED' : 'enabled') + ' from ' + door + '.');
+    if (disabled) {
+      this.mailNotice(name, String(o.reason || ''), !!o.door);
+    }
     log.debug("Leaving AccountState.setDisabled(). Changed.");
     return {
       ok: true, username: name, disabled: !!disabled, changed: true,
@@ -331,6 +357,9 @@ class AccountState {
     const realm = realms.get(String(c.realm || '')) || realms.current();
     later(function (): void {
       realms.run(realm, function (): void {
+        if (c.disabled) {
+          self.mailNotice(name, '', false);
+        }
         const ended = c.disabled
           ? self.endEverything(name, {
               channel: 'internal',

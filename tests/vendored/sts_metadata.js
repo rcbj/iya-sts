@@ -283,7 +283,11 @@ function theProtocolListIsHonest(doc, page) {
                     // kind, carded beside XACML because both are families a
                     // client reaches with a credential it already holds.
                     "GNAP",
-                    "XACML", "Federation", "Shared Signals",
+                    "XACML", "Federation",
+                    // OPENID FEDERATION 1.1 (#132, 2026-09-23), beside the
+                    // bilateral family whose name it shares and whose job
+                    // it does not.
+                    "OpenID Federation", "Shared Signals",
                     "SAML 2.0", "SAML 1.1",
                     "WS-Federation", "WS-Trust", "Kerberos", "SPNEGO", "SPIFFE",
                     // THE NINETEENTH (2026-09-10): the certificate authority
@@ -314,6 +318,9 @@ function theProtocolListIsHonest(doc, page) {
                     // assertion below about every card naming a spec is what
                     // makes that marker load-bearing rather than decorative.
                     "Recovery codes",
+                    // THE EMAILED CODE AND LINK (#64): a third credential
+                    // mechanism that is not a protocol, beside the other two.
+                    "Email codes and links",
                     "Verifiable Credentials (OID4VCI / OID4VP)"];
   assert.ok(Array.isArray(doc.protocols),
     "the document should carry the protocol list; it has none.");

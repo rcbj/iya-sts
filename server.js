@@ -662,6 +662,7 @@ const serviceState = require('./common/service_state');
 // listener in bind() and on the KDC's TCP listener in announce(), and asked
 // once, below, whether this process may start at all. See that file.
 const proxyProtocol = require('./common/proxy_protocol');
+const clientHello = require('./tls/client_hello');
 
 // ---------------------------------------------------------------------------
 // THIS PROCESS'S STATE, IN THE ONE ORDER THERE IS.
@@ -745,6 +746,11 @@ serviceState.start().then(function (both) {
   const bootstrapped = realms.run(realms.DEFAULT_REALM, function () {
     return credentials.bootstrapOnce(realms.DEFAULT_ID, function () {
       adminRbac.seedBootstrapAdministrator();
+      // A CONSOLE NOBODY CAN ENTER IS SAID HERE, ONCE (#103): product mode
+      // never opens it to whoever signs in, so a realm left with no bootstrap
+      // administrator and an empty roster is logged under STS-ADMIN-0798
+      // rather than discovered by being refused.
+      adminRbac.reportClosedConsole();
       return credentials.bootstrap({ username: bootstrapUsername });
     });
   }).then(function () {
@@ -759,6 +765,7 @@ serviceState.start().then(function (both) {
         return realms.run(realm, function () {
           return credentials.bootstrapOnce(realm.id, function () {
             adminRbac.seedBootstrapAdministrator(realm.id);
+            adminRbac.reportClosedConsole(realm.id);
             return credentials.bootstrap({ username: bootstrapUsername });
           });
         });
@@ -810,7 +817,37 @@ serviceState.start().then(function (both) {
   // sets the pool already sends (`keystore.sharedAll()`), and was made per
   // realm on first use. The bootstrap is still awaited first — a bootstrap
   // that throws is fatal at startup.
-  return bootstrapped.then(function () {
+  // EVERY PRODUCT REALM'S FIRST KRBTGT KEY (#169, 2026-09-23), after the
+  // bootstrap and before the request workers fork or the listener binds, so a
+  // KDC has its random krbtgt key before its first request — made once for
+  // the cluster, under a claim per realm, by whichever node wins it. Never
+  // rejects: a realm left without a key refuses at its KDC and says why.
+  const krbtgtReady = bootstrapped.then(function () {
+    return require('./kerberos/krb5_krbtgt_rotation').ensureAll();
+  }).then(function (made) {
+    (made || []).forEach(function (one) {
+      if (one && one.ok === false) {
+        log.warn('sts: trust realm "' + (one.realm || 'default') + '" has ' +
+                 'no krbtgt key yet (' + (one.why || 'see above') + '); its ' +
+                 'KDC refuses until one is made.');
+      }
+    });
+    return made;
+  });
+  return krbtgtReady.then(function () {
+    // THE MAIL CHANNEL (#63): in PRODUCT, a realm whose configured transport
+    // cannot be built — a missing SDK, an unreadable secret, `capture` — is
+    // a service that would promise reset links it cannot send, and it does
+    // not start. Asked here, after the store restored every realm's settings
+    // and before anything forks or binds. Development answers '' whatever it
+    // finds (common/mail.ts, startupProblem()).
+    return require('./common/mail').startupProblem();
+  }).then(function (mailProblem) {
+    if (mailProblem) {
+      // error-code: none — the problem's own STS-MAIL code leads the message
+      log.fatal(mailProblem + ' The service is NOT STARTING.');
+      process.exit(1);
+    }
     return requestPool.start().then(function (pool) {
       if (pool.wanted) {
         log.info('sts: ' + pool.started + ' of ' + pool.wanted + ' request ' +
@@ -954,6 +991,12 @@ if (useHttps) {
   // invisible: the far end sees a closed socket and this log said nothing.
   tlsServer.observeConnectionsOn(mainServer,
                                  'the main port (' + PORT + ')');
+  // THE CLIENT'S JA4 TLS FINGERPRINT (#62 P0, 2026-09-22), read off the
+  // ClientHello before the TLS engine takes the socket — see
+  // tls/client_hello.ts. Installed BEFORE the PROXY protocol below, so that
+  // one's wrapper is the outer one and this reads a socket whose header is
+  // already gone.
+  clientHello.install(mainServer, { label: 'the main port (' + PORT + ')' });
   // The PROXY protocol header comes off BEFORE the TLS handshake — see
   // common/proxy_protocol.ts. A no-op with global.proxyProtocol off.
   proxyProtocol.install(mainServer, { label: 'the main port (' + PORT + ')',

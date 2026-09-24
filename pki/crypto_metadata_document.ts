@@ -456,6 +456,15 @@ class CryptoMetadataDocument {
   }
 
   // The XSD, served at `/crypto/metadata.xsd`.
+  //
+  // **IT DECLARES `cm:CryptoMetadataLocation` TOO (#188, 2026-09-24)** — the
+  // one element of this namespace that is NOT in this document: the SAML 2.0
+  // identity provider metadata carries it in its `md:Extensions`
+  // (`saml/saml2_sso.ts`, #42 D8) to say where this document is. It was in
+  // no schema at all until then, so a validator loading this one to check
+  // that extension found nothing to check it against —
+  // tests/vendored/sts_xml_schema_validation.js loads this file for exactly
+  // that and refused the metadata until the declaration was here.
   static schema(): string {
     helpers.log.debug("Entering CryptoMetadataDocument.schema().");
     helpers.log.debug("Leaving CryptoMetadataDocument.schema().");
@@ -530,7 +539,9 @@ class CryptoMetadataDocument {
       '<xs:attribute name="issuer" type="xs:anyURI" use="required"/>' +
       '<xs:attribute name="realm" type="xs:string" use="required"/>' +
       '<xs:attribute name="generatedAt" type="xs:dateTime" use="required"/>' +
-      '</xs:complexType></xs:element></xs:schema>';
+      '</xs:complexType></xs:element>' +
+      '<xs:element name="CryptoMetadataLocation" type="xs:anyURI"/>' +
+      '</xs:schema>';
   }
 
   // THE XML, SIGNED — an enveloped signature, FIRST, by the realm's current

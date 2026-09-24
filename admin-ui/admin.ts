@@ -215,6 +215,7 @@ const auditView = adminViews.auditView;
 const errorCodesView = adminViews.errorCodesView;
 const usedAssertionsView = adminViews.usedAssertionsView;
 const delegationView = adminViews.delegationView;
+const delegationPolicyView = adminViews.delegationPolicyView;
 const clusterSummary = adminViews.clusterSummary;
 const permissionGroupsView = adminViews.permissionGroupsView;
 const queryOne = adminViews.queryOne;
@@ -238,6 +239,7 @@ const spiffeListeners = adminViews.spiffeListeners;
 const spiffeJson = adminViews.spiffeJson;
 const spiffeEntriesJson = adminViews.spiffeEntriesJson;
 const spiffeAgentsJson = adminViews.spiffeAgentsJson;
+const spiffeBrokersJson = adminViews.spiffeBrokersJson;
 const spiffeSelectorText = adminViews.spiffeSelectorText;
 const newUserContainer = adminViews.newUserContainer;
 const CREDENTIAL_CHOICES = adminViews.CREDENTIAL_CHOICES;
@@ -349,6 +351,7 @@ const samlAssertionsAction = adminActions.samlAssertionsAction;
 const sessionsAction = adminActions.sessionsAction;
 const signalsAction = adminActions.signalsAction;
 const spiffeAgentsAction = adminActions.spiffeAgentsAction;
+const spiffeBrokersAction = adminActions.spiffeBrokersAction;
 const spiffeCommaList = adminActions.spiffeCommaList;
 const spiffeEntriesAction = adminActions.spiffeEntriesAction;
 const spiffeUnknownAction = adminActions.spiffeUnknownAction;
@@ -1008,7 +1011,8 @@ const SECTIONS = [
                    'assertion\'s clock skew — and the deliberate defect ' +
                    '<code>oauth2.breakIdTokenNonce</code>, which makes this ' +
                    'service return an ID Token whose <code>nonce</code> is ' +
-                   'wrong so that a client can find out whether it checks. ' +
+                   'wrong so that a client can find out whether it checks ' +
+                   '(development mode only). ' +
                    'The five a CLIENT may answer for itself — the three ' +
                    'lifetimes, the refresh idle timeout and whether a ' +
                    'sign-out revokes refresh tokens — moved to ' +
@@ -1339,6 +1343,29 @@ const SECTIONS = [
                'read. So a relationship is created DISABLED and an assertion ' +
                'is refused unless it verifies against the certificate ' +
                'configured on it.' },
+      // OPENID FEDERATION 1.1 (#132, 2026-09-23), beside Federation because a
+      // reader looking for one looks for the other — and a separate page,
+      // because it is a different thing: TRUST THROUGH A CHAIN of signed
+      // statements, where `/admin/federation` is a bilateral relationship
+      // with one pinned key. Drawn by oidfed/oidfed_admin.ts.
+      { path: '/admin/oidfed', label: 'OpenID Federation',
+        blurb: 'This realm as an OpenID Federation 1.1 entity: its Entity ' +
+               'Configuration and role (Trust Anchor, Intermediate or Leaf), ' +
+               'its Federation Entity Keys and their history, the ' +
+               'subordinates it vouches for and the Trust Anchors it ' +
+               'trusts, the Trust Marks it issues and carries, resolving ' +
+               'another entity\'s Trust Chain, and the ' +
+               '<code>oidfed.*</code> settings.' },
+      // CLAIMS PROVIDERS (#147, 2026-09-24), beside the two above for the same
+      // reason: another party this realm is configured to trust, here for
+      // claims about a person — OpenID Connect aggregated and distributed
+      // claims. Drawn by oauth-oidc/claims_providers_admin.ts.
+      { path: '/admin/claim-providers', label: 'Claims Providers',
+        blurb: 'The OpenID Providers this realm fetches claims from for a ' +
+               'person who linked one on the portal, passed to a relying ' +
+               'party as aggregated or distributed claims (OpenID Connect ' +
+               'Core 5.6.2): the register, the redirect URI to register at ' +
+               'each, every person\'s link, and revoking one.' },
 
       // FIVE PAGES ADDED ON 2026-08-27, AND EVERY ONE OF THEM EXISTS BECAUSE
       // ITS FAMILY HAD SETTINGS AND NO PAGE. Kerberos has nineteen appconfig
@@ -1424,7 +1451,8 @@ const SECTIONS = [
       { path: '/admin/webauthn', label: 'WebAuthn',
         blurb: 'Security keys &mdash; W3C WebAuthn Level 3 over FIDO CTAP2 ' +
                '&mdash; as a second factor OR as the only credential on an ' +
-               'account, and the thirteen settings behind the ceremony. ' +
+               'account, the settings behind the ceremony, and what is done ' +
+               'with an authenticator\'s attestation statement. ' +
                '<strong>There were none of these until 2026-09-10</strong>: ' +
                'the RP name, the algorithms offered, the user verification ' +
                'requirement, the attestation conveyance and the timeout were ' +
@@ -1592,6 +1620,12 @@ const SECTIONS = [
                    'configuration — this service wrote all of it when the ' +
                    'agent attested — which is why nothing on an agent is ' +
                    'editable and the ban is the only control.' },
+          { path: '/admin/spiffe/brokers', label: 'Brokers',
+            blurb: 'Who may call the SPIFFE Broker API — the node proxies ' +
+                   'and meshes that ask for a workload\'s SVIDs by ' +
+                   'referencing it — and which kinds of reference each may ' +
+                   'use. The list is <code>spiffe.brokers</code>, read on ' +
+                   'every call.' },
         ] },
       { path: '/admin/tls', label: 'TLS / mutual TLS',
         blurb: 'The certificate the main port and LDAPS 636 present, ' +
@@ -1763,7 +1797,12 @@ const SECTIONS = [
                'every door that sets a password: the console, ' +
                '<code>/admin-api</code>, the user portal, an activation link ' +
                'and an LDAP modify. A generated password is drawn to satisfy ' +
-               'it in both modes. It is not the XACML policy repository, ' +
+               'it in both modes. Beside it, the <strong>authentication ' +
+               'policy</strong> (#64): which ways of signing in this realm ' +
+               'accepts as a first and as a second factor, and when a second ' +
+               'is required — <code>cn=default,ou=authnPolicies</code>, ' +
+               'inherited from the default realm by a realm with none. It ' +
+               'is not the XACML policy repository, ' +
                'which is <a href="/admin/xacml/policies">Protocols → XACML → ' +
                'Policies</a>.' },
       // -------------------------------------------------------------------
@@ -2151,6 +2190,16 @@ const SECTIONS = [
                'on an application\'s entry, which skips the prompt for ' +
                'everybody and writes nothing about anybody, so taking one ' +
                'away asks everybody again.' },
+      // AFTER CONSENT, AND THE PAIR IS THE ARGUMENT (#142): consent is what a
+      // person agreed to, a grant what a client holds on the strength of it.
+      // Drawn by `oauth-oidc/grant_management_admin.ts`.
+      { path: '/admin/grants', label: 'Grants',
+        blurb: 'The OAuth grants clients hold through Grant Management for ' +
+               'OAuth 2.0 — each named by a grant_id, created, merged and ' +
+               'replaced by ordinary authorization requests, and readable ' +
+               'and revocable by its client at /oauth2/grants/{grant_id}. ' +
+               'Revoke one here and every refresh token under it is ' +
+               'refused on every node.' },
       // AFTER CONSENT AND BEFORE SIGN-OUT, and the pair either side is the
       // argument. Consent is what a person AGREED an application may ask for;
       // this is what the policy DECIDED when something asked. Both are records
@@ -2414,6 +2463,38 @@ const SECTIONS = [
                'page names; a per-process job has a row per process. ' +
                'Admin Write may run a job now, and on a cluster may ask ' +
                'the leader to hand the scheduler to another node.' },
+      // MAIL (#63, 2026-09-22), after the scheduler: what this service SENT
+      // — the outbox, its dead letters, and in development the captured
+      // messages. Drawn by `admin-ui/mail_admin.ts` out of `common/mail.ts`;
+      // how it is configured to send is Server configuration → Mail.
+      { path: '/admin/mail/outbox', label: 'Mail outbox',
+        blurb: 'Every message this realm queued &mdash; a reset link, a ' +
+               'verification link, a security notice, a test &mdash; to ' +
+               'whom, and what became of it: sent, captured (development), ' +
+               'pending or a DEAD LETTER an administrator can retry. A sent ' +
+               'message keeps no body; in development a captured one is ' +
+               'shown whole, links included.' },
+      // RISK (#62, 2026-09-22), after the scheduler and before the audit log:
+      // the external datasets a risk score reads and the refused passwords it
+      // counts. Drawn by `admin-ui/risk_admin.ts` out of `risk/`.
+      { path: '/admin/risk', label: 'Risk',
+        blurb: 'The external datasets a risk score reads &mdash; ' +
+               'geolocation, the network an address belongs to, Tor exits, ' +
+               'IP reputation and an operator\'s own allow and deny lists ' +
+               '&mdash; each with its active version, whether it is fresh, ' +
+               'and every version loaded or refused. Look up what they say ' +
+               'about an address, import a list, activate, roll back. ' +
+               'Below, every refused password in the realm, attributed to a ' +
+               'person and a network and never to a typed name.' },
+      // The scoring itself measured (#62): drawn by the same file.
+      { path: '/admin/risk-scoring', label: 'Risk scoring',
+        blurb: 'The risk scoring system measured over a window: ' +
+               'assessments over time by level, how scores and levels ' +
+               'fell, every signal beside its factor and how often it ' +
+               'fired, decisions, doors and countries, what people said ' +
+               'about their own sign-ins, and &mdash; for this process ' +
+               '&mdash; how long an assessment takes and the reactions ' +
+               'taken.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +
@@ -2469,6 +2550,19 @@ const SECTIONS = [
                'a value NOWHERE stops the service from starting rather than ' +
                'defaulting quietly. Like every writing page here, it writes ' +
                'the realm it is read IN.' },
+      // BESIDE Configuration, because it answers the question that page's
+      // `global.mode` row raises: what does the mode change? It is drawn by
+      // `admin-ui/mode_admin.ts` (#181) and changes nothing — the setting is
+      // written on Configuration.
+      { path: '/admin/mode', label: 'Mode',
+        blurb: 'What <code>global.mode</code> changes, and what is in force ' +
+               'in this realm: every requirement with its development and ' +
+               'product answers, every development-only setting with the ' +
+               'value stored and the value in force — a product realm ' +
+               'ignores a development-only value it still holds — and ' +
+               'what product mode still does not check. Read from ' +
+               '<code>common/mode.js</code>, the one place the two modes ' +
+               'are told apart.' },
       { path: '/admin/persistence', label: 'Persistence',
         blurb: 'Whether anything here survives a restart, and where it is ' +
                'written. THREE things can be — the embedded directory (which ' +
@@ -2489,6 +2583,19 @@ const SECTIONS = [
                'which lease, and what active-active mode still refuses to ' +
                'start without. Every clustered write is fenced by the ' +
                'node\'s membership, and a node that loses it exits.' },
+      // MAIL (#63, 2026-09-22), beside Cluster: how this service SENDS
+      // mail — the transport, where a link points, the realm's wording of
+      // each message, a test message, and the Mail settings group. Drawn by
+      // `admin-ui/mail_admin.ts`; what it sent is Monitoring → Mail outbox.
+      { path: '/admin/mail', label: 'Mail',
+        blurb: 'The one outbound mail channel: which transport this realm ' +
+               'sends through (SMTP with STARTTLS or implicit TLS and ' +
+               'optional DKIM, Amazon SES, Azure Communication Services, ' +
+               'the Gmail API &mdash; or, in development, the capture ' +
+               'transport), whether it could be built, where a mailed link ' +
+               'points, a test message, and the wording of each message ' +
+               'per language. A realm may override the service\'s ' +
+               'transport. No secret is ever shown here.' },
       { path: '/admin/rbac', label: 'Admin roles',
         blurb: 'Who holds the two roles that grant this console — Admin ' +
                'Read and Admin Write — granted and revoked here. They are ' +
@@ -2633,6 +2740,7 @@ interface AdminConsoleDeps {
   spiffeJson: typeof spiffeJson;
   spiffeEntriesJson: typeof spiffeEntriesJson;
   spiffeAgentsJson: typeof spiffeAgentsJson;
+  spiffeBrokersJson: typeof spiffeBrokersJson;
   spiffeSelectorText: typeof spiffeSelectorText;
   newUserContainer: typeof newUserContainer;
   CREDENTIAL_CHOICES: typeof CREDENTIAL_CHOICES;
@@ -2696,6 +2804,7 @@ interface AdminConsoleDeps {
   sessionsAction: typeof sessionsAction;
   signalsAction: typeof signalsAction;
   spiffeAgentsAction: typeof spiffeAgentsAction;
+  spiffeBrokersAction: typeof spiffeBrokersAction;
   spiffeEntriesAction: typeof spiffeEntriesAction;
   spiffeAction: typeof spiffeAction;
   ssfAction: typeof ssfAction;
@@ -2816,6 +2925,7 @@ class AdminConsole {
       spiffeJson: spiffeJson,
       spiffeEntriesJson: spiffeEntriesJson,
       spiffeAgentsJson: spiffeAgentsJson,
+      spiffeBrokersJson: spiffeBrokersJson,
       spiffeSelectorText: spiffeSelectorText,
       newUserContainer: newUserContainer,
       CREDENTIAL_CHOICES: CREDENTIAL_CHOICES,
@@ -2879,6 +2989,7 @@ class AdminConsole {
       sessionsAction: sessionsAction,
       signalsAction: signalsAction,
       spiffeAgentsAction: spiffeAgentsAction,
+      spiffeBrokersAction: spiffeBrokersAction,
       spiffeEntriesAction: spiffeEntriesAction,
       spiffeAction: spiffeAction,
       ssfAction: ssfAction,
@@ -3497,6 +3608,22 @@ class AdminConsole {
         'enforced from that moment — including against you, so grant ' +
         'yourself one first.' + elsewhere);
     }
+    // PRODUCT MODE, BEFORE THE CLAIM (2026-09-22, #103): the window does not
+    // open, so a reader drawn a page here is being refused, and the sentence
+    // says what would let them in.
+    if (info.bootstrapPasswordRequired || info.windowWithheld) {
+      const boot = info.bootstrap && info.bootstrap.username
+        ? '<code>' + this.esc(info.bootstrap.username) + '</code>'
+        : 'the bootstrap administrator';
+      log.debug("Leaving AdminConsole.gateBanner(). Product, unclaimed.");
+      return this.warn('<strong>Signed in as ' + who + ', holding no ' +
+        'console role: this console has not been claimed yet.</strong> In ' +
+        'product mode only the bootstrap administrator, ' + boot + ', ' +
+        'signing in with its password, can use this console until it does. ' +
+        'Nobody else holds a role until one is granted, and a sign-in as ' +
+        boot + ' by a federation partner, a certificate, a wallet or a ' +
+        'Kerberos ticket does not count.' + elsewhere);
+    }
     if (info.closed) {
       // Rendered for completeness rather than because a reader will meet it: a
       // request in this state is refused before a page is drawn. It is
@@ -3508,7 +3635,10 @@ class AdminConsole {
         (info.bootstrap && info.bootstrap.seeded && info.bootstrap.claimedAt
           ? 'the bootstrap administrator has already signed in, which closed ' +
             'the open window. '
-          : '<code>admin.openWhenEmpty</code> is off. ') +
+          : (info.windowOpens === false
+              ? 'this is product mode, which never opens the console to ' +
+                'whoever signs in. '
+              : '<code>admin.openWhenEmpty</code> is off. ')) +
         '<code>POST /admin-api/rbac/grant</code> is the way back in — it ' +
         'takes an access token carrying <code>admin:write</code> rather than ' +
         'this console\'s session, which is why it still works when this page ' +
@@ -5317,6 +5447,25 @@ class AdminConsole {
   // goes through page() like everything else, so it carries the nav and the
   // banner: a reader who is refused one page can still see the ones they are
   // allowed, which is the difference between a permission and a wall.
+  // ONE LOG LINE PER CONSOLE SESSION for a refusal of product mode's
+  // unclaimed console (#103): a flag on the session's own row, so a browser
+  // that keeps clicking is one event, and a new sign-in is a new one. The
+  // response itself is marked with the same code by the caller.
+  noteBootstrapRefusal(state, code, what) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminConsole.noteBootstrapRefusal(). " + code);
+    const session = state && state.session;
+    if (session && session.consoleWindowRefusal === code) {
+      log.debug("Leaving AdminConsole.noteBootstrapRefusal(). Already said.");
+      return;
+    }
+    if (session) {
+      session.consoleWindowRefusal = code;
+    }
+    log.warn(errorCodes.tag(code) + 'admin console: ' + what + '.');
+    log.debug("Leaving AdminConsole.noteBootstrapRefusal().");
+  }
+
   // error-code: none — the helper's definition, not a call to it.
   refuse(req, res, status, code, title, message, detail) {
     const { log, gateStateFor } = this.deps;
@@ -5343,8 +5492,14 @@ class AdminConsole {
     const inner = '<div class="err"><strong>' + this.esc(title) + '</strong> ' +
                   this.esc(message) + '</div>' +
       (detail.html || '');
+    // THROUGH `withCsrf()` LIKE EVERY OTHER PAGE (2026-09-23). The shell draws
+    // the Sign out form for anybody with a session, and a refusal page is
+    // exactly where the gate says a refused person must still be able to sign
+    // out — without the token the gate's own exemption refused that POST as
+    // `csrf (missing)`, so a person refused a role could not leave.
     res.status(status).type('text/html')
-       .send(this.page(title, '', inner, null, gateStateFor(req), req));
+       .send(this.withCsrf(req, this.page(title, '', inner, null,
+                                          gateStateFor(req), req)));
     log.debug("Leaving AdminConsole.refuse(). Answered HTML.");
   }
 
@@ -5436,13 +5591,31 @@ class AdminConsole {
   // actually reach, and it is the page where that sentence is ACTIONABLE. The
   // two that were context are gone on purpose.
   sendToConsoleSignIn(req, res) {
-    const { log, oidcRp, mode, errorCodes, realms } = this.deps;
+    const { log, oidcRp } = this.deps;
     log.debug("Entering AdminConsole.sendToConsoleSignIn().");
-    const started = oidcRp.beginSignIn(req, res, 'admin', {
+    const begun = oidcRp.beginSignIn(req, res, 'admin', {
       returnTo: String(req.originalUrl || '/admin'),
       fallback: '/admin'
     });
-    if (!started.ok) {
+    // A promise under FAPI 1.0 Advanced (#139), where the request is signed
+    // and pushed before the browser is sent; a value otherwise, answered in
+    // the same tick as it always was.
+    if (begun && typeof begun.then === 'function') {
+      begun.then((started: any) => {
+        this.startedConsoleSignIn(req, res, started);
+      });
+      log.debug("Leaving AdminConsole.sendToConsoleSignIn(). Pushing.");
+      return;
+    }
+    this.startedConsoleSignIn(req, res, begun);
+    log.debug("Leaving AdminConsole.sendToConsoleSignIn().");
+  }
+
+  // What `sendToConsoleSignIn()` does with the answer.
+  startedConsoleSignIn(req, res, started) {
+    const { log, mode, errorCodes, realms } = this.deps;
+    log.debug("Entering AdminConsole.startedConsoleSignIn().");
+    if (!started.ok && !res.headersSent) {
       // THREE REASONS REACH HERE, AND THE SENTENCE A READER NEEDS DIFFERS. The
       // client entry is gone, or has no secret — or, since 2026-09-12, product
       // mode refused to start a flow at an address the entry does not carry,
@@ -5468,7 +5641,7 @@ class AdminConsole {
                   { needed: unregistered ? 'address' : 'client', signIn: '',
                     signInRealm: realms.DEFAULT_ID });
     }
-    log.debug("Leaving AdminConsole.sendToConsoleSignIn(). " +
+    log.debug("Leaving AdminConsole.startedConsoleSignIn(). " +
               (started.ok ? "Sent to the authorization endpoint." :
                "Refused."));
   }
@@ -7757,15 +7930,25 @@ class AdminConsole {
           'restore button is: having to restart this service to get back to ' +
           'a working credential turns a two-second test into a two-minute ' +
           'one.') +
-          '<form method="post" action="/admin/logout">' +
-          '<input type="hidden" name="action" value="restore-kerberos">' +
-          '<input type="hidden" name="user" value="' + this.esc(wantedUser) +
-          '">' +
-          this.logoutBackField(back) +
-          '<p><button type="submit">Clear the Kerberos sign-out ' +
-          'instant</button> <span class="sub">Tickets issued before it are ' +
-          'accepted again. A fresh AS-REQ does this too, and is the ' +
-          'supported way back.</span></p></form><form method="post" ' +
+          // DEVELOPMENT ONLY (#111): refused in product by the action, and
+          // so not offered there — a note says why in its place.
+          (mode.opensTestControls()
+            ? '<form method="post" action="/admin/logout">' +
+              '<input type="hidden" name="action" ' +
+              'value="restore-kerberos">' +
+              '<input type="hidden" name="user" value="' +
+              this.esc(wantedUser) + '">' +
+              this.logoutBackField(back) +
+              '<p><button type="submit">Clear the Kerberos sign-out ' +
+              'instant</button> <span class="sub">Tickets issued before it ' +
+              'are accepted again. Development mode only. A fresh AS-REQ ' +
+              'does NOT do this: it gets a newer ticket and the older ones ' +
+              'stay refused.</span></p></form>'
+            : this.note('Clearing a Kerberos sign-out instant is a ' +
+              'development-only test control and is not offered in product ' +
+              'mode: the instant stands until the latest a ticket from ' +
+              'before it could still be valid.')) +
+          '<form method="post" ' +
           'action="/admin/logout"><input type="hidden" name="action" ' +
           'value="restore-token"><input type="hidden" name="user" ' +
           'value="' + this.esc(wantedUser) + '">' +
@@ -8085,6 +8268,144 @@ class AdminConsole {
         return self.esc(e);
       }).join('<br><br>') + '</td>' +
       '</tr>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHO MAY ACT FOR WHOM AT WS-TRUST AND THE TOKEN EXCHANGE (#108,
+  // 2026-09-23) — the section of /admin/delegation drawn from
+  // `adminViews.delegationPolicyView()`, the function GET
+  // /admin-api/delegation/policy answers with. READ ONLY here: each value is
+  // an attribute on an application or a person, so it is edited where every
+  // attribute of one is — the application's page (and POST
+  // /admin-api/applications/update) and the person's page (and POST
+  // /admin-api/users/set-not-delegated, /set-may-act). A second form here
+  // would be a second door onto the same attribute, which this console
+  // refuses everywhere else.
+  // ---------------------------------------------------------------------------
+  delegationPolicySection(req, view) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.delegationPolicySection().");
+    const navParams = pageParamsOf(req.query);
+    const pairsNav = self.pageNavPair('/admin/delegation', navParams,
+                                      view.pairs.paging);
+    const intermediariesNav = self.pageNavPair('/admin/delegation', navParams,
+                                               view.intermediaries.paging);
+    const peopleNav = self.pageNavPair('/admin/delegation', navParams,
+                                       view.people.paging);
+    const appLink = function (identifier) {
+      log.debug("Entering appLink().");
+      log.debug("Leaving appLink().");
+      // The application's page is `?application=`, not a path segment:
+      // `/admin/applications/<id>` is no route and 404s, which the console
+      // crawl in `sts_admin_console.js` reports (2026-09-23).
+      return '<a href="' + self.esc('/admin/applications?application=' +
+        encodeURIComponent(String(identifier))) + '"><code>' +
+        self.esc(identifier) + '</code></a>';
+    };
+    const pairRows = view.pairs.shown.map(function (pair) {
+      return '<tr><td><code>' + self.esc(pair.mechanism) + '</code></td>' +
+        '<td class="who">' + appLink(pair.intermediary) +
+        (pair.impersonates ? '<br><span class="state-expired">may ' +
+          'impersonate</span>' : '') + '</td>' +
+        '<td class="who"><code>' + self.esc(pair.target) + '</code>' +
+        (pair.targetApplication && pair.targetApplication !== pair.target
+          ? '<br><span class="state-none">the application ' +
+            self.esc(pair.targetApplication) + '</span>' : '') + '</td>' +
+        '<td class="who"><code>' + self.esc(pair.attribute) + '</code><br>' +
+        '<span class="state-none">on the ' + self.esc(pair.setOnRole) +
+        ', ' + appLink(pair.setOn) + '</span></td>' +
+        '<td>' + (pair.subjectGroups.length
+          ? pair.subjectGroups.map(function (dn) {
+            return '<code>' + self.esc(dn) + '</code>';
+          }).join('<br>')
+          : 'anybody not protected') + '</td>' +
+        '<td>' + (pair.warning
+          ? '<span class="state-expired">' + self.esc(pair.warning) +
+            '</span>'
+          : '<span class="state-valid">nothing else is missing</span>') +
+        '</td></tr>';
+    }).join('');
+    const intermediaryRows = view.intermediaries.shown.map(function (row) {
+      return '<tr><td class="who">' + appLink(row.application) + '</td>' +
+        '<td>' + (row.trustedToImpersonate
+          ? '<code>appTrustedToImpersonate</code> TRUE' : '&mdash;') +
+        '</td><td>' + (row.subjectGroups.length
+          ? row.subjectGroups.map(function (dn) {
+            return '<code>' + self.esc(dn) + '</code>';
+          }).join('<br>') : 'anybody not protected') + '</td></tr>';
+    }).join('');
+    const peopleRows = view.people.shown.map(function (row) {
+      return '<tr><td class="who"><a href="' + self.esc('/admin/users?user=' +
+        encodeURIComponent(String(row.username))) + '">' +
+        self.esc(row.username) + '</a></td><td>' +
+        (row.notDelegated ? '<code>stsNotDelegated</code> — nobody may act ' +
+          'for them' : '&mdash;') + '</td><td>' +
+        (row.mayAct ? '<code>' + self.esc(row.mayAct) + '</code>'
+                    : '&mdash;') + '</td></tr>';
+    }).join('');
+    const register = view.register;
+    log.debug("Leaving AdminConsole.delegationPolicySection().");
+    return '<h2 id="delegation-policy">Who may act for whom &mdash; WS-Trust ' +
+      'and token exchange</h2>' +
+      self.note('<strong>Kerberos\'s model, on application entries</strong> ' +
+      '(#108). A WS-Trust <code>OnBehalfOf</code> or <code>ActAs</code> and ' +
+      'an RFC 8693 token exchange are decided from four attributes: ' +
+      '<code>appAllowedToDelegateTo</code> on the INTERMEDIARY names the ' +
+      'targets it may reach as somebody else (the analogue of ' +
+      '<code>msDS-AllowedToDelegateTo</code>); ' +
+      '<code>appAllowedToActOnBehalfOf</code> on the TARGET names the ' +
+      'intermediaries it accepts (the resource-based one); ' +
+      '<code>appDelegationSubjectGroup</code> narrows who the intermediary ' +
+      'may act for; and <code>appTrustedToImpersonate</code> lets it ' +
+      'IMPERSONATE — <code>OnBehalfOf</code>, or an exchange with no ' +
+      '<code>actor_token</code> — as well as delegate. Only an application ' +
+      'may be an intermediary. A person carrying ' +
+      '<code>stsNotDelegated</code>, or a member of ' +
+      (register.protectedGroups.length
+        ? register.protectedGroups.map(function (one) {
+          return '<code>' + self.esc(one) + '</code>';
+        }).join(' or ')
+        : 'a console roster') +
+      ', is never delegated. When the attributes allow, the issuance policy ' +
+      'is asked about action-id <code>delegate</code> and only a Deny ' +
+      'refuses. ' + (register.enforced
+        ? '<strong>This realm is in product mode, so this is ' +
+          'ENFORCED</strong>: ' +
+          'a refusal is <code>wst:RequestFailed</code>, ' +
+          '<code>invalid_request</code> or <code>invalid_target</code>.'
+        : '<strong>This realm is in development mode, so nothing is ' +
+          'refused</strong>: the policy is asked and each act above says ' +
+          'what WOULD have been refused in product.') +
+      ' Edit an application\'s four on its own page, and a person\'s two ' +
+      'on theirs. <code>GET /admin-api/delegation/policy</code> is this ' +
+      'section as JSON.') +
+      pairsNav.head +
+      '<table><tr><th>Mechanism</th><th>Intermediary (who acts)</th>' +
+      '<th>Target (what is reached)</th><th>Attribute, and where it ' +
+      'lives</th><th>May act for</th><th>Anything missing?</th></tr>' +
+      (pairRows || '<tr><td colspan="6">No application here names a ' +
+        'delegation target or an intermediary it accepts, so every ' +
+        'WS-Trust and token-exchange delegation is ' +
+        (register.enforced ? 'refused' : 'one product would refuse') +
+        '.</td></tr>') + '</table>' + pairsNav.foot +
+      '<h3>Intermediaries</h3>' +
+      intermediariesNav.head +
+      '<table><tr><th>Application</th><th>May impersonate</th>' +
+      '<th>May act for</th></tr>' +
+      (intermediaryRows || '<tr><td colspan="3">No application carries ' +
+        '<code>appTrustedToImpersonate</code> or a subject group.</td></tr>') +
+      '</table>' + intermediariesNav.foot +
+      '<h3>People</h3>' +
+      self.note('<code>stsMayAct</code> is a person\'s own choice of the ' +
+      'one party who may act for them; the access tokens issued about them ' +
+      'carry it as RFC 8693\'s <code>may_act</code>, and a token exchange ' +
+      'of one by anybody else is refused in every mode.') +
+      peopleNav.head +
+      '<table><tr><th>Person</th><th>Cannot be delegated</th>' +
+      '<th>May act for them (stsMayAct)</th></tr>' +
+      (peopleRows || '<tr><td colspan="3">Nobody carries either flag.' +
+        '</td></tr>') + '</table>' + peopleNav.foot;
   }
 
   // ---------------------------------------------------------------------------
@@ -8468,8 +8789,10 @@ class AdminConsole {
       'rule a scope naming another application\'s <code>client_id</code> ' +
       'already follows, one step more precise.') +
 
-      this.note('<strong>A grant REFUSES nothing by default, and that is the ' +
-      'setting at the foot of this page.</strong> With ' +
+      this.note('<strong>In product mode an ungranted permission is refused ' +
+      '<code>invalid_scope</code>, always. In development a grant refuses ' +
+      'nothing by default, and that is the setting at the foot of this ' +
+      'page.</strong> With ' +
       '<code>oauth2.delegatedPermissionsEnforced</code> off &mdash; which it ' +
       'is unless somebody turned it on &mdash; an ungranted permission is ' +
       'honoured exactly as a granted one is, logged as ungranted, and marked ' +
@@ -9465,9 +9788,10 @@ class AdminConsole {
                 'what was ISSUED and not what was GRANTED — <a ' +
                 'href="/admin/delegation/allowed">the configured ' +
                 'register</a> is the other question, and ' +
-                '<code>oauth2.delegatedPermissionsEnforced</code> is off by ' +
-                'default, so a token can carry a permission its client was ' +
-                'never granted.' });
+                'in development <code>oauth2.delegatedPermissionsEnforced' +
+                '</code> is off by default, so a token can carry a ' +
+                'permission its client was never granted (product mode ' +
+                'refuses one).' });
     }
     log.debug("Leaving AdminConsole.delegationMapKey().");
     return '<table class="key"><tr><th>Shape</th><th>What it means</th></tr>' +
@@ -11367,9 +11691,70 @@ class AdminConsole {
   // refuses to remove the last way in. An operator must not be able to do what
   // the person themselves is stopped from doing.
   // ===========================================================================
+  // THE EMAILED SECOND FACTOR (#64) on a person's page: whether they opted
+  // in, whether it is being used and why not, and the one control an operator
+  // has over it — clearing it. There is no Turn On: the opt-in is the
+  // person's (D8), and an operator who wanted them asked for a second factor
+  // requires one, which the sign-in screen then asks them to set up.
+  //
+  // Beside it, the ADDRESS (#64 P2): what `mail` holds, whether it is
+  // verified and by whom, and — for Admin Write — a form to set it, which
+  // marks it verified because an administrator is a trusted source.
+  emailFactorBlock(key, mech, state, carryBack) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.emailFactorBlock().");
+    const mf = mech.mailFactor || { held: '', optedIn: '', why: '' };
+    const mailFactor = require('../common/mail_factor');
+    const status = mailFactor.status(key);
+    const mailUsable = require('../common/authn_policy').mailUsable();
+    const out = '<h3>Email address, and email as a second factor</h3>' +
+      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      '<tr><th>Address</th><td>' + (status.address
+        ? '<code>' + this.esc(status.address) + '</code> — ' +
+          (status.verified ? '<span class="state-valid">verified</span>'
+                           : '<span class="state-none">not verified</span>')
+        : '<span class="state-none">none</span>') + '</td></tr>' +
+      '<tr><th>Emailed second factor</th><td>' + (mf.optedIn
+        ? (mf.held ? '<span class="state-valid">on</span> — an emailed ' +
+                     this.esc(mf.held) + ' after their first factor'
+                   : 'chosen (an emailed ' + this.esc(mf.optedIn) + ') and ' +
+                     '<strong>not used</strong>: ' + this.esc(mf.why))
+        : '<span class="state-none">off</span> — they turn it on at ' +
+          '<code>/portal/mfa</code>, where the <a ' +
+          'href="/admin/policies#authn">authentication policy</a> allows ' +
+          'it.') + '</td></tr>' +
+      (status.failures
+        ? '<tr><th>Consecutive failures</th><td>' +
+          this.esc(String(status.failures)) + '</td></tr>' : '') +
+      '</table>' +
+      (state.write && mf.optedIn
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="clear-email-factor">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          carryBack + '<div class="formrow"><button class="danger">Turn off ' +
+          'their emailed second factor</button></div></form>'
+        : '') +
+      (state.write
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="set-mail">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          carryBack + '<div class="formrow"><label>Address <input ' +
+          'type="email" name="mail" size="40" maxlength="254" required ' +
+          'value="' + this.esc(status.address) + '"></label> ' +
+          '<button type="submit">Set the address</button></div></form>' +
+          this.note('An address set here is <strong>verified</strong> — an ' +
+          'administrator is a trusted source (#64) — and the old one, if ' +
+          'there was one' + (mailUsable ? ', is told it changed.'
+            : '. <strong>This realm cannot send mail</strong>, so nobody is ' +
+              'told.'))
+        : this.note('Setting the address needs <strong>Admin Write</strong>.'));
+    log.debug("Leaving AdminConsole.emailFactorBlock().");
+    return out;
+  }
+
   mfaSection(row, key, state, back) {
     const { log, credentials, totp, webauthnPolicy, backupCodes,
-            adminViews } = this.deps;
+            adminViews, mode } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.mfaSection(). key=" + key);
     const heading = '<h2>Second factors, and what this person can sign in ' +
@@ -11430,7 +11815,11 @@ class AdminConsole {
                 ? ', with the authenticator app offered as the alternative ' +
                   'for somebody at a machine the key is not plugged into'
                 : '')
-            : 'a CODE from their authenticator app') +
+            : (mech.secondFactor === 'totp'
+                ? 'a CODE from their authenticator app'
+                : 'an EMAILED ' + (mech.secondFactor === 'email-link'
+                    ? 'SIGN-IN LINK' : 'CODE') + ', the one second factor ' +
+                  'they hold')) +
           '. A password alone will not sign them in.'
         : '<span class="state-none">no</span> — nothing here is configured ' +
           'as a second factor, so a password alone signs them in.') +
@@ -11451,7 +11840,9 @@ class AdminConsole {
               'second factor for any account — which is not a second factor ' +
               'at all.'
             : 'Authenticator apps are switched off in this realm ' +
-              '(<code>totp.enabled</code> on <a href="/admin/totp">TOTP ' +
+              '(the authentication policy on <a href="/admin/policies#authn">' +
+              'Policies</a>; the TOTP settings are on <a ' +
+              'href="/admin/totp">TOTP ' +
               'MFA</a>), so nobody new can enrol one.'))
         : (!mech.totpUsable
             ? this.warn('<strong>An enrolment exists and this process cannot ' +
@@ -11548,6 +11939,7 @@ class AdminConsole {
         // both, and the cell rendered the literal characters `<code title=…>`.
         '<td>' + self.shortened(one.credentialId || '', 24) + '</td>' +
         '<td class="num">' + self.esc(String(one.signCount || 0)) + '</td>' +
+        '<td>' + self.attestationCell(one.attestation, one.aaguid) + '</td>' +
         '<td>' +
         self.esc(one.enrolledAt ? self.whenText(one.enrolledAt) : '—') +
         '</td><td>' + (state.write
@@ -11568,7 +11960,8 @@ class AdminConsole {
     const keysBlock = '<h3>Security keys (WebAuthn)</h3>' +
       (allKeys.length
         ? '<table><tr><th>Label</th><th>Role</th><th>Credential id</th>' +
-          '<th class="num">Sign count</th><th>Enrolled</th><th></th></tr>' +
+          '<th class="num">Sign count</th><th>Attestation</th>' +
+          '<th>Enrolled</th><th></th></tr>' +
           allKeys.map(keyRow).join('') + '</table>' +
           this.note('<strong>The sign count is WebAuthn\'s replay ' +
           'defence</strong>: an authenticator\'s counter only ever goes up, ' +
@@ -11627,7 +12020,8 @@ class AdminConsole {
               'has a set, which is the ordinary reason this says none — ' +
               'clearing and re-enrolling is what issues one.'
             : 'Recovery codes are switched off in this realm ' +
-              '(<code>backupCodes.enabled</code> on <a ' +
+              '(the authentication policy on <a href="/admin/policies#authn">' +
+              'Policies</a>; its settings on <a ' +
               'href="/admin/backup-codes">Recovery codes</a>), so no new set ' +
               'will be issued. A set already issued goes on working.'))
         : (!b.usable
@@ -11719,6 +12113,300 @@ class AdminConsole {
             ? this.note('Clearing needs <strong>Admin Write</strong>.')
             : ''));
 
+    // --- app passwords (#101, 2026-09-22) ---------------------------------
+    // WHAT THIS PERSON USES AT THE FIVE DOORS THAT TAKE ONLY A PASSWORD. The
+    // list — name, id, scope, made, last used, never a hash — with a Revoke
+    // per row, and a form that makes one and answers it ONCE on the page
+    // `usersPost()` draws. `POST /admin-api/users/create-app-password` and
+    // `revoke-app-password` are the same two acts (rule 7), and `GET
+    // /admin-api/users/app-passwords` is this list, paged.
+    const held = credentials.appPasswordsOf(key);
+    const doorsView = adminViews.passwordOnlyDoorsFor(key);
+    const appRow = function (one) {
+      log.debug("Entering appRow().");
+      log.debug("Leaving appRow().");
+      return '<tr><td>' + self.esc(one.name) + '</td><td><code>' +
+        self.esc(one.id) + '</code></td><td>' +
+        self.esc((one.doorLabels || one.doors).join(', ')) + '</td><td>' +
+        self.esc(one.createdAt ? self.whenText(one.createdAt) : '—') +
+        (one.createdBy ? ' by ' + self.esc(one.createdBy) : '') +
+        '</td><td>' +
+        self.esc(one.lastUsedAt ? self.whenText(one.lastUsedAt) +
+                 (one.lastUsedDoor ? ' (' + one.lastUsedDoor + ')' : '')
+                 : 'never') + '</td><td>' + (state.write
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" value="revoke-app-password">' +
+            '<input type="hidden" name="user" value="' + self.esc(key) +
+            '"><input type="hidden" name="id" value="' + self.esc(one.id) +
+            '"><input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + self.esc(back) +
+            '"><button class="danger" type="submit">Revoke</button></form>'
+          : '') + '</td></tr>';
+    };
+    const appPasswordsBlock = '<h3>App passwords</h3>' +
+      this.note(this.esc(doorsView.sentence)) +
+      (held.unreadable
+        ? this.warn('<strong>The app passwords on this entry cannot be ' +
+                    'read</strong>, so none of them is accepted and no new ' +
+                    'one is made over them.')
+        : (held.passwords.length
+            ? '<table><tr><th>Name</th><th>Id</th><th>Accepted at</th>' +
+              '<th>Made</th><th>Last used</th><th></th></tr>' +
+              held.passwords.map(appRow).join('') + '</table>'
+            : this.note('<strong>None.</strong> The person makes their own ' +
+                        'on <code>/portal/app-passwords</code>.'))) +
+      (state.write
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="create-app-password">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          '<input type="hidden" name="from" value="user">' +
+          '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
+          '<div class="formrow"><label>Name <input type="text" name="name" ' +
+          'maxlength="64" required></label></div><div class="formrow">' +
+          ['ldap', 'wstrust', 'scim', 'ssf', 'est'].map(function (door) {
+            return '<label><input type="checkbox" name="door_' + door +
+                   '" value="on"> ' + self.esc(door) + '</label> ';
+          }).join('') + '</div><div class="formrow"><button type="submit" ' +
+          'title="' + this.esc('Generates an app password for this person, ' +
+            'scoped to the doors ticked, and shows it to you ONCE.') +
+          '">Make an app password</button></div></form>' +
+          this.note('An app password is <strong>shown once</strong> — note ' +
+                    'it and give it to them by a channel you trust. It is ' +
+                    'one factor, accepted only at the doors ticked and ' +
+                    'never at the sign-in screen, and a CAEP ' +
+                    '<code>credential-change</code> says it was made or ' +
+                    'revoked.')
+        : this.note('Making or revoking one needs <strong>Admin ' +
+                    'Write</strong>.'));
+
+    // --- identity verifications (#127, 2026-09-23) ------------------------
+    // WHAT A CLIENT'S `verified_claims` REQUEST IS ANSWERED FROM (OpenID
+    // Connect for Identity Assurance 1.0). The list — framework, evidence,
+    // the claims covered, where it came from — with a Remove per row, and a
+    // form that records one: a single evidence element as flat fields, which
+    // `identity_assurance.ts`'s `fromForm()` turns into the element the API
+    // takes as JSON. With no script, every type's fields are drawn and those
+    // of the types not chosen are ignored. `POST
+    // /admin-api/users/record-verification` and `remove-verification` are
+    // the same two acts (rule 7), and `GET /admin-api/users/verifications`
+    // is this list, paged.
+    const ida = adminViews.verificationsJson({ user: key, per: 100 });
+    const option = function (value, label?) {
+      log.debug("Entering option().");
+      log.debug("Leaving option().");
+      return '<option value="' + self.esc(value) + '">' +
+             self.esc(label || value) + '</option>';
+    };
+    const select = function (name, values, blank?) {
+      log.debug("Entering select().");
+      log.debug("Leaving select().");
+      return '<select name="' + name + '">' +
+             (blank ? option('', blank) : '') +
+             values.map(function (one) {
+               return option(one);
+             }).join('') + '</select>';
+    };
+    const field = function (label, name, placeholder?) {
+      log.debug("Entering field().");
+      log.debug("Leaving field().");
+      return '<label>' + self.esc(label) + ' <input type="text" name="' +
+             name + '" maxlength="256"' + (placeholder
+               ? ' placeholder="' + self.esc(placeholder) + '"' : '') +
+             '></label> ';
+    };
+    const idaRow = function (one) {
+      log.debug("Entering idaRow().");
+      const v = one.verification || {};
+      log.debug("Leaving idaRow().");
+      return '<tr><td><code>' + self.esc(v.trust_framework || '') +
+        '</code>' + (v.assurance_level
+          ? ' (' + self.esc(v.assurance_level) + ')' : '') + '</td><td>' +
+        self.esc((v.evidence || []).map(function (e) {
+          const detail = (e.document_details && e.document_details.type) ||
+                         (e.record && e.record.type) ||
+                         (e.attestation && e.attestation.type) ||
+                         e.signature_type || '';
+          return e.type + (detail ? ' — ' + detail : '');
+        }).join('; ') || 'none') + '</td><td>' +
+        self.esc(Object.keys(one.claims || {}).join(', ')) + '</td><td>' +
+        self.esc(v.time ? self.whenText(v.time) : '—') + '</td><td>' +
+        self.esc(one.source || '') + (one.by ? ' (' + self.esc(one.by) +
+                                      ')' : '') + '</td><td>' +
+        (state.write
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" value="remove-verification">' +
+            '<input type="hidden" name="user" value="' + self.esc(key) +
+            '"><input type="hidden" name="id" value="' + self.esc(one.id) +
+            '"><input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + self.esc(back) +
+            '"><button class="danger" type="submit">Remove</button></form>'
+          : '') + '</td></tr>';
+    };
+    const verificationsBlock = '<h3>Identity verifications</h3>' +
+      this.note('What a client asking for <code>verified_claims</code> ' +
+                '(OpenID Connect for Identity Assurance 1.0) is answered ' +
+                'from. A claim is released as verified only while this ' +
+                'entry still holds the value that was verified. ' +
+                (mode.inventsClaimValues()
+                  ? 'In development mode a person with none is answered ' +
+                    'with an invented one under <code>urn:sts:demo</code>.'
+                  : 'Nothing is released for a person with none.')) +
+      (ida.verifications.length
+        ? '<table><tr><th>Trust framework</th><th>Evidence</th>' +
+          '<th>Claims</th><th>Verified</th><th>Source</th><th></th></tr>' +
+          ida.verifications.map(idaRow).join('') + '</table>'
+        : this.note('<strong>None recorded.</strong>')) +
+      (state.write && ida.trustFrameworks.length
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="record-verification">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          '<input type="hidden" name="from" value="user">' +
+          '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
+          '<div class="formrow"><label>Trust framework ' +
+          select('trust_framework', ida.trustFrameworks) + '</label> ' +
+          field('Assurance level', 'assurance_level') +
+          field('Verified at', 'time', '2026-09-23T10:00:00Z (now if empty)') +
+          '</div><div class="formrow"><label>Evidence ' +
+          select('evidence_type', ida.evidenceTypes, 'none') + '</label> ' +
+          '<label>Check method ' + select('check_method', ida.checkMethods,
+                                          'none') + '</label></div>' +
+          '<div class="formrow"><strong>document:</strong> <label>Type ' +
+          select('document_type', ida.documentTypes) + '</label> ' +
+          field('Number', 'document_number') +
+          field('Issuer', 'issuer_name') +
+          field('Issuer country', 'issuer_country', 'DEU') +
+          field('Issued', 'date_of_issuance', 'YYYY-MM-DD') +
+          field('Expires', 'date_of_expiry', 'YYYY-MM-DD') + '</div>' +
+          '<div class="formrow"><strong>electronic_record:</strong> ' +
+          '<label>Type ' + select('record_type', ida.electronicRecordTypes) +
+          '</label> ' + field('Source', 'source_name') + '</div>' +
+          '<div class="formrow"><strong>vouch:</strong> <label>Type ' +
+          select('attestation_type', ida.attestationTypes) + '</label> ' +
+          field('Reference', 'reference_number') +
+          field('Voucher', 'voucher_name') + '</div>' +
+          '<div class="formrow"><strong>electronic_signature:</strong> ' +
+          field('Signature type', 'signature_type') +
+          field('Issuer', 'signature_issuer') +
+          field('Serial number', 'serial_number') +
+          field('Created', 'created_at', '2026-09-23T10:00:00Z') + '</div>' +
+          '<div class="formrow">Claims verified: ' +
+          ida.verifiableClaims.map(function (claim) {
+            // One field per claim, as the app-password doors are: a form
+            // body keeps only the last of a repeated name.
+            return '<label><input type="checkbox" name="claim_' +
+                   self.esc(claim) + '" value="on"> ' + self.esc(claim) +
+                   '</label> ';
+          }).join('') + '</div><div class="formrow"><button ' +
+          'type="submit" title="' + this.esc('Records the verification ' +
+            'with each ticked claim\'s value as the entry holds it now.') +
+          '">Record a verification</button></div></form>'
+        : (state.write
+            ? this.note('No trust framework is configured ' +
+                        '(<code>oauth2.idaTrustFrameworks</code> on <a ' +
+                        'href="/admin/oauth2">OAuth 2.0 / OIDC</a>), so ' +
+                        'none can be recorded.')
+            : this.note('Recording or removing one needs <strong>Admin ' +
+                        'Write</strong>.')));
+
+    // --- devices (#130, 2026-09-23) ----------------------------------------
+    // THE PERSON'S DEVICES: the entries in ou=devices they own, each linked
+    // to the applications that used it, with whether its Native SSO secret
+    // is live, and a Remove each. `GET /admin-api/users/devices` and `POST
+    // /admin-api/users/remove-device` are the same (rule 7).
+    const deviceView = adminViews.devicesJson({ user: key });
+    const deviceRow = function (one) {
+      log.debug("Entering deviceRow().");
+      log.debug("Leaving deviceRow().");
+      return '<tr><td>' + self.esc(one.label) + '<br><code>' +
+        self.esc(one.id) + '</code></td><td>' +
+        (one.applications.length
+          ? one.applications.map(function (dn) {
+              return '<code>' + self.esc(dn) + '</code>';
+            }).join('<br>') : '—') + '</td><td>' +
+        (one.nativeSso ? (one.sessionLive ? 'live' : 'session ended')
+                       : 'none') + '</td><td>' +
+        self.esc(one.lastUsed ? self.whenText(one.lastUsed) : '—') +
+        '</td><td>' +
+        (state.write
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" value="remove-device">' +
+            '<input type="hidden" name="user" value="' + self.esc(key) +
+            '"><input type="hidden" name="id" value="' + self.esc(one.id) +
+            '"><input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + self.esc(back) +
+            '"><button class="danger" type="submit">Remove</button></form>'
+          : '') + '</td></tr>';
+    };
+    const devicesBlock = '<h3>Devices</h3>' +
+      this.note('The phones and computers this person\'s applications run ' +
+                'on, each an entry in <code>ou=devices</code> — made by an ' +
+                'OpenID Connect Native SSO sign-in — linked to the ' +
+                'applications that used it. A live Native SSO secret lets ' +
+                'those apps share one sign-in.') +
+      (deviceView.devices.length
+        ? '<table><tr><th>Device</th><th>Applications</th>' +
+          '<th>Native SSO</th><th>Last used</th><th></th></tr>' +
+          deviceView.devices.map(deviceRow).join('') + '</table>'
+        : this.note('<strong>None.</strong>')) +
+      (state.write ? '' : this.note('Removing one needs <strong>Admin ' +
+                                    'Write</strong>.'));
+
+    // --- self-issued IDs (#129, 2026-09-23) --------------------------------
+    // THE WALLET KEYS WHOSE SIOPv2 ID TOKEN SIGNS THIS PERSON IN. The list
+    // with a Remove each, and a form that enrols one BY VALUE — the
+    // administrator's door; the person's own proves the key on
+    // `/portal/self-issued`. `POST /admin-api/users/enrol-self-issued-subject`
+    // and `remove-self-issued-subject` are the same two acts (rule 7), and
+    // `GET /admin-api/users/self-issued-subjects` is this list.
+    const siopView = adminViews.selfIssuedSubjectsJson({ user: key });
+    const siopRow = function (one) {
+      log.debug("Entering siopRow().");
+      log.debug("Leaving siopRow().");
+      return '<tr><td><code>' + self.esc(one.subject) + '</code></td><td>' +
+        self.esc(one.label || '') + '</td><td>' +
+        self.esc(one.enrolledAt ? self.whenText(one.enrolledAt) : '—') +
+        (one.by ? ' by ' + self.esc(one.by) : '') + '</td><td>' +
+        (state.write
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" ' +
+            'value="remove-self-issued-subject">' +
+            '<input type="hidden" name="user" value="' + self.esc(key) +
+            '"><input type="hidden" name="subject" value="' +
+            self.esc(one.subject) + '"><input type="hidden" name="from" ' +
+            'value="user"><input type="hidden" name="back" value="' +
+            self.esc(back) + '"><button class="danger" ' +
+            'type="submit">Remove</button></form>'
+          : '') + '</td></tr>';
+    };
+    const selfIssuedBlock = '<h3>Self-issued IDs</h3>' +
+      this.note('Wallet keys whose self-issued ID Token (SIOPv2) signs this ' +
+                'person in' + (siopView.signInEnabled ? '.'
+                  : ' — while <code>oid4vp.signInSelfIssued</code> is on, ' +
+                    'which it is not here.')) +
+      (siopView.subjects.length
+        ? '<table><tr><th>Subject</th><th>Label</th><th>Enrolled</th>' +
+          '<th></th></tr>' + siopView.subjects.map(siopRow).join('') +
+          '</table>'
+        : this.note('<strong>None.</strong> The person enrols their own on ' +
+                    '<code>/portal/self-issued</code>.')) +
+      (state.write
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" ' +
+          'value="enrol-self-issued-subject">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          '<input type="hidden" name="from" value="user">' +
+          '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
+          '<div class="formrow"><label>Subject <input type="text" ' +
+          'name="subject" size="60" maxlength="2048" required ' +
+          'placeholder="did:jwk:… or a JWK thumbprint"></label> <label>Label ' +
+          '<input type="text" name="label" maxlength="64"></label></div>' +
+          '<div class="formrow"><button type="submit" title="' +
+          this.esc('Whoever holds this key signs in as this person. Enrol ' +
+                   'only a key you know is theirs.') + '">Enrol</button>' +
+          '</div></form>'
+        : this.note('Enrolling or removing one needs <strong>Admin ' +
+                    'Write</strong>.'));
+
     const html = heading +
       this.note('Everything in this section is about <code>' +
                 this.esc(row.name) +
@@ -11728,7 +12416,10 @@ class AdminConsole {
       'href="/admin/totp">TOTP MFA</a> and <a ' +
       'href="/admin/webauthn">WebAuthn</a> under Protocols; this is who ' +
       'holds what.') +
-      wayIn + totpBlock + keysBlock + recoveryBlock;
+      wayIn + totpBlock + this.emailFactorBlock(key, mech, state,
+                                                carryBack) +
+      keysBlock + recoveryBlock + appPasswordsBlock +
+      devicesBlock + selfIssuedBlock + verificationsBlock;
 
     log.debug("Leaving AdminConsole.mfaSection(). totp=" + mech.totp + ", " +
               allKeys.length +
@@ -11968,6 +12659,204 @@ class AdminConsole {
   // passkeys button for somebody with no primary key — with a sentence saying
   // why it is absent.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // THE PERSON'S FEDERATION LINKS (#109, 2026-09-22): which partner's subject
+  // signs them in, through which relationship. A table with a Remove per link,
+  // and a form to add one — the console half of `POST /admin-api/users/
+  // federation-link` and `/federation-unlink` (rule 7), both of which reach
+  // `admin-core/admin_actions.ts`'s federationLinkAction(). Paged, like every
+  // list on this page.
+  // ---------------------------------------------------------------------------
+  userFederationLinksSection(key, page, gate, back, params) {
+    const { log, federation } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.userFederationLinksSection().");
+    const heading = '<h2 id="federation-links">Federation links</h2>' +
+      this.note('A link says that ONE partner\'s identifier for somebody — ' +
+        'OpenID Connect\'s <code>iss</code> and <code>sub</code>, a SAML ' +
+        'persistent NameID and the partner\'s entity ID — is this person. ' +
+        'A partner signs in only the person its subject is linked to; a ' +
+        'relationship under <code>link-at-first-sign-in</code> makes the ' +
+        'link itself after the person signs in here. <strong>Removing a ' +
+        'link ends every session that partner signed them in to</strong>, ' +
+        'and their next sign-in through it is treated as unlinked.');
+    const nav = this.pageNavPair('/admin/users', params, page.paging);
+    const form = function (action, fields, label, danger) {
+      log.debug("Entering form(). " + action);
+      log.debug("Leaving form().");
+      return '<form method="post" action="/admin/users">' +
+        '<input type="hidden" name="action" value="' + self.esc(action) + '">' +
+        '<input type="hidden" name="user" value="' + self.esc(key) + '">' +
+        '<input type="hidden" name="from" value="user">' +
+        '<input type="hidden" name="back" value="' + self.esc(back) + '">' +
+        fields + '<div class="formrow"><button' +
+        (danger ? ' class="danger"' : '') + '>' + self.esc(label) +
+        '</button></div></form>';
+    };
+    const rows = page.shown.length
+      ? '<table><tr><th>Relationship</th><th>Issuer</th><th>Subject</th>' +
+        '<th></th></tr>' + page.shown.map(function (one) {
+          return '<tr><td><code>' + self.esc(one.relationship) + '</code>' +
+            (one.relationshipExists ? ''
+              : ' <span class="sub">(no such service-provider-side ' +
+                'relationship here — this link matches nothing)</span>') +
+            '</td><td><code>' + self.esc(one.issuer) + '</code></td>' +
+            '<td><code>' + self.esc(one.subject) + '</code></td><td>' +
+            (gate.write
+              ? form('federation-unlink', '<input type="hidden" name="link" ' +
+                     'value="' + self.esc(one.link) + '">', 'Remove', true)
+              : '') + '</td></tr>';
+        }).join('') + '</table>'
+      : this.note('No partner\'s subject is linked to this person.');
+    if (!gate.write) {
+      log.debug("Leaving AdminConsole.userFederationLinksSection(). Read " +
+                "only.");
+      return heading + nav.head + rows + nav.foot +
+        this.note('Adding or removing a link needs <strong>Admin ' +
+                  'Write</strong>.');
+    }
+    const relationships = federation.inRole('service-provider') || [];
+    const add = relationships.length
+      ? '<h3>Link a partner\'s subject</h3>' +
+        form('federation-link',
+          '<div class="formrow"><label>Relationship <select ' +
+          'name="relationship">' + relationships.map(function (one) {
+            return '<option value="' + self.esc(one.fedId) + '">' +
+              self.esc(one.fedId) + ' — ' + self.esc(one.fedPeer || '(no ' +
+                                                     'partner set)') +
+              '</option>';
+          }).join('') + '</select></label></div>' +
+          '<div class="formrow"><label>Subject <input type="text" ' +
+          'name="subject" size="42"' + this.tip('The partner\'s own ' +
+          'identifier for this person: the ID Token\'s sub, or the ' +
+          'persistent NameID. Not their name or address.') + '></label>' +
+          '</div><div class="formrow"><label>Issuer <input type="text" ' +
+          'name="issuer" size="42" placeholder="the relationship\'s ' +
+          'fedPeer"></label></div>', 'Link', false)
+      : this.note('There is no service-provider-side relationship in this ' +
+                  'realm to link through.');
+    log.debug("Leaving AdminConsole.userFederationLinksSection().");
+    return heading + nav.head + rows + nav.foot + add;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PERSON'S KERBEROS ACCOUNT (#59, 2026-09-22): the principal, what this
+  // realm's KDC holds for them — the PUBLIC half, never a key — and "Reset
+  // password and download keytab".
+  //
+  // **THE ONE CONTROL IS A PASSWORD RESET**, and the section says so before
+  // the button does. A keytab is derived from a password in hand and this
+  // service holds none of this person's, so the only password an
+  // administrator can derive one from is a password they set now — typed, or
+  // generated and never shown (`kerberos/krb5_person_keys.ts`,
+  // `personKeytab()`). The form posts to `/admin/kerberos/principals`, the
+  // page every other Kerberos key act goes through, and whose answer is the
+  // shown-once keytab page.
+  // ---------------------------------------------------------------------------
+  userKerberosSection(key, kerberos, gate) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.userKerberosSection(). key=" + key);
+    const heading = '<h2 id="kerberos">Kerberos</h2>';
+    if (!kerberos || !kerberos.kdc) {
+      log.debug("Leaving AdminConsole.userKerberosSection(). No KDC.");
+      return heading + this.note('Trust realm <code>' +
+        this.esc((kerberos && kerberos.trustRealm) || '') + '</code> has no ' +
+        'KDC (' + this.esc((kerberos && kerberos.reason) || 'krb5.enabled is ' +
+        'off for it') + '), so there is no Kerberos principal for this ' +
+        'person and no keytab to make.');
+    }
+    if (!kerberos.person) {
+      log.debug("Leaving AdminConsole.userKerberosSection(). Not in the " +
+                "directory.");
+      return heading + this.note('This identity has no entry in this realm\'s ' +
+        'directory, which is the one its KDC reads, so it is not a Kerberos ' +
+        'principal here.');
+    }
+    const keys = kerberos.keys;
+    const etypeList = function (etypes) {
+      log.debug("Entering etypeList().");
+      log.debug("Leaving etypeList().");
+      return (etypes || []).map(function (one) {
+        return '<code>' + self.esc(one.name) + '</code>';
+      }).join(' ');
+    };
+    const state = '<table class="key">' +
+      '<tr><th>Principal</th><td><code>' + this.esc(kerberos.principal) +
+      '</code></td></tr>' +
+      '<tr><th>KDC</th><td>' + (kerberos.productKdc
+        ? 'product — keyed from their own password'
+        : 'development — every user is keyed from <code>krb5.userPassword' +
+          '</code>, not from their own password') +
+      '</td></tr>' +
+      (kerberos.productKdc
+        ? '<tr><th>Keys</th><td>' + (keys
+            ? 'kvno ' + this.esc(String(keys.kvno)) + ' ' +
+              etypeList(keys.etypes) + (keys.current ? ''
+                : ' — <span class="state-invalid">not from the password ' +
+                  'they hold now</span>, so the KDC refuses them until ' +
+                  'their next verified sign-in') +
+              (keys.derivedAt ? '<br><span class="sub">derived ' +
+                this.esc(keys.derivedAt) + (keys.derivedOn ? ' on a ' +
+                'password ' + this.esc(keys.derivedOn) : '') + '</span>' : '')
+            : '<span class="state-none">none yet</span> — they get them the ' +
+              'first time a password is set or verified here') +
+          '</td></tr>' +
+          '<tr><th>Previous versions</th><td>' + (keys &&
+            keys.retained.length
+            ? keys.retained.map(function (one) {
+                return 'kvno ' + self.esc(String(one.kvno)) + ' until ' +
+                       self.esc(one.expiresAt);
+              }).join('<br>')
+            : '<span class="state-none">none</span>') + '</td></tr>'
+        : '') +
+      (kerberos.disabled
+        ? '<tr><th>Account</th><td><strong class="state-expired">DISABLED' +
+          '</strong> — the KDC refuses it KDC_ERR_CLIENT_REVOKED</td></tr>'
+        : '') +
+      '</table>';
+    const why = this.note('<strong>A keytab is as good as their ' +
+      'password</strong>: whoever holds it gets a Kerberos ticket as them ' +
+      '(<code>kinit -k -t</code>). This service never reads a stored key ' +
+      'back out, so a keytab is DERIVED from a password in hand — and the ' +
+      'only password you can have in hand for somebody else is one you set ' +
+      'now. The person can make their own, from their own password, on ' +
+      '<code>/portal/kerberos</code>.');
+    if (!gate.write) {
+      log.debug("Leaving AdminConsole.userKerberosSection(). Read only.");
+      return heading + state + why + this.note('Resetting the password for ' +
+        'a keytab needs <strong>Admin Write</strong>.');
+    }
+    if (kerberos.disabled) {
+      log.debug("Leaving AdminConsole.userKerberosSection(). Disabled.");
+      return heading + state + why + this.note('The account is disabled, so ' +
+        'a keytab for it could not sign in. Enable it first.');
+    }
+    const form = '<h3>Reset password and download keytab</h3>' +
+      this.warn('<strong>This CHANGES ' + this.esc(key) + '\'s ' +
+        'password</strong>: their old one stops working for every protocol, ' +
+        'the Kerberos kvno moves up by one, and they are signed out of ' +
+        'everything. They are NOT asked to change it at their next sign-in, ' +
+        'because that would end the keytab. With <strong>a generated ' +
+        'password</strong> nobody is shown it, and the keytab is the only ' +
+        'thing that signs them in until a password is set again.') +
+      '<form method="post" action="/admin/kerberos/principals">' +
+      '<input type="hidden" name="action" value="reset-person-keytab">' +
+      '<input type="hidden" name="username" value="' + this.esc(key) + '">' +
+      '<input type="hidden" name="from" value="user">' +
+      '<div class="formrow"><label for="krb5-keytab-password">New ' +
+      'password</label><input type="password" id="krb5-keytab-password" ' +
+      'name="password" autocomplete="new-password" size="30"></div>' +
+      '<div class="formrow"><label><input type="checkbox" name="random" ' +
+      'value="true"> or a generated one that is never shown</label></div>' +
+      '<div class="formrow"><button class="danger" type="submit" title="' +
+      this.esc('Sets the password, signs them out everywhere, and shows the ' +
+               'keytab derived from it once.') + '">Reset password and ' +
+      'download keytab</button></div></form>';
+    log.debug("Leaving AdminConsole.userKerberosSection().");
+    return heading + state + why + form;
+  }
+
   userCredentialControlsSection(key, factors, gate, back) {
     const { log } = this.deps;
     const self = this;
@@ -12009,7 +12898,8 @@ class AdminConsole {
       '<tr><th>Second factor required</th><td>' + (requirement.required
         ? '<strong>yes</strong> — ' + [requirement.byUser ? 'on this account'
             : '', requirement.byRealm ? 'by the realm ' +
-            '(<code>authn.mfaRequired</code>)' : ''].filter(Boolean)
+            '(the <a href="/admin/policies#authn">authentication policy</a>)'
+            : ''].filter(Boolean)
               .join(' and ') +
           (factors.mfaRequired ? '; they hold one'
             : '; <strong>they hold none, so their next sign-in asks them to ' +
@@ -12031,7 +12921,10 @@ class AdminConsole {
         this.note('Resetting a password, disabling a credential or requiring ' +
                   'a second factor needs <strong>Admin Write</strong>.');
     }
-    const form = function (action, label, title, danger) {
+    // `extra` is markup for the form's own fields (#146): the reset forms'
+    // "compromised" box and the disable form's RISC reason — the console half
+    // of what `/admin-api/users` takes, per rule 7.
+    const form = function (action, label, title, danger, extra?) {
       log.debug("Entering form(). " + action);
       log.debug("Leaving form().");
       return '<form method="post" action="/admin/users">' +
@@ -12039,9 +12932,13 @@ class AdminConsole {
         '<input type="hidden" name="user" value="' + self.esc(key) + '">' +
         '<input type="hidden" name="from" value="user">' +
         '<input type="hidden" name="back" value="' + self.esc(back) + '">' +
+        (extra || '') +
         '<div class="formrow"><button' + (danger ? ' class="danger"' : '') +
         ' title="' + self.esc(title) + '">' + label + '</button></div></form>';
     };
+    const compromisedBox = '<div class="formrow"><label><input ' +
+      'type="checkbox" name="compromised" value="true"> the password was ' +
+      'compromised (RISC <code>credential-compromise</code>)</label></div>';
     const reset = '<h3>Reset the password</h3>' +
       this.note('<strong>Reset password</strong> sets a generated password ' +
                 'and shows ' +
@@ -12052,12 +12949,17 @@ class AdminConsole {
       'link to send them, valid for ' +
       '<code>security.passwordResetTtlMinutes</code>; at it they choose a ' +
       'new password under this realm\'s password policy.') +
+      this.note('Tick <strong>the password was compromised</strong> when ' +
+                'that is WHY you are resetting it: RISC receivers are then ' +
+                'also told <code>credential-compromise</code>. A reset link ' +
+                'always tells them <code>recovery-activated</code>.') +
       form('reset-password', 'Reset password',
            'A generated password, shown once; they change it at next ' +
-           'sign-in; they are signed out everywhere.', true) +
+           'sign-in; they are signed out everywhere.', true, compromisedBox) +
       form('issue-password-reset', 'Generate a password reset link',
            'Removes their current password, signs them out everywhere, and ' +
-           'shows a single-use link to send them.', true);
+           'shows a single-use link to send them — or mails it to them.',
+           true, compromisedBox + this.mailLinkBox('the link'));
     const passkeys = '<h3>Passwordless sign-in</h3>' + (factors.primaryKeys > 0
       ? (factors.password
           ? this.note('Removes all ' + this.esc(String(factors.primaryKeys)) +
@@ -12099,7 +13001,8 @@ class AdminConsole {
                     'before it signs them in. A passwordless sign-in is ' +
                     'refused while it is required.' +
                     (requirement.byRealm ? ' The realm already requires it ' +
-                      'of everybody (<code>authn.mfaRequired</code>).' : '')) +
+                      'of everybody (the <a href="/admin/policies#authn">' +
+                      'authentication policy</a>).' : '')) +
           form('require-mfa', 'Require MFA for this person',
                'They must use a second factor, and enrol one at their next ' +
                'sign-in if they hold none.', false));
@@ -12125,17 +13028,100 @@ class AdminConsole {
                   'is the same act.') +
         form('disable', 'Disable the account',
              'Sets pwdAccountLockedTime and signs them out of everything.',
-             true));
+             true,
+             '<div class="formrow"><label>Reason for RISC receivers ' +
+             '<select name="riscReason"><option value="">none given' +
+             '</option><option value="hijacking">hijacking — the account ' +
+             'was taken over</option><option value="bulk-account">' +
+             'bulk-account — one of many created in bulk</option>' +
+             '</select></label></div>'));
+    // WHO MAY ACT FOR THEM (#108, 2026-09-23): the person's half of the
+    // WS-Trust and token-exchange delegation policy. POST
+    // /admin-api/users/set-not-delegated and /set-may-act are the same acts.
+    const facts = this.deps.credentials.delegationFactsFor(key) || {};
+    const delegationBlock = '<h3 id="delegation">Who may act for them</h3>' +
+      this.note('<code>stsNotDelegated</code> is Kerberos\'s ' +
+        '<code>NOT_DELEGATED</code> for WS-Trust <code>OnBehalfOf</code> / ' +
+        '<code>ActAs</code> and the RFC 8693 token exchange: while it is ' +
+        'set nobody may act for them, whatever any application\'s ' +
+        'delegation attributes say (enforced in product mode; see ' +
+        '<a href="/admin/delegation#delegation-policy">the policy</a>). It ' +
+        'is ' + (facts.notDelegated ? '<strong>set</strong>' : 'not set') +
+        '. <code>stsMayAct</code> names the one party who may act for them ' +
+        '— their access tokens carry it as <code>may_act</code> — and is ' +
+        (facts.mayAct ? '<code>' + this.esc(facts.mayAct) + '</code>'
+                      : 'empty') + '.') +
+      form('set-not-delegated', facts.notDelegated
+        ? 'Allow them to be delegated' : 'Never delegate this person',
+           'Writes stsNotDelegated.', !facts.notDelegated,
+           '<input type="hidden" name="value" value="' +
+           (facts.notDelegated ? 'false' : 'true') + '">') +
+      form('set-may-act', 'Set who may act for them',
+           'Writes stsMayAct; empty clears it.', false,
+           '<div class="formrow"><label>Delegate DN <input type="text" ' +
+           'name="delegate" size="60" value="' +
+           this.esc(facts.mayAct || '') + '" placeholder="uid=bob,ou=users,' +
+           '... or cn=app,ou=applications,..."></label></div>');
     log.debug("Leaving AdminConsole.userCredentialControlsSection().");
-    return heading + state + signalsNote + account + reset + passkeys + mfa;
+    return heading + state + signalsNote + account + reset + passkeys + mfa +
+      delegationBlock;
   }
 
-  userDetailPage(req, key) {
+  // -------------------------------------------------------------------------
+  // THE PERSON'S CURRENT RISK, LARGE AND IN COLOUR (#62; rcbj asked for it
+  // exactly so): the first thing on their page, the level in the colour an
+  // administrator reads at a glance — green, amber, red, grey for nobody
+  // assessed yet — with the score, the level it came from, when it moved,
+  // what moved it, and a link to the assessments behind it. No script: a
+  // styled block, as every tile on this page is.
+  // -------------------------------------------------------------------------
+  private riskBadge(standing: any): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.riskBadge().");
+    const level = standing ? String(standing.level || 'UNSCORED')
+                           : 'UNKNOWN';
+    const palette: Record<string, string[]> = {
+      LOW: ['#188038', '#ffffff'], MEDIUM: ['#f9ab00', '#202124'],
+      HIGH: ['#d93025', '#ffffff'], UNSCORED: ['#5f6368', '#ffffff'],
+      UNKNOWN: ['#dadce0', '#202124'] };
+    const colours = palette[level] || palette.UNKNOWN;
+    const when = function (ms: number): string {
+      return ms ? new Date(ms).toISOString().replace('T', ' ').slice(0, 16) +
+                  ' UTC' : '';
+    };
+    const facts = standing
+      ? 'score ' + this.esc(Number(standing.score).toPrecision(3)) +
+        (standing.previousLevel ? ' &middot; was ' +
+          this.esc(standing.previousLevel) : '') +
+        (standing.crossedAt ? ' &middot; since ' +
+          this.esc(when(standing.crossedAt)) : '') +
+        (standing.reason ? '<br>because: ' + this.esc(standing.reason) : '')
+      : 'This person has not been assessed: nobody has signed in as them ' +
+        'since risk scoring began, or it is off.';
+    log.debug("Leaving AdminConsole.riskBadge(). " + level + ".");
+    return '<div class="risk-badge" style="display:flex;align-items:center;' +
+      'gap:28px;margin:14px 0 18px;padding:20px 28px;border-radius:14px;' +
+      'background:' + colours[0] + ';color:' + colours[1] + '">' +
+      '<div style="font-size:3em;font-weight:800;letter-spacing:.05em;' +
+      'line-height:1">' + this.esc(level) + '</div>' +
+      '<div style="font-size:1.05em;line-height:1.5"><div style="font-size:' +
+      '1.3em;font-weight:700">Current risk</div>' + facts +
+      '<div style="margin-top:6px"><a style="color:inherit;font-weight:600" ' +
+      'href="' + this.esc(standing && standing.subject
+        ? '/admin/risk?subject=' + encodeURIComponent(standing.subject) +
+          '#risk-assessments'
+        : '/admin/risk') + '">Assessments &rarr;</a></div>' +
+      '</div></div>';
+  }
+
+  // `risk` as `userDetailJson()` takes it; undefined draws no badge, because
+  // nobody read the standing.
+  userDetailPage(req, key, risk?: any) {
     const { log, adminViews, gateStateFor, queryWith, DEFAULT_BLOCKS_PER_PAGE,
             DEFAULT_PER_PAGE } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.userDetailPage(). key=" + key);
-    const view = adminViews.userDetailJson(req, key);
+    const view = adminViews.userDetailJson(req, key, risk);
     if (!view) {
       log.debug("Leaving AdminConsole.userDetailPage(). Nothing known.");
       return null;
@@ -12189,6 +13175,7 @@ class AdminConsole {
                                          artifactPage.paging);
 
     const inner = this.messagesOf(req) +
+      (risk === undefined ? '' : this.riskBadge(risk)) +
       '<div class="tiles">' +
         this.tile(row.authentications, 'authentications') +
         this.tile(row.protocols.length, 'protocols') +
@@ -12338,11 +13325,21 @@ class AdminConsole {
       this.userCredentialsSection(key, view.credentialsState, gateStateFor(req),
                                   back) +
 
+      // WHICH PARTNERS' SUBJECTS SIGN THEM IN (#109, 2026-09-22): the links,
+      // after what they sign a grant with and before what an administrator
+      // can do to their password — a link is another way in.
+      this.userFederationLinksSection(key, view.federationLinkPage,
+                                      gateStateFor(req), back, params) +
+
       // WHAT AN ADMINISTRATOR CAN DO TO THEIR PASSWORD AND SECOND FACTORS
       // (2026-09-13), before the sign-out buttons, which it partly subsumes: a
       // reset signs the person out as well.
       this.userCredentialControlsSection(key, view.mfa.json, gateStateFor(req),
                                          back) +
+
+      // THEIR KERBEROS ACCOUNT, AND A KEYTAB FOR IT (#59): after the password
+      // controls, because the one control here IS a password reset.
+      this.userKerberosSection(key, view.kerberos, gateStateFor(req)) +
 
       // ---------------------------------------------------------------------
       // TWO BUTTONS, AND THE ORDER IS THE ARGUMENT (2026-09-05).
@@ -12858,12 +13855,12 @@ class AdminConsole {
     };
   }
 
-  usersView(req) {
+  usersView(req, risk?: any) {
     const { log, stats, queryWith } = this.deps;
     log.debug("Entering AdminConsole.usersView().");
     const wantedUser = String(req.query.user || '').trim();
     if (wantedUser) {
-      const detail = this.userDetailPage(req, wantedUser);
+      const detail = this.userDetailPage(req, wantedUser, risk);
       if (!detail) {
         // Not a 404: this service has simply never seen the name, or has
         // forgotten it to the cap since the link was drawn. Both are answers
@@ -12919,7 +13916,9 @@ class AdminConsole {
     // section it was pressed in.
     const who = String(body.user || body.username || '').trim();
     const back = String(body.from || '') === 'user' && who
-      ? this.userReturnTo(body, who, '#credential-controls')
+      ? this.userReturnTo(body, who,
+          /^federation-/.test(String(body.action || ''))
+            ? '#federation-links' : '#credential-controls')
       : '/admin/users' +
         queryWith(this.listViewFromBack('/admin/users', body.back), {});
     // A ONE-TIME SECRET IS ANSWERED WITH A PAGE (2026-09-13): a reset password
@@ -12927,7 +13926,9 @@ class AdminConsole {
     // redirect's query string — the browser history, every proxy log on the
     // way, and the `Referer` of the next click. `/admin/users/new` made this
     // argument first. A JSON caller still gets JSON.
-    const oneTime = result.ok && (result.password || result.resetUrl);
+    // An app password (#101) is the third such secret.
+    const oneTime = result.ok && (result.password || result.resetUrl ||
+                                  result.appPassword);
     if (oneTime && !/json/i.test(String(req.headers['content-type'] || ''))) {
       this.respond(req, res, result, 'Credential reset', '/admin/users',
                    this.credentialResetPage(result, back),
@@ -12947,6 +13948,26 @@ class AdminConsole {
     log.debug("Entering AdminConsole.credentialResetPage().");
     const who = this.esc(result.username);
     const out = [];
+    if (result.appPassword) {
+      // AN APP PASSWORD (#101): shown once, and nothing else happened — no
+      // sign-out and no RISC event, so this page is the whole answer.
+      out.push('<h2>The app password "' + this.esc(result.name) + '" for ' +
+        who + ', shown once</h2>' +
+        '<div class="secret">' + this.esc(result.appPassword) + '</div>' +
+        this.warn('<strong>Note it now.</strong> This service stores a ' +
+        'scrypt hash and cannot show it again. Give it to ' + who + ' by a ' +
+        'channel you trust. It is accepted at ' +
+        this.esc((result.doorLabels || result.doors || []).join(', ')) +
+        ' only — never at the sign-in screen.') +
+        this.note('A CAEP <code>credential-change</code> (<code>password' +
+        '</code>, <code>create</code>) went to every stream that asked for ' +
+        'it and covers this person.') +
+        this.note('<a class="btn" href="' + this.esc(back) + '">Back to ' +
+                  who + '</a>'));
+      log.debug("Leaving AdminConsole.credentialResetPage(). An app " +
+                "password.");
+      return out.join('');
+    }
     if (result.password) {
       out.push('<h2>The new password for ' + who + ', shown once</h2>' +
         '<div class="secret">' + this.esc(result.password) + '</div>' +
@@ -12958,6 +13979,10 @@ class AdminConsole {
             'choose their own before anything is signed in.'
           : 'The forced change could not be recorded, so it will go on ' +
             'working until somebody changes it.')));
+    }
+    if (result.mailError) {
+      out.push(this.warn('<strong>The link was NOT mailed:</strong> ' +
+        this.esc(result.mailError) + ' It is shown below instead.'));
     }
     if (result.resetUrl) {
       out.push('<h2>The password reset link for ' + who + ', shown once</h2>' +
@@ -13132,6 +14157,27 @@ class AdminConsole {
       '<td class="sub">' + this.esc(row.schema) + '</td></tr>';
   }
 
+  // THE "MAIL IT TO THEM" BOX (#63): `deliver=mail` on the reset link and
+  // the activation link, TICKED when the realm has a mail transport — an
+  // administrator who never sees a person's link cannot be the one who used
+  // it — and absent, with the reason, when it has none.
+  mailLinkBox(what) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.mailLinkBox().");
+    const mailChannel = require('../common/mail');
+    if (!mailChannel.available()) {
+      log.debug("Leaving AdminConsole.mailLinkBox(). No transport.");
+      return this.note('This realm has no mail transport ' +
+        '(<a href="/admin/mail">Mail</a>), so ' + this.esc(what) + ' is ' +
+        'shown to you to pass on.');
+    }
+    log.debug("Leaving AdminConsole.mailLinkBox().");
+    return '<div class="formrow"><label><input type="checkbox" ' +
+      'name="deliver" value="mail" checked> mail ' + this.esc(what) +
+      ' to the address on their entry, and do not show it to me</label>' +
+      '</div>';
+  }
+
   credentialChoiceRow(choice, chosen) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.credentialChoiceRow().");
@@ -13280,6 +14326,7 @@ class AdminConsole {
           'meets it in both modes.') +
       ' If the password is refused the person is still created, with no ' +
       'credential, and the page says why.') +
+      this.mailLinkBox('the activation link') +
 
       '<h2>What is known about them</h2>' +
       this.note('Every attribute a person in this directory can carry, which ' +
@@ -13444,6 +14491,20 @@ class AdminConsole {
         'a scrypt hash. If it is lost, set a new one; there is no recovery ' +
         'because there is nothing to recover.'));
     }
+    if (result.mailedTo) {
+      secret.push('<h2>The activation link was mailed</h2>' +
+        this.note('It went to <strong>' + this.esc(result.mailedTo) +
+                  '</strong>, valid until ' +
+                  this.esc(result.expiresAt || 'it expires') + ', and is ' +
+                  'not shown here. Monitoring &rarr; ' +
+                  '<a href="/admin/mail/outbox">Mail</a> shows where it got ' +
+                  'to.'));
+    }
+    if (result.mailError) {
+      secret.push(this.warn('<strong>The activation link was NOT ' +
+        'mailed:</strong> ' + this.esc(result.mailError) + ' It is shown ' +
+        'below instead.'));
+    }
     if (result.activationUrl) {
       // ABSOLUTE, and built from the request rather than from a setting: this
       // is a link somebody is about to paste into a message, and a
@@ -13463,9 +14524,10 @@ class AdminConsole {
         'password or enrolling a security key. It is spent when that setup ' +
         'FINISHES rather than when the link is opened, so a mail scanner or ' +
         'a browser prefetch cannot burn it. There is deliberately no ' +
-        'self-service version of this link: with no mail channel here, a ' +
-        'form that issued one would hand any visitor an activation link for ' +
-        'any unactivated account.'));
+        'self-service version of this link: until the account is activated ' +
+        'nobody has proved the address on it is theirs. Tick <em>mail the ' +
+        'activation link</em> on the form to have this service send it ' +
+        'instead.'));
     }
     const inner =
       (result.credentialError
@@ -15054,7 +16116,8 @@ class AdminConsole {
       '<code>https://example.com/</code> carrying <code>scope: openid ' +
       'write</code> — the base becomes the <code>aud</code> and the name ' +
       'becomes the scope, which is what a resource server wants: check the ' +
-      'audience once, then read bare permission names. <strong>It REFUSES ' +
+      'audience once, then read bare permission names. <strong>In product ' +
+      'mode an ungranted permission is refused; in development it REFUSES ' +
       'nothing by default.</strong> With ' +
       '<code>oauth2.delegatedPermissionsEnforced</code> off — which it is ' +
       'unless somebody turned it on, at the foot of the Delegation page — an ' +
@@ -16814,7 +17877,8 @@ class AdminConsole {
         ? 'this development-mode service reports and does not refuse'
         : 'this product-mode service refuses') + '. The fetch follows the ' +
       'federation outbound policy: no redirects, a size cap, a timeout, ' +
-      'https unless <code>federation.outboundAllowInsecure</code> is on' +
+      'https with the certificate verified (plain http and a skipped ' +
+      'check only in development mode)' +
       (mode.dialsInternalAddresses()
         ? '.'
         : ', and never to a loopback, private or link-local address.')) +
@@ -17762,7 +18826,22 @@ class AdminConsole {
     const paging = view.paging;
     const filterParams = view.filterParams;
     const nav = this.pageNavPair('/admin/saml2', filterParams, paging);
+    // The refused-lookup list's own pager (#112), carrying every other
+    // parameter so the service-provider table stays where it was.
+    const refused = view.refused;
+    const refusedNav = this.pageNavPair('/admin/saml2',
+                                        adminViews.pageParamsOf(req.query),
+                                        refused.paging);
     const listView = this.listViewOf('/admin/saml2', req.query);
+    const refusedRows = refused.shown.map(function (row) {
+      return '<tr><td><code>' + self.esc(row.entityId) + '</code></td><td>' +
+             self.esc(row.why) + '</td><td>' + self.esc(String(row.count)) +
+             '</td><td>' + self.esc(row.firstAt.replace('T', ' ')
+                                      .slice(0, 19)) +
+             '</td><td>' + self.esc(row.lastAt.replace('T', ' ')
+                                      .slice(0, 19)) +
+             '</td></tr>';
+    }).join('');
     const rows = paged.shown.map(function (row) {
       const facts = saml2Facts(base, row.identifier);
       const href = '/admin/saml2' + queryWith(listView, { sp: row.identifier });
@@ -17797,10 +18876,12 @@ class AdminConsole {
       this.note('<strong>Every service provider gets its own metadata ' +
       'document.</strong> The identity provider names itself differently to ' +
       'each one and publishes endpoints scoped to it, which is what Okta and ' +
-      'Ping do. <strong>And it is minted for anything asked for</strong> — a ' +
-      'service provider does not have to appear here before it can be ' +
-      'pointed at this service, because asking for its metadata is what ' +
-      'creates it. The unscoped document at <a ' +
+      'Ping do. <strong>In development it is minted for anything asked ' +
+      'for</strong> — a service provider does not have to appear here before ' +
+      'it can be pointed at this service, because asking for its metadata is ' +
+      'what creates it. <strong>In product it is not</strong>: a name that ' +
+      'is not registered below is a 404 at every per-service-provider ' +
+      'path. The unscoped document at <a ' +
       'href="/saml2/metadata">/saml2/metadata</a> works too and names one ' +
       'identity provider for everybody.') +
       '<p class="sub"><a href="/saml2">what the profile is</a> &middot; <a ' +
@@ -17831,10 +18912,12 @@ class AdminConsole {
           (needle ? ' under that filter' : '') + '. Start one at <a ' +
           'href="/saml2/sp">the mock service provider</a>, or register an ' +
           'entityID below.')) +
-      '<h2>Register a service provider</h2><p class="sub">Optional, and it ' +
-      'changes nothing about whether a request is accepted — an entityID is ' +
-      'accepted whether or not it is here. What it buys is a metadata ' +
-      'document to hand somebody before they have sent anything.</p><form ' +
+      '<h2>Register a service provider</h2><p class="sub">Optional in ' +
+      'development, where an entityID is accepted whether or not it is here ' +
+      'and what this buys is a metadata document to hand somebody before ' +
+      'they have sent anything. In product it is how a service provider ' +
+      'comes to exist: its metadata and endpoints answer only once it is ' +
+      'registered.</p><form ' +
       'method="post" action="/admin/saml2"><div class="formrow"><input ' +
       'type="hidden" name="action" value="register"><label ' +
       'for="new_sp">entityID</label><input type="text" id="new_sp" name="sp" ' +
@@ -17847,12 +18930,29 @@ class AdminConsole {
       'the entry if the answer describes it, and consumes the document — ' +
       'held to the realm\'s metadata trust anchors when it has any. A ' +
       'request from a service provider with no metadata starts the same ' +
-      'lookup in the background.</p><form method="post" ' +
+      'lookup in the background. <strong>In product mode the answer must ' +
+      'verify against a trust anchor</strong> ' +
+      '(<code>saml2.metadataTrustAnchors</code>): with none, this import is ' +
+      'refused unless <code>saml2.mdqImportWithoutAnchors</code> is on — ' +
+      'and then the document is consumed with no signature check — and a ' +
+      'lookup a request starts for an unknown entityID is not made at ' +
+      'all.</p><form method="post" ' +
       'action="/admin/saml2"><div class="formrow"><input type="hidden" ' +
       'name="action" value="mdq-import"><label for="mdq_sp">entityID</label>' +
       '<input type="text" id="mdq_sp" name="sp" ' +
       'placeholder="https://sp.example.com/saml"><button>Import</button>' +
       '</div></form>' +
+      '<h2>Metadata Query lookups refused</h2><p ' +
+      'class="sub">EntityIDs a request asked to be registered through the ' +
+      'responder and was not (product mode): no trust anchor, so nothing ' +
+      'was fetched, or an answer that did not verify against one. Newest ' +
+      'first; this process\'s record, since it started. To register one, ' +
+      'import it above or register it by hand.</p>' +
+      (refusedRows
+        ? refusedNav.head + '<table><thead><tr><th>entityID</th><th>Why' +
+          '</th><th>Times</th><th>First</th><th>Last</th></tr></thead>' +
+          '<tbody>' + refusedRows + '</tbody></table>' + refusedNav.foot
+        : '<p class="sub">None.</p>') +
       this.configFormsFor('/admin/saml2') +
       this.note('These decide the SHAPE of an assertion — who issued it, how ' +
       'long it is good for, what is signed. <a ' +
@@ -18757,10 +19857,24 @@ class AdminConsole {
         'gate is on, no role has a member, and ' +
         (info.bootstrap && info.bootstrap.seeded && info.bootstrap.claimedAt
           ? 'the bootstrap administrator has already signed in. '
-          : '<code>admin.openWhenEmpty</code> is off. ') +
+          : (info.windowOpens === false
+              ? 'this is product mode, which never opens the console to ' +
+                'whoever signs in. '
+              : '<code>admin.openWhenEmpty</code> is off. ')) +
         'Anything you are reading ' +
         'here you are reading through <code>/admin-api</code> or with the ' +
         'gate off.</div>'
+      : (info.bootstrapPasswordRequired
+          ? this.warn('<strong>Only <code>' +
+            this.esc(info.bootstrap.username) + '</code>, signing in with ' +
+            'its password, can use this console until it does.</strong> ' +
+            'This is product mode and the console has not been claimed: ' +
+            'the window in which anybody who signs in holds both roles is ' +
+            'a development convenience and never opens here. Its first ' +
+            'password sign-in through this realm claims the console; a ' +
+            'sign-in as that account by any other method holds nothing ' +
+            'until then. Anybody granted a role on this page holds it at ' +
+            'once.')
       : (info.openToAnyone && info.bootstrap && info.bootstrap.seeded
           ? this.warn('<strong><code>' + this.esc(info.bootstrap.username) +
                       '</code> ' +
@@ -18785,7 +19899,7 @@ class AdminConsole {
                 'reach this port and these roles decide nothing. They are ' +
                 'still real directory groups and can be granted now. ' +
                 '(UNREACHABLE since 2026-09-06: the gate is ' +
-                'unconditional.)'))));
+                'unconditional.)')))));
 
     const noDirectory = info.available ? '' :
       '<div class="err">No LDAP directory is loaded in this process, so ' +
@@ -19072,7 +20186,7 @@ class AdminConsole {
                                                           'exposed by <code>' +
           this.esc(one.resource) + '</code>' +
           (one.granted ? '' : '<br><span class="state-none">and this client ' +
-            'has NOT been granted it &mdash; with ' +
+            'has NOT been granted it &mdash; in product mode, or with ' +
             '<code>oauth2.delegatedPermissionsEnforced</code> on, the ' +
             'request is refused anyway, consented or not</span>')
         : '<span class="state-none">an ordinary scope &mdash; no application ' +
@@ -19207,9 +20321,9 @@ class AdminConsole {
   // /admin/policies (2026-09-12) — DIRECTORY → POLICIES, and the PASSWORD
   // POLICY is the first kind of policy on it.
   //
-  // ONE COMPUTATION, TWO RENDERINGS: `adminViews.passwordPoliciesView()` is the
+  // ONE COMPUTATION, TWO RENDERINGS: `adminViews.policiesView()` is the
   // model, this route draws it, and `GET /admin-api/policies` hands the same
-  // model back. The two writes are `adminActions.passwordPoliciesAction()`,
+  // model back. The writes are `adminActions.policiesAction()`,
   // which `POST /admin-api/policies/{action}` calls too — rule 7 by
   // construction.
   //
@@ -19223,25 +20337,44 @@ class AdminConsole {
   // `form.elements.action` a RadioNodeList whose value is empty, and the
   // console suite finds every form it presses by the action it posts.
   // ---------------------------------------------------------------------------
-  passwordPolicyFieldRow(field) {
+  //
+  // **ONE ROW RENDERER FOR EVERY KIND (#64)**, told the id prefix of its form
+  // (`pp-` for the password policy, as the console suite finds it). A field
+  // the view marks `disabled` — an email mechanism in a realm that cannot send
+  // mail — is drawn DISABLED WITH THE REASON BESIDE IT, `configRow()`'s
+  // pattern, rather than left out: a control that vanished would read as a
+  // mechanism this service does not have.
+  policyFieldRow(field, prefix) {
     const { log } = this.deps;
-    log.debug("Entering AdminConsole.passwordPolicyFieldRow().");
-    const id = 'pp-' + field.key;
+    log.debug("Entering AdminConsole.policyFieldRow().");
+    const id = String(prefix || 'pp-') + field.key;
     const hint = this.tip(field.what, Infinity);
+    const off = field.disabled ? ' disabled' : '';
     let control;
     if (field.type === 'bool') {
       control = '<input type="checkbox" id="' + this.esc(id) + '" name="' +
         this.esc(field.key) + '" value="TRUE"' +
-        (field.value ? ' checked' : '') +
-        hint + '>';
+        (field.value ? ' checked' : '') + off +
+        hint + '>' +
+        (field.disabled
+          ? ' <span class="off">' + this.esc(field.disabledWhy) + '</span>'
+          : '');
+    } else if (field.type === 'enum') {
+      control = '<select id="' + this.esc(id) + '" name="' +
+        this.esc(field.key) + '"' + off + hint + '>' +
+        (field.values || []).map((value) => {
+          return '<option value="' + this.esc(value) + '"' +
+            (String(field.value) === String(value) ? ' selected' : '') +
+            '>' + this.esc(value) + '</option>';
+        }).join('') + '</select>';
     } else {
       control = '<input type="number" id="' + this.esc(id) + '" name="' +
         this.esc(field.key) + '" min="' + this.esc(field.min) + '" max="' +
         this.esc(field.max) +
-        '" step="1" required value="' + this.esc(field.value) + '"' + hint +
-        '> <span class="sub">' + this.esc(field.unit) + '</span>';
+        '" step="1" required value="' + this.esc(field.value) + '"' + off +
+        hint + '> <span class="sub">' + this.esc(field.unit) + '</span>';
     }
-    log.debug("Leaving AdminConsole.passwordPolicyFieldRow().");
+    log.debug("Leaving AdminConsole.policyFieldRow().");
     return '<tr><td><label for="' + this.esc(id) + '"' + hint + '>' +
       this.esc(field.label) +
       '</label></td><td>' + control + '</td>' +
@@ -19251,9 +20384,307 @@ class AdminConsole {
                                                 '</td>' +
       '<td class="' + (field.source === 'directory' ? '' : 'state-none') +
       '">' +
-      this.esc(field.source === 'directory' ? 'this profile' :
-               'built-in default') +
+      this.esc(field.source === 'directory' ? 'this profile'
+        : field.source === 'default realm' ? 'the default realm\'s profile'
+          : 'built-in default') +
       '</td></tr>';
+  }
+
+  // A DISABLED FIELD POSTS NOTHING, so a console save made while this realm
+  // cannot send mail reads every email row as "no" — including one left ON
+  // from before mail stopped working. That is the only save that could
+  // succeed (`authn_policy.save()` refuses an email row on without mail), and
+  // the warning above the form says the rows are off until mail works.
+
+  // ---------------------------------------------------------------------------
+  // ONE SECTION PER KIND OF POLICY (#64). The password policy and the
+  // authentication policy each have things to say that no field table
+  // carries; any other kind is drawn by `genericPolicySection()` from its
+  // module alone, which is what makes a future policy cost no page.
+  // ---------------------------------------------------------------------------
+
+  // The save form and the reset form every kind has. The reset is its own
+  // form, for the reason in the header above.
+  private policyForms(kind, member, prefix, intro) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.policyForms(). " + kind.id);
+    const profile = member.profile;
+    const saveAction = kind.actions[0];
+    const resetAction = kind.actions[1];
+    const out = '<form method="post" action="/admin/policies">' +
+      '<input type="hidden" name="action" value="' + this.esc(saveAction) +
+      '">' +
+      '<input type="hidden" name="profile" value="' + this.esc(profile.name) +
+      '">' +
+      this.wideTable('The default ' + kind.label.toLowerCase() + ' profile',
+        '<table><tr><th>Rule</th><th>Value</th><th>Attribute</th>' +
+        '<th>Built-in default</th><th>Source</th></tr>' +
+        member.fields.map((field) => {
+          return this.policyFieldRow(field, prefix);
+        }).join('') +
+        '<tr><td><label for="' + this.esc(prefix) + 'description">' +
+        'Description</label></td>' +
+        '<td colspan="4"><input type="text" id="' + this.esc(prefix) +
+        'description" name="description" size="60" maxlength="1024" ' +
+        'value="' + this.esc(profile.description) + '" placeholder="what ' +
+        'this profile is for"></td></tr></table>') +
+      '<p><button>Save the profile</button></p>' + (intro || '') +
+      '</form>' +
+      (profile.stored
+        ? '<form method="post" action="/admin/policies" class="inline">' +
+          '<input type="hidden" name="action" value="' +
+          this.esc(resetAction) + '"><input type="hidden" ' +
+          'name="profile" value="' + this.esc(profile.name) + '"><button ' +
+          'class="secondary">Remove this realm\'s profile</button></form>'
+        : '');
+    log.debug("Leaving AdminConsole.policyForms().");
+    return out;
+  }
+
+  private policySchemaTables(schema) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.policySchemaTables().");
+    const out = '<table><tr><th>Object class</th><th>What it is</th></tr>' +
+      schema.objectClasses.map((row) => {
+        return '<tr><td><code>' + this.esc(row.name) + '</code></td><td>' +
+          this.esc(row.what) + '</td></tr>';
+      }).join('') + '</table>' +
+      '<table><tr><th>Attribute</th><th>On</th><th>What it holds</th></tr>' +
+      schema.attributes.map((row) => {
+        return '<tr><td><code>' + this.esc(row.name) +
+               '</code></td><td>the profile</td><td>' + this.esc(row.what) +
+               '</td></tr>';
+      }).join('') +
+      (schema.personAttributes || []).map((row) => {
+        return '<tr><td><code>' + this.esc(row.name) + '</code></td><td>a ' +
+          'person</td><td>' + this.esc(row.what) + '</td></tr>';
+      }).join('') + '</table>';
+    log.debug("Leaving AdminConsole.policySchemaTables().");
+    return out;
+  }
+
+  private policyProblems(profile) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.policyProblems().");
+    log.debug("Leaving AdminConsole.policyProblems().");
+    return profile.problems.length
+      ? this.warn('<strong>The stored profile has ' +
+                  profile.problems.length +
+        ' problem(s), and the built-in default is in force for each ' +
+        'field named:</strong> ' +
+        profile.problems.map(this.esc.bind(this)).join(' '))
+      : '';
+  }
+
+  passwordPolicySection(view) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.passwordPolicySection().");
+    const self = this;
+    const kind = view.kinds.filter(function (k) {
+      return k.id === 'password';
+    })[0];
+    const pw = view.password;
+    const profile = pw.profile;
+    const out =
+      '<h2 id="password">Password policy — the default profile</h2>' +
+      self.note('What a password set in this realm must look like. It is ' +
+      'stored as <code>' +
+      self.esc(profile.dn || ('cn=default,ou=passwordPolicies,…')) +
+      '</code>, in the shape of draft-behera-ldap-password-policy (the ' +
+      'schema OpenLDAP\'s ppolicy overlay reads), so an ' +
+      '<code>ldapsearch</code> finds it and an <code>ldapmodify</code> ' +
+      'changes it.') +
+
+      (view.enforced
+        ? '<div class="ok">' + self.esc(view.enforcement) + '</div>'
+        : self.warn(self.esc(view.enforcement) + ' Switch the realm with ' +
+          '<code>global.mode</code> on <a ' +
+          'href="/admin/config">Configuration</a>.')) +
+
+      self.policyProblems(profile) +
+
+      self.note(profile.stored
+        ? 'This profile is <strong>stored</strong> at <code>' +
+          self.esc(profile.dn) +
+          '</code>. Saving replaces it; removing it deletes it, after which ' +
+          'the built-in defaults below are in force.'
+        : '<strong>Nothing is stored yet, so the built-in defaults are in ' +
+          'force.</strong> Saving this form writes <code>cn=default</code> ' +
+          'under <code>ou=passwordPolicies</code> in this realm\'s ' +
+          'directory. A realm created later starts with the same built-in ' +
+          'defaults rather than a copy of this one — the profile is not ' +
+          'seeded, so it cannot be missing from a realm nobody seeded.') +
+
+      self.policyForms(kind, pw, 'pp-', self.note('Every field is checked ' +
+      'before anything is written, and two rules relate fields to each ' +
+      'other: a generated password must be at least the minimum length, and ' +
+      'at least twice the symbol count plus two — a generator asked for ' +
+      'more symbols than that would be drawing for a very long time. ' +
+      '<strong>A change applies to the NEXT password set in this ' +
+      'realm</strong>; nothing already stored is re-checked, because a ' +
+      'stored password is a hash and there is nothing left to check it ' +
+      'against.')) +
+
+      '<h3 id="rules">What a password must be, right now</h3>' +
+      self.note('The rules as the <a href="/portal/password">user ' +
+      'portal</a> and the activation page print them to the person ' +
+      'choosing a password, so the page they read and the rule this ' +
+      'service applies are one sentence.') +
+      '<ul>' + pw.rules.map(function (rule) {
+        return '<li>' + self.esc(rule) + '</li>';
+      }).join('') + '</ul>' +
+
+      '<h3 id="doors">Where it is enforced</h3>' +
+      self.note('Every door that sets a password ends in one function in ' +
+      '<code>common/credentials.ts</code>, which is what makes the list ' +
+      'below complete rather than a list somebody remembered. ' +
+      self.esc(pw.notDoors)) +
+      '<table><tr><th>Door</th><th>Reaches</th></tr>' +
+      pw.doors.map(function (row) {
+        return '<tr><td>' + self.esc(row.door) + '</td><td><code>' +
+               self.esc(row.via) +
+          '</code></td></tr>';
+      }).join('') + '</table>' +
+
+      '<h3 id="history">The history, and what it costs</h3>' +
+      self.note('<strong>A remembered password is the scrypt hash it was ' +
+      'already stored as</strong>, moved into <code>pwdHistory</code> on ' +
+      'the person\'s own entry when the next one replaces it — no new hash ' +
+      'is made, and the password itself is never kept. Checking a new ' +
+      'password costs one scrypt comparison per remembered one, about 70ms ' +
+      'each on this thread, so a history of ' + self.esc(profile.history) +
+      ' is up to ' +
+      self.esc((profile.history + 1) * 70) + 'ms at a password change. A ' +
+      'generated password skips the comparison, because nothing drawn at ' +
+      'random is a previous password. <code>pwdHistory</code> and ' +
+      '<code>pwdChangedTime</code> are maintained by this service and an ' +
+      'LDAP modify naming either is refused in product mode.') +
+
+      '<h3 id="generator">The generator</h3>' +
+      self.note('<strong>New users created from the console or ' +
+      '<code>/admin-api</code> get a generated password by ' +
+      'default</strong>, shown or returned ONCE. It is drawn by ' +
+      '<code>' + self.esc(pw.generator.module) + '</code>' +
+      (pw.generator.version ? ' ' + self.esc(pw.generator.version) : '') +
+      ' from ' +
+      self.esc(pw.generator.source) + ', using ' +
+      self.esc(pw.generator.pools.join(', ')) +
+      ' (leaving out ' + pw.generator.excluded.map(function (one) {
+        return '<code>' + self.esc(one) + '</code>';
+      }).join(' and ') + ', which silently end or change a string pasted ' +
+      'into a shell or a JSON body), and it draws until ' +
+      self.esc(pw.generator.drawsUntil) +
+      '.') +
+
+      '<h3 id="schema">Schema</h3>' +
+      self.note('This directory is schemaless, so a container of entries ' +
+      'carrying invented attributes says what they mean here. The ' +
+      '<code>pwd*</code> names are draft-behera-ldap-password-policy\'s; ' +
+      'the <code>stsPwd*</code> ones are this service\'s own, because the ' +
+      'draft delegates composition rules to the server and defines none.') +
+      self.policySchemaTables(pw.schema);
+    log.debug("Leaving AdminConsole.passwordPolicySection().");
+    return out;
+  }
+
+  authnPolicySection(view) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.authnPolicySection().");
+    const self = this;
+    const kind = view.kinds.filter(function (k) {
+      return k.id === 'authn';
+    })[0];
+    const ap = view.authn;
+    const profile = ap.profile;
+    const yesNo = function (value, active) {
+      log.debug("Entering yesNo().");
+      log.debug("Leaving yesNo().");
+      return value === null ? '<span class="off">—</span>'
+        : value ? (active ? 'yes' : 'yes — <strong>inactive</strong>')
+          : 'no';
+    };
+    const out =
+      '<h2 id="authn">Authentication policy — the default profile</h2>' +
+      self.note('Which ways of signing in this realm accepts as a FIRST ' +
+      'factor and as a SECOND, and when a second factor is required. ' +
+      'Asked at every sign-in door, in both modes: this policy decides what ' +
+      'the sign-in screen offers, not whether a credential is checked.') +
+
+      (ap.mail.usable ? ''
+        : self.warn('<strong>This realm cannot send mail</strong>, so the ' +
+          'two email mechanisms are drawn disabled below and are never ' +
+          'offered. Configure a transport on <a href="/admin/mail">Server ' +
+          'configuration → Mail</a>.')) +
+
+      self.warn('<strong>Email as an authenticator.</strong> ' +
+        self.esc(ap.nistWarning)) +
+
+      self.policyProblems(profile) +
+
+      self.note(profile.from === 'realm'
+        ? 'This realm\'s own profile is <strong>stored</strong> at <code>' +
+          self.esc(profile.dn) + '</code>. Removing it puts this realm back ' +
+          'to the default realm\'s profile, or to the built-in defaults ' +
+          'where the default realm has none.'
+        : profile.from === 'default-realm'
+          ? '<strong>This realm has no profile of its own, and follows the ' +
+            'default realm\'s</strong> (<code>' + self.esc(profile.dn) +
+            '</code>). Saving this form writes this realm\'s own, which ' +
+            'overrides it here and nowhere else.'
+          : '<strong>Nothing is stored, so the built-in defaults are in ' +
+            'force.</strong> Saving this form writes <code>cn=default</code> ' +
+            'under <code>ou=authnPolicies</code>. Saved in the DEFAULT ' +
+            'realm, it is the policy of every realm that has none of its ' +
+            'own.') +
+
+      self.policyForms(kind, ap, 'ap-', self.note('Every field is checked ' +
+      'before anything is written. At least one mechanism must be accepted ' +
+      'as a first factor, and if a second factor is required of everybody ' +
+      'at least one must be accepted as a second. <strong>A person who ' +
+      'HOLDS a second factor is asked for it whatever this says</strong>: ' +
+      'there is no setting that skips a held factor.')) +
+
+      '<h3 id="authn-now">What this realm accepts, right now</h3>' +
+      '<ul>' + ap.rules.map(function (rule) {
+        return '<li>' + self.esc(rule) + '</li>';
+      }).join('') + '</ul>' +
+      '<table><tr><th>Mechanism</th><th>First factor</th>' +
+      '<th>Second factor</th></tr>' +
+      ap.mechanisms.map(function (m) {
+        return '<tr><td>' + self.esc(m.label) + '</td><td>' +
+          yesNo(m.primary, m.active) + '</td><td>' +
+          yesNo(m.secondFactor, m.active) + '</td></tr>';
+      }).join('') + '</table>' +
+      self.note('A dash is a role the mechanism cannot have: an ' +
+      'authenticator app or a recovery code is never a first factor, and ' +
+      'a certificate, a Kerberos ticket, a wallet or a federation partner ' +
+      'is never asked for second.') +
+
+      '<h3 id="authn-schema">Schema</h3>' +
+      self.policySchemaTables(ap.schema);
+    log.debug("Leaving AdminConsole.authnPolicySection().");
+    return out;
+  }
+
+  // A kind this console has nothing particular to say about: its fields,
+  // its rules and its schema, from its module.
+  genericPolicySection(view, kind) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.genericPolicySection(). " + kind.id);
+    const self = this;
+    const member = view[kind.id];
+    const out = '<h2 id="' + self.esc(kind.id) + '">' +
+      self.esc(kind.label) + ' — the default profile</h2>' +
+      self.note('Governs ' + self.esc(kind.governs) + '. Stored under ' +
+      '<code>' + self.esc(kind.container) + '</code>.') +
+      self.policyProblems(member.profile) +
+      self.policyForms(kind, member, kind.id + '-', '') +
+      '<ul>' + member.rules.map(function (rule) {
+        return '<li>' + self.esc(rule) + '</li>';
+      }).join('') + '</ul>' +
+      self.policySchemaTables(member.schema);
+    log.debug("Leaving AdminConsole.genericPolicySection().");
+    return out;
   }
 
   // The page's own URL with the preview user on it. Every form on this page
@@ -21212,9 +22643,10 @@ class AdminConsole {
     // rather than an oversight — see the paragraph in `admin-ui/CLAUDE.md` that
     // used to say the opposite. What pays for it is that a setting's
     // description is also on `/admin/config`'s own JSON view, in
-    // `GET /admin-api/config`, and in README.md's table, so the text has three
-    // other doors that a keyboard or a screen reader can reach. A field whose
-    // prose has NO other door does not get this treatment.
+    // `GET /admin-api/config`, and in docs/configuration.md's table, so the
+    // text has three other doors that a keyboard or a screen reader can
+    // reach. A field whose prose has NO other door does not get this
+    // treatment.
     return '<tr>' +
       '<td><label for="' + this.esc(id) + '"' +
       this.tip(setting.description, Infinity) +
@@ -23594,7 +25026,9 @@ class AdminConsole {
     const html = '<h2>The mechanism</h2>' +
       (info.offered
         ? ''
-        : this.warn('<strong><code>totp.enabled</code> is off</strong>, so ' +
+        : this.warn('<strong>The authentication policy turns authenticator ' +
+          'apps off</strong> (<a href="/admin/policies#authn">Policies</a>), ' +
+          'so ' +
           'nobody new can enrol an authenticator app. <strong>It does not ' +
           'disable a secret somebody already holds</strong> — that account ' +
           'is still configured for two factors and the sign-in screen still ' +
@@ -23624,6 +25058,137 @@ class AdminConsole {
     return { html: html, json: info };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE ATTESTATION POLICY (#105): what `authn/webauthn_attestation.ts` does
+  // with a registration's statement, and where its trust anchors come from —
+  // this realm's `webauthn.attestationTrustAnchors` and the FIDO Metadata
+  // Service BLOB, whose state is read from what this process holds
+  // (`risk_datasets.mdsSnapshot()`, since a status block is drawn
+  // synchronously). The BLOB is uploaded on Monitoring → Risk and its
+  // `/admin-api/risk` twin, where #62 P5 put it; it is not uploaded twice.
+  // ---------------------------------------------------------------------------
+  private attestationPolicyBlock(info) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.attestationPolicyBlock().");
+    let mds = null;
+    try {
+      mds = require('../risk/risk_datasets').mdsSnapshot();
+    } catch (e) {
+      log.debug("Caught in AdminConsole.attestationPolicyBlock(): " +
+                ((e && e.message) || e));
+      // Drawn as "not read": the policy rows above do not depend on it.
+      mds = null;
+    }
+    info.mds = mds;
+    const policyText = {
+      off: 'nothing is verified — the format is recorded and the ' +
+           'statement believed. Development only.',
+      'verify-if-present': 'every statement that arrives is VERIFIED by ' +
+           'its format\'s procedure and refused if it does not verify; a ' +
+           'chain is checked against the anchors below, and a model the ' +
+           'FIDO Metadata Service lists must chain to the roots it lists ' +
+           'and is refused when MDS reports it compromised. ' +
+           '<code>none</code> and self attestation are accepted as ' +
+           'untrusted — which is what a synced passkey sends.',
+      'require-trusted': 'only a statement that CHAINS TO AN ANCHOR is ' +
+           'accepted: no <code>none</code>, no self attestation, and so no ' +
+           'synced passkey.'
+    };
+    const html = '<h3>The attestation statement</h3>' +
+      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      '<tr><th>Policy</th><td><code>' + this.esc(info.attestationPolicy) +
+        '</code>' + (info.attestationPolicyConfigured === 'by-mode'
+          ? ' (<code>by-mode</code>)' : '') + ' — ' +
+        (policyText[info.attestationPolicy] || '') +
+        (info.attestationDemandsTrust &&
+         info.attestationPolicy !== 'require-trusted'
+          ? ' <strong>A trusted statement is required anyway</strong>, by ' +
+            'the allow-list, certification level or FIPS rows below.'
+          : '') + '</td></tr>' +
+      '<tr><th>Formats verified</th><td>' +
+        info.attestationFormats.map((f) => {
+          return '<code>' + this.esc(f) + '</code>';
+        }).join(', ') + ' — all eight of WebAuthn Level 3 section 8.' +
+        '</td></tr>' +
+      '<tr><th>Trust anchors</th><td>' +
+        this.esc(String(info.attestationTrustAnchors)) + ' configured ' +
+        '(<code>webauthn.attestationTrustAnchors</code>), and the roots ' +
+        'the FIDO Metadata Service lists for each model.</td></tr>' +
+      '<tr><th>FIDO Metadata Service</th><td>' +
+        (!mds || !mds.known
+          ? 'not read in this process yet — the next draw has it.'
+          : (mds.active
+              ? 'BLOB <code>' + this.esc(String(mds.serial)) + '</code> (' +
+                this.esc(String(mds.rows)) + ' key(s)), next due ' +
+                this.esc(mds.nextUpdateAt
+                  ? new Date(mds.nextUpdateAt).toISOString().slice(0, 10)
+                  : 'unstated') +
+                (mds.stale ? ' — <strong>STALE</strong>, so no model is ' +
+                             'known from it' : '')
+              : 'no BLOB is active, so no model\'s roots or status are ' +
+                'known.') +
+            ' ' + (mds.url
+              ? 'Downloaded from <code>' + this.esc(mds.url) + '</code> by ' +
+                'the <code>' + this.esc(mds.job) + '</code> job.'
+              : 'Uploaded on <a href="/admin/risk">Monitoring → Risk</a> ' +
+                '(<code>risk.mdsUrl</code> is empty).')) +
+        '</td></tr>' +
+      '<tr><th>Allowed models</th><td>' +
+        (info.attestationAllowedAaguids.length
+          ? info.attestationAllowedAaguids.map((a) => {
+            return '<code>' + this.esc(a) + '</code>';
+          }).join(', ')
+          : 'any the policy accepts') + '</td></tr>' +
+      '<tr><th>Certification</th><td>at least <code>' +
+        this.esc(info.attestationMinCertificationLevel) + '</code>' +
+        (info.attestationRequireFips ? ', and FIPS 140 certified' : '') +
+        '</td></tr>' +
+      '<tr><th>android-safetynet</th><td>' +
+        (info.attestationAllowSafetynet
+          ? '<strong>trusted</strong> — deprecated, and Google no longer ' +
+            'runs the service'
+          : 'verified and recorded as untrusted (deprecated)') + '</td></tr>' +
+      '<tr><th>android-key</th><td>' +
+        (info.attestationAndroidSoftwareKeys
+          ? 'the software- and hardware-enforced lists'
+          : 'the hardware-enforced (TEE) list only') + '</td></tr>' +
+      '</table>' +
+      this.note('What a key\'s statement proved is on its row under <a ' +
+      'href="/admin/users">Users</a> and on <code>/portal/keys</code>: ' +
+      'the format, whether it was verified and trusted, and the model the ' +
+      'metadata names.');
+    log.debug("Leaving AdminConsole.attestationPolicyBlock().");
+    return html;
+  }
+
+  // A key's attestation, for its row (#105): what the statement proved, or
+  // "claimed" where nothing was verified — the AAGUID then is only what the
+  // authenticator data said.
+  attestationCell(att, aaguid) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.attestationCell().");
+    if (!att || !att.verified) {
+      log.debug("Leaving AdminConsole.attestationCell(). Not verified.");
+      return '<span class="state-none" title="' +
+        this.esc('Nothing about the authenticator was verified' +
+                 (att && att.format ? ' (format ' + att.format + ', policy ' +
+                  att.policy + ')' : '') + '. The AAGUID, where there is ' +
+                 'one, is what the authenticator claimed.') + '">claimed' +
+        (aaguid ? ' <code>' + this.esc(aaguid) + '</code>' : '') + '</span>';
+    }
+    log.debug("Leaving AdminConsole.attestationCell().");
+    return '<span class="' + (att.trusted ? 'state-valid' : 'state-none') +
+      '" title="' + this.esc('Format ' + att.format + ', type ' + att.type +
+      (att.trusted ? ', chained to ' + (att.anchor === 'mds'
+        ? 'a FIDO Metadata Service root' : 'a configured anchor')
+        : ', not chained to an anchor') +
+      (att.certificationLevel ? ', ' + att.certificationLevel : '') +
+      '.') + '">' + (att.trusted ? 'verified, trusted' : 'verified, ' +
+      'untrusted') + '</span>' +
+      (att.model ? ' — ' + this.esc(att.model) : '') +
+      ' <code>' + this.esc(att.format) + '</code>';
+  }
+
   webauthnMechanismBlock() {
     const { log, webauthnPolicy } = this.deps;
     const self = this;
@@ -23643,7 +25208,7 @@ class AdminConsole {
         : this.warn('<strong><code>webauthn.enabled</code> is off</strong>, ' +
           'so no new security key can be enrolled here. <strong>It does not ' +
           'disable a key somebody already holds</strong>, for ' +
-          '<code>totp.enabled</code>\'s reason — and there is a sharper ' +
+          'the TOTP row\'s reason — and there is a sharper ' +
           'edge: somebody whose only credential is a <code>primary</code> ' +
           'key would be locked out of their own account by this switch. ' +
           'Removing a key is on that person\'s row under <a ' +
@@ -23673,12 +25238,14 @@ class AdminConsole {
             'says anything about.'
           : 'requested only. Nothing is refused on it.') + '</td></tr>' +
       '<tr><th>Attestation</th><td><code>' + this.esc(info.attestation) +
-      '</code>, ' +
-        'conveyance requested. <strong>NO ATTESTATION STATEMENT IS VERIFIED ' +
-        'HERE whatever is asked for</strong> — there is no metadata service, ' +
-        'no vendor trust anchor and no model allow-list — so the statement ' +
-        'is parsed, reported and believed. Formats recognised: ' +
-        this.esc(info.attestationFormats.join(', ')) + '.</td></tr>' +
+      '</code>, conveyance requested' +
+        (info.attestationDemandsTrust && info.attestation !== 'enterprise' &&
+         info.attestation !== 'direct'
+          ? ' — and <strong>sent as <code>direct</code></strong>, because ' +
+            'this realm requires a trusted statement and a browser asked ' +
+            'for less may strip it'
+          : '') +
+        '. What is done with the statement is the next section.</td></tr>' +
       '<tr><th>Timeout</th><td>' + this.esc(String(info.timeoutMs)) + 'ms, ' +
         'and it is a HINT: the specification lets a client clamp it and ' +
         'browsers do. The pending step this service holds expires on its own ' +
@@ -23686,6 +25253,7 @@ class AdminConsole {
         'counter</th><td>' + this.esc(info.signatureCounter) +
         '</td></tr>' +
       '</table>' +
+      this.attestationPolicyBlock(info) +
       '<h3>CTAP</h3>' +
       this.note('These three are what a browser translates into what it asks ' +
       'the AUTHENTICATOR for. <strong>They are requests and not ' +
@@ -23780,6 +25348,104 @@ class AdminConsole {
   // no specification. Everything in it is a decision this service made, and the
   // page says which decision and why rather than citing a document.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // WHAT THE KDC DOES ABOUT PRE-AUTHENTICATION, IN THIS REALM (#173,
+  // 2026-09-22) — the `status` member of `/admin/kerberos`, and so of
+  // `GET /admin-api/kerberos` (rule 7). Whether a password alone gets a
+  // two-factor account a ticket is `global.mode`'s answer
+  // (`mode.issuesTicketsOnPasswordAlone()`), and it is drawn here rather than
+  // left to the mode page because it is the KDC's behaviour somebody comes to
+  // this page to find. The FAST provider is `kerberos/krb5_fast.ts`, reached
+  // through the principal database's key source; a process without the
+  // directory has none, and says so.
+  // ---------------------------------------------------------------------------
+  kerberosPreauthStatusBlock() {
+    const { log, mode } = this.deps;
+    log.debug("Entering AdminConsole.kerberosPreauthStatusBlock().");
+    const provider = krb5Principals.preauthProvider();
+    const refuses = !mode.issuesTicketsOnPasswordAlone();
+    const info = provider ? provider.policy() : {
+      fast: false,
+      passwordAloneForSecondFactorAccounts: refuses ? 'refused' : 'accepted',
+      note: 'no FAST provider is installed in this process (it arrives with ' +
+            'the directory), so FAST and OTP pre-authentication are not ' +
+            'offered'
+    };
+    const row = (what: string, answer: string) => {
+      return '<tr><th>' + this.esc(what) + '</th><td>' + answer + '</td></tr>';
+    };
+    // THE KRBTGT KEY (#169): its kvno, last rotation and next scheduled one,
+    // drawn here as well as on Principals (where its controls are) because
+    // it is the KDC's state somebody comes to this page to find. Read
+    // lazily: the view lives in `admin-core/`, loaded after this file.
+    let krbtgt: any = null;
+    try {
+      krbtgt = krb5Principals.kerberosRealmOf().enabled
+        ? require('../admin-core/admin_views').krbtgtView() : null;
+    } catch (e) {
+      log.debug("Caught in AdminConsole.kerberosPreauthStatusBlock(): " +
+                ((e && e.message) || e));
+      krbtgt = null;
+    }
+    const krbtgtHtml = !krbtgt ? '' :
+      '<h3>The krbtgt key</h3>' +
+      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      row('Key from', this.esc(krbtgt.source === 'stored'
+        ? 'a random key stored on the directory'
+        : krbtgt.source === 'password'
+          ? 'krb5.krbtgtPassword (development)'
+          : krbtgt.source === 'unreadable'
+            ? 'a stored record this service cannot open — no TGT is issued'
+            : 'nothing yet — no TGT is issued')) +
+      row('kvno', this.esc(krbtgt.kvno == null ? '—' : String(krbtgt.kvno))) +
+      row('Last rotated', this.esc(krbtgt.lastRotatedAt || 'never')) +
+      row('Next scheduled rotation', krbtgt.scheduled
+        ? this.esc(String(krbtgt.nextDueAt || '—'))
+        : 'none — ' + this.esc(String(krbtgt.offReason || ''))) +
+      row('Previous versions kept', this.esc((krbtgt.retained || [])
+        .map(function (one: any) {
+          return 'kvno ' + one.kvno + ' until ' + one.expiresAt;
+        }).join('; ') || 'none')) +
+      '</table>' +
+      '<p><a href="/admin/kerberos/principals">Rotate it on ' +
+      'Principals</a></p>';
+    const html =
+      '<h3>Pre-authentication, and a second factor</h3>' +
+      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      row('A password alone, for a person who holds or owes a second factor',
+          refuses
+            ? '<span class="state-valid">refused</span> — ' +
+              '<code>KDC_ERR_POLICY</code> (12), only after the password ' +
+              'verified; a wrong one is <code>KDC_ERR_PREAUTH_FAILED</code> ' +
+              'as for anybody (product mode)'
+            : '<span class="state-none">accepted</span> — development mode ' +
+              'issues a ticket on any password it accepts') +
+      row('FAST (RFC 6113)', info.fast
+        ? '<span class="state-valid">yes</span> — armor ' +
+          'FX_FAST_ARMOR_AP_REQUEST: a TGT the client host got with its own ' +
+          'keytab (a service principal from <a href="/admin/kerberos/' +
+          'principals">Principals</a>)'
+        : '<span class="state-none">no</span> — ' + this.esc(info.note)) +
+      row('Second factor over Kerberos', info.fast
+        ? 'RFC 6560 OTP pre-authentication inside FAST: the password as the ' +
+          'PIN and the person\'s authenticator app code, checked by the ' +
+          'sign-in screen\'s own verifier and once-only step ' +
+          '(<code>kinit -T &lt;armor ccache&gt;</code>). A security key over ' +
+          'Kerberos (PKINIT) is not supported.'
+        : 'none') +
+      row('What the ticket says', info.fast
+        ? 'the RFC 8129 authentication indicator <code>' +
+          this.esc(info.otpIndicator || 'otp') + '</code>, carried into ' +
+          'service tickets; <code>/authn/spnego</code> counts it as the ' +
+          'second factor (<code>amr</code> pwd, otp; <code>acr</code> mfa)'
+        : '—') +
+      '</table>' + krbtgtHtml;
+    const json = Object.assign({ passwordAloneRefused: refuses }, info,
+                               { krbtgt: krbtgt });
+    log.debug("Leaving AdminConsole.kerberosPreauthStatusBlock().");
+    return { html: html, json: json };
+  }
+
   backupCodesMechanismBlock() {
     const { log, backupCodes } = this.deps;
     log.debug("Entering AdminConsole.backupCodesMechanismBlock().");
@@ -23792,7 +25458,7 @@ class AdminConsole {
           'time somebody enrols a second factor.'
         : '<span class="state-none">no</span> — no NEW set will be issued. ' +
           '<strong>A set already issued goes on working</strong>, which is ' +
-          'the contract <code>totp.enabled</code> and ' +
+          'the contract the authentication policy\'s TOTP row and ' +
           '<code>webauthn.enabled</code> both keep: a switch that took away ' +
           'the only way back into an account whose phone is lost would be ' +
           'the worst one on this console.') +
@@ -24056,7 +25722,19 @@ class AdminConsole {
           this.esc(state.problem)
         : '<strong>The native module is not loaded, so the Unix socket is ' +
           'NOT SERVED</strong> (product): ' + this.esc(state.problem));
+    // THE TCP PORT (#166): what the realm's posture is and whether its port
+    // is listening. A product realm serves it only where the network is
+    // declared to authenticate source addresses, on a named address.
+    const tcp = state.tcp || null;
+    const tcpLine = tcp
+      ? ' The Workload API TCP port is <strong>' + this.esc(tcp.state) +
+        '</strong>' + (tcp.port
+          ? ' (' + this.esc(tcp.host + ':' + tcp.port) + ', ' +
+            (tcp.listening ? 'listening' : 'not listening') + ')'
+          : '') + ': ' + this.esc(tcp.why) + '.'
+      : '';
     const out = '<h2>Workload attestation</h2>' + this.note(kernel +
+      tcpLine +
       ' A TCP caller is never attested. Which attestors run is ' +
       '<code>spiffe.workloadAttestors</code>' +
       (state.unknownConfigured.length
@@ -24284,6 +25962,8 @@ class AdminConsole {
       '<th>What a caller presents</th></tr>' +
       this.spiffeListenerRows(json.listeners.workloadApi, 'Workload API') +
       this.spiffeListenerRows(json.listeners.serverApi, 'SPIRE Server API') +
+      this.spiffeListenerRows(json.listeners.brokerApi || [],
+                              'SPIFFE Broker API') +
       '</table>' +
 
       this.spiffeWorkloadAttestation(json.workloadAttestation) +
@@ -24326,7 +26006,12 @@ class AdminConsole {
       this.esc(json.authentication.assertedSelectorHeader) + '</code>) are ' +
       (json.authentication.acceptAssertedSelectors
         ? '<strong>believed</strong>, and nothing verifies them.'
-        : 'ignored (<code>spiffe.acceptAssertedSelectors</code> is off).')) +
+        : 'ignored (<code>spiffe.acceptAssertedSelectors</code> is off, ' +
+          'or this realm is in product mode, where it is never in force).') +
+      ' Both switches are what is IN FORCE: in product mode ' +
+      '<code>spiffe.attestWorkloads</code> is always on and asserted ' +
+      'selectors are never believed, whatever is stored, and neither can ' +
+      'be changed to the looser value there.') +
       '<h3>The per-method table</h3>' +
       this.note('Copied from SPIRE\'s own <code>policy_data.json</code> ' +
       'rather than reasoned out: a table derived from what each method ' +
@@ -24386,6 +26071,8 @@ class AdminConsole {
       '<li><a href="/admin/spiffe/agents">Attested agents</a> &mdash; ' +
       this.esc(json.counts.agents) + ' of at most ' +
       this.esc(json.counts.maxAgents) +
+      '</li><li><a href="/admin/spiffe/brokers">SPIFFE Broker API ' +
+      'brokers</a> &mdash; who may ask for a referenced workload\'s SVIDs' +
       '</li><li><a href="/spiffe">What this is, and what it does not ' +
       'check</a></li><li><a href="/admin/ldap/spiffe">The containers and ' +
       'their schema</a></li><li><a href="/admin-api/spiffe">The same, over ' +
@@ -24768,6 +26455,75 @@ class AdminConsole {
     return { json: { agent: agent }, inner: inner };
   }
 
+  // THE SPIFFE BROKER API'S BROKERS (#170): the list, a remove per row, and
+  // the form that adds a broker or replaces what it may reference.
+  spiffeBrokersPage(req) {
+    const { log, spiffeBrokersJson, queryWith, spiffeCa } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.spiffeBrokersPage().");
+    const view = spiffeBrokersJson(req);
+    const json = view.json;
+    const listView = this.listViewOf('/admin/spiffe/brokers', req.query);
+    const back = '<input type="hidden" name="back" value="' +
+                 this.esc(queryWith(listView, {})) + '">';
+    const rows = json.brokers.map(function (one) {
+      return '<tr><td><code>' + self.esc(one.id) + '</code></td><td>' +
+        (one.problem ? '<strong>refused:</strong> ' + self.esc(one.problem)
+                     : self.esc(one.referenceTypes.join(', '))) +
+        '</td><td><form method="post" action="/admin/spiffe/brokers">' +
+        '<input type="hidden" name="action" value="remove"><input ' +
+        'type="hidden" name="id" value="' + self.esc(one.id) + '">' + back +
+        '<button class="danger">Remove</button></form></td></tr>';
+    }).join('') || '<tr><td colspan="3">No broker is authorized, so every ' +
+      'call to the SPIFFE Broker API is refused PERMISSION_DENIED.</td></tr>';
+    const listening = json.listeners.filter(function (b) {
+      return b.listening;
+    }).map(function (b) {
+      return '<code>' + self.esc(b.address) + '</code>';
+    }).join(', ');
+    const inner = this.messagesOf(req) +
+      this.note('The SPIFFE Broker API (Incubating) lets a trusted ' +
+      'infrastructure component ask for the SVIDs of a workload it ' +
+      'REFERENCES — a process id, or a Kubernetes pod — which this service ' +
+      'attests itself before answering. It is served with mutual TLS on ' +
+      '<code>spiffe.grpcHost</code> and <code>spiffe.brokerPort</code> (' +
+      (listening ? 'listening on ' + listening
+                 : 'not listening in this realm: <code>spiffe.brokerPort' +
+                   '</code> is ' + this.esc(json.port)) + '). A caller ' +
+      'presents an X509-SVID, and one whose SPIFFE ID is not listed here is ' +
+      'refused.') +
+      this.note('<strong>A process id means something only on the node it ' +
+      'was read on.</strong> The endpoint is TCP, so allow ' +
+      '<code>pid</code> only to a broker running on this host; ' +
+      '<code>k8s</code> resolves a pod in this node\'s kubelet pod list.') +
+      '<form method="get" action="/admin/spiffe/brokers"><div ' +
+      'class="formrow"><label for="q">Search</label><input id="q" name="q" ' +
+      'value="' + this.esc(json.filter.q) + '" size="30" placeholder="a ' +
+      'SPIFFE ID or a reference type"><label for="per">Rows</label><select ' +
+      'id="per" name="per">' + this.perPageOptions(view.paging.perPage) +
+      '</select><button class="secondary">Filter</button></div></form>' +
+      '<table><tr><th>Broker</th><th>May reference</th><th></th></tr>' +
+      rows + '</table>' +
+      this.pageNavPair('/admin/spiffe/brokers', this.filterOnly(listView),
+                       view.paging).head +
+      '<h2>Authorize a broker</h2>' +
+      '<form method="post" action="/admin/spiffe/brokers"><div ' +
+      'class="formrow"><input type="hidden" name="action" value="set">' +
+      back + '<label for="b-id">SPIFFE ID</label><input id="b-id" name="id" ' +
+      'size="44" placeholder="spiffe://' + this.esc(spiffeCa.trustDomain()) +
+      '/ns/mesh/sa/node-proxy"></div><div class="formrow"><label><input ' +
+      'type="checkbox" name="referenceTypes" value="pid"> pid ' +
+      '(WorkloadPIDReference)</label><label><input type="checkbox" ' +
+      'name="referenceTypes" value="k8s"> k8s (a pod)</label><label><input ' +
+      'type="checkbox" name="referenceTypes" value="*"> * (both)</label>' +
+      '<button>Save</button>' +
+      this.note('A broker already listed has its reference types replaced. ' +
+      'An ID from a federated trust domain is verified against that ' +
+      'domain\'s bundle.') + '</div></form>';
+    log.debug("Leaving AdminConsole.spiffeBrokersPage().");
+    return { json: json, inner: inner, title: 'SPIFFE brokers' };
+  }
+
   spiffeAgentsView(req) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.spiffeAgentsView().");
@@ -25048,9 +26804,12 @@ class AdminConsole {
         (Array.isArray(field.enum) && field.enum.length
           ? '<select name="value"' + self.tip(field.what) + '>' +
             '<option value=""' + (value ? '' : ' selected') + '>' +
-            '(not set — this relationship says nothing)</option>' +
+            (field.name === 'fedSubjectPolicy'
+              ? '(not set — ' + federation.DEFAULT_SUBJECT_POLICY + ')'
+              : '(not set — this relationship says nothing)') + '</option>' +
             field.enum.map(function (one) {
-              const row = federation.mechanismRow(one);
+              const row = federation.mechanismRow(one) ||
+                          federation.subjectPolicyRow(one);
               return '<option value="' + self.esc(one) + '"' +
                 (String(value) === one ? ' selected' : '') + '>' +
                 self.esc(one) +
@@ -25068,17 +26827,50 @@ class AdminConsole {
             : '')) + '</td></tr>';
     }).join('');
 
+    // WHO THIS PARTNER'S SUBJECTS ARE LINKED TO (#109), paged, each name a
+    // link to the person's page — which is where a link is added or removed.
+    const linkPage = view.linkPage;
+    const linkNav = this.pageNavPair('/admin/federation',
+                                     this.deps.pageParamsOf(req.query),
+                                     linkPage.paging);
+    const linkedSection = row.role !== 'service-provider' ? ''
+      : '<h2 id="linked-people">People linked to this partner</h2>' +
+        this.note('Each person below carries a <code>federationLink</code> ' +
+          'through this relationship: the partner\'s identifier for them, ' +
+          'which is what signs them in. Under <code>fedSubjectPolicy</code> ' +
+          '<code>' + this.esc(federation.subjectPolicyOf(record)) + '</code>' +
+          '. A link is added and removed on the person\'s own page, and ' +
+          'removing one ends the sessions this partner signed them in to.') +
+        linkNav.head +
+        (linkPage.shown.length
+          ? '<table><tr><th>Person</th><th>Issuer</th><th>Subject</th></tr>' +
+            linkPage.shown.map(function (one) {
+              return '<tr><td><a href="' + self.esc('/admin/users' +
+                queryWith({}, { user: one.username })) + '#federation-links">' +
+                self.esc(one.username) + '</a></td><td><code>' +
+                self.esc(one.issuer) + '</code></td><td><code>' +
+                self.esc(one.subject) + '</code></td></tr>';
+            }).join('') + '</table>'
+          : this.note('Nobody is linked to this partner yet.')) +
+        linkNav.foot;
+
     const switches = ['fedEnabled'].concat(
       row.role === 'service-provider'
         ? ['fedAutocreateUsers', 'fedUpdateUserAttributes',
-           'fedAllowUnsolicited', 'fedSignRequest']
+           'fedMayAssertAdministrators', 'fedAllowUnsolicited',
+           'fedSignRequest', 'fedAcceptSignout', 'fedRequireSignedLogout']
+            .concat(federation.encrypts(record) ? ['fedAllowUnencrypted']
+                                                : [])
         : []).map(function (name) {
       const field = federation.SCHEMA.attributes.filter(
           function (f) { return f.name === name; })[0];
       if (!field) return '';
-      // The two provisioning switches default ON; the rest default off.
+      // The two provisioning switches and the two sign-out switches (#167)
+      // default ON; the rest default off.
       const dflt = name === 'fedAutocreateUsers' ||
-                   name === 'fedUpdateUserAttributes';
+                   name === 'fedUpdateUserAttributes' ||
+                   name === 'fedAcceptSignout' ||
+                   name === 'fedRequireSignedLogout';
       const on = federation.boolOf(record[name], dflt);
       return '<tr><td><code>' + self.esc(name) + '</code></td>' +
         '<td class="' + (on ? 'ok' : 'off') + '">' + (on ? 'TRUE' : 'FALSE') +
@@ -25199,8 +26991,11 @@ class AdminConsole {
             'name for this service per partner, so a partner keying its ' +
             'trust store off an entityID gets one that is only ' +
             'ours-with-them</span></td></tr>' +
-          ((row.protocol === 'saml2' || row.protocol === 'saml11')
-            ? '<tr><td>Our SAML metadata</td><td class="who"><a href="' +
+          ((row.protocol === 'saml2' || row.protocol === 'saml11' ||
+            row.protocol === 'wsfed')
+            ? '<tr><td>Our ' + (row.protocol === 'wsfed' ? 'WS-Federation'
+                                                         : 'SAML') +
+              ' metadata</td><td class="who"><a href="' +
               this.esc(federation.PATHS.metadata + '/' +
                        encodeURIComponent(row.id)) +
               '"><code>' +
@@ -25209,7 +27004,62 @@ class AdminConsole {
               'publishes proves nothing they did not already have to ' +
               'trust</span></td></tr>'
             : '') +
+          // A PARTNER'S SIGN-OUT (#167): what the partner registers so it can
+          // tell this service a session ended, and — below the table — what
+          // this service tells it.
+          Object.keys(view.signOut || {}).map(function (name) {
+            const words = {
+              singleLogout: 'SingleLogoutService (Redirect and POST), for ' +
+                            'the partner\'s LogoutRequest and its ' +
+                            'LogoutResponse to ours',
+              signOutCleanup: 'Sign-out cleanup URL, for wsignoutcleanup1.0 ' +
+                              '— the person confirms it here',
+              backchannelLogout: '<code>backchannel_logout_uri</code>',
+              frontchannelLogout: '<code>frontchannel_logout_uri</code>, ' +
+                                  'with <code>frontchannel_logout_session' +
+                                  '_required</code>',
+              postLogoutRedirect: '<code>post_logout_redirect_uri</code>, ' +
+                                  'for a sign-out here that ends at the ' +
+                                  'partner'
+            };
+            return '<tr><td>' + (words[name] || self.esc(name)) + '</td><td ' +
+              'class="who"><code>' + self.esc(view.signOut[name]) +
+              '</code></td></tr>';
+          }).join('') +
+          ((row.protocol === 'saml11' || row.protocol === 'oauth2')
+            ? '<tr><td>Sign-out</td><td><span class="sub">none — ' +
+              (row.protocol === 'saml11' ? 'SAML 1.1' : 'OAuth 2.0') +
+              ' defines no sign-out, so the partner cannot end a session ' +
+              'here and is not told of one ending</span></td></tr>'
+            : '') +
+          // THE KEY THE PARTNER ENCRYPTS TO (#168): the certificate, or
+          // for OpenID Connect the JWKS and the two registration members.
+          (view.encryption
+            ? '<tr><td>Encryption certificate (<code>' +
+              this.esc(view.encryption.policy.keyType) + '</code>)</td>' +
+              '<td class="who">' + (view.encryption.certificatePem
+                ? '<pre>' + this.esc(view.encryption.certificatePem) +
+                  '</pre>'
+                : '<span class="warn">none — rotate the key below to ' +
+                  'issue one</span>') + '</td></tr>' +
+              (view.jwks
+                ? '<tr><td><code>jwks_uri</code> (or its contents as ' +
+                  '<code>jwks</code>)</td><td class="who"><code>' +
+                  this.esc(view.jwks) + '</code></td></tr>' +
+                  '<tr><td><code>id_token_encrypted_response_alg</code> / ' +
+                  '<code>_enc</code></td><td><code>' +
+                  this.esc(view.encryption.policy.management) +
+                  '</code> / <code>' +
+                  this.esc(view.encryption.policy.content) + '</code></td>' +
+                  '</tr>'
+                : '<tr><td>Encryption algorithms</td><td><code>' +
+                  this.esc(view.encryption.policy.content) + '</code> under ' +
+                  '<code>' + this.esc(view.encryption.policy.management) +
+                  '</code>, published in the metadata</td></tr>')
+            : '') +
           '</table>' +
+          (view.encryption ? this.federationEncryptionSection(row,
+                               view.encryption, carryBack) : '') +
           this.note('<a class="btn" href="' + this.esc(login) +
                     '">Start a federated ' +
           'sign-in through this ' +
@@ -25239,6 +27089,7 @@ class AdminConsole {
       '<th>What it is</th></tr>' + switches +
       '</table>' +
       '<h2>Lists</h2>' + multiSections +
+      linkedSection +
       '<h2>Delete</h2>' +
       '<form method="post" action="/admin/federation"><div class="formrow">' +
       carryBack +
@@ -25269,6 +27120,52 @@ class AdminConsole {
 
     log.debug("Leaving AdminConsole.federationDetailPage(). " + row.id + ".");
     return { inner: inner, json: view.json };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A RELATIONSHIP'S ENCRYPTION KEY (#168): whether plaintext is refused, the
+  // key table — never a private key — and the Rotate button, whose API twin
+  // is `POST /admin-api/federation/rotate-key` (rule 7).
+  // ---------------------------------------------------------------------------
+  federationEncryptionSection(row, encryption, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.federationEncryptionSection().");
+    const rows = encryption.keys.map(function (key) {
+      return '<tr><td><code>' + self.esc(key.kid) + '</code></td><td>' +
+        self.esc(key.keyType) + '</td><td class="' +
+        (key.decrypts ? 'ok' : 'off') + '">' + self.esc(key.state) +
+        (key.retiresAt ? ' — decrypts until ' +
+          self.esc(new Date(key.retiresAt).toISOString()) : '') +
+        '</td><td>' + self.esc(key.notAfter || '') + '</td><td>' +
+        (key.sealed ? 'sealed' : 'in clear (keys do not persist)') +
+        '</td></tr>';
+    }).join('');
+    log.debug("Leaving AdminConsole.federationEncryptionSection().");
+    return '<h2 id="encryption">Encryption</h2>' +
+      this.note(encryption.required
+        ? '<strong>A plaintext assertion is refused.</strong> The partner ' +
+          'must encrypt to the key above, with the algorithms above.'
+        : (encryption.allowUnencrypted
+            ? '<strong class="warn">fedAllowUnencrypted is on: a plaintext ' +
+              'assertion is ACCEPTED</strong>, and the person\'s ' +
+              'identifier and attributes may cross their browser in clear.'
+            : 'A plaintext assertion is accepted in development mode; ' +
+              'product mode refuses it. An encrypted one is decrypted and ' +
+              'held to the algorithms above in both.')) +
+      (rows
+        ? '<table><tr><th>kid</th><th>Type</th><th>State</th><th>Expires' +
+          '</th><th>At rest</th></tr>' + rows + '</table>'
+        : this.note('No key is held.')) +
+      '<form method="post" action="/admin/federation"><div class="formrow">' +
+      carryBack +
+      '<input type="hidden" name="action" value="rotate-key">' +
+      '<input type="hidden" name="id" value="' + this.esc(row.id) + '">' +
+      '<button type="submit">Rotate the encryption key</button>' +
+      '<span class="sub">A new key is issued under this realm\'s ' +
+      'Intermediate and published at once; the one it replaces still ' +
+      'decrypts for ' + this.esc(String(encryption.graceS)) + ' seconds ' +
+      '(federation.encryptionKeyGraceS).</span></div></form>';
   }
 
   federationView(req) {
@@ -25683,6 +27580,7 @@ class AdminConsole {
             caepJson, caepAction, caepSessionsState, caepApplicationsState,
             riscJson, riscAction, riscAccountsState, riscApplicationsState,
             spiffeAction, spiffeEntriesAction, spiffeAgentsAction,
+            spiffeBrokersAction,
             federationAction, federationDiagram, federation } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.registerRoutes().");
@@ -26026,6 +27924,53 @@ class AdminConsole {
         return;
       }
 
+      // ---------------------------------------------------------------------
+      // PRODUCT MODE, BEFORE THE BOOTSTRAP ADMINISTRATOR HAS CLAIMED THE
+      // CONSOLE (2026-09-22, #103). Two refusals the role check below would
+      // make with the wrong reason:
+      //
+      //   * the bootstrap account itself, signed in by something other than a
+      //     password this service verified — a partner asserting its name, a
+      //     certificate whose CN is `admin`, a wallet, a Kerberos ticket. It
+      //     holds both roles by membership and `gateStateFor()` has withheld
+      //     them; the page says to sign in with the password (STS-ADMIN-0796);
+      //   * anybody else, whom development's open window would have let in and
+      //     product does not (STS-ADMIN-0797), recorded once per session.
+      //
+      // Both are logged once per console session rather than per request: a
+      // browser that keeps clicking is one event, not forty.
+      // ---------------------------------------------------------------------
+      if (state.bootstrapPasswordRequired) {
+        self.noteBootstrapRefusal(state, 'STS-ADMIN-0796',
+          'the bootstrap administrator "' + state.username + '" reached the ' +
+          'console before claiming it, signed in by ' +
+          ((state.session && (state.session.amr || []).join(', ')) ||
+           'no recorded method') + ' through ' +
+          ((state.session && state.session.signInAuthority) || 'no') +
+          ' authority rather than by a password verified here; its roles ' +
+          'were not honoured and the console stays unclaimed');
+        errorCodes.mark(res, 'STS-ADMIN-0796');
+        self.refuse(req, res, 403, 'bootstrap_password_required',
+                    'Sign in with the bootstrap administrator\'s password.',
+                    'The bootstrap administrator\'s first console sign-in ' +
+                    'must use its password. ' + state.username + ' has not ' +
+                    'claimed this console yet, and this session was not made ' +
+                    'from a password this service verified — it came from a ' +
+                    'federation partner, a certificate, a wallet or a ' +
+                    'Kerberos ticket, any of which can name this account ' +
+                    'without proving that its holder is the operator who was ' +
+                    'given the generated password. Sign out, and sign in ' +
+                    'again with the password.',
+                    { roles: [],
+                      html: self.note('Once it has signed in with its ' +
+                        'password the console is claimed, and from then on ' +
+                        'this account is an ordinary member of the roster, ' +
+                        'however it signs in.') });
+        log.debug("Leaving the admin console gate. The bootstrap " +
+                  "administrator must claim the console with its password.");
+        return;
+      }
+
       if (needsWrite ? state.write : state.read) {
         // ---------------------------------------------------------------------
         // AND THE CSRF TOKEN, ON THE WAY THROUGH (2026-09-06). OWASP A01/A08.
@@ -26042,7 +27987,16 @@ class AdminConsole {
         // `?format=json` and a POST from a script is exactly what CSRF is not
         // about — but the token is cheap to send and letting `Content-Type:
         // application/json` past would make the header the bypass.
-        if (needsWrite) {
+        //
+        // **THE ONE POST WHOSE TOKEN IS CHECKED PAST THIS POINT (#215)** is the
+        // dataset upload, `POST /admin/risk/upload`: its body is a file of up
+        // to gigabytes that `common/app.js` leaves unread — the same predicate
+        // decides both — so the token is not in `parseBody(req)` here. The
+        // upload handler (`risk/risk_upload.ts`) reads the form's fields
+        // first and checks this session's token against them before it
+        // writes a byte of the file; the role and the policy are still
+        // decided below, on the headers, as for every write.
+        if (needsWrite && !app.isStreamedUpload(req)) {
           const token = websecurity.checkCsrf(state.session ? state.session.id :
                                               '',
                                               parseBody(req));
@@ -26130,7 +28084,21 @@ class AdminConsole {
 
       const group = needsWrite ? state.writeGroup : state.readGroup;
       const role = rbac.roleFor(needsWrite ? 'write' : 'read');
-      errorCodes.mark(res, needsWrite ? 'STS-ADMIN-0008' : 'STS-ADMIN-0007');
+      // PRODUCT'S WITHHELD WINDOW (#103) is this same refusal with its own
+      // code, recorded once per session: the reader is refused exactly as any
+      // holder of no role is, and what an operator needs to know is that the
+      // console has not been claimed yet.
+      if (state.windowWithheld) {
+        self.noteBootstrapRefusal(state, 'STS-ADMIN-0797',
+          state.username + ' holds no console role and reached the console ' +
+          'while its bootstrap administrator' +
+          (state.bootstrap && state.bootstrap.username
+            ? ' "' + state.bootstrap.username + '"' : '') +
+          ' has not claimed it; product mode does not open the console to ' +
+          'whoever signs in');
+      }
+      errorCodes.mark(res, state.windowWithheld ? 'STS-ADMIN-0797'
+        : (needsWrite ? 'STS-ADMIN-0008' : 'STS-ADMIN-0007'));
       self.refuse(req, res, 403, 'insufficient_role',
                   'You are signed in and that is not enough.',
                   'Signed in as ' + state.username + ', holding ' +
@@ -28473,6 +30441,9 @@ class AdminConsole {
       const paging = view.paging;
       const summary = view.summary;
       const policy = view.policy;
+      // WS-Trust and token exchange (#108): the view GET
+      // /admin-api/delegation/policy answers with.
+      const exchangePolicy = delegationPolicyView(req.query);
       const known = knownUserKeys();
       // What every paging link on this page carries with it, for the reason the
       // tokens page gives: a "next" that dropped the filter would be page 2 of
@@ -28873,18 +30844,16 @@ class AdminConsole {
         'rather than quietly editing. What IS still true is the sentence ' +
         'underneath it: <strong>Kerberos is the one family here that polices ' +
         'delegation IN THE ACT</strong>. The permissions above are policy ' +
-        'this service was configured with and refuses on only when ' +
+        'this service was configured with and refuses on in product mode, ' +
+        'and in development only when ' +
         '<code>oauth2.delegatedPermissionsEnforced</code> is set; these two ' +
         'attributes are a KDC decision that has always been made, on every ' +
-        'S4U request, whatever anything is set to. WS-Trust puts no ' +
-        'authorization on <code>OnBehalfOf</code> or <code>ActAs</code> and ' +
-        'this service adds none; RFC 8693 leaves the policy to the ' +
-        'authorization server, and what this one now has is the register ' +
-        'above rather than nothing. All of that is stated on every row it ' +
-        'produces, in the same column that names an attribute for a Kerberos ' +
-        'row — <strong>the asymmetry is still the most useful thing on this ' +
-        'page</strong>: the same picture, policed at one end and not at the ' +
-        'other.') +
+        'S4U request, whatever anything is set to. WS-Trust and the RFC ' +
+        '8693 token exchange are decided by the same model since #108 — ' +
+        'the section below — ENFORCED in product mode and, in development, ' +
+        'asked and recorded as what would have been refused. Every row says ' +
+        'which attribute allowed it, in the same column for all three ' +
+        'families.') +
         self.note('The whole of the KDC\'s decision rests on two attributes ' +
         'on two OPPOSITE accounts, which is why they are in one table with a ' +
         'column saying which account carries the permission. Same messages, ' +
@@ -28925,6 +30894,8 @@ class AdminConsole {
           'flags.</td></tr>') +
         '</table>' +
         flagsNav.foot +
+
+        self.delegationPolicySection(req, exchangePolicy) +
 
         '<h3>The mechanisms</h3>' +
         self.note('Read off the same table this page records against, so a ' +
@@ -29047,7 +31018,10 @@ class AdminConsole {
                     { permissions: pagingJson(allowedState.permPage.paging),
                             grants: pagingJson(allowedState.grantPage.paging) }
                 },
-                settings: self.configSettingsJson('/admin/delegation')
+                settings: self.configSettingsJson('/admin/delegation'),
+                // WS-Trust and token exchange (#108), paged as GET
+                // /admin-api/delegation/policy pages it.
+                delegationPolicy: exchangePolicy.json
               }),
                    'Delegation', '/admin/delegation', inner);
       log.debug("Leaving the admin delegation page.");
@@ -31076,10 +33050,13 @@ class AdminConsole {
 
     app.get('/admin/users', function (req, res) {
       log.debug("Entering the admin users page.");
-      const view = self.usersView(req);
-      self.respond(req, res, view.json, view.title, '/admin/users', view.inner,
-                   view.up);
-      log.debug("Leaving the admin users page. " + view.title + ".");
+      // A person's current risk is read before the page is drawn (#62).
+      adminViews.riskFor(req.query).then(function (risk) {
+        const view = self.usersView(req, risk);
+        self.respond(req, res, view.json, view.title, '/admin/users',
+                     view.inner, view.up);
+        log.debug("Leaving the admin users page. " + view.title + ".");
+      });
     });
 
     app.post('/admin/users', function (req, res, next) {
@@ -31090,14 +33067,20 @@ class AdminConsole {
       // runs the body below synchronously, exactly as before.
       const creating = String(body.action || '') === 'create'
         ? { username: String(body.username || body.user || '') } : null;
-      createClaims.runClaimed(creating, function (held) {
-        self.usersPost(req, res, body, held);
-      }, function (held) {
-        errorCodes.mark(res, held.code);
-        self.respondToAction(req, res, '/admin/users' +
-          queryWith(self.listViewFromBack('/admin/users', body.back), {}),
-          { ok: false, errors: [createClaims.refusalMessage(held)] });
-      }, next);
+      // A PASSWORD IN THE BODY IS SCREENED AGAINST PWNED PASSWORDS FIRST
+      // (#62 P6): the action below is synchronous, and the password rules
+      // read the verdict this leaves.
+      require('../common/breached_passwords').screenAll([body.password])
+        .then(function () {
+        createClaims.runClaimed(creating, function (held) {
+          self.usersPost(req, res, body, held);
+        }, function (held) {
+          errorCodes.mark(res, held.code);
+          self.respondToAction(req, res, '/admin/users' +
+            queryWith(self.listViewFromBack('/admin/users', body.back), {}),
+            { ok: false, errors: [createClaims.refusalMessage(held)] });
+        }, next);
+        });
       log.debug("Leaving the admin users action endpoint.");
     });
 
@@ -31235,25 +33218,29 @@ class AdminConsole {
       // administrator, and a value taken from the form would be whatever the
       // poster typed. The same way `/admin/delegation` and `/admin/sessions`
       // name their actor.
-      createClaims.runClaimed({ username: posted.username }, function (held) {
-        self.newUserCreate(req, res, body, posted, wantsJson, held);
-      }, function (held) {
-        errorCodes.mark(res, held.code);
-        const refusal = { ok: false,
-                          errors: [createClaims.refusalMessage(held)] };
-        if (wantsJson) {
-          self.respondToAction(req, res, '/admin/users/new', refusal);
-          return;
-        }
-        const view = self.newUserPage(req, posted);
-        self.respond(req, res, Object.assign({ created: false,
-                                               errors: refusal.errors },
-                                               view.json),
-                     'New user', '/admin/users',
-                     self.warn('<strong>Nobody was created.</strong> ' +
-                               self.esc(refusal.errors[0])) + view.inner,
-                               self.newUserUp());
-      }, next);
+      // Screened against Pwned Passwords first (#62 P6), as above.
+      require('../common/breached_passwords').screenAll([body.password])
+        .then(function () {
+        createClaims.runClaimed({ username: posted.username }, function (held) {
+          self.newUserCreate(req, res, body, posted, wantsJson, held);
+        }, function (held) {
+          errorCodes.mark(res, held.code);
+          const refusal = { ok: false,
+                            errors: [createClaims.refusalMessage(held)] };
+          if (wantsJson) {
+            self.respondToAction(req, res, '/admin/users/new', refusal);
+            return;
+          }
+          const view = self.newUserPage(req, posted);
+          self.respond(req, res, Object.assign({ created: false,
+                                                 errors: refusal.errors },
+                                                 view.json),
+                       'New user', '/admin/users',
+                       self.warn('<strong>Nobody was created.</strong> ' +
+                                 self.esc(refusal.errors[0])) + view.inner,
+                                 self.newUserUp());
+        }, next);
+        });
       log.debug("Leaving the admin new-user action endpoint. Create.");
     });
 
@@ -31680,7 +33667,12 @@ class AdminConsole {
         'written about anybody</strong> &mdash; so removing a row here asks ' +
         'everybody again, including the people who would have said yes. That ' +
         'is the whole difference from the table below it, where removing a ' +
-        'row asks one person.<br><br>It is keyed on the PAIR and not on the ' +
+        'row asks one person. Removing a row also revokes every token of ' +
+        'that application carrying the scope, except for people who agreed ' +
+        'to it themselves, and this is the only door that removes one ' +
+        '&mdash; on this service\'s own console, portal or debugger too, ' +
+        'whose sessions standing on it then end at their next renewal.' +
+        '<br><br>It is keyed on the PAIR and not on the ' +
         'scope alone: consenting <code>read</code> here consents it for this ' +
         'application, and an application registered five minutes from now ' +
         'that spells the same word is still asked. It is an ordinary ' +
@@ -31728,12 +33720,17 @@ class AdminConsole {
         'sixth alone &mdash; which is what the screen shows and what these ' +
         'rows have to be able to express. The timestamp is when they pressed ' +
         'Allow.<br><br>Revoking a row asks that one person again the next ' +
-        'time that one application requests that one scope. It does NOT ' +
-        'touch anything already issued: an access token minted before the ' +
-        'revoke is still valid, exactly as taking a delegated permission ' +
-        'away does not re-judge a grant already made. <a ' +
-        'href="/admin/tokens">Tokens</a> is where something already issued ' +
-        'is revoked.') +
+        'time that one application requests that one scope, and it ' +
+        '<strong>WITHDRAWS</strong> it: every access and refresh token that ' +
+        'application holds for them carrying the scope is revoked on every ' +
+        'node, and the instant is written onto their entry as <code>' +
+        self.esc(consent.WITHDRAWN_ATTRIBUTE) + '</code>, so a refresh ' +
+        'token granted before it is refused at the token endpoint even after ' +
+        'they agree again. Withdrawing one scope revokes the whole refresh ' +
+        'token. Removing a global consent above does the same for everybody ' +
+        'it covered, and <code>oauth2.refreshRequiresConsent</code> refuses ' +
+        'a refresh token from the authorization endpoint that no recorded ' +
+        'consent covers.') +
         self.sectionSearchForm({
           path: '/admin/consent', query: req.query, param: 'q',
           // The list this search narrows, so that a new search starts at page 1
@@ -31760,6 +33757,27 @@ class AdminConsole {
                 'asked for is under global consent above, because an ' +
                 'override writes nothing down.')) +
         consentsNav.foot +
+
+        '<h4>Withdraw everything one person agreed to for one ' +
+        'application</h4>' +
+        self.note('Every recorded consent between one person and one ' +
+        'application, in one act &mdash; what the person can do themselves ' +
+        'from <code>/portal/consents</code>. Every token that application ' +
+        'holds for them under those scopes is revoked.') +
+        '<form method="post" action="/admin/consent">' +
+        self.consentBack(listView) +
+          '<input type="hidden" name="from" value="recorded">' +
+          '<div class="formrow">' +
+          '<input type="hidden" name="action" ' +
+            'value="revoke-application-consent">' +
+          '<label for="ac-username">Person</label>' +
+          '<input type="text" id="ac-username" name="username" size="24" ' +
+            'placeholder="alice">' +
+          '<label for="ac-client">Application</label>' +
+          '<select id="ac-client" name="client">' + applicationOptions +
+          '</select>' +
+          '<button type="submit" class="danger">Withdraw</button>' +
+        '</div></form>' +
 
         '<h4>Forget everything one person agreed to</h4>' +
         self.note('Every recorded consent for one person, in one act, so ' +
@@ -32290,194 +34308,76 @@ class AdminConsole {
 
     app.get('/admin/policies', function (req, res) {
       log.debug("Entering the admin policies page.");
-      const view = adminViews.passwordPoliciesView(req.query);
-      const pw = view.password;
-      const profile = pw.profile;
+      const view = adminViews.policiesView(req.query);
       const listedNav = self.pageNavPair('/admin/policies',
                                          pageParamsOf(req.query),
                                          pagingOf(req.query,
                                                   view.paging.total));
+      const kindLabel = {};
+      view.kinds.forEach(function (kind) {
+        kindLabel[kind.id] = kind.label;
+      });
 
       const inner = self.messagesOf(req) +
         '<div class="tiles">' +
           self.tile(view.kinds.length, 'kind of policy') +
-          self.tile(view.paging.total, 'password profile') +
-          self.tile(view.enforced ? 'yes' : 'no', 'enforced in this realm') +
-          self.tile(profile.stored ? 'stored' : 'built-in',
-                    'the default profile is') +
+          self.tile(view.paging.total, 'profile') +
+          self.tile(view.enforced ? 'yes' : 'no',
+                    'password policy enforced in this realm') +
         '</div>' +
 
         self.note('<strong>A policy here is a rule this realm holds a ' +
-        'credential to.</strong> The first kind is the password policy, and ' +
-        'there is one profile of it — <code>default</code> — which applies ' +
-        'to every person in this realm. It is stored in the directory as ' +
-        '<code>' +
-        self.esc(profile.dn || ('cn=default,ou=passwordPolicies,…')) +
-        '</code>, in the shape of draft-behera-ldap-password-policy (the ' +
-        'schema OpenLDAP\'s ppolicy overlay reads), so an ' +
-        '<code>ldapsearch</code> finds it and an <code>ldapmodify</code> ' +
-        'changes it. <strong>This is not the XACML policy ' +
+        'credential to.</strong> Each kind below is a SEPARATE policy with ' +
+        'its own entry in its own container, and each has one profile — ' +
+        '<code>default</code> — which applies to every person in this ' +
+        'realm. ' +
+        view.kinds.map(function (kind) {
+          return '<a href="#' + self.esc(kind.id) + '">' +
+            self.esc(kind.label) + '</a> (<code>' +
+            self.esc(kind.container) + '</code>)';
+        }).join(', ') + '. <strong>This is not the XACML policy ' +
         'repository</strong>: <a href="/admin/xacml/policies">that one</a> ' +
-        'holds documents a PDP evaluates, in <code>ou=policies</code>; this ' +
-        'holds numbers every door that sets a password checks.') +
+        'holds documents a PDP evaluates, in <code>ou=policies</code>.') +
 
-        (view.enforced
-          ? '<div class="ok">' + self.esc(view.enforcement) + '</div>'
-          : self.warn(self.esc(view.enforcement) + ' Switch the realm with ' +
-            '<code>global.mode</code> on <a ' +
-            'href="/admin/config">Configuration</a>.')) +
-
-        (profile.problems.length
-          ? self.warn('<strong>The stored profile has ' +
-                      profile.problems.length +
-            ' problem(s), and the built-in default is in force for each ' +
-            'field named:</strong> ' +
-            profile.problems.map(self.esc.bind(self)).join(' '))
-          : '') +
-
-        '<h2 id="password">Password policy — the default profile</h2>' +
-        self.note(profile.stored
-          ? 'This profile is <strong>stored</strong> at <code>' +
-            self.esc(profile.dn) +
-            '</code>. Saving replaces it; putting the defaults back deletes ' +
-            'it, after which the built-in defaults below are in force.'
-          : '<strong>Nothing is stored yet, so the built-in defaults are in ' +
-            'force.</strong> Saving this form writes <code>cn=default</code> ' +
-            'under <code>ou=passwordPolicies</code> in this realm\'s ' +
-            'directory. A realm created later starts with the same built-in ' +
-            'defaults rather than a copy of this one — the profile is not ' +
-            'seeded, so it cannot be missing from a realm nobody seeded.') +
-
-        '<form method="post" action="/admin/policies">' +
-        '<input type="hidden" name="action" value="save-password-policy">' +
-        '<input type="hidden" name="profile" value="' + self.esc(profile.name) +
-        '">' +
-        self.wideTable('The default password profile',
-          '<table><tr><th>Rule</th><th>Value</th><th>Attribute</th>' +
-          '<th>Built-in default</th><th>Source</th></tr>' +
-          pw.fields.map(self.passwordPolicyFieldRow.bind(self)).join('') +
-          '<tr><td><label for="pp-description">Description</label></td>' +
-          '<td colspan="4"><input type="text" id="pp-description" ' +
-          'name="description" size="60" maxlength="1024" value="' +
-          self.esc(profile.description) + '" placeholder="what this profile ' +
-          'is for"></td></tr></table>') +
-        '<p><button>Save the profile</button></p>' +
-        self.note('Every field is checked before anything is written, and ' +
-        'two rules relate fields to each other: a generated password must be ' +
-        'at least the minimum length, and at least twice the symbol count ' +
-        'plus two — a generator asked for more symbols than that would be ' +
-        'drawing for a very long time. <strong>A change applies to the NEXT ' +
-        'password set in this realm</strong>; nothing already stored is ' +
-        're-checked, because a stored password is a hash and there is ' +
-        'nothing left to check it against.') +
-        '</form>' +
-
-        (profile.stored
-          ? '<form method="post" action="/admin/policies" class="inline">' +
-            '<input type="hidden" name="action" ' +
-            'value="reset-password-policy"><input type="hidden" ' +
-            'name="profile" value="' + self.esc(profile.name) +
-            '"><button ' +
-            'class="secondary">Put the built-in defaults back</button></form>'
-          : '') +
-
-        '<h2 id="rules">What a password must be, right now</h2>' +
-        self.note('The rules as the <a href="/portal/password">user ' +
-        'portal</a> and the activation page print them to the person ' +
-        'choosing a password, so the page they read and the rule this ' +
-        'service applies are one sentence.') +
-        '<ul>' + pw.rules.map(function (rule) {
-          return '<li>' + self.esc(rule) + '</li>';
-        }).join('') + '</ul>' +
-
-        '<h2 id="doors">Where it is enforced</h2>' +
-        self.note('Every door that sets a password ends in one function in ' +
-        '<code>common/credentials.ts</code>, which is what makes the list ' +
-        'below complete rather than a list somebody remembered. ' +
-        self.esc(pw.notDoors)) +
-        '<table><tr><th>Door</th><th>Reaches</th></tr>' +
-        pw.doors.map(function (row) {
-          return '<tr><td>' + self.esc(row.door) + '</td><td><code>' +
-                 self.esc(row.via) +
-            '</code></td></tr>';
-        }).join('') + '</table>' +
-
-        '<h2 id="history">The history, and what it costs</h2>' +
-        self.note('<strong>A remembered password is the scrypt hash it was ' +
-        'already stored as</strong>, moved into <code>pwdHistory</code> on ' +
-        'the person\'s own entry when the next one replaces it — no new hash ' +
-        'is made, and the password itself is never kept. Checking a new ' +
-        'password costs one scrypt comparison per remembered one, about 70ms ' +
-        'each on this thread, so a history of ' + self.esc(profile.history) +
-        ' is up to ' +
-        self.esc((profile.history + 1) * 70) + 'ms at a password change. A ' +
-        'generated password skips the comparison, because nothing drawn at ' +
-        'random is a previous password. <code>pwdHistory</code> and ' +
-        '<code>pwdChangedTime</code> are maintained by this service and an ' +
-        'LDAP modify naming either is refused in product mode.') +
-
-        '<h2 id="generator">The generator</h2>' +
-        self.note('<strong>New users created from the console or ' +
-        '<code>/admin-api</code> get a generated password by ' +
-        'default</strong>, shown or returned ONCE. It is drawn by ' +
-        '<code>' + self.esc(pw.generator.module) + '</code>' +
-        (pw.generator.version ? ' ' + self.esc(pw.generator.version) : '') +
-        ' from ' +
-        self.esc(pw.generator.source) + ', using ' +
-        self.esc(pw.generator.pools.join(', ')) +
-        ' (leaving out ' + pw.generator.excluded.map(function (one) {
-          return '<code>' + self.esc(one) + '</code>';
-        }).join(' and ') + ', which silently end or change a string pasted ' +
-        'into a shell or a JSON body), and it draws until ' +
-        self.esc(pw.generator.drawsUntil) +
-        '.') +
+        view.kinds.map(function (kind) {
+          if (kind.id === 'password') {
+            return self.passwordPolicySection(view);
+          }
+          if (kind.id === 'authn') {
+            return self.authnPolicySection(view);
+          }
+          return self.genericPolicySection(view, kind);
+        }).join('') +
 
         '<h2 id="profiles">Profiles</h2>' +
-        self.note('One profile today, and the list is paged like every list ' +
-        'in this console. A second profile cannot be created yet: nothing ' +
-        'assigns a profile to a person, so a second one would decide nothing ' +
-        'while looking exactly like one that does.') +
+        self.note('One profile of each kind today, and the list is paged ' +
+        'like every list in this console. A second profile of a kind cannot ' +
+        'be created yet: nothing assigns a profile to a person, so a second ' +
+        'one would decide nothing while looking exactly like one that does.') +
         listedNav.head +
         '<table><tr><th>Kind</th><th>Profile</th><th>Stored at</th>' +
         '<th>Problems</th></tr>' +
         view.profiles.map(function (row) {
-          return '<tr><td>' + self.esc(row.kind) + '</td><td><a ' +
-            'href="#password">' +
+          return '<tr><td>' + self.esc(kindLabel[row.kind] || row.kind) +
+            '</td><td><a href="#' + self.esc(row.kind) + '">' +
             self.esc(row.name) + '</a></td><td>' +
             (row.stored ? '<code>' + self.esc(row.dn) + '</code>'
-                        : '<span class="state-none">not stored — built-in ' +
-                          'defaults</span>') +
+              : row.inherited
+                ? 'inherited from the default realm: <code>' +
+                  self.esc(row.dn) + '</code>'
+                : '<span class="state-none">not stored — built-in ' +
+                  'defaults</span>') +
             '</td><td>' + self.esc(String(row.problems.length)) + '</td></tr>';
         }).join('') + '</table>' +
         listedNav.foot +
 
-        '<h2 id="schema">Schema</h2>' +
-        self.note('This directory is schemaless, so a container of entries ' +
-        'carrying invented attributes says what they mean here. The ' +
-        '<code>pwd*</code> names are draft-behera-ldap-password-policy\'s; ' +
-        'the <code>stsPwd*</code> ones are this service\'s own, because the ' +
-        'draft delegates composition rules to the server and defines none.') +
-        '<table><tr><th>Object class</th><th>What it is</th></tr>' +
-        pw.schema.objectClasses.map(function (row) {
-          return '<tr><td><code>' + self.esc(row.name) + '</code></td><td>' +
-            self.esc(row.what) + '</td></tr>';
-        }).join('') + '</table>' +
-        '<table><tr><th>Attribute</th><th>On</th><th>What it holds</th></tr>' +
-        pw.schema.attributes.map(function (row) {
-          return '<tr><td><code>' + self.esc(row.name) +
-                 '</code></td><td>the ' +
-            'profile</td><td>' + self.esc(row.what) + '</td></tr>';
-        }).join('') +
-        pw.schema.personAttributes.map(function (row) {
-          return '<tr><td><code>' + self.esc(row.name) + '</code></td><td>a ' +
-            'person</td><td>' + self.esc(row.what) + '</td></tr>';
-        }).join('') + '</table>' +
-
         self.note('The same over JSON is ' +
         '<code>/admin/policies?format=json</code> and <code>GET ' +
-        '/admin-api/policies</code>; the two actions on this page are ' +
-        '<code>POST /admin-api/policies/save-password-policy</code> and ' +
-        '<code>/reset-password-policy</code>.');
+        '/admin-api/policies</code>; the actions on this page are ' +
+        view.actions.map(function (action) {
+          return '<code>POST /admin-api/policies/' + self.esc(action) +
+                 '</code>';
+        }).join(', ') + '.');
 
       self.respond(req, res, view, 'Policies', '/admin/policies', inner);
       log.debug("Leaving the admin policies page.");
@@ -32491,11 +34391,12 @@ class AdminConsole {
       // an actor of its own, and a function that reached for a cookie would
       // work from one of them.
       const state = gateStateFor(req);
-      const result = adminActions.passwordPoliciesAction(body, {
+      const result = adminActions.policiesAction(body, {
         actor: (state && state.username) || '', via: 'console' });
       self.respondToAction(req, res, '/admin/policies' +
         queryWith(self.listViewFromBack('/admin/policies', body.back), {}) +
-        (result.ok ? '#password' : ''), result);
+        (result.ok && /^[a-z]+$/.test(String(result.kind || ''))
+          ? '#' + result.kind : ''), result);
       log.debug("Leaving the admin policies action endpoint.");
     });
 
@@ -34378,6 +36279,18 @@ class AdminConsole {
                        'the transmitter\'s pedantry — and it is said out ' +
                        'loud rather than passed over.') +
                        '">media type</div>') +
+          // WHAT THIS CONSOLE DID WITH IT (#62): the signal-response
+          // policy's reactions, taken, observed or failed.
+          (row.reactions || []).map(function (r) {
+            return '<div class="signal-reaction ' +
+              (r.failed ? 'state-invalid' : 'sub') + '">' + (r.failed
+                ? 'could not end its sessions'
+                : r.skipped ? 'ended nothing: ' + self.esc(r.skipped)
+                : (r.observed ? 'would end this console\'s sessions ' +
+                                '(development observes)'
+                              : 'ended ' + self.esc(String(r.ended)) +
+                                ' console session(s)')) + '</div>';
+          }).join('') +
           '</td>' +
           '<td class="sub"><code>' + self.esc(row.jti) + '</code>' +
           '<div><code>' + self.esc(row.stream || '') + '</code></div></td>' +
@@ -35193,6 +37106,97 @@ class AdminConsole {
         : 'Development mode keys every user from krb5.userPassword, so ' +
           'nobody here holds stored keys.') + '</td></tr>';
 
+      // THE REALM'S KRBTGT (#169): its own block, because none of the
+      // service-principal controls applies to it — no keytab is ever made
+      // for it — and two controls of its own do, both of which QUEUE a run
+      // of `krb5.krbtgt-rotate-now` on the scheduler rather than rotating in
+      // this request. The invalidate form is a typed confirmation, not a
+      // script: the word goes in a text field and the action refuses
+      // without it (STS-ADMIN-0610).
+      const k = json.krbtgt;
+      const krbtgtSection = !k ? '' :
+        '<h2>The krbtgt key</h2>' +
+        self.note('Every ticket-granting ticket this realm issues is sealed ' +
+          'under this key. ' + (k.source === 'password'
+            ? 'In this development realm it is derived from the published ' +
+              '<code>krb5.krbtgtPassword</code>, so a reader can decrypt a ' +
+              'TGT; rotating it here replaces it with a random stored key.'
+            : 'It is a RANDOM key per enctype, kept sealed on the directory ' +
+              'entry <code>' + self.esc(k.principal || '') + '</code> and ' +
+              'never shown — there is no keytab for it.') +
+          ' A rotation keeps the version it replaces for ' +
+          self.esc(String(k.retainedTtlSeconds)) + ' seconds (the longest a ' +
+          'TGT under it can live, renewals included), so every TGT goes on ' +
+          'working; <strong>rotate and invalidate</strong> keeps nothing — ' +
+          'Active Directory\'s double reset in one act — and every TGT in ' +
+          'the realm is refused at its next use.') +
+        (k.source === 'unreadable'
+          ? self.warn('<strong>The stored krbtgt key cannot be opened ' +
+              'here</strong> (' + self.esc(k.why) + '), so this KDC issues ' +
+              'no ticket. Only <strong>rotate and invalidate</strong> ' +
+              'replaces it.')
+          : k.source === 'none'
+            ? self.warn('No krbtgt key is stored for this realm yet, so its ' +
+                'KDC issues no ticket. It is made at the next start, or by ' +
+                'the <code>krb5.krbtgt-rotate</code> job, or by a rotation ' +
+                'here.')
+            : '') +
+        '<table class="key">' +
+        '<tr><th>Principal</th><td><code>' + self.esc(k.principal || '—') +
+        '</code></td></tr>' +
+        '<tr><th>Key from</th><td>' + self.esc({
+          stored: 'a random key stored on the directory',
+          password: 'krb5.krbtgtPassword (development)',
+          none: 'nothing yet', unreadable: 'a record this service cannot open'
+        }[k.source] || k.source) + '</td></tr>' +
+        '<tr><th>kvno</th><td>' + self.esc(k.kvno == null ? '—'
+                                                          : String(k.kvno)) +
+        '</td></tr><tr><th>Enctypes</th><td>' + etypeList(k.etypes) +
+        '</td></tr><tr><th>Created</th><td class="sub">' +
+        self.esc(k.createdAt || '—') + '</td></tr>' +
+        '<tr><th>Last rotated</th><td class="sub">' +
+        self.esc(k.lastRotatedAt || 'never') +
+        (k.invalidatedAt ? '<br>last invalidated ' +
+          self.esc(k.invalidatedAt) : '') + '</td></tr>' +
+        '<tr><th>Next scheduled rotation</th><td class="sub">' +
+        (k.scheduled
+          ? self.esc(k.nextDueAt || '—') + ' (every ' +
+            self.esc(String(k.intervalDays)) + ' days, ' +
+            '<code>krb5.krbtgtRotationIntervalDays</code>)'
+          : 'none — ' + self.esc(k.offReason)) + '</td></tr>' +
+        '<tr><th>Previous versions</th><td>' + retainedCell(k.retained) +
+        '</td></tr></table>' +
+        (mayChange
+          ? '<form method="post" action="/admin/kerberos/principals">' +
+            '<input type="hidden" name="action" value="rotate-krbtgt">' +
+            '<input type="hidden" name="back" value="' + self.esc(back) +
+            '"><button type="submit" title="' + self.esc('A new random ' +
+              'krbtgt key at the next kvno; the current one is kept for the ' +
+              'TGTs already sealed under it. Queued on the scheduler.') +
+            '">Rotate the krbtgt key</button></form>' +
+            ((k.retained || []).length
+              ? rowButton('drop-previous-service-keys', 'spn',
+                  String(k.principal || '').replace(/@[^@]*$/, ''),
+                  'Drop previous versions',
+                  'Stops accepting TGTs sealed under kvno ' +
+                  k.retained.map(function (one) {
+                    return one.kvno;
+                  }).join(', ') + ' now. The current key is untouched.')
+              : '') +
+            '<form method="post" action="/admin/kerberos/principals">' +
+            '<input type="hidden" name="action" ' +
+            'value="rotate-krbtgt-invalidate">' +
+            '<input type="hidden" name="back" value="' + self.esc(back) +
+            '"><div class="formrow"><label for="krbtgt-confirm">Type ' +
+            '<code>' + self.esc(k.confirmWord || 'invalidate') + '</code> ' +
+            'to end every TGT in the realm</label>' +
+            '<input type="text" id="krbtgt-confirm" name="confirm" size="12" ' +
+            'autocomplete="off">' +
+            '<button type="submit" class="danger">Rotate and ' +
+            'invalidate</button></div></form>'
+          : self.note('Rotating the krbtgt key needs <strong>Admin ' +
+                      'Write</strong>.'));
+
       const inner = self.messagesOf(req) +
         self.note('<strong>Who this KDC holds a stored key for.</strong> ' +
                   self.esc(json.notes.mode)) +
@@ -35228,6 +37232,7 @@ class AdminConsole {
                         'one.') +
                   ' <code>krb5.personKeys</code> is ' +
                   (json.personKeys ? 'on' : 'OFF') + '.') +
+        krbtgtSection +
         '<h2>Service principals</h2>' + servicesNav.head +
         '<table><tr><th>Principal</th><th>kvno</th><th>Enctypes</th>' +
         '<th>Created</th><th>Previous versions</th><th>At ' +
@@ -35240,11 +37245,12 @@ class AdminConsole {
                       '<code>HTTP/web.example.com</code>, with or without ' +
                       '<code>@' + self.esc(json.realm) + '</code>. It gets a ' +
                       'RANDOM key for every enctype in ' +
-                      '<code>krb5.enctypes</code> at kvno ' +
+                      '<code>krb5.enctypes</code> (never rc4-hmac in product ' +
+                      'mode) at kvno ' +
                       self.esc(String(json.startingKvno)) + ', stored sealed ' +
                       'on its application entry, and the next page shows its ' +
-                      'keytab ONCE. <code>krbtgt</code> is refused: that key ' +
-                      'is <code>krb5.krbtgtPassword</code>.') +
+                      'keytab ONCE. <code>krbtgt</code> is refused: it has ' +
+                      'its own block above, and no keytab.') +
             '<form method="post" action="/admin/kerberos/principals">' +
             '<input type="hidden" name="action" value="create-service">' +
             '<input type="hidden" name="back" value="' + self.esc(back) + '">' +
@@ -35264,9 +37270,14 @@ class AdminConsole {
                          json.peoplePaging.perPage) +
         '<h2>What there is deliberately no button for</h2>' +
         self.note('<strong>Downloading a keytab again.</strong> A stored key ' +
-                  'is never read back out: the keytab is handed over by the ' +
-                  'create or rotate that made it, and a lost one is replaced ' +
-                  'by rotating. <strong>Setting a person\'s keys.</strong> ' +
+                  'is never read back out: a service principal\'s keytab is ' +
+                  'handed over by the create or rotate that made it, and a ' +
+                  'lost one is replaced by rotating. A PERSON\'s keytab ' +
+                  '(#59) is derived from a password in hand: <strong>Reset ' +
+                  'password and download keytab</strong> on their page ' +
+                  'under Directory &rarr; Users, or their own password on ' +
+                  '<code>/portal/kerberos</code>. <strong>Setting a ' +
+                  'person\'s keys.</strong> ' +
                   'They come from the person\'s password and from nothing ' +
                   'else; clearing them is the one control, and the next ' +
                   'verified sign-in derives them again.') +
@@ -35287,17 +37298,51 @@ class AdminConsole {
       log.debug("Entering the admin Kerberos principals action endpoint.");
       const body = parseBody(req);
       const state = gateStateFor(req);
-      const result = adminActions.kerberosPrincipalsAction(body,
-        { actor: (state && state.username) || '', via: 'console' });
+      // ONE ACTION ANSWERS A PROMISE (#59's `reset-person-keytab`, whose
+      // string-to-key is asynchronous), so every answer is resolved.
+      Promise.resolve(adminActions.kerberosPrincipalsAction(body,
+        { actor: (state && state.username) || '', via: 'console' }))
+        .then(function (result) {
+          answered(result);
+        }, function (e) {
+          log.error(errorCodes.tag('STS-ADMIN-0803') + 'admin: a Kerberos ' +
+                    'principals action threw: ' + ((e && e.stack) || e));
+          answered(errorCodes.mark({ ok: false, errors: ['The action ' +
+            'failed inside this service; the log says why.'] },
+            'STS-ADMIN-0803'));
+        });
+      log.debug("Leaving the admin Kerberos principals action endpoint. " +
+                "Answering when the action settles.");
+
+      function answered(result) {
+      log.debug("Entering answered().");
       const isJson = /json/i.test(String(req.headers['content-type'] || ''));
       if (result.ok && result.keytab && !isJson) {
         // THE ONE TIME THE KEYTAB IS DRAWN. See the header above the GET.
         const shown = Object.assign({}, result);
         delete shown.keytab;
+        // A PERSON'S KEYTAB (#59) is not replaced by rotating: it is made
+        // again from a password, and this one came from a password the
+        // administrator just set — which the page says above everything else.
+        const person = !!result.username;
         const inner = self.warn('<strong>This keytab is shown once.</strong> ' +
             'It is not kept in the clear anywhere and this service cannot ' +
-            'show it again; a lost keytab is replaced by rotating, which ' +
-            'makes a new key.') +
+            'show it again; ' +
+            (person
+              ? 'another is made by resetting the password again, or by ' +
+                'the person from their own password on the portal.'
+              : 'a lost keytab is replaced by rotating, which makes a new ' +
+                'key.')) +
+          (person
+            ? self.warn('<strong>' + self.esc(result.username) + '\'s ' +
+                'password was changed</strong> to ' +
+                (result.generated
+                  ? 'a generated one that nobody was shown, so this keytab ' +
+                    'is the only thing that signs them in until a password ' +
+                    'is set again'
+                  : 'the one you typed') +
+                ', and they were signed out of everything.')
+            : '') +
           self.note(self.esc(result.message)) +
           '<table class="key">' +
           '<tr><th>Principal</th><td><code>' + self.esc(result.principal) +
@@ -35326,20 +37371,30 @@ class AdminConsole {
           '<textarea readonly rows="6" name="keytab-base64">' +
           self.esc(result.keytab) +
           '</textarea>' +
-          self.note('<a href="/admin/kerberos/principals">Back to the ' +
-                    'Kerberos principals</a>');
+          self.note(person
+            ? '<a href="' + self.esc('/admin/users' +
+                queryWith({ user: result.username }, {})) + '">Back to ' +
+              self.esc(result.username) + '</a>'
+            : '<a href="/admin/kerberos/principals">Back to the ' +
+              'Kerberos principals</a>');
+        // Never cached: the body carries a key.
+        res.set('Cache-Control', 'no-store');
         self.respond(req, res, shown, 'Kerberos keytab',
-                     '/admin/kerberos/principals',
+                     person ? '/admin/users' : '/admin/kerberos/principals',
                      inner);
-        log.debug("Leaving the admin Kerberos principals action endpoint. " +
-                  "Keytab shown.");
+        log.debug("Leaving answered(). Keytab shown.");
         return;
       }
-      self.respondToAction(req, res, '/admin/kerberos/principals' +
-        queryWith(self.listViewFromBack('/admin/kerberos/principals',
-                                        body.back), {}),
+      // A person's action returns to their page when that is where it was
+      // asked from; the list view otherwise.
+      self.respondToAction(req, res, body.from === 'user' && body.username
+        ? '/admin/users' + queryWith({ user: String(body.username) }, {})
+        : '/admin/kerberos/principals' +
+          queryWith(self.listViewFromBack('/admin/kerberos/principals',
+                                          body.back), {}),
                            result);
-      log.debug("Leaving the admin Kerberos principals action endpoint.");
+      log.debug("Leaving answered().");
+      }
     });
 
     app.get('/admin/ssf', function (req, res) {
@@ -37113,6 +39168,25 @@ class AdminConsole {
       log.debug("Leaving the admin SPIFFE agents action endpoint.");
     });
 
+    app.get('/admin/spiffe/brokers', function (req, res) {
+      log.debug("Entering the admin SPIFFE brokers page.");
+      const view = self.spiffeBrokersPage(req);
+      self.respond(req, res, view.json, view.title, '/admin/spiffe/brokers',
+                   view.inner);
+      log.debug("Leaving the admin SPIFFE brokers page.");
+    });
+
+    app.post('/admin/spiffe/brokers', function (req, res) {
+      log.debug("Entering the admin SPIFFE brokers action endpoint.");
+      const body = parseBody(req);
+      const result = spiffeBrokersAction(body);
+      const listView = self.listViewFromBack('/admin/spiffe/brokers',
+                                             body.back);
+      self.respondToAction(req, res, '/admin/spiffe/brokers' +
+                           queryWith(listView, {}), result);
+      log.debug("Leaving the admin SPIFFE brokers action endpoint.");
+    });
+
     app.get('/admin/federation', function (req, res) {
       log.debug("Entering the admin federation page.");
       const view = self.federationView(req);
@@ -37128,24 +39202,32 @@ class AdminConsole {
     app.post('/admin/federation', function (req, res) {
       log.debug("Entering the admin federation action endpoint.");
       const body = parseBody(req);
-      const result = federationAction(body);
-      const id = String(body.id || body.relationship || '').trim();
-      // The list state the form carried, REBUILT rather than echoed — see
-      // listViewFromBack(), and the note in admin-ui/CLAUDE.md about a new form
-      // on a drill-down needing `carryBack` in it. Every form on the drill-down
-      // above has it.
-      const listView = self.listViewFromBack('/admin/federation', body.back);
-      // A DELETE goes back to the LIST and everything else stays on the
-      // drill-down, which is the one place this differs from the SAML 2.0
-      // page's handler: landing on the detail page of something that no longer
-      // exists would answer with "there is no relationship called…", which
-      // reads as the delete having failed.
-      const back = (id && result.ok !== false &&
-                    String(body.action || '') !== 'delete')
-        ? '/admin/federation' + queryWith(listView, { relationship: id })
-        : '/admin/federation' + queryWith(listView, {});
-      self.respondToAction(req, res, back, result);
-      log.debug("Leaving the admin federation action endpoint.");
+      // A PROMISE SINCE #168: a create and a key rotation issue a key.
+      federationAction(body).then(function (result) {
+        const id = String(body.id || body.relationship || '').trim();
+        // The list state the form carried, REBUILT rather than echoed — see
+        // listViewFromBack(), and the note in admin-ui/CLAUDE.md about a new
+        // form on a drill-down needing `carryBack` in it. Every form on the
+        // drill-down above has it.
+        const listView = self.listViewFromBack('/admin/federation', body.back);
+        // A DELETE goes back to the LIST and everything else stays on the
+        // drill-down, which is the one place this differs from the SAML 2.0
+        // page's handler: landing on the detail page of something that no
+        // longer exists would answer with "there is no relationship
+        // called…", which reads as the delete having failed.
+        const back = (id && result.ok !== false &&
+                      String(body.action || '') !== 'delete')
+          ? '/admin/federation' + queryWith(listView, { relationship: id })
+          : '/admin/federation' + queryWith(listView, {});
+        self.respondToAction(req, res, back, result);
+        log.debug("Leaving the admin federation action endpoint.");
+      }, function (e) {
+        log.error(errorCodes.tag('STS-ADMIN-0575') + 'the federation action ' +
+                  'threw: ' + ((e && e.stack) || e));
+        self.respondToAction(req, res, '/admin/federation',
+          { ok: false, errors: ['The federation action failed: ' +
+                                ((e && e.message) || e)] });
+      });
     });
 
     app.get('/admin/federation/map', function (req, res) {
@@ -37533,6 +39615,7 @@ const SETTING_HOMES = [
   { group: 'Management API', pages: ['/admin/rbac'] },
   { group: 'Applications', pages: ['/admin/applications'] },
   { group: 'Federation', pages: ['/admin/federation'] },
+  { group: 'OpenID Federation', pages: ['/admin/oidfed'] },
   { group: 'XACML', pages: ['/admin/xacml'] },
   // THE CERTIFICATE AUTHORITY'S FOUR SETTINGS, on the page that builds one.
   // They are DEFAULTS FOR A FORM rather than a policy — what a hierarchy was
@@ -37605,6 +39688,7 @@ const SETTING_HOMES = [
   // THE SCHEDULER'S SETTINGS (2026-09-22, #49), on the page that shows the
   // jobs they switch and the ticks they time.
   { group: 'Scheduler', pages: ['/admin/scheduler'] },
+  { group: 'Mail', pages: ['/admin/mail'] },
   { group: 'SCIM', pages: ['/admin/scim'] },
   // Shared Signals. A page of its own rather than a section of anything, for
   // the reason /admin/federation is ungrouped: SSF is not a variant of another
@@ -37617,6 +39701,9 @@ const SETTING_HOMES = [
   // of the first. The MONITORING page beneath it edits nothing, so it is not
   // named here — this table is about where a setting is EDITED.
   { group: 'CAEP', pages: ['/admin/caep'] },
+  // RISK SCORING (#62): its datasets and failure history, on the Monitoring
+  // page that shows them, because there is no protocol for them to belong to.
+  { group: 'Risk', pages: ['/admin/risk'] },
   // RISC, on the CAEP group's terms: the second vocabulary over SSF is a
   // second specification and not a corner of the first, and the MONITORING
   // page beneath it edits nothing so it is not named here.
@@ -37641,8 +39728,9 @@ const SETTING_HOMES = [
   // /admin/users now; these two rows are the mechanisms.
   //
   // The old comment also said WebAuthn "has no settings at all and so has no
-  // row here". It has thirteen since 2026-09-10 — every parameter of the
-  // ceremony, which had been literals in a string in `authn/authn.ts`.
+  // row here". It has had settings since 2026-09-10 — every parameter of the
+  // ceremony, which had been literals in a string in `authn/authn.ts` — and
+  // the attestation policy's seven since #105.
   { group: 'TOTP MFA', pages: ['/admin/totp'] },
   { group: 'GNAP', pages: ['/admin/gnap'] },
   // ===== certificate enrollment setting homes (2026-09-13) =====
@@ -37659,6 +39747,9 @@ const SETTING_HOMES = [
   // A POLICY ABOUT THE TWO MECHANISMS ABOVE (2026-09-13), and drawn on BOTH of
   // their pages — `saml.issuer`'s arrangement — because either one satisfies
   // it and a reader of either page must see that it is in force.
+  // Since #101 (2026-09-22) the group also holds `authn.passwordAloneDoors`
+  // and the two `appPasswords.*` settings: what the requirement does at the
+  // five password-only doors, and what a person uses there instead.
   { group: 'Second-factor requirement',
     pages: ['/admin/totp', '/admin/webauthn'] },
   { group: 'Group claim', pages: ['/admin/groups'] },
@@ -37749,6 +39840,7 @@ const LIST_PARAMS = {
                             'clientsPage'],
   '/admin/spiffe/entries': ['q', 'origin', 'per', 'page'],
   '/admin/spiffe/agents': ['q', 'per', 'page'],
+  '/admin/spiffe/brokers': ['q', 'per', 'page'],
   // `personq` and `personfrom` are the grant pane's search (2026-09-13), so a
   // grant or a Revoke lands back on the results the reader was working
   // through. `person` is deliberately NOT here: it is the one they picked, and
@@ -37820,6 +39912,7 @@ const LIST_PARAMS = {
                     'backchannelDeliveriesPage'],
   '/admin/realms': ['per', 'page'],
   '/admin/federation': ['q', 'role', 'per', 'page'],
+  '/admin/oidfed': [],
   // TWO lists on one page — the global overrides and the recorded answers —
   // so each gets a page parameter of its own and they share one `per`, which
   // is the arrangement /admin/delegation already has and pagingOf()'s
@@ -39789,10 +41882,18 @@ const PROTOCOL_SETTINGS_PAGES = [
            'sent to the browser AND checked against the UV flag when the ' +
            'ceremony returns, because that flag is inside the bytes the ' +
            'authenticator signed. Nothing signed says what the browser was ' +
-           'asked about attestation, the resident key or the attachment — so ' +
-           'a check on those would be a comparison against a value this ' +
-           'service itself supplied. What it does instead is RECORD what ' +
-           'came back.',
+           'asked about the attestation conveyance, the resident key or the ' +
+           'attachment — so a check on those would be a comparison against ' +
+           'a value this service itself supplied. What it does instead is ' +
+           'RECORD what came back.',
+           '<strong>THE ATTESTATION STATEMENT IS VERIFIED (SINCE ' +
+           '#105)</strong> ' +
+           'under <code>webauthn.attestationPolicy</code> — in product mode ' +
+           'by default, all eight formats of WebAuthn Level 3 section 8, the ' +
+           'chain against this realm\'s anchors and the FIDO Metadata ' +
+           'Service\'s roots, revocation, and MDS status reports. What each ' +
+           'key\'s statement proved is on its row under <a ' +
+           'href="/admin/users">Users</a>.',
            '<strong>Raising user verification does not change what a session ' +
            'CLAIMS.</strong> A passwordless sign-in still records <code>amr ' +
            '["hwk"]</code> and <code>acr "1"</code> — one factor — even ' +
@@ -39901,10 +42002,15 @@ const PROTOCOL_SETTINGS_PAGES = [
            'It is the same device as the reserved password ' +
            '<code>invalid</code> and the Kerberos names that stay unknown: a ' +
            'permissive server is hard to write error handling against, so ' +
-           'the errors have to be reachable deliberately.'],
+           'the errors have to be reachable deliberately. <strong>In ' +
+           'development mode only</strong>: a realm in product mode ' +
+           'ignores it where the ID Token is built, logs that once ' +
+           '(STS-CORE-0106), and refuses turning it on (STS-CORE-0103).'],
     links: [['/.well-known/openid-configuration', 'the discovery document'],
             ['/oauth2/rfc9700', 'what RFC 9700 mode enforces'],
             ['/oauth2/oauth21', 'what OAuth 2.1 mode enforces'],
+            ['/oauth2/fapi',
+             'which FAPI profile is in force, and what it enforces'],
             ['/admin/token-lifetimes', 'how long what it issues lasts'],
             ['/admin/tokens', 'what has been issued']] },
 
@@ -39989,7 +42095,14 @@ const PROTOCOL_SETTINGS_PAGES = [
            'Credential status</a>; one a trusted foreign issuer signed has ' +
            'its status list fetched, kept for its ttl and at most <code>' +
            'oid4vp.statusListMaxCacheS</code>, and a credential whose status ' +
-           'cannot be read is refused.'],
+           'cannot be read is refused. <strong>So is one that names no ' +
+           'status</strong> (<code>oid4vp.requireStatusReference</code>, ' +
+           '<code>all</code> by default in both modes), and an ldp_vc whose ' +
+           'presentation withheld its <code>credentialStatus</code>, which ' +
+           'the request asks for; a trusted issuer that publishes no status ' +
+           'is exempted by its certificate\'s thumbprint in <code>' +
+           'oid4vp.statusOptionalIssuers</code>. The result page names the ' +
+           'rule that refused.'],
     links: [['/oid4vp/verifier', 'the verifier, for a person'],
             ['/admin/vc-verifier-config', 'what it asks for']] },
 
@@ -40031,6 +42144,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            'every application here. With it off that endpoint answers 403 ' +
            'naming this setting, and <code>/spnego/protected</code> still ' +
            'performs the whole handshake and gives no session.'],
+    status: slot.forward('kerberosPreauthStatusBlock'),
     links: [['/krb5/principals', 'the principal database'],
             ['/krb5/service', 'the protected service'],
             ['/spnego', 'what SPNEGO is, for a person'],
@@ -40355,11 +42469,18 @@ WIRE_STEPS.push(function (instance: AdminConsole): void {
     '<code>/saml2</code> and this console all read. A permissive version of ' +
     'it would not be a permissive mock; it would be an ' +
     'authentication bypass for every protocol in this process.') +
-    instance.note('<strong>The gate is on the SIGNER, not on the ' +
-    'subject.</strong> Once a relationship is configured and enabled, ' +
-    'everything downstream is as permissive as the rest of this service: any ' +
-    'username in the assertion is accepted, any attribute is mapped, nothing ' +
-    'about the person is checked, and a directory entry is created for them.');
+    instance.note('<strong>The gate is on the SIGNER, and on the SUBJECT ' +
+    'too (#109).</strong> A verified assertion signs in only the person its ' +
+    'partner\'s subject is LINKED to — a <code>federationLink</code> on the ' +
+    'entry. What happens to a subject nobody linked is the relationship\'s ' +
+    '<code>fedSubjectPolicy</code>: the person it names signs in here first ' +
+    'and is then linked (<code>link-at-first-sign-in</code>, the default), ' +
+    'it is refused (<code>pre-linked</code>), it gets a new entry of its own ' +
+    '(<code>jit-namespaced</code>), or — in development only — the old name ' +
+    'match (<code>any-existing</code>). Three rules narrow it further, and a ' +
+    'console administrator is refused unless ' +
+    '<code>fedMayAssertAdministrators</code> is on. Nothing is written onto ' +
+    'an entry before all of that has passed.');
 });
 
 const FEDERATION_LINKS =

@@ -141,6 +141,9 @@ import crypto = require('./crypto');
 // from here; the one failure this module has is logged with its code.
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+// #64: the authentication policy, whose row replaced this module's `enabled`
+// setting. A LEAF (helpers, mode, realms, error codes), so no cycle.
+import authnPolicy = require('./authn_policy');
 
 // See the header: the same thirty-two characters as base32 and for a different
 // reason, declared here so that a change to either cannot move the other.
@@ -168,6 +171,7 @@ interface BackupCodesDeps {
     verifySecretAsync(plaintext: string, stored: unknown): Promise<boolean>;
   };
   errorCodes: { tag(code: string): string };
+  authnPolicy: { allows(mechanism: string, role: string): boolean };
   randomInt(min: number, max: number): number;
 }
 
@@ -189,6 +193,7 @@ class BackupCodes {
       config: config,
       crypto: crypto as unknown as BackupCodesDeps['crypto'],
       errorCodes: errorCodes,
+      authnPolicy: authnPolicy,
       randomInt: function (min: number, max: number): number {
         return nodeCrypto.randomInt(min, max);
       }
@@ -216,7 +221,9 @@ class BackupCodes {
     log.debug("Entering BackupCodes.settings().");
     log.debug("Leaving BackupCodes.settings().");
     return {
-      enabled: config.value('backupCodes.enabled') !== false,
+      // #64: the authentication policy's row, which replaced
+      // `backupCodes.enabled` with the same contract.
+      enabled: this.deps.authnPolicy.allows('recoveryCode', 'second-factor'),
       count: Math.max(1, Math.min(50,
         Number(config.value('backupCodes.count') || 10))),
       length: Math.max(8, Math.min(32,
@@ -249,7 +256,7 @@ class BackupCodes {
   // and an endpoint is a door.
   //
   // **TURNING IT OFF DOES NOT INVALIDATE A SET SOMEBODY ALREADY HOLDS**, which
-  // is the contract `totp.enabled` and `webauthn.enabled` both keep. A person
+  // is the contract the TOTP row and `webauthn.enabled` both keep. A person
   // who was issued ten codes still holds ten codes, and the sign-in door still
   // accepts one — a setting that silently took away the only way back into an
   // account whose phone is lost would be the worst possible knob in this

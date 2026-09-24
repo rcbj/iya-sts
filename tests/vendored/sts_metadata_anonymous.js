@@ -241,6 +241,10 @@ const DID_TYPE = /^application\/did\+json\b/;
 const SAML_TYPE = /^application\/samlmetadata\+xml\b/;
 const XML_TYPE = /^application\/xml\b/;
 const TEXT_TYPE = /^text\/plain\b/;
+// OpenID Federation 1.1 section 9: an Entity Configuration's media type, and
+// 8.7.2's for the Historical Keys.
+const ENTITY_STATEMENT_TYPE = /^application\/entity-statement\+jwt\b/;
+const JWK_SET_JWT_TYPE = /^application\/jwk-set\+jwt\b/;
 
 // ---------------------------------------------------------------------------
 // A JWK THAT IS A PUBLIC KEY, and the members that would say otherwise.
@@ -422,6 +426,94 @@ const DOCUMENTS = [
         const secret = privateMembersIn((m && m.publicKeyJwk) || {});
         if (secret.length) {
           bad.push("verificationMethod " + i + " carries " + secret.join(", "));
+        }
+      });
+      log.debug("Leaving must().");
+      return bad;
+    } },
+  // OPENID FEDERATION'S (#132, 2026-09-23): the realm's Entity Configuration,
+  // which #129 served for the verifier alone and every realm serves now.
+  { family: "OpenID Federation",
+    spec: "OpenID Federation 1.1 section 9",
+    path: "/.well-known/openid-federation",
+    type: ENTITY_STATEMENT_TYPE, json: false, badCredential: "ignored",
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      const parts = String(text || "").trim().split(".");
+      let header = null;
+      let claims = null;
+      try {
+        header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
+        claims = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+      } catch (e) {
+        log.debug("Caught in must(): " + e.message);
+      }
+      if (!header || !claims || parts.length !== 3) {
+        bad.push("not a compact JWT");
+        log.debug("Leaving must().");
+        return bad;
+      }
+      if (header.typ !== "entity-statement+jwt") {
+        bad.push("typ is " + header.typ);
+      }
+      if (!claims.iss || claims.iss !== claims.sub) {
+        bad.push("an Entity Configuration is self-issued: iss " + claims.iss +
+                 ", sub " + claims.sub);
+      }
+      const keys = (claims.jwks && claims.jwks.keys) || [];
+      if (!keys.length) {
+        bad.push("no jwks");
+      }
+      keys.forEach(function (k, i) {
+        const secret = privateMembersIn(k || {});
+        if (secret.length) {
+          bad.push("key " + i + " carries " + secret.join(", "));
+        }
+      });
+      if (!claims.metadata || !claims.metadata.openid_credential_verifier) {
+        bad.push("no openid_credential_verifier metadata");
+      }
+      log.debug("Leaving must().");
+      return bad;
+    } },
+  { family: "OpenID Federation",
+    spec: "OpenID Federation 1.1 section 8.7",
+    path: "/oidfed/historical-keys",
+    type: JWK_SET_JWT_TYPE, json: false, badCredential: "ignored",
+    // THE KEYS A REALM HAS RETIRED OR REVOKED, signed: public halves only,
+    // each with the exp it stopped being valid at. An empty list is a
+    // realm that has never rotated, which is the ordinary case here.
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      const parts = String(text || "").trim().split(".");
+      let header = null;
+      let claims = null;
+      try {
+        header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
+        claims = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+      } catch (e) {
+        log.debug("Caught in must(): " + e.message);
+      }
+      if (!header || !claims || parts.length !== 3) {
+        bad.push("not a compact JWT");
+        log.debug("Leaving must().");
+        return bad;
+      }
+      if (header.typ !== "jwk-set+jwt") {
+        bad.push("typ is " + header.typ);
+      }
+      if (!Array.isArray(claims.keys)) {
+        bad.push("no keys array");
+      }
+      (claims.keys || []).forEach(function (k, i) {
+        const secret = privateMembersIn(k || {});
+        if (secret.length) {
+          bad.push("keys[" + i + "] carries " + secret.join(", "));
+        }
+        if (!Number.isFinite(k.exp)) {
+          bad.push("keys[" + i + "] has no exp (8.7.2)");
         }
       });
       log.debug("Leaving must().");
@@ -903,6 +995,10 @@ const NO_PUBLIC_METADATA = {
     "artifact is a credential, which is TOTP's position above read a second " +
     "time and with no document even in principle. An anonymous GET of " +
     "anything here is meant to fail.",
+  "Email codes and links":
+    "not a protocol — a code or a link is mailed to one person's verified " +
+    "address and is a credential, not a document; there is nothing a " +
+    "stranger could discover and nothing any client would look for.",
   "Federation":
     "there is no service-wide document — /federation/metadata/:id is one per " +
     "CONFIGURED relationship, and section 5 asserts the surface is ungated " +
@@ -928,6 +1024,10 @@ const WELL_KNOWN_ELSEWHERE = {
     "the same handler as /.well-known/gnap-as-rs for a NAMED authorization " +
     "server profile, which only exists once somebody creates one; the " +
     "unnamed form is the row in DOCUMENTS.",
+  "/.well-known/webfinger":
+    "RFC 7033 WebFinger (#119): it answers only with a resource parameter, " +
+    "and sts_discovery_realms.js fetches it anonymously for every form of " +
+    "resource, with its JRD, its CORS header and its 400 and 404.",
   "/.well-known/hoba/register":
     "NOT a document — it is where a client REGISTERS a HOBA key, and it is a " +
     "POST that changes state. sts_admin_console.js and the SCIM jobs are " +
@@ -1242,10 +1342,11 @@ async function theIssuerPathFormsAnswerToo() {
 // 5. THE PER-APPLICATION DOCUMENTS.
 //
 // Three of these families mint a document PER PARTNER, and two of them do it
-// for a partner that has never been registered — which is this service being a
-// mock, and is what lets a service provider be pointed at
-// /saml2/metadata/<anything> and get a working entityID. The third refuses to
-// invent anything, and the shape of its refusal is the assertion: a 404 says
+// — in development mode — for a partner that has never been registered, which
+// is this service being a mock, and is what lets a service provider be
+// pointed at /saml2/metadata/<anything> and get a working entityID. In
+// product mode (#112) those two answer 404 for such a name. The third
+// refuses to invent anything, and the shape of its refusal is the assertion: a 404 says
 // the reader was let in and there was nothing there, where a 401 or a redirect
 // would say the surface had been closed. federation/CLAUDE.md's gate is on the
 // SIGNER of an incoming assertion, and it must never become a gate on the
@@ -1261,6 +1362,21 @@ async function thePerPartnerDocuments() {
   ];
   for (const one of minted) {
     const r = await fetchDocument(one.path);
+    // IN PRODUCT MODE (#112) a name nobody registered is a 404 at these
+    // paths, and that 404 is the same kind of answer the federation one
+    // below is: the reader was let in and there is nothing there. This job
+    // sends no credential, so it tells the modes apart by the answer — a
+    // handler-sent text/plain 404 saying why — rather than by asking.
+    if (r.status === 404) {
+      check(one.path + " is, in product mode, an honest 404 for a name " +
+            "nobody registered", function () {
+        assert.ok(/text\/plain/.test(r.type), r.type);
+        assert.ok(/no-store/.test(r.cache), r.cache);
+        assert.ok(/registered/.test(r.text) && /product mode/.test(r.text),
+                  r.text.slice(0, 200));
+      });
+      continue;
+    }
     check(one.path + " answers a stranger", function () {
       assert.strictEqual(r.status, 200,
         one.family + "'s per-partner metadata answered " + r.status +

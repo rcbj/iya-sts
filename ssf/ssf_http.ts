@@ -42,12 +42,18 @@
 //    URL list on purpose: a receiver legitimately moves its endpoint path
 //    around and does not legitimately move to another host.
 //
-// 3. **https ONLY UNLESS `ssf.pushAllowInsecure` SAYS OTHERWISE**, exactly as
-//    federation does, and for a reason that is different in kind: what travels
-//    on this request is not a credential, it is an EVENT — that somebody's
-//    session was revoked, that an account was disabled. That is somebody's
-//    security posture in transit, and it is also carrying the receiver's own
-//    `authorization_header`, which IS a credential. Both halves want TLS.
+// 3. **https, WITH THE CERTIFICATE VERIFIED**, exactly as federation does,
+//    and for a reason that is different in kind: what travels on this request
+//    is not a credential, it is an EVENT — that somebody's session was
+//    revoked, that an account was disabled. That is somebody's security
+//    posture in transit, and it is also carrying the receiver's own
+//    `authorization_header`, which IS a credential. Both halves want TLS, and
+//    RFC 8935 requires it with the receiver authenticated. Since #171 the
+//    policy is `common/outbound_tls.ts`'s: plain http only with
+//    `ssf.pushAllowHttp`, and never in product mode; verification off only
+//    with `ssf.pushSkipTlsVerification`, and only in development; a private
+//    CA through `ssf.pushCaFile`. This service's own receivers are the one
+//    exception to all three, and it is not a relaxation — see `pushSet()`.
 //
 // 4. **NO REDIRECTS, A CAPPED BODY AND A TIMEOUT**, for federation's reasons.
 //    A 302 from a push endpoint is not a protocol this service speaks and
@@ -105,6 +111,7 @@ import InstanceSlot = require('../common/instance_slot');
 // directory: it requires nothing here.
 import realms = require('../common/realms');
 import version = require('../common/version');
+import OutboundTls = require('../common/outbound_tls');
 
 const { URL } = nodeUrl;
 
@@ -115,6 +122,20 @@ const { URL } = nodeUrl;
 // Built once at require time: the version cannot change while the process
 // runs.
 const USER_AGENT = version.userAgent('ssf-transmitter');
+
+// THE OUTBOUND TRANSPORT POLICY, as `common/outbound_tls.ts` takes it (#171).
+// No plain http in product at all: RFC 8935 names no loopback exception, and
+// this service's own receivers are exempt for a different reason (header,
+// point 3).
+const PUSH_TRANSPORT = {
+  what: 'an SSF push delivery',
+  allowHttpKey: 'ssf.pushAllowHttp',
+  skipTlsKey: 'ssf.pushSkipTlsVerification',
+  caFileKey: 'ssf.pushCaFile',
+  loopbackHttpInProduct: false,
+  httpRefusedCode: 'STS-SSF-0108',
+  skipIgnoredCode: 'STS-SSF-0109'
+};
 
 // THE ERROR CODES (common/error_codes.js). Every way a push can fail carries
 // its code on the result as `errorCode`, which `ssf.ts`'s transmit() puts on
@@ -205,12 +226,13 @@ class SsfHttp {
     return on;
   }
 
-  allowInsecure(): boolean {
-    const { log, config } = this.deps;
-    log.debug("Entering SsfHttp.allowInsecure().");
-    const on = !!config.value('ssf.pushAllowInsecure');
-    log.debug("Leaving SsfHttp.allowInsecure(). " + on);
-    return on;
+  // The three transport settings as they are IN FORCE in this realm (#171) —
+  // in product a stored `ssf.pushSkipTlsVerification` is not.
+  transportSettings(): ReturnType<typeof OutboundTls.describe> {
+    const { log } = this.deps;
+    log.debug("Entering SsfHttp.transportSettings().");
+    log.debug("Leaving SsfHttp.transportSettings().");
+    return OutboundTls.describe(PUSH_TRANSPORT);
   }
 
   private timeoutMs(): any {
@@ -388,44 +410,63 @@ class SsfHttp {
   urlProblem(raw: unknown): string {
     const { log } = this.deps;
     log.debug("Entering SsfHttp.urlProblem().");
+    log.debug("Leaving SsfHttp.urlProblem().");
+    return this.urlVerdict(raw).why;
+  }
+
+  // The same answer, with `STS-SSF-0108` when the refusal is plain http in
+  // product mode and '' for every other, whose code is the caller's
+  // (`STS-SSF-0012` at stream creation, `STS-SSF-0034` at push time).
+  urlVerdict(raw: unknown): { why: string; errorCode: string } {
+    const { log } = this.deps;
+    log.debug("Entering SsfHttp.urlVerdict().");
     const text = String(raw || '').trim();
     if (!text) {
-      log.debug("Leaving SsfHttp.urlProblem(). Empty.");
-      return 'there is no delivery.endpoint_url on the stream';
+      log.debug("Leaving SsfHttp.urlVerdict(). Empty.");
+      return { why: 'there is no delivery.endpoint_url on the stream',
+               errorCode: '' };
     }
     let parsed = null;
     try {
       parsed = new URL(text);
     } catch (e) {
-      log.debug("Caught in SsfHttp.urlProblem(): " + ((e && e.message) || e));
-      log.debug("Leaving SsfHttp.urlProblem(). It will not parse.");
-      return '"' + text + '" is not a URL (' + e.message + ')';
+      log.debug("Caught in SsfHttp.urlVerdict(): " + ((e && e.message) || e));
+      log.debug("Leaving SsfHttp.urlVerdict(). It will not parse.");
+      return { why: '"' + text + '" is not a URL (' + e.message + ')',
+               errorCode: '' };
     }
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-      log.debug("Leaving SsfHttp.urlProblem(). Wrong scheme.");
-      return 'its scheme is "' + parsed.protocol.replace(':', '') +
-             '", and a push endpoint is https (or http, with ' +
-             'ssf.pushAllowInsecure on)';
+      log.debug("Leaving SsfHttp.urlVerdict(). Wrong scheme.");
+      return { why: 'its scheme is "' + parsed.protocol.replace(':', '') +
+                    '", and a push endpoint is https (or http, with ' +
+                    'ssf.pushAllowHttp on, in development mode)',
+               errorCode: '' };
     }
     const ours = this.isOwnLoopback(text);
-    if (parsed.protocol === 'http:' && !this.allowInsecure() && !ours) {
-      log.debug("Leaving SsfHttp.urlProblem(). http, refused.");
-      return 'it is an http:// URL and ssf.pushAllowInsecure is off. A ' +
-             'Security Event Token is somebody\'s security posture in ' +
-             'transit, and the receiver\'s own authorization_header travels ' +
-             'beside it, so plain http is refused unless that setting says ' +
-             'otherwise';
+    if (parsed.protocol === 'http:' && !ours) {
+      const verdict = OutboundTls.httpVerdict(PUSH_TRANSPORT,
+                                              parsed.hostname);
+      if (!verdict.ok) {
+        log.debug("Leaving SsfHttp.urlVerdict(). http, refused.");
+        return { why: verdict.why + '. A Security Event Token is ' +
+                      'somebody\'s security posture in transit, and the ' +
+                      'receiver\'s own authorization_header travels beside ' +
+                      'it',
+                 errorCode: verdict.errorCode };
+      }
     }
     const hosts = this.allowedHosts();
     if (hosts.length && !ours &&
         hosts.indexOf(parsed.hostname.toLowerCase()) < 0) {
-      log.debug("Leaving SsfHttp.urlProblem(). Not on the allowlist.");
-      return 'its host "' + parsed.hostname + '" is not in ' +
-             'ssf.pushAllowedHosts (' + hosts.join(', ') + '). That list is ' +
-             'empty by default, meaning any host; this deployment has set it';
+      log.debug("Leaving SsfHttp.urlVerdict(). Not on the allowlist.");
+      return { why: 'its host "' + parsed.hostname + '" is not in ' +
+               'ssf.pushAllowedHosts (' + hosts.join(', ') + '). That list ' +
+               'is empty by default, meaning any host; this deployment has ' +
+               'set it',
+               errorCode: '' };
     }
-    log.debug("Leaving SsfHttp.urlProblem(). Fine.");
-    return '';
+    log.debug("Leaving SsfHttp.urlVerdict(). Fine.");
+    return { why: '', errorCode: '' };
   }
 
   // -------------------------------------------------------------------------
@@ -460,12 +501,12 @@ class SsfHttp {
              'request at all. Poll delivery (urn:ietf:rfc:8936) needs none — ' +
              'the receiver comes here.' });
     }
-    const problem = this.urlProblem(url);
-    if (problem) {
-      log.debug("Leaving SsfHttp.pushSet(). " + problem);
+    const problem = this.urlVerdict(url);
+    if (problem.why) {
+      log.debug("Leaving SsfHttp.pushSet(). " + problem.why);
       return Promise.resolve({ ok: false, status: 0, err: '', description: '',
-        errorCode: 'STS-SSF-0034',
-        why: 'the delivery endpoint cannot be dialled: ' + problem });
+        errorCode: problem.errorCode || 'STS-SSF-0034',
+        why: 'the delivery endpoint cannot be dialled: ' + problem.why });
     }
     const target = new URL(String(url).trim());
     const secure = target.protocol === 'https:';
@@ -477,9 +518,9 @@ class SsfHttp {
     // (or, with no Root, generated per start and self-signed) — nobody a
     // public truststore knows — so the ordinary check below would refuse
     // every push to the console's and the portal's receive endpoints — and
-    // `ssf.pushAllowInsecure` is NOT the way round it, because that setting
-    // turns the check off for every receiver in the world to fix a connection
-    // to ourselves.
+    // `ssf.pushSkipTlsVerification` is NOT the way round it, because that
+    // setting turns the check off for every receiver in the world to fix a
+    // connection to ourselves (and is not honoured in product at all).
     //
     // So: our own trust anchor — the Root while there is one, the self-signed
     // certificate while there is not (`trustAnchorPems()` in
@@ -532,9 +573,22 @@ class SsfHttp {
       // header, point 2 — a check disabled six months ago and forgotten is the
       // worst kind of leftover.
       log.warn('ssf: pushing a Security Event Token to ' + target.origin +
-               ' over plain http because ssf.pushAllowInsecure is ON. The ' +
+               ' over plain http because ssf.pushAllowHttp is ON. The ' +
                'event and the receiver\'s authorization_header both travel ' +
                'in clear.');
+    }
+    // THE CERTIFICATE POLICY FOR ANY OTHER RECEIVER (#171): verified against
+    // node's store and `ssf.pushCaFile`, and skipped only where development
+    // mode and `ssf.pushSkipTlsVerification` both say so. Not asked for one
+    // of our own receivers: the pin above is what that connection checks.
+    const policy = secure && !anchor
+      ? OutboundTls.tlsVerdict(PUSH_TRANSPORT, target.origin) : null;
+    if (policy && !policy.ok) {
+      log.debug("Leaving SsfHttp.pushSet(). " + policy.why);
+      // error-code: none — the policy answers its own, STS-CORE-0104
+      return Promise.resolve({ ok: false, status: 0, err: '', description: '',
+        errorCode: policy.errorCode,
+        why: 'the delivery endpoint cannot be dialled: ' + policy.why });
     }
     const body = Buffer.from(String(token), 'utf8');
     const headers: Record<string, string | number> = {
@@ -550,7 +604,6 @@ class SsfHttp {
     // Read once per push, so a runtime change cannot move the bound half way
     // through one response.
     const limit = this.maxBodyBytes();
-    const allowInsecure = this.allowInsecure.bind(this);
     const timeoutMs = this.timeoutMs.bind(this);
     log.debug("Leaving SsfHttp.pushSet(). Dialling " + target.origin + '.');
     return new Promise(function (resolve) {
@@ -572,15 +625,17 @@ class SsfHttp {
         // The ordinary certificate check, and it is deliberately NOT this
         // service's usual "verify nothing" posture: what is being protected
         // is the receiver's authorization_header and the fact that somebody's
-        // session was revoked. `ssf.pushAllowInsecure` turns it off for
-        // localhost work and is warned about above.
+        // session was revoked. `policy` above is what decides it; only
+        // development mode with `ssf.pushSkipTlsVerification` turns it off,
+        // and that is warned about on every request.
         //
         // For one of this service's own receivers it stays ON and the anchor
         // above is what it checks against — a PIN rather than a relaxation,
         // which is the whole difference between this and setting that
         // setting.
-        rejectUnauthorized: secure && (!!anchor || !allowInsecure()),
-        ca: anchor ? [anchor] : undefined
+        rejectUnauthorized: secure &&
+          (!!anchor || !policy || policy.rejectUnauthorized),
+        ca: anchor ? [anchor] : (policy && policy.ca ? policy.ca : undefined)
       };
       // **ADDED ONLY WHEN THERE IS A PIN, AND NEVER AS `undefined`**
       // (2026-09-15). Node validates this option by PRESENCE: an explicit
@@ -723,8 +778,8 @@ class SsfHttp {
           retryable: !selfSigned,
           why: 'the request failed: ' + (e.code ? e.code + ' — ' : '') +
                e.message + (selfSigned
-            ? '. Set ssf.pushAllowInsecure to push to a receiver whose ' +
-              'certificate nothing here trusts.' : '') });
+            ? '. Name the receiver\'s CA in ssf.pushCaFile to push to a ' +
+              'receiver whose certificate nothing here trusts.' : '') });
       });
       request.write(body);
       request.end();
@@ -946,7 +1001,9 @@ export = {
   MAX_BODY_BYTES: SsfHttp.MAX_BODY_BYTES,
   SET_MEDIA_TYPE: SsfHttp.SET_MEDIA_TYPE,
   pushAllowed: slot.forward('pushAllowed'),
-  allowInsecure: slot.forward('allowInsecure'),
+  transportSettings: slot.forward('transportSettings'),
+  urlVerdict: slot.forward('urlVerdict'),
+  PUSH_TRANSPORT: PUSH_TRANSPORT,
   allowedHosts: slot.forward('allowedHosts'),
   urlProblem: slot.forward('urlProblem'),
   pushSet: slot.forward('pushSet')

@@ -68,8 +68,9 @@
 // ---------------------------------------------------------------------------
 // It is a LIBRARY like `dpop.js` (rule 3): it registers no route and requires
 // only `helpers.js`, `config.js` and `common/crypto.js` — plus
-// `common/tls_client_certificates.js` lazily, in `peerVerified()` — so it
-// cannot join a cycle and its position in the require order does not matter.
+// `common/tls_client_certificates.js` and `common/revocation_status.js`
+// lazily, in `peerVerified()` and `issuedIdentityOf()` — so it cannot join a
+// cycle and its position in the require order does not matter.
 // `dpop.js` requires it, because `presentedAccessToken()` there is the single
 // check every protected endpoint shares and a second one beside it would be
 // another caller nobody updated.
@@ -228,6 +229,37 @@ function peerVerified(req) {
          '8705 section 3 binds to the certificate rather than to anybody\'s ' +
          'opinion of it.'
   };
+}
+
+// ---------------------------------------------------------------------------
+// WHO THIS REALM ISSUED THE CERTIFICATE TO, AND DO THEY STILL HOLD IT.
+//
+// The two identity questions `common/tls_client_certificates.js` answers, off
+// this request's socket: `identityOf()` names the person or application a
+// realm-issued TLS client certificate was issued to, and `stillHeld()` asks
+// whether that holder's record still lists it. RFC 8705's implicit mapping in
+// `client_auth.js` asked them first; GNAP's PKI trust model
+// (`gnap/gnap_proof.ts`, #107) asks them of the same socket, so they moved
+// here rather than being asked twice in two spellings. Required lazily, for
+// `peerVerified()`'s reason: it reaches the certificate authority, and a
+// process with none answers "not issued here".
+// ---------------------------------------------------------------------------
+function issuedIdentityOf(request) {
+  log.debug("Entering issuedIdentityOf().");
+  let identity = { issuedHere: false, accepted: false };
+  let held = false;
+  try {
+    const tlsClient = require('../common/tls_client_certificates');
+    const status = require('../common/revocation_status');
+    identity = tlsClient.identityOf(status.fromSocket(request.socket));
+    held = identity.accepted ? tlsClient.stillHeld(identity) : false;
+  } catch (e) {
+    log.debug("Caught in issuedIdentityOf(): " + ((e && e.message) || e));
+    identity = { issuedHere: false, accepted: false };
+    held = false;
+  }
+  log.debug("Leaving issuedIdentityOf(). issuedHere=" + identity.issuedHere);
+  return { identity: identity, held: held };
 }
 
 // RFC 8705 `x5t#S256`: SHA-256 over the DER, base64url. The same digest
@@ -480,6 +512,7 @@ module.exports = {
   CONFIRMATION_MEMBER: CONFIRMATION_MEMBER,
   peerCertificate: peerCertificate,
   peerVerified: peerVerified,
+  issuedIdentityOf: issuedIdentityOf,
   thumbprintOf: thumbprintOf,
   presentedThumbprint: presentedThumbprint,
   confirmationFor: confirmationFor,

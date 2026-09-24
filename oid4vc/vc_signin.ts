@@ -155,6 +155,9 @@ import verifier = require('./vc_verifier');
 import vcDid = require('./vc_did');
 // THE ATOMIC "ONCE" (#46), for finishing a sign-in on exactly one node.
 import clusterClaims = require('../cluster/cluster_claims');
+import identityAssurance = require('../common/identity_assurance');
+// SIOPv2 (#129): an enrolment, when the browser collects one.
+import siop = require('./siop');
 
 const { log, xmlEscape } = helpers;
 
@@ -176,7 +179,12 @@ const QUERY = validation.z.looseObject({
   state: validation.types.opt(validation.types.opaque),
   response_code: validation.types.opt(validation.types.opaque),
   wallet: validation.types.opt(validation.types.uri),
-  qr: validation.types.opt(validation.types.oneOf(['1']))
+  qr: validation.types.opt(validation.types.oneOf(['1'])),
+  // SIOPv2 (#129): a self-issued ID Token instead of a presentation, and —
+  // from a session somebody already holds — to enrol its key rather than to
+  // sign in with it.
+  siop: validation.types.opt(validation.types.oneOf(['1'])),
+  enrol: validation.types.opt(validation.types.oneOf(['1']))
 });
 
 const DC_API_FORM = validation.z.looseObject({
@@ -250,6 +258,8 @@ interface VcSigninDeps {
   verifier: typeof verifier;
   stsDid: (req: any) => string;
   clusterClaims: typeof clusterClaims;
+  identityAssurance: typeof identityAssurance;
+  siop: typeof siop;
   contentSecurityPolicy: (overrides: any) => string;
   qrSvg: (text: string) => Promise<string>;
 }
@@ -283,6 +293,8 @@ class VcSignin {
       verifier: verifier,
       stsDid: vcDid.stsDid,
       clusterClaims: clusterClaims,
+      identityAssurance: identityAssurance,
+      siop: siop,
       contentSecurityPolicy: app.contentSecurityPolicy,
       // The QR code as SVG, as `common/totp.ts` draws its own — see there for
       // why SVG and why server-side.
@@ -301,6 +313,28 @@ class VcSignin {
     log.debug("Entering VcSignin.enabled().");
     log.debug("Leaving VcSignin.enabled().");
     return !!config.value('oid4vp.signIn');
+  }
+
+  // SIOPv2 (#129): is a self-issued ID Token a way in here? It is its own
+  // switch, OFF by default — a way in is something a realm turns on.
+  selfIssuedEnabled(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering VcSignin.selfIssuedEnabled().");
+    log.debug("Leaving VcSignin.selfIssuedEnabled().");
+    return !!config.value('oid4vp.signInSelfIssued');
+  }
+
+  // Who holds the sign-on session this browser carries, or '' — for an
+  // enrolment, which is only ever for the person already signed in.
+  personOf(req: any): string {
+    const { log, authn } = this.deps;
+    log.debug("Entering VcSignin.personOf().");
+    const session = authn.sessionOf(req);
+    const name = session && session.user && session.authenticated !== false
+      ? String(session.user.username || '') : '';
+    log.debug("Leaving VcSignin.personOf(). " + (name ? 'Signed in.' :
+                                                        'Nobody.'));
+    return name;
   }
 
   // IS THE PLAIN QR CODE OFFERED? `oid4vp.signInCrossDevice`, OFF by default
@@ -465,6 +499,15 @@ class VcSignin {
     const { log, authn } = this.deps;
     log.debug("Entering VcSignin.contextOf().");
     const mfaId = String(query.mfa || '');
+    // AN ENROLMENT (#129) waits on no pending record: its "record" is the
+    // enrolment's own id, carried as `authn`, and nothing else reads it.
+    if (query.enrol === '1') {
+      log.debug("Leaving VcSignin.contextOf(). An enrolment.");
+      return { record: query.authn ? { id: String(query.authn),
+                                       protocol: 'self-issued enrolment' }
+                                   : null,
+               step: null, mfaId: '', enrol: true };
+    }
     if (mfaId) {
       const step = authn.mfaStepFor(mfaId);
       log.debug("Leaving VcSignin.contextOf(). A second-factor step.");
@@ -482,7 +525,8 @@ class VcSignin {
     return authn.WALLET_WAIT_PATH + '?authn=' +
       encodeURIComponent(ctx.record.id) + '&state=' +
       encodeURIComponent(state) +
-      (ctx.mfaId ? '&mfa=' + encodeURIComponent(ctx.mfaId) : '');
+      (ctx.mfaId ? '&mfa=' + encodeURIComponent(ctx.mfaId) : '') +
+      (ctx.enrol ? '&enrol=1' : '');
   }
 
   // ---------------------------------------------------------------------------
@@ -497,11 +541,38 @@ class VcSignin {
       log.debug("Leaving VcSignin.handleStart(). Malformed.");
       return;
     }
+    const selfIssued = query.siop === '1';
+    // AN ENROLMENT STARTS HERE WITH NO RECORD: it is given one, and it is for
+    // the person this browser is signed in as, or for nobody.
+    let enrolFor = '';
+    if (query.enrol === '1') {
+      enrolFor = this.personOf(req);
+      if (!selfIssued || !enrolFor || query.mfa) {
+        errorCodes.mark(res, 'STS-VC-0093');
+        this.page(res, 403, 'Sign in first',
+          '<h1>403 &mdash; sign in before enrolling a wallet</h1><div ' +
+          'class="err">A self-issued key is enrolled for the person who is ' +
+          'signed in, from their own portal, and this browser holds no ' +
+          'sign-on session.</div><p><a href="/portal/self-issued">Your ' +
+          'self-issued IDs</a></p>');
+        log.debug("Leaving VcSignin.handleStart(). No session to enrol for.");
+        return;
+      }
+      query.authn = 'enrol-' + randomId(18);
+    }
     const ctx = this.contextOf(query);
     const record = ctx.record;
-    if (!this.enabled()) {
+    if (!this.enabled() || (selfIssued && !this.selfIssuedEnabled())) {
       this.closedPage(res, record);
       log.debug("Leaving VcSignin.handleStart(). The door is closed.");
+      return;
+    }
+    if (selfIssued && ctx.mfaId) {
+      errorCodes.mark(res, 'STS-VC-0093');
+      this.page(res, 400, 'Not a second factor',
+        '<h1>400 &mdash; a self-issued ID is not offered as a second ' +
+        'factor</h1>' + this.fallbackHtml(record));
+      log.debug("Leaving VcSignin.handleStart(). SIOPv2 as a second factor.");
       return;
     }
     if (!record) {
@@ -535,10 +606,11 @@ class VcSignin {
       did = '';
     }
     const tx = verifier.buildVpRequest(req, {
+      responseType: selfIssued ? 'id_token' : 'vp_token',
       signIn: {
         authnId: record.id,
         bindingHash: this.hashOf(binding),
-        completePath: authn.WALLET_WAIT_PATH,
+        completePath: authn.WALLET_WAIT_PATH + (enrolFor ? '?enrol=1' : ''),
         ttlMs: this.ttlMs(),
         crossDevice: this.qrOffered(),
         issuerDids: did ? [did] : [],
@@ -547,6 +619,9 @@ class VcSignin {
     });
     tx.signIn.walletUrl = wallet.url;
     tx.signIn.mfaId = ctx.mfaId;
+    if (enrolFor) {
+      tx.signIn.enrol = { username: enrolFor };
+    }
     verifier.saveTransaction(tx);
     this.bindingCookie(res, binding);
     log.info('oid4vp-signin: a wallet sign-in was started for the pending ' +
@@ -628,12 +703,22 @@ class VcSignin {
         'phone: a QR code can be passed to somebody else, and whoever ' +
         'scans it signs THIS browser in.</p>'
       : '';
-    this.page(res, 200, 'Sign in with a wallet',
-      '<h1>Sign in with a wallet</h1>' +
-      '<p class="sub">Your wallet will be asked for a credential this ' +
-      'service issued to you, and shown exactly what is asked for before ' +
-      'anything is sent.' + (ctx.mfaId ? ' It is your second factor: the ' +
-      'credential must be yours.' : '') + '</p>' +
+    const selfIssued = tx.responseType === 'id_token';
+    const heading = ctx.enrol ? 'Enrol a wallet'
+      : selfIssued ? 'Sign in with a self-issued ID' : 'Sign in with a wallet';
+    this.page(res, 200, heading,
+      '<h1>' + heading + '</h1>' +
+      '<p class="sub">' + (ctx.enrol
+        ? 'Your wallet will be asked for a self-issued ID Token (SIOPv2), ' +
+          'signed with its own key. That key is then enrolled for you, and ' +
+          'signs you in here from then on.'
+        : selfIssued
+          ? 'Your wallet will be asked for a self-issued ID Token (SIOPv2), ' +
+            'signed with a key you enrolled here.'
+          : 'Your wallet will be asked for a credential this ' +
+            'service issued to you, and shown exactly what is asked for ' +
+            'before anything is sent.' + (ctx.mfaId ? ' It is your second ' +
+            'factor: the credential must be yours.' : '')) + '</p>' +
       dcHtml + this.sameDeviceHtml(req, tx) + qrLink +
       '<p id="wallet-waiting">The request expires in ' + seconds +
       ' seconds. If your wallet on this device does not bring you back, <a ' +
@@ -652,7 +737,9 @@ class VcSignin {
     const { log, xmlEscape, verifier, realms, qrSvg } = this.deps;
     log.debug("Entering VcSignin.qrPage().");
     const query = verifier.vpRequestQuery(req, tx);
-    const svg = await qrSvg('openid4vp://?' + query);
+    // SIOPv2's static `siopv2:` for an ID Token alone (#129).
+    const svg = await qrSvg((tx.responseType === 'id_token' ? 'siopv2://?' :
+                             'openid4vp://?') + query);
     const self = this.waitPathFor(ctx, tx.state) + '&qr=1';
     const seconds = Math.max(0, Math.round((tx.expires - Date.now()) / 1000));
     this.page(res, 200, 'Sign in with a wallet',
@@ -693,7 +780,8 @@ class VcSignin {
     const tx = verifier.transactionFor(query.state);
     if (!tx || !tx.signIn || !query.authn ||
         tx.signIn.authnId !== String(query.authn) ||
-        String(tx.signIn.mfaId || '') !== ctx.mfaId) {
+        String(tx.signIn.mfaId || '') !== ctx.mfaId ||
+        !!tx.signIn.enrol !== !!ctx.enrol) {
       errorCodes.mark(res, 'STS-VC-0056');
       this.page(res, 400, 'No such sign-in',
         '<h1>400 &mdash; no such wallet sign-in</h1><div class="err">This ' +
@@ -730,6 +818,23 @@ class VcSignin {
         this.fallbackHtml(record));
       log.debug("Leaving VcSignin.admitted(). Already completed.");
       return null;
+    }
+    // AN ENROLMENT'S PERSON must still be the one signed in here: a sign-out,
+    // or another person signing in on this browser, ends it.
+    if (ctx.enrol) {
+      if (this.personOf(req).toLowerCase() !==
+          String(tx.signIn.enrol.username).toLowerCase()) {
+        errorCodes.mark(res, 'STS-VC-0093');
+        this.page(res, 403, 'Signed out',
+          '<h1>403 &mdash; you are no longer signed in as the person this ' +
+          'enrolment was for</h1><p><a href="/portal/self-issued">Start ' +
+          'again</a></p>');
+        log.debug("Leaving VcSignin.admitted(). The enrolment's person " +
+                  "left.");
+        return null;
+      }
+      log.debug("Leaving VcSignin.admitted(). An enrolment.");
+      return { ctx: ctx, tx: tx };
     }
     if (!record || (!ctx.mfaId && !authn.pendingFor(record.id))) {
       errorCodes.mark(res, 'STS-VC-0053');
@@ -869,18 +974,22 @@ class VcSignin {
   // ---------------------------------------------------------------------------
   private async finish(req: any, res: any, ctx: any, tx: any): Promise<void> {
     const { log, authn, verifier, errorCodes, xmlEscape,
-            clusterClaims } = this.deps;
+            clusterClaims, siop, realms } = this.deps;
     log.debug("Entering VcSignin.finish().");
     const record = ctx.record;
     const outcome = tx.signIn.outcome;
-    const retry = ctx.mfaId
-      ? authn.WALLET_PATH + '?mfa=' + encodeURIComponent(ctx.mfaId)
-      : authn.WALLET_PATH + '?authn=' + encodeURIComponent(record.id);
+    const selfIssued = tx.responseType === 'id_token';
+    const retry = ctx.enrol ? '/portal/self-issued'
+      : ctx.mfaId
+        ? authn.WALLET_PATH + '?mfa=' + encodeURIComponent(ctx.mfaId)
+        : authn.WALLET_PATH + '?authn=' + encodeURIComponent(record.id) +
+          (selfIssued ? '&siop=1' : '');
     if (!outcome.ok) {
       errorCodes.mark(res, outcome.errorCode || 'STS-VC-0061');
       this.page(res, 403, 'Not signed in',
         '<h1>Nobody was signed in</h1>' +
-        '<p id="wallet-verdict">The presentation ' +
+        '<p id="wallet-verdict">The ' +
+        (selfIssued ? 'self-issued ID Token ' : 'presentation ') +
         (tx.verdict.ok ? '<strong>verified</strong>' :
                          '<strong>did not verify</strong>') + '.</p>' +
         '<div class="err" id="wallet-reason">' + xmlEscape(outcome.reason) +
@@ -919,6 +1028,29 @@ class VcSignin {
     verifier.saveTransaction(tx);
     const username = outcome.username;
 
+    // AN ENROLMENT (#129): the proved key, for the person signed in here —
+    // `siop.enrol()` refuses one enrolled for somebody else. No session is
+    // started: this browser already holds one.
+    if (ctx.enrol) {
+      const enrolled = siop.enrol(username, outcome.subject,
+                                  'enrolled with a wallet', 'self (SIOPv2)');
+      if (!enrolled.ok) {
+        errorCodes.mark(res, 'STS-VC-0094');
+        this.page(res, 400, 'Not enrolled',
+          '<h1>That key was not enrolled</h1><div class="err" ' +
+          'id="wallet-reason">' + xmlEscape(enrolled.error) + '</div>' +
+          '<p><a href="/portal/self-issued">Back</a></p>');
+        log.debug("Leaving VcSignin.finish(). Enrolment refused.");
+        return;
+      }
+      log.info('oid4vp-signin: ' + username + ' enrolled the self-issued ' +
+               'subject ' + outcome.subject + ' (transaction ' + tx.state +
+               ').');
+      res.redirect(303, realms.href('/portal/self-issued?enrolled=1'));
+      log.debug("Leaving VcSignin.finish(). Enrolled.");
+      return;
+    }
+
     // THE WALLET AS THE SECOND FACTOR.
     if (ctx.mfaId) {
       const finished = authn.finishWithWallet(req, res, ctx.mfaId, outcome);
@@ -938,9 +1070,26 @@ class VcSignin {
       return;
     }
 
+    // THE RISK OF THIS SIGN-IN (#62 P3), assessed before any session and
+    // handed on: the issuance policy decides on it with the roles, and a
+    // step-up it names is asked for after the wallet, as a demanded second
+    // factor is.
+    const assessed = await authn.assessSignIn(req, username, VIA,
+      { application: record.application || '',
+        credential: { kind: 'wallet' } });
+
     // A SECOND FACTOR AFTER THE WALLET, where one is needed.
     const second = authn.beginSecondFactorAfterWallet(req, res, record,
-                                                      username, outcome);
+                                                      username, outcome,
+                                                      assessed);
+    if (second.refused && second.onRisk) {
+      errorCodes.mark(res, second.errorCode || 'STS-RISK-0016');
+      this.page(res, 403, 'Not signed in',
+        '<h1>Nobody was signed in</h1><div class="err" id="wallet-reason">' +
+        'Authentication failed.</div>' + this.fallbackHtml(record));
+      log.debug("Leaving VcSignin.finish(). Refused on risk.");
+      return;
+    }
     if (second.refused) {
       errorCodes.mark(res, 'STS-VC-0064');
       this.page(res, 403, 'Not permitted',
@@ -960,16 +1109,27 @@ class VcSignin {
     const session = authn.startSession(res, username, outcome.amr || ['pop'],
       outcome.acr || '1', VIA, {
         request: req,
+        // Which credential answered (#62 P0): a wallet presentation.
+        credential: { kind: 'wallet' },
+        // The sign-in's assessment (#62 P3).
+        risk: assessed || undefined,
         application: record.application || '',
-        protocol: 'OpenID4VP',
-        method: 'a wallet: a ' + (outcome.format || 'dc+sd-jwt') +
-                ' credential this realm issued, with a fresh holder proof (' +
-                (outcome.holderKey || 'holder key') + ')' +
-                (outcome.keyStorage ? ', key storage attested ' +
-                                      outcome.keyStorage : ''),
-        note: 'A verifiable presentation of a credential this realm issued ' +
-              'to ' + outcome.subject + ' verified, including proof of ' +
-              'possession of the key it is bound to, and a session was ' +
+        protocol: selfIssued ? 'SIOPv2' : 'OpenID4VP',
+        method: selfIssued
+          ? 'a self-issued ID Token (SIOPv2) signed by the enrolled key ' +
+            outcome.subject
+          : 'a wallet: a ' + (outcome.format || 'dc+sd-jwt') +
+            ' credential this realm issued, with a fresh holder proof (' +
+            (outcome.holderKey || 'holder key') + ')' +
+            (outcome.keyStorage ? ', key storage attested ' +
+                                  outcome.keyStorage : ''),
+        note: (selfIssued
+          ? 'A self-issued ID Token signed by ' + outcome.subject + ', a ' +
+            'key enrolled for this person, verified'
+          : 'A verifiable presentation of a credential this realm issued ' +
+            'to ' + outcome.subject + ' verified, including proof of ' +
+            'possession of the key it is bound to') +
+              ', and a session was ' +
               'started in the browser that asked for it' +
               (tx.signIn.via === 'dc_api' ? ', through the Digital ' +
                                             'Credentials API' : '') +
@@ -993,6 +1153,15 @@ class VcSignin {
     }
     log.info('oid4vp-signin: ' + username + ' signed in with a wallet ' +
              '(transaction ' + tx.state + ', session ' + session.id + ').');
+    // AN IDENTITY VERIFICATION (#127): the disclosed claims the entry agrees
+    // with, checked cryptographically, as an electronic_record. Never throws;
+    // `oauth2.idaAutomaticVerifications` switches it.
+    // A self-issued ID Token (#129) verified a key, not a claim, so it
+    // records nothing.
+    if (!selfIssued) {
+      this.deps.identityAssurance.recordAutomatic(username, 'wallet',
+        { claims: outcome.disclosed || {}, format: outcome.format });
+    }
     authn.completeAuthentication(res, record);
     log.debug("Leaving VcSignin.finish(). Signed in.");
   }

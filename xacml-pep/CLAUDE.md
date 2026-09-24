@@ -304,7 +304,20 @@ GET  /              what this PEP is, what it holds, what it has enforced
 GET  /protected     THE RESOURCE. 200 or 403, decided here
 POST /notify        the PDP's nudge: pull now
 GET  /healthcheck   liveness
+GET  /crl/<name>    this PEP's own credential's CRLs (#174), from PEP_CRL_DIR
 ```
+
+**`/crl/<name>` is not a fifth endpoint of the PEP's; it is its credential's
+distribution point (#174, 2026-09-23).** A product-mode PDP refuses, under
+hard-fail, a client certificate from an authority it does not hold that names
+no CRL and no OCSP responder (STS-PKI-0190) — nobody could ever revoke it. So
+`tests/tools/pep-credential.js --crl-base=http://xacml-pep:9090/crl` names the
+Root's and the Issuing CA's lists in the chain it mints and writes them beside
+the credential, and this container, the only thing alive for as long as that
+credential is presented, serves them from `PEP_CRL_DIR` (by default the `crl/`
+directory beside `PEP_TLS_CERT`). Only a name of the form `<word>.crl` is looked
+up; the documents are public and signed, and this container holds no key that
+could sign one.
 
 **`/notify` answers 204 immediately and pulls afterwards.** The PDP times that
 request out in two seconds by default, and holding it open for the length of a
@@ -439,7 +452,7 @@ specifically to avoid) or a first-start script for a demonstration container.
 Mount a pair to see the authenticated path. **Either way it enforces.**
 
 **And the compose service's nudge is refused by default**: its notify URL is
-plain `http` on the bridge and `xacml.pepNotifyAllowInsecure` is off. That is
+plain `http` on the bridge and `xacml.pepNotifyAllowHttp` is off. That is
 the design demonstrating itself — no nudge is delivered, the PDP says why on the
 PEP's row, and the PEP converges on its fifteen-second poll anyway.
 
@@ -447,7 +460,9 @@ PEP's row, and the PEP converges on its fifteen-second poll anyway.
 to do it. `sts_xacml_remote_pep.js` runs its sections 1–5 in exactly this
 configuration — an http notify URL the PDP refuses to dial — so every
 convergence there is the poll and the registration reply is checked for the
-refusal. Then it turns `xacml.pepNotifyAllowInsecure` on in its own realm and
+refusal. Then it turns `xacml.pepNotifyAllowHttp` on in its own realm — and,
+when that realm is in product mode, asserts that plain http is STILL refused
+(#171) and puts the realm in development mode for the rest — and
 measures the other half: the PDP dials this container's `/notify` across the
 bridge, the row records `The PEP answered 204.`, and a change lands in tens of
 milliseconds against a five-second poll. **That outbound request is one of three

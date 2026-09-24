@@ -237,6 +237,8 @@ import audit = require('../common/audit');
 // active-active mode is held to. Both LIBRARIES; `cluster_claims.js` requires
 // `persistence.js` lazily, so neither closes a cycle.
 import clusterClaims = require('../cluster/cluster_claims');
+// WHICH CLIENTS MAY HOLD THE SCIM SCOPES (#110), asked again of every token.
+import scopePolicy = require('../common/scope_policy');
 import capabilities = require('../cluster/cluster_capabilities');
 
 // `mtls.js` is required for its place in the require order and nothing of it
@@ -607,6 +609,7 @@ interface ScimAuthDeps {
   errorCodes: typeof errorCodes;
   audit: typeof audit;
   clusterClaims: typeof clusterClaims;
+  scopePolicy: typeof scopePolicy;
   // `common/tls_client_certificates.js`, required when first asked for — see
   // attemptClientCertificate().
   loadTlsClientCertificates(): { checkSocket(socket: any): any };
@@ -672,6 +675,7 @@ class ScimAuth {
       errorCodes: errorCodes,
       audit: audit,
       clusterClaims: clusterClaims,
+      scopePolicy: scopePolicy,
       loadTlsClientCertificates: function loadTlsClientCertificates() {
         helpers.log.debug("Entering loadTlsClientCertificates().");
         helpers.log.debug("Leaving loadTlsClientCertificates().");
@@ -863,10 +867,11 @@ class ScimAuth {
           'An access token issued by this service\'s own authorization ' +
           'server, presented as "Authorization: Bearer <token>". Any grant ' +
           'will do — authorization code, client credentials, password, ' +
-          'refresh, device, token exchange — and the scope is whatever was ' +
-          'asked for, because this authorization server grants what it is ' +
-          'asked. The token must carry the read scope to read and the write ' +
-          'scope to write, must be one THIS service signed, must not have ' +
+          'refresh, device, token exchange — but the SCIM scopes are issued ' +
+          'only to a client whose oauthAllowedScope declares them, in every ' +
+          'mode. The token must carry the read scope to read and the write ' +
+          'scope to write, its client must still declare that scope, it ' +
+          'must be one THIS service signed, must not have ' +
           'been revoked, and must not have been narrowed by RFC 8707 to a ' +
           'different resource.',
         attempt: this.attemptBearer.bind(this),
@@ -934,9 +939,10 @@ class ScimAuth {
           'server that accepted anything would not be performing the ' +
           'exchange at all. So it does what Kerberos does for the same ' +
           'reason — ANY username authenticates and every one of them shares ' +
-          'one password (scim.digestPassword). SHA-256, SHA-512-256 and MD5 ' +
-          'are all offered, in that order, with the -sess variants; qop is ' +
-          'auth. A wrong password is a 401, a stale nonce is a 401 with ' +
+          'one password (scim.digestPassword). SHA-256 and SHA-512-256 are ' +
+          'offered, in that order, with the -sess variants, and MD5 last ' +
+          'only where scim.digestMd5 turns it on; qop is auth. A wrong ' +
+          'password is a 401, a stale nonce is a 401 with ' +
           'stale=true, and a replayed nonce count is a 401 — three negatives ' +
           'that are otherwise hard to provoke.',
         attempt: this.attemptDigest.bind(this),
@@ -1074,8 +1080,8 @@ class ScimAuth {
 
   // One challenge per algorithm, strongest first — RFC 7616 section 3.7 says a
   // server MAY send several and SHOULD order them that way, and a client takes
-  // the first it understands. MD5 is last and is offered at all because the
-  // installed base of Digest clients that speak nothing else is most of it.
+  // the first it understands. MD5 is last, and offered only where
+  // `scim.digestMd5` turns it on (off by default, development only, #182).
   private digestChallenge(req, opts?) {
     const { log, crypto } = this.deps;
     log.debug("Entering ScimAuth.digestChallenge().");
@@ -1362,7 +1368,8 @@ class ScimAuth {
                      early.digest === crypto.createHash('sha256')
                        .update(password).digest('hex'))
       ? early.checked
-      : credentials.verify(username, password, { via: 'SCIM HTTP Basic' });
+      : credentials.verify(username, password, { via: 'SCIM HTTP Basic',
+                                                 door: 'scim' });
     if (!checked.ok) {
       log.debug("Leaving ScimAuth.attemptBasic(). The credential was " +
                 "refused: " +
@@ -1388,7 +1395,11 @@ class ScimAuth {
     return {
       ok: true, scheme: 'basic', principal: username, isClient: false,
       scopes: '',
-      note: mode.verifiesCredentials()
+      // An app password is said so (#101).
+      note: checked.reason === 'app-password' && checked.appPassword
+        ? 'HTTP Basic (an app password, "' + checked.appPassword.name +
+          '", was verified)'
+        : mode.verifiesCredentials()
         ? 'HTTP Basic (the password was verified)'
         : 'HTTP Basic (no password was checked)'
     };
@@ -1417,8 +1428,9 @@ class ScimAuth {
   //
   // The algorithms are offered strongest first because RFC 7616 section 3.7
   // says so and because a client takes the first it understands. MD5 is last
-  // and is offered at all because most of the installed base of Digest clients
-  // speaks nothing else; it is not a recommendation, and the page says so.
+  // and is in the table because most of the installed base of Digest clients
+  // speaks nothing else; it is not a recommendation, it is OFF unless
+  // `scim.digestMd5` is set, and that is development's alone (#182).
   // ---------------------------------------------------------------------------
   static readonly DIGEST_CANDIDATES: readonly DigestAlgorithm[] = [
     { token: 'SHA-256', hash: 'sha256' },
@@ -1456,11 +1468,25 @@ class ScimAuth {
   // service always offered. `DIGEST_ALGORITHMS` stays the table of what this
   // BUILD can compute, for `admin-ui/crypto_metadata.ts`; this is what a
   // challenge carries and a credential may use.
+  //
+  // OFF BY DEFAULT AND DEVELOPMENT MODE ONLY SINCE #182 (2026-09-23): the
+  // most secure option is the default, and `mode.usesBrokenAlgorithms()`
+  // governs it — read through `mode.valueInForce()`, so a product realm with
+  // it stored on reads it off and says so once (STS-CORE-0106). Product
+  // offers no Digest at all (`digestAllowedByMode()`), so this is the second
+  // lock on a door the first already shuts.
   // ---------------------------------------------------------------------------
+  private digestMd5() {
+    const { log, mode } = this.deps;
+    log.debug("Entering ScimAuth.digestMd5().");
+    log.debug("Leaving ScimAuth.digestMd5().");
+    return mode.valueInForce('scim.digestMd5') === true;
+  }
+
   private digestAlgorithms() {
-    const { log, config } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering ScimAuth.digestAlgorithms().");
-    const md5 = config.value('scim.digestMd5') !== false;
+    const md5 = this.digestMd5();
     log.debug("Leaving ScimAuth.digestAlgorithms().");
     return this.DIGEST_ALGORITHMS.filter((row) => {
       return md5 || row.token !== 'MD5';
@@ -1625,7 +1651,7 @@ class ScimAuth {
         this.digestAlgorithms().map((row) => { return row.token; }).join(', ') +
         ' (each also with the -sess variant). The challenge lists what it ' +
         'will accept.' +
-        (config.value('scim.digestMd5') === false && /^md5/i.test(algorithm)
+        (!this.digestMd5() && /^md5/i.test(algorithm)
           ? ' MD5 is turned off on this service (scim.digestMd5).' : '')));
     }
     const qop = String(params.qop || '').toLowerCase();
@@ -2745,8 +2771,9 @@ class ScimAuth {
       return Promise.resolve(null);
     }
     log.debug("Leaving ScimAuth.verifyBasicOffThread(). Handed to the pool.");
+    // `door: 'scim'` (#101), the synchronous path's, so the two agree.
     return credentials.verifyAsync(pair.username, pair.password,
-                                   { via: 'SCIM HTTP Basic' })
+                                   { via: 'SCIM HTTP Basic', door: 'scim' })
       .then((checked) => {
         Object.defineProperty(req, ScimAuth.BASIC_VERDICT, {
           value: { username: pair.username,
@@ -2909,7 +2936,7 @@ class ScimAuth {
   // THE SECOND HALF: the scope, the funnel, the session and the policy, for a
   // credential that was accepted.
   private settleDecision(req, wanted?, decision?) {
-    const { log, hasScope, accessGate, errorCodes } = this.deps;
+    const { log, hasScope, accessGate, errorCodes, scopePolicy } = this.deps;
     log.debug("Entering ScimAuth.settleDecision().");
 
     // Accepted. The access control policy, which is two lines and is published
@@ -2937,14 +2964,37 @@ class ScimAuth {
                   (decision.scopes ? '"' + decision.scopes + '"' : 'no ' +
                   'scope at ' +
                   'all') + '. Ask for it at the authorization or token ' +
-                  'endpoint — this authorization server grants what it is ' +
-                  'asked, so any grant will do. Reads need ' +
+                  'endpoint, as a client whose oauthAllowedScope declares ' +
+                  'it. Reads need ' +
                   '"' + this.scopeRead() + '" and writes need "' +
                   this.scopeWrite() +
                   '"; one does not imply the other, deliberately, so that a ' +
                   'client\'s handling of a read-only credential is something ' +
                   'you can actually produce here.',
           headers: { 'WWW-Authenticate': [challenge] }
+        });
+      }
+      // AND THE CLIENT STILL DECLARES IT (#110, 2026-09-22). The token
+      // endpoint issues a SCIM scope only to a client whose
+      // `oauthAllowedScope` lists it; asked again here, on every call, so an
+      // allowance removed from a client stops the tokens it already holds
+      // rather than waiting for them to expire.
+      if (!scopePolicy.declares(decision.clientId, required)) {
+        log.debug("Leaving ScimAuth.settleDecision(). The client no longer " +
+                  "declares " + required + ".");
+        const withdrawn = (decision.scheme === 'dpop' ? 'DPoP' : 'Bearer') +
+          ' realm="' + this.realm() + '", error="insufficient_scope", ' +
+          'error_description="the client does not declare ' + required +
+          '", scope="' + required + '"';
+        return this.coded('STS-SCIM-0079', {
+          ok: false, status: 403, scimType: null,
+          detail: 'This access token carries "' + required + '", and the ' +
+                  'client it was issued to, "' + (decision.clientId || '') +
+                  '", does not declare that scope in its oauthAllowedScope. ' +
+                  'A SCIM scope is honoured only while the client declares ' +
+                  'it, so removing it from the application cuts off tokens ' +
+                  'already issued.',
+          headers: { 'WWW-Authenticate': [withdrawn] }
         });
       }
     }
@@ -3273,11 +3323,11 @@ class ScimAuth {
         'policy. It is two lines because this service authenticates nobody ' +
         'in the sense that matters — it is a turnstile, not a lock.',
 
-        'AUTHORIZATION IS NOT AUTHENTICATION HERE EITHER. Any caller can get ' +
-        'any scope: this authorization server grants what it is asked, from ' +
-        'any grant, to any client_id. What the scope requirement exercises ' +
-        'is the CLIENT\'s handling of one, which is the thing a permissive ' +
-        'server otherwise makes untestable.'
+        'A SCOPE IS TIED TO A CLIENT (#110). The SCIM scopes are issued only ' +
+        'to a client whose oauthAllowedScope declares them, in both modes, ' +
+        'and a token is honoured only while its client still declares the ' +
+        'scope it uses — so removing the declaration cuts off tokens ' +
+        'already issued (STS-SCIM-0079).'
       ]
     };
     log.debug("Leaving ScimAuth.describe(). " + out.schemes.length +

@@ -112,9 +112,9 @@
 // (oauth-oidc/CLAUDE.md 3f and 3ah). Client authentication at
 // `/oauth2/introspect` is not this mode's either: an RFC 9701 JWT request
 // authenticates in every mode and a JSON one in product mode (3ai).
-// `/oauth2/revoke` authenticates nobody. And the requirements RFC 9700 places
-// on the CLIENT stay the client's — this service can detect several of them
-// and fix none.
+// Nor is `/oauth2/revoke`'s, which is `mode.opensRevocation()`'s (#102). And
+// the requirements RFC 9700 places on the CLIENT stay the client's — this
+// service can detect several of them and fix none.
 // ===========================================================================
 
 const crypto = require('crypto');
@@ -145,6 +145,10 @@ const clientAuth = require('./client_auth');
 // to oauth2.redirectUris), plus the refusals 2.1 adds at the checks already
 // in this file. `oauth-oidc/CLAUDE.md` rule 3ah.
 const oauth21 = require('./oauth21');
+// A FAPI PROFILE IMPLIES THIS MODE TOO (#138): a leaf requiring only helpers
+// and config, whose enabled() reads the realm's oauth2.fapi or a named
+// authorization server's own value from the request's ambient context.
+const fapi = require('./fapi');
 // PRODUCT MODE IMPLIES THIS MODE (2026-09-17) — `enabled()` below. A leaf
 // beneath `config`: `mode.js` requires config and bunyan and nothing else, so
 // this require closes no cycle and moves no route.
@@ -940,10 +944,8 @@ const REQUIREMENTS = [
           'asymmetric registers `jwks` instead, or has a certificate subject ' +
           'DN or thumbprint put on its entry. The credentials live on that ' +
           'entry in the directory, which is the one store (see ' +
-          '/admin/applications) — and `jwks_uri` is RECORDED AND NEVER ' +
-          'FOLLOWED, because fetching a URL somebody registered in order to ' +
-          'verify a credential is a server-side request forgery with a ' +
-          'specification citation attached. True with the mode off, since ' +
+          '/admin/applications) — or a `jwks_uri`, fetched under the ' +
+          'outbound policy since #120. True with the mode off, since ' +
           'the endpoint is always there.' },
 
   { id: 'asymmetric-client-auth', section: '2.5', level: 'RECOMMENDED',
@@ -1372,8 +1374,8 @@ const REQUIREMENTS = [
           'find out: `oauth2.breakIdTokenNonce` puts a DELIBERATELY WRONG ' +
           'nonce in the ID Token, so a client that accepts the result is a ' +
           'client that is not checking. That switch is off by default, is ' +
-          'not part of this mode, and every token it spoils is logged as ' +
-          'spoiled.' },
+          'not part of this mode, is honoured in development mode only, and ' +
+          'every token it spoils is logged as spoiled.' },
 
   { id: 'no-token-use-before-nonce-check', section: '4.5.3.2',
     level: 'MUST NOT',
@@ -1412,11 +1414,14 @@ const REQUIREMENTS = [
 // it; the product-mode term is the process's and is a FLOOR — `||`, never
 // `&&`. A realm able to opt out would be a realm whose public clients had
 // neither a credential nor the rules that replace one.
+// **AND ANY FAPI PROFILE (#138)**, which is a stricter superset in the same
+// way — per realm, or per named authorization server through fapi.js's
+// ambient profile.
 function enabled() {
   log.debug("Entering enabled().");
   log.debug("Leaving enabled().");
   return !!config.value('oauth2.rfc9700') || oauth21.enabled() ||
-         mode.enforcesOauthSecurityBcp();
+         fapi.enabled() || mode.enforcesOauthSecurityBcp();
 }
 
 // OAuth 2.1 section 8.4.2 makes the wildcard a MUST, so that mode ignores the
@@ -1735,77 +1740,87 @@ function checkRedirectUri(opts) {
   return { ok: true, matched: matched.uri, how: matched.how };
 }
 
-// The same comparison for RP-Initiated Logout's post_logout_redirect_uri, which
-// without this mode is the plainest open redirector in this service: it
-// forwards the browser to any absolute http(s) URL in a query parameter, with
-// no session and no client involved. A registered client's own
-// post_logout_redirect_uris are used when the request names one; otherwise the
-// setting is, on the ground that somebody who listed a URI as a place this
-// server may return a browser to has said the same thing about it either way.
+// RP-Initiated Logout's post_logout_redirect_uri, in EVERY mode since #124
+// (2026-09-23): it was RFC 9700 mode only, and without that mode it was the
+// plainest open redirector in this service. The client is the one the
+// request names — by `id_token_hint`, or `client_id` — and `oauth2.ts`'s
+// `logoutEndpoint()` asks this before the session is ended, so a refused
+// target leaves the person on a page rather than following it.
 function checkPostLogoutRedirectUri(opts) {
   log.debug("Entering checkPostLogoutRedirectUri().");
-  if (!enabled()) {
-    log.debug("Leaving checkPostLogoutRedirectUri(). RFC 9700 mode is off.");
-    return { ok: true };
-  }
   const client = opts.client;
   const declared = client && Array.isArray(client.post_logout_redirect_uris)
     ? client.post_logout_redirect_uris.map(String) : [];
   const presented = String(opts.target || '');
-  // A PRIVATE-USE ADDRESS IS BELIEVED ONLY WHEN A CLIENT VOUCHES FOR IT
-  // (2026-09-13). Sign-out needs no client at all, so a service-wide list that
-  // admitted a protocol handler would be a redirector to it with nobody
-  // accountable for the entry; the address has to be on the entry of the client
-  // this request names. OAuth 2.1 mode goes further and reads no service-wide
-  // list for ANY address, for the reason registeredUrisFor() gives.
+  // THE CLIENT's OWN LIST, EXACTLY, IN EVERY MODE (#124). RP-Initiated Logout
+  // 1.0 section 3: the OP SHOULD NOT redirect to a value that does not
+  // exactly match one of the client's registered post_logout_redirect_uris.
+  if (declared.length) {
+    const found = declared.some(function (uri) {
+      return uriMatches(uri, presented).ok;
+    });
+    if (!found) {
+      log.debug("Leaving checkPostLogoutRedirectUri(). Not registered.");
+      return { ok: false, errorCode: 'STS-OAUTH-0123',
+               error: 'invalid_request', requirement: 'no-open-redirector',
+               description: 'RP-Initiated Logout 1.0 section 3: "' +
+                 presented + '" is not among the ' + declared.length +
+                 ' post_logout_redirect_uri(s) this client registered: ' +
+                 declared.join(', ') + '.' };
+    }
+    log.debug("Leaving checkPostLogoutRedirectUri(). Registered.");
+    return { ok: true };
+  }
+  // NOTHING REGISTERED. A private-use address is believed only when a client
+  // vouches for it, in every mode (2026-09-13): a sign-out forwarding to any
+  // protocol handler an operating system registers is a redirector nobody is
+  // accountable for. OAuth 2.1 mode (section 2.3.1) and PRODUCT mode believe
+  // no unregistered address at all; development keeps its acceptance of one,
+  // #118's rule for redirect URIs, which is how a relying party under test is
+  // pointed here without registering first. `oauth2.redirectUris` — the
+  // AUTHORIZATION redirect list — is no longer read for a sign-out (#124).
   const privateUse = validation.isPrivateUseRedirect(presented);
-  if (!declared.length && (privateUse || oauth21.enabled())) {
-    log.debug("Leaving checkPostLogoutRedirectUri(). No client vouches for " +
-              "it.");
-    return privateUse
-      ? { ok: false, errorCode: 'STS-OAUTH-0290', error: 'invalid_request',
-          requirement: 'no-open-redirector',
-          description: 'RFC 9700 section 2.1: "' + presented + '" is a ' +
-                       'native application\'s private-use address, and one ' +
-                       'is followed after a sign-out only when the client ' +
-                       'this request names (client_id) registered it as a ' +
-                       'post_logout_redirect_uri. ' +
-                       (client && client.known
-                         ? 'That client has registered none.'
-                         : 'This request names no client this service ' +
-                           'holds.') }
-      : { ok: false, errorCode: 'STS-OAUTH-0286', error: 'invalid_request',
-          requirement: 'registered-client-required',
-          description: 'OAuth 2.1 (' + oauth21.DRAFT + ') section 2.3.1: a ' +
-                       'post_logout_redirect_uri is followed only when the ' +
-                       'client this request names registered it, and ' +
-                       (client && client.known
-                         ? 'that client has registered none'
-                         : 'this request names no client this service ' +
-                           'holds') + '. The service-wide ' +
-                       'oauth2.redirectUris list is not read in this mode.' };
-  }
-  // Same rule as the redirect URIs: the attribute is the list, however it got
-  // onto the entry.
-  const list = declared.length ? declared : configuredRedirectUris();
-  const found = list.some(function (uri) {
-    return uriMatches(uri, presented).ok;
-  });
-  if (!found) {
-    log.debug("Leaving checkPostLogoutRedirectUri(). Not registered.");
-    return { ok: false, errorCode: 'STS-OAUTH-0123', error: 'invalid_request',
+  if (privateUse) {
+    log.debug("Leaving checkPostLogoutRedirectUri(). A private-use address " +
+              "no client vouches for.");
+    return { ok: false, errorCode: 'STS-OAUTH-0290', error: 'invalid_request',
              requirement: 'no-open-redirector',
-             description: 'RFC 9700 section 2.1: an authorization server ' +
-                          'must not forward the browser to an arbitrary URI. ' +
-                          '"' + presented + '" ' +
-                              'is not among the ' +
-                          (list.length ?
-                           list.length + ' registered URI(s): ' +
-                           list.join(', ')
-                                       : 'registered URIs, and none are ' +
-                                         'registered') + '.' };
+             description: '"' + presented + '" is a native application\'s ' +
+                          'private-use address, and one is followed after a ' +
+                          'sign-out only when the client this request names ' +
+                          'registered it as a post_logout_redirect_uri. ' +
+                          (client && client.known
+                            ? 'That client has registered none.'
+                            : 'This request names no client this service ' +
+                              'holds.') };
   }
-  log.debug("Leaving checkPostLogoutRedirectUri(). Accepted.");
+  if (oauth21.enabled()) {
+    log.debug("Leaving checkPostLogoutRedirectUri(). OAuth 2.1 mode.");
+    return { ok: false, errorCode: 'STS-OAUTH-0286', error: 'invalid_request',
+             requirement: 'registered-client-required',
+             description: 'OAuth 2.1 (' + oauth21.DRAFT + ') section 2.3.1: a ' +
+                          'post_logout_redirect_uri is followed only when the ' +
+                          'client this request names registered it, and ' +
+                          (client && client.known
+                            ? 'that client has registered none'
+                            : 'this request names no client this service ' +
+                              'holds') + '.' };
+  }
+  if (!mode.acceptsUnregisteredAddresses()) {
+    log.debug("Leaving checkPostLogoutRedirectUri(). Product mode.");
+    return { ok: false, errorCode: 'STS-OAUTH-0603', error: 'invalid_request',
+             requirement: 'no-open-redirector',
+             description: 'RP-Initiated Logout 1.0 section 3: "' + presented +
+                          '" is followed only when the client this request ' +
+                          'names (by id_token_hint or client_id) registered ' +
+                          'it, and ' +
+                          (client && client.known
+                            ? 'that client has registered none'
+                            : 'this request names no client this service ' +
+                              'holds') + '.' };
+  }
+  log.debug("Leaving checkPostLogoutRedirectUri(). Development accepts an " +
+            "unregistered address.");
   return { ok: true };
 }
 
@@ -2270,6 +2285,15 @@ function checkClientRegistration(metadata) {
     log.debug("Leaving checkClientRegistration(). OAuth 2.1 (" +
               stricter.requirement + ").");
     return stricter;
+  }
+  // FAPI's (#138): the client authentication methods it allows, https
+  // redirect URIs, and key sizes. A client made another way is held to the
+  // method at the token endpoint, which every client passes through.
+  const profiled = fapi.registrationRefusal(meta);
+  if (profiled) {
+    log.debug("Leaving checkClientRegistration(). FAPI (" +
+              profiled.requirement + ").");
+    return profiled;
   }
   const uris = Array.isArray(meta.redirect_uris) ?
                meta.redirect_uris.map(String) : [];
@@ -2829,9 +2853,11 @@ function forgetStaleRefreshTokens() {
 //      ITS OWN.** The family was found by looking the parent's jti up here, so
 //      a parent record not yet replicated (or dropped by the cap) split the
 //      chain, and a later replay revoked half of it. So the family id now
-//      travels IN THE REFRESH TOKEN (`FAMILY_CLAIM`, RFC 9700 mode only, inside
-//      the JWE where no client reads it), and `familyForIssuance()` prefers
-//      what the parent's own token says.
+//      travels IN THE REFRESH TOKEN (`FAMILY_CLAIM`, inside the JWE where no
+//      client reads it), and `familyForIssuance()` prefers what the parent's
+//      own token says. **In every mode since #102 (2026-09-22)**, rotation or
+//      not: RFC 7009's revocation of a refresh token takes its whole grant,
+//      and a chain that does not rotate is still one grant.
 //   2. **`family.members.push()` LOST MEMBERS.** The family row is written
 //      whole, so two nodes each adding a child wrote back two arrays with one
 //      child each, and the last writer won. Membership is no longer stored as
@@ -2853,7 +2879,8 @@ const FAMILY_CLAIM = 'refresh_family';
 // the presented token's own `refresh_family` claim, where it has one.
 function familyForIssuance(jti, parentJti, parentFamily) {
   log.debug("Entering familyForIssuance().");
-  const parent = parentJti ? refreshTokens.get(String(parentJti)) : null;
+  const parent = parentJti ? (refreshTokens.get(String(parentJti)) ||
+                              grantTokens.get(String(parentJti))) : null;
   // The root's own jti names the family. It needs no randomness of its own and
   // it makes a family identifiable in a log line without a second lookup.
   const familyId = String(parentFamily || '') ||
@@ -2927,6 +2954,122 @@ function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
   refreshFamilies.set(familyId, family);
   forgetStaleRefreshTokens();
   log.debug("Leaving noteRefreshIssued(). Family " + familyId + ".");
+}
+
+// ---------------------------------------------------------------------------
+// WHAT ONE GRANT ISSUED, FOR RFC 7009 (#102, 2026-09-22).
+//
+// Section 2.1: revoking a refresh token SHOULD also invalidate "all access
+// tokens based on the same authorization grant". The bookkeeping above knows
+// a family's REFRESH tokens, and only while rotation is required; it never
+// knew an access token at all — and its header says why that was right for a
+// REPLAY. A revocation is a different act (see `revokeRequest()` in
+// `oauth2.ts`): the client is finished with the grant, and what it was issued
+// under that grant goes with it.
+//
+// **ONE ROW PER TOKEN SET, keyed by the refresh token's jti**, naming its
+// family and the access token minted beside it — in every mode, because the
+// SHOULD does not depend on rotation. One key per issuance rather than an
+// array on the family row, for (2) above: two nodes writing two different
+// keys cannot lose either. `grantMembersOf()` derives the membership, and
+// adds what the rotation bookkeeping knows.
+//
+// **FORGOTTEN WHEN BOTH TOKENS ARE PAST THEIR `exp`**, when nothing is left to
+// revoke, and bounded by the refresh bookkeeping's own setting at twice its
+// value — one row per token set against its one per refresh token, plus the
+// slack of a chain that does not rotate. Pruned at insert, as that
+// bookkeeping is (`forgetStaleRefreshTokens()`); a row dropped at the cap is
+// an access token the revocation of its grant will not reach, which is the
+// safe direction — it still expires — and is logged.
+// ---------------------------------------------------------------------------
+// refresh jti -> { family, access, clientId, forget }
+const grantTokens = realms.map({ persist: 'oauth2_bcp.grantTokens',
+                                 tombstone: true });
+
+function forgetStaleGrantTokens() {
+  log.debug("Entering forgetStaleGrantTokens().");
+  const now = Date.now();
+  grantTokens.forEach(function (record, jti) {
+    if (!record || record.forget < now) {
+      grantTokens.delete(jti);
+    }
+  });
+  const cap = 2 * maxRefreshTokens();
+  let dropped = 0;
+  while (grantTokens.size > cap) {
+    const oldest = grantTokens.keys().next();
+    if (oldest.done) {
+      break;
+    }
+    grantTokens.delete(oldest.value);
+    dropped++;
+  }
+  if (dropped) {
+    log.warn('RFC 7009: ' + dropped + ' record(s) of what a grant issued ' +
+             'were forgotten because twice oauth2.maxRefreshTokenFamilies (' +
+             cap + ') is full of unexpired token sets. Those tokens still ' +
+             'work until they expire, but revoking their refresh token will ' +
+             'no longer revoke them with it. Raise the setting.');
+  }
+  log.debug("Leaving forgetStaleGrantTokens(). " + grantTokens.size + " " +
+            "remembered.");
+}
+
+// Called from `refreshToken()` in `oauth2.ts`, the one function that mints a
+// refresh token, with the access token `tokenSet()` minted beside it (empty
+// where there was none). `expSec` is the later of the two `exp`s.
+function noteGrantTokens(familyId, refreshJti, accessJti, clientId, expSec) {
+  log.debug("Entering noteGrantTokens(). family=" + familyId);
+  if (!familyId || !refreshJti) {
+    log.debug("Leaving noteGrantTokens(). Nothing to record.");
+    return;
+  }
+  const skew = Number(config.value('oauth2.clockSkewS'));
+  const exp = Number(expSec);
+  grantTokens.set(String(refreshJti), {
+    family: String(familyId),
+    access: String(accessJti || ''),
+    clientId: String(clientId || ''),
+    forget: (isFinite(exp) ? exp * 1000 : Date.now() +
+             refreshFamilyWindowMs()) + (isFinite(skew) ? skew * 1000 : 0)
+  });
+  forgetStaleGrantTokens();
+  log.debug("Leaving noteGrantTokens().");
+}
+
+// The family a presented refresh token belongs to: what its own token says,
+// then what either record here says, then the token itself as the root of a
+// family of one (a token minted before #102 carried no claim outside RFC 9700
+// mode).
+function familyOfRefresh(claims) {
+  log.debug("Entering familyOfRefresh().");
+  const c = claims || {};
+  const jti = String(c.jti || '');
+  const known = jti ? (refreshTokens.get(jti) || grantTokens.get(jti)) : null;
+  const familyId = String(c[FAMILY_CLAIM] || (known && known.family) || jti);
+  log.debug("Leaving familyOfRefresh(). family=" + (familyId || '(none)'));
+  return familyId;
+}
+
+// Every jti of the grant a family is: its refresh tokens and the access tokens
+// minted beside them, as recorded here, and the members the rotation
+// bookkeeping knows (`membersOf()`). `alsoJti` is the presented token's own.
+function grantMembersOf(familyId, alsoJti) {
+  log.debug("Entering grantMembersOf().");
+  const wanted = String(familyId || '');
+  const out = new Set(membersOf(wanted, alsoJti));
+  if (wanted) {
+    grantTokens.forEach(function (record, jti) {
+      if (record && record.family === wanted) {
+        out.add(String(jti));
+        if (record.access) {
+          out.add(String(record.access));
+        }
+      }
+    });
+  }
+  log.debug("Leaving grantMembersOf(). " + out.size + " jti(s).");
+  return Array.from(out);
 }
 
 // How long a family revoked by a replay stays revoked: as long as any member
@@ -3295,7 +3438,9 @@ function checkRefreshRequest(opts) {
 // refresh tokens after a security event, and the examples the section gives are
 // a password change and a LOGOUT.
 //
-// Logout is the one this service has. `authn.js` owns the single session store
+// Logout is the one this service has — and Back-Channel Logout section 2.7
+// makes it a SHOULD for every refresh token without `offline_access` (#123).
+// `authn.js` owns the single session store
 // both protocols end a session through, so it asks this whether to act — the
 // policy is here with the rest of the mode, and the finding and revoking is
 // there, where the session and the token registry are.
@@ -3313,14 +3458,20 @@ function checkRefreshRequest(opts) {
 // whoever the token was issued to — a session may hold refresh tokens for three
 // clients, and two of them agreeing to be revoked says nothing about the third.
 //
-// `enabled()` still gates it, so with RFC 9700 mode off this answers false for
-// every client whatever their entry says, exactly as it did.
+// ~~`enabled()` still gates it, so with RFC 9700 mode off this answers false
+// for every client whatever their entry says.~~ — IN EVERY MODE SINCE #123
+// (2026-09-23): OpenID Connect Back-Channel Logout 1.0 section 2.7 says a
+// refresh token issued without `offline_access` SHOULD be revoked when the
+// session it was issued on ends, and that is not a BCP refinement but the
+// logout specification's own rule — a development install signing a person
+// out and leaving their refresh token introspecting active was a gap, not a
+// permissive default (the refresh grant already refused it since #118). The
+// `offline_access` distinction is `authn.ts`'s, where the records are.
 function revokeRefreshOnLogout(clientId) {
   log.debug("Entering revokeRefreshOnLogout().");
   log.debug("Leaving revokeRefreshOnLogout().");
-  return enabled() &&
-    !!applications.settingFor(clientId || '', 'oauth2.revokeRefreshOnLogout',
-                              config);
+  return !!applications.settingFor(clientId || '',
+                                   'oauth2.revokeRefreshOnLogout', config);
 }
 
 // Section 2.2 / 2.2.1, and it refuses nothing: whether an access token is
@@ -3714,11 +3865,16 @@ function state() {
     // WHICH FLAG turned it on. `oauth2.oauth21` implies this mode, and without
     // this member a realm carrying only that one would read here as enforcing
     // everything with `oauth2.rfc9700: false` beside it.
-    enabled_by: !on ? '' : (config.value('oauth2.rfc9700') ? 'oauth2.rfc9700'
-                                                           : 'oauth2.oauth21'),
+    // Four things can (#138 added FAPI; product mode is the floor).
+    enabled_by: !on ? ''
+      : config.value('oauth2.rfc9700') ? 'oauth2.rfc9700'
+      : oauth21.enabled() ? 'oauth2.oauth21'
+      : fapi.enabled() ? 'oauth2.fapi=' + fapi.profile()
+      : 'global.mode=product',
     settings: {
       'oauth2.rfc9700': !!config.value('oauth2.rfc9700'),
       'oauth2.oauth21': oauth21.enabled(),
+      'oauth2.fapi': fapi.profile() || null,
       'oauth2.redirectUris': configuredRedirectUris(),
       'oauth2.loopbackPortWildcard': loopbackPortWildcard(),
       'global.https': mainPortIsTls(),
@@ -3726,7 +3882,10 @@ function state() {
       // reading this page to find out what it is talking to needs to know that
       // the ID Tokens are being spoiled on purpose, and this is the page they
       // are reading.
-      'oauth2.breakIdTokenNonce': !!config.value('oauth2.breakIdTokenNonce'),
+      // AS IT IS IN FORCE: false in a product realm whatever is stored
+      // (#104, `mode.valueInForce()`).
+      'oauth2.breakIdTokenNonce':
+        !!mode.valueInForce('oauth2.breakIdTokenNonce'),
       // #34 (2026-09-15). Reported here for the reason the row above is:
       // a client author reading this page is trying to find out what this
       // server will do to their request, and four of these five turn a SHOULD
@@ -3805,6 +3964,11 @@ module.exports = {
   // family by id.
   FAMILY_CLAIM: FAMILY_CLAIM,
   familyForIssuance: familyForIssuance,
+  // #102: what one grant issued, for RFC 7009's revocation of a refresh
+  // token.
+  noteGrantTokens: noteGrantTokens,
+  familyOfRefresh: familyOfRefresh,
+  grantMembersOf: grantMembersOf,
   // #34: re-exported so that `oauth2.js` asks ONE name whether refresh tokens
   // rotate, whatever turned it on. The answer lives in sender_constraints.js,
   // which this file may require and which may never require this file back.

@@ -42,14 +42,28 @@ The vocabularies run over that pipe:
 
 | Vocabulary | Events | About | Emitted on its own when |
 |---|---|---|---|
-| **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, an administrator changes a credential |
-| **RISC** | 14 | an account | a person is deleted, `active` goes false or true, a mail address or telephone number changes, an administrator resets a password or clears recovery codes |
+| **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, any credential of a person changes, a directory change moves a claim of somebody holding live tokens |
+| **RISC** | 14 | an account | a person is deleted, disabled or enabled; a mail address or telephone number changes, or is given to an account after another released it; an administrator resets a password (optionally marking it compromised) or issues a reset link; recovery codes are cleared or confirmed; the account holder opts out or back in on `/portal/signals` |
 
-The remaining CAEP and RISC events describe things this service never does:
-no device reports compliance to it, no risk engine talks to it, it searches
-no breach corpus and it runs no recovery flow. You emit those by hand from the
-console or the management API. [CAEP events](caep-events.md) covers what
-triggers each CAEP event.
+The remaining events describe things this service does not observe:
+- CAEP's device compliance: no device reports to it (#164). Risk level has
+  had a source since #62: a person's risk level changing.
+- RISC's deprecated `sessions-revoked`.
+
+You emit those by hand from the console or the management API.
+[CAEP events](caep-events.md) covers what triggers each CAEP event.
+
+**RISC opt-out (section 2.8) is the account holder's choice.** On
+`/portal/signals` a person can stop sharing security events about their
+account. Their account enters `opt-out-initiated`; receivers keep being told
+everything; and after `risc.optOutDelayHours` a scheduler job sends
+`opt-out-effective`, after which only opt-out events are sent about them.
+They can cancel during the wait, or opt back in afterwards. The wait stops
+somebody who has just taken an account over from silencing it at once.
+
+**`account-disabled` carries a `reason` only when an administrator gives one**
+(`hijacking` or `bulk-account`, on the console's disable form or as
+`riscReason` on `/admin-api/users/disable`).
 
 One more event exists, and it belongs to this service rather than to any
 specification: `urn:iya:sts:secevent:event-type:signing-key-rotated`. It goes
@@ -148,8 +162,11 @@ covers nobody until a subject is added.
 Push is the one place in SSF where this service makes a request to an address
 that a caller chose. Four settings limit it: `ssf.pushDelivery` turns it off,
 `ssf.pushAllowedHosts` is a host allowlist (empty by default, meaning any
-host), only `https` is used unless `ssf.pushAllowInsecure` is on, and every
-push has a timeout, a cap on the response size and **no redirects**. With push
+host), only `https` with the receiver's certificate verified is used — plain
+http only with `ssf.pushAllowHttp` and verification off only with
+`ssf.pushSkipTlsVerification`, **both in development mode only** (#171);
+product reaches a privately certified receiver through `ssf.pushCaFile` — and
+every push has a timeout, a cap on the response size and **no redirects**. With push
 turned off, SSF still works in full over poll, and `delivery_methods_supported`
 lists only poll.
 
@@ -223,6 +240,9 @@ The metadata document lists the schemes it accepts in
 * **HTTP Basic**: a directory person's name and password, so that a client
   that has no token flow yet can still reach every endpoint. Basic carries no
   scope, so a Basic caller gets both. `ssf.authBasic` turns the scheme off.
+  In product mode a person who holds or must hold a second factor is refused
+  their own password with the `401` a wrong one gets, and uses an
+  [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `ssf`.
 * **GNAP**: a key-bound GNAP access token whose access includes `ssf:read` or
   `ssf:write`, so that a GNAP web application can own a stream itself. See
   [GNAP](gnap.md).
@@ -273,7 +293,8 @@ client that acts as the transmitter. It verifies the signature when it can
 find a key. A SET that another party signed is reported as *not verifiable
 here*, not as invalid. `GET /ssf/received` lists what arrived.
 `ssf.receiveRequireSignature` makes it refuse a SET whose signature fails, the
-way a strict receiver would.
+way a strict receiver would. **Product mode always refuses one**, at this
+endpoint and at the console's and portal's own receivers (#117).
 
 Every SET that arrives is recorded, and it is then refused if its header's
 `typ` is not `secevent+jwt` (section 4.1.1), if its `iss` is not one
@@ -292,12 +313,24 @@ admin console and one for the user portal. Both ask for every CAEP and RISC
 event type, and both take delivery over a real RFC 8935 push to an endpoint of
 their own. What arrives is shown at `/admin/signals` and `/portal/signals`.
 [Signals received](signals-received.md) explains how this works, and why an
-empty page has five possible causes.
+empty page has five possible causes. **Both act on what they receive**: a
+verified event the `signal-response` policy permits ends the receiving
+surface's own sessions for the person it names (product mode; development
+records it). An unverified event is never acted on.
 
 ### Deliberate defects
 
 A transmitter that is always correct is hard to write error handling against,
-so each of these switches produces a known mistake:
+so each of these switches produces a known mistake.
+
+**`ssf.legacySubClaim` and `ssf.breakSetSignature` make a SET wrong, and are
+honoured in development mode only** (#104), **and so is
+`risc.googleSubjectType`** (#181), whose `subject_type` RISC 1.0 section 3.1
+says new services MUST NOT use. A realm in product mode ignores them where the
+SET is built and signed — even one still stored from before the realm was
+switched, which is logged once (`STS-CORE-0106`) — and refuses turning them on
+(`STS-CORE-0103`). The other two produce SETs that conform to their
+specifications, and are honoured in both modes.
 
 | Setting | What it breaks |
 |---|---|
@@ -325,7 +358,7 @@ so each of these switches produces a known mistake:
 
 | | Development | Product |
 |---|---|---|
-| Credential at `/ssf/*` | required, but only a check at the door: any name and any password except `invalid` passes Basic, and anybody can get a token with either scope | required, and a Basic password is checked against the person's hashed `userPassword` |
+| Credential at `/ssf/*` | required, but only a check at the door: any name and any password except `invalid` passes Basic. A token carries `ssf:read` or `ssf:write` only when its client declares them in `oauthAllowedScope` (in both modes), and is honoured only while it still does (`STS-SSF-0107`) | required, and a Basic password is checked against the person's hashed `userPassword` |
 | Access tokens | verified | verified |
 | Subjects of automatic events | a person with no `mail` gets an invented `@example.com` address | a real value from the directory entry, or the issuer/subject pair. RISC's two identifier events are not sent when there is no real value |
 | Streams, queues, CAEP and RISC registers | in memory, lost on restart | persisted with other minted state (product mode on postgres) |
@@ -363,7 +396,9 @@ types from what a stream may ask for.
 | `ssf.eventsSupported` | `STS_SSF_EVENTS_SUPPORTED` | verification, stream-updated | yes | Which of SSF's own two event types are offered. |
 | `ssf.pushDelivery` | `STS_SSF_PUSH_DELIVERY` | `true` | yes | Whether the service may push SETs at all. When off, only poll is offered. |
 | `ssf.pushAllowedHosts` | `STS_SSF_PUSH_ALLOWED_HOSTS` | *(empty)* | yes | Hosts the service may push to. Empty means any host. |
-| `ssf.pushAllowInsecure` | `STS_SSF_PUSH_ALLOW_INSECURE` | `false` | yes | Allows `http://` endpoints and certificates that nothing here trusts. |
+| `ssf.pushAllowHttp` | `STS_SSF_PUSH_ALLOW_HTTP` | `false` | yes | Allows `http://` endpoints, in development mode only. This service's own receivers are exempt in both modes. |
+| `ssf.pushSkipTlsVerification` | `STS_SSF_PUSH_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only — a warning.** Pushes to a receiver whose certificate nothing here trusts. Ignored in product, and refused on write there. |
+| `ssf.pushCaFile` | `STS_SSF_PUSH_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates a receiver may chain to, beside node's own store. |
 | `ssf.pushTimeoutMs` | `STS_SSF_PUSH_TIMEOUT_MS` | `10000` | yes | How long to wait for a receiver to answer a push. |
 | `ssf.pushMaxResponseBytes` | `STS_SSF_PUSH_MAX_RESPONSE_BYTES` | `65536` | yes | How much of a receiver's answer is read before the push counts as failed. |
 | `ssf.pushRetries` | `STS_SSF_PUSH_RETRIES` | `0` | yes | How many times a failed push is retried. Only failures that could go differently are retried. |
@@ -391,9 +426,10 @@ types from what a stream may ask for.
 | `ssf.authScopeRead` | `STS_SSF_AUTH_SCOPE_READ` | `ssf:read` | yes | The scope needed to read a stream, its status or the poll queue. |
 | `ssf.authScopeWrite` | `STS_SSF_AUTH_SCOPE_WRITE` | `ssf:write` | yes | The scope needed to change anything about a stream. |
 | `ssf.receiveEnabled` | `STS_SSF_RECEIVE_ENABLED` | `true` | yes | Whether `POST /ssf/receive` accepts pushed SETs. When off, it answers 501. |
-| `ssf.receiveRequireSignature` | `STS_SSF_RECEIVE_REQUIRE_SIGNATURE` | `false` | yes | Refuses a received SET whose signature fails, with 400 `invalid_key`. |
-| `ssf.legacySubClaim` | `STS_SSF_LEGACY_SUB_CLAIM` | `false` | yes | Deliberate defect: adds the deprecated `sub` claim beside `sub_id`. |
-| `ssf.breakSetSignature` | `STS_SSF_BREAK_SET_SIGNATURE` | `false` | yes | Deliberate defect: changes one character of every SET's signature. |
+| `ssf.receiveRequireSignature` | `STS_SSF_RECEIVE_REQUIRE_SIGNATURE` | `false` | yes | Refuses a received SET whose signature fails, with 400 `invalid_key`, in development mode. Product mode always refuses one (#117). |
+| `ssf.actOnSignalsInDevelopment` | `STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT` | `false` | yes | The console and portal end their own sessions on a received signal in development too; product always does. |
+| `ssf.legacySubClaim` | `STS_SSF_LEGACY_SUB_CLAIM` | `false` | yes | Deliberate defect, development only: adds the deprecated `sub` claim beside `sub_id`. |
+| `ssf.breakSetSignature` | `STS_SSF_BREAK_SET_SIGNATURE` | `false` | yes | Deliberate defect, development only: changes one character of every SET's signature. |
 | `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | A stream owned by a GNAP application only hears about people who approved a grant to it. |
 
 ### CAEP (`caep.*`)
@@ -402,7 +438,7 @@ types from what a stream may ask for.
 |---|---|---|---|---|
 | `caep.enabled` | `STS_CAEP_ENABLED` | `true` | yes | Offers CAEP's eight event types and keeps the session register. |
 | `caep.autoEmit` | `STS_CAEP_AUTO_EMIT` | `true` | yes | Sends CAEP events automatically for the session acts this service can observe. |
-| `caep.autoEmitTypes` | `STS_CAEP_AUTO_EMIT_TYPES` | `session-established,session-presented,session-revoked,credential-change,assurance-level-change` | yes | Which of those acts produce an event. A type nothing here can cause is dropped with a warning. |
+| `caep.autoEmitTypes` | `STS_CAEP_AUTO_EMIT_TYPES` | `session-established,session-presented,session-revoked,credential-change,assurance-level-change,token-claims-change,risk-level-change` | yes | Which of those acts produce an event. A type nothing here can cause is dropped with a warning. |
 | `caep.eventsSupported` | `STS_CAEP_EVENTS_SUPPORTED` | all eight | yes | Which CAEP types a stream may ask for. Short names are accepted. |
 | `caep.assuranceNamespace` | `STS_CAEP_ASSURANCE_NAMESPACE` | `NIST-AAL` | yes | The `namespace` of an `assurance-level-change` emitted by hand. Automatic ones use `urn:sts:acr`. |
 | `caep.defaultRiskLevel` | `STS_CAEP_DEFAULT_RISK_LEVEL` | `MEDIUM` | yes | What a `risk-level-change` says when the caller does not choose a level. |
@@ -419,11 +455,13 @@ types from what a stream may ask for.
 |---|---|---|---|---|
 | `risc.enabled` | `STS_RISC_ENABLED` | `true` | yes | Offers RISC's fourteen event types and keeps the account register. |
 | `risc.autoEmit` | `STS_RISC_AUTO_EMIT` | `true` | yes | Sends RISC events automatically for the directory changes this service can observe. |
-| `risc.autoEmitTypes` | `STS_RISC_AUTO_EMIT_TYPES` | `account-purged,account-disabled,account-enabled,identifier-changed,account-credential-change-required,recovery-information-changed` | yes | Which of those acts produce an event. |
+| `risc.autoEmitTypes` | `STS_RISC_AUTO_EMIT_TYPES` | every type but `sessions-revoked` | yes | Which of those acts produce an event. |
+| `risc.recycleWindowDays` | `STS_RISC_RECYCLE_WINDOW_DAYS` | `365` | yes | How long after an account released an address or number another account taking it is reported as `identifier-recycled`. Also bounded by `risc.maxAccountsTracked`. `0` reports nothing. |
+| `risc.optOutDelayHours` | `STS_RISC_OPT_OUT_DELAY_HOURS` | `24` | yes | How long an opt-out waits in `opt-out-initiated` before the `risc.opt-out-effective` job makes it effective. |
 | `risc.eventsSupported` | `STS_RISC_EVENTS_SUPPORTED` | all fourteen | yes | Which RISC types a stream may ask for, including the deprecated `sessions-revoked`. |
 | `risc.subjectFormat` | `STS_RISC_SUBJECT_FORMAT` | `iss_sub` | yes | The RFC 9493 format of an account subject: `iss_sub`, `email` or `opaque`. The two identifier events always use `email`. |
 | `risc.honourOptOut` | `STS_RISC_HONOUR_OPT_OUT` | `true` | yes | Suppresses events for an account in the `opt-out` state, except the four opt-out events. |
-| `risc.googleSubjectType` | `STS_RISC_GOOGLE_SUBJECT_TYPE` | `false` | yes | Deliberate defect: spells the subject discriminator `subject_type` on RISC subjects. |
+| `risc.googleSubjectType` | `STS_RISC_GOOGLE_SUBJECT_TYPE` | `false` | yes | Deliberate defect: spells the subject discriminator `subject_type` on RISC subjects. Development mode only: ignored in product, and turning it on is refused (#181). |
 | `risc.reasonLanguage` | `STS_RISC_REASON_LANGUAGE` | `en` | yes | The language tag of the reason members on `credential-compromise`. |
 | `risc.includeReasons` | `STS_RISC_INCLUDE_REASONS` | `true` | yes | Whether `credential-compromise` carries its optional reason members. |
 | `risc.omitEventTimestamp` | `STS_RISC_OMIT_EVENT_TIMESTAMP` | `false` | yes | Deliberate defect: leaves `event_timestamp` off `credential-compromise`. |

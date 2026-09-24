@@ -78,6 +78,17 @@
 
 const nodeCrypto = require('crypto');
 const forge = require('node-forge');
+// FORGE'S GENERATOR IS NODE'S (#65, section 13). forge keeps a Fortuna DRBG
+// of its own and draws from it INSIDE the library — the blinding of every
+// RSA private-key operation (every XML signature `vendored/xmldsig.js` makes
+// with forge's `pk.sign()`, every certificate forge signs), OAEP seeds,
+// PKCS#1 v1.5 padding, PKCS#7 content keys. Calling node here instead of
+// `forge.random` at our own call sites stopped none of that. forge is one
+// module instance, so pointing its default generator at node's once, on
+// load, covers every caller — the vendored ones included, which may not be
+// edited here. `createInstance()` answers the same, so no forge generator of
+// forge's own exists in this process; `tests/random_values.js` holds it.
+installForgeRandom(forge);
 // The DER writer for the post-quantum certificate below. node-forge cannot
 // represent an ML-DSA key at all, so that one certificate is built by hand.
 const asn1js = require('asn1js');
@@ -112,6 +123,11 @@ const xmldom = require('@xmldom/xmldom');
 // puts it under a Symbol — so no member a caller compares or serialises moves;
 // a caller that wants the condition's name reads it with `codeOf()`.
 const errorCodes = require('./error_codes');
+// THE MODE, for the two broken algorithms this file can be asked to accept
+// (#181): SHA-1 in a verified signature and an rsa-1_5 key transport on an
+// unwrap. A LEAF too — it requires `config` and `error_codes` and nothing
+// else — so this file stays one.
+const mode = require('./mode');
 
 const log = bunyan.createLogger({
   name: 'crypto',
@@ -563,10 +579,13 @@ Object.keys(XML_DIGEST_METHODS).forEach(function (uri) {
   };
 });
 
-// Whether SHA-1 signatures are accepted. Read on every call: runtime.
+// Whether SHA-1 signatures are accepted. Read on every call: runtime. As IN
+// FORCE since #181: `saml.allowSha1Signatures` on is development's, so a
+// product realm refuses SHA-1 whatever is stored and says so once
+// (`mode.valueInForce()`, STS-CORE-0106).
 function sha1Allowed() {
   log.debug("Entering sha1Allowed().");
-  const on = config.value('saml.allowSha1Signatures') === true;
+  const on = mode.valueInForce('saml.allowSha1Signatures') === true;
   log.debug("Leaving sha1Allowed(). " + on);
   return on;
 }
@@ -610,7 +629,8 @@ function xmlAlgorithmVerdict(signatureMethod, digestMethods) {
       (digests.some(function (d) {
         return (XML_DIGEST_METHODS[String(d)] || {}).sha1;
       }) ? ', or a SHA-1 DigestMethod' : '') + '), which is weak and ' +
-      'refused while saml.allowSha1Signatures is off';
+      'refused while saml.allowSha1Signatures is off — and always in ' +
+      'product mode';
     out.code = 'STS-KEYS-0062';
     log.debug("Leaving xmlAlgorithmVerdict(). SHA-1 refused.");
     return out;
@@ -671,6 +691,11 @@ function xmlSignatureKeyProblem(certificate) {
     return found.problem;
   }
   const type = String(found.key.asymmetricKeyType || '');
+  const weakCurve = type === 'ec' ? xmlEcdsaCurveProblem(found.key) : '';
+  if (weakCurve) {
+    log.debug("Leaving xmlSignatureKeyProblem(). " + weakCurve);
+    return 'its public key is ' + weakCurve;
+  }
   const usable = xmlSignatureKeyTypeUsable(type);
   log.debug("Leaving xmlSignatureKeyProblem(). " + type + " usable=" + usable);
   return usable ? '' : 'its public key is ' + (type || 'of an unknown type') +
@@ -739,6 +764,34 @@ function pssParameters(methodElement) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// AN XML ECDSA KEY ON A CURVE WEAKER THAN P-256 (#202, 2026-09-24).
+// Wycheproof's secp160/secp192/secp224 vectors verified through
+// verifyXmlSignatureValue() because nothing asked which curve a
+// certificate's key was on — XMLDSig names no curve, so any curve node's
+// OpenSSL loads was accepted. Under 128 bits of security is refused in
+// PRODUCT (NIST SP 800-57 part 1, table 2; `mode.usesBrokenAlgorithms()`,
+// REQUIREMENTS `xml-ecdsa-curves`) by an ALLOW-list of the curves of at
+// least 256 bits, so a curve nobody listed is refused rather than guessed
+// at. Development keeps every curve, so a partner on one can be exercised.
+// ---------------------------------------------------------------------------
+const XML_ECDSA_CURVES = ['prime256v1', 'secp384r1', 'secp521r1',
+                          'secp256k1', 'brainpoolP256r1', 'brainpoolP320r1',
+                          'brainpoolP384r1', 'brainpoolP512r1'];
+
+function xmlEcdsaCurveProblem(key) {
+  log.debug("Entering xmlEcdsaCurveProblem().");
+  const curve = String(((key && key.asymmetricKeyDetails) || {})
+    .namedCurve || '');
+  if (XML_ECDSA_CURVES.indexOf(curve) >= 0 || mode.usesBrokenAlgorithms()) {
+    log.debug("Leaving xmlEcdsaCurveProblem(). " + curve + " allowed.");
+    return '';
+  }
+  log.debug("Leaving xmlEcdsaCurveProblem(). " + curve + " refused.");
+  return 'an ECDSA key on ' + (curve || 'an unnamed curve') + ', weaker ' +
+    'than P-256, which verifies no XML signature in product mode';
+}
+
 // THE ONE PRIMITIVE: does `signature` verify over `octets` under
 // `signatureMethod` with `key`? A key of the wrong type for the method is
 // `false` — another registered certificate may be the right one — and never a
@@ -753,6 +806,20 @@ function verifyXmlSignatureValue(signatureMethod, key, octets, signature, pss) {
   const type = String((key && key.asymmetricKeyType) || '');
   if (row.keyTypes.indexOf(type) < 0) {
     log.debug("Leaving verifyXmlSignatureValue(). A " + type + " key.");
+    return false;
+  }
+  if ((row.family === 'rsa' || row.family === 'rsa-pss') &&
+      rsaKeyProblem(key, 0)) {
+    // An exponent or a modulus that makes a forgery (#202, rsaKeyProblem());
+    // no size floor, XMLDSig has none and SAML partners still sign with
+    // 1024-bit keys.
+    log.debug("Leaving verifyXmlSignatureValue(). A forgeable RSA key.");
+    return false;
+  }
+  if (row.family === 'ecdsa' && xmlEcdsaCurveProblem(key)) {
+    log.info(errorCodes.tag('STS-KEYS-0077') + 'an XML signature was ' +
+             'refused: ' + xmlEcdsaCurveProblem(key));
+    log.debug("Leaving verifyXmlSignatureValue(). A weak curve.");
     return false;
   }
   let ok = false;
@@ -1330,12 +1397,152 @@ const BLOCK_CIPHERS = {
                   ivBytes: 16, tagBytes: 0 }
 };
 
-// The two key transports. `rsa-1_5` is RSAES-PKCS1-v1_5 and is offered because
-// old service providers require it, not because it is safe.
+// The three key transports. `rsa-1_5` is RSAES-PKCS1-v1_5 and is offered
+// because old service providers require it, not because it is safe.
+//
+// **`rsa-oaep` JOINED ON 2026-09-23 (#168)**: XML Encryption 1.1 section
+// 5.5.2's RSAES-OAEP with the digest and the mask generation function NAMED —
+// `<ds:DigestMethod>` and `<xenc11:MGF>` children of the EncryptionMethod —
+// written here as SHA-256 and MGF1-SHA-256. It is what a federation
+// relationship's service-provider key is published with, so this service's
+// own identity provider has to be able to encrypt to it. Node performs it
+// (`oaepHash` names the digest of the OAEP padding AND of MGF1), forge does
+// not, which is why its two directions below go through node's OpenSSL.
 const KEY_TRANSPORTS = {
+  'rsa-oaep': { uri: XENC11_NS + 'rsa-oaep', scheme: 'RSA-OAEP',
+                hash: 'sha256', node: true },
   'rsa-oaep-mgf1p': { uri: XENC_NS + 'rsa-oaep-mgf1p', scheme: 'RSA-OAEP' },
   'rsa-1_5': { uri: XENC_NS + 'rsa-1_5', scheme: 'RSAES-PKCS1-V1_5' }
 };
+
+// THE DIGESTS AN rsa-oaep EncryptionMethod MAY NAME, by the URI XML Encryption
+// 1.1 section 5.2 gives each, and the MGF1 URIs of section 5.5.2. Absent, both
+// are SHA-1 (section 5.5.2: "SHA-1 is used as the default"). Node derives the
+// MGF1 digest from the OAEP digest, so a document naming two DIFFERENT ones
+// is refused by name rather than read under the wrong one — which would fail
+// exactly as a wrong key fails, and send somebody to the wrong place.
+const OAEP_DIGESTS = {
+  sha1: DS_NS + 'sha1',
+  sha256: XENC_NS + 'sha256',
+  sha384: 'http://www.w3.org/2001/04/xmldsig-more#sha384',
+  sha512: XENC_NS + 'sha512'
+};
+const MGF1_URIS = {
+  sha1: XENC11_NS + 'mgf1sha1',
+  sha256: XENC11_NS + 'mgf1sha256',
+  sha384: XENC11_NS + 'mgf1sha384',
+  sha512: XENC11_NS + 'mgf1sha512'
+};
+
+// ---------------------------------------------------------------------------
+// KEY AGREEMENT: XML Encryption 1.1 section 5.6.4's ECDH-ES, and the AES key
+// wraps (section 5.7.2) the agreed key encrypts the content key with (#168).
+//
+// A recipient whose key is EC has no RSA key to transport to, so the sender
+// generates an EPHEMERAL key pair on the same curve, agrees a secret with the
+// recipient's public key, derives a key-encryption key from it with section
+// 5.4.1's ConcatKDF, and wraps the content key under that. The ephemeral
+// public key travels in `<xenc:OriginatorKeyInfo>` as a `<dsig11:ECKeyValue>`
+// — the curve by OID and the point uncompressed — because without it there is
+// no agreement at the far end.
+//
+// **THE KDF's OtherInfo IS THREE ATTRIBUTES, EACH A BIT STRING WITH A LEADING
+// PAD-COUNT OCTET** (section 5.4.1): the octet that says how many padding bits
+// the last octet carries is part of the hexBinary and NOT part of the bits.
+// Reading it as data would agree with a matching bug and nothing else. This
+// service writes AlgorithmID as the key-wrap URI and the two party infos
+// empty, and reads whatever a sender wrote.
+//
+// **NO POST-QUANTUM KEY ENCAPSULATION.** Neither W3C nor OASIS has defined an
+// ML-KEM method for XML Encryption, so confidentiality here stays classical
+// against a harvest-now-decrypt-later adversary; see federation/CLAUDE.md.
+// ---------------------------------------------------------------------------
+const KEY_AGREEMENTS = {
+  'ecdh-es': { uri: XENC11_NS + 'ECDH-ES' }
+};
+const CONCAT_KDF_URI = XENC11_NS + 'ConcatKDF';
+const KEY_WRAPS = {
+  'kw-aes128': { uri: XENC_NS + 'kw-aes128', bytes: 16 },
+  'kw-aes192': { uri: XENC_NS + 'kw-aes192', bytes: 24 },
+  'kw-aes256': { uri: XENC_NS + 'kw-aes256', bytes: 32 }
+};
+const DSIG11_NS = 'http://www.w3.org/2009/xmldsig11#';
+// The named curves an ECKeyValue may name, by OID, and each coordinate's
+// length in octets.
+const XML_EC_CURVES = {
+  'urn:oid:1.2.840.10045.3.1.7': { crv: 'P-256', bytes: 32 },
+  'urn:oid:1.3.132.0.34': { crv: 'P-384', bytes: 48 },
+  'urn:oid:1.3.132.0.35': { crv: 'P-521', bytes: 66 }
+};
+const XML_EC_OIDS = { 'P-256': 'urn:oid:1.2.840.10045.3.1.7',
+                      'P-384': 'urn:oid:1.3.132.0.34',
+                      'P-521': 'urn:oid:1.3.132.0.35' };
+
+function keyWrapByUri(uri) {
+  log.debug("Entering keyWrapByUri().");
+  const name = Object.keys(KEY_WRAPS).filter(function (key) {
+    return KEY_WRAPS[key].uri === uri;
+  })[0];
+  log.debug("Leaving keyWrapByUri().");
+  return name ? Object.assign({ name: name }, KEY_WRAPS[name]) : null;
+}
+
+function nameOfUri(table, uri) {
+  log.debug("Entering nameOfUri().");
+  const name = Object.keys(table).filter(function (key) {
+    return table[key] === uri;
+  })[0];
+  log.debug("Leaving nameOfUri().");
+  return name || '';
+}
+
+// A ConcatKDFParams attribute's bits, as octets: the hexBinary less its
+// leading pad-count octet. Bits are only ever whole octets here, so a
+// non-zero pad count is refused rather than truncated.
+function concatKdfBits(hex, what) {
+  log.debug("Entering concatKdfBits(). " + what);
+  const text = String(hex || '');
+  if (!text) {
+    log.debug("Leaving concatKdfBits(). Absent.");
+    return Buffer.alloc(0);
+  }
+  if (!/^([0-9A-Fa-f]{2})+$/.test(text)) {
+    log.debug("Leaving concatKdfBits(). Not hexBinary.");
+    throw new Error('the ConcatKDFParams ' + what + ' is not hexBinary');
+  }
+  const bytes = Buffer.from(text, 'hex');
+  if (bytes[0] !== 0) {
+    log.debug("Leaving concatKdfBits(). A partial octet.");
+    throw new Error('the ConcatKDFParams ' + what + ' declares ' + bytes[0] +
+                    ' padding bits, and this service reads whole octets');
+  }
+  log.debug("Leaving concatKdfBits().");
+  return bytes.subarray(1);
+}
+
+// Section 5.4.1's KDF over Z. `otherInfo` is AlgorithmID || PartyUInfo ||
+// PartyVInfo [|| SuppPubInfo [|| SuppPrivInfo]], the counter a 32-bit
+// big-endian integer from 1, one digest per round.
+function xmlConcatKdf(z, keyBytes, hash, otherInfo) {
+  log.debug("Entering xmlConcatKdf(). " + hash + ", " + keyBytes + " bytes.");
+  const size = nodeCrypto.createHash(hash).digest().length;
+  const rounds = Math.ceil(keyBytes / size);
+  const blocks = [];
+  for (let i = 1; i <= rounds; i++) {
+    const counter = Buffer.alloc(4);
+    counter.writeUInt32BE(i);
+    blocks.push(nodeCrypto.createHash(hash)
+      .update(Buffer.concat([counter, z, otherInfo])).digest());
+  }
+  log.debug("Leaving xmlConcatKdf().");
+  return Buffer.concat(blocks).subarray(0, keyBytes);
+}
+
+function hexBits(bytes) {
+  log.debug("Entering hexBits().");
+  log.debug("Leaving hexBits().");
+  return '00' + Buffer.from(bytes).toString('hex').toUpperCase();
+}
 
 function cipherByUri(uri) {
   log.debug("Entering cipherByUri().");
@@ -1353,21 +1560,6 @@ function transportByUri(uri) {
   })[0];
   log.debug("Leaving transportByUri().");
   return name ? Object.assign({ name: name }, KEY_TRANSPORTS[name]) : null;
-}
-
-// The forge options for a key transport. RSA-OAEP here is SHA-1/MGF1-SHA1,
-// which is what `rsa-oaep-mgf1p` MEANS — the newer `rsa-oaep` URI carries its
-// digest in a child element and is deliberately not offered, because a service
-// provider that can do that can do GCM too and this list exists for the ones
-// that cannot.
-function transportOptions(transport) {
-  log.debug("Entering transportOptions().");
-  if (transport.scheme === 'RSA-OAEP') {
-    log.debug("Leaving transportOptions().");
-    return { md: forge.md.sha1.create(), mgf1: { md: forge.md.sha1.create() } };
-  }
-  log.debug("Leaving transportOptions().");
-  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -1425,13 +1617,22 @@ function encryptElement(xml, certPem, opts) {
   opts = opts || {};
   const wrapper = opts.wrapper || 'saml:EncryptedAssertion';
   const cipher = BLOCK_CIPHERS[opts.algorithm] || BLOCK_CIPHERS['aes256-gcm'];
-  const transport = KEY_TRANSPORTS[opts.keyTransport] ||
-                    KEY_TRANSPORTS['rsa-oaep-mgf1p'];
+  const transportName = KEY_TRANSPORTS[opts.keyTransport]
+    ? opts.keyTransport : 'rsa-oaep-mgf1p';
+  const transport = KEY_TRANSPORTS[transportName];
+  const wrapName = KEY_WRAPS[opts.keyWrap] ? opts.keyWrap : 'kw-aes256';
   artifact(opts, 'SAML 2.0 ' + wrapper, 'before encryption', xml);
 
-  const cert = forge.pki.certificateFromPem(certPem);
-  const key = forge.random.getBytesSync(cipher.keyBytes);
-  const iv = forge.random.getBytesSync(cipher.ivBytes);
+  // WHICH KIND OF KEY THE RECIPIENT HOLDS decides between transport and
+  // agreement (#168): an EC certificate has no RSA key to wrap to, and
+  // until this date it made this function throw — which the identity
+  // provider turned into an assertion sent IN CLEAR (STS-SAML-0012).
+  const recipient = new nodeCrypto.X509Certificate(certPem).publicKey;
+  const ec = recipient.asymmetricKeyType === 'ec';
+  // Node's generator in forge's binary-string shape: forge.random was a
+  // second DRBG, and fifty times slower (#65, section 13).
+  const key = randomBytes(cipher.keyBytes).toString('binary');
+  const iv = randomBytes(cipher.ivBytes).toString('binary');
   const c = forge.cipher.createCipher(cipher.mode, key);
   // The tag length matters only to GCM; forge ignores it for CBC, and passing
   // it unconditionally keeps this one call rather than two.
@@ -1444,42 +1645,122 @@ function encryptElement(xml, certPem, opts) {
   const body = cipher.tagBytes
     ? iv + c.output.getBytes() + c.mode.tag.getBytes()
     : iv + c.output.getBytes();
-  const wrapped = cert.publicKey.encrypt(key, transport.scheme,
-                                         transportOptions(transport));
   const certB64 = certPem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+  const contentKey = Buffer.from(key, 'binary');
+  const recipientInfo = '<ds:X509Data><ds:X509Certificate>' + certB64 +
+    '</ds:X509Certificate></ds:X509Data>';
+
+  let encryptedKey = '';
+  let how = '';
+  if (ec) {
+    // ECDH-ES: an ephemeral pair on the recipient's curve, ConcatKDF to a
+    // key-encryption key, and the content key wrapped under it.
+    const wrap = KEY_WRAPS[wrapName];
+    const crv = recipient.export({ format: 'jwk' }).crv;
+    const oid = XML_EC_OIDS[crv];
+    if (!oid) {
+      log.debug("Leaving encryptElement(). Unknown curve.");
+      throw new Error('the recipient\'s EC key is on curve ' + crv + ', and ' +
+                      'this service agrees over ' +
+                      Object.keys(XML_EC_OIDS).join(', '));
+    }
+    const ephemeral = nodeCrypto.generateKeyPairSync('ec',
+      { namedCurve: EC_CURVES[crv] });
+    const z = nodeCrypto.diffieHellman({ privateKey: ephemeral.privateKey,
+                                         publicKey: recipient });
+    const algorithmId = Buffer.from(wrap.uri, 'utf8');
+    const kek = xmlConcatKdf(z, wrap.bytes, 'sha256', algorithmId);
+    const wrapped = aesKeyWrap(kek, contentKey);
+    const point = ephemeral.publicKey.export({ format: 'jwk' });
+    const pub = Buffer.concat([Buffer.from([4]),
+                               Buffer.from(String(point.x), 'base64url'),
+                               Buffer.from(String(point.y), 'base64url')]);
+    encryptedKey =
+      '<xenc:EncryptedKey>' +
+        '<xenc:EncryptionMethod Algorithm="' + wrap.uri + '"/>' +
+        '<ds:KeyInfo><xenc:AgreementMethod Algorithm="' +
+          KEY_AGREEMENTS['ecdh-es'].uri + '">' +
+          '<xenc11:KeyDerivationMethod xmlns:xenc11="' + XENC11_NS + '" ' +
+            'Algorithm="' + CONCAT_KDF_URI + '">' +
+            '<xenc11:ConcatKDFParams AlgorithmID="' + hexBits(algorithmId) +
+              '" PartyUInfo="00" PartyVInfo="00">' +
+              '<ds:DigestMethod Algorithm="' + OAEP_DIGESTS.sha256 + '"/>' +
+            '</xenc11:ConcatKDFParams></xenc11:KeyDerivationMethod>' +
+          '<xenc:OriginatorKeyInfo><ds:KeyValue>' +
+            '<dsig11:ECKeyValue xmlns:dsig11="' + DSIG11_NS + '">' +
+            '<dsig11:NamedCurve URI="' + oid + '"/>' +
+            '<dsig11:PublicKey>' + pub.toString('base64') +
+            '</dsig11:PublicKey></dsig11:ECKeyValue>' +
+          '</ds:KeyValue></xenc:OriginatorKeyInfo>' +
+          '<xenc:RecipientKeyInfo>' + recipientInfo +
+          '</xenc:RecipientKeyInfo>' +
+        '</xenc:AgreementMethod></ds:KeyInfo>' +
+        '<xenc:CipherData><xenc:CipherValue>' + wrapped.toString('base64') +
+        '</xenc:CipherValue></xenc:CipherData>' +
+      '</xenc:EncryptedKey>';
+    how = 'key agreed with ecdh-es, wrapped with ' + wrapName;
+  } else {
+    let wrappedKey;
+    if (transport.node) {
+      // rsa-oaep with a named digest: node's OpenSSL, the one MGF1 digest
+      // `oaepHash` also sets.
+      wrappedKey = nodeCrypto.publicEncrypt({
+        key: recipient,
+        padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: transport.hash
+      }, contentKey).toString('base64');
+    } else {
+      // rsa-oaep-mgf1p (SHA-1, MGF1-SHA1 — what the URI MEANS) and rsa-1_5,
+      // through node's OpenSSL as well since #65: forge drew the OAEP seed
+      // and the PKCS#1 v1.5 padding from a generator of its own, in
+      // JavaScript. The bytes on the wire are the same scheme either way.
+      wrappedKey = nodeCrypto.publicEncrypt({
+        key: recipient,
+        padding: transport.scheme === 'RSA-OAEP'
+          ? nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING
+          : nodeCrypto.constants.RSA_PKCS1_PADDING,
+        oaepHash: transport.scheme === 'RSA-OAEP' ? 'sha1' : undefined
+      }, contentKey).toString('base64');
+    }
+    encryptedKey =
+      '<xenc:EncryptedKey>' +
+        '<xenc:EncryptionMethod Algorithm="' + transport.uri + '">' +
+          // The digest child belongs to OAEP and is meaningless under
+          // RSA-1_5, so it is emitted only where it means something. A
+          // service provider parsing strictly refuses the stray element.
+          (transport.scheme === 'RSA-OAEP'
+            ? '<ds:DigestMethod xmlns:ds="' + DS_NS + '" Algorithm="' +
+              OAEP_DIGESTS[transport.hash || 'sha1'] + '"/>'
+            : '') +
+          (transport.node
+            ? '<xenc11:MGF xmlns:xenc11="' + XENC11_NS + '" Algorithm="' +
+              MGF1_URIS[transport.hash] + '"/>'
+            : '') +
+        '</xenc:EncryptionMethod>' +
+        '<ds:KeyInfo>' + recipientInfo + '</ds:KeyInfo>' +
+        '<xenc:CipherData><xenc:CipherValue>' + wrappedKey +
+        '</xenc:CipherValue></xenc:CipherData>' +
+      '</xenc:EncryptedKey>';
+    how = 'key wrapped with ' + transportName;
+  }
 
   const encrypted =
     '<' + wrapper + ' xmlns:saml="' + NS_SAML + '">' +
     '<xenc:EncryptedData xmlns:xenc="' + XENC_NS + '" Type="' + XENC_NS +
     'Element"><xenc:EncryptionMethod ' +
       'Algorithm="' + cipher.uri + '"/>' +
-      '<ds:KeyInfo xmlns:ds="' + DS_NS + '">' +
-        '<xenc:EncryptedKey>' +
-          '<xenc:EncryptionMethod Algorithm="' + transport.uri + '">' +
-            // The digest child belongs to OAEP and is meaningless under
-            // RSA-1_5, so it is emitted only where it means something. A
-            // service provider parsing strictly refuses the stray element.
-            (transport.scheme === 'RSA-OAEP'
-              ? '<ds:DigestMethod xmlns:ds="' + DS_NS + '" Algorithm="' +
-                DS_NS + 'sha1"/>'
-              : '') +
-          '</xenc:EncryptionMethod>' +
-          '<ds:KeyInfo><ds:X509Data><ds:X509Certificate>' + certB64 +
-          '</ds:X509Certificate></ds:X509Data></ds:KeyInfo>' +
-          '<xenc:CipherData><xenc:CipherValue>' + forge.util.encode64(wrapped) +
-          '</xenc:CipherValue></xenc:CipherData>' +
-        '</xenc:EncryptedKey>' +
+      '<ds:KeyInfo xmlns:ds="' + DS_NS + '">' + encryptedKey +
       '</ds:KeyInfo>' +
       '<xenc:CipherData><xenc:CipherValue>' + forge.util.encode64(body) +
       '</xenc:CipherValue></xenc:CipherData>' +
     '</xenc:EncryptedData></' + wrapper + '>';
 
   artifact(opts, 'SAML 2.0 ' + wrapper,
-           'after encryption (' + cipher.name + ', key wrapped with ' +
-           transport.name + ')',
+           'after encryption (' + cipher.name + ', ' +
+           how + ')',
            encrypted);
   log.debug("Leaving encryptElement(). " + cipher.name + " / " +
-            transport.name + ".");
+            (ec ? 'ecdh-es' : transportName) + ".");
   return encrypted;
 }
 
@@ -1556,8 +1837,240 @@ function parsesAsFragment(xml) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// THE CALLER'S ALLOW-LIST (#168). `opts.allowedCiphers` names the block
+// ciphers, `opts.allowedKeyManagement` the key transports and agreements
+// (`rsa-oaep`, `rsa-oaep-mgf1p`, `rsa-1_5`, `ecdh-es`) and
+// `opts.allowedOaepDigests` the digests an `rsa-oaep` may name — a federation
+// relationship accepts exactly what it published. Each is asked BEFORE any key
+// operation, so a refusal says nothing about the ciphertext; the answer
+// carries `refused: true` so a caller can tell "an algorithm this door does
+// not take" from "a document that did not decrypt", which are two different
+// codes there and must not be one.
+// ---------------------------------------------------------------------------
+function refusedAlgorithm(opts, list, name, what) {
+  log.debug("Entering refusedAlgorithm(). " + what + "=" + name);
+  const allowed = opts && opts[list];
+  if (!Array.isArray(allowed) || allowed.indexOf(name) >= 0) {
+    log.debug("Leaving refusedAlgorithm(). Allowed.");
+    return null;
+  }
+  log.debug("Leaving refusedAlgorithm(). Refused.");
+  return errorCodes.mark({ ok: false, refused: true, algorithm: name,
+                           why: 'the ' + what + ' is ' + name + ', and this ' +
+                                'recipient accepts only ' +
+                                (allowed.join(', ') || 'nothing') },
+                         'STS-KEYS-0071');
+}
+
+// The private key, as node's KeyObject, from a PEM or a KeyObject.
+function privateKeyObject(key) {
+  log.debug("Entering privateKeyObject().");
+  if (key && typeof key === 'object' && key.type === 'private') {
+    log.debug("Leaving privateKeyObject(). A KeyObject.");
+    return key;
+  }
+  log.debug("Leaving privateKeyObject(). A PEM.");
+  return nodeCrypto.createPrivateKey(String(key || ''));
+}
+
+function childByLocal(parent, localName) {
+  log.debug("Entering childByLocal(). " + localName);
+  const kids = parent ? parent.childNodes : null;
+  for (let i = 0; kids && i < kids.length; i++) {
+    if (kids[i].nodeType === 1 && kids[i].localName === localName) {
+      log.debug("Leaving childByLocal(). Found.");
+      return kids[i];
+    }
+  }
+  log.debug("Leaving childByLocal(). None.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// ECDH-ES, READ BACKWARDS: the agreed secret from our private key and the
+// originator's ephemeral public key, and section 5.4.1's KDF over it.
+// `keyBytes` is how much key the caller needs — the key wrap's size, or the
+// content key's for an agreement straight under EncryptedData. Throws a
+// sentence; the caller codes it.
+// ---------------------------------------------------------------------------
+function agreedKey(agreement, privateKey, keyBytes) {
+  log.debug("Entering agreedKey(). " + keyBytes + " bytes.");
+  const kdf = agreement.getElementsByTagNameNS('*', 'KeyDerivationMethod')[0];
+  if (!kdf || kdf.getAttribute('Algorithm') !== CONCAT_KDF_URI) {
+    log.debug("Leaving agreedKey(). Not ConcatKDF.");
+    throw new Error('the ECDH-ES agreement derives its key with ' +
+      ((kdf && kdf.getAttribute('Algorithm')) || 'no KeyDerivationMethod') +
+      ', and this service derives with ConcatKDF only');
+  }
+  const params = kdf.getElementsByTagNameNS('*', 'ConcatKDFParams')[0];
+  const digestEl = params ? params.getElementsByTagNameNS('*',
+    'DigestMethod')[0] : null;
+  const hash = nameOfUri(OAEP_DIGESTS,
+                         digestEl ? digestEl.getAttribute('Algorithm') : '');
+  if (!params || !hash || hash === 'sha1') {
+    log.debug("Leaving agreedKey(). An unusable KDF digest.");
+    throw new Error('the ConcatKDF names no digest this service derives ' +
+                    'with (SHA-256, SHA-384 or SHA-512)');
+  }
+  const otherInfo = Buffer.concat(['AlgorithmID', 'PartyUInfo', 'PartyVInfo',
+                                   'SuppPubInfo', 'SuppPrivInfo']
+    .map(function (name) {
+      return concatKdfBits(params.getAttribute(name), name);
+    }));
+  const originator = agreement.getElementsByTagNameNS('*',
+    'OriginatorKeyInfo')[0];
+  const ecValue = originator ? originator.getElementsByTagNameNS('*',
+    'ECKeyValue')[0] : null;
+  const curveEl = ecValue ? ecValue.getElementsByTagNameNS('*',
+    'NamedCurve')[0] : null;
+  const pointEl = ecValue ? ecValue.getElementsByTagNameNS('*',
+    'PublicKey')[0] : null;
+  const curve = curveEl ? XML_EC_CURVES[curveEl.getAttribute('URI')] : null;
+  if (!curve || !pointEl) {
+    log.debug("Leaving agreedKey(). No usable originator key.");
+    throw new Error('the agreement carries no originator ECKeyValue on a ' +
+                    'curve this service agrees over (' +
+                    Object.keys(XML_EC_OIDS).join(', ') + ')');
+  }
+  const point = Buffer.from(String(pointEl.textContent || '').trim(),
+                            'base64');
+  if (point.length !== 1 + 2 * curve.bytes || point[0] !== 4) {
+    log.debug("Leaving agreedKey(). Not an uncompressed point.");
+    throw new Error('the originator\'s public key is not an uncompressed ' +
+                    'point on ' + curve.crv);
+  }
+  const originatorKey = nodeCrypto.createPublicKey({ format: 'jwk', key: {
+    kty: 'EC', crv: curve.crv,
+    x: point.subarray(1, 1 + curve.bytes).toString('base64url'),
+    y: point.subarray(1 + curve.bytes).toString('base64url') } });
+  const z = nodeCrypto.diffieHellman({ privateKey: privateKey,
+                                       publicKey: originatorKey });
+  log.debug("Leaving agreedKey().");
+  return xmlConcatKdf(z, keyBytes, hash, otherInfo);
+}
+
+// ---------------------------------------------------------------------------
+// THE AES-CBC PADDING ORACLE, CLOSED (#202, 2026-09-24).
+//
+// Jager and Somorovsky, "How To Break XML Encryption" (CCS 2011), and XML
+// Encryption 1.1 section 6.1.3: an UNAUTHENTICATED CBC decryption that
+// answers "bad padding" differently from "decrypted, but not XML" lets an
+// attacker who can submit ciphertexts recover the plaintext a byte at a time
+// — no key needed, just the difference between two answers. This function
+// answered with three: STS-KEYS-0022 (padding), STS-KEYS-0025 (not UTF-8,
+// from the catch) and STS-KEYS-0023 (not XML), each with its own sentence,
+// and returned early on the padding, so even the TIME differed.
+//
+// Now every CBC failure after the key is unwrapped is ONE refusal —
+// STS-KEYS-0078, one sentence (CBC_REFUSAL) — and the three checks all RUN
+// whatever the padding said: a bad count strips nothing and is carried as a
+// flag, the result is decoded and parsed anyway, and the flags are combined
+// only at the end. What still varies with the plaintext is the XML parser's
+// own time, which no refusal can hide; the branch that could be avoided is
+// gone. The real answer is AES-GCM, which this service writes by default
+// and product can be held to per relationship (`allowedCiphers`); CBC stays
+// because service providers that require it exist.
+//
+// A GCM failure keeps its own code and sentence: it is authenticated, and a
+// tag that does not verify reveals nothing about the plaintext.
+// ---------------------------------------------------------------------------
+const CBC_REFUSAL = 'the AES-CBC ciphertext did not decrypt to a ' +
+  'well-formed XML element — the key, the ciphertext or its padding is ' +
+  'wrong, and which of those it was is deliberately not said (XML ' +
+  'Encryption 1.1 section 6.1.3). AES-CBC is unauthenticated; AES-GCM ' +
+  'would have detected an altered ciphertext';
+
+function cbcPlaintextUsable(opened) {
+  log.debug("Entering cbcPlaintextUsable().");
+  const padOk = !!(opened && opened.padOk);
+  const bytes = opened ? opened.plain : Buffer.alloc(0);
+  let text = '';
+  let utf8Ok = true;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch (e) {
+    log.debug("Caught in cbcPlaintextUsable(): " + ((e && e.message) || e));
+    utf8Ok = false;
+    text = bytes.toString('utf8');
+  }
+  // Parsed whether or not the two checks above held, so the three failures
+  // cost the same work up to the parser's own.
+  const xmlOk = parsesAsFragment(text);
+  const ok = padOk && utf8Ok && xmlOk && !!opened;
+  log.debug("Leaving cbcPlaintextUsable(). " + ok);
+  return { ok: ok, text: text };
+}
+
+// ---------------------------------------------------------------------------
+// THE CONTENT OF AN EncryptedData, OPENED ON NODE'S OpenSSL (#202,
+// 2026-09-24). `raw` is the CipherValue: IV || ciphertext [|| tag]. Returns
+// `{ plain, padOk }`, or null when the cipher refuses it outright (a GCM
+// tag, a CBC length that is not whole blocks).
+//
+// **IT WAS forge UNTIL WYCHEPROOF'S AES-CBC VECTORS**, and forge's unpadding
+// checks only that the LAST octet is at most a block: a final octet of ZERO
+// (zero padding, "no padding") and an EMPTY ciphertext both "finished", and
+// the rubbish that came out reached the XML parser (STS-KEYS-0023) instead of
+// being refused as padding. XML Encryption 1.1 section 5.2's padding is
+// NOT PKCS#7 — the last octet counts the padding, 1 to the block size, and
+// the others are arbitrary (Apache Santuario writes ISO 10126 random bytes) —
+// so this checks exactly that and no more: a whole number of blocks, at
+// least one, and a final octet between 1 and 16. Node with automatic padding
+// would refuse every random-padded document real service providers send.
+// GCM's IV and tag are the fixed 12 and 16 octets the layout defines, and
+// node refuses a tag that does not verify.
+// ---------------------------------------------------------------------------
+function openXmlContent(cipher, key, raw) {
+  log.debug("Entering openXmlContent(). " + cipher.name);
+  const bits = key.length * 8;
+  try {
+    if (raw.length < cipher.ivBytes + cipher.tagBytes) {
+      log.debug("Leaving openXmlContent(). Too short.");
+      return null;
+    }
+    const iv = raw.subarray(0, cipher.ivBytes);
+    if (cipher.tagBytes) {
+      const tag = raw.subarray(raw.length - cipher.tagBytes);
+      const gcm = /** @type {import('crypto').DecipherGCM} */ (
+        nodeCrypto.createDecipheriv(
+          /** @type {import('crypto').CipherGCMTypes} */
+          ('aes-' + bits + '-gcm'), key, iv,
+          { authTagLength: cipher.tagBytes }));
+      gcm.setAuthTag(tag);
+      const out = Buffer.concat([gcm.update(raw.subarray(cipher.ivBytes,
+        raw.length - cipher.tagBytes)), gcm.final()]);
+      log.debug("Leaving openXmlContent(). GCM.");
+      return { plain: out, padOk: true };
+    }
+    const body = raw.subarray(cipher.ivBytes);
+    if (!body.length || body.length % 16) {
+      // The LENGTH is public — it is on the wire — so refusing it early
+      // tells an attacker nothing the ciphertext did not.
+      log.debug("Leaving openXmlContent(). Not whole blocks.");
+      return null;
+    }
+    const cbc = nodeCrypto.createDecipheriv('aes-' + bits + '-cbc', key, iv);
+    cbc.setAutoPadding(false);
+    const padded = Buffer.concat([cbc.update(body), cbc.final()]);
+    // NO EARLY RETURN ON THE PADDING — see cbcPlaintextUsable(). A bad count
+    // strips nothing and is carried as a flag; the caller decodes and parses
+    // the result either way and refuses all three failures as ONE.
+    const count = padded[padded.length - 1];
+    const padOk = count >= 1 && count <= 16;
+    const plain = padded.subarray(0, padded.length - (padOk ? count : 0));
+    log.debug("Leaving openXmlContent(). CBC.");
+    return { plain: plain, padOk: padOk };
+  } catch (e) {
+    log.debug("Caught in openXmlContent(): " + ((e && e.message) || e));
+    log.debug("Leaving openXmlContent(). Refused.");
+    return null;
+  }
+}
+
 function decryptElement(xml, privateKeyPem, opts) {
   log.debug("Entering decryptElement().");
+  const options = opts || {};
   let doc;
   try {
     doc = new DOMParser().parseFromString(String(xml), 'text/xml');
@@ -1575,65 +2088,195 @@ function decryptElement(xml, privateKeyPem, opts) {
                                              '<xenc:EncryptedData> inside it' },
                            'STS-KEYS-0016');
   }
-  const dataMethod = data.getElementsByTagNameNS('*', 'EncryptionMethod')[0];
-  const cipher = cipherByUri(dataMethod ? dataMethod.getAttribute('Algorithm') :
-                             '');
+  const dataMethod = childByLocal(data, 'EncryptionMethod');
+  const dataUri = dataMethod ? dataMethod.getAttribute('Algorithm') : '';
+  const cipher = cipherByUri(dataUri);
   if (!cipher) {
     log.debug("Leaving decryptElement(). Unknown block cipher.");
     return errorCodes.mark({ ok: false, why: 'the data is encrypted with ' +
-             ((dataMethod && dataMethod.getAttribute('Algorithm')) || '(no ' +
-                 'algorithm stated)') +
+             (dataUri || '(no algorithm stated)') +
              ', and this service reads only ' +
              Object.keys(BLOCK_CIPHERS).join(', ') },
                            'STS-KEYS-0017');
   }
-  const keyEl = data.getElementsByTagNameNS('*', 'EncryptedKey')[0];
-  if (!keyEl) {
-    // A <RetrievalMethod> pointing at an EncryptedKey elsewhere in the document
-    // is legal and is not implemented: nothing this service issues produces
-    // one, and saying so is more useful than a null dereference three lines
-    // down.
+  const cipherRefused = refusedAlgorithm(options, 'allowedCiphers',
+                                         cipher.name, 'block cipher');
+  if (cipherRefused) {
+    log.debug("Leaving decryptElement(). The caller does not take " +
+              cipher.name + ".");
+    return cipherRefused;
+  }
+  // WHERE THE CONTENT KEY IS. Inside the EncryptedData's KeyInfo (what this
+  // service writes), or — SAML 2.0 core section 2.3.4 allows it — an
+  // EncryptedKey BESIDE the EncryptedData inside the same wrapper, or an
+  // AgreementMethod straight under the KeyInfo, whose agreed key IS the
+  // content key (XML Encryption 1.1 section 5.6).
+  const dataKeyInfo = childByLocal(data, 'KeyInfo');
+  const keyEl = (dataKeyInfo && childByLocal(dataKeyInfo, 'EncryptedKey')) ||
+                doc.getElementsByTagNameNS('*', 'EncryptedKey')[0] || null;
+  const directAgreement = !keyEl && dataKeyInfo
+    ? childByLocal(dataKeyInfo, 'AgreementMethod') : null;
+  if (!keyEl && !directAgreement) {
+    // A <RetrievalMethod> pointing at an EncryptedKey elsewhere is legal and
+    // is not implemented: nothing this service issues produces one, and saying
+    // so is more useful than a null dereference three lines down.
     log.debug("Leaving decryptElement(). No EncryptedKey.");
     return errorCodes.mark({ ok: false, why: 'there is no ' +
-             '<xenc:EncryptedKey> inside the KeyInfo. A key carried ' +
-             'elsewhere and pointed at with <ds:RetrievalMethod> is legal ' +
-             'and is not implemented here' }, 'STS-KEYS-0018');
+             '<xenc:EncryptedKey> inside the KeyInfo or beside the ' +
+             'EncryptedData, and no key agreement. A key pointed at with ' +
+             '<ds:RetrievalMethod> is legal and is not implemented here' },
+                           'STS-KEYS-0018');
   }
-  const keyMethod = keyEl.getElementsByTagNameNS('*', 'EncryptionMethod')[0];
-  const transport = transportByUri(keyMethod ?
-                                   keyMethod.getAttribute('Algorithm') : '');
-  if (!transport) {
+  const keyMethod = keyEl ? childByLocal(keyEl, 'EncryptionMethod') : null;
+  const keyUri = keyMethod ? keyMethod.getAttribute('Algorithm') : '';
+  const transport = keyEl ? transportByUri(keyUri) : null;
+  const wrap = keyEl && !transport ? keyWrapByUri(keyUri) : null;
+  const keyInfoOfKey = keyEl ? childByLocal(keyEl, 'KeyInfo') : null;
+  const agreement = directAgreement ||
+    (wrap && keyInfoOfKey ? childByLocal(keyInfoOfKey, 'AgreementMethod') :
+     null);
+  if (keyEl && !transport && !(wrap && agreement)) {
     log.debug("Leaving decryptElement(). Unknown key transport.");
     return errorCodes.mark({ ok: false, why: 'the key is wrapped with ' +
-             ((keyMethod && keyMethod.getAttribute('Algorithm')) || '(no ' +
-                 'algorithm stated)') +
+             (keyUri || '(no algorithm stated)') +
              ', and this service unwraps only ' +
-             Object.keys(KEY_TRANSPORTS).join(', ') },
+             Object.keys(KEY_TRANSPORTS).join(', ') + ', or ' +
+             Object.keys(KEY_WRAPS).join(', ') + ' under an ECDH-ES ' +
+             'agreement' },
                            'STS-KEYS-0019');
   }
-  // Two CipherValues: the wrapped key inside EncryptedKey, and the data. Read
-  // the key's from the EncryptedKey subtree rather than from the document, or a
-  // document whose EncryptedKey comes second yields the wrong one.
-  const keyCipher = keyEl.getElementsByTagNameNS('*', 'CipherValue')[0];
-  const dataCipherEls = data.getElementsByTagNameNS('*', 'CipherValue');
-  let dataCipher = null;
-  for (let n = 0; n < dataCipherEls.length; n++) {
-    if (!keyEl.contains || !keyEl.contains(dataCipherEls[n])) {
-      dataCipher = dataCipherEls[n];
-    }
+  if (agreement &&
+      agreement.getAttribute('Algorithm') !== KEY_AGREEMENTS['ecdh-es'].uri) {
+    log.debug("Leaving decryptElement(). Unknown key agreement.");
+    return errorCodes.mark({ ok: false, refused: true,
+             algorithm: agreement.getAttribute('Algorithm') || '',
+             why: 'the key is agreed with ' +
+                  (agreement.getAttribute('Algorithm') || '(no algorithm)') +
+                  ', and this service agrees only with ECDH-ES' },
+                           'STS-KEYS-0073');
   }
-  if (!keyCipher || !dataCipher) {
+  const managementName = transport ? transport.name : 'ecdh-es';
+  const managementRefused = refusedAlgorithm(options, 'allowedKeyManagement',
+                                             managementName,
+                                             'key management');
+  if (managementRefused) {
+    log.debug("Leaving decryptElement(). The caller does not take " +
+              managementName + ".");
+    return managementRefused;
+  }
+  // AN rsa-1_5 UNWRAP IS THE DECRYPTION ORACLE, and product never performs
+  // one (#181, `mode.usesBrokenAlgorithms()`). XML Encryption 1.1 section
+  // 6.1.2 is Bleichenbacher's attack on exactly this, and section 6.1.3 adds
+  // the worse half for this service: a server that decrypts PKCS#1 v1.5 under
+  // a key it also SIGNS with can be made to forge signatures, and this
+  // realm's XML key does both. So the refusal comes before any RSA operation
+  // and says nothing about the ciphertext. Development unwraps it, because a
+  // service provider that only speaks rsa-1_5 is what it is for.
+  if (transport && transport.name === 'rsa-1_5' &&
+      !mode.usesBrokenAlgorithms()) {
+    log.debug("Leaving decryptElement(). rsa-1_5, in product.");
+    return errorCodes.mark({ ok: false, refused: true, algorithm: 'rsa-1_5',
+             why: 'the key is wrapped with ' +
+             'rsa-1_5 (RSAES-PKCS1-v1_5), which this realm does not unwrap ' +
+             'in product mode — XML Encryption 1.1 section 6.1.2. Encrypt ' +
+             'to it with rsa-oaep' }, 'STS-KEYS-0070');
+  }
+  // rsa-oaep's digest and MGF, each SHA-1 where absent (section 5.5.2).
+  let oaepHash = '';
+  if (transport && transport.name === 'rsa-oaep') {
+    const digestEl = childByLocal(keyMethod, 'DigestMethod');
+    const mgfEl = childByLocal(keyMethod, 'MGF');
+    const digest = digestEl ? nameOfUri(OAEP_DIGESTS,
+                                        digestEl.getAttribute('Algorithm'))
+                            : 'sha1';
+    const mgf = mgfEl ? nameOfUri(MGF1_URIS, mgfEl.getAttribute('Algorithm'))
+                      : 'sha1';
+    if (!digest || !mgf || digest !== mgf) {
+      log.debug("Leaving decryptElement(). An unusable OAEP digest.");
+      return errorCodes.mark({ ok: false, refused: true,
+               algorithm: 'rsa-oaep',
+               why: 'the rsa-oaep key transport names ' +
+                    (digestEl ? digestEl.getAttribute('Algorithm') : 'SHA-1') +
+                    ' as its digest and ' +
+                    (mgfEl ? mgfEl.getAttribute('Algorithm') : 'MGF1-SHA-1') +
+                    ' as its mask generation function; this service ' +
+                    'unwraps only a matching pair of SHA-1, SHA-256, ' +
+                    'SHA-384 or SHA-512' }, 'STS-KEYS-0072');
+    }
+    const digestRefused = refusedAlgorithm(options, 'allowedOaepDigests',
+                                           digest, 'OAEP digest');
+    if (digestRefused) {
+      log.debug("Leaving decryptElement(). The caller does not take the " +
+                "OAEP digest " + digest + ".");
+      return digestRefused;
+    }
+    oaepHash = digest;
+  }
+  // The data's CipherValue: the EncryptedData's own CipherData, never one
+  // inside a key.
+  const dataCipherData = childByLocal(data, 'CipherData');
+  const dataCipher = dataCipherData ? childByLocal(dataCipherData,
+                                                   'CipherValue') : null;
+  const keyCipherData = keyEl ? childByLocal(keyEl, 'CipherData') : null;
+  const keyCipher = keyCipherData ? childByLocal(keyCipherData,
+                                                 'CipherValue') : null;
+  if ((keyEl && !keyCipher) || !dataCipher) {
     log.debug("Leaving decryptElement(). A CipherValue is missing.");
     return errorCodes.mark({ ok: false, why: 'the element is missing one of ' +
              'its two <xenc:CipherValue>s — the wrapped key, or the ' +
              'data' }, 'STS-KEYS-0020');
   }
 
+  // THE OAEP LABEL (#202, 2026-09-24). XML Encryption 1.1 section 5.5.2:
+  // `<xenc:OAEPparams>`, when present, is the base64 of the label P, for
+  // rsa-oaep-mgf1p and rsa-oaep alike. It was ignored until Wycheproof's
+  // EncryptionWithLabel vectors: a key a sender wrapped under a label then
+  // failed to unwrap and was reported as a key for another certificate.
+  const paramsEl = keyMethod ? childByLocal(keyMethod, 'OAEPparams') : null;
+  const oaepLabel = paramsEl
+    ? Buffer.from(String(paramsEl.textContent || '').trim(), 'base64')
+    : undefined;
   try {
-    const priv = forge.pki.privateKeyFromPem(privateKeyPem);
-    const key = priv.decrypt(forge.util.decode64(
-        (keyCipher.textContent || '').trim()),
-                             transport.scheme, transportOptions(transport));
+    let key;
+    const wrappedBytes = keyCipher
+      ? Buffer.from(String(keyCipher.textContent || '').trim(), 'base64')
+      : Buffer.alloc(0);
+    if (agreement) {
+      const privateKey = privateKeyObject(privateKeyPem);
+      if (privateKey.asymmetricKeyType !== 'ec') {
+        log.debug("Leaving decryptElement(). An agreement to a non-EC key.");
+        return errorCodes.mark({ ok: false, why: 'the element is encrypted ' +
+                 'by ECDH-ES key agreement and this recipient\'s key is not ' +
+                 'an EC key' }, 'STS-KEYS-0074');
+      }
+      const agreed = agreedKey(agreement, privateKey,
+                               wrap ? wrap.bytes : cipher.keyBytes);
+      key = wrap ? aesKeyUnwrap(agreed, wrappedBytes).toString('binary')
+                 : agreed.toString('binary');
+    } else if (transport.node) {
+      key = nodeCrypto.privateDecrypt({
+        key: privateKeyObject(privateKeyPem),
+        padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: oaepHash,
+        oaepLabel: oaepLabel
+      }, wrappedBytes).toString('binary');
+    } else {
+      // rsa-oaep-mgf1p and rsa-1_5 through node's OpenSSL since #65, where
+      // forge's JavaScript RSA drew its blinding from a generator of its own
+      // and was not constant-time. RSA-1_5 is OpenSSL's IMPLICIT REJECTION
+      // (node refuses PKCS#1 v1.5 decryption without it): a padding that
+      // does not check unwraps to a deterministic random value instead of
+      // throwing, so the length check below is still what names a wrong
+      // key, and the timing no longer tells a caller which it was.
+      key = nodeCrypto.privateDecrypt({
+        key: privateKeyObject(privateKeyPem),
+        padding: transport.scheme === 'RSA-OAEP'
+          ? nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING
+          : nodeCrypto.constants.RSA_PKCS1_PADDING,
+        oaepHash: transport.scheme === 'RSA-OAEP' ? 'sha1' : undefined,
+        oaepLabel: transport.scheme === 'RSA-OAEP' ? oaepLabel : undefined
+      }, wrappedBytes).toString('binary');
+    }
     if (!key || key.length !== cipher.keyBytes) {
       // A WRONG KEY IS THE ORDINARY FAILURE and it is worth naming: this
       // service regenerates its key on every start in development mode (the
@@ -1652,70 +2295,52 @@ function decryptElement(xml, privateKeyPem, opts) {
                'copy of its metadata is the usual cause — fetch ' +
                '/saml2/metadata again' }, 'STS-KEYS-0021');
     }
-    const raw = forge.util.decode64((dataCipher.textContent || '').trim());
-    const iv = raw.slice(0, cipher.ivBytes);
-    const decipher = forge.cipher.createDecipher(cipher.mode, key);
-    if (cipher.tagBytes) {
-      const tag = raw.slice(raw.length - cipher.tagBytes);
-      decipher.start({ iv: iv, tag: forge.util.createBuffer(tag),
-                       tagLength: cipher.tagBytes * 8 });
-      decipher.update(forge.util.createBuffer(
-        raw.slice(cipher.ivBytes, raw.length - cipher.tagBytes)));
-    } else {
-      decipher.start({ iv: iv });
-      decipher.update(forge.util.createBuffer(raw.slice(cipher.ivBytes)));
+    const opened = openXmlContent(cipher, Buffer.from(key, 'binary'),
+      Buffer.from(String(dataCipher.textContent || '').trim(), 'base64'));
+    if (!cipher.tagBytes) {
+      // AES-CBC: ONE REFUSAL FOR THE PADDING, THE ENCODING AND THE PARSE.
+      // See cbcPlaintextUsable() for why.
+      const usable = cbcPlaintextUsable(opened);
+      if (!usable.ok) {
+        log.debug("Leaving decryptElement(). CBC did not yield a document.");
+        return errorCodes.mark({ ok: false, why: CBC_REFUSAL },
+                               'STS-KEYS-0078');
+      }
+      opened.plain = Buffer.from(usable.text, 'utf8');
+    } else if (!opened) {
+      // AES-GCM's tag: the ciphertext was altered. Authenticated, so saying
+      // so is no oracle — nothing about the plaintext is learned from it.
+      log.debug("Leaving decryptElement(). The GCM tag did not verify.");
+      return errorCodes.mark({ ok: false, why: 'the AES-GCM authentication ' +
+        'tag did not verify, so the ciphertext was altered after it was ' +
+        'encrypted' }, 'STS-KEYS-0022');
     }
-    if (!decipher.finish()) {
-      // For GCM this is the authentication tag failing, which means the
-      // ciphertext was altered; for CBC it is the padding. They are different
-      // facts and the message says which, because "decryption failed" sends
-      // somebody looking at their key when the document was edited in transit.
-      log.debug("Leaving decryptElement(). The cipher refused.");
-      return errorCodes.mark({ ok: false, why: cipher.tagBytes
-        ? 'the AES-GCM authentication tag did not verify, so the ciphertext ' +
-          'was altered after it was encrypted'
-        : 'the AES-CBC padding is not valid, so the key or the ciphertext is ' +
-          'wrong' },
-                             'STS-KEYS-0022');
-    }
-    const plain = forge.util.decodeUtf8(decipher.output.getBytes());
+    // Fatal on a malformed sequence, as forge's decodeUtf8() was: a
+    // plaintext that is not UTF-8 is not a document (STS-KEYS-0025).
+    const plain = new TextDecoder('utf-8', { fatal: true })
+      .decode(opened.plain);
     // ---------------------------------------------------------------------
-    // DOES IT PARSE? A cipher that finished is not a document that survived,
-    // and the gap between those two is CBC's whole problem.
-    //
-    // AES-GCM is authenticated: an altered ciphertext fails the tag above and
-    // never reaches here. AES-CBC IS NOT. Altering a byte of CBC ciphertext
-    // corrupts one block, flips bits in the next, and quite often still leaves
-    // valid PKCS#7 padding — so `finish()` returns true and hands back
-    // plausible-looking rubbish. Measured, not assumed: flipping one character
-    // of a CBC cipher value here returns the element TRUNCATED mid-tag, with no
-    // error anywhere.
-    //
-    // So the plaintext is parsed before it is called a success. That is not
-    // integrity — nothing can retrofit integrity onto unauthenticated CBC, and
-    // this service offers CBC precisely because real service providers require
-    // it — but it turns "here is your NameID" plus a crash two frames later
-    // into one refusal that says what happened. A caller that wanted the bytes
-    // whatever they are is not a caller this function has.
+    // DOES IT PARSE? A cipher that finished is not a document that survived.
+    // For GCM (authenticated) a plaintext that is not XML is the sender's
+    // bug and is named as such. For CBC the same question is asked inside
+    // cbcPlaintextUsable(), above, and answered as one refusal.
     if (!parsesAsFragment(plain)) {
       log.debug("Leaving decryptElement(). The plaintext is not XML.");
       return errorCodes.mark({ ok: false, why: 'the decryption produced ' +
-               'something that is not well-formed ' +
-               'XML' + (cipher.tagBytes ? '' : ', and ' + cipher.name + ' is ' +
-               'UNAUTHENTICATED — an altered ciphertext can decrypt to ' +
-               'rubbish with valid padding and no error, which is what a GCM ' +
-               'algorithm would have caught') }, 'STS-KEYS-0023');
+               'something that is not well-formed XML' }, 'STS-KEYS-0023');
     }
-    artifact(opts, 'SAML 2.0 encrypted element',
-             'after decryption (' + cipher.name + ', key unwrapped with ' +
-             transport.name + ')', plain);
+    artifact(options, 'SAML 2.0 encrypted element',
+             'after decryption (' + cipher.name + ', key ' +
+             (agreement ? 'agreed with ecdh-es' : 'unwrapped with ' +
+              transport.name) + ')', plain);
     log.debug("Leaving decryptElement(). " + plain.length + " characters.");
     return { ok: true, xml: plain, algorithm: cipher.name,
-             keyTransport: transport.name };
+             keyTransport: managementName, keyWrap: wrap ? wrap.name : '',
+             oaepDigest: oaepHash };
   } catch (e) {
-    // forge throws on a key that will not unwrap at all, which is the RSA-OAEP
-    // equivalent of the length check above. Swallowed into an answer for the
-    // reason this whole function answers rather than throws.
+    // forge and node throw on a key that will not unwrap at all, which is
+    // the RSA-OAEP equivalent of the length check above. Swallowed into an
+    // answer for the reason this whole function answers rather than throws.
     //
     // THE MESSAGE IS NOT ASSUMED TO BE ABOUT THE KEY, and that is a correction
     // rather than caution: this catch covers the decryption AND the parse, and
@@ -1723,7 +2348,8 @@ function decryptElement(xml, privateKeyPem, opts) {
     // NamespaceError from a perfectly good NameID was reported as a wrong
     // certificate — which sends somebody to re-fetch metadata over a bug in the
     // parser three lines away.
-    const aboutTheKey = /oaep|padding|rsa|decrypt|key/i.test(e.message || '');
+    const aboutTheKey = /oaep|padding|rsa|decrypt|key|wrap|agree|ecdh|kdf/i
+      .test(e.message || '');
     log.debug("Leaving decryptElement(). " + e.message);
     return errorCodes.mark({ ok: false, why: aboutTheKey
       ? 'the wrapped key could not be unwrapped with this service\'s private ' +
@@ -2012,7 +2638,8 @@ function signJws(payload, key, opts) {
   const spec = jwsSpec(algorithm);
   if (spec.family === 'pq') {
     const pqInput = pqSigningInput(payload, algorithm, options);
-    const pqSig = pqJose.sign(algorithm, key, Buffer.from(pqInput, 'ascii'));
+    const pqSig = jwsSignatureOver(algorithm, key,
+                                   Buffer.from(pqInput, 'ascii'));
     const pqOut = pqInput + '.' + b64u(pqSig);
     log.debug('Leaving signJws(). ' + algorithm + ', ' + pqOut.length +
               ' characters.');
@@ -2030,8 +2657,8 @@ function signJws(payload, key, opts) {
     }
     const input = b64u(Buffer.from(JSON.stringify(header), 'utf8')) + '.' +
                   b64u(Buffer.from(JSON.stringify(body), 'utf8'));
-    const signature = nodeCrypto.sign(spec.hash, Buffer.from(input, 'ascii'),
-        nodeParamsFor(spec, key));
+    const signature = jwsSignatureOver(algorithm, key,
+                                       Buffer.from(input, 'ascii'));
     const out = input + '.' + b64u(signature);
     log.debug('Leaving signJws(). ' + algorithm + ', ' + out.length +
               ' characters.');
@@ -2186,6 +2813,158 @@ function tokenClockSkew() {
 // token whose `alg` is not in the caller's list is refused for that and never
 // for its signature, whichever entry point was used.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// STRICT BASE64URL (#202, 2026-09-24). RFC 7515 section 2 and RFC 7516
+// section 2: every segment of a compact serialization is base64url with no
+// padding and nothing else. Node's decoder SKIPS characters it does not know
+// and ignores the unused low bits of the last character, so until
+// Wycheproof's `base64` vectors a JWS whose MAC had a space, a `?` or a `#`
+// inserted — or whose payload's last character had its unused bits set —
+// verified: the signed text and the decoded bytes were two different things,
+// and one token had many spellings. A segment is now the ONE canonical
+// encoding of its bytes, or it is refused.
+// ---------------------------------------------------------------------------
+// strictBase64url() is a hot path: every segment of every compact JWS and JWE;
+// no Entering/Leaving pair, which would drown the log.
+function strictBase64url(segment, what) {
+  const text = String(segment);
+  const bytes = Buffer.from(text, 'base64url');
+  if (!/^[A-Za-z0-9_-]*$/.test(text) || bytes.toString('base64url') !== text) {
+    throw new Error('the ' + what + ' is not canonical base64url (RFC 7515 ' +
+      'section 2): it carries a character outside the alphabet, padding, or ' +
+      'unused bits that are not zero.');
+  }
+  return bytes;
+}
+
+// ---------------------------------------------------------------------------
+// A KEY A JWS MAY NOT BE VERIFIED WITH (#202, 2026-09-24). Wycheproof's
+// json_web_key vectors found that any key node would load was used:
+//
+//   * an RSA public exponent below 3, or even — RFC 8017 section 3.1 requires
+//     3 <= e, odd. With e = 1 a "signature" is the padded digest itself and
+//     anybody can make one. Refused in EVERY mode: it is not a weak key but a
+//     forgery.
+//   * an RSA modulus with the ROCA fingerprint (CVE-2017-15361, Infineon's
+//     RSALib): such a key is factorable. Refused in every mode, by the
+//     published test — the modulus's residue modulo each of 38 small primes
+//     lies in the subgroup 65537 generates, which a random modulus does with
+//     negligible probability.
+//   * an RSA modulus under 2048 bits — RFC 7518 section 3.3 (and RFC 8230
+//     section 5 for COSE) says a key of 2048 bits or larger MUST be used.
+//   * an HMAC key shorter than the hash output — RFC 7518 section 3.2 says a
+//     key of the same size as the hash output or larger MUST be used. An
+//     EMPTY key is refused in every mode.
+//
+// The two size floors are refused in PRODUCT (`mode.usesBrokenAlgorithms()`):
+// development keeps accepting them so that a client whose key or
+// client_secret is too short can be exercised, which is the same bargain
+// that predicate makes for SHA-1 and rsa-1_5. Answers '' or the sentence.
+// ---------------------------------------------------------------------------
+const ROCA_PRIMES = [3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53,
+                     59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109,
+                     113, 127, 131, 137, 139, 149, 151, 157, 163, 167];
+const ROCA_SUBGROUPS = ROCA_PRIMES.map(function (p) {
+  const members = {};
+  const g = 65537 % p;
+  let x = 1;
+  do {
+    members[x] = true;
+    x = (x * g) % p;
+  } while (x !== 1);
+  return { p: BigInt(p), members: members };
+});
+
+// rsaKeyProblem() is a hot path: every RSA verification; no Entering/Leaving
+// pair.
+function rsaKeyProblem(publicKey, minimumBits) {
+  if (!publicKey || (publicKey.asymmetricKeyType !== 'rsa' &&
+                     publicKey.asymmetricKeyType !== 'rsa-pss')) {
+    return '';
+  }
+  const details = publicKey.asymmetricKeyDetails || {};
+  const e = BigInt(details.publicExponent || 0);
+  if (e < 3n || e % 2n === 0n) {
+    return 'an RSA public exponent of ' + e + ' (RFC 8017 section 3.1 ' +
+      'requires an odd e of at least 3)';
+  }
+  const n = rsaModulus(publicKey);
+  const roca = ROCA_SUBGROUPS.every(function (row) {
+    return row.members[Number(n % row.p)] === true;
+  });
+  if (roca) {
+    return 'an RSA modulus with the ROCA fingerprint (CVE-2017-15361), ' +
+      'which is factorable';
+  }
+  const bits = Number(details.modulusLength || 0);
+  if (minimumBits && bits < minimumBits && !mode.usesBrokenAlgorithms()) {
+    return 'a ' + bits + '-bit RSA key, where ' + minimumBits + ' bits or ' +
+      'more MUST be used (RFC 7518 section 3.3, RFC 8230 section 5)';
+  }
+  return '';
+}
+
+// The modulus of an RSA public key as a BigInt. Node exports an `rsa` key
+// as a JWK but not an `rsa-pss` one, so the SubjectPublicKeyInfo's
+// RSAPublicKey is read for that.
+// rsaModulus() is a hot path: every RSA verification.
+function rsaModulus(publicKey) {
+  if (publicKey.asymmetricKeyType === 'rsa') {
+    const jwk = publicKey.export({ format: 'jwk' });
+    return BigInt('0x' + Buffer.from(String(jwk.n), 'base64url')
+      .toString('hex'));
+  }
+  const der = publicKey.export({ type: 'spki', format: 'der' });
+  const spki = asn1js.fromBER(new Uint8Array(der).buffer);
+  const bits = /** @type {any} */ (spki.result).valueBlock.value[1];
+  const inner = asn1js.fromBER(bits.valueBlock.valueHexView.slice().buffer);
+  const n = /** @type {any} */ (inner.result).valueBlock.value[0];
+  return BigInt('0x' + Buffer.from(n.valueBlock.valueHexView).toString('hex'));
+}
+
+// A JWK that says it is not for verifying signatures (RFC 7517 sections
+// 4.2 and 4.3): `use` other than `sig`, or `key_ops` without `verify`.
+// jwkUseProblem() is a hot path: every verification with a JWK.
+function jwkUseProblem(key) {
+  if (!key || typeof key !== 'object' || !key.kty) {
+    return '';
+  }
+  if (key.use !== undefined && key.use !== 'sig') {
+    return 'a JWK whose "use" is "' + key.use + '" (RFC 7517 section 4.2)';
+  }
+  if (Array.isArray(key.key_ops) && key.key_ops.indexOf('verify') < 0) {
+    return 'a JWK whose "key_ops" do not include "verify" (RFC 7517 ' +
+      'section 4.3)';
+  }
+  return '';
+}
+
+// hmacKeyProblem() is a hot path: every HMAC verification; no Entering/Leaving
+// pair.
+function hmacKeyProblem(spec, key) {
+  const bytes = Buffer.isBuffer(key) ? key.length
+    : (key && typeof key === 'object' && key.type === 'secret')
+      ? Number(key.symmetricKeySize || 0)
+      : Buffer.byteLength(String(key == null ? '' : key), 'utf8');
+  if (!bytes) {
+    return 'an empty HMAC key';
+  }
+  // RFC 7518 section 3.2: "A key of the same size as the hash output ...
+  // or larger MUST be used". Refused in PRODUCT (#202); development accepts
+  // a shorter one so a client holding one can be exercised
+  // (`mode.usesBrokenAlgorithms()`, REQUIREMENTS `jose-key-sizes`). The key
+  // is what `client_secret_jwt` signs with — the UTF-8 octets of the
+  // client_secret — which is why `oauth2.registeredSecretBytes` mints one
+  // long enough for HS512 by default.
+  const need = nodeCrypto.createHash(spec.hash).digest().length;
+  if (bytes < need && !mode.usesBrokenAlgorithms()) {
+    return 'a ' + (bytes * 8) + '-bit HMAC key for ' + spec.hash + ', where ' +
+      'a key of the hash output\'s size (' + (need * 8) + ' bits) or larger ' +
+      'MUST be used (RFC 7518 section 3.2)';
+  }
+  return '';
+}
+
 function prepareVerification(token, key, options) {
   log.debug('Entering prepareVerification().');
   const parts = String(token || '').split('.');
@@ -2195,8 +2974,12 @@ function prepareVerification(token, key, options) {
       parts.length + '.');
   }
   let header;
+  let signatureBytes;
   try {
-    header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    strictBase64url(parts[1], 'JWS payload');
+    signatureBytes = strictBase64url(parts[2], 'JWS signature');
+    header = JSON.parse(strictBase64url(parts[0], 'JWS protected header')
+      .toString('utf8'));
   } catch (e) {
     log.debug('Leaving prepareVerification(). The header is not JSON.');
     throw new Error('the JWS protected header is not readable base64url ' +
@@ -2221,7 +3004,7 @@ function prepareVerification(token, key, options) {
     spec: spec,
     payload: parts[1],
     signingInput: Buffer.from(parts[0] + '.' + parts[1], 'ascii'),
-    signature: Buffer.from(parts[2], 'base64url'),
+    signature: signatureBytes,
     // AN EMPTY PAYLOAD IS A MESSAGE, FOR ONE CALLER (2026-09-13). RFC 8555
     // section 6.3's POST-as-GET is a JWS whose payload is the empty string,
     // and it is signed exactly like any other. Only a caller that says so gets
@@ -2234,12 +3017,97 @@ function prepareVerification(token, key, options) {
     // JWK, which is what a verifier is handed in practice. Read HERE rather
     // than at the check, so that a key that cannot be read is refused in the
     // same place whichever entry point was used.
-    prepared.pub = (key && key.pub) ? Buffer.from(key.pub, 'base64url')
-      : (typeof key === 'string' ? Buffer.from(key, 'base64url')
-                                 : Buffer.from(key));
+    prepared.pub = pqPublicBytes(key);
   }
   log.debug('Leaving prepareVerification(). alg=' + header.alg);
   return prepared;
+}
+
+// An AKP public key as bytes: a JWK's `pub`, its base64url text, or bytes.
+function pqPublicBytes(key) {
+  log.debug('Entering pqPublicBytes().');
+  log.debug('Leaving pqPublicBytes().');
+  return (key && key.pub) ? Buffer.from(key.pub, 'base64url')
+    : (typeof key === 'string' ? Buffer.from(key, 'base64url')
+                               : Buffer.from(key));
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGNATURE CHECK OF A JWS, OVER OCTETS A CALLER NAMES (#202, 2026-09-24).
+//
+// `verifyCompactJws()` is this and nothing more once it has read the token
+// and refused an algorithm the caller did not name: the same `verifyBytes()`
+// for every classical algorithm and the same `pqJose.verify()` for the
+// post-quantum ones. It is a function of its own so that an EXTERNAL answer
+// can be held to exactly the check a JWS gets — C2SP Wycheproof's vectors
+// (`tests/wycheproof.js`) and NIST's ACVP ones (`tests/acvp_pqc.js`) are
+// signatures over arbitrary octets, which no compact serialization can carry,
+// since what a JWS signs is always `BASE64URL(header) '.' BASE64URL(payload)`.
+// Refactored rather than copied, so a vector that passes here passes for the
+// same reason a token does. Returns true or false, and THROWS where the token
+// path throws (an ECDSA signature of the wrong length, a key that will not
+// load, an algorithm this service does not implement).
+// ---------------------------------------------------------------------------
+function checkPreparedSignature(prepared, key) {
+  log.debug('Entering checkPreparedSignature(). alg=' + prepared.header.alg);
+  const ok = prepared.spec.family === 'pq'
+    ? pqJose.verify(prepared.header.alg, prepared.pub, prepared.signingInput,
+                    prepared.signature)
+    : verifyBytes(prepared, key);
+  log.debug('Leaving checkPreparedSignature(). ' + !!ok);
+  return !!ok;
+}
+
+function jwsSignatureValid(alg, key, signingInput, signature) {
+  log.debug('Entering jwsSignatureValid(). alg=' + alg);
+  const spec = jwsSpec(alg);
+  const prepared = {
+    header: { alg: alg },
+    spec: spec,
+    signingInput: Buffer.from(signingInput),
+    signature: Buffer.from(signature)
+  };
+  if (spec.family === 'pq') {
+    prepared.pub = pqPublicBytes(key);
+  }
+  const ok = checkPreparedSignature(prepared, key);
+  log.debug('Leaving jwsSignatureValid(). ' + ok);
+  return ok;
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGNATURE A JWS CARRIES, OVER OCTETS A CALLER NAMES — for the
+// algorithms this file signs ITSELF: EdDSA and ES256K (the `ownSigner` rows)
+// and every post-quantum one. `signJws()` signs through this, so the
+// deterministic ML-DSA and SLH-DSA signatures NIST and Wycheproof publish
+// can be compared with what this service actually produces. The rows
+// `jsonwebtoken` signs are refused by name: this function would otherwise
+// be a second signer for them that nothing in the service uses.
+// ---------------------------------------------------------------------------
+//
+// `internal.deterministic` (#203) asks pq_jose for FIPS 204/205's
+// DETERMINISTIC variant instead of the hedged one every other caller gets.
+// It exists for `tests/acvp_pqc.js`, which compares with NIST's
+// deterministic vectors, and is not a setting: signJws() never passes it.
+function jwsSignatureOver(alg, key, signingInput, internal) {
+  log.debug('Entering jwsSignatureOver(). alg=' + alg);
+  const spec = jwsSpec(alg);
+  const input = Buffer.from(signingInput);
+  if (spec.family === 'pq') {
+    const pqSig = Buffer.from(pqJose.sign(alg, key, input,
+      { deterministic: !!(internal && internal.deterministic === true) }));
+    log.debug('Leaving jwsSignatureOver(). Post-quantum.');
+    return pqSig;
+  }
+  if (!spec.ownSigner) {
+    log.debug('Leaving jwsSignatureOver(). jsonwebtoken signs this one.');
+    throw new Error('jwsSignatureOver: ' + alg + ' is signed by ' +
+      'jsonwebtoken inside signJws(), not by this file.');
+  }
+  const signature = nodeCrypto.sign(spec.hash, input,
+                                    nodeParamsFor(spec, key));
+  log.debug('Leaving jwsSignatureOver(). ' + alg + '.');
+  return signature;
 }
 
 // Everything but post-quantum, which is every algorithm whose check is
@@ -2249,7 +3117,17 @@ function verifyBytes(prepared, key) {
   const spec = prepared.spec;
   const signingInput = prepared.signingInput;
   const signature = prepared.signature;
+  const misuse = jwkUseProblem(key);
+  if (misuse) {
+    log.debug('Leaving verifyBytes(). ' + misuse);
+    throw new Error('this JWS cannot be verified with ' + misuse + '.');
+  }
   if (spec.family === 'hmac') {
+    const weak = hmacKeyProblem(spec, key);
+    if (weak) {
+      log.debug('Leaving verifyBytes(). ' + weak);
+      throw new Error('this JWS cannot be verified with ' + weak + '.');
+    }
     const expected = nodeCrypto.createHmac(spec.hash, key)
       .update(signingInput).digest();
     log.debug('Leaving verifyBytes(). HMAC.');
@@ -2276,6 +3154,12 @@ function verifyBytes(prepared, key) {
   } catch (e) {
     log.debug('Leaving verifyBytes(). The key would not load.');
     throw new Error('the verification key could not be read: ' + e.message);
+  }
+  const weakRsa = spec.family === 'rsa' ? rsaKeyProblem(publicKey, 2048)
+                                        : '';
+  if (weakRsa) {
+    log.debug('Leaving verifyBytes(). ' + weakRsa);
+    throw new Error('this JWS cannot be verified with ' + weakRsa + '.');
   }
   log.debug('Leaving verifyBytes(). ' + spec.family + '.');
   return nodeCrypto.verify(spec.hash, signingInput,
@@ -2312,10 +3196,7 @@ function verifyCompactJws(token, key, opts) {
   const options = opts || {};
   log.debug('Entering verifyCompactJws().');
   const prepared = prepareVerification(token, key, options);
-  const ok = prepared.spec.family === 'pq'
-    ? pqJose.verify(prepared.header.alg, prepared.pub, prepared.signingInput,
-                    prepared.signature)
-    : verifyBytes(prepared, key);
+  const ok = checkPreparedSignature(prepared, key);
   const out = finishVerification(prepared, ok);
   log.debug('Leaving verifyCompactJws(). ' + prepared.header.alg +
             ' verified.');
@@ -2426,6 +3307,24 @@ function verifyJws(token, key, opts) {
     log.debug('Leaving verifyJws(). ' + peeked.alg + ' via the shared ' +
               'verifier.');
     return checkJwtClaims(verified.claims, options);
+  }
+  // The library path is held to the same two rules as the shared verifier
+  // (#202): one canonical spelling of each segment, and — for an HMAC — a
+  // key RFC 7518 section 3.2 allows. jsonwebtoken already refuses an RSA
+  // key under 2048 bits by default (its allowInsecureKeySizes).
+  const segments = String(token || '').split('.');
+  if (segments.length === 3) {
+    strictBase64url(segments[0], 'JWS protected header');
+    strictBase64url(segments[1], 'JWS payload');
+    strictBase64url(segments[2], 'JWS signature');
+  }
+  if (peeked && JWS_ALGS[peeked.alg] &&
+      JWS_ALGS[peeked.alg].family === 'hmac') {
+    const weak = hmacKeyProblem(JWS_ALGS[peeked.alg], key);
+    if (weak) {
+      log.debug('Leaving verifyJws(). ' + weak);
+      throw new Error('this JWS cannot be verified with ' + weak + '.');
+    }
   }
   const verifyOptions = Object.assign({}, options);
   if (verifyOptions.algorithms === undefined) {
@@ -2706,11 +3605,64 @@ function openContent(spec, cek, iv, aad, ciphertext, tag) {
     log.debug('Leaving openContent(). CBC-HMAC.');
     return out;
   }
-  const decipher = nodeCrypto.createDecipheriv(spec.cipher, cek, iv);
+  // THE IV IS 96 BITS AND THE TAG 128, AND NOTHING ELSE IS OPENED (#202,
+  // 2026-09-24). RFC 7518 section 5.3 fixes both. Node's GCM takes any IV
+  // length and — without `authTagLength` — any tag from 4 octets up, so
+  // until Wycheproof's truncated-tag vectors a JWE whose tag had been cut to
+  // four octets was OPENED: an attacker forging content needed to guess 32
+  // bits of tag, not 128. Both are checked here, before the cipher, and the
+  // tag length is also pinned in the decipher itself.
+  if (iv.length !== 12 || tag.length !== 16) {
+    log.debug('Leaving openContent(). A ' + iv.length + '-octet IV or a ' +
+              tag.length + '-octet tag.');
+    throw new Error('an AES-GCM JWE carries a 96-bit IV and a 128-bit ' +
+      'authentication tag (RFC 7518 section 5.3); this one has ' +
+      (iv.length * 8) + ' and ' + (tag.length * 8) + ' bits');
+  }
+  const decipher = /** @type {import('crypto').DecipherGCM} */ (
+    nodeCrypto.createDecipheriv(spec.cipher, cek, iv,
+                                { authTagLength: 16 }));
   decipher.setAAD(aad);
   decipher.setAuthTag(tag);
   const out = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   log.debug('Leaving openContent(). GCM.');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE CONTENT HALF OF A JWE, BY `enc` NAME (#202, 2026-09-24). What
+// `encryptJweCompact()` and `decryptJweCompact()` call, exported so that an
+// external answer — Wycheproof's AES-GCM and A*CBC-HS* vectors — reaches the
+// same two functions rather than node's cipher directly. A compact JWE
+// cannot carry those vectors itself: its AAD is always the protected header.
+// ---------------------------------------------------------------------------
+function jweContentSpec(enc) {
+  log.debug('Entering jweContentSpec(). enc=' + enc);
+  const spec = JWE_ENCS[String(enc)];
+  if (!spec) {
+    log.debug('Leaving jweContentSpec(). Unknown.');
+    throw new Error('no JWE content encryption "' + enc + '"; this service ' +
+      'speaks ' + Object.keys(JWE_ENCS).join(', ') + '.');
+  }
+  log.debug('Leaving jweContentSpec().');
+  return spec;
+}
+
+function sealJweContent(enc, cek, iv, aad, plaintext) {
+  log.debug('Entering sealJweContent(). enc=' + enc);
+  const out = sealContent(jweContentSpec(enc), Buffer.from(cek),
+                          Buffer.from(iv), Buffer.from(aad),
+                          Buffer.from(plaintext));
+  log.debug('Leaving sealJweContent().');
+  return out;
+}
+
+function openJweContent(enc, cek, iv, aad, ciphertext, tag) {
+  log.debug('Entering openJweContent(). enc=' + enc);
+  const out = openContent(jweContentSpec(enc), Buffer.from(cek),
+                          Buffer.from(iv), Buffer.from(aad),
+                          Buffer.from(ciphertext), Buffer.from(tag));
+  log.debug('Leaving openJweContent().');
   return out;
 }
 
@@ -2748,8 +3700,19 @@ function concatKdf(z, keyBytes, algId) {
 
 const AES_KW_IV = Buffer.from('A6A6A6A6A6A6A6A6', 'hex');
 
+// RFC 3394 section 2.2: the key data is n >= 2 64-bit semiblocks, so the
+// wrapped value is (n + 1) of them — at least 24 octets. Node's
+// `id-aes*-wrap` unwrapped an EMPTY value to an empty key until Wycheproof's
+// InvalidWrappingSize vectors (#202, 2026-09-24); both directions refuse a
+// size the RFC does not define before the cipher is asked.
 function aesKeyWrap(kek, plaintextKey) {
   log.debug('Entering aesKeyWrap().');
+  if (plaintextKey.length < 16 || plaintextKey.length % 8) {
+    log.debug('Leaving aesKeyWrap(). ' + plaintextKey.length + ' octets.');
+    throw new Error('AES Key Wrap wraps a whole number of 64-bit ' +
+      'semiblocks, at least two (RFC 3394 section 2.2); this key is ' +
+      plaintextKey.length + ' octets.');
+  }
   const cipher = nodeCrypto.createCipheriv('id-aes' + (kek.length * 8) +
       '-wrap', kek, AES_KW_IV);
   const out = Buffer.concat([cipher.update(plaintextKey), cipher.final()]);
@@ -2759,6 +3722,12 @@ function aesKeyWrap(kek, plaintextKey) {
 
 function aesKeyUnwrap(kek, wrapped) {
   log.debug('Entering aesKeyUnwrap().');
+  if (wrapped.length < 24 || wrapped.length % 8) {
+    log.debug('Leaving aesKeyUnwrap(). ' + wrapped.length + ' octets.');
+    throw new Error('an AES-wrapped key is a whole number of 64-bit ' +
+      'semiblocks, at least three (RFC 3394 section 2.2); this one is ' +
+      wrapped.length + ' octets.');
+  }
   const decipher = nodeCrypto.createDecipheriv('id-aes' + (kek.length * 8) +
       '-wrap', kek, AES_KW_IV);
   const out = Buffer.concat([decipher.update(wrapped), decipher.final()]);
@@ -3035,12 +4004,22 @@ function unwrapCek(header, encryptedKey, options, spec) {
           'section 4.7.1); this one has ' +
           (header.iv ? 'no tag' : (header.tag ? 'no iv' : 'neither')) + '.');
       }
+      // RFC 7518 section 4.7.1: a 96-bit `iv` and a 128-bit `tag`, and a
+      // shorter tag is refused rather than checked — see openContent().
+      const wrapIv = Buffer.from(String(header.iv), 'base64url');
+      const wrapTag = Buffer.from(String(header.tag), 'base64url');
+      if (wrapIv.length !== 12 || wrapTag.length !== 16) {
+        throw new Error('a ' + alg + ' JWE carries a 96-bit `iv` and a ' +
+          '128-bit `tag` (RFC 7518 section 4.7.1); this one has ' +
+          (wrapIv.length * 8) + ' and ' + (wrapTag.length * 8) + ' bits.');
+      }
       // A GCM decipher; the name is built, so the checker cannot see the mode.
       const decipher = /** @type {import('crypto').DecipherGCM} */ (
-        nodeCrypto.createDecipheriv('aes-' + (kek.length * 8) + '-gcm', kek,
-                                    Buffer.from(String(header.iv),
-                                                'base64url')));
-      decipher.setAuthTag(Buffer.from(String(header.tag), 'base64url'));
+        nodeCrypto.createDecipheriv(
+          /** @type {import('crypto').CipherGCMTypes} */
+          ('aes-' + (kek.length * 8) + '-gcm'), kek, wrapIv,
+          { authTagLength: 16 }));
+      decipher.setAuthTag(wrapTag);
       const out = Buffer.concat([decipher.update(encryptedKey),
                                  decipher.final()]);
       log.debug('Leaving unwrapCek(). AES-GCM key wrap.');
@@ -3143,7 +4122,8 @@ function decryptJweCompact(compact, opts) {
   }
   let header;
   try {
-    header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    header = JSON.parse(strictBase64url(parts[0], 'JWE protected header')
+      .toString('utf8'));
   } catch (e) {
     log.debug('Leaving decryptJweCompact(). The header is not JSON.');
     throw new Error('the JWE protected header is not valid base64url JSON: ' +
@@ -3199,6 +4179,18 @@ function decryptJweCompact(compact, opts) {
       'development mode and when it is rotated.');
   }
 
+  // Every other segment strictly (see strictBase64url()), once the header
+  // has been read and its refusals by NAME given — a JWE whose tag or IV has
+  // a stray character must not open as though it had none.
+  for (let i = 1; i < 5; i++) {
+    try {
+      strictBase64url(parts[i], ['', 'JWE encrypted key', 'JWE IV',
+                                 'JWE ciphertext', 'JWE tag'][i]);
+    } catch (e) {
+      log.debug('Leaving decryptJweCompact(). A segment is not base64url.');
+      throw e;
+    }
+  }
   const spec = JWE_ENCS[header.enc];
   let cek;
   try {
@@ -3241,6 +4233,123 @@ function decryptJweCompact(compact, opts) {
 // ===========================================================================
 // SECTION 5 — KEYS, CERTIFICATES, THUMBPRINTS
 // ===========================================================================
+
+// ---------------------------------------------------------------------------
+// A USER AGENT'S FINGERPRINT, for CAEP's `fp_ua` (#145, 2026-09-22): "a
+// fingerprint of the user agent computed by the Transmitter". The
+// base64url SHA-256 of the `User-Agent` header as it arrived — stable for one
+// browser, so a receiver can see that a session was presented from a
+// different agent than it was established from, and not the header itself,
+// which would hand every receiver a string nobody asked it to hold. '' for no
+// header, which leaves the member out.
+// ---------------------------------------------------------------------------
+function userAgentFingerprint(userAgent) {
+  log.debug('Entering userAgentFingerprint().');
+  const text = String(userAgent || '');
+  if (!text) {
+    log.debug('Leaving userAgentFingerprint(). No user agent.');
+    return '';
+  }
+  log.debug('Leaving userAgentFingerprint().');
+  return nodeCrypto.createHash('sha256').update(text, 'utf8')
+    .digest('base64url');
+}
+
+// ---------------------------------------------------------------------------
+// A CREDENTIAL'S FINGERPRINT, for the authentication event (#62 P0,
+// 2026-09-22): the base64url SHA-256 of a credential identifier as the caller
+// holds it — a WebAuthn credential id (itself base64url), a certificate's
+// SHA-256 thumbprint. `userAgentFingerprint()`'s reason, one field over: the
+// event has to say WHICH key answered, so that a later sign-in can be told to
+// be the same one, and it has no business holding the identifier itself —
+// a session row is copied into logs, pages and the change log. '' for none.
+// ---------------------------------------------------------------------------
+function credentialFingerprint(identifier) {
+  log.debug('Entering credentialFingerprint().');
+  const text = String(identifier || '');
+  if (!text) {
+    log.debug('Leaving credentialFingerprint(). No identifier.');
+    return '';
+  }
+  log.debug('Leaving credentialFingerprint().');
+  return nodeCrypto.createHash('sha256').update(text, 'utf8')
+    .digest('base64url');
+}
+
+// ---------------------------------------------------------------------------
+// THE FIRST `chars` HEX CHARACTERS OF A SHA-256, for JA4 (#62 P0,
+// 2026-09-22), whose second and third parts are "a 12 character truncated
+// sha256 hash" of a comma-joined list (FoxIO's JA4 specification). A
+// truncation of a digest this file computes, rather than a digest computed
+// by the caller: the rule is that this service hashes here.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A PASSWORD AS THE PWNED PASSWORDS RANGE API KEYS IT (#62 P6): SHA-1, upper-
+// case hex. **NOT A SECURITY USE OF SHA-1** — nothing is signed, stored or
+// compared with it; it is the key the Have I Been Pwned corpus is indexed
+// by, and only its first five characters leave this process
+// (`common/breached_passwords.ts`, k-anonymity). Here because every digest of
+// a secret this service computes is computed in this file.
+// ---------------------------------------------------------------------------
+function pwnedPasswordDigest(password) {
+  log.debug('Entering pwnedPasswordDigest().');
+  log.debug('Leaving pwnedPasswordDigest().');
+  return nodeCrypto.createHash('sha1').update(String(password || ''), 'utf8')
+    .digest('hex').toUpperCase();
+}
+
+function truncatedSha256Hex(text, chars) {
+  log.debug('Entering truncatedSha256Hex().');
+  const hex = nodeCrypto.createHash('sha256')
+    .update(String(text || ''), 'utf8').digest('hex');
+  log.debug('Leaving truncatedSha256Hex().');
+  return hex.slice(0, Math.max(0, Math.min(64, Number(chars) || 0)));
+}
+
+// ---------------------------------------------------------------------------
+// WHICH CERTIFICATE THIS IS, IN THE TWO STRINGS A RECEIVER MATCHES ON (#145,
+// 2026-09-22): the issuer's distinguished name and the serial number, the
+// pair RFC 5280 section 4.1.2.2 makes unique — a serial alone is unique only
+// per issuer. CAEP's credential-change carries them as `x509_issuer` and
+// `x509_serial` for any change to an X.509 credential.
+//
+// The issuer is an RFC 4514 string (most specific RDN first); node's
+// `X509Certificate#issuer` lists the RDNs, already escaped, one per line in
+// the order the certificate encodes them, which is the reverse. The
+// serial is lower-case hex with no separators, the form `common/pki.js`
+// records as `serialHex`, so an event and the register name one certificate
+// the same way. Answers empty strings for anything that is not
+// a certificate; it never throws, because every caller is reporting a change
+// that has already happened.
+// ---------------------------------------------------------------------------
+function certificateIdentifiers(pem) {
+  log.debug('Entering certificateIdentifiers().');
+  let cert = null;
+  try {
+    cert = new nodeCrypto.X509Certificate(String(pem || ''));
+  } catch (e) {
+    log.debug('Caught in certificateIdentifiers(): ' +
+              ((e && e.message) || e));
+    // Not a certificate: nothing to identify, and the event goes without.
+    log.debug('Leaving certificateIdentifiers(). Not a certificate.');
+    return { issuer: '', serial: '', subject: '' };
+  }
+  // Node writes each RDN already escaped (OpenSSL's RFC 2253 flags), so only
+  // the ORDER is changed here — escaping again would double every backslash.
+  const rfc4514 = function (text) {
+    return String(text || '').split('\n')
+      .filter(function (one) { return one !== ''; })
+      .reverse().join(',');
+  };
+  const issuer = rfc4514(cert.issuer);
+  const serial = String(cert.serialNumber || '').toLowerCase()
+    .replace(/^(00)+(?=[0-9a-f])/, '');
+  log.debug('Leaving certificateIdentifiers().');
+  // The SUBJECT too, the same way: for a CA's own certificate it is the
+  // issuer of everything that CA signs, which is what a caller holding only
+  // a leaf's serial needs.
+  return { issuer: issuer, serial: serial, subject: rfc4514(cert.subject) };
+}
 
 // ---------------------------------------------------------------------------
 // A CERTIFICATE SERIAL NUMBER, AND WHY IT CANNOT BE THE CONSTANT IT WAS.
@@ -4798,6 +5907,13 @@ async function verifyRawSignature(scheme, key, data, signature) {
       return false;
     }
     const type = String(publicKey.asymmetricKeyType || '');
+    // An exponent or a modulus that makes a forgery (#202,
+    // rsaKeyProblem()); no size floor here — a TPM or an attestor's key is
+    // what its protocol made it.
+    if (rsaKeyProblem(publicKey, 0)) {
+      log.debug("Leaving verifyRawSignature(). A forgeable RSA key.");
+      return false;
+    }
     let ok = false;
     if (s.family === 'rsa-pkcs1' && (type === 'rsa' || type === 'rsa-pss')) {
       ok = nodeCrypto.verify(s.hash, message, { key: publicKey,
@@ -4988,6 +6104,31 @@ async function verifyPkcs7SignedData(der, options) {
   };
 }
 
+// A SHA-256 FED AS BYTES ARRIVE (#215): `update(chunk)` for each chunk, then
+// `hex()` once, lowercase. A dataset upload (`risk/risk_upload.ts`) is hashed
+// on its way to disk rather than read a second time afterwards — a file of
+// several hundred megabytes read twice is the cost this saves. `update()` is
+// a hot path (one call per chunk of the upload), so it logs nothing.
+function sha256Digester() {
+  log.debug("Entering sha256Digester().");
+  const hash = nodeCrypto.createHash('sha256');
+  let digest = '';
+  log.debug("Leaving sha256Digester().");
+  return {
+    update: function (chunk) {
+      hash.update(chunk);
+    },
+    hex: function () {
+      log.debug("Entering sha256Digester().hex().");
+      if (!digest) {
+        digest = hash.digest('hex');
+      }
+      log.debug("Leaving sha256Digester().hex().");
+      return digest;
+    }
+  };
+}
+
 // The SHA-256 of a file, streamed, lowercase hex — refusing one larger than
 // `limit` bytes when `limit` is above 0 (SPIRE's `util.GetSHA256Digest()`,
 // which the unix workload attestor hashes an executable with, #40). Rejects
@@ -5014,7 +6155,1423 @@ async function sha256OfFile(file, limit) {
   return hash.digest('hex');
 }
 
+// ===========================================================================
+// SECTION 9 — THE KERBEROS PSEUDO-RANDOM FUNCTION AND KRB-FX-CF2 (#173,
+// 2026-09-22).
+//
+// RFC 6113 FAST combines keys: the ARMOR key is KRB-FX-CF2 of an AP-REQ's
+// subkey and its ticket's session key, the encrypted challenge's two keys are
+// KRB-FX-CF2 of the armor key and the long-term key, and a reply key is
+// STRENGTHENED by KRB-FX-CF2 of a random key and itself. KRB-FX-CF2 (section
+// 5.1) is built on RFC 3961's `pseudo-random()`, which each enctype defines
+// for itself — and the vendored codec (`kerberos/krb5_crypto.js`) has
+// string-to-key, encryption and checksums but no PRF, and may not be edited
+// here. So the PRF is written HERE, for this file's reason (every primitive in
+// one place), and synchronously on node's own crypto, which is all three
+// definitions need:
+//
+//   * aes128/256-cts-hmac-sha1-96 (RFC 3962 section 4): the SHA-1 of the
+//     input, truncated to one AES block, encrypted under DK(key, "prf") —
+//     RFC 3961's derived key over the n-folded constant "prf";
+//   * aes128-cts-hmac-sha256-128 and aes256-cts-hmac-sha384-192 (RFC 8009
+//     section 5): KDF-HMAC-SHA2(key, "prf", input, 256 or 384);
+//   * arcfour-hmac-md5 (RFC 4757 section 3): HMAC-SHA1(key, input).
+//
+// **CHECKED AGAINST EXTERNAL ANSWERS, NOT AGAINST ITSELF**: RFC 3961's n-fold
+// vectors, MIT's `t_prf.c` PRF vectors for the four AES types and MIT's
+// `t_cf2.expected` for KRB-FX-CF2 over all five (`tests/kerberos_fast_otp.js`)
+// — a round trip through FAST with this file on both ends would agree with any
+// mistake made the same way twice.
+//
+// It stays a LEAF: node's `crypto` and nothing else.
+// ===========================================================================
+
+// The enctypes the PRF is defined for here, with their key size and PRF output
+// size in bytes. Anything else is refused by name.
+const KRB5_PRF_ETYPES = {
+  17: { keyBytes: 16, prfBytes: 16, family: 'aes-sha1', aes: 'aes-128-cbc' },
+  18: { keyBytes: 32, prfBytes: 16, family: 'aes-sha1', aes: 'aes-256-cbc' },
+  19: { keyBytes: 16, prfBytes: 32, family: 'aes-sha2', hash: 'sha256' },
+  20: { keyBytes: 32, prfBytes: 48, family: 'aes-sha2', hash: 'sha384' },
+  23: { keyBytes: 16, prfBytes: 20, family: 'rc4' }
+};
+
+function krb5PrfProfile(etype) {
+  log.debug("Entering krb5PrfProfile(). etype=" + etype);
+  const profile = KRB5_PRF_ETYPES[Number(etype)];
+  if (!profile) {
+    log.debug("Leaving krb5PrfProfile(). Unknown.");
+    // error-code: none — a programming error; every caller passes an enctype the KDC negotiated
+    throw new Error('crypto: no Kerberos pseudo-random function is defined ' +
+                    'here for enctype ' + etype);
+  }
+  log.debug("Leaving krb5PrfProfile().");
+  return profile;
+}
+
+// RFC 3961 section 5.1's n-fold, in bytes: MIT's krb5int_nfold(), which
+// rotates the input 13 bits per copy and adds the copies with end-around
+// carry. The RFC's own section A.1 vectors hold it.
+function krb5Nfold(input, outBytes) {
+  log.debug("Entering krb5Nfold(). in=" + input.length + " out=" + outBytes);
+  const inBytes = Buffer.from(input);
+  const inLen = inBytes.length;
+  let a = inLen;
+  let b = outBytes;
+  while (b !== 0) {
+    const t = b;
+    b = a % b;
+    a = t;
+  }
+  const lcm = (inLen * outBytes) / a;
+  const out = Buffer.alloc(outBytes);
+  let byte = 0;
+  for (let i = lcm - 1; i >= 0; i--) {
+    const msbit = (((inLen << 3) - 1) +
+                   (((inLen << 3) + 13) * Math.floor(i / inLen)) +
+                   ((inLen - (i % inLen)) << 3)) % (inLen << 3);
+    byte += (((inBytes[((inLen - 1) - (msbit >>> 3)) % inLen] << 8) |
+              inBytes[(inLen - (msbit >>> 3)) % inLen]) >>>
+             ((msbit & 7) + 1)) & 0xff;
+    byte += out[i % outBytes];
+    out[i % outBytes] = byte & 0xff;
+    byte >>>= 8;
+  }
+  if (byte) {
+    for (let i = outBytes - 1; i >= 0; i--) {
+      byte += out[i];
+      out[i] = byte & 0xff;
+      byte >>>= 8;
+    }
+  }
+  log.debug("Leaving krb5Nfold().");
+  return out;
+}
+
+// One AES block under a key, CBC with a zero IV and no padding — which for a
+// single block is the block cipher itself, and is what RFC 3961's DR and RFC
+// 3962's PRF both call E.
+function aesBlocks(cipherName, key, data) {
+  log.debug("Entering aesBlocks().");
+  const c = nodeCrypto.createCipheriv(cipherName, Buffer.from(key),
+                                      Buffer.alloc(16));
+  c.setAutoPadding(false);
+  const out = Buffer.concat([c.update(Buffer.from(data)), c.final()]);
+  log.debug("Leaving aesBlocks().");
+  return out;
+}
+
+// RFC 3961 section 5.1's DK for the AES-SHA1 profiles: DR — the n-folded
+// constant encrypted, fed back, until there are enough bytes — then
+// random-to-key, which is the identity for AES.
+function aesSha1DerivedKey(profile, key, constant) {
+  log.debug("Entering aesSha1DerivedKey().");
+  let block = krb5Nfold(Buffer.from(constant), 16);
+  const parts = [];
+  let have = 0;
+  while (have < profile.keyBytes) {
+    block = aesBlocks(profile.aes, key, block);
+    parts.push(block);
+    have += block.length;
+  }
+  log.debug("Leaving aesSha1DerivedKey().");
+  return Buffer.concat(parts).subarray(0, profile.keyBytes);
+}
+
+// RFC 3961 pseudo-random(key, octets) for `etype`. Answers a Buffer of that
+// enctype's PRF length.
+function krb5Prf(etype, key, octets) {
+  log.debug("Entering krb5Prf(). etype=" + etype);
+  const profile = krb5PrfProfile(etype);
+  const input = Buffer.from(octets);
+  if (Buffer.from(key).length !== profile.keyBytes) {
+    log.debug("Leaving krb5Prf(). Wrong key size.");
+    // error-code: none — a programming error; the key comes from the codec that negotiated its enctype
+    throw new Error('crypto: a key for enctype ' + etype + ' is ' +
+                    profile.keyBytes + ' bytes, not ' +
+                    Buffer.from(key).length);
+  }
+  let out;
+  if (profile.family === 'aes-sha1') {
+    const tmp = nodeCrypto.createHash('sha1').update(input).digest()
+      .subarray(0, 16);
+    out = aesBlocks(profile.aes,
+                    aesSha1DerivedKey(profile, key, Buffer.from('prf')), tmp);
+  } else if (profile.family === 'aes-sha2') {
+    const bits = profile.prfBytes * 8;
+    const k = Buffer.alloc(4);
+    k.writeUInt32BE(bits, 0);
+    out = nodeCrypto.createHmac(profile.hash, Buffer.from(key))
+      .update(Buffer.concat([Buffer.from([0, 0, 0, 1]), Buffer.from('prf'),
+                             Buffer.from([0]), input, k]))
+      .digest().subarray(0, profile.prfBytes);
+  } else {
+    out = nodeCrypto.createHmac('sha1', Buffer.from(key)).update(input)
+      .digest();
+  }
+  log.debug("Leaving krb5Prf().");
+  return out;
+}
+
+// RFC 6113 section 5.1's PRF+: pseudo-random(key, 1 || info) ||
+// pseudo-random(key, 2 || info) || ..., the counter one octet, truncated.
+function krb5PrfPlus(etype, key, info, outBytes) {
+  log.debug("Entering krb5PrfPlus().");
+  const parts = [];
+  let have = 0;
+  for (let counter = 1; have < outBytes; counter++) {
+    if (counter > 255) {
+      log.debug("Leaving krb5PrfPlus(). Too long.");
+      // error-code: none — a programming error; no Kerberos key is 255 PRF blocks long
+      throw new Error('crypto: PRF+ ran out of one-octet counters');
+    }
+    const block = krb5Prf(etype, key,
+                          Buffer.concat([Buffer.from([counter]),
+                                         Buffer.from(info)]));
+    parts.push(block);
+    have += block.length;
+  }
+  log.debug("Leaving krb5PrfPlus().");
+  return Buffer.concat(parts).subarray(0, outBytes);
+}
+
+// RFC 6113 section 5.1: KRB-FX-CF2(K1, K2, pepper1, pepper2) =
+// random-to-key(PRF+(K1, pepper1) XOR PRF+(K2, pepper2)), with K1's enctype
+// and key size. The keys are `{ etype, key }`, the peppers strings or bytes;
+// the answer is `{ etype, key }` (random-to-key is the identity for every
+// enctype above).
+function krbFxCf2(key1, key2, pepper1, pepper2) {
+  log.debug("Entering krbFxCf2(). etypes " + key1.etype + "/" + key2.etype);
+  const size = krb5PrfProfile(key1.etype).keyBytes;
+  krb5PrfProfile(key2.etype);
+  const a = krb5PrfPlus(key1.etype, key1.key, Buffer.from(pepper1), size);
+  const b = krb5PrfPlus(key2.etype, key2.key, Buffer.from(pepper2), size);
+  const out = Buffer.alloc(size);
+  for (let i = 0; i < size; i++) {
+    out[i] = a[i] ^ b[i];
+  }
+  log.debug("Leaving krbFxCf2().");
+  return { etype: Number(key1.etype), key: new Uint8Array(out) };
+}
+
+// ---------------------------------------------------------------------------
+// OPENID CONNECT SESSION MANAGEMENT 1.0 SECTION 3's `session_state` (#121):
+// SHA-256 over `client_id + " " + origin + " " + browser_state + " " + salt`,
+// base64url, then "." and the salt. The OP iframe's script repeats this
+// computation in the browser with the Web Crypto API, so the two must agree
+// on every octet: UTF-8, single spaces, no padding. A fresh salt when none is
+// given, which is every authorization response.
+// ---------------------------------------------------------------------------
+function sessionStateHash(clientId, origin, browserState, salt) {
+  log.debug('Entering sessionStateHash().');
+  const chosen = salt || nodeCrypto.randomBytes(16).toString('base64url');
+  const digest = nodeCrypto.createHash('sha256')
+    .update(String(clientId) + ' ' + String(origin) + ' ' +
+            String(browserState || '') + ' ' + chosen, 'utf8')
+    .digest('base64url');
+  log.debug('Leaving sessionStateHash().');
+  return digest + '.' + chosen;
+}
+
+// ===========================================================================
+// SECTION 10 — WEBAUTHN: COSE SIGNATURES AND THE ATTESTATION STRUCTURES
+// (#105, 2026-09-23).
+//
+// `authn/webauthn_attestation.ts` verifies the eight attestation statement
+// formats of WebAuthn Level 3 section 8, and four of them carry structures
+// that are nobody's JWS and nobody's X.509: a TPM's TPMT_PUBLIC, TPMS_ATTEST
+// and TPMT_SIGNATURE (section 8.3, TPM 2.0 Library Part 2), Android's
+// KeyDescription (section 8.4, the extension 1.3.6.1.4.1.11129.2.1.17),
+// Apple's nonce extension (section 8.8) and FIDO's AAGUID extension (section
+// 8.2.1). They are HERE and not beside the verifier for rcbj's rule of
+// 2026-09-21: every signature, and every codec a signature is checked over,
+// is in this file or in `pki.js` — the certificate half (which extension a
+// certificate carries, and its subject) is `pki.js`'s.
+//
+// **`spiffe/spiffe_tpm.ts` HAS A TPM CODEC OF ITS OWN AND IT IS NOT THIS
+// ONE.** That one reads the two structures SPIRE's tpm_devid sends (a
+// TPMT_PUBLIC and TPM2_Certify's name) and refuses everything else; a
+// WebAuthn TPM statement needs the whole TPMS_ATTEST (magic, type,
+// extraData) and ECDAA's extra scheme field. Merging them is a refactor of
+// an attestor that has its own tests, and is left for when one of them
+// changes.
+//
+// **ONE COSE TABLE FOR THE SIGNATURES.** `verifyCoseSignature()` checks a
+// signature made with a COSE algorithm (RFC 9053, RFC 8230, RFC 8812 and RFC
+// 9964) — what an attestation statement's `alg` and a credential's key both
+// name. ECDSA arrives as DER, which is what WebAuthn section 6.5.5 says an
+// authenticator produces; RSASSA-PSS uses a salt as long as the hash (RFC
+// 8230 section 2); ML-DSA is RFC 9964's (published May 2026 from
+// draft-ietf-cose-dilithium-11): kty AKP (7), `pub` at -1, and the three
+// algorithm identifiers -48, -49 and -50, verified by `pq_jose.js`, which
+// holds the one ML-DSA implementation this process uses for JOSE as well.
+// SHA-1 (RS1, -65535) is not in the table: product never uses a broken
+// algorithm (`mode.usesBrokenAlgorithms()`), and no current authenticator
+// needs it.
+//
+// It stays a LEAF: node's crypto, asn1js and `pq_jose.js`, all required
+// above.
+// ===========================================================================
+
+const COSE_SIGNATURE_ALGS = {
+  '-7': { name: 'ES256', family: 'ecdsa', hash: 'sha256', kty: 'EC' },
+  '-35': { name: 'ES384', family: 'ecdsa', hash: 'sha384', kty: 'EC' },
+  '-36': { name: 'ES512', family: 'ecdsa', hash: 'sha512', kty: 'EC' },
+  '-8': { name: 'EdDSA', family: 'eddsa', hash: null, kty: 'OKP' },
+  '-257': { name: 'RS256', family: 'rsa-pkcs1', hash: 'sha256', kty: 'RSA' },
+  '-258': { name: 'RS384', family: 'rsa-pkcs1', hash: 'sha384', kty: 'RSA' },
+  '-259': { name: 'RS512', family: 'rsa-pkcs1', hash: 'sha512', kty: 'RSA' },
+  '-37': { name: 'PS256', family: 'rsa-pss', hash: 'sha256', kty: 'RSA',
+           saltLength: 32 },
+  '-38': { name: 'PS384', family: 'rsa-pss', hash: 'sha384', kty: 'RSA',
+           saltLength: 48 },
+  '-39': { name: 'PS512', family: 'rsa-pss', hash: 'sha512', kty: 'RSA',
+           saltLength: 64 },
+  '-48': { name: 'ML-DSA-44', family: 'pq', hash: null, kty: 'AKP' },
+  '-49': { name: 'ML-DSA-65', family: 'pq', hash: null, kty: 'AKP' },
+  '-50': { name: 'ML-DSA-87', family: 'pq', hash: null, kty: 'AKP' }
+};
+
+// The COSE entry for an identifier, or null.
+function coseSignatureAlg(coseAlg) {
+  log.debug("Entering coseSignatureAlg(). alg=" + coseAlg);
+  log.debug("Leaving coseSignatureAlg().");
+  return COSE_SIGNATURE_ALGS[String(coseAlg)] || null;
+}
+
+// A public key as node holds one, from a KeyObject, a JWK, a PEM or a DER
+// SubjectPublicKeyInfo; null when it is none of them.
+function nodePublicKeyOf(key) {
+  log.debug("Entering nodePublicKeyOf().");
+  try {
+    if (key && key.type === 'public' && key.asymmetricKeyType) {
+      log.debug("Leaving nodePublicKeyOf(). A KeyObject.");
+      return key;
+    }
+    if (key && key.kty) {
+      const jwk = Object.assign({}, key);
+      // node refuses a JWK carrying an `alg` it does not use for import, on
+      // some versions; the algorithm is decided by the caller, not the key.
+      delete jwk.alg;
+      log.debug("Leaving nodePublicKeyOf(). A JWK.");
+      return nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' });
+    }
+    if (Buffer.isBuffer(key)) {
+      log.debug("Leaving nodePublicKeyOf(). DER.");
+      return nodeCrypto.createPublicKey({ key: key, format: 'der',
+                                          type: 'spki' });
+    }
+    log.debug("Leaving nodePublicKeyOf(). PEM.");
+    return nodeCrypto.createPublicKey(key);
+  } catch (e) {
+    log.debug("Caught in nodePublicKeyOf(): " + ((e && e.message) || e));
+    log.debug("Leaving nodePublicKeyOf(). Unreadable.");
+    return null;
+  }
+}
+
+// Does `signature` verify over `data` under `key` with COSE algorithm
+// `coseAlg`? SYNCHRONOUS — the WebAuthn assertion is checked inside a
+// synchronous block of `authn.ts`, and every algorithm here is microseconds
+// except ML-DSA, whose verification is a few hundred. `key` is anything
+// `nodePublicKeyOf()` reads, or for ML-DSA an AKP JWK (`{ kty: 'AKP', pub }`)
+// or the raw public key bytes. A key of the wrong kind for the algorithm is
+// false, never a throw: an RSA key under ES256 is a signature that does not
+// verify, and the caller says so.
+function verifyCoseSignature(coseAlg, key, data, signature) {
+  log.debug("Entering verifyCoseSignature(). alg=" + coseAlg);
+  const spec = coseSignatureAlg(coseAlg);
+  if (!spec) {
+    log.debug("Leaving verifyCoseSignature(). Unknown algorithm.");
+    return false;
+  }
+  const message = Buffer.from(data || []);
+  const sig = Buffer.from(signature || []);
+  try {
+    // A `publicKeyFromSpki()` answer — what a certificate's key is read as,
+    // and the one form that carries an ML-DSA key out of a certificate node
+    // may not be able to read.
+    if (key && key.spki !== undefined && key.kind !== undefined) {
+      if (spec.family === 'pq') {
+        const read = key.kind === 'pq'
+          ? pqcX509.decodeSpki(new Uint8Array(key.spki)) : null;
+        const ok = !!read && String(read.alg) === spec.name &&
+          !!pqJose.verify(spec.name, Buffer.from(read.pub), message, sig);
+        log.debug("Leaving verifyCoseSignature(). " + spec.name +
+                  " from a certificate " + ok);
+        return ok;
+      }
+      key = key.key;
+    }
+    if (spec.family === 'pq') {
+      const pub = key && key.pub !== undefined
+        ? Buffer.from(key.pub, typeof key.pub === 'string' ? 'base64url'
+                                                           : undefined)
+        : Buffer.from(key || []);
+      const ok = !!pqJose.verify(spec.name, pub, message, sig);
+      log.debug("Leaving verifyCoseSignature(). " + spec.name + " " + ok);
+      return ok;
+    }
+    const publicKey = nodePublicKeyOf(key);
+    if (!publicKey) {
+      log.debug("Leaving verifyCoseSignature(). No key.");
+      return false;
+    }
+    const type = String(publicKey.asymmetricKeyType || '');
+    // RFC 8230 section 5: 2048 bits or more, and never an exponent or a
+    // modulus that makes a forgery (#202, see rsaKeyProblem()).
+    const weak = rsaKeyProblem(publicKey, 2048);
+    if (weak) {
+      log.debug("Leaving verifyCoseSignature(). " + weak);
+      return false;
+    }
+    let ok = false;
+    if (spec.family === 'ecdsa' && type === 'ec') {
+      ok = nodeCrypto.verify(spec.hash, message,
+                             { key: publicKey, dsaEncoding: 'der' }, sig);
+    } else if (spec.family === 'eddsa' &&
+               (type === 'ed25519' || type === 'ed448')) {
+      ok = nodeCrypto.verify(null, message, publicKey, sig);
+    } else if (spec.family === 'rsa-pkcs1' && type === 'rsa') {
+      ok = nodeCrypto.verify(spec.hash, message, { key: publicKey,
+        padding: nodeCrypto.constants.RSA_PKCS1_PADDING }, sig);
+    } else if (spec.family === 'rsa-pss' &&
+               (type === 'rsa' || type === 'rsa-pss')) {
+      ok = nodeCrypto.verify(spec.hash, message, { key: publicKey,
+        padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: spec.saltLength }, sig);
+    }
+    log.debug("Leaving verifyCoseSignature(). " + spec.name + " " + ok);
+    return !!ok;
+  } catch (e) {
+    log.debug("Caught in verifyCoseSignature(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyCoseSignature(). Threw, so false.");
+    return false;
+  }
+}
+
+// ----- TPM 2.0 (Library Part 2) --------------------------------------------
+
+// TPM_ALG_ID (Part 2, table 9) — the values the structures below name.
+const TPM_ALG = {
+  RSA: 0x0001, SHA1: 0x0004, HMAC: 0x0005, AES: 0x0006, KEYEDHASH: 0x0008,
+  SHA256: 0x000b, SHA384: 0x000c, SHA512: 0x000d, NULL: 0x0010,
+  RSASSA: 0x0014, RSAES: 0x0015, RSAPSS: 0x0016, OAEP: 0x0017,
+  ECDSA: 0x0018, ECDH: 0x0019, ECDAA: 0x001a, SM2: 0x001b,
+  ECSCHNORR: 0x001c, ECC: 0x0023, SYMCIPHER: 0x0025
+};
+const TPM_HASHES = { 0x0004: 'sha1', 0x000b: 'sha256', 0x000c: 'sha384',
+                     0x000d: 'sha512' };
+// TPM_ECC_CURVE (Part 2, table 10), as a JWK curve and its coordinate size.
+const TPM_CURVES = { 0x0003: { crv: 'P-256', bytes: 32 },
+                     0x0004: { crv: 'P-384', bytes: 48 },
+                     0x0005: { crv: 'P-521', bytes: 66 } };
+// TPM_GENERATED_VALUE and TPM_ST_ATTEST_CERTIFY (Part 2, tables 7 and 19).
+const TPM_GENERATED_VALUE = 0xff544347;
+const TPM_ST_ATTEST_CERTIFY = 0x8017;
+
+// A reader over a TPM structure. Every read throws on a short buffer, and the
+// parser's caller turns that into its refusal.
+function tpmReader(bytes) {
+  log.debug("Entering tpmReader().");
+  const buf = Buffer.from(bytes || []);
+  let at = 0;
+  // A HOT PATH: the reader's methods carry no Entering/Leaving pair, for
+  // `pki.js`'s sshReader()'s reason — once per field of every structure.
+  const reader = {
+    take: function (n) {
+      if (n < 0 || at + n > buf.length) {
+        // error-code: none — a parse failure, refused by the caller under
+        // its own code
+        throw new Error('the TPM structure is truncated');
+      }
+      const out = buf.subarray(at, at + n);
+      at += n;
+      return out;
+    },
+    u8: function () {
+      return reader.take(1)[0];
+    },
+    u16: function () {
+      return reader.take(2).readUInt16BE(0);
+    },
+    u32: function () {
+      return reader.take(4).readUInt32BE(0);
+    },
+    u64: function () {
+      return reader.take(8).readBigUInt64BE(0);
+    },
+    sized: function () {
+      return Buffer.from(reader.take(reader.u16()));
+    },
+    left: function () {
+      return buf.length - at;
+    }
+  };
+  log.debug("Leaving tpmReader().");
+  return reader;
+}
+
+// The node digest name of a TPM hash algorithm; throws for one not here.
+function tpmHashName(algId) {
+  log.debug("Entering tpmHashName(). alg=" + algId);
+  const name = TPM_HASHES[Number(algId)];
+  if (!name) {
+    log.debug("Leaving tpmHashName(). Unknown.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the TPM hash algorithm 0x' + Number(algId).toString(16) +
+                    ' is not supported');
+  }
+  log.debug("Leaving tpmHashName().");
+  return name;
+}
+
+// TPMT_PUBLIC (Part 2, section 12.2.4), for an RSA or ECC object — what a
+// WebAuthn TPM statement's `pubArea` is. Answers `{ type, nameAlg,
+// attributes, authPolicy, symmetric, scheme, keyBits, exponent, curveId,
+// kdf, modulus, x, y, raw, jwk }`, `raw` being the bytes a Name hashes and
+// `jwk` the public key. A TPM2B_PUBLIC's size prefix is NOT accepted:
+// section 8.3 says the two bytes must be removed. Throws a sentence.
+function tpmParsePublic(bytes) {
+  log.debug("Entering tpmParsePublic().");
+  const raw = Buffer.from(bytes || []);
+  const r = tpmReader(raw);
+  const out = { type: r.u16(), nameAlg: r.u16(), attributes: r.u32(),
+                authPolicy: r.sized(), symmetric: 0, scheme: 0,
+                schemeHash: 0, keyBits: 0, exponent: 0, curveId: 0, kdf: 0,
+                modulus: null, x: null, y: null, raw: raw, jwk: null };
+  const symmetric = function () {
+    log.debug("Entering symmetric().");
+    const alg = r.u16();
+    if (alg !== TPM_ALG.NULL) {
+      r.u16();
+      r.u16();
+    }
+    log.debug("Leaving symmetric().");
+    return alg;
+  };
+  if (out.type === TPM_ALG.RSA) {
+    out.symmetric = symmetric();
+    out.scheme = r.u16();
+    if (out.scheme !== TPM_ALG.NULL) {
+      out.schemeHash = r.u16();
+    }
+    out.keyBits = r.u16();
+    out.exponent = r.u32();
+    out.modulus = r.sized();
+    // An exponent of 0 is the TPM's way of saying the default, 2^16 + 1.
+    const exponent = Buffer.alloc(4);
+    exponent.writeUInt32BE(out.exponent || 65537, 0);
+    let start = 0;
+    while (start < 3 && exponent[start] === 0) {
+      start++;
+    }
+    out.jwk = { kty: 'RSA', n: out.modulus.toString('base64url'),
+                e: exponent.subarray(start).toString('base64url') };
+  } else if (out.type === TPM_ALG.ECC) {
+    out.symmetric = symmetric();
+    out.scheme = r.u16();
+    if (out.scheme !== TPM_ALG.NULL) {
+      out.schemeHash = r.u16();
+      if (out.scheme === TPM_ALG.ECDAA) {
+        // TPMS_SCHEME_ECDAA carries a count beside the hash.
+        r.u16();
+      }
+    }
+    out.curveId = r.u16();
+    out.kdf = r.u16();
+    if (out.kdf !== TPM_ALG.NULL) {
+      r.u16();
+    }
+    out.x = r.sized();
+    out.y = r.sized();
+    const curve = TPM_CURVES[out.curveId];
+    if (!curve) {
+      log.debug("Leaving tpmParsePublic(). Unsupported curve.");
+      // error-code: none — a parse failure, refused by the caller
+      throw new Error('the TPM curve 0x' + out.curveId.toString(16) +
+                      ' is not supported');
+    }
+    const pad = Buffer.alloc(curve.bytes);
+    out.jwk = { kty: 'EC', crv: curve.crv,
+                x: Buffer.concat([pad, out.x]).subarray(-curve.bytes)
+                  .toString('base64url'),
+                y: Buffer.concat([pad, out.y]).subarray(-curve.bytes)
+                  .toString('base64url') };
+  } else {
+    log.debug("Leaving tpmParsePublic(). Unsupported type.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the TPM object type 0x' + out.type.toString(16) +
+                    ' is not an RSA or ECC key');
+  }
+  if (r.left()) {
+    log.debug("Leaving tpmParsePublic(). Trailing bytes.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error(r.left() + ' byte(s) follow the TPMT_PUBLIC');
+  }
+  log.debug("Leaving tpmParsePublic().");
+  return out;
+}
+
+// TPMS_ATTEST (Part 2, section 10.12.8), of which WebAuthn reads the
+// certify form. Answers `{ magic, type, qualifiedSigner, extraData, clock,
+// resetCount, restartCount, safe, firmwareVersion, name, qualifiedName }`;
+// `name` and `qualifiedName` only for TPM_ST_ATTEST_CERTIFY. Throws a
+// sentence; the caller checks the values.
+function tpmParseAttest(bytes) {
+  log.debug("Entering tpmParseAttest().");
+  const r = tpmReader(bytes);
+  const out = {
+    magic: r.u32(), type: r.u16(), qualifiedSigner: r.sized(),
+    extraData: r.sized(), clock: r.u64(), resetCount: r.u32(),
+    restartCount: r.u32(), safe: r.u8(), firmwareVersion: r.u64(),
+    name: null, qualifiedName: null
+  };
+  if (out.type === TPM_ST_ATTEST_CERTIFY) {
+    out.name = r.sized();
+    out.qualifiedName = r.sized();
+    if (r.left()) {
+      log.debug("Leaving tpmParseAttest(). Trailing bytes.");
+      // error-code: none — a parse failure, refused by the caller
+      throw new Error(r.left() + ' byte(s) follow the TPMS_CERTIFY_INFO');
+    }
+  }
+  log.debug("Leaving tpmParseAttest().");
+  return out;
+}
+
+// TPMT_SIGNATURE (Part 2, section 11.3.4): `{ sigAlg, hash, signature }`,
+// the signature as a verifier takes it — RSA's bytes, or an ECDSA
+// signature as DER. null when `bytes` is not exactly one such structure,
+// which is how the verifier tells it from a bare signature (see
+// `webauthn_attestation.ts`).
+function tpmParseSignature(bytes) {
+  log.debug("Entering tpmParseSignature().");
+  try {
+    const r = tpmReader(bytes);
+    const sigAlg = r.u16();
+    let out = null;
+    if (sigAlg === TPM_ALG.RSASSA || sigAlg === TPM_ALG.RSAPSS) {
+      out = { sigAlg: sigAlg, hash: r.u16(), signature: r.sized() };
+    } else if (sigAlg === TPM_ALG.ECDSA) {
+      const hash = r.u16();
+      const rr = r.sized();
+      const ss = r.sized();
+      const integer = function (b) {
+        log.debug("Entering integer().");
+        log.debug("Leaving integer().");
+        return new asn1js.Integer({ valueHex: new Uint8Array(
+          Buffer.concat([Buffer.from([0]), b])) });
+      };
+      const der = new asn1js.Sequence({ value: [integer(rr), integer(ss)] })
+        .toBER(false);
+      out = { sigAlg: sigAlg, hash: hash, signature: Buffer.from(der) };
+    }
+    if (!out || r.left()) {
+      log.debug("Leaving tpmParseSignature(). Not one TPMT_SIGNATURE.");
+      return null;
+    }
+    log.debug("Leaving tpmParseSignature().");
+    return out;
+  } catch (e) {
+    log.debug("Caught in tpmParseSignature(): " + ((e && e.message) || e));
+    log.debug("Leaving tpmParseSignature(). Unreadable.");
+    return null;
+  }
+}
+
+// TPM2B_NAME's contents for an object (Part 1, section 16): nameAlg ‖
+// H_nameAlg(TPMT_PUBLIC).
+function tpmName(parsedPublic) {
+  log.debug("Entering tpmName().");
+  const alg = Buffer.alloc(2);
+  alg.writeUInt16BE(parsedPublic.nameAlg, 0);
+  log.debug("Leaving tpmName().");
+  return Buffer.concat([alg, nodeCrypto.createHash(
+    tpmHashName(parsedPublic.nameAlg)).update(parsedPublic.raw).digest()]);
+}
+
+// ----- the certificate extensions WebAuthn defines --------------------------
+
+// The ASN.1 of an extension's value, or null. Typed loosely: its callers
+// walk constructed values asn1js's union of value blocks does not narrow.
+/** @returns {any} */
+function berOf(bytes) {
+  log.debug("Entering berOf().");
+  const parsed = asn1js.fromBER(new Uint8Array(Buffer.from(bytes || [])));
+  log.debug("Leaving berOf().");
+  return parsed.offset === -1 ? null : parsed.result;
+}
+
+// id-fido-gen-ce-aaguid (1.3.6.1.4.1.45724.1.1.4, section 8.2.1): the
+// extension's value is an OCTET STRING of the 16-byte AAGUID. Answers the
+// AAGUID or null.
+function fidoAaguidExtension(extnValue) {
+  log.debug("Entering fidoAaguidExtension().");
+  const read = berOf(extnValue);
+  if (!read || !(read instanceof asn1js.OctetString)) {
+    log.debug("Leaving fidoAaguidExtension(). Not an OCTET STRING.");
+    return null;
+  }
+  const value = Buffer.from(read.valueBlock.valueHexView);
+  log.debug("Leaving fidoAaguidExtension(). " + value.length + " bytes.");
+  return value.length === 16 ? value : null;
+}
+
+// Apple's anonymous attestation nonce (1.2.840.113635.100.8.2, section
+// 8.8): SEQUENCE { [1] EXPLICIT OCTET STRING }. Answers the nonce or null.
+function appleAttestationNonce(extnValue) {
+  log.debug("Entering appleAttestationNonce().");
+  const read = berOf(extnValue);
+  const tagged = read && read.valueBlock && Array.isArray(read.valueBlock.value)
+    ? read.valueBlock.value.filter(function (one) {
+      return one.idBlock.tagClass === 3 && one.idBlock.tagNumber === 1;
+    })[0] : null;
+  const inner = tagged && tagged.valueBlock &&
+    Array.isArray(tagged.valueBlock.value) ? tagged.valueBlock.value[0] : null;
+  if (!inner || !(inner instanceof asn1js.OctetString)) {
+    log.debug("Leaving appleAttestationNonce(). Not the structure.");
+    return null;
+  }
+  log.debug("Leaving appleAttestationNonce().");
+  return Buffer.from(inner.valueBlock.valueHexView);
+}
+
+// Android's KeyDescription (1.3.6.1.4.1.11129.2.1.17, section 8.4.1, the
+// schema in Android's key attestation documentation):
+//
+//   KeyDescription ::= SEQUENCE {
+//     attestationVersion INTEGER, attestationSecurityLevel ENUMERATED,
+//     keyMintVersion INTEGER, keyMintSecurityLevel ENUMERATED,
+//     attestationChallenge OCTET STRING, uniqueId OCTET STRING,
+//     softwareEnforced AuthorizationList,
+//     hardwareEnforced AuthorizationList }   -- "teeEnforced" before v100
+//
+// Of an AuthorizationList, the three fields section 8.4 reads: `purpose`
+// ([1] EXPLICIT SET OF INTEGER), `allApplications` ([600] EXPLICIT NULL)
+// and `origin` ([702] EXPLICIT INTEGER). Answers `{ attestationVersion,
+// attestationSecurityLevel, attestationChallenge, softwareEnforced,
+// teeEnforced }` with each list as `{ purpose: [], allApplications,
+// origin }`, or throws a sentence.
+function androidKeyDescription(extnValue) {
+  log.debug("Entering androidKeyDescription().");
+  const read = berOf(extnValue);
+  const items = read && read.valueBlock && Array.isArray(read.valueBlock.value)
+    ? read.valueBlock.value : [];
+  if (items.length < 8) {
+    log.debug("Leaving androidKeyDescription(). Not a KeyDescription.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the Android key attestation extension is not a ' +
+                    'KeyDescription (it has ' + items.length + ' field(s), ' +
+                    'not 8)');
+  }
+  const integer = function (one) {
+    log.debug("Entering integer().");
+    log.debug("Leaving integer().");
+    return one && one.valueBlock && one.valueBlock.valueDec !== undefined
+      ? Number(one.valueBlock.valueDec) : NaN;
+  };
+  const list = function (one) {
+    log.debug("Entering list().");
+    const out = { purpose: [], allApplications: false, origin: null };
+    const fields = one && one.valueBlock && Array.isArray(one.valueBlock.value)
+      ? one.valueBlock.value : [];
+    fields.forEach(function (field) {
+      if (field.idBlock.tagClass !== 3) {
+        return;
+      }
+      const inner = field.valueBlock && Array.isArray(field.valueBlock.value)
+        ? field.valueBlock.value[0] : null;
+      if (field.idBlock.tagNumber === 1 && inner &&
+          Array.isArray(inner.valueBlock.value)) {
+        out.purpose = inner.valueBlock.value.map(integer);
+      } else if (field.idBlock.tagNumber === 600) {
+        out.allApplications = true;
+      } else if (field.idBlock.tagNumber === 702) {
+        out.origin = integer(inner);
+      }
+    });
+    log.debug("Leaving list().");
+    return out;
+  };
+  if (!(items[4] instanceof asn1js.OctetString)) {
+    log.debug("Leaving androidKeyDescription(). No challenge.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the KeyDescription\'s attestationChallenge is not an ' +
+                    'OCTET STRING');
+  }
+  const out = {
+    attestationVersion: integer(items[0]),
+    attestationSecurityLevel: integer(items[1]),
+    attestationChallenge: Buffer.from(items[4].valueBlock.valueHexView),
+    softwareEnforced: list(items[6]),
+    teeEnforced: list(items[7])
+  };
+  log.debug("Leaving androidKeyDescription(). version " +
+            out.attestationVersion);
+  return out;
+}
+
+// ===========================================================================
+// SECTION 11 — SIGSTORE AND TUF: CANONICAL JSON, THRESHOLD SIGNATURES, THE
+// REKOR SIGNED ENTRY TIMESTAMP AND DSSE (#170, 2026-09-23)
+//
+// What `spiffe/spiffe_sigstore.ts` and `spiffe/spiffe_sigstore_tuf.ts` need
+// to believe a cosign signature and the sigstore trust root, as primitives:
+//
+//   * TWO CANONICAL JSON FORMS, and they are not the same thing. TUF
+//     metadata is signed over securesystemslib's OLPC canonical form (sorted
+//     keys, no whitespace, only `"` and `\` escaped, integers only); a Rekor
+//     signed entry timestamp over RFC 8785 JCS (`jsoncanonicalizer` in
+//     cosign). Written separately because a string with a control character
+//     canonicalizes differently under the two, and a verifier that used the
+//     wrong one would refuse good metadata or — worse — sign-check a
+//     different byte string from the one that was signed.
+//   * `verifyThresholdSignatures()`: TUF's rule — at least `threshold`
+//     DISTINCT keyids of a role, each a key the role names, each signature
+//     verifying over the canonical bytes. A keyid signing twice counts once.
+//   * `verifyRekorSet()`: cosign's `VerifySET()` — the SET is an ECDSA
+//     (ASN.1) signature over the JCS form of `{body, integratedTime,
+//     logIndex, logID}`, by the log whose key's SHA-256 is `logID`.
+//   * `dssePae()`: DSSE's pre-authentication encoding, which is what an
+//     in-toto attestation's signature covers.
+//   * `verifyWithPublicKey()`: one signature under a key held as an SPKI,
+//     with the scheme cosign uses for the key's kind — ECDSA with SHA-256
+//     (whatever the curve, as cosign's `LoadVerifier(pub, SHA256)`), RSA
+//     PKCS#1 v1.5 with SHA-256, Ed25519, and the post-quantum families,
+//     which cosign does not have and a key file here may hold.
+// ===========================================================================
+
+// securesystemslib's canonical JSON (OLPC): what a TUF signature covers.
+// Throws on a value that has no canonical form (a non-integer number).
+// A HOT PATH: it recurses once per value in a metadata document, so no
+// Entering/Leaving pair — one would drown the log in thousands of lines per
+// refresh.
+function olpcCanonicalJson(value) {
+  if (value === null) {
+    return 'null';
+  }
+  if (value === true || value === false) {
+    return String(value);
+  }
+  if (typeof value === 'number') {
+    if (!Number.isInteger(value)) {
+      // error-code: none — a parse failure; the caller refuses the metadata
+      throw new Error('canonical JSON has no floating-point numbers');
+    }
+    return String(value);
+  }
+  if (typeof value === 'string') {
+    return '"' + value.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  }
+  if (Array.isArray(value)) {
+    return '[' + value.map(olpcCanonicalJson).join(',') + ']';
+  }
+  if (typeof value === 'object') {
+    return '{' + Object.keys(value).sort().map(function (key) {
+      return olpcCanonicalJson(key) + ':' + olpcCanonicalJson(value[key]);
+    }).join(',') + '}';
+  }
+  // error-code: none — a parse failure; the caller refuses the metadata
+  throw new Error('canonical JSON cannot hold a ' + typeof value);
+}
+
+// RFC 8785 (JCS): ES6 serialization of strings and numbers, keys sorted by
+// UTF-16 code units — which is JavaScript's own string comparison. A HOT
+// PATH for the same reason as the function above: no Entering/Leaving pair
+// in a function that recurses per value would drown the log.
+function jcsCanonicalJson(value) {
+  if (value === null || typeof value === 'boolean' ||
+      typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      // error-code: none — a parse failure; the caller refuses the entry
+      throw new Error('JCS has no representation for ' + value);
+    }
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return '[' + value.map(jcsCanonicalJson).join(',') + ']';
+  }
+  if (typeof value === 'object') {
+    return '{' + Object.keys(value).sort().filter(function (key) {
+      return value[key] !== undefined;
+    }).map(function (key) {
+      return JSON.stringify(key) + ':' + jcsCanonicalJson(value[key]);
+    }).join(',') + '}';
+  }
+  // error-code: none — a parse failure; the caller refuses the entry
+  throw new Error('JCS cannot hold a ' + typeof value);
+}
+
+// The DER SubjectPublicKeyInfo of a PEM `PUBLIC KEY` (or a bare base64
+// body), or null. Read as bytes rather than through node, so a post-quantum
+// key node cannot parse is still one.
+function spkiFromPublicKeyPem(pem) {
+  log.debug("Entering spkiFromPublicKeyPem().");
+  const text = String(pem || '');
+  const match = /-----BEGIN PUBLIC KEY-----([\s\S]*?)-----END PUBLIC KEY-----/
+    .exec(text);
+  const body = (match ? match[1] : text).replace(/\s+/g, '');
+  if (!body || /[^A-Za-z0-9+/=]/.test(body)) {
+    log.debug("Leaving spkiFromPublicKeyPem(). Not a key.");
+    return null;
+  }
+  const der = Buffer.from(body, 'base64');
+  const described = publicKeyFromSpki(der);
+  log.debug("Leaving spkiFromPublicKeyPem(). " + (described.kind || 'none'));
+  return described.kind ? der : null;
+}
+
+// The PEM of a DER SubjectPublicKeyInfo, as cosign writes one
+// (`cryptoutils.MarshalPublicKeyToPEM`).
+function publicKeyPemOfSpki(spkiDer) {
+  log.debug("Entering publicKeyPemOfSpki().");
+  const b64 = Buffer.from(spkiDer || []).toString('base64');
+  log.debug("Leaving publicKeyPemOfSpki().");
+  return '-----BEGIN PUBLIC KEY-----\n' +
+         (b64.match(/.{1,64}/g) || []).join('\n') +
+         '\n-----END PUBLIC KEY-----\n';
+}
+
+// ONE SIGNATURE UNDER A KEY HELD AS AN SPKI, with the scheme cosign uses for
+// that kind of key (see the section head). `ecdsaEncoding` is 'der' (cosign,
+// Rekor, TUF, CT) unless a caller says 'p1363'.
+async function verifyWithPublicKey(spkiDer, data, signature, ecdsaEncoding) {
+  log.debug("Entering verifyWithPublicKey().");
+  const described = publicKeyFromSpki(spkiDer);
+  let scheme = null;
+  if (described.kind === 'ec') {
+    scheme = { family: 'ecdsa', hash: 'sha256',
+               encoding: ecdsaEncoding || 'der' };
+  } else if (described.kind === 'rsa') {
+    scheme = { family: 'rsa-pkcs1', hash: 'sha256' };
+  } else if (described.kind === 'ed25519' || described.kind === 'ed448') {
+    scheme = { family: 'eddsa' };
+  } else if (described.kind === 'pq') {
+    scheme = { family: 'pq' };
+  }
+  if (!scheme) {
+    log.debug("Leaving verifyWithPublicKey(). An unusable key.");
+    return false;
+  }
+  const ok = await verifyRawSignature(scheme, described, data, signature);
+  log.debug("Leaving verifyWithPublicKey(). " + ok);
+  return ok;
+}
+
+// A TUF key (`{ keytype, scheme, keyval: { public } }`) as an SPKI, or null.
+// ecdsa and rsa keys carry a PEM; an ed25519 key carries the 32 raw bytes as
+// hex, which is wrapped in the fixed Ed25519 SPKI prefix (RFC 8410).
+function tufKeySpki(key) {
+  log.debug("Entering tufKeySpki().");
+  const type = String((key && key.keytype) || '');
+  const pub = String(((key && key.keyval) || {}).public || '');
+  if (type === 'ed25519' && /^[0-9a-f]{64}$/i.test(pub)) {
+    log.debug("Leaving tufKeySpki(). ed25519.");
+    return Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'),
+                          Buffer.from(pub, 'hex')]);
+  }
+  if (['ecdsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'rsa',
+       'sigstore-oidc'].indexOf(type) >= 0 || /BEGIN PUBLIC KEY/.test(pub)) {
+    log.debug("Leaving tufKeySpki(). PEM.");
+    return spkiFromPublicKeyPem(pub);
+  }
+  log.debug("Leaving tufKeySpki(). Not a key this reads.");
+  return null;
+}
+
+// TUF's threshold rule over one role (see the section head). `role` is
+// `{ keyids, threshold }` and `keys` the root's key table. Resolves
+// `{ ok, valid, threshold }`; `ok` only when at least `threshold` distinct
+// keyids of the role verified.
+async function verifyThresholdSignatures(signed, signatures, keys, role) {
+  log.debug("Entering verifyThresholdSignatures().");
+  const threshold = Number((role && role.threshold) || 0);
+  const allowed = ((role && role.keyids) || []).map(String);
+  if (!Number.isInteger(threshold) || threshold < 1) {
+    log.debug("Leaving verifyThresholdSignatures(). No threshold.");
+    return { ok: false, valid: 0, threshold: threshold };
+  }
+  let bytes = null;
+  try {
+    bytes = Buffer.from(olpcCanonicalJson(signed), 'utf8');
+  } catch (e) {
+    log.debug("Caught in verifyThresholdSignatures(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving verifyThresholdSignatures(). Not canonical.");
+    return { ok: false, valid: 0, threshold: threshold };
+  }
+  const counted = {};
+  const list = Array.isArray(signatures) ? signatures : [];
+  for (let i = 0; i < list.length; i++) {
+    const keyid = String((list[i] && list[i].keyid) || '');
+    if (!keyid || counted[keyid] || allowed.indexOf(keyid) < 0) continue;
+    const spki = tufKeySpki((keys || {})[keyid]);
+    const sigHex = String((list[i] && list[i].sig) || '');
+    if (!spki || !/^[0-9a-f]*$/i.test(sigHex) || !sigHex) continue;
+    if (await verifyWithPublicKey(spki, bytes, Buffer.from(sigHex, 'hex'))) {
+      counted[keyid] = true;
+    }
+  }
+  const valid = Object.keys(counted).length;
+  log.debug("Leaving verifyThresholdSignatures(). " + valid + " of " +
+            threshold);
+  return { ok: valid >= threshold, valid: valid, threshold: threshold };
+}
+
+// cosign's VerifySET(): `payload` is the bundle's `{ body, integratedTime,
+// logIndex, logID }`, `set` the signed entry timestamp's bytes, `logs` the
+// trusted Rekor logs `[{ logIdHex, spki }]`. Resolves '' when it verifies,
+// otherwise why not.
+async function verifyRekorSet(payload, set, logs) {
+  log.debug("Entering verifyRekorSet().");
+  const p = payload || {};
+  const logId = String(p.logID || '').toLowerCase();
+  const trusted = (logs || []).filter(function (one) {
+    return String(one.logIdHex || '').toLowerCase() === logId;
+  })[0];
+  if (!trusted) {
+    log.debug("Leaving verifyRekorSet(). Unknown log.");
+    return 'rekor log public key not found for payload (log ID ' + logId + ')';
+  }
+  let canonical = null;
+  try {
+    canonical = Buffer.from(jcsCanonicalJson({
+      body: p.body, integratedTime: p.integratedTime,
+      logIndex: p.logIndex, logID: p.logID }), 'utf8');
+  } catch (e) {
+    log.debug("Caught in verifyRekorSet(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyRekorSet(). Not canonical.");
+    return 'the bundle payload cannot be canonicalized: ' +
+           ((e && e.message) || e);
+  }
+  const ok = await verifyWithPublicKey(trusted.spki, canonical,
+                                       Buffer.from(set || []));
+  log.debug("Leaving verifyRekorSet(). " + ok);
+  return ok ? '' : 'unable to verify SET';
+}
+
+// DSSE v1 pre-authentication encoding: "DSSEv1" SP LEN(type) SP type SP
+// LEN(body) SP body, the lengths in ASCII decimal bytes.
+function dssePae(payloadType, payload) {
+  log.debug("Entering dssePae().");
+  const type = Buffer.from(String(payloadType || ''), 'utf8');
+  const body = Buffer.from(payload || []);
+  log.debug("Leaving dssePae().");
+  return Buffer.concat([
+    Buffer.from('DSSEv1 ' + type.length + ' ', 'utf8'), type,
+    Buffer.from(' ' + body.length + ' ', 'utf8'), body]);
+}
+
+// Lower-case hex SHA-256 of bytes, and SHA-512 — the two hashes TUF target
+// metadata and Rekor entries name. HOT PATHS: called per blob and per
+// metadata file, one line each, so no Entering/Leaving pair — it would
+// drown the log.
+function sha256Hex(bytes) {
+  return nodeCrypto.createHash('sha256').update(Buffer.from(bytes || []))
+    .digest('hex');
+}
+
+function sha512Hex(bytes) {
+  return nodeCrypto.createHash('sha512').update(Buffer.from(bytes || []))
+    .digest('hex');
+}
+
+// ===========================================================================
+// SECTION 12 — DKIM (RFC 6376, RFC 8463), FOR THE MAIL CHANNEL (#63).
+//
+// **WHY HERE AND NOT IN THE MAIL LIBRARY.** `common/mail.ts`'s SMTP transport
+// is built on nodemailer, which has a DKIM signer of its own; it is not used,
+// for the one-crypto-module rule this file's header argues — a second signer
+// with its own key handling and its own canonicalization is exactly the
+// drift that header records. So the MESSAGE is composed by the library, and
+// its signature is made here.
+//
+// Both halves of the signature scheme are here, the canonicalization with the
+// signing, for the same reason XML canonicalization sits with XML signing: a
+// canonicalization that disagrees with the verifier's is a signature that
+// fails with nothing to say why, and that is a property of the signature,
+// not of the message.
+//
+// **relaxed/relaxed ONLY** (section 3.4.2 and 3.4.4). `simple` breaks on any
+// relay that rewraps a header, and nothing here needs it.
+//
+// Two algorithms: `rsa-sha256` (section 3.3.1; RFC 8301 made it the only RSA
+// one and set 1024 bits as the floor — this refuses less than 2048, the
+// size RFC 8301 recommends) and `ed25519-sha256` (RFC 8463: PureEdDSA over the
+// SHA-256 of the canonicalized header data, NOT over the data itself). DKIM
+// has no post-quantum algorithm registered; when one is, it is a row below.
+// ===========================================================================
+const DKIM_ALGORITHMS = ['rsa-sha256', 'ed25519-sha256'];
+
+// The headers signed when present, in this order (section 5.4.1's list, less
+// the ones this service never writes). `From` is REQUIRED (section 5.4) and
+// the signature is refused without it.
+const DKIM_SIGNED_HEADERS = ['from', 'reply-to', 'subject', 'date', 'to',
+                             'cc', 'message-id', 'mime-version',
+                             'content-type', 'content-transfer-encoding',
+                             'in-reply-to', 'references'];
+
+// Section 3.4.4: WSP runs to one SP, trailing WSP off every line, every
+// trailing empty line off the body, and a non-empty body ends in CRLF. An
+// empty body canonicalizes to the empty string.
+function dkimRelaxedBody(body) {
+  log.debug('Entering dkimRelaxedBody().');
+  const text = Buffer.isBuffer(body) ? body.toString('binary')
+                                     : String(body == null ? '' : body);
+  const lines = text.replace(/\r?\n/g, '\r\n').split('\r\n').map(
+    function (line) {
+      return line.replace(/[ \t]+/g, ' ').replace(/ +$/, '');
+    });
+  while (lines.length && lines[lines.length - 1] === '') {
+    lines.pop();
+  }
+  log.debug('Leaving dkimRelaxedBody().');
+  return lines.length ? lines.join('\r\n') + '\r\n' : '';
+}
+
+// Section 3.4.2: the name lower-cased, the value unfolded, WSP runs to one
+// SP, WSP off both ends of the value, no WSP around the colon.
+function dkimRelaxedHeader(name, value) {
+  log.debug('Entering dkimRelaxedHeader().');
+  const unfolded = String(value == null ? '' : value)
+    .replace(/\r?\n(?=[ \t])/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+  log.debug('Leaving dkimRelaxedHeader().');
+  return String(name).trim().toLowerCase() + ':' + unfolded;
+}
+
+// Splits a raw RFC 5322 message into its header fields (name, raw value with
+// folding kept) and its body. Exported for the tests' verifier.
+function dkimSplitMessage(raw) {
+  log.debug('Entering dkimSplitMessage().');
+  const text = Buffer.isBuffer(raw) ? raw.toString('binary') : String(raw);
+  const at = text.search(/\r?\n\r?\n/);
+  const head = at < 0 ? text : text.slice(0, at);
+  const body = at < 0 ? '' : text.slice(at).replace(/^\r?\n\r?\n/, '');
+  const fields = [];
+  head.split(/\r?\n(?![ \t])/).forEach(function (line) {
+    const colon = line.indexOf(':');
+    if (colon > 0) {
+      fields.push({ name: line.slice(0, colon),
+                    value: line.slice(colon + 1) });
+    }
+  });
+  log.debug('Leaving dkimSplitMessage(). ' + fields.length + ' field(s).');
+  return { fields: fields, body: body };
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGNATURE. `raw` is the whole message as it will be sent; what comes
+// back is the complete `DKIM-Signature:` field (no trailing CRLF), for the
+// caller to put in front of the message. Throws on a key or an option that
+// cannot make a valid signature.
+//
+// Where a header occurs more than once, section 5.4.2 signs the LAST
+// instance for each name listed once — and the list here names each once.
+// ---------------------------------------------------------------------------
+function dkimSign(raw, opts) {
+  log.debug('Entering dkimSign().');
+  const o = opts || {};
+  const algorithm = String(o.algorithm || 'rsa-sha256');
+  if (DKIM_ALGORITHMS.indexOf(algorithm) < 0) {
+    log.debug('Leaving dkimSign(). Unknown algorithm.');
+    throw new Error('DKIM algorithm "' + algorithm + '" is not one of ' +
+                    DKIM_ALGORITHMS.join(', '));
+  }
+  const domain = String(o.domain || '').trim().toLowerCase();
+  const selector = String(o.selector || '').trim().toLowerCase();
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
+    .test(domain) ||
+      !/^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$/.test(selector)) {
+    log.debug('Leaving dkimSign(). Bad domain or selector.');
+    throw new Error('a DKIM signature needs a domain (d=) and a selector ' +
+                    '(s=) that are DNS labels');
+  }
+  const key = nodeCrypto.createPrivateKey(o.privateKeyPem);
+  const keyType = key.asymmetricKeyType;
+  if (algorithm === 'rsa-sha256') {
+    const bits = keyType === 'rsa' && key.asymmetricKeyDetails
+      ? Number(key.asymmetricKeyDetails.modulusLength) : 0;
+    if (keyType !== 'rsa' || bits < 2048) {
+      log.debug('Leaving dkimSign(). Not an RSA key of 2048 bits or more.');
+      throw new Error('rsa-sha256 needs an RSA key of at least 2048 bits ' +
+                      '(RFC 8301); this key is ' + (keyType || 'unknown') +
+                      (bits ? ', ' + bits + ' bits' : ''));
+    }
+  } else if (keyType !== 'ed25519') {
+    log.debug('Leaving dkimSign(). Not an Ed25519 key.');
+    throw new Error('ed25519-sha256 needs an Ed25519 key; this key is ' +
+                    (keyType || 'unknown'));
+  }
+  const message = dkimSplitMessage(raw);
+  const bodyHash = nodeCrypto.createHash('sha256')
+    .update(dkimRelaxedBody(message.body), 'binary').digest('base64');
+  const lastOf = {};
+  message.fields.forEach(function (field) {
+    lastOf[field.name.trim().toLowerCase()] = field;
+  });
+  if (!lastOf['from']) {
+    log.debug('Leaving dkimSign(). No From.');
+    throw new Error('a DKIM signature must cover From (RFC 6376 section ' +
+                    '5.4), and the message has none');
+  }
+  const signed = DKIM_SIGNED_HEADERS.filter(function (name) {
+    return !!lastOf[name];
+  });
+  const timestamp = Math.floor(Number(o.timestamp) ||
+                               Date.now() / 1000);
+  const tags = 'v=1; a=' + algorithm + '; c=relaxed/relaxed; d=' + domain +
+    '; s=' + selector + '; t=' + timestamp + '; h=' + signed.join(':') +
+    '; bh=' + bodyHash + '; b=';
+  const data = signed.map(function (name) {
+    return dkimRelaxedHeader(name, lastOf[name].value) + '\r\n';
+  }).join('') + dkimRelaxedHeader('DKIM-Signature', tags);
+  let signature;
+  if (algorithm === 'rsa-sha256') {
+    signature = nodeCrypto.sign('sha256', Buffer.from(data, 'binary'), key);
+  } else {
+    // RFC 8463 section 3: the SHA-256 of the data is what Ed25519 signs.
+    const digest = nodeCrypto.createHash('sha256')
+      .update(data, 'binary').digest();
+    signature = nodeCrypto.sign(null, digest, key);
+  }
+  log.debug('Leaving dkimSign(). ' + algorithm + ', d=' + domain + ', s=' +
+            selector + ', ' + signed.length + ' header(s).');
+  return 'DKIM-Signature: ' + tags + signature.toString('base64');
+}
+
+// ---------------------------------------------------------------------------
+// A VERIFIER, for this service's own tests and for the console's "is my DKIM
+// key the one DNS publishes" check — never for a message somebody else sent,
+// because this service receives no mail. `publicKeyPem` is the selector's key
+// (the p= of its DNS record, as a PEM). Answers `{ ok, why }`.
+// ---------------------------------------------------------------------------
+function dkimVerify(raw, publicKeyPem) {
+  log.debug('Entering dkimVerify().');
+  const message = dkimSplitMessage(raw);
+  const field = message.fields.filter(function (one) {
+    return one.name.trim().toLowerCase() === 'dkim-signature';
+  })[0];
+  if (!field) {
+    log.debug('Leaving dkimVerify(). No signature.');
+    return { ok: false, why: 'no DKIM-Signature field' };
+  }
+  const tags = {};
+  field.value.replace(/\r?\n[ \t]/g, '').split(';').forEach(function (part) {
+    const eq = part.indexOf('=');
+    if (eq > 0) {
+      tags[part.slice(0, eq).trim()] = part.slice(eq + 1).replace(/\s+/g, '');
+    }
+  });
+  const bodyHash = nodeCrypto.createHash('sha256')
+    .update(dkimRelaxedBody(message.body), 'binary').digest('base64');
+  if (bodyHash !== tags.bh) {
+    log.debug('Leaving dkimVerify(). Body hash differs.');
+    return { ok: false, why: 'the body hash does not match bh=' };
+  }
+  const lastOf = {};
+  message.fields.forEach(function (one) {
+    lastOf[one.name.trim().toLowerCase()] = one;
+  });
+  const withoutB = field.value.replace(/(;\s*b=)[^;]*$/, '$1');
+  const data = String(tags.h || '').split(':').map(function (name) {
+    const one = lastOf[name.trim().toLowerCase()];
+    return one ? dkimRelaxedHeader(name, one.value) + '\r\n' : '';
+  }).join('') + dkimRelaxedHeader('DKIM-Signature', withoutB);
+  const signature = Buffer.from(String(tags.b || ''), 'base64');
+  let ok = false;
+  try {
+    const key = nodeCrypto.createPublicKey(publicKeyPem);
+    ok = tags.a === 'ed25519-sha256'
+      ? nodeCrypto.verify(null, nodeCrypto.createHash('sha256')
+        .update(data, 'binary').digest(), key, signature)
+      : nodeCrypto.verify('sha256', Buffer.from(data, 'binary'), key,
+                          signature);
+  } catch (e) {
+    log.debug('Caught in dkimVerify(): ' + ((e && e.message) || e));
+    ok = false;
+  }
+  log.debug('Leaving dkimVerify(). ' + ok);
+  return { ok: ok, why: ok ? '' : 'the signature does not verify' };
+}
+
+// ===========================================================================
+// SECTION 13 — RANDOM VALUES (#65, 2026-09-23).
+//
+// **THE GENERATOR IS NODE'S AND THIS SECTION ADDS NONE.** `crypto.randomBytes`,
+// `randomInt`, `randomUUID` and `getRandomValues` are all OpenSSL's DRBG,
+// seeded from the operating system on every platform node runs on (getrandom
+// on Linux, BCryptGenRandom on Windows, the kernel source on macOS), and
+// under OpenSSL's FIPS provider they become the FIPS DRBG with no change
+// here. That is the "platform-independent secure random number generator" the
+// ticket asked for, and it was already in use at almost every site.
+//
+// **THE COMMUNITY MODULES WERE REVIEWED AND NONE IS ADOPTED.** The good ones —
+// nanoid's `customAlphabet`, crypto-random-string, otp-generator — end at
+// exactly these calls and rejection-sample exactly as `randomString()` does;
+// they would be a dependency on the path of every secret for ten lines, and
+// both of the first two are ESM-only. Several popular ones are worse than
+// nothing: randomstring falls back to `Math.random()` when its source throws,
+// rand-token takes `x % chars.length`, random-js's default engine IS
+// `Math.random()`. `randomString()` is nanoid's design, rejection sampling,
+// and its test (a chi-square over many draws) is nanoid's test.
+//
+// **WHAT THE SECTION IS FOR is the three mistakes it makes impossible,** each
+// of which this tree had on the day it was written:
+//
+//   1. **A MODULO OVER AN ALPHABET.** `ALPHABET[byte % ALPHABET.length]` is
+//      biased whenever the length does not divide 256: GNAP's 31-character
+//      user-code alphabet drew its first eight characters 9/256 of the time
+//      and the rest 8/256 — a code a person types, which is the one kind of
+//      value short enough for the bias to matter. SPIFFE's Azure challenge
+//      nonce did the same over 62 characters (harmless at 190 bits, the same
+//      bug). `randomString()` draws each index with `randomInt()`, which
+//      rejection-samples inside node, so no alphabet size can reintroduce
+//      it — `backup_codes.ts` argued this per module; it is now said once.
+//   2. **A SECOND GENERATOR.** `forge.random` is a Fortuna DRBG in
+//      JavaScript, seeded from node's but with its own state on the heap,
+//      outside FIPS mode, and fifty times slower (about 91 µs for 32 bytes
+//      against 1.7 µs). It drew the content key and IV of every encrypted
+//      SAML assertion and the ID of every SAML and WS-Federation document —
+//      and, until a second pass the same day, it went on drawing INSIDE
+//      forge after those two call sites were gone: the blinding of every
+//      RSA XML signature, the older key transports' OAEP seed and padding,
+//      the SCEP key unwrap. `installForgeRandom()` below points forge's own
+//      generator at node's, so no caller, vendored or not, can reach
+//      Fortuna; the key transports and the unwrap moved to node's
+//      `publicEncrypt()` / `privateDecrypt()` as well.
+//   3. **A SHORT SECRET.** `randomToken()` refuses fewer than 128 bits, so a
+//      bearer value cannot be made guessable by a length typed in a hurry.
+//
+// `tests/random_values.js` holds all three: the distribution, forge's
+// generator answering with node's bytes, and a reading of the service's
+// source that fails on `Math.random`, `forge.random`, forge's own RSA
+// encrypt and decrypt, a second generator package, or a random byte taken
+// modulo anything.
+//
+// No Entering/Leaving pair on the four below: they are called several times
+// in a single request (every ID, every nonce, every code), and a pair per
+// draw would drown the log — the hot-path exception of the root CLAUDE.md's
+// style rules. `randomString()`'s refusal is the one exit worth a line.
+// ===========================================================================
+
+// The fewest bits `randomToken()` will make. NIST SP 800-63B-4 asks 64 of a
+// look-up secret and RFC 6749 section 10.10 128 of a token an attacker could
+// guess at; this section takes the larger for everything it makes.
+const RANDOM_TOKEN_MIN_BITS = 128;
+
+// forge's `random` context, answering from node's generator in forge's
+// binary-string shape (the header of this file, where it is called, and
+// reason 2 above). `getBytes()` keeps its optional callback. It runs while
+// this module is loading, BEFORE the logger below exists, so it has no
+// Entering/Leaving pair — `common/config_file.js`'s situation — and it
+// cannot fail: every member it sets is a plain function.
+function installForgeRandom(forgeModule) {
+  const ctx = forgeModule.random;
+  const draw = function (count) {
+    return nodeCrypto.randomBytes(Number(count) || 0).toString('binary');
+  };
+  const generate = function (count, callback) {
+    const bytes = draw(count);
+    if (typeof callback === 'function') {
+      process.nextTick(callback, null, bytes);
+      return undefined;
+    }
+    return bytes;
+  };
+  ctx.generate = generate;
+  ctx.getBytes = generate;
+  ctx.getBytesSync = draw;
+  // Seeding means nothing to node's DRBG; accepted and dropped rather than
+  // left feeding a Fortuna pool nothing reads any more.
+  ctx.collect = function () {
+    return undefined;
+  };
+  ctx.collectInt = function () {
+    return undefined;
+  };
+  ctx.createInstance = function () {
+    return ctx;
+  };
+  ctx.drawsFromNode = true;
+  return ctx;
+}
+
+// `n` bytes from node's CSPRNG. The one spelling, so the source test has one
+// thing to allow.
+function randomBytes(n) {
+  return nodeCrypto.randomBytes(n);
+}
+
+// An integer in [min, max), uniform — node's `randomInt`, rejection-sampled.
+function randomInt(min, max) {
+  return nodeCrypto.randomInt(min, max);
+}
+
+// A random v4 UUID (RFC 9562 section 5.4).
+function randomUuid() {
+  return nodeCrypto.randomUUID();
+}
+
+// At least `bits` of randomness (rounded up to whole bytes), base64url.
+function randomToken(bits) {
+  const want = bits === undefined ? 256 : Number(bits);
+  if (!Number.isInteger(want) || want < RANDOM_TOKEN_MIN_BITS) {
+    // error-code: none — a programming error; every caller passes a constant
+    throw new Error('crypto: randomToken() makes at least ' +
+                    RANDOM_TOKEN_MIN_BITS + ' bits, not ' + bits);
+  }
+  return nodeCrypto.randomBytes(Math.ceil(want / 8)).toString('base64url');
+}
+
+// `length` characters, each drawn UNIFORMLY from `alphabet` (reason 1 above).
+// An alphabet with a repeated character is refused, because a repeat is a
+// bias of its own that no sampling can undo — the character is simply twice
+// as likely.
+function randomString(alphabet, length) {
+  const chars = Array.from(String(alphabet || ''));
+  const n = Number(length);
+  if (chars.length < 2 || new Set(chars).size !== chars.length ||
+      !Number.isInteger(n) || n < 0) {
+    log.debug('Leaving randomString(). Refused: an alphabet of ' +
+              chars.length + ', length ' + length + '.');
+    // error-code: none — a programming error; every alphabet is a constant
+    throw new Error('crypto: randomString() needs two or more distinct ' +
+                    'characters and a whole length');
+  }
+  let out = '';
+  for (let i = 0; i < n; i++) {
+    out += chars[nodeCrypto.randomInt(0, chars.length)];
+  }
+  return out;
+}
+
 module.exports = {
+  // --- section 13: random values (#65) ---
+  RANDOM_TOKEN_MIN_BITS: RANDOM_TOKEN_MIN_BITS,
+  installForgeRandom: installForgeRandom,
+  randomBytes: randomBytes,
+  randomInt: randomInt,
+  randomUuid: randomUuid,
+  randomToken: randomToken,
+  randomString: randomString,
+  // --- section 12: DKIM (#63) ---
+  DKIM_ALGORITHMS: DKIM_ALGORITHMS,
+  dkimSign: dkimSign,
+  dkimVerify: dkimVerify,
+  dkimRelaxedBody: dkimRelaxedBody,
+  dkimRelaxedHeader: dkimRelaxedHeader,
+  sessionStateHash: sessionStateHash,
+  userAgentFingerprint: userAgentFingerprint,
+  credentialFingerprint: credentialFingerprint,
+  truncatedSha256Hex: truncatedSha256Hex,
+  pwnedPasswordDigest: pwnedPasswordDigest,
+  certificateIdentifiers: certificateIdentifiers,
   // --- a credential several processes have to derive alike ---
   deriveSharedCredential: deriveSharedCredential,
   // --- XML digital signature ---
@@ -5038,6 +7595,10 @@ module.exports = {
   decryptElement: decryptElement,
   BLOCK_CIPHERS: BLOCK_CIPHERS,
   KEY_TRANSPORTS: KEY_TRANSPORTS,
+  KEY_AGREEMENTS: KEY_AGREEMENTS,
+  KEY_WRAPS: KEY_WRAPS,
+  OAEP_DIGESTS: OAEP_DIGESTS,
+  MGF1_URIS: MGF1_URIS,
   cipherByUri: cipherByUri,
   transportByUri: transportByUri,
   // --- JWS / JWT ---
@@ -5061,6 +7622,18 @@ module.exports = {
   jwsSpec: jwsSpec,
   protectedHeaderFor: protectedHeaderFor,
   verifyCompactJws: verifyCompactJws,
+  // The byte-level halves of the JOSE doors (#202): what external test
+  // vectors are held to. See each function's head.
+  jwsSignatureValid: jwsSignatureValid,
+  jwsSignatureOver: jwsSignatureOver,
+  sealJweContent: sealJweContent,
+  openJweContent: openJweContent,
+  aesKeyWrap: aesKeyWrap,
+  aesKeyUnwrap: aesKeyUnwrap,
+  // The CipherValue opener decryptElement() uses, exported so Wycheproof
+  // can hold its PADDING verdict to vectors — decryptElement() itself
+  // answers every CBC failure identically, on purpose (STS-KEYS-0078).
+  openXmlContent: openXmlContent,
   checkJwtClaims: checkJwtClaims,
   JWE_ALG: JWE_ALG,
   JWE_ALGS: JWE_ALGS,
@@ -5125,11 +7698,45 @@ module.exports = {
   RAW_SIGNATURE_FAMILIES: RAW_SIGNATURE_FAMILIES,
   publicKeyFromSpki: publicKeyFromSpki,
   verifyRawSignature: verifyRawSignature,
+  olpcCanonicalJson: olpcCanonicalJson,
+  jcsCanonicalJson: jcsCanonicalJson,
+  spkiFromPublicKeyPem: spkiFromPublicKeyPem,
+  publicKeyPemOfSpki: publicKeyPemOfSpki,
+  verifyWithPublicKey: verifyWithPublicKey,
+  tufKeySpki: tufKeySpki,
+  verifyThresholdSignatures: verifyThresholdSignatures,
+  verifyRekorSet: verifyRekorSet,
+  dssePae: dssePae,
+  sha256Hex: sha256Hex,
+  sha512Hex: sha512Hex,
   ecdsaIntegersToP1363: ecdsaIntegersToP1363,
   tpmKdfa: tpmKdfa,
   tpmMakeCredential: tpmMakeCredential,
   verifyPkcs7SignedData: verifyPkcs7SignedData,
   sha256OfFile: sha256OfFile,
+  sha256Digester: sha256Digester,
+  // --- section 9: the Kerberos PRF and KRB-FX-CF2 (#173) ---
+  KRB5_PRF_ETYPES: KRB5_PRF_ETYPES,
+  krb5Nfold: krb5Nfold,
+  krb5Prf: krb5Prf,
+  krb5PrfPlus: krb5PrfPlus,
+  krbFxCf2: krbFxCf2,
+  // --- section 10: WebAuthn's COSE signatures and attestation structures
+  //     (#105) ---
+  COSE_SIGNATURE_ALGS: COSE_SIGNATURE_ALGS,
+  coseSignatureAlg: coseSignatureAlg,
+  verifyCoseSignature: verifyCoseSignature,
+  TPM_ALG: TPM_ALG,
+  TPM_GENERATED_VALUE: TPM_GENERATED_VALUE,
+  TPM_ST_ATTEST_CERTIFY: TPM_ST_ATTEST_CERTIFY,
+  tpmHashName: tpmHashName,
+  tpmParsePublic: tpmParsePublic,
+  tpmParseAttest: tpmParseAttest,
+  tpmParseSignature: tpmParseSignature,
+  tpmName: tpmName,
+  fidoAaguidExtension: fidoAaguidExtension,
+  appleAttestationNonce: appleAttestationNonce,
+  androidKeyDescription: androidKeyDescription,
   // --- the algorithm URIs, so that there is one spelling of each in the
   //     process. Taken from the vendored module rather than re-declared.
   DS_NS: xmldsig.DS_NS,

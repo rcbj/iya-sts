@@ -148,12 +148,14 @@ cached, so each decision makes a fresh query.
 
 ### The embedded PEPs: this service's own issuance and access
 
-Three PEPs are built into the process:
+Five PEPs are built into the process:
 
 | PEP | Decides | Policy |
 |---|---|---|
 | **issuance** | every one of the nine kinds of issuance: session, access token, ID token, refresh token, authorization code, SAML assertion, WS-Federation token, WS-Trust token and Kerberos ticket | `xacml.issuancePolicy` (`role-issuance`) |
 | **access** | who may reach the admin console, the management API, the User Portal, SCIM, the SPIRE Server API, the embedded debugger and the `/xacml` surface | `xacml.accessPolicy` (`access-control`) |
+| **risk response** | what happens when a person's risk level changes: a CAEP announcement, ending everything they hold, a RISC credential-compromise, disabling the account — one question per reaction, a Permit meaning do it ([Risk scoring](risk-scoring.md#when-a-persons-risk-changes)) | `xacml.riskResponsePolicy` (`risk-response`) |
+| **signal response** | what this service's own console and portal do with a verified CAEP or RISC event they receive: whether it ends their own sessions for the person it names ([Signals received](signals-received.md#what-the-console-and-the-portal-do-with-a-signal)) | `xacml.signalResponsePolicy` (`signal-response`) |
 | **demonstration** | `GET /xacml/protected` | the repository root |
 
 The issuance PEP builds a request in which the subject is the party being
@@ -165,7 +167,19 @@ issuance. **Nothing else in the service tests roles.** The reason someone was
 refused is always a document that you can read, edit, try out and find in the
 audit log.
 
-Both service policies are **built in and called directly, not seeded**. The
+**The request also carries the RISK of the authentication** the issuance
+rests on, as four environment attributes (`urn:sts:xacml:risk-level`,
+`-score`, `-signal` and `-satisfied`), and the built-in `role-issuance`
+policy decides on it in the same evaluation: HIGH is refused, and MEDIUM is
+refused until the authentication carries a second factor or, for a signal
+about the device, a security key. A risk rule's Deny carries the obligation
+`urn:sts:xacml:obligation:risk`, which says whether to refuse or step up and
+with what; the doors that can ask a person for that factor do. Product mode
+enforces a risk Deny, and development mode records it and lets the issuance
+through. [Risk scoring](risk-scoring.md#how-a-score-decides) has the rules and
+how to change them.
+
+The three service policies are **built in and called directly, not seeded**. The
 same built-in document applies in every realm. A realm that wants something
 different writes a repository entry with the name in the setting, and that
 override applies only to its own realm. Delete the entry and the built-in
@@ -273,6 +287,7 @@ modes. See [What is not checked](what-is-not-checked.md).
 | `xacml.enforceAccess` | `STS_XACML_ENFORCE_ACCESS` | `true` | yes | Whether the gated surfaces ask the embedded PDP. The role checks underneath still apply. |
 | `xacml.accessPolicy` | `STS_XACML_ACCESS_POLICY` | `access-control` | yes | The policy the access PEP evaluates. A repository entry with this name overrides the built-in one. |
 | `xacml.issuancePolicy` | `STS_XACML_ISSUANCE_POLICY` | `role-issuance` | yes | The policy the issuance PEP evaluates. A repository entry with this name overrides the built-in one. |
+| `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | yes | The policy asked what happens when a person's risk level changes. A repository entry with this name overrides the built-in one. |
 | `xacml.maxPolicies` | `STS_XACML_MAX_POLICIES` | `200` | yes | How many entries `ou=policies` may hold. A create past the limit is refused, and nothing is evicted. |
 | `xacml.pepBias` | `STS_XACML_PEP_BIAS` | `deny-biased` | yes | The demonstration PEP's bias (section 7.2): `deny-biased` or `permit-biased`. |
 | `xacml.returnPolicyIdList` | `STS_XACML_RETURN_POLICY_ID_LIST` | `false` | yes | Returns the list of policies that applied, even when the request did not ask for it. |
@@ -284,7 +299,9 @@ modes. See [What is not checked](what-is-not-checked.md).
 | `xacml.pepStaleAfterS` | `STS_XACML_PEP_STALE_AFTER_S` | `300` | yes | How long after its last heartbeat the console calls a PEP stale. The service behaves no differently. |
 | `xacml.pepNotify` | `STS_XACML_PEP_NOTIFY` | `true` | yes | Whether a repository change nudges registered PEPs. When off, changes take up to one poll interval longer to reach them. |
 | `xacml.pepNotifyAllowedHosts` | `STS_XACML_PEP_NOTIFY_ALLOWED_HOSTS` | *(empty)* | yes | Hosts that may be nudged. Empty means any host. |
-| `xacml.pepNotifyAllowInsecure` | `STS_XACML_PEP_NOTIFY_ALLOW_INSECURE` | `false` | yes | Allows nudging an `http://` notify URL. |
+| `xacml.pepNotifyAllowHttp` | `STS_XACML_PEP_NOTIFY_ALLOW_HTTP` | `false` | yes | Allows nudging an `http://` notify URL, in development mode only. |
+| `xacml.pepNotifySkipTlsVerification` | `STS_XACML_PEP_NOTIFY_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only — a warning.** Nudges a PEP whose certificate does not verify. Ignored in product, and refused on write there. |
+| `xacml.pepNotifyCaFile` | `STS_XACML_PEP_NOTIFY_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates a PEP's notify listener may chain to, beside node's own store. |
 | `xacml.pepNotifyTimeoutMs` | `STS_XACML_PEP_NOTIFY_TIMEOUT_MS` | `2000` | yes | How long to wait for a PEP to answer a nudge. |
 | `roles.enforceIssuance` | `STS_ROLES_ENFORCE_ISSUANCE` | `true` | yes | Whether issuance asks the issuance PEP. When off, everything is issued. |
 | `roles.remotePepGroup` | `STS_ROLES_REMOTE_PEP_GROUP` | `remote-peps` | yes | The group whose members hold `REMOTE_PEPS`. Empty closes those endpoints to everyone. |

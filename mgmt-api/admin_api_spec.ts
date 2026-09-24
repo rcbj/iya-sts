@@ -458,6 +458,15 @@ class AdminApiSpec {
         content: { 'application/json': { schema: source.requestBody } }
       };
     }
+    // A BODY THAT IS A FILE (#215, `POST /admin-api/risk/upload`): the bytes
+    // themselves under each type the operation takes, never JSON.
+    if (source.requestBodyTypes) {
+      operation.requestBody = { required: true, content: {} };
+      source.requestBodyTypes.forEach(function (type: string): void {
+        operation.requestBody.content[type] = {
+          schema: { type: 'string', format: 'binary' } };
+      });
+    }
     if (action) {
       operation.responses['200'] = {
         description: source.responseDescription || 'The operation was applied.',
@@ -495,6 +504,15 @@ class AdminApiSpec {
           schema: { $ref: '#/components/schemas/ActionResult' } } }
       };
     }
+    // The statuses an operation answers beyond 200 and 400 (#215's upload:
+    // 202 stored and loading, 413, 415, 507), each an ActionResult.
+    Object.keys(source.extraResponses || {}).forEach(function (status) {
+      operation.responses[status] = {
+        description: source.extraResponses[status],
+        content: { 'application/json': {
+          schema: { $ref: '#/components/schemas/ActionResult' } } }
+      };
+    });
     log.debug("Leaving AdminApiSpec.operationOf().");
     return operation;
   }
@@ -1755,12 +1773,25 @@ const SCHEMAS = {
                      'POST-binding request into a GET so the SameSite=Lax ' +
                      'session cookie is visible. Same reading as above.'
       },
+      mdqRefused: {
+        type: 'array',
+        description: 'On the list reply. The entityIDs a request asked the ' +
+                     'Metadata Query responder to register and product ' +
+                     'mode refused (#112) — `entityId`, `errorCode` ' +
+                     '(STS-SAML-0080: no trust anchor, nothing fetched; ' +
+                     'STS-SAML-0081: the answer did not verify), `why`, ' +
+                     '`count`, `firstAt`, `lastAt` — newest first. This ' +
+                     'process\'s record since it started.',
+        items: openObject('One refused entityID.', {})
+      },
+      mdqRefusedPaging: pagingObject('mdqRefused'),
       found: {
         type: 'boolean',
         description: 'On the ?sp= reply only. FALSE for an entityID that is ' +
                      'not in the registry — whose metadata document is still ' +
                      'served, and whose AuthnRequest would still be ' +
-                     'answered, because this profile accepts any entityID.'
+                     'answered, in development; in product both are ' +
+                     'refused.'
       }
     }, PAGING_PROPERTIES)),
 
@@ -1796,6 +1827,17 @@ const SCHEMAS = {
         items: openObject(
           'One relationship, its state and what has crossed it.', {})
       },
+      encryption: openObject(
+        'With ?relationship=, for a SAML 2.0, WS-Federation or OpenID ' +
+        'Connect service-provider-side relationship (#168): what a partner ' +
+        'encrypts to. `policy` (the key type, key management and content ' +
+        'encryption accepted), `required` (whether plaintext is refused — ' +
+        'product mode, unless `allowUnencrypted`), `current` (the kid ' +
+        'published), `certificatePem` (what the partner configures), `jwk` ' +
+        '(OpenID Connect: the key `/federation/jwks/{id}` serves) and `keys` ' +
+        '— the key table with `state`, `retiresAt` and `decrypts`, and NEVER ' +
+        'a private key. `fedEncryptionKey` in `fields` is reported as `(set ' +
+        '— not returned)`.', {}),
       roles: {
         type: 'array',
         description: 'The two directions, each with what it means. Named for ' +
@@ -3770,7 +3812,15 @@ const SCHEMAS = {
         on: { type: 'boolean' },
         allowedHosts: { type: 'array', items: { type: 'string' },
           description: 'EMPTY MEANS ANY, which is the default.' },
-        allowInsecure: { type: 'boolean' },
+        transport: openObject('The transport policy IN FORCE in this ' +
+            'realm (#171): plain http allowed, certificate verification ' +
+            'skipped (never in product mode, whatever is stored), and the CA ' +
+            'file a PEP\'s certificate may chain to beside node\'s store.', {
+          allowHttp: { type: 'boolean' },
+          skipTlsVerification: { type: 'boolean' },
+          skipTlsVerificationSet: { type: 'boolean' },
+          caFile: { type: 'string' }
+        }),
         timeoutMs: { type: 'integer' }
       }),
       peps: { type: 'array', items: openObject('One registered PEP.', {
@@ -4985,9 +5035,9 @@ const SCHEMAS = {
       authorizedBy: {
         type: 'string',
         description: 'What PERMITTED it: the attribute AND the account it is ' +
-                     'on, in the KDC\'s own words. For the unpoliced ' +
-                     'mechanisms it says so and says why — that sentence is ' +
-                     'the point rather than a placeholder.'
+                     'on, in the KDC\'s own words — or, for WS-Trust and ' +
+                     'token exchange (#108), in the delegation policy\'s; ' +
+                     'in development, what WOULD have refused it.'
       },
       reason: {
         type: 'string',

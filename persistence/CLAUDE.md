@@ -846,6 +846,14 @@ directory and everything it had minted. Now:
   erased a local change made a moment earlier and left the diff with nothing to
   write. And a realm another node REMOVED is removed here, which nothing did
   before — this process's next save used to write it straight back.
+  **The directory applier's base is what a RUNNING flush sent for that key,
+  not the shadow (2026-09-23)**: the shadow advances only when the flush
+  settles, so a change made while it was out that UNDID the flush's own change
+  (a disable in flight, an enable after it) matched the shadow, looked like
+  nothing this process had changed, and lost to a replicated row still holding
+  the old value — the enable was never written anywhere. `inFlightDirectory`
+  holds the sent JSON until the flush settles; `tests/cluster_lww_stores.js`
+  section D holds a COMMIT open to reproduce it.
 
 A reset-all in one process still clears every stored setting, because there the
 shadow is the table; in a cluster it clears what this node knew was stored.

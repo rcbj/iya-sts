@@ -2350,7 +2350,10 @@ thirds of the answer to hide.
 
 **TWO TABLES FROM TWO STORES, and the split is the point of the page.** What
 HAPPENED comes from `../common/delegation.js` (rule 3l). Who MAY DELEGATE TO WHOM
-comes from `../kerberos/krb5_principals.js`'s `delegationPolicy()`, required
+comes from `../kerberos/krb5_principals.js`'s `delegationPolicy()` for Kerberos
+and from `../common/delegation_policy.ts` (rule 3az, through
+`adminViews.delegationPolicyView()`) for WS-Trust and RFC 8693 since #108 — the
+first required
 directly — a plain require in the ordinary direction, and both tests that would
 force a slot pass: that module registers no route (the KDC's own are in
 `krb5_kdc.js`) and `server.js` loads the Kerberos modules before this one, so
@@ -2367,12 +2370,20 @@ Four things about it are decisions rather than defaults:
   else's configuration. A control that let a person TYPE a chain would put
   invented rows in a table whose entire worth is that its rows are what actually
   happened, and the table would then need a column saying which were which.
-* **The policy half is KERBEROS ONLY and the page says so loudly.** That is not
-  a gap being papered over: Kerberos is the only family here that polices
-  delegation at all, and each WS-Trust and RFC 8693 act says so in the same
-  column that names an attribute for a Kerberos one. **That asymmetry is the
-  most useful thing on the page** — the same picture, policed at one end and not
-  at the other — so do not "tidy" the unpoliced rows into an em dash.
+* **The policy half has TWO sections since #108 (2026-09-23)**: Kerberos's, from
+  `krb5_principals.js`, and *Who may act for whom — WS-Trust and token
+  exchange* (`#delegation-policy`), drawn by `delegationPolicySection()` from
+  `adminViews.delegationPolicyView()` — the function `GET
+  /admin-api/delegation/policy` answers with, so the two doors cannot disagree.
+  Three tables (pairs, intermediaries, people), each PAGED on a parameter of its
+  own (`policyPairsPage`, `intermediariesPage`, `peoplePage`) under the page's
+  one `per`. It is READ ONLY: every value is an attribute on an application or
+  a person, edited where every attribute of one is — the application's page and
+  the person's page (*Who may act for them*: `set-not-delegated`,
+  `set-may-act`) — so a form here would be a second door onto one attribute.
+  Every act says what allowed or refused it in the same column for all three
+  families, and in development what WOULD have refused it — do not "tidy" that
+  sentence into an em dash either.
 * **Ten columns, not twelve**, and the two that were merged were merged because
   the table became unreadable rather than merely wide. `td.who` breaks a long
   identifier anywhere (or one DN widens the page), so every extra column costs
@@ -3481,6 +3492,45 @@ the group is created by the first grant, and treating the empty group a revoke
 leaves behind as *closed* would mean the console locking itself the moment
 somebody tidied up.
 
+**THE WINDOW IS DEVELOPMENT'S ALONE SINCE 2026-09-22 (#103).** It gave both
+roles to anybody who could sign in by ANY method — a federation partner
+asserting a name, a certificate a trusted CA issued, a wallet, a Kerberos
+ticket — until the operator arrived, which a product cannot ship. rcbj's three
+decisions, taken as the issue's plan recommended:
+
+* **Product never opens it** (`mode.opensConsoleToAnyone()`, asked in the
+  roster's realm by `admin_rbac.ts`'s `windowOpensHere()`), and there is no
+  weaker product option: `admin.openWhenEmpty` is read in development only.
+  `rolesOf()` still answers `openable` for the banner, and `withheld` for a
+  person development would have let in; the gate refuses them
+  `insufficient_role` coded `STS-ADMIN-0797`, logged once per console session.
+* **The claim is bound to the PASSWORD.** The account `admin` exists, so any
+  door that can sign in AS it — a partner may assert any existing person
+  (#109), a certificate's CN maps to an entry — would inherit its roles by
+  membership and close the window by arriving. Until the claim, in product,
+  `rolesOf()` marks the account `claimPending`, `gateStateFor()` honours its
+  roles only when `rbac.passwordSignIn(session)` says the console session was
+  made from a password this service verified — the ID Token's `amr` carries
+  `pwd` and not `federated`, AND the sign-on session's latest event was vouched
+  for by this service (`signInAuthority: 'local'`, which
+  `authn.startRelyingPartySession()` copies off the parent). `amr` alone is not
+  enough: SPNEGO puts `pwd` there for a pre-authenticated ticket. Anything else
+  is refused 403 `bootstrap_password_required` (`STS-ADMIN-0796`) and
+  `noteConsoleSignIn()` claims nothing. The debugger, which never sees the
+  session, waits for the claim (`STS-DBG-0033`); so does a portal session's
+  certificate-enrollment authority (`sessionIsAdmin()`). An LDAP bind and EST
+  Basic verify the password themselves, so they ARE the password sign-in and
+  honour the roles as before. Once claimed, `admin` is an ordinary member.
+* **A realm with no bootstrap administrator and an empty roster is closed** in
+  product — seeding failed (`STS-ADMIN-0706`) or `admin.bootstrapUsername` is
+  empty — and `reportClosedConsole()` says so at error level
+  (`STS-ADMIN-0798`) from `server.js`'s bootstrap and a realm's create. The way
+  in is `POST /admin-api/rbac/grant` with an `admin:write` token.
+
+`tests/console_bootstrap_product.js` holds the in-process half (the rules, the
+gate over a loopback socket, the debugger, the startup log) and
+`tests/vendored/sts_console_bootstrap_product.js` the HTTP half.
+
 **A grant to somebody who does not exist is allowed and dangles.** That is the
 interesting case for a mock — grant the role, then watch them arrive already
 holding it — and it is why the roster counts membership VALUES rather than
@@ -3546,10 +3596,15 @@ tables, each refused only to a realm authority (`refusalFor()`):
   realm has a Kerberos realm, a principal database and keys of its own, so
   `/admin/kerberos` and `/admin/kerberos/principals` show that realm's and a
   realm administrator manages them. What is still the process's is refused per
-  SETTING below.
+  SETTING below. **The two RISK pages left it on 2026-09-22 (#62)**:
+  `/admin/risk` and `/admin/risk-scoring` show a realm administrator their own
+  realm, and `risk_admin.ts` leaves off what is the service's (`realmOnly`).
 * **`SERVICE_ACTIONS`** — creating or removing a realm, or naming another realm
   on `/admin/realms`; `build-root` or a `*` scope on `/admin/pki`; exporting the
-  `tls-server` key. `REALM_READS` refuses `/admin/realms?realm=<another>`.
+  `tls-server` key; on `/admin/risk`, accepting a provider's terms, any
+  dataset but the operator lists, or another realm's list.
+  `REALM_READS` refuses `?realm=<another>` on `/admin/realms`, `/admin/risk`
+  and `/admin/risk-scoring`.
 * **SETTINGS** — every `perProcess` row (a realm write of one lands PROCESS-WIDE
   in `config.setOverride()`, so a Save on a realm's page would change the
   process), the `admin.`, `adminApi.`, `realms.`, `workers.`, `persistence.`,
@@ -3576,7 +3631,8 @@ rules as the default realm's (8a): both roles, `pwdReset` on an account it
 created, and a window open until THAT account signs in through its realm —
 `noteConsoleSignIn()` closes the window of `session.derivedFromRealm`. While a
 realm's window is open, anybody signed in through that realm holds both of that
-realm's roles, and nothing outside it. A realm whose roster already named
+realm's roles, and nothing outside it — in development; in product the window
+never opens and the realm's `admin` claims it only with its password (8a, #103). A realm whose roster already named
 somebody seeds with its window closed. **In product mode a create generates the
 password** (`STS-ADMIN-0789` if it cannot), and `POST /admin/realms` answers a
 one-time page carrying it rather than a redirect, for `/admin/users/new`'s
@@ -3598,7 +3654,7 @@ suite nearly always has realms — the doors are named constants in each job.
 
 The API explorer mints only the SERVICE token, so it is a service page. The LDAP
 socket's write authorization recognises a realm administrator in their realm
-(`ldap_server.js`'s `boundDnIsRealmAdministrator()`), and certificate
+(`ldap_server.js`'s `boundDnHoldsRealmRole()`), and certificate
 enrollment (`common/cert_enrollment.ts`'s `adminFor()` and `sessionIsAdmin()`)
 asks the ambient realm's roster after the service's; no other protocol door was
 widened, and SCIM changed only the wording of the bootstrap account's delete
@@ -4160,11 +4216,20 @@ under global consent correctly looks like):
   held as `oauthConsent` on the person's entry. Removing a row asks that person
   and nobody else.
 
-**FOUR ACTIONS, and `CONSENT_ACTIONS` is built from the switch rather than
+**EVERY REMOVAL IS A WITHDRAWAL SINCE #172**: it revokes the tokens issued
+under the consent and records when, so a refresh token granted before it is
+refused even after the consent is given again (`common/CLAUDE.md`, 3t). The page
+said *nothing already issued is touched* until then, and now says the opposite.
+`revoke-global-consent` is the only door that removes an `oauthGlobalConsent`
+value; the generic application edit refuses it.
+
+**FIVE ACTIONS (the fifth, `revoke-application-consent`, since #172 — the
+console's and the API's twin of `/portal/consents`' per-application Withdraw),
+and `CONSENT_ACTIONS` is built from the switch rather than
 typed**, for `PERMISSION_ACTIONS`' reason: `tests/vendored/admin_api.js` reads
 the refusal sentence to check that every console action has an `/admin-api`
 operation, so a list short by one turns the parity check off for that action.
-Two of the four go through `applications.updateApplication()` like every other
+Two of the five go through `applications.updateApplication()` like every other
 attribute write in this console, so the schema rules, the `application.update`
 audit row and the `ldapmodify` equivalence all come for free.
 
@@ -4582,8 +4647,8 @@ tooltip and nowhere else on the page. `configRow()` used to draw it as a fold
 with the setting's short label as the summary; that fold is gone.
 
 What pays for it is that a setting's description has **three other doors** —
-`/admin/config?format=json`, `GET /admin-api/config`, and README.md's table —
-so the text is reachable without a mouse even though this page no longer draws
+`/admin/config?format=json`, `GET /admin-api/config`, and
+`docs/configuration.md`'s table — so the text is reachable without a mouse even though this page no longer draws
 it. Both were checked rather than assumed. **A field whose prose has NO other
 door does not get this treatment**, which is why the derived tooltips above add
 a title and remove nothing.
@@ -5621,6 +5686,36 @@ the keytab. The note above the tiles states the bounds as they stand now, with
 zero in `krb5.retainedKeyTtlS` already turned into the seconds it means, since a
 reader of that page is deciding whether to press Drop.
 
+**A PERSON'S KEYTAB (2026-09-22, #59)** is on the PERSON'S page, not this one:
+a *Kerberos* section on `/admin/users?user=` (`userKerberosSection()`, after the
+password controls) with the principal and the public half of their keys, and
+**Reset password and download keytab** — a typed password or a generated one
+that is never shown. The form POSTs HERE, `action=reset-person-keytab`, so it
+answers with the same shown-once keytab page, which for a person says above
+everything else that their password WAS changed and links back to their page.
+The one action that answers a PROMISE (string-to-key is asynchronous), so the
+POST handler resolves every action's answer. The control is a password reset
+because a keytab is derived from a password in hand and an administrator holds
+none of the person's — `kerberos/CLAUDE.md` argues it; the section's warning is
+drawn before the button. The *deliberately no button* note on this page now
+points there.
+
+**THE KRBTGT KEY (2026-09-23, #169)** has a block of its own above the service
+table: where the key comes from (a random stored key; the password in
+development; none yet; a record this service cannot open), its kvno, when it
+was made, last rotated and last invalidated, the next scheduled rotation (or
+why there is none), and the versions kept. It is NOT a service row — no
+service control applies, and `rotate-service` would hand its key out as a
+keytab — so `listServices()` leaves the entry out. Two controls, Admin Write:
+**Rotate the krbtgt key** and **Rotate and invalidate**, the second a text field
+for the word `invalidate` and a `danger` button — a typed confirmation needs no
+script, and the action refuses without the word (`STS-ADMIN-0610`). Both QUEUE
+a run on the scheduler and 303 back with its id; the kvno on the page moves
+when the leader has run it. **Drop previous versions** appears while a version
+is kept. `/admin/kerberos`'s status block (`kerberosPreauthStatusBlock()`)
+carries the same kvno, last rotation, next due time and kept versions, read
+lazily through `adminViews.krbtgtView()`, and links here for the controls.
+
 ## `/admin/applications?application=…` HAS A CREDENTIALS SECTION (2026-09-13)
 
 Asked for by rcbj: the application's page shows its client secret and the key
@@ -5975,6 +6070,35 @@ things are this console's.
 `tests/admin_credential_controls.js` drives the actions, the portal page and the
 enrolment step in a child process; no owned browser job presses the section yet.
 
+## `/admin/mode`: WHAT THE MODE CHANGES, AND WHAT IS IN FORCE HERE (#181, 2026-09-23)
+
+Server configuration → Mode, beside Configuration, drawn by `mode_admin.ts`
+from `common/mode.js`'s `report()` and nothing else: the realm's mode; every
+REQUIREMENTS row with its development and product answers (the one in force in
+bold) and where it is implemented; every `onlyWhile` row of `config.js` with
+the value stored, the value in force and whether it is ignored (a warning box
+lists the ignored ones, which is exactly where a realm was switched to product
+with a development-only value still stored); and NOT_YET. The prose — this
+file's section on the mode, `mode.js`, `global.mode`'s description and
+`docs/what-is-not-checked.md` — cited this page and `GET /admin-api/mode` for
+two weeks before either was registered.
+
+Three decisions:
+
+* **A REALM'S PAGE, and a READ-ONLY one.** The mode is per realm, so a realm's
+  administrator reads their own answer; it is absent from `SERVICE_PAGES`.
+  `global.mode` itself stays in the Global group on `/admin/config`
+  (SETTING_HOMES has no row for this page, because it draws no setting group);
+  the page links there rather than being a second door onto the value.
+* **NOT PAGED**, against the rule that lists are: the rows are the source's
+  tables — REQUIREMENTS, NOT_YET, the marked settings — bounded by the code and
+  not by anything a deployment accumulates, and comparing two requirements
+  must not need a page turn. `/admin/sts-metadata` is unpaged for the same
+  reason.
+* **IT ADDS NO FACT.** A sentence here that is not in `report()` would be the
+  second copy `mode.js`'s header refuses; the page's `?format=json` is
+  `report()` itself, which is what `GET /admin-api/mode` answers (rule 7).
+
 ## `/admin/vc-status`: THIS REALM'S STATUS LISTS, AND THE ONE CONTROL THEY HAVE (#38's follow-ups, 2026-09-17)
 
 Verifiable Credentials → Credential status, drawn by `vc_status_admin.ts` from
@@ -6119,3 +6243,77 @@ so a person with no file can paste; `parseBody()` hands the file part over as
 text under `file`, and `saml2Action()` takes `document` first. The list page
 gained one column, the last request's signature outcome, read off
 `samlAuthnRequestVerification`.
+
+## A PERSON'S APP PASSWORDS ON `/admin/users` (2026-09-22, #101)
+
+`mfaSection()` draws an **App passwords** block after the recovery codes: the
+sentence `adminViews.passwordOnlyDoorsFor()` builds (which password-only doors
+refuse this person's own password), each app password — name, id, doors, when
+made and by whom, last use, never a hash — with a **Revoke** per row, and a
+**Make an app password** form (a name and one checkbox per door, named
+`door_<id>` because the form parser keeps the last of a repeated name). Both
+post `from=user` to `POST /admin/users`, so they return to the person's page;
+Admin Write for either. A make answers with **the one-time page**
+`credentialResetPage()` draws for a reset password — extended rather than
+copied, since an app password is the third secret that exists once and must
+never ride a redirect's query string. The three settings are in the existing
+*Second-factor requirement* group, so `SETTING_HOMES` gained no row.
+`authn/CLAUDE.md` owns the rule; `mgmt-api/CLAUDE.md` has the API twin.
+
+## `/admin/mail` AND `/admin/mail/outbox`: THE MAIL CHANNEL'S TWO PAGES (2026-09-22, #63)
+
+One module, `mail_admin.ts`, filed in two sections by the console's filing
+rule:
+
+- **Server configuration → Mail** answers *how does this service send mail*:
+  - the transport and whether it could be built, and where a mailed link points;
+  - a test message, and a verification link, both to a PERSON in the realm by
+    username;
+  - each message's wording per language;
+  - the `Mail` settings group (`SETTING_HOMES`).
+- **Monitoring → Mail outbox** answers *what did it send*: the outbox, the dead
+  letters and their Retry, and in development a captured message whole.
+
+The API mirrors both at the same paths (`/admin-api/mail`,
+`/admin-api/mail/outbox`, and their `:action`s), so a realm administrator is
+confined by one rule on both surfaces. A realm's `mail.*` rows are its override
+of the service's, and a realm administrator edits those and no other realm's.
+
+**No form here takes an address.** A console form that sent a message to an
+address typed on it would be an open relay with a login. The channel has no
+parameter for one (`common/mail.ts`, point 5).
+
+**"Mail the link"** is a box on the reset-link form on `/admin/users` and
+beside the activation choice on `/admin/users/new` (`mailLinkBox()`,
+`deliver=mail`). It is TICKED whenever the realm has a transport: an
+administrator who never sees a person's reset link cannot be the one who used
+it. It is replaced by a sentence when there is no transport. A link that could
+not be mailed is shown as before, with the reason.
+
+## MONITORING → RISK TAKES A FILE: `POST /admin/risk/upload` (2026-09-24, #215)
+
+The page's first import form is *Upload a file*: `enctype="multipart/form-data"`,
+a `<input type="file">` and a real submit button, and **no script** — the
+page stays under `script-src 'none'`; there is no progress bar, because the
+answer comes when the file is stored and the version then shows `loading`
+until a reload shows it `active` or `refused`. The paste form stays below it,
+renamed *Paste a list*. A realm administrator's copy pins the realm and drops
+the terms checkbox, as the paste form's does. `risk/CLAUDE.md` argues the
+upload; three things are this file's:
+
+* **THE GATE LEAVES ONE POST'S CSRF TOKEN TO THE ROUTE.** The body of
+  `/admin/risk/upload` is a file `common/app.js` leaves unread, so the token
+  is not in `parseBody(req)`; the gate skips its CSRF check exactly where
+  `app.isStreamedUpload(req)` says so, and `risk/risk_upload.ts` checks this
+  session's token against the form's fields before it writes the file. The
+  role and the policy are still decided by the gate, on the headers. A CSRF
+  refusal from the route is a 403 in the gate's words, not a redirect into
+  the console.
+* **THE FORM'S FIELD ORDER IS LOAD-BEARING.** Every field before the file,
+  the file last: a browser sends parts in document order, `withCsrf()` puts
+  the token straight after `<form …>`, and the route refuses a field after
+  the file. A future edit that moves the file input up breaks every upload.
+* **`admin_scope.ts` IS ASKED BY THE ROUTE, not the gate**, for the reason
+  the token is: the dataset and realm are fields. `RiskAdmin.uploadDoor()`
+  asks the `/admin/risk` rule with them, so a realm administrator can upload
+  their own realm's lists and nothing else, as they can paste them.

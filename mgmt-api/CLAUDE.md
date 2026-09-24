@@ -564,7 +564,10 @@ They are why the off switch exists.
   premise is that it authenticates nobody.
 * **It is the way back in.** When the console is closed and nobody who holds a
   role can sign in (the roster emptied after the bootstrap administrator's first
-  sign-in, or `admin.openWhenEmpty` off with no role granted), NO browser can
+  sign-in, `admin.openWhenEmpty` off with no role granted, or — since
+  2026-09-22, #103 — a product-mode realm with no bootstrap administrator and
+  nobody on its roster, which product never opens and logs at startup as
+  `STS-ADMIN-0798`), NO browser can
   reach the console — the screen that grants the first role is
   behind the gate that role opens. `POST /admin-api/rbac/grant` is the only door
   out of that state, and a door that needed a role would not be one.
@@ -663,6 +666,9 @@ everything, and it is named.
 KDC has no clear-the-instant; both exist for the reason
 `POST /admin-api/tokens/restore` does, which is that restarting this service to
 get back to a working credential turns a two-second test into a two-minute one.
+**`restore-kerberos` is development-only since #111 (2026-09-23)**: product mode
+refuses it (`STS-ADMIN-0804`, `mode.opensTestControls()`) on this door and the
+console's alike, in `admin_actions.ts`'s `logoutAction()` which both reach.
 
 **What this API cannot do is in the reply rather than absent from it.** A
 front-channel logout notification is an iframe in the signed-out person's own
@@ -1253,9 +1259,11 @@ forwarded collaborator, so `tests/admin_actions_layer.js` did not change).
 
 Four things a caller is told, and the descriptions tell them:
 
-* **CREATE AND ROTATE ARE THE ONLY REPLIES CARRYING KEY MATERIAL**, as an MIT
-  keytab in base64 under `keytab`, handed over once: nothing can read a stored
-  key back afterwards, the GET included. A lost keytab is a rotation, not a read.
+* **CREATE, ROTATE AND `reset-person-keytab` ARE THE ONLY REPLIES CARRYING KEY
+  MATERIAL**, as an MIT keytab in base64 under `keytab`, handed over once and
+  `no-store`: nothing can read a stored key back afterwards, the GET included. A
+  lost service keytab is a rotation, not a read; a person's is another reset
+  (or their own on `/portal/kerberos`).
 * **NEITHER LIST CARRIES A KEY** — people and services are enctypes, kvno, salt
   and when, which is the public half (`stsKrb5KeyInfo`, `krb5ServiceKeyInfo`).
 * **IT IS THE REALM THE CALL IS IN (2026-09-15)**, and every reply says which as
@@ -1272,12 +1280,40 @@ Four things a caller is told, and the descriptions tell them:
   enctypes, expiry — never a key), with `retention` at the top saying the bounds
   in force. A drop with nothing kept answers `dropped: 0`; one for a principal
   holding no stored key is refused. `kerberos/CLAUDE.md` argues the design.
+* **SEVEN SINCE 2026-09-22 (#59)**: `reset-person-keytab` (`username`, and
+  `password` or `random: true`) SETS the person's password and answers the
+  keytab derived from it — the console's "Reset password and download keytab"
+  on their `/admin/users` page. It is the one ASYNCHRONOUS action, so the
+  handler resolves every answer. A generated password is never in the reply.
+  Refused before anything changes for neither or both of `password` and
+  `random` (`STS-ADMIN-0802`) and for what the register refuses (no KDC,
+  nobody, disabled); after the password was set, a keytab that could not be
+  made says the password WAS set (`STS-ADMIN-0803`). The job drives it last in
+  its Kerberos round trip, because it re-derives the keys the clears emptied.
 
-**`sts_admin_api_operations.js` HOLDS ALL SIX OUT OF ITS EXAMPLE REPLAY**
+* **NINE SINCE 2026-09-23 (#169)**: `rotate-krbtgt` and
+  `rotate-krbtgt-invalidate` (`confirm: "invalidate"`), the realm's krbtgt key.
+  **Neither rotates in the request**: each QUEUES a run of
+  `krb5.krbtgt-rotate-now` (`kerberos/krb5_krbtgt_rotation.ts`), which runs
+  once on the scheduler's leader, and answers `queued` and the `runId` — the
+  shape `POST /admin-api/keys/rotate` has for #48's reason. Neither answer, nor
+  the GET's new `krbtgt` block (source, kvno, enctypes, created, last rotated,
+  kept versions, `scheduled`, `offReason`, `nextDueAt`), carries a key.
+  Refused: the invalidate form without the word (`STS-ADMIN-0610`), a
+  scheduler that will not queue it (`STS-ADMIN-0611`), a realm with no KDC
+  (`STS-KRB-0128`). `drop-previous-service-keys` takes `krbtgt/<REALM>` too.
+  `GET /admin-api/kerberos`'s `status` carries the same `krbtgt` block as the
+  console's settings page (rule 7). `admin-core/` reaches the rotation module
+  LAZILY: it is built at 23b-iii, long after the console.
+
+**`sts_admin_api_operations.js` HOLDS ALL SEVEN OUT OF ITS EXAMPLE REPLAY**
 (`REPLAY_HELD_BACK`) — for the same reason as the truststore's: the replay runs
 in a throwaway realm and these write in the default one. Its
 `theKerberosPrincipalsRoundTrip()` drives them at the root instead, with a read
-back after every write.
+back after every write. **The two krbtgt actions are in its `NOT_DRIVEN_HERE`**
+(#169): `sts_kerberos_krbtgt_rotation.js` drives them in a throwaway realm with
+a KDC of its own, because an invalidation ends every TGT of the realm it runs
+in, and a rotation is checked by a TGT across it, which a 2xx cannot show.
 
 
 ## `/admin-api/pki` — FOUR OPERATIONS, AND A MODULE REQUIRED IN THE ORDINARY DIRECTION (2026-09-10)
@@ -1579,6 +1615,62 @@ names the realm the call was made in. **`reset-password` answers `password` and
 `issue-password-reset` answers `resetUrl` in the JSON body, once** — neither is
 retrievable afterwards, and neither is in the audit row.
 
+## WHO MAY ACT FOR WHOM (#108, 2026-09-23)
+
+The delegation policy for WS-Trust and RFC 8693 (`../common/CLAUDE.md`, rule
+3az) has three doors here, and rule 7 is kept by construction rather than by a
+new resource:
+
+* **The four application attributes** (`appAllowedToDelegateTo`,
+  `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`,
+  `appTrustedToImpersonate`) are ordinary `EDITABLE` rows, so `POST
+  /admin-api/applications/{add,set,remove,update}` edits them exactly as the
+  application's console page does. `STS-REG-0194` refuses a flag that is not
+  TRUE or FALSE and a subject group that is not a DN.
+* **The person's two** are `POST /admin-api/users/set-not-delegated`
+  (`{ user, value }`, value defaulting to true) and `/set-may-act`
+  (`{ user, delegate }`, a DN; empty clears), through the same `usersAction()`
+  the person's console page posts — `STS-ADMIN-0805` and `0806`.
+* **`GET /admin-api/delegation/policy`** is the read, answered by
+  `adminViews.delegationPolicyView()` — the function the *Who may act for whom*
+  section of `/admin/delegation` draws — three lists PAGED on parameters of
+  their own (`policyPairsPage`, `intermediariesPage`, `peoplePage`, and `per`
+  for all three), because the people list is a walk of the directory with no
+  natural bound. It is read only, like `GET /admin-api/delegation`: a second
+  write door onto an attribute that already has one would be the drift rule 7
+  exists to catch. The console's JSON carries the same object as
+  `delegationPolicy`.
+
+## FEDERATION LINKS (#109, 2026-09-22)
+
+`POST /admin-api/users/federation-link` and `/federation-unlink` mirror the
+*Federation links* panel of a person's console page, through the same
+`usersAction()` (`admin-core/admin_actions.ts`'s `federationLinkAction()`), and
+the link a request names goes through `federation/federation_links.ts`'s
+`resolveRequest()` — the check SCIM's extension uses too. Their examples name a
+relationship the throwaway realm of `sts_admin_api_operations.js` does not
+have, so the replay there is a refusal, which is what that job asks of an
+example it cannot satisfy. What they write is READ in two places, both paged
+(rule 7): `federationLinks` / `federationLinksPaging` on `GET /admin-api/users?user=`
+and `links` / `linksPaging` on `GET /admin-api/federation?relationship=`. An
+unlink ends the sessions the partner made after the answer, so the reply says
+they are "being ended" rather than counting them.
+
+## APP PASSWORDS (2026-09-22, #101)
+
+Two more users actions — `create-app-password` (`name`, `doors` as an array or
+the console's `door_<id>` checkboxes; the password answered ONCE in
+`appPassword`) and `revoke-app-password` (`id`) — through
+`admin-core/admin_actions.ts`'s `credentialAdminAction()`, each audited and a
+CAEP `credential-change`; and `GET /admin-api/users/app-passwords?user=`,
+PAGED (`page`, `per`), mirroring the App passwords block on the person's
+`/admin/users` page and, for the person, `/portal/app-passwords`. It carries
+no hash and no password, and `passwordOnlyDoors` says which doors refuse the
+person's own password. `GET /admin-api/users?user=` carries the same list
+unpaged in `factors.appPasswords` (bounded by `appPasswords.maxPerPerson`,
+at most fifty), the precedent `admin_views.ts` sets for a list that cannot
+grow past fifty.
+
 ## A REALM'S OWN TOKEN (2026-09-14, #32)
 
 A trust realm has administrators of its own (`admin-ui/CLAUDE.md` 8d), and rule 7
@@ -1595,12 +1687,23 @@ keeps the SERVICE credential exactly as it was and adds a second, narrower one:
   `realmAudienceAccepted()` wants `<base>/realm/<id>/admin-api` — what
   `resource=` at that realm's token endpoint gives. `adminApi.audience` pins the
   service's audience and is not consulted.
-* **ONLY FROM THAT REALM'S `sts-management-api`** (`STS-API-0111`). The token
-  endpoint does not restrict who may ask for `admin:*`, so without this any
-  client registered in the realm — dynamic registration included — could mint
-  itself Admin Write over the realm. **This is narrower than the service token,
-  which accepts a token issued to any client carrying the scopes**; that wider
-  gap is not changed here.
+* **~~ONLY FROM THAT REALM'S `sts-management-api`~~ (`STS-API-0111`, RETIRED
+  2026-09-22, #110) — NOW ONE RULE FOR BOTH REALMS: THE CLIENT DECLARES THE
+  SCOPE.** The token endpoint did not restrict who could ask for `admin:*`, so
+  this check stood in for the realm while the SERVICE token was accepted from
+  ANY client carrying the scopes — any client that could use
+  `client_credentials` in the default realm minted Admin Write, and in
+  development, where a client credential is not verified, that was any
+  `client_id`. Since #110 the token endpoint issues `admin:*` only to a client
+  whose `oauthAllowedScope` lists it (`common/CLAUDE.md`, `scope_policy.ts`), a
+  registration cannot declare it, and `declaredAdminScopes()` asks every token,
+  in the realm that ISSUED it, whether its client still declares the scope the
+  operation needs: 403 `STS-API-0123` if not, and an undeclared scope the
+  operation does not need is dropped before the roles are read. Removing a
+  declaration therefore cuts off tokens already issued. The seeded
+  `sts-management-api` and `sts-admin-console` (the API explorer mints as the
+  console) declare both in every realm; an administrator may declare them on
+  any other client, which is then a door too.
 * **THE CONSOLE'S SCOPE, READ OFF THE OPERATION** (`STS-API-0112`).
   `consoleOperationOf()` maps the request to the console path and action it
   mirrors — `POST /admin-api/pki/build-root` is `build-root` on `/admin/pki` —
@@ -1628,6 +1731,14 @@ the handler runs synchronously as it did. The directory module is found in the
 require CACHE, never required: it is below this module in the route order. The
 design is `ldap/CLAUDE.md`'s, *Several nodes: a create claims its name*.
 
+## `/admin-api/mode` (#181, 2026-09-23)
+
+One operation, `getMode`: `admin-ui/mode_admin.ts`'s `modeView()`, which is
+`common/mode.js`'s `report()` for the realm the call is in — what
+`/admin/mode?format=json` answers (rule 7). It changes nothing; `global.mode`
+is written through `POST /admin-api/config/set` like every other setting. Call
+it under `/realm/{id}/admin-api/mode` for a realm's answer.
+
 ## `/admin-api/vc-status` (#38's follow-ups, 2026-09-17)
 
 Two operations, and both are `admin-ui/vc_status_admin.ts`'s own functions
@@ -1639,3 +1750,28 @@ status — and `POST /admin-api/vc-status/{suspend|reinstate|revoke}` with
 a PATH SEGMENT, as every other action here is, so one operation per verb
 appears in the OpenAPI document with its own `operationId` and its own
 description of what it does to the lists.
+
+## `POST /admin-api/risk/upload`: THE FIRST OPERATION WHOSE BODY IS A FILE (#215, 2026-09-24)
+
+The twin (rule 7) of Monitoring → Risk's upload form. **The body is the
+dataset file itself** — `application/octet-stream`, `application/gzip` or
+`application/zip`, none of which decides how it is read (its first bytes do)
+— and the fields are **query parameters**, checked by name by the handler
+(`handlerOwnsBody: true`; an unknown or repeated one is refused). It is a
+plain `path` row placed ABOVE `/risk/:action`, which would otherwise take
+`upload` as an action it does not know; `consoleOperationOf()` still reads it
+as the `upload` action on `/admin/risk` for the policy and `admin_scope.ts`,
+and the handler asks the realm rule again with the query's fields.
+
+**Nothing here reads the body.** `common/app.js` leaves this path unread and
+`risk/risk_upload.ts` streams it to disk (`risk/CLAUDE.md`). **It answers 202**
+once the file is stored and the version recorded `loading`, 200 for a version
+already recorded, 400 for a refusal before that, 413 over
+`risk.uploadMaxBytes` (from the declared length, before a byte is read), 415
+for another body type and 507 when the upload directory has no room — every
+refusal with `Connection: close`, so a client is not left sending a large
+body into an answered request.
+
+**Two members the spec builder learned for it** (`admin_api_spec.ts`):
+`requestBodyTypes` publishes the body as `type: string, format: binary`
+under each type, and `extraResponses` adds statuses beyond 200 and 400.

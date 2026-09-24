@@ -56,17 +56,16 @@
 // have either, both or neither.
 //
 // ---------------------------------------------------------------------------
-// `jwks_uri` IS DELIBERATELY NOT DEREFERENCED, and it is the same refusal
-// WS-Federation's `wreqptr` gets.
-//
-// RFC 7591 lets a client register its keys by value (`jwks`) or by reference
-// (`jwks_uri`). Following the reference means this service making an outbound
-// HTTP request to a URL somebody registered, which is a server-side request
-// forgery with a specification citation attached — the identical shape
-// `wsfed.js` refuses, and refusing it there while doing it here would be a
-// position held in one file and not the other. A client that registers
-// `jwks_uri` is told to register `jwks` instead, by name, at the moment it
-// authenticates rather than as a silent failure to verify.
+// ~~`jwks_uri` IS DELIBERATELY NOT DEREFERENCED, and it is the same refusal
+// WS-Federation's `wreqptr` gets.~~ — REVERSED BY #120 (2026-09-22, rcbj's
+// decision). RFC 7591 lets a client register its keys by value (`jwks`) or
+// by reference (`jwks_uri`), and OpenID Connect Registration expects the
+// reference to be honoured. The SSRF argument that refused it is answered by
+// the outbound policy it is fetched under (`federation_http.ts`: https, no
+// redirect, a size cap, internal addresses refused in product mode) rather
+// than by a refusal, and what `wreqptr` still gets is different: that URL is
+// chosen by the REQUEST, this one was REGISTERED. `client_jwks.js` holds the
+// fetch and its cache.
 //
 // ---------------------------------------------------------------------------
 // It is a LIBRARY (rule 3): it registers no route and requires `common/`
@@ -199,6 +198,8 @@ function isAsymmetric(method) {
 // answer. A different document on the same request is verified afresh.
 // ---------------------------------------------------------------------------
 const usedAssertions = require('../common/used_assertions');
+// FAPI 2.0's "as a string" (#140). A leaf: it requires nothing here back.
+const fapi = require('./fapi');
 const VERIFIED_ON_REQUEST = Symbol('sts.clientAuth.verifiedAssertions');
 
 // The lifetime ceiling a client assertion is held to, in seconds, or 0 for
@@ -399,19 +400,26 @@ async function verifyAssertion(opts) {
       return { ok: false, errorCode: fromChain.errorCode,
                description: fromChain.error };
     }
+    // A REGISTERED `jwks_uri`, FETCHED (#120) — only where nothing was
+    // registered by value, under `federation_http.ts`'s outbound policy, and
+    // cached by `client_jwks.js`; the header's `kid` fetches again when the
+    // cached set lacks it (a client that rotated its keys).
+    let fetchedWhy = '';
+    if (!opts.jwks && opts.jwksUri) {
+      const fetched = await assertionGrant.ensurePartyKeys(
+        { oauthJwksUri: opts.jwksUri }, 'application', header && header.kid);
+      fetchedWhy = (fetched && fetched.why) || '';
+      assertionGrant.keysForParty({ oauthJwksUri: opts.jwksUri },
+                                  'application')
+        .keys.forEach(function (one) { found.push(one); });
+    }
     if (!found.length && opts.jwksUri) {
-      log.debug("Leaving verifyAssertion(). Only a jwks_uri is registered.");
+      log.debug("Leaving verifyAssertion(). The jwks_uri gave no key.");
       return { ok: false, errorCode: 'STS-OAUTH-0005', description: 'this ' +
-                                       'client registered jwks_uri and no ' +
-                                       'jwks. This service will NOT fetch a ' +
-                                       'URL somebody registered in order to ' +
-                                       'verify a credential — that is a ' +
-                                       'server-side request forgery with a ' +
-                                       'specification citation attached, and ' +
-                                       'it is the same refusal ' +
-                                       'WS-Federation\'s wreqptr gets here. ' +
-                                       'Register the keys by value, as ' +
-                                       '`jwks`.' };
+                                       'client registered a jwks_uri and its ' +
+                                       'keys could not be fetched' +
+                                       (fetchedWhy ? ': ' + fetchedWhy : '') +
+                                       '.' };
     }
     if (!found.length && readingProblem) {
       log.debug("Leaving verifyAssertion().");
@@ -511,6 +519,16 @@ async function verifyAssertion(opts) {
                             'draft-ietf-oauth-rfc7523bis-11 section 4) — ' +
                             'the token endpoint URL may not be used — and ' +
                             'it names ' + JSON.stringify(aud) + '.' };
+    }
+    // FAPI 2.0 section 5.3.2.1 item 8 (#140): "as a string" — a one-element
+    // array names the right audience in the wrong shape.
+    if (fapi.strictAssertionAudience() && Array.isArray(aud)) {
+      log.debug("Leaving verifyAssertion(). FAPI 2.0: aud is an array.");
+      return { ok: false, errorCode: 'STS-OAUTH-0283',
+               description: 'the client_assertion must name this ' +
+                            'authorization server\'s issuer identifier as a ' +
+                            'STRING in aud (FAPI 2.0 section 5.3.2.1 item ' +
+                            '8), and it names an array.' };
     }
   }
   // THE REGISTERED KEY'S CHAIN, NOW THAT IT HAS VERIFIED SOMETHING
@@ -799,28 +817,10 @@ function registeredCertificatesOf(jwksText) {
   return out;
 }
 
-// The two identity questions `tls_client_certificates.js` answers, off this
-// request's socket. Required lazily, for `mtls.peerVerified()`'s reason: it
-// reaches the certificate authority, and a process with none answers
-// "not issued here".
-function issuedIdentityOf(request) {
-  log.debug("Entering issuedIdentityOf().");
-  let identity = { issuedHere: false, accepted: false };
-  let held = false;
-  try {
-    const tlsClient = require('../common/tls_client_certificates');
-    const status = require('../common/revocation_status');
-    identity = tlsClient.identityOf(status.fromSocket(request.socket));
-    held = identity.accepted ? tlsClient.stillHeld(identity) : false;
-  } catch (e) {
-    log.debug("Caught in issuedIdentityOf(): " + ((e && e.message) || e));
-    identity = { issuedHere: false, accepted: false };
-    held = false;
-  }
-  log.debug("Leaving issuedIdentityOf(). issuedHere=" + identity.issuedHere);
-  return { identity: identity, held: held };
-}
-
+// The two identity questions `tls_client_certificates.js` answers — who a
+// certificate was issued to, and whether that holder's record still lists it
+// — are `mtls.issuedIdentityOf()` since #107 (2026-09-23), because GNAP's PKI
+// trust model asks them of the same socket.
 function verifyCertificate(opts) {
   log.debug("Entering verifyCertificate(). method=" + opts.method);
   const cert = mtls.peerCertificate(opts.request);
@@ -848,8 +848,10 @@ function verifyCertificate(opts) {
   if (revocation && revocation.refused) {
     log.debug("Leaving verifyCertificate(). Refused on revocation.");
     return { ok: false,
-             errorCode: revocation.status === 'revoked' ? 'STS-PKI-0118' :
-                        'STS-PKI-0119',
+             // The verdict's own code — 0118 revoked, 0119 unestablished,
+             // and since #174 0188 not dialled, 0189 an invalid noRevAvail,
+             // 0190 a certificate nobody can revoke.
+             errorCode: revocationStatus.codeOf(revocation),
              description: 'RFC 8705 section 2: the client certificate on ' +
                           'this connection was refused on revocation ' +
                           '(pki.revocationCheck is ' +
@@ -934,7 +936,7 @@ function verifyCertificate(opts) {
                           'uses exactly one, so there is no single subject ' +
                           'to expect. Clear all but one.' };
   }
-  const issued = issuedIdentityOf(opts.request);
+  const issued = mtls.issuedIdentityOf(opts.request);
   const identity = issued.identity;
   if (identity.issuedHere && identity.accepted) {
     const mine = identity.kind === 'application' &&

@@ -65,14 +65,25 @@
 // forms with another whole-valued attribute (a password and its history).
 const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
                 'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
-                'stsactivationexpires', 'appregistrationjson'];
+                'stsactivationexpires', 'appregistrationjson',
+                'stsapppassword', 'stsidaverification',
+                'stsselfissuedsubject', 'stsdevicesecrethash',
+                'stsdevicesession', 'stscibausercode',
+                // The OpenID Federation register (#132): a record and a key
+                // table are each one JSON value, written whole.
+                'stsoidfedkind', 'stsoidfedentityid', 'stsoidfeddata',
+                'stsoidfedkeys'];
 
 // Always merged by value: lists this service appends to itself.
 const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',
                'description', 'oauthconsent', 'stswebauthncredential',
                'x509subject', 'didsubject', 'spiffesubject', 'authnmethod',
                'federationattribute', 'federationissuer',
-               'federationrelationship', 'federationsubject'];
+               'federationrelationship', 'federationlink',
+               // A subordinate's OpenID Federation event history (#137):
+               // appended by whichever node records an event, so two
+               // appends at once must both survive.
+               'stsoidfedevent'];
 
 // A HOT PATH, AND EVERY FUNCTION IN THIS FILE IS ON IT: `same()`, `uuidOf()`,
 // `countOf()`, `listOf()`, `mergeValues()`, `mergeAttributes()`,

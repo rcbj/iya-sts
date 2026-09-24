@@ -381,6 +381,17 @@ let flushing = null;
 // The ONE flush queued behind `flushing`, shared by every caller that arrives
 // while it runs. See flush().
 let flushQueued = null;
+// WHAT THE RUNNING FLUSH HAS SENT, realm \n key -> the JSON of each upsert,
+// from the moment it is handed to the driver until the flush settles
+// (2026-09-23). `applyDirectoryChange()` WAITS for the flush when the entry
+// it is about to apply is in here, and merges once it has settled — against a
+// shadow that then says what the store holds. It merged against the sent JSON
+// at first, which fixed a change undone while its flush was out (a person
+// disabled, the flush, and enabled again) but not a change that WAS the flush
+// (the enable itself out, the committed row still locked): with live equal to
+// the sent JSON nothing looked pending and the locked row was applied over the
+// enable (`sts_second_factor_doors`, single-node, both times).
+const inFlightDirectory = new Map();
 
 // True while start() is loading. Every changed() call is a no-op then: restore
 // writes into the live stores through the same functions an operator does, and
@@ -1260,6 +1271,9 @@ function flush() {
         live.set(realmId, rows);
       });
     }
+    changes.upserts.forEach(function (row) {
+      inFlightDirectory.set(row.realm + '\n' + row.key, row.json);
+    });
     return driver.saveDirectory({
       upserts: changes.upserts,
       deletes: changes.deletes,
@@ -1346,6 +1360,7 @@ function flush() {
     log.debug('Leaving flush(). It failed.');
     return { written: false, error: err.message };
   }).then(function (result) {
+    inFlightDirectory.clear();
     flushing = null;
     return result;
   });
@@ -1793,6 +1808,14 @@ function openStore(chosen, resolvedUrl) {
     // -------------------------------------------------------------------
     return usedAssertions.setStore(driver, activeMode);
   }).then(function () {
+    // AND RISK SCORING ITS TABLES (#62 P1): the external datasets by version
+    // and the failure history, in `sts_risk_*` on a store whose driver has
+    // them, and in the process otherwise — `risk/risk_store.ts` decides by
+    // the driver's method names. Required LAZILY: this file is loaded long
+    // before the composition root builds the risk modules, and a require at
+    // load would build their instance first.
+    require('../risk/risk_store').setDriver(driver, activeMode);
+  }).then(function () {
     return persistsAppconfig() ? driver.loadOverrides() : null;
   }).then(function (saved) {
     // WHAT THE SETTINGS TABLE HOLDS, which is what a flush diffs against. The
@@ -2134,6 +2157,10 @@ function stop() {
     // is closed underneath it.
     return usedAssertions.clearStore();
   }).then(function () {
+    // The risk store goes back to this process's own maps before the driver
+    // is closed underneath it.
+    require('../risk/risk_store').clearDriver();
+  }).then(function () {
     // LEAVING THE CLUSTER LAST, after every write this process owed has been
     // made under its membership — and before the pool closes, since leaving
     // is a statement. A standby that never held the lease leaves the same way.
@@ -2196,6 +2223,30 @@ function applyDirectoryChange(change) {
   // the DN as written and this has to normalise nothing itself. Normalising a
   // DN is ldap_server.js's job and a second implementation here would be one
   // whose disagreement is invisible.
+  // -------------------------------------------------------------------------
+  // A FLUSH OF THIS ENTRY IS OUT: WAIT FOR IT, THEN LOOK (2026-09-23).
+  //
+  // The row read below is what the store has COMMITTED, and while this
+  // process's own write of the entry is in flight that is OLDER than what this
+  // process holds. With nothing changed here since the send, live equals the
+  // sent JSON, nothing reads as pending, and the committed row was applied
+  // wholesale: a person enabled here (the flush in flight) and disabled a
+  // moment before (committed) had the lock put back by a change notification
+  // for their entry, and once the flush settled the shadow said "enabled"
+  // while live said "disabled", so the next flush wrote the lock back for good
+  // — `sts_second_factor_doors`, carol refused as disabled 100ms after
+  // /users/enable, on the worker that enabled her. After the flush the shadow
+  // is what was sent and the store holds it (or the driver's merge of it), so
+  // the three-way merge below has a true base. The flush never waits on an
+  // apply, so this cannot deadlock.
+  // -------------------------------------------------------------------------
+  if (flushing && inFlightDirectory.has(change.realm + '\n' + change.key)) {
+    log.debug('applyDirectoryChange(): a flush of ' + change.key + ' is ' +
+              'out; applying the change once it settles.');
+    return flushing.then(function () {
+      return applyDirectoryChange(change);
+    });
+  }
   return driver.readEntry(change.realm, change.key).then(function (row) {
     const rows = shadow.get(change.realm) || new Map();
     // -----------------------------------------------------------------------
@@ -2211,7 +2262,22 @@ function applyDirectoryChange(change) {
     // writes it against the row it has now seen.
     // -----------------------------------------------------------------------
     const key = row ? row.key : change.key;
+    // AND ASKED AGAIN NOW THE ROW HAS BEEN READ: a flush that started during
+    // the read (a queued one, taking the change this process made meanwhile)
+    // has sent the entry, and the row read before it is older than what it
+    // sent — applied here it would undo the send, exactly as above. Measured
+    // in `tests/cluster_lww_stores.js` section D: the queued flush listed the
+    // entry between the check above and the read settling.
+    if (flushing && inFlightDirectory.has(change.realm + '\n' + key)) {
+      log.debug('applyDirectoryChange(): a flush of ' + key + ' started ' +
+                'during the read; applying the change once it settles.');
+      return flushing.then(function () {
+        return applyDirectoryChange(change);
+      });
+    }
     const live = entryAt(change.realm, key);
+    // THE BASE IS THE SHADOW: no flush of this key is out (both checks
+    // above), so the shadow is what the store last held from this process.
     const base = rows.has(key) ? rows.get(key) : null;
     const pending = live ? JSON.stringify(live) !== base : base !== null;
     let keep = null;
@@ -2474,6 +2540,16 @@ function coordinate() {
     realms: applyRealmsChange,
     appconfig: applyAppconfigChange,
     keys: applyKeysChange,
+    // A RISK DATASET VERSION ACTIVATED ON ANOTHER NODE (#62 P1): the row is
+    // already in the table every node reads, so applying it is dropping what
+    // this process cached about the old version. The key is the dataset.
+    'risk-dataset': function (change) {
+      log.debug("Entering the risk-dataset applier.");
+      require('../risk/risk_store').noteActivated(change.realm || '',
+                                                  change.key || '');
+      log.debug("Leaving the risk-dataset applier.");
+      return null;
+    },
     // A FUNCTION WITH A `prepare` ON IT. The applier contract is a function —
     // `replication.js` checks `typeof applier === 'function'` — and `prepare`
     // is an optional property it looks for beside it, so this stays one

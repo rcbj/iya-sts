@@ -22,9 +22,9 @@ twice — two calls would count two authentications for one act.
 ## `OnBehalfOf` and `ActAs` are TWO mechanisms now, not one with two spellings
 
 `delegatedSubject()` used to collapse them with a `||`, and for everything that
-reads it that was right — the token issued is identical either way, because this
-service polices nothing. It is wrong for `/admin/delegation`, where the
-difference is the whole point:
+reads it that was right — the token issued is identical either way. It is wrong
+for `/admin/delegation`, where the difference is the whole point, and since #108
+for the delegation policy, which needs the stronger permission for the first:
 
 * **`wst:OnBehalfOf`** (1.3 §9.2) asks for a token ABOUT somebody. The relying
   party is handed an ordinary sign-in and cannot tell a middle tier was involved.
@@ -71,13 +71,52 @@ The requester also carries an `application` where this registry already holds an
 entry under the name it authenticated as. It stays a LOOKUP: an unknown name
 leaves the slot empty and the party is drawn from `presented`, as before.
 
-**Neither is authorized by anything here, and the row says that too**, in the
-same field where a Kerberos row names an attribute on an account. Do not tidy
-that sentence into an em dash: the asymmetry between a policed family and an
-unpoliced one is the most useful thing on that page. What this service does NOT
-do is put the composite fact into an `ActAs` token — nothing in the assertion
-says a middle tier acted — and the row states that as a gap in the mock rather
-than in the profile.
+**Both are authorized by the delegation policy since #108 (2026-09-23)**, and
+the row names what allowed it in the same field where a Kerberos row names an
+attribute on an account — see the next section. What this service does NOT do
+is put the composite fact into an `ActAs` token — nothing in the assertion says
+a middle tier acted — and the row states that as a gap in the mock rather than
+in the profile.
+
+## WHO MAY ACT FOR WHOM (#108, 2026-09-23)
+
+WS-Trust puts no authorization on either element — 1.3 section 9.2 and 1.4
+section 9.3 describe what the requester ASKS for and leave the decision to the
+STS — and until #108 this one decided nothing. `handleRst()` now asks
+`../common/delegation_policy.ts` (rule 3az, `../common/CLAUDE.md`) after the
+role gate and the JWT-subject check and before the token is built: the one
+place that knows the `AppliesTo`, which is the TARGET. The intermediary is the
+REQUESTER; `OnBehalfOf` is `impersonation` and needs
+`appTrustedToImpersonate`, `ActAs` is `delegation`.
+
+**ONLY AN APPLICATION MAY DELEGATE** — the owner's decision on #108. The
+requester's authenticated NAME must be an application entry's identifier;
+the credential it presented (a UsernameToken, verified against a
+`userPassword`) may be kept on a service account entry of the same name, which
+is the only way an application authenticates here. A requester that is only a
+PERSON is refused `STS-WSTRUST-0019`, and the fault says why.
+
+**A REFUSAL IS WS-TRUST 1.4 SECTION 11's `wst:RequestFailed`** ("The specified
+request failed"). `soapFault()` takes the fault code as an optional third
+argument and the request's own trust namespace as the fourth: on SOAP 1.1 it
+REPLACES `soap:Client` as the `faultcode`, and on SOAP 1.2 it is the `Subcode`
+under `soap:Sender` — section 11's own mapping. Every other refusal here still
+sends the generic fault, which is a gap worth a ticket rather than a sweep made
+on the side. `STS-WSTRUST-0018` for the attribute rule, `0019` for a person
+requester, `0020` for the XACML Deny.
+
+**ENFORCED IN PRODUCT** (`mode.authorizesDelegation()`); development issues and
+the act says "WOULD HAVE BEEN REFUSED in product: …". A refused act is recorded
+with `outcome: refused` before the fault is answered, so it is on
+`/admin/delegation` — the only list a refusal is in. A requester delegating
+about ITSELF acts for nobody and needs nothing.
+
+**THE ORDER COST ONE THING, AND IT IS STATED RATHER THAN FIXED.**
+`authenticate()` records the delegated subject's `recordAuthentication()` row
+before the policy is asked, so a refused delegation still leaves that row on
+`/admin/users`. Moving the policy into `authenticate()` would need the
+`AppliesTo`, which the "authenticate ABOVE the branch" rule below keeps out of
+it.
 
 ---
 
@@ -148,6 +187,37 @@ what to present:**
 
 `tests/saml_family_hardcoded.js` section E pins all of it in process.
 
+## EACH VERSION ANSWERS IN ITS OWN SCHEMA'S ELEMENTS (#188, 2026-09-24)
+
+The answer echoes the request's trust namespace, and until #188 it answered
+every version in 1.3's vocabulary. Validating each answer against its own
+version's published schema (`tests/vendored/sts_xml_schema_validation.js`)
+found three elements the **2004/04** member submission does not have:
+
+* **Issue is answered with the RSTR itself.** That version's
+  `RequestSecurityTokenResponseCollection` holds `minOccurs='2'` responses —
+  it is for several tokens at once — so a collection of one was invalid.
+  The action is `.../RSTR/Issue`. 2005/02 (`minOccurs='1'`) and 1.3 (the
+  collection is REQUIRED for an Issue's final response) are unchanged.
+* **The reference is `wst:RequestedTokenReference`**, the element 2005/02
+  renamed `RequestedAttachedReference`.
+* **Cancel is refused** with that namespace's `wst:InvalidRequest` fault
+  (`STS-WSTRUST-0021`): 2004/04 has no `CancelTarget` and no
+  `RequestedTokenCancelled`, and answering in elements the version does not
+  define is worse than saying it does not define the operation.
+
+What is left in 2004/04 and is NOT a schema error, stated rather than
+changed: the `wsp:AppliesTo` and `wsa:EndpointReference` in the answer are
+the 2004/09 policy and 2005/08 addressing namespaces for every version (the
+2004/04 schema imports 2002/12 and 2004/03), which its lax wildcard admits.
+
+**The published 1.3 schema's own namespace is wrong**, and that is recorded
+on #188 rather than worked around here: `ws-trust-1.3.xsd` declares
+`http://docs.oasis-open.org/ws-sx/ws-trust/200512/` with a trailing slash,
+which is not the specification's namespace and not what this endpoint (or
+any other) speaks. The job validates against a copy with that one string
+changed (`tests/tools/fetch-xml-schemas.sh`).
+
 ## What is tested, and what is not
 
 The parent project has `tests/wstrust.js` and
@@ -169,3 +239,12 @@ OAuth 2.0 grants follow (`STS-OAUTH-0510`): a bare name is a `sub` a relying par
 on and a person created later under the name would inherit. An `anonymous` request names
 nobody by design and is unaffected, and so is a SAML assertion, whose `NameID` is the
 username. A process with no directory still uses the name. `tests/stable_subject.js` D5b.
+
+## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
+
+`requesterCredential()` passes `door: 'wstrust'`, so in product a person who
+holds or must hold a second factor is refused their own password with the one
+`STS-WSTRUST-0003` fault a wrong password gets, and presents an app password
+scoped to `wstrust` instead; the authentication row's method then says
+`(app password)`. `authn/CLAUDE.md` owns the rule. WS-Trust has no rate limit
+of its own for a refused UsernameToken, so there is nothing further to count.

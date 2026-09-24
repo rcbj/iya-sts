@@ -17,13 +17,23 @@ form POST, not a redirect**, carrying a WS-Trust `RequestSecurityTokenResponse`
 that wraps a signed SAML assertion. Because the token travels in a form body it
 is not length-limited and never lands in a URL, a log or a `Referer` header.
 
+That form POST (section 13.2.2) shapes the response page. It needs a script to
+submit itself, so the page relaxes `script-src` to `'self'` naming one real
+resource, `/wsfed/autopost.js` — an inline script would not run at all,
+silently, leaving a page that looks as if it is working and never posts. Its
+submit button is labelled for a person rather than hidden, because with
+scripting off the button *is* the mechanism. And `form-action` stays out of the
+content security policy: the form posts to `wreply`, which is by definition
+another origin, and `form-action 'self'` would block the response from ever
+reaching the relying party while the sign-in still appeared to succeed.
+
 ## Features
 
 ### Endpoints
 
 | Path | What it is |
 |---|---|
-| `GET\|POST /wsfed` | the passive requestor endpoint, dispatched on `wa`; with no `wa` it describes itself and every parameter |
+| `GET\|POST /wsfed` | the passive requestor endpoint, dispatched on `wa`; with no `wa` it describes itself and every parameter, the way `GET /sts` does |
 | `GET /FederationMetadata/2007-06/FederationMetadata.xml` | the signed federation metadata |
 | `GET\|POST /wsfed/rp` | a **mock relying party** (not part of any specification) |
 | `GET /wsfed/autopost.js` | the one script the sign-in response page runs |
@@ -48,7 +58,7 @@ at `/admin/sts-metadata`.
 | `wreply` | where the response is POSTed — see [the mode table](#development-and-product-mode) |
 | `wctx` | echoed back **byte for byte** and never interpreted |
 | `wct` | the request timestamp; its skew is recorded, not enforced |
-| `wfresh` | the maximum age of the authentication, in **minutes**: `0` forces the sign-in screen, `N` re-shows it when the session is older; a value that is not a number is refused |
+| `wfresh` | the maximum age of the authentication, in **minutes** — the one place this profile and OIDC's `max_age` differ in unit, and reading it as seconds makes every request look fresh: `0` forces the sign-in screen, `N` re-shows it when the session is older; a value that is not a number is refused. It is dropped on the way back from the sign-in screen, as `prompt=login` is, or it would demand a fresh authentication forever |
 | `wauth` | an authentication method the relying party demands — see [`wauth`](#wauth-a-step-up-never-a-fake) |
 | `whr` | the home realm; recorded and shown, nothing is forwarded |
 | `wreq` | an RST by value; its `TokenType` chooses the token, and an `AppliesTo` that disagrees with `wtrealm` is logged (`wtrealm` wins) |
@@ -60,7 +70,7 @@ at `/admin/sts-metadata`.
 
 **The default token is a SAML 1.1 assertion**, because that is what AD FS
 issues to a WS-Federation relying party and what the libraries written against
-it read first. A SAML 2.0 assertion is issued when the `wreq` RST's `TokenType`
+it (WIF, `Microsoft.Owin.Security.WsFederation`) read first. A SAML 2.0 assertion is issued when the `wreq` RST's `TokenType`
 asks for one, or with the non-spec `tokenType=saml2`. Both are offered in the
 metadata's `fed:TokenTypesOffered`.
 
@@ -80,6 +90,13 @@ relying party may overrule it with `wsfedAssertionLifetimeMin` on its entry (see
 [the assertion settings](saml2-sso.md#the-assertion-settings-every-application-inherits)).
 The RSTR's `wsu:Lifetime` states the lifetime without the skew.
 
+**`ds:Signature` sits in three different positions** in the three documents
+this profile involves — last in a SAML 1.1 assertion, second (after `Issuer`)
+in a SAML 2.0 one, and first in the federation metadata's `EntityDescriptor` —
+and all three are schema-mandated rather than stylistic. A client that looks
+for it in one place will fail on the others. The SAML 1.1 spellings that
+differ from 2.0 are listed on [SAML 1.1](saml11.md#the-assertion).
+
 **The RSTR is WS-Trust February 2005** by default, as a single
 `RequestSecurityTokenResponse` — what AD FS emits and WIF-era relying parties
 parse. `trust=1.3` switches to a ws-sx 200512 RSTR Collection, the shape
@@ -98,12 +115,17 @@ There is no WS-Federation sign-in screen: the person signs in at the
 in the one session store. So a person who signed in for OAuth, SAML or the
 console is not asked again, a security key or TOTP works at the screen, and a
 relying party whose application entry names a
-[federation](federation.md) partner sends the person to that partner.
+[federation](federation.md) partner sends the person to that partner. Sign in
+at the OpenID Connect screen with a security key and arrive at `wsignin1.0`,
+and the assertion's `AuthenticationMethod` reflects the `amr` the session
+recorded; signing out of either protocol signs out of both.
 
 One quirk is kept: WS-Federation section 13.2.1 allows the sign-in request to
 arrive as a cross-site form POST, which `SameSite=Lax` keeps the session cookie
-off, so such a request goes to the sign-in screen even when a session exists.
-A GET does not have this problem.
+off, so such a request goes to the sign-in screen even when a session exists,
+and the screen says so rather than looking like a broken session. A GET does
+not have this problem. The alternative, `SameSite=None`, would be a decision
+needing its own argument; `Lax` is deliberate.
 
 ### `wauth`: a step-up, never a fake
 
@@ -115,7 +137,8 @@ A GET does not have this problem.
 * A **multi-factor** demand is met only by two real factors — a password and a
   one-time code, or a password and a key. A passwordless key alone does not
   answer it.
-* A demand the session does not meet is a **step-up**, in every mode: the
+* A demand the session does not meet is a **step-up**, in every mode — the
+  same mechanism as `acr_values=mfa` in OAuth: the
   person is sent back through the sign-in screen with exactly what the demand
   needs — a hardware demand is offered only the key, a multi-factor demand a
   second factor — and the assertion then reports what actually happened. A
@@ -140,17 +163,24 @@ signed out too — and loads each relying party's `wreply` with
 `wa=wsignoutcleanup1.0` as a one-pixel image, printing the same URLs as links so
 a failed cleanup can be seen. With a `wreply` on the request, the page offers a
 **link** back rather than redirecting, because a redirect would abandon the
-cleanups. `wsignoutcleanup1.0` arriving here ends the session and sends no
+cleanups. The cleanup images are what front-channel logout is, so that one
+response widens `img-src` to `*`: a cleanup ping is by definition a third-party
+origin, and the URLs are ones the relying parties themselves supplied as
+`wreply`. `wsignoutcleanup1.0` arriving here ends the session and sends no
 cleanups of its own, which would loop between two identity providers. The
 protocol-independent `/logout` sends the same cleanups; see
 [Signing out](signing-out.md).
 
 ### Federation metadata
 
-`/FederationMetadata/2007-06/FederationMetadata.xml` is signed, names this
-identity provider by `wsfed.entityId`, and holds a `RoleDescriptor` with
-`fed:TokenTypesOffered`, `fed:ClaimTypesOffered`, the passive requestor endpoint
-and the WS-Trust endpoint at `/sts`. It describes what this realm's mode
+`/FederationMetadata/2007-06/FederationMetadata.xml` is at **AD FS's path**,
+because WS-Federation names none and that is where every relying party in this
+ecosystem looks first. It is signed, names this identity provider by
+`wsfed.entityId`, and holds a `fed:SecurityTokenServiceType` `RoleDescriptor`
+with `fed:TokenTypesOffered`, `fed:ClaimTypesOffered`, the
+`PassiveRequestorEndpoint` and the `SecurityTokenServiceEndpoint` — the latter
+at `/sts`, the same service answering the active profile
+([WS-Trust](ws-trust.md)). It describes what this realm's mode
 actually emits. It carries no SAML `IDPSSODescriptor` — that is at
 `/saml2/metadata`.
 
@@ -161,7 +191,9 @@ say so, because a relying party's issuer registry would refuse the token.
 
 ### The mock relying party
 
-`/wsfed/rp` is the default `wreply` and a test harness. It sends a complete
+`/wsfed/rp` is the default `wreply` — so a request that names no return
+address has somewhere real to go — and a test harness that shows every verdict
+rather than one boolean. It sends a complete
 sign-in request and verifies the response check by check: `wa`, `wresult`, the
 RSTR and its token type, the assertion's signature against `/sts/cert`, the
 issuer, the audience, the validity window, the subject, the claims — and that
@@ -172,9 +204,12 @@ in another.
 ### Not implemented
 
 `wresultptr` (the response is always by value), the attribute and pseudonym
-services (`wattr1.0`, `wpseudo1.0`), token encryption (a passive request carries
-no recipient certificate to encrypt to), and the metadata exchange over SOAP.
-`wreqptr` is refused by design.
+services (`wattr1.0`, `wpseudo1.0`, which answer 501 explaining what they would
+have done), token encryption (a passive request carries no recipient
+certificate to encrypt to — where `/sts?encrypt=1` has one, because a
+WS-Security signature carries it), the metadata exchange over SOAP, and any
+authorization or policy enforcement (`wp` and `wencoding` are logged and
+nothing more). `wreqptr` is refused by design.
 
 ## Development and product mode
 
@@ -182,7 +217,7 @@ no recipient certificate to encrypt to), and the metadata exchange over SOAP.
 |---|---|---|
 | `wreply` | used as it stands; with none, the mock relying party | must be one of the `wsfedReplyUrl` values on the `wtrealm`'s application entry, exact match; with none, the registered one; no mock fallback. An address development merely observed is refused until an operator confirms it |
 | Password at the sign-in screen | any password but `invalid` | verified |
-| Given name, surname, mail, display name | invented | read off the directory entry, or omitted |
+| Given name, surname, mail, display name, UPN | invented, and described that way in the metadata | read off the directory entry, or omitted — and the signed metadata describes them that way |
 
 The `wauth` step-up, the `wreqptr` refusal and `wctx` round trip behave the
 same in both modes. See [What is not checked](what-is-not-checked.md).

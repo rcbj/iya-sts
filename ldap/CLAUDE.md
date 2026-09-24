@@ -713,6 +713,59 @@ credential at a REAL foreign service. Same decision, same reason
 (`/krb5/principals` prints the Kerberos passwords), worth restating because the
 consequence is different.
 
+## `ou=devices`: A DEVICE IS AN ENTRY (2026-09-23, #130)
+
+rcbj's direction: devices are first-class objects in this directory, linked
+to their person and to the applications that use them. Each is an RFC 4519
+`device` (with this service's `stsDevice` class), named `cn=<uuid>`, whose
+standard `owner` is the person's DN and whose `stsDeviceApplication` values
+are the DNs of the applications that used it; `stsDeviceSecretHash` (in
+SECRET_ATTRIBUTES, merged whole) and `stsDeviceSession` hold its OpenID
+Connect Native SSO secret and the sign-on session it is good for. The
+container is seeded like the others; `listDeviceEntries()`,
+`writeDeviceEntry()` and `deleteDeviceEntry()` are the store, reached through
+`credentials.deviceStore()`, and `common/devices.ts` decides what an entry
+means. #164 adds the rest of what a device is to these same entries.
+
+## `ou=oidfed`: THE OPENID FEDERATION REGISTER (2026-09-23, #132)
+
+Each realm's tree holds `ou=oidfed`, and under it one entry per thing the
+realm knows as a federation entity: class `stsOidfedEntry`, `stsOidfedKind`
+(`keys`, `subordinate`, `anchor`, `mark-type`, `issued-mark`, `held-mark`,
+`mark-policy`), `stsOidfedEntityId` and the record as one JSON value in
+`stsOidfedData`, named `cn=<kind prefix><SHA-256 digest>`. The realm's one
+`keys` entry holds the Federation Entity Key table in `stsOidfedKeys`, one
+row per value with the private key SEALED where keys persist — in
+SECRET_ATTRIBUTES, and redacted row by row on the wire and on
+`/admin/ldap/directory` by `withheldKeyTableValues()`, which #168 wrote for
+`fedEncryptionKey` and which that day's change also wired into the directory
+page its header named (#168 had applied it to searches only). All four are
+merged whole (`directory_merge.js`'s SINGLE). `listOidfedEntries()`,
+`writeOidfedEntry()` and `deleteOidfedEntry()` are the hooks, reached
+through `credentials.oidfedStore()`; `oidfed/oidfed_store.ts` decides what
+an entry means. Written over the socket only by an Admin Write holder in
+product mode, like every other container here.
+
+**Three more kinds since 2026-09-24 (#136, #137)**: `events` (`ev-`), one
+subordinate's history as one JSON event per value of **`stsOidfedEvent`** —
+the one attribute here that is MERGED BY VALUE (`directory_merge.js`'s MULTI),
+because events are appended by whichever node records one and two appends at
+once must both survive; `suspension` (`su-`); and the one `collection` entry,
+the last Entity Collection crawl. An `events` or `suspension` entry about a
+realm of this service is keyed `realm:<id>`, not by its identifier
+(`oidfed/subordinate_events.ts` argues why), and an `events` entry is never
+deleted — it outlives the subordinate it is about.
+
+## `stsCibaUserCode`: THE PERSON'S CIBA USER CODE (2026-09-23, #131)
+
+The secret a CIBA client that registered `backchannel_user_code_parameter`
+must send with every request for this person (CIBA section 7.1), set or
+cleared by the person on `/portal/ciba`. Scrypt-hashed like `userPassword`
+(`stsCrypto.hashSecret()`), in `SECRET_ATTRIBUTES` and merged whole
+(`directory_merge.js`'s SINGLE); read and written only through the
+`readCibaUserCode` / `writeCibaUserCode` hooks `credentials.ts` forwards, and
+matched by `oauth-oidc/ciba.ts`. `oauth-oidc/CLAUDE.md` (3bc).
+
 ## THE FIVE FEDERATION ATTRIBUTES ON A PERSON'S ENTRY
 
 `applyFederatedAttributes()` runs on an entry created because somebody signed in
@@ -757,9 +810,25 @@ Now an existing entry is used and updated, and a missing one is left missing for
 `authn.startSession()` to refuse (`STS-AUTHN-0180`; the relationship's own page answers
 `STS-FED-0090`). **`fedUpdateUserAttributes`** (on by default) is the second switch:
 `applyFederatedAttributes()` takes `{ created }` and writes the partner's values on a
-returning person only while it is on, while the three facts about where the person came
+returning person only while it is on, while the facts about where the person came
 from are recorded either way. `tests/federation_provisioning.js` drives both shapes
 through a real OIDC federated sign-in.
+
+**`federationLink` (#109, 2026-09-22) is the one of those attributes that DECIDES
+anything**: `<relationship> <issuer> <subject>`, the partner's stable identifier for
+the person paired with the relationship it came through, and what a partner signs in
+by — `../federation/CLAUDE.md`, *WHICH PEOPLE A PARTNER MAY ASSERT*. It replaced
+`federationSubject`, which recorded subjects without their partner. This file keeps
+the one rule only the store can keep, **a link names one person** — `writeFederationLink()`
+refuses a value somebody else carries (`STS-FED-0107`) — and hands every REMOVED value,
+from any door, `ldapmodify` included, to `federation_links.ts`'s `linksRemoved()` from
+`noteAccountChange()`, which ends the sessions that partner made. `applyFederatedAttributes()`
+writes the link it is handed and derives none; `autoCreateUser()` creates a federated
+person only when the payload says `create: true`, which is the subject decision's call.
+The five functions the register reads (`federationPerson()`, `peopleByFederationLink()`,
+`federationLinksThrough()`, `plannedPersonDn()`, `writeFederationLink()`) ride on the
+object `federation.setDirectory()` already takes — the same door, not a new slot. A
+lookup by link is a walk of the realm, as `entryBySpiffeSubject()` is.
 
 ## `entryUUID`: THE ONE THING ABOUT AN ENTRY THAT NEVER CHANGES, AND A PERSON'S `sub` (2026-09-14)
 
@@ -1808,11 +1877,19 @@ division is `group_claims.js`'s and `applications.js`'s: neither file knows the
 other's half.
 
 It is the SEVENTH `setDirectory()`-shaped slot this module fills at require
-time and the second that hands over a WRITER as well as readers. Four functions,
-validated whole, for `setLogoutReader()`'s reason: a filler that installed the
-two reads and neither write would leave a service that draws the consent screen,
-records nothing, and draws it again on the next request — a loop with a button
-in it, every part of it working.
+time and the second that hands over a WRITER as well as readers. Seven
+functions, validated whole, for `setLogoutReader()`'s reason: a filler that
+installed the two reads and neither write would leave a service that draws the
+consent screen, records nothing, and draws it again on the next request — a
+loop with a button in it, every part of it working.
+
+**THREE OF THE SEVEN ARE THE WITHDRAWALS (#172)**: `oauthConsentWithdrawn` on
+the same entry, `<stamp> <scope> <client_id>` with the instant to the
+millisecond, written when a consent is withdrawn so that a re-consent revives no
+refresh token granted before it (`common/CLAUDE.md`, 3t). One set of functions
+serves both attributes, told which by name (`consentAttributeOf()`), and a name
+that is neither is the consent attribute, so the slot cannot be used to write
+anything else onto somebody's entry.
 
 **NOTHING HERE CREATES AN ENTRY.** A consent is written for somebody who has
 just authenticated, so `observeIdentity()` made their entry on the way past.
@@ -2245,7 +2322,7 @@ whether it asks at all. Three lines:
 * **an administrator writes anything** — somebody whose bound DN names an entry in
   the DEFAULT realm's directory whose identity holds **Admin Write**
   (`STS-LDAP-0053` otherwise). **Since 2026-09-14 a realm's own administrator
-  writes anything in THAT realm** (`boundDnIsRealmAdministrator()`): a
+  writes anything in THAT realm** (`boundDnHoldsRealmRole()`, `'write'`): a
   non-default ambient realm, a bound DN naming an entry in it, and Admin Write
   on that realm's roster — never its open bootstrap window;
 * **anybody else may MODIFY THEIR OWN ENTRY, and only the attributes
@@ -2287,7 +2364,7 @@ doors that told the Kerberos key register about a new password were
 `setPassword()` and a verified sign-in, so a password set with `ldapmodify` left
 the person without usable keys until they signed in somewhere else.
 
-**WHAT IT DOES NOT COVER IS READING**, which is the next section. That paragraph
+**WHAT IT DOES NOT COVER IS READING**, which is the next two sections. That paragraph
 read *search and compare are unauthorized in both modes* until the same day.
 `tests/directory_write_authorization.js` holds the rule in process.
 
@@ -2303,7 +2380,7 @@ SECURITY* in `ldap_server.js` argues each rule where it is enforced. Five
 `common/mode.js` predicates decide whether each asks at all, and all five are
 product mode only, for the write half's reason.
 
-**THE BIND** — four refusals that come BEFORE the password is read, in this
+**THE BIND** — five refusals that come BEFORE the password is read, in this
 order, because none of them should cost a guesser anything or count against a
 caller refused for another reason:
 
@@ -2312,6 +2389,7 @@ caller refused for another reason:
 | an anonymous bind | 48 `inappropriateAuthentication` (RFC 4513 §5.1.1) | `STS-LDAP-0070` |
 | any bind on the plain listener | 13 `confidentialityRequired` | `STS-LDAP-0071` |
 | a DN with an empty password | 53 `unwillingToPerform` (RFC 4513 §5.1.2) | `STS-LDAP-0072` |
+| a DN that is not a person's (#106) | 49 `invalidCredentials`, not counted | `STS-LDAP-0100` |
 | a DN or address past its failed-bind limit | 53 `unwillingToPerform` | `STS-LDAP-0073` |
 
 **THE FIRST ROW DID NOT HAPPEN UNTIL 2026-09-18, AND NOTHING IN PROCESS COULD
@@ -2390,15 +2468,79 @@ logging the compared VALUE, which had been writing passwords to the info log.
 and `entryDN` on an add or modify, administrator included (`STS-LDAP-0076`, 19,
 RFC 4512 §3.3.1's NO-USER-MODIFICATION).
 
-**WHAT IS STILL OPEN** is narrower and is `common/mode.js`'s
-`directory-read-authorization` row: a connection that has bound as ANYBODY may
-read every non-credential attribute of every entry in the realm its base names.
-Deciding what a person, an administrator and an application may each read is a
-design question rather than a hole.
+**WHAT A BOUND IDENTITY MAY THEN READ** was open here until 2026-09-23 (a
+`NOT_YET` row in `common/mode.js`); it is the next section.
 
 `tests/directory_read_security.js` holds all of it in process, including the
 filter oracle asked in both modes so the product-mode zero is a refusal, and was
 mutation-tested against thirteen mutants, all caught.
+
+## WHO MAY READ THIS DIRECTORY OVER THE SOCKET, IN PRODUCT MODE (2026-09-23, #106)
+
+Until this date a connection bound as ANYBODY read every non-credential
+attribute of every entry in the realm its base named — every person's mail,
+telephone number and memberships, every application's redirect URIs, every
+federation's signing certificate. `mode.authorizesDirectoryReads()` (product
+only, the write half's reason) now asks who is reading, and
+`directory_read_policy.ts` is the rule table: a static utility class that reads
+no store and no setting, handed a READER and an ENTRY and answering
+`visible()`, `attributeRule()` and `readable()`. `ldap_server.js` does the two
+things only it can — `readerOf()` classifies the reader ONCE per operation (the
+console roster is asked once, not per entry), `readKindOf()` classifies an
+entry by placement and class — in the block headed *WHO MAY READ THIS
+DIRECTORY OVER THE SOCKET*.
+
+| Reader | Sees |
+|---|---|
+| development (`unrestricted`) | everything |
+| Admin Read or Admin Write — the default realm's roster (every realm) or the realm's own (that realm); never a role held only through the open window | every entry in scope, every attribute |
+| anybody bound | their OWN entry, whole — `memberOf` included |
+| a person, of another PERSON | `ldap.directoryReadableAttributes` — **EMPTY by default**, and empty means the other person is not there at all |
+| a person, of a GROUP | only one they are a direct member of (`member`, `uniqueMember`, `memberUid` read straight off the entry, never resolved), and then `objectClass`, `cn`, `description`; the member list with `ldap.groupMembersReadable` |
+| anybody bound, of a CONTAINER (the base, and an `ou=`/`dc=`/`o=` entry that is neither) | its naming attributes, so a subtree search from the base does not fail at the base |
+| anybody, anonymous included, of a CRL distribution point | everything — the base read `isCrlDistributionEntry()` exempts from the bind |
+| a person, of anything else — applications, federations, policies, roles, PEPs, trust anchors, password policies, SPIFFE entries and agents | nothing |
+| an OUTSIDER — bound, but as nobody in the realm being read (a realm's own administrator in another realm) | the containers |
+
+Five decisions are in it, the first four the owner's on #106:
+
+* **ONLY PEOPLE BIND.** A DN not under the realm's `ou=users` is refused 49
+  (`STS-LDAP-0100`) before its password is read and without counting against
+  the bind limit, decided by PLACEMENT so the refusal is no oracle of what
+  exists. An application reads the directory through SCIM (scoped, token-bound;
+  a `scim:read` token is a whole-realm provisioning read, and tying it to a
+  client is #110).
+* **SELF-ONLY BY DEFAULT**, stricter than the plan's address book
+  (`objectClass,cn,displayName,uid,mail`), which is what an operator widens to;
+  the setting's description says what widening exposes.
+* **A NATIVE TABLE, NOT XACML**: a subtree search visits every entry, and a PDP
+  call each is the access gate's walk history (*AND A SIXTH*, above) again.
+* **ADMIN READ IS ENOUGH** for the socket, as it is for `/admin/ldap`.
+  `boundDnHoldsRole(dn, role)` and `boundDnHoldsRealmRole(dn, role)` replaced
+  the two write-only helpers (`boundDnIsDirectoryAdministrator()`,
+  `boundDnIsRealmAdministrator()`), and the write half passes `'write'`.
+* **INVISIBLE MEANS ABSENT.** A search skips an invisible entry BEFORE its
+  filter (so it neither matches nor counts against the size limit; the audit
+  row's `withheldEntries` counts them); a base search or a compare naming one
+  is noSuchObject with `STS-LDAP-0013`, the code and error a missing DN gets.
+  An unreadable attribute is absent from the result (`toSearchEntry(…, rule)`)
+  AND from the filter (`matchableForReader(stored, rule)`) — Undefined, as
+  OpenLDAP's `disclose` and 389-ds ACIs evaluate it — and a compare of one is
+  50 (`STS-LDAP-0099`) whether or not the entry holds it, since 16 against 50
+  would say which.
+
+**Credentials are not the table's**: `withheldFromReaders()` is asked after it,
+so a row answering "all" can never hand out a hash. **The dispatched path
+decides identically** — `performOperation()` builds its request with the bound
+DN, and nothing new crosses in `operationRequest()`. **The console, `/admin-api`,
+SCIM and every protocol are untouched**: they read through this module's
+functions, never a search on the socket.
+
+`tests/directory_read_authorization.js` holds every row through
+`performOperation()` in both modes, and over a real ldapjs client on a child's
+LDAPS listener in each mode; seven mutants, all caught.
+`tests/vendored/sts_ldap_read_authorization.js` asks the same of a running
+service over 636, in a product realm and a development realm.
 
 ## `stsSamlAssertion*`: A PERSON'S RFC 7522 KEY PAIR (2026-09-13)
 
@@ -2529,3 +2671,16 @@ the handler), a SCIM create of a User or a Group, and `POST
   subject there; a single process keeps random values.
   `directory_create_claims.ts`'s header has it, and
   `tests/cluster_autocreate_subject.js` holds both halves.
+
+## A SECOND-FACTOR PERSON'S BIND, AND `stsAppPassword` (2026-09-22, #101)
+
+The simple bind passes `door: 'ldap'` to `credentials.verify()`, so in product
+a person who holds or must hold a second factor is refused their own password
+with the same 49 a wrong one gets, counted against the bind limit as one, and
+binds with an app password scoped to `ldap`; both audit rows then say an app
+password was used. `authn/CLAUDE.md` owns the rule. This module adds three
+hooks to `credentials.setDirectory()` — `readAppPasswords`, `writeAppPasswords`
+(one single-valued JSON value, assigned whole, `null` deletes) and `isPerson`
+(`isPersonEntry()` by placement, never a name) — and `stsAppPassword` is on
+`OWN_NAMES`, `SECRET_ATTRIBUTES` (withheld from every read, a verifier like
+`userPassword`) and `persistence/directory_merge.js`'s `SINGLE`.

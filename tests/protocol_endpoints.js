@@ -202,8 +202,9 @@ function childMain() {
 
       const named = table.forPage(fakeReq('/admin/authorization-servers'),
                                   '/admin/authorization-servers');
-      // Eleven since 2026-09-13: RFC 9126's /:as/oauth2/par joined the ten.
-      note(named.length === 11 && named.every(function (row) {
+      // Eleven since 2026-09-13: RFC 9126's /:as/oauth2/par joined the ten;
+      // twelve since #138, with /:as/oauth2/fapi.
+      note(named.length === 12 && named.every(function (row) {
         return /tenantpe/.test(row.url) && /tenantpe$/.test(row.name);
       }), 'a named authorization server is listed by its id, once per route',
            named.map(function (row) { return row.url; }).join(', '));
@@ -293,7 +294,8 @@ function childMain() {
 function run(t) {
   log.debug("Entering run().");
   const out = path.join(os.tmpdir(), 'pe-' + process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|CONFIG_FILE$)/.test(key)) {

@@ -31,6 +31,8 @@
 //   H. AN EMERGENCY (#48): new keys rather than the published next ones, no
 //      retired key kept, certificates revoked for keyCompromise, refresh
 //      tokens refused at once, every session ended.
+//   J. A certificate the realm was publishing stays known to its OCSP
+//      responder through a retirement and the re-certification after it (#185).
 //   I. THE REQUEST. An unknown unit and an unconfirmed emergency are
 //      refused; a rotation asked for is a queued run.
 //
@@ -385,6 +387,56 @@ function childMain() {
     }) && view.refresh && typeof view.refresh.graceDays === 'number',
          'I4. the rotation view names every unit\'s current key');
 
+    // --- J. a published certificate stays known through a retirement (#185) ---
+    // `sts_pki_distribution_points` collected a realm's certificates, the
+    // hourly signing.retire ran in the middle, and the responder answered
+    // UNKNOWN for the JOSE and XML certificates it had collected seconds
+    // before. A certificate this service published is `good` while it is
+    // current and `revoked` once replaced — never unknown.
+    const settled = async function () {
+      for (let i = 0; i < 40; i++) {
+        await new Promise(function (r) { setTimeout(r, 50); });
+      }
+    };
+    await own.rotate(REALM, { units: ['xml:RS256'], reason: 'requested' });
+    await settled();
+    const published = ['jose', 'xml'].map(function (useCase) {
+      const cert = pki.certificateFor(scope, useCase, 'RS256');
+      return { useCase: useCase, serial: cert && cert.serialHex };
+    });
+    const slotsOf = function () {
+      const certs = (pki.rawRowFor(scope) || {}).certs || {};
+      const out = {};
+      Object.keys(certs).filter(function (k) {
+        return /RS256/.test(k);
+      }).forEach(function (k) {
+        out[k] = certs[k].serialHex + '/' + certs[k].kid;
+      });
+      return out;
+    };
+    const slotsBefore = slotsOf();
+    const retiring = own.retireDue(REALM, { nowMs: function () {
+      return Date.now() + 400 * DAY;
+    } });
+    await settled();
+    const normal = function (hex) {
+      return String(hex || '').replace(/^0+/, '').toLowerCase();
+    };
+    const lost = published.filter(function (one) {
+      const known = revocation.issuedHere(scope, one.useCase, one.serial) ||
+        revocation.listFor(scope, one.useCase).some(function (r) {
+          return normal(r.serialHex) === normal(one.serial);
+        });
+      return !one.serial || !known;
+    });
+    note(retiring.dropped >= 1 && lost.length === 0,
+         'J1. a retirement and the re-certification after it leave every ' +
+         'certificate the realm was publishing known to its responder — ' +
+         'good, or revoked, never unknown',
+         JSON.stringify({ dropped: retiring.dropped, published: published,
+                          lost: lost, before: slotsBefore,
+                          after: slotsOf() }));
+
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
   })().catch(function (e) {
@@ -398,7 +450,8 @@ function childMain() {
 function inAChild(t) {
   log.debug("Entering inAChild().");
   const out = path.join(os.tmpdir(), 'signing-rotation-' + process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|CONFIG_FILE$)/.test(key)) {

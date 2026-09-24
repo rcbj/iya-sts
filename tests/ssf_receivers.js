@@ -80,8 +80,9 @@ const BOB = { username: 'bob', sub: 'urn:sts:user:bob', mail: '' };
 function delivered(subject, payload, uri) {
   log.debug("Entering delivered().");
   log.debug("Leaving delivered().");
-  return { surface: receivers.PORTAL, jti: 'j' + Math.random().toString(16)
-    .slice(2, 10), at: new Date().toISOString(),
+  return { surface: receivers.PORTAL,
+    jti: 'j' + require('crypto').randomBytes(4).toString('hex'),
+    at: new Date().toISOString(),
     claims: { sub_id: subject,
       events: (function () {
         const map = {};
@@ -612,9 +613,9 @@ function run(t) {
   t.log.info('I. status(), which is what an empty page has to say');
   // -----------------------------------------------------------------------
   const healthy = receivers.status(receivers.ADMIN);
-  t.equal(healthy.why.length, 0,
+  t.check(healthy.why.length === 0,
           'with everything on and a stream in place there is nothing to ' +
-          'explain');
+          'explain', JSON.stringify(healthy.why));
   config.setOverride('ssf.pushDelivery', 'false');
   const quiet = receivers.status(receivers.ADMIN);
   t.check(quiet.why.join(' ').indexOf('ssf.pushDelivery') >= 0,
@@ -667,7 +668,8 @@ function deliverSigned(t, surface, bearer, person, quiet) {
     payload: { event_timestamp: Math.floor(Date.now() / 1000) },
     subject: { format: 'complex', user: { format: 'iss_sub',
         iss: 'https://sts.example.com', sub: person.sub },
-      session: { format: 'opaque', id: 's-' + Math.random() } } });
+      session: { format: 'opaque',
+        id: 's-' + require('crypto').randomBytes(8).toString('hex') } } });
   const token = events.signSetSync(claims);
   const taken = receivers.accept(surface, {
     headers: { authorization: bearer,

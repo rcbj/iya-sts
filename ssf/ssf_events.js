@@ -85,6 +85,10 @@ const nodeCrypto = require('crypto');
 const { log, signJwtAs, signJwtAsAsync, randomId, nowSec, allSigningKeys,
   STS, kidNamesKey } = require('../common/helpers');
 const config = require('../common/config');
+// A leaf (it requires only `config` and `error_codes`): the two deliberate
+// defects below are read through `mode.valueInForce()`, which answers the
+// default in a product realm (#104).
+const mode = require('../common/mode');
 // THE ONE PLACE THIS SERVICE VERIFIES A SIGNATURE, `common/crypto.js`
 // (2026-09-10). `verifySet()` below is what reads a SET back, and it goes
 // through that module like every other verification here. It is a LEAF (rule
@@ -1109,6 +1113,52 @@ const STS_EVENTS = [
       log.debug("Leaving generate().");
       return payload;
     }
+  },
+  // #169 (2026-09-23, rcbj's decision 4): a realm's krbtgt key was rotated
+  // WITH NOTHING KEPT — Active Directory's double reset in one act — so every
+  // ticket-granting ticket its KDC issued before it is refused, and every
+  // person's Kerberos session in the realm has ended. Like the one above it
+  // has no subject: it is about the realm's KDC, not anybody. An ordinary
+  // rotation is not announced, because every TGT goes on working.
+  {
+    uri: STS_PREFIX + 'kerberos-tickets-invalidated',
+    family: 'sts',
+    name: 'Kerberos Tickets Invalidated',
+    subject: 'none',
+    members: [
+      { name: 'realm', required: true, type: 'string',
+        what: 'The trust realm whose krbtgt key was replaced.' },
+      { name: 'kerberos_realm', required: true, type: 'string',
+        what: 'The Kerberos realm its KDC answers for.' },
+      { name: 'kvno', required: true, type: 'number',
+        what: 'The krbtgt key version now current; no earlier one is kept.' },
+      { name: 'reason', required: true, type: 'enum',
+        values: ['invalidated'],
+        what: 'Why: an administrator asked for "rotate and invalidate".' },
+      { name: 'event_timestamp', required: false, type: 'number',
+        what: 'When the key was replaced, in seconds since the epoch.' }
+    ],
+    required: ['realm', 'kerberos_realm', 'kvno', 'reason'],
+    what: 'NON-SPEC, this service\'s own. A realm\'s krbtgt key was ' +
+          'replaced and no previous version kept, so every Kerberos ' +
+          'ticket-granting ticket issued before this event is refused ' +
+          '(KRB_AP_ERR_BADKEYVER) at its next use, and every person signs ' +
+          'in to Kerberos again. A receiver that trusts sessions built on ' +
+          'those tickets re-checks them.',
+    generate: function (values) {
+      log.debug("Entering generate().");
+      const v = values || {};
+      const payload = {
+        realm: String(v.realm || 'default'),
+        kerberos_realm: String(v.kerberos_realm || ''),
+        kvno: Number(v.kvno) || 0,
+        reason: 'invalidated',
+        event_timestamp: Number(v.event_timestamp) ||
+                         Math.floor(Date.now() / 1000)
+      };
+      log.debug("Leaving generate().");
+      return payload;
+    }
   }
 ];
 
@@ -1516,12 +1566,14 @@ function buildSet(options) {
     // receiver deciding whether to end a session cares about the second one.
     claims.toe = asked.toe;
   }
-  if (config.value('ssf.legacySubClaim') && asked.subject &&
+  if (mode.valueInForce('ssf.legacySubClaim') && asked.subject &&
       typeof asked.subject.sub === 'string') {
     // The deliberate defect. RFC 8417 discourages `sub` on a SET and SSF uses
     // `sub_id`; a client written against a transmitter that emits `sub`
     // anyway will silently read nothing here, which is precisely the failure
-    // worth being able to reproduce. See ssf.legacySubClaim.
+    // worth being able to reproduce. See ssf.legacySubClaim. Development mode
+    // only (#104): in a product realm the read answers false whatever is
+    // stored.
     claims.sub = asked.subject.sub;
   }
   log.debug('Leaving buildSet(). jti=' + claims.jti);
@@ -1551,7 +1603,10 @@ function signingAlgorithm() {
 // device as `oauth2.breakIdTokenNonce`: it flips one byte of the signature
 // AFTER signing, so a receiver that does not verify accepts an event that
 // nothing signed. That path is unreachable against a correct transmitter,
-// which is exactly why a debugger needs it.
+// which is exactly why a debugger needs it. DEVELOPMENT MODE ONLY (#104,
+// `mode.spoilsOnPurpose()`): read through `mode.valueInForce()` when the
+// token is signed, so a realm switched to product stops breaking signatures
+// at once, whatever is still stored.
 // ---------------------------------------------------------------------------
 function signSet(claims, options) {
   log.debug('Entering signSet().');
@@ -1569,7 +1624,7 @@ function signSet(claims, options) {
     // `ssf.setCertificateHeader` decides the `x5c` / `x5u`.
     certificateHeader: 'ssf-set' })
     .then(function (token) {
-      if (!config.value('ssf.breakSetSignature')) {
+      if (!mode.valueInForce('ssf.breakSetSignature')) {
         log.debug('Leaving signSet(). Signed with ' + alg + '.');
         return token;
       }
@@ -1834,6 +1889,7 @@ module.exports = {
   STS_PREFIX: STS_PREFIX,
   STS_EVENTS: STS_EVENTS,
   SIGNING_KEY_ROTATED: STS_PREFIX + 'signing-key-rotated',
+  KERBEROS_TICKETS_INVALIDATED: STS_PREFIX + 'kerberos-tickets-invalidated',
   STATUSES: STATUSES,
   supportedEventUris: supportedEventUris,
   validateEvent: validateEvent,

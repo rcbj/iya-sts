@@ -53,6 +53,11 @@ const log = require('bunyan').createLogger({ name: 'kerberos_person_keys',
 
 const ROOT = path.join(__dirname, '..');
 
+// How many enctypes a PRODUCT key record, keytab or listing carries: the
+// four AES types of the default `krb5.enctypes`, which product reads without
+// 23 (rc4-hmac) since #182 — it was five.
+const PRODUCT_ENCTYPES = 4;
+
 // ---------------------------------------------------------------------------
 // AN INDEPENDENT KEYTAB READER. Written from MIT's `kt_file.c` layout, not from
 // `krb5_keytab.js`, and deliberately in a different style so the two share no
@@ -218,7 +223,7 @@ async function developmentIsUnchanged(t) {
   t.check(report.ok === true, 'a development AS-REQ for alice with ' +
                               'krb5.userPassword gets a TGT',
           JSON.stringify(report));
-  const fresh = 'devprobe' + Math.random().toString(36).slice(2, 8);
+  const fresh = 'devprobe' + require('crypto').randomBytes(3).toString('hex');
   const onDemand = await driveAsExchange(principals.USER_PASSWORD, fresh);
   t.check(onDemand.ok === true, 'a name nobody configured is still created ' +
                                 'on demand',
@@ -528,7 +533,16 @@ async function productChild() {
   const toAlice3 = await asReq('kpbob', PW, ['kpalice']);
   out.toAlice3 = brief(toAlice3);
   const PW2 = 'Another-Strong-Pass-42?';
+  const hashBefore = String(entryOf('kpalice').attributes.userpassword[0]);
   credentials.setPassword('kpalice', PW2);
+  await personKeys.idle();
+  // A DERIVATION OF THE OLD PASSWORD THAT STARTS AFTER THE CHANGE LANDED — a
+  // verify queued behind another derivation, or run on another node. It
+  // carries the hash the old password was checked against, and must write
+  // nothing: stamping the entry's NEW hash on the OLD password's keys made the
+  // new password's keytab refused on the cluster stack (2026-09-24).
+  personKeys.observePassword('kpalice', PW, { event: 'set',
+                                              hash: hashBefore });
   await personKeys.idle();
   // AFTER THE CHANGE: both old tickets still open at the KDC, and what it
   // issues for alice now is under kvno 4.
@@ -925,9 +939,13 @@ function productModeAuthenticatesPeople(t, r) {
                                           'password');
   t.check(!!r.alice && r.alice.kvno === 3 && r.alice.sealed === true &&
           r.alice.current === true &&
-          r.alice.etypes.length === 5,
-          'SETTING THE PASSWORD DERIVED KEYS: kvno krb5.kvno, every enctype, ' +
-          'sealed, and matching the password', JSON.stringify(r.alice));
+          r.alice.etypes.length === PRODUCT_ENCTYPES &&
+          r.alice.etypes.every(function (e) {
+            return e.etype !== 23;
+          }),
+          'SETTING THE PASSWORD DERIVED KEYS: kvno krb5.kvno, every enctype ' +
+          'product uses (the four AES, no rc4-hmac — #182), sealed, and ' +
+          'matching the password', JSON.stringify(r.alice));
   t.check(r.storedSealed === true && r.storedClearMentionsKey === false,
           'the entry holds ONE sealed value and no key in the clear');
   t.equal(r.boundName, 'kpalice', 'the name is sealed WITH the keys');
@@ -1002,7 +1020,8 @@ function productModeRefusesAndUpgrades(t, r) {
 function keysAreNeverShown(t, r) {
   log.debug("Entering keysAreNeverShown().");
   t.log.info('=== no key in an audit row, a view or a dump ===');
-  t.check(Array.isArray(r.keyMaterial) && r.keyMaterial.length === 5,
+  t.check(Array.isArray(r.keyMaterial) &&
+          r.keyMaterial.length === PRODUCT_ENCTYPES,
           'the child read the real key bytes out of the seal to look for them');
   t.check(r.auditHasDerivedRow === true, 'the derivation IS audited');
   t.check(r.auditHasKey === false && r.auditHasPassword === false,
@@ -1026,11 +1045,11 @@ function servicePrincipalsWork(t, r) {
           JSON.stringify({ ok: r.createOk, errors: r.createErrors,
                            kvno: r.createKvno }));
   const entries = independentKeytabRead(Buffer.from(r.keytab, 'base64'));
-  t.check(entries.length === 5 && entries.every(function (e) {
+  t.check(entries.length === PRODUCT_ENCTYPES && entries.every(function (e) {
     return e.name.join('/') === 'HTTP/web.example.com' &&
-           e.realm === 'EXAMPLE.COM' && e.vno === 3;
-  }), 'THE KEYTAB PARSES WITH THE INDEPENDENT READER: five enctypes for the ' +
-      'SPN at kvno 3',
+           e.realm === 'EXAMPLE.COM' && e.vno === 3 && e.enctype !== 23;
+  }), 'THE KEYTAB PARSES WITH THE INDEPENDENT READER: the four AES enctypes ' +
+      '(no rc4-hmac in product, #182) for the SPN at kvno 3',
      JSON.stringify(entries.map(function (e) { return [e.enctype, e.vno]; })));
   t.check(r.appViewWithheld === true, 'the application view withholds the ' +
                                       'stored key');
@@ -1070,7 +1089,7 @@ function servicePrincipalsWork(t, r) {
                                             'refused');
   t.check(r.krbtgtRefused === true, 'krbtgt/* is refused');
   t.check(Array.isArray(r.unknownAction) &&
-          /Unknown action "nope"\. There are six: create-service, rotate-service, delete-service, clear-person-keys, drop-previous-service-keys, drop-previous-person-keys\./
+          /Unknown action "nope"\. There are nine: create-service, rotate-service, delete-service, clear-person-keys, drop-previous-service-keys, drop-previous-person-keys, reset-person-keytab, rotate-krbtgt, rotate-krbtgt-invalidate\./
             .test(r.unknownAction.join(' ')),
           'an unknown action gets the house sentence',
           JSON.stringify(r.unknownAction));
@@ -1112,7 +1131,7 @@ function previousPersonVersionsAreKept(t, r) {
   t.check(Array.isArray(r.aliceRetainedAfterChange) &&
           r.aliceRetainedAfterChange.length === 1 &&
           r.aliceRetainedAfterChange[0].kvno === 3 &&
-          r.aliceRetainedAfterChange[0].etypes.length === 5 &&
+          r.aliceRetainedAfterChange[0].etypes.length === PRODUCT_ENCTYPES &&
           !isNaN(Date.parse(r.aliceRetainedAfterChange[0].expiresAt)),
           'the people list shows the kept version: kvno, enctypes and expiry',
           JSON.stringify(r.aliceRetainedAfterChange));
@@ -1182,10 +1201,11 @@ function previousServiceVersionsAreKept(t, r) {
     return entries.map(function (e) { return e.vno; })
       .filter(function (v, i, all) { return all.indexOf(v) === i; }).sort();
   };
-  t.check(rotated.length === 10 && JSON.stringify(vnos(rotated)) === '[3,4]' &&
+  t.check(rotated.length === 2 * PRODUCT_ENCTYPES &&
+          JSON.stringify(vnos(rotated)) === '[3,4]' &&
           JSON.stringify(r.rotateKeytabKvnos) === '[4,3]',
-          'THE ROTATION\'S KEYTAB CARRIES BOTH kvnos — five enctypes at 4 ' +
-          'and five at 3 — read by the independent reader, as MIT\'s ktadd ' +
+          'THE ROTATION\'S KEYTAB CARRIES BOTH kvnos — four enctypes at 4 ' +
+          'and four at 3 — read by the independent reader, as MIT\'s ktadd ' +
           'without -k leaves one',
           JSON.stringify({ vnos: vnos(rotated), count: rotated.length,
                            keytabKvnos: r.rotateKeytabKvnos }));
@@ -1238,7 +1258,7 @@ function previousServiceVersionsAreKept(t, r) {
           JSON.stringify(r.accept4After2));
   t.check(Array.isArray(r.servicesListed) && r.servicesListed.length === 1 &&
           r.servicesListed[0].kvno === 4 &&
-          r.servicesListed[0].etypes.length === 5,
+          r.servicesListed[0].etypes.length === PRODUCT_ENCTYPES,
           'the service list shows kvno 4 kept',
           JSON.stringify(r.servicesListed));
   t.check(r.dropService.ok === true && r.dropService.dropped === 1 &&

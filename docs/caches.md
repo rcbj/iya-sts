@@ -146,6 +146,7 @@ there is no stored copy to fall back to, so keys stay in memory.
 | Cache | Holds | Scope | How long | Setting |
 |---|---|---|---|---|
 | Signed metadata | the signed `signed_metadata` JWT published in the discovery document | per realm | the setting; at most the second setting's number of entries | `oauth2.signedMetadataCacheS` (60), `oauth2.maxSignedMetadataEntries` (64) |
+| Fetched client key sets | the JSON Web Key Set a client's registered `jwks_uri` answered (#120) | per realm | 256 entries per realm, the oldest dropped | `oauth2.clientJwksCacheS` (300), `oauth2.clientJwksRefetchS` (30) |
 | Request objects | JWT request objects fetched from a client's registered `request_uri` | per realm | the setting; 0 (the default) turns it off; at most 256 entries | `oauth2.requestUriCacheS` (0) |
 | Authorization details types | parsed RFC 9396 type definitions and their compiled JSON Schemas | per process | until the definition text changes (512 entries) | — |
 | SSF event permissions | which Shared Signals events each application may receive | per realm | until any application entry changes; 4,096 answers, oldest first | — |

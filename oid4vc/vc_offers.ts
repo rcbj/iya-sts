@@ -966,7 +966,9 @@ class VcOffers {
       // fetches.
       let offerQuery;
       if (String(req.query.by || '') === 'reference') {
-        const id = randomId(12);
+        // 128 bits (#65): fetching this URI hands over the offer and its
+        // pre-authorized code, so it is a bearer value like the code.
+        const id = randomId(16);
         credentialOffers.set(id,
                              { offer: built.offer, expires: now +
                               this.offerTtlMs() });

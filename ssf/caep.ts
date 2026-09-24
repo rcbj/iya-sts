@@ -96,6 +96,14 @@ import subjects = require('./ssf_subjects');
 // library over `common/` and registers no route, so the require moves nothing
 // and closes no cycle.
 import stepUp = require('../oauth-oidc/step_up');
+// WHICH CLAIMS A DIRECTORY WRITE MOVED (#145): the catalogue that maps an LDAP
+// attribute onto the claim it becomes, and the groups claim. Both are
+// `common/` libraries loaded at 5 and 6, long before this file, and neither
+// requires anything of SSF, so the requires close no cycle.
+import claimAttributes = require('../common/claim_attributes');
+// `fp_ua`'s fingerprint (#145). A leaf library.
+import stsCrypto = require('../common/crypto');
+import groupClaims = require('../common/group_claims');
 
 // One register row. See `blankRow()`.
 interface CaepRow {
@@ -150,18 +158,21 @@ interface CaepRegisterDeps {
               complexSubject(members: Record<string, any>):
                 Record<string, any> };
   stepUp: { LEVELS: string[] };
+  claimAttributes: { CATALOGUE: ReadonlyArray<{ ldap: string;
+                                                 claim: string[] }> };
+  groupClaims: { groupsOf(username: unknown): { enabled?: boolean;
+                                                claim: string;
+                                                values: string[] } };
 }
 
 // The acts this service can actually OBSERVE, and their event types — three
-// at first, five now (the fourth and fifth are marked below). Written as short
+// at first, six now (the fourth to sixth are marked below). Written as short
 // names because that is what `caep.autoEmitTypes` holds — a setting whose
 // values were 60-character URIs would be a setting nobody could type. The
-// other three CAEP events are things nothing here observes on a sign-on
-// session: no device reports compliance to this service and no risk engine
-// talks to it (`token-claims-change` is sent only by GNAP, through
-// `gnap/gnap_signals.ts`), so they are emitted by hand and a row naming one of
-// them is dropped with a warning rather than producing an event nothing can
-// cause.
+// other two CAEP events are things nothing here observes: no device reports
+// compliance to this service (#164 will) and no risk engine talks to it
+// (#62), so they are emitted by hand and a row naming one of them is dropped
+// with a warning rather than producing an event nothing can cause.
 const AUTO_ACTS: Record<string, string> = {
   established: 'session-established',
   presented: 'session-presented',
@@ -180,7 +191,20 @@ const AUTO_ACTS: Record<string, string> = {
   // this service used to send. A re-authentication that leaves `acr` where it
   // was emits nothing; `observe()` below decides. See `authn/CLAUDE.md`, *What
   // an authenticated identity is here*.
-  reauthenticated: 'assurance-level-change'
+  reauthenticated: 'assurance-level-change',
+  // THE SIXTH (#145, 2026-09-22): a directory write moved a claim of a person
+  // who holds live tokens or assertions — an attribute the claim catalogue
+  // maps, their own `memberOf`, or a group they joined, left or whose name
+  // changed. `claimsChangeFor()` below reads the write; `ssf.ts` checks the
+  // live issuance and sends it. GNAP's grant modification sends the same type
+  // through `gnap/gnap_signals.ts`, unchanged.
+  claims: 'token-claims-change',
+  // THE SEVENTH (#62 P4, 2026-09-22): a person's risk level CHANGED — the
+  // risk engine assessed a sign-in, a live session or a re-check of one, and
+  // the `risk-response` policy permitted announcing it. Its subject names the
+  // PERSON (`principal` USER): the standing moved, not one session. `ssf.ts`'s
+  // `riskAutoEmit()` sends it.
+  risk: 'risk-level-change'
 };
 
 // THE SCALE THIS SERVICE'S OWN LEVELS ARE ON, and it is deliberately not
@@ -288,6 +312,69 @@ class CaepRegister {
   // service cannot cause is DROPPED WITH A WARNING rather than honoured: there
   // is no code path that would ever fire it, so honouring it would leave a
   // setting that reads as configured and does nothing.
+  // -------------------------------------------------------------------------
+  // THE CLAIMS A DIRECTORY WRITE MOVED (#145), from the directory's account
+  // observer notice: `kind: 'updated'` with the person's attribute maps before
+  // and after, or `kind: 'membership'` when a group they are in changed.
+  // Answers `{ claims }` in CAEP token-claims-change's shape — each changed
+  // claim with its NEW value, `null` for one that is gone — or null when
+  // nothing a token carries moved. The claim NAMES are the catalogue's (a
+  // nested claim nests: `address.locality` is `{ address: { locality } }`),
+  // and the groups claim is whatever `group_claims.ts` names it, with the
+  // person's groups as they are now.
+  // -------------------------------------------------------------------------
+  claimsChangeFor(notice?: Record<string, any> | null):
+      { claims: Record<string, any> } | null {
+    const { helpers: { log }, claimAttributes, groupClaims } = this.deps;
+    log.debug("Entering CaepRegister.claimsChangeFor().");
+    const asked = notice || {};
+    const username = String(asked.username || '');
+    if (!username) {
+      log.debug("Leaving CaepRegister.claimsChangeFor(). Nobody named.");
+      return null;
+    }
+    const claims: Record<string, any> = {};
+    let groupsMoved = asked.kind === 'membership';
+    if (asked.kind === 'updated') {
+      const before = asked.before || {};
+      const after = asked.after || {};
+      const valuesAt = function (map: Record<string, any>, name: string) {
+        return (map[name] || []).map(String);
+      };
+      claimAttributes.CATALOGUE.forEach(function (row) {
+        const name = row.ldap.toLowerCase();
+        const now = valuesAt(after, name);
+        if (JSON.stringify(valuesAt(before, name)) === JSON.stringify(now)) {
+          return;
+        }
+        let at = claims;
+        row.claim.slice(0, -1).forEach(function (part) {
+          at[part] = at[part] && typeof at[part] === 'object' ? at[part] : {};
+          at = at[part];
+        });
+        at[row.claim[row.claim.length - 1]] = now.length === 0 ? null
+          : now.length === 1 ? now[0] : now;
+      });
+      // A person's own `memberOf` is read live as their groups, so writing it
+      // moves the groups claim exactly as a group's `member` does.
+      groupsMoved = JSON.stringify(valuesAt(before, 'memberof')) !==
+                    JSON.stringify(valuesAt(after, 'memberof'));
+    }
+    if (groupsMoved) {
+      const groups = groupClaims.groupsOf(username);
+      if (groups && groups.enabled !== false && groups.claim) {
+        claims[groups.claim] = groups.values.slice(0);
+      }
+    }
+    if (!Object.keys(claims).length) {
+      log.debug("Leaving CaepRegister.claimsChangeFor(). No claim moved.");
+      return null;
+    }
+    log.debug("Leaving CaepRegister.claimsChangeFor(). " +
+              Object.keys(claims).join(', ') + ".");
+    return { claims: claims };
+  }
+
   autoEmitActs(): string[] {
     const { helpers: { log }, config, events } = this.deps;
     log.debug("Entering CaepRegister.autoEmitActs().");
@@ -841,13 +928,24 @@ class CaepRegister {
 
     const uri = events.CAEP_PREFIX + short;
     const values: Record<string, any> = {};
+    // THE USER AGENT'S FINGERPRINT (#145), on the two events CAEP gives the
+    // member to, where the act arrived with a request to read it from.
+    const headers = (asked.req && asked.req.headers) || {};
+    const fingerprint = stsCrypto.userAgentFingerprint(
+      headers['user-agent'] || '');
     if (act === 'established') {
       values.acr = row.acr;
       values.amr = row.amr;
       values.ext_id = sessionId;
+      if (fingerprint) {
+        values.fp_ua = fingerprint;
+      }
     }
     if (act === 'presented') {
       values.ext_id = sessionId;
+      if (fingerprint) {
+        values.fp_ua = fingerprint;
+      }
     }
     if (act === 'reauthenticated') {
       values.namespace = ACR_NAMESPACE;
@@ -1057,7 +1155,9 @@ class CaepRegister {
       audit: audit,
       events: events,
       subjects: subjects,
-      stepUp: stepUp
+      stepUp: stepUp,
+      claimAttributes: claimAttributes,
+      groupClaims: groupClaims
     };
   }
 }
@@ -1087,6 +1187,7 @@ export = {
   enabled: slot.forward('enabled'),
   supportedEventUris: slot.forward('supportedEventUris'),
   autoEmitActs: slot.forward('autoEmitActs'),
+  claimsChangeFor: slot.forward('claimsChangeFor'),
   subjectFor: slot.forward('subjectFor'),
   sessionIdOf: slot.forward('sessionIdOf'),
   rowFor: slot.forward('rowFor'),

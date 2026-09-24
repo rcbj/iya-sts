@@ -23,12 +23,18 @@
 // third, GNAP (2026-09-12), is here for a different reason and attemptGnap()
 // argues it: a GNAP client application owns a stream as ITSELF.
 //
-// **IN DEVELOPMENT IT IS A TURNSTILE AND NOT A LOCK**, exactly as
-// `scim/CLAUDE.md` says of its own: anybody can get a token with either SSF
-// scope from this service's token endpoint with any grant, and any username
-// with any password but `invalid` passes Basic. What the gate buys is that a
-// client's 401, 403 and scope-handling paths can be run at all — none of which
-// an unauthenticated endpoint can exercise.
+// **IN DEVELOPMENT BASIC IS A TURNSTILE AND NOT A LOCK**, exactly as
+// `scim/CLAUDE.md` says of its own: any username with any password but
+// `invalid` passes it. What the gate buys is that a client's 401, 403 and
+// scope-handling paths can be run at all — none of which an unauthenticated
+// endpoint can exercise.
+//
+// **A TOKEN'S SCOPE IS TIED TO ITS CLIENT, IN BOTH MODES (#110, 2026-09-22).**
+// Until then anybody could get a token with either SSF scope from this
+// service's token endpoint with any grant. The token endpoint and GNAP now
+// issue them only to a client whose `oauthAllowedScope` declares them, and
+// `undeclaredRefusal()` asks again on every call (`STS-SSF-0107`), so an
+// allowance removed from a client stops the tokens it already holds.
 //
 // **IN PRODUCT MODE BASIC VERIFIES THE PASSWORD (2026-09-12)**, through
 // `common/credentials.ts` — the one place a presented password is checked, and
@@ -94,6 +100,9 @@ import dpop = require('../oauth-oidc/dpop');
 // The decision object is never serialised to a caller — the route sends `err`
 // and `description` and nothing else.
 import errorCodes = require('../common/error_codes');
+// WHICH CLIENTS MAY HOLD THE SHARED SIGNALS SCOPES (#110), asked again of
+// every token. A library that requires only libraries.
+import scopePolicy = require('../common/scope_policy');
 
 interface Scheme {
   id: string;
@@ -143,6 +152,7 @@ interface SsfAuthDeps {
     presentedAccessToken(req: any, res: any, what: string): any;
   };
   errorCodes: { codeOf(value: any): string };
+  scopePolicy: { declares(clientId: unknown, scope: string): boolean };
   // `ssf/ssf_cluster.ts`, `gnap/gnap_access.ts` and `gnap/gnap_rs.ts`,
   // required when first asked for. See `attemptGnap()`.
   loadSsfCluster(): {
@@ -419,14 +429,51 @@ class SsfAuth {
         'not the same permission: "' + this.scopeRead() + '" reads a ' +
         'stream, its status and its poll queue, and "' + this.scopeWrite() +
         '" changes what this transmitter delivers and to whom. Ask for the ' +
-        'one you need — this service grants either to anybody.',
+        'one you need, as a client whose oauthAllowedScope declares it.',
         { 'WWW-Authenticate': this.challenges() }, 'access_denied');
+    }
+    const withdrawn = this.undeclaredRefusal(String(claims.client_id || ''),
+                                             need);
+    if (withdrawn) {
+      log.debug("Leaving SsfAuth.attemptOAuth(). The client no longer " +
+                "declares the scope.");
+      return withdrawn;
     }
     log.debug("Leaving SsfAuth.attemptOAuth(). Accepted.");
     return { ok: true, status: 200, scheme: presented.scheme === 'dpop'
       ? 'dpop' : 'bearer',
       principal: SsfAuth.principalOfClaims(claims),
       scopes: scopes, err: '', description: '', headers: {} };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE CLIENT STILL DECLARES THE SCOPE (#110, 2026-09-22). The token
+  // endpoint and GNAP issue the Shared Signals scopes only to a client whose
+  // `oauthAllowedScope` lists them; asked again on every call, so an
+  // allowance removed from a client stops the tokens it already holds.
+  // `client` is an OAuth token's client_id, or the GNAP application's
+  // identifier. Null when it declares the scope, or when nothing is needed.
+  // -------------------------------------------------------------------------
+  private undeclaredRefusal(client: string, need: string): Decision | null {
+    const { helpers: { log }, scopePolicy } = this.deps;
+    log.debug("Entering SsfAuth.undeclaredRefusal().");
+    if (need === 'none') {
+      log.debug("Leaving SsfAuth.undeclaredRefusal(). Nothing needed.");
+      return null;
+    }
+    const required = need === 'write' ? this.scopeWrite() : this.scopeRead();
+    if (scopePolicy.declares(client, required)) {
+      log.debug("Leaving SsfAuth.undeclaredRefusal(). Declared.");
+      return null;
+    }
+    log.debug("Leaving SsfAuth.undeclaredRefusal(). Not declared.");
+    return this.refusal('STS-SSF-0107', 403,
+      'This token carries "' + required + '", and the client it was issued ' +
+      'to, "' + client + '", does not declare that scope in its ' +
+      'oauthAllowedScope. A Shared Signals scope is honoured only while the ' +
+      'client declares it, so removing it from the application cuts off ' +
+      'tokens already issued.',
+      { 'WWW-Authenticate': this.challenges() }, 'access_denied');
   }
 
   // -------------------------------------------------------------------------
@@ -577,9 +624,18 @@ class SsfAuth {
         'delivers and to whom.',
         { 'WWW-Authenticate': this.challenges(req) }, 'access_denied');
     }
+    const gnapWithdrawn = this.undeclaredRefusal(
+      String(record.instanceId || ''), need);
+    if (gnapWithdrawn) {
+      log.debug("Leaving SsfAuth.attemptGnap(). The client no longer " +
+                "declares the scope.");
+      return gnapWithdrawn;
+    }
     const granted = [this.scopeRead(), this.scopeWrite()]
       .filter((scope, i) => {
-        return this.gnapCovers(record.access, i === 0 ? 'read' : 'write');
+        return this.gnapCovers(record.access, i === 0 ? 'read' : 'write') &&
+          this.deps.scopePolicy.declares(String(record.instanceId || ''),
+                                         scope);
       });
     log.debug("Leaving SsfAuth.attemptGnap(). Accepted " +
               record.instanceId + '.');
@@ -649,8 +705,9 @@ class SsfAuth {
         'any username with any password except "' + REFUSED_PASSWORD + '".',
         { 'WWW-Authenticate': this.challenges() });
     }
+    // `door: 'ssf'` (#101): a password-only door — see credentials.ts.
     const checked = credentials.verify(user, password,
-                                       { via: 'SSF HTTP Basic' });
+                                       { via: 'SSF HTTP Basic', door: 'ssf' });
     if (!checked.ok) {
       log.debug("Leaving SsfAuth.attemptBasic(). Refused: " + checked.reason);
       return this.refusal(checked.reason === 'reserved-refusal'
@@ -674,7 +731,11 @@ class SsfAuth {
       scopes: this.scopeRead() + ' ' + this.scopeWrite(), err: '',
       description: '',
       headers: {},
-      note: mode.verifiesCredentials()
+      // An app password is said so (#101).
+      note: checked.reason === 'app-password' && checked.appPassword
+        ? 'HTTP Basic (an app password, "' + checked.appPassword.name +
+          '", was verified)'
+        : mode.verifiesCredentials()
         ? 'HTTP Basic (the password was verified)'
         : 'HTTP Basic (no password was checked)' };
   }
@@ -776,10 +837,12 @@ class SsfAuth {
         ? 'Product mode: a Basic password is verified against the ' +
           'person\'s directory entry, and a verified person is granted ' +
           'both scopes. An access token still has to be one this service ' +
-          'issued, carrying the scope the operation needs.'
-        : 'A turnstile rather than a lock. Anybody can get a token with ' +
-          'either scope from this service\'s own token endpoint with any ' +
-          'grant, and any username with any password but "' +
+          'issued, carrying the scope the operation needs, to a client that ' +
+          'still declares it.'
+        : 'A turnstile rather than a lock for Basic. A token\'s scope is ' +
+          'issued only to a client whose oauthAllowedScope declares it, ' +
+          'from this service\'s own token endpoint with any grant, and any ' +
+          'username with any password but "' +
           REFUSED_PASSWORD + '" passes Basic. What it buys is that a ' +
           'client\'s 401, 403 and scope-handling paths can be run at all.'
     };
@@ -799,6 +862,7 @@ class SsfAuth {
       credentials: credentials,
       dpop: dpop,
       errorCodes: errorCodes,
+      scopePolicy: scopePolicy,
       loadSsfCluster: function () {
         return require('./ssf_cluster');
       },

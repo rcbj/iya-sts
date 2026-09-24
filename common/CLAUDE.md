@@ -11,7 +11,7 @@ more than one family needs it, not because it felt general.
 | `config_file.js` | The one place that decides what `CONFIG_FILE` means. Requires nothing at all. |
 | `config.js` | Every setting this service has, and the refusal to start without one. The only module `helpers.js` depends on. |
 | `helpers.js` | Log, keys, `signJwt()`, `userFor()`, the cross-protocol parsers. |
-| `crypto.js` | **EVERY SIGNATURE AND EVERY CIPHER IN THIS SERVICE, since 2026-08-27.** XML Signature and XML Encryption, JWS, JWE, key and certificate generation, thumbprints, constant-time comparison — and since 2026-09-21 (#40) signatures over raw bytes and TPM 2.0 KDFa / MakeCredential (section 8). A LEAF — it sits UNDER `helpers.js` and may never require it back. See below. |
+| `crypto.js` | **EVERY SIGNATURE AND EVERY CIPHER IN THIS SERVICE, since 2026-08-27.** XML Signature and XML Encryption, JWS, JWE, key and certificate generation, thumbprints, constant-time comparison — and since 2026-09-21 (#40) signatures over raw bytes and TPM 2.0 KDFa / MakeCredential (section 8), and since 2026-09-22 (#173) the Kerberos PRF and KRB-FX-CF2 (section 9), and since 2026-09-23 (#105) WebAuthn's COSE signatures (`verifyCoseSignature()`, RFC 9053/8230/9964 — PS256/384/512 and ML-DSA-44/65/87 among them) and the attestation structures: a TPM's TPMT_PUBLIC, TPMS_ATTEST and TPMT_SIGNATURE, Android's KeyDescription, Apple's nonce and FIDO's AAGUID extension (section 10). **And since 2026-09-23 (#168) XML Encryption 1.1's `rsa-oaep` with a named digest and MGF1 (SHA-256 by default) and ECDH-ES key agreement (ConcatKDF, AES key wrap) in both directions, and a caller's allow-list on `decryptElement()` (`allowedCiphers`, `allowedKeyManagement`, `allowedOaepDigests`), asked before any key operation** — which is what a federation relationship decrypts a partner's assertion under (`federation/CLAUDE.md`). **And since 2026-09-22 (#63) DKIM signing (RFC 6376 relaxed/relaxed, rsa-sha256 and RFC 8463 ed25519-sha256) and a verifier for this service's own tests (section 12)**, so the mail channel's SMTP transport signs through here and never through nodemailer's own signer (3ba). A LEAF — it sits UNDER `helpers.js` and may never require it back. See below. |
 | `app.js` | The express app and every middleware. Requiring it is how a protocol module gets somewhere to register. |
 | `admin_stats.js` | The counters, the revocation set, and `recordAuthentication()` — the single authentication funnel. |
 | `audit.js` | What happened, when, and to whom, as discrete events. Sits BESIDE `admin_stats.js`, not under it. |
@@ -20,6 +20,7 @@ more than one family needs it, not because it felt general.
 | `signing_history.ts` | **EVERY SIGNING KEY A REALM HAS EVER HELD (2026-09-22, #42's follow-up)** — the record that outlives the key. `signing.retire` drops a retired key past its grace and its private half is gone; this keeps the metadata and the CERTIFICATE, so a signature captured months ago can still be read back. Append-only, never swept, and DERIVED from the key set rather than from the rotation events — see below. A LIBRARY over `realms` and `error_codes`, with `helpers` and `pki` reached lazily. |
 | `applications.js` | Every application this service has been asked about, stored in the directory under `ou=applications`. |
 | `delegation.js` | Who acted on whose behalf, through what, to reach what — eight mechanisms across three protocol families in ONE model. What HAPPENED. |
+| `delegation_policy.ts` | **WHO MAY ACT FOR WHOM AT WS-TRUST AND RFC 8693 (2026-09-23, #108)** — Kerberos's model on application entries (four attributes) and the person's `stsNotDelegated` and `stsMayAct`, decided at the act, enforced in product and recorded in development, with a deny-only XACML layer on top. Rule 3az, below. |
 | `app_permissions.ts` | **Who MAY reach what, decided in advance** — delegated permissions between two OAuth application entries, in Microsoft Entra ID's shape. The CONFIGURED twin of the file above it, and never to be drawn as one register with it. |
 | `user_graph.ts` | ONE PERSON, END TO END: that register UNIONED with the issued one, so a picture can show every grant, flow, assertion, ticket and SVID in somebody's name beside every delegation naming them. |
 | `credential_graph.ts` | ONE CREDENTIAL, END TO END: where it came from — who held it, in whose name, to reach what — and every generation of exchange behind it, back to the issuance the line rests on. |
@@ -29,7 +30,7 @@ more than one family needs it, not because it felt general.
 | `pqc_support.ts` | **DOES THIS KEY PAIR USE A POST-QUANTUM ALGORITHM — ONE ANSWER (2026-09-13).** Behind the icon on `/admin/pki` and `/admin/keys`, the `pqc` member on those pages' JSON, and the mark in the certificate details dialog. It reads every spelling the two pages hold a key in — a JOSE `alg`, a key-material id, a node key type, an OID, a certificate's SubjectPublicKeyInfo — and answers one of FOUR kinds, because "PQC" is four claims: `pq` (ML-DSA, SLH-DSA), `composite` (one key with a post-quantum and a classical half), `kem` (ML-KEM, which signs nothing), and `hybrid` (a CLASSICAL key whose certificate carries an alternative post-quantum key under X.509 (2019) clause 9.8 — the key itself is not post-quantum). **The key decides, never the signature on its certificate**: an ML-DSA key under an RSA CA is marked and an EC key under an ML-DSA CA is not. A classical key is `null`. A LEAF over `pq_jose.js` and the vendored registry. |
 | `certificate_details.ts` | **ONE CERTIFICATE, EVERY FIELD, AND THE PATH IT BUILDS (2026-09-13)** — the model behind the certificate details dialog on `/admin/pki` and `/admin/crypto-metadata` and `GET /admin-api/certificates`: the tbsCertificate in RFC 5280 section 4.1's order (both signature algorithms, every RDN with its OID, each validity bound's ASN.1 time type, the key's parameters and bytes, both unique identifiers, every extension decoded) and a trust chain BUILT by matching each issuer's name AND verifying its signature, because a stored chain is a snapshot and a replaced Root has the same subject as the one it replaced. Built on the vendored inspector (`describeCertificate()`, `verifyChain()`); fingerprints are node's, and a post-quantum key is named from the PQC registry because the inspector summarises a composite by its classical half. A LEAF: it reads no caller's PEM and decides nothing about where a certificate came from — `admin-core/certificate_views.ts` does. |
 | `pki_merge.js` | **ONE CERTIFICATE AUTHORITY ROW WRITTEN BY SEVERAL NODES AT ONCE (2026-09-14, #46).** The three-way merge `keystore.js` applies under the row's lock: revocations and issued serials are unions, a CA tier or certificate slot is first writer wins, the register's CRL number adds. Pure JSON in, JSON out; a LEAF over config and bunyan. Its header argues why a merge and not a row per revocation. |
-| `pki.js` | **A CERTIFICATE AUTHORITY, since 2026-09-10 — ONE ROOT FOR THE SERVICE AND AN INTERMEDIATE PER TRUST REALM since 2026-09-11 (3w)** — Root, Intermediate, an Issuing CA per use case, and the leaves it issues (signing key pairs, TLS certificates, enrolled certificates). **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). **And since 2026-09-21 (#40) SOMEBODY ELSE'S certificates**: `verifyPathToAnchors()` — a path to a caller's trust anchors, Go's `x509.Certificate.Verify()` as SPIRE's node attestors use it, failing closed on an unhandled critical extension and on any CA with nameConstraints — and OpenSSH certificates (`parseSshPublicKey()`, `parseSshAuthorizedKey()`, `checkSshHostCertificate()`), moved here from `spiffe/` the day they were written at rcbj's direction; their signatures are `crypto.js`'s section 8. The AWS and Azure certificates SPIRE embeds for its cloud attestors are here too, GENERATED into `pki_cloud_anchors.json` (`awsIidCertificate()`, `azureImdsRoots()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms`, `error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules. |
+| `pki.js` | **A CERTIFICATE AUTHORITY, since 2026-09-10 — ONE ROOT FOR THE SERVICE AND AN INTERMEDIATE PER TRUST REALM since 2026-09-11 (3w)** — Root, Intermediate, an Issuing CA per use case, and the leaves it issues (signing key pairs, TLS certificates, enrolled certificates, and since #168 a federation relationship's ENCRYPTION key pair — `issueEncryptionKeyPair()`, the signing door with keyEncipherment or keyAgreement and never digitalSignature, reached through a marker only this module can make). **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). **And since 2026-09-21 (#40) SOMEBODY ELSE'S certificates**: `verifyPathToAnchors()` — a path to a caller's trust anchors, Go's `x509.Certificate.Verify()` as SPIRE's node attestors use it, failing closed on an unhandled critical extension and on any CA with nameConstraints — and OpenSSH certificates (`parseSshPublicKey()`, `parseSshAuthorizedKey()`, `checkSshHostCertificate()`), moved here from `spiffe/` the day they were written at rcbj's direction; their signatures are `crypto.js`'s section 8. **And since 2026-09-23 (#105) a WebAuthn attestation certificate's facts** — `attestationCertificateFacts()` (version, subject, basicConstraints, EKU, the SAN's directoryName types, the extensions' raw values, the key) and `attestationKeyIdentifier()`, the key identifier FIDO MDS lists a fido-u2f model under; a certificate with an EMPTY subject (a TPM AIK) is named by its SAN in `verifyPathToAnchors()`'s sentences, which read `x509.subject` unguarded until then. The AWS and Azure certificates SPIRE embeds for its cloud attestors are here too, GENERATED into `pki_cloud_anchors.json` (`awsIidCertificate()`, `azureImdsRoots()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms`, `error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules. |
 | `cert_enrollment.ts` | **WHO MAY BE ISSUED A CERTIFICATE FOR WHOM, AND WHAT GOES IN IT (2026-09-13)** — the core ACME (`acme/`), EST (`est/`) and SCEP (`scep/`) issue through, so none of the three decides any of it: the identity rule (yourself, or any person or application in the realm for a holder of Admin Write), the nine issued `/admin/pki` profiles and the five refused by design, the PKCS#10 proof of possession for every key family, names built from the DIRECTORY ENTRY with an unowned name refusing the request, every certificate kept on the entry it names (and a private key only when this service made it), and the two entry-bound credentials — an ACME EAB key and a SCEP challenge. A LIBRARY (rule 3ag) whose store is the entry, through a slot `ldap/ldap_server.js` fills. |
 | `enrollment_monitor.ts` | **WHAT THE THREE ENROLLMENT PROTOCOLS HAVE DONE (2026-09-13)** — one vocabulary of counters for `/admin/{acme,est,scep}/monitor`, per realm, merged across processes in `gnap_monitor.js`'s shape, and unable to throw into the request it counts. |
 | `jose_certificate_header.js` | **WHICH `x5c` OR `x5u` A SIGNED TOKEN CARRIES (2026-09-13)** — twelve use cases, one setting each in its protocol's group (`none`/`x5c`/`x5u`/`both`, `x5u` by default, per realm), the chain of the certified key that signed (leaf to service Root), and the `x5u` resource behind `GET /pki/chain/{scope}/{sha256}.pem`. A LIBRARY over `config`, `realms` and `error_codes`; `pki` and `helpers` lazily. See *3af* below. |
@@ -38,6 +39,7 @@ more than one family needs it, not because it felt general.
 | `certificate_subject.js` | **RFC 8705 SECTION 2.1.2's FIVE CERTIFICATE SUBJECT PARAMETERS, READ AND COMPARED (2026-09-13)** — an RFC 4514 DN compared as a name (types, OIDs, escapes, caseIgnoreMatch, a multi-valued RDN in any order), the four subjectAltName kinds off node's `X509Certificate` (a host name without case, an IP by value, an email's domain without case, a URI exactly), and the grammar a registration may hold. `applications.js` asks it what may be written and `oauth-oidc/client_auth.js` whether a certificate matches. A LEAF over `helpers.js`. |
 | `realm_chooser.ts` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list in development and a text box in product (`mode.listsRealmsBeforeSignIn()`) — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
 | `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
+| `outbound_tls.ts` | **WHETHER AN OUTBOUND REQUEST MAY BE PLAIN HTTP, AND WHETHER THE CERTIFICATE OF WHOEVER ANSWERS IS VERIFIED (#171, 2026-09-23)** — one policy for GNAP's push finish, SSF push, federation's back channels (and every requester that borrows them) and the XACML nudge, each handing in its three settings and two codes. A static utility class. See *`outbound_tls.ts`* below. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
 
@@ -206,6 +208,18 @@ documents use, that a verifier must be TOLD which element it is checking, that a
 decryption answers rather than throws, that a token read back against our own
 certificate gets the configured clock skew.
 
+**SECTION 9: THE KERBEROS PRF AND KRB-FX-CF2 (2026-09-22, #173).** RFC 6113
+FAST combines keys with KRB-FX-CF2, which is built on each enctype's RFC 3961
+`pseudo-random()` — and the vendored Kerberos codec has no PRF and may not be
+edited, so it is here, synchronous on node's crypto: `krb5Nfold()` (RFC 3961
+section 5.1), `krb5Prf()` for the two RFC 3962 AES enctypes (SHA-1 of the input
+encrypted under DK(key, "prf")), the two RFC 8009 ones (KDF-HMAC-SHA2) and RC4
+(HMAC-SHA1), `krb5PrfPlus()` and `krbFxCf2()`. An enctype with no PRF here is
+refused by name. `tests/kerberos_fast_otp.js` holds it to RFC 3961's n-fold
+vectors and MIT's `t_prf.c` and `t_cf2.expected`, which are external answers;
+the suite's own client (`tests/vendored/krb5_wire.js`) has an independent copy
+written from the RFCs, and MIT's `kinit` agrees with both.
+
 **SECTION 8: SIGNATURES OVER RAW BYTES, AND THE TPM (2026-09-21, #40).**
 SPIFFE's node attestors prove possession of a key in four formats that are
 neither a JWS nor an XML signature — SPIRE's x509pop (RSA-PSS over a digest,
@@ -341,6 +355,173 @@ one caller that needs it reaches it.
 is there for `tests/crypto_module.js`, which is the only independent reading of
 XMLDSIG in this repository — the thing that makes "our signature verifies"
 mean something. Removing it saves a package and costs that.
+
+### Held to Wycheproof and ACVP (#202, #203, 2026-09-24)
+
+**`tests/wycheproof.js` drives C2SP Wycheproof through every door this file
+has, and `tests/acvp_pqc.js` NIST's FIPS 203/204/205 vectors** (the corpora
+and their provenance: `tests/CLAUDE.md`, *The external test vectors*). Four
+functions were exported for it, and each is a REFACTOR of what the service
+already runs rather than a second copy: `jwsSignatureValid()` is the check
+`verifyCompactJws()` makes once it has read the token (`checkPreparedSignature()`,
+shared), `jwsSignatureOver()` is what `signJws()` signs EdDSA, ES256K and every
+post-quantum algorithm with, and `sealJweContent()` / `openJweContent()` are
+`sealContent()` / `openContent()` by `enc` name — a vector is arbitrary
+octets, and no compact serialization can carry them. `aesKeyWrap()` and
+`aesKeyUnwrap()` are exported as they are.
+
+**What the vectors found, and the fix for each:**
+
+1. **A JWE AES-GCM tag cut to four octets opened** (Wycheproof's
+   truncated-tag and `rejectsTruncatedGhash` vectors). Node's GCM takes any
+   tag from 4 octets without `authTagLength`, so forging content cost 2^32
+   guesses. `openContent()` and the `A*GCMKW` unwrap now require RFC 7518's
+   96-bit IV and 128-bit tag and pin the tag length in the decipher.
+2. **An AES-wrapped key of zero octets unwrapped** to an empty key.
+   `aesKeyWrap()` / `aesKeyUnwrap()` now refuse what RFC 3394 does not
+   define (fewer than two semiblocks, a partial one).
+3. **An XML Encryption AES-CBC ciphertext with a final padding octet of zero,
+   or none at all, "decrypted"** — forge checks only that the last octet is
+   at most a block. `openXmlContent()` decrypts on node with XML Encryption
+   1.1 section 5.2's rule: whole blocks, and a last octet of 1 to 16. It is
+   deliberately NOT PKCS#7: the other padding octets are arbitrary there
+   (Santuario writes random ones), so Wycheproof's PKCS#5 vectors that differ
+   only in those octets are, correctly, opened — the harness decides that
+   case independently. `openXmlContent()` is exported so that verdict can be
+   held to the vectors: `decryptElement()` no longer tells anyone (below).
+4. **`<xenc:OAEPparams>` was ignored**: a key wrapped under an OAEP label
+   failed and was reported as a key for another certificate. It is now the
+   label, for `rsa-oaep` and `rsa-oaep-mgf1p`.
+5. **A JWS segment with a space, `?`, `#`, padding or non-zero unused bits
+   verified** — node's base64url decoder skips what it does not know, so the
+   signed text and the decoded bytes were different things.
+   `strictBase64url()` refuses anything but the one canonical encoding, in
+   the shared verifier, in `verifyJws()`'s library path and for every
+   segment of a compact JWE.
+6. **An RSA key with public exponent 1 verified** — its "signature" is the
+   padded digest, which anybody can write. `rsaKeyProblem()` refuses an even
+   exponent or one below 3 (RFC 8017 section 3.1) at every RSA door, in both
+   modes.
+7. **A ROCA key verified** (CVE-2017-15361). Refused at every RSA door, in
+   both modes, by the published fingerprint test (the modulus modulo 38
+   small primes lies in the subgroup 65537 generates).
+8. **A 1024-bit RSA key verified a JWS.** RFC 7518 section 3.3 and RFC 8230
+   section 5 (COSE) say 2048 MUST; refused in PRODUCT
+   (`mode.usesBrokenAlgorithms()`, REQUIREMENTS `jose-key-sizes`),
+   accepted in development so a client holding one can be exercised. XMLDSig
+   and the raw proofs have no floor and get none.
+9. **An empty HMAC key verified, and so did one shorter than the hash
+   output.** Empty is refused in both modes; shorter than the hash output
+   (RFC 7518 section 3.2, MUST) in PRODUCT, by the same predicate and row as
+   8. The key is a `client_secret_jwt` client's secret as UTF-8, so
+   `oauth2.registeredSecretBytes` now mints 48 random bytes (64 base64url
+   characters, enough for HS512) by default, and the parent project's
+   `sts_jws_verification.js` registers 64-octet-plus secrets.
+10. **A JWK whose `use` is `enc`, or whose `key_ops` lack `verify`, verified
+    a signature.** `jwkUseProblem()` refuses it (RFC 7517 sections 4.2, 4.3).
+
+11. **An XML ECDSA signature verified on any curve node could load** —
+    secp160, secp192, secp224 among them; XMLDSig names no curve and nothing
+    asked. `xmlEcdsaCurveProblem()` refuses, in PRODUCT, every curve not on
+    an allow-list of the 256-bit-and-larger ones (P-256/384/521, secp256k1,
+    brainpoolP256r1 and up): `verifyXmlSignatureValue()` answers false and
+    logs `STS-KEYS-0077`, and `xmlSignatureKeyProblem()` refuses to register
+    such a certificate. Development keeps every curve (same predicate,
+    REQUIREMENTS `xml-ecdsa-curves`).
+12. **THE AES-CBC PADDING ORACLE.** `decryptElement()` answered a bad CBC
+    padding (STS-KEYS-0022), a plaintext that was not UTF-8 (0025) and one
+    that was not XML (0023) with three codes, three sentences and an early
+    return — Jager and Somorovsky's attack on XML Encryption (XML Encryption
+    1.1 section 6.1.3) needs nothing more than that difference. Now all three
+    are ONE refusal, `STS-KEYS-0078` with one sentence, and the padding,
+    decoding and parse all RUN before the answer is chosen
+    (`cbcPlaintextUsable()`): a bad count strips nothing and is carried as a
+    flag. What still varies with the plaintext is the XML parser's own time,
+    which no refusal can hide; AES-GCM (the default, and what a relationship
+    can be held to with `allowedCiphers`) is the real answer, and CBC stays
+    because service providers that require it exist. A GCM tag failure keeps
+    STS-KEYS-0022 and GCM's non-XML plaintext 0023: authenticated, so saying
+    which reveals nothing. **One oracle is left, in development only**: an
+    `rsa-1_5` key transport whose unwrap lands on the wrong length is 0021,
+    before the content — Bleichenbacher's, which is why product never
+    unwraps `rsa-1_5` at all (STS-KEYS-0070).
+
+**No ACVP vector failed**, and it showed the ML-DSA and SLH-DSA JWS signers
+were FIPS 204/205's DETERMINISTIC variants byte for byte — noble signs with
+no randomness when none is passed, and `pq_jose.js` passed none. **They are
+HEDGED now** (FIPS 204 section 3.4 and FIPS 205 section 9.2 recommend it):
+`pq_jose.sign()` hands noble 32 fresh octets for ML-DSA (and a composite's
+ML-DSA half) and n for SLH-DSA. The deterministic variant is reachable only
+through `jwsSignatureOver(alg, key, input, { deterministic: true })`, an
+internal parameter `tests/acvp_pqc.js` passes to compare with NIST's
+vectors — not a setting, and nothing in the service passes it. **The one
+exception is the vendored engine** (`vendored/pqc.js`, which `pki.js`
+signs post-quantum CERTIFICATES and CRLs with through `pqc_x509.sign()`): it
+still signs deterministically and may not be edited here; the parent project
+owns that change.
+
+### Random values: node's generator, drawn uniformly (#65, 2026-09-23)
+
+**Section 13 adds no generator.** Node's `crypto` is OpenSSL's DRBG seeded
+from the operating system on every platform, and the FIPS DRBG under the FIPS
+provider; that was already the answer to "a platform-independent secure random
+number generator". What the section adds is `randomBytes`, `randomInt`,
+`randomUuid`, `randomToken(bits)` (refuses fewer than 128) and
+`randomString(alphabet, length)` (a `randomInt` per character, and an
+alphabet with a repeated character refused), so that three mistakes cannot be
+written again. Each was in the tree that day:
+
+* **A random byte modulo an alphabet's length** — biased unless the length
+  divides 256. GNAP's 31-character user code drew its first eight characters
+  9/256 of the time; SPIFFE's Azure challenge nonce did the same over 62.
+* **`forge.random`**, a second DRBG in JavaScript with its state on the heap,
+  outside FIPS mode and fifty times slower — the content key and IV of every
+  encrypted SAML assertion, and `helpers.genId()`.
+* **A short bearer value**, which `randomToken()` refuses.
+
+**No community module was adopted** — the header of section 13 records the
+review: nanoid and crypto-random-string end at these same calls, and
+randomstring, rand-token and random-js each have a `Math.random` path or a
+modulo. The other 190-odd call sites still call node's `crypto` directly and
+are correct; they move to section 13 when their files are next touched, not
+in a sweep. `tests/random_values.js` holds the distribution and reads the
+source for all three shapes.
+
+**THE SECOND PASS, THE SAME DAY: `forge.random` HAD ONLY LEFT THE CALL
+SITES.** forge went on drawing from its own Fortuna inside the library — the
+blinding of every RSA signature `vendored/xmldsig.js` makes with `pk.sign()`
+(every SAML, WS-Trust and WS-Federation RSA signature, and every Redirect
+binding signature), forge's RSA-OAEP seed and PKCS#1 v1.5 padding, and the
+SCEP key unwrap's blinding. A source check cannot see a library's insides, so
+four changes:
+
+* **`installForgeRandom()`** points forge's default generator (and
+  `createInstance()`) at node's when `crypto.js` loads. forge is one module
+  instance, so this reaches the vendored callers that may not be edited here.
+  The parent project owes the real fix: `xmldsig.js` signing RSA with node's
+  `crypto.sign()` rather than forge's JavaScript RSA.
+* **`rsa-oaep-mgf1p` and `rsa-1_5` wrap and unwrap through node's
+  `publicEncrypt()` / `privateDecrypt()`**, and `transportOptions()` is gone.
+  RSA-1_5 decryption needs OpenSSL's implicit rejection, which node 24 has
+  (both images run 24.16).
+* **`scep/scep_cms.ts`'s PKCS#1 v1.5 unwrap is node's `privateDecrypt()`**,
+  where it was forge's non-constant-time JavaScript (the Marvin attack's
+  target); a runtime without implicit rejection logs `STS-SCEP-0066` once.
+* **`generate-password` is gone**: `password_policy.ts`'s `PasswordGenerator`
+  draws through `randomString()` (3ac above).
+
+And the handles below section 13's floor were raised to 128 bits (the
+OID4VCI `credential_offer_uri` id, the mock SP's `RelayState` and the mock
+RP's `wctx`), the LDAP cluster instruction's nonce to 16 bytes, and
+`admin_stats.js`'s `ARTIFACT_TAG` takes four random bytes where it took the
+start time. `krb5_service.js`'s sequence number (7 random bits) is in a locked
+file and RFC 4121 does not require it to be random.
+
+**AND THE TESTS.** GitHub's code scanning (CodeQL `js/insecure-randomness`)
+had sixteen open alerts on `ldap/ldap_server.js` whose SOURCE was a test's
+`Math.random()` — a realm id or username suffix handed to the directory.
+Every test now draws from `crypto`, and `tests/random_values.js` holds the
+tests' own files (the parent's copies excepted) to the `Math.random` rule.
 
 ## `applications.js` GREW A FOURTH ATTRIBUTE ROLE, AND THE NAME IS THE ARGUMENT
 
@@ -1189,6 +1370,28 @@ own — the LDAP connection needed a mirror and an ask, and everything the front
 process MINTS needed the barrier to know it had. Neither was found by reasoning
 about the design; both were found by one job in one mode.
 
+### A BODY THE PARSERS DO NOT TAKE, AND A PROXY THAT MUST NOT HOLD IT (#215, 2026-09-24)
+
+`app.js`'s two body parsers drain every body into memory at 5 MB. **The two
+risk dataset upload paths are their one exception** (`isStreamedUpload()`,
+exported on the app for the console gate, which leaves those uploads' CSRF
+token to `risk/risk_upload.ts` — `risk/CLAUDE.md` argues the upload). The
+pool needed nothing to STREAM them — `proxy()` already pipes — and two things
+to REFUSE them well:
+
+* **a large body's headers are flushed to the worker at once** (declared over
+  5 MB, or chunked): node sends a client request's headers with its first
+  write, so an upload declaring more than `risk.uploadMaxBytes` reached the
+  worker only with its first chunk, and one whose client waited to be told
+  reached it never — a 408 at the request timeout, found by
+  `sts_admin_risk_upload.js` in `single-node`;
+* **an answer that comes before the body has all arrived closes the
+  client's connection** (`Connection: close`, set here because the worker's
+  own is hop-by-hop and dropped) and drains the rest, rather than writing
+  into a worker that stopped reading and resetting the client mid-upload.
+
+Every ordinary request is proxied exactly as before.
+
 ### A SECOND POOL FOR THE CONSOLE AND THE PORTAL (2026-09-13)
 
 `workers.surfaceCount` workers kept for this service's OWN two hosted
@@ -1985,8 +2188,9 @@ build the development-mode second realm at startup.
 **MOVED FROM THE ROOT `CLAUDE.md`'s TRUST-REALM INDEX, AND IT DISAGREES WITH THE
 FIRST-ROW PARAGRAPHS ABOVE** — a realm may be in RFC 9700 mode while the process
 is not: the `realmRuntime` marker, which had one row until 2026-09-12, TWELVE
-from 2026-09-13 and **TWENTY-TWO since 2026-09-15**, and must not get a
-twenty-third by analogy: `oauth2.rfc9700`, `oauth2.oauth21`, the ten SPIFFE rows
+from 2026-09-13, TWENTY-TWO from 2026-09-15 and **TWENTY-THREE since
+2026-09-22**, and must not get a twenty-fourth by analogy: `oauth2.rfc9700`,
+`oauth2.oauth21`, `oauth2.fapi` (#138), the ten SPIFFE rows
 a realm's own listeners and authorities are built from, and
 the ten Kerberos rows a realm's own principal database is built from — each
 group's argument made at the head of its own group in `config.js` rather than
@@ -1999,7 +2203,12 @@ consumed at startup, since `oauth-oidc/oauth21.js` reads it per request. It is i
 `tests/config_realm_layer.js`'s list, whose generic check that a realmRuntime row
 moves no derived row holds for it for that reason. A realm binds no socket, so the reason `oauth2.rfc9700`
 is restart-only service-wide does not reach it; what a realm does NOT get is a
-scheme of its own.
+scheme of its own. **`oauth2.fapi` (#138, 2026-09-22) made it a third time**:
+every FAPI profile turns RFC 9700 mode on and requires TLS, so `global.https`
+reads it through `processValue()` too, and `oauth-oidc/fapi.js` reads it per
+request (and a named authorization server's own value from the request's
+ambient context). It is an enum, `off` by default, because #139–#141 add
+profiles to the same switch.
 
 **A ROW MAY NARROW ITS TYPE, and only the `int` type can so far.** `min`, `max`
 and `step` are OPTIONAL members of a row that `TYPES.int.check()` applies; a row
@@ -2072,7 +2281,8 @@ which had to be true at once:
 env/generate_defaults.js` writes it from the `dflt` column. Two copies of a
 default is one copy that will be wrong, and wrong in the quietest way — the
 service running on one value while the console, the OpenAPI document's
-`default` property and README.md's table all report the other. That generator
+`default` property and `docs/configuration.md`'s table all report the other.
+That generator
 neutralises `process.exit` for the length of its own `require` of this module,
 because regenerating the file is the one moment when an incomplete
 `env/defaults.js` is EXPECTED; the bypass is in the build tool and deliberately
@@ -2968,7 +3178,9 @@ with `Cannot find module` naming a file the operator never mentioned.
      this service reading their own profile — a question with one sensible
      answer, in front of every sign-in, whose Deny button makes the surface
      unreachable. It is an ATTRIBUTE rather than an exemption in `consent.ts`,
-     so an operator who wants the screen removes the values and gets it.
+     so an operator who wants the screen removes the values and gets it —
+     through `revoke-global-consent`, which since #172 also revokes the
+     surface's tokens under it, so its sessions end at their next renewal.
    * **The redirect URI on the entry is LEARNT as well as seeded — in
      DEVELOPMENT, with `global.publicBaseUrl` empty, up to
      `oidcRp.maxRedirectUris`.** The seeded value names `localhost:<port>`,
@@ -3145,7 +3357,11 @@ with `Cannot find module` naming a file the operator never mentioned.
    for keeping `presented` next to `key`.
 
    **The CONFIGURED half of `/admin/delegation` is NOT in this file.** Who may
-   delegate to whom is `krb5_principals.js`'s `delegationPolicy()`, because
+   delegate to whom at WS-Trust and RFC 8693 is `delegation_policy.ts` (rule
+   3az, #108) — the ACT log and the POLICY stay two files for
+   `app_permissions.ts`'s reason, intent and evidence kept apart; this file
+   only carries the policy's sentence on the row. For Kerberos it is
+   `krb5_principals.js`'s `delegationPolicy()`, because
    what those two attributes mean is a statement about the principal database
    and that store is over there. A `common/` module reaching into `kerberos/`
    would have been the layering inversion this directory's entry test exists to
@@ -3398,10 +3614,10 @@ with `Cannot find module` naming a file the operator never mentioned.
    against the CURRENT registry.
 
    **AND NOTHING HERE ASKS WHETHER THE GRANT WAS HELD.** `holdsPermission()` is
-   that question and it belongs to the configured register;
+   that question and it belongs to the configured register; in development
    `oauth2.delegatedPermissionsEnforced` is off by default, so a token carrying
-   a permission its client was never granted is an ordinary outcome here and the
-   line reports what was ISSUED. Colouring it as a refusal would be this model
+   a permission its client was never granted is an ordinary outcome there (product
+   refuses the request, #110) and the line reports what was ISSUED. Colouring it as a refusal would be this model
    deciding a policy the token endpoint declined to decide.
 
    **THE ARRAY'S PRESENCE IS THE DISCRIMINATOR, and that is load-bearing rather
@@ -3500,6 +3716,141 @@ with `Cannot find module` naming a file the operator never mentioned.
    and drawing both would make the common case, a credential with no ancestry and
    no descendants, into a page explaining itself in two directions. The forward
    direction is what `/admin/delegation` and its map are for.
+
+## `scope_policy.ts`: which scopes a client may be issued (#110, 2026-09-22) — rule 3au
+
+Until #110 nothing tied a scope to a client: the token endpoint kept every scope
+a request named, in every mode, so any client that could use
+`client_credentials` minted `admin:write` for `/admin-api`, `scim:write` or
+`ssf:write`. `common/scope_policy.ts` is the policy that closes it, and
+`oauth-oidc/CLAUDE.md` (3au) says where the authorization server asks it.
+
+**THE DECLARATION IS `oauthAllowedScope`, AND IT IS THE `appAllowedProtocol`
+SPLIT AGAIN.** `oauthScope` is SIGHTED — what the client has asked for,
+written by `seen()` — and until #110 an RFC 7591 registration's `scope` was
+written there too, so the declared and the observed could not be told apart.
+The registration writes the new attribute now (and RFC 7592's read returns it
+from there), and `oauthScope` is sighted only. **It is not family-scoped**: a
+SCIM or Shared Signals client is declared for that family and still gets its
+token from `/oauth2/token`. `applications.allowedScopesOf()` answers the list
+or NULL — and the difference between an empty list and none is what the policy
+reads.
+
+**THREE KINDS OF SCOPE, READ THREE WAYS.**
+
+* **This service's own protected scopes**, in BOTH modes: `admin:read`,
+  `admin:write`, the SCIM pair and the Shared Signals pair BY THEIR SETTINGS
+  (`scim.scopeRead`/`scopeWrite`, `ssf.authScopeRead`/`authScopeWrite` — a list
+  written out would go stale the day one was renamed, and the renamed scope
+  would be issued to anybody), and the debugger permission. Development already
+  gates the resource servers behind them; a gate any client can mint the key to
+  is not one. The debugger permission keeps its own role rule on top
+  (`debugger_access.ts`).
+* **A scope naming an application or a delegated permission** is not judged
+  here: the first is an audience and not a privilege, the second has a grant of
+  its own (`oauthDelegatedPermission`, rule 3s).
+* **Every other scope**, in PRODUCT only (`mode.grantsUndeclaredScopes()`): a
+  client with a list gets what it lists; a client with none gets the documented
+  default — OIDC Core's six and the caller's `defaults` (the authorization
+  server passes this realm's OpenID4VCI scopes; GNAP passes none). That is RFC
+  6749 section 3.3's pre-defined default, and the alternative ("nothing without
+  a list") breaks every plain OpenID Connect client.
+
+**`declares()` IS THE RESOURCE SERVERS' QUESTION.** `/admin-api`
+(`declaredAdminScopes()`, `STS-API-0123`), SCIM (`STS-SCIM-0079`) and Shared
+Signals (`STS-SSF-0107`, OAuth and GNAP) ask it of every token, in the realm
+that issued it, so an allowance removed from a client stops the tokens it
+already holds. That is what replaced the realm gate's "only
+`sts-management-api`" (`STS-API-0111`, retired): one rule for both realms.
+
+**A LIBRARY, built by the composition root** beside `account_state`. It
+requires only libraries, so GNAP (`gnap_grants.ts`, `STS-GNAP-0719` — one
+declared vocabulary per application whatever protocol it asks in) and the three
+resource servers can require it without a cycle. The debugger permission's
+spelling is written out rather than required from `debugger/`, for
+`applications.js`'s reason, and `tests/scope_policy.js` compares the two.
+
+**NO MIGRATION.** A persisted `sts-management-api` or `sts-admin-console` seeded
+before #110 is left alone by `seedInternalApplication()` and carries no
+declaration: add `admin:read admin:write` to its `oauthAllowedScope` on the
+console (the application's page — the console's own gate is a session, which
+this does not touch) or by `ldapmodify`, since `/admin-api` then refuses its
+tokens; or delete the entry and restart.
+
+## 3az. `delegation_policy.ts`: who may act for whom at WS-Trust and RFC 8693 (#108, 2026-09-23)
+
+Until #108 the two delegating families other than Kerberos decided nothing about
+the act: a WS-Trust requester that could authenticate got a token about anybody
+for any `AppliesTo` through `OnBehalfOf` or `ActAs`, and any client could
+exchange any verified token (RFC 8693) for one about its subject addressed
+anywhere. The act was recorded (3l) with "authorized by nothing". This file is
+the policy.
+
+**KERBEROS'S MODEL, BY NAME, ON THE ENTRIES THAT ALREADY EXIST.** No new store
+and no new object class — `ou=applications` and the person's entry are the
+store, so an `ldapmodify` IS a policy change and rule 7 holds by construction
+(`/admin/applications/<id>` and `POST /admin-api/applications/update`):
+
+| Attribute | On | Kerberos analogue |
+|---|---|---|
+| `appAllowedToDelegateTo` | the INTERMEDIARY | `msDS-AllowedToDelegateTo` |
+| `appAllowedToActOnBehalfOf` | the TARGET | `msDS-AllowedToActOnBehalfOfOtherIdentity` |
+| `appDelegationSubjectGroup` | the intermediary | (none — the people it may act for, by group DN; empty is anybody unprotected) |
+| `appTrustedToImpersonate` | the intermediary, default FALSE | `TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION` |
+| `stsNotDelegated` | the PERSON | `NOT_DELEGATED` |
+| `stsMayAct` | the PERSON | (none — RFC 8693 section 4.4's `may_act`, the person's own choice) |
+
+**THE ORDER OF `decide()` IS THE ARGUMENT.** A self case (a client exchanging its
+own token acts for nobody) needs nothing. Then the SUBJECT, because a protected
+person is refused whoever asks — `stsNotDelegated`, or a member of the console's
+Admin Read / Admin Write roster, COMPUTED from `admin.readGroup` /
+`admin.writeGroup` at decision time rather than seeded, so a role granted later
+is covered. Then the INTERMEDIARY must be an application entry. Then
+IMPERSONATION (`OnBehalfOf`, an exchange with no `actor_token`) needs the flag.
+Then the subject groups. Then every TARGET — resolved to the application that
+registered it first (`forAudience()`/`forClientId()` for OAuth,
+`forAppliesTo()` for WS-Trust, then `get()`), and allowed by either attribute,
+the raw string included so an unregistered audience can be named without
+inventing an entry. None named is refused: a token about somebody else with no
+audience restriction is one no attribute describes. Last, THE DENY-ONLY XACML
+LAYER: `issuance_gate.checkDelegation()` asks the issuance policy about
+action-id `delegate` with the intermediary as XACML 3.0's intermediary-subject,
+and only an explicit Deny refuses (`xacml/CLAUDE.md`). The attribute model stays
+the readable one; the policy engine is where an administrator writes something
+stricter.
+
+**`may_act` STANDS IN FOR TWO QUESTIONS, NEVER THE THIRD.** A verified
+subject_token naming the actor answers *may this party act for this subject*
+(the groups) and *may it do so invisibly* (the flag) — the subject said so. It
+does not answer *where*, so the targets are still checked. A mismatch is the
+token endpoint's refusal in EVERY mode, not this file's: the token itself says
+no. `mayActClaimFor()` is the ISSUING half, from `stsMayAct` only (the owner's
+decision on #108) — a person by `urn:uuid:`, an application by its client_id.
+
+**MODE-FREE, AND `enforced` SAYS WHETHER A REFUSAL REFUSES**
+(`mode.authorizesDelegation()`). Both doors ask in both modes; development
+issues and `rowText()` puts "WOULD HAVE BEEN REFUSED in product: …" on the act,
+which is Kerberos's development fixtures' arrangement. `refusal` names the kind
+so each door speaks its own protocol: `target` is RFC 8693's `invalid_target`,
+the rest `invalid_request`; WS-Trust answers every one with
+`wst:RequestFailed`, and an `intermediary` refusal there is "only an application
+may delegate" (`STS-WSTRUST-0019`).
+
+**THE PERSON'S HALF IS `credentials.ts`'s**, through the directory slot it
+already has (`readDelegationFacts`, `writeNotDelegated`, `writeMayAct`,
+`delegationFlaggedPersons` on `ldap_server.js`'s side) — one read answers the
+two flags, the groups and the delegate resolved. `setMayAct()` refuses a DN that
+names nobody in the realm, or the person themselves (`STS-AUTHN-0227`).
+
+**A LIBRARY (rule 3), built by the composition root** beside `scope_policy`. It
+requires `applications`, `config`, `mode`, `credentials` and `issuance_gate` —
+libraries every caller already requires — and adds NO slot (rule 3e): the
+groups come through the credential store's directory rather than the
+`admin_stats` group resolver, which answers claims and is off when
+`groups.claim` is. `list()` is the register `/admin/delegation`'s section and
+`GET /admin-api/delegation/policy` page through `adminViews.delegationPolicyView()`.
+`tests/delegation_policy.js` is the truth table; `tests/token_exchange_product.js`
+and `tests/vendored/sts_delegation_policy.js` the doors.
 
 ## An OAuth client is not a person, and now it has somewhere to be
 
@@ -3816,7 +4167,11 @@ URI.
 It requires `helpers.js`, `config.js`, `applications.js`, `error_codes.js` and
 `admin_stats.js` (for `identityKeyOf()`, so that `alice`, `alice@EXAMPLE.COM` and her
 `urn:uuid:<entryUUID>` — or the retired `urn:sts:user:alice` — are one person
-here exactly as they are one entry in the directory), and nothing requires it back. **The directory arrives through
+here exactly as they are one entry in the directory, and for `revokeWhere()`),
+and nothing requires it back. **`oauth-oidc/oauth2_bcp.js` is reached LAZILY**
+(the `grants` dependency, #172), only when a withdrawal follows a refresh
+token's grant: that module is built at 9 with stores of its own, and a require
+at the top of this file would run them first. **The directory arrives through
 `setDirectory()`, which `ldap_server.js` fills at ITS require time** — the same
 inversion `group_claims.ts`, `applications.js`, `federation.js`,
 `spiffe_registry.js`, `vc_claims.js` and `admin_rbac.js` all use, and for their
@@ -3887,6 +4242,54 @@ what somebody gets wrong:
   service-wide list of harmless scopes would be shorter to configure and would
   mean an application registered five minutes ago inheriting a decision made
   about a different one.
+
+### Withdrawn means withdrawn (#172, 2026-09-23)
+
+Until this date a revoke, a forget and a global revoke edited the record and
+said that nothing already issued was touched — so an application a person had
+taken `offline_access` back from went on refreshing, while they were away, for
+the refresh token's whole life. Three things now, and each closes a gap the
+other two leave:
+
+* **THE INSTANT IS RECORDED.** `oauthConsentWithdrawn` on the person (`<stamp>
+  <scope> <client_id>`, the consent grammar with the stamp to the MILLISECOND,
+  `\d{14}\.\d{3}Z`, so a consent value can never parse as one) and
+  `oauthGlobalConsentWithdrawn` on the application (`<stamp> <scope>`, a schema
+  row that is NOT editable, written by `applications.noteGlobalConsentWithdrawn()`
+  alone). One value per pair; a later withdrawal replaces an earlier one.
+  Without it a RE-CONSENT would revive every refresh token granted before the
+  withdrawal. The directory slot grew three hooks for it
+  (`withdrawalsOf`, `addWithdrawal`, `removeWithdrawal`), validated whole with
+  the other four: a store that could hold the consent and not its withdrawal
+  would be that revival.
+* **WHAT WAS ISSUED UNDER IT IS REVOKED**, by `revokeIssuedUnder()` through
+  `stats.revokeWhere()` — the one persisted, replicated revocation register —
+  so an access token introspects inactive on every node. Tokens of this client
+  and person carrying the scope (an access token's audience counts); a refresh
+  token takes its grant with it, #102's `grantMembersOf()` and
+  `revokeFamily()`. A GLOBAL withdrawal reaches everybody but the people who
+  agreed to the scope themselves.
+* **THE REFRESH GRANT ASKS** `refreshRefusal()`, against the directory, in every
+  mode. A refresh token carries `grant_at` (ms) and `grant_type`, carried
+  unchanged through every refresh. A personal withdrawal at or after `grant_at`
+  refuses (`STS-OAUTH-0615`; a tie refuses); so does a global withdrawal at or
+  after it unless the person's own consent predates the grant. A grant from the
+  authorization endpoint that no recorded consent covered refuses while consent
+  is required and `oauth2.refreshRequiresConsent` is on (`STS-OAUTH-0616`); the
+  other grants never ask anybody and are held to withdrawals only. It is the
+  ENFORCEMENT — stateless, so it holds for a token the walk never saw; the walk
+  is the prompt clean-up and the only thing that reaches an access token.
+
+**Withdrawing one scope revokes the whole refresh token** (the decision on
+#172): RFC 6749 section 6 would allow a narrowed refresh, and the grant's scope
+was fixed when it was made. **`revoke-global-consent` is the only door that
+removes an `oauthGlobalConsent` value** — `updateApplication()` refuses the
+generic remove without `consentRegister` (`STS-REG-0191`), because it cannot
+require this module to do the rest. **The hosted surfaces are not exempt**:
+withdrawing `offline_access` from the console's, portal's or debugger's global
+consent revokes their sessions' tokens, each ends at its next renewal, and the
+person signs in again and is asked — nobody is locked out, and the reply says
+which surface it was.
 
 ### Two more things
 
@@ -5478,7 +5881,7 @@ that minted a key able to assert about anybody would hand every person who can
 sign in a token as every other person — and because that refusal lives in the
 GRANT rather than on either page, neither door can forget it.
 `pki.personSelfService` turns the portal's offer off without touching a key
-anybody already holds, which is `totp.enabled`'s contract; `portal/CLAUDE.md`
+anybody already holds, which is the TOTP row's contract (it was `totp.enabled` until #64); `portal/CLAUDE.md`
 argues the page.
 
 `tests/rfc7523_person_issuer.js` is the in-process half and section 13 of
@@ -5574,9 +5977,12 @@ outside.
   certificate-checked: the CRL's own signature is the authentication.
 * **`auto` IS `mode.refusesUnknownRevocationStatus()`**: hard-fail in product,
   soft-fail in development. Development checks too, because the register cannot
-  make a good certificate fail. A certificate naming no fetchable list is not
-  refused by hard-fail unless `pki.revocationRequireDistributionPoint` — there
-  is no fetch to block.
+  make a good certificate fail. **A certificate naming no list and no
+  responder is refused by hard-fail where
+  `pki.revocationRequireDistributionPoint` says, and its `auto` is
+  `mode.refusesUnrevocableCertificates()` — product refuses (#174).** One naming
+  only addresses this service will not dial is a different case, refused under
+  hard-fail whatever that says — see *NOT DIALLED* below.
 * **THE MAIN PORT IS ANNOTATED, NOT REFUSED.** `common/app.js` runs
   `annotateRequest()` below `requestPool.middleware()` — in the worker that
   answers a dispatched request — onto `req.certificateRevocation`, and the
@@ -5669,9 +6075,10 @@ That paragraph listed four gaps and all four are closed; the module header's
   endpoint (`oid4vp.trustedIssuerCertificates`). **Every one of those paths is
   asynchronous and was made to wait**, so there is no register-only twin. Its
   issuer is fetched hop by hop from its own caIssuers address, because nothing
-  presents one; a certificate naming no such address is refused only under
-  `pki.revocationRequireDistributionPoint`, one naming an address that did not
-  answer is refusable under hard-fail. **A bare key is reported `bare` and never
+  presents one; a certificate naming no such address is refused where
+  `pki.revocationRequireDistributionPoint` says (`auto`: in product, since
+  #174), one naming an address that did not answer is refusable under
+  hard-fail. **A bare key is reported `bare` and never
   `good`.** SPIFFE federated bundles are trust anchors, which no list revokes.
 
 The two defence-in-depth delta checks — a delta signed by another authorised key
@@ -5693,6 +6100,55 @@ ldapjs directory on ephemeral ports. **They are children for what they share wit
 a process**: `global.mode`, a dozen `pki.revocation*` settings, authorities
 revoked in the keystore's rows, and the module-wide caches. The branch race that
 first put them there is fixed below.
+
+### NOT DIALLED, NAMES NONE, AND noRevAvail (#174, 2026-09-23)
+
+**TWO CASES THAT WERE ONE.** `crlNoPointResult()` answered *names only
+distribution points this service does not dial* with the same `none: true,
+no-distribution-point` as *names none*, so under the default
+`pki.revocationLdap=ldaps` a certificate whose issuer published its list at
+`ldap://…` was ACCEPTED by hard-fail — even when that list revoked it. The
+argument for accepting "names none" (no fetch to block) does not reach it: the
+issuer published a list and this service's policy is what stopped it being
+read, which RFC 5280 section 6.3 calls an undetermined status.
+
+* **`not-dialled` is refusable, and refused under hard-fail as `STS-PKI-0188`**
+  — an address in a scheme never dialled, plain ldap under `ldaps`, any ldap
+  under `off`, an LDAP URL this file will not read, a relative name without
+  `pki.revocationLdapDirectory` or with a multi-valued RDN, a cRLIssuer with no
+  address, an OCSP responder that is not http(s), any responder under
+  `pki.revocationOcsp=off`. Only when nothing else answers: a fetchable CRL
+  beside an ldap responder is still good. The verdict carries `notDialled` (per
+  link and at the top), the why names the setting that would dial it, and each
+  address is logged once per process rather than per request.
+  `describePolicy()` lists what is not dialled apart from what names none, and
+  `/admin/pki`, `/tls` and the crypto report draw its sentence.
+* **Names none is `pki.revocationRequireDistributionPoint`, an enum since #174**
+  — `auto` (the default) asks `mode.refusesUnrevocableCertificates()`, `on`,
+  `off`. Product refuses a CA-issued foreign certificate with no list, no
+  responder and no noRevAvail (`STS-PKI-0190`), because nobody can ever revoke
+  it; `off` is documented with that warning. A self-signed certificate is never
+  asked: the walk stops at it as an anchor. The registered path's
+  issuer-not-found case rides the same flag.
+* **RFC 9608 noRevAvail is honoured** (`noRevAvailOf()`): section 4 skips the
+  check, which the product default made necessary — without it the refusal
+  above would reject the one certificate whose issuer SAID the absence is
+  deliberate. Section 3's contradictions (with cA TRUE, a CDP, freshestCRL or an
+  OCSP responder) are INVALID and refused under every policy but off,
+  soft-fail included (`STS-PKI-0189`). Believed only for a verified chain or a
+  registered certificate.
+* **`unknownCodeOf()` picks the code**: 0189 for an invalid certificate, 0190
+  where every refusable link names nothing, 0188 where they are not dialled or
+  name nothing, and 0119 as soon as any link's reason is a fetch that failed.
+  A registered certificate's refusal is still 0129.
+
+**THE SUITE'S OWN CHAINS PAY FOR IT.** Every chain a job or launcher mints and
+presents to a product-mode service — the remote PEP credential, XACML users,
+certificate sign-ins, uploaded application and person keys — names its CAs'
+lists now, served by `tests/vendored/test_crl_host.js` from the job's own
+process, or (for the launcher's PEP credential, whose minter exits) written by
+`tests/tools/pep-credential.js --crl-base` and served by the PEP container at
+`GET /crl/<name>`. None of it is committed key material.
 
 ### A BRANCH IS BUILT ONCE, IN ONE PROCESS (2026-09-12)
 
@@ -5865,8 +6321,8 @@ reads, and `pwdInHistory` keeps the draft's meaning: PREVIOUS passwords, with th
 current one refused beside them. The draft defines no composition rule, so those
 are `stsPwd*` and nobody mistakes them for the draft's.
 
-**IT IS A LEAF (rule 3)** requiring `helpers.js`, `mode.js` and the
-`generate-password` package, and its directory arrives through a slot
+**IT IS A LEAF (rule 3)** requiring `helpers.js`, `mode.js` and `crypto.js`,
+and its directory arrives through a slot
 `ldap_server.js` fills — `roles.js`'s arrangement exactly. **`FIELDS` is one
 table read five ways**: the schema, the console's form, the management API's
 request schema, the validation and the parse. Three decisions in it:
@@ -5883,12 +6339,17 @@ request schema, the validation and the parse. Three decisions in it:
   loosen a policy. The console form is told apart so that an unticked checkbox
   (which posts nothing) reads as "no".
 
-**THE GENERATOR IS `generate-password` AND ITS JOB IS THE DRAW.** It draws from
-`crypto.randomBytes` with rejection sampling (no modulo bias) and has no
-dependencies; it cannot count symbols, so this file draws whole passwords with
+**THE GENERATOR IS `crypto.js`'s `randomString()` AND ITS JOB IS THE DRAW**
+(`PasswordGenerator`; the `generate-password` package until #65, which sampled
+correctly but held 256 pre-drawn random bytes at module scope between
+passwords, and was a dependency on the path of a secret for twenty lines). Each
+character is a `randomInt()` over the four pools, so no character is likelier
+than another; it cannot count symbols, so this file draws whole passwords with
 all four pools on and REJECTS any that fail the profile, which keeps the result
-uniform over the passwords that pass. `"` and a backtick are left out because a
-generated password is pasted into shells and JSON bodies.
+uniform over the passwords that pass. A strict draw missing a pool counts
+against `MAX_DRAWS`, where the package recursed with no bound. `"` and a
+backtick are left out because a generated password is pasted into shells and
+JSON bodies.
 
 **`credentials.ts` IS WHERE IT IS ASKED.** `preparePassword()` decides
 everything — composition, history, the hash, the history to leave — and writes
@@ -6184,6 +6645,19 @@ state at all.
 
 `tls/CLAUDE.md` carries what it looked like from the outside, and
 `tests/pki_anchor_drift.js` pins the repair.
+
+### And the certificate it replaces stays known to the responder (2026-09-23, #185)
+
+A slot is certified again whenever a key set changes — every rotation,
+promotion and retirement re-certifies the set, issuing a NEW certificate for
+the same key — and `certify()` overwrote the slot's record, so the serial it
+replaced left the issued register. A relying party holding the certificate the
+realm had published seconds earlier then got `unknown` from its OCSP
+responder, which hard-fail refuses (`sts_pki_distribution_points`, when the
+hourly `signing.retire` ran during it). The displaced serial is now kept in
+`issuedKeyPairs` with `pki_merge.js`'s `displacedRecord()`, the record a
+cluster merge already keeps: `good` until it expires, `revoked` once something
+revokes it, never unknown. `tests/signing_rotation.js` section J.
 
 ### And it records only what the CURRENT authority signed (2026-09-15, #46)
 
@@ -6569,6 +7043,117 @@ persona surname, `@sts.example` address or `email_verified: true`;
 1.1 attribute authority and a sign-out naming somebody else are refused.
 Development keeps all of it, which is what the test suite drives.
 
+**NOR, SINCE 2026-09-22 (#103), DOES IT OPEN THE CONSOLE TO WHOEVER SIGNS IN
+FIRST** (`opensConsoleToAnyone()`, the `console-bootstrap-window` row). It is
+asked in the realm whose roster is bound, not the realm being read, because the
+window is that realm's. `admin-ui/CLAUDE.md` 8a has the rest: the bootstrap
+account's claim bound to a password, and the closed console logged at startup.
+The one thing it needed from here is `oidc_rp.ts` recording, beside the ID
+Token's `amr`, the sign-on session's `signInAuthority` on the console session.
+
+**NOR, SINCE 2026-09-23 (#171), DOES IT SEND ANYTHING OVER TLS IT DID NOT
+VERIFY** (`skipsOutboundTlsVerification()`, and `dialsPlainHttpOutbound()` for
+plain http; the `outbound-tls` row). See *`outbound_tls.ts`* below.
+
+**NOR, SINCE THE SAME DAY (#104), IS IT WRONG OR LOOSE ON PURPOSE.** The three
+deliberate defects — `oauth2.breakIdTokenNonce`, `ssf.breakSetSignature`,
+`ssf.legacySubClaim` (`spoilsOnPurpose()`, the `deliberate-defects` row) — and
+`spiffe.attestWorkloads` off (`servesUnattestedEntries()`) and
+`spiffe.acceptAssertedSelectors` (`believesAssertedSelectors()`, #40) are
+development mode's. Each row carries the `onlyWhile` marker below, so the
+write is refused, and each reader asks **`mode.valueInForce(key)`** rather
+than `config.value(key)`: the row's DEFAULT wherever the marker's predicate
+says no, logged once per process and setting (`STS-CORE-0106`, a set bounded
+by the table). The read is the guard, because `global.mode` is runtime and a
+realm can be switched with a value still stored. `trustsUnverifiedLocalSocket()`
+is the SPIRE Server API's `local` socket (the `spire-local-socket` row,
+`spiffe/CLAUDE.md`).
+
+**#181 (2026-09-23) MARKED ELEVEN MORE ROWS AND GAVE THE REPORT ITS PAGES.**
+`risc.googleSubjectType` and `krb5.clockOffset` joined `spoilsOnPurpose()`;
+`saml2.signAssertion`, `saml11.signAssertion` and `saml11.signResponse` off
+carry `issuesUnsignedAssertions()`; `spiffe.requireSecurityHeader` off carries
+`servesWithoutSecurityHeader()`; and `usesBrokenAlgorithms()` governs
+`saml.allowSha1Signatures` and — through `onlyWhileValues`, the weak values
+alone — `saml.signatureAlgorithm` `rsa-sha1`, `saml2.keyTransportAlgorithm`
+`rsa-1_5` and `pki.signatureAlgorithm` `sha1-rsa`/`sha1-ecdsa`. Three reads
+needed more than `valueInForce()`: an application's OVERRIDE of a marked
+setting (`applications.settingFor()` passes it through **`mode.inForce(key,
+value, source)`**, said once per setting and attribute, and
+`updateApplication()` / `createApplication()` refuse writing one,
+`STS-REG-0193`); an inbound `rsa-1_5` EncryptedKey, which no setting governs
+(`crypto.js`'s `decryptElement()`, `STS-KEYS-0070`); and a CA build or key
+pair NAMING SHA-1 (`pki.js`, `STS-PKI-0191`; an algorithm inherited from a
+branch built in development is replaced by the key's default instead).
+`mode.report()` gained `developmentOnlySettings` — every marked row with its
+stored value, the value in force and whether it is ignored — and is drawn by
+**`GET /admin/mode`** (`admin-ui/mode_admin.ts`, Server configuration → Mode)
+and answered by **`GET /admin-api/mode`**; until then the prose cited both
+routes and neither was registered.
+
+**#182 (2026-09-23) PUT THE MARKER ON A LIST ELEMENT.** `usesBrokenAlgorithms()`
+also governs `scim.digestMd5` (default now OFF — the marker's default is the
+product value) and the `23` (rc4-hmac, RFC 8429) in `krb5.enctypes`, a csv row
+whose DEFAULT keeps 23 so a development KDC exercises RC4. So for a list with
+`onlyWhileValues`, `mode.allowsValue()` judges ELEMENTS — a list is allowed
+when none of its elements is one the marker names, its default included — and
+`mode.inForce()` answers `productValue()`: the list WITHOUT those elements (the
+default's elements when nothing would be left), not the row's default. The
+STS-CORE-0106 line names the elements ignored. A stored value of that row is
+taken back by clearing it, since writing the default is itself refused in a
+product realm. `kerberos/CLAUDE.md` has where the KDC asks
+(`principals.etypePermitted()`, the same marker for one number).
+
+## `outbound_tls.ts`: THE TRANSPORT OF AN OUTBOUND REQUEST (#171, 2026-09-23)
+
+Four families dial an address somebody else answers — GNAP's push finish, SSF
+push delivery, federation's back channels, the XACML PEP nudge — and each had
+ONE `…AllowInsecure` switch that allowed plain http AND turned verification
+off, which product mode honoured. Each is three settings now, and this module
+is where all four ask; the module header argues why it is one module and why
+in `common/` (rcbj's rule that TLS code lives in a shared module, and GNAP,
+SSF and XACML not requiring the federation module for their transport).
+
+* **`httpVerdict(family, host)`** — `…AllowHttp` off refuses; development
+  (`mode.dialsPlainHttpOutbound()`) allows; product allows loopback only where
+  the family says a spec names it (GNAP) and otherwise refuses with the
+  family's code.
+* **`tlsVerdict(family, origin)`** — `rejectUnauthorized` and `ca`. A skip is
+  honoured only while `mode.skipsOutboundTlsVerification()` says so, with a
+  warning per request; in product it is ignored and said ONCE per setting per
+  process (`skipsVerification()`, which SPIRE's kubelet skip asks directly).
+  `…CaFile` is read on EVERY request (no cache — a handshake costs more, and a
+  rotated file is in force at once) and added BESIDE `tls.rootCertificates`;
+  a file that cannot be used refuses the request, `STS-CORE-0104`.
+* **`describe(family)`** — the three as they are IN FORCE, for the console and
+  `/admin-api` views, where a skip stored in a product realm reads false.
+
+**THE WRITE IS REFUSED IN `config.js`, NOT HERE.** A row carrying
+`onlyWhile: '<mode predicate>'` may be set to anything but its DEFAULT only
+while that predicate answers true (`modeWriteProblem()`, `STS-CORE-0103`; it
+read "set TRUE" until #104 marked `spiffe.attestWorkloads`, whose default is
+on and whose refused value is off — `mode.allowsValue()` is the one test, and
+`mode.writeRefusalReason()` the sentence per predicate; since #165 a row may
+also carry `onlyWhileValues: [...]`, and then only the values it lists need the
+predicate — `oid4vp.requireStatusReference`'s `off` is development only, its
+`own-only` is not), asked by
+`setOverride()`, by `checkWrite()` — which `admin-core/admin_actions.ts`'s
+all-or-nothing sections ask before writing anything — and by `realms.js` for a
+realm set, create or update with THAT realm ambient. **It is deliberately not
+in `checkOverride()`**, which is also what a start and a restore validate a
+STORED value with: refusing there would refuse to restore a realm that holds
+one, where the rule is that a stored value is ignored where it is read. The
+lazy `require('./mode')` inside `modeWriteProblem()` closes no cycle: both
+modules are loaded by the time anything writes.
+
+**THE OLD KEYS ARE REFUSED AT START, WITH NO SHIM.** `config.js`'s
+`REPLACED_SETTINGS`: an appconfig file or an environment variable naming one
+stops the start and names the three replacements (`STS-CORE-0105`), because a
+deployment that set one would otherwise start and dial nothing; a stored
+override naming one is refused as an unknown key (`STS-CORE-0008`) with the
+replacement named. There is no mapping from old to new, because which half an
+operator meant is the question the split exists to make them answer.
+
 ## ALL FIVE GATED SURFACES ASK THE POLICY, AND THEY ALL SIGN IN THROUGH ONE STORE (2026-09-06)
 
 `common/access_gate.ts` declared five resources from the day it was written and
@@ -6671,8 +7256,8 @@ Since 2026-09-06. `/admin` and `/portal` used to authenticate by REDIRECTING
 STRAIGHT TO THE SIGN-IN SCREEN and then reading the session that screen minted.
 They are **OpenID Connect relying parties** now: an unauthenticated request is
 sent to `/oauth2/authorize`, comes back to a registered redirect URI with a
-code, and the code is redeemed at `/oauth2/token` with a client secret and a
-PKCE verifier for an ID Token that establishes a session of that surface's own.
+code, and the code is redeemed at `/oauth2/token` with a `private_key_jwt`
+client assertion (a client secret until #138) and a PKCE verifier for an ID Token that establishes a session of that surface's own.
 
 **WHAT WAS WRONG WITH THE OLD ARRANGEMENT IS THE WHOLE ARGUMENT**: this
 service's own two applications were the only applications in the process that
@@ -6684,9 +7269,12 @@ reach outside it and this is the index of them:
 
 1. **THEY ARE ORDINARY ENTRIES IN THE REGISTRY.** `sts-admin-console` and
    `sts-user-portal` under `ou=applications`, seeded at startup
-   (`applications.seedInternal`), each a confidential client with a secret
-   minted per start, `authorization_code` + `refresh_token`, `response_types:
-   ['code']` and `client_secret_basic`. **Deleting one takes its surface offline
+   (`applications.seedInternal`), each a confidential client,
+   `authorization_code` + `refresh_token`, `response_types: ['code']` and —
+   since #138 (2026-09-22) — `private_key_jwt` with NO client secret: the key
+   is issued by the realm's CA on first use and kept, sealed, on the entry
+   (`oauth-oidc/CLAUDE.md` 3av). It was `client_secret_basic` with a secret
+   minted per start. **Deleting one takes its surface offline
    until a restart**, with a refusal that names the entry — which is the seeding
    rule finally having an observable consequence. — *THERE ARE THREE OF THEM
    SINCE 2026-09-06* under `applications.js`, above
@@ -7358,7 +7946,7 @@ For the *Password and second factors* section of a person's console page.
   none issued, `0166` expired, `0167` mismatch, `0168` incomplete) for the audit
   row; the page shows the requester one sentence for all of them.
 * **`mfaRequirementFor(username)`** is `{ required, byUser, byRealm }` —
-  `stsMfaRequired` on the entry OR `authn.mfaRequired` — and `setMfaRequired()`
+  `stsMfaRequired` on the entry OR the authentication policy's `requireSecondFactor` (it was `authn.mfaRequired` until #64) — and `setMfaRequired()`
   writes the first (`0170`). `mechanismsFor()` carries it as `mfaRequirement`,
   beside `passwordResetLink`.
 * **`removePrimaryKeys()`** removes every key in the `primary` role and refuses
@@ -7374,12 +7962,139 @@ For the *Password and second factors* section of a person's console page.
   the key store and was true for anybody — both found by the protocol suite
   run against a product-mode deployment.
 
-**Two settings**: `authn.mfaRequired` (group *Second-factor requirement*, drawn
+**Two settings**: the authentication policy's `requireSecondFactor` (it was `authn.mfaRequired` until #64) (group *Second-factor requirement*, drawn
 on `/admin/totp` and `/admin/webauthn`) and `security.passwordResetTtlMinutes`.
 **Two defaults changed**: `caep.autoEmitTypes` names `credential-change` and
 `risc.autoEmitTypes` names `account-credential-change-required` and
 `recovery-information-changed` — `ssf/CLAUDE.md` has the table of which door
 sends what.
+
+## 3ax. `app_passwords.ts` and `credentials.ts`'s `secondFactorRefusal()`: the password-only doors and what they take instead (#101, 2026-09-22)
+
+`authn/CLAUDE.md` owns the RULE (a second-factor person's own password is
+refused at the five password-only doors in product, as a wrong password is).
+What is this directory's is where it is decided and what an app password is.
+
+* **`secondFactorDemand(name)`** (#173) is the account half of it on its own
+  — `{ person, totp, key, holds, required, byUser, needed }`, mode-free — so
+  the KDC, which verifies a password as a Kerberos key and never calls
+  `verify()`, asks the same question (`kerberos/CLAUDE.md`, the FAST
+  section). `secondFactorRefusal()` is built on it.
+* **`secondFactorRefusal(answer, name, opts)`** runs right after
+  `resetRefusal()` in `verify()` and `verifyAsync()`, only on a `verified`
+  answer, only in product (`mode.acceptsPasswordAloneFromSecondFactorAccounts()`
+  — the named predicate, and a `REQUIREMENTS` row `second-factor-doors`), only
+  for a PERSON (the slot's `isPerson`; where the hook is missing the answer is
+  yes — refuse by default), only when they hold an `mfa` key or an
+  authenticator app or `mfaRequirementFor()` says required, and never for a
+  caller declaring `secondFactor: 'asked-next'` or `'session-held'`. A `door`
+  listed in `authn.passwordAloneDoors` passes, with a WARN per use. The
+  refusal is `STS-AUTHN-0213`, shaped exactly as a wrong password's verdict,
+  and the Kerberos password observer is not called for it.
+* **`passwordOnlyDoors(username)`** answers the whole table at once for the
+  pages that say it — `/portal/app-passwords`, `/portal/mfa`, the person's
+  `/admin/users` page and the API — so a page cannot promise a door the
+  verifier refuses.
+* **`app_passwords.ts` is a LIBRARY (rule 3)** in `backup_codes.ts`'s shape and
+  for rule 3y's reasons: the SHAPE (twenty-four characters of the thirty-two
+  unconfusable ones, six groups of four; the first four are a PUBLIC ID), the
+  five door ids, the scope and name rules, and the hash — `crypto.hashSecret()`
+  (rule 3r), because an app password is verify-only. **The id is what makes a
+  presented value cost ONE scrypt**: the record is found by it and only its
+  hash is checked, where a constant-time walk would cost one per record on
+  every wrong password, on every bind a pooled client makes.
+* **The records live in `credentials.ts`** (`stsAppPassword`, one JSON value,
+  single-valued): `createAppPassword()` (refusals `0214` name, `0215` doors,
+  `0216` the cap `appPasswords.maxPerPerson`, `0217` `appPasswords.enabled`
+  off, `0219` an unreadable value it will not write over, `0220` not a
+  person), `revokeAppPassword()` (`0218`), `appPasswordsOf()` (never a hash).
+  **In `verify()` the app password is asked FIRST**, and only when the
+  presented value has the shape AND names one of the person's ids; a match at
+  a door outside its scope — or with no door, which is the sign-in screen — is
+  `0213`, and a non-match falls through to the ordinary password check (a
+  password that happens to look like one is still a password). It is asked
+  after the disabled check and the development pass, so a disabled account
+  refuses it and development checks nothing. Last use is written at most once
+  a minute per password.
+* **Three settings**, all in the *Second-factor requirement* group (drawn on
+  `/admin/totp` and `/admin/webauthn`, no new `SETTING_HOMES` row):
+  `authn.passwordAloneDoors`, `appPasswords.enabled`,
+  `appPasswords.maxPerPerson`.
+
+`tests/second_factor_doors.js` is the in-process half;
+`tests/vendored/sts_second_factor_doors.js` drives the five doors over the wire.
+
+## 3ay. `identity_assurance.ts`: a person's identity verifications, and `verified_claims` (#127, 2026-09-23)
+
+OpenID Connect for Identity Assurance 1.0. **A verification is a RECORD ON THE
+ENTRY, not a property of a sign-in**: `stsIdaVerification` holds up to sixteen
+of them as one JSON value, newest first, each the specification's
+`verification` element (`trust_framework`, `assurance_level`, `time`,
+`verification_process`, `evidence`) and the claims it covered **with the values
+that were verified**. It is withheld from every LDAP read (SECRET_ATTRIBUTES):
+evidence carries document numbers. `directory_merge.js` merges it whole, as a
+credential.
+
+rcbj's answers, and where each lives:
+
+* **Three sources.** An administrator records one on the person's
+  `/admin/users` page or `POST /admin-api/users/record-verification` (and
+  removes one by id); a wallet sign-in with a credential this realm issued
+  records an `electronic_record` checked `vcrypt` (`vc_signin.ts`); a client
+  certificate sign-in records an `electronic_signature` under the
+  certificate's issuer and serial (`tls_server.js`'s `certificateFacts()`).
+  An automatic record covers only what the sign-in presented AND the entry
+  holds, replaces the previous record of its kind, never throws, and is
+  switched by `oauth2.idaAutomaticVerifications`. It is recorded under the
+  FIRST of `oauth2.idaTrustFrameworks`.
+* **Only a value the DIRECTORY holds is verified.** `currentValues()` drops a
+  claim any of whose values the catalogue invented (report `source` not
+  `directory`), so development's persona can never be recorded as checked. A
+  claim is RELEASED as verified only while the entry still holds the recorded
+  value — a name changed after the passport was looked at is left out, and
+  the log says why. The ordinary claim still carries the new value.
+* **All four evidence types**, each held to what section 5.1.1 requires and to
+  the vocabularies discovery publishes (`DOCUMENT_TYPES`, `CHECK_METHODS`,
+  `ELECTRONIC_RECORD_TYPES` — the schema's plus this service's
+  `urn:sts:verifiable-credential`). An unknown member of `verification` is
+  dropped, so a record can only say what discovery says is supported.
+* **`value`/`values` are ENFORCED on the verification and its evidence**, with
+  `max_age` on `time`; an element nothing satisfies is OMITTED, never answered
+  with a weaker one; only the members asked for are returned
+  (`matches()`/`project()`). On the claims inside `verified_claims` they are
+  reported and not enforced, as on every ordinary claim.
+* **Development invents one** — `demoRecord()`, trust framework
+  `urn:sts:demo`, for a person with no record, under
+  `mode.inventsClaimValues()` and listed on `/admin/mode`. It is never
+  recordable, published in discovery only in development, and a request
+  naming any real framework never matches it. Product releases recorded
+  verifications only.
+* **Aggregated and distributed claims are #147's**; attachments are not
+  stored (`attachments_supported: []`).
+
+The request is parsed in `oauth2.ts`'s `parseClaimsRequest()` (section 6's
+refusals are `invalid_request`, STS-OAUTH-0157 like every malformed claims
+request; each node counts toward `oauth2.maxRequestedClaims`), normalised to
+an array so the copy in the access token parses again at UserInfo, and
+answered in `requestedClaimsOf()` beside the ordinary claims — so the
+federation release policy applies to it as to any requested claim.
+`tests/identity_assurance.js` holds it.
+
+## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23 — the foundation of #164)
+
+A device is an entry under `ou=devices` (`ldap/CLAUDE.md`), owned by a person
+and linked to the applications that used it. Today OpenID Connect Native SSO
+makes them (`oauth-oidc/CLAUDE.md`, 3bb). Four rules, each argued in the
+file's header:
+
+* **The device outlives its secret.** The secret is accepted only while its
+  session lives; a later sign-in presenting it re-binds the SAME device, and
+  the secret is never rotated.
+* **A secret presented for somebody else is ignored** — a new device is made.
+* **A person holds at most `oauth2.maxDevicesPerPerson`**; at the bound the
+  least recently used device whose session has ended makes room.
+* **The view never carries the hash**, on the console, the API or the
+  portal.
 
 ## Several nodes: second factors, links, enrollment credentials and the bootstrap (2026-09-14, #46)
 
@@ -7763,4 +8478,197 @@ dead-letters a pending delivery before its retention ends and would be
 bypassed; and `keys.plaintext`, whose decrypted key is dropped by a one-shot
 deadline re-armed at each use — to the second, where a minute-long job would
 leave it decrypted up to a minute longer than `keys.plaintextTtlS` says.
+
+
+## 3ba. The mail channel: `mail.ts`, `mail_transports.ts`, `mail_templates.ts`, `mail_uses.ts` (#63, 2026-09-22)
+
+Until #63 this service had no way to tell a person anything. A reset link and
+an activation link were shown to an administrator to pass on by hand, and a
+person could not start recovery themselves. **Four files, and the split is
+the design.**
+
+| File | What it is | Who may require it |
+|---|---|---|
+| `mail.ts` | THE CHANNEL: `send()`, the outbox, the claim per attempt, the `mail.deliver` job, the ceilings, the templates store, the preferences, the startup check | anybody, through `send()`; the directory fills its slot |
+| `mail_transports.ts` | FIVE TRANSPORTS behind `send(message)`: capture, SMTP (nodemailer), SES v2, Azure Communication Services, the Gmail API | `mail.ts` ONLY |
+| `mail_templates.ts` | THE MESSAGES: the built-in English wording of each, rendering, and the rules a realm's own wording must keep | `mail.ts` ONLY |
+| `mail_uses.ts` | WHAT IT IS FOR: self-service reset, address verification, an administrator's links, security notices | the portal, the console, `account_signals.ts`, `account_state.ts`, `admin_actions.ts`, `ldap_server.js` — every one LAZILY |
+
+**Nothing reaches a transport except through the channel.** A module that
+did would skip the outbox, the claim, the ceiling and the audit row, and those
+are every property the channel exists to have.
+
+Rcbj's three decisions (#63):
+
+- **One transport for the service, which a realm may override.** Every `mail.*`
+  row is an ordinary realm-overridable row. A built transport is cached per
+  realm on the INSTANCE, keyed by a fingerprint of its settings, so a changed
+  setting rebuilds it and re-reads its secret.
+- **Development captures unless a transport is configured.** Product's
+  `default` is `off`.
+- **Both Google routes.** The Workspace SMTP relay is a preset of the SMTP
+  transport, and the Gmail API has a transport of its own.
+
+**Capture never reaches product.** A captured message keeps its body, and a
+password reset link on the console is a credential shown to whoever may read
+it. So `capture` is refused on write (`config.js`'s `modeWriteProblem()`,
+STS-MAIL-0003) and at start. More generally, a product service whose configured
+transport cannot be built does not start (`startupProblem()`, awaited by
+`server.js` before the workers fork, STS-MAIL-0002).
+
+**The outbox is back-channel logout's arrangement, for its reason** (rule
+3aq): a persisted per-realm row per message, attempted at once by the process
+that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
+
+- **It has no retry timer of its own** — a retry waits for the sweep, which is
+  what `tests/no_periodic_timers.js` holds.
+- **A SENT message loses its body.** A dead letter keeps its body for the
+  retry, and a captured one keeps it because the body is all it is for.
+
+**Three rules keep it from being an open relay or a phishing kit:**
+
+- **The recipient is a DIRECTORY ENTRY.** `send()` takes a username, and the
+  address is the entry's `mail`. The one exception is `address-changed`, sent
+  to the entry's FORMER address, which `ldap_server.js`'s account observer
+  hands over from the directory's own before-image.
+- **A link is built on `global.publicBaseUrl`, never on the request.**
+  `baseUrlOf(req)` reads the Host header, and a Host header choosing where a
+  reset link points is the poisoned-reset attack. Development falls back to
+  the listener's configured address (`mode.mailsLinksFromListenerAddress()`),
+  and product mails no link without the pin (STS-MAIL-0015).
+- **A template loads nothing, runs nothing and writes no address of its own**,
+  checked when a realm saves one.
+- **Every message is wrapped in the realm's LAYOUT (#64)** — the built-in
+  `layout` template, reworded per realm like any other, which carries the
+  message's body as `{{content}}` exactly once in each part (checked on save)
+  and says why the person received it (`{{reason}}`, the category's). It is a
+  template and not a message: `send()` refuses it by name.
+- **The second exception to "the recipient is `mail`" (#64)** is
+  `sendToPendingAddress()`: the verification link of a person's own CHANGE of
+  address goes to the entry's pending `stsMailVerifyAddress` — written by
+  their signed-in form, never a request's — for the former-address rule's
+  reason read the other way round.
+
+**The uses, and why each is shaped the way it is:**
+
+- **Forgot password answers ONE SENTENCE, BEFORE doing the work** (the portal
+  answers and then `setImmediate`s `requestReset()`), so neither the words nor
+  the time say whether an account exists. It removes nothing, unlike an
+  administrator's reset link, because a request anybody can make must not be
+  able to lock somebody out. It mails only a VERIFIED address by default
+  (`mail.resetRequiresVerifiedAddress` — most secure by default, with the
+  weaker setting warned about in docs/mail.md). **Since #64 it asks for
+  THREE things by default** (`mail.resetRequiresBackupCode`, rcbj's D4): the
+  username, the verified address on the account, and one of the person's
+  recovery codes, which is SPENT when all three are right — so one code cannot
+  be replayed into a stream of reset mail. A wrong code with the right name
+  and address tells the address owner (`reset-refused-attempt`), once an hour
+  at most. Every combination is answered with the same sentence.
+- **Verification records the ADDRESS, not a flag** (`stsMailVerified`). A
+  changed `mail` is unverified with nothing to clear. The GET of the link draws
+  a button and spends nothing, because a mail scanner follows every link. The
+  same state is UserInfo's `email_verified` in product (`oauth2.ts`,
+  `personFromDirectory()`). **Since #64 the link's hash is of the token AND
+  the address the account had when it was sent**, so no link outlives a change
+  of address by anybody; and **a person may CHANGE their own address**
+  (`startAddressChange()`, rcbj's D5): the new one is held pending, mailed a
+  link, and becomes `mail` — verified, with the former address told — only
+  when the link is followed. **Who wrote an address decides whether it is
+  verified** (`ldap_server.js`'s `verifyWrittenMail()`): an administrator (the
+  console, `/admin-api`, `set-mail`), SCIM, an administrator's LDAP write and
+  a federation partner (unless it said `email_verified: false`) are trusted
+  sources; a person's own LDAP write is sent a verification link; an address
+  `namePlan()` invented is never verified.
+- **Security notices hook the places every door already passes through**,
+  never each door:
+  - `AccountSignals` sees every password change, compromise and recovery
+    start, whether or not SSF is loaded.
+  - `AccountState` sees every disable.
+  - `admin_actions.ts`'s two session-ending doors are the administrator's
+    alone. A person's own sign-out tells nobody.
+
+  An app password (a `friendlyName`) is not "your password was changed". A
+  recovery whose link was itself mailed (`mailed: true`) sends no second
+  message.
+
+`tests/mail.js` holds all of it in process, including SMTP against a real
+`smtp-server` with STARTTLS and DKIM. `tests/vendored/sts_mail.js` drives it
+over HTTP into the Mailpit the compose stack runs. docs/mail.md is the
+operator's guide.
+
+## 3bd. `authn_policy.ts` and `admin-core/policy_kinds.ts`: THE AUTHENTICATION POLICY, AND ONE POLICIES PAGE FOR EVERY KIND (#64, 2026-09-23)
+
+**Which mechanisms a realm accepts as a FIRST factor, which as a SECOND, and
+when a second is required** — rcbj's "default policy under Directory >
+Policies that defines primary authentication mechanisms and MFA mechanisms,
+overridden per realm by an administrator". The module's header argues it; the
+decisions are rcbj's, on the ticket:
+
+- **A SEPARATE POLICY FROM THE PASSWORD POLICY, ON THE SAME PAGE.** Its own
+  module, container (`ou=authnPolicies`) and schema, sharing nothing with
+  `password_policy.ts` but the SHAPE — a `FIELDS` table read five ways, not
+  seeded, a save carrying every field. `/admin/policies` and
+  `/admin-api/policies` hold both, and every policy defined later:
+  `policy_kinds.ts` is a list of KINDS, each a module with that interface and
+  two actions (`save-<id>-policy`, `reset-<id>-policy`); the page, the JSON,
+  the API's operations (with each save's body schema from the kind's FIELDS)
+  and the refusal sentence the parity checks read are all drawn from it. A
+  future policy is a module and a row there.
+- **A REALM INHERITS (D6)**: its own `cn=default`, then the DEFAULT realm's,
+  then the built-in defaults. `reset` deletes the realm's own. `read().from`
+  says which is in force — which the password policy, whose realms do not
+  inherit, has no need of.
+- **IT RETIRED THREE SETTINGS, WITH NO SHIM (D7)**: `authn.mfaRequired` is
+  `requireSecondFactor` (`if-held` | `always` — there is no `never`: a held
+  factor is always asked for), and `totp.enabled` and `backupCodes.enabled`
+  are the TOTP and recovery-code rows, which keep those settings' contract:
+  off stops ENROLMENT, never a factor already held.
+- **WHERE IT IS ASKED.** `authn.startSession()`, the line every door
+  reaches, refuses a session whose mechanism the policy does not accept in
+  the role it answered in (STS-AUTHN-0268 first, -0269 second); held second
+  factors are not refused there, by the contract above. The sign-in screen
+  draws only what it accepts, `webauthnPolicy.roleAllowed()` asks the two
+  security-key rows, `totp.settings().enabled` and
+  `backupCodes.settings().enabled` read theirs, and
+  `credentials.mfaRequirementFor()` reads `requireSecondFactor`.
+- **EMAIL IS OFF BY DEFAULT, AND GUARDED (D1)**: NIST SP 800-63B-4 section
+  3.1.3.1. An email row cannot be SAVED on in a realm that cannot send mail
+  (STS-AUTHN-0244), one already on there is not ACTIVE (`active()`, fail
+  closed), and the page draws such rows DISABLED with the reason.
+
+**Authorization is still policy (rcbj's rule).** What a session stands on —
+`amr`, `acr` and the credential kinds — goes to the issuance policy as
+environment attributes (`urn:sts:xacml:amr`, `acr`, `credential-kind`) when
+the session starts; the built-in `role-issuance` template's
+`refuseEmailFactor` option is the rule an operator writes to refuse a session
+on an emailed factor, carrying an obligation the PEP refuses on even where
+the role question is waived. The facts ride along whenever the policy is
+asked and do not make it asked.
+
+`tests/authn_policy.js` holds the module, the inheritance, the mail guard,
+the retired settings and a kind registered later.
+
+## 3be. `mail_factor.ts`: THE EMAILED FACTOR AS A FACT ABOUT A PERSON (#64, 2026-09-23)
+
+The emailed six-digit code and the emailed sign-in link are drawn and checked
+by `authn/email_factor.ts` (`authn/CLAUDE.md`); what the screens, the
+credential store, the portal and the console must agree on is here:
+
+- **A PERSON OPTS IN (D8)** — `stsMailFactor` (`code` | `link`), from
+  `/portal/mfa`, cleared by an administrator (`clear-email-factor`). It is
+  HELD only while it is usable: allowed as a second factor, mail working, the
+  address verified. `credentials.mechanismsFor()` counts a held one in
+  `mfaRequired` and names it LAST in `secondFactor`, after a key and an app:
+  it is the weakest.
+- **THE SECRETS** are minted from the CSPRNG and kept only as a scrypt hash
+  (`crypto.hashSecret()`) on the sign-in step.
+- **THE FAILURES** are counted on the entry (`stsMailFactorFailures`): a count
+  on a step dies with the step and an attacker starts another. At the
+  policy's `emailFailureLimit` (at most 100, section 3.2.2) the opt-in is
+  cleared and the person and their administrators are told.
+
+An emailed factor is `amr ["otp"]` (RFC 8176 has no value for email, D2) and
+meets NO risk step-up (`risk_engine.satisfiedBy()`'s `kinds`, D1).
+`tests/email_factor.js` drives it end to end in process;
+`tests/vendored/sts_email_factor.js` over HTTP into Mailpit.
 

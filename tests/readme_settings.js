@@ -3,7 +3,10 @@
 // File: readme_settings.js
 //
 // ===========================================================================
-// THE README'S SETTINGS TABLES, AGAINST THE TABLE THAT DECLARES THE SETTINGS.
+// THE SETTINGS TABLES, AGAINST THE TABLE THAT DECLARES THE SETTINGS.
+//
+// The tables are in `docs/configuration.md` (*Every setting*). They were in
+// README.md, which is where this file's name comes from.
 //
 // `readme_ports.js` next door holds ten rows of README to `config.js`. This
 // file holds the other two hundred, and it exists because of what those ten
@@ -28,8 +31,8 @@
 // WHY IN PROCESS, which is the question tests/CLAUDE.md asks first.
 //
 // Every claim here is a comparison between two FILES in this repository —
-// `README.md` and `common/config.js`. No running service could be asked, and
-// nothing here binds a port or issues anything. Same shape as
+// `docs/configuration.md` and `common/config.js`. No running service could be
+// asked, and nothing here binds a port or issues anything. Same shape as
 // `readme_ports.js`, `postgres_schema.js` and `xacml_pep.js`'s COPY set.
 //
 // ---------------------------------------------------------------------------
@@ -50,7 +53,8 @@
 //     instead, so the gap is visible and can be closed deliberately.
 //
 //     If it ever reaches zero, make it an assertion. That is the moment the
-//     claim "README lists every setting" becomes true and worth defending.
+//     claim "the documentation lists every setting" becomes true and worth
+//     defending.
 //
 // The environment variable and the default are compared for every row that
 // does name a real setting, for `readme_ports.js`'s reason: a row naming the
@@ -75,7 +79,7 @@ const config = require('../common/config');
 const log = require('bunyan').createLogger({ name: 'readme_settings',
   level: process.env.LOG_LEVEL || 'info' });
 
-const README = path.join(__dirname, '..', 'README.md');
+const README = path.join(__dirname, '..', 'docs', 'configuration.md');
 
 // A settings row is `| \`key\` | \`ENV_VAR\` | ... |`. The key may carry a
 // parenthetical after the backticks — `global.https` is written
@@ -105,7 +109,7 @@ function run(t) {
   log.debug("Entering run().");
   const found = rows();
   if (!t.check(found.length > 150,
-               'README.md has a settings table to check',
+               'docs/configuration.md has a settings table to check',
                'found ' + found.length + ' rows, which is too few to be that ' +
                'table; either the format changed — in which case change ROW ' +
                'here too — or a table that was being kept honest is gone')) {
@@ -152,7 +156,7 @@ function run(t) {
     const s = known.get(row.key);
     return s && s.env && s.env !== row.env;
   }).map(function (row) {
-    return row.key + ': README says ' + row.env + ', config.js says ' +
+    return row.key + ': the docs say ' + row.env + ', config.js says ' +
            known.get(row.key).env;
   });
   t.equal(wrong.join('; '), '',
@@ -189,6 +193,6 @@ function run(t) {
 
 module.exports = {
   name: 'readme_settings',
-  describe: "the README's settings tables against config.js",
+  describe: "docs/configuration.md's settings tables against config.js",
   run: run
 };

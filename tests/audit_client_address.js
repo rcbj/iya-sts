@@ -64,7 +64,8 @@ function rowWith(marker) {
 function inAChild(env, body) {
   log.debug("Entering inAChild().");
   const out = path.join(os.tmpdir(), 'audit-address-' + process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(KRB5_|STS_|LDAP_|LDAPS_|CONFIG_FILE$)/.test(key)) {

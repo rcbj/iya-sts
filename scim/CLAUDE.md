@@ -253,6 +253,26 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    the top level. Adding them to one projection would have left the other still
    unusable and a reader unable to say which endpoint was right.
 
+   **THIS SERVICE'S OWN USER EXTENSION (#109, 2026-09-22)**,
+   `urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User`, declared to
+   scimmy beside the enterprise one (an undeclared member is dropped by its
+   coercion), carries one member: `federationLinks`, a list of
+   `{ relationship, issuer, subject }` — the person's federation links
+   (`../federation/CLAUDE.md`, *WHICH PEOPLE A PARTNER MAY ASSERT*). Its row
+   in `scim_map.ts` is kind `links`, which every converter there steps over:
+   `scim.ts` converts it, because each link has to be asked of the federation
+   register (`federation_links.ts`'s `resolveRequest()`, the check the console
+   and `/admin-api` use) and a link another person carries is refused 409
+   `uniqueness` (`STS-FED-0107`). It is checked BEFORE a create, so a refused
+   link leaves nobody behind. **NOT SENT on a PUT is "unchanged"** — `active`'s
+   rule, so a provisioning client that never heard of the extension cannot
+   unlink anybody — and a PUT that sends `federationLinks: []` removes them all
+   (scimmy's coercion drops an empty array, so the raw body is read for it); a
+   PATCH is applied to the resource as egress drew it, links included, so what
+   it leaves is what is written. Egress writes the OBJECT form: scimmy keeps a
+   multi-valued complex member only there. A removal ends the sessions that
+   partner signed the person in to, through the directory's write hook.
+
    `describeRow()` and `describeMapping()` are now the one projection, here
    beside the table, and both endpoints call them. **`type` and `parent` are
    `null` rather than absent** where a row has none, so a client can tell "this
@@ -309,11 +329,17 @@ into the LDAP directory, entry for entry, with **no store of its own**.
   offered, and the OAuth ones must carry `scim:read` or `scim:write` — the first
   scope requirement anywhere in this service. **It is still a turnstile rather
   than a lock** IN DEVELOPMENT MODE, which is a different sentence and the one
-  that matters: anybody can get a token with either scope from any grant, any
-  password but `invalid` passes Basic, any username passes Digest with the one
-  shared password, and anybody can register a HOBA key for any name. **In
-  product mode none of those four halves holds** — see the audit section at the
-  foot of this file. What it buys is that a client's
+  that matters: any password but `invalid` passes Basic, any username passes
+  Digest with the one shared password, and anybody can register a HOBA key for
+  any name. **In product mode none of those three halves holds** — see the audit
+  section at the foot of this file. **A TOKEN'S SCOPE IS TIED TO ITS CLIENT IN
+  BOTH MODES (#110, 2026-09-22)**: until then anybody could get a token with
+  either scope from any grant. The token endpoint now issues the SCIM scopes
+  only to a client whose `oauthAllowedScope` declares them, and
+  `settleDecision()` asks every token whether its client still declares the
+  scope the operation needs (`STS-SCIM-0079`, 403 `insufficient_scope`), so
+  withdrawing the declaration cuts off tokens already issued. The policy is
+  `common/scope_policy.ts`'s (`common/CLAUDE.md`). What it buys is that a client's
   401, 403, challenge-response and scope handling can be exercised at all — none
   of which an open endpoint can produce. See rule 6a-ii and `scim_auth.ts`.
   **A BASIC PASSWORD IS VERIFIED IN THE WORKER POOL since 2026-09-21**: product
@@ -551,9 +577,16 @@ never builds an `ErrorResponse`.
   `scim.maxDigestNonces` (2000) and `scim.maxHobaChallenges` (2000) are safe to
   lower for a simpler reason: a forgotten nonce or challenge is refused, never
   accepted.
-* **`scim.digestMd5`** (true) drops MD5 from the challenges and refuses an MD5
-  credential naming the setting. `DIGEST_ALGORITHMS` stays the table of what the
-  BUILD computes, for the crypto report.
+* **`scim.digestMd5`** (false since #182, 2026-09-23; it was true) adds MD5 to
+  the challenges; off, an MD5 credential — or one naming no algorithm, which
+  RFC 7616 reads as MD5 — is refused naming the setting. `DIGEST_ALGORITHMS`
+  stays the table of what the BUILD computes, for the crypto report. **It is
+  DEVELOPMENT MODE ONLY** (`onlyWhile: 'usesBrokenAlgorithms'`): refused on
+  write in a product realm (STS-CORE-0103) and read through
+  `mode.valueInForce()` (STS-CORE-0106). Product offers no Digest at all
+  (STS-SCIM-0056, below), so there the marker only keeps a stored `true` from
+  claiming something the service does not do; development is where the
+  default changed, because the most secure option is the default.
 * **`scim.digestNonceSeconds` and `scim.hobaMaxAgeSeconds` carry `min: 1`** and
   are read straight through; they were `Number(...) || 300` and `|| 600`, which
   rewrote a value the table accepted without saying so.
@@ -637,3 +670,12 @@ The capability row `scim.challenge-state` is provided by `scim_auth.ts`.
   next count is accepted, and a failing claim store refuses. Not run against two
   live nodes: Digest is not offered in product mode, and a HOBA run needs a
   signed-in owner to register a key.
+
+## A second-factor person's Basic password (2026-09-22, #101)
+
+Both Basic paths — `attemptBasic()` and `verifyBasicOffThread()` — pass
+`door: 'scim'`, so in product a person who holds or must hold a second factor
+is refused their own password with the one `STS-SCIM-0037` sentence a wrong
+password gets (the code on the call-log row is `STS-AUTHN-0213`), and uses an
+app password scoped to `scim`; the decision's `note` says so. `authn/CLAUDE.md`
+owns the rule.

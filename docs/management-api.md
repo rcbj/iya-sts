@@ -4,8 +4,8 @@ title: Management API
 
 # Management API
 
-`/admin-api` is the administrative console at `/admin` over JSON, for a
-script, a CI job or a test rather than a person. Whatever the console shows
+`/admin-api` is the [administrative console](admin-console.md) at `/admin`
+over JSON, for a script, a CI job or a test rather than a person. Whatever the console shows
 can be read here, and whatever it can change can be changed here. It is not a
 protocol, but it is protected like one: every call carries an
 [OAuth 2.0](https://www.rfc-editor.org/rfc/rfc6749) access token that this
@@ -127,6 +127,23 @@ already written code that assumed it was there. Parity is kept structurally:
   mirrors**, so you can look up the page that shows the same thing.
 * **An unknown action is not a 404.** It gets the console's own "Unknown
   action" refusal, which lists the actions that exist.
+* **One route per resource, one documented operation per action.** Express
+  registers `/admin-api/tokens/:action` once; the OpenAPI document lists
+  `/admin-api/tokens/revoke`, `/restore`, `/revoke-kind`, `/revoke-subject`,
+  `/revoke-user` and `/revoke-all` as separate operations, each with its own
+  body schema and example. `/admin/sts-metadata`, which reads the router,
+  shows one row per resource, while the document describes the URLs a caller
+  actually uses.
+
+**Nothing in the service can see a form appear on a page**, so parity is also
+checked from outside, by this repository's `tests/vendored/admin_api.js`. It
+reads the facts from the running service rather than from a list in the test:
+the console's page list comes back in `GET /admin-api/status`, and each action
+handler, asked for an action that does not exist, replies with the names of the
+ones that do ("Unknown action "x". The four are: add, remove, clear,
+replace."). Add an action to the console and that sentence grows, and the test
+fails until the API has an operation for it. The same test checks every
+property the document describes against a live reply.
 
 ### The areas, broadly
 
@@ -138,9 +155,14 @@ cover:
   persistence, the database, encryption at rest, secrets, caches, the
   scheduler, the cluster, the error-code table and the audit log.
 * **Identities.** People and groups in the directory, second factors (TOTP,
-  WebAuthn, recovery codes), password policies, sessions and sign-out.
+  WebAuthn, recovery codes), password policies, sessions and sign-out. Each
+  security key on `GET /admin-api/users?user=` carries `attestation` — what
+  its attestation statement proved (format, type, verified, trusted, the
+  anchor, the model the FIDO metadata names) — and `GET /admin-api/webauthn`
+  reports the attestation policy in force and the FIDO MDS BLOB (#105).
 * **Applications and what they are issued.** The application register,
-  consent, permissions, roles, delegation, issued tokens, the claim and SAML
+  consent, permissions, roles, delegation and who may delegate (`GET
+  /admin-api/delegation/policy`), issued tokens, the claim and SAML
   attribute sets, and signing keys.
 * **Each protocol family's settings and state.** OAuth 2.0 / OIDC and
   authorization servers, SAML 2.0 and 1.1, WS-Trust, WS-Federation, federation
@@ -182,6 +204,19 @@ realm's own administrators cannot see it. It also stops working while
 header and has no DPoP key to prove. With that setting on, use `curl` and a
 proof.
 
+**The explorer is the one console page with a script.** The console is
+`script-src 'none'` like the rest of the service, which is what makes the whole
+family of reflected-content problems moot rather than merely unlikely. The
+explorer relaxes that on its own two routes and in exactly two clauses:
+`script-src 'self'`, and `connect-src 'self'` so the page can call the API it
+documents. Everything else, `default-src 'none'` included, stays as it is, and
+the console next door is still `script-src 'none'` — which the tests assert.
+The script is a **separate file** because `'self'` is enough for a file where an
+inline block would need `'unsafe-inline'`, the clause that would make the
+relaxation matter. It is served verbatim from disk, is not a node module, and
+builds every element with `createElement` rather than assigning `innerHTML`,
+because it renders response bodies that are not always this service's own.
+
 ## Trust realms and per-realm administrators
 
 The API is scoped to a realm by the same path prefix as every other endpoint.
@@ -202,10 +237,19 @@ calling a prefix that no longer exists.
 | The service token | the default realm's `/oauth2/token`, with `resource=<base>/admin-api` | `/admin-api` and every `/realm/<id>/admin-api` | everything its scopes allow |
 | A realm's own token | `/realm/<id>/oauth2/token` as that realm's `sts-management-api`, with `resource=<base>/realm/<id>/admin-api` | `/realm/<id>/admin-api` only | that realm's operations only |
 
+**Either token must have been issued to a client that declares the scope it
+uses** (#110). `admin:read` and `admin:write` are issued only to a
+client whose `oauthAllowedScope` lists them, in both modes — any other client is
+refused `invalid_scope` at the token endpoint — and the API asks again on every
+call, in the realm that issued the token: a token whose client no longer
+declares the scope an operation needs is refused 403 (`STS-API-0123`), so
+withdrawing the declaration cuts off tokens already issued. The seeded
+`sts-management-api` and `sts-admin-console` declare both in every realm; an
+administrator may declare them on another client with
+`POST /admin-api/applications/add`. A dynamic registration may not.
+
 A realm's token is tried only under that realm's prefix. It must carry the
-realm's issuer and audience, and it must have been issued to the realm's own
-`sts-management-api` client (`STS-API-0111`). Any other client registered in
-the realm is refused, even with the `admin:*` scopes. The token is then
+realm's issuer and audience. The token is then
 refused whatever the console refuses the realm's administrators
 (`STS-API-0112`), and the same rule decides both doors:
 
@@ -245,6 +289,10 @@ dangerous as it sounds. In product mode, with the switch off, a browser that
 navigates to the API gets a 403 page telling it to sign in at `/admin`, and a
 realm administrator's session is confined to their realm as described above.
 
+Whatever the state, **whoever can call this API can revoke every token this
+service has issued and change what the next one contains**. Do not expose a
+development-mode instance on a public address.
+
 The policy layer runs only where the API is gated. In development with the
 switch off there is no credential and so no subject, and a policy that
 refused an unauthenticated subject would close the recovery path. On an
@@ -263,7 +311,7 @@ override them, because they decide who administers the service.
 | `adminApi.audience` | `ADMIN_API_AUDIENCE` | derived: `global.publicBaseUrl` + `/admin-api`, or this process's scheme, host and port + `/admin-api` | yes | The `aud` a token must carry. At its default, `/admin-api` under the host the request arrived on is accepted as well; any other value pins that one value. |
 | `admin.readGroup` | `ADMIN_READ_GROUP` | `admin-read` | yes | The directory group whose members hold Admin Read, which lets them read the console and, with the token gate off in product mode, `GET` the API. |
 | `admin.writeGroup` | `ADMIN_WRITE_GROUP` | `admin-write` | yes | The directory group whose members hold Admin Write; write implies read. |
-| `admin.openWhenEmpty` | `ADMIN_OPEN_WHEN_EMPTY` | `true` | yes | Keep the console open to every signed-in person until the bootstrap administrator first signs in. |
+| `admin.openWhenEmpty` | `ADMIN_OPEN_WHEN_EMPTY` | `true` | yes | Keep the console open to every signed-in person until the bootstrap administrator first signs in. Development mode only: product never opens it. |
 | `admin.bootstrapUsername` | `STS_ADMIN_BOOTSTRAP_USERNAME` | `admin` | no | The administrator seeded at startup in every realm, a member of both roles, with a forced password change. |
 | `admin.bootstrapPassword` | `STS_ADMIN_BOOTSTRAP_PASSWORD` | empty | no | In product mode, the bootstrap administrator's password instead of a generated one that is logged once. Secret; held to the password policy. |
 | `xacml.enforceAccess` | `STS_XACML_ENFORCE_ACCESS` | `true` | yes | Ask the XACML policy before letting a caller through; on the token path this is what checks the scope. |
@@ -278,9 +326,19 @@ them on the console or with `POST /admin-api/config/set`.
 
 ## Design decisions
 
+* **An API, because a form is the right shape for a person and the wrong one
+  for anything else.** Every console page always answered `?format=json`, so
+  reading was never the problem; *changing* something was. Without the API a
+  script that wanted to revoke a token, or a CI job narrowing the issuer's
+  claim set before running a wallet against it, would have to parse a 303
+  redirect for its message or know which hidden input a form carried — driving
+  a browser without one.
 * **The API mirrors the console and decides nothing.** Both doors call one
   action function and one read view, so they cannot differ on what is
   allowed. The console page is drawn from the same model the API returns.
+  The way to see it is not to read the code: revoke a token through the API
+  and RFC 7662 introspection calls it inactive, because there is one set of
+  revoked jtis in the service and `/oauth2/revoke` writes to the same one.
 * **The OpenAPI document is generated, not written.** It is built from the
   route table, so it cannot describe an operation that does not exist or
   omit one that does. The explorer's copy is built by the same function.
@@ -307,12 +365,11 @@ them on the console or with `POST /admin-api/config/set`.
   is presented.** If a token minted in a realm counted as the service
   credential, anybody who could create a realm could mint a token for
   everything. A realm's own token is therefore believed only in that realm.
-* **The default realm's gate accepts `admin:*` from any client, but a realm's
-  gate accepts it only from `sts-management-api`.** The token endpoint does
-  not restrict who may ask for these scopes, and the realm check closes that
-  gap for realm tokens. For the service token it is still open: control who
-  can register clients (`oauth2.openRegistration` in product mode) with that
-  in mind.
+* **`admin:*` is tied to the client, in both realms and both modes (#110).**
+  Otherwise any client that could use `client_credentials` could mint Admin
+  Write. The token endpoint issues them only to a client whose `oauthAllowedScope` declares them, a registration
+  cannot declare them, and the gate asks the same question of every token
+  (`STS-API-0123`).
 * **The secret is a configuration setting, not an action.** A secret
   generated per start is readable only through the API it unlocks. That is a
   bootstrap hole, so `adminApi.clientSecret` pins it, and regenerating a
@@ -332,9 +389,22 @@ them on the console or with `POST /admin-api/config/set`.
   logout is its own named operation, `global`, because an empty list arriving
   at `end` usually means a caller built a list and got nothing.
 * **The explorer is the service's own, not Swagger UI.** It is about 450
-  lines with no dependency, where Swagger UI would add about 11.7 MB. It is
-  one of the few pages allowed a script, and it loads the script as a file
+  lines with no dependency, where `swagger-ui-dist` would add about 11.7 MB
+  and an install-time telemetry package, in an image built where there may be
+  no network beyond the registry. It does what was needed — read the
+  document, fill a form, show the response — plus the equivalent `curl` line
+  beside each operation, which is what an operator actually copies. It is one
+  of the few pages allowed a script, and it loads the script as a file
   (`script-src 'self'`), never inline.
+* **The document declares the credential.** It carries `security`, two
+  `securitySchemes`, and the scope on every operation. `security: []` would be
+  OpenAPI for *no credential is needed*, and a client generated from it would
+  send none and be refused by every operation.
+  `tests/admin_api_document_security.js` and
+  `tests/vendored/sts_admin_api_auth.js` hold the document to the gate from
+  both ends.
+* **A test still needs no secret of its own.** The test launchers mint one
+  token before any job runs and hand it to every job.
 
 ## In the running service
 
@@ -355,6 +425,9 @@ token is currently required.
 
 ## Related
 
+* [Admin console](admin-console.md): the pages every operation mirrors
+* [Applications](applications.md): the registry, including the seeded
+  `sts-management-api` client
 * [Configuration](configuration.md): how settings resolve, and the runtime
   `config` operations
 * [Trust realms](trust-realms.md): realm prefixes and per-realm

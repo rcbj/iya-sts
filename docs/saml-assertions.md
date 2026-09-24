@@ -198,7 +198,7 @@ nothing registered is refused by name.
 
 ### The registered certificate's whole chain is validated at every use
 
-Since 2026-09-13, in both modes. The certificate that verified the signature
+In both modes. The certificate that verified the signature
 counts only while its trust chain holds: every link verifies and is in date,
 every issuer is a CA permitted to sign certificates within its path length, the
 certificate itself is not a CA and may sign, and the path ends at **this
@@ -243,7 +243,7 @@ issued for.
 on such a row — the key handle, the expiry, the declared issuer, whether there
 is a key pair to take off — is per profile.
 
-## A person can be the issuer too (2026-09-13)
+## A person can be the issuer too
 
 A person may hold an RFC 7522 key pair on their own directory entry —
 `stsSamlAssertionCertificate`, its chain, `stsSamlAssertionThumbprint` and a
@@ -322,15 +322,14 @@ changed — the console page, or `POST /admin-api/config/set`.
   and advertised in the metadata; nothing on the wire is invented.
 * **A person may be the issuer, only about themselves.** A party that may
   assert about other people is an application an operator declared — see
-  [above](#a-person-can-be-the-issuer-too-2026-09-13).
+  [above](#a-person-can-be-the-issuer-too).
 * **Standard base64 is accepted and logged.** RFC 7522 asks for base64url, but
   widely deployed stacks send base64, and refusing it would send a client
   author to look at their signature code.
 
 ## What it still does not do
 
-* ~~**Revocation is published and never consulted.**~~ **Consulted since
-  2026-09-12**: the registered certificate that verified an assertion is checked
+* **Revocation is consulted**: the registered certificate that verified an assertion is checked
   for revocation after its chain (`STS-PKI-0129`). *Take the key pair off* is a
   third act again: it stops this service accepting what that key signs, puts
   nothing on any list, and does not stop the certificate chaining. See

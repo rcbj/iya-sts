@@ -806,7 +806,8 @@ function inAChild(t) {
   log.debug("Entering inAChild().");
   t.log.info('=== 3. the endpoint, in a child process ===');
   const out = path.join(os.tmpdir(), 'rfc9701-' + process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|CONFIG_FILE$)/.test(key)) {

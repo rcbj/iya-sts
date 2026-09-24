@@ -35,7 +35,7 @@ docker build -t iya-sts .
 docker run --rm -p 8081:8081 -e CONFIG_FILE=./env/local.js iya-sts
 ```
 
-**From an image, not from a checkout (since 2026-09-16).** Part of the service
+**From an image, not from a checkout.** Part of the service
 is written in TypeScript and is compiled only while the image is built, so
 `node server.js` on a checkout stops and says so. Every setting below that is
 shown as an environment variable is passed with `-e`.
@@ -65,7 +65,7 @@ will not bind on an ordinary user account.
 | 8888 | The Kerberos-protected test service | `krb5.servicePort` | `KRB5_SERVICE_PORT` |
 | 389 | The LDAP directory | `ldap.port` | `LDAP_PORT` |
 | 636 | The same directory over TLS (LDAPS) | `ldap.tlsPort` | `LDAPS_PORT` |
-| 8092 | The SPIFFE Workload API over gRPC | `spiffe.workloadPort` | `STS_SPIFFE_WORKLOAD_PORT` |
+| 8092 | The SPIFFE Workload API over gRPC (product mode: only where `spiffe.workloadTcpSourceAuthenticated` is on) | `spiffe.workloadPort` | `STS_SPIFFE_WORKLOAD_PORT` |
 | 8181 | The SPIRE Server API over gRPC | `spiffe.serverPort` | `STS_SPIFFE_SERVER_PORT` |
 | — | The Workload API's **Unix socket**, at `/tmp/spire-agent/public/api.sock` | `spiffe.workloadSocket` | `STS_SPIFFE_WORKLOAD_SOCKET` |
 
@@ -76,7 +76,7 @@ cannot — and each listener publishes its own result, because "389 is up and 63
 is not" is the ordinary outcome and one flag could only report one of them:
 
 - `GET /admin/ldap/service` — `listening` / `listenError`, and a `tls` object with its own pair
-  (an admin console page since 2026-09-01, so it needs a session; `GET
+  (an admin console page, so it needs a session; `GET
   /admin-api/ldap/service` is the same object and is not gated)
 - `GET /spiffe` — all four SPIFFE sockets, separately
 - `GET /krb5/principals` — the KDC
@@ -84,7 +84,7 @@ is not" is the ordinary outcome and one flag could only report one of them:
 So a page answering 200 is not evidence that the listener behind it came up. Read
 the flag.
 
-**Two TLS ports left this table on 2026-09-16.** 8443 (`tls.port`) asked for a
+**Two TLS ports have left this table.** 8443 (`tls.port`) asked for a
 client certificate and never required one; 9443 (`tls.mutualPort`) required one
 at the handshake. Both listeners and both settings were deleted, and neither
 setting has a replacement — a deployment that still sets one gets an "unknown
@@ -162,8 +162,7 @@ session it answers a 302 to the sign-in screen, which is why the `-L` is there
 and why what comes back is that screen rather than the page. Open it in a
 browser and sign in — any username, since this service checks no password in
 its default `development` mode. There is no setting that opens the console;
-`admin.authRequired` was removed on 2026-09-06 when `global.mode` took over the
-question. `/admin-api` reads the same service for a program, and takes an OAuth
+`admin.authRequired` is gone; `global.mode` answers that question. `/admin-api` reads the same service for a program, and takes an OAuth
 2.0 access token of its own.
 
 A protocol you can drive end to end in a browser with nothing else installed is
@@ -171,7 +170,8 @@ A protocol you can drive end to end in a browser with nothing else installed is
 in with any username, and the mock service provider verifies the response it gets
 back check by check. `https://localhost:8081/saml2/metadata` is the identity provider
 metadata; `https://localhost:8081/saml2/metadata/anything-you-like` is a document of its
-own for a service provider by that name, minted on the spot.
+own for a service provider by that name, minted on the spot — in development mode
+only. In product mode that is a 404 until the service provider is registered.
 
 `/admin/sts-metadata` is the sharper of the two. It reads the endpoint list off the
 live Express router, so it answers only once every protocol module has registered

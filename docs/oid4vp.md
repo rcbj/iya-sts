@@ -7,7 +7,7 @@ title: OpenID4VP
 iya-sts is a **Verifier** for
 [OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html),
 using DCQL queries. It verifies what a wallet presents, check by check, in all
-three credential formats its [issuer](oid4vci.md) mints. Since 2026-09-17 a
+three credential formats its [issuer](oid4vci.md) mints. A
 verified presentation is also **a way to sign in**: *Sign in with a wallet* on
 the sign-in screen, including through the
 [W3C Digital Credentials API](https://www.w3.org/TR/digital-credentials/). The
@@ -101,9 +101,32 @@ credential's status (see [status lists](oid4vci.md#status-lists)):
 
 A credential whose status is not VALID is refused. So is one whose status
 cannot be established, because a list that cannot be fetched or verified means
-no statement can be made (`STS-VC-0072`). This realm's own credential with no
-status reference is refused. A foreign credential that carries no status
-reference is accepted.
+no statement can be made (`STS-VC-0072`).
+
+**A credential must name its status** (#165). `oid4vp.requireStatusReference`
+says what a credential with no status reference means, and it is `all` by
+default in both modes:
+
+* `all` refuses any credential that names no status (`STS-VC-0088`) — a
+  credential with no reference can never be shown to have been revoked;
+* `own-only` accepts a **foreign** credential with no reference. **Warning:**
+  a credential its issuer has taken back then goes on being accepted here;
+* `off` also accepts this realm's own credential with no reference, and an
+  `ldp_vc` that withheld its status. It is for development only: product mode
+  refuses to set it (`STS-CORE-0103`) and reads a stored `off` as `all`.
+
+A trusted issuer that publishes no status is exempted one at a time, by the
+SHA-256 thumbprint of its certificate in `oid4vp.statusOptionalIssuers` (hex,
+colon-hex as `openssl x509 -fingerprint -sha256` prints it, or base64url).
+The exemption covers a missing reference only: a credential that does name a
+status is still checked against it.
+
+An `ldp_vc` is a bbs-2023 derived proof, which discloses only what the holder
+chooses. The bar door's DCQL query therefore asks for `credentialStatus`, and
+a presentation that does not disclose it is refused (`STS-VC-0089`): every
+`ldp_vc` this realm issues carries it, so its absence means it was withheld. A
+wallet sign-in asks for it too, and reads that credential's status from the
+sign-in register whether or not it was disclosed.
 
 ### What the bar door asks for
 
@@ -154,7 +177,10 @@ trusted to name somebody. In order, a sign-in needs:
 5. the account is not disabled, and the issuance policy allows the session.
 
 A credential from another realm, a trusted partner, a foreign token, or a
-deleted entry still verifies and signs nobody in. The page says why.
+deleted entry still verifies and is recorded as before, and signs nobody in.
+The page says why, and the refusal is recorded under its error code
+(`STS-VC-0058` to `STS-VC-0060`, `STS-VC-0066`; a presentation that did not
+verify at all is `STS-VC-0061`).
 
 **Every format signs in**, each with its own proof of the holder key:
 
@@ -177,7 +203,9 @@ key made for this one sign-in; `oid4vp.signInDcApiResponseMode` can ask for
 `dc_api` in the clear). For this path the audience is `origin:<origin>`, so a
 presentation made for another path does not sign in here.
 `/authn/wallet/dc-api` also requires the `Origin` header to be this service's
-own (`STS-VC-0074`).
+own (`STS-VC-0074`). A wallet on another device is reached by the platform over
+a transport that proves it is near that browser, which is what a relayed QR
+code cannot be.
 
 **The page has one script**, `/authn/wallet.js`, because no markup can make a
 browser ask a wallet. The form has a real submit button. With the script
@@ -187,8 +215,20 @@ link.
 **A plain QR code for a wallet on another device is off by default**
 (`oid4vp.signInCrossDevice`). The QR code is the one path that can be relayed:
 an attacker shows their own code to a victim, the victim scans it, and the
-attacker's browser is signed in. Where it is turned on, the QR page has no
-script and polls with a `<meta>` refresh every `oid4vp.signInPollS` seconds.
+attacker's browser is signed in. Where it is turned on, the page says so, and
+the QR page has no script and polls with a `<meta>` refresh every
+`oid4vp.signInPollS` seconds:
+
+```
+GET  /authn/wallet?authn={id}                Set-Cookie: sts_wallet_binding=…
+  303 -> /authn/wallet/wait?authn={id}&state=…
+GET  /authn/wallet/wait?…                    "Open your wallet" + QR code,
+                                             <meta http-equiv="refresh">
+     wallet: GET /oid4vp/request/{id}        the signed request, by reference
+     wallet: POST /oid4vp/response           verified; whom it signs in decided
+GET  /authn/wallet/wait?…[&response_code=…]  Set-Cookie: sts_session=…
+  303 -> the original request
+```
 
 **The session goes to the browser that started it.** An `sts_wallet_binding`
 cookie (HttpOnly, SameSite=Lax) is bound to the transaction and compared in
@@ -207,7 +247,7 @@ answered once and finished once, across the cluster.
   `acr` is `"mfa"`. Only what the issuer recorded is believed, never what a
   presentation says about itself.
 * **A wallet, then a second factor.** When the request, the realm
-  (`authn.mfaRequired`) or the account demands two factors, the person is then
+  (the authentication policy's `requireSecondFactor`) or the account demands two factors, the person is then
   asked for their authenticator app, their security key, or their password at
   `/authn/password-factor`. The session then says, for example,
   `amr ["pop","otp"]` and `acr "mfa"`.
@@ -246,6 +286,57 @@ every live generation of the BBS key. Both documents are served
 `Cache-Control: no-store`, because in development the keys behind them are new
 on every start. `did:key` is not generated here.
 
+### Self-issued ID Tokens (SIOPv2)
+
+This service is also a **relying party of a Self-Issued OpenID Provider**
+(SIOPv2): a wallet answers with an ID Token it signs with its own key. It is
+never the Self-Issued OP itself.
+
+* **Signing in.** With `oid4vp.signInSelfIssued` on (off by default), the
+  sign-in screen offers *Sign in with a self-issued ID*. It starts a signed
+  request with `response_type=id_token` and `scope=openid`, carrying
+  `subject_syntax_types_supported` (the JWK Thumbprint syntax, `did:jwk`,
+  `did:key`, `did:web`) in `client_metadata`, answered by `direct_post` at
+  `/oid4vp/response`. A QR code uses the `siopv2://` scheme.
+* **Only an enrolled key signs anybody in, in both modes.** Nobody vouches
+  for a self-issued key, so it signs in only the person who enrolled it:
+  * **the person**, on `/portal/self-issued`, by answering a SIOPv2 request
+    from the session they already hold — the key is proved, never typed;
+  * **an administrator**, on the person's page under Directory → Users, or
+    with `POST /admin-api/users/enrol-self-issued-subject` (and
+    `remove-self-issued-subject`, `GET /admin-api/users/self-issued-subjects`).
+
+  A subject belongs to one person per realm, and a person may hold ten.
+* **What is checked** (SIOPv2 section 11.1): `iss` equals `sub`; a JWK
+  Thumbprint subject is the thumbprint of `sub_jwk` (a private key there is
+  refused); a DID subject's `kid` is one of its authentication methods; the
+  signature (never `none`); `aud` is this Verifier's Client Identifier;
+  `nonce`; `exp`; and `iat` no older than `oid4vp.siopIdTokenMaxAgeS`. A
+  `did:web` is fetched only once it is enrolled, through the outbound policy
+  every fetch here obeys.
+* **With a presentation** (`response_type=vp_token id_token`), the ID Token
+  must be signed by the presentation's holder key.
+* **The bar door** takes `?response_type=id_token` (or `vp_token id_token`)
+  and `?response_mode=form_post` on `/oid4vp/start`, to exercise a Self-Issued
+  OP without signing anybody in.
+
+Not offered: the `fragment` response mode (a Verifier chooses its response
+mode, and reading a fragment would need a script on a page here), and dynamic
+discovery of a Self-Issued OP's metadata — the static `siopv2:` configuration
+is assumed.
+
+### How a signed request names its Verifier
+
+`oid4vp.clientIdPrefix` chooses the Client Identifier of a signed request
+(OpenID4VP section 5.9). An unsigned request always uses `redirect_uri:`.
+
+| Value | Client Identifier | How the wallet finds the key |
+|---|---|---|
+| `pre-registered` (default) | `oid4vp.clientId` | out of band |
+| `decentralized_identifier` | `decentralized_identifier:` + the realm's `did:web` | the `kid` is a DID URL into the realm's DID document |
+| `verifier_attestation` | `verifier_attestation:` + the attestation's `sub` | the Verifier Attestation JWT in the request's `jwt` header, whose `cnf` is the signing key. `oid4vp.verifierAttestation` holds one an attestation issuer signed; empty, this realm attests itself, which only a wallet that already trusts this realm accepts |
+| `openid_federation` | `openid_federation:` + the realm's Entity Identifier (its issuer) | the realm's Entity Configuration at `/.well-known/openid-federation`, which carries the `openid_credential_verifier` metadata and the realm's place in the federation — see [OpenID Federation](oidfed.md) |
+
 ### Not implemented
 
 * The unsigned and multi-signed request forms of the Digital Credentials API
@@ -282,12 +373,18 @@ check are the same in both modes. See
 | `oid4vp.presentationRequestTtlS` | `OID4VP_PRESENTATION_REQUEST_TTL_S` | `600` | yes | How long a presentation request waits for a wallet's response. |
 | `oid4vp.maxTransactions` | `OID4VP_MAX_TRANSACTIONS` | `5000` | yes | How many waiting requests a realm keeps; past it the oldest is dropped. |
 | `oid4vp.statusListMaxCacheS` | `OID4VP_STATUS_LIST_MAX_CACHE_S` | `3600` | yes | The longest a foreign issuer's status list is kept; `0` fetches every time. |
+| `oid4vp.requireStatusReference` | `OID4VP_REQUIRE_STATUS_REFERENCE` | `all` | yes | Whether a presented credential must name its status: `all`, `own-only` (foreign credentials exempt — **warning:** one its issuer revoked is accepted), or `off` (development only). |
+| `oid4vp.statusOptionalIssuers` | `OID4VP_STATUS_OPTIONAL_ISSUERS` | *(empty)* | yes | SHA-256 thumbprints of trusted issuer certificates whose credentials may name no status. **Warning:** such a credential can never be shown revoked. |
 | `oid4vp.signIn` | `OID4VP_SIGN_IN` | `true` | yes | Offer *Sign in with a wallet* and answer `/authn/wallet`. |
 | `oid4vp.signInTtlS` | `OID4VP_SIGN_IN_TTL_S` | `300` | yes | How long a wallet sign-in waits for the wallet and for the browser to collect the session. |
 | `oid4vp.signInPollS` | `OID4VP_SIGN_IN_POLL_S` | `3` | yes | How often the QR-code page reloads itself. |
 | `oid4vp.signInCrossDevice` | `OID4VP_SIGN_IN_CROSS_DEVICE` | `false` | yes | Offer a plain, relayable QR code for a wallet on another device. |
 | `oid4vp.signInFormats` | `OID4VP_SIGN_IN_FORMATS` | `dc+sd-jwt,jwt_vc_json,ldp_vc` | yes | The formats a sign-in asks for, in order of preference. |
 | `oid4vp.signInDcApiResponseMode` | `OID4VP_SIGN_IN_DC_API_RESPONSE_MODE` | `dc_api.jwt` | yes | Whether a Digital Credentials API answer is encrypted (`dc_api.jwt`) or in the clear (`dc_api`). |
+| `oid4vp.signInSelfIssued` | `OID4VP_SIGN_IN_SELF_ISSUED` | `false` | yes | Offer *Sign in with a self-issued ID* (SIOPv2) and the enrolment on `/portal/self-issued`. |
+| `oid4vp.siopIdTokenMaxAgeS` | `OID4VP_SIOP_ID_TOKEN_MAX_AGE_S` | `300` | yes | How old a self-issued ID Token's `iat` may be. |
+| `oid4vp.clientIdPrefix` | `OID4VP_CLIENT_ID_PREFIX` | `pre-registered` | yes | How a signed request names this Verifier: `pre-registered`, `decentralized_identifier`, `verifier_attestation` or `openid_federation`. |
+| `oid4vp.verifierAttestation` | `OID4VP_VERIFIER_ATTESTATION` | *(empty)* | yes | A Verifier Attestation JWT for the `verifier_attestation` prefix. **Warning:** empty, this realm attests itself. |
 | `oid4vp.signInRegisterMaxEntries` | `OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES` | `100000` | yes | Rows the sign-in register keeps per realm; past it the oldest is dropped, which fails closed. |
 
 The DID documents' lifetimes and signing algorithm are `oid4vci.*` settings;

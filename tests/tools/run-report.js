@@ -405,6 +405,9 @@ function vendoredJobs(options) {
     jobs.push({ suite: 'protocol', name: entry.file.replace(/\.js$/, ''),
                 file: entry.file, dir: VENDORED_DIR, browser: !!entry.browser,
                 docker: !!entry.docker,
+                // Needs the OpenID conformance suite (#176); see the skip in
+                // main().
+                conformance: !!entry.conformance,
                 // A job may raise its own watchdog and may not lower it; see
                 // runJob(), where that rule is enforced rather than trusted.
                 timeoutMs: Number(entry.timeoutMs) || 0,
@@ -1687,6 +1690,27 @@ async function main() {
       }));
       continue;
     }
+    if (job.conformance && !process.env.CONFORMANCE_SUITE_URL) {
+      // A DELIBERATE EXCLUSION, as the docker one above is (#176): the
+      // OpenID conformance suite is three containers and a JVM, and
+      // ./run-tests.sh starts them only in the modes STS_TEST_CONFORMANCE_MODES
+      // names, handing this job their address. The reason says what is
+      // therefore unchecked in this run.
+      const why = 'no CONFORMANCE_SUITE_URL: this run brought up no OpenID ' +
+                  'conformance suite. ./run-tests.sh does in the modes ' +
+                  'STS_TEST_CONFORMANCE_MODES names (`memory` by ' +
+                  'default); in this one the FAPI plans are unchecked by ' +
+                  'the suite, and what stands is the local FAPI jobs ' +
+                  '(sts_fapi_baseline, sts_fapi_advanced, sts_fapi2, ' +
+                  'sts_fapi2_message_signing, sts_fapi_ciba).';
+      log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
+               why);
+      results.push(Object.assign({}, job, {
+        status: 'skipped', ms: 0, code: null, assertions: [],
+        failures: [], why: why
+      }));
+      continue;
+    }
     if (job.suite === 'protocol' && !instance) {
       const why = protocolWhy || 'no service to drive';
       results.push(Object.assign({}, job, {
@@ -1812,8 +1836,9 @@ async function main() {
         // THE DIRECTORY'S PORT UNDER THE NAME A JOB LOOKS IT UP BY, AND THAT
         // IS NOT THE NAME THE SERVICE READS IT FROM.
         //
-        // The service takes `LDAP_PORT` (README.md's *Configuration* table is
-        // the authority, and `service.js`'s PORT_VARS uses those spellings);
+        // The service takes `LDAP_PORT` (docs/configuration.md's settings
+        // table is the authority, and `service.js`'s PORT_VARS uses those
+        // spellings);
         // `sts_global_logout.js` reads **`STS_LDAP_PORT`**. Every other
         // listener in that block is spelt the same on both sides, so the loop
         // below covers it — this one has to be said, and saying it is what the
@@ -1905,6 +1930,19 @@ async function main() {
         job.env.NODE_OPTIONS = job.env.NODE_OPTIONS
           ? job.env.NODE_OPTIONS + ' ' + fresh : fresh;
       }
+      // ------------------------------------------------------------------
+      // A BROWSER'S USER-AGENT, FOR EVERY JOB IN EVERY MODE (#62 P3,
+      // 2026-09-22). Product mode refuses a first sign-in from an automated
+      // client (the issuance policy on the risk of the authentication), and
+      // node's fetch() says `node` and Selenium's Chrome says
+      // `HeadlessChrome` — `tools/browser-user-agent.js` argues it. In every
+      // mode rather than only product's, so the risk history a run builds is
+      // the same shape wherever it runs. Appended for the token's reason.
+      // ------------------------------------------------------------------
+      const browserAgent = '--require ' +
+        path.join(__dirname, 'browser-user-agent.js');
+      job.env.NODE_OPTIONS = job.env.NODE_OPTIONS
+        ? job.env.NODE_OPTIONS + ' ' + browserAgent : browserAgent;
       // ------------------------------------------------------------------
       // AND THE CLIENT SECRET, FOR THE ONE JOB THAT MINTS TOKENS OF ITS OWN.
       //

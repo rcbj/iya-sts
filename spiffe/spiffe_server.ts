@@ -98,6 +98,14 @@ import workloadAttestation = require('./spiffe_workload_attestation');
 import unixAttestor = require('./spiffe_workload_attestor_unix');
 import dockerAttestor = require('./spiffe_workload_attestor_docker');
 import k8sAttestor = require('./spiffe_workload_attestor_k8s');
+// #170: the systemd attestor, and the docker attestor's sigstore verifier
+// (with its TUF trust root, whose scheduler job registers when it loads).
+// LIBRARIES; they register no route.
+import systemdAttestor = require('./spiffe_workload_attestor_systemd');
+import sigstore = require('./spiffe_sigstore');
+// The SPIFFE Broker API's handlers (#170). A LIBRARY: `handlers()` wraps them
+// for the `broker` surface and binds nothing; the listener is this module's.
+import broker = require('./spiffe_broker');
 import mode = require('../common/mode');
 // The console, for one slot and nothing else. `admin.js` cannot require THIS
 // module — `common/protocol_stack.ts` requires admin.js first, and until
@@ -163,6 +171,11 @@ type RouteApp = typeof app;
 // The workload attestation table, built on first use by any instance.
 const WORKLOAD_ATTESTATION: { table: any } = { table: null };
 
+// The SPIFFE Broker API's handler table, built once (#170): its wrappers are
+// `spiffe_grpc.ts`'s, and a realm's server takes it through
+// `handlersInRealm()` like the other two surfaces.
+const BROKER_HANDLERS: { table: Record<string, any> | null } = { table: null };
+
 class SpiffeServer {
   constructor(private readonly deps: SpiffeServerDeps) {
     deps.log.debug("Entering SpiffeServer.constructor().");
@@ -196,9 +209,15 @@ class SpiffeServer {
         table.register(new unixAttestor.UnixWorkloadAttestor(
           unixAttestor.UnixWorkloadAttestor.defaultDeps()));
         table.register(new dockerAttestor.DockerWorkloadAttestor(
-          dockerAttestor.DockerWorkloadAttestor.defaultDeps(info)));
+          dockerAttestor.DockerWorkloadAttestor.defaultDeps(info,
+            table.cgroupPaths.bind(table), sigstore.shared)));
         table.register(new k8sAttestor.K8sWorkloadAttestor(
           k8sAttestor.K8sWorkloadAttestor.defaultDeps(info)));
+        table.register(new systemdAttestor.SystemdWorkloadAttestor(
+          systemdAttestor.SystemdWorkloadAttestor.defaultDeps(
+            function (facts) {
+              return peer.stillValid(facts);
+            })));
         return table;
       }
     };
@@ -260,7 +279,7 @@ class SpiffeServer {
   // ---------------------------------------------------------------------------
   description(req) {
     const { log, baseUrlOf, ca, config, rpc, workload, serverApi, registry,
-            auth } = this.deps;
+            auth, mode } = this.deps;
     const self = this;
     log.debug('Entering SpiffeServer.description().');
     const base = baseUrlOf(req);
@@ -356,7 +375,9 @@ class SpiffeServer {
         service: 'SpiffeWorkloadAPI',
         listeners: this.bindingsNow().workload,
         securityHeader: rpc.SECURITY_HEADER + ': true',
-        securityHeaderRequired: !!config.value('spiffe.requireSecurityHeader'),
+        // As IN FORCE (#181): true in a product realm whatever is stored.
+        securityHeaderRequired:
+          !!mode.valueInForce('spiffe.requireSecurityHeader'),
         methods: rpc.methodsOf('workload').map(function (method) {
           const note = workload.METHOD_NOTES[self.protoNameOf(method.path)] ||
                        {};
@@ -381,6 +402,20 @@ class SpiffeServer {
           };
         })
       },
+      // THE SPIFFE BROKER API (#170).
+      brokerApi: {
+        service: 'spiffe.broker.API',
+        specification: 'SPIFFE Broker API and SPIFFE Broker Endpoint ' +
+                       '(Incubating)',
+        listeners: this.bindingsNow().broker,
+        securityHeader: rpc.BROKER_SECURITY_HEADER + ': true',
+        brokers: auth.brokers(),
+        referenceTypes: [broker.PID_REFERENCE, broker.K8S_REFERENCE],
+        methods: rpc.methodsOf('broker').map(function (method) {
+          return { name: self.protoNameOf(method.path), path: method.path,
+                   streaming: method.responseStream };
+        })
+      },
       registry: {
         entries: registry.entryCount(),
         agents: registry.agentCount(),
@@ -396,11 +431,19 @@ class SpiffeServer {
       notChecked: [
         'A WORKLOAD API CALLER OVER TCP IS NOT ATTESTED. The Unix socket ' +
         'is (#40, 2026-09-21): the kernel names the connecting process ' +
-        '(SO_PEERCRED, and a pidfd that holds it), the unix, docker and k8s ' +
-        'workload attestors turn it into SPIRE\'s selectors, and every call ' +
+        '(SO_PEERCRED, and a pidfd that holds it), the unix, docker ' +
+        '(Docker and Podman, with a cosign image signature where asked), ' +
+        'k8s and systemd workload attestors turn it into SPIRE\'s ' +
+        'selectors (#170), and every call ' +
         'checks the process is still the one attested. A TCP connection has ' +
         'no peer process to ask, so its caller is identified only by the ' +
-        'transport, the endpoint and its address. A peer in a pid namespace ' +
+        'transport, the endpoint and its address — which is why a product ' +
+        'realm does not serve TCP at all unless ' +
+        'spiffe.workloadTcpSourceAuthenticated declares that the network ' +
+        'authenticates source addresses (Workload Endpoint section 3), on a ' +
+        'named address, and refuses a registration entry that selects ' +
+        'nothing but the transport and endpoint (#166); ' +
+        'workloadAttestation.tcp says which. A peer in a pid namespace ' +
         'this service cannot see is attested on its uid and gid alone. In ' +
         'development without the native module the socket is served ' +
         'unattested and workloadAttestation below says so; a product does ' +
@@ -416,8 +459,9 @@ class SpiffeServer {
         'NOTHING VERIFIES AN ASSERTED SELECTOR. With ' +
         'spiffe.acceptAssertedSelectors on, a Workload API caller may send ' +
         'its own selectors in a metadata header and they are matched as ' +
-        'though something had checked them. It is off by default and it ' +
-        'exists because selector matching is ' +
+        'though something had checked them. It is off by default, is ' +
+        'never in force in product mode (nor can it be turned on there), ' +
+        'and it exists because selector matching is ' +
         'the interesting behaviour of a Workload ' +
         'API and there is otherwise no way to exercise a client\'s "these ' +
         'matched and those did not" path here.',
@@ -507,6 +551,7 @@ class SpiffeServer {
         console: base + '/admin/spiffe',
         entries: base + '/admin/spiffe/entries',
         agents: base + '/admin/spiffe/agents',
+        brokers: base + '/admin/spiffe/brokers',
         api: base + '/admin-api/spiffe',
         directory: base + '/admin/ldap/spiffe',
         metadata: base + '/admin/sts-metadata'
@@ -639,10 +684,18 @@ class SpiffeServer {
           'obtains an identity in this trust domain. Product mode does not ' +
           'serve it at all.') +
       ' <strong>A caller over TCP is not attested</strong> — there is no ' +
-      'peer process to ask — so anybody who can reach that port obtains an ' +
-      'identity in this trust domain. It matters more here than anywhere ' +
-      'else in this service, because what comes out is a credential another ' +
-      'service will believe.</p>' +
+      'peer process to ask — so its source address is the only identity it ' +
+      'carries. Here the TCP port is <strong>' +
+      this.esc(String((document.workloadAttestation &&
+                       document.workloadAttestation.tcp &&
+                       document.workloadAttestation.tcp.state) || 'unknown')) +
+      '</strong>: product mode serves it only where ' +
+      '<code>spiffe.workloadTcpSourceAuthenticated</code> declares that the ' +
+      'network authenticates source addresses, on a named address, and ' +
+      'refuses an entry that selects nothing but the transport and ' +
+      'endpoint; development serves it to anybody who can reach it. It ' +
+      'matters more here than anywhere else in this service, because what ' +
+      'comes out is a credential another service will believe.</p>' +
       '<p class="' + (document.authentication.enforced ? 'note' : 'warn') +
       '">' +
       (document.authentication.enforced
@@ -743,6 +796,22 @@ class SpiffeServer {
           '<th>What</th></tr>' +
           self.methodRows(service.methods) + '</table>';
       }).join('') +
+
+      '<h2>The SPIFFE Broker API</h2>' +
+      '<table><tr><th>Realm</th><th>Address</th><th>State</th>' +
+      '<th>What a caller presents</th></tr>' +
+      this.listenerRows(document.brokerApi.listeners) + '</table>' +
+      '<p>A broker authenticates with its X509-SVID over mutual TLS, sends ' +
+      '<code>' + this.esc(document.brokerApi.securityHeader) + '</code>, and ' +
+      'names a workload by reference — a process id or a Kubernetes pod — ' +
+      'which this service attests itself before answering with that ' +
+      'workload\'s SVIDs. Brokers (<code>spiffe.brokers</code>): ' +
+      (document.brokerApi.brokers.length
+        ? document.brokerApi.brokers.map(function (one) {
+            return '<code>' + self.esc(one.id) + '</code> (' +
+              self.esc(one.problem || one.types.join(', ')) + ')';
+          }).join(', ')
+        : 'none, so every call is refused PERMISSION_DENIED') + '.</p>' +
 
       '<h2>Who may call the SPIRE Server API</h2>' +
       '<p>' + this.esc(document.authentication.what) + '</p>' +
@@ -845,7 +914,12 @@ class SpiffeServer {
     const read = function () {
       log.debug("Entering read().");
       const out = [];
-      if (surface === 'workload') {
+      if (surface === 'broker') {
+        const port = config.value('spiffe.brokerPort');
+        if (port) {
+          out.push({ address: config.value('spiffe.grpcHost') + ':' + port });
+        }
+      } else if (surface === 'workload') {
         if (config.value('spiffe.workloadSocketEnabled')) {
           out.push({ address: 'unix://' + config.value('spiffe.workloadSocket'),
                      socketPath: config.value('spiffe.workloadSocket') });
@@ -1031,6 +1105,35 @@ class SpiffeServer {
                        authentication: 'Nothing is listening here.' });
         continue;
       }
+      // THE WORKLOAD API'S TCP PORT IS SERVED ONLY WHERE THE NETWORK
+      // AUTHENTICATES THE SOURCE ADDRESS (#166): in product, not without
+      // `spiffe.workloadTcpSourceAuthenticated`, and never on a wildcard
+      // address. `spiffe_auth.ts`'s `workloadTcpPosture()` decides, IN THE
+      // REALM, because the mode and both settings are the realm's. Recorded
+      // and reported like 0113, never thrown: the Unix socket beside it and
+      // the SPIRE Server API are unaffected.
+      if (surface === 'workload' && !entry.socketPath) {
+        const posture = this.inRealm(realmId, function () {
+          return auth.workloadTcpPosture();
+        });
+        if (!posture.served) {
+          // STS-SPIFFE-0120 (not declared) or STS-SPIFFE-0121 (a wildcard).
+          log.error(errorCodes.tag(posture.errorCode) + 'spiffe: the "' +
+                    (realmId || 'default') + '" realm\'s Workload API TCP ' +
+                    'port (' + entry.address + ') was NOT bound: ' +
+                    posture.why + '.');
+          // The code rides as errorCodes' non-enumerable mark: this row is
+          // drawn on GET /spiffe and returned by /admin-api, and a code is
+          // recorded, never sent.
+          results.push(errorCodes.mark({ address: entry.address,
+                         listening: false, error: posture.why,
+                         port: 0, tls: false, socket: false,
+                         realm: realmId || '',
+                         authentication: 'Nothing is listening here.' },
+                       posture.errorCode));
+          continue;
+        }
+      }
       // The SPIRE Server API's socket is PRIVATE — it is the trusted `local`
       // entity — and the Workload API's is not. See spiffe_grpc.ts.
       if (entry.socketPath) {
@@ -1040,15 +1143,33 @@ class SpiffeServer {
       // is null for every address but one.
       const tls = !entry.socketPath && secure;
       const self = this;
+      // THE SPIRE SERVER API'S SOCKET IS ACCEPTED THROUGH THE SAME LISTENER
+      // (#104) wherever the native module is built, in both modes, so that a
+      // product realm can read the peer's kernel uid before it calls anybody
+      // `local`. Nothing is refused at accept: the facts are recorded, and
+      // `spiffe_auth.ts`'s `localTrust()` decides per call, in the mode the
+      // realm is in then. Without the module it is bound as it always was,
+      // and a product realm trusts nobody on it (STS-SPIFFE-0119).
+      const peerRead = surface === 'server' && !!entry.socketPath &&
+        this.deps.peer.availability().available;
       const bound = attested
         ? await rpc.bindAttestedSocket(server, entry.socketPath,
           function (socket) {
             return self.attestConnection(realmId, socket);
           })
-        : await rpc.bindOne(server, entry.address,
-          tls ? secure : rpc.grpc.ServerCredentials.createInsecure());
+        : peerRead
+          ? await rpc.bindAttestedSocket(server, entry.socketPath,
+            function (socket) {
+              return self.observeLocalCaller(entry.socketPath, socket);
+            })
+          : await rpc.bindOne(server, entry.address,
+            tls ? secure : rpc.grpc.ServerCredentials.createInsecure());
       bound.tls = !!tls;
       bound.socket = !!entry.socketPath;
+      // Workload attestation is the Workload API's; the SPIRE Server API's
+      // socket only has its peer's credentials read (#104).
+      bound.attested = attested;
+      bound.peerCredentials = attested || peerRead;
       if (bound.listening && entry.socketPath && surface === 'server') {
         bound.restricted = rpc.restrictSocket(entry.socketPath);
       }
@@ -1058,8 +1179,23 @@ class SpiffeServer {
       bound.authentication = entry.socketPath
         ? (surface === 'server'
             ? (auth.trustLocalSocket()
-                ? 'No credential. This socket is the `local` entity and is ' +
-                  'trusted outright, which is how the spire-server CLI works.'
+                ? (this.deps.mode.trustsUnverifiedLocalSocket()
+                    ? 'No credential. This socket is the `local` entity and ' +
+                      'is trusted outright, which is how the spire-server ' +
+                      'CLI works.'
+                    : (peerRead && bound.restricted
+                        ? 'No credential, from a process running as this ' +
+                          'service\'s own uid: product mode verifies per ' +
+                          'connection that the socket is private and reads ' +
+                          'the caller\'s uid from the kernel before it is ' +
+                          'the `local` entity.'
+                        : 'Nobody is the `local` entity here: product mode ' +
+                          'verifies the socket\'s boundary and cannot (' +
+                          (peerRead ? 'the socket is not private'
+                                    : 'the peer\'s uid cannot be read — ' +
+                                      this.deps.peer.availability().problem) +
+                          '). Present an administrator\'s X509-SVID on the ' +
+                          'TCP port.'))
                 : 'An X509-SVID is required even here ' +
                   '(spiffe.trustLocalSocket is off).')
             : 'None, and there must be none: the Workload Endpoint ' +
@@ -1072,8 +1208,19 @@ class SpiffeServer {
                 ? 'None — authentication is off, so this port is plain ' +
                   'gRPC and every method is open to everybody.'
                 : 'None, and there must be none: the Workload Endpoint ' +
-                  'specification forbids requiring one. The deployment ' +
-                  'secures this port by other means or does not expose it.'));
+                  'specification forbids requiring one. ' +
+                  (this.inRealm(realmId, function () {
+                    return auth.workloadTcpPosture().declared;
+                  }) && !this.inRealm(realmId, function () {
+                    return self.deps.mode.servesUnattestedWorkloadTcp();
+                  })
+                    ? 'The network is DECLARED to authenticate source ' +
+                      'addresses (spiffe.workloadTcpSourceAuthenticated), ' +
+                      'so a caller is answered with the entries its ' +
+                      'peer: address selects.'
+                    : 'Nothing attests a caller here (development): the ' +
+                      'deployment secures this port by other means or does ' +
+                      'not expose it.')));
       bound.realm = realmId || '';
       results.push(bound);
     }
@@ -1239,8 +1386,13 @@ class SpiffeServer {
         return { name: entry.name,
                  handlers: self.handlersInRealm(realmId, entry.handlers) };
       }));
+    const brokerServer = rpc.buildServer([
+      { name: 'broker',
+        handlers: this.handlersInRealm(realmId, this.brokerHandlers()) }
+    ]);
     const entry = { realmId: realmId, workloadServer: workloadServer,
-                    apiServer: apiServer, workload: [], api: [], bindings: [] };
+                    apiServer: apiServer, brokerServer: brokerServer,
+                    workload: [], api: [], broker: [], bindings: [] };
     // REGISTERED BEFORE IT BINDS, so that `claimedBy()` sees this realm while
     // the next one is being started — the bindings are empty until they are
     // not, and an address is only claimed once it is listening.
@@ -1279,6 +1431,8 @@ class SpiffeServer {
     entry.bindings = entry.workload.slice(0);
     entry.api = await this.bindAll(apiServer, 'server', realmId);
     entry.bindings = entry.workload.concat(entry.api);
+    entry.broker = await this.bindBroker(brokerServer, realmId);
+    entry.bindings = entry.workload.concat(entry.api, entry.broker);
     log.info('spiffe: the "' + (realmId || 'default') + '" realm answers on ' +
              entry.bindings.filter(function (b) { return b.listening; })
                .map(function (b) { return b.address; }).join(', ') +
@@ -1321,15 +1475,48 @@ class SpiffeServer {
     return facts;
   }
 
+  // ONE SPIRE SERVER API SOCKET CONNECTION (#104): the kernel's facts and
+  // whether the socket is private, recorded for `localTrust()`. No workload
+  // attestor runs — this is not the Workload API — and nothing is refused
+  // here: an unreadable peer is `facts.error`, which `localTrust()` reads as
+  // "not local" in a product realm and a development realm never asks.
+  async observeLocalCaller(socketPath, socket) {
+    const { log, peer, rpc } = this.deps;
+    log.debug('Entering SpiffeServer.observeLocalCaller().');
+    const facts = peer.observe(socket);
+    facts.localSocket = rpc.socketPrivacy(socketPath);
+    log.debug('Leaving SpiffeServer.observeLocalCaller(). ' + facts.tag +
+              ' uid=' + facts.uid + ' private=' + facts.localSocket.private);
+    return facts;
+  }
+
   // What GET /spiffe, the console and /admin-api draw about workload
   // attestation.
   workloadAttestationState() {
-    const { log, peer, mode } = this.deps;
+    const { log, peer, mode, auth, realms } = this.deps;
     log.debug('Entering SpiffeServer.workloadAttestationState().');
     const kernel = peer.state();
     const attestors = this.workloadAttestation().state();
+    // THE TCP PORT (#166), in the realm asking: what the posture says NOW,
+    // and whether this realm's port is actually listening — two facts, since
+    // a realm switched to product after its port was bound keeps the socket
+    // and refuses every call on it.
+    // Without its `errorCode`: this is drawn and returned, and a code is
+    // recorded, never sent.
+    const posture: Record<string, any> =
+      Object.assign({}, auth.workloadTcpPosture());
+    delete posture.errorCode;
+    const realmId = realms.current().id === realms.DEFAULT_ID
+      ? '' : realms.current().id;
+    const held = listeners.get(realmId);
+    const tcpBinding = held ? held.workload.filter(function (b) {
+      return !b.socket;
+    })[0] : null;
+    posture.listening = !!(tcpBinding && tcpBinding.listening);
+    posture.attested = false;
     log.debug('Leaving SpiffeServer.workloadAttestationState().');
     return {
+      tcp: posture,
       nativeModule: kernel.nativeModule,
       problem: kernel.problem,
       unattestedSocketServed: !kernel.nativeModule &&
@@ -1351,6 +1538,99 @@ class SpiffeServer {
     return WORKLOAD_ATTESTATION.table;
   }
 
+  // The Broker API's handlers, wrapped once (#170).
+  brokerHandlers(): Record<string, any> {
+    const { log } = this.deps;
+    const self = this;
+    log.debug('Entering SpiffeServer.brokerHandlers().');
+    if (!BROKER_HANDLERS.table) {
+      BROKER_HANDLERS.table = new broker.SpiffeBroker(
+        broker.SpiffeBroker.defaultDeps(function () {
+          return self.workloadAttestation();
+        })).handlers();
+    }
+    log.debug('Leaving SpiffeServer.brokerHandlers().');
+    return BROKER_HANDLERS.table;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SPIFFE BROKER ENDPOINT'S LISTENER (#170): `spiffe.grpcHost` and
+  // `spiffe.brokerPort` in the realm, MUTUAL TLS ONLY. Three rules, each the
+  // family's:
+  //
+  //   * started from `listen()` through `startRealm()`, never at require — a
+  //     bind can fail, and a require that throws takes the service down;
+  //   * a failure is RECORDED on the binding and logged under its code
+  //     (STS-SPIFFE-0140), and GET /spiffe draws it;
+  //   * it is NEVER bound plain. The SPIRE Server API's port falls back to
+  //     plain when it cannot be given a certificate (STS-SPIFFE-0070), in a
+  //     posture that is reported; the Broker Endpoint's specification says
+  //     it "requires transport security in the form of mutual TLS", and a
+  //     port handing any workload's SVIDs to whoever asked would be the whole
+  //     trust domain on a socket. So no certificate is no listener.
+  //
+  // An address another realm holds is refused exactly as `bindAll()` refuses
+  // it, naming the realm.
+  // ---------------------------------------------------------------------------
+  async bindBroker(server, realmId) {
+    const { log, rpc, errorCodes } = this.deps;
+    log.debug('Entering SpiffeServer.bindBroker(). realm=' +
+              (realmId || 'default'));
+    const results = [];
+    const addresses = this.addressesFor('broker', realmId);
+    for (let i = 0; i < addresses.length; i++) {
+      const wanted = addresses[i].address;
+      const row: Record<string, any> = {
+        address: wanted, listening: false, error: '', port: 0, tls: false,
+        socket: false, realm: realmId || '',
+        authentication: 'Nothing is listening here.' };
+      const taken = this.claimedBy(wanted, realmId);
+      if (taken !== null) {
+        row.error = 'the "' + (taken || 'default') + '" realm already ' +
+          'answers on ' + this.addressHeldBy(taken, wanted) + ' in this ' +
+          'process; give this realm spiffe.grpcHost or spiffe.brokerPort of ' +
+          'its own';
+        log.error(errorCodes.tag('STS-SPIFFE-0140') + 'spiffe: the "' +
+                  (realmId || 'default') + '" realm\'s SPIFFE Broker API ' +
+                  'listener was NOT bound: ' + row.error);
+        results.push(errorCodes.mark(row, 'STS-SPIFFE-0140'));
+        continue;
+      }
+      let credentials = null;
+      try {
+        credentials = await this.inRealm(realmId, function () {
+          return rpc.brokerCredentials();
+        });
+      } catch (e) {
+        log.debug("Caught in SpiffeServer.bindBroker(): " +
+                  ((e && e.message) || e));
+        row.error = 'it could not be given a mutual-TLS identity (' +
+                    ((e && e.message) || e) + '), and the Broker Endpoint ' +
+                    'is never served without one';
+        log.error(errorCodes.tag('STS-SPIFFE-0140') + 'spiffe: the "' +
+                  (realmId || 'default') + '" realm\'s SPIFFE Broker API ' +
+                  'listener was NOT bound: ' + row.error);
+        results.push(errorCodes.mark(row, 'STS-SPIFFE-0140'));
+        continue;
+      }
+      const held = listeners.get(String(realmId || ''));
+      if (held) {
+        held.brokerCredentials = credentials;
+      }
+      const bound = await rpc.bindOne(server, wanted, credentials);
+      bound.tls = true;
+      bound.socket = false;
+      bound.realm = realmId || '';
+      bound.authentication = 'Mutual TLS. Verify this server as ' +
+        'spiffe://<trust domain>/spire/server against the trust bundle, ' +
+        'present the X509-SVID of a broker named in spiffe.brokers, and send ' +
+        'broker.spiffe.io: true on every call.';
+      results.push(bound);
+    }
+    log.debug('Leaving SpiffeServer.bindBroker(). ' + results.length);
+    return results;
+  }
+
   stopRealm(realmId) {
     const { log } = this.deps;
     log.debug('Entering SpiffeServer.stopRealm(). realm=' +
@@ -1363,7 +1643,8 @@ class SpiffeServer {
     // The attested socket's accepting listener is this module's, not
     // grpc-js's, and is closed here.
     this.deps.rpc.closeAttested(entry.workloadServer);
-    [entry.workloadServer, entry.apiServer].forEach(function (server) {
+    [entry.workloadServer, entry.apiServer,
+     entry.brokerServer].forEach(function (server) {
       if (!server) return;
       try {
         server.forceShutdown();
@@ -1454,12 +1735,14 @@ class SpiffeServer {
     log.debug("Entering SpiffeServer.bindingsNow().");
     const workloadAll = [];
     const apiAll = [];
+    const brokerAll = [];
     listeners.forEach(function (entry) {
       entry.workload.forEach(function (b) { workloadAll.push(b); });
       entry.api.forEach(function (b) { apiAll.push(b); });
+      (entry.broker || []).forEach(function (b) { brokerAll.push(b); });
     });
     log.debug("Leaving SpiffeServer.bindingsNow().");
-    return { workload: workloadAll, api: apiAll };
+    return { workload: workloadAll, api: apiAll, broker: brokerAll };
   }
 
   close() {
@@ -1597,12 +1880,17 @@ class SpiffeServer {
     const self = this;
     log.debug('Entering SpiffeServer.refreshServerCredentials().');
     listeners.forEach(function (entry, realmId) {
-      if (!entry.apiCredentials) {
+      if (!entry.apiCredentials && !entry.brokerCredentials) {
         return;
       }
       self.awaitRealmBranch(realmId).then(function () {
         return self.inRealm(realmId, function () {
-          return rpc.refreshServerApiCredentials(entry.apiCredentials);
+          // The Broker endpoint presents the same identity (#170), so it is
+          // re-keyed with it.
+          return Promise.all([entry.apiCredentials, entry.brokerCredentials]
+            .filter(Boolean).map(function (credentials) {
+              return rpc.refreshServerApiCredentials(credentials);
+            }));
         });
       }).catch(function (e) {
         log.error(errorCodes.tag('STS-SPIFFE-0114') +
@@ -1695,7 +1983,8 @@ class SpiffeServer {
       const now = instance.bindingsNow();
       // The workload attestation state rides the same reader (#40): it is
       // this module's, and a slot of its own would fail rule 3e's test.
-      return { workload: now.workload, api: now.api, bundlePath: BUNDLE_PATH,
+      return { workload: now.workload, api: now.api, broker: now.broker,
+               bundlePath: BUNDLE_PATH,
                workloadAttestation: instance.workloadAttestationState() };
     });
     helpers.log.debug("Leaving SpiffeServer.wire().");

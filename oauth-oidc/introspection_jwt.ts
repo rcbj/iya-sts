@@ -61,8 +61,8 @@
 // LIST.** The same reasoning as the UserInfo response's in `oauth2.ts`: the
 // symmetric families in `common/crypto.js`'s table are for a document encrypted
 // TO this service, and here the only key is the one the client registered. And
-// the same refusal: an inline JWKS only, never a `jwks_uri` dialled while
-// answering a request.
+// the same source: an inline JWKS, or the set a `jwks_uri` answered, fetched
+// before the endpoint answers (#120) — never dialled while answering.
 //
 // **A LIBRARY (rule 3).** It registers no route and requires `helpers.js`,
 // `common/crypto.js`, `common/applications.js`, `error_codes.js` and
@@ -97,6 +97,10 @@ import errorCodes = require('../common/error_codes');
 // service's default resource indicator. A library requiring only `common/`
 // modules and `authorization_servers.ts`, so this is still a leaf.
 import jwtAccessToken = require('./jwt_access_token');
+// FAPI's default signing algorithm (#139). A leaf: it requires nothing here.
+import fapi = require('./fapi');
+// A leaf: a client's fetched `jwks_uri` key set (#120).
+import clientJwks = require('./client_jwks');
 
 // A loose JSON-shaped object: a registration, an answer, a key.
 type Json = any;
@@ -291,8 +295,9 @@ class IntrospectionJwt {
     const { log, applications, errorCodes } = this.deps;
     log.debug("Entering IntrospectionJwt.protectionFor().");
     const registered = client || {};
+    // FAPI 1.0 Advanced signs PS256 by default (section 8.6, #139).
     const signAlg = String(registered.introspection_signed_response_alg || '')
-      .trim() || DEFAULT_SIGNING_ALG;
+      .trim() || fapi.defaultSigningAlg() || DEFAULT_SIGNING_ALG;
     const encAlg = String(registered.introspection_encrypted_response_alg ||
                           '').trim();
     const encEncRaw = String(registered.introspection_encrypted_response_enc ||
@@ -437,11 +442,11 @@ class IntrospectionJwt {
   // registration member being honoured, so the sentence a client gets back
   // names the member it registered.
   //
-  // Inline `jwks` only: a `jwks_uri` would have this service make an outbound
-  // HTTPS call to a URL the client chose, at the moment it answers a request —
-  // the refusal `client_auth.js` makes about verifying with one, made again.
-  // `jwks` arrives as an object from a registration document and as TEXT from
-  // the application registry (`oauthJwks`), so both are read.
+  // The inline `jwks`, or — since #120 — the key set its `jwks_uri` answered,
+  // from `client_jwks.js`'s cache: this reader is synchronous, so each
+  // endpoint that encrypts to a client prefetches it (`ensureFor()`) before
+  // it answers. `jwks` arrives as an object from a registration document and
+  // as TEXT from the application registry (`oauthJwks`), so both are read.
   // -------------------------------------------------------------------------
   recipientKey(registered: Json, alg: string, member: string): Json {
     const { log } = this.deps;
@@ -461,13 +466,15 @@ class IntrospectionJwt {
           e.message + '), so there is no key to encrypt to.');
       }
     }
+    if (!jwks && client.jwks_uri) {
+      jwks = clientJwks.cachedKeys(String(client.jwks_uri));
+    }
     if (!jwks || !Array.isArray(jwks.keys) || !jwks.keys.length) {
-      log.debug("Leaving IntrospectionJwt.recipientKey(). No inline jwks.");
+      log.debug("Leaving IntrospectionJwt.recipientKey(). No jwks.");
       throw new Error(client.jwks_uri
-        ? 'This client registered a jwks_uri, and this service reads an ' +
-          'INLINE "jwks" member only — it will not fetch a URL a client ' +
-          'chose while answering that client\'s request. Re-register with ' +
-          'the key material in a "jwks" member.'
+        ? 'This client registered ' + member + '="' + alg + '" and a ' +
+          'jwks_uri whose keys could not be fetched, so there is no key to ' +
+          'encrypt to.'
         : 'This client registered ' + member + '="' + alg +
           '" and no "jwks" member, so there is no key to encrypt to.');
     }

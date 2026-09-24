@@ -191,6 +191,7 @@ class ProtocolEndpoints {
       this.perServer('/:as/oauth2/revoke'),
       this.perServer('/:as/oauth2/register'),
       this.perServer('/:as/oauth2/logout'),
+      this.perServer('/:as/oauth2/fapi'),
       this.perServer('/:as/oauth2/jwks')
     ];
     log.debug("Leaving ProtocolEndpoints.buildPages().");
@@ -203,6 +204,7 @@ class ProtocolEndpoints {
         '/oauth2/revoke', '/oauth2/register', '/oauth2/register/:client_id',
         '/oauth2/logout', '/oauth2/consent', '/oauth2/rfc9700',
         '/oauth2/oauth21',
+        '/oauth2/fapi', '/oauth2/grants/:grantId',
         '/dpop/nonce-mode'
       ].map(route),
       '/admin/authorization-servers': namedServerRoutes,
@@ -258,6 +260,9 @@ class ProtocolEndpoints {
                                 this.socket('spiffe-workload')],
       '/admin/spiffe/agents': [this.socket('spiffe-server'),
                                this.route('/spiffe/bundle')],
+      // The SPIFFE Broker API's own listener (#170).
+      '/admin/spiffe/brokers': [this.socket('spiffe-broker'),
+                                this.route('/spiffe/bundle')],
       '/admin/xacml': [
         '/xacml', '/xacml/pdp', '/xacml/policies', '/xacml/protected',
         '/xacml/pep/register', '/xacml/pep/policies', '/xacml/pep/heartbeat',
@@ -283,7 +288,11 @@ class ProtocolEndpoints {
       '/admin/caep': SSF_DELIVERY.map(route),
       '/admin/risc': SSF_DELIVERY.map(route),
       '/admin/federation': ['/federation', '/federation/login/:id',
-                            '/federation/acs/:id', '/federation/metadata/:id',
+                            '/federation/acs/:id', '/federation/link/:handle',
+                            '/federation/metadata/:id',
+                            '/federation/slo/:id',
+                            '/federation/backchannel-logout/:id',
+                            '/federation/frontchannel-logout/:id',
                             '/authn/select-idp'].map(route),
       '/admin/totp': ['/authn/totp', '/portal/mfa'].map(route),
       '/admin/backup-codes': ['/authn/backup-code', '/portal/mfa'].map(route),
@@ -336,6 +345,18 @@ class ProtocolEndpoints {
         '/.well-known/est/:label/simplereenroll',
         '/.well-known/est/:label/serverkeygen',
         '/.well-known/est/:label/csrattrs', '/.well-known/est/:label/fullcmc'
+      ].map(route),
+      // ===== OpenID Federation endpoints row (#132) =====
+      '/admin/oidfed': [
+        '/.well-known/openid-federation', '/oidfed/fetch', '/oidfed/list',
+        '/oidfed/resolve', '/oidfed/trust-mark', '/oidfed/trust-mark-status',
+        '/oidfed/trust-mark-list', '/oidfed/historical-keys',
+        '/oidfed/register', '/oidfed/extended-list', '/oidfed/collection',
+        '/oidfed/subordinate-events'
+      ].map(route),
+      // ===== Claims Providers endpoints row (#147) =====
+      '/admin/claim-providers': [
+        '/portal/claim-sources', '/portal/claim-sources/callback'
       ].map(route),
       // ===== SCEP endpoints row =====
       '/admin/scep': [
@@ -419,6 +440,11 @@ class ProtocolEndpoints {
         log.debug("Entering the spiffe-server socket builder.");
         log.debug("Leaving the spiffe-server socket builder.");
         return self.spiffeRows('server');
+      },
+      'spiffe-broker': function () {
+        log.debug("Entering the spiffe-broker socket builder.");
+        log.debug("Leaving the spiffe-broker socket builder.");
+        return self.spiffeRows('broker');
       }
     };
   }
@@ -535,12 +561,14 @@ class ProtocolEndpoints {
     const here = realms.currentId() === realms.DEFAULT_ID ? '' :
                  realms.currentId();
     const now = server.bindings();
-    const list = surface === 'workload' ? now.workload : now.api;
+    const list = surface === 'workload' ? now.workload
+      : surface === 'broker' ? (now.broker || []) : now.api;
     const rows = list.filter(function (binding) {
       return String(binding.realm || '') === here;
     }).map(function (binding) {
       return {
         name: surface === 'workload' ? 'SPIFFE Workload API (gRPC)' :
+              surface === 'broker' ? 'SPIFFE Broker API (gRPC)' :
               'SPIRE Server API (gRPC)',
         methods: [],
         url: binding.address,

@@ -8,7 +8,8 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 |---|---|
 | `authn.ts` | The sign-in screen, the session store, and the pending-authentication record. |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
-| `webauthn_policy.ts` | The ceremony's options and the four policy settings that refuse, kept out of `webauthn.js` so that file stays loadable on its own. |
+| `webauthn_policy.ts` | The ceremony's options, the four policy settings that refuse, and the attestation policy's settings (#105), kept out of `webauthn.js` so that file stays loadable on its own. |
+| `webauthn_attestation.ts` | **A registration's attestation statement, verified (#105)**: WebAuthn Level 3 section 7.1 steps 21-25 and all eight section 8 formats, the trust anchors (the realm's and the FIDO Metadata Service's), MDS status reports, revocation, and the record a key carries. A library (rule 3). See *The attestation statement*, below. |
 
 **A THIRD ENDPOINT LIVES IN `/authn/*` AND IS NOT IN THIS DIRECTORY.**
 `/authn/spnego` — sign in with a Kerberos ticket — is
@@ -337,7 +338,7 @@ agree with the rest of the screen:
   here, and `oid4vc/CLAUDE.md` carries the argument:
   * `beginSecondFactorAfterWallet()` — asked by the wallet door once a
     presentation has named somebody, and it answers whether a second factor
-    is needed (`forceMfa`, `authn.mfaRequired`, the person's own
+    is needed (`forceMfa`, the authentication policy, the person's own
     `stsMfaRequired`, or a second factor they hold) and draws it: their
     authenticator app, their security key, or their PASSWORD at
     `/authn/password-factor` — a new screen with one field, no script, rate
@@ -1405,6 +1406,91 @@ token there would refuse a credential the policy had just allowed.
 
 ---
 
+## THE SIGN-IN SCREEN MAY CARRY ONE SCRIPT: THE BROWSER FINGERPRINT (2026-09-22, #62 P6)
+
+**Only while `risk.fingerprinting` is on in the realm — off by default**
+(rcbj's decision). The argument the root CLAUDE.md asks for, made from
+scratch: **a browser fingerprint cannot be computed without a script** — it
+is the canvas, audio and font behaviour of the browser, which no form field
+reports — and **the screen does not need it to work**. The script
+(`/authn/fingerprint.js`: FingerprintJS v5, MIT, its usage ping turned off,
+then eight lines of glue) only fills a hidden `device_fp` field; with the
+script blocked the field is empty, the real submit button signs the person
+in exactly as before, and an empty field decides nothing. `sendLoginPage()`
+relaxes `script-src` to `'self'` through `app.contentSecurityPolicy()` and
+only while the setting is on; the script answers 404 (STS-AUTHN-0225) while
+it is off, so nothing serves a script no page asks for.
+
+**The value is never kept**: `eventContext()` reads it from the posted form
+and keeps `device`, a keyed digest (`credentialFingerprint('device:' …)`),
+beside the User-Agent's. The risk engine scores a digest this person never
+signed in from as `new-device` (×2).
+
+**Turning it on is the operator's decision**, after the privacy impact
+assessment `docs/risk-scoring.md` sets out: a browser fingerprint is personal
+data about the device, collected without the person doing anything.
+
+## EVERY SIGN-IN SCREEN ANSWERS A REFUSED SESSION, AND THE REFUSAL SAYS WHY (2026-09-22, #62 P0)
+
+`startSession()` refuses by returning null (the section above), and **three
+callers on this module's own screens did not look**: the password door, the
+anonymous *Continue without signing in*, and `/authn/password-factor`. The
+password door then called `returnToCaller()`, whose request ran again with no
+session and sent the browser straight back to the sign-in screen with nothing
+said. The four second-factor paths looked, but answered only a DISABLED account
+(`refusedAsDisabled()`); a policy refusal or a missing directory entry fell
+through to the same loop. Risk scoring (#62) will refuse sessions at this same
+funnel, so every refusal has to be answered first.
+
+* **THE REFUSAL SAYS WHY ON THE CALLER'S OWN `detail`.** Each refusal writes
+  `refusedWith` (its error code) and, for the issuance policy, `refusedWhy`
+  onto the object the caller passed. The return value stays a null for the
+  reason above: two callers wrap this in a `try`, and a richer return type
+  would have changed what every caller tests.
+* **`refusedSession()` IS THE SCREENS' ONE READER**, replacing
+  `refusedAsDisabled()`: the sign-in screen again, with the policy's sentence
+  where the policy refused (the password door already shows it before a
+  password is typed) and otherwise only *Authentication failed* — the
+  enumeration answer, which a disabled account and a missing entry both fall
+  under. Every one of the seven callers on this module's screens goes through
+  it.
+* **THE PENDING SIGN-IN IS PUT BACK.** Every door deletes its pending record
+  before asking for the session, so the screen redrawn after a refusal named a
+  record the next POST could not find — a second failure, saying nothing about
+  the first. `refusedSession()` restores it while it has time left, so the
+  person can sign in as somebody else, or again once an administrator has
+  acted.
+
+`tests/authn_session_refusals.js` A and B hold it, measured with the refusal
+easiest to cause from outside: no directory entry with `ldap.autocreateUsers`
+off.
+
+## AN AUTHENTICATION EVENT SAYS WHERE IT CAME FROM (2026-09-22, #62 P0)
+
+An event (*What an authenticated identity is here*) said HOW somebody proved who
+they were and nothing about from where; the address was kept only on
+`admin_stats.js`'s list, capped at fifty. Risk scoring compares one sign-in
+against the last, so each event now carries `context`:
+
+| Field | What | Never |
+|---|---|---|
+| `address` | `audit.currentAddress()`, the source `/admin/users` and the audit log already answer from | a second answer to where a sign-in came from |
+| `uaFingerprint` | `stsCrypto.userAgentFingerprint()` of the `User-Agent` — CAEP's `fp_ua` | the header itself |
+| `ja4` | the connection's JA4 TLS fingerprint, `tls/client_hello.ts` | anything on plain HTTP, where there is no ClientHello |
+| `credential` | `{ kind, fingerprint, aaguid, backupEligible, backupState }` from `detail.credential` | the credential id: `stsCrypto.credentialFingerprint()` of it |
+
+**The request is the caller's `detail.request`, or the audit log's ambient
+one** (`audit.currentRequest()`), so a door that hands `startSession()` a
+detail without its request is still described. Every door names its
+credential's `kind` — `password`, `webauthn`, `totp`, `backup-code`,
+`wallet`, `certificate`, `kerberos`, `federation`; the WebAuthn door adds the
+key that answered, its AAGUID and the authenticator data's BE and BS flags
+(a device-bound key and a synced passkey are different evidence). A row
+persisted before 2026-09-22 has events with no `context`, and a
+re-authentication of such a row gives its synthesised first event an empty
+one.
+`tests/authn_session_refusals.js` C holds it.
+
 ## A MACHINE ENDPOINT REGISTERED UNDER A FRONT DOOR MINTED AN ARRIVAL SESSION PER REQUEST (2026-09-10)
 
 `ARRIVAL_PATHS` is a list of FRONT DOORS, matched by PREFIX, and its own comment
@@ -1511,6 +1597,21 @@ it stands in for and there is no vocabulary here in which to say so** —
 downgrading to `1` would claim ONE factor when two were checked — so the audit
 row and `/admin/sessions` are where which mechanism it was is recorded.
 
+## A FEDERATION PARTNER'S SESSION RIDES ON THE SESSION, AND CAN ONLY SHORTEN IT (#167)
+
+`startSession()` and `reauthenticateSession()` hand `detail.fedPartnerSession`
+and `detail.sessionNotOnOrAfter` to `bindPartnerSession()`: the first is kept
+on the session as it came (the relationship, the partner's NameID and
+SessionIndex or `sub` and `sid`), so a partner's sign-out can find the one
+session it names on any node; the second — the partner's SAML
+`SessionNotOnOrAfter`, as epoch ms — becomes `expires` where it is earlier,
+with `expiresBoundBy` saying so. It is the absolute expiry `sessionEnded()`
+already reads, so the sweep and both lazy lookups honour it with no path of
+their own. A later federated sign-in on the session replaces the partner
+session; a local re-authentication leaves it, because the partner's session did
+not end. Both fields are kept off the authentication's statistics row. See
+`../federation/CLAUDE.md`, *A PARTNER'S SIGN-OUT*.
+
 ## THE SESSION CLOCKS ARE SETTINGS, AND ONE FUNCTION SAYS WHETHER A SESSION HAS ENDED (2026-09-12)
 
 `SESSION_TTL_MS` (an hour), `AUTHN_TTL_MS` (ten minutes) and `MFA_TTL_MS` (five)
@@ -1576,6 +1677,52 @@ arrived at:
 **`/portal/keys` asks both functions**, so the two ceremonies cannot accept
 different origins. `tests/webauthn_addresses.js` pins it.
 
+## THE ATTESTATION STATEMENT (#105, 2026-09-23)
+
+Until #105 `webauthn.js` never read `attStmt`: the statement was "parsed,
+reported and believed" and the AAGUID on a key was the authenticator's say-so.
+`webauthn_attestation.ts` now verifies it, and the design decisions are in its
+header; what a maintainer of THIS directory needs is where it sits:
+
+* **`webauthn.js` still verifies nothing about the statement.** It returns
+  `attStmt` (as plain data), the raw authenticator data, the client data hash,
+  the COSE key and its algorithm, and adds three section 7.1 checks by name —
+  `credential algorithm was offered` (only when the caller passes
+  `expectedAlgorithms`), `credential ID is at most 1023 bytes` and `backup state
+  only where backup eligible` — mapped to `STS-AUTHN-0228`–`0230` in
+  `webauthn_policy.ts`'s table. It stays loadable on its own for the parent
+  project's cross-implementation test; the six new COSE algorithms (PS256/384/
+  512, ML-DSA-44/65/87 from RFC 9964) go through `crypto.verifyCoseSignature()`
+  and a standalone copy refuses them rather than misreading them. **The stored
+  JWK now carries `alg`**, so an assertion is checked with the credential's own
+  hash and padding; a key stored before has none and is read by key type — which
+  fixed ES384 and ES512 keys, checked with SHA-256 until then.
+* **Both ceremony doors ask it, AFTER the ceremony's checks and BEFORE the
+  credential id is claimed**: the sign-in screen (`authn.ts`, in the async
+  registration tail) and `credentials.checkKeyEnrolment()` (`/portal/keys`). A
+  refusal is a refused ceremony with its code; nothing is written.
+* **The policy is `webauthn_policy.attestationSettings()`**: `by-mode` resolves
+  through `mode.acceptsUnverifiedAttestation()` (development `off`, product
+  `verify-if-present`), and `off` carries the `onlyWhile` marker. A demand for a
+  trusted statement (require-trusted, an AAGUID list, a level, FIPS) makes
+  `creationOptions()` ask for `direct`.
+* **The FIDO metadata is #62 P5's dataset, not a second client**:
+  `risk_datasets.lookupAuthenticatorBy()` finds a model by AAGUID or attestation
+  key identifier, and its metadata statement's `attestationRootCertificates`
+  are the model's anchors (the postgres lookup returns the statement since
+  #105). The console's MDS block reads `mdsSnapshot()` because a status block is
+  drawn synchronously.
+* **The record** (`attestation` on the key: policy, format, type, verified,
+  trusted, anchor, aaguid, model, certificationLevel, mdsStatus, mdsVersion,
+  checkedAt) is drawn on `/portal/keys`, the `/admin/users` key rows and `GET
+  /admin-api/users`. A key without one is "claimed".
+
+`tests/webauthn_attestation.js` (with `tests/webauthn_attestation_kit.js`, a
+software authenticator in all eight formats) and
+`tests/vendored/sts_webauthn_attestation.js` are the tests. Not done:
+enterprise attestation (section 5.4.7) has no RP ID allow-list, which the plan
+deferred.
+
 ## `/authn/password-change`: A FORCED PASSWORD CHANGE AT THE SIGN-IN SCREEN (2026-09-13)
 
 **`pwdReset: TRUE` on a person's entry means the password must be changed
@@ -1625,7 +1772,7 @@ change.**
 
 `credentials.mfaRequirementFor(username)` answers `{ required, byUser, byRealm }`
 — `stsMfaRequired` on the entry, set by **Require MFA** on the person's console
-page, or `authn.mfaRequired` for the realm. `finishPasswordSignIn()` asks it
+page, or the realm's authentication policy (`requireSecondFactor`). `finishPasswordSignIn()` asks it
 after computing `factor`:
 
 * **A passwordless sign-in under the requirement is refused** on the login page
@@ -1648,13 +1795,94 @@ after computing `factor`:
   second factor may add one at sign-in, because there is none an attacker with
   the password could be bypassing.**
 
-**IT IS ENFORCED AT THIS SCREEN AND NOWHERE ELSE**, and the setting's
-description says which doors it does not reach: a federated assertion, SPNEGO,
-a TLS client certificate, the OAuth password grant, an LDAP bind, WS-Trust and
-SCIM Basic. A session that already exists is not ended. **The enrolment emits
+**THIS SCREEN IS THE ONLY DOOR THAT CAN ASK FOR IT**, and since #101 the
+five that cannot are no longer a gap: they REFUSE the password (the section
+below). What it still does not reach is a federated assertion and a TLS client
+certificate. **The Kerberos AS exchange is the one other door that CAN ask for a
+second factor** (#173, the section below). A session that already
+exists is not ended. **The enrolment emits
 no CAEP event**, because the signals the request asked for are the ADMIN doors'
 (`admin-core/admin_actions.ts`); the portal's own enrolment pages do not emit
 either. `tests/admin_credential_controls.js` section 7 drives it over HTTP.
+
+## THE PASSWORD-ONLY DOORS REFUSE A SECOND-FACTOR PERSON'S PASSWORD, AND APP PASSWORDS ARE WHAT THEY TAKE (2026-09-22, #101)
+
+**This file owns the rule; `common/credentials.ts` implements it** —
+`secondFactorRefusal()` beside `resetRefusal()` in `verify()` and
+`verifyAsync()` — and each door carries one line pointing here.
+
+* **THE FIVE DOORS**: an LDAP simple bind, a WS-Security UsernameToken, SCIM
+  and SSF HTTP Basic, EST Basic. None of their specifications (RFC 4513 section
+  5.1.3, the UsernameToken Profile, RFC 7617, RFC 7030 section 3.2.3) defines a
+  second factor, so the rule is the ACCOUNT's: NIST SP 800-63B section 4.2 —
+  an account bound to two factors is AAL2, and a verifier that accepts one of
+  them alone brings it to AAL1. In product (`mode.
+  acceptsPasswordAloneFromSecondFactorAccounts()` false) a PERSON who holds an
+  authenticator app or an `mfa` key, or of whom one is required
+  (`mfaRequirementFor()`), is refused their RIGHT password there
+  (`STS-AUTHN-0213`). The entry's KIND decides — `isPerson()` on the
+  directory slot, by placement — so an application's secret is untouched.
+* **REFUSE BY DEFAULT.** A caller is exempt only by declaring
+  `secondFactor: 'asked-next'` (this screen, and the wallet's password-factor
+  screen, where the password IS the second factor) or `'session-held'` (the
+  portal's password change). A door added tomorrow that says nothing is
+  covered. Each of the five passes `door:` beside its `via:`.
+* **THE ANSWER IS A WRONG PASSWORD'S, BYTE FOR BYTE**, and it counts against
+  every rate limit a wrong password counts against — otherwise it is a
+  password oracle. The code rides the verdict to the audit row and the log.
+  `tests/vendored/sts_second_factor_doors.js` compares the two answers as
+  strings at all five doors.
+* **APP PASSWORDS** (`common/app_passwords.ts`, the records in
+  `credentials.ts`): generated, shown once, scrypt-hashed on the entry
+  (`stsAppPassword`, withheld from every LDAP read), named, scoped to one or
+  more of the five doors, looked up by a public four-character id so a
+  presented value costs ONE scrypt. Accepted only at a door it names
+  (`reason: 'app-password'`, one factor, and the door says so on its
+  authentication row); **never at this screen**, whose call passes no `door`
+  — `STS-AUTHN-0214` wherever it is out of scope. Refused on a disabled
+  account (that check comes first); untouched by a password reset (it is not
+  derived from the password); last use written at most once a minute. Made on
+  `/portal/app-passwords` behind a full sign-in, or by an administrator on
+  `/admin/users` and `POST /admin-api/users/create-app-password`; revoked on
+  the same pages; each make and revoke a CAEP `credential-change`.
+* **`authn.passwordAloneDoors`** is the documented weaker option: a listed door
+  accepts the password alone, at one factor, and the log says so each time.
+* **No `password || OTP` concatenation** (rcbj, #101): ambiguous to parse, it
+  spends a TOTP step per connection a pooled client cannot manage, and no
+  specification describes it. **The Kerberos AS-REQ is not one of the five** —
+  the KDC derives keys from the password and never calls `verify()` — and it
+  has its own answer, below.
+
+## THE KERBEROS AS EXCHANGE: A SIXTH PASSWORD DOOR, AND THE ONE THAT CAN ASK (2026-09-22, #173)
+
+**The same account rule, a different answer, because Kerberos standardised a
+second factor.** `common/credentials.ts`'s `secondFactorDemand()` — the question
+`secondFactorRefusal()` asks, answered on its own — decides who is a two-factor
+account at the KDC too (`kerberos/krb5_person_keys.ts` asks it through the
+principal database's key source), so the two cannot disagree. In product
+(`mode.issuesTicketsOnPasswordAlone()` false) an AS-REQ proving the password
+alone is refused `KDC_ERR_POLICY` (`STS-KRB-0135`) — and, unlike the five
+doors' answer, that is NOT a wrong password's: the refusal comes only AFTER the
+password verified, so somebody without it gets `KDC_ERR_PREAUTH_FAILED` and
+learns nothing, and somebody with it learns what this screen tells them by
+asking for the code next. The e-text says how to get a ticket instead:
+
+* **RFC 6113 FAST** armored by the client host's own TGT, carrying **RFC 6560
+  OTP pre-authentication**: the password as the PIN and the authenticator code,
+  both checked in one exchange (`kerberos/krb5_fast.ts`). **THE CODE IS SPENT
+  WHERE THIS SCREEN SPENDS IT** — `verifyTotpAsync()` and the `authn.totp-step`
+  counter — so one code cannot be used at `/authn/totp` and at the KDC, in
+  either order (`tests/kerberos_fast_otp.js`, and over the wire the portal's
+  confirmation code refused at the KDC).
+* **An app password is not accepted by the KDC**: it never derives a Kerberos
+  key, so as a PIN or a PA-ENC-TIMESTAMP it is a wrong password.
+* **The ticket carries the RFC 8129 indicator `otp`**, and `/authn/spnego`
+  (`kerberos/spnego_authn.ts`) turns it into `amr ["pwd","otp"]`, `acr "mfa"` —
+  the claims this screen makes after `/authn/totp`. The SPNEGO button is still
+  withheld from a request that demanded two factors: whether a ticket carries
+  the indicator is not known until it is presented.
+* **A security key over Kerberos is PKINIT (#179)**, not built: a person whose
+  only second factor is a key cannot get a ticket in product.
 
 ## SEVERAL NODES: A SIGN-OUT HOLDS, AND TWO COPIES OF A SESSION MERGE (2026-09-14, #46 section 3)
 
@@ -1867,3 +2095,79 @@ for each is `common/CLAUDE.md`'s *Several nodes* section; what is this file's is
 that **a refusal after a verification that passed is still a refusal of the
 step, not an error page**, and that a catch sits on each promise because
 Express 4 does not look at what a handler returns (`STS-AUTHN-0182`).
+
+## A SIGN-IN AS ONE NAMED PERSON: FEDERATION'S LINKING STEP (#109, 2026-09-22)
+
+`beginAuthentication({ lockedUsername })` mints a pending record whose NAME is
+fixed: `federation_sp.ts`'s `link-at-first-sign-in` sends a person here when a
+partner named an existing account its subject is not linked to yet, and the
+account holder must prove they are that person before the link is made
+(`../federation/CLAUDE.md`, *WHICH PEOPLE A PARTNER MAY ASSERT*). Four things
+follow, and each is the record deciding rather than the markup:
+
+* **the POST reads the name off the record**, and a typed name is not read at
+  all — the screen draws it `readonly` for the person, which is a suggestion to
+  a browser and nothing more;
+* **no passwordless key** (`STS-AUTHN-0212`) and **no anonymous session**: the
+  linking rests on the password, and a key a person could enrol at this very
+  screen in development is no proof of anything;
+* **a second factor is asked exactly as for anybody** — held, required by the
+  account or the realm, enrolled where required and held by none — because
+  `finishPasswordSignIn()` is not told this is a linking sign-in; that is the
+  point;
+* **none of the other doors** (the partner buttons, SPNEGO, the wallet) is drawn.
+
+What comes back is an ordinary local session and a 303 to the pending record's
+`returnTo`, `/federation/link/{handle}`, which reads the session's LATEST
+authentication event — its `via` is the record's `protocol`, `Federation link` —
+to know the sign-in it is shown was made through this screen, as that person,
+just now. Development checks no password here any more than anywhere (the
+reserved `invalid` is refused); product verifies it.
+
+
+## THE EMAILED CODE AND THE EMAILED SIGN-IN LINK (#64, 2026-09-23)
+
+`authn/email_factor.ts` draws and checks both, as a FIRST factor (the sign-in
+screen's "Email me a sign-in code" / "…link" buttons — submit buttons of the
+same form, so the username goes with them and no script is needed) and as a
+SECOND (a `pendingMfa` step whose `factor` is `email-code` or `email-link`,
+or whose `email` offers one as a way round the factor asked for). This module
+declares the three paths and owns the step store; that one registers the six
+routes just after this module and reaches the steps only through
+`mintMfaStep()`, `saveMfaStep()`, `dropMfaStep()`, `finishEmailSecondFactor()`
+and `finishEmailFirstFactor()` — the wallet door's arrangement.
+
+**OFF BY DEFAULT** — the authentication policy's four email rows
+(`common/CLAUDE.md` 3bd) — because NIST SP 800-63B-4 section 3.1.3.1 says
+email SHALL NOT be used for out-of-band authentication. Where they are on:
+
+- **Only a VERIFIED address is mailed**, and a person holds the emailed SECOND
+  factor only by opting in (`common/CLAUDE.md` 3be).
+- **As a first factor the page never says whether the account exists**: an
+  unknown name, a disabled account or an unverified address gets a DECOY step
+  no code can finish, the same page, and no mail.
+- **The secret is a scrypt hash on the step**, valid for at most ten minutes,
+  spent once for the cluster (a claim on the step and the send), replaced by a
+  resend no sooner than `emailResendS`, at most three sends a step; the step
+  ENDS after `emailCodeAttempts` wrong ones; `mfa-code`'s rate limits apply.
+- **A link finishes only in the browser that started the sign-in** (rcbj's
+  D3): the step holds the SHA-256 of a cookie set when the link was sent, and
+  the landing page is refused without it. Approving from another device is the
+  login-CSRF shape and is not offered. **The landing GET spends nothing**; a
+  Continue button posts. The waiting page refreshes with a `<meta>` tag and,
+  once the step is spent, says the sign-in went on in the other tab.
+- **No script on any of the six pages** — so none is on the root file's list
+  of pages that relax the policy; each argued its case the same way
+  `/authn/totp` did.
+- **`amr ["otp"]`**, the first factor's `amr` plus `otp` and `acr "mfa"` as a
+  second (D1, D2); the event's credential kind is `email-code` or
+  `email-link`, which the issuance policy is told and `risk_engine` reads: an
+  emailed factor meets no risk step-up. `beginSecondFactorAfterWallet()`
+  (named for its first caller) runs after an emailed first factor with
+  `opts.first: 'email'`, so the email is never the second factor after itself,
+  and the password fallback is offered only where the policy accepts a password
+  as a second factor.
+
+`startSession()` asks the authentication policy of every door: a mechanism it
+does not accept in the role it answered in gets no session (STS-AUTHN-0268,
+-0269), held second factors excepted by the contract `totp.enabled` kept.

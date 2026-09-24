@@ -328,7 +328,36 @@ function generate(alg) {
   };
 }
 
-function sign(alg, priv, message) {
+// ---------------------------------------------------------------------------
+// HEDGED, NOT DETERMINISTIC (#203, 2026-09-24).
+//
+// FIPS 204 section 3.4 and FIPS 205 section 9.2 define two signing variants
+// and RECOMMEND the hedged one: ML-DSA's `rnd` is 32 fresh random octets
+// rather than all zeros, SLH-DSA's `opt_rand` n fresh random octets rather
+// than PK.seed. noble signs deterministically when it is handed no
+// randomness, and until NIST's ACVP vectors showed this service's signatures
+// matching the deterministic ones byte for byte, this function never handed
+// it any. Deterministic signing turns a fault or side channel in one
+// signature into a key-recovery oracle over repeated messages; hedged
+// signing costs 32 octets from the generator.
+//
+// `opts.deterministic` is the ONE way back, and it is an INTERNAL parameter,
+// not a setting: `tests/acvp_pqc.js` passes it (through
+// `crypto.jwsSignatureOver()`) to compare with NIST's deterministic
+// vectors, and nothing in the service does. The composite halves' ML-DSA
+// signature is hedged the same way.
+// ---------------------------------------------------------------------------
+function signingRandomness(alg, opts, bytes) {
+  log.debug('Entering signingRandomness(). alg=' + alg);
+  if (opts && opts.deterministic === true) {
+    log.debug('Leaving signingRandomness(). Deterministic, as asked.');
+    return undefined;
+  }
+  log.debug('Leaving signingRandomness(). Hedged.');
+  return new Uint8Array(nodeCrypto.randomBytes(bytes));
+}
+
+function sign(alg, priv, message, opts) {
   log.debug('Entering sign(). alg=' + alg);
   const msg = Buffer.from(message);
   if (ML[alg]) {
@@ -339,11 +368,16 @@ function sign(alg, priv, message) {
     }
     const kp = ML[alg].keygen(Buffer.from(priv));
     log.debug('Leaving sign(). ML-DSA.');
-    return Buffer.from(ML[alg].sign(kp.secretKey, msg));
+    return Buffer.from(ML[alg].sign(kp.secretKey, msg, new Uint8Array(0),
+                                    signingRandomness(alg, opts, 32)));
   }
   if (SLH[alg]) {
+    // n is half the public key (PK.seed || PK.root), 16 octets for 128s.
+    const n = Buffer.from(priv).length / 4;
     log.debug('Leaving sign(). SLH-DSA.');
-    return Buffer.from(SLH[alg].sign(Buffer.from(priv), msg));
+    return Buffer.from(SLH[alg].sign(Buffer.from(priv), msg,
+                                     new Uint8Array(0),
+                                     signingRandomness(alg, opts, n)));
   }
   const cfg = COMPOSITES[alg];
   if (!cfg) {
@@ -364,7 +398,8 @@ function sign(alg, priv, message) {
   // the context produces a signature that verifies against an implementation
   // that also omits it and against nothing else.
   const mlSig = ML[cfg.ml].sign(mlKp.secretKey, mPrime,
-                                Buffer.from(cfg.label, 'utf8'));
+                                Buffer.from(cfg.label, 'utf8'),
+                                signingRandomness(alg, opts, 32));
   log.debug('Leaving sign(). Composite ' + alg + '.');
   return Buffer.concat([Buffer.from(mlSig), tradSign(spec, tradPriv, mPrime)]);
 }

@@ -23,7 +23,16 @@
 //      certificate that verified the credential, cached, and its bit
 //      honoured; an unreachable list means no statement can be made, so the
 //      credential is refused;
-//   6. the new stores are on `/admin/caches`, and the console and the
+//   6. A STATUS REFERENCE IS REQUIRED (#165): a foreign credential naming
+//      none is refused (STS-VC-0088) unless `oid4vp.requireStatusReference`
+//      is own-only or its issuer's certificate thumbprint is in
+//      `oid4vp.statusOptionalIssuers`; one of this realm's with none is
+//      refused under all and own-only; an `ldp_vc` whose presentation
+//      withheld `credentialStatus` is refused at the bar door (STS-VC-0089),
+//      revoked or not, and the door's query asks for it;
+//   7. in product `off` is refused on write (STS-CORE-0103) and read as
+//      `all` with it still stored;
+//   8. the new stores are on `/admin/caches`, and the console and the
 //      management API answer the same JSON (rule 7).
 //
 // In a CHILD PROCESS, for `admin_credential_controls.js`'s reason.
@@ -63,6 +72,7 @@ function childMain() {
     const nodeCrypto = require('crypto');
     const statusAdmin = require(ROOT + '/admin-ui/vc_status_admin');
     const cachesAdmin = require(ROOT + '/admin-ui/caches_admin');
+    const modeModule = require(ROOT + '/common/mode');
     await w.inRealm(function () {
       w.provision();
       m.ldap.createUser('st-alice', { invent: false });
@@ -319,7 +329,7 @@ function childMain() {
     await w.inRealm(function () {
       m.config.setOverride('oid4vp.trustedIssuerCertificates',
                            partner.certPem);
-      m.config.setOverride('federation.outboundAllowInsecure', 'true');
+      m.config.setOverride('federation.outboundAllowHttp', 'true');
       m.config.setOverride('oid4vp.claims', '');
     });
 
@@ -371,20 +381,266 @@ function childMain() {
          '5d. a list that cannot be fetched means no statement can be made, ' +
          'so the credential is REFUSED (section 8.3), not let through',
          unreachable.status + ' ' + unreachable.code);
+    // ------------------------------------------------------------------
+    // A FOREIGN CREDENTIAL THAT NAMES NO STATUS (#165):
+    // oid4vp.requireStatusReference, all by default in both modes, and the
+    // per-issuer exemption keyed by certificate thumbprint.
+    // ------------------------------------------------------------------
     const noStatus = await presentToBarDoor(partnerCredential(''));
-    note(noStatus.status === 200,
-         '5e. a foreign credential that names NO status is accepted: that ' +
-         'issuer publishes none, which is a different thing from one this ' +
-         'realm issued and cannot find', noStatus.status);
+    note(noStatus.status === 400 && noStatus.code === 'STS-VC-0088' &&
+         /Credential status/.test(noStatus.text) &&
+         /no status reference/.test(noStatus.text),
+         '5e. a foreign SD-JWT VC that names NO status is REFUSED by ' +
+         'default (oid4vp.requireStatusReference all), STS-VC-0088: it could ' +
+         'never be shown to have been revoked (#165)',
+         noStatus.status + ' ' + noStatus.code + ' ' +
+         noStatus.text.slice(0, 200));
+    await w.inRealm(function () {
+      m.config.setOverride('oid4vp.requireStatusReference', 'own-only');
+    });
+    const ownOnly = await presentToBarDoor(partnerCredential(''));
+    note(ownOnly.status === 200,
+         '5f. under own-only the same foreign credential is accepted — the ' +
+         'relaxation its description warns about', ownOnly.status + ' ' +
+         ownOnly.text.slice(0, 200));
+    await w.inRealm(function () {
+      m.config.clearOverride('oid4vp.requireStatusReference');
+    });
+    const spellings = [
+      ['hex', m.stsCrypto.certificateThumbprint(partner.certPem,
+                                               { format: 'hex' })],
+      ['colon-hex', m.stsCrypto.certificateThumbprint(partner.certPem,
+                                                     { format: 'colon-hex' })],
+      ['base64url (x5t#S256)', m.stsCrypto.certificateThumbprint(
+        partner.certPem, { format: 'base64url' })]];
+    for (const [spelling, thumbprint] of spellings) {
+      await w.inRealm(function () {
+        m.config.setOverride('oid4vp.statusOptionalIssuers',
+                             'deadbeef,' + thumbprint);
+      });
+      const exempt = await presentToBarDoor(partnerCredential(''));
+      note(exempt.status === 200,
+           '5g. under all, a foreign credential with no status is accepted ' +
+           'when its issuer certificate\'s thumbprint (' + spelling + ') is ' +
+           'in oid4vp.statusOptionalIssuers', exempt.status + ' ' +
+           exempt.text.slice(0, 200));
+    }
+    const other = await w.inRealm(function () {
+      return m.stsCrypto.selfSignedRsaCertificate(
+        { commonName: 'some other issuer' });
+    });
+    await w.inRealm(function () {
+      m.config.setOverride('oid4vp.statusOptionalIssuers',
+        m.stsCrypto.certificateThumbprint(other.certPem, { format: 'hex' }));
+    });
+    const notExempt = await presentToBarDoor(partnerCredential(''));
+    note(notExempt.status === 400 && notExempt.code === 'STS-VC-0088',
+         '5h. and refused when the exemption names another certificate',
+         notExempt.status + ' ' + notExempt.code);
+    await w.inRealm(function () {
+      m.config.setOverride('oid4vp.statusOptionalIssuers',
+        m.stsCrypto.certificateThumbprint(partner.certPem, { format: 'hex' }));
+      m.status.forgetFetched();
+    });
+    const exemptRevoked = await presentToBarDoor(partnerCredential(listPath));
+    note(exemptRevoked.status === 400 &&
+         exemptRevoked.code === 'STS-VC-0072',
+         '5i. the exemption covers a MISSING reference only: an exempt ' +
+         'issuer\'s credential that names a status is still checked against ' +
+         'it, and refused while that list says INVALID',
+         exemptRevoked.status + ' ' + exemptRevoked.code);
+    await w.inRealm(function () {
+      m.config.clearOverride('oid4vp.statusOptionalIssuers');
+    });
+    listValue = 0;
+    await w.inRealm(function () {
+      m.status.forgetFetched();
+    });
+
+    // A foreign jwt_vc_json, the other JOSE format: the same rule.
+    function partnerJwtVc(uri) {
+      const now = Math.floor(Date.now() / 1000);
+      return m.stsCrypto.signJws({
+        iss: 'https://partner.example', sub: 'urn:uuid:partner-person',
+        cnf: { jwk: partnerHolder.jwk }, nbf: now - 5, exp: now + 600,
+        status: uri ? { status_list: { idx: 7, uri: uri } } : undefined,
+        vc: { '@context': ['https://www.w3.org/2018/credentials/v1'],
+              type: m.vcConfigs.VCI_JWT_TYPES,
+              credentialSubject: { id: 'urn:uuid:partner-person' } } },
+        partnerKey, { algorithm: 'RS256',
+                      header: { alg: 'RS256', typ: 'JWT' } });
+    }
+    async function presentJwtVcToBarDoor(credential) {
+      const begun = await w.request('GET',
+        '/oid4vp/start?by=reference&format=jwt_vc_json',
+        { browser: w.browser() });
+      const url = new URL(begun.headers.location);
+      const ro = w.decode((await w.request('GET',
+        w.pathOf(url.searchParams.get('request_uri')))).text);
+      await w.inRealm(function () {
+        const tx = m.verifier.transactionFor(ro.state);
+        tx.requested = [];
+        m.verifier.saveTransaction(tx);
+      });
+      return w.request('POST', '/oid4vp/response', {
+        form: { state: ro.state,
+                vp_token: w.vpToken('dc+sd-jwt',
+                  w.presentJwtVc(credential, partnerHolder, ro.nonce,
+                                 ro.client_id)) } });
+    }
+    const jwtNoStatus = await presentJwtVcToBarDoor(partnerJwtVc(''));
+    note(jwtNoStatus.status === 400 && jwtNoStatus.code === 'STS-VC-0088',
+         '5j. a foreign jwt_vc_json that names no status is refused too, ' +
+         'STS-VC-0088', jwtNoStatus.status + ' ' + jwtNoStatus.code + ' ' +
+         jwtNoStatus.text.slice(0, 200));
+    const jwtWithStatus = await presentJwtVcToBarDoor(partnerJwtVc(listPath));
+    note(jwtWithStatus.status === 200,
+         '5k. and one that names a list saying VALID is accepted',
+         jwtWithStatus.status + ' ' + jwtWithStatus.text.slice(0, 200));
     partnerServer.close();
     await w.inRealm(function () {
       m.config.clearOverride('oid4vp.trustedIssuerCertificates');
-      m.config.clearOverride('federation.outboundAllowInsecure');
+      m.config.clearOverride('federation.outboundAllowHttp');
       m.config.clearOverride('oid4vp.claims');
     });
 
     // ==================================================================
-    // 6. THE STORES ARE ON /admin/caches, AND RULE 7
+    // 6. THIS REALM'S OWN CREDENTIALS WITH NO STATUS (#165)
+    // ==================================================================
+    for (const format of ['dc+sd-jwt', 'jwt_vc_json', 'ldp_vc']) {
+      for (const policy of ['all', 'own-only', 'off']) {
+        const answer = await w.inRealm(function () {
+          return m.status.checkPresented({ own: true, format: format,
+                                           claims: {}, credentialStatus: [],
+                                           policy: policy });
+        });
+        const wanted = policy === 'off';
+        note(answer.ok === wanted &&
+             (wanted || answer.errorCode === 'STS-VC-0088'),
+             '6a. a ' + format + ' credential of this realm that names no ' +
+             'status is ' + (wanted ? 'accepted under off (development ' +
+             'only)' : 'refused under ' + policy + ', STS-VC-0088'),
+             JSON.stringify(answer));
+      }
+    }
+
+    // The ldp_vc that WITHHOLDS its status, at the bar door.
+    const ldpIdx = Number(ldpEntries[0].statusListIndex);
+    async function presentLdpToBarDoor(pick) {
+      const begun = await w.request('GET',
+        '/oid4vp/start?by=reference&format=ldp_vc',
+        { browser: w.browser() });
+      const url = new URL(begun.headers.location);
+      const ro = w.decode((await w.request('GET',
+        w.pathOf(url.searchParams.get('request_uri')))).text);
+      await w.inRealm(function () {
+        const tx = m.verifier.transactionFor(ro.state);
+        tx.requested = [];
+        m.verifier.saveTransaction(tx);
+      });
+      const answer = await w.request('POST', '/oid4vp/response', {
+        form: { state: ro.state,
+                vp_token: w.vpToken('dc+sd-jwt',
+                  await w.presentLdp(ldp.credential, ldpHolder, ro.nonce,
+                                     ro.client_id,
+                                     pick ? { pick: pick } : {})) } });
+      answer.ro = ro;
+      return answer;
+    }
+    function withholding(line) {
+      return /credentials#credentialSubject> <did:jwk:/.test(line) ||
+             /credentials#issuer>/.test(line) ||
+             /credentials#validFrom>/.test(line) ||
+             /credentials#validUntil>/.test(line);
+    }
+    await w.inRealm(function () {
+      m.config.setOverride('oid4vp.claims', '');
+    });
+    const disclosed = await presentLdpToBarDoor(null);
+    const ldpQuery = (((disclosed.ro || {}).dcql_query || {}).credentials ||
+                      [])[0] || {};
+    note((ldpQuery.claims || []).some(function (c) {
+      return JSON.stringify(c.path) === '["credentialStatus"]';
+    }), '6b. the bar door\'s ldp_vc query ASKS for credentialStatus, so a ' +
+        'conforming wallet discloses it', JSON.stringify(ldpQuery));
+    note(disclosed.status === 200,
+         '6c. an ldp_vc of this realm that discloses its status entries, ' +
+         'VALID, is accepted at the bar door', disclosed.status + ' ' +
+         disclosed.text.slice(0, 200));
+    const withheld = await presentLdpToBarDoor(withholding);
+    note(withheld.status === 400 && withheld.code === 'STS-VC-0089' &&
+         /credentialStatus/.test(withheld.text),
+         '6d. the same ldp_vc presented WITHOUT its credentialStatus is ' +
+         'refused, STS-VC-0089 — withholding is not a way past the check',
+         withheld.status + ' ' + withheld.code + ' ' +
+         withheld.text.slice(0, 200));
+    await w.inRealm(function () {
+      return statusAdmin.statusAction({ idx: ldpIdx, action: 'revoke' },
+                                      'the test');
+    });
+    const revokedDisclosed = await presentLdpToBarDoor(null);
+    const revokedWithheld = await presentLdpToBarDoor(withholding);
+    note(revokedDisclosed.status === 400 &&
+         revokedDisclosed.code === 'STS-VC-0072' &&
+         revokedWithheld.status === 400 &&
+         revokedWithheld.code === 'STS-VC-0089',
+         '6e. once revoked, it is refused STS-VC-0072 with the entry ' +
+         'disclosed and STS-VC-0089 without it — the hole #165 closed',
+         revokedDisclosed.status + ' ' + revokedDisclosed.code + ' / ' +
+         revokedWithheld.status + ' ' + revokedWithheld.code);
+    await w.inRealm(function () {
+      m.config.setOverride('oid4vp.requireStatusReference', 'off');
+    });
+    const offWithheld = await presentLdpToBarDoor(withholding);
+    note(offWithheld.status === 200,
+         '6f. development, oid4vp.requireStatusReference off: the withheld ' +
+         'presentation is accepted — the development-only weakness',
+         offWithheld.status + ' ' + offWithheld.text.slice(0, 200));
+
+    // ==================================================================
+    // 7. PRODUCT: off IS REFUSED ON WRITE AND IGNORED ON READ
+    // ==================================================================
+    await w.inRealm(function () {
+      m.config.setOverride('global.mode', 'product');
+    });
+    const refusedOff = await w.inRealm(function () {
+      return { set: m.config.setOverride('oid4vp.requireStatusReference',
+                                         'off'),
+               check: m.config.checkWriteCode('oid4vp.requireStatusReference',
+                                              'off'),
+               stored: m.config.checkOverride('oid4vp.requireStatusReference',
+                                              'off'),
+               ownOnly: m.config.checkWrite('oid4vp.requireStatusReference',
+                                            'own-only'),
+               inForce: modeModule.valueInForce(
+                 'oid4vp.requireStatusReference'),
+               predicate: modeModule.acceptsCredentialsWithoutStatus() };
+    });
+    note(!refusedOff.set.ok &&
+         m.errorCodes.codeOf(refusedOff.set) === 'STS-CORE-0103' &&
+         refusedOff.check === 'STS-CORE-0103' && refusedOff.stored === null &&
+         refusedOff.ownOnly === null && refusedOff.inForce === 'all' &&
+         refusedOff.predicate === false,
+         '7a. product: writing oid4vp.requireStatusReference=off is refused, ' +
+         'STS-CORE-0103; own-only is allowed; and the off still STORED from ' +
+         'development is read as all', JSON.stringify({
+           set: refusedOff.set, code: m.errorCodes.codeOf(refusedOff.set),
+           check: refusedOff.check, ownOnly: refusedOff.ownOnly,
+           inForce: refusedOff.inForce }));
+    const productWithheld = await presentLdpToBarDoor(withholding);
+    note(productWithheld.status === 400 &&
+         productWithheld.code === 'STS-VC-0089',
+         '7b. product, off still stored: the withheld ldp_vc is refused, ' +
+         'STS-VC-0089', productWithheld.status + ' ' + productWithheld.code +
+         ' ' + productWithheld.text.slice(0, 200));
+    await w.inRealm(function () {
+      m.config.clearOverride('global.mode');
+      m.config.clearOverride('oid4vp.requireStatusReference');
+      m.config.clearOverride('oid4vp.claims');
+    });
+
+    // ==================================================================
+    // 8. THE STORES ARE ON /admin/caches, AND RULE 7
     // ==================================================================
     const names = m.cacheRegistry.names();
     const wanted = ['oid4vp.sign-in-register', 'oid4vci.status-entries',
@@ -392,7 +648,7 @@ function childMain() {
                     'oid4vci.status-list-tokens', 'oid4vp.transactions'];
     note(wanted.every(function (name) {
       return names.indexOf(name) >= 0;
-    }), '6a. every store this feature added describes itself to ' +
+    }), '8a. every store this feature added describes itself to ' +
         '/admin/caches (rule 3ap)',
         JSON.stringify(wanted.filter(function (name) {
           return names.indexOf(name) < 0;
@@ -412,7 +668,7 @@ function childMain() {
          entries.entries.every(function (row) {
            return /^idx:\d+$/.test(row.key);
          }),
-         '6b. and the page the management API answers with lists them, with ' +
+         '8b. and the page the management API answers with lists them, with ' +
          'keys and no values',
          JSON.stringify((entries.entries || [])[0] || {}));
     const statusView = await w.inRealm(function () {
@@ -424,7 +680,7 @@ function childMain() {
          statusView.rows.some(function (r) {
            return r.idx === idx && r.status === 'INVALID';
          }),
-         '6c. /admin/vc-status (and GET /admin-api/vc-status, the same ' +
+         '8c. /admin/vc-status (and GET /admin-api/vc-status, the same ' +
          'function) reports the lists and every credential\'s status',
          JSON.stringify({ allocated: statusView.allocated,
                           invalid: statusView.invalid,
@@ -439,7 +695,7 @@ function childMain() {
     });
     note(!refusedAction.ok && !badIndex.ok &&
          m.errorCodes.codeOf(badIndex) === 'STS-VC-0082',
-         '6d. INVALID is final and an index that is not one is refused, ' +
+         '8d. INVALID is final and an index that is not one is refused, ' +
          'STS-VC-0082',
          JSON.stringify(refusedAction.errors) + ' ' +
          JSON.stringify(badIndex.errors));

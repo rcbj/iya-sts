@@ -225,6 +225,9 @@ const MAX_ANCHORS = 32;
 // A LEAF requiring only `config`; `helpers.js` above already requires it.
 // ---------------------------------------------------------------------------
 const serviceMode = require('../common/mode');
+// A person's identity verifications (#127): a certificate sign-in records an
+// electronic_signature one. A library; it registers nothing.
+const identityAssurance = require('../common/identity_assurance');
 // For the one question below that must be asked of the PROCESS rather than of
 // the ambient realm. A LEAF this module's closure already holds (`app.js` and
 // `helpers.js` both require it).
@@ -256,9 +259,14 @@ function truststoreOpenToAnybody() {
 // HTTPS port among them — so one function is where the policy is stated;
 // `ldap/ldap_server.js` asks it for LDAPS.
 //
-// The defaults are node's own written down (TLSv1.2; an empty cipher string is
-// omitted, which means `tls.DEFAULT_CIPHERS`), so an unedited service
-// negotiates exactly what it did.
+// The floor is node's own (TLSv1.2). THE CIPHER LIST IS BCP 195 SINCE #140
+// (2026-09-22, rcbj's decision): the TLS 1.3 suites first, then only RFC 9325
+// section 4.2's four ECDHE AES-GCM suites for TLS 1.2 — FAPI 2.0 section
+// 5.2.2's requirement, made the default of every listener because a cipher
+// suite belongs to the socket and not to a realm. `honorCipherOrder` makes the
+// SERVER's order win, which is what puts TLS 1.3's and the strongest TLS 1.2
+// suites first whatever a client lists. An empty `tls.ciphers` still means
+// `tls.DEFAULT_CIPHERS`.
 //
 // **A CIPHER LIST THAT MATCHES NOTHING STOPS THE SERVICE HERE**, at require
 // time, naming the setting. Found any later it is a TypeError out of
@@ -271,7 +279,8 @@ function protocolOptions() {
   // `any`: the setting is a string, and the TLS types want a version literal.
   /** @type {any} */
   const options = { minVersion: String(config.value('tls.minVersion') ||
-                                       'TLSv1.2') };
+                                       'TLSv1.2'),
+                    honorCipherOrder: true };
   const ciphers = String(config.value('tls.ciphers') || '').trim();
   if (ciphers) {
     options.ciphers = ciphers;
@@ -1385,7 +1394,8 @@ function secureContextOptions() {
     // that a truststore change, which re-applies this whole object, cannot
     // quietly reset a listener to node's defaults.
     minVersion: protocolOptions().minVersion,
-    ciphers: protocolOptions().ciphers
+    ciphers: protocolOptions().ciphers,
+    honorCipherOrder: true
   };
 }
 
@@ -2674,6 +2684,45 @@ function startCertificateSession(req, res, mode, revocation, identity) {
   });
 }
 
+// WHAT A CLIENT CERTIFICATE SAYS ABOUT ITS HOLDER, in claim names (#127):
+// the subject's common name, given name, surname and e-mail address (the
+// attribute or an rfc822Name in subjectAltName), with the issuer, serial and
+// start of validity an electronic_signature evidence element names.
+function certificateFacts(cert) {
+  log.debug('Entering certificateFacts().');
+  const subject = (cert && cert.subject) || {};
+  const first = function (value) {
+    log.debug('Entering first().');
+    log.debug('Leaving first().');
+    return Array.isArray(value) ? String(value[0] || '') :
+      String(value || '');
+  };
+  const claims = {};
+  if (first(subject.CN)) {
+    claims.name = first(subject.CN);
+  }
+  if (first(subject.GN)) {
+    claims.given_name = first(subject.GN);
+  }
+  if (first(subject.SN)) {
+    claims.family_name = first(subject.SN);
+  }
+  const email = first(subject.emailAddress) ||
+    ((String((cert && cert.subjectaltname) || '')
+      .match(/(?:^|,\s*)email:([^,\s]+)/) || [])[1] || '');
+  if (email) {
+    claims.email = email;
+  }
+  const started = Date.parse(String((cert && cert.valid_from) || ''));
+  log.debug('Leaving certificateFacts(). ' + Object.keys(claims).length +
+            ' claim(s).');
+  return { claims: claims,
+           issuer: cert && cert.issuer ? dnRfc4514(cert.issuer) : '',
+           serial: String((cert && cert.serialNumber) || ''),
+           notBefore: isNaN(started) ? '' :
+             new Date(started).toISOString().replace(/\.\d+Z$/, 'Z') };
+}
+
 function startCertificateSessionIn(req, res, mode, revocation, gated) {
   log.debug('Entering startCertificateSessionIn(). mode=' + mode);
   const socket = req.socket;
@@ -2734,7 +2783,12 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
     session = authn.startSession(res, username, ['swk'], '1',
                                  'a client certificate on the ' + mode +
                                  '-client-certificate listener',
-                                 { request: req });
+                                 // Which certificate, as a thumbprint the
+                                 // event fingerprints again (#62 P0).
+                                 { request: req,
+                                   credential: {
+                                     kind: 'certificate',
+                                     id: cert.fingerprint256 || '' } });
   } catch (e) {
     // Bookkeeping must never break a connection that has already been
     // accepted — the same rule recordClientCertificate() states.
@@ -2771,6 +2825,12 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
     ? 'its revocation was consulted (' + revocation.policy + '): ' +
       revocation.why
     : 'NO REVOCATION WAS CHECKED (pki.revocationCheck is off)';
+  // AN IDENTITY VERIFICATION (#127): what the certificate's subject says
+  // that the entry agrees with, as an electronic_signature under the
+  // certificate's issuer and serial. Never throws, and switched by
+  // `oauth2.idaAutomaticVerifications`.
+  identityAssurance.recordAutomatic(username, 'certificate',
+                                    certificateFacts(cert));
   log.info('tls: ' + username + ' is signed in on a verified client ' +
            'certificate ' +
            '(' + mode + ' listener). The chain verified and ' + revocationSaid);
@@ -3437,8 +3497,32 @@ app.get('/tls/sign-in', function (req, res) {
             'own doing — send one and this route will sign its holder in.'
       };
       res.set('Cache-Control', 'no-store');
-      res.status(200).type('application/json').send(JSON.stringify(answer));
-      log.debug('Leaving GET /tls/sign-in. signedIn=' + answer.signedIn);
+      // COMMITTED BEFORE IT IS ANSWERED, WHERE A SESSION WAS STARTED
+      // (2026-09-23). This route is never dispatched, so the session is written
+      // by the FRONT process, and the read barrier learns about a front-process
+      // write only once it has COMMITTED (`request_pool.js`'s
+      // noteLocalWrites()). Answered before that, the browser's next request —
+      // the console's code flow, straight to /oauth2/authorize on a request
+      // worker — could reach a worker that had not caught up and was sent to
+      // the sign-in screen with a session in its cookie
+      // (`sts_console_bootstrap_product` in single-node). With nothing started
+      // there is nothing to wait for.
+      const send = function () {
+        res.status(200).type('application/json').send(JSON.stringify(answer));
+        log.debug('Leaving GET /tls/sign-in. signedIn=' + answer.signedIn);
+      };
+      if (!session.started) {
+        send();
+        return;
+      }
+      const persistence = require('../persistence/persistence');
+      Promise.all([persistence.flush(), persistence.flushMinted()])
+        .then(send, function (e) {
+          // The store's own failure is reported by persistence.js; the answer
+          // goes out, and a worker catches up on the change log's own clock.
+          log.debug('Caught in GET /tls/sign-in: ' + ((e && e.message) || e));
+          send();
+        });
     });
   });
 });

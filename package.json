@@ -20,6 +20,7 @@
     "@digitalbazaar/ed25519-verification-key-2020": "^4.2.0",
     "@digitalbazaar/security-context": "^1.0.1",
     "@digitalbazaar/zcap": "^9.0.1",
+    "@fingerprintjs/fingerprintjs": "5.2.0",
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.8.1",
     "@noble/curves": "1.4.0",
@@ -30,22 +31,26 @@
     "ajv-formats": "^3.0.1",
     "asn1js": "^3.0.10",
     "body-parser": "^2.2.2",
+    "bowser": "^2.14.1",
     "bunyan": "latest",
+    "busboy": "^1.6.0",
     "cors": "^2.8.5",
     "croner": "^10.0.1",
     "express": "^4.22.2",
-    "generate-password": "^1.7.1",
+    "isbot": "^5.2.2",
     "jsonld": "^9.0.0",
     "jsonld-signatures": "^11.6.0",
     "jsonwebtoken": "^9.0.2",
     "ldapjs": "file:node-ldapjs",
     "macaroon": "^3.0.4",
     "node-forge": "^1.3.1",
+    "nodemailer": "^10.0.10",
     "pg": "^8.23.0",
     "pkijs": "^3.4.0",
     "qrcode": "^1.5.4",
     "scimmy": "^1.3.5",
     "xml-crypto": "^6.0.0",
+    "yauzl": "^3.4.0",
     "zod": "^4.5.4"
   },
   "overrides": {
@@ -89,7 +94,11 @@
     "@azure/arm-resourcegraph": "^4.0.0",
     "@azure/arm-compute": "^22.0.0",
     "@google-cloud/secret-manager": "^5.0.0",
-    "node-vault": "^0.10.0"
+    "node-vault": "^0.10.0",
+    "dbus-next": "^0.10.2",
+    "@aws-sdk/client-sesv2": "^3.0.0",
+    "@azure/communication-email": "^1.0.0",
+    "@googleapis/gmail": "^22.0.0"
   },
   "peerDependenciesMeta": {
     "@aws-sdk/client-secrets-manager": {
@@ -105,6 +114,9 @@
       "optional": true
     },
     "node-vault": {
+      "optional": true
+    },
+    "dbus-next": {
       "optional": true
     },
     "@aws-sdk/client-ec2": {
@@ -132,6 +144,15 @@
       "optional": true
     },
     "@azure/arm-compute": {
+      "optional": true
+    },
+    "@aws-sdk/client-sesv2": {
+      "optional": true
+    },
+    "@azure/communication-email": {
+      "optional": true
+    },
+    "@googleapis/gmail": {
       "optional": true
     }
   }

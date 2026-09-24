@@ -98,7 +98,7 @@ function deleted(username, before) {
 function transmitted(row, uri, payload, streamId) {
   log.debug("Entering transmitted().");
   risc.noteTransmitted({ stream_id: streamId || 'st-1' }, {
-    jti: 'jti-' + Math.random().toString(16).slice(2, 10),
+    jti: 'jti-' + require('crypto').randomBytes(4).toString('hex'),
     iss: 'https://sts.example.com',
     sub_id: risc.subjectFor(row, uri),
     events: (function () {

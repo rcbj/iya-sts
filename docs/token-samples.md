@@ -6,7 +6,7 @@ nav_order: 16
 # Token samples
 
 One real example of every kind of token, assertion and certificate this
-service issues, decoded. They were captured on 2026-09-22 from a
+service issues, decoded. They were captured from a running
 development-mode container reached at `https://127.0.0.1:38081`, so
 `127.0.0.1:38081` in a value below is the address the request arrived on.
 That address becomes the issuer, and yours will differ. Every value was
@@ -140,7 +140,7 @@ Issued beside the access token above, from the same token response. Its
 `typ` header is `JWT`.
 
 **This sample was captured before
-[#118](https://github.com/rcbj/iya-sts/issues/118) (2026-09-22) and shows
+[#118](https://github.com/rcbj/iya-sts/issues/118) and shows
 the earlier shape.** An ID Token from the authorization code flow no longer
 carries:
 
@@ -217,7 +217,9 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0cy1mNzA0NTI0MWU2YjAiLCJ4NXUiOiJo
 * `name`, `given_name`, `family_name`, `email` and `email_verified` are
   invented in development mode (`mode.inventsClaimValues()`), which is why the
   family name is `Mock`. Product mode fills them only from the directory
-  entry, and never sets `email_verified`.
+  entry, and `email_verified` is `true` only when the person verified that
+  address by following a link sent to it ([mail](mail.md)), `false`
+  otherwise.
 * `email` is here although the request asked only for `openid profile`.
   That was a bug, [#155](https://github.com/rcbj/iya-sts/issues/155), fixed by
   #118: none of these claims are in a code-flow ID Token now.
@@ -3378,9 +3380,10 @@ KVNO Timestamp           Principal
 ```
 
 The key version is `krb5.kvno` (3) for every principal built from
-configuration. One key per `krb5.enctypes` entry, and the list includes RC4
-by default in both modes; see
-[#159](https://github.com/rcbj/iya-sts/issues/159).
+configuration. One key per `krb5.enctypes` entry. The list includes RC4 by
+default in development mode, as above; in product mode it never does, and no
+keytab carries an RC4 key there
+([#182](https://github.com/rcbj/iya-sts/issues/182)).
 
 ### SPNEGO tokens
 

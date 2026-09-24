@@ -29,6 +29,18 @@
 //      address (STS-SAML-0079, nothing dialled); an SSO request from an SP
 //      with no metadata is answered at once and the MDQ lookup it starts
 //      happens AFTER, and no request dials anything while it is answered.
+//   F. WHAT AN UNKNOWN SERVICE PROVIDER CAN CAUSE (#112). In PRODUCT an
+//      anonymous AuthnRequest from an unknown entityID with MDQ configured
+//      asks the responder NOTHING without a realm trust anchor
+//      (STS-SAML-0080), and with one registers the entity only when the
+//      answer verifies against it (an unsigned or foreign-signed answer is
+//      STS-SAML-0081); a registered entry is still looked up; an operator's
+//      import with no anchor is refused (STS-SAML-0084) unless
+//      saml2.mdqImportWithoutAnchors is on, when the reply warns; the
+//      refused entityIDs are listed newest first on GET /admin-api/saml2
+//      and the page; every per-provider path of both profiles is a 404
+//      for a name that is not a registered provider of THAT profile
+//      (STS-SAML-0082, 0083). DEVELOPMENT is unchanged throughout.
 //   E. ENCRYPTION. With saml2.encryptAssertion on and no certificate,
 //      product answers Responder with no assertion (STS-SAML-0011) and
 //      development sends it in clear; a service provider whose metadata
@@ -119,11 +131,13 @@ async function run(t) {
   require('../ldap/ldap_server');
   const applications = require('../common/applications');
   const saml2sso = require('../saml/saml2_sso');
+  const saml11sso = require('../saml/saml11_sso');
   const spMetadata = require('../saml/sp_metadata');
   const adminActions = require('../admin-core/admin_actions');
   const adminViews = require('../admin-core/admin_views');
   const authn = require('../authn/authn');
   saml2sso.registerRoutes(app);
+  saml11sso.registerRoutes(app);
   const sso = kit.handlerFor(app, 'get', '/saml2/sso');
   const slo = kit.handlerFor(app, 'get', '/saml2/slo');
   const direct = new saml2sso.Saml2Sso(saml2sso.Saml2Sso.defaultDeps());
@@ -145,7 +159,7 @@ async function run(t) {
     server.listen(0, '127.0.0.1', resolve);
   });
   const base = 'http://127.0.0.1:' + server.address().port;
-  config.setOverride('federation.outboundAllowInsecure', true);
+  config.setOverride('federation.outboundAllowHttp', true);
   config.setOverride('federation.outbound', true);
 
   const codeOf = function (res) {
@@ -462,10 +476,30 @@ async function run(t) {
             JSON.stringify(notFound.errors));
     const prodName = 'https://prod-' + stamp + '.md.test/saml';
     const prodBefore = hits['/mdq/entities/' + prodName] || 0;
-    const prodRefused = await kit.withSettings(config,
-      { 'global.mode': 'product' },
+    // IN PRODUCT PLAIN HTTP IS REFUSED FIRST (#171), whatever
+    // federation.outboundAllowHttp says; the address rule is then asked of
+    // the same responder over https, which is refused before any connection
+    // is opened and so needs no listener that speaks it.
+    // Both are an OPERATOR's import with saml2.mdqImportWithoutAnchors on,
+    // so that the only refusal left to reach is the transport's (#112 put
+    // two in front of it; section F holds those).
+    const prodPlain = await kit.withSettings(config,
+      { 'global.mode': 'product', 'saml2.mdqImportWithoutAnchors': true },
       function () {
-        return spMetadata.mdqImport(prodName);
+        return spMetadata.mdqImport(prodName, { origin: 'operator' });
+      });
+    t.check(!prodPlain.ok &&
+            /product mode/.test(JSON.stringify(prodPlain.errors || '')) &&
+            !/trust anchor/.test(JSON.stringify(prodPlain.errors || '')) &&
+            (hits['/mdq/entities/' + prodName] || 0) === prodBefore,
+            'in PRODUCT mode a plain-http responder is refused whatever ' +
+            'federation.outboundAllowHttp says, and nothing is dialled',
+            JSON.stringify(prodPlain.errors));
+    const prodRefused = await kit.withSettings(config,
+      { 'global.mode': 'product', 'saml2.mdqImportWithoutAnchors': true,
+        'saml2.mdqBaseUrl': base.replace(/^http:/, 'https:') + '/mdq/' },
+      function () {
+        return spMetadata.mdqImport(prodName, { origin: 'operator' });
       });
     t.check(!prodRefused.ok &&
             errorCodes.codeOf(prodRefused) === 'STS-SAML-0079' &&
@@ -473,6 +507,9 @@ async function run(t) {
             'in PRODUCT mode the loopback responder is refused by the ' +
             'outbound policy, STS-SAML-0079, and nothing is dialled',
             JSON.stringify(prodRefused.errors));
+    // withSettings() CLEARS what it set, so the responder the rest of this
+    // file uses is set again.
+    config.setOverride('saml2.mdqBaseUrl', base + '/mdq/');
     // MDQ-sourced metadata is refreshable by the sweep.
     served['/mdq/entities/' + mdqName] = { status: 200,
       body: entity(mdqName, { acs: 'https://mdq2.test/acs',
@@ -519,6 +556,355 @@ async function run(t) {
             'an entityID nobody publishes is asked for ONCE per interval, ' +
             'however many requests name it');
     config.clearOverride('saml2.mdqBaseUrl');
+
+    // -----------------------------------------------------------------------
+    t.log.info('F1. #112: what a request-started MDQ lookup may register');
+    // -----------------------------------------------------------------------
+    // THE TRANSPORT IS STUBBED HERE, AND ONLY HERE. Product mode refuses both
+    // plain http and a loopback responder before a connection is opened
+    // (D2 above holds both), so a product-mode answer can only reach
+    // mdqImport() through a fetcher that hands it the local server's
+    // document directly. What is under test is what the ANSWER may do; the
+    // fetch has its own checks in D2.
+    config.setOverride('saml2.mdqBaseUrl', base + '/mdq/');
+    const probe = new spMetadata.SpMetadata(
+      spMetadata.SpMetadata.defaultDeps());
+    const asked = [];
+    probe.fetchMetadata = function (url) {
+      log.debug("Entering probe.fetchMetadata().");
+      asked.push(url);
+      const path = decodeURIComponent(new URL(url).pathname);
+      const answer = served[path] || { status: 404, body: 'no' };
+      log.debug("Leaving probe.fetchMetadata().");
+      return Promise.resolve(answer.status === 200
+        ? { ok: true, xml: answer.body }
+        : { ok: false, errorCode: 'STS-SAML-0048',
+            why: 'the responder answered ' + answer.status });
+    };
+    const probeSso = new saml2sso.Saml2Sso(Object.assign(
+      saml2sso.Saml2Sso.defaultDeps(), { spMetadata: probe }));
+    const probeHandler = function (req, res) {
+      log.debug("Entering probeHandler().");
+      log.debug("Leaving probeHandler().");
+      return probeSso.singleSignOn(req, res);
+    };
+    const askedFor = function (name) {
+      log.debug("Entering askedFor().");
+      log.debug("Leaving askedFor().");
+      return asked.filter(function (u) {
+        return u.indexOf(encodeURIComponent(name)) >= 0;
+      }).length;
+    };
+    const settle = async function (name, n) {
+      log.debug("Entering settle().");
+      for (let i = 0; i < 50 && askedFor(name) < n; i++) {
+        await wait(20);
+      }
+      await wait(60);
+      log.debug("Leaving settle().");
+    };
+    const refusedRow = function (name) {
+      log.debug("Entering refusedRow().");
+      log.debug("Leaving refusedRow().");
+      return probe.mdqRefusalList().filter(function (row) {
+        return row.entityId === name;
+      })[0] || null;
+    };
+    const unknown = function (label) {
+      log.debug("Entering unknown().");
+      const name = 'https://' + label + '-' + stamp + '.md.test/saml';
+      created.push(name);
+      served['/mdq/entities/' + name] = { status: 200,
+        body: entity(name, { acs: 'https://' + label + '.test/acs' }) };
+      log.debug("Leaving unknown().");
+      return name;
+    };
+
+    const bare = unknown('prod-bare');
+    await kit.withSettings(config, { 'global.mode': 'product' },
+      async function () {
+        const res = redirect(probeHandler, '/saml2/sso',
+                             authnRequest(bare, '_p1'));
+        t.check(res.statusCode === 403,
+                'PRODUCT: an anonymous AuthnRequest from an unknown SP is ' +
+                'refused (unsigned)', res.statusCode + ' ' + codeOf(res));
+        await settle(bare, 1);
+      });
+    t.equal(askedFor(bare), 0,
+            'PRODUCT, no trust anchor: the MDQ responder is NEVER ASKED');
+    t.check(!applications.get(bare), 'and nothing is registered');
+    t.check(refusedRow(bare) && refusedRow(bare).errorCode ===
+            'STS-SAML-0080',
+            'the entityID is listed as refused, STS-SAML-0080',
+            JSON.stringify(refusedRow(bare)));
+    await kit.withSettings(config, { 'global.mode': 'product' },
+      async function () {
+        const direct80 = await probe.mdqImport(bare);
+        t.check(!direct80.ok && errorCodes.codeOf(direct80) ===
+                'STS-SAML-0080' && askedFor(bare) === 0,
+                'mdqImport() with no origin is a REQUEST lookup, and is ' +
+                'refused the same way without dialling',
+                JSON.stringify(direct80.errors));
+        redirect(probeHandler, '/saml2/sso', authnRequest(bare, '_p1b'));
+      });
+    t.equal(refusedRow(bare).count, 3,
+            'a second request for it counts, and is one row');
+
+    await kit.withSettings(config,
+      { 'global.mode': 'product',
+        'saml2.metadataTrustAnchors': anchor.cert.b64 },
+      async function () {
+        const unsignedName = unknown('prod-unsigned');
+        redirect(probeHandler, '/saml2/sso',
+                 authnRequest(unsignedName, '_p2'));
+        await settle(unsignedName, 1);
+        t.equal(askedFor(unsignedName), 1,
+                'PRODUCT with a realm anchor: the responder IS asked');
+        t.check(!applications.get(unsignedName),
+                'an UNSIGNED answer registers nothing');
+        t.equal((refusedRow(unsignedName) || {}).errorCode,
+                'STS-SAML-0081', 'and it is listed, STS-SAML-0081');
+
+        const strangerName = unknown('prod-stranger');
+        served['/mdq/entities/' + strangerName].body = kit.signEnveloped(
+          stsCrypto, entity(strangerName), stranger);
+        redirect(probeHandler, '/saml2/sso',
+                 authnRequest(strangerName, '_p3'));
+        await settle(strangerName, 1);
+        t.check(!applications.get(strangerName) &&
+                (refusedRow(strangerName) || {}).errorCode ===
+                'STS-SAML-0081',
+                'an answer signed by ANOTHER key registers nothing, ' +
+                'STS-SAML-0081');
+
+        const goodName = unknown('prod-signed');
+        served['/mdq/entities/' + goodName].body = kit.signEnveloped(
+          stsCrypto, entity(goodName, { acs: 'https://good.test/acs' }),
+          anchor);
+        redirect(probeHandler, '/saml2/sso', authnRequest(goodName, '_p4'));
+        await settle(goodName, 1);
+        for (let i = 0; i < 25 && !applications.get(goodName); i++) {
+          await wait(20);
+        }
+        t.check(applications.get(goodName) &&
+                fieldsOf(goodName).samlSpMetadataSignature === 'verified' &&
+                [].concat(fieldsOf(goodName).samlAssertionConsumerService ||
+                          []).indexOf('https://good.test/acs') >= 0,
+                'an answer that VERIFIES against the realm anchor registers ' +
+                'the service provider', JSON.stringify(fieldsOf(goodName)
+                  .samlSpMetadataSignature));
+        t.check(!refusedRow(goodName), 'and is not listed as refused');
+      });
+
+    const devName = unknown('dev-lookup');
+    redirect(probeHandler, '/saml2/sso', authnRequest(devName, '_d1'));
+    await settle(devName, 1);
+    for (let i = 0; i < 25 && !applications.get(devName); i++) {
+      await wait(20);
+    }
+    t.check(askedFor(devName) === 1 && applications.get(devName) &&
+            fieldsOf(devName).samlSpMetadataSignature === 'unsigned',
+            'DEVELOPMENT is unchanged: no anchor, an unsigned answer, and ' +
+            'the request\'s lookup registers the service provider');
+
+    // An entry that EXISTS is refreshed from MDQ as before, in product too.
+    const existing = newSp('prod-existing');
+    served['/mdq/entities/' + existing] = { status: 200,
+      body: entity(existing, { acs: 'https://existing.test/acs' }) };
+    await kit.withSettings(config, { 'global.mode': 'product' },
+      async function () {
+        redirect(probeHandler, '/saml2/sso', authnRequest(existing, '_e0'));
+        await settle(existing, 1);
+      });
+    t.check(askedFor(existing) === 1 && [].concat(fieldsOf(existing)
+      .samlAssertionConsumerService || []).indexOf(
+      'https://existing.test/acs') >= 0,
+            'PRODUCT: a REGISTERED service provider with no metadata is ' +
+            'still looked up and consumed');
+
+    // -----------------------------------------------------------------------
+    t.log.info('F2. #112: an operator\'s MDQ import');
+    // -----------------------------------------------------------------------
+    const opName = unknown('operator');
+    await kit.withSettings(config, { 'global.mode': 'product' },
+      async function () {
+        const refused = await probe.mdqImport(opName, { origin: 'operator' });
+        t.check(!refused.ok && errorCodes.codeOf(refused) ===
+                'STS-SAML-0084' && askedFor(opName) === 0 &&
+                !applications.get(opName),
+                'PRODUCT, no anchor: an operator import is REFUSED, ' +
+                'STS-SAML-0084, and nothing is fetched',
+                JSON.stringify(refused.errors));
+        const viaAction = await adminActions.saml2Action({
+          action: 'mdq-import', sp: opName });
+        t.check(!viaAction.ok && /trust anchor/.test(
+          JSON.stringify(viaAction.errors)) && !applications.get(opName),
+                'and so is the console/API action',
+                JSON.stringify(viaAction.errors));
+        const allowed = await kit.withSettings(config,
+          { 'saml2.mdqImportWithoutAnchors': true },
+          function () {
+            return probe.mdqImport(opName, { origin: 'operator' });
+          });
+        t.check(allowed.ok && allowed.created &&
+                /WITHOUT a signature check/.test(
+                  (allowed.warnings || []).join(' ') + allowed.message),
+                'with saml2.mdqImportWithoutAnchors ON it is imported, ' +
+                'and the reply WARNS that nothing was verified',
+                JSON.stringify(allowed.errors || allowed.warnings));
+        const signedOp = unknown('operator-signed');
+        served['/mdq/entities/' + signedOp].body = kit.signEnveloped(
+          stsCrypto, entity(signedOp), anchor);
+        const anchored = await kit.withSettings(config,
+          { 'saml2.metadataTrustAnchors': anchor.cert.b64 },
+          function () {
+            return probe.mdqImport(signedOp, { origin: 'operator' });
+          });
+        t.check(anchored.ok && !anchored.warnings &&
+                fieldsOf(signedOp).samlSpMetadataSignature === 'verified',
+                'with a realm anchor an operator import is verified and ' +
+                'carries no warning', JSON.stringify(anchored.errors || ''));
+      });
+    const devOp = unknown('operator-dev');
+    const devImported = await probe.mdqImport(devOp, { origin: 'operator' });
+    t.check(devImported.ok && devImported.created && !devImported.warnings,
+            'DEVELOPMENT: an operator import with no anchor works as before',
+            JSON.stringify(devImported.errors || ''));
+
+    // -----------------------------------------------------------------------
+    t.log.info('F3. #112: the refused entityIDs on the page and the API');
+    // -----------------------------------------------------------------------
+    const listed = adminViews.saml2ListJson(kit.fakeReq('GET', '/admin/saml2',
+      { per: '1', mdqRefusedPage: '1' }, '')).json;
+    // The record is the module's, shared by every instance of it, so the
+    // probe's refusals are listed too; one more is refused through the
+    // module's own facade so the newest row is known.
+    t.check(Array.isArray(listed.mdqRefused) && listed.mdqRefusedPaging &&
+            listed.mdqRefusedPaging.param === 'mdqRefusedPage',
+            'GET /admin-api/saml2 carries mdqRefused with its own pager',
+            JSON.stringify(listed.mdqRefusedPaging));
+    const viaModule = unknown('listed');
+    kit.withSettings(config, { 'global.mode': 'product' }, function () {
+      spMetadata.queueMdqLookup(viaModule);
+    });
+    const relisted = adminViews.saml2ListJson(kit.fakeReq('GET',
+      '/admin/saml2', {}, '')).json;
+    t.check(relisted.mdqRefused.length >= 1 &&
+            relisted.mdqRefused[0].entityId === viaModule &&
+            relisted.mdqRefused[0].errorCode === 'STS-SAML-0080',
+            'the newest refusal is FIRST',
+            JSON.stringify(relisted.mdqRefused.slice(0, 2)));
+    // The page's own view, below the console gate.
+    const drawn = require('../admin-ui/admin').saml2View(
+      kit.fakeReq('GET', '/admin/saml2', {}, '')).inner;
+    t.check(/Metadata Query lookups refused/.test(drawn) &&
+            drawn.indexOf(viaModule) >= 0,
+            'and the SAML 2.0 page draws it');
+    config.clearOverride('saml2.mdqBaseUrl');
+
+    // -----------------------------------------------------------------------
+    t.log.info('F4. #112: per-provider paths for an unregistered name');
+    // -----------------------------------------------------------------------
+    const scopedGet = function (handler, path, name, param) {
+      log.debug("Entering scopedGet().");
+      const res = kit.fakeRes();
+      const params = {};
+      params[param] = name;
+      handler(kit.fakeReq('GET', path + '/' + encodeURIComponent(name), {},
+                          '', '', { params: params }), res);
+      log.debug("Leaving scopedGet().");
+      return res;
+    };
+    const scopedPost = function (handler, path, name, param) {
+      log.debug("Entering scopedPost().");
+      const res = kit.fakeRes();
+      const params = {};
+      params[param] = name;
+      handler(kit.fakeReq('POST', path + '/' + encodeURIComponent(name), {},
+                          '', '<x/>', { params: params }), res);
+      log.debug("Leaving scopedPost().");
+      return res;
+    };
+    const meta2 = kit.handlerFor(app, 'get', '/saml2/metadata/:sp');
+    const sso2 = kit.handlerFor(app, 'get', '/saml2/sso/:sp');
+    const slo2 = kit.handlerFor(app, 'get', '/saml2/slo/:sp');
+    const ars2 = kit.handlerFor(app, 'post', '/saml2/ars/:sp');
+    const meta11 = kit.handlerFor(app, 'get', '/saml11/metadata/:rp');
+    const sso11 = kit.handlerFor(app, 'get', '/saml11/sso/:rp');
+    const responder11 = kit.handlerFor(app, 'post', '/saml11/responder/:rp');
+    const nobody = 'https://nobody-at-all-' + stamp + '.md.test/saml';
+    created.push(nobody);
+    const registered2 = newSp('published');
+    const rp11 = 'https://rp11-' + stamp + '.md.test/saml';
+    t.check(applications.createApplication({
+      identifier: rp11, kind: 'saml11-relying-party', protocol: 'SAML 1.1',
+      fields: { samlEntityId: rp11 } }).ok, 'a SAML 1.1 relying party');
+    created.push(rp11);
+    const oauthClient = 'oauth-only-' + stamp;
+    t.check(applications.createApplication({
+      identifier: oauthClient, kind: 'oauth2-client', protocol: 'OAuth 2.0',
+      fields: { oauthClientId: oauthClient } }).ok, 'an OAuth client');
+    created.push(oauthClient);
+    const is404 = function (res, code) {
+      log.debug("Entering is404().");
+      log.debug("Leaving is404().");
+      return res.statusCode === 404 && codeOf(res) === code &&
+             /text\/plain/.test(res.headers['content-type'] || '') &&
+             res.headers['cache-control'] === 'no-store';
+    };
+    await kit.withSettings(config, { 'global.mode': 'product' },
+      async function () {
+        const m = scopedGet(meta2, '/saml2/metadata', nobody, 'sp');
+        t.check(is404(m, 'STS-SAML-0082') && !applications.get(nobody),
+                'PRODUCT: /saml2/metadata/{unregistered} is 404, ' +
+                'text/plain, no-store, STS-SAML-0082, and registers nothing',
+                m.statusCode + ' ' + codeOf(m) + ' ' + m.body.slice(0, 120));
+        [['sso', sso2, scopedGet], ['slo', slo2, scopedGet],
+         ['ars', ars2, scopedPost]].forEach(function (row) {
+          const r = row[2](row[1], '/saml2/' + row[0], nobody, 'sp');
+          t.check(is404(r, 'STS-SAML-0082'),
+                  'PRODUCT: /saml2/' + row[0] + '/{unregistered} is 404 too',
+                  r.statusCode + ' ' + codeOf(r));
+        });
+        const asOauth = scopedGet(meta2, '/saml2/metadata', oauthClient,
+                                  'sp');
+        t.check(is404(asOauth, 'STS-SAML-0082'),
+                'an application that is NOT a SAML 2.0 service provider ' +
+                'is 404 as well', asOauth.statusCode + ' ' + codeOf(asOauth));
+        const mine = scopedGet(meta2, '/saml2/metadata', registered2, 'sp');
+        t.check(mine.statusCode === 200 && /EntityDescriptor/.test(mine.body),
+                'a REGISTERED service provider\'s document is 200',
+                mine.statusCode + ' ' + mine.body.slice(0, 160));
+        const bySlug = scopedGet(meta2, '/saml2/metadata',
+                                 saml2sso.slugOf(registered2), 'sp');
+        t.equal(bySlug.statusCode, 200, 'and by its slug');
+        const m11 = scopedGet(meta11, '/saml11/metadata', nobody, 'rp');
+        t.check(is404(m11, 'STS-SAML-0083'),
+                'PRODUCT: /saml11/metadata/{unregistered} is 404, ' +
+                'STS-SAML-0083', m11.statusCode + ' ' + codeOf(m11));
+        const s11 = scopedGet(sso11, '/saml11/sso', nobody, 'rp');
+        const r11 = scopedPost(responder11, '/saml11/responder', nobody,
+                               'rp');
+        t.check(is404(s11, 'STS-SAML-0083') && is404(r11, 'STS-SAML-0083'),
+                'and so are /saml11/sso/{rp} and /saml11/responder/{rp}',
+                s11.statusCode + ' ' + r11.statusCode);
+        const byRp = scopedGet(meta11, '/saml11/metadata', rp11, 'rp');
+        t.check(byRp.statusCode === 200 &&
+                /EntityDescriptor/.test(byRp.body),
+                'a REGISTERED relying party\'s document is 200',
+                byRp.statusCode + ' ' + byRp.body.slice(0, 160));
+        const saml2As11 = scopedGet(meta11, '/saml11/metadata', registered2,
+                                    'rp');
+        t.check(is404(saml2As11, 'STS-SAML-0083'),
+                'a SAML 2.0 service provider is not a SAML 1.1 relying ' +
+                'party', saml2As11.statusCode + ' ' + codeOf(saml2As11));
+      });
+    const devMeta = scopedGet(meta2, '/saml2/metadata', nobody, 'sp');
+    const devMeta11 = scopedGet(meta11, '/saml11/metadata', nobody, 'rp');
+    t.check(devMeta.statusCode === 200 && devMeta11.statusCode === 200,
+            'DEVELOPMENT is unchanged: both documents are minted for a ' +
+            'name nobody registered', devMeta.statusCode + ' ' +
+            devMeta11.statusCode);
 
     // -----------------------------------------------------------------------
     t.log.info('E. encryption per mode');
@@ -596,7 +982,7 @@ async function run(t) {
     });
   } finally {
     config.clearOverride('saml2.mdqBaseUrl');
-    config.clearOverride('federation.outboundAllowInsecure');
+    config.clearOverride('federation.outboundAllowHttp');
     config.clearOverride('federation.outbound');
     created.forEach(function (id) {
       if (applications.get(id)) {

@@ -95,6 +95,10 @@ import mtls = require('../oauth-oidc/mtls');
 // capability table this file declares its row in. Both LIBRARIES that reach
 // `persistence.js` lazily, so neither can close a cycle from here.
 import claims = require('../cluster/cluster_claims');
+// CAEP credential-change for a person's certificate issued or revoked (#145).
+// A library that sends nothing where Shared Signals is not loaded; it
+// requires `helpers` and `crypto` and nothing of this file's.
+import accountSignals = require('../ssf/account_signals');
 import capabilities = require('../cluster/cluster_capabilities');
 import InstanceSlot = require('./instance_slot');
 
@@ -526,7 +530,7 @@ class CertEnrollment {
     try {
       verified = await realms.run(realms.get(realms.DEFAULT_ID), function () {
         return credentials.verifyAsync(name, String(password || ''),
-                                       { via: via });
+                                       { via: via, door: 'est' });
       });
     } catch (e) {
       log.debug("Caught in CertEnrollment.adminFor(): " +
@@ -559,7 +563,7 @@ class CertEnrollment {
     let local = null;
     try {
       local = await credentials.verifyAsync(name, String(password || ''),
-                                            { via: via });
+                                            { via: via, door: 'est' });
     } catch (e) {
       log.debug("Caught in CertEnrollment.adminFor(): " +
                 ((e && e.message) || e));
@@ -603,7 +607,13 @@ class CertEnrollment {
       roles = null;
     }
     log.debug("Leaving CertEnrollment.sessionIsAdmin().");
-    return !!(roles && roles.write === true && roles.open !== true);
+    // NOR THE BOOTSTRAP ACCOUNT BEFORE ITS CLAIM, IN PRODUCT (#103): a portal
+    // session may have been made by a federation partner or a certificate
+    // naming it, and until it has claimed the console with its password its
+    // roles open the console alone. `adminFor()` above verifies the password
+    // itself, so it IS a password sign-in and asks no such question.
+    return !!(roles && roles.write === true && roles.open !== true &&
+              roles.claimPending !== true);
   }
 
   async authenticatePerson(username, password, via?) {
@@ -621,19 +631,28 @@ class CertEnrollment {
     if (local.ok) {
       try {
         verified = await credentials.verifyAsync(name, String(password || ''),
-                                                 { via: via });
+                                                 { via: via, door: 'est' });
       } catch (e) {
         log.debug("Caught in CertEnrollment.authenticatePerson(): " +
                   ((e && e.message) || e));
         verified = null;
       }
     }
+    // `door: 'est'` on all three verifications (#101): EST Basic is a
+    // password-only door, so in product a person with a second factor is
+    // refused their own password here — an administrator included, whose way
+    // to enroll on somebody's behalf is then a realm-issued client
+    // certificate — and an app password scoped to `est` is accepted instead.
+    // An app password is ONE factor and the principal says it was one.
     const admin = await self.adminFor(name, password, via);
     if (local.ok && verified && verified.ok) {
       log.debug("Leaving CertEnrollment.authenticatePerson(). Verified here.");
       return { ok: true, principal: { kind: 'person', id: name, admin: admin,
                                       via: via, realm: realms.currentId(),
-                                      hasEntry: true } };
+                                      hasEntry: true,
+                                      appPassword: verified.appPassword
+                                        ? verified.appPassword.name
+                                        : undefined } };
     }
     if (admin) {
       // An administrator of the SERVICE with no entry of this name in this
@@ -1763,6 +1782,20 @@ class CertEnrollment {
                 keySource: record.keySource, via: record.via,
                 notAfter: record.notAfter }
     });
+    // A PERSON's certificate is one of their credentials, and CAEP says so
+    // with its issuer and serial (#145). An application's is not a person's
+    // and has no CAEP subject here.
+    if (kind === 'person') {
+      accountSignals.certificateChanged({ username: resolved.entry.id,
+        pem: issued.certificatePem, changeType: 'create',
+        friendlyName: profile.profile + ' certificate',
+        initiatingEntity: allowed.admin ? 'admin' : 'user',
+        via: FAMILY_LABELS[family],
+        reasonAdmin: 'A ' + profile.profile + ' certificate was issued to ' +
+                     resolved.entry.id + ' over ' + FAMILY_LABELS[family] +
+                     '.',
+        reasonUser: 'A certificate was issued to you.' });
+    }
     if (replacing) {
       await self.revokeEnrolled(replacing, 'superseded',
                                 asked.principal ? String(asked.principal.id)
@@ -1914,6 +1947,21 @@ class CertEnrollment {
       return JSON.stringify(one);
     });
     self.writeAttribute(found.entry, 'certificate', rewritten);
+    // Revoked, told to a person's receivers whether or not the audit row is
+    // quiet (#145): a certificate superseded by its renewal is still one the
+    // person no longer holds, and that act is the system's.
+    if (found.entry && found.entry.kind === 'person') {
+      accountSignals.certificateChanged({ username: found.entry.id,
+        pem: found.record.certificatePem, changeType: 'revoke',
+        friendlyName: String(found.record.profile || '') + ' certificate',
+        initiatingEntity: reason === 'superseded' ? 'system'
+          : String(by || '') === String(found.entry.id) ? 'user' : 'admin',
+        via: FAMILY_LABELS[found.family],
+        reasonAdmin: 'A certificate of ' + found.entry.id + ' issued over ' +
+                     FAMILY_LABELS[found.family] + ' was revoked (' +
+                     (reason || 'unspecified') + ').',
+        reasonUser: 'A certificate of yours was revoked.' });
+    }
     if (!opts.quiet) {
       audit.record({
         category: 'protocol', action: 'enrollment.revoke',

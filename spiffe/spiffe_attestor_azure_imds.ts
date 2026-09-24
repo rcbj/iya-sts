@@ -40,7 +40,6 @@
 // the SDK's default credential. **An app secret is never a setting.**
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import fs = require('fs');
 import helpers = require('../common/helpers');
 const { log } = helpers;
@@ -69,7 +68,6 @@ const VMSS_NAME = /^[a-zA-Z0-9._-]+$/;
 
 interface AzureImdsDeps {
   log: typeof log;
-  crypto: typeof nodeCrypto;
   fs: typeof fs;
   config: typeof config;
   errorCodes: typeof errorCodes;
@@ -99,7 +97,7 @@ class AzureImdsAttestor {
     helpers.log.debug("Entering AzureImdsAttestor.defaultDeps().");
     helpers.log.debug("Leaving AzureImdsAttestor.defaultDeps().");
     return {
-      log: log, crypto: nodeCrypto, fs: fs, config: config,
+      log: log, fs: fs, config: config,
       errorCodes: errorCodes, stsCrypto: stsCrypto, pki: pki,
       spiffeId: spiffeId, rpc: rpc, agentPath: agentPath, outbound: outbound,
       load: function (pkg) {
@@ -442,7 +440,8 @@ class AzureImdsAttestor {
 
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
-    const { log, crypto, config, spiffeId, rpc, agentPath, load } = this.deps;
+    const { log, config, stsCrypto, spiffeId, rpc, agentPath, load } =
+      this.deps;
     log.debug("Entering AzureImdsAttestor.attest().");
     const call = context.call;
     const status = rpc.grpc.status;
@@ -474,11 +473,9 @@ class AzureImdsAttestor {
       }
     }
     // 1. THE CHALLENGE FIRST.
-    const random = crypto.randomBytes(32);
-    let nonce = '';
-    for (let i = 0; i < random.length; i++) {
-      nonce += ALPHANUMERIC[random[i] % ALPHANUMERIC.length];
-    }
+    // 32 alphanumerics drawn uniformly (#65): a byte modulo 62 favoured
+    // the first eight — harmless at 190 bits, and the same bug as GNAP's.
+    const nonce = stsCrypto.randomString(ALPHANUMERIC, 32);
     const answer = await context.challenge(Buffer.from(nonce, 'utf8'));
     let payload = null;
     try {

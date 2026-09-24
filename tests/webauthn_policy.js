@@ -203,10 +203,15 @@ function run(t) {
   });
   withSetting('webauthn.attestation', 'enterprise', function () {
     t.check(policy.report().attestationVerified === false,
-      'NO ATTESTATION STATEMENT IS VERIFIED WHATEVER IS ASKED FOR — there is ' +
-      'no metadata service here, no vendor trust anchor and no model ' +
-      'allow-list, so the report says so rather than letting a conveyance ' +
-      'setting imply a check');
+      'DEVELOPMENT\'S by-mode ATTESTATION POLICY VERIFIES NOTHING whatever ' +
+      'the conveyance asks for (#105), and the report says so rather than ' +
+      'letting a conveyance setting imply a check');
+  });
+  withSetting('webauthn.attestationPolicy', 'verify-if-present', function () {
+    t.check(policy.report().attestationVerified === true &&
+            policy.report().attestationFormats.length === 8,
+      'and verify-if-present reports that every statement is verified, in ' +
+      'all eight formats — tests/webauthn_attestation.js asserts that it is');
   });
 
   // -------------------------------------------------------------------------

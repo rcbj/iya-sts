@@ -721,8 +721,12 @@ async function test() {
   // 8. RFC 7521 SECTION 4.1 — THE SCOPE IS NARROWED AND NEVER WIDENED.
   // -------------------------------------------------------------------------
   log.info("=== 8. the requested scope ===");
+  // The extra scope is `profile` — one every client may ask for — and not a
+  // word of the job's own: in product mode an undeclared scope is refused
+  // invalid_scope before the grant is read (#110), and what this section is
+  // about is the ASSERTION narrowing a request, not the client's list.
   const scoped = await tokenRequest({ grant_type: GRANT,
-    scope: "openid email admin",
+    scope: "openid email profile",
     assertion: signJws({ alg: "RS256", typ: "JWT", kid: kid },
       { iss: ISS, sub: person, aud: TOKEN_ENDPOINT, iat: now(),
         exp: now() + 120, jti: jti(), scope: "openid email" },
@@ -1116,7 +1120,7 @@ async function test() {
         "used twice", function () {
           const said = refused(thenGrant, "invalid_grant",
                                "a client assertion re-presented as a grant");
-          assert.ok(/used already — as a client assertion/.test(said),
+          assert.ok(/used already (?:—|-) as a client assertion/.test(said),
             "the refusal should say what it was spent as; it said " +
             said.slice(0, 250));
         });
@@ -1141,7 +1145,7 @@ async function test() {
             assert.strictEqual(thenClient.status, 401,
               JSON.stringify(thenClient.body).slice(0, 300));
             assert.strictEqual(thenClient.body.error, "invalid_client");
-            assert.ok(/used already — as an authorization grant/
+            assert.ok(/used already (?:—|-) as an authorization grant/
                         .test(String(thenClient.body.error_description)),
               String(thenClient.body.error_description).slice(0, 300));
           });

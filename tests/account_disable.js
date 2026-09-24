@@ -174,7 +174,7 @@ function childMain() {
     const rpBase = 'http://127.0.0.1:' + rp.address().port;
 
     config.setOverride('oauth2.consentRequired', false);
-    config.setOverride('federation.outboundAllowInsecure', true);
+    config.setOverride('federation.outboundAllowHttp', true);
     config.setOverride('oauth2.backchannelLogoutBackoffMs', 0);
 
     const SECRET = 'account-disable-secret-0123456789abcdef';
@@ -186,6 +186,9 @@ function childMain() {
                 oauthRedirectUri: [REDIRECT],
                 oauthGrantType: ['authorization_code', 'refresh_token',
                                  'password'],
+                // G. asks for an /admin-api token, and admin:read is issued
+                // only to a client that declares it (#110).
+                oauthAllowedScope: ['openid', 'admin:read'],
                 oauthTokenEndpointAuthMethod: 'client_secret_basic',
                 oauthBackchannelLogoutUri: rpBase + '/bc' } });
     const ALICE = 'ad-alice';
@@ -591,7 +594,8 @@ function childMain() {
 function inAChild(t) {
   log.debug("Entering inAChild().");
   const out = path.join(os.tmpdir(), 'account-disable-' + process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|CONFIG_FILE$)/.test(key)) {

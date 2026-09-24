@@ -155,14 +155,17 @@
 //
 // **THE NUDGE IS DELIBERATELY UNDELIVERABLE FOR SECTIONS 1–5**, because the
 // PULL is the contract and the nudge is an optimisation over it. The PEP
-// registers a plain-http notify URL while `xacml.pepNotifyAllowInsecure` is
+// registers a plain-http notify URL while `xacml.pepNotifyAllowHttp` is
 // off, so the PDP refuses to dial it and says so in the registration reply —
 // which section 1 asserts rather than assumes. Every convergence up to section
 // 5 is therefore a POLL and nothing else.
 //
 // Section 6 then turns that setting on IN THIS REALM and measures the
 // difference, which is the only way to have both claims: that the PEP converges
-// without the nudge, and that the nudge works.
+// without the nudge, and that the nudge works. **In product mode plain http
+// stays refused whatever that setting says (#171)** — section 6 asserts that
+// refusal, and then puts THIS REALM in development mode for the measurement,
+// because the PEP container's notify listener is plain http on the bridge.
 //
 // ---------------------------------------------------------------------------
 // WHAT WOULD FAIL HERE AND NOWHERE ELSE.
@@ -1455,12 +1458,12 @@ async function itRegistersAndPulls() {
       "URL; the PEP recorded " + JSON.stringify(seen.registration));
     assert.strictEqual(seen.registration.notify.usable, false,
       "THIS IS THE PREMISE OF SECTIONS 4 AND 5. The PEP registered an http " +
-      "notify URL and xacml.pepNotifyAllowInsecure is off, so the PDP will " +
+      "notify URL and xacml.pepNotifyAllowHttp is off, so the PDP will " +
       "not dial it — which means the convergences up to section 5 happened " +
       "by POLLING. Section 6 turns it on and measures the difference. The " +
       "PDP said " + JSON.stringify(seen.registration.notify));
     assert.ok(String(seen.registration.notify.why)
-                .indexOf("pepNotifyAllowInsecure") > 0,
+                .indexOf("pepNotifyAllowHttp") > 0,
       "and it should name the setting rather than merely refusing; it says " +
       seen.registration.notify.why);
   });
@@ -2276,7 +2279,23 @@ async function theNudgeIsDelivered(polledMs) {
   log.debug("Entering theNudgeIsDelivered().");
   log.info("=== The nudge, over the bridge, for real ===");
 
-  await setSetting("xacml.pepNotifyAllowInsecure", true);
+  await setSetting("xacml.pepNotifyAllowHttp", true);
+  // PRODUCT MODE REFUSES PLAIN HTTP WHATEVER THE SETTING SAYS (#171). Asserted
+  // when this realm is in product mode, which the refusal itself says; the
+  // realm is then put in development mode for the delivery, and back after.
+  let restoreProduct = false;
+  const inProduct = await pepRow();
+  if (inProduct.row && inProduct.row.notifyProblem &&
+      /product mode/.test(inProduct.row.notifyProblem)) {
+    check("in product mode the PDP still refuses the plain-http notify URL, " +
+          "whatever xacml.pepNotifyAllowHttp says", function () {
+      assert.ok(/pepNotifyAllowHttp/.test(inProduct.row.notifyProblem),
+        "and the refusal should name the setting it overrides; it says " +
+        inProduct.row.notifyProblem);
+    });
+    await setSetting("global.mode", "development");
+    restoreProduct = true;
+  }
   const readied = await pepRow();
   check("with the setting on, the PDP now considers the PEP nudgeable",
         function () {
@@ -2339,7 +2358,7 @@ async function theNudgeIsDelivered(polledMs) {
   //
   // Reading it once therefore raced, and lost by about a hundred milliseconds:
   // the row still carried the DELIBERATE refusal from section 1 — "plain http
-  // and xacml.pepNotifyAllowInsecure is off" — while the service log showed
+  // and xacml.pepNotifyAllowHttp is off" — while the service log showed
   // the nudge going out correctly, "over plain http (… is on)", moments
   // before. That is the hardest kind of false failure to read, because the
   // sentence it reports is a real one this job put there on purpose.
@@ -2398,6 +2417,9 @@ async function theNudgeIsDelivered(polledMs) {
   log.info("[nudge] OK — the PDP dialled the PEP across the " + pep.network +
            " network, the PEP answered, and the change was enforced " +
            elapsed + "ms after it was made.");
+  if (restoreProduct) {
+    await setSetting("global.mode", "product");
+  }
   log.debug("Leaving theNudgeIsDelivered().");
 }
 

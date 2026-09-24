@@ -115,7 +115,11 @@ function application(identifier, fields) {
   log.debug("Leaving application().");
   return { identifier: identifier, kind: "oauth2-client", name: identifier,
            protocols: ["oauth2", "ssf"],
+           // The Shared Signals scopes are issued only to a client that
+           // declares them (#110).
            fields: Object.assign({ oauthClientId: [identifier],
+                                   oauthAllowedScope: ["ssf:read",
+                                                       "ssf:write"],
                                    oauthClientSecret: SECRET,
                                    oauthTokenEndpointAuthMethod:
                                      "client_secret_post" }, fields || {}) };
@@ -177,6 +181,38 @@ function receiver(token) {
       });
     }
   };
+}
+
+// DRAINED UNTIL WHAT IS AWAITED HAS ARRIVED, or five seconds have passed.
+// Delivery is asynchronous by specification — SSF 1.0 section 8.1.4.2 says a
+// receiver "MUST NOT depend on the Verification Event being transmitted
+// synchronously", and a stream-updated event is queued the same way — so one
+// drain straight after the request asks too early wherever the poll can be
+// answered by another node (`cluster` mode found it: the verify answered on
+// one node, the drain on the other, and it was empty). Everything drained is
+// kept, so a check on the whole list sees every SET that arrived.
+async function drainUntil(receiver, id, arrived) {
+  log.debug("Entering drainUntil().");
+  const deadline = Date.now() + 5000;
+  let got = [];
+  for (;;) {
+    got = got.concat(await receiver.drain(id));
+    if (arrived(got) || Date.now() >= deadline) {
+      log.debug("Leaving drainUntil().");
+      return got;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+  }
+}
+
+function hasType(list, type) {
+  log.debug("Entering hasType().");
+  log.debug("Leaving hasType().");
+  return list.some(function (one) {
+    return typeOf(one) === type;
+  });
 }
 
 function typeOf(set) {
@@ -387,7 +423,9 @@ async function test() {
   check("a verification request answers 204 (section 8.1.4.2)", function () {
     assert.strictEqual(r.status, 204, r.text);
   });
-  let got = await alice.drain(aliceStream);
+  let got = await drainUntil(alice, aliceStream, function (list) {
+    return hasType(list, VERIFICATION);
+  });
   const verification = got.filter(function (one) {
     return typeOf(one) === VERIFICATION;
   })[0];
@@ -413,7 +451,9 @@ async function test() {
   await ok(realmApi + "/risc/emit", { type: "account-disabled",
     account_id: usernameFor("ssf-conf-person"),
     reason_admin: "sts_ssf_conformance" }, "emitted account-disabled");
-  got = await alice.drain(aliceStream);
+  got = await drainUntil(alice, aliceStream, function (list) {
+    return hasType(list, UPDATED);
+  });
   check("A PAUSED POLL STREAM HANDS OUT ITS stream-updated EVENT (status " +
         "paused) AND NOTHING ELSE — the account-disabled waits", function () {
           assert.deepStrictEqual(got.map(typeOf), [UPDATED],
@@ -424,7 +464,9 @@ async function test() {
         });
   r = await alice.send("POST", "/ssf/status", { stream_id: aliceStream,
                                                 status: "enabled" });
-  got = await alice.drain(aliceStream);
+  got = await drainUntil(alice, aliceStream, function (list) {
+    return hasType(list, UPDATED) && hasType(list, ACCOUNT_DISABLED);
+  });
   check("enabling it hands out stream-updated (status enabled) and then the " +
         "account-disabled held while it was paused", function () {
           assert.strictEqual(r.status, 200, r.text);
@@ -439,9 +481,10 @@ async function test() {
   const receiveUrl = issuer + "/ssf/receive";
   const claims = function (iss, aud) {
     log.debug("Entering claims().");
-    const out = { jti: "conf-" + Math.random().toString(36).slice(2),
-                  iss: iss, aud: aud, iat: now,
-                  sub_id: { format: "opaque", id: "x" }, events: {} };
+    const out = {
+      jti: "conf-" + require('crypto').randomBytes(8).toString('hex'),
+      iss: iss, aud: aud, iat: now,
+      sub_id: { format: "opaque", id: "x" }, events: {} };
     out.events[VERIFICATION] = {};
     log.debug("Leaving claims().");
     return out;
@@ -452,30 +495,61 @@ async function test() {
     return call("POST", realmBase + "/ssf/receive", unsignedSet(header, body),
                 { "Content-Type": "application/secevent+jwt" });
   };
+  // THE SETS HERE ARE UNSIGNED, which only development accepts: since #117
+  // product mode refuses any SET it cannot verify, and it asks that FIRST, so
+  // every push below is `invalid_key` there and the type, issuer and audience
+  // checks behind it are development's to show. The realm's mode is asked
+  // rather than assumed, because the suite runs this job in both.
+  const modeReport = await call("GET", realmApi + "/mode");
+  const product = !!(modeReport.json && modeReport.json.mode === "product");
+  log.info("section 7 runs in " + (product ? "product" : "development") +
+           " mode (" + modeReport.status + ")");
+  const refusedUnverified = function (what) {
+    log.debug("Entering refusedUnverified().");
+    log.debug("Leaving refusedUnverified().");
+    return function () {
+      assert.strictEqual(r.status, 400, r.text);
+      assert.strictEqual(r.json.err, "invalid_key", what + ": " + r.text);
+    };
+  };
   const typed = { alg: "RS256", typ: "secevent+jwt", kid: "conformance" };
   r = await push(typed, claims(issuer, receiveUrl));
-  check("a SET from this realm's issuer, addressed to the endpoint's own " +
-        "URL, is accepted (202)", function () {
-          assert.strictEqual(r.status, 202, r.text);
-        });
+  check(product
+    ? "PRODUCT: an unsigned SET from this realm's issuer, addressed to the " +
+      "endpoint's own URL, is refused invalid_key — nothing unverified is " +
+      "accepted (#117)"
+    : "a SET from this realm's issuer, addressed to the endpoint's own " +
+      "URL, is accepted (202)",
+    product ? refusedUnverified("the well-formed SET") : function () {
+      assert.strictEqual(r.status, 202, r.text);
+    });
   r = await push(typed, claims("https://other.example", receiveUrl));
-  check("ONE FROM ANOTHER ISSUER IS REFUSED with invalid_issuer (section " +
-        "4.1.6)", function () {
-          assert.strictEqual(r.status, 400, r.text);
-          assert.strictEqual(r.json.err, "invalid_issuer");
-        });
+  check(product
+    ? "PRODUCT: one from another issuer is refused before its issuer is " +
+      "read, invalid_key"
+    : "ONE FROM ANOTHER ISSUER IS REFUSED with invalid_issuer (section " +
+      "4.1.6)",
+    product ? refusedUnverified("another issuer") : function () {
+      assert.strictEqual(r.status, 400, r.text);
+      assert.strictEqual(r.json.err, "invalid_issuer");
+    });
   r = await push(typed, claims(issuer, "somebody-else"));
-  check("one addressed to somebody else is refused with invalid_audience",
-        function () {
-          assert.strictEqual(r.status, 400, r.text);
-          assert.strictEqual(r.json.err, "invalid_audience");
-        });
+  check(product
+    ? "PRODUCT: one addressed to somebody else is refused invalid_key"
+    : "one addressed to somebody else is refused with invalid_audience",
+    product ? refusedUnverified("another audience") : function () {
+      assert.strictEqual(r.status, 400, r.text);
+      assert.strictEqual(r.json.err, "invalid_audience");
+    });
   r = await push({ alg: "RS256", typ: "JWT" }, claims(issuer, receiveUrl));
-  check("and one that is not explicitly typed secevent+jwt is refused " +
-        "(section 4.1.1)", function () {
-          assert.strictEqual(r.status, 400, r.text);
-          assert.ok(/secevent\+jwt/.test(r.json.description), r.text);
-        });
+  check(product
+    ? "PRODUCT: one not typed secevent+jwt is refused invalid_key"
+    : "and one that is not explicitly typed secevent+jwt is refused " +
+      "(section 4.1.1)",
+    product ? refusedUnverified("an untyped SET") : function () {
+      assert.strictEqual(r.status, 400, r.text);
+      assert.ok(/secevent\+jwt/.test(r.json.description), r.text);
+    });
 
   r = await alice.send("DELETE", "/ssf/stream" + q);
   check("alice deletes her own stream", function () {

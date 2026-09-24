@@ -177,6 +177,9 @@
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 import config = require('../common/config');
+// A LEAF, for the key transport AS IN FORCE: `rsa-1_5` is development's
+// (#181), so a product realm's page must not report it in use.
+import mode = require('../common/mode');
 // THE ERROR CODES (common/error_codes.js, a leaf). The key export marks its
 // refusals on the RESULT under the non-enumerable Symbol `mark()` uses, so
 // `/admin-api/keys/export` sends the same JSON and this page reads the code
@@ -527,8 +530,10 @@ const STANDARDS = [
   { key: 'webauthn', name: 'WebAuthn Level 3',
     specs: ['W3C WebAuthn Level 3', 'FIDO CTAP2'],
     coverage: 'partial: the relying party\'s half. Registration and ' +
-              'assertion signatures are really verified; attestation ' +
-              'STATEMENTS are parsed and not chased.',
+              'assertion signatures are really verified, and so are ' +
+              'attestation STATEMENTS (#105) — all eight formats, their ' +
+              'chains and the FIDO Metadata Service — under ' +
+              'webauthn.attestationPolicy.',
     what: 'The signature covers `authenticatorData || ' +
           'SHA-256(clientDataJSON)` and the RP ID hash inside that ' +
           'authenticator data is compared byte for byte against SHA-256 of ' +
@@ -1054,7 +1059,13 @@ class CryptoMetadata {
                    'over http, https or ldaps (plain ldap only when ' +
                    'pki.revocationLdap allows it); an ldaps directory\'s ' +
                    'certificate must chain to node\'s store or ' +
-                   'pki.revocationLdapCaFile.' },
+                   'pki.revocationLdapCaFile. A list at an address that is ' +
+                   'not dialled is a status that could not be established, ' +
+                   'refused under hard-fail (STS-PKI-0188); a certificate ' +
+                   'naming no list and no responder is refused in product ' +
+                   '(pki.revocationRequireDistributionPoint=auto, ' +
+                   'STS-PKI-0190), and one carrying RFC 9608 noRevAvail is ' +
+                   'not checked.' },
             { what: 'Revocation check — how a foreign OCSP response is trusted',
               how: 'The request carries a SHA-1 CertID (the RFC 5019 ' +
                    'profile\'s identifier, not a signature) and a 32-octet ' +
@@ -1165,7 +1176,10 @@ class CryptoMetadata {
         verifies: 'EVERY REQUEST A CLIENT INSTANCE MAKES, by the key it ' +
                   'presented: an RFC 9421 HTTP message signature (with the ' +
                   'body covered by an RFC 9530 Content-Digest), a mutual TLS ' +
-                  'certificate, a detached JWS over the body or an attached ' +
+                  'certificate (revocation consulted; a chain to the client ' +
+                  'truststore and a binding to the application entry under ' +
+                  'gnap.mtlsTrust=pki, product\'s default), a detached JWS ' +
+                  'over the body or an attached ' +
                   'JWS carrying it. A key rotation is verified under BOTH ' +
                   'keys. A resource server calling introspection or ' +
                   'registration is proofed the same way, and every token ' +
@@ -1224,6 +1238,55 @@ class CryptoMetadata {
             ['Content-Digest algorithms', httpsig.DIGEST_ALGORITHMS],
             ['jwt-encrypted content encryption, through gnap.jweEnc',
              [String(config.value('gnap.jweEnc') || 'A256GCM')]]
+          ];
+        } },
+
+      { name: 'OpenID Federation',
+        signs: 'Every federation statement a realm makes — its Entity ' +
+               'Configuration, its Subordinate Statements, the Trust Marks ' +
+               'it issues, and its resolve, Trust Mark Status and ' +
+               'Historical Keys responses — as typed JWTs (RFC 8725 3.11) ' +
+               'with the realm\'s Federation Entity Key, a key kept apart ' +
+               'from every protocol key (OpenID Federation 1.1 3.1.1).',
+        verifies: 'Every statement of a Trust Chain against the keys the ' +
+                  'statement above it names, and the last against the keys ' +
+                  'CONFIGURED for the Trust Anchor (10.2); an Entity ' +
+                  'Configuration against its own keys; a Trust Mark ' +
+                  'against its issuer\'s keys as established through the ' +
+                  'issuer\'s own chain (7.3), and its delegation against ' +
+                  'the owner the anchor names (7.2.2). The kid must name ' +
+                  'exactly one key; HMAC and none are refused.',
+        encrypts: 'Nothing.',
+        decrypts: 'Nothing.',
+        keys: 'One Federation Entity Key table per realm (oidfed.signingAlg, ' +
+              'ES256 by default, ML-DSA offered), on the realm\'s ou=oidfed ' +
+              'entry with the private halves sealed under the ' +
+              'key-encryption key wherever keys persist; a next key ' +
+              'published ahead, retired keys published through ' +
+              'oidfed.keyOverlapDays and kept for the Historical Keys ' +
+              'endpoint for good, their private halves dropped at ' +
+              'retirement. The pinned keys of each Trust Anchor and ' +
+              'subordinate are public keys in the register.',
+        hashes: 'SHA-256 for the RFC 7638 thumbprint each key\'s kid is, and ' +
+                'to name a register entry after the entity or mark it is ' +
+                'about.',
+        whatItDoesNot: 'It does not authenticate a client at a federation ' +
+                       'endpoint (8.8 — "none" is the default and the only ' +
+                       'method here), and it signs no federation statement ' +
+                       'with a protocol key or the other way round.',
+        envelopes: ['jws', 'jwt', 'jwk', 'thumbprint'],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          const statement = require('../oidfed/entity_statement');
+          const held = require('../common/helpers');
+          log.debug("Leaving algorithms().");
+          return [
+            ['Federation Entity Key algorithms offered',
+             held.FEDERATION_KEY_ALGS.slice(0)],
+            ['This realm\'s new keys, through oidfed.signingAlg',
+             [String(config.value('oidfed.signingAlg') || 'ES256')]],
+            ['Signatures verified in federation statements',
+             statement.acceptedAlgorithms()]
           ];
         } },
 
@@ -1393,9 +1456,10 @@ class CryptoMetadata {
                 'vendored table below.',
         whatItDoesNot: 'It does not decrypt an assertion a partner ' +
                        'encrypted, and it does not consume a federated ' +
-                       'sign-out. THE GATE IS ON THE SIGNER AND NOT ON THE ' +
-                       'SUBJECT: past a verified signature any username is ' +
-                       'accepted. This is the one surface here where a ' +
+                       'sign-out. THE GATE IS ON THE SIGNER AND ON THE ' +
+                       'SUBJECT (#109): past a verified signature only the ' +
+                       'person the partner\'s subject is linked to is ' +
+                       'signed in. This is the one surface here where a ' +
                        'missing check is an authentication bypass for every ' +
                        'protocol in the process — see federation/CLAUDE.md.',
         envelopes: ['xmldsig', 'c14n', 'jws'],
@@ -1447,7 +1511,10 @@ class CryptoMetadata {
                 'RSA-OAEP-MGF1P, because that is what the URI MEANS rather ' +
                 'than a choice this service made.',
         whatItDoesNot: 'It does not accept a SHA-1 signature unless ' +
-                       'saml.allowSha1Signatures is on, nor MD5, a MAC or ' +
+                       'saml.allowSha1Signatures is on — never in product ' +
+                       'mode, which also never signs with rsa-sha1, wraps ' +
+                       'a key with rsa-1_5 or unwraps one — nor MD5, a MAC ' +
+                       'or ' +
                        'a stateful hash-based signature at all. A service ' +
                        'provider it holds no certificate for, with ' +
                        'encryption turned on, gets the assertion IN CLEAR, ' +
@@ -1469,7 +1536,7 @@ class CryptoMetadata {
             ['Block cipher (saml2.encryptionAlgorithm)',
              [String(config.value('saml2.encryptionAlgorithm'))]],
             ['Key transport (saml2.keyTransportAlgorithm)',
-             [String(config.value('saml2.keyTransportAlgorithm'))]],
+             [String(mode.valueInForce('saml2.keyTransportAlgorithm'))]],
             ['Block ciphers offered', Object.keys(stsCrypto.BLOCK_CIPHERS)],
             ['Key transports offered', Object.keys(stsCrypto.KEY_TRANSPORTS)]
           ];
@@ -1759,7 +1826,9 @@ class CryptoMetadata {
                   'permits a JWE-wrapped SET and neither this service nor ' +
                   'any deployed transmitter emits one, so what protects an ' +
                   'event in transit is TLS on the delivery endpoint, which ' +
-                  'is why `ssf.pushAllowInsecure` ships OFF.',
+                  'is why the receiver\'s certificate is verified — and, ' +
+                  'since #171, verified in product mode whatever ' +
+                  '`ssf.pushSkipTlsVerification` says.',
         decrypts: 'Nothing, for the same reason.',
         hashes: 'Whatever the chosen signature algorithm implies, and ' +
                 'nothing of its own: a SET carries no digest of anything the ' +
@@ -1772,7 +1841,8 @@ class CryptoMetadata {
                        'truncated signature fails the base64url decode and ' +
                        'is reported as a MALFORMED token, which is a ' +
                        'different bug from a bad one for whoever is being ' +
-                       'tested.',
+                       'tested. Development mode only: a product realm ' +
+                       'ignores it and refuses setting it (#104).',
         envelopes: ['jws', 'jwt', 'jwk', 'dpop', 'tls'],
         algorithms: function () {
           log.debug("Entering algorithms().");
@@ -1905,7 +1975,11 @@ class CryptoMetadata {
       { name: 'WebAuthn / CTAP',
         signs: 'Nothing. The AUTHENTICATOR signs; this service is the ' +
                'relying party, which is the half that only ever checks.',
-        verifies: 'The registration attestation and every assertion: the ' +
+        verifies: 'The registration, its attestation statement (packed, ' +
+                  'tpm, android-key, android-safetynet, fido-u2f, apple and ' +
+                  'compound signatures, COSE ES256/384/512, RS256/384/512, ' +
+                  'PS256/384/512, EdDSA and ML-DSA-44/65/87), and every ' +
+                  'assertion: the ' +
                   'signature over `authenticatorData || ' +
                   'SHA-256(clientDataJSON)`, against the COSE public key the ' +
                   'credential registered.',
@@ -1915,11 +1989,12 @@ class CryptoMetadata {
                 'covers, and the RP ID hash inside the authenticator data ' +
                 'that is compared byte for byte against SHA-256 of the ' +
                 'origin\'s domain.',
-        whatItDoesNot: 'It validates no attestation STATEMENT whatever ' +
-                       '`webauthn.attestation` asks for — the certificate ' +
-                       'chain a packed or TPM attestation carries is parsed ' +
-                       'and not chased, and there is no metadata service, no ' +
-                       'vendor trust anchor and no model allow-list here. ' +
+        whatItDoesNot: 'Since #105 it VERIFIES the attestation statement ' +
+                       '— all eight WebAuthn Level 3 section 8 formats, the ' +
+                       'chain against configured anchors and the FIDO ' +
+                       'Metadata Service\'s roots, revocation, and MDS ' +
+                       'status reports — under `webauthn.attestationPolicy`, ' +
+                       'which is off by default in development only. ' +
                        'The registration offers fewer algorithms than the ' +
                        'verifier ACCEPTS, which is deliberate: what a ' +
                        'platform authenticator actually produces is what a ' +
@@ -2112,6 +2187,41 @@ class CryptoMetadata {
                             'A set written before 2026-09-11: ' +
                             report.comparison]],
             ['At rest', [report.atRest]]
+          ];
+        } },
+
+      // THE EMAILED CODE AND LINK (#64): random secrets, hashed, and a
+      // cookie's digest for the browser binding.
+      { name: 'Email codes and links',
+        signs: 'Nothing. A code or a link is a random secret checked against ' +
+               'a stored hash of one; the message it rides in is signed by ' +
+               'DKIM only where the SMTP transport is configured for it (see ' +
+               'Mail).',
+        verifies: 'A presented code or link token, against the scrypt hash ' +
+                  'on the sign-in step, with crypto.verifySecret() on the ' +
+                  'worker pool; and a link\'s browser binding, as the ' +
+                  'SHA-256 of the cookie set when it was sent.',
+        encrypts: '',
+        decrypts: '',
+        hashes: 'Each secret ONCE, with crypto.hashSecret() (scrypt), when ' +
+                'it ' +
+                'is minted — the code or token itself is never stored, and ' +
+                'the mail channel drops a sent message\'s body. The binding ' +
+                'cookie as SHA-256.',
+        whatItDoesNot: 'It never counts as a phishing-resistant factor or as ' +
+                       'a risk step-up, never mails an address that is not ' +
+                       'verified, and never keeps a secret past ten minutes ' +
+                       'or a second use.',
+        envelopes: [],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          log.debug("Leaving algorithms().");
+          return [
+            ['Code', ['six decimal digits from crypto.randomInt(), leading ' +
+                      'zeros kept']],
+            ['Link token', ['256 bits from crypto.randomBytes(), base64url']],
+            ['At rest', ['scrypt, via crypto.hashSecret(), on the sign-in ' +
+                         'step']]
           ];
         } },
 
@@ -2754,8 +2864,9 @@ class CryptoMetadata {
                'and are what a great many deployed relying parties still ' +
                'send. `rsa-oaep-mgf1p` IS SHA-1 by definition — the URI ' +
                'means it — and the newer `rsa-oaep` carries its digest in a ' +
-               'child element and is deliberately not offered, because a ' +
-               'service provider that can do that can do GCM too. ' +
+               'child element and is offered since #168 with SHA-256 and ' +
+               'MGF1-SHA-256, which is what a federation relationship ' +
+               'publishes and requires. ' +
                'HMAC-SHA1-96 in RFC 3962 is a MAC rather than a ' +
                'collision-resistance claim and is what Active Directory uses ' +
                'to this day.' },
@@ -2915,7 +3026,8 @@ class CryptoMetadata {
         }),
         configured: {
           blockCipher: String(config.value('saml2.encryptionAlgorithm')),
-          keyTransport: String(config.value('saml2.keyTransportAlgorithm')),
+          keyTransport:
+            String(mode.valueInForce('saml2.keyTransportAlgorithm')),
           encryptAssertion: !!config.value('saml2.encryptAssertion'),
           encryptLogoutNameId: !!config.value('saml2.encryptLogoutNameId')
         }
@@ -3642,9 +3754,10 @@ class CryptoMetadata {
         'tested against. Nothing this service encrypts is a real secret. ' +
         '<code>rsa-oaep-mgf1p</code> is SHA-1 by definition — the URI means ' +
         'it — and the newer <code>rsa-oaep</code> carries its digest in a ' +
-        'child element and is deliberately not offered, because a service ' +
-        'provider that can read that one can do GCM too and this list exists ' +
-        'for the ones that cannot.');
+        'child element and is offered since #168 with SHA-256 and ' +
+        'MGF1-SHA-256, which is what a federation relationship publishes and ' +
+        'requires. A recipient whose certificate is EC is encrypted to by ' +
+        'ECDH-ES key agreement (ConcatKDF, kw-aes256).');
 
     html += '<h3>Kerberos encryption types</h3>' +
       '<table><thead><tr><th class="n">etype</th><th>Name</th>' +

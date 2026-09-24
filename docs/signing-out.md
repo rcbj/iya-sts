@@ -10,7 +10,7 @@ own, and each one signs them out of itself:
 
 | Endpoint | What it is |
 |---|---|
-| `GET /oauth2/logout` | OpenID Connect RP-Initiated Logout |
+| `GET|POST /oauth2/logout` | OpenID Connect RP-Initiated Logout — asks the person to confirm unless a verified `id_token_hint` names the session |
 | `GET|POST /wsfed?wa=wsignout1.0` | WS-Federation 1.2 section 13.2.4 |
 | `GET|POST /saml2/slo` | SAML 2.0 Single Logout |
 
@@ -33,7 +33,9 @@ GET /logout?format=json           the same thing, for a test
 ```
 
 Signing out may mean signing in first. This service has no other way to know who
-is asking, and the session that creates is listed with everything else.
+is asking, and the session that creates is listed with everything else. **No
+console role is needed, and that is not an oversight**: signing yourself out
+must not require a role that signing in did not.
 
 **`?username=` naming somebody else works in development mode only.** In product
 mode a password is verified at every door, so an anonymous request naming a
@@ -73,6 +75,7 @@ history.
 | OpenID Connect relying parties | its `frontchannel_logout_uri` loads in a hidden iframe, with `iss` and `sid` where it asked for them, and its `backchannel_logout_uri` is POSTed a signed Logout Token |
 | WS-Federation realms | `wa=wsignoutcleanup1.0` as a one-pixel image, with the URL printed beside it |
 | SAML 2.0 service providers | the signed `LogoutRequest`, offered as a link |
+| Federation partners (#167) | the identity provider a session was signed in **through**: its own sign-out — a signed `LogoutRequest`, RP-Initiated Logout with the partner's ID Token as `id_token_hint`, or `wsignout1.0` — offered as a link or a form, from `/logout` in the person's own browser only. SAML 1.1 and OAuth 2.0 partners define no sign-out and are not told. See [Federation](federation.md#a-partners-sign-out) |
 | Tokens | the `jti` joins the same revocation set `/oauth2/revoke` writes to, so `/oauth2/introspect` reports it inactive immediately |
 | Authorization codes | discarded, so no more tokens come from that sign-on |
 | Credential Offer pre-authorized codes | the same |
@@ -95,21 +98,39 @@ So those rows appear on the page with a dash instead of a checkbox and a sentenc
 saying why. Hiding them would make a global logout look complete when it is not,
 which is the most misleading thing this endpoint could do.
 
-Two more things it does not reach, and both are honest rather than missing:
+Three more limits, all honest rather than missing:
 
 * **A Kerberos service ticket keeps working against the service that accepts
   it.** The sign-out instant is checked at the *KDC*, and accepting a service
-  ticket never contacts the KDC. A fresh `AS-REQ` also succeeds and clears the
-  instant — signing out is not being locked out.
+  ticket never contacts the KDC. A fresh `AS-REQ` also succeeds — signing out
+  is not being locked out — but does not lift the instant (#111): its new
+  ticket is accepted, and every ticket-granting ticket from before the
+  sign-out, renewed or not, stays refused until the latest one could still be
+  valid — the sign-out plus the longer of the ticket and renew lifetimes, plus
+  the clock skew — on every node.
 
   Worth being plain about: **Kerberos itself has no logout, no session and no
   revocation.** There is no CRL, no status query and no list of issued tickets —
-  a ticket is valid because it decrypts and hasn't expired, and short lifetimes
-  are the entire revocation model. `KDC_ERR_TGT_REVOKED` (20) is a registered
-  error code whose text says what is meant, but no specification defines a
-  mechanism that emits it. What this service does is an invention using the one
-  lever a real KDC has — the `TGS-REQ`, which is the only moment the KDC is back
-  in the loop. Do not read it as conformance.
+  a KDC deliberately keeps no state about what it has issued, which is what
+  lets one be replicated read-only. A ticket is valid because it decrypts and
+  hasn't expired, a service accepts one with its own key without contacting
+  the KDC, and short lifetimes are the entire revocation model.
+  `KDC_ERR_TGT_REVOKED` (20) is a registered error code whose text says what is
+  meant (RFC 4120 §7.5.9), but no specification defines a mechanism that emits
+  it. What this service does is an invention using the one lever a real KDC
+  has — the `TGS-REQ`, which is the only moment the KDC is back in the loop,
+  and the same lever that makes disabling an Active Directory account bite
+  within the service-ticket lifetime rather than the TGT's. Do not read it as
+  conformance.
+
+  The check is on the ticket's `authtime`, not its issue time, because a
+  renewed ticket deliberately preserves `authtime`; checking anything else
+  would let a renewal launder a signed-out ticket back into a live one.
+* **An LDAP client sees its connection end mid-conversation.** The connection
+  is the session, so the sign-out is the socket closing, which is what a
+  directory revoking a session looks like from the other end. An *Unsolicited
+  Notice of Disconnection* (RFC 4511 section 4.4.1) would be the polite form,
+  and node-ldapjs has no way to send one.
 * **SPIFFE is not in the list at all.** A SPIFFE identity is a workload, attested
   per call, holding no session. The registry can end an identity's ability to
   obtain *another* SVID, which is a ban rather than a logout; that lives at
@@ -146,7 +167,23 @@ only way to see which happened.
 
 `iss` and `sid` are sent only to a client that registered
 `frontchannel_logout_session_required`; the specification says they are otherwise
-omitted.
+omitted. The discovery document says `frontchannel_logout_session_supported:
+true`. `iss` is the issuer that client's ID Token named. For a client of a
+named authorization server (`/tenant1/oauth2/…`), that is the named server's
+issuer, even when you sign out somewhere else.
+
+**The `frontchannel_logout_uri` must be on a redirect URI's origin**: the same
+scheme, host and port as one of the client's `redirect_uris` (section 2). In
+the example above, both are on `http://localhost:3000`. A registration, a
+console edit or an `/admin-api` write that breaks the rule is refused. A stored
+URI that breaks it, for example after the matching redirect URI was removed,
+is not framed, and the sign-out page lists that client with the reason.
+
+**Returning to the application.** After `/oauth2/logout` with a
+`post_logout_redirect_uri`, a page that notifies relying parties returns to
+that address by itself after `oauth2.frontchannelLogoutWaitS` seconds (default
+3). That gives the iframes time to load. The page also shows the address as a
+link. Set the wait to `0` to return only when the link is followed.
 
 ## Back-channel logout
 
@@ -185,8 +222,10 @@ What to expect:
   times with a growing pause — see `oauth2.backchannelLogoutAttempts`,
   `...TimeoutMs`, `...BackoffMs` and `...TokenTtlS` in
   [configuration](configuration.md).
-* **The address has to be reachable under the outbound rules**: https, unless
-  `federation.outboundAllowInsecure` is on (the ordinary case on localhost),
+* **The address has to be reachable under the outbound rules**: https with the
+  certificate verified, unless `federation.outboundAllowHttp` or
+  `federation.outboundSkipTlsVerification` is on — the ordinary case on
+  localhost, and development mode only (#171) —
   nothing at all with `federation.outbound` off, and — in product mode — never
   a loopback, private or link-local address.
 * **A session that simply EXPIRES sends one too**, while
@@ -240,8 +279,8 @@ the portal draws a button for it at the foot of its **Overview** page.
 | | Who it is for | Difference |
 |---|---|---|
 | `/logout` | a person, about themselves | no console role needed; it is the browser that loads the notifications |
-| `/admin/logout` | an operator, about somebody else | behind the console's two roles; filtered and paged; has two **NON-SPEC** undos — restoring a revoked token, and clearing a Kerberos sign-out instant |
-| `GET|POST /admin-api/logout` | a test | four operations: `global`, `end`, `restore-token`, `restore-kerberos` |
+| `/admin/logout` | an operator, about somebody else | behind the console's two roles; filtered and paged; has two **NON-SPEC** undos — restoring a revoked token, and clearing a Kerberos sign-out instant (development mode only) |
+| `GET|POST /admin-api/logout` | a test | four operations: `global`, `end`, `restore-token`, `restore-kerberos` (refused in product mode) |
 
 All three call one pair of functions, which is what stops them coming to
 disagree about what a live session is.
@@ -270,9 +309,19 @@ stamps a sign-out instant on the **principal**, refusing every ticket that
 principal authenticated before now, and still reaches no service ticket already
 in a cache.
 
+## A partner ending the session
+
+A federation partner's own sign-out — a SAML `LogoutRequest`, an OpenID
+Connect Back-Channel or Front-Channel logout, a WS-Federation cleanup the
+person confirms — ends the session that partner started, and only that one,
+through this same model: the session and the relying parties riding on it,
+each told as above, with `federation.signout` on the audit log. A partner's
+SAML `SessionNotOnOrAfter` ends the session when it passes, as an expiry. See
+[Federation](federation.md#a-partners-sign-out).
+
 ## A session that simply runs out
 
-It ends the same way, and says so the same way. Since 2026-09-04 an expiry
+It ends the same way, and says so the same way. An expiry
 writes the `session.end` audit row and emits CAEP's `session-revoked` like any
 other ending — with `initiating_entity: policy`, because nobody signed out: a
 lifetime ran out. A sweep runs every 30 seconds so that this happens whether or

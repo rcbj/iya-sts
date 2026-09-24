@@ -48,17 +48,21 @@
 //     it asks the authenticator for. Same standing: a request, not a check.
 //   * **POLICY** — `enabled`, `primaryAllowed`, `mfaAllowed`,
 //     `maxKeysPerPerson`. Not WebAuthn at all. These are enforced HERE, by the
-//     callers below, and they are the only four in this file that refuse
-//     anything.
+//     callers below.
+//   * **ATTESTATION** (#105) — `attestationPolicy` and the six settings
+//     beside it, read by `attestationSettings()` and enforced by
+//     `./webauthn_attestation.ts` on the statement a registration carries:
+//     WebAuthn Level 3 section 7.1's steps 21-25, which DO refuse.
 //
-// **ONE CEREMONY SETTING IS ALSO ENFORCED AND IT IS THE ONE THAT COULD BE.**
+// **ONE CEREMONY OPTION IS ALSO ENFORCED AND IT IS THE ONE THAT COULD BE.**
 // `userVerification: 'required'` is sent to the browser AND checked against the
 // UV flag in the authenticator data when the ceremony comes back, because that
 // flag is IN the signed bytes — so it is a claim this service can verify rather
-// than a preference it can only express. `attestation`, `residentKey` and
-// `authenticatorAttachment` have no equivalent: nothing signed says what the
-// browser was asked for, so a check would be a comparison against a value this
-// service itself supplied.
+// than a preference it can only express. `attestation` (the CONVEYANCE),
+// `residentKey` and `authenticatorAttachment` have no equivalent: nothing
+// signed says what the browser was asked for, so a check would be a
+// comparison against a value this service itself supplied. The attestation
+// STATEMENT that comes back is signed, and is what the fourth kind checks.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -82,6 +86,13 @@ import webauthn = require('./webauthn');
 // under the Symbol `mark()` uses, so a caller's `errorCodes.codeOf()` reads it
 // and nothing that serialises the answer can send it anywhere.
 import errorCodes = require('../common/error_codes');
+// The mode's reading of `webauthn.attestationPolicy` (#105): its `by-mode`
+// default, and `off` refused in product. A leaf: it requires `config` and
+// `error_codes`, both already here.
+import mode = require('../common/mode');
+// THE AUTHENTICATION POLICY (#64): its passkey and security-key rows are
+// asked in `roleAllowed()`. A LEAF, so no cycle.
+import authnPolicy = require('../common/authn_policy');
 
 // JOSE spelling -> COSE identifier, INVERTED from the verifier's own table
 // rather than written out. That table is what decides whether a signature can
@@ -98,6 +109,15 @@ Object.keys(webauthn.COSE_ALGS).forEach(function (id) {
 // implements and the two `pubKeyCredParams` was hardcoded to before any of this
 // was settable.
 const FALLBACK_ALGS = ['ES256', 'RS256'];
+
+// The attestation statement formats `authn/webauthn_attestation.ts` verifies
+// (#105): all eight of WebAuthn Level 3 section 8. Written here rather than
+// read from that module because this one is required by it, and a table of
+// eight names is data, not behaviour — `tests/webauthn_attestation.js`
+// asserts the two agree.
+const ATTESTATION_FORMATS = ['packed', 'tpm', 'android-key',
+                             'android-safetynet', 'fido-u2f', 'none', 'apple',
+                             'compound'];
 
 // ---------------------------------------------------------------------------
 // WHICH CHECK A CEREMONY FAILED, AS AN ERROR CODE (2026-09-12).
@@ -124,7 +144,11 @@ const FAILED_CHECK_CODES = {
   'user verification': 'STS-AUTHN-0033',
   'attested credential data present': 'STS-AUTHN-0034',
   'signature counter advanced': 'STS-AUTHN-0035',
-  'signature verifies': 'STS-AUTHN-0036'
+  'signature verifies': 'STS-AUTHN-0036',
+  // WebAuthn Level 3 section 7.1's remaining registration checks (#105).
+  'credential algorithm was offered': 'STS-AUTHN-0228',
+  'credential ID is at most 1023 bytes': 'STS-AUTHN-0229',
+  'backup state only where backup eligible': 'STS-AUTHN-0230'
 };
 
 // The `authenticatorSelection` member of the creation options. Its
@@ -142,6 +166,7 @@ interface WebauthnPolicyDeps {
   log: typeof helpers.log;
   webauthn: typeof webauthn;
   errorCodes: typeof errorCodes;
+  mode: typeof mode;
 }
 
 class WebauthnPolicy {
@@ -159,7 +184,8 @@ class WebauthnPolicy {
       config: config,
       log: helpers.log,
       webauthn: webauthn,
-      errorCodes: errorCodes
+      errorCodes: errorCodes,
+      mode: mode
     };
   }
 
@@ -217,6 +243,62 @@ class WebauthnPolicy {
     };
     log.debug('Leaving WebauthnPolicy.settings(). uv=' + out.userVerification +
               ', ' + out.algorithms.length + ' algorithm(s).');
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ATTESTATION POLICY (#105), read in the same one place as the rest.
+  //
+  // `policy` is what is IN FORCE: `webauthn.attestationPolicy` through
+  // `mode.valueInForce()` (product reads a stored `off` as `by-mode`), and
+  // `by-mode` resolved by `mode.acceptsUnverifiedAttestation()` — `off` in
+  // development, `verify-if-present` in product. `demandsTrust` is whether
+  // ANY setting needs a statement that chains to an anchor: the policy
+  // `require-trusted`, an AAGUID allow-list, a certification level or FIPS —
+  // each of which is a claim about the authenticator that only a trusted
+  // statement can make. A demand for trust verifies whatever the policy
+  // says, and asks the browser for `direct` attestation (creationOptions()).
+  // ---------------------------------------------------------------------------
+  attestationSettings() {
+    const { config, log, mode } = this.deps;
+    log.debug('Entering WebauthnPolicy.attestationSettings().');
+    const configured = this.oneOf(
+      mode.valueInForce('webauthn.attestationPolicy'),
+      ['by-mode', 'off', 'verify-if-present', 'require-trusted'], 'by-mode');
+    const policy = configured === 'by-mode'
+      ? (mode.acceptsUnverifiedAttestation() ? 'off' : 'verify-if-present')
+      : configured;
+    const asked = config.value('webauthn.attestationAllowedAaguids');
+    const allowedAaguids = (Array.isArray(asked) ? asked
+                                                 : String(asked || '')
+                                                     .split(','))
+      .map(function (one) {
+        return String(one || '').trim().toLowerCase().replace(/-/g, '');
+      })
+      .filter(function (one) { return /^[0-9a-f]{32}$/.test(one); });
+    const minCertificationLevel = this.oneOf(
+      config.value('webauthn.attestationMinCertificationLevel'),
+      ['none', 'L1', 'L1plus', 'L2', 'L2plus', 'L3', 'L3plus'], 'none');
+    const requireFips = config.value('webauthn.attestationRequireFips') ===
+                        true;
+    const out = {
+      configured: configured,
+      policy: policy,
+      trustAnchorsPem: String(config.value('webauthn.attestationTrustAnchors')
+                              || ''),
+      allowedAaguids: allowedAaguids,
+      minCertificationLevel: minCertificationLevel,
+      requireFips: requireFips,
+      allowSafetynet: config.value('webauthn.attestationAllowSafetynet') ===
+                      true,
+      androidSoftwareKeys:
+        config.value('webauthn.attestationAndroidSoftwareKeys') === true,
+      demandsTrust: policy === 'require-trusted' ||
+                    allowedAaguids.length > 0 ||
+                    minCertificationLevel !== 'none' || requireFips
+    };
+    log.debug('Leaving WebauthnPolicy.attestationSettings(). policy=' +
+              out.policy + ', demandsTrust=' + out.demandsTrust);
     return out;
   }
 
@@ -352,7 +434,30 @@ class WebauthnPolicy {
       return errorCodes.mark({ ok: false,
                why: 'A security key cannot be a second factor in this realm ' +
                     '(webauthn.mfaAllowed). An authenticator app is the ' +
-                    'other one, where totp.enabled is on.' }, 'STS-AUTHN-0046');
+                    'other one, where the authentication policy allows ' +
+                    'it.' }, 'STS-AUTHN-0046');
+    }
+    // THE AUTHENTICATION POLICY'S TWO ROWS (#64), asked after this module's
+    // own settings and with the same contract: a key already enrolled goes
+    // on being asked for as a second factor, and what the row stops is a
+    // NEW one, or — as a first factor — signing in with one at all.
+    const policyRow: { mechanism: string;
+                       as: 'primary' | 'second-factor';
+                       code: string } = String(role) === 'primary'
+      ? { mechanism: 'passkey', as: 'primary', code: 'STS-AUTHN-0253' }
+      : { mechanism: 'securityKey', as: 'second-factor',
+          code: 'STS-AUTHN-0254' };
+    if (!authnPolicy.allows(policyRow.mechanism, policyRow.as)) {
+      log.debug('Leaving WebauthnPolicy.roleAllowed(). The authentication ' +
+                'policy does not accept it.');
+      return errorCodes.mark({ ok: false,
+               why: String(role) === 'primary'
+                 ? 'This realm\'s authentication policy does not accept a ' +
+                   'security key or passkey as a first factor. Sign in with ' +
+                   'what it does accept.'
+                 : 'This realm\'s authentication policy does not accept a ' +
+                   'NEW security key as a second factor. A key already ' +
+                   'enrolled goes on working.' }, policyRow.code);
     }
     log.debug('Leaving WebauthnPolicy.roleAllowed(). Allowed.');
     return { ok: true };
@@ -401,10 +506,18 @@ class WebauthnPolicy {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.creationOptions(). rpId=' + rpId);
     const live = this.settings();
+    // A POLICY THAT NEEDS A STATEMENT ASKS FOR ONE (#105). `none` and
+    // `indirect` let the browser strip or anonymise the statement, and a
+    // realm that requires a trusted one would then refuse every enrolment
+    // for a reason nobody could see on this page. `enterprise` is kept: it
+    // asks for more, not less.
+    const attestation = this.attestationSettings().demandsTrust &&
+                        live.attestation !== 'enterprise'
+      ? 'direct' : live.attestation;
     const out = {
       rp: { name: live.rpName, id: rpId },
       algorithms: this.algorithmIds(),
-      attestation: live.attestation,
+      attestation: attestation,
       timeout: live.timeoutMs,
       authenticatorSelection: <AuthenticatorSelection>{
         userVerification: live.userVerification,
@@ -465,6 +578,7 @@ class WebauthnPolicy {
     const { log, webauthn } = this.deps;
     log.debug('Entering WebauthnPolicy.report().');
     const live = this.settings();
+    const attestationPolicy = this.attestationSettings();
     const out = {
       offered: live.enabled,
       rpName: live.rpName,
@@ -486,8 +600,25 @@ class WebauthnPolicy {
       userVerification: live.userVerification,
       userVerificationEnforced: live.userVerification === 'required',
       attestation: live.attestation,
-      attestationVerified: false,
-      attestationFormats: ['packed', 'none', 'fido-u2f'],
+      // WHAT IS DONE WITH THE STATEMENT (#105). `attestationVerified` was the
+      // literal `false` and `attestationFormats` the three formats the parser
+      // recognised; both are now what `authn/webauthn_attestation.ts`
+      // verifies, under the policy in force.
+      attestationPolicy: attestationPolicy.policy,
+      attestationPolicyConfigured: attestationPolicy.configured,
+      attestationVerified: attestationPolicy.policy !== 'off' ||
+                           attestationPolicy.demandsTrust,
+      attestationDemandsTrust: attestationPolicy.demandsTrust,
+      attestationFormats: ATTESTATION_FORMATS.slice(),
+      attestationAllowedAaguids: attestationPolicy.allowedAaguids,
+      attestationMinCertificationLevel:
+        attestationPolicy.minCertificationLevel,
+      attestationRequireFips: attestationPolicy.requireFips,
+      attestationAllowSafetynet: attestationPolicy.allowSafetynet,
+      attestationAndroidSoftwareKeys: attestationPolicy.androidSoftwareKeys,
+      attestationTrustAnchors: attestationPolicy.trustAnchorsPem
+        ? (attestationPolicy.trustAnchorsPem.match(
+            /-----BEGIN CERTIFICATE-----/g) || []).length : 0,
       timeoutMs: live.timeoutMs,
       authenticatorAttachment: live.authenticatorAttachment,
       residentKey: live.residentKey,
@@ -536,6 +667,8 @@ export = {
   creationOptions: slot.forward('creationOptions'),
   requestOptions: slot.forward('requestOptions'),
   requireUserVerification: slot.forward('requireUserVerification'),
+  attestationSettings: slot.forward('attestationSettings'),
+  ATTESTATION_FORMATS: ATTESTATION_FORMATS,
   report: slot.forward('report'),
   failureCodeFor: slot.forward('failureCodeFor'),
   // The JOSE-name-to-COSE-identifier map, exported for the tests that assert

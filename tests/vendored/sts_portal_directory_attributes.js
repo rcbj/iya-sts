@@ -287,6 +287,9 @@ async function apiPost(path, payload) {
 // for it.
 // ---------------------------------------------------------------------------
 var PASSWORD = "portal-directory-Passw0rd!-" + String(Date.now()).slice(-6);
+// What section 3 sets through the management API, and what the owner signs
+// in with after it.
+const PROBE_PASSWORD = "A-probe-Passw0rd!-" + String(Date.now()).slice(-6);
 var MAIL_DOMAIN = "portal-directory.test";
 
 function personAttributes(who) {
@@ -321,7 +324,7 @@ async function ensurePerson(who) {
 // SIGN IN AT `/portal`, which is an OpenID Connect relying party of this
 // service's own authorization server — so this is a code flow.
 // ---------------------------------------------------------------------------
-async function signIn(who) {
+async function signIn(who, password) {
   log.debug("Entering signIn(). who=" + who);
   await ensurePerson(who);
   const b = browser(who);
@@ -339,7 +342,7 @@ async function signIn(who) {
   assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
   r = await b.go("POST", "/authn/login",
                  form({ authn_id: authnId, username: who,
-                        password: PASSWORD, action: "login",
+                        password: password || PASSWORD, action: "login",
                         csrf_token: csrfOf(r.text) }));
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in should end in a redirect; got " + r.status + " " +
@@ -440,9 +443,12 @@ async function itDrawsTheDirectory() {
   const classes = classesOn(before.text);
   check("THE THREE OBJECT CLASSES ARE THE HEADINGS, in inheritance order — " +
         "'the inetOrgPerson attributes' IS the union of three classes, and a " +
-        "reader who does not know that learns it from the page", function () {
+        "reader who does not know that learns it from the page — and the " +
+        "Identity Assurance claims (#128) follow them as a group of their " +
+        "own, which no object class defines", function () {
     assert.deepStrictEqual(classes,
-      ["person", "organizationalPerson", "inetOrgPerson"],
+      ["person", "organizationalPerson", "inetOrgPerson",
+       "Identity Assurance claims"],
       "the page drew: " + JSON.stringify(classes));
   });
 
@@ -558,12 +564,21 @@ async function theRefusalsHold(b) {
   // `userPassword` to refuse to print.
   const set = await fetch(api + "/users/set-password", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user: OWNER, password: "A-probe-Passw0rd!" })
+    body: JSON.stringify({ user: OWNER, password: PROBE_PASSWORD })
   });
   assert.ok(set.status === 200,
     "setting a password answered " + set.status);
 
-  const page = await b.go("GET", "/portal");
+  // AN ADMINISTRATOR'S PASSWORD CHANGE ENDS THE PERSON'S PORTAL SESSIONS in
+  // product (#62's signal-response), and it arrives ASYNCHRONOUSLY — so the
+  // session `b` holds may be ended before or after the page below is read
+  // (in `cluster` it was ended first, and the page was a sign-in). The owner
+  // signs in again with the password just set, after the change's own
+  // second, because the portal keeps a session begun after the event's
+  // `event_timestamp` second and ends one begun within it.
+  await new Promise(function (resolve) { setTimeout(resolve, 1100); });
+  const signedIn = await signIn(OWNER, PROBE_PASSWORD);
+  const page = await signedIn.go("GET", "/portal");
   const drawn = attributesOn(page.text);
 
   check("`userPassword` IS ON THE PAGE — it is on the `person` MAY list, and " +
@@ -582,7 +597,7 @@ async function theRefusalsHold(b) {
   });
 
   check("and the password itself is nowhere in the HTML", function () {
-    assert.ok(String(page.text).indexOf("A-probe-Passw0rd!") < 0,
+    assert.ok(String(page.text).indexOf(PROBE_PASSWORD) < 0,
       "the page carries the password that was just set.");
   });
 
@@ -604,6 +619,7 @@ async function theRefusalsHold(b) {
     });
   });
   log.debug("Leaving theRefusalsHold().");
+  return signedIn;
 }
 
 // ===========================================================================
@@ -773,8 +789,10 @@ async function test() {
   log.info("Running the /portal directory-attribute checks against " + base);
   const b = await itDrawsTheDirectory();
   await itReadsTheEntryAndNotTheSession(b);
-  await theRefusalsHold(b);
-  await theCredentialsAreNotOnIt(b);
+  // Section 3 signs in again after its administrator's password change,
+  // and section 5 drives the portal with that session.
+  const again = await theRefusalsHold(b);
+  await theCredentialsAreNotOnIt(again);
   await oneUserCannotReadAnother();
   log.info(checks + " assertion(s).");
   log.info("Test completed successfully.");

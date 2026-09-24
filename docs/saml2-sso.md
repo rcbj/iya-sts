@@ -41,11 +41,11 @@ WS-Trust and WS-Federation as well.
 
 | Path | What it is |
 |---|---|
-| `GET\|POST /saml2/sso[/{sp}]` | the Single Sign-On service — GET is the HTTP Redirect binding, POST is HTTP POST or POST-SimpleSign |
-| `POST /saml2/ars[/{sp}]` | the Artifact Resolution Service, SOAP over HTTP — a back channel the browser never touches |
-| `GET\|POST /saml2/slo[/{sp}]` | Single Logout, in both directions |
-| `GET /saml2/metadata[/{sp}]` | the signed identity provider metadata, one document per service provider |
-| `GET\|POST /saml2/sp` | a **mock service provider** (not part of any specification) |
+| `GET\|POST /saml2/sso[/{sp}]` | the Single Sign-On service — GET is the HTTP Redirect binding (bindings section 3.4: DEFLATE, base64 and the detached query-string signature of 3.4.4.1), POST is HTTP POST (3.5) or POST-SimpleSign. The binding the *Response* comes back on is the AuthnRequest's own `ProtocolBinding` |
+| `POST /saml2/ars[/{sp}]` | the Artifact Resolution Service, SOAP 1.1 over HTTP (bindings section 3.2.3) — a back channel the browser never touches |
+| `GET\|POST /saml2/slo[/{sp}]` | Single Logout (profiles section 4.4), in both directions |
+| `GET /saml2/metadata[/{sp}]` | the signed identity provider metadata (an `IDPSSODescriptor`), one document per service provider |
+| `GET\|POST /saml2/sp` | a **mock service provider** (not part of any specification), the default assertion consumer service |
 | `GET /saml2` | a page describing all of the above, including every AuthnRequest parameter and what is done with it |
 
 In a trust realm every path is under `/realm/{id}`. The full, current list is
@@ -59,18 +59,25 @@ its SSO, SLO and artifact endpoints sit under the same `{sp}` segment. That is
 what Okta and Ping give each application, and it means two service providers
 are configured from two documents that share nothing but a signing
 certificate. `saml2.perApplicationEntityId` off gives every document the one
-entityID; the endpoints stay per application either way.
+entityID — for a service provider library that keys its trust store off the
+entityID and is surprised to find a new one per application; the endpoints stay
+per application either way.
 
 `{sp}` is the service provider's entityID percent-encoded, or a **slug** — the
 entityID where it is safe in a URL path, otherwise `app-` and twelve hex
 characters of its SHA-256. A slug is not reversible, so `/admin/saml2` lists the
 metadata URL for every service provider rather than leaving you to derive it.
 
-**The metadata is minted for any entityID asked for** and never 404s. In
-development, with `saml2.autocreateApplications` on (the default), asking for
-it — or a valid AuthnRequest — creates the application entry; in product mode
-nothing is created because something named it. The document publishes a
-`use="encryption"` key, the NameID formats this identity provider advertises,
+**In development the metadata is minted for any entityID asked for** and
+never 404s: with `saml2.autocreateApplications` on (the default), asking for
+it — or a valid AuthnRequest — creates the application entry. **In product
+mode nothing is created because something named it, and every `{sp}` path —
+`/saml2/metadata/{sp}`, `/saml2/sso/{sp}`, `/saml2/slo/{sp}` and
+`/saml2/ars/{sp}` — answers 404 (`text/plain`) for a name that is not a
+registered SAML 2.0 service provider.** Register it on `/admin/saml2`, or with
+`POST /admin-api/applications/create`, first. The document publishes a
+`use="encryption"` key — the same certificate it signs with, and what a service
+provider encrypts an `EncryptedID` to — the NameID formats this identity provider advertises,
 `WantAuthnRequestsSigned` according to the signing policy below, the
 bindings it speaks, and an `<md:Organization>` from `saml.organization*`.
 
@@ -89,7 +96,8 @@ again, and WebAuthn, TOTP, SPNEGO, a client certificate or a federated partner
 are all available at that screen. An AuthnRequest that arrives by cross-site
 POST is held and the browser is sent to a GET on the same endpoint, because
 `SameSite=Lax` keeps the session cookie off a cross-site POST but not off a
-top-level GET. The request is held for `saml2.requestTtlMin`.
+top-level GET: the request is held and the browser is sent a 303 to the GET.
+The request is held for `saml2.requestTtlMin`.
 
 The AuthnRequest controls that change what happens:
 
@@ -127,7 +135,26 @@ attributes](#custom-saml-attributes). Both the assertion and the Response are
 signed by default (`saml2.signAssertion`, `saml2.signResponse`); on the Redirect
 binding `signResponse` means the query-string signature. The signature algorithm
 and canonicalization are `saml.signatureAlgorithm` and
-`saml.canonicalizationAlgorithm`.
+`saml.canonicalizationAlgorithm`. **In product mode the assertion is always
+signed** (#181): saml-profiles-2.0-os sections 4.1.3.5 and 4.1.4.5 require it
+over the HTTP POST binding, and an assertion that leaves its Response — by
+artifact, by `AssertionIDReference`, as an RFC 7522 grant — carries no other
+signature, so `saml2.signAssertion` off (or an application's
+`saml2SignAssertion` FALSE) is development's alone. `saml2.signResponse` off
+stays allowed in product, because with the assertion signed the profile asks
+for no more.
+
+**Where the Response goes depends on the realm's mode.** In development the
+`AssertionConsumerServiceURL` the request names is used as it stands,
+registered or not, and a request naming none goes to the registered
+`samlAssertionConsumerService` or to the mock service provider. In product mode
+it must be one of the `samlAssertionConsumerService` values on that service
+provider's own application entry, compared exactly; a request naming another is
+refused on a page (not sent a failure Response — the address is the thing in
+question), and there is no fallback to `/saml2/sp`. Once the service provider's
+metadata has been consumed, the request is answered only at one of its
+AssertionConsumerService endpoints, in every mode. The same rule governs SAML
+1.1's `shire` and WS-Federation's `wreply` (`wsfedReplyUrl`).
 
 A Response on the Redirect binding longer than `saml2.redirectWarnLength` is
 logged at WARN and sent anyway — bindings section 4.1.2 says a response should
@@ -140,14 +167,19 @@ an endpoint index, the SHA-1 of the issuer's entityID, twenty random bytes) and
 stands for the whole Response. The service provider resolves it with an
 `ArtifactResolve` at `/saml2/ars`:
 
-* **it resolves exactly once**, across every node of a cluster; a second
-  resolution is refused with a status naming the reason. `saml2.artifactTtlS` is
-  only the upper bound on how long an unresolved one lives;
+* **it resolves exactly once**, across every node of a cluster (bindings
+  section 3.6.4.1); resolving destroys it, and a second resolution is refused
+  with a status naming the reason. No lifetime setting can express this, and
+  the happy path passes either way. `saml2.artifactTtlS` is only the upper
+  bound on how long an unresolved one lives;
 * the resolver must be **the service provider the artifact was issued to**;
 * where signed requests are required, the resolver must **prove it** — by
   signing the `ArtifactResolve` or by presenting one of its registered
   certificates as the TLS client certificate. A refused caller does not spend
   the artifact.
+
+`/saml11/responder` authenticates an artifact's resolver the same way; see
+[SAML 1.1](saml11.md#the-saml-responder-and-attribute-authority).
 
 ### Single Logout
 
@@ -157,15 +189,24 @@ session and returning a `LogoutResponse` — and accepts a `LogoutResponse`. An
 `GET /saml2/slo` is identity-provider-initiated: it ends the session and names
 every service provider signed into, with a signed `LogoutRequest` for each,
 offered as links rather than fired blind into hidden frames, because a
-`LogoutRequest` expects an answer the page could not observe. The
+`LogoutRequest` is a signed message a service provider *answers*, and firing
+those blind would produce a page claiming a federation-wide logout it cannot
+observe. (WS-Federation's `wsignoutcleanup1.0` is different: an idempotent GET
+that works as a one-pixel image.) The
 protocol-independent sign-out at `/logout` does the same; see
 [Signing out](signing-out.md).
 
-A `LogoutRequest` carries no return address, so the `LogoutResponse` goes to,
-in order: the consumed metadata's `SingleLogoutService`, the
-`samlSingleLogoutService` on the application entry,
-`saml2.defaultSingleLogoutService`, and finally the ACS URL the service provider
-last used — which is a guess, and is logged as one. Logout messages follow the
+A `LogoutRequest` carries no return address — only service provider metadata
+has one — so the `LogoutResponse` goes to, in order: the consumed metadata's
+`SingleLogoutService` (its `ResponseLocation`, on the binding the request
+arrived on where it publishes one), the `samlSingleLogoutService` on the
+application entry, `saml2.defaultSingleLogoutService`, and finally the ACS URL
+the service provider last used — which is a guess, and is logged as one. It is
+a guess that usually works, because a service provider's ACS and its SLO
+endpoint are commonly the same handler, and it is the difference between Single
+Logout being exercisable here and not. Declare the address on `/admin/saml2`,
+through `POST /admin-api/saml2/set-logout-service`, or with an `ldapmodify`.
+Logout messages follow the
 same signature policy as an AuthnRequest, and a refused `LogoutRequest` ends no
 session.
 
@@ -182,6 +223,7 @@ LogoutResponse or ArtifactResolve is **verified in every mode**:
 | signed, and does not verify | refused | refused |
 | signed, and not checkable (MD5, a MAC, HSS/LMS, XMSS, signature wrapping) | refused | refused |
 | signed with SHA-1, `saml.allowSha1Signatures` off | refused | refused |
+| signed with SHA-1, `saml.allowSha1Signatures` on | accepted, recorded weak | refused (#181) |
 | from a service provider whose consumed metadata has expired | refused | refused |
 | signed, with no certificate registered | accepted, not verified | refused |
 | unsigned | accepted | refused |
@@ -237,6 +279,27 @@ an entry with no URL refreshes from MDQ; and a request from a service provider
 with no consumed metadata **starts** a lookup without waiting for it, so that
 request is answered as unknown and the next one finds the registration.
 
+**In product mode an MDQ answer registers a service provider only when a trust
+anchor vouches for it**, because a lookup a request starts names whatever
+entityID the request carried — anybody's:
+
+| | Development | Product |
+|---|---|---|
+| A request from an unknown entityID, no `saml2.metadataTrustAnchors` | looked up; the answer creates the entry | **not looked up at all** (`STS-SAML-0080`) |
+| The same, with trust anchors | looked up; the answer must verify | looked up; the entry is created only if the answer **verifies against a realm anchor** (`STS-SAML-0081` otherwise) |
+| An administrator's Import from MDQ, no trust anchors | imported | **refused** (`STS-SAML-0084`) unless `saml2.mdqImportWithoutAnchors` is on |
+| An entry that already exists | refreshed from MDQ | refreshed from MDQ |
+
+> **Warning**: with `saml2.mdqImportWithoutAnchors` on, an imported document
+> is consumed with **no signature check**: its signing keys and endpoints are
+> whatever the responder answered. Prefer a trust anchor.
+
+The entityIDs a request's lookup was refused for are listed, newest first,
+under *Metadata Query lookups refused* on `/admin/saml2` and as `mdqRefused`
+in `GET /admin-api/saml2` (paged by `mdqRefusedPage`). MDQ itself
+(draft-young-md-query-25 section 6.1, and its SAML profile's section 4.1)
+recommends a signature the requester checks as the integrity mechanism.
+
 ### Encryption
 
 This service encrypts the assertion (`<saml:EncryptedAssertion>`) and, in a
@@ -245,17 +308,50 @@ encrypted AuthnRequest in SAML 2.0, so that is all a request can carry. The
 assertion is **signed first, then encrypted**, so the signature is inside the
 ciphertext.
 
-The recipient certificate is taken, most specific first, from
-`samlEncryptionCertificate` on the entry (which consuming metadata writes), a
-registered `samlSigningCertificate`, and — in development only — the observed
-certificate off a signed AuthnRequest. Encryption happens when
-`saml2.encryptAssertion` (or the application's override) says so, **or** when
-the service provider's consumed metadata publishes an encryption key.
+| | Outbound | Inbound |
+|---|---|---|
+| Response | `<saml:EncryptedAssertion>` | — |
+| LogoutRequest | `<saml:EncryptedID>` | `<saml:EncryptedID>`, always decrypted |
+
+The recipient certificate is taken, most specific first, from:
+
+1. the service provider's consumed metadata (`samlSpMetadata` /
+   `samlSpMetadataUrl` on the entry): set the URL and press **Refresh the
+   metadata** on the application page (or
+   `POST /admin-api/applications/refresh-metadata`), or upload the document on
+   `/admin/saml2` (`POST /admin-api/saml2/upload-metadata`); consuming it
+   extracts the `use="encryption"` KeyDescriptor into
+   `samlEncryptionCertificate`, among everything else it registers;
+2. `samlEncryptionCertificate`, typed;
+3. a **registered** `samlSigningCertificate` — from the metadata or the console;
+4. in development mode only, the **observed** certificate a signed AuthnRequest
+   carried (`samlObservedSigningCertificate`), so a service provider that signs
+   its requests needs no configuration there; product encrypts to it only once
+   an operator confirms it;
+5. nothing: the assertion goes out **in clear** with a WARN in development — a
+   mock that stopped issuing when a key was missing is useless exactly when
+   somebody is setting it up — and product refuses.
+
+Encryption happens when `saml2.encryptAssertion` (or the application's
+override) says so, **or** when the service provider's consumed metadata
+publishes an encryption key.
+
+**The metadata fetch never happens while a flow is running.** It is an explicit
+action that writes the certificate onto the entry, and issuing reads the entry,
+so no sign-in waits on somebody else's web server. It follows the federation
+outbound policy: https with the certificate verified (plain http only with
+`federation.outboundAllowHttp`, in development mode), a timeout of
+`federation.outboundTimeoutMs`, no redirects followed, and a size cap. A
+failure changes nothing, so an application that was working keeps working.
 
 Four block ciphers (`aes256-gcm`, `aes128-gcm`, `aes256-cbc`, `aes128-cbc`) and
 two key transports (`rsa-oaep-mgf1p`, `rsa-1_5`). CBC is unauthenticated and
 `rsa-1_5` is Bleichenbacher-broken; both are offered because deployed service
-providers require them.
+providers require them. **`rsa-1_5` is development mode's only** (#181): a
+product realm wraps with `rsa-oaep-mgf1p` whatever the setting or the
+application says, refuses to set it, and refuses an `rsa-1_5` key sent to it
+in an `EncryptedID` before unwrapping it (`STS-KEYS-0070`) — XML Encryption 1.1
+section 6.1.2, and 6.1.3's warning about a key that both decrypts and signs.
 
 ### The mock service provider
 
@@ -348,7 +444,9 @@ being answered.
 | An unknown entityID's request, or a metadata request for one | accepted, and its application entry created | answered without creating an entry; its AuthnRequest is refused — no registered return address and no signature (an MDQ lookup can register it) |
 | Encryption wanted and no certificate | sent **in clear**, with a WARN | refused with a `Responder` status and no assertion |
 | Encryption to an observed request certificate | yes | only once an operator confirms it |
-| `WantAssertionsSigned` in the SP's metadata with `saml2.signAssertion` off | the setting wins, and the request is logged | the assertion is signed |
+| `WantAssertionsSigned` in the SP's metadata with `saml2.signAssertion` off | the setting wins, and the request is logged | the assertion is signed — as it is for every service provider (#181) |
+| `saml2.signAssertion` off, or an application's `saml2SignAssertion` FALSE | the assertion is unsigned | ignored (logged once, `STS-CORE-0106`), and writing it is refused (`STS-CORE-0103`, `STS-REG-0193`) |
+| `saml.signatureAlgorithm` `rsa-sha1`, `saml2.keyTransportAlgorithm` `rsa-1_5` | used | ignored — `rsa-sha256`, `rsa-oaep-mgf1p` — and writing either is refused |
 | Given name, surname, mail, display name | invented | read off the directory entry, or omitted |
 | Empty `saml2.entityId` | replaced with `urn:sts:idp` | SSO and metadata refuse, naming the setting |
 | Artifact resolver authentication | not required (follows `requireSignedAuthnRequests`) | required |
@@ -365,9 +463,9 @@ one-shot artifact are enforced in **both** modes. See
 |---|---|---|---|---|
 | `saml.issuer` | `STS_SAML_ISSUER` (or `STS_ISSUER`) | `urn:wstrust:mock:sts` | yes | Who signed an assertion: the issuer of the SAML assertions WS-Trust and WS-Federation carry, and what `/wsfed/rp` checks one against. The browser profiles name themselves with `saml2.entityId` and `saml11.providerId`. |
 | `saml.clockSkewS` | `STS_SAML_CLOCK_SKEW_S` | `0` | yes | Seconds added to both ends of every issued assertion's validity window (at most 300). |
-| `saml.signatureAlgorithm` | `STS_SAML_SIGNATURE_ALGORITHM` | `rsa-sha256` | yes | The XML signature algorithm and Redirect `SigAlg`: `rsa-sha256`, `rsa-sha384`, `rsa-sha512`, or the broken `rsa-sha1`. |
+| `saml.signatureAlgorithm` | `STS_SAML_SIGNATURE_ALGORITHM` | `rsa-sha256` | yes | The XML signature algorithm and Redirect `SigAlg`: `rsa-sha256`, `rsa-sha384`, `rsa-sha512`, or the broken `rsa-sha1`. `rsa-sha1` is development mode only: product signs with `rsa-sha256` instead and refuses setting it (#181). |
 | `saml.canonicalizationAlgorithm` | `STS_SAML_CANONICALIZATION_ALGORITHM` | `exclusive` | yes | `exclusive` or `exclusive-with-comments`; inclusive c14n is not offered. |
-| `saml.allowSha1Signatures` | `STS_SAML_ALLOW_SHA1_SIGNATURES` | `false` | yes | Whether an XML signature this service verifies may use SHA-1; if allowed it is recorded as weak. |
+| `saml.allowSha1Signatures` | `STS_SAML_ALLOW_SHA1_SIGNATURES` | `false` | yes | Whether an XML signature this service verifies may use SHA-1; if allowed it is recorded as weak. On is development mode only: product refuses SHA-1 whatever this says, and refuses turning it on (#181). |
 | `saml.organizationName` | `STS_SAML_ORGANIZATION_NAME` | `sts` | yes | `<md:OrganizationName>` in the SAML metadata; empty omits `<md:Organization>`. |
 | `saml.organizationDisplayName` | `STS_SAML_ORGANIZATION_DISPLAY_NAME` | `Mock security token service` | yes | `<md:OrganizationDisplayName>`; empty omits the organisation. |
 | `saml.organizationUrl` | `STS_SAML_ORGANIZATION_URL` | *(empty)* | yes | `<md:OrganizationURL>`; empty means this service's base URL. |
@@ -379,13 +477,13 @@ one-shot artifact are enforced in **both** modes. See
 | `saml2.entityId` | `STS_SAML2_ENTITY_ID` | `urn:sts:idp` | yes | The identity provider's entityID and the `Issuer` of every Response and assertion this profile issues. |
 | `saml2.perApplicationEntityId` | `STS_SAML2_PER_APPLICATION_ENTITY_ID` | `true` | yes | Give each service provider its own entityID, `<entityID>:{sp}`. |
 | `saml2.assertionLifetimeMin` | `STS_SAML2_ASSERTION_LIFETIME_MIN` | `60` | yes | Assertion lifetime; per application with `saml2AssertionLifetimeMin`. |
-| `saml2.signAssertion` | `STS_SAML2_SIGN_ASSERTION` | `true` | yes | Sign the assertion; per application with `saml2SignAssertion`. |
+| `saml2.signAssertion` | `STS_SAML2_SIGN_ASSERTION` | `true` | yes | Sign the assertion; per application with `saml2SignAssertion`. Off is development mode only: product signs every assertion, and turning it off is refused, here and per application (#181). |
 | `saml2.signResponse` | `STS_SAML2_SIGN_RESPONSE` | `true` | yes | Sign the Response (the query string on the Redirect binding); per application with `saml2SignResponse`. |
 | `saml2.nameIdFormat` | `STS_SAML2_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified` | yes | The NameID format when the request names none; per application with `saml2NameIdFormat`. |
 | `saml2.artifactTtlS` | `STS_SAML2_ARTIFACT_TTL_S` | `300` | yes | How long an unresolved artifact lives (it is one-shot regardless); per application with `saml2ArtifactTtlS`. |
 | `saml2.encryptAssertion` | `STS_SAML2_ENCRYPT_ASSERTION` | `false` | yes | Encrypt the assertion; per application with `saml2EncryptAssertion`. |
 | `saml2.encryptionAlgorithm` | `STS_SAML2_ENCRYPTION_ALGORITHM` | `aes256-gcm` | yes | The block cipher: `aes256-gcm`, `aes128-gcm`, `aes256-cbc`, `aes128-cbc`. |
-| `saml2.keyTransportAlgorithm` | `STS_SAML2_KEY_TRANSPORT_ALGORITHM` | `rsa-oaep-mgf1p` | yes | The key wrap: `rsa-oaep-mgf1p` or the broken `rsa-1_5`. |
+| `saml2.keyTransportAlgorithm` | `STS_SAML2_KEY_TRANSPORT_ALGORITHM` | `rsa-oaep-mgf1p` | yes | The key wrap: `rsa-oaep-mgf1p` or the broken `rsa-1_5`. `rsa-1_5` is development mode only: product wraps with `rsa-oaep-mgf1p` instead, here and per application, and refuses setting it (#181). |
 | `saml2.encryptLogoutNameId` | `STS_SAML2_ENCRYPT_LOGOUT_NAMEID` | `false` | yes | Send `<saml:EncryptedID>` in the LogoutRequests this service sends. |
 | `saml2.autocreateApplications` | `STS_SAML2_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry for a new entityID on its first valid AuthnRequest or metadata request. |
 | `saml2.requireSignedAuthnRequests` | `STS_SAML2_REQUIRE_SIGNED_AUTHN_REQUESTS` | `auto` | yes | Refuse unsigned requests: `auto` (on in product), `on` or `off`; also sets `WantAuthnRequestsSigned`. |
@@ -398,6 +496,7 @@ one-shot artifact are enforced in **both** modes. See
 | `saml2.spMetadataRefreshIntervalS` | `STS_SAML2_SP_METADATA_REFRESH_INTERVAL_S` | `300` | yes | How often the refresher looks, and how long a failed MDQ lookup is remembered. |
 | `saml2.metadataTrustAnchors` | `STS_SAML2_METADATA_TRUST_ANCHORS` | *(empty)* | yes | Base64 DER certificates, comma-separated, that consumed metadata must be signed with. |
 | `saml2.mdqBaseUrl` | `STS_SAML2_MDQ_BASE_URL` | *(empty)* | yes | The base URL of a Metadata Query Protocol responder. |
+| `saml2.mdqImportWithoutAnchors` | `STS_SAML2_MDQ_IMPORT_WITHOUT_ANCHORS` | `false` | yes | Product mode only: allow an administrator's MDQ import with no trust anchor. **Warning**: the document is consumed with no signature check. |
 
 The per-application attributes are listed in
 [the assertion settings](#the-assertion-settings-every-application-inherits).
@@ -416,10 +515,11 @@ changed on those pages or with `POST /admin-api/config/set`.
 * **No sign-in screen of its own.** A POST-binding request is held and turned
   into a GET so the `SameSite=Lax` session cookie is visible; the person meets
   the one sign-in screen, and single sign-on works across every protocol.
-* **Metadata is per service provider and minted on request.** Each service
-  provider gets its own identity provider entityID and endpoints, the way
-  commercial identity providers do, and nothing has to be provisioned before a
-  service provider can be pointed here.
+* **Metadata is per service provider and, in development, minted on
+  request.** Each service provider gets its own identity provider entityID and
+  endpoints, the way commercial identity providers do, and in development
+  nothing has to be provisioned before a service provider can be pointed here.
+  In product mode a name nobody registered is a 404.
 * **A request's own certificate is never a trust anchor.** Verifying a
   signature against the key the message brought proves nothing; an observed
   certificate waits for an operator, the way an observed return address does.
@@ -435,10 +535,12 @@ changed on those pages or with `POST /admin-api/config/set`.
 * **Encryption without a key is a mode.** Development sends plaintext and says
   so, because a mock that stops issuing is useless while it is being set up;
   product refuses, because plaintext is what encryption was asked to prevent.
-* **Broken algorithms are offered on purpose.** `rsa-1_5`, CBC and `rsa-sha1`
-  exist because deployed service providers demand them, and a client library is
-  entitled to be tested against them. SHA-1 is refused when **verifying** unless
-  `saml.allowSha1Signatures` is on.
+* **Broken algorithms are offered on purpose — in development.** `rsa-1_5`,
+  CBC and `rsa-sha1` exist because deployed service providers demand them, and
+  a client library is entitled to be tested against them. SHA-1 is refused
+  when **verifying** unless `saml.allowSha1Signatures` is on. Since #181
+  product mode uses neither `rsa-sha1` nor `rsa-1_5` and never accepts SHA-1,
+  whatever is stored; CBC is still offered in both modes.
 * **A refusal about the return address is a page, not a Response.** Sending a
   failure Response to the address in question would be delivering to it anyway.
 * **The clock skew moves `Conditions` only.** Backdating `IssueInstant` or
@@ -455,8 +557,14 @@ changed on those pages or with `POST /admin-api/config/set`.
   its signature verification outcome, its registered and observed certificates
   with **Confirm** and **Discard**, its metadata state (fresh, stale, expired)
   with **Refresh**, **Upload** and **Import from MDQ**, and its logout address.
+  It answers the one question nothing else here can — **which metadata document
+  do I configure this service provider from**, which is not one URL and whose
+  slug nobody derives by hand. It holds nothing of its own: every row is an
+  entry in `ou=applications`.
 * **Protocols → SAML → SAML assertions** (`/admin/saml-assertions`) and
   **Custom SAML attributes** (`/admin/saml-attributes`), described above.
+* `POST /admin-api/applications/refresh-metadata` fetches a service
+  provider's metadata from its `samlSpMetadataUrl`.
 * `GET /admin-api/saml2` and `POST /admin-api/saml2/{action}` — `register`,
   `set-logout-service`, `remove-logout-service`, `set-signing-certificate`,
   `remove-signing-certificate`, `confirm-signing-certificate`,

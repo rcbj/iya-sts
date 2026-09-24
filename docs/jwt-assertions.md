@@ -131,7 +131,7 @@ configuration step with no decision in it.
 
 ## A person can be the issuer too, and their key may only speak for them
 
-Since 2026-09-11. Everything above has an **application** as the issuer: a party
+Everything above has an **application** as the issuer: a party
 an operator declared, vouching for somebody else. RFC 7523 asks no such thing —
 §3 claim 1 wants `iss` to be "a unique identifier for the JWT issuer" and claim
 2 says the `sub` of an authorization grant "typically identifies an authorized
@@ -173,13 +173,13 @@ should assert under some other name.
 
 ### A person can do it themselves
 
-Since 2026-09-12 they do not need you. **`/portal/signing-key`** in the user
+They do not need you. **`/portal/signing-key`** in the user
 portal is the same act, performed by the person the key is for: they sign in,
 press *Generate my RFC 7523 signing key*, and the private half is shown once on
 the page that comes back — with the claims, the `kid` and the algorithm printed
 beside it, and a `curl` line to spend it with. The same page issues the RFC 7522
 (SAML) key pair on a card of its own; see
-[SAML assertions](saml-assertions.md#a-person-can-be-the-issuer-too-2026-09-13).
+[SAML assertions](saml-assertions.md#a-person-can-be-the-issuer-too).
 
 It is the same code path as the call above (`issueSigningKeyPair()` then the
 same write), so what lands on the entry is identical; what differs is that the
@@ -218,7 +218,7 @@ issued, and a person may not. Like the application's, it is **not revocation**:
 the certificate is still valid and on no list, and what changes is that this
 service will no longer accept what the key signs.
 
-**Since 2026-09-13 a person's key pair can also be replaced by a certificate
+**A person's key pair can also be replaced by a certificate
 they already hold**, and a person can hold an RFC 7522 (SAML 2.0) key pair beside
 this one — both from the Credentials section of `/admin/users?user=<name>`, or
 through `/admin-api/pki/upload-certificate` with `target=person`. The rule above
@@ -270,7 +270,7 @@ holding a certificate authority.
 
 ### The certificate's whole chain is validated every time the key is used
 
-Since 2026-09-13, in both modes, for both halves of RFC 7523. When the key that
+In both modes, for both halves of RFC 7523. When the key that
 verified an assertion carries a certificate — a JWK with `x5c` in `oauthJwks`,
 `oauthAssertionJwks` or a person's `stsAssertionJwks`, or the JWS `x5c` header —
 the signature counts only if that certificate's trust chain holds **at that

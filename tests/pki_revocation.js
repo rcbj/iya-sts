@@ -429,8 +429,16 @@ async function run(t) {
                'not run. It is the half of this file most worth having.');
   } else {
     const issuerPem = pki.rawRowFor(REALM).issuing.jose.certificatePem;
+    // NOT ON ANY LIST, rather than "not the two revoked above": the issued
+    // register also keeps a certificate a re-certification displaced from its
+    // slot (#185), which a rotation may have superseded.
+    const listed = revocation.listFor(REALM, 'jose').map(function (one) {
+      return String(one.serialHex).replace(/^0+/, '').toLowerCase();
+    });
     const good = issued.filter(function (one) {
-      return one.serialHex !== first && one.serialHex !== second;
+      return one.serialHex !== first && one.serialHex !== second &&
+        listed.indexOf(String(one.serialHex).replace(/^0+/, '')
+          .toLowerCase()) < 0;
     })[0];
 
     const isGood = await ask(REALM, 'jose', issuerPem, good.serialHex, false);

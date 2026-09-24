@@ -48,11 +48,14 @@
 // protocol here.
 //
 // So the shape of the exception is: **a relationship must be configured, and
-// what it configures is a KEY**. Once configured, everything downstream is as
-// permissive as the rest of this service — any username in the assertion is
-// accepted, any attribute is mapped, nothing about the person is checked, and
-// an entry is created for them. The gate is on the SIGNER, not on the SUBJECT,
-// which is exactly the line `spiffe_auth.js` draws and for the same reason.
+// what it configures is a KEY** — AND, SINCE #109 (2026-09-22), WHICH PEOPLE
+// THAT KEY MAY SIGN IN. A verified assertion signs in only the person its
+// subject is LINKED to (`federationLink`, `federation_links.ts`), and what
+// happens to a subject nobody linked is `fedSubjectPolicy`'s: a local sign-in
+// as the person it names before the link is made (the default), a refusal, a
+// new namespaced entry, or — development only — the old name match. The gate
+// was on the SIGNER alone until then, which let any partner whose signature
+// verified sign in any local account it could name, `admin` included.
 //
 // ---------------------------------------------------------------------------
 // ONE RELATIONSHIP IS ONE DIRECTION, AND THAT IS A DECISION.
@@ -191,6 +194,9 @@ const cacheRegistry = require('./../common/cache_registry');
 // of their choosing. See applicationConfiguredFor().
 // ---------------------------------------------------------------------------
 const applications = require('./../common/applications');
+// `any-existing` is refused in product (#109): a relationship may not be SET to
+// it there. A leaf over config.js; it requires nothing here back.
+const mode = require('./../common/mode');
 
 // ---------------------------------------------------------------------------
 // THE TWO ROLES. Which end of the relationship THIS SERVICE is.
@@ -221,7 +227,23 @@ const PATHS = {
   base: '/federation',
   login: '/federation/login',
   acs: '/federation/acs',
-  metadata: '/federation/metadata'
+  metadata: '/federation/metadata',
+  // Where the local sign-in of `link-at-first-sign-in` returns to (#109).
+  link: '/federation/link',
+  // A PARTNER'S SIGN-OUT (#167). `slo` is the one path every browser-borne
+  // sign-out arrives at — a SAML LogoutRequest or LogoutResponse, a
+  // WS-Federation wsignoutcleanup1.0, and the browser coming back from an
+  // OpenID Provider's end_session_endpoint — for the ACS's reason (decision 2
+  // in federation_sp.ts): one URL to configure at the partner rather than
+  // four. The two OpenID Connect paths are separate because each is a
+  // registration member of its own at the partner and each is answered in a
+  // shape of its own (a JSON-free 200/400 to a server; a page in an iframe).
+  slo: '/federation/slo',
+  backchannelLogout: '/federation/backchannel-logout',
+  frontchannelLogout: '/federation/frontchannel-logout',
+  // An OpenID Connect relationship's encryption key as a JWKS (#168), what
+  // the partner registers to encrypt its ID Token to.
+  jwks: '/federation/jwks'
 };
 
 const ROLES = [
@@ -436,6 +458,205 @@ const MECHANISM_IDS = MECHANISMS.map(function (one) {
   return one.mechanism;
 });
 
+// ---------------------------------------------------------------------------
+// WHICH PEOPLE A PARTNER MAY ASSERT (#109, 2026-09-22): `fedSubjectPolicy`'s
+// four values, the order they are offered in, and the two readers of the
+// three rules. The decision itself is `federation_sp.ts`'s
+// `subjectDecision()`; this is the vocabulary it and the console share.
+//
+// **AN EMPTY VALUE IS THE DEFAULT, AND AN UNKNOWN ONE IS THE STRICTEST.**
+// Empty is what every relationship created before the attribute holds and
+// what a console clearing the field writes, so it means
+// `link-at-first-sign-in`. A value that is none of the four can only have
+// arrived by `ldapmodify` (update() refuses it), and reading it as anything
+// but `pre-linked` would let a typo widen who the partner may sign in.
+// ---------------------------------------------------------------------------
+const SUBJECT_POLICIES = [
+  { policy: 'link-at-first-sign-in', label: 'Link at first sign-in (default)',
+    what: 'A linked subject signs in. An unlinked one naming an existing ' +
+          'person signs in HERE as that person first, and is then linked.' },
+  { policy: 'pre-linked', label: 'Pre-linked only',
+    what: 'Only a link made beforehand — on the console, through ' +
+          '/admin-api or SCIM — signs anybody in.' },
+  { policy: 'jit-namespaced', label: 'Just-in-time, namespaced',
+    what: 'An unlinked subject gets a new entry named ' +
+          '<relationship>~<name>, linked at creation, never an existing ' +
+          'person.' },
+  { policy: 'any-existing', label: 'Any existing person, by name ' +
+                                    '(development only)',
+    what: 'The name the partner sends is matched onto a local person. ' +
+          'Refused in product mode.' }
+];
+
+const SUBJECT_POLICY_IDS = SUBJECT_POLICIES.map(function (one) {
+  return one.policy;
+});
+
+const DEFAULT_SUBJECT_POLICY = 'link-at-first-sign-in';
+
+function subjectPolicyRow(id) {
+  log.debug("Entering subjectPolicyRow().");
+  const wanted = String(id || '');
+  const found = SUBJECT_POLICIES.filter(function (one) {
+    return one.policy === wanted;
+  })[0] || null;
+  log.debug("Leaving subjectPolicyRow().");
+  return found;
+}
+
+// The policy a relationship is under. See the header above SUBJECT_POLICIES.
+function subjectPolicyOf(record) {
+  log.debug("Entering subjectPolicyOf().");
+  const text = String((record && record.fedSubjectPolicy) || '').trim();
+  if (!text) {
+    log.debug("Leaving subjectPolicyOf(). The default.");
+    return DEFAULT_SUBJECT_POLICY;
+  }
+  if (SUBJECT_POLICY_IDS.indexOf(text) < 0) {
+    log.warn('federation: the relationship ' + (record && record.fedId) +
+             ' carries fedSubjectPolicy "' + text + '", which is none of ' +
+             SUBJECT_POLICY_IDS.join(', ') + '; it is read as pre-linked, ' +
+             'the strictest.');
+    log.debug("Leaving subjectPolicyOf(). Unknown, so pre-linked.");
+    return 'pre-linked';
+  }
+  log.debug("Leaving subjectPolicyOf(). " + text);
+  return text;
+}
+
+// ---------------------------------------------------------------------------
+// `fedSubjectPattern`: AN ADMINISTRATOR'S REGULAR EXPRESSION, BOUNDED.
+//
+// JavaScript's engine backtracks and node offers no timeout on a match, so
+// the bound is on what may be written rather than on how long a match runs:
+// at most PATTERN_MAX characters, no backreference, and no quantifier on a
+// group that itself contains one — `(a+)+`, `(a|aa)*`, the shapes that make a
+// backtracking engine exponential — and the value tested is cut off at
+// PATTERN_INPUT_MAX characters. It is ANCHORED here (`^(?:…)$`), so an
+// administrator writing `ou=partners` gets a whole-DN match rather than a
+// substring one, which is XACML's regexp-match lesson (xacml_functions.js)
+// read again: an unanchored pattern admits far more than it names.
+// ---------------------------------------------------------------------------
+const PATTERN_MAX = 256;
+const PATTERN_INPUT_MAX = 1024;
+
+// Whether a group that holds a quantifier or an alternation (at any depth) is
+// itself followed by a quantifier. A scan rather than a regex over the
+// pattern, because the groups nest and a regex cannot count them. Escapes and
+// character classes are stepped over: `[+]` is a plus sign, not a quantifier.
+function nestedQuantifier(pattern) {
+  log.debug("Entering nestedQuantifier().");
+  const stack = [];
+  let i = 0;
+  let found = false;
+  // No Entering/Leaving pair in quantifierAt(): it runs for every character
+  // of the pattern, and a pair per character would drown the log.
+  const quantifierAt = function (at, withOptional) {
+    const c = pattern.charAt(at);
+    return c === '+' || c === '*' || c === '{' || (withOptional && c === '?');
+  };
+  while (i < pattern.length && !found) {
+    const c = pattern.charAt(i);
+    if (c === '\\') {
+      i += 2;
+      continue;
+    }
+    if (c === '[') {
+      let j = i + 1;
+      while (j < pattern.length && pattern.charAt(j) !== ']') {
+        j += pattern.charAt(j) === '\\' ? 2 : 1;
+      }
+      i = j + 1;
+      if (quantifierAt(i, false) && stack.length) {
+        stack[stack.length - 1].risky = true;
+      }
+      continue;
+    }
+    if (c === '(') {
+      stack.push({ risky: false });
+      i += 1;
+      continue;
+    }
+    if (c === ')') {
+      const group = stack.pop() || { risky: false };
+      i += 1;
+      const quantified = quantifierAt(i, true);
+      if (group.risky && quantified) {
+        found = true;
+      }
+      if (stack.length && (group.risky || quantifierAt(i, false))) {
+        stack[stack.length - 1].risky = true;
+      }
+      continue;
+    }
+    if (stack.length && (c === '|' || quantifierAt(i, false) ||
+                         (c === '?' && i > 0 &&
+                          pattern.charAt(i - 1) !== '('))) {
+      stack[stack.length - 1].risky = true;
+    }
+    i += 1;
+  }
+  log.debug("Leaving nestedQuantifier(). " + found);
+  return found;
+}
+
+function subjectPatternProblem(text) {
+  log.debug("Entering subjectPatternProblem().");
+  const pattern = String(text == null ? '' : text);
+  if (!pattern) {
+    log.debug("Leaving subjectPatternProblem(). Empty is no pattern.");
+    return '';
+  }
+  if (pattern.length > PATTERN_MAX) {
+    log.debug("Leaving subjectPatternProblem(). Too long.");
+    return 'it is ' + pattern.length + ' characters long, and at most ' +
+           PATTERN_MAX + ' are accepted';
+  }
+  if (/\\[1-9]|\\k</.test(pattern)) {
+    log.debug("Leaving subjectPatternProblem(). A backreference.");
+    return 'it uses a backreference, which a pattern here may not';
+  }
+  // A group whose body carries a quantifier or an alternation, followed by a
+  // quantifier — at any depth. Read on the source text by nestedQuantifier(),
+  // so it errs towards refusing: `([a-z]+)?` is refused too, and `[a-z]+`
+  // does the same job without the group.
+  if (nestedQuantifier(pattern)) {
+    log.debug("Leaving subjectPatternProblem(). A nested quantifier.");
+    return 'it applies a quantifier to a group that is itself quantified ' +
+           'or an alternation, the shape that makes a match take ' +
+           'exponential time; write the repetition once';
+  }
+  try {
+    new RegExp('^(?:' + pattern + ')$');
+  } catch (e) {
+    log.debug("Caught in subjectPatternProblem(): " + ((e && e.message) || e));
+    log.debug("Leaving subjectPatternProblem(). It does not compile.");
+    return 'it does not compile: ' + e.message;
+  }
+  log.debug("Leaving subjectPatternProblem(). Usable.");
+  return '';
+}
+
+// Whether `value` matches the relationship's pattern, WHOLE. A pattern that
+// would be refused today (written by `ldapmodify`) matches NOTHING — a rule
+// that cannot be read must not fall open.
+function subjectPatternMatches(text, value) {
+  log.debug("Entering subjectPatternMatches().");
+  const pattern = String(text == null ? '' : text);
+  if (subjectPatternProblem(pattern)) {
+    log.debug("Leaving subjectPatternMatches(). An unusable pattern.");
+    return false;
+  }
+  const subject = String(value == null ? '' : value);
+  if (subject.length > PATTERN_INPUT_MAX) {
+    log.debug("Leaving subjectPatternMatches(). The value is too long.");
+    return false;
+  }
+  const matched = new RegExp('^(?:' + pattern + ')$', 'i').test(subject);
+  log.debug("Leaving subjectPatternMatches(). " + matched);
+  return matched;
+}
+
 function mechanismRow(id) {
   log.debug("Entering mechanismRow().");
   const wanted = String(id || '');
@@ -478,6 +699,34 @@ function familyOf(protocolId) {
 // is the one issuing the token, and it is read by `fieldsForRole()` rather
 // than by any form directly.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ENCRYPTION TO THIS SERVICE AS A SERVICE PROVIDER (#168): the vocabulary of
+// the four relationship fields below, owned here because the register owns
+// the schema. `federation_encryption.ts` owns what is DONE with them.
+//
+// Two families, because a SAML 2.0 or WS-Federation assertion is XML
+// Encryption and an OpenID Connect ID Token is JWE, and they name the same
+// ideas differently. Refused in every mode, by name: AES-CBC in either
+// (XML's is the Jager-Somorovsky padding oracle; JOSE's composite is
+// authenticated but there is no partner that has CBC and not GCM), and
+// RSAES-PKCS1-v1_5 in either (Bleichenbacher).
+// ---------------------------------------------------------------------------
+const ENCRYPTING_PROTOCOLS = ['saml2', 'wsfed', 'oidc'];
+const ENCRYPTION_KEY_TYPES = ['rsa-3072', 'ec-p256'];
+const XML_KEY_MANAGEMENT = ['rsa-oaep', 'ecdh-es'];
+const JOSE_KEY_MANAGEMENT = ['RSA-OAEP-256', 'RSA-OAEP', 'ECDH-ES',
+                             'ECDH-ES+A128KW', 'ECDH-ES+A256KW'];
+const XML_CONTENT_ENCRYPTION = ['aes256-gcm', 'aes128-gcm'];
+const JOSE_CONTENT_ENCRYPTION = ['A256GCM', 'A128GCM'];
+const REFUSED_ALGORITHMS = ['aes128-cbc', 'aes192-cbc', 'aes256-cbc',
+                            'rsa-1_5', 'RSA1_5', 'A128CBC-HS256',
+                            'A192CBC-HS384', 'A256CBC-HS512'];
+// Which management algorithms a key of each type can do.
+const MANAGEMENT_FOR_KEY = {
+  'rsa-3072': ['rsa-oaep', 'RSA-OAEP-256', 'RSA-OAEP'],
+  'ec-p256': ['ecdh-es', 'ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A256KW']
+};
+
 const SCHEMA = {
   objectClasses: [
     { name: 'top', where: 'RFC 4512', standard: true,
@@ -582,6 +831,22 @@ const SCHEMA = {
       what: 'The partner\'s public keys as a JWKS document, verbatim. Read ' +
             'BEFORE fedJwksUri and never refreshed, so a relationship ' +
             'carrying this makes no outbound request for keys at all.' },
+    // OPENID FEDERATION (#134, 2026-09-23): an `oidc` relationship whose OP
+    // is DISCOVERED through its Trust Chain rather than configured by hand.
+    // See oidfed/oidfed_rp.ts, and federation/CLAUDE.md for why this is
+    // still a relationship whose trust is a configured key.
+    { name: 'fedTrustAnchor', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'OPENID CONNECT ONLY. The Entity Identifier of one of this ' +
+            'realm\'s Trust Anchors (/admin/oidfed). Set, the OP named by ' +
+            'fedPeer is resolved through its Trust Chain to that anchor, ' +
+            'its endpoints and keys are the openid_provider metadata the ' +
+            'chain vouches for, and this service registers with it ' +
+            'AUTOMATICALLY under its own Entity Identifier, signing its ' +
+            'requests and token-endpoint authentication with its ES256 ' +
+            'key — so fedSsoUrl, fedTokenUrl, fedJwks, fedJwksUri, ' +
+            'fedClientId and fedClientSecret are not read. Empty, the ' +
+            'relationship is configured by hand as always.' },
     { name: 'fedSigningCertificate', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'THE PARTNER\'S SIGNING CERTIFICATE, base64 DER — the same ' +
@@ -663,6 +928,175 @@ const SCHEMA = {
             'person — or one somebody has since edited — keeps what the ' +
             'directory says. Which relationship and issuer a person came ' +
             'through is recorded either way.' },
+    // --- WHICH PEOPLE THE PARTNER MAY ASSERT (#109, 2026-09-22) ----------
+    // The gate used to be on the SIGNER only: any person a verified assertion
+    // named was signed in, matched onto a local entry by NAME. These five say
+    // which local person a partner's subject may become — see
+    // federation/CLAUDE.md, *WHICH PEOPLE A PARTNER MAY ASSERT*.
+    { name: 'fedSubjectPolicy', kind: 'single', role: 'service-provider',
+      from: 'this register', enum: SUBJECT_POLICY_IDS,
+      what: 'HOW THE PARTNER\'S SUBJECT BECOMES A LOCAL PERSON. The subject ' +
+            'is the partner\'s own stable identifier — iss + sub, a ' +
+            'persistent NameID and the partner\'s entity ID — and a person ' +
+            'carries it as a federationLink. link-at-first-sign-in (the ' +
+            'default; empty means it): a linked subject signs in; an ' +
+            'unlinked one naming an existing person must first sign in HERE ' +
+            'as that person — password, and a second factor where one is ' +
+            'held or required — and only then is the link recorded and the ' +
+            'partner\'s attributes written; one naming nobody gets a new ' +
+            'entry namespaced to this relationship where provisioning is on. ' +
+            'pre-linked: only a link signs anybody in. jit-namespaced: an ' +
+            'unlinked subject always gets a NEW entry, ' +
+            '<relationship>~<name>, ' +
+            'never an existing person. any-existing: the name the partner ' +
+            'sent is matched straight onto a local person, as this service ' +
+            'did before #109 — DEVELOPMENT ONLY, refused in product, and it ' +
+            'lets this partner sign in any account it can name.' },
+    { name: 'fedSubjectGroup', kind: 'multi', role: 'service-provider',
+      from: 'this register',
+      what: 'A RULE ON TOP OF THE POLICY: the person must be a member of one ' +
+            'of these groups, each a cn or a DN. An entry this sign-in would ' +
+            'CREATE is in no group, so with this set nobody is created. ' +
+            'Empty: no group rule.' },
+    { name: 'fedSubjectDomain', kind: 'multi', role: 'service-provider',
+      from: 'this register',
+      what: 'A RULE ON TOP OF THE POLICY: the mail domain the partner SENT ' +
+            '(the mapped mail, or the mapped username where it is an ' +
+            'address) must be one of these, and so must the local entry\'s ' +
+            'mail where it has one. Compared case-insensitively and ' +
+            'exactly: example.com does not admit sub.example.com. Empty: no ' +
+            'domain rule.' },
+    { name: 'fedSubjectPattern', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'A RULE ON TOP OF THE POLICY: a regular expression the local ' +
+            'entry\'s DN must match WHOLE (it is anchored for you), such as ' +
+            'uid=[^,]+,ou=users,.* — for an entry this sign-in would create, ' +
+            'the DN it would be created at. At most 256 characters, no ' +
+            'backreference and no quantifier applied to a group that is ' +
+            'itself quantified, and it is tested against at most 1024 ' +
+            'characters, so a pattern cannot be made to backtrack for ' +
+            'minutes. Empty: no pattern.' },
+    { name: 'fedMayAssertAdministrators', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      what: 'LET THIS PARTNER SIGN IN A CONSOLE ADMINISTRATOR. OFF by ' +
+            'default, and off means a person in the Admin Read or Admin ' +
+            'Write roster — or holding REMOTE_PEPS — is refused whatever ' +
+            'else is true, a valid link included (STS-FED-0093). Turning it ' +
+            'on makes this partner\'s signing key a key to the console for ' +
+            'every administrator linked to it.' },
+    // --- A PARTNER'S SIGN-OUT (#167) ---------------------------------------
+    // federation/federation_slo.ts is what reads these, in both directions:
+    // the partner telling this service a session ended, and this service
+    // telling the partner. federation/CLAUDE.md, *A PARTNER'S SIGN-OUT*.
+    { name: 'fedSloUrl', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'THE PARTNER\'S SAML 2.0 SingleLogoutService — where this ' +
+            'service sends a signed <LogoutRequest> when a person signs out ' +
+            'HERE (/logout), and where the <LogoutResponse> to the ' +
+            'partner\'s own LogoutRequest goes. From the partner\'s ' +
+            'metadata. Empty: the partner is never told of a sign-out here, ' +
+            'and a LogoutRequest from it is still honoured but answered with ' +
+            'nothing, because there is nowhere to send the answer. SAML 2.0 ' +
+            'only: SAML 1.1 defines no logout at all.' },
+    { name: 'fedSloBinding', kind: 'single', role: 'service-provider',
+      from: 'this register', enum: ['HTTP-Redirect', 'HTTP-POST'],
+      what: 'Which binding a LogoutRequest or LogoutResponse this service ' +
+            'sends the partner goes on: HTTP-Redirect (the default; the ' +
+            'signature is over the query string) or HTTP-POST (an enveloped ' +
+            'signature, on a real form with a real button — no script). A ' +
+            'message FROM the partner is accepted on either.' },
+    { name: 'fedEndSessionUrl', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'THE PARTNER\'S OpenID Connect end_session_endpoint ' +
+            '(RP-Initiated Logout 1.0), from its discovery document. When a ' +
+            'person signs out HERE, the sign-out page offers to send them ' +
+            'there with the partner\'s own ID Token as id_token_hint, this ' +
+            'relationship\'s client_id, and this relationship\'s single ' +
+            'logout endpoint as post_logout_redirect_uri — which the partner ' +
+            'must have registered. The ID Token is kept on the session only ' +
+            'while this is set. Empty: the partner is not told.' },
+    { name: 'fedAcceptSignout', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'HONOUR THE PARTNER\'S SIGN-OUT: a SAML LogoutRequest, an ' +
+            'OpenID Connect Back-Channel or Front-Channel logout, a ' +
+            'WS-Federation cleanup. ON by default — the partner is the ' +
+            'authority on the person\'s sign-on, and when it ends a session ' +
+            'or disables an account there, this is the only signal that ' +
+            'reaches here. Off, every one of them is refused ' +
+            '(STS-FED-0123) and the session here lives its whole lifetime.' },
+    { name: 'fedRequireSignedLogout', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      what: 'REQUIRE THE PARTNER\'S SAML LogoutRequest AND LogoutResponse TO ' +
+            'BE SIGNED, as saml-profiles-2.0-os section 4.4.4.1 says they ' +
+            'MUST be. ON by default and ALWAYS on in product mode, where ' +
+            'turning it off is refused (STS-FED-0132). Off — development ' +
+            'only — accepts an UNSIGNED logout message, which lets anybody ' +
+            'who can name a person\'s partner session end it: a partner ' +
+            'under test that cannot sign yet is the only reason to. A ' +
+            'signature that IS present is verified either way.' },
+    // --- WHAT A PARTNER ENCRYPTS TO (#168) ------------------------------
+    // federation/federation_encryption.ts issues, rotates, publishes and
+    // decrypts with the key; federation/CLAUDE.md, *A PARTNER'S ENCRYPTED
+    // ASSERTION*. SAML 2.0, WS-Federation and OpenID Connect only: SAML 1.1
+    // has no encryption construct and a plain OAuth 2.0 relationship reads
+    // no ID Token.
+    { name: 'fedEncryptionKeyType', kind: 'single', role: 'service-provider',
+      from: 'this register', enum: ENCRYPTION_KEY_TYPES,
+      what: 'THE KIND OF KEY A PARTNER ENCRYPTS TO: rsa-3072 (the default ' +
+            'for SAML 2.0 and WS-Federation) or ec-p256 (the default for ' +
+            'OpenID Connect). Changing it issues a new key of that kind at ' +
+            'once and keeps the old one for federation.encryptionKeyGraceS, ' +
+            'as a rotation does.' },
+    { name: 'fedKeyManagementAlgorithm', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      enum: XML_KEY_MANAGEMENT.concat(JOSE_KEY_MANAGEMENT),
+      what: 'HOW THE PARTNER WRAPS OR AGREES THE CONTENT KEY, and the only ' +
+            'one accepted. XML (SAML 2.0, WS-Federation): rsa-oaep — XML ' +
+            'Encryption 1.1\'s RSA-OAEP with SHA-256 and MGF1-SHA-256 — for ' +
+            'an RSA key, ecdh-es (ConcatKDF, kw-aes256) for an EC one. JOSE ' +
+            '(an OpenID Connect ID Token): RSA-OAEP-256 or RSA-OAEP for an ' +
+            'RSA key, ECDH-ES, ECDH-ES+A128KW or ECDH-ES+A256KW for an EC ' +
+            'one. WARNING: RSA-OAEP is OAEP over SHA-1, offered for a ' +
+            'partner that has nothing newer; RSA-OAEP-256 is the one to ' +
+            'use. rsa-1_5 and ' +
+            'RSA1_5 are refused in every mode (Bleichenbacher). Empty means ' +
+            'the default for the key type.' },
+    { name: 'fedContentEncryptionAlgorithm', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      enum: XML_CONTENT_ENCRYPTION.concat(JOSE_CONTENT_ENCRYPTION),
+      what: 'THE CIPHER OVER THE ASSERTION OR THE ID TOKEN, and the only one ' +
+            'accepted: aes256-gcm (the default) or aes128-gcm for XML, ' +
+            'A256GCM (the default) or A128GCM for JOSE. AES-CBC — XML ' +
+            'Encryption\'s aes*-cbc and JOSE\'s A*CBC-HS* — is refused in ' +
+            'every mode: the XML form is the padding oracle of Jager and ' +
+            'Somorovsky (2011), and a partner that can do GCM in one can in ' +
+            'the other.' },
+    { name: 'fedAllowUnencrypted', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'ACCEPT A PLAINTEXT ASSERTION IN PRODUCT MODE. OFF by default, ' +
+            'and off means a SAML 2.0 or WS-Federation assertion, or an ' +
+            'OpenID Connect id_token by form_post, that is NOT encrypted to ' +
+            'this relationship\'s key is refused (STS-FED-0140). WARNING: ' +
+            'turning it on lets the partner send the person\'s NameID, mail, ' +
+            'groups and every other attribute IN CLEAR through their ' +
+            'browser — its history, its extensions and every TLS-terminating ' +
+            'proxy on the way. Turn it on only for a partner that cannot ' +
+            'encrypt, and prefer asking it to. Development mode accepts ' +
+            'plaintext whatever this says.' },
+    { name: 'fedEncryptionKey', kind: 'multi', role: 'service-provider',
+      from: 'this register', sensitive: true,
+      what: 'THE KEY TABLE: one JSON row per key this relationship decrypts ' +
+            'with — its kid, its key type, `current` or `previous`, its ' +
+            'certificate and chain under this realm\'s Intermediate, and the ' +
+            'private key, SEALED under the key-encryption key wherever keys ' +
+            'persist. A `previous` row is kept until its retiresAt and then ' +
+            'removed by the scheduler job federation.encryption-key-retire. ' +
+            'Written only by create, rotate and that job; WITHHELD from ' +
+            'every LDAP search in product and from every page and ' +
+            '/admin-api reply, which publish the public half. The key type ' +
+            'is a column so a ' +
+            'hybrid post-quantum key can be a row beside the classical one ' +
+            'once one is registered.' },
     { name: 'fedAllowUnsolicited', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'Accept a response this service did not ask for — SAML 2.0\'s ' +
@@ -812,6 +1246,7 @@ const EDITABLE = {
   fedUserinfoUrl: 'set',
   fedJwksUri: 'set',
   fedJwks: 'set',
+  fedTrustAnchor: 'set',
   fedSigningCertificate: 'set',
   fedClientId: 'set',
   fedClientSecret: 'set',
@@ -822,11 +1257,25 @@ const EDITABLE = {
   fedUsernameSource: 'set',
   fedAutocreateUsers: 'set',
   fedUpdateUserAttributes: 'set',
+  fedSubjectPolicy: 'set',
+  fedSubjectPattern: 'set',
+  fedMayAssertAdministrators: 'set',
   fedAllowUnsolicited: 'set',
+  fedEncryptionKeyType: 'set',
+  fedKeyManagementAlgorithm: 'set',
+  fedContentEncryptionAlgorithm: 'set',
+  fedAllowUnencrypted: 'set',
+  fedSloUrl: 'set',
+  fedSloBinding: 'set',
+  fedEndSessionUrl: 'set',
+  fedAcceptSignout: 'set',
+  fedRequireSignedLogout: 'set',
   fedApplication: 'set',
   fedAuthnMechanism: 'set',
   fedAuthnRelationship: 'set',
   fedAttributeMap: 'multi',
+  fedSubjectGroup: 'multi',
+  fedSubjectDomain: 'multi',
   fedRelease: 'multi',
   description: 'multi'
 };
@@ -1116,6 +1565,69 @@ function containerDn() {
   return haveDirectory() ? directory.containerDn() : '';
 }
 
+// ---------------------------------------------------------------------------
+// THE PEOPLE A PARTNER'S SUBJECTS ARE LINKED TO (#109), through the same slot.
+//
+// These five are PERSON questions asked of a register that is otherwise about
+// relationships, and they are here rather than behind a slot of their own
+// because the object `ldap_server.js` hands `setDirectory()` already IS this
+// module's door into the directory: a second slot would be a second door for
+// one caller, which is rule 3e's test failed rather than passed. What a link
+// IS lives in `federation_links.ts`; what these answer is where the values are.
+//
+//   federatedPerson(name)      the entry a name finds — its DN, mail, links
+//                              and groups — or null
+//   peopleLinkedBy(value)      every person carrying that federationLink
+//   linkedThrough(fedId)       every link made through one relationship
+//   plannedPersonDn(name)      the DN an entry created for `name` would get
+//   writeFederationLink(...)   add or remove one value on one person
+// ---------------------------------------------------------------------------
+function directoryHas(fn) {
+  log.debug("Entering directoryHas().");
+  log.debug("Leaving directoryHas().");
+  return haveDirectory() && typeof directory[fn] === 'function';
+}
+
+function federatedPerson(name) {
+  log.debug("Entering federatedPerson().");
+  log.debug("Leaving federatedPerson().");
+  return directoryHas('federationPerson')
+    ? directory.federationPerson(String(name || '')) : null;
+}
+
+function peopleLinkedBy(value) {
+  log.debug("Entering peopleLinkedBy().");
+  log.debug("Leaving peopleLinkedBy().");
+  return directoryHas('peopleByFederationLink')
+    ? directory.peopleByFederationLink(String(value || '')) : [];
+}
+
+function linkedThrough(fedId) {
+  log.debug("Entering linkedThrough().");
+  log.debug("Leaving linkedThrough().");
+  return directoryHas('federationLinksThrough')
+    ? directory.federationLinksThrough(String(fedId || '')) : [];
+}
+
+function plannedPersonDn(name) {
+  log.debug("Entering plannedPersonDn().");
+  log.debug("Leaving plannedPersonDn().");
+  return directoryHas('plannedPersonDn')
+    ? directory.plannedPersonDn(String(name || '')) : '';
+}
+
+function writeFederationLink(name, value, add, options) {
+  log.debug("Entering writeFederationLink(). add=" + !!add);
+  if (!directoryHas('writeFederationLink')) {
+    log.debug("Leaving writeFederationLink(). No directory.");
+    return errorCodes.mark({ ok: false, errors: ['There is no embedded ' +
+      'directory loaded, so there is nobody to link.'] }, 'STS-FED-0109');
+  }
+  log.debug("Leaving writeFederationLink().");
+  return directory.writeFederationLink(String(name || ''), String(value || ''),
+                                       !!add, options || {});
+}
+
 function maxRelationships() {
   log.debug("Entering maxRelationships().");
   log.debug("Leaving maxRelationships().");
@@ -1145,7 +1657,22 @@ function readinessOf(record) {
     log.debug('Leaving readinessOf(). There is no relationship.');
     return { ready: false, missing: ['the relationship does not exist'] };
   }
-  if (record.fedRole === 'service-provider') {
+  if (record.fedRole === 'service-provider' &&
+      record.fedProtocol === 'oidc' &&
+      String(record.fedTrustAnchor || '').trim()) {
+    // DISCOVERED THROUGH THE FEDERATION (#134): the OP and the anchor are
+    // the whole configuration; what the chain does not vouch for is refused
+    // at the sign-in, by name (oidfed/oidfed_rp.ts). The authorization code
+    // flow only — automatic registration signs the request, and an ID Token
+    // on the front channel would carry no client authentication at all.
+    if (!String(record.fedPeer || '').trim()) {
+      missing.push('fedPeer');
+    }
+    if (String(record.fedResponseType || 'code') !== 'code') {
+      missing.push('fedResponseType=code (an OP discovered through a Trust ' +
+                   'Chain is used with the authorization code flow)');
+    }
+  } else if (record.fedRole === 'service-provider') {
     const row = protocolRow(record.fedProtocol);
     const needs = row ? row.needs : [];
     needs.forEach(function (name) {
@@ -1176,6 +1703,12 @@ function readinessOf(record) {
                    'token is a JWT)');
     }
   }
+  // THE KEY A PARTNER HAS TO ENCRYPT TO (#168), where plaintext would be
+  // refused: without one nothing could be accepted, which is a relationship
+  // that half-works — refused by name like any other missing field.
+  if (encryptionRequired(record) && !currentEncryptionKeyOf(record)) {
+    missing.push('fedEncryptionKey (rotate the encryption key to issue one)');
+  }
   if (record.fedRole === 'identity-provider') {
     if (!String(record.fedApplication || '').trim()) {
       missing.push('fedApplication');
@@ -1199,6 +1732,223 @@ function readinessOf(record) {
       'field(s) missing.'
                                                         : 'Ready.'));
   return { ready: missing.length === 0, missing: missing };
+}
+
+// ---------------------------------------------------------------------------
+// ENCRYPTION (#168): what a relationship's four fields MEAN, read in one
+// place so that the console, the metadata, the decryption and the readiness
+// check cannot disagree about the default.
+// ---------------------------------------------------------------------------
+function encrypts(record) {
+  log.debug("Entering encrypts().");
+  log.debug("Leaving encrypts().");
+  return !!record && record.fedRole === 'service-provider' &&
+         ENCRYPTING_PROTOCOLS.indexOf(record.fedProtocol) >= 0;
+}
+
+// `xml` for SAML 2.0 and WS-Federation, `jose` for OpenID Connect.
+function encryptionFamilyOf(record) {
+  log.debug("Entering encryptionFamilyOf().");
+  log.debug("Leaving encryptionFamilyOf().");
+  return record && record.fedProtocol === 'oidc' ? 'jose' : 'xml';
+}
+
+function defaultKeyTypeFor(protocol) {
+  log.debug("Entering defaultKeyTypeFor().");
+  log.debug("Leaving defaultKeyTypeFor().");
+  return protocol === 'oidc' ? 'ec-p256' : 'rsa-3072';
+}
+
+function defaultManagementFor(family, keyType) {
+  log.debug("Entering defaultManagementFor().");
+  const ec = keyType === 'ec-p256';
+  log.debug("Leaving defaultManagementFor().");
+  return family === 'jose' ? (ec ? 'ECDH-ES' : 'RSA-OAEP-256')
+                           : (ec ? 'ecdh-es' : 'rsa-oaep');
+}
+
+// `{ family, keyType, management, content }`, each the field or its default.
+// A stored value the vocabulary no longer holds (only an ldapmodify writes
+// one) reads as the DEFAULT — the strictest reading there is, since every
+// default is also the strongest choice.
+function encryptionPolicyOf(record) {
+  log.debug("Entering encryptionPolicyOf().");
+  const family = encryptionFamilyOf(record);
+  const typed = String((record && record.fedEncryptionKeyType) || '').trim();
+  const keyType = ENCRYPTION_KEY_TYPES.indexOf(typed) >= 0 ? typed
+    : defaultKeyTypeFor(record && record.fedProtocol);
+  const managed = String((record && record.fedKeyManagementAlgorithm) || '')
+    .trim();
+  const managementList = family === 'jose' ? JOSE_KEY_MANAGEMENT
+                                           : XML_KEY_MANAGEMENT;
+  const management = managementList.indexOf(managed) >= 0 &&
+      MANAGEMENT_FOR_KEY[keyType].indexOf(managed) >= 0
+    ? managed : defaultManagementFor(family, keyType);
+  const contentList = family === 'jose' ? JOSE_CONTENT_ENCRYPTION
+                                        : XML_CONTENT_ENCRYPTION;
+  const contentTyped = String((record &&
+                               record.fedContentEncryptionAlgorithm) || '')
+    .trim();
+  const content = contentList.indexOf(contentTyped) >= 0 ? contentTyped
+                                                         : contentList[0];
+  log.debug("Leaving encryptionPolicyOf(). " + family + " " + keyType + " " +
+            management + " " + content);
+  return { family: family, keyType: keyType, management: management,
+           content: content };
+}
+
+// THE KEY TABLE, parsed. A row that does not parse is dropped with a line in
+// the log: it decrypts nothing and publishes nothing either way.
+function encryptionKeysOf(record) {
+  log.debug("Entering encryptionKeysOf().");
+  const rows = [];
+  ((record && record.fedEncryptionKey) || []).forEach(function (value) {
+    try {
+      const row = JSON.parse(String(value));
+      if (row && row.kid && row.certificate) {
+        rows.push(row);
+      }
+    } catch (e) {
+      log.warn('federation: ' + ((record && record.fedId) || '') + ' holds ' +
+               'a fedEncryptionKey value that is not JSON, and it is ' +
+               'ignored: ' + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving encryptionKeysOf(). " + rows.length + " row(s).");
+  return rows;
+}
+
+// The same rows WITHOUT the private key — what any page, API reply or log may
+// carry.
+function encryptionKeyView(record) {
+  log.debug("Entering encryptionKeyView().");
+  const out = encryptionKeysOf(record).map(function (row) {
+    const view = Object.assign({}, row);
+    delete view.privateKey;
+    return view;
+  });
+  log.debug("Leaving encryptionKeyView().");
+  return out;
+}
+
+function currentEncryptionKeyOf(record) {
+  log.debug("Entering currentEncryptionKeyOf().");
+  log.debug("Leaving currentEncryptionKeyOf().");
+  return encryptionKeysOf(record).filter(function (row) {
+    return row.state === 'current';
+  })[0] || null;
+}
+
+// Does THIS response have to be encrypted? Only where it crosses the browser
+// — a SAML 2.0 Response, a WS-Federation wresult, an id_token by form_post —
+// and only in product, where `fedAllowUnencrypted` is the one way out. An ID
+// Token redeemed at the partner's token endpoint comes over TLS from the
+// partner and is not the exposure this closes. See mode.js.
+function encryptionRequired(record) {
+  log.debug("Entering encryptionRequired().");
+  if (!encrypts(record)) {
+    log.debug("Leaving encryptionRequired(). Not an encrypting protocol.");
+    return false;
+  }
+  const frontChannel = record.fedProtocol !== 'oidc' ||
+    String(record.fedResponseType || 'code') !== 'code';
+  log.debug("Leaving encryptionRequired().");
+  return frontChannel && !mode.acceptsUnencryptedFederatedAssertions() &&
+         !boolOf(record.fedAllowUnencrypted, false);
+}
+
+// The four fields' values a write may NOT hold, or null.
+function encryptionFieldProblem(record, field, value) {
+  log.debug("Entering encryptionFieldProblem(). field=" + field);
+  const fields = ['fedEncryptionKeyType', 'fedKeyManagementAlgorithm',
+                  'fedContentEncryptionAlgorithm', 'fedAllowUnencrypted'];
+  if (fields.indexOf(field) < 0) {
+    log.debug("Leaving encryptionFieldProblem(). Not an encryption field.");
+    return null;
+  }
+  if (!encrypts(record)) {
+    log.debug("Leaving encryptionFieldProblem(). Not an encrypting protocol.");
+    return { code: 'STS-FED-0143',
+             why: field + ' applies to SAML 2.0, WS-Federation and OpenID ' +
+                  'Connect only',
+             message: field + ' applies to a SAML 2.0, WS-Federation or ' +
+                      'OpenID Connect relationship. SAML 1.1 has no ' +
+                      'encryption construct and a plain OAuth 2.0 ' +
+                      'relationship reads no ID Token.' };
+  }
+  if (value === '' || field === 'fedAllowUnencrypted') {
+    log.debug("Leaving encryptionFieldProblem(). Empty or a switch.");
+    return null;
+  }
+  if (REFUSED_ALGORITHMS.indexOf(value) >= 0) {
+    log.debug("Leaving encryptionFieldProblem(). A refused algorithm.");
+    return { code: 'STS-FED-0139',
+             why: value + ' is refused in every mode',
+             message: value + ' is refused in every mode: ' +
+                      (/cbc/i.test(value)
+                        ? 'AES-CBC in XML Encryption is a padding oracle ' +
+                          '(Jager and Somorovsky, 2011), and every partner ' +
+                          'that has it has GCM'
+                        : 'RSAES-PKCS1-v1_5 is Bleichenbacher\'s ' +
+                          'decryption oracle (XML Encryption 1.1 section ' +
+                          '6.1.2, RFC 8017)') + '.' };
+  }
+  const family = encryptionFamilyOf(record);
+  const allowed = field === 'fedEncryptionKeyType' ? ENCRYPTION_KEY_TYPES
+    : field === 'fedKeyManagementAlgorithm'
+      ? (family === 'jose' ? JOSE_KEY_MANAGEMENT : XML_KEY_MANAGEMENT)
+      : (family === 'jose' ? JOSE_CONTENT_ENCRYPTION
+                           : XML_CONTENT_ENCRYPTION);
+  if (allowed.indexOf(value) < 0) {
+    log.debug("Leaving encryptionFieldProblem(). Not in the vocabulary.");
+    return { code: 'STS-FED-0143',
+             why: '"' + value + '" is not a ' + field + ' for this protocol',
+             message: '"' + value + '" is not a ' + field + ' for ' +
+                      (family === 'jose' ? 'an OpenID Connect' :
+                       'a SAML 2.0 or WS-Federation') + ' relationship. It ' +
+                      'is one of ' + allowed.join(', ') + '.' };
+  }
+  if (field === 'fedKeyManagementAlgorithm' &&
+      MANAGEMENT_FOR_KEY[encryptionPolicyOf(record).keyType]
+        .indexOf(value) < 0) {
+    log.debug("Leaving encryptionFieldProblem(). The wrong key type.");
+    return { code: 'STS-FED-0143',
+             why: value + ' does not fit a ' +
+                  encryptionPolicyOf(record).keyType + ' key',
+             message: value + ' cannot be done with this relationship\'s ' +
+                      encryptionPolicyOf(record).keyType + ' key. Set ' +
+                      'fedEncryptionKeyType first; it is one of ' +
+                      MANAGEMENT_FOR_KEY[encryptionPolicyOf(record).keyType]
+                        .join(', ') + ' for this key.' };
+  }
+  log.debug("Leaving encryptionFieldProblem(). Nothing wrong.");
+  return null;
+}
+
+// THE ONE WRITER OF THE KEY TABLE, for `federation_encryption.ts`: rotate,
+// issue and retire. `rows` are whole rows, private keys included, as they are
+// to be stored; `why` is the audit sentence.
+function writeEncryptionKeys(id, rows, why) {
+  log.debug("Entering writeEncryptionKeys(). id=" + id);
+  const record = get(id);
+  if (!record) {
+    log.debug("Leaving writeEncryptionKeys(). No such relationship.");
+    return false;
+  }
+  record.fedEncryptionKey = rows.map(function (row) {
+    return JSON.stringify(row);
+  });
+  if (!persist(record)) {
+    log.debug("Leaving writeEncryptionKeys(). The directory refused it.");
+    return false;
+  }
+  recordChange('federation.encryption-key', record,
+               why + ' on the federation relationship ' + id,
+               { keys: rows.map(function (row) {
+                   return row.kid + ':' + row.state;
+                 }).join(', ') });
+  log.debug("Leaving writeEncryptionKeys().");
+  return true;
 }
 
 function isEnabled(record) {
@@ -1822,7 +2572,19 @@ function create(spec) {
   if (role === 'service-provider') {
     record.fedAutocreateUsers = boolText(true);
     record.fedUpdateUserAttributes = boolText(true);
+    // WHICH PEOPLE THE PARTNER MAY ASSERT (#109): the most secure default a
+    // federation still works with, written onto the entry for the reason the
+    // two above are.
+    record.fedSubjectPolicy = DEFAULT_SUBJECT_POLICY;
+    record.fedMayAssertAdministrators = boolText(false);
     record.fedSignRequest = boolText(false);
+    // A PARTNER'S SIGN-OUT (#167): honoured, and signed — the most secure
+    // default, and the one a partner that follows its specification meets.
+    record.fedAcceptSignout = boolText(true);
+    record.fedRequireSignedLogout = boolText(true);
+    if (protocol === 'saml2') {
+      record.fedSloBinding = 'HTTP-Redirect';
+    }
     if (protocol === 'saml2' || protocol === 'saml11') {
       record.fedBinding = 'HTTP-Redirect';
       // SAML 1.1 has no request, so there is nothing for a response to be in
@@ -1837,6 +2599,19 @@ function create(spec) {
     }
     if (protocol === 'oauth2') {
       record.fedResponseType = 'code';
+    }
+    // WHAT A PARTNER ENCRYPTS TO (#168), the defaults written down. The key
+    // itself is issued by `federation_encryption.ts` right after this, which
+    // the console and /admin-api both do; this function is synchronous and
+    // issuing is not.
+    if (ENCRYPTING_PROTOCOLS.indexOf(protocol) >= 0) {
+      const family = protocol === 'oidc' ? 'jose' : 'xml';
+      record.fedEncryptionKeyType = defaultKeyTypeFor(protocol);
+      record.fedKeyManagementAlgorithm =
+        defaultManagementFor(family, record.fedEncryptionKeyType);
+      record.fedContentEncryptionAlgorithm = family === 'jose'
+        ? JOSE_CONTENT_ENCRYPTION[0] : XML_CONTENT_ENCRYPTION[0];
+      record.fedAllowUnencrypted = boolText(false);
     }
   }
   if (role === 'identity-provider') {
@@ -1885,6 +2660,68 @@ function create(spec) {
 // promises a list, and the console and an `ldapmodify` then disagree about what
 // the attribute holds.
 // ---------------------------------------------------------------------------
+// The fields a value can be WRONG for: the three subject fields (#109), and
+// the sign-out binding and signature switch (#167). Answers null, or the code,
+// the audit sentence and the message for the caller.
+function subjectFieldProblem(field, value) {
+  log.debug("Entering subjectFieldProblem(). field=" + field);
+  if (field === 'fedSubjectPolicy' && value !== '') {
+    if (SUBJECT_POLICY_IDS.indexOf(value) < 0) {
+      log.debug("Leaving subjectFieldProblem(). Not a policy.");
+      return { code: 'STS-FED-0102',
+               why: '"' + value + '" is not a subject policy',
+               message: '"' + value + '" is not a fedSubjectPolicy. It is ' +
+                        'one of ' + SUBJECT_POLICY_IDS.join(', ') + ', or ' +
+                        'empty for ' + DEFAULT_SUBJECT_POLICY + '.' };
+    }
+    if (value === 'any-existing' && !mode.matchesFederatedNames()) {
+      log.debug("Leaving subjectFieldProblem(). any-existing in product.");
+      return { code: 'STS-FED-0095',
+               why: 'any-existing is refused in product mode',
+               message: 'any-existing is refused in product mode: it ' +
+                        'matches the name a partner sends onto any local ' +
+                        'person, which OpenID Connect Core section 5.7 ' +
+                        'says a relying party must not rely on. Use ' +
+                        'link-at-first-sign-in, pre-linked or ' +
+                        'jit-namespaced.' };
+    }
+  }
+  if (field === 'fedSubjectPattern') {
+    const problem = subjectPatternProblem(value);
+    if (problem) {
+      log.debug("Leaving subjectFieldProblem(). An unusable pattern.");
+      return { code: 'STS-FED-0103',
+               why: 'fedSubjectPattern is unusable: ' + problem,
+               message: 'fedSubjectPattern was not changed: ' + problem +
+                        '.' };
+    }
+  }
+  // A PARTNER'S SIGN-OUT (#167): the binding is one of two, and product
+  // mode never accepts an unsigned logout message — so it refuses the switch
+  // that would, rather than holding a value it will ignore.
+  if (field === 'fedSloBinding' && value !== '' &&
+      ['HTTP-Redirect', 'HTTP-POST'].indexOf(value) < 0) {
+    log.debug("Leaving subjectFieldProblem(). Not a binding.");
+    return { code: 'STS-FED-0133',
+             why: '"' + value + '" is not a single logout binding',
+             message: '"' + value + '" is not a fedSloBinding. It is ' +
+                      'HTTP-Redirect or HTTP-POST, or empty for ' +
+                      'HTTP-Redirect.' };
+  }
+  if (field === 'fedRequireSignedLogout' && !boolOf(value, true) &&
+      !mode.acceptsUnsignedFederatedLogout()) {
+    log.debug("Leaving subjectFieldProblem(). Unsigned logout in product.");
+    return { code: 'STS-FED-0132',
+             why: 'fedRequireSignedLogout off is refused in product mode',
+             message: 'fedRequireSignedLogout cannot be turned off in ' +
+                      'product mode: saml-profiles-2.0-os section 4.4.4.1 ' +
+                      'says a logout message MUST be signed, and an ' +
+                      'unsigned one is anybody signing anybody out.' };
+  }
+  log.debug("Leaving subjectFieldProblem(). Nothing wrong.");
+  return null;
+}
+
 function update(id, change) {
   log.debug('Entering update(). id=' + id + ', field=' +
             (change && change.field));
@@ -1938,7 +2775,21 @@ function update(id, change) {
                       id + ' is ' + record.fedRole + '-side. Nothing was ' +
                                                      'changed.'] };
   }
-  const value = String(info.value == null ? '' : info.value);
+  let value = String(info.value == null ? '' : info.value);
+  // A DOMAIN IS COMPARED CASE-INSENSITIVELY, so it is stored lower-cased and
+  // without the `@` somebody pasting an address would bring (#109).
+  if (field === 'fedSubjectDomain') {
+    value = value.trim().replace(/^@+/, '').toLowerCase();
+  }
+  const refusal = subjectFieldProblem(field, value) ||
+                  encryptionFieldProblem(record, field, value);
+  if (refusal) {
+    log.debug('Leaving update(). ' + refusal.code);
+    // error-code: none — subjectFieldProblem() names the code at each return
+    actionRefused(refusal.code, id, refusal.why);
+    log.debug("Leaving update().");
+    return { ok: false, errors: [refusal.message] };
+  }
   const before = row.kind === 'multi' ? (record[field] || []).slice() :
                  record[field];
   if (row.editable === 'multi') {
@@ -1993,8 +2844,24 @@ function update(id, change) {
   // the form posted and `boolOf()` has to guess.
   if (row.name === 'fedEnabled' || row.name === 'fedAutocreateUsers' ||
       row.name === 'fedUpdateUserAttributes' ||
-      row.name === 'fedSignRequest' || row.name === 'fedAllowUnsolicited') {
+      row.name === 'fedMayAssertAdministrators' ||
+      row.name === 'fedSignRequest' || row.name === 'fedAllowUnsolicited' ||
+      row.name === 'fedAllowUnencrypted') {
     record[field] = boolText(boolOf(record[field], false));
+  }
+  // A NEW KEY TYPE TAKES ITS OWN DEFAULT KEY MANAGEMENT (#168): the old
+  // value may be one the new key cannot do, and a relationship whose
+  // algorithm and key disagree accepts nothing. The key itself is issued by
+  // the action that called this — see admin-core's federationAction().
+  if (row.name === 'fedEncryptionKeyType' && value !== '' &&
+      value !== before) {
+    record.fedKeyManagementAlgorithm =
+      defaultManagementFor(encryptionFamilyOf(record), value);
+  }
+  // The two sign-out switches default ON (#167), so an empty value is TRUE.
+  if (row.name === 'fedAcceptSignout' ||
+      row.name === 'fedRequireSignedLogout') {
+    record[field] = boolText(boolOf(record[field], true));
   }
   if (!persist(record)) {
     log.debug('Leaving update(). The directory refused the write.');
@@ -2491,12 +3358,26 @@ module.exports = {
   PROTOCOL_IDS: PROTOCOL_IDS,
   MECHANISMS: MECHANISMS,
   MECHANISM_IDS: MECHANISM_IDS,
+  // WHICH PEOPLE A PARTNER MAY ASSERT (#109).
+  SUBJECT_POLICIES: SUBJECT_POLICIES,
+  SUBJECT_POLICY_IDS: SUBJECT_POLICY_IDS,
+  DEFAULT_SUBJECT_POLICY: DEFAULT_SUBJECT_POLICY,
+  subjectPolicyRow: subjectPolicyRow,
+  subjectPolicyOf: subjectPolicyOf,
+  subjectPatternProblem: subjectPatternProblem,
+  subjectPatternMatches: subjectPatternMatches,
   SCHEMA: SCHEMA,
   protocolRow: protocolRow,
   mechanismRow: mechanismRow,
   roleRow: roleRow,
   familyOf: familyOf,
   setDirectory: setDirectory,
+  // The people a partner's subjects are linked to (#109); see their header.
+  federatedPerson: federatedPerson,
+  peopleLinkedBy: peopleLinkedBy,
+  linkedThrough: linkedThrough,
+  plannedPersonDn: plannedPersonDn,
+  writeFederationLink: writeFederationLink,
   attributesFor: attributesFor,
   recordFromAttributes: recordFromAttributes,
   idProblem: idProblem,
@@ -2537,6 +3418,23 @@ module.exports = {
   releaseFilterFor: releaseFilterFor,
   create: create,
   update: update,
+  // ENCRYPTION TO THIS SERVICE (#168): the vocabulary, the policy a record's
+  // four fields mean, and the key table's one writer.
+  ENCRYPTING_PROTOCOLS: ENCRYPTING_PROTOCOLS,
+  ENCRYPTION_KEY_TYPES: ENCRYPTION_KEY_TYPES,
+  XML_KEY_MANAGEMENT: XML_KEY_MANAGEMENT,
+  JOSE_KEY_MANAGEMENT: JOSE_KEY_MANAGEMENT,
+  XML_CONTENT_ENCRYPTION: XML_CONTENT_ENCRYPTION,
+  JOSE_CONTENT_ENCRYPTION: JOSE_CONTENT_ENCRYPTION,
+  REFUSED_ALGORITHMS: REFUSED_ALGORITHMS,
+  encrypts: encrypts,
+  encryptionFamilyOf: encryptionFamilyOf,
+  encryptionPolicyOf: encryptionPolicyOf,
+  encryptionKeysOf: encryptionKeysOf,
+  encryptionKeyView: encryptionKeyView,
+  currentEncryptionKeyOf: currentEncryptionKeyOf,
+  encryptionRequired: encryptionRequired,
+  writeEncryptionKeys: writeEncryptionKeys,
   remove: remove,
   recordUse: recordUse,
   recordFailure: recordFailure,

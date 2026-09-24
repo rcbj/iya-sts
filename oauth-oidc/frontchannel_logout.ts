@@ -245,18 +245,26 @@ class FrontchannelLogout {
   // sentence this page can produce, and a filtered list would say nothing at
   // all.
   //
-  // `issuer` is this authorization server's own issuer identifier, which the
-  // caller supplies: this service runs SEVERAL named authorization servers in
-  // one process and the `iss` an RP is expecting is the one that issued its
-  // tokens.
+  // `iss` IS THE ISSUER THE CLIENT'S ID TOKEN NAMED (#122, 2026-09-22): the
+  // one `noteClient()` recorded when this session answered the client. This
+  // service runs several named authorization servers and several realms in
+  // one process, and a sign-out at `/logout` or at another server's
+  // `/oauth2/logout` used to send every client the issuer of the SIGN-OUT
+  // request — one a client of `/:as/…` does not recognise, so section 2's
+  // check on `iss` failed and its logout did not run. `issuer`, which the
+  // caller supplies, is used only for a client recorded before the issuer
+  // was (a session from before 2026-09-17, #36).
   // -------------------------------------------------------------------------
   notificationsFor(session: Json, issuer: string): Notification[] {
     const { log, applications, validation, errorCodes } = this.deps;
     log.debug("Entering FrontchannelLogout.notificationsFor(). issuer=" +
               issuer);
     const sid = (session && session.id) || '';
+    const held = (session && session.oidcClients) || {};
     const rows = this.clientsOf(session).map(function (clientId) {
       const client = applications.clientConfigOf(clientId);
+      const iss = String((held[clientId] && held[clientId].iss) || issuer ||
+                         '');
       const stored = String((client && client.frontchannel_logout_uri) || '');
       // THE SAME RULE REGISTRATION APPLIES, APPLIED AGAIN WHEN IT IS READ
       // (2026-09-13). Registration, the console and `/admin-api` refuse
@@ -274,7 +282,21 @@ class FrontchannelLogout {
                  clientId + '\'s stored frontchannel_logout_uri is not ' +
                  'notified, because it ' + storedProblem + '.');
       }
-      const uri = storedProblem ? '' : stored;
+      // AND SECTION 2's ORIGIN RULE, read the same way (#122, 2026-09-22):
+      // the URI must be on the origin of one of the client's redirect URIs,
+      // or this sign-out would frame another host's page with the session's
+      // `sid` on it. Registration and the console refuse it now; a value
+      // written through `ldapmodify`, or before that date, is skipped here.
+      const originProblem = stored && !storedProblem
+        ? applications.frontchannelOriginProblem(stored,
+            (client && client.redirect_uris) || [])
+        : null;
+      if (originProblem) {
+        log.warn(errorCodes.tag('STS-OAUTH-0572') + 'front-channel logout: ' +
+                 clientId + '\'s stored frontchannel_logout_uri is not ' +
+                 'notified: ' + originProblem);
+      }
+      const uri = storedProblem || originProblem ? '' : stored;
       const wantsSession = !!(client &&
                               client.frontchannel_logout_session_required);
       let url = '';
@@ -288,7 +310,7 @@ class FrontchannelLogout {
         url = uri;
         if (wantsSession) {
           url += (url.indexOf('?') >= 0 ? '&' : '?') +
-                 'iss=' + encodeURIComponent(issuer || '') +
+                 'iss=' + encodeURIComponent(iss) +
                  '&sid=' + encodeURIComponent(sid);
         }
       }
@@ -300,6 +322,11 @@ class FrontchannelLogout {
         // Why this client will not be notified, in words, or '' when it will
         // be. Stated here rather than worked out again by each renderer.
         why: uri ? ''
+                  : originProblem
+                  ? 'the frontchannel_logout_uri stored for this client is ' +
+                    'not notified: ' + originProblem + ' Correct ' +
+                    'oauthFrontchannelLogoutUri or oauthRedirectUri on its ' +
+                    'entry.'
                   : storedProblem
                   ? 'the frontchannel_logout_uri stored for this client ' +
                     'cannot be framed — it ' + storedProblem + ' — so it is ' +

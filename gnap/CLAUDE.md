@@ -130,6 +130,18 @@ approved a grant to it. `ssf/ssf.ts`'s `emitProtocolEvent()` is the delivery,
 and `ssf/ssf_auth.ts`'s `gnap` scheme is how an application owns a stream as
 itself. **Nothing listens to CAEP or RISC to revoke a grant**, by decision.
 
+**THE `ssf` ACCESS RIGHTS ARE THIS SERVICE'S OWN PROTECTED SCOPES (#110,
+2026-09-22).** `ssf:read`/`ssf:write` as reference strings, or an object of type
+`ssf` with those actions (no actions means both), are granted only to a client
+whose APPLICATION ENTRY declares them in `oauthAllowedScope` — the attribute the
+OAuth token endpoint reads, reused rather than twinned (`gnapAllowedAccess`
+already exists and is a narrowing an operator may add; this is not optional),
+so there is one declared vocabulary per application whatever protocol it asks
+in. `protectedAccessProblem()` refuses at grant creation and modification with
+`request_denied` (`STS-GNAP-0719`), in both modes, before `accessProblem()`; the
+transmitter asks again on every call (`ssf/CLAUDE.md`). The policy is
+`common/scope_policy.ts`'s. Nothing else in a GNAP access right is held to it.
+
 ## A person's opaque identifier is over their subject (2026-09-14)
 
 `gnap_subject.ts`'s `opaqueIdFor()` HMACs the person's `urn:uuid:` subject where the
@@ -210,6 +222,7 @@ empty-store control accepts, and a proof another node accepted is refused.
 | 0650–0699 | the console, the monitor, application entries |
 | 0700–0709 | signals |
 | 0710–0719 | single-use values spent across the cluster (#46) |
+| 0720 | the push finish's transport: `gnap.pushSkipTlsVerification` ignored in product (#171) |
 
 `tests/error_codes.js` carries `gnapError(res` and `interactionError(res` as
 failure patterns.
@@ -222,9 +235,12 @@ failure patterns.
 | `tests/gnap_token_formats.js` | one matrix over all five formats (the JWT two through an adapter), and attenuation for the three that attenuate |
 | `tests/gnap_request.js` | which layer refuses what — the schemas, control characters, the walkers — RFC 7638's thumbprint and RFC 9635's two interaction hash vectors |
 | `tests/realm_isolation.js` | the GNAP stores are per realm and purged with it, and no module-scope Map |
-| `tests/vendored/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code |
-| `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the demonstration RS; introspection, registration, derivation, mutual TLS |
+| `tests/vendored/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code. Its section 6 push listener presents a certificate from a CA the job makes at run time and sets `gnap.pushCaFile` to it (#171; skipped with no directory shared with the service), so the push is VERIFIED in both modes |
+| `tests/outbound_tls.js`, `tests/vendored/sts_outbound_tls.js` | the push finish's transport policy beside SSF's, federation's and XACML's (#171) |
+| `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the demonstration RS; introspection, registration, derivation, mutual TLS (in a realm set to `gnap.mtlsTrust=pinned`, since its certificate is self-signed) |
 | `tests/vendored/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream |
+| `tests/gnap_mtls_trust.js` | #107 in process over real handshakes: both trust models, revocation in both, 0277/0278, every binding refusal (0287–0292), rotation, the override and the product default |
+| `tests/vendored/sts_gnap_mtls.js` | #107 against a running service: the same, with the realm's own certificates from the Credentials door and a foreign authority whose leaf names a CRL the job serves |
 
 The three jobs share `tests/vendored/gnap_client.js` (an independent client
 written from the RFCs) and `gnap_flow.js` (the resource owner and harness).
@@ -236,6 +252,71 @@ the published key. The default suite is now `eddsa-jcs-2022` and the job checks
 the proof itself: RFC 8785, two SHA-256 hashes, node's Ed25519. The
 compatibility suite is still checked only by the service, which is one of the
 reasons it is not the default.
+
+## Mutual TLS: pinned or a PKI, and revocation in both (#107, 2026-09-23)
+
+`verifyMtls()` compared the certificate on the connection with the key and did
+nothing else: no chain, and not even this service's own revocation register,
+which RFC 8705's `self_signed_tls_client_auth` already consulted. In product the
+key was a pin on the entry (`gnapKey`), which RFC 9635 section 7.3.2 allows, and
+which can be neither revoked nor rotated at an authority. `gnap_proof.ts`'s
+header (*MUTUAL TLS, TWO TRUST MODELS*) argues the design; what a reader needs
+here:
+
+* **Revocation is consulted in both models**, from `req.certificateRevocation`,
+  with the verdict's own code (STS-PKI-0118 revoked, 0119 unknown under
+  hard-fail, #174's three). An unverified certificate is looked up in the
+  register too, so a pinned certificate this realm issued and revoked is
+  refused, and a self-signed one nobody issued is unaffected.
+* **`gnap.mtlsTrust`** — `pki`, `pinned`, or `auto`, which is
+  `mode.requiresPkiForGnapMtls()`: pki in product, pinned in development. An
+  entry's `gnapMtlsTrust` may make it STRICTER and never weaker
+  (`applications.gnapMtlsTrustFor()` combines them; a weaker write is
+  STS-REG-0196, a stored one is ignored). Continuation, management and
+  rotation ask the model of the grant's client.
+* **Under pki** `mtls.peerVerified()` must say verified (STS-GNAP-0287), and
+  after the proof `proof.certificateBinding()` ties the certificate to the
+  entry: issued TO it by this realm (`mtls.issuedIdentityOf()`, moved out of
+  `client_auth.js` so both callers share it; another holder's is 0291, one no
+  longer on the record 0292), or carrying the ONE RFC 8705 subject parameter
+  the entry registers — the `oauthTlsClientAuth*` attributes, reused rather
+  than twinned (none 0288, two 0289, a mismatch 0290).
+* **Rotation at the authority.** Under pki a key by value whose thumbprint no
+  entry holds is placed by what the authority says — the application a
+  realm-issued certificate names, or the ONE GNAP entry whose subject it
+  carries — never by the thumbprint; an instance identifier or key reference
+  proves the certificate on the connection rather than the one pinned. The new
+  thumbprint is then written to `gnapKeyIdentity` (`gnap_grants.ts`,
+  `placeMtlsCaller()` / `bindMtlsCaller()`). A key presented BY VALUE is never
+  swapped: section 11.3 makes the TLS key the request's key (0278).
+* **No auto-creation under pki**: an unknown key with no entry to bind to is
+  0288, in development too.
+* **Not done**: RFC 9440's `Client-Cert` header from a TLS-terminating proxy —
+  this service reads only its own socket. Nothing is added to discovery,
+  because section 9 has no member for a trust model.
+
+## The push finish verifies the client's certificate (#171, 2026-09-23)
+
+`gnap.pushAllowInsecure` allowed a plain-http finish URI AND turned
+certificate verification off for every https one, and product mode honoured
+it: a push to a registered `https://` URI went to whoever answered the
+handshake, carrying the `interact_ref` and `hash` of an approved grant. RFC
+9635 section 11.1 gives an unverified session none of its protection.
+
+Three settings now, asked through `common/outbound_tls.ts` (shared with SSF,
+federation and XACML — its header argues the placement):
+
+* `gnap.pushAllowHttp` — plain http: any host in development; in product a
+  loopback address only, because RFC 9635 section 2.5.2.1 names it. That is
+  `STS-GNAP-0103`'s rule, and a refusal of it at PUSH time carries the same
+  code as at grant time (one code per condition); `gnap_http.ts`'s
+  `urlVerdict()` answers the code and `gnap_grants.ts` uses it.
+* `gnap.pushSkipTlsVerification` — development only. Ignored in product
+  (`STS-GNAP-0720`, logged once per process) and refused on write
+  (`STS-CORE-0103`).
+* `gnap.pushCaFile` — the client's private CA, beside node's store; a file
+  that cannot be read refuses the push (`STS-CORE-0104`) and is recorded on the
+  grant's history like any failed push.
 
 ## ZCAP PROOF SUITES (2026-09-22, #43)
 

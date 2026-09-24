@@ -257,6 +257,51 @@ services:
       - ./openbao/read-only.hcl:/usr/src/sts/openbao/read-only.hcl:ro
     command: ["node", "openbao/seed.js"]
 
+  # ===========================================================================
+  # A MAIL CATCHER (#63, 2026-09-22): Mailpit (MIT), which the mail channel's
+  # SMTP transport delivers to in `tests/vendored/sts_mail.js` — and whose
+  # HTTP API is how that job reads what arrived. It REQUIRES STARTTLS, so a
+  # message it holds is one that went over TLS, and it accepts any SMTP AUTH.
+  #
+  # Its certificate is minted at run time by `openbao/generate-tls.js` — the
+  # one encoder every certificate in this stack comes from, and never a key in
+  # git — into the directory shared with the service (#171), which reads it
+  # there as `mail.smtpCaFile`: a self-signed server certificate is its own
+  # trust anchor. The service does not depend on the catcher: a job that
+  # needs it waits for it, and a catcher that will not start fails that job
+  # alone rather than the suite.
+  # ===========================================================================
+  mailpit-tls:
+    container_name: ${STS_MAILPIT_TLS_CONTAINER_NAME:-sts-docker-tests-mailpit-tls}
+    image: ${STS_IMAGE:-rcbj/sts}
+    build:
+      context: .
+    restart: "no"
+    environment:
+      - STS_BAO_TLS_DIR=/run/sts-test/mailpit
+      - STS_BAO_TLS_NAMES=mailpit,localhost
+      - STS_BAO_TLS_IPS=127.0.0.1
+    volumes:
+      - sts-test-shared:/run/sts-test
+      - ./openbao/generate-tls.js:/usr/src/sts/openbao/generate-tls.js:ro
+    command: ["node", "openbao/generate-tls.js"]
+
+  mailpit:
+    container_name: ${STS_MAILPIT_CONTAINER_NAME:-sts-docker-tests-mailpit}
+    hostname: mailpit
+    image: axllent/mailpit:${MAILPIT_TAG:-latest}
+    depends_on:
+      mailpit-tls:
+        condition: service_completed_successfully
+    environment:
+      - MP_SMTP_TLS_CERT=/run/sts-test/mailpit/server.crt
+      - MP_SMTP_TLS_KEY=/run/sts-test/mailpit/server.key
+      - MP_SMTP_REQUIRE_STARTTLS=true
+      - MP_SMTP_AUTH_ACCEPT_ANY=true
+      - MP_MAX_MESSAGES=5000
+    volumes:
+      - sts-test-shared:/run/sts-test:ro
+
   sts:
     # Named, so that a `docker logs` while a run is going has something to name,
     # and DIFFERENT from docker-compose.yml's `sts` so that a test run can never
@@ -342,6 +387,15 @@ services:
       # two places: `spiffe_server.js` recognises the wildcard and names
       # the realm holding it, and this line stops it happening.
       - STS_SPIFFE_GRPC_HOST=${STS_SPIFFE_GRPC_HOST:-172.30.0.10}
+      # THE STACK'S BRIDGE IS DECLARED TO AUTHENTICATE SOURCE ADDRESSES (#166).
+      # A product node serves the Workload API over TCP only on such a
+      # network (SPIFFE Workload Endpoint section 3), and this one is a
+      # network the launcher created with only its own containers on it, the
+      # service bound to its own address above rather than the wildcard. So
+      # the product modes run sts_spiffe_grpc.js's declared path;
+      # STS_SPIFFE_WORKLOAD_TCP_SOURCE_AUTHENTICATED=false runs the refused
+      # one instead. Development ignores it.
+      - STS_SPIFFE_WORKLOAD_TCP_SOURCE_AUTHENTICATED=${STS_SPIFFE_WORKLOAD_TCP_SOURCE_AUTHENTICATED:-true}
       - STS_EXTRA_IPS=${STS_EXTRA_IPS:-172.30.0.11/24 172.30.0.12/24 172.30.0.13/24}
       # THE BARE FORM IS LOAD-BEARING and the obvious alternative breaks the
       # container. With no `=`, compose passes this through ONLY if the shell
@@ -416,6 +470,31 @@ services:
       - STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-0}
       - STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-}
       - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-false}
+      # THE PWNED PASSWORDS SCREEN IS OFF IN EVERY SUITE STACK (#62 P6): on,
+      # a product-mode stack would send the prefix of every password the
+      # suite sets to api.pwnedpasswords.com — a run that depends on the
+      # internet, and a fixture password that happens to be breached would be
+      # refused. The screen is held in process with the API stubbed
+      # (tests/breached_passwords.js).
+      - STS_RISK_BREACH_CHECK=${STS_RISK_BREACH_CHECK:-off}
+      # Every job here comes from ONE /24, and many refuse a password on
+      # purpose, so the default network threshold (20 an hour) put the
+      # network-failures signal on every first sign-in after the first few
+      # minutes of a product-mode run (2026-09-23). The service's default
+      # is unchanged; only this stack raises it.
+      - STS_RISK_NETWORK_FAILURE_THRESHOLD=${STS_RISK_NETWORK_FAILURE_THRESHOLD:-1000000}
+      # AND MEDIUM FROM THE MODEL ALONE IS OUT OF REACH HERE (2026-09-23).
+      # The THIN-HISTORY half is the service's own fix now: fewer than
+      # risk.minimumHistory (5) earlier sign-ins are UNSCORED. What is left is
+      # this stack's own shape, which no deployment has: every sign-in in it
+      # shares one address and one User-Agent, so
+      # the model's features cancel and its prior alone decides: about the
+      # realm's sign-ins per person over this person's, which puts a new
+      # person's second sign-in over 1 once other jobs have signed in the
+      # same people many times. At 1000 (HIGH's own threshold) MEDIUM cannot
+      # be reached and HIGH still refuses. MEDIUM's step-up is covered in
+      # process by tests/risk_decisions.js.
+      - STS_RISK_MEDIUM_SCORE_PERCENT=${STS_RISK_MEDIUM_SCORE_PERCENT:-1000}
       # WHERE THE TWO PERSISTING MODES DIAL, and it is `sts_app` rather than
       # the owner: postgres/schema.sql builds a role with SELECT, INSERT,
       # UPDATE and DELETE on the rows and no CREATE anywhere, so this service
@@ -511,6 +590,20 @@ services:
       # listener. Read-only, and the identity they carry can read two values
       # and change nothing.
       - sts-bao-client:/run/secrets/bao:ro
+      # A DIRECTORY SHARED WITH THE RUNNER (#171). A job that runs a push
+      # listener of its own makes a CA at run time and writes the CA's
+      # CERTIFICATE here, then names it in a `…CaFile` setting so the service
+      # VERIFIES that listener: product mode ignores every
+      # `…SkipTlsVerification`, and a CA file is a path on this container's
+      # filesystem. Nothing is committed and no key is ever written here.
+      # tests/vendored/outbound_test_ca.js argues it; the runner mounts the
+      # same volume below. The cluster file's `sts2` inherits it through
+      # `extends`. Read-only on this side.
+      - sts-test-shared:/run/sts-test:ro
+      # WHERE AN UPLOADED RISK DATASET IS WRITTEN WHILE IT IS IMPORTED (#215),
+      # at `risk.uploadDirectory`'s default: docker-compose.yml's volume and
+      # its reason. The cluster file gives node B one of its own.
+      - sts-risk-uploads:/usr/src/sts/data/risk-uploads
     healthcheck:
       # The scheme follows the mode in this service — oauth2.rfc9700 derives
       # global.https — so the probe decides which module to use the same way
@@ -615,10 +708,12 @@ services:
       # rather than once, for federation_http.ts's reason.
       - PEP_TLS_INSECURE=true
       # THE ADDRESS THE SERVICE NUDGES, and it is deliverable in this stack
-      # once the job turns xacml.pepNotifyAllowInsecure on in its realm — which
+      # once the job turns xacml.pepNotifyAllowHttp on in its realm — which
       # is the one place this repository's third outbound request is dialled at
       # a listener that answers. Until it does, the service refuses to dial a
-      # plain-http URL and says so on the row, which the job asserts first.
+      # plain-http URL and says so on the row, which the job asserts first. In
+      # product mode plain http stays refused (#171): the job asserts that and
+      # puts its own realm in development mode for the delivery.
       - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-http://xacml-pep:9090/notify}
       - PEP_RESOURCE=${XACML_PEP_RESOURCE:-https://example.test/records}
       - PEP_BIAS=${XACML_PEP_BIAS:-deny-biased}
@@ -661,6 +756,79 @@ services:
   # own discovery are the two answers, and the number that used to be on
   # this line was wrong within a fortnight of being written.
   # ---------------------------------------------------------------------------
+  # -------------------------------------------------------------------------
+  # THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): its server,
+  # its MongoDB and its nginx, from the images the suite publishes, pinned by
+  # tag. tests/vendored/sts_fapi_conformance.js drives it through its API and
+  # fails on a FAILED module — rcbj's decision on #142: "a job in
+  # ./run-tests.sh that fails when a module fails".
+  #
+  # BEHIND A COMPOSE PROFILE, so no mode starts three more containers (and a
+  # JVM) unless the launcher asks: ./run-tests.sh sets COMPOSE_PROFILES and
+  # CONFORMANCE_SUITE_URL for the modes in STS_TEST_CONFORMANCE_MODES
+  # (`memory` by default), and in every other mode the job reports itself
+  # SKIPPED with that reason.
+  #
+  # THE NAMES ARE THE SUITE'S OWN. Its nginx proxies to `server:8080`, its
+  # server builds every URL it hands out on BASE_URL, and the scripted
+  # browser inside the server follows those URLs back — so the nginx answers
+  # to `localhost.emobix.co.uk`, the name the suite's own compose file uses,
+  # on this network alone. Nothing is published.
+  #
+  # PINNED ADDRESSES, `.40` to `.42` of the run's subnet: the `sts` service
+  # adds `.11` to `.13` to its own interface for the realm SPIFFE listeners,
+  # which docker's allocator cannot see, and three more dynamically addressed
+  # containers are enough to reach them.
+  # -------------------------------------------------------------------------
+  conformance-mongo:
+    container_name: ${STS_CONFORMANCE_MONGO_CONTAINER_NAME:-sts-docker-tests-conformance-mongo}
+    image: mongo:${CONFORMANCE_MONGO_TAG:-6.0.13}
+    profiles: ["conformance"]
+    networks:
+      default:
+        ipv4_address: ${CONFORMANCE_MONGO_ADDRESS:-172.30.0.40}
+        aliases:
+          - mongodb
+
+  conformance-server:
+    container_name: ${STS_CONFORMANCE_SERVER_CONTAINER_NAME:-sts-docker-tests-conformance-server}
+    image: registry.gitlab.com/openid/conformance-suite:${CONFORMANCE_SUITE_TAG:-release-v5.3.1}
+    profiles: ["conformance"]
+    depends_on:
+      conformance-mongo:
+        condition: service_started
+    environment:
+      - BASE_URL=https://localhost.emobix.co.uk:8443
+      - BASE_MTLS_URL=https://localhost.emobix.co.uk:8444
+      - MONGODB_HOST=mongodb
+      # The suite's development profile: no sign-in to its own API. Its
+      # server still wants client ids for the two sign-in providers it offers
+      # in production, and refuses to start without them; these are the
+      # placeholders its own compose file passes.
+      - SPRING_PROFILES_ACTIVE=dev
+      - OIDC_GOOGLE_CLIENTID=google-client
+      - OIDC_GOOGLE_SECRET=google-secret
+      - OIDC_GITLAB_CLIENTID=gitlab-client
+      - OIDC_GITLAB_SECRET=gitlab-secret
+    networks:
+      default:
+        ipv4_address: ${CONFORMANCE_SERVER_ADDRESS:-172.30.0.41}
+        aliases:
+          - server
+
+  conformance-nginx:
+    container_name: ${STS_CONFORMANCE_NGINX_CONTAINER_NAME:-sts-docker-tests-conformance-nginx}
+    image: registry.gitlab.com/openid/conformance-suite/nginx:${CONFORMANCE_SUITE_TAG:-release-v5.3.1}
+    profiles: ["conformance"]
+    depends_on:
+      conformance-server:
+        condition: service_started
+    networks:
+      default:
+        ipv4_address: ${CONFORMANCE_NGINX_ADDRESS:-172.30.0.42}
+        aliases:
+          - localhost.emobix.co.uk
+
   tests:
     container_name: ${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}
     image: ${STS_TESTS_IMAGE:-rcbj/mock-sts-tests}
@@ -746,6 +914,18 @@ services:
       # child of this container and `localhost` is right.
       # ---------------------------------------------------------------------
       - GNAP_PUSH_HOST=${GNAP_PUSH_HOST:-tests}
+      # The shared directory (#171): where this container writes a run-time
+      # CA's certificate, and the path the SERVICE reads it at — the same
+      # volume, mounted into `sts` at the same place.
+      - OUTBOUND_TEST_CA_DIR=${OUTBOUND_TEST_CA_DIR:-/run/sts-test}
+      - OUTBOUND_TEST_CA_FILE=${OUTBOUND_TEST_CA_FILE:-/run/sts-test/outbound-test-ca.crt}
+      # THE MAIL CATCHER (#63): where `tests/vendored/sts_mail.js` reads what
+      # arrived, and where it tells the service to deliver — the host, the
+      # port and the catcher's certificate AS THE SERVICE SEES IT.
+      - MAILPIT_API_URL=${MAILPIT_API_URL:-http://mailpit:8025}
+      - MAILPIT_SMTP_HOST=${MAILPIT_SMTP_HOST:-mailpit}
+      - MAILPIT_SMTP_PORT=${MAILPIT_SMTP_PORT:-1025}
+      - MAILPIT_CA_FILE=${MAILPIT_CA_FILE:-/run/sts-test/mailpit/server.crt}
       - XACML_PEP_NAME=${XACML_PEP_NAME:-xacml-pep}
       - XACML_PEP_REALM=${XACML_PEP_REALM:-pep-e2e}
       # ---------------------------------------------------------------------
@@ -797,6 +977,11 @@ services:
       # bare: an empty value is what a hand-run of this file has, and that must
       # go on behaving as it did.
       - ADMIN_API_CLIENT_SECRET
+      # The conformance suite, when the mode brought it up (#176). Empty
+      # otherwise, which the job reads as "skipped, and why".
+      - CONFORMANCE_SUITE_URL=${CONFORMANCE_SUITE_URL:-}
+      - CONFORMANCE_CALLBACK_HOST=${CONFORMANCE_CALLBACK_HOST:-tests}
+      - CONFORMANCE_PLANS=${CONFORMANCE_PLANS:-}
     # Chrome crashes tabs on heavy pages when limited to Docker's default 64MB
     # /dev/shm. The console job also passes --disable-dev-shm-usage; this raises
     # the cap as well, because the two mitigations fail differently and the
@@ -809,7 +994,13 @@ services:
       # root inside the container, which is why the workflow chowns it before
       # the upload step reads it.
       - ./tests/report:/usr/src/sts/tests/report
+      # The directory shared with the service (#171) — see `sts` above.
+      - sts-test-shared:/run/sts-test
     depends_on:
+      # The mail catcher (#63): STARTED, for xacml-pep's reason below — a
+      # catcher that will not come up fails sts_mail.js and nothing else.
+      mailpit:
+        condition: service_started
       sts:
         # The whole ordering of this file. `up` reports success for a container
         # that was created and then exited, so "started" is not the question —
@@ -844,6 +1035,10 @@ services:
 volumes:
   sts-bao-file:
   sts-bao-client:
+  # The run-time CA certificates a job hands the service (#171).
+  sts-test-shared:
+  # An uploaded risk dataset while it is imported (#215).
+  sts-risk-uploads:
 
 # One bridge, and nothing published on it. `docker compose` gives the network a
 # name from the project, so two projects cannot share one.

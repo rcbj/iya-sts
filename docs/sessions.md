@@ -88,14 +88,12 @@ at the same instant as one nobody has touched — set
 last used, whichever limit comes first. The idle timeout is checked whenever a
 session is read, so it applies to sessions that already exist, and a request to
 the admin console or the user portal counts as use of the sign-on session behind
-it. Until 2026-09-12 both were constants in `authn/authn.ts` and neither could
-be changed.
+it.
 
-**An expiry ends the session properly**, and until 2026-09-04 it did not: the
-record was deleted with no audit row and no event, and only *lazily* — when
-something next looked the session up — so somebody who closed their browser was
-never looked up again and the session sat in the map, counted as live, for as
-long as the process ran. A sweep now runs every 30 seconds, inside every trust
+**An expiry ends the session properly**, not *lazily* when something next
+looks the session up — somebody who closed their browser would never be looked
+up again, and the session would sit in the map, counted as live, for as long as
+the process ran. A sweep runs every 30 seconds, inside every trust
 realm, and an expiry writes the same `session.end` audit row and the same CAEP
 `session-revoked` any other ending writes. See
 [CAEP events](caep-events.md#session-revoked) for what a receiver is told.
@@ -200,8 +198,10 @@ Consequences worth stating:
   — a registered code whose text says what is meant and for which the
   specification defines no mechanism, so this is an invention using it. It
   reaches **no service ticket already in a cache**;
-- a fresh AS-REQ succeeds and clears the instant, because signing out is not
-  being locked out;
+- a fresh AS-REQ succeeds, because signing out is not being locked out, and
+  does not lift the instant: its ticket is accepted while every ticket from
+  before the sign-out, renewed or not, stays refused until the latest one could
+  still be valid;
 - a Kerberos client never touches the browser session at all — **unless** the
   ticket is spent at `/authn/spnego`, which is a different act: that door mints
   a browser session *from* a ticket, and from then on there are two sessions.

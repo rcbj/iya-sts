@@ -898,6 +898,25 @@ const SCHEMA = {
             '"startup" (one of this service\'s own seeded clients). Absent ' +
             'on an application that simply turned up. Written by this ' +
             'registry and not editable; it grants and refuses nothing.' },
+    // REGISTERED THROUGH AN OPENID FEDERATION (#134, 2026-09-23): an
+    // application that became a client because its Trust Chain ended at one
+    // of this realm's Trust Anchors (OpenID Federation for OpenID Connect
+    // 1.1, section 12), how, until when and through which anchor. Past
+    // appFederationExpiresAt the client is UNKNOWN to every endpoint
+    // (clientConfigOf()) — 12.3: a registration may not outlive the chain it
+    // was made from — and the oidfed.registrations-expire job removes it.
+    { name: 'appFederationRegistration', kind: 'single',
+      from: 'OpenID Federation (#134)',
+      what: '"automatic" (its first signed authentication request) or ' +
+            '"explicit" (its Entity Configuration POSTed to /oidfed/register).' },
+    { name: 'appFederationExpiresAt', kind: 'single',
+      from: 'OpenID Federation (#134)',
+      what: 'When the registration ends, in SECONDS since the epoch: the ' +
+            'Trust Chain\'s own expiry, or oidfed.registrationLifetimeS ' +
+            'if that comes first.' },
+    { name: 'appFederationTrustAnchor', kind: 'single',
+      from: 'OpenID Federation (#134)',
+      what: 'The Trust Anchor its chain ended at.' },
     { name: 'oauthClientId', kind: 'multi', from: 'OAuth 2.0 / OIDC / ' +
                                                   'OpenID4VCI',
       identifier: true,
@@ -1045,11 +1064,13 @@ const SCHEMA = {
             'backchannel_logout_uri. Every sign-out of a session this client ' +
             'was issued an authorization response on sends one, ' +
             'server-to-server, after the sign-out has answered, through the ' +
-            'outbound policy (https unless ' +
-            'federation.outboundAllowInsecure; no internal address in ' +
+            'outbound policy (https with the certificate verified; no ' +
+            'internal address in ' +
             'product mode). SINGLE-valued, like the front-channel URI: the ' +
-            'specification defines one per client. http or https with no ' +
-            'fragment.' },
+            'specification defines one per client. https with no fragment; ' +
+            'http only for a confidential client and only where the ' +
+            'outbound policy sends over http (federation.outboundAllowHttp, ' +
+            'development mode; section 2.2, #123).' },
     { name: 'oauthBackchannelLogoutSessionRequired', kind: 'single',
       from: 'POST /oauth2/register, the console, or by hand',
       what: 'TRUE if this client requires `sid` in the Logout Token — ' +
@@ -1063,7 +1084,56 @@ const SCHEMA = {
     { name: 'oauthResponseType', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'response_type values seen at the authorization endpoint.' },
     { name: 'oauthScope', kind: 'multi', from: 'OAuth 2.0 / OIDC',
-      what: 'Scopes this application has asked for.' },
+      what: 'Scopes this application has ASKED FOR, accumulated as it asks. ' +
+            'SIGHTED, never declared: nothing is allowed or refused by it. ' +
+            'What the application may be issued is oauthAllowedScope.' },
+    // ---------------------------------------------------------------------
+    // THE DECLARED TWIN OF `oauthScope` (#110, 2026-09-22), and the
+    // `appProtocol` / `appAllowedProtocol` split again: one attribute is what
+    // happened and the other is what somebody said. Until that day an RFC
+    // 7591 registration's `scope` was written onto `oauthScope` beside every
+    // scope the client had merely asked for, so what was declared and what was
+    // observed could not be told apart — and nothing read either as a limit.
+    //
+    // IT IS READ, in three places. The authorization, pushed authorization and
+    // token endpoints refuse a scope it does not list (`common/scope_policy.ts`
+    // decides which, and in which mode); `tokenSet()` narrows a refresh or an
+    // exchange to it; and the resource servers behind this service's own
+    // protected scopes — /admin-api, /scim/v2, the Shared Signals endpoints —
+    // ask it again on every call, so removing a value cuts off a token already
+    // issued. GNAP reads it for the Shared Signals access rights.
+    //
+    // NOT FAMILY-SCOPED, deliberately. A SCIM or Shared Signals client is
+    // declared for that family and still gets its token from /oauth2/token;
+    // refusing the declaration on its entry would refuse the one thing it
+    // needs.
+    // ---------------------------------------------------------------------
+    { name: 'oauthAllowedScope', kind: 'multi',
+      from: 'POST /oauth2/register (its `scope`), the console, the ' +
+            'management API, or by hand',
+      what: 'THE SCOPES THIS CLIENT MAY BE ISSUED — RFC 7591 section 2\'s ' +
+            '`scope`, "the list that the client can use when requesting ' +
+            'access tokens". One scope token per value. Three kinds of scope ' +
+            'read it differently.\n\n**This service\'s own protected ' +
+            'scopes** — admin:read and admin:write (/admin-api), the SCIM ' +
+            'scopes (scim.scopeRead, scim.scopeWrite), the Shared Signals ' +
+            'scopes (ssf.authScopeRead, ssf.authScopeWrite) and the debugger ' +
+            'permission — are issued ONLY to a client that lists them, IN ' +
+            'BOTH MODES, and the resource server behind each asks again on ' +
+            'every call, so removing a value here cuts off tokens already ' +
+            'issued. An RFC 7591 registration may not declare them; an ' +
+            'administrator does, here.\n\n**Every other scope**, in ' +
+            'product mode, is issued only when listed here — or, when ' +
+            'nothing is listed, when it is in the default set: openid, ' +
+            'profile, email, address, phone, offline_access and this ' +
+            'realm\'s OpenID4VCI credential scopes. In development any ' +
+            'scope is issued.\n\n**A scope naming an application or a ' +
+            'delegated permission** keeps its own rules (the audience, and ' +
+            'oauthDelegatedPermission) and need not be listed.\n\nA scope ' +
+            'outside the list is refused invalid_scope at the authorization ' +
+            'and token endpoints (RFC 6749 section 3.3), and taken off a ' +
+            'refresh or a token exchange. Distinct from oauthScope, which is ' +
+            'only what the client has asked for.' },
 
     // --- delegated permissions: the RESOURCE half, then the CLIENT half -----
     //
@@ -1167,14 +1237,12 @@ const SCHEMA = {
             'that decides what a token says.** A `scope` value matching a ' +
             'defined permission becomes the access token\'s `aud` (the base ' +
             'URI) and its `scope` (the name) — see oauth2.js\'s ' +
-            'audienceScopes(). Whether the client HOLDS the grant is ' +
-            'reported either way and REFUSES nothing unless ' +
-            '`oauth2.delegatedPermissionsEnforced` is on, which is off by ' +
-            'default: this service exists to exercise clients and a refusal ' +
-            'that cannot be turned off removes a test case rather than ' +
-            'adding one. With it on, an ungranted permission is ' +
-            '`invalid_scope` at the authorization endpoint, where the client ' +
-            'can still be told.\n\nA VALUE THAT RESOLVES TO NO DEFINED ' +
+            'audienceScopes(). In PRODUCT MODE an ungranted permission is ' +
+            'refused `invalid_scope` at the authorization and token ' +
+            'endpoints, always. In development it is reported and REFUSES ' +
+            'nothing unless `oauth2.delegatedPermissionsEnforced` is on, ' +
+            'which is off by default: a client under test is exercised by ' +
+            'both answers.\n\nA VALUE THAT RESOLVES TO NO DEFINED ' +
             'PERMISSION IS NOT AN ERROR AND IS NOT HIDDEN. The resource\'s ' +
             'entry may have been deleted, or the permission removed from ' +
             'under it; `/admin/delegation` shows such a grant as DANGLING, ' +
@@ -1215,12 +1283,83 @@ const SCHEMA = {
             'match one scope; an `ldapmodify` reaches this attribute like ' +
             'every other and is not checked, and /admin/consent shows what ' +
             'it put there.' },
+    // WHEN AN OVERRIDE ABOVE WAS WITHDRAWN (#172), one value per scope. NOT
+    // editable, and that is the point of it: it is what stops a RE-ADDED
+    // override reviving the refresh tokens issued under the one that was
+    // taken away, so a form that could remove it would be a form that could
+    // bring a withdrawn grant back. `common/consent.ts` writes it, through
+    // `noteGlobalConsentWithdrawn()` below, and nothing else does.
+    { name: 'oauthGlobalConsentWithdrawn', kind: 'multi',
+      from: 'the consent register, when a global consent is withdrawn',
+      what: 'WHEN A GLOBAL CONSENT WAS WITHDRAWN, as `<when> <scope>` with ' +
+            'the instant to the millisecond. The refresh grant refuses a ' +
+            'refresh token granted before it that stood on that override, ' +
+            'even after the override is added back — a withdrawn grant is ' +
+            'not revived by the next one. One value per scope; a later ' +
+            'withdrawal replaces the earlier. Written by the consent ' +
+            'register and never by a form.' },
     { name: 'oauthTokenEndpointAuthMethod', kind: 'single', from: 'POST ' +
         '/oauth2/register',
       what: 'How it authenticates. RFC 7591 section 2 makes ' +
             'client_secret_basic the default when a registration omits it, ' +
             'which is why an omission means CONFIDENTIAL rather than ' +
             'unknown.' },
+    // OPENID CONNECT NATIVE SSO FOR MOBILE APPS 1.0 (#130, 2026-09-23).
+    { name: 'oauthNativeSso', kind: 'single',
+      from: 'the console, the management API, or a TRUSTED software ' +
+            'statement at POST /oauth2/register',
+      families: ['oidc'],
+      familyWhy: 'Native SSO is an OpenID Connect profile: the device_sso ' +
+        'scope, the ds_hash in an ID Token, and the exchange of one.',
+      what: 'TRUE lets this client ask for the device_sso scope — and so be ' +
+            'handed a device_secret — and take part in a Native SSO token ' +
+            'exchange, as the first app or the second. Anything else, the ' +
+            'default, refuses both. Both apps of an exchange must hold it ' +
+            'AND share oauthNativeSsoGroup. A registration may set it only ' +
+            'through a trusted software statement, because the group is the ' +
+            'boundary and a client may not choose its own.' },
+    { name: 'oauthNativeSsoGroup', kind: 'single',
+      from: 'the console, the management API, or a TRUSTED software ' +
+            'statement at POST /oauth2/register',
+      families: ['oidc'],
+      familyWhy: 'The same profile as oauthNativeSso.',
+      what: 'The Native SSO group: the apps that may share one device ' +
+            'session — in practice one vendor\'s. A token exchange is ' +
+            'refused unless the app that received the ID Token and the app ' +
+            'asking share it. 1 to 64 of letters, digits and . _ : -; an ' +
+            'empty or malformed value takes the client out of Native SSO.' },
+    // OPENID CONNECT CIBA CORE 1.0 SECTION 4 (#131, 2026-09-23): the four
+    // registration members, from a registration, the console or the API.
+    { name: 'oauthBackchannelTokenDeliveryMode', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API',
+      families: ['oidc'],
+      familyWhy: 'CIBA is an OpenID Connect flow: it issues an ID Token.',
+      what: 'CIBA `backchannel_token_delivery_mode`: poll, ping or push. A ' +
+            'client with none may not use the Backchannel Authentication ' +
+            'Endpoint at all.' },
+    { name: 'oauthBackchannelClientNotificationEndpoint', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API',
+      families: ['oidc'],
+      familyWhy: 'The same flow as oauthBackchannelTokenDeliveryMode.',
+      what: 'CIBA `backchannel_client_notification_endpoint`: the https ' +
+            'URL a ping or a push is POSTed to, under the outbound policy. ' +
+            'Required for ping and push.' },
+    { name: 'oauthBackchannelAuthenticationRequestSigningAlg',
+      kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API',
+      families: ['oidc'],
+      familyWhy: 'The same flow as oauthBackchannelTokenDeliveryMode.',
+      what: 'CIBA `backchannel_authentication_request_signing_alg`: when ' +
+            'set, every authentication request from this client must be a ' +
+            'signed request object with this algorithm (section 7.1.1).' },
+    { name: 'oauthBackchannelUserCodeParameter', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API',
+      families: ['oidc'],
+      familyWhy: 'The same flow as oauthBackchannelTokenDeliveryMode.',
+      what: 'TRUE: every authentication request from this client carries ' +
+            'the person\'s `user_code` (CIBA section 7.1), a secret the ' +
+            'person set on /portal/ciba, which stops a client that knows ' +
+            'only a name from sending them requests.' },
     // OPENID CONNECT CORE SECTION 8 AND SECTION 9 (#118, 2026-09-22).
     { name: 'oauthSubjectType', kind: 'single',
       from: 'POST /oauth2/register, the console, the management API, or by ' +
@@ -1267,13 +1406,13 @@ const SCHEMA = {
             'it, which is the whole point of preferring it to a shared ' +
             'secret.' },
     { name: 'oauthJwksUri', kind: 'single', from: 'POST /oauth2/register',
-      what: 'RFC 7591 `jwks_uri`. RECORDED AND NEVER FETCHED: following it ' +
-            'would mean this service making an outbound request to a URL ' +
-            'somebody registered in order to verify a credential, which is a ' +
-            'server-side request forgery with a specification citation ' +
-            'attached — the same refusal WS-Federation\'s wreqptr gets. A ' +
-            'client that registers only this is told to register `jwks` ' +
-            'instead, by name, when it tries to authenticate.' },
+      what: 'RFC 7591 `jwks_uri`, https. FETCHED since #120, when a key ' +
+            'is needed, under federation/federation_http.ts\'s outbound ' +
+            'policy (https, no redirect, a size cap, internal addresses ' +
+            'refused in product mode), cached for ' +
+            'oauth2.clientJwksCacheS and fetched again for an unknown kid at ' +
+            'most every oauth2.clientJwksRefetchS. Never beside `oauthJwks`: ' +
+            'RFC 7591 section 2 allows one or the other.' },
     // -------------------------------------------------------------------
     // RFC 9701 (2026-09-13). THE THREE CLIENT METADATA MEMBERS OF SECTION 6,
     // each an attribute of its own, and they are READ: `/oauth2/introspect`
@@ -1318,9 +1457,9 @@ const SCHEMA = {
             'EMPTY MEANS NOT ENCRYPTED. One of the asymmetric algorithms ' +
             '(RSA-OAEP, RSA-OAEP-256, ECDH-ES and its key-wrap variants), ' +
             'and ' +
-            'the key is taken from this entry\'s `oauthJwks` — a `jwks_uri` ' +
-            'is never fetched. The symmetric families are refused: they are ' +
-            'for a document encrypted TO this service.' },
+            'the key is taken from this entry\'s `oauthJwks`, or the set its ' +
+            '`oauthJwksUri` answers (#120). The symmetric families are ' +
+            'refused: they are for a document encrypted TO this service.' },
     { name: 'oauthIntrospectionEncryptedResponseEnc', kind: 'single',
       from: 'POST /oauth2/register, the console, the management API, or by ' +
             'hand',
@@ -2131,7 +2270,8 @@ const SCHEMA = {
     { name: 'saml2KeyTransportAlgorithm', kind: 'single', from: 'by hand',
       overrides: 'saml2.keyTransportAlgorithm',
       what: 'How the content key is wrapped for this service provider — ' +
-            'rsa-oaep-mgf1p or rsa-1_5 — overriding ' +
+            'rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256; #168) or ' +
+            'rsa-1_5 — overriding ' +
             'saml2.keyTransportAlgorithm. An appliance that accepts only ' +
             'rsa-1_5 is the reason this is per application rather than a ' +
             'decision made once for the whole service.' },
@@ -2296,6 +2436,59 @@ const SCHEMA = {
             'by the XACML PDP against the policy named by ' +
             'xacml.issuancePolicy, not by an if in an issuance site, so the ' +
             'reason for a refusal is a policy somebody can read.' },
+
+    // ---------------------------------------------------------------------
+    // THE DELEGATION POLICY (#108, 2026-09-23): WHO MAY ACT FOR WHOM AT THE
+    // TWO DOORS THAT HAD NO POLICY — WS-Trust `OnBehalfOf` / `ActAs` and the
+    // RFC 8693 token exchange.
+    //
+    // KERBEROS'S MODEL, DELIBERATELY AND BY NAME, and on the same kind of
+    // entry: a KDC decides S4U2Proxy from `msDS-AllowedToDelegateTo` on the
+    // front end and `msDS-AllowedToActOnBehalfOfOtherIdentity` on the back
+    // end, protocol transition from TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION,
+    // and nothing at all for an account flagged NOT_DELEGATED. These four are
+    // those, on `ou=applications`, so there is no new store and no new object
+    // class — an `ldapmodify` IS a policy change, exactly as it is for a
+    // redirect URI. `common/delegation_policy.ts` reads them; the person's
+    // half (`stsNotDelegated`, `stsMayAct`) is on the person's own entry.
+    //
+    // A TARGET IS AN APPLICATION IDENTIFIER. An RFC 8693 `audience` or
+    // `resource` and a WS-Trust `AppliesTo` are resolved to the application
+    // that registered them first (forAudience(), forAppliesTo()), and a value
+    // here may also be the raw string, so an unregistered audience can be
+    // allowed without inventing an entry for it.
+    // ---------------------------------------------------------------------
+    { name: 'appAllowedToDelegateTo', kind: 'multi', from: 'by hand',
+      what: 'THE TARGETS THIS APPLICATION MAY OBTAIN A TOKEN FOR ON SOMEBODY ' +
+            'ELSE\'S BEHALF, when it is the INTERMEDIARY of a WS-Trust ' +
+            'OnBehalfOf / ActAs request or an RFC 8693 token exchange — the ' +
+            'analogue of Kerberos\'s msDS-AllowedToDelegateTo, on the front ' +
+            'end. One application identifier (or the literal audience / ' +
+            'AppliesTo) per value. Enforced in product mode; development ' +
+            'records what would have been refused on /admin/delegation. ' +
+            'appAllowedToActOnBehalfOf on the TARGET is the other way to ' +
+            'allow the same pair.' },
+    { name: 'appAllowedToActOnBehalfOf', kind: 'multi', from: 'by hand',
+      what: 'THE INTERMEDIARIES THIS APPLICATION ACCEPTS as acting for ' +
+            'somebody else when it is the TARGET of a delegation — the ' +
+            'resource-based analogue of Kerberos\'s ' +
+            'msDS-AllowedToActOnBehalfOfOtherIdentity, set on the back end. ' +
+            'One intermediary application identifier per value.' },
+    { name: 'appDelegationSubjectGroup', kind: 'multi', from: 'by hand',
+      what: 'THE PEOPLE THIS INTERMEDIARY MAY ACT FOR, as group DNs: a ' +
+            'subject must be a member of one of them. EMPTY MEANS ANYBODY ' +
+            'who is not protected — a person carrying stsNotDelegated, or a ' +
+            'member of the console\'s Admin Read or Admin Write roster, is ' +
+            'never delegated whatever this says.' },
+    { name: 'appTrustedToImpersonate', kind: 'single', from: 'by hand',
+      what: 'TRUE or FALSE, default FALSE: may this intermediary ' +
+            'IMPERSONATE — WS-Trust OnBehalfOf, or a token exchange with no ' +
+            'actor_token, whose result names the subject and nothing about ' +
+            'the intermediary — as well as DELEGATE (ActAs, or an exchange ' +
+            'with an actor_token, whose result carries `act`)? The analogue ' +
+            'of Kerberos\'s TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION. A ' +
+            'subject_token whose may_act names this party is the one ' +
+            'exception: the subject asked for it.' },
 
     { name: 'appGroupsClaim', kind: 'single', from: 'by hand',
       overrides: 'groups.claim',
@@ -2683,11 +2876,10 @@ const SCHEMA = {
             'delivery endpoint. It is a DECLARATION and nothing reads it: a ' +
             'push goes to the endpoint on the STREAM, which the receiver ' +
             'named when it created one, and this service will not take a URL ' +
-            'to dial from an application entry. That is the same position ' +
-            'federation/federation_http.ts takes about oauthJwksUri, one ' +
-            'family along: a URL recorded here is a note about what a ' +
-            'receiver is, and a URL on a stream is a URL this service opens ' +
-            'a connection to. The two are deliberately not the same store.' },
+            'to dial from an application entry: a URL recorded here is a ' +
+            'note about what a receiver is, and a URL on a stream is a URL ' +
+            'this service opens a connection to. The two are deliberately ' +
+            'not the same store.' },
     // ---------------------------------------------------------------------
     // THE ONE ATTRIBUTE ON THIS ENTRY THAT LIMITS SHARED SIGNALS (2026-09-12).
     //
@@ -2751,6 +2943,17 @@ const SCHEMA = {
       what: 'The proofing method a key reference is bound to (section 7.1.1: ' +
             '"MUST be bound to a single proofing mechanism"): httpsig, jwsd ' +
             'or jws. Default httpsig.' },
+    { name: 'gnapMtlsTrust', kind: 'single', from: 'the console, or by hand',
+      what: 'How a key this client proves by mutual TLS is trusted, for ' +
+            'this client alone (#107): `pki` or `pinned`, as the realm\'s ' +
+            'gnap.mtlsTrust. It can only make the realm STRICTER — `pki` ' +
+            'where the realm is pinned — and `pinned` is refused where the ' +
+            'realm is pki (STS-REG-0196) and ignored if the realm is made ' +
+            'pki afterwards. Empty follows the realm. Under pki the ' +
+            'certificate must chain to the client truststore and be issued ' +
+            'to this entry by this realm, or carry the one RFC 8705 subject ' +
+            'parameter it registers (oauthTlsClientAuthSubjectDn or an ' +
+            'oauthTlsClientAuthSan* attribute).' },
     { name: 'gnapSymmetricKey', kind: 'single', from: 'the console, or by hand',
       sensitive: true,
       what: 'A SHARED SECRET for a key reference, base64url, at least 32 ' +
@@ -3049,6 +3252,12 @@ const EDITABLE = {
   // having been deliberately withdrawn — which, on the one attribute here
   // that REFUSES people, is the failure worth designing against.
   appRequiredRole: 'multi',
+  // THE DELEGATION POLICY (#108): three lists and a flag. See their SCHEMA
+  // rows and `common/delegation_policy.ts`.
+  appAllowedToDelegateTo: 'multi',
+  appAllowedToActOnBehalfOf: 'multi',
+  appDelegationSubjectGroup: 'multi',
+  appTrustedToImpersonate: 'set',
   // THE IDENTIFIER ATTRIBUTES, one per protocol family (see the PROTOCOLS
   // table). Every one of them is `multi` bar oauthTlsClientAuthSubjectDn below,
   // whose own row says why — an application answering to two client_ids or two
@@ -3068,6 +3277,14 @@ const EDITABLE = {
   oauthClientSecretPreviousUntil: 'set',
   oauthClientSecretExpiresAt: 'set',
   oauthTokenEndpointAuthMethod: 'set',
+  // Native SSO (#130). One answer each.
+  oauthNativeSso: 'set',
+  oauthNativeSsoGroup: 'set',
+  // CIBA (#131). One answer each.
+  oauthBackchannelTokenDeliveryMode: 'set',
+  oauthBackchannelClientNotificationEndpoint: 'set',
+  oauthBackchannelAuthenticationRequestSigningAlg: 'set',
+  oauthBackchannelUserCodeParameter: 'set',
   // OIDC Core sections 8 and 9 (#118). One answer each.
   oauthSubjectType: 'set',
   oauthSectorIdentifierUri: 'set',
@@ -3250,6 +3467,7 @@ const EDITABLE = {
   gnapKey: 'set',
   gnapKeyReference: 'set',
   gnapKeyProof: 'set',
+  gnapMtlsTrust: 'set',
   gnapSymmetricKey: 'set',
   gnapSymmetricAlg: 'set',
   gnapClassId: 'set',
@@ -3274,6 +3492,8 @@ const EDITABLE = {
   oauthGrantType: 'multi',
   oauthResponseType: 'multi',
   oauthScope: 'multi',
+  // DECLARED (#110): what the client may be issued. See its SCHEMA row.
+  oauthAllowedScope: 'multi',
   // THE THREE THAT MAKE A DELEGATED PERMISSION. Two `multi` and one `set`, and
   // each mode is the attribute's own kind read back: a base URI is one answer
   // per application (its own row says why widening it would mean deciding
@@ -3790,6 +4010,41 @@ function homePageOf(source) {
 }
 
 // ---------------------------------------------------------------------------
+// OPENID CONNECT CORE SECTION 4, `initiate_login_uri` (#120): where a third
+// party — the user portal — may start a sign-in AT the relying party. It is a
+// registration member (OpenID Connect Registration section 2) and lives in
+// `appRegistrationJson` only; `oidcRegistrationProblem()` held it to https
+// when it was written, and it is held to that again here because
+// `ldapmodify` reaches the attribute unchecked. '' where there is none.
+// ---------------------------------------------------------------------------
+function initiateLoginUriOf(source) {
+  log.debug("Entering initiateLoginUriOf().");
+  const holder = source || {};
+  const fields = holder.fields || holder;
+  let document = null;
+  try {
+    document = fields.appRegistrationJson
+      ? JSON.parse(String(fields.appRegistrationJson)) : null;
+  } catch (e) {
+    log.debug("Caught in initiateLoginUriOf(): " + ((e && e.message) || e));
+    // registrationOf() reports an unparseable document; here it names none.
+    document = null;
+  }
+  const text = String((document && document.initiate_login_uri) || '').trim();
+  let usable = '';
+  try {
+    const parsed = new URL(text);
+    usable = parsed.protocol === 'https:' && !parsed.hash ? text : '';
+  } catch (e) {
+    log.debug("Caught in initiateLoginUriOf(): " + ((e && e.message) || e));
+    // Not a URL: no sign-in link.
+    usable = '';
+  }
+  log.debug("Leaving initiateLoginUriOf().");
+  return usable;
+}
+
+// ---------------------------------------------------------------------------
 // THE CORS ORIGINS, WRITTEN AND READ (2026-09-13).
 //
 // The grammar is `common/validation.js`'s — `originProblem()` and
@@ -4035,6 +4290,45 @@ function corsOriginsOfRealm() {
       });
   });
   log.debug("Leaving corsOriginsOfRealm(). " + out.length + " origin(s).");
+  return out;
+}
+
+// The origin of every http or https redirect URI any application in the
+// ambient realm registered — the relying parties OpenID Connect Session
+// Management's OP iframe may be framed by (#121, `frame-ancestors`). Read off
+// the directory's attributes, `corsOriginsOfRealm()`'s reason: no view is
+// built and no sealed key opened. A private-use scheme has no web origin and
+// cannot frame anything, so it is left out, as is anything that does not
+// parse.
+function redirectOriginsOfRealm() {
+  log.debug("Entering redirectOriginsOfRealm().");
+  const backing = store();
+  if (!backing) {
+    log.debug("Leaving redirectOriginsOfRealm(). No directory.");
+    return [];
+  }
+  const out = [];
+  backing.allApplications().forEach(function (entry) {
+    valuesOf(byLowerName(entry.attributes).oauthredirecturi)
+      .forEach(function (uri) {
+        let origin = '';
+        try {
+          const parsed = new URL(String(uri));
+          origin = /^https?:$/.test(parsed.protocol) ? parsed.origin : '';
+        } catch (e) {
+          log.debug("Caught in redirectOriginsOfRealm(): " +
+                    ((e && e.message) || e));
+          // Not a URL: no origin to frame from.
+          origin = '';
+        }
+        if (origin && out.indexOf(origin) < 0) {
+          out.push(origin);
+        }
+      });
+  });
+  out.sort();
+  log.debug("Leaving redirectOriginsOfRealm(). " + out.length +
+            " origin(s).");
   return out;
 }
 
@@ -4364,6 +4658,103 @@ function addressProblem(attribute, value) {
                    problem + '.' : null;
 }
 
+// ---------------------------------------------------------------------------
+// FRONT-CHANNEL LOGOUT 1.0 SECTION 2's ORIGIN RULE (#122, 2026-09-22): "The
+// domain, port, and scheme of this URL MUST be the same as that of a
+// registered Redirection URI value." The scheme rule above is about what a
+// sign-out page may frame; this one is about WHOSE page it frames — without
+// it a client could have a sign-out load an address on a host that is not
+// its own, in the person's browser, with the session's `sid` on it.
+//
+// Asked at every door, in every mode: RFC 7591 registration and update
+// (STS-REG-0170, through registrationUriProblem()), a console or /admin-api
+// write of the attribute (STS-REG-0171), and when a sign-out reads the stored
+// value (`frontchannel_logout.ts`, STS-OAUTH-0572), because `ldapmodify`
+// passes neither of the first two. Returns the sentence, or null.
+// ---------------------------------------------------------------------------
+function frontchannelOriginProblem(uri, redirectUris) {
+  log.debug("Entering frontchannelOriginProblem().");
+  let origin = '';
+  try {
+    origin = new URL(String(uri)).origin;
+  } catch (e) {
+    log.debug("Caught in frontchannelOriginProblem(): " +
+              ((e && e.message) || e));
+    // Not a URL: the scheme rule refuses it with a better sentence.
+    origin = '';
+  }
+  if (!origin || origin === 'null') {
+    log.debug("Leaving frontchannelOriginProblem(). Not a URL.");
+    return '"' + uri + '" is not a URL with a scheme, host and port.';
+  }
+  const origins = valuesOf(redirectUris).map(function (one) {
+    try {
+      return new URL(String(one)).origin;
+    } catch (e) {
+      log.debug("Caught in frontchannelOriginProblem(): " +
+                ((e && e.message) || e));
+      // A redirect URI that is not a URL has no origin to match.
+      return '';
+    }
+  });
+  if (origins.indexOf(origin) >= 0) {
+    log.debug("Leaving frontchannelOriginProblem(). Matched.");
+    return null;
+  }
+  log.debug("Leaving frontchannelOriginProblem(). No redirect URI there.");
+  return '"' + uri + '" is at ' + origin + ', and ' +
+    (origins.filter(function (one) { return !!one; }).length
+      ? 'no registered redirect URI is (the scheme, host and port must be ' +
+        'the same as one of them)'
+      : 'the client registers no redirect URI for it to match') +
+    ' — Front-Channel Logout 1.0 section 2.';
+}
+
+// ---------------------------------------------------------------------------
+// BACK-CHANNEL LOGOUT 1.0 SECTION 2.2's SCHEME RULE (#123, 2026-09-23): the
+// `backchannel_logout_uri` "SHOULD use the https scheme ... however, it MAY
+// use the http scheme, provided that the Client Type is confidential". Two
+// refusals, both of an http URI, in every mode:
+//
+//   * a PUBLIC client's (STS-REG-0189) — the specification's own rule;
+//   * anybody's that the outbound policy would refuse to dial
+//     (STS-REG-0190) — `federation.outboundAllowHttp` off, or product mode,
+//     which never sends over plain http (#171) — so the registration would
+//     be a promise that goes straight to the dead-letter queue. Refused where
+//     the client can still be told, with the policy's own reason: the
+//     question is ASKED of `federation_http.ts` (lazily, for #120's reason),
+//     so this refusal and the delivery cannot disagree.
+//
+// `publicClient` is the caller's reading of the client's type: an explicit
+// `none` at registration, and a create or an entry declaring none.
+// ---------------------------------------------------------------------------
+function backchannelSchemeProblem(uri, publicClient) {
+  log.debug("Entering backchannelSchemeProblem().");
+  if (!/^http:/i.test(String(uri || ''))) {
+    log.debug("Leaving backchannelSchemeProblem(). Not http.");
+    return null;
+  }
+  if (publicClient) {
+    log.debug("Leaving backchannelSchemeProblem(). A public client.");
+    return { errorCode: 'STS-REG-0189', error: 'invalid_client_metadata',
+             description: 'backchannel_logout_uri: an http URI is allowed ' +
+               'only to a confidential client (Back-Channel Logout 1.0 ' +
+               'section 2.2); this client authenticates with none. Use ' +
+               'https.' };
+  }
+  const undeliverable = require('../federation/federation_http')
+    .urlProblem(String(uri));
+  if (undeliverable) {
+    log.debug("Leaving backchannelSchemeProblem(). Undeliverable.");
+    return { errorCode: 'STS-REG-0190', error: 'invalid_client_metadata',
+             description: 'backchannel_logout_uri: every Logout Token to ' +
+               'this address would be dead-lettered — ' + undeliverable +
+               '. Use https.' };
+  }
+  log.debug("Leaving backchannelSchemeProblem(). Allowed.");
+  return null;
+}
+
 // The same question about an RFC 7591 document, before any of it is written.
 // Answers null or `{ errorCode, error, description }` in RFC 7591 section
 // 3.2.2's vocabulary — `invalid_redirect_uri` for a redirect URI, and
@@ -4389,6 +4780,28 @@ function registrationUriProblem(metadata) {
         return { errorCode: 'STS-REG-0070', error: members[i][2],
                  description: members[i][0] + ': ' + problem };
       }
+    }
+  }
+  const backchannel = valuesOf(meta.backchannel_logout_uri)[0];
+  if (backchannel) {
+    // RFC 7591 section 2: an omitted method is client_secret_basic, so only
+    // an explicit `none` is a public client here.
+    const schemeProblem = backchannelSchemeProblem(backchannel,
+      String(meta.token_endpoint_auth_method || '') === 'none');
+    if (schemeProblem) {
+      log.debug("Leaving registrationUriProblem(). The back-channel scheme.");
+      return schemeProblem;
+    }
+  }
+  const frontchannel = valuesOf(meta.frontchannel_logout_uri)[0];
+  if (frontchannel) {
+    const originProblem = frontchannelOriginProblem(frontchannel,
+                                                    meta.redirect_uris);
+    if (originProblem) {
+      log.debug("Leaving registrationUriProblem(). The front-channel " +
+                "origin.");
+      return { errorCode: 'STS-REG-0170', error: 'invalid_client_metadata',
+               description: 'frontchannel_logout_uri: ' + originProblem };
     }
   }
   log.debug("Leaving registrationUriProblem(). Nothing refused.");
@@ -4597,6 +5010,76 @@ function idTokenEncryptionMetadataProblem(values) {
       'id_token_encryption_enc_values_supported).');
   }
   log.debug("Leaving idTokenEncryptionMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// JARM SECTION 3: WHAT A CLIENT MAY REGISTER ABOUT ITS JWT-SECURED
+// AUTHORIZATION RESPONSES (#139, #143).
+//
+// `authorization_signed_response_alg` (RS256 by default — JARM's own default;
+// PS256 under FAPI 1.0 Advanced, which `oauth-oidc/jarm.ts` decides), and
+// `authorization_encrypted_response_alg` / `_enc` (no encryption by default,
+// A128CBC-HS256 when only the alg is named). Like the ID Token's, they have no
+// attribute: they live in `appRegistrationJson`. The grammar is here for the
+// ID Token members' reason; whether the client's `jwks` holds a key to encrypt
+// to is `jarm.ts`'s.
+//
+// `none` is refused (JARM section 3: "The algorithm none is not allowed"); an
+// HMAC algorithm is allowed and keyed by the client secret, as the ID Token's
+// is; the encryption list is the asymmetric one, as for every response this
+// service encrypts to a client.
+// ---------------------------------------------------------------------------
+function jarmMetadataProblem(values) {
+  log.debug("Entering jarmMetadataProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0179', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  const names = ['authorization_signed_response_alg',
+                 'authorization_encrypted_response_alg',
+                 'authorization_encrypted_response_enc'];
+  for (let i = 0; i < names.length; i++) {
+    const value = asked[names[i]];
+    if (value !== undefined && value !== null && typeof value !== 'string') {
+      log.debug("Leaving jarmMetadataProblem(). Not a string.");
+      return refusal(names[i], 'must be a string naming one algorithm.');
+    }
+  }
+  const signAlg = String(asked.authorization_signed_response_alg || '').trim();
+  if (signAlg && stsCrypto.JWS_SIGNING_ALGS.indexOf(signAlg) < 0) {
+    log.debug("Leaving jarmMetadataProblem(). Signing alg.");
+    return refusal(names[0], '"' + signAlg + '" is not an algorithm this ' +
+      'service signs an authorization response with' + (signAlg === 'none'
+        ? ' — JARM section 3 does not allow none' : '') + '. It signs with ' +
+      stsCrypto.JWS_SIGNING_ALGS.join(', ') + ' (see ' +
+      'authorization_signing_alg_values_supported).');
+  }
+  const alg = String(asked.authorization_encrypted_response_alg || '').trim();
+  const enc = String(asked.authorization_encrypted_response_enc || '').trim();
+  if (alg && ID_TOKEN_ENCRYPTION_ALGS.indexOf(alg) < 0) {
+    log.debug("Leaving jarmMetadataProblem(). Encryption alg.");
+    return refusal(names[1], '"' + alg + '" is not an algorithm this ' +
+      'service encrypts an authorization response with. It encrypts with ' +
+      ID_TOKEN_ENCRYPTION_ALGS.join(', ') + ', to the key registered in ' +
+      '"jwks".');
+  }
+  if (enc && !alg) {
+    log.debug("Leaving jarmMetadataProblem(). enc without alg.");
+    return refusal(names[2], 'JARM section 3 says ' +
+      'authorization_encrypted_response_alg MUST also be provided, and none ' +
+      'is.');
+  }
+  if (enc && ID_TOKEN_ENCRYPTION_ENCS.indexOf(enc) < 0) {
+    log.debug("Leaving jarmMetadataProblem(). Content encryption.");
+    return refusal(names[2], '"' + enc + '" is not a content encryption ' +
+      'algorithm this service has. It has ' +
+      ID_TOKEN_ENCRYPTION_ENCS.join(', ') + '.');
+  }
+  log.debug("Leaving jarmMetadataProblem(). Nothing refused.");
   return null;
 }
 
@@ -4815,6 +5298,219 @@ function requestObjectAttributeProblem(attribute, value, fields) {
 }
 
 // ---------------------------------------------------------------------------
+// OPENID CONNECT DYNAMIC CLIENT REGISTRATION SECTION 2, AND RFC 7591 SECTION 2
+// — WHAT THE REST OF A REGISTRATION MAY SAY (#120, 2026-09-22).
+//
+// The members nothing checked until this date, each refused
+// `invalid_client_metadata` (or `invalid_redirect_uri`) at the registration
+// and RFC 7592 update that names it, in every mode, because a registration is
+// a document the client keeps and acts on:
+//
+//   * `application_type` — `web` (the default) or `native`. A native client's
+//     redirect URIs are a private-use scheme or http on a loopback address; a
+//     web client using the implicit grant registers https only, and never
+//     localhost. (`STS-REG-0181`, `0182`)
+//   * `grant_types` against `response_types` — RFC 7591 section 2.1's table: a
+//     response type with `code` needs `authorization_code`, one with `token`
+//     or `id_token` needs `implicit`, and each of those two grants needs a
+//     response type that uses it. (`0183`)
+//   * `redirect_uris` — required of a client that uses either redirect-based
+//     grant. (`0184`)
+//   * `id_token_signed_response_alg` and `userinfo_signed_response_alg` —
+//     algorithms this service signs with (an ID Token is never `none`).
+//     They failed at issuance as a 500 until this. (`0185`)
+//   * `jwks` and `jwks_uri` — never both (RFC 7591 section 2), and a
+//     `jwks_uri` is https: it is FETCHED since #120
+//     (`oauth-oidc/client_jwks.js`).
+//     (`0186`)
+//   * `default_max_age` (a non-negative integer), `require_auth_time` (a
+//     boolean) and `default_acr_values` (acr values). (`0187`)
+//   * `initiate_login_uri` — https (Core section 4). (`0188`)
+//
+// `grantsAndResponseTypesOf()` is the same reading with RFC 7591's defaults
+// applied — `authorization_code` and `code` — which the registration response
+// returns and the endpoints enforce.
+// ---------------------------------------------------------------------------
+const APPLICATION_TYPES = ['web', 'native'];
+const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+const ACR_VALUE_SHAPE = /^[\x21\x23-\x5B\x5D-\x7E]{1,256}$/;
+
+// The registration's grant and response types with RFC 7591 section 2's
+// defaults applied, each response type in a fixed word order. `code` is the
+// response_types default only where the grants include one that redirects:
+// a client registering `client_credentials` alone and omitting
+// response_types would otherwise be refused as inconsistent (section 2.1)
+// for a member it never sent, and every back-channel client does exactly
+// that. It gets no response type, which is what it can use.
+function grantsAndResponseTypesOf(values) {
+  log.debug("Entering grantsAndResponseTypesOf().");
+  const asked = values || {};
+  const grants = Array.isArray(asked.grant_types) && asked.grant_types.length
+    ? asked.grant_types.map(String) : ['authorization_code'];
+  const redirects = grants.indexOf('authorization_code') >= 0 ||
+                    grants.indexOf('implicit') >= 0;
+  const types = (Array.isArray(asked.response_types)
+    ? asked.response_types.map(String) : (redirects ? ['code'] : []))
+    .map(function (one) {
+      return one.split(/\s+/).filter(Boolean).sort().join(' ');
+    });
+  log.debug("Leaving grantsAndResponseTypesOf().");
+  return { grant_types: grants, response_types: types };
+}
+
+function oidcRegistrationProblem(values) {
+  log.debug("Entering oidcRegistrationProblem().");
+  const asked = values || {};
+  const refusal = function (code, member, description, error) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: code, error: error || 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  const type = asked.application_type === undefined ? 'web'
+    : asked.application_type;
+  if (APPLICATION_TYPES.indexOf(type) < 0) {
+    log.debug("Leaving oidcRegistrationProblem(). application_type.");
+    return refusal('STS-REG-0181', 'application_type', JSON.stringify(type) +
+      ' is not web or native (OpenID Connect Registration section 2).');
+  }
+  const lists = grantsAndResponseTypesOf(asked);
+  const uris = Array.isArray(asked.redirect_uris) ? asked.redirect_uris : [];
+  const implicit = lists.grant_types.indexOf('implicit') >= 0;
+  for (let i = 0; i < uris.length; i++) {
+    let url = null;
+    try {
+      url = new URL(String(uris[i]));
+    } catch (e) {
+      log.debug("Caught in oidcRegistrationProblem(): " +
+                ((e && e.message) || e));
+      // Refused for its shape by registrationUriProblem(), asked first.
+      url = null;
+    }
+    if (!url) {
+      continue;
+    }
+    const loopback = LOOPBACK_HOSTS.indexOf(url.hostname) >= 0;
+    if (type === 'native' && (url.protocol === 'https:' ||
+        (url.protocol === 'http:' && !loopback))) {
+      log.debug("Leaving oidcRegistrationProblem(). A native redirect URI.");
+      return refusal('STS-REG-0182', 'redirect_uris', '"' + uris[i] + '" ' +
+        'is not a private-use scheme or an http loopback address, which is ' +
+        'what a native client registers (OpenID Connect Registration ' +
+        'section 2).', 'invalid_redirect_uri');
+    }
+    if (type === 'web' && implicit &&
+        (url.protocol !== 'https:' || url.hostname === 'localhost')) {
+      log.debug("Leaving oidcRegistrationProblem(). An implicit web URI.");
+      return refusal('STS-REG-0182', 'redirect_uris', '"' + uris[i] + '" ' +
+        'is not an https URL off localhost, which a web client using the ' +
+        'implicit grant must register (OpenID Connect Registration section ' +
+        '2).', 'invalid_redirect_uri');
+    }
+  }
+  const usesCode = lists.response_types.some(function (one) {
+    return one.split(' ').indexOf('code') >= 0;
+  });
+  // `token` is what makes a response type the implicit GRANT: an access token
+  // from the authorization endpoint. RFC 7591's table also files `id_token`
+  // under implicit, but RFC 9700 mode refuses the implicit grant at
+  // registration and allows `code id_token` — the hybrid response FAPI 1.0
+  // Advanced asks for — so holding an ID Token to that row would make the
+  // one registration FAPI requires impossible. Section 2.1 lets a server
+  // decide how strict it is about the table; this is the one leniency.
+  const usesToken = lists.response_types.some(function (one) {
+    return one.split(' ').indexOf('token') >= 0;
+  });
+  const usesImplicit = usesToken || lists.response_types.some(function (one) {
+    return one.split(' ').indexOf('id_token') >= 0;
+  });
+  const has = function (grant) {
+    return lists.grant_types.indexOf(grant) >= 0;
+  };
+  // `response_type=none` (#125) issues nothing, so it needs no grant and
+  // contradicts none: a client registering only it is not refused for the
+  // authorization_code grant RFC 7591 defaults it to.
+  const onlyNone = lists.response_types.length > 0 &&
+    lists.response_types.every(function (one) { return one === 'none'; });
+  const clash = usesCode && !has('authorization_code')
+    ? 'a response type with code needs the authorization_code grant'
+    : usesToken && !has('implicit')
+      ? 'a response type with token needs the implicit grant'
+      : has('authorization_code') && !usesCode && !onlyNone
+        ? 'the authorization_code grant needs a response type with code'
+        : has('implicit') && !usesImplicit
+          ? 'the implicit grant needs a response type with token or id_token'
+          : '';
+  if (clash) {
+    log.debug("Leaving oidcRegistrationProblem(). The lists disagree.");
+    return refusal('STS-REG-0183', 'grant_types', clash + ' (RFC 7591 ' +
+      'section 2.1); this registration says grant_types ' +
+      JSON.stringify(lists.grant_types) + ' and response_types ' +
+      JSON.stringify(lists.response_types) + '.');
+  }
+  if ((has('authorization_code') || has('implicit')) && !uris.length) {
+    log.debug("Leaving oidcRegistrationProblem(). No redirect URI.");
+    return refusal('STS-REG-0184', 'redirect_uris', 'a client using the ' +
+      'authorization_code or implicit grant must register at least one ' +
+      '(RFC 7591 section 2).', 'invalid_redirect_uri');
+  }
+  /** @type {Array<{ member: string, algs: string[] }>} */
+  const algs = [{ member: 'id_token_signed_response_alg',
+                  algs: stsCrypto.JWS_SIGNING_ALGS },
+                { member: 'userinfo_signed_response_alg',
+                  algs: stsCrypto.JWS_SIGNING_ALGS.concat(['none']) }];
+  for (let i = 0; i < algs.length; i++) {
+    const value = asked[algs[i].member];
+    if (value !== undefined && value !== null &&
+        algs[i].algs.indexOf(String(value)) < 0) {
+      log.debug("Leaving oidcRegistrationProblem(). " + algs[i].member + ".");
+      return refusal('STS-REG-0185', algs[i].member, JSON.stringify(value) +
+        ' is not an algorithm this service signs with; it signs with ' +
+        algs[i].algs.join(', ') + '.');
+    }
+  }
+  if (asked.jwks !== undefined && asked.jwks_uri !== undefined) {
+    log.debug("Leaving oidcRegistrationProblem(). jwks and jwks_uri.");
+    return refusal('STS-REG-0186', 'jwks_uri', 'a registration carries ' +
+      'jwks or jwks_uri, never both (RFC 7591 section 2).');
+  }
+  if (asked.jwks_uri !== undefined && !/^https:\/\/[^\s]+$/i.test(
+      String(asked.jwks_uri))) {
+    log.debug("Leaving oidcRegistrationProblem(). jwks_uri is not https.");
+    return refusal('STS-REG-0186', 'jwks_uri', 'must be an https URL.');
+  }
+  if (asked.default_max_age !== undefined &&
+      !(Number.isInteger(asked.default_max_age) &&
+        asked.default_max_age >= 0)) {
+    log.debug("Leaving oidcRegistrationProblem(). default_max_age.");
+    return refusal('STS-REG-0187', 'default_max_age', 'must be a ' +
+      'non-negative whole number of seconds.');
+  }
+  if (asked.require_auth_time !== undefined &&
+      typeof asked.require_auth_time !== 'boolean') {
+    log.debug("Leaving oidcRegistrationProblem(). require_auth_time.");
+    return refusal('STS-REG-0187', 'require_auth_time', 'must be a boolean.');
+  }
+  if (asked.default_acr_values !== undefined &&
+      !(Array.isArray(asked.default_acr_values) &&
+        asked.default_acr_values.every(function (one) {
+          return typeof one === 'string' && ACR_VALUE_SHAPE.test(one);
+        }))) {
+    log.debug("Leaving oidcRegistrationProblem(). default_acr_values.");
+    return refusal('STS-REG-0187', 'default_acr_values', 'must be an array ' +
+      'of acr values.');
+  }
+  if (asked.initiate_login_uri !== undefined && !/^https:\/\/[^\s]+$/i.test(
+      String(asked.initiate_login_uri))) {
+    log.debug("Leaving oidcRegistrationProblem(). initiate_login_uri.");
+    return refusal('STS-REG-0188', 'initiate_login_uri', 'must be an https ' +
+      'URL (OpenID Connect Registration section 2).');
+  }
+  log.debug("Leaving oidcRegistrationProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // OPENID CONNECT CORE SECTIONS 8 AND 9: WHAT A CLIENT MAY REGISTER ABOUT ITS
 // SUBJECT AND ITS ASSERTION ALGORITHM (#118, 2026-09-22).
 //
@@ -4829,6 +5525,87 @@ function requestObjectAttributeProblem(attribute, value, fields) {
 // endpoint. Registration answers STS-REG-0167; a console or API write
 // STS-REG-0168.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// OPENID CONNECT CIBA CORE 1.0 SECTION 4 (#131): the four registration
+// members, their attributes, and what a registration may say. A mode of
+// poll, ping or push; ping and push need an https notification endpoint
+// (section 4 says https, whatever the outbound policy would dial); a signing
+// algorithm is asymmetric; the user code is a boolean. STS-REG-0197.
+// ---------------------------------------------------------------------------
+const CIBA_ATTRIBUTES = {
+  backchannel_token_delivery_mode: 'oauthBackchannelTokenDeliveryMode',
+  backchannel_client_notification_endpoint:
+    'oauthBackchannelClientNotificationEndpoint',
+  backchannel_authentication_request_signing_alg:
+    'oauthBackchannelAuthenticationRequestSigningAlg'
+};
+
+function cibaMetadataProblem(values) {
+  log.debug("Entering cibaMetadataProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0197', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  const mode = asked.backchannel_token_delivery_mode;
+  if (mode !== undefined &&
+      ['poll', 'ping', 'push'].indexOf(String(mode)) < 0) {
+    log.debug("Leaving cibaMetadataProblem(). An unknown mode.");
+    return refusal('backchannel_token_delivery_mode', 'must be poll, ping ' +
+                   'or push (CIBA Core section 4).');
+  }
+  const endpoint = asked.backchannel_client_notification_endpoint;
+  if ((mode === 'ping' || mode === 'push') && !endpoint) {
+    log.debug("Leaving cibaMetadataProblem(). No endpoint.");
+    return refusal('backchannel_client_notification_endpoint', 'is ' +
+                   'required for the ' + mode + ' mode (CIBA Core section 4).');
+  }
+  if (endpoint !== undefined &&
+      !/^https:\/\/[^\s#]+$/i.test(String(endpoint))) {
+    log.debug("Leaving cibaMetadataProblem(). Not https.");
+    return refusal('backchannel_client_notification_endpoint', 'must be an ' +
+                   'https URL with no fragment (CIBA Core section 4).');
+  }
+  const alg = asked.backchannel_authentication_request_signing_alg;
+  if (alg !== undefined && (stsCrypto.JWS_ASYMMETRIC_ALGS || [])
+        .indexOf(String(alg)) < 0) {
+    log.debug("Leaving cibaMetadataProblem(). The algorithm.");
+    return refusal('backchannel_authentication_request_signing_alg', '"' +
+                   alg + '" is not an asymmetric JWS algorithm this service ' +
+                   'verifies (CIBA Core section 4 forbids none).');
+  }
+  const userCode = asked.backchannel_user_code_parameter;
+  if (userCode !== undefined && typeof userCode !== 'boolean') {
+    log.debug("Leaving cibaMetadataProblem(). Not a boolean.");
+    return refusal('backchannel_user_code_parameter', 'must be a boolean.');
+  }
+  log.debug("Leaving cibaMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// What a client registered for CIBA: `{ mode, endpoint, signingAlg,
+// userCode }`, with mode '' for a client that registered none.
+function cibaOf(clientId) {
+  log.debug("Entering cibaOf().");
+  const who = String(clientId == null ? '' : clientId).trim();
+  const found = who ? (forClientId(who) || get(who)) : null;
+  const fields = (found && found.fields) || {};
+  const one = function (name) {
+    return String(valuesOf(fields[name])[0] || '').trim();
+  };
+  const mode = one('oauthBackchannelTokenDeliveryMode');
+  log.debug("Leaving cibaOf(). " + (mode || 'none'));
+  return {
+    mode: ['poll', 'ping', 'push'].indexOf(mode) >= 0 ? mode : '',
+    endpoint: one('oauthBackchannelClientNotificationEndpoint'),
+    signingAlg: one('oauthBackchannelAuthenticationRequestSigningAlg'),
+    userCode: one('oauthBackchannelUserCodeParameter').toUpperCase() ===
+      'TRUE'
+  };
+}
+
 const OIDC_SUBJECT_ATTRIBUTES = {
   subject_type: 'oauthSubjectType',
   sector_identifier_uri: 'oauthSectorIdentifierUri',
@@ -5005,6 +5782,36 @@ function pushedAuthorizationAttributeProblem(attribute, value) {
 }
 
 // ---------------------------------------------------------------------------
+// THE DELEGATION POLICY'S TWO GRAMMARS (#108): the flag is TRUE or FALSE, and
+// a subject group is a DN. The two lists of identifiers take any string — an
+// audience or an AppliesTo nobody registered is an ordinary target — so they
+// are not checked here. STS-REG-0194. A CLEAR is never refused.
+// ---------------------------------------------------------------------------
+function delegationAttributeProblem(attribute, value) {
+  log.debug("Entering delegationAttributeProblem(). attribute=" + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (!text) {
+    log.debug("Leaving delegationAttributeProblem(). A clear.");
+    return '';
+  }
+  if (attribute === 'appTrustedToImpersonate' &&
+      ['TRUE', 'FALSE'].indexOf(text.toUpperCase()) < 0) {
+    log.debug("Leaving delegationAttributeProblem(). Not a boolean.");
+    return attribute + ': "' + text + '" is not TRUE or FALSE.';
+  }
+  if (attribute === 'appDelegationSubjectGroup' &&
+      !/^[A-Za-z][A-Za-z0-9-]*=[^,]+(,\s*[A-Za-z][A-Za-z0-9-]*=[^,]+)*$/
+        .test(text)) {
+    log.debug("Leaving delegationAttributeProblem(). Not a DN.");
+    return attribute + ': "' + text + '" is not a DN. Name the group by ' +
+           'its distinguished name, as /admin/groups shows it.';
+  }
+  log.debug("Leaving delegationAttributeProblem(). Nothing refused.");
+  return '';
+}
+
+// ---------------------------------------------------------------------------
 // RFC 8705: WHAT A CLIENT MAY REGISTER ABOUT ITS CERTIFICATE (2026-09-13).
 //
 // Section 2.1.2's five subject parameters, of which a `tls_client_auth` client
@@ -5123,6 +5930,76 @@ function mtlsAttributeProblem(attribute, value, fields) {
                ' first.' };
   }
   log.debug("Leaving mtlsAttributeProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// GNAP MUTUAL TLS: WHICH TRUST MODEL A CLIENT'S CERTIFICATE IS HELD TO (#107,
+// 2026-09-23).
+//
+// The realm's `gnap.mtlsTrust` (`auto` asks `mode.requiresPkiForGnapMtls()`)
+// and an entry's `gnapMtlsTrust`, combined in ONE place so the proof, the
+// grant engine and the write door below cannot disagree about which is in
+// force. The combination is the stricter of the two: an operator may hold one
+// client to a PKI in a realm that pins, and no client may pin itself in a
+// realm that requires a PKI — that would be a client choosing to be checked
+// less, which is not a client's choice. `gnap/gnap_proof.ts` argues the two
+// models.
+//
+//   STS-REG-0195  gnapMtlsTrust is neither pki nor pinned
+//   STS-REG-0196  gnapMtlsTrust=pinned in a realm whose setting is pki
+// ---------------------------------------------------------------------------
+const GNAP_MTLS_TRUSTS = ['pki', 'pinned'];
+
+function gnapRealmMtlsTrust() {
+  log.debug("Entering gnapRealmMtlsTrust().");
+  const set = String(config.value('gnap.mtlsTrust') || 'auto');
+  if (GNAP_MTLS_TRUSTS.indexOf(set) >= 0) {
+    log.debug("Leaving gnapRealmMtlsTrust(). " + set);
+    return set;
+  }
+  log.debug("Leaving gnapRealmMtlsTrust(). auto.");
+  return mode.requiresPkiForGnapMtls() ? 'pki' : 'pinned';
+}
+
+// `fields` is an entry's fields (or null for a caller with no entry yet).
+// Answers `{ trust, realm, entry }`, `entry` being what the entry asked for
+// ('' for nothing, or a value that is not honoured).
+function gnapMtlsTrustFor(fields) {
+  log.debug("Entering gnapMtlsTrustFor().");
+  const realm = gnapRealmMtlsTrust();
+  const asked = String(valuesOf((fields || {}).gnapMtlsTrust)[0] || '')
+    .trim().toLowerCase();
+  const trust = realm === 'pki' || asked === 'pki' ? 'pki' : 'pinned';
+  log.debug("Leaving gnapMtlsTrustFor(). " + trust);
+  return { trust: trust, realm: realm, entry: asked };
+}
+
+// The write door's question about `gnapMtlsTrust`. A clear is never refused.
+// Answers `{ code, message }` or null.
+function gnapMtlsTrustProblem(attribute, value) {
+  log.debug("Entering gnapMtlsTrustProblem(). attribute=" + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (attribute !== 'gnapMtlsTrust' || !text) {
+    log.debug("Leaving gnapMtlsTrustProblem(). Not asked.");
+    return null;
+  }
+  if (GNAP_MTLS_TRUSTS.indexOf(text) < 0) {
+    log.debug("Leaving gnapMtlsTrustProblem(). Not a trust model.");
+    return { code: 'STS-REG-0195',
+             message: 'gnapMtlsTrust: "' + text + '" is not pki or pinned.' };
+  }
+  if (text === 'pinned' && gnapRealmMtlsTrust() === 'pki') {
+    log.debug("Leaving gnapMtlsTrustProblem(). Weaker than the realm.");
+    return { code: 'STS-REG-0196',
+             message: 'gnapMtlsTrust: this realm holds every GNAP key ' +
+               'proved by mutual TLS to a PKI (gnap.mtlsTrust resolves to ' +
+               'pki), and an application may make that stricter for itself, ' +
+               'never weaker. A pinned certificate cannot be revoked or ' +
+               'rotated at a certificate authority (RFC 9635 section 11.4).' };
+  }
+  log.debug("Leaving gnapMtlsTrustProblem(). Nothing refused.");
   return null;
 }
 
@@ -5638,6 +6515,31 @@ function normaliseFields(value) {
         code = code || 'STS-REG-0071';
         return;
       }
+      // Back-Channel Logout section 2.2's scheme (#123). A create naming no
+      // method and carrying no credential declares `none` (the method
+      // createApplication() writes for it).
+      if (name === 'oauthBackchannelLogoutUri') {
+        const method = String(asked.oauthTokenEndpointAuthMethod || '');
+        const schemeProblem = backchannelSchemeProblem(values[0],
+          method === 'none' ||
+          (!method && !asked.oauthClientSecret && !asked.oauthJwks &&
+           !asked.oauthJwksUri));
+        if (schemeProblem) {
+          errors.push(schemeProblem.description);
+          code = code || schemeProblem.errorCode;
+          return;
+        }
+      }
+      // Front-Channel Logout section 2, against the create's redirect URIs.
+      if (name === 'oauthFrontchannelLogoutUri') {
+        const originProblem = frontchannelOriginProblem(values[0],
+                                                        asked.oauthRedirectUri);
+        if (originProblem) {
+          errors.push(originProblem);
+          code = code || 'STS-REG-0171';
+          return;
+        }
+      }
     }
     // The CORS origins, every value, and STORED NORMALISED — see
     // corsOriginWriteProblem(). A create with one value that is not an origin
@@ -5657,6 +6559,19 @@ function normaliseFields(value) {
         return all.indexOf(one) === index;
       });
       return;
+    }
+    // #110: a declared scope is a scope token, the rule oauthGlobalConsent
+    // has, for its reason — a value that is not one can never be asked for.
+    if (name === 'oauthAllowedScope') {
+      const scopeProblems = values.map(scopeTokenProblem)
+                                  .filter(function (one) {
+        return !!one;
+      });
+      if (scopeProblems.length) {
+        scopeProblems.forEach(function (one) { errors.push(one); });
+        code = code || 'STS-REG-0172';
+        return;
+      }
     }
     if (name === 'ssfAllowedEvents') {
       const problems = values.map(ssfAllowedEventProblem)
@@ -5691,6 +6606,17 @@ function normaliseFields(value) {
       code = code || 'STS-REG-0101';
       return;
     }
+    // The delegation policy's two grammars (#108), every value.
+    const delegationProblems = values.map(function (one) {
+      return delegationAttributeProblem(name, one);
+    }).filter(function (one) {
+      return !!one;
+    });
+    if (delegationProblems.length) {
+      delegationProblems.forEach(function (one) { errors.push(one); });
+      code = code || 'STS-REG-0194';
+      return;
+    }
     // RFC 9126's one.
     const pushedProblem = pushedAuthorizationAttributeProblem(name, values[0]);
     if (pushedProblem) {
@@ -5703,6 +6629,14 @@ function normaliseFields(value) {
     if (subjectProblem) {
       errors.push(subjectProblem);
       code = code || 'STS-REG-0168';
+      return;
+    }
+    // GNAP's mutual TLS trust model (#107): a value, and never weaker than
+    // the realm.
+    const gnapTrustProblem = gnapMtlsTrustProblem(name, values[0]);
+    if (gnapTrustProblem) {
+      errors.push(gnapTrustProblem.message);
+      code = code || gnapTrustProblem.code;
       return;
     }
     // RFC 8705's six, read against the create's OTHER subject parameters,
@@ -5855,6 +6789,49 @@ function generalizedTime(when) {
   return d.getUTCFullYear() + pad(d.getUTCMonth() + 1) + pad(d.getUTCDate()) +
          pad(d.getUTCHours()) + pad(d.getUTCMinutes()) +
          pad(d.getUTCSeconds()) + 'Z';
+}
+
+// ---------------------------------------------------------------------------
+// AN ISSUED RFC 7523 KEY PAIR, ONTO ITS APPLICATION'S ENTRY (#138): the seven
+// attributes `/admin/pki` writes, in the order it writes them, as one list so
+// the console and this service's own surfaces (`oidc_rp.ts`, which issues its
+// console, portal and debugger their private_key_jwt keys) cannot disagree
+// about what an issued key pair is. `record` is `pki.issueSigningKeyPair()`'s
+// `issued`.
+// ---------------------------------------------------------------------------
+function issuedJwtKeyPairValues(record) {
+  log.debug("Entering issuedJwtKeyPairValues().");
+  log.debug("Leaving issuedJwtKeyPairValues().");
+  return [
+    ['oauthAssertionJwks', JSON.stringify(record.jwks)],
+    ['oauthAssertionCertificate', record.certificatePem],
+    ['oauthAssertionCertificateChain', (record.chainPem || []).join('')],
+    ['oauthAssertionPrivateKey', record.privateKeyPem],
+    ['oauthAssertionKid', record.kid],
+    ['oauthAssertionExpiresAt', generalizedTime(new Date(record.notAfter))],
+    // `issued` for a key pair generated here; an upload's record says which
+    // kind of upload it was. See KEY_SOURCES.
+    ['oauthAssertionKeySource', record.source || 'issued']
+  ];
+}
+
+// Writes them, all or a report of which failed. A failure loses the private
+// key — common/pki.js keeps no copy — so the caller must issue again.
+function storeIssuedJwtKeyPair(identifier, record) {
+  log.debug("Entering storeIssuedJwtKeyPair(). " + identifier);
+  const writes = issuedJwtKeyPairValues(record);
+  for (let i = 0; i < writes.length; i++) {
+    const done = updateApplication(identifier, {
+      attribute: writes[i][0], mode: 'set', value: writes[i][1] });
+    if (!done || done.ok === false) {
+      log.debug("Leaving storeIssuedJwtKeyPair(). " + writes[i][0] +
+                " failed.");
+      return { ok: false, failed: writes[i][0],
+               errors: (done && done.errors) || [] };
+    }
+  }
+  log.debug("Leaving storeIssuedJwtKeyPair(). Stored.");
+  return { ok: true };
 }
 
 function fromGeneralizedTime(value) {
@@ -6591,8 +7568,8 @@ function applyRegistrationFields(record, registration, statement) {
   setField(record, 'oauthClientId', record.identifier);
   setField(record, 'oauthClientSecret', meta.client_secret);
   // RFC 7591's key members. `jwks` is stored as text because that is what the
-  // verifier parses and what an operator edits; `jwks_uri` is recorded and
-  // never followed (see its schema row).
+  // verifier parses and what an operator edits; `jwks_uri` is recorded and,
+  // since #120, fetched when a key is needed (see its schema row).
   if (meta.jwks) {
     setField(record, 'oauthJwks',
              typeof meta.jwks === 'string' ? meta.jwks :
@@ -6675,6 +7652,35 @@ function applyRegistrationFields(record, registration, statement) {
       delete record.fields[OIDC_SUBJECT_ATTRIBUTES[member]];
     }
   });
+  // NATIVE SSO (#130): ONLY FROM A TRUSTED SOFTWARE STATEMENT. The group is
+  // the boundary between apps that may share a device session, so a client
+  // that could name its own would join any vendor's apps. A registration
+  // without such a statement leaves what an administrator set alone; one
+  // with it writes what the statement's issuer said.
+  if (statement && statement.trusted &&
+      Object.prototype.hasOwnProperty.call(statement, 'nativeSso')) {
+    setField(record, 'oauthNativeSso', statement.nativeSso ? 'TRUE' : 'FALSE');
+    if (statement.nativeSsoGroup) {
+      setField(record, 'oauthNativeSsoGroup', statement.nativeSsoGroup);
+    } else {
+      delete record.fields.oauthNativeSsoGroup;
+    }
+  }
+  // CIBA section 4 (#131), the same way: an update that omits one clears it.
+  Object.keys(CIBA_ATTRIBUTES).forEach(function (member) {
+    const value = String(meta[member] || '').trim();
+    if (value) {
+      setField(record, CIBA_ATTRIBUTES[member], value);
+    } else {
+      delete record.fields[CIBA_ATTRIBUTES[member]];
+    }
+  });
+  if (typeof meta.backchannel_user_code_parameter === 'boolean') {
+    setField(record, 'oauthBackchannelUserCodeParameter',
+             meta.backchannel_user_code_parameter ? 'TRUE' : 'FALSE');
+  } else {
+    delete record.fields.oauthBackchannelUserCodeParameter;
+  }
   // RFC 9396 section 10, the same way: an update that omits it clears it.
   delete record.fields.oauthAuthorizationDetailsTypes;
   if (Array.isArray(meta.authorization_details_types) &&
@@ -6719,8 +7725,20 @@ function applyRegistrationFields(record, registration, statement) {
   setField(record, 'appHomePageUrl', meta.client_uri);
   setField(record, 'oauthGrantType', meta.grant_types);
   setField(record, 'oauthResponseType', meta.response_types);
-  if (meta.scope) setField(record, 'oauthScope',
-                           String(meta.scope).split(/\s+/));
+  // RFC 7591 section 2's `scope` is a DECLARATION — "the list that the
+  // client can use when requesting access tokens" — so it goes on the
+  // declared attribute and never on `oauthScope`, which is what the client
+  // has ASKED for (#110). CLEARED when absent, for RFC 9701's reason above:
+  // RFC 7592 section 2.2 replaces the whole registration. The registration
+  // endpoint has already refused a protected scope in it
+  // (`common/scope_policy.ts`); a seeded row is this service's own and may
+  // declare one.
+  delete record.fields.oauthAllowedScope;
+  const declaredScope = String(meta.scope || '').split(/\s+/)
+    .filter(function (one) { return !!one; });
+  if (declaredScope.length) {
+    setField(record, 'oauthAllowedScope', declaredScope);
+  }
   // RFC 7591 section 2: an omitted method means client_secret_basic, so the
   // attribute states the EFFECTIVE value rather than the absence. An entry
   // saying nothing here would read as "unknown", and RFC 9700 mode's answer for
@@ -6747,6 +7765,7 @@ function register(clientId, registration, options) {
                      requestObjectMetadataProblem(registration) ||
                      pushedAuthorizationMetadataProblem(registration) ||
                      oidcSubjectMetadataProblem(registration) ||
+                     cibaMetadataProblem(registration) ||
                      mtlsMetadataProblem(registration) ||
                      authorizationDetailsMetadataProblem(registration);
   if (uriProblem) {
@@ -6761,15 +7780,27 @@ function register(clientId, registration, options) {
   record.registered = true;
   // Only when nobody registered it first: an administrator's entry that later
   // registers through RFC 7591 was still put here by the administrator.
-  if (!record.fields.appRegisteredBy) {
+  // A FEDERATION REGISTRATION (#134) says so, and when it ends — replacing
+  // whatever an earlier one of the same client said (12.2.2: an existing
+  // registration is invalidated by a new one).
+  const federated = (options || {}).federation;
+  if (federated) {
+    setField(record, 'appRegisteredBy', 'oidfed-' + federated.type);
+    setField(record, 'appFederationRegistration', String(federated.type));
+    setField(record, 'appFederationExpiresAt', String(federated.expiresAt));
+    setField(record, 'appFederationTrustAnchor',
+             String(federated.trustAnchor));
+  } else if (!record.fields.appRegisteredBy) {
     setField(record, 'appRegisteredBy', 'rfc7591');
   }
   record.firstAt = record.firstAt || now;
   record.lastAt = now;
   addTo(record.kinds, 'oauth2-client');
   addTo(record.protocols, 'OAuth 2.0');
-  addTo(record.descriptions, 'registered through RFC 7591 dynamic client ' +
-                             'registration');
+  addTo(record.descriptions, federated
+    ? 'registered through an OpenID Federation Trust Chain (' +
+      federated.type + ')'
+    : 'registered through RFC 7591 dynamic client registration');
   if (registration.client_name) record.name = String(registration.client_name);
   applyRegistrationFields(record, registration,
                           (options || {}).softwareStatement);
@@ -6778,7 +7809,9 @@ function register(clientId, registration, options) {
     action: loaded.known ? 'application.update' : 'application.create',
     actor: '', protocol: 'OAuth 2.0', channel: 'internal',
     target: String(clientId),
-    summary: 'Client "' + clientId + '" registered through RFC 7591',
+    summary: 'Client "' + clientId + '" registered through ' +
+             (federated ? 'OpenID Federation (' + federated.type + ')'
+                        : 'RFC 7591'),
     detail: { identifier: String(clientId), registered: true,
               redirectUris: (registration.redirect_uris || []).length,
               storedInDirectory: written }
@@ -6904,6 +7937,42 @@ function softwareStatementFactsOf(clientId) {
            publisher: one('appSoftwareStatementPublisher') };
 }
 
+// Has a federation registration ended (#134, 12.3)? Its expiry is checked
+// at the read, whenever the job that removes it last ran.
+function federationExpired(fields) {
+  log.debug("Entering federationExpired().");
+  const at = Number((fields || {}).appFederationExpiresAt);
+  log.debug("Leaving federationExpired().");
+  return !!(fields && fields.appFederationRegistration) &&
+         !(at > Math.floor(Date.now() / 1000));
+}
+
+// Every application registered through an OpenID Federation, for the job
+// that removes the ones past their expiry and for the console.
+function federatedRegistrations() {
+  log.debug("Entering federatedRegistrations().");
+  const backing = store();
+  if (!backing) {
+    log.debug("Leaving federatedRegistrations(). No directory.");
+    return [];
+  }
+  const out = [];
+  backing.allApplications().forEach(function (entry) {
+    const record = recordFromAttributes(entry.attributes);
+    const f = record.fields;
+    if (f.appFederationRegistration) {
+      out.push({ identifier: String(record.identifier || f.oauthClientId ||
+                                    ''),
+                 type: String(f.appFederationRegistration),
+                 expiresAt: Number(f.appFederationExpiresAt) || 0,
+                 trustAnchor: String(f.appFederationTrustAnchor || ''),
+                 expired: federationExpired(f) });
+    }
+  });
+  log.debug("Leaving federatedRegistrations(). " + out.length);
+  return out;
+}
+
 // What oauth2.js's `registeredClients.get(id)` used to answer: the RFC 7591
 // record, or null for an application that merely turned up. "Registered" is the
 // distinction RFC 9700 mode's redirect URI and client authentication rules turn
@@ -6917,7 +7986,8 @@ function softwareStatementFactsOf(clientId) {
 function registrationOf(clientId) {
   log.debug("Entering registrationOf().");
   const loaded = load(clientId);
-  if (!loaded.known || !loaded.record.registered) {
+  if (!loaded.known || !loaded.record.registered ||
+      federationExpired(loaded.record.fields)) {
     log.debug("Leaving registrationOf().");
     return null;
   }
@@ -6974,6 +8044,17 @@ function registrationOf(clientId) {
       fields.oauthResponseType.slice(0);
   if (fields.oauthTokenEndpointAuthMethod !== undefined) {
     document.token_endpoint_auth_method = fields.oauthTokenEndpointAuthMethod;
+  }
+  // RFC 7591 section 3.2.1 returns the registered `scope`, and the
+  // attribute is what an operator edits (#110) — so it is read from there,
+  // and a list cleared on the console is a member the document no longer
+  // carries.
+  const allowedScope = valuesOf(fields.oauthAllowedScope).map(String)
+    .filter(function (one) { return !!one.trim(); });
+  if (allowedScope.length) {
+    document.scope = allowedScope.join(' ');
+  } else {
+    delete document.scope;
   }
   // RFC 9701's three, from the attributes, so an operator's edit is what RFC
   // 7592's read hands back — and an attribute cleared on the console is a
@@ -7100,8 +8181,11 @@ function declaredClient(record, fields, redirectCount) {
 function clientConfigOf(identifier) {
   log.debug("Entering clientConfigOf(). identifier=" + identifier);
   const loaded = load(identifier);
-  if (!loaded.known) {
-    log.debug("Leaving clientConfigOf(). Never seen.");
+  // A FEDERATION REGISTRATION PAST ITS CHAIN (#134, 12.3) is no registration:
+  // the client is answered as unknown everywhere until it registers again.
+  if (!loaded.known || federationExpired(loaded.record.fields)) {
+    log.debug("Leaving clientConfigOf(). Never seen, or a federation " +
+              "registration that has ended.");
     return { known: false, registered: false, declared: false,
              redirect_uris: [],
              post_logout_redirect_uris: [], token_endpoint_auth_method: '',
@@ -7467,6 +8551,16 @@ function createApplication(detail) {
     log.debug("Leaving createApplication().");
     return errorCodes.mark({ ok: false, errors: wrongFamily }, 'STS-REG-0010');
   }
+  // And the mode rule `updateApplication()` applies (#181): a create is the
+  // other door an override attribute can be written through.
+  const modeProblems = Object.keys(given.fields).map(function (name) {
+    return overrideModeProblem(name, valuesOf(given.fields[name])[0]);
+  }).filter(function (one) { return !!one; });
+  if (modeProblems.length) {
+    log.debug("Leaving createApplication(). A development-only value.");
+    return errorCodes.mark({ ok: false, errors: modeProblems },
+                           'STS-REG-0193');
+  }
   const record = loaded.record;
   const now = Date.now();
   record.firstAt = now;
@@ -7632,6 +8726,40 @@ function viewAfterWrite(identifier, record) {
 // against the row rather than trusted, because a `set` on a multi-valued
 // attribute would replace a list of redirect URIs with one and read afterwards
 // as the others having been forgotten.
+// ---------------------------------------------------------------------------
+// AN OVERRIDE THE MODE DOES NOT ALLOW (#181). An attribute that overrides a
+// setting whose row carries `onlyWhile` — `saml2SignAssertion`,
+// `saml11SignAssertion`, `saml11SignResponse`, `saml2KeyTransportAlgorithm` —
+// may not be set to a development-only value in a product realm, for the
+// reason `config.js`'s `modeWriteProblem()` refuses the setting itself: the
+// value would be ignored where it is read (`settingFor()`), and a write that
+// is accepted and then ignored is a console that lies. A value that does not
+// parse is left to `settingFor()`'s own warning, as before; a clear is never
+// refused. Answers the sentence, or ''.
+// ---------------------------------------------------------------------------
+function overrideModeProblem(attribute, value) {
+  log.debug("Entering overrideModeProblem(). attribute=" + attribute);
+  const row = ATTRIBUTE_BY_NAME[attribute];
+  const key = row && row.overrides;
+  if (!key || !value) {
+    log.debug("Leaving overrideModeProblem(). Not an override, or a clear.");
+    return '';
+  }
+  const parsed = config.parseAs(key, value);
+  if (!parsed.ok || mode.allowsValue(key, parsed.value)) {
+    log.debug("Leaving overrideModeProblem(). Allowed.");
+    return '';
+  }
+  const setting = config.SETTINGS.filter(function (one) {
+    return one.key === key;
+  })[0];
+  log.debug("Leaving overrideModeProblem(). Refused.");
+  return '"' + attribute + '" cannot be set to ' + value + ' here: it ' +
+    'overrides ' + key + ', and this realm is in product mode ' +
+    '(global.mode=product), where that value is ignored — ' +
+    mode.writeRefusalReason(setting ? setting.onlyWhile : '');
+}
+
 function updateApplication(identifier, change) {
   log.debug("Entering updateApplication().");
   const asked = change || {};
@@ -7735,6 +8863,14 @@ function updateApplication(identifier, change) {
   // one step further. A value can arrive here by `ldapmodify`, or be left
   // behind by a family being untimed from the entry after it was set, and
   // refusing to remove it would shut the one door that could tidy it up.
+  if (mode === 'set' && value) {
+    const modeProblem = overrideModeProblem(attribute, value);
+    if (modeProblem) {
+      log.debug("Leaving updateApplication(). Development-only value.");
+      return errorCodes.mark({ ok: false, errors: [modeProblem] },
+                             'STS-REG-0193');
+    }
+  }
   if ((mode === 'set' && value) || mode === 'add') {
     const wrongFamily = familyRefusal(attribute,
                                       declaredFamiliesOf(loaded.record),
@@ -7808,6 +8944,15 @@ function updateApplication(identifier, change) {
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0101');
     }
   }
+  // The delegation policy's two grammars (#108), on an ADD or a SET.
+  if ((mode === 'set' || mode === 'add') && value) {
+    const problem = delegationAttributeProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable delegation " +
+                "policy value.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0194');
+    }
+  }
   // RFC 9126's one, on a SET that carries a value.
   if (mode === 'set' && value) {
     const problem = pushedAuthorizationAttributeProblem(attribute, value);
@@ -7833,6 +8978,16 @@ function updateApplication(identifier, change) {
                                          loaded.record.fields);
     if (problem) {
       log.debug("Leaving updateApplication(). Not a usable RFC 8705 value.");
+      return errorCodes.mark({ ok: false, errors: [problem.message] },
+                             problem.code);
+    }
+  }
+  // GNAP's mutual TLS trust model (#107), on a SET that carries a value.
+  if (mode === 'set' && value) {
+    const problem = gnapMtlsTrustProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable GNAP mutual TLS " +
+                "trust model.");
       return errorCodes.mark({ ok: false, errors: [problem.message] },
                              problem.code);
     }
@@ -7876,6 +9031,28 @@ function updateApplication(identifier, change) {
     if (problem) {
       log.debug("Leaving updateApplication(). Not a usable address.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0071');
+    }
+    // Back-Channel Logout section 2.2's scheme (#123), for the entry's type.
+    if (attribute === 'oauthBackchannelLogoutUri') {
+      const schemeProblem = backchannelSchemeProblem(value,
+        String(loaded.record.fields.oauthTokenEndpointAuthMethod || '') ===
+          'none');
+      if (schemeProblem) {
+        log.debug("Leaving updateApplication(). The back-channel scheme.");
+        return errorCodes.mark({ ok: false,
+                                 errors: [schemeProblem.description] },
+                               schemeProblem.errorCode);
+      }
+    }
+    // Front-Channel Logout section 2, against the entry's redirect URIs.
+    if (attribute === 'oauthFrontchannelLogoutUri') {
+      const originProblem = frontchannelOriginProblem(value,
+        loaded.record.fields.oauthRedirectUri);
+      if (originProblem) {
+        log.debug("Leaving updateApplication(). The front-channel origin.");
+        return errorCodes.mark({ ok: false, errors: [originProblem] },
+                               'STS-REG-0171');
+      }
     }
   }
   if ((attribute === 'oauthResourceMetadata' ||
@@ -8024,12 +9201,42 @@ function updateApplication(identifier, change) {
   // ONLY AN ADD IS CHECKED, the same asymmetry the two rules above have and for
   // their reason: a remove names a value already on the entry, and an
   // `ldapmodify` reaches this attribute like every other.
+  // A GLOBAL CONSENT IS TAKEN AWAY ONLY BY THE CONSENT REGISTER (#172).
+  // `consent.revokeGlobal()` records WHEN and revokes every token issued
+  // under the override; a remove through this generic door did neither, so
+  // it left every refresh token standing on it renewable for its whole life.
+  // The register passes `consentRegister`, and it is the one caller that
+  // does. Refused rather than routed, because this module cannot require
+  // the register (it requires this one), and a door that silently did half a
+  // withdrawal would be worse than one that says where the whole one is.
+  if (attribute === 'oauthGlobalConsent' && mode === 'remove' &&
+      asked.consentRegister !== true) {
+    log.debug("Leaving updateApplication(). A global consent is withdrawn " +
+              "through the consent register.");
+    return errorCodes.mark({ ok: false, errors: ['A global consent is ' +
+      'withdrawn through the consent register — the ' +
+      '`revoke-global-consent` action at /admin/consent or `POST ' +
+      '/admin-api/consent/revoke-global-consent` — and not by removing the ' +
+      'value here: withdrawing it also revokes every token issued under it ' +
+      'and records when, so that adding it back revives nothing. Nothing ' +
+      'was changed.'] }, 'STS-REG-0191');
+  }
   if (attribute === 'oauthGlobalConsent' && mode === 'add') {
     const problem = scopeTokenProblem(value);
     if (problem) {
       log.debug("Leaving updateApplication(). The consented scope is not a " +
                 "scope token.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0018');
+    }
+  }
+  // A DECLARED SCOPE (#110) the same way, and only an add for the same
+  // asymmetry: a remove names a value already on the entry.
+  if (attribute === 'oauthAllowedScope' && mode === 'add') {
+    const problem = scopeTokenProblem(value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). The declared scope is not a " +
+                "scope token.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0172');
     }
   }
   // ---------------------------------------------------------------------------
@@ -9100,6 +10307,78 @@ function view(record, entry) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// WHAT A CLIENT REGISTERED IT WOULD USE (#120): the `grant_types` and
+// `response_types` of its REGISTRATION DOCUMENT, which the token and
+// authorization endpoints hold it to in every mode (rcbj's decision). Read
+// from `appRegistrationJson` and NOT from `oauthGrantType` /
+// `oauthResponseType`, because those two also record what was OBSERVED — a
+// list that grows with use is no restriction. A client with no registration
+// document, or one that names neither list (registered before #120 applied
+// RFC 7591's defaults), answers null and is held to nothing, as a client_id
+// nobody registered is.
+// ---------------------------------------------------------------------------
+function registeredFlowsOf(clientId) {
+  log.debug("Entering registeredFlowsOf().");
+  const loaded = load(String(clientId || ''));
+  if (!loaded.known || !loaded.record.registered) {
+    log.debug("Leaving registeredFlowsOf(). Not registered.");
+    return null;
+  }
+  let document = null;
+  try {
+    document = JSON.parse(loaded.record.fields.appRegistrationJson || 'null');
+  } catch (e) {
+    log.debug("Caught in registeredFlowsOf(): " + ((e && e.message) || e));
+    // Unreadable: registrationOf() reports it; nothing to hold the client to.
+    document = null;
+  }
+  if (!document || (!Array.isArray(document.grant_types) &&
+                    !Array.isArray(document.response_types))) {
+    log.debug("Leaving registeredFlowsOf(). Nothing registered.");
+    return null;
+  }
+  log.debug("Leaving registeredFlowsOf().");
+  return {
+    grant_types: Array.isArray(document.grant_types)
+      ? document.grant_types.map(String) : null,
+    response_types: Array.isArray(document.response_types)
+      ? document.response_types.map(function (one) {
+        return String(one).split(/\s+/).filter(Boolean).sort().join(' ');
+      }) : null
+  };
+}
+
+// RFC 7592 SECTION 2 (#120): a registration access token presented for a
+// client that does not exist "SHOULD be immediately revoked" — it is some
+// OTHER client's, being tried where it does not belong. This finds the client
+// holding it (compared in constant time) and takes the token off its entry.
+// Answers the client_id it was revoked from, or ''.
+function revokeRegistrationAccessToken(token) {
+  log.debug("Entering revokeRegistrationAccessToken().");
+  const presented = String(token || '');
+  if (!presented) {
+    log.debug("Leaving revokeRegistrationAccessToken(). No token.");
+    return '';
+  }
+  const holder = list().filter(function (row) {
+    const held = String(((row && row.fields) || {})
+      .appRegistrationAccessToken || '');
+    return held !== '' && stsCrypto.constantTimeEquals(presented, held);
+  })[0];
+  if (!holder) {
+    log.debug("Leaving revokeRegistrationAccessToken(). Nobody holds it.");
+    return '';
+  }
+  updateApplication(holder.identifier, { attribute:
+    'appRegistrationAccessToken', mode: 'remove', value: presented });
+  log.warn(errorCodes.tag('STS-OAUTH-0596') + 'applications: a registration ' +
+           'access token of "' + holder.identifier + '" was presented for ' +
+           'another client, and is revoked (RFC 7592 section 2).');
+  log.debug("Leaving revokeRegistrationAccessToken(). Revoked.");
+  return holder.identifier;
+}
+
 function list() {
   log.debug("Entering list().");
   const backing = store();
@@ -9172,10 +10451,20 @@ function largestSetting(settingKey, config) {
   return most;
 }
 
+// **A DEVELOPMENT-ONLY VALUE IS NOT IN FORCE IN PRODUCT, WHEREVER IT CAME
+// FROM** (#181). A setting whose row carries `onlyWhile` —
+// `saml2.signAssertion` off, `saml2.keyTransportAlgorithm` `rsa-1_5`, … — is read as `mode.js`
+// says: the setting through `valueInForce()`, and an entry's override of it
+// through `inForce()`, which answers the row's default in a product realm and
+// says so once per setting and attribute (STS-CORE-0106). Checked HERE,
+// because every per-application read comes through this function; a check at
+// each caller would be the one a new caller forgets. `updateApplication()`
+// refuses to write such a value (STS-REG-0193).
 function settingFor(identifier, settingKey, config) {
   log.debug("Entering settingFor(). identifier=" + (identifier || '(none)') +
             ", setting=" + settingKey);
-  const fallback = config.value(settingKey);
+  const fallback = mode.inForce(settingKey, config.value(settingKey),
+                                settingKey);
   if (!identifier) {
     log.debug("Leaving settingFor(). No application named; the setting " +
               "decides.");
@@ -9215,7 +10504,7 @@ function settingFor(identifier, settingKey, config) {
   }
   log.debug("Leaving settingFor(). " + identifier + " overrides " + settingKey +
             ".");
-  return parsed.value;
+  return mode.inForce(settingKey, parsed.value, attribute);
 }
 
 // Which attribute overrides which setting, built ONCE from the schema rows'
@@ -9236,6 +10525,35 @@ function overridableSettings() {
   return Object.keys(OVERRIDE_ATTRIBUTES).map(function (key) {
     return { setting: key, attribute: OVERRIDE_ATTRIBUTES[key] };
   });
+}
+
+// ---------------------------------------------------------------------------
+// THE INSTANT A GLOBAL CONSENT WAS WITHDRAWN (#172), written by
+// `common/consent.ts`'s `revokeGlobal()` and by nothing else — the schema row
+// above says why it is not editable. `stamp` is the register's, so this
+// module knows nothing about its grammar beyond "a value per scope, the scope
+// after the first space". Returns whether it was written.
+// ---------------------------------------------------------------------------
+function noteGlobalConsentWithdrawn(identifier, scope, stamp) {
+  log.debug("Entering noteGlobalConsentWithdrawn(). identifier=" +
+            identifier);
+  const loaded = load(String(identifier || ''));
+  const leaf = String(scope || '').trim();
+  if (!loaded.known || !leaf || !stamp) {
+    log.debug("Leaving noteGlobalConsentWithdrawn(). No entry or no scope.");
+    return false;
+  }
+  const record = loaded.record;
+  const name = 'oauthGlobalConsentWithdrawn';
+  const kept = (record.fields[name] || []).filter(function (one) {
+    const text = String(one);
+    return text.slice(text.indexOf(' ') + 1) !== leaf;
+  });
+  record.fields[name] = kept;
+  setField(record, name, String(stamp) + ' ' + leaf);
+  const saved = save(record);
+  log.debug("Leaving noteGlobalConsentWithdrawn(). saved=" + saved);
+  return saved;
 }
 
 function get(identifier) {
@@ -9603,8 +10921,9 @@ function forPermissionBase(base) {
 // have to know which spelling it is holding.
 //
 // IT IS A QUESTION AND NOT A GATE. Nothing in this module refuses anything for
-// its answer; `oauth2.delegatedPermissionsEnforced` is what turns a false into
-// a refusal, and it is off by default.
+// its answer; oauth2.ts's permissionRefusal() turns a false into a refusal —
+// always in product mode, and in development when
+// `oauth2.delegatedPermissionsEnforced` is on (#110).
 function holdsPermission(clientId, id) {
   log.debug("Entering holdsPermission().");
   const wanted = String(id == null ? '' : id).trim();
@@ -9622,6 +10941,41 @@ function holdsPermission(clientId, id) {
     .indexOf(wanted) >= 0;
   log.debug("Leaving holdsPermission(). " + (held ? 'held' : 'not held') + ".");
   return held;
+}
+
+// ---------------------------------------------------------------------------
+// THE SCOPES A CLIENT DECLARED (#110, 2026-09-22): its `oauthAllowedScope`,
+// or NULL when it declares none — and the difference between an empty list and
+// no list is the whole of what `common/scope_policy.ts` reads it for. A client
+// that lists nothing gets the documented default set in product; a client that
+// lists something gets exactly that.
+//
+// Looked up the way holdsPermission() looks a grant up, and for its reason:
+// by `client_id` first, because that is what a token names, and then by the
+// registry identifier, which is what a GNAP token names (its instanceId is the
+// application's identifier). IN THE AMBIENT REALM: a client_id names a client
+// in one realm, and the caller runs this inside the realm whose token it is.
+//
+// A QUESTION AND NOT A GATE, like its neighbour: nothing here refuses.
+// ---------------------------------------------------------------------------
+function allowedScopesOf(clientId) {
+  log.debug("Entering allowedScopesOf().");
+  const who = String(clientId == null ? '' : clientId).trim();
+  if (!who) {
+    log.debug("Leaving allowedScopesOf(). No client named.");
+    return null;
+  }
+  const found = forClientId(who) || get(who);
+  if (!found) {
+    log.debug("Leaving allowedScopesOf(). No such client in the registry.");
+    return null;
+  }
+  const held = valuesOf((found.fields || {}).oauthAllowedScope).map(String)
+    .map(function (one) { return one.trim(); })
+    .filter(function (one) { return !!one; });
+  log.debug("Leaving allowedScopesOf(). " +
+            (held.length ? held.length + " declared." : "None declared."));
+  return held.length ? held : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -9708,6 +11062,28 @@ function forAudience(audience) {
 // permission (an unmatched name returns null and nothing is refused), it is not
 // case-folded, and it walks the container rather than keeping an index.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// MAY THIS CLIENT TAKE PART IN NATIVE SSO, AND IN WHICH GROUP? (#130)
+// `{ enabled, group }`: enabled only when the flag is TRUE and the group is a
+// well-formed name — a flag with no group would be a client in a group of
+// one, which the exchange could never use, and saying so here keeps the
+// scope from being granted to it at all.
+// ---------------------------------------------------------------------------
+const NATIVE_SSO_GROUP = /^[A-Za-z0-9._:-]{1,64}$/;
+
+function nativeSsoOf(clientId) {
+  log.debug("Entering nativeSsoOf().");
+  const who = String(clientId == null ? '' : clientId).trim();
+  const found = who ? (forClientId(who) || get(who)) : null;
+  const fields = (found && found.fields) || {};
+  const flag = String(valuesOf(fields.oauthNativeSso)[0] || '')
+    .toUpperCase() === 'TRUE';
+  const group = String(valuesOf(fields.oauthNativeSsoGroup)[0] || '').trim();
+  const enabled = flag && NATIVE_SSO_GROUP.test(group);
+  log.debug("Leaving nativeSsoOf(). " + enabled);
+  return { enabled: enabled, group: enabled ? group : '' };
+}
+
 function forClientId(clientId) {
   log.debug("Entering forClientId(). clientId=" + clientId);
   const wanted = String(clientId == null ? '' : clientId).trim();
@@ -10096,8 +11472,6 @@ function debuggerApplications() {
         client_id: 'sts-debugger-ui',
         client_name: 'Protocol debugger',
         client_id_issued_at: issued,
-        client_secret: randomId(24),
-        client_secret_expires_at: 0,
         registration_access_token: randomId(24),
         registration_client_uri: internalBaseUrl() +
                                  '/oauth2/register/sts-debugger-ui',
@@ -10108,7 +11482,7 @@ function debuggerApplications() {
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         scope: 'openid profile email offline_access ' + permission,
-        token_endpoint_auth_method: 'client_secret_basic'
+        token_endpoint_auth_method: 'private_key_jwt'
       } }
   ];
 }
@@ -10125,8 +11499,10 @@ function debuggerApplications() {
 const HOSTED_SURFACE_CLIENT_IDS = Object.freeze(['sts-admin-console',
   'sts-user-portal', 'sts-debugger-ui']);
 
-// The two, built fresh on each call because each carries two credentials that
-// are generated rather than declared.
+// The rows, built fresh on each call because each carries a credential that is
+// generated rather than declared — a registration access token, and a client
+// secret for the management API alone: the three hosted surfaces authenticate
+// by private_key_jwt with a key `oidc_rp.ts` has issued (#138).
 function internalApplications() {
   log.debug("Entering internalApplications().");
   const base = internalBaseUrl();
@@ -10169,8 +11545,6 @@ function internalApplications() {
         client_id: 'sts-admin-console',
         client_name: 'Admin console',
         client_id_issued_at: issued,
-        client_secret: randomId(24),
-        client_secret_expires_at: 0,
         registration_access_token: randomId(24),
         registration_client_uri: base + '/oauth2/register/sts-admin-console',
         client_uri: base + '/admin',
@@ -10179,8 +11553,11 @@ function internalApplications() {
         post_logout_redirect_uris: [base + '/admin'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        scope: 'openid profile email offline_access',
-        token_endpoint_auth_method: 'client_secret_basic'
+        // `admin:read admin:write` (#110): the API explorer mints the reader
+        // a token as this client, carrying the scopes their console roles
+        // grant, and /admin-api asks whether the client declared them.
+        scope: 'openid profile email offline_access admin:read admin:write',
+        token_endpoint_auth_method: 'private_key_jwt'
       } },
     // THE USER PORTAL, ADDED 2026-09-06 WITH THE MOVE ONTO THE CODE FLOW. It
     // was the admin console's row with one difference, `realmScope: 'every'`,
@@ -10213,8 +11590,6 @@ function internalApplications() {
         client_id: 'sts-user-portal',
         client_name: 'User portal',
         client_id_issued_at: issued,
-        client_secret: randomId(24),
-        client_secret_expires_at: 0,
         registration_access_token: randomId(24),
         registration_client_uri: base + '/oauth2/register/sts-user-portal',
         client_uri: base + '/portal',
@@ -10224,7 +11599,7 @@ function internalApplications() {
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         scope: 'openid profile email offline_access',
-        token_endpoint_auth_method: 'client_secret_basic'
+        token_endpoint_auth_method: 'private_key_jwt'
       } },
     { identifier: 'sts-management-api',
       name: 'Management API',
@@ -10384,6 +11759,10 @@ function seedInternalApplications(options) {
 
 module.exports = {
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
+  issuedJwtKeyPairValues: issuedJwtKeyPairValues,
+  storeIssuedJwtKeyPair: storeIssuedJwtKeyPair,
+  frontchannelOriginProblem: frontchannelOriginProblem,
+  backchannelSchemeProblem: backchannelSchemeProblem,
   requiredRolesOf: requiredRolesOf,
   requiresNarrowedRoles: requiresNarrowedRoles,
   KINDS: KINDS,
@@ -10416,6 +11795,7 @@ module.exports = {
   // second spelling of "http or https" in the page would be the second opinion
   // this module exists to prevent.
   homePageOf: homePageOf,
+  initiateLoginUriOf: initiateLoginUriOf,
   homePageProblem: homePageProblem,
   // THE CORS ORIGINS (2026-09-13): the one entry's list, the entry a request
   // named, and the realm's union — the three questions `common/cors.js` asks.
@@ -10423,6 +11803,7 @@ module.exports = {
   corsOriginsForClient: corsOriginsForClient,
   ssfAllowedEventsFor: ssfAllowedEventsFor,
   corsOriginsOfRealm: corsOriginsOfRealm,
+  redirectOriginsOfRealm: redirectOriginsOfRealm,
   ssfAllowedEventProblem: ssfAllowedEventProblem,
   // THE SEALED ATTRIBUTE AND THE PREFIX TEST THAT RECOGNISES ONE. Exported for
   // `admin-ui/admin.ts`, whose application page dumps `attributes` — the entry
@@ -10451,6 +11832,7 @@ module.exports = {
   // registration endpoint read them; nothing else should keep a copy.
   introspectionResponseProblem: introspectionResponseProblem,
   idTokenEncryptionMetadataProblem: idTokenEncryptionMetadataProblem,
+  jarmMetadataProblem: jarmMetadataProblem,
   ID_TOKEN_DEFAULT_ENC: ID_TOKEN_DEFAULT_ENC,
   ID_TOKEN_ENCRYPTION_ALGS: ID_TOKEN_ENCRYPTION_ALGS,
   ID_TOKEN_ENCRYPTION_ENCS: ID_TOKEN_ENCRYPTION_ENCS,
@@ -10464,11 +11846,20 @@ module.exports = {
   // `oauth-oidc/request_object.ts` and the registration endpoint read them.
   requestObjectMetadataProblem: requestObjectMetadataProblem,
   oidcSubjectMetadataProblem: oidcSubjectMetadataProblem,
+  cibaMetadataProblem: cibaMetadataProblem,
+  cibaOf: cibaOf,
+  oidcRegistrationProblem: oidcRegistrationProblem,
+  revokeRegistrationAccessToken: revokeRegistrationAccessToken,
+  registeredFlowsOf: registeredFlowsOf,
+  grantsAndResponseTypesOf: grantsAndResponseTypesOf,
   OIDC_SUBJECT_ATTRIBUTES: OIDC_SUBJECT_ATTRIBUTES,
   pushedAuthorizationMetadataProblem: pushedAuthorizationMetadataProblem,
   pushedAuthorizationAttributeProblem: pushedAuthorizationAttributeProblem,
+  delegationAttributeProblem: delegationAttributeProblem,
   mtlsMetadataProblem: mtlsMetadataProblem,
   mtlsAttributeProblem: mtlsAttributeProblem,
+  gnapMtlsTrustFor: gnapMtlsTrustFor,
+  gnapMtlsTrustProblem: gnapMtlsTrustProblem,
   TLS_SUBJECT_ATTRIBUTES: TLS_SUBJECT_ATTRIBUTES,
   TLS_BOUND_TOKENS_ATTRIBUTE: TLS_BOUND_TOKENS_ATTRIBUTE,
   // RFC 9396 — what an entry may say about authorization_details, and the
@@ -10496,6 +11887,7 @@ module.exports = {
   // The two conversions, exported because ldap_server.js seeds and reads
   // entries with them and this module owns the schema they encode.
   attributesFor: attributesFor,
+  nativeSsoOf: nativeSsoOf,
   recordFromAttributes: recordFromAttributes,
   labelFor: labelFor,
   editableAttributes: editableAttributes,
@@ -10509,6 +11901,7 @@ module.exports = {
   createApplication: createApplication,
   seedInternalApplications: seedInternalApplications,
   updateApplication: updateApplication,
+  noteGlobalConsentWithdrawn: noteGlobalConsentWithdrawn,
   regenerateClientSecret: regenerateClientSecret,
   rotateClientSecret: rotateClientSecret,
   sweepClientSecrets: sweepClientSecrets,
@@ -10538,6 +11931,9 @@ module.exports = {
   discardReturnAddress: discardReturnAddress,
   deleteApplication: deleteApplication,
   list: list,
+  // OpenID Federation registrations (#134).
+  federatedRegistrations: federatedRegistrations,
+  federationExpired: federationExpired,
   get: get,
   settingFor: settingFor,
   largestSetting: largestSetting,
@@ -10583,6 +11979,7 @@ module.exports = {
   // And the question the lookup deliberately does not answer: whether the
   // client asking has been GRANTED what it is naming.
   holdsPermission: holdsPermission,
+  allowedScopesOf: allowedScopesOf,
   count: count,
   containerDn: containerDn,
   maxApplications: maxApplications

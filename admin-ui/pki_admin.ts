@@ -100,6 +100,10 @@ import pki = require('../common/pki');
 // (rule 3) that registers nothing — the HTTP endpoints are `pki/pki_service.ts`
 // at 17b — so requiring it here moves no route and closes no cycle.
 import pkiRevocation = require('../common/pki_revocation');
+// CAEP credential-change when a revoked certificate was a PERSON's (#145).
+// A library over `helpers` and `crypto`; the require moves nothing.
+import accountSignals = require('../ssf/account_signals');
+import stsCrypto = require('../common/crypto');
 // The pane's model: the field table, the six line grammars, the profile
 // defaults and what an issue does with all of it. A LIBRARY (rule 3) — it
 // registers nothing, so requiring it here moves no route.
@@ -430,18 +434,9 @@ class PkiAdmin {
         valuesOf: function (record) {
           log.debug("Entering valuesOf().");
           log.debug("Leaving valuesOf().");
-          return [
-            ['oauthAssertionJwks', JSON.stringify(record.jwks)],
-            ['oauthAssertionCertificate', record.certificatePem],
-            ['oauthAssertionCertificateChain', record.chainPem.join('')],
-            ['oauthAssertionPrivateKey', record.privateKeyPem],
-            ['oauthAssertionKid', record.kid],
-            ['oauthAssertionExpiresAt',
-             self.generalizedTime(new Date(record.notAfter))],
-            // `issued` for a key pair generated here; an upload's record says
-            // which kind of upload it was. See KEY_SOURCES in applications.js.
-            ['oauthAssertionKeySource', record.source || 'issued']
-          ];
+          // ONE LIST, in applications.js (#138), which this service's own
+          // surfaces write their private_key_jwt keys through as well.
+          return applications.issuedJwtKeyPairValues(record);
         }
       },
       saml: {
@@ -1342,11 +1337,14 @@ class PkiAdmin {
         // is the shape every settings-backed control in this console has. An
         // empty `pki.signatureAlgorithm` means "the right one for the key
         // algorithm" — see that row's description for why a fixed value there
-        // is wrong for EC.
+        // is wrong for EC. The signature algorithm's default is applied by
+        // `pki.js`'s `algorithmsFrom()`, not here (#181): it reads the setting
+        // AS IN FORCE, so a SHA-1 value stored in a product realm is the
+        // key's own default rather than a refused build, and skips a value
+        // the key cannot produce, as every other build does.
         keyAlg: String(body.keyAlg || '').trim() ||
                 config.value('pki.keyAlgorithm'),
-        signatureAlg: String(body.signatureAlg || '').trim() ||
-                      config.value('pki.signatureAlgorithm') || '',
+        signatureAlg: String(body.signatureAlg || '').trim(),
         organisation: String(body.organisation || '').trim() ||
                       config.value('pki.organisation'),
         country: String(body.country || '').trim(),
@@ -1926,6 +1924,37 @@ class PkiAdmin {
       // asymmetry is the whole reason this line exists and the reason there is
       // no matching one for HTTP.
       pkiRevocation.publishSoon(scope, String(body.ca || '').trim());
+      // A PERSON'S CERTIFICATE REVOKED IS A CREDENTIAL CHANGE (#145). The
+      // authority's register says whose it was; the issuer is the authority's
+      // own subject, since that is what signed it. An application's, or one
+      // this register never recorded, has no person to tell.
+      if (!done.already) {
+        const caId = String(body.ca || '').trim();
+        const serial = pkiRevocation.normalSerial(done.entry.serialHex);
+        const held = pki.issuedKeyPairsFor(scope, caId).filter(function (one) {
+          return pkiRevocation.normalSerial(one.serialHex) === serial;
+        })[0];
+        if (held && held.subjectKind === 'person' && held.identifier) {
+          let authority = '';
+          try {
+            const issuer = pki.describeIssuer(scope, caId);
+            authority = stsCrypto.certificateIdentifiers(
+              issuer && issuer.certificatePem).subject;
+          } catch (e) {
+            log.debug('Caught in PkiAdmin.pkiAction(): ' +
+                      ((e && e.message) || e));
+            // No authority to name: the event goes with the serial alone.
+          }
+          accountSignals.credentialChanged({ username: held.identifier,
+            credentialType: 'x509', changeType: 'revoke',
+            x509Issuer: authority, x509Serial: serial,
+            initiatingEntity: 'admin', via: '/admin/pki',
+            reasonAdmin: 'An administrator revoked the certificate ' + serial +
+                         ' of ' + held.identifier + ' (' +
+                         done.entry.reason + ').',
+            reasonUser: 'A certificate of yours was revoked.' });
+        }
+      }
       log.debug('Leaving PkiAdmin.pkiAction(). Revoked.');
       return { ok: true, entry: done.entry, already: !!done.already,
                why: done.already
@@ -2192,7 +2221,8 @@ class PkiAdmin {
       json.signatureAlgorithms.map(function (one) {
         return '<option value="' + esc(one.id) + '">' + esc(one.label) +
           (one.kind !== kind ? ' — needs a ' + esc(one.kind) + ' key' : '') +
-          (one.weak ? ' [weak, on purpose]' : '') + '</option>';
+          (one.weak ? ' [weak, on purpose — refused in product mode]' : '') +
+          '</option>';
       }).join('');
   }
 

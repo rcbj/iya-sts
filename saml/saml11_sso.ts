@@ -140,9 +140,14 @@
 //    `<EntityDescriptor>` whose `IDPSSODescriptor` carries
 //    `protocolSupportEnumeration="urn:oasis:names:tc:SAML:1.1:protocol"` and
 //    whose endpoints name the 1.1 profile URIs as their bindings. That is what
-//    is published here. It is per relying party and minted for anything asked
-//    for, exactly as the 2.0 document is — see that module's decision 1, which
-//    is the same argument and is not repeated.
+//    is published here. It is per relying party and, in DEVELOPMENT, minted
+//    for anything asked for, exactly as the 2.0 document is — see that
+//    module's decision 1, which is the same argument and is not repeated. **IN
+//    PRODUCT (#112, 2026-09-23) `/saml11/metadata/{rp}`, `/saml11/sso/{rp}` and
+//    `/saml11/responder/{rp}` are a 404 for a name that is not a registered
+//    SAML 1.1 relying party** (`STS-SAML-0083`,
+//    `mode.publishesMetadataForUnregisteredProviders()`), for the reason that
+//    decision now gives in product.
 //
 // 6. **NOTHING IS VERIFIED, AND IN THIS PROFILE THERE IS ALSO NOTHING TO
 //    VERIFY.** The 2.0 module records an AuthnRequest's signature and its
@@ -634,10 +639,11 @@ class Saml11Sso {
   }
 
   // The relying party a path segment names, and whether this service had heard
-  // of it. It NEVER answers "no such relying party", for the reason
-  // `saml2_sso.ts`'s decision 1 gives: the ask is what registers it, so a
-  // service provider can be pointed here before anything at all has been
-  // provisioned.
+  // of it. It never answers "no such relying party" itself, for the reason
+  // `saml2_sso.ts`'s decision 1 gives: in development the ask is what
+  // registers it, so a service provider can be pointed here before anything
+  // at all has been provisioned. In product `refusedUnregistered()` turns an
+  // unregistered one into a 404 (#112).
   private relyingPartyFromSegment(segment) {
     const { applications, log, slugOf } = this.deps;
     log.debug("Entering Saml11Sso.relyingPartyFromSegment(). segment=" +
@@ -669,6 +675,45 @@ class Saml11Sso {
     log.debug("Leaving Saml11Sso.relyingPartyFromSegment(). Nothing knows " +
               "it; it IS the identifier.");
     return { id: text, known: false, unscoped: false };
+  }
+
+  // IS THE SEGMENT A REGISTERED SAML 1.1 RELYING PARTY (#112)? An entry of
+  // the kind, or one DECLARED for the SAML 1.1 family — not any application
+  // whose slug happens to match.
+  private isRegisteredRelyingParty(id): boolean {
+    const { applications, log } = this.deps;
+    log.debug("Entering Saml11Sso.isRegisteredRelyingParty().");
+    const record: any = id ? applications.get(id) : null;
+    const answer = !!record &&
+      ((record.kinds || []).indexOf(RP_KIND) >= 0 ||
+       applications.declaredFamiliesOf(record).indexOf('saml11') >= 0);
+    log.debug("Leaving Saml11Sso.isRegisteredRelyingParty(). " + answer);
+    return answer;
+  }
+
+  // THE PER-RELYING-PARTY PATHS ANSWER ONLY FOR A REGISTERED ONE, IN PRODUCT
+  // (#112): the metadata, the inter-site transfer service and the responder
+  // under `{rp}`. A handler-sent 404, text/plain and `no-store`, with
+  // `STS-SAML-0083` — Express's own 404 body is left for unrouted paths. True
+  // when it answered.
+  private refusedUnregistered(res, scoped, path): boolean {
+    const { errorCodes, log, mode } = this.deps;
+    log.debug("Entering Saml11Sso.refusedUnregistered(). " + path);
+    if (!scoped.id || mode.publishesMetadataForUnregisteredProviders() ||
+        this.isRegisteredRelyingParty(scoped.id)) {
+      log.debug("Leaving Saml11Sso.refusedUnregistered(). Answered for.");
+      return false;
+    }
+    errorCodes.mark(res, 'STS-SAML-0083');
+    res.status(404)
+       .type('text/plain')
+       .set('Cache-Control', 'no-store')
+       .send('There is no SAML 1.1 relying party registered here as "' +
+             scoped.id + '", so ' + path + ' has nothing to answer for it. ' +
+             'This identity provider publishes itself only to a relying ' +
+             'party an operator registered (product mode).\n');
+    log.debug("Leaving Saml11Sso.refusedUnregistered(). 404.");
+    return true;
   }
 
   // The four-step search above. Returns the identifier AND how it was arrived
@@ -1456,6 +1501,10 @@ class Saml11Sso {
     const base = baseUrlOf(req);
     const params = this.paramsOf(req);
     const scoped = this.relyingPartyFromSegment(req.params.rp);
+    if (this.refusedUnregistered(res, scoped, SSO_PATH + '/{rp}')) {
+      log.debug("Leaving Saml11Sso.interSiteTransfer(). Not registered.");
+      return;
+    }
 
     // A flow being resumed after the sign-in screen. There is no request
     // document to restore — just the parameters the browser first arrived with.
@@ -1741,7 +1790,10 @@ class Saml11Sso {
       subject: { kind: 'user', name: String((session.user || {}).username ||
                                             ''),
                  authenticated: session.authenticated !== false },
-      claims: null
+      claims: null,
+      // The session the assertion rests on, whose risk the issuance policy
+      // reads (#62 P3).
+      session: session
     });
     if (!roleAnswer.allowed) {
       log.info('saml11: the issuance policy refused an assertion for "' +
@@ -1989,6 +2041,10 @@ class Saml11Sso {
     log.debug("Entering Saml11Sso.respond().");
     const base = baseUrlOf(req);
     const scoped = this.relyingPartyFromSegment(req.params.rp);
+    if (this.refusedUnregistered(res, scoped, RESPONDER_PATH + '/{rp}')) {
+      log.debug("Leaving Saml11Sso.respond(). Not registered.");
+      return;
+    }
     const raw = typeof req.body === 'string' ? req.body : '';
     logArtifact('SAML 1.1 Request', 'as received over SOAP', raw);
 
@@ -2508,6 +2564,10 @@ class Saml11Sso {
     log.debug("Entering the SAML 1.1 metadata endpoint.");
     const base = baseUrlOf(req);
     const scoped = this.relyingPartyFromSegment(req.params.rp);
+    if (this.refusedUnregistered(res, scoped, METADATA_PATH + '/{rp}')) {
+      log.debug("Leaving the SAML 1.1 metadata endpoint. Not registered.");
+      return;
+    }
     // A document with entityID="" configures nobody; say why instead.
     const issuerProblem = this.providerIdProblem();
     if (issuerProblem) {
@@ -2809,8 +2869,9 @@ class Saml11Sso {
                               'through ' +
                               'ResponseID'
                             : responseSig.why)
-          : 'unsigned — saml11.signResponse is off, which is a supported ' +
-            'state and not a failure of the relying party');
+          : 'unsigned — saml11.signResponse is off, which development ' +
+            'mode allows as a test case (the Browser/POST profile requires ' +
+            'a signed Response, so product never sends one)');
 
     const assertion = firstByLocal(root, 'Assertion');
     add('it contains an assertion', !!assertion,

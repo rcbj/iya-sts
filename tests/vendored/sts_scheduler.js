@@ -116,13 +116,27 @@ async function apiAs(token, method, path, payload) {
   return reply;
 }
 
+// EVERY PAGE OF JOBS (2026-09-23). The job list is paged on `jobsPage`, and
+// a REALM job has a row per realm — so once the suite has made enough realms
+// the 200 rows of page one no longer hold `scheduler.history`, and jobOf()
+// answered null for a job the service was running (cluster mode, job 334).
+// A claim about what the list CONTAINS is a claim about the whole list.
 async function report(prefix) {
   log.debug("Entering report().");
-  const r = await api("GET", (prefix || "") + "/admin-api/scheduler?per=200");
+  const path = (prefix || "") + "/admin-api/scheduler?per=200";
+  const r = await api("GET", path);
   assert.strictEqual(r.status, 200, "GET /admin-api/scheduler answered " +
                      r.status + " " + r.text.slice(0, 300));
+  const body = r.body;
+  const pages = Number((body.jobsPaging || {}).pages) || 1;
+  for (let page = 2; page <= pages; page++) {
+    const more = await api("GET", path + "&jobsPage=" + page);
+    assert.strictEqual(more.status, 200, "GET /admin-api/scheduler page " +
+                       page + " answered " + more.status);
+    body.jobs = (body.jobs || []).concat(more.body.jobs || []);
+  }
   log.debug("Leaving report().");
-  return r.body;
+  return body;
 }
 
 // Polls `fn` until it answers something truthy, at the service's own tick,
@@ -177,6 +191,17 @@ async function thePageAndTheApiAgree(cookie) {
   const json = await report();
   const pageJson = await call("GET", base + "/admin/scheduler?format=json" +
                               "&per=200", { headers: { Cookie: cookie } });
+  // EVERY PAGE, as report() reads the API's (2026-09-23): a comparison of all
+  // the API's jobs with one page of the console's would fail on a service
+  // with more than 200 job rows, about pages drawing exactly what they should.
+  const pagesOf = Number(((pageJson.body || {}).jobsPaging || {}).pages) || 1;
+  for (let page = 2; page <= pagesOf; page++) {
+    const more = await call("GET", base + "/admin/scheduler?format=json" +
+                            "&per=200&jobsPage=" + page,
+                            { headers: { Cookie: cookie } });
+    pageJson.body.jobs = pageJson.body.jobs.concat((more.body || {}).jobs ||
+                                                   []);
+  }
   // **`per=200` HERE TOO, AND IT IS THE POINT RATHER THAN A CONVENIENCE**
   // (2026-09-22). The jobs table is PAGED now — `admin-ui/CLAUDE.md`, *every
   // list that can grow without a bound is paged*; a REALM job has a row per
@@ -187,6 +212,12 @@ async function thePageAndTheApiAgree(cookie) {
   // what it should. The JSON fetch above already asks the same way.
   const html = await call("GET", base + "/admin/scheduler?per=200",
                           { headers: { Cookie: cookie } });
+  for (let page = 2; page <= pagesOf; page++) {
+    const more = await call("GET", base + "/admin/scheduler?per=200" +
+                            "&jobsPage=" + page,
+                            { headers: { Cookie: cookie } });
+    html.text += more.text;
+  }
   const ids = json.jobs.map(function (j) { return j.id + "@" + j.realm; })
     .sort();
   check("the API lists the two jobs P1 moved and the scheduler's own",

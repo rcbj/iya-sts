@@ -11,7 +11,8 @@ declare module '@google-cloud/secret-manager';
 declare module '@azure/keyvault-secrets';
 declare module '@azure/identity';
 declare module 'node-vault';
-
-// `admin-core/admin_views.ts` reads the password generator's version out of its
-// package.json, which the package's own declarations do not cover.
-declare module 'generate-password/package.json';
+// The mail channel's three cloud transports (#63), required by
+// `common/mail_transports.ts` when a realm chooses one.
+declare module '@aws-sdk/client-sesv2';
+declare module '@azure/communication-email';
+declare module '@googleapis/gmail';

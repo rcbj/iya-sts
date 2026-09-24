@@ -1604,8 +1604,25 @@ function lazyKeySet(realmId, stored) {
   });
   // THE BBS KEY (2026-09-22, #49 P5): its public half resident, its secret
   // half the keystore's door, and a setter for bbsKeyPair()'s backfill.
+  // **THE BLOB HOLDS BASE64, SO IT IS DECODED (2026-09-22, #161).** This read
+  // was `Uint8Array.from(stored.bbsKey.publicKey)`, and `keystore.js`'s
+  // serialiseBbsKey() writes the public half as a base64 STRING — and
+  // `Uint8Array.from` over a string maps each CHARACTER through Number(),
+  // which is NaN for every base64 character and lands as 0. So a realm whose
+  // keys persist got a public half of ZEROS the length of the string, against
+  // a secret half that `privateMaterialFor()` decodes correctly: a mismatched
+  // pair, silently. Every ldp_vc credential then failed the issuer's own
+  // self-check (`oid4vc/vc_issuer.ts`), which is why `vc_did` and the two
+  // ldp_vc jobs failed in the single-node and cluster modes and passed in
+  // memory mode, where the key is generated in the process and never read
+  // back through this path. It also GREW on each round trip — 96 real bytes,
+  // then 128 zeros, then 172 — because the zeros were re-encoded.
+  //
+  // `Buffer.from(x, 'base64')` IGNORES the encoding when `x` is a typed array
+  // and copies it, so this is right for both shapes: the stored string, and a
+  // blob that already carries bytes.
   const bbsPublic = stored.bbsKey && stored.bbsKey.publicKey
-    ? Uint8Array.from(stored.bbsKey.publicKey) : null;
+    ? Uint8Array.from(Buffer.from(stored.bbsKey.publicKey, 'base64')) : null;
   let bbsGenerated = null;
   const bbsStoredView = bbsPublic ? Object.defineProperty(
     { publicKey: bbsPublic }, 'secretKey', {
@@ -2546,6 +2563,97 @@ function candidatesForKid(candidates, headerKid) {
 }
 
 // ---------------------------------------------------------------------------
+// THIS REALM'S OWN CLASSICAL KEYS, BY ALGORITHM (#139).
+//
+// `ownSignerFor()` is the key `signJwt()` signs with: the RSA key for every
+// RS* and PS* algorithm, and the curve key of `extraKeys` for the rest. The
+// post-quantum and HMAC families are refused: the first is generated in the
+// pool and cannot be waited for here, and the second is a client's secret.
+// `ownCandidatesFor()` is the other half — the certificates a token this
+// realm signed with `alg` may be verified against, the current key and any
+// live standby (#42), so that a rotation does not strand tokens in flight.
+// ---------------------------------------------------------------------------
+function ownSignerFor(alg) {
+  log.debug("Entering ownSignerFor(). alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (!spec || spec.family === 'hmac' || spec.family === 'pq') {
+    log.debug("Leaving ownSignerFor(). Not a classical asymmetric alg.");
+    throw new Error('this service does not sign its own tokens with "' + alg +
+      '"; it signs them with an RSA or elliptic-curve key of its own.');
+  }
+  if (spec.family === 'rsa') {
+    log.debug("Leaving ownSignerFor(). The RSA key.");
+    return { key: STS.privateKey, kid: STS.kid };
+  }
+  const found = classicalKeysFor(alg)[0];
+  if (!found) {
+    log.debug("Leaving ownSignerFor(). No key.");
+    throw new Error('this realm holds no key for "' + alg + '".');
+  }
+  log.debug("Leaving ownSignerFor(). " + alg + ".");
+  return { key: found.privateKey, kid: found.publicJwk.kid };
+}
+
+// The curve keys of the current key set that sign `alg` — the EdDSA pair
+// narrowed by `oauth2.eddsaCurve`, as `signingKeyFromList()` narrows it.
+function classicalKeysFor(alg) {
+  log.debug("Entering classicalKeysFor(). alg=" + alg);
+  const keys = stsKeysFor();
+  const wanted = String(config.value('oauth2.eddsaCurve') || 'Ed25519');
+  const out = (keys.extraKeys || []).filter(function (one) {
+    return one.alg === alg && (alg !== 'EdDSA' ||
+      (one.publicJwk.crv || 'Ed25519') === wanted);
+  });
+  log.debug("Leaving classicalKeysFor(). " + out.length + ".");
+  return out;
+}
+
+function ownCandidatesFor(alg) {
+  log.debug("Entering ownCandidatesFor(). alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (!spec || spec.family === 'hmac' || spec.family === 'pq') {
+    log.debug("Leaving ownCandidatesFor(). None for this family.");
+    return [];
+  }
+  if (spec.family === 'rsa') {
+    log.debug("Leaving ownCandidatesFor(). The RSA certificates.");
+    return ownRsaCertificates('jose');
+  }
+  const keys = stsKeysFor();
+  const now = Date.now();
+  const out = [];
+  classicalKeysFor(alg).forEach(function (one) {
+    const pem = crypto.createPublicKey({ key: one.publicJwk,
+                                         format: 'jwk' })
+      .export({ type: 'spki', format: 'pem' });
+    out.push({ kid: one.publicJwk.kid, certPem: pem, role: 'current' });
+    standbyOf(keys, 'jose:' + certificateSlotOf(one)).filter(function (sb) {
+      return standbyLive(sb, now) && sb.certPem;
+    }).forEach(function (sb) {
+      out.push({ kid: sb.kid, certPem: sb.certPem, role: sb.role });
+    });
+  });
+  log.debug("Leaving ownCandidatesFor(). " + out.length + ".");
+  return out;
+}
+
+// The options a verification of this realm's own token uses: the caller's,
+// and — where the caller named no algorithms — the token's own, which is safe
+// here and only here because every candidate is a key of the family that
+// algorithm belongs to (RFC 8725 section 3.1's confusion needs a key of
+// another family, an RSA key read as an HMAC secret).
+function ownVerifyOptions(header, opts) {
+  log.debug("Entering ownVerifyOptions().");
+  const out = Object.assign({}, opts || {});
+  if (out.algorithms === undefined && header && header.alg &&
+      ownCandidatesFor(String(header.alg)).length) {
+    out.algorithms = [String(header.alg)];
+  }
+  log.debug("Leaving ownVerifyOptions().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // VERIFY A JWS THIS REALM SIGNED — `stsCrypto.verifyJws()` against each
 // candidate above. The first that verifies answers; if none does, the error
 // from the CURRENT key is thrown, which is the error every caller already
@@ -2556,11 +2664,16 @@ function candidatesForKid(candidates, headerKid) {
 function verifyOwnJws(token, opts) {
   log.debug("Entering verifyOwnJws().");
   const header = peekJoseHeader(token);
-  const candidates = candidatesForKid(ownRsaCertificates('jose'), header.kid);
+  const byAlg = ownCandidatesFor(String((header && header.alg) || ''));
+  const candidates = candidatesForKid(byAlg.length ? byAlg
+                                        : ownRsaCertificates('jose'),
+                                      header.kid);
+  const options = ownVerifyOptions(header, opts);
   let first = null;
   for (let i = 0; i < candidates.length; i++) {
     try {
-      const claims = stsCrypto.verifyJws(token, candidates[i].certPem, opts);
+      const claims = stsCrypto.verifyJws(token, candidates[i].certPem,
+                                         options);
       log.debug("Leaving verifyOwnJws(). The " + candidates[i].role +
                 " key verified it.");
       return claims;
@@ -2581,7 +2694,10 @@ function verifyOwnJws(token, opts) {
 function verifyOwnCompactJws(token, opts) {
   log.debug("Entering verifyOwnCompactJws().");
   const header = peekJoseHeader(token);
-  const candidates = candidatesForKid(ownRsaCertificates('jose'), header.kid);
+  const byAlg = ownCandidatesFor(String((header && header.alg) || ''));
+  const candidates = candidatesForKid(byAlg.length ? byAlg
+                                        : ownRsaCertificates('jose'),
+                                      header.kid);
   let first = null;
   for (let i = 0; i < candidates.length; i++) {
     try {
@@ -2821,6 +2937,47 @@ async function mintStandbyKey(unitRow, role) {
   return Object.assign(base, { kid: pq.publicJwk.kid,
                                privateKey: pq.privateKey,
                                publicJwk: pq.publicJwk });
+}
+
+// ---------------------------------------------------------------------------
+// A FEDERATION ENTITY KEY (OpenID Federation 1.1 section 3.1.1, #132,
+// 2026-09-23) — made by the recipes a signing unit's `next` key is
+// (`curveKeyFrom()` over CURVE_KEY_SPECS, `pqKeyFrom()`), so there is still
+// one way a key is made here (rcbj's rule of 2026-09-21). What differs is
+// only its NAME and its OWNER: the `kid` is the key's RFC 7638 thumbprint, as
+// 3.1.1 recommends, and the key belongs to no signing unit — it is held,
+// sealed, published and rotated by `oidfed/federation_keys.ts`, and appears
+// in the realm's Entity Configuration and nowhere else ("These Federation
+// Entity Keys SHOULD NOT be used in other protocols"). RSA is not offered:
+// a Federation Entity Key is new, so there is no installed base to be
+// compatible with, and the curve and post-quantum keys are the stronger
+// choices at their sizes.
+// ---------------------------------------------------------------------------
+const FEDERATION_KEY_ALGS = Object.freeze(['ES256', 'ES384', 'ES512', 'EdDSA',
+                                           'ML-DSA-44', 'ML-DSA-65',
+                                           'ML-DSA-87']);
+
+async function makeFederationKey(alg) {
+  log.debug("Entering makeFederationKey(). alg=" + alg);
+  if (FEDERATION_KEY_ALGS.indexOf(alg) < 0) {
+    log.debug("Leaving makeFederationKey(). Not offered.");
+    throw new Error('"' + alg + '" is not an algorithm a Federation Entity ' +
+                    'Key is made for; the offered ones are ' +
+                    FEDERATION_KEY_ALGS.join(', ') + '.');
+  }
+  let entry;
+  if (/^ML-DSA-/.test(alg)) {
+    entry = pqKeyFrom(alg, await pqJose.generateAsync(alg));
+  } else {
+    const spec = curveSpecFor({ alg: alg, crv: alg === 'EdDSA' ? 'Ed25519'
+                                                                : '' });
+    entry = curveKeyFrom(spec, await generateCurvePairAsync(spec));
+  }
+  const publicJwk = Object.assign({}, entry.publicJwk, { use: 'sig',
+                                                         alg: alg });
+  publicJwk.kid = stsCrypto.jwkThumbprint(publicJwk);
+  log.debug("Leaving makeFederationKey(). kid=" + publicJwk.kid);
+  return { alg: alg, privateKey: entry.privateKey, publicJwk: publicJwk };
 }
 
 // A plain copy of a set's CURRENT members — everything `keystore.serialise()`
@@ -3207,10 +3364,13 @@ function xmlEscape(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
+// An XML ID: `_` and 128 random bits in hex — the NCName an `ID` attribute
+// needs cannot start with a digit. Node's generator since #65; it was
+// forge.random, a second DRBG (common/crypto.js, section 13).
 function genId() {
   log.debug("Entering genId().");
   log.debug("Leaving genId().");
-  return '_' + forge.util.bytesToHex(forge.random.getBytesSync(16));
+  return '_' + stsCrypto.randomBytes(16).toString('hex');
 }
 
 // --- reading XML somebody else wrote ---------------------------------------
@@ -4307,19 +4467,31 @@ function signJwtAsAsync(payload, alg, secret, opts) {
 // `typ: "at+jwt"`, and `oauth2.js`'s `accessToken()` is the caller that asks
 // for it (2026-09-13). The refresh token signed here names none and keeps
 // `typ: "JWT"`. `alg` and `kid` stay `crypto.js`'s to set.
+//
+// `opts.algorithm` (#139) is the JWS algorithm, RS256 when absent: FAPI 1.0
+// Advanced signs with PS256, and `oauth2.accessTokenSigningAlg` chooses any
+// classical algorithm this realm holds a key for. The key comes from
+// `ownSignerFor()`, never from the post-quantum list, because this function is
+// synchronous and the one every issued token is counted through.
 function signJwt(payload, context, opts) {
   log.debug("Entering signJwt(). typ=" + (payload.typ || '(none)'));
+  const alg = String((opts && opts.algorithm) || 'RS256');
+  const signer = ownSignerFor(alg);
   const certificateHeaderMembers = withCertificateHeader(
     (opts && opts.header) || undefined,
-    opts && opts.certificateHeader, 'RS256', STS.kid);
-  const kid = publishedKidFor(STS.kid);
+    opts && opts.certificateHeader, alg, signer.kid);
+  // `opts.kidDid` (#129): a request object whose Client Identifier is a DID
+  // names its key as a DID URL — the DID, `#`, and the key id its did:web
+  // document lists the key under (`vc_did.ts`).
+  const kid = (opts && opts.kidDid) ? opts.kidDid + '#' + signer.kid :
+    publishedKidFor(signer.kid);
   logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'before ' +
       'signing',
-              { header: Object.assign({ alg: 'RS256', kid: kid },
+              { header: Object.assign({ alg: alg, kid: kid },
                                       certificateHeaderMembers || {}),
                 payload: payload });
-  const signed = stsCrypto.signJws(payload, STS.privateKey,
-                                   { algorithm: 'RS256', keyid: kid,
+  const signed = stsCrypto.signJws(payload, signer.key,
+                                   { algorithm: alg, keyid: kid,
                                      header: certificateHeaderMembers });
   logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'after ' +
       'signing', signed);
@@ -4842,6 +5014,9 @@ module.exports = {
   nowSec: nowSec,
   randomId: randomId,
   bbsKeyPair: bbsKeyPair,
+  // A Federation Entity Key (#132), for `oidfed/federation_keys.ts`.
+  makeFederationKey: makeFederationKey,
+  FEDERATION_KEY_ALGS: FEDERATION_KEY_ALGS,
   bbsGenerations: bbsGenerations,
   bbsKidOf: bbsKidOf,
   BBS_UNIT: BBS_UNIT,

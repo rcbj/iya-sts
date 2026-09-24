@@ -283,11 +283,12 @@ const tokens = realms.map({ persist: 'admin_stats.tokens' });
 
 
 // What `typ` means, in the vocabulary the console and RFC 7009 use. Every token
-// this server issues is a JWT signed with the realm's own keys, so `typ` is the
-// only thing that tells them apart — the same fact UserInfo relies on.
+// this server issues is a JWT signed with the realm's own keys, so `typ` is
+// what tells them apart — the same fact UserInfo relies on. An ID Token is
+// not in it: it carries no `typ` claim since #118 (2026-09-22), and names its
+// kind in the signing context instead (recordJwt()).
 const KIND_BY_TYP = {
   'Bearer': 'access_token',
-  'ID': 'id_token',
   'Refresh': 'refresh_token',
   'UserInfo': 'userinfo_response',
   'oauth-authz-req+jwt': 'request_object',
@@ -306,8 +307,9 @@ const REVOCABLE_KINDS = ['access_token', 'id_token', 'refresh_token',
 // written out again — the tokens page's filter offers exactly these, and a
 // filter listing a kind that can no longer be issued (or missing one that can)
 // is a filter that quietly returns nothing.
-const TOKEN_KINDS = Object.keys(KIND_BY_TYP)
-                          .map(function (typ) { return KIND_BY_TYP[typ]; });
+// `id_token` is the one kind that no `typ` names (see above).
+const TOKEN_KINDS = ['id_token'].concat(Object.keys(KIND_BY_TYP)
+  .map(function (typ) { return KIND_BY_TYP[typ]; }));
 
 function kindOfTyp(typ) {
   log.debug("Entering kindOfTyp().");
@@ -332,7 +334,12 @@ function kindOfTyp(typ) {
 function recordJwt(payload, signed, context) {
   log.debug("Entering recordJwt(). typ=" + (payload.typ || '(none)'));
   const issuedUnder = context || {};
-  const kind = kindOfTyp(payload.typ);
+  // THE ISSUER'S WORD FIRST, then `typ` (#118, 2026-09-22). An ID Token
+  // carries no `typ` claim since that date — `typ: 'ID'` was defined by no
+  // specification — so `oauth2.ts`'s idToken() states the kind in `context`,
+  // and only a kind this table knows is taken from it.
+  const kind = TOKEN_KINDS.indexOf(String(issuedUnder.kind || '')) >= 0
+    ? String(issuedUnder.kind) : kindOfTyp(payload.typ);
   // A token with no jti cannot be revoked and cannot be looked up, so it gets a
   // synthetic key that sorts with the others and is marked unrevocable on the
   // page. The signed UserInfo response is the one that arrives this way.
@@ -672,9 +679,16 @@ const artifacts = realms.arr({ persist: 'admin_stats.artifacts',
 // one row acts on the other. A per-process tag makes the handle mean one row
 // again. It is opaque to every caller — nothing parses it, and the console and
 // the management API both take it from the list they were given.
+//
+// **THE TAG'S TAIL IS RANDOM SINCE #65 (2026-09-23).** It was the last four
+// base-36 digits of the start time, and in a cluster every container's node
+// tends to have the same pid — so two nodes started a multiple of about
+// twenty-eight minutes apart minted one tag. Four random bytes make that a
+// one-in-four-billion coincidence instead. `crypto.js` is a leaf, so this
+// require closes no cycle.
 // ---------------------------------------------------------------------------
 const ARTIFACT_TAG = process.pid.toString(36) +
-                     Date.now().toString(36).slice(-4);
+                     require('./crypto').randomBytes(4).toString('hex');
 
 // ---------------------------------------------------------------------------
 // AND A REGISTER OF WHAT HAS BEEN REVOKED, WHICH THE COMMENT BELOW USED TO
@@ -2463,7 +2477,8 @@ function recordAuthentication(detail) {
 // ---------------------------------------------------------------------------
 const RESERVED_JWT_CLAIMS = [
   'iss', 'sub', 'aud', 'exp', 'nbf', 'iat', 'jti', 'typ', 'cnf',
-  'scope', 'client_id', 'azp', 'nonce', 'at_hash', 'c_hash', 'auth_time',
+  'scope', 'client_id', 'azp', 'nonce', 'at_hash', 'c_hash', 's_hash',
+  'auth_time',
   'amr', 'acr', 'username', 'authorization_details', 'act',
   // OIDC Core 5.5's claims request, as the authorization endpoint understood
   // it. It rides in the access token for the reason `authorization_details`
@@ -3295,6 +3310,58 @@ function tokenList() {
   out.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
   log.debug("Leaving tokenList(). " + out.length + " token(s).");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// DOES THIS PERSON HOLD ANYTHING LIVE THAT CARRIES THEIR CLAIMS (#145)?
+//
+// Asked before a CAEP `token-claims-change` is sent: the event says the claims
+// in tokens already issued moved, and a person with none has no token whose
+// claims could be stale — sending it anyway would be noise every receiver has
+// to discard. An access, ID or refresh token that names them (by `username`,
+// by `preferred_username` on an older ID Token, or by `sub`) and is still
+// valid counts, and so does a SAML assertion whose subject is them and which
+// has neither expired nor been disowned. Read from the same register the
+// tokens page draws, in the ambient realm.
+// ---------------------------------------------------------------------------
+const CLAIM_BEARING_KINDS = ['access_token', 'id_token', 'refresh_token'];
+
+function holdsLiveIssuance(username, sub) {
+  log.debug("Entering holdsLiveIssuance(). user=" + username);
+  const name = String(username || '');
+  const subject = String(sub || '');
+  if (!name && !subject) {
+    log.debug("Leaving holdsLiveIssuance(). Nobody named.");
+    return false;
+  }
+  const nowMs = Date.now();
+  let live = false;
+  tokens.forEach(function (record) {
+    if (live || CLAIM_BEARING_KINDS.indexOf(record.kind) < 0) {
+      return;
+    }
+    const theirs = (name && record.username === name) ||
+                   (subject && record.sub === subject);
+    const state = theirs ? tokenStateOf(record, nowMs) : '';
+    if (state === 'valid' || state === 'no expiry stated') {
+      live = true;
+    }
+  });
+  if (!live && name) {
+    live = allArtifacts().some(function (one) {
+      // recordAssertion()'s kind is 'SAML 2.0' or 'SAML 1.1'.
+      if (String(one.kind || '').indexOf('SAML') !== 0) {
+        return false;
+      }
+      if (String(one.subject || '') !== name) {
+        return false;
+      }
+      const state = artifactStateOf(withRevocation(one), nowMs);
+      return state !== 'revoked' && state !== 'expired';
+    });
+  }
+  log.debug("Leaving holdsLiveIssuance(). " + live);
+  return live;
 }
 
 // FOUR ANSWERS FOR AN ARTIFACT SINCE 2026-09-05, AND THE FOURTH REVERSED A
@@ -4494,6 +4561,7 @@ module.exports = {
   applyClaimRelease: applyClaimRelease,
   expandValue: expandValue,
   tokenList: tokenList,
+  holdsLiveIssuance: holdsLiveIssuance,
   artifactList: artifactList,
   issuedList: issuedList,
   issuedSets: issuedSets,

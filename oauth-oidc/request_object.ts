@@ -186,6 +186,8 @@ import usedAssertions = require('../common/used_assertions');
 // `keysForParty()`: which of a client's registered keys may verify something it
 // signed. One answer for RFC 7523, the software statement and this.
 import assertionGrant = require('./assertion_grant');
+// FAPI 1.0 Advanced's request-object rules (#139). A leaf.
+import fapi = require('./fapi');
 
 // A loose JSON-shaped object: the claims, clients, profiles and results this
 // file reads and answers. Their shapes are the libraries' own, and those
@@ -212,6 +214,7 @@ interface RequestObjectDeps {
   helpers: typeof helpers;
   assertionGrant: typeof assertionGrant;
   usedAssertions: typeof usedAssertions;
+  fapi: typeof fapi;
   log: typeof helpers.log;
   // `oauth-oidc/par`, required at the moment a pushed request's URN arrives
   // (see pushedRequest()). It may throw.
@@ -345,6 +348,7 @@ class RequestObject {
       helpers: helpers,
       assertionGrant: assertionGrant,
       usedAssertions: usedAssertions,
+      fapi: fapi,
       log: helpers.log,
       // Required LAZILY: `par.ts` requires this module for
       // `verifyObject()`, and a require back at load would close the cycle.
@@ -378,9 +382,12 @@ class RequestObject {
   signedRequired(client: Json, profile: Json): Json {
     const { config, log } = this.deps;
     log.debug("Entering RequestObject.signedRequired().");
+    // FAPI 1.0 Advanced requires one of every client (Part 2 section 5.2.2
+    // item 1, #139).
     const required = !!config.value('oauth2.requireSignedRequestObject') ||
                      !!(client && client.require_signed_request_object) ||
-                     !!(profile && profile.requireSigned === true);
+                     !!(profile && profile.requireSigned === true) ||
+                     this.deps.fapi.requiresSignedRequestObject();
     log.debug("Leaving RequestObject.signedRequired(). " + required);
     return required;
   }
@@ -767,6 +774,15 @@ class RequestObject {
         'server advertises request_object_signing_alg_values_supported ' +
         JSON.stringify(offered) + '.');
     }
+    // FAPI 1.0 Advanced section 8.6: PS256 or ES256 (#139).
+    const profiled = self.deps.fapi.signingAlgRefusal(alg,
+                                                     'the request object');
+    if (profiled) {
+      log.debug("Leaving RequestObject.verify(). Not an algorithm FAPI " +
+                "Advanced allows.");
+      return self.refusal(profiled.errorCode, 'invalid_request_object',
+                          profiled.description);
+    }
     if (alg === 'none') {
       try {
         const claims = self.unsignedClaims(jws);
@@ -804,17 +820,22 @@ class RequestObject {
               'keyed by the client secret, and this client has none';
       }
     } else {
-      const read = assertionGrant.keysForParty({
-        oauthJwks: client.jwks, oauthAssertionJwks: client.assertion_jwks
-      }, 'application');
+      const party = {
+        oauthJwks: client.jwks, oauthAssertionJwks: client.assertion_jwks,
+        oauthJwksUri: client.jwks_uri
+      };
+      // A registered `jwks_uri` is fetched (#120), `client_jwks.js`'s cache.
+      const fetched = await assertionGrant.ensurePartyKeys(party,
+        'application', header && header.kid);
+      const read = assertionGrant.keysForParty(party, 'application');
       candidates = read.keys;
       if (!candidates.length) {
         why = 'this client holds no key a request object could be verified ' +
               'with' + (read.problems.length
                 ? ' (' + read.problems.join('; ') + ')' : '') +
               (client.jwks_uri
-                ? ' — it registered a jwks_uri, which this service does not ' +
-                  'fetch; register the keys by value as `jwks`'
+                ? ' — the keys at its jwks_uri could not be fetched' +
+                  (fetched && fetched.why ? ': ' + fetched.why : '')
                 : '. Register its public keys as `jwks`, or issue it a key ' +
                   'pair from /admin/pki');
       }
@@ -905,8 +926,8 @@ class RequestObject {
   // object itself, as the endpoint reads a query: a string stays a string, a
   // number or a boolean becomes its text, `resource` keeps its array (RFC 8707
   // repeats it), and an object — `claims`, `authorization_details` — is the
-  // JSON a query would have carried. `request` and `request_uri` inside an
-  // object are dropped: a request object does not refer to another one.
+  // JSON a query would have carried. `request` and `request_uri` never reach
+  // here: `verifyObject()` refuses an object carrying either (section 4).
   // ---------------------------------------------------------------------------
   parametersFrom(claims: Json, outer: Json, clientId: Json): Json {
     const { log } = this.deps;
@@ -1123,6 +1144,25 @@ class RequestObject {
           'authorization endpoint.');
       }
     }
+    // FAPI 1.0 Advanced (#139): exp and nbf required and within 60 minutes,
+    // and aud this server's issuer (Part 2 section 5.2.2 items 13, 15, 17).
+    const lifetime = self.deps.fapi.requestObjectRefusal(claims,
+                                                         options.issuer);
+    if (lifetime) {
+      log.debug("Leaving RequestObject.verifyObject(). FAPI Advanced " +
+                "refused its claims.");
+      return self.refusal(lifetime.errorCode, lifetime.error,
+                          lifetime.description);
+    }
+    // FAPI 2.0 section 5.3.2.1 item 13 (#140).
+    const ahead = self.deps.fapi.futureTimestampRefusal(claims,
+                                                        'the request object');
+    if (ahead) {
+      log.debug("Leaving RequestObject.verifyObject(). FAPI 2.0: a " +
+                "timestamp in the future.");
+      return self.refusal(ahead.errorCode, 'invalid_request_object',
+                          ahead.description);
+    }
     if (claims.client_id !== undefined &&
         String(claims.client_id) !== clientId) {
       log.debug("Leaving RequestObject.verifyObject(). client_id differs.");
@@ -1131,6 +1171,26 @@ class RequestObject {
         'the query parameter is "' + clientId + '". RFC 9101 section 6.3 ' +
           'says ' +
         'the two MUST be identical.');
+    }
+    // RFC 9101 section 4: "The request and request_uri parameters MUST NOT
+    // be included in Request Objects." Refused rather than dropped, which is
+    // what `parametersFrom()` did until 2026-09-24: a pushed object carrying
+    // a request_uri was answered 201, where RFC 9126 section 2.1 says a push
+    // MUST NOT provide one, and the OpenID conformance suite's FAPI 2.0
+    // Message Signing plan expects `invalid_request_object` (#176). In every
+    // mode, at every endpoint that takes an object.
+    const nested = ['request', 'request_uri'].filter(function (name) {
+      return claims[name] !== undefined;
+    });
+    if (nested.length) {
+      log.debug("Leaving RequestObject.verifyObject(). A nested " +
+                nested.join(' and ') + ".");
+      return self.refusal('STS-OAUTH-0676', 'invalid_request_object',
+        'the request object carries ' + nested.map(function (name) {
+          return '`' + name + '`';
+        }).join(' and ') + ' as a claim. RFC 9101 section 4: the request ' +
+        'and request_uri parameters MUST NOT be included in a request ' +
+        'object.');
     }
     if (query.response_type !== undefined &&
         claims.response_type !== undefined &&

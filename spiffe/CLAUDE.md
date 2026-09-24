@@ -120,8 +120,8 @@ socket gets THAT realm's trust domain back from `FetchX509Bundles`.
 
 ---
 
-`protos/` holds the SPIFFE project's own `workloadapi.proto` and the
-`spire-api-sdk`'s, VERBATIM. `spiffe_grpc.ts` reads them at module scope through
+`protos/` holds the SPIFFE project's own `workloadapi.proto` and
+`brokerapi.proto` (#170) and the `spire-api-sdk`'s, VERBATIM. `spiffe_grpc.ts` reads them at module scope through
 `path.join(__dirname, 'protos')`, so they moved into this directory with it; a
 missing one is not a degraded SPIFFE feature, it is a service that does not start.
 The wire matching what a real client expects is the entire reason
@@ -368,6 +368,17 @@ that up silently.
    on every surface that reports an authority, and nothing about SPIFFE stops
    working. `tests/spiffe_authority.js` holds that path, in a child process
    because the suite builds a hierarchy before it runs.
+
+   **A FOURTH WAY TO REACH IT WAS A RACE, AND IS NOT ONE ANY MORE
+   (2026-09-24).** In `cluster`, the node that did not create a realm binds the
+   realm's SPIFFE sockets from the change log a few hundred milliseconds before
+   the realm's branch reaches it — so it found no SPIFFE Issuing CA and built a
+   self-signed authority no bundle publishes, and its Broker endpoint was
+   refused `self-signed certificate in certificate chain`
+   (`sts_spiffe_broker`). Where a Root exists, `buildTrustMaterial()` now waits
+   (`awaitSpiffeIssuer()`, pulling the realm's row from the store each look,
+   `SPIFFE_BRANCH_WAIT_MS`) before falling back.
+   `tests/spiffe_authority_waits_for_branch.js` holds it.
 
    The X.509 authority is **EC P-256 by
    default** — what SPIRE issues — which is why the four PKI modules are
@@ -663,6 +674,15 @@ library, wired by `spiffe_server.ts`:
   on loopback or its secure port (`requestConfigured()`), with the token, the
   client certificate and the CA read from FILES — no credential is a setting,
   because settings are drawn, returned by `/admin-api` and persisted.
+  `spiffe.k8sSkipKubeletVerification` (SPIRE's `skip_kubelet_verification`)
+  is honoured in DEVELOPMENT MODE ONLY since #171 (2026-09-23): the attestor
+  asks `common/outbound_tls.ts`'s `skipsVerification()`, which in product
+  ignores it — said once, `STS-SPIFFE-0116` — so the kubelet's certificate is
+  verified against `spiffe.k8sKubeletCaFile` as though it were off; the row
+  carries `onlyWhile`, so product refuses to set it (`STS-CORE-0103`).
+  `requestConfigured()` asks the same predicate again where the option is
+  applied. The read-only port's plain http to loopback is SPIRE's own
+  arrangement and is not governed by `federation.outboundAllowHttp`.
 
 **THE SEAM IS `spiffe_grpc.ts`'s `bindAttestedSocket()`.** grpc-js does not
 expose an accepted connection's file descriptor, so the Workload API's Unix
@@ -685,7 +705,8 @@ crosses to a request worker is the caller, already plain.
 **What is still not attested, and why each is a sentence rather than a gap:**
 
 * **A caller over TCP** — no peer process to ask. It keeps the `transport:`,
-  `endpoint:` and `peer:` selectors.
+  `endpoint:` and `peer:` selectors, and **product does not serve it without a
+  declared network** — see *The Workload API over TCP* below (#166).
 * **A peer in another pid namespace** (pid 0 from `SO_PEERCRED`) — attested on
   its kernel uid and gid alone; nothing that needs the process is invented.
 * **The socket without the native module** — development serves it
@@ -693,13 +714,100 @@ crosses to a request worker is the caller, already plain.
   not bind it** (`STS-SPIFFE-0113`, `mode.requiresWorkloadAttestation()`).
   Asserted selectors are not believed in product
   (`mode.believesAssertedSelectors()`).
-* SPIRE's `systemd` attestor, docker's sigstore checks and Podman sockets, and
-  the Kubernetes broker — follow-ups recorded on #40.
+* A Unix-socket caller whose image signature carries no Rekor bundle is
+  refused rather than looked up online, and the new sigstore bundle format is
+  not read — see *systemd, Podman, sigstore and the Broker API* below (#170).
 
 `tests/spiffe_workload_attestation.js` drives a real connection from a child
 process and asserts the child's pid, uid, gid and selectors, the revalidation,
 and a failing attestor's refusal; the attestors over fake `/proc`, Engine and
 kubelet beside it.
+
+**THE TWO LOOSENING SWITCHES ARE DEVELOPMENT MODE'S (#104, 2026-09-23).**
+`spiffe.acceptAssertedSelectors` was already ignored in product (#40) and
+`spiffe.attestWorkloads` OFF was not: it handed every caller every entry,
+which made the attestation above meaningless. Both rows carry `onlyWhile`
+(`believesAssertedSelectors`, `servesUnattestedEntries`), so a product realm
+refuses the non-default value on write (`STS-CORE-0103`), and
+`spiffe_auth.ts` reads both through `mode.valueInForce()`, which answers the
+default there whatever is stored and says so once (`STS-CORE-0106`).
+
+### The Workload API over TCP, and what an entry must select (#166, 2026-09-23)
+
+The Workload Endpoint specification section 3: "TCP transport MUST NOT be used
+unless the underlying network allows the Workload Endpoint server to strongly
+authenticate the workload based on source IP address." Sections 3.1 and 5 rule
+out TLS and client authentication, so the source address is the only identity a
+TCP caller can carry — and product bound 8092 on `0.0.0.0` and attested nobody.
+Whether a network authenticates source addresses is not observable from here, so
+the operator DECLARES it. Decisions taken on the issue, the most secure in each
+case:
+
+* **`SpiffeAuth.workloadTcpPosture()` IS THE ONE ANSWER**, read in the ambient
+  realm by three askers: `bindAll()` (a product realm without
+  `spiffe.workloadTcpSourceAuthenticated` does not bind the TCP address,
+  `STS-SPIFFE-0120`; with it and a wildcard `spiffe.grpcHost`, not either,
+  `STS-SPIFFE-0121` — the operator names the address they vouch for),
+  `prepareCall()` (a realm switched to product, or whose declaration was
+  withdrawn, after its port was bound refuses every call on it `UNAVAILABLE` —
+  the listeners are bound once, so the read is the guard), and
+  `workloadAttestationState().tcp`, which `GET /spiffe`, `/admin/spiffe` and
+  `/admin-api/spiffe` draw. The predicate is `mode.servesUnattestedWorkloadTcp()`
+  and the setting is `realmRuntime`, like the port it governs. A refused
+  binding carries its code as `errorCodes.mark()`, never as a member: the row is
+  drawn and returned.
+* **AN ENTRY MUST IDENTIFY ITS WORKLOAD** (`mode.registersUnidentifyingEntries()`,
+  `registry.identifiesWorkload()`): in product, one with no selector or only
+  `transport:`/`endpoint:` is refused in `checkRecord()` (`STS-SPIFFE-0122`), so
+  the console, `/admin-api` and `BatchCreateEntry`/`BatchUpdateEntry`
+  (INVALID_ARGUMENT per item) are held to it alike; the code rides the result as
+  a mark and each door records it. An entry written in development answers
+  nobody once the realm is in product (`answersWorkloads()` in
+  `entitledEntries()`, `STS-SPIFFE-0123`, said once per entry). Empty is refused
+  too because SPIRE itself refuses an empty selector list.
+* **`peer:` STAYS EXACT.** No CIDR prefixes: SPIRE has no such selector, and a
+  prefix would be this service inventing a matching rule a client written
+  against SPIRE would not expect.
+* **Development is unchanged**, and `workloadSelectors()` too: `peer:` was
+  already the only TCP selector that says WHO; the refusal is what makes
+  `transport:` and `endpoint:` descriptive.
+
+`tests/spiffe_workload_tcp_product.js` holds all of it — the posture, a real
+bind in both modes with a gRPC client over TCP, the three doors, exact `peer:`;
+`tests/vendored/sts_spiffe_grpc.js` the network's view in both states. The test
+stacks (`docker-compose-run-tests.yml`) DECLARE their bridge, which only this
+launcher's containers are on, so the product modes exercise the declared path.
+
+### The `local` entity, verified in product (#104)
+
+SPIRE trusts its private socket outright and relies on its filesystem
+permissions; `spiffe.trustLocalSocket` (on) did the same here in every mode,
+and a chmod that FAILED (`STS-SPIFFE-0010`) left the socket served and trusted
+in product. rcbj's decision on #104 was to keep the default on and VERIFY the
+boundary in product rather than assume it. `SpiffeAuth.localTrust()`, asked per
+call on the server surface in the listener's realm:
+
+* development (`mode.trustsUnverifiedLocalSocket()`): `local` on the socket's
+  existence, unchanged;
+* product: `local` only when the connection's facts say the socket is PRIVATE
+  (`restrictSocket()` succeeded for that path before the connection was
+  accepted, and neither the socket nor its directory has a group or other bit —
+  `SpiffeGrpc.socketPrivacy()`, `STS-SPIFFE-0117`) AND the peer's kernel uid is
+  `process.geteuid()` (`STS-SPIFFE-0118`). Facts that cannot be read — no
+  native module, `SO_PEERCRED` failed — are "not local" (`STS-SPIFFE-0119`).
+  Root is NOT accepted as a stand-in for the service's uid.
+
+**The facts come from the Workload API's own listener.** Wherever the native
+module is built, the Server socket is bound through `bindAttestedSocket()` in
+both modes and `observeLocalCaller()` records the peer's credentials and
+`facts.localSocket` at accept; no workload attestor runs and nothing is refused
+there. Without the module it is bound as before and a product realm trusts
+nobody on it — it is still SERVED, because the mode is per realm and runtime,
+and the refusal (with its code) is what tells the operator why. A refused
+caller is anonymous on the socket (it carries no TLS), and `authorize()` puts
+the local refusal's code and sentence on the `UNAUTHENTICATED` answer.
+`tests/spiffe_local_socket.js` holds all of it, the real socket and a CLI in a
+child process included.
 
 **THE SPIRE SERVER API IS THE OTHER HALF**, and it came first: its TCP port is
 MUTUAL TLS, its callers present an X509-SVID verified against the trust bundle,
@@ -717,7 +825,10 @@ different claims and merging them back into one gets both wrong.
   is not a revocation either; see rule 3k.
   What IS refused: a Workload API call with no `workload.spiffe.io: true` header
   (every conforming implementation refuses it, and a client that omits it has a
-  bug nothing else will report), a JWT-SVID with no audience, a
+  bug nothing else will report — always in product, since #181:
+  `spiffe.requireSecurityHeader` off is development's,
+  `mode.servesWithoutSecurityHeader()`, read by `spiffe_grpc.ts` and GET
+  /spiffe through `mode.valueInForce()`), a JWT-SVID with no audience, a
   `ValidateJWTSVID` that does not really verify, an entry in another trust
   domain or under `/spire`, a banned agent, an attestation type nothing here
   verifies, a join token this server did not
@@ -1115,6 +1226,107 @@ reads the partition back.
 
 **Left alone and said so**: the `x-sts-workload-selector` metadata key —
 renaming it breaks every client that sends it.
+
+## systemd, Podman, sigstore and the Broker API (#170, 2026-09-23)
+
+#40's four recorded follow-ups, built whole on the decisions on the issue: the
+Broker API in scope despite its draft status, Rekor REQUIRED as SPIRE requires
+it, and the keyless trust roots through TUF as a scheduler job. The selector
+spellings are copied from SPIRE's source, as #40's were.
+
+* **`systemd`** — `spiffe_workload_attestor_systemd.ts`, SPIRE's plugin:
+  `GetUnitByPID` on the system bus, then the unit's `Id` and `FragmentPath`,
+  as `id:` and `fragment_path:`. **The pid is PIDFD-CHECKED, which SPIRE's is
+  not**: the connection's facts (`spiffe_peer.ts`) are asked again AFTER
+  systemd answers, and a process that is no longer the one that connected
+  fails the attestation (`STS-SPIFFE-0125`) — a reused pid would otherwise be
+  answered with another unit. A peer this service cannot see gets nothing:
+  `GetUnitByPID(0)` is this service's own unit. The D-Bus client is the
+  optional peer `dbus-next`, `common/secrets.js`'s arrangement through `load`;
+  without it every connection is refused naming the package
+  (`STS-SPIFFE-0124`, logged once). An image installs it the way it installs a
+  cloud SDK (`STS_CLOUD_SDKS=dbus-next`).
+* **Podman** — the docker attestor asks Podman's Docker-compatible API when a
+  cgroup path says `libpod-` or `/libpod/` (SPIRE's `detectPodmanSocket()`):
+  the rootful socket (`spiffe.dockerPodmanSocketPath`), or the rootless one
+  from `spiffe.dockerPodmanSocketPathTemplate` with the `user-<uid>.slice`'s
+  uid — only with `spiffe.dockerUseRootlessPodman` on, because that socket is
+  in the CALLER'S runtime directory; off, the container is not attested by
+  this plugin (`STS-SPIFFE-0142`, logged once). The extractor already reads
+  `libpod-<id>.scope`. Selectors stay `docker:`.
+* **sigstore** — `spiffe_sigstore.ts`, cosign's `verify.go` flow over the
+  legacy `.sig` / `.att` tags; the header lists each step. Everything a
+  signature is checked with is in `common/crypto.js` section 11 (OLPC and JCS
+  canonical JSON, TUF threshold signatures, the Rekor SET, DSSE PAE, a
+  signature under an SPKI with cosign's scheme — post-quantum keys included,
+  beyond cosign) and `common/pki.js` (the Fulcio signer's facts and RFC 6962
+  embedded-SCT verification; the path is `verifyPathToAnchors()` at the
+  certificate's own notBefore). Decided rather than copied:
+  * **A FAILED SIGNATURE REFUSES THE CONNECTION** (`UNAVAILABLE` under
+    `STS-SPIFFE-0111`, the specific cause 0126–0130 on the log line) — SPIRE's
+    behaviour, never a missing selector.
+  * **REKOR IS REQUIRED AND CHECKED OFFLINE.** A signature without a bundle is
+    refused (0129); cosign's online lookup is not done.
+    `spiffe.dockerSigstoreSkipTlog` skips the log with a warning in its
+    description.
+  * **STRICTER THAN SPIRE IN THREE PLACES**: the payload must name THIS
+    manifest digest (SPIRE passes cosign no claim verifier, so a genuine
+    signature of another image under this image's tag would verify); an empty
+    `spiffe.dockerSigstoreAllowedIdentities` admits no keyless signer; and the
+    registry is dialled only when `spiffe.dockerSigstoreAllowedRegistries`
+    names it — the registry comes from the image, which is the WORKLOAD'S
+    choice, so it is the root `CLAUDE.md`'s caller-supplied URL made the
+    administrator's by the list (the Bearer token realm and a blob redirect
+    too; blobs are checked against their digests).
+  * **NO KEY IS A SETTING**: cosign keys, the pinned `trusted_root.json`, the
+    TUF root and the registry credentials are FILE PATHS.
+  * **SPIRE's default `ignore_attestations: false` is kept**, which refuses an
+    image with no in-toto attestation — as SPIRE does.
+* **TUF** — `spiffe_sigstore_tuf.ts`, the specification's client workflow
+  (root rotations signed by both key sets, timestamp, snapshot, targets, the
+  target's length and every hash, rollback and expiry refused) as the cluster
+  job `spiffe.sigstore-tuf-refresh` (`spiffe.dockerSigstoreTufRefreshS`, daily).
+  **A FAILED REFRESH KEEPS THE LAST GOOD SET**: the row in
+  `realms.sharedMap({ persist: 'spiffe.sigstoreTuf' })` is written only when
+  every step verified, and a failure records only its reason on it
+  (`STS-SPIFFE-0131`). The first root is the operator's file; the row is keyed
+  by it and the repository URL, so changing either starts afresh. Top-level
+  targets only.
+* **THE SPIFFE BROKER API** — `spiffe_broker.ts` (handlers), `spiffe_grpc.ts`
+  (`prepareBrokerCall()`, the `broker` surface), `spiffe_server.ts`
+  (`bindBroker()`). The current draft has four RPCs on `spiffe.broker.API`,
+  not an `AttestReference` call — that name is SPIRE's plugin method behind
+  them. Per realm like the other sockets (`spiffe.grpcHost`,
+  `spiffe.brokerPort`, seeded 0 on a new realm, and `spiffe.brokers` seeded
+  empty), started from `listen()` through `startRealm()`, a failure recorded
+  on the binding (`STS-SPIFFE-0140`) — and **never bound plain**: no
+  certificate is no listener. The server presents the realm's
+  `spiffe://<td>/spire/server` SVID and asks for a client certificate without
+  requiring it at the handshake, so a missing or unverified SVID is refused
+  `UNAUTHENTICATED` (0133) with a reason and a FEDERATED broker is verified
+  like any presented SVID. Then `spiffe.brokers` (0134), the reference type
+  that broker may use, asked of the TYPE URL before the value is read as
+  SPIRE does (0135), the reference itself (0136) and its attestation — a pid
+  through `spiffe_peer.observePid()` and the workload attestors, a pod through
+  the k8s attestor's `attestPodReference()` (SPIRE's `agent_node` scope). A
+  brokered caller is ALWAYS narrowed, never invented for, never given an admin
+  or downstream entry, and its hints are made unique before anything is minted
+  (`entitledEntries()`). Section 4.8's refusals carry a hand-encoded
+  `google.rpc.ErrorInfo`. The streams are the Workload API's rotation timer,
+  and before each re-send the reference is asked again: a stopped workload
+  ends its stream `NOT_FOUND` (0137). **Not dispatched to a request worker**
+  (`DISPATCHED_SURFACES`): the pidfds and the attestors' state are the front
+  process's. Not done: references to objects other than pods, SPIRE's cluster
+  scope and SubjectAccessReview, a Unix socket endpoint, server reflection.
+  The broker list is `/admin/spiffe/brokers` and
+  `/admin-api/spiffe/brokers[/:action]` (rule 7).
+
+`tests/spiffe_attestor_systemd_podman.js`, `tests/spiffe_sigstore.js` (every
+key, certificate, SCT, Rekor entry and TUF repository made at run time) and
+`tests/spiffe_broker.js` (a real mutual-TLS listener in a child process) hold
+it in process; `tests/vendored/sts_spiffe_broker.js` over the network in a
+development and a product realm. **The interop run against a real
+`spire-agent` recorded on #40 is still not done.**
 
 ## THE AUTHORITIES ROTATE ON THE SCHEDULER (2026-09-22, #49 P5, rcbj's D6)
 

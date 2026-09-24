@@ -95,6 +95,10 @@ const errorCodes = require('./error_codes');
 const clientAddress = require('./client_address');
 // A LEAF: the affinity maps below, described to `/admin/caches` (#74).
 const cacheRegistry = require('./cache_registry');
+// THE JA4 READER (#62 P0) IS REQUIRED LAZILY, in `clientHelloModule()`
+// below: this file is loaded by `app.js` before the composition root defers
+// instance building, and a load here would build `tls/client_hello`'s
+// default instance before the root could install its own.
 
 let logLevelProblem = null;
 const log = bunyan.createLogger({
@@ -671,6 +675,13 @@ const PEER_AUTHORIZED_HEADER = 'x-sts-peer-authorized';
 // handler ever sees a value that did not come from the pool.
 // ---------------------------------------------------------------------------
 const PROTOCOL_WORKER_HEADER = 'x-sts-pool-protocol-worker';
+
+// The JA4 reader, loaded on first use — see the note at the requires.
+function clientHelloModule() {
+  log.debug("Entering clientHelloModule().");
+  log.debug("Leaving clientHelloModule().");
+  return require('../tls/client_hello');
+}
 
 // What the front process saw of this connection, in a shape that survives a
 // header. `raw` is a Buffer and is the only field that needs care; everything
@@ -1497,9 +1508,20 @@ function poolFor(url) {
 // `GET /admin-api/debugger` answered by a worker would report a listener that
 // never bound and a child that was never forked. Pinned for that reason; the
 // settings drawn on that page are ordinary configuration either way.
+//
+// **AND THE SPIFFE BROKER ENDPOINTS' LISTENERS (2026-09-23, #170).** A realm's
+// Broker API socket is bound by the front process, like every SPIFFE socket,
+// and `/admin/spiffe/brokers` and `GET /admin-api/spiffe/brokers` report
+// whether it is listening — so answered by a worker they said `listeners: []`
+// about a socket that was bound (`sts_spiffe_broker`, single-node). The
+// brokers they list are ordinary configuration either way. Only these two:
+// `/admin/spiffe` and `/admin-api/spiffe` stay dispatched, for the authority
+// argument above, and `matchesAny()` stops at the segment boundary.
 // ---------------------------------------------------------------------------
 const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
-                          '/admin/debugger', '/admin-api/debugger'];
+                          '/admin/debugger', '/admin-api/debugger',
+                          '/admin/spiffe/brokers',
+                          '/admin-api/spiffe/brokers'];
 
 function dispatched(url) {
   log.debug("Entering dispatched().");
@@ -1862,7 +1884,12 @@ function receivePublishedPki(entry, published) {
     return;
   }
   const realmId = String(published.realm);
-  keystore.adoptPki(realmId, published.chain || null);
+  // A COPY FROM BEFORE A REBUILD is refused (keystore.js, adoptPki()), and is
+  // not passed on: this process has asserted what it holds instead.
+  if (!keystore.adoptPki(realmId, published.chain || null)) {
+    log.debug("Leaving receivePublishedPki(). A stale copy, not forwarded.");
+    return;
+  }
   log.info('request_pool: the "' + realmId + '" realm\'s certificate ' +
            'authority was ' + (published.chain ? 'built' : 'removed') +
            ' by worker ' + (entry && entry.pid) + '; every process here now ' +
@@ -3765,6 +3792,12 @@ function middleware(options) {
 // One request, streamed to a worker and streamed back. The front process copies
 // no body into memory and parses nothing: `req` is piped in and the answer is
 // piped out.
+// Above this declared body size a proxied request's headers are sent to its
+// worker at once; see the block above `req.pipe(upstream)` in proxy(). The
+// body parsers' own limit (`common/app.js`), which is the size past which a
+// body is either refused on its headers or streamed.
+const PROMPT_HEADERS_BYTES = 5 * 1024 * 1024;
+
 function proxy(entry, req, res, atGeneration, ticket) {
   log.debug('Entering proxy(). pid=' + entry.pid + ' ' + req.method + ' ' +
             req.url);
@@ -3851,6 +3884,10 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // ---------------------------------------------------------------------
   delete headers[PEER_CERT_HEADER];
   delete headers[PEER_AUTHORIZED_HEADER];
+  // THE CLIENT'S JA4 FINGERPRINT (#62 P0), for the same reason as the
+  // certificate: a client that could set it could claim any TLS stack.
+  const helloModule = clientHelloModule();
+  delete headers[helloModule.FORWARD_HEADER];
   // Nothing a client says about whose directory connections should close may be
   // believed. See LDAP_DROP_HEADER.
   delete headers[LDAP_DROP_HEADER];
@@ -3877,6 +3914,12 @@ function proxy(entry, req, res, atGeneration, ticket) {
   if (peer) {
     headers[PEER_CERT_HEADER] = peer.cert;
     headers[PEER_AUTHORIZED_HEADER] = peer.authorized ? 'yes' : 'no';
+  }
+  // What this process read off the connection's ClientHello, which the
+  // worker's unix socket cannot see — tls/client_hello.ts.
+  const hello = helloModule.encodeForward(req);
+  if (hello) {
+    headers[helloModule.FORWARD_HEADER] = hello;
   }
   delete headers[POOL_TICKET_HEADER];
   if (ticket) {
@@ -4056,6 +4099,19 @@ function proxy(entry, req, res, atGeneration, ticket) {
       }
       res.setHeader(name, answer.headers[name]);
     });
+    // AN ANSWER BEFORE THE REQUEST'S BODY HAD ALL ARRIVED (#215) is a
+    // refusal made on the headers — a dataset upload over its cap, or with
+    // no room for it — and the worker has closed its end. The client's
+    // connection is closed after this answer too, and what is still coming
+    // is drained rather than written to a worker that stopped reading, so
+    // the client is told once and cleanly instead of being reset
+    // mid-upload. Every other request has been read in full by the time it
+    // is answered, and is untouched.
+    if (!req.complete) {
+      res.setHeader('Connection', 'close');
+      req.unpipe(upstream);
+      req.resume();
+    }
     answer.pipe(res);
     answer.on('end', finish);
     answer.on('error', function (err) {
@@ -4104,6 +4160,25 @@ function proxy(entry, req, res, atGeneration, ticket) {
              'request needed, so it can simply be made again.\n');
   });
 
+  // -------------------------------------------------------------------------
+  // A LARGE BODY'S HEADERS GO TO THE WORKER BEFORE ITS FIRST BYTE (#215,
+  // 2026-09-24).
+  //
+  // Node sends a client request's headers with its first write, so a
+  // request whose body had not begun to arrive reached the worker as
+  // NOTHING: a dataset upload declaring more than `risk.uploadMaxBytes`,
+  // which the upload refuses on its headers alone, sat here until the
+  // client's first chunk — or, from a client that waits to be told (an
+  // `Expect: 100-continue` it does not get, or a test sending headers
+  // only), until the request timed out as a 408. Flushed only where the
+  // body is large enough for that to matter — declared over what the body
+  // parsers would take at all, or of no declared length — so every
+  // ordinary request is sent exactly as it was, headers and body together.
+  const declared = Number((req.headers || {})['content-length']);
+  if ((isFinite(declared) && declared > PROMPT_HEADERS_BYTES) ||
+      (req.headers && req.headers['transfer-encoding'])) {
+    upstream.flushHeaders();
+  }
   req.pipe(upstream);
   req.on('aborted', function () {
     upstream.destroy();

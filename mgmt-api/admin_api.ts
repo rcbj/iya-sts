@@ -138,11 +138,16 @@ const { log, parseBody, baseUrlOf, STS } = helpers;
 // into the roles the access policy asks for — see the gate below.
 import stsCrypto = require('../common/crypto');
 import roles = require('../common/roles');
+// WHICH CLIENTS MAY HOLD `admin:*` (#110) — the gate asks it of every token.
+import scopePolicy = require('../common/scope_policy');
 // The password policy's FIELD TABLE, which the request schema of
 // `save-password-policy` is generated from — for `narrowDoorProperties()`'s
 // reason: a hand-written list of what an operation accepts is a second
 // definition of the table and goes stale in the document a caller trusts most.
 import passwordPolicy = require('../common/password_policy');
+// THE KINDS OF POLICY (#64): the policies resource documents two actions per
+// kind, and each save's body from that kind's FIELDS.
+import policyKinds = require('../admin-core/policy_kinds');
 import admin = require('../admin-ui/admin');
 // WHAT A REALM ADMINISTRATOR MAY NOT REACH (2026-09-14, #32) — the console's
 // table, asked of a realm's own token and a realm's own session here. A
@@ -203,8 +208,14 @@ import secretsAdmin = require('../admin-ui/secrets_admin');
 import cachesAdmin = require('../admin-ui/caches_admin');
 // THE STATUS LISTS' PAGE (#38's follow-ups), for its two functions (rule 7).
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
+// Server configuration → Mode (#181): its one view, rule 7.
+import modeAdmin = require('../admin-ui/mode_admin');
 // The scheduler's page (#49): its view and its two actions, rule 7.
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
+// The mail channel's two pages (#63), mirrored below (rule 7).
+import mailAdmin = require('../admin-ui/mail_admin');
+// Monitoring → Risk (#62): its view and its four actions, rule 7.
+import riskAdmin = require('../admin-ui/risk_admin');
 // The embedded protocol debugger's report (2026-09-13). A page module required
 // at 18 like the one above, and it reads the listener's status lazily, so this
 // require moves no route.
@@ -359,6 +370,7 @@ interface AdminApiDeps {
   STS: typeof STS;
   stsCrypto: typeof stsCrypto;
   roles: typeof roles;
+  scopePolicy: typeof scopePolicy;
   passwordPolicy: typeof passwordPolicy;
   admin: typeof admin;
   adminScope: typeof adminScope;
@@ -395,7 +407,10 @@ interface AdminApiDeps {
   loadAcmeApi(): typeof import('../acme/acme_api');
   loadEstApi(): typeof import('../est/est_api');
   loadScepApi(): typeof import('../scep/scep_api');
+  loadOidfedApi(): typeof import('../oidfed/oidfed_api');
   loadOauth2MonitorApi(): typeof import('../oauth-oidc/oauth2_monitor_api');
+  loadGrantManagementApi(): typeof import('../oauth-oidc/grant_management_api');
+  loadClaimsProvidersApi(): typeof import('../oauth-oidc/claims_providers_api');
 }
 
 type RouteApp = typeof app;
@@ -421,6 +436,7 @@ class AdminApi {
       STS: STS,
       stsCrypto: stsCrypto,
       roles: roles,
+      scopePolicy: scopePolicy,
       passwordPolicy: passwordPolicy,
       admin: admin,
       adminScope: adminScope,
@@ -465,8 +481,19 @@ class AdminApi {
       loadScepApi: function () {
         return require('../scep/scep_api');
       },
+      // OPENID FEDERATION (#132): the same shape, its view and acts reached
+      // lazily inside each handler.
+      loadOidfedApi: function () {
+        return require('../oidfed/oidfed_api');
+      },
       loadOauth2MonitorApi: function () {
         return require('../oauth-oidc/oauth2_monitor_api');
+      },
+      loadClaimsProvidersApi: function () {
+        return require('../oauth-oidc/claims_providers_api');
+      },
+      loadGrantManagementApi: function () {
+        return require('../oauth-oidc/grant_management_api');
       }
     };
   }
@@ -757,6 +784,125 @@ class AdminApi {
                        .concat(admin.listField(req, body, many));
     log.debug("Leaving AdminApi.namesOf(). " + names.length + " name(s).");
     return names;
+  }
+
+  // --- the policies resource's actions (#64)
+  // --------------------------------------
+  //
+  // Two per kind in `admin-core/policy_kinds.ts`, the save's body built from
+  // the kind's own FIELDS. The prose of the two kinds this service defines is
+  // written out; a kind registered later gets the generic sentences, which
+  // are true of every kind because every kind implements the same interface.
+  policyKindActions() {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.policyKindActions().");
+    const PROSE = {
+      password: {
+        save: 'Writes `cn=default,ou=passwordPolicies` in this realm\'s ' +
+              'directory, REPLACING what is there. Two rules relate fields: ' +
+              '`generatedLength` must be at least `minLength`, and at least ' +
+              'twice `minSymbols` plus two. **A change applies to the NEXT ' +
+              'password set in this realm and to nothing already stored**, ' +
+              'which is a hash and cannot be re-checked.',
+        example: { minLength: 14 }
+      },
+      authn: {
+        save: 'Writes `cn=default,ou=authnPolicies` in this realm\'s ' +
+              'directory, REPLACING what is there — in the DEFAULT realm, ' +
+              'the profile every realm without its own follows. At least ' +
+              'one mechanism must be a first factor, and with ' +
+              '`requireSecondFactor: always` at least one a second. ' +
+              '**An email mechanism cannot be turned on while this realm ' +
+              'cannot send mail** (`STS-AUTHN-0244`), and NIST SP 800-63B-4 ' +
+              'section 3.1.3.1 advises against email as an authenticator ' +
+              'at all, which is why both are off by default. There is no ' +
+              '`never`: a person who holds a second factor is always asked ' +
+              'for it.',
+        example: { emailCodeTtlS: 240 }
+      }
+    };
+    const cap = function (text) {
+      log.debug("Entering cap().");
+      log.debug("Leaving cap().");
+      return text.charAt(0).toUpperCase() + text.slice(1);
+    };
+    const out = [];
+    policyKinds.list().forEach(function (kind) {
+      const module = kind.module;
+      const prose = PROSE[kind.id] || {
+        save: 'Writes this kind\'s `cn=default` under `' + kind.container +
+              '`, REPLACING what is there.',
+        example: {}
+      };
+      const properties = {
+        profile: { type: 'string', enum: [module.DEFAULT_PROFILE],
+                   description: 'Which profile. Only `default` exists.' },
+        description: { type: 'string',
+                       description: 'What the profile is for, for the next ' +
+                                    'person. Optional.' }
+      };
+      module.FIELDS.forEach(function (field) {
+        properties[field.key] = field.type === 'bool'
+          ? { oneOf: [{ type: 'boolean' }, { type: 'string' }],
+              description: field.what + ' (`true`/`false`, or `TRUE`/' +
+                           '`FALSE` from a form.) Default ' + field.dflt +
+                           '.' }
+          : field.type === 'enum'
+            ? { type: 'string', enum: field.values,
+                description: field.what + ' Default `' + field.dflt + '`.' }
+            : { oneOf: [{ type: 'integer', minimum: field.min,
+                          maximum: field.max },
+                        { type: 'string' }],
+                description: field.what + ' Between ' + field.min + ' and ' +
+                             field.max + '. Default ' + field.dflt + '.' };
+      });
+      out.push({
+        action: policyKinds.saveAction(kind),
+        operationId: 'save' + cap(kind.id) + 'Policy',
+        summary: 'Set the ' + kind.label.toLowerCase() + ' profile',
+        description: prose.save + '\n\n**Every field is required** and one ' +
+                     'left out is refused by name rather than reset to a ' +
+                     'default, because a save that quietly loosened a rule ' +
+                     'nobody mentioned is the mistake nobody sees. The only ' +
+                     'profile is `default`: nothing assigns a profile to a ' +
+                     'person, so another name is refused rather than stored.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: properties,
+          required: module.FIELDS.map(function (field) {
+            return field.key;
+          }),
+          examples: [Object.assign({ profile: module.DEFAULT_PROFILE },
+                                   module.DEFAULTS, prose.example)],
+          additionalProperties: false
+        },
+        responseDescription: 'The profile now in force and the rules as ' +
+                             'sentences.' });
+      out.push({
+        action: policyKinds.resetAction(kind),
+        operationId: 'reset' + cap(kind.id) + 'Policy',
+        summary: 'Remove this realm\'s ' + kind.label.toLowerCase() +
+                 ' profile',
+        description: 'Deletes this realm\'s stored profile, after which ' +
+                     kind.fallsBackTo + ' ' +
+                     (kind.id === 'authn' ? 'governs this realm'
+                       : 'are in force') +
+                     '. `removed: false` means nothing was stored here.',
+        requestBody: {
+          type: 'object',
+          properties: {
+            profile: { type: 'string', enum: [module.DEFAULT_PROFILE],
+                       description: 'Which profile. Only `default` exists.' }
+          },
+          examples: [{ profile: module.DEFAULT_PROFILE }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whether anything was removed, and the profile ' +
+                             'now in force.' });
+    });
+    log.debug("Leaving AdminApi.policyKindActions(). " + out.length + ".");
+    return out;
   }
 
   // --- the shared parameter descriptions
@@ -1082,8 +1228,10 @@ class AdminApi {
                      'four lifetimes `GET /token-lifetimes` also reports — ' +
                      'and `oauth2.breakIdTokenNonce`, which makes this ' +
                      'service return an ID Token whose `nonce` is WRONG so ' +
-                     'that a client can be shown to check ' +
-                     'it.\n\n`oauth2.rfc9700` is restart-only and says so in ' +
+                     'that a client can be shown to check it — in ' +
+                     'development mode only; a product realm ignores it and ' +
+                     'refuses setting it.\n\n`oauth2.rfc9700` is ' +
+                     'restart-only and says so in ' +
                      '`restartReason`: `global.https` derives from it and a ' +
                      'listener\'s scheme is settled when the socket is ' +
                      'bound. A TRUST REALM can carry it while the process ' +
@@ -1183,7 +1331,7 @@ class AdminApi {
         operationId: 'getWebauthnSettings',
         summary:
           'The security-key ceremony\'s settings, and what a key may be here',
-        description: 'The thirteen `webauthn.*` settings, in three kinds. ' +
+        description: 'The twenty-one `webauthn.*` settings, in four kinds. ' +
                      '**THE CEREMONY**: the RP name, the RP ID override, the ' +
                      'algorithms offered, the user verification requirement, ' +
                      'the attestation conveyance and the timeout — handed to ' +
@@ -1208,10 +1356,16 @@ class AdminApi {
                      'resident key or the attachment, so a check on those ' +
                      'would compare against a value this service itself ' +
                      'supplied — what it does instead is RECORD what came ' +
-                     'back.\n\n**NO ATTESTATION STATEMENT IS VERIFIED** ' +
-                     'whatever is asked for: there is no metadata service ' +
-                     'here, no vendor trust anchor and no model allow-list. ' +
-                     '`status` carries the COSE algorithm table, read from ' +
+                     'back.\n\n**THE ATTESTATION STATEMENT** (#105): ' +
+                     '`webauthn.attestationPolicy` and the six settings ' +
+                     'beside it — trust anchors, an AAGUID allow-list, a ' +
+                     'certification level, FIPS, SafetyNet and Android ' +
+                     'software keys. `status` reports the policy in force, ' +
+                     'the eight formats verified and the FIDO Metadata ' +
+                     'Service BLOB (`status.mds`); the BLOB itself is ' +
+                     'uploaded through `POST /risk/import`, where #62 put ' +
+                     'it. What each key\'s statement proved is on `GET ' +
+                     '/users`, per key.\n\n`status` carries the COSE algorithm table, read from ' +
                      '`authn/webauthn.js` — the module that checks the ' +
                      'signature — with the offered ones marked.\n\nWho holds ' +
                      'a key is `GET /users`, and removing one is `POST ' +
@@ -1237,7 +1391,16 @@ class AdminApi {
                      '`KDC_ERR_C_PRINCIPAL_UNKNOWN` — every other name gets ' +
                      'an account — and `krb5.clockOffset` moves this KDC\'s ' +
                      'idea of now so a client can be shown `KRB_AP_ERR_SKEW` ' +
-                     'without anybody touching a system clock.' },
+                     'without anybody touching a system clock.\n\nAND A ' +
+                     '`status` MEMBER (#173): what the KDC does about ' +
+                     'pre-authentication in this realm — whether a password ' +
+                     'alone gets a ticket for a person who holds or must hold ' +
+                     'a second factor (`passwordAloneRefused`; product ' +
+                     'refuses it with KDC_ERR_POLICY after the password ' +
+                     'verified), whether RFC 6113 FAST is served (`fast`, ' +
+                     'with its armor types and factors), and the RFC 8129 ' +
+                     'indicator an OTP pre-authentication puts in a ticket ' +
+                     '(`otpIndicator`).' },
       { path: '/ldap', console: '/admin/ldap', tag: 'LDAP',
         operationId: 'getLdapSettings',
         summary: 'The embedded directory\'s own settings',
@@ -1534,7 +1697,8 @@ class AdminApi {
             cachesAdmin, parseBody, loadApiExplorer, admin, adminActions, rbac, helpers,
             realms, stats, resourceMetadata, applications, loadGnapConsole, pki,
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
-            loadScepApi, loadOauth2MonitorApi } = this.deps;
+            loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
+            loadGrantManagementApi, loadClaimsProvidersApi } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
     const ROUTES: any[] = [
@@ -1766,6 +1930,45 @@ class AdminApi {
         } },
 
       // ---------------------------------------------------------------------
+      // THE MODE (#181). `modeAdmin.modeView()` — `common/mode.js`'s
+      // `report()` for the realm the call is in, the function `/admin/mode`
+      // answers — and nothing else. It CHANGES nothing: `global.mode` is set
+      // through `POST /admin-api/config/set` like every other setting.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/mode', tag: 'Service',
+        operationId: 'getMode',
+        summary: 'What global.mode changes, and what is in force in this ' +
+                 'realm',
+        description: 'The mode of the realm the call is in (`mode`, ' +
+                     '`isProduct`) and everything it decides: ' +
+                     '`requirements` — each with `id`, `what`, the ' +
+                     '`development` and `product` answers, `inForce` (the ' +
+                     'one this realm gives) and `where` it is implemented; ' +
+                     '`developmentOnlySettings` — every setting whose row ' +
+                     'is marked development-only, with `key`, `group`, the ' +
+                     '`predicate` in common/mode.js that must answer yes, ' +
+                     '`developmentOnlyValues` (null when every value but ' +
+                     'the default is), `default`, the `value` stored, the ' +
+                     'value `inForce`, `ignored` (true exactly where a ' +
+                     'product realm holds a development-only value, which ' +
+                     'is read as the default) and `why`; and `notYet` — ' +
+                     'what product mode still does not check, each with ' +
+                     '`id` and `what`. The mode is per trust realm, so ' +
+                     'call it under /realm/{id}/admin-api/mode for a ' +
+                     'realm.',
+        mirrors: 'GET /admin/mode',
+        responseDescription: 'The mode report.',
+        responseSchema: { type: 'object',
+          description: '`mode`, `isProduct`, `requirements`, ' +
+                       '`developmentOnlySettings` and `notYet`, as ' +
+                       'common/mode.js\'s report() answers them.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API mode endpoint.");
+          self.sendJson(res, 200, modeAdmin.modeView());
+          log.debug("Leaving the management API mode endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
       // THE CACHES (#74). `cachesAdmin.cachesView()` and nothing else — the
       // function the page's `?format=json` answers — with the page's own
       // parameters, so the list and one cache's paged entries are one
@@ -1846,6 +2049,578 @@ class AdminApi {
             responseDescription: 'The index and its new status.'
           };
         })
+      },
+
+      // ---------------------------------------------------------------------
+      // RISK SCORING (#62 P1, 2026-09-22): `riskAdmin.riskView()` and
+      // `riskAdmin.riskAction()`, the two functions `/admin/risk` answers.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/risk', tag: 'Risk',
+        operationId: 'getRisk',
+        summary: 'The risk datasets, a lookup, and the refused passwords',
+        description: 'Which `store` holds the risk data (the database, or ' +
+                     'this process where there is none); every dataset in ' +
+                     '`datasets` with its `state` (active, stale or empty), ' +
+                     'active and previous version, publication date, row ' +
+                     'count, provider attribution and every recorded ' +
+                     '`versions` row (refused ones with their `refusal`); ' +
+                     'the `formats` a file may be in; with `address`, what ' +
+                     'the active datasets say about it in `lookup` (`geo`, ' +
+                     '`asn`, `lists`, the `datasets` versions that answered ' +
+                     'and any `stale` ones left out); and a page of the ' +
+                     'realm\'s refused passwords in `failures` — a subject ' +
+                     'or a name\'s digest, the door, the network prefix, the ' +
+                     'ASN and the code, never an address.',
+        mirrors: 'GET /admin/risk',
+        parameters: [
+          { name: 'realm', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The realm whose failures and operator lists are ' +
+                         'shown; the default realm when absent.' },
+          { name: 'address', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'An IPv4 or IPv6 address to look up.' },
+          { name: 'offset', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 0 },
+            description: 'Where the page of failures starts.' }
+        ],
+        responseDescription: 'The datasets, the lookup and the failures.',
+        responseSchema: { type: 'object',
+          description: '`store`, `datasets`, `formats`, `lookup`, ' +
+                       '`failures`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API risk endpoint.");
+          const realmOnly = riskAdmin.realmOnly(req);
+          riskAdmin.riskView(req.query, realmOnly).then(function (view) {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API risk endpoint.");
+          }).catch(function (e) {
+            log.warn(errorCodes.tag('STS-RISK-0011') + 'risk: the view ' +
+                     'failed: ' + ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-RISK-0011');
+            self.sendJson(res, 500, { ok: false,
+                                      errors: [String((e && e.message) ||
+                                                      e)] });
+            log.debug("Leaving the management API risk endpoint. Failed.");
+          });
+        } },
+
+      // Monitoring → Risk Scoring (#62): `riskAdmin.metricsView()`.
+      { method: 'GET', path: BASE + '/risk/metrics', tag: 'Risk',
+        operationId: 'getRiskMetrics',
+        summary: 'The risk scoring system measured',
+        description: 'The realm\'s assessments over `window`, counted in ' +
+                     'the store (`database` says which): `assessments` ' +
+                     'with its `total`, `subjects`, `bots`, `meanScore`, ' +
+                     '`maxScore`, counts `byLevel`, `byDoor`, ' +
+                     '`byDecision`, `byPhase`, `byCountry`, `byBand` (the ' +
+                     'score in decades), `bySignal`, the `feedback` people ' +
+                     'gave, and a `series` of levels per `bucketMs`; the ' +
+                     'people at each level now in `standings`; every ' +
+                     'signal with its `factor` and how often it `fired`; ' +
+                     'the level `thresholds`; and, for THIS process since ' +
+                     'it started, `process` — assessments made and ' +
+                     'failed, the time to assess, the reactions taken, ' +
+                     'observed and failed, the live-session re-checks and ' +
+                     'the breached-password screening.',
+        mirrors: 'GET /admin/risk-scoring',
+        parameters: [
+          { name: 'realm', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The realm counted; the default realm when ' +
+                         'absent.' },
+          { name: 'window', in: 'query', required: false,
+            schema: { type: 'string', enum: ['1h', '24h', '7d', '30d'] },
+            description: 'How far back the assessments are counted; 24h ' +
+                         'when absent.' }
+        ],
+        responseDescription: 'The scoring system\'s metrics.',
+        responseSchema: { type: 'object',
+          description: '`assessments`, `standings`, `signals`, ' +
+                       '`thresholds`, `process`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API risk metrics endpoint.");
+          const realmOnly = riskAdmin.realmOnly(req);
+          riskAdmin.metricsView(req.query, realmOnly).then(function (view) {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API risk metrics endpoint.");
+          }).catch(function (e) {
+            log.warn(errorCodes.tag('STS-RISK-0025') + 'risk: the metrics ' +
+                     'failed: ' + ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-RISK-0025');
+            self.sendJson(res, 500, { ok: false,
+                                      errors: [String((e && e.message) ||
+                                                      e)] });
+            log.debug("Leaving the management API risk metrics endpoint. " +
+                      "Failed.");
+          });
+        } },
+
+      // THE DATASET UPLOAD (#215): `POST /admin/risk/upload`'s twin (rule 7).
+      // The body is the FILE — never parsed: `common/app.js` exempts this
+      // path from its body parsers, and `risk/risk_upload.ts` streams it to
+      // disk — and the fields are query parameters, which the handler
+      // checks by name. ABOVE `/risk/:action`, which would otherwise take
+      // `upload` as an action it does not know.
+      { method: 'POST', path: BASE + '/risk/upload', tag: 'Risk',
+        operationId: 'uploadRiskDataset',
+        summary: 'Upload a risk dataset file, and import it',
+        description: 'The request body is the dataset file as its provider ' +
+                     'publishes it — gzip, a zip holding exactly one file, ' +
+                     'or plain text, told apart by its first bytes and ' +
+                     'expanded as it is read, never onto disk — sent as ' +
+                     '`application/octet-stream`, `application/gzip` or ' +
+                     '`application/zip`. The fields are query parameters, ' +
+                     'as `POST /admin-api/risk/import` takes them in its ' +
+                     'body; `sha256` is of the file as sent. Refused ' +
+                     'before a byte is read when the declared length is ' +
+                     'over risk.uploadMaxBytes (413) or the upload ' +
+                     'directory\'s free space cannot hold it (507), and ' +
+                     'stopped where the body passes the cap. **Answers ' +
+                     '202 as soon as the file is stored** and the version ' +
+                     'is recorded `loading`; `GET /admin-api/risk` then ' +
+                     'shows it `active`, or `refused` with its reason (a ' +
+                     'decompression bomb past risk.expandedMaxBytes or ' +
+                     'risk.expansionMaxRatio, a zip of more than one ' +
+                     'file, a SHA-256 that does not match, no row, a ' +
+                     'shrink). A refusal found before the version is ' +
+                     'recorded — the dataset, format, realm or provider, ' +
+                     'terms not accepted — is the answer (400), as is a ' +
+                     'version already recorded (200, `duplicate: true`). ' +
+                     'Send a `Content-Length`: without one the whole of ' +
+                     'risk.uploadMaxBytes must be free.',
+        mirrors: 'POST /admin/risk/upload',
+        handlerOwnsBody: true,
+        parameters: [
+          { name: 'dataset', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The dataset, as GET /admin-api/risk lists them.' },
+          { name: 'format', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The format of the file once expanded.' },
+          { name: 'realm', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The realm, for an operator list only.' },
+          { name: 'version', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The version\'s name; its SHA-256 by default.' },
+          { name: 'sha256', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The SHA-256 of the file AS SENT (compressed, if ' +
+                         'it is), which the provider publishes; a ' +
+                         'mismatch refuses the version.' },
+          { name: 'publishedAt', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'An ISO 8601 date.' },
+          { name: 'provider', in: 'query', required: false,
+            schema: { type: 'string' } },
+          { name: 'licence', in: 'query', required: false,
+            schema: { type: 'string' } },
+          { name: 'attribution', in: 'query', required: false,
+            schema: { type: 'string' } },
+          { name: 'activate', in: 'query', required: false,
+            schema: { type: 'string', enum: ['true', 'false'] },
+            description: '`false` loads without activating.' },
+          { name: 'acceptTerms', in: 'query', required: false,
+            schema: { type: 'string', enum: ['true', 'false'] },
+            description: 'Accept the provider\'s current terms as part of ' +
+                         'this import.' }
+        ],
+        requestBodyTypes: ['application/octet-stream', 'application/gzip',
+                           'application/zip'],
+        responseDescription: 'The version already recorded ' +
+                             '(`duplicate: true`), or the import\'s outcome ' +
+                             'where it ended before the answer.',
+        extraResponses: {
+          '202': 'Stored and loading: `state`, `dataset`, `realm`, ' +
+                 '`version`, `sha256`, `bytes` and `kind` (gzip, zip or ' +
+                 'plain).',
+          '413': 'Larger than risk.uploadMaxBytes.',
+          '415': 'Not one of the three body types.',
+          '507': 'The upload directory has no room for it.'
+        },
+        handler: function (req, res) {
+          log.debug("Entering the management API risk upload.");
+          riskAdmin.receiveUpload(req, 'the management API at ' +
+                                  '/admin-api/risk/upload')
+            .then(function (answer) {
+              if (answer.close) {
+                res.set('Connection', 'close');
+              }
+              if (answer.code) {
+                errorCodes.mark(res, answer.code);
+              }
+              self.sendJson(res, answer.status, answer.body);
+              log.debug("Leaving the management API risk upload. " +
+                        answer.status);
+            }).catch(function (e) {
+              log.warn(errorCodes.tag('STS-RISK-0037') + 'risk: an upload ' +
+                       'failed: ' + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-RISK-0037');
+              res.set('Connection', 'close');
+              self.sendJson(res, 500, { ok: false,
+                                        errors: [String((e && e.message) ||
+                                                        e)] });
+              log.debug("Leaving the management API risk upload. Threw.");
+            });
+        } },
+
+      { method: 'POST', route: BASE + '/risk/:action', tag: 'Risk',
+        mirrors: 'POST /admin/risk',
+        handler: function (req, res) {
+          log.debug("Entering the management API risk action.");
+          riskAdmin.riskAction(self.withAction(req, parseBody(req)),
+                               'the management API at /admin-api/risk')
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-RISK-0011');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API risk action.");
+            }).catch(function (e) {
+              log.warn(errorCodes.tag('STS-RISK-0011') + 'risk: an action ' +
+                       'failed: ' + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-RISK-0011');
+              self.sendJson(res, 500, { ok: false,
+                                        errors: [String((e && e.message) ||
+                                                        e)] });
+              log.debug("Leaving the management API risk action. Threw.");
+            });
+        },
+        actions: [
+          { action: 'import', operationId: 'importRiskDataset',
+            summary: 'Import one version of a risk dataset, and activate it',
+            description: 'Loads `content` as `format` into `dataset` (in ' +
+                         '`realm` for an operator list). Refused, and kept ' +
+                         'as a refused version, when `sha256` is named and ' +
+                         'does not match, when no line is a row, or when it ' +
+                         'has more than risk.datasetShrinkLimitPercent ' +
+                         'fewer rows than the active version. A version ' +
+                         'already recorded is not loaded again ' +
+                         '(`duplicate: true`). The provider\'s current ' +
+                         'terms must have been accepted (accept-terms, or ' +
+                         '`acceptTerms: true` here) unless the list is the ' +
+                         'operator\'s own. `activate: false` loads ' +
+                         'without activating. A file of millions of rows ' +
+                         'belongs in risk.datasetsDirectory instead.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                dataset: { type: 'string' },
+                format: { type: 'string' },
+                content: { type: 'string' },
+                realm: { type: 'string' },
+                version: { type: 'string' },
+                publishedAt: { type: 'string',
+                               description: 'An ISO 8601 date.' },
+                sha256: { type: 'string' },
+                provider: { type: 'string' },
+                licence: { type: 'string' },
+                attribution: { type: 'string' },
+                activate: { type: 'boolean' },
+                acceptTerms: { type: 'boolean',
+                  description: 'Accept the provider\'s current terms as ' +
+                               'part of this import. Without it, an import ' +
+                               'of a provider whose terms nobody has ' +
+                               'accepted is refused.' }
+              },
+              required: ['dataset', 'format', 'content'],
+              examples: [{ dataset: 'iplist.tor-exit', format: 'ip-list',
+                           content: '192.0.2.10\n198.51.100.0/24\n' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The version, its row count and state.' },
+          { action: 'activate', operationId: 'activateRiskDataset',
+            summary: 'Make a loaded version of a dataset the active one',
+            description: 'The version must have loaded (`ready`) or have ' +
+                         'been active before (`superseded`).',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { dataset: { type: 'string' },
+                            version: { type: 'string' },
+                            realm: { type: 'string' } },
+              required: ['dataset', 'version'],
+              examples: [{ dataset: 'asn', version: '2026-09' }],
+              additionalProperties: false },
+            responseDescription: 'The active version and the one it ' +
+                                 'replaced.' },
+          { action: 'rollback', operationId: 'rollbackRiskDataset',
+            summary: 'Make the previous version of a dataset active again',
+            description: 'Refused when there is no previous version.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { dataset: { type: 'string' },
+                            realm: { type: 'string' } },
+              required: ['dataset'],
+              examples: [{ dataset: 'asn' }],
+              additionalProperties: false },
+            responseDescription: 'The version now active.' },
+          { action: 'accept-terms', operationId: 'acceptRiskProviderTerms',
+            summary: 'Accept a dataset provider\'s current terms',
+            description: 'Records that the terms of `provider`, as this ' +
+                         'build states them (GET /admin-api/risk lists ' +
+                         'every provider\'s terms and digest), are ' +
+                         'accepted: through the management API, from this ' +
+                         'deployment, now. No provider\'s data is imported ' +
+                         'without an acceptance of its current terms; a ' +
+                         'change to the terms needs a new one. The audit ' +
+                         'row for the request names the caller.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { provider: { type: 'string' } },
+              required: ['provider'],
+              examples: [{ provider: 'dbip-lite' }],
+              additionalProperties: false },
+            responseDescription: 'The acceptance recorded.' },
+          { action: 'delete', operationId: 'deleteRiskDatasetVersion',
+            summary: 'Delete the rows of a version that is not active',
+            description: 'Its record stays, as `deleted`.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { dataset: { type: 'string' },
+                            version: { type: 'string' },
+                            realm: { type: 'string' } },
+              required: ['dataset', 'version'],
+              examples: [{ dataset: 'asn', version: '2026-08' }],
+              additionalProperties: false },
+            responseDescription: 'How many rows were deleted.' }
+        ]
+      },
+
+      // ---------------------------------------------------------------------
+      // MAIL (#63, 2026-09-22). `mailAdmin.settingsView()` and
+      // `outboxView()` — what the two pages' `?format=json` answer — and
+      // `settingsAction()` and `outboxAction()`, the functions their forms
+      // post to. The paths are the pages' paths, so a realm administrator is
+      // confined by the same rule on both surfaces.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/mail', tag: 'Service',
+        operationId: 'getMail',
+        summary: 'The mail channel in this realm: its transport, its ' +
+                 'messages, its settings',
+        description: 'The effective `transport` (`capture`, `smtp`, `ses`, ' +
+                     '`acs`, `gmail` or `off`) and the `setting` it came ' +
+                     'from, whether mail is `available`, the `relay` (host, ' +
+                     'port, TLS, AUTH method, DKIM) for SMTP, the last ' +
+                     '`buildProblem` in the answering process, the `from` ' +
+                     'address, `linkBase` (where a mailed link points) and ' +
+                     'whether it is pinned, the outbox `counts`, the ' +
+                     '`categories`, and `templates` — every message with ' +
+                     'its placeholders and the languages this realm has its ' +
+                     'own wording in — and the Mail `settings`. **No secret ' +
+                     'is ever in it.** With `template` (and `lang`), that ' +
+                     'message\'s wording as `template`.',
+        mirrors: 'GET /admin/mail',
+        parameters: [
+          { name: 'template', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A message id, to answer its wording.' },
+          { name: 'lang', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The language of `template`; `en` by default.' }
+        ],
+        responseDescription: 'The mail channel\'s state in this realm.',
+        responseSchema: { type: 'object',
+          description: '`realm`, `mode`, `setting`, `transport`, ' +
+                       '`available`, `from`, `linkBase`, `linkBasePinned`, ' +
+                       '`relay`, `buildProblem`, `counts`, `categories`, ' +
+                       '`selfServiceReset`, `securityNotices`, `templates`, ' +
+                       '`settings`, and `template` when asked for.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API mail endpoint.");
+          const json = mailAdmin.settingsView(req, req.query);
+          if (req.query && req.query.template && !json.template) {
+            errorCodes.mark(res, 'STS-MAIL-0017');
+            self.sendJson(res, 404, { ok: false, errors: ['There is no ' +
+              'message "' + String(req.query.template) + '".'] });
+            log.debug("Leaving the management API mail endpoint. Unknown.");
+            return;
+          }
+          self.sendJson(res, 200, json);
+          log.debug("Leaving the management API mail endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/mail/:action', tag: 'Service',
+        mirrors: 'POST /admin/mail',
+        handler: function (req, res) {
+          log.debug("Entering the management API mail action.");
+          const result = mailAdmin.settingsAction(
+            self.withAction(req, parseBody(req)), '',
+            'the management API at /admin-api/mail');
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-MAIL-0025');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API mail action.");
+        },
+        actions: [
+          { action: 'test', operationId: 'sendMailTestMessage',
+            summary: 'Send a test message to a person in this realm',
+            description: 'Queues the `test-message` message for `user` — a ' +
+                         'person in this realm\'s directory — at the address ' +
+                         'on their entry, through the realm\'s transport. ' +
+                         '**Never to an address**: there is no parameter for ' +
+                         'one. Refused (STS-MAIL-0027) when the person has ' +
+                         'no address, and with the channel\'s own code when ' +
+                         'it refuses to queue (no transport, a ceiling). ' +
+                         'The outbox shows where it got to.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description: 'The person, by username.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The message queued, and its id.' },
+          { action: 'verify', operationId: 'sendMailVerificationLink',
+            summary: 'Mail a person a link that verifies their address',
+            description: 'A single-use link to `/portal/verify-email`, ' +
+                         'mailed to the address on `user`\'s entry and ' +
+                         'never returned: the person follows it, and the ' +
+                         'address becomes `stsMailVerified`. The same link ' +
+                         'the person\'s own button on `/portal/email` sends. ' +
+                         'Refused for nobody (STS-MAIL-0012), no address ' +
+                         '(STS-MAIL-0011) or no transport (STS-MAIL-0032); ' +
+                         'answers that it is already verified when it is.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description: 'The person, by username.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether a link was sent.' },
+          { action: 'save-template', operationId: 'saveMailTemplate',
+            summary: 'Save this realm\'s wording of a message in a language',
+            description: 'The subject, the text part and the HTML part of ' +
+                         '`template` in `lang` (a BCP 47 tag). Refused ' +
+                         '(STS-MAIL-0016) when it writes an address of its ' +
+                         'own (a link is a placeholder), loads or runs ' +
+                         'anything, uses a placeholder the message does not ' +
+                         'offer, or leaves a link out of the text part.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                template: { type: 'string',
+                            description: 'The message id.' },
+                lang: { type: 'string', description: 'A BCP 47 tag.' },
+                subject: { type: 'string', description: 'One line.' },
+                text: { type: 'string', description: 'The text part.' },
+                html: { type: 'string', description: 'The HTML part.' }
+              },
+              required: ['template', 'lang', 'subject', 'text', 'html'],
+              examples: [{ template: 'test-message', lang: 'de',
+                           subject: '{{service}} Testnachricht',
+                           text: 'Eine Testnachricht ({{transport}}).\n',
+                           html: '<p>Eine Testnachricht ' +
+                                 '({{transport}}).</p>' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it was saved.' },
+          { action: 'reset-template', operationId: 'resetMailTemplate',
+            summary: 'Put a message back to the built-in wording',
+            description: 'Removes this realm\'s wording of `template` in ' +
+                         '`lang`; the built-in English is used again. ' +
+                         'Refused (STS-MAIL-0017) when there is none.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                template: { type: 'string',
+                            description: 'The message id.' },
+                lang: { type: 'string', description: 'A BCP 47 tag.' }
+              },
+              required: ['template', 'lang'],
+              examples: [{ template: 'test-message', lang: 'de' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it was reset.' }
+        ]
+      },
+
+      { method: 'GET', path: BASE + '/mail/outbox', tag: 'Service',
+        operationId: 'getMailOutbox',
+        summary: 'Every message this realm queued, and what became of it',
+        description: 'The outbox, newest first: `counts` (`pending`, ' +
+                     '`sent`, `captured`, `dead`) and `rows`, each `id`, ' +
+                     '`username`, `to`, `category`, `template`, `lang`, ' +
+                     '`subject`, `state`, `transport`, `attempts`, ' +
+                     '`generation`, `errorCode`, `why`, `providerId`, ' +
+                     '`messageId` and the times — **never a body**, in ' +
+                     '`rowsPaging`. With `message`, that one message as ' +
+                     '`message`, which carries `text` and `html` only when ' +
+                     'it was CAPTURED (development).',
+        mirrors: 'GET /admin/mail/outbox',
+        parameters: [
+          { name: 'state', in: 'query', required: false,
+            schema: { type: 'string', enum: ['pending', 'sent', 'captured',
+                                             'dead'] },
+            description: 'Only messages in this state (`dead`: the dead ' +
+                         'letters).' },
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A person, an address, a message or a code.' },
+          { name: 'message', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'One message\'s id.' }
+        ].concat(self.pagingParameters()),
+        responseDescription: 'The outbox.',
+        responseSchema: { type: 'object',
+          description: '`realm`, `transport`, `counts`, `state`, `q`, ' +
+                       '`rows`, `rowsPaging`, and `message` when asked for.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API mail outbox endpoint.");
+          self.sendJson(res, 200, mailAdmin.outboxView(req, req.query));
+          log.debug("Leaving the management API mail outbox endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/mail/outbox/:action', tag: 'Service',
+        mirrors: 'POST /admin/mail/outbox',
+        handler: function (req, res) {
+          log.debug("Entering the management API mail outbox action.");
+          const result = mailAdmin.outboxAction(
+            self.withAction(req, parseBody(req)), '');
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-MAIL-0025');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API mail outbox action.");
+        },
+        actions: [
+          { action: 'retry', operationId: 'retryMailDeadLetter',
+            summary: 'Send a dead letter again',
+            description: 'A new generation of `message` — a fresh attempt ' +
+                         'budget, the same body and Message-ID — to the ' +
+                         'address the person\'s entry holds NOW, through the ' +
+                         'realm\'s transport as it is now. Refused ' +
+                         '(STS-MAIL-0018) for an unknown message, one that ' +
+                         'is not a dead letter, one that kept no body, or a ' +
+                         'person with no usable address.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                message: { type: 'string',
+                           description: 'The message id, as the outbox ' +
+                                        'lists it.' }
+              },
+              required: ['message'],
+              examples: [{ message: 'no-such-message' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The message, queued again.' }
+        ]
       },
 
       // ---------------------------------------------------------------------
@@ -2761,7 +3536,11 @@ class AdminApi {
             description: 'Tokens issued with no browser session at all: the ' +
                          'grants that never involve one.' },
           { name: 'artifacts',
-            description: 'SAML assertions, Kerberos tickets and credentials.' }
+            description: 'SAML assertions, Kerberos tickets and credentials.' },
+          { name: 'federationLinks',
+            description: 'The federation partners\' subjects linked to ' +
+                         'this person (#109), each `{ link, relationship, ' +
+                         'issuer, subject, relationshipExists }`.' }
         ])),
         responseDescription: 'The list, or one identity.',
         responseSchema: { oneOf: [
@@ -2770,7 +3549,11 @@ class AdminApi {
         ] },
         handler: function (req, res) {
           log.debug("Entering the management API users endpoint.");
-          self.sendJson(res, 200, adminViews.usersJson(req));
+          // The person's current risk, read first (#62) — the console's
+          // route does the same, so the two answers agree.
+          return adminViews.riskFor(req.query).then(function (risk) {
+            self.sendJson(res, 200, adminViews.usersJson(req, risk));
+          });
           log.debug("Leaving the management API users endpoint.");
         } },
 
@@ -2789,6 +3572,115 @@ class AdminApi {
       // writes are the ones `invent: true` on a create has always written
       // directly. An operation that returned form values to nobody would be an
       // operation with no act behind it.
+      // APP PASSWORDS, ONE PERSON'S, PAGED (#101). The list the App passwords
+      // block on /admin/users draws, and the one `/portal/app-passwords`
+      // draws for the person themselves.
+      { method: 'GET', path: BASE + '/users/app-passwords', tag: 'Users',
+        operationId: 'getUserAppPasswords',
+        summary: 'One person\'s app passwords, and which password-only ' +
+                 'doors refuse their own password',
+        description: 'Each app password the person holds — its public ' +
+                     '`id`, `name`, the `doors` it is accepted at, when it ' +
+                     'was made and by whom, and when and where it was last ' +
+                     'used. **Never the password and never its hash.** ' +
+                     'Beside them, `passwordOnlyDoors` says which of the ' +
+                     'five doors refuse this person\'s own password (in ' +
+                     'product mode, while they hold or must hold a second ' +
+                     'factor, less `authn.passwordAloneDoors`), and ' +
+                     '`doors` is the catalogue a scope is chosen from.',
+        mirrors: 'GET /admin/users',
+        parameters: [
+          { name: 'user', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The person, as /admin-api/users names them.' }
+        ].concat(this.pagingParameters()),
+        responseDescription: 'The page of app passwords and its paging.',
+        handler: function (req, res) {
+          log.debug("Entering the management API app-passwords endpoint.");
+          self.sendJson(res, 200, adminViews.appPasswordsJson(req.query));
+          log.debug("Leaving the management API app-passwords endpoint.");
+        } },
+
+      // DEVICES, ONE PERSON'S (#130). The list the Devices block on
+      // /admin/users draws.
+      { method: 'GET', path: BASE + '/users/devices', tag: 'Users',
+        operationId: 'getUserDevices',
+        summary: 'One person\'s devices (ou=devices)',
+        description: 'Each device entry the person owns: its `id` and DN, ' +
+                     'what to call it, the DN of every application that has ' +
+                     'used it, whether it holds a Native SSO device secret ' +
+                     'and whether the sign-on session that secret is good ' +
+                     'for is still live, and when it was made and last ' +
+                     'used. Never the secret or its hash.',
+        mirrors: 'GET /admin/users',
+        parameters: [
+          { name: 'user', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The person, as /admin-api/users names them.' }
+        ],
+        responseDescription: 'The person\'s devices.',
+        handler: function (req, res) {
+          log.debug("Entering the management API devices endpoint.");
+          self.sendJson(res, 200, adminViews.devicesJson(req.query));
+          log.debug("Leaving the management API devices endpoint.");
+        } },
+
+      // SELF-ISSUED SUBJECTS, ONE PERSON'S (#129). The list the Self-issued
+      // IDs block on /admin/users draws.
+      { method: 'GET', path: BASE + '/users/self-issued-subjects',
+        tag: 'Users', operationId: 'getUserSelfIssuedSubjects',
+        summary: 'The self-issued (SIOPv2) subjects enrolled for one person',
+        description: 'Each DID or RFC 9278 JWK thumbprint URI enrolled for ' +
+                     'the person, with its label, when and by whom — every ' +
+                     'one a key whose self-issued ID Token signs them in. ' +
+                     'Beside them, whether signing in that way is on ' +
+                     '(`oid4vp.signInSelfIssued`), how many a person may ' +
+                     'hold, and the subject syntaxes accepted.',
+        mirrors: 'GET /admin/users',
+        parameters: [
+          { name: 'user', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The person, as /admin-api/users names them.' }
+        ],
+        responseDescription: 'The subjects enrolled.',
+        handler: function (req, res) {
+          log.debug("Entering the management API self-issued subjects " +
+                    "endpoint.");
+          self.sendJson(res, 200,
+                        adminViews.selfIssuedSubjectsJson(req.query));
+          log.debug("Leaving the management API self-issued subjects " +
+                    "endpoint.");
+        } },
+
+      // IDENTITY VERIFICATIONS, ONE PERSON'S, PAGED (#127). The list the
+      // Identity verifications block on /admin/users draws.
+      { method: 'GET', path: BASE + '/users/verifications', tag: 'Users',
+        operationId: 'getUserVerifications',
+        summary: 'One person\'s identity verifications (OpenID Connect for ' +
+                 'Identity Assurance)',
+        description: 'Each verification recorded for the person, newest ' +
+                     'first: its `id`, where it came from (`source`: ' +
+                     'admin, wallet or certificate), when and by whom, the ' +
+                     '`verification` element — trust framework, time, ' +
+                     'evidence — and the `claims` it covered with the ' +
+                     'values that were verified. A client\'s ' +
+                     '`verified_claims` request is answered from these, ' +
+                     'for a claim only while the entry still holds the ' +
+                     'verified value. Beside them, the vocabularies a ' +
+                     'record is made from.',
+        mirrors: 'GET /admin/users',
+        parameters: [
+          { name: 'user', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The person, as /admin-api/users names them.' }
+        ].concat(this.pagingParameters()),
+        responseDescription: 'The page of verifications and its paging.',
+        handler: function (req, res) {
+          log.debug("Entering the management API verifications endpoint.");
+          self.sendJson(res, 200, adminViews.verificationsJson(req.query));
+          log.debug("Leaving the management API verifications endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/users/new', tag: 'Users',
         operationId: 'getNewUserForm',
         summary: 'Every attribute a person may be created with, and the four ' +
@@ -2841,6 +3733,11 @@ class AdminApi {
           log.debug("Entering the management API users action endpoint.");
           const body = parseBody(req);
           const request = self.withAction(req, body);
+          // A PASSWORD IN THE REQUEST IS SCREENED AGAINST PWNED PASSWORDS
+          // FIRST (#62 P6), for the console route's reason: the action is
+          // synchronous and reads the verdict this leaves.
+          return require('../common/breached_passwords')
+            .screenAll([request.password]).then(function () {
           // A CREATE CLAIMS ITS NAME FIRST — see `claimForCreate()`.
           return self.runClaimed(res, request.action === 'create'
             ? { username: String(request.username || request.user || '') }
@@ -2862,6 +3759,7 @@ class AdminApi {
             self.sendJson(res, result.ok ? 200 : 400, result);
             log.debug("Leaving the management API users action endpoint.");
           });
+            });
         },
         actions: [
           { action: 'issue-activation', operationId: 'issueActivationLink',
@@ -2884,9 +3782,10 @@ class AdminApi {
                          'is opened, because a link burned by a mail scanner ' +
                          'or a browser prefetch would strand the person it ' +
                          'was for.\n\nThere is deliberately no self-service ' +
-                         'version: with no mail channel here it would have ' +
-                         'to show the link on screen, which is an account ' +
-                         'takeover with a username as the only input.',
+                         'version: until the account is activated nobody has ' +
+                         'proved the address on it is theirs. `deliver: ' +
+                         '"mail"` (#63) has this service mail it instead of ' +
+                         'returning it.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -2895,14 +3794,25 @@ class AdminApi {
                         description: 'The person, as /admin-api/users names ' +
                                      'them. They must already exist.' },
                 username: { type: 'string',
-                            description: 'Accepted for `user`.' }
+                            description: 'Accepted for `user`.' },
+                deliver: { type: 'string', enum: ['show', 'mail'],
+                           description: '`mail` (#63) sends the link to the ' +
+                                        'address on the person\'s entry ' +
+                                        'through the realm\'s mail ' +
+                                        'transport and does NOT return it: ' +
+                                        'the answer carries `mailedTo`. If ' +
+                                        'it cannot be mailed the link is ' +
+                                        'returned as with `show` (the ' +
+                                        'default), with `mailError` saying ' +
+                                        'why.' }
               },
               required: ['user'],
               examples: [{ user: 'alice' }],
               additionalProperties: false
             },
             responseDescription:
-              'The activation URL, ONCE, and when it expires.' },
+              'The activation URL, ONCE, and when it expires — or, with ' +
+              '`deliver: "mail"`, the address it was mailed to.' },
 
           { action: 'create', operationId: 'createUser',
             summary: 'Put a person in the directory before they authenticate',
@@ -3057,7 +3967,18 @@ class AdminApi {
                                                 'API caller with one ' +
                                                 'value has nothing to ' +
                                                 'mistype against and may ' +
-                                                'omit it.' }
+                                                'omit it.' },
+                deliver: { type: 'string', enum: ['show', 'mail'],
+                           description: 'With `credential: activation`, `mail` (#63) sends ' +
+                                        'the link to the ' +
+                                        'address on the person\'s entry ' +
+                                        'through the realm\'s mail ' +
+                                        'transport and does NOT return it: ' +
+                                        'the answer carries `mailedTo`. If ' +
+                                        'it cannot be mailed the link is ' +
+                                        'returned as with `show` (the ' +
+                                        'default), with `mailError` saying ' +
+                                        'why.' }
               },
               required: ['username'],
               examples: [{ username: 'rcbj' },
@@ -3232,6 +4153,58 @@ class AdminApi {
             },
             responseDescription: 'Whose set was cleared.' },
 
+          // THE EMAILED SECOND FACTOR AND THE ADDRESS (#64).
+          { action: 'clear-email-factor', operationId: 'clearUserEmailFactor',
+            summary: 'Turn off somebody\'s emailed second factor',
+            description: 'Clears `stsMailFactor` — the emailed code or link ' +
+                         'the person opted into on `/portal/mfa`. It cannot ' +
+                         'lock anybody out: it is a second factor. There is ' +
+                         'no operation that turns it ON: the opt-in is the ' +
+                         'person\'s. `removed: false` means they had none.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether a factor was turned off.' },
+
+          { action: 'set-mail', operationId: 'setUserMail',
+            summary: 'Set somebody\'s email address',
+            description: 'Writes `mail` on the person\'s entry and marks it ' +
+                         'VERIFIED (`stsMailVerified`): an administrator is ' +
+                         'one of the trusted sources #64 names, with SCIM, ' +
+                         'an ' +
+                         'administrator\'s LDAP write and a federation ' +
+                         'partner. The FORMER address, if there was one, is ' +
+                         'told it changed. Refused unless it is an address ' +
+                         'this service could send to.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                mail: { type: 'string', maxLength: 254,
+                        description: 'The address.' }
+              },
+              required: ['user', 'mail'],
+              examples: [{ user: 'alice', mail: 'alice@example.com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The address now on the entry, verified.' },
+
           // -----------------------------------------------------------------
           // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS (2026-09-13),
           // mirroring the Password and second-factor controls on a person's
@@ -3271,10 +4244,16 @@ class AdminApi {
                         description:
                           'The person, as /admin-api/users names them.' },
                 username: { type: 'string',
-                            description: 'Accepted for `user`.' }
+                            description: 'Accepted for `user`.' },
+                compromised: { type: 'boolean',
+                               description: 'The reset is BECAUSE a ' +
+                                 'credential was compromised: RISC ' +
+                                 '`credential-compromise` (`password`) is ' +
+                                 'sent as well (#146).' }
               },
               required: ['user'],
-              examples: [{ user: 'alice' }],
+              examples: [{ user: 'alice' }, { user: 'alice',
+                                              compromised: true }],
               additionalProperties: false
             },
             responseDescription: 'The generated password, ONCE, whether the ' +
@@ -3303,7 +4282,10 @@ class AdminApi {
                          'is enforced.\n\n**Shared Signals**: a CAEP ' +
                          '`credential-change` (`password`, `revoke`) where a ' +
                          'password was removed, a RISC ' +
-                         '`account-credential-change-required`, and a CAEP ' +
+                         '`account-credential-change-required` and ' +
+                         '`recovery-activated` (#146), RISC ' +
+                         '`credential-compromise` when `compromised` is ' +
+                         'true, and a CAEP ' +
                          '`credential-change` (`password`, `create`) when ' +
                          'the link is spent.',
             requestBodyRequired: true,
@@ -3314,10 +4296,26 @@ class AdminApi {
                         description:
                           'The person, as /admin-api/users names them.' },
                 username: { type: 'string',
-                            description: 'Accepted for `user`.' }
+                            description: 'Accepted for `user`.' },
+                compromised: { type: 'boolean',
+                               description: 'The reset is BECAUSE a ' +
+                                 'credential was compromised: RISC ' +
+                                 '`credential-compromise` (`password`) is ' +
+                                 'sent as well (#146).' },
+                deliver: { type: 'string', enum: ['show', 'mail'],
+                           description: '`mail` (#63) sends the link to the ' +
+                                        'address on the person\'s entry ' +
+                                        'through the realm\'s mail ' +
+                                        'transport and does NOT return it: ' +
+                                        'the answer carries `mailedTo`. If ' +
+                                        'it cannot be mailed the link is ' +
+                                        'returned as with `show` (the ' +
+                                        'default), with `mailError` saying ' +
+                                        'why.' }
               },
               required: ['user'],
-              examples: [{ user: 'alice' }],
+              examples: [{ user: 'alice' }, { user: 'alice',
+                                              compromised: true }],
               additionalProperties: false
             },
             responseDescription: 'The reset link, ONCE, when it expires, ' +
@@ -3365,7 +4363,7 @@ class AdminApi {
                          'those is a way in. If a second factor is still ' +
                          'REQUIRED ' +
                          'of the person — `require-mfa`, or ' +
-                         '`authn.mfaRequired` for the realm — their next ' +
+                         'the realm\'s authentication policy — their next ' +
                          'sign-in asks them to enrol a new one, which is how ' +
                          'to reset somebody\'s MFA.\n\nRefused for somebody ' +
                          'who holds no second factor.\n\n**Shared Signals**: ' +
@@ -3400,12 +4398,19 @@ class AdminApi {
                          'step to enrol an authenticator app or a security ' +
                          'key before any session is started. A passwordless ' +
                          'security-key sign-in is refused while it is ' +
-                         'required.\n\n**What it does not reach** is every ' +
-                         'sign-in that never meets that screen: federation, ' +
-                         'SPNEGO, a TLS client certificate, the OAuth ' +
-                         'password grant, an LDAP bind, WS-Trust and SCIM ' +
-                         'Basic. `authn.mfaRequired` is the same requirement ' +
-                         'for every person in the realm.',
+                         'required.\n\nIn product mode it also refuses ' +
+                         'their own password at the five password-only ' +
+                         'doors — an LDAP bind, a WS-Trust UsernameToken, ' +
+                         'SCIM, SSF and EST Basic — answered as a wrong ' +
+                         'password; an app password (`create-app-password`) ' +
+                         'is what they use there (#101). **What it does not ' +
+                         'reach** is a sign-in that is neither that screen ' +
+                         'nor one of those doors: federation, SPNEGO or a ' +
+                         'Kerberos AS-REQ, a TLS client certificate. ' +
+                         'The authentication policy\'s `requireSecondFactor: ' +
+                         'always` ' +
+                         'is the same requirement for ' +
+                         'every person in the realm.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -3427,7 +4432,8 @@ class AdminApi {
             operationId: 'stopRequiringUserSecondFactor',
             summary: 'Take the per-account second-factor requirement off',
             description: 'Clears `stsMfaRequired`. A realm requirement ' +
-                         '(`authn.mfaRequired`) is unaffected and the reply ' +
+                         '(the authentication policy) is unaffected and the ' +
+                         'reply ' +
                          'says whether one is in force. ' +
                          'A second factor the person ' +
                          'holds goes on being asked for, as it always is.',
@@ -3446,6 +4452,269 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The requirement as it now stands.' },
+
+          // WHO MAY ACT FOR A PERSON (#108, 2026-09-23) — the person's half
+          // of the delegation policy (`common/delegation_policy.ts`), drawn
+          // on their /admin/users page. Rule 7.
+          { action: 'set-not-delegated', operationId: 'setUserNotDelegated',
+            summary: 'Mark somebody as one who cannot be delegated',
+            description: 'Sets (`value` true, the default) or clears ' +
+                         '`stsNotDelegated` on the person\'s entry — ' +
+                         'Kerberos\'s NOT_DELEGATED, "sensitive and cannot ' +
+                         'be delegated". While it is set nobody may act for ' +
+                         'them at WS-Trust OnBehalfOf / ActAs or the RFC ' +
+                         '8693 ' +
+                         'token exchange, whatever any application\'s ' +
+                         'delegation attributes say. Enforced in product ' +
+                         'mode; development records what would have been ' +
+                         'refused on /admin/delegation. Members of the ' +
+                         'console\'s Admin Read and Admin Write rosters are ' +
+                         'protected the same way without it.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                value: { type: 'boolean',
+                         description: 'true sets the flag (the default), ' +
+                                      'false clears it.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice', value: true }],
+              additionalProperties: false
+            },
+            responseDescription: 'The flag as it now stands.' },
+
+          { action: 'set-may-act', operationId: 'setUserMayAct',
+            summary: 'Name the one party who may act for somebody',
+            description: 'Sets or clears `stsMayAct` on the person\'s entry: ' +
+                         'the DN of a person or an application in this ' +
+                         'realm. Access tokens issued about the person then ' +
+                         'carry RFC 8693 section 4.4\'s `may_act` naming ' +
+                         'that party (a person by their `urn:uuid:` subject, ' +
+                         'an application by its client_id), and a token ' +
+                         'exchange of such a token by anybody else is ' +
+                         'refused invalid_request in every mode. The person ' +
+                         'sets the same thing themselves on /portal/delegate.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                delegate: { type: 'string',
+                            description: 'The DN of the person or ' +
+                                         'application; empty clears it.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice',
+                           delegate: 'uid=bob,ou=users,dc=example,dc=com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The delegate as it now stands.' },
+
+          { action: 'answer-ciba-request',
+            operationId: 'answerUserCibaRequest',
+            summary: 'Approve or deny a CIBA request waiting for somebody ' +
+                     '(development test control)',
+            description: 'Answers an OpenID Connect CIBA backchannel ' +
+                         'authentication request waiting for the person, as ' +
+                         'they would on /portal/ciba: `approve` true or ' +
+                         'false, and an optional `acr` recorded as the ' +
+                         'level the approval reached. A ping or push client ' +
+                         'is notified as it would be. DEVELOPMENT ONLY: ' +
+                         'refused in product mode, where only the person ' +
+                         'answers.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                id: { type: 'string',
+                      description: 'The request\'s auth_req_id.' },
+                approve: { type: 'boolean',
+                           description: 'true approves, false denies.' },
+                acr: { type: 'string',
+                       description: 'The level the approval is recorded as ' +
+                                    'reaching.' }
+              },
+              required: ['user', 'id', 'approve'],
+              examples: [{ user: 'alice', id: 'auth-req-id', approve: true }],
+              additionalProperties: false
+            },
+            responseDescription: 'The request\'s state.' },
+
+          { action: 'remove-device', operationId: 'removeUserDevice',
+            summary: 'Remove one of somebody\'s devices',
+            description: 'Deletes the device entry from ou=devices, and its ' +
+                         'Native SSO device secret with it: the apps on the ' +
+                         'device can no longer share a sign-in, and sign in ' +
+                         'again. The tokens already issued stand until the ' +
+                         'sign-on session they belong to ends.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                id: { type: 'string',
+                      description: 'The device\'s id, from GET ' +
+                                   '/admin-api/users/devices.' }
+              },
+              required: ['user', 'id'],
+              examples: [{ user: 'alice',
+                           id: '00000000-0000-4000-8000-000000000000' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was removed.' },
+
+          { action: 'enrol-self-issued-subject',
+            operationId: 'enrolUserSelfIssuedSubject',
+            summary: 'Enrol a self-issued (SIOPv2) subject for somebody',
+            description: 'Enrols a did:jwk, did:key or did:web, an RFC 9278 ' +
+                         'JWK thumbprint URI, a base64url SHA-256 JWK ' +
+                         'thumbprint or a public JWK (as JSON) on the ' +
+                         'person\'s entry. A self-issued ID Token signed by ' +
+                         'that key then signs them in, while ' +
+                         'oid4vp.signInSelfIssued is on. Refused where the ' +
+                         'subject is already enrolled for anybody in the ' +
+                         'realm. A person enrols their own on ' +
+                         '/portal/self-issued by proving the key with their ' +
+                         'wallet.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                subject: { type: 'string',
+                           description: 'The DID, thumbprint or JWK.' },
+                label: { type: 'string',
+                         description: 'A name for it, at most 64 ' +
+                                      'characters.' }
+              },
+              required: ['user', 'subject'],
+              examples: [{ user: 'alice',
+                           subject: 'did:jwk:eyJrdHkiOiJPS1AiLCJjcnYiOiJFZDI' +
+                                    '1NTE5IiwieCI6IjEyMyJ9',
+                           label: 'phone wallet' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The subject as enrolled.' },
+
+          { action: 'remove-self-issued-subject',
+            operationId: 'removeUserSelfIssuedSubject',
+            summary: 'Remove one of somebody\'s self-issued subjects',
+            description: 'Takes the subject off the person\'s entry; its ' +
+                         'self-issued ID Token signs nobody in afterwards.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                subject: { type: 'string',
+                           description: 'The subject, as listed.' }
+              },
+              required: ['user', 'subject'],
+              examples: [{ user: 'alice',
+                           subject: 'urn:ietf:params:oauth:jwk-thumbprint:' +
+                                    'sha-256:NzbLsXh8uDCcd-6MNwXF4W_7noWXFZ' +
+                                    'AfHkxZsRGC9Xs' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was removed.' },
+
+          { action: 'record-verification',
+            operationId: 'recordUserVerification',
+            summary: 'Record an identity verification for somebody',
+            description: 'Keeps an OpenID Connect for Identity Assurance 1.0 ' +
+                         '`verification` element on the person\'s entry, ' +
+                         'with the claims it covered. `trust_framework` ' +
+                         'must be one of oauth2.idaTrustFrameworks; each ' +
+                         'evidence element is checked by its type ' +
+                         '(document, electronic_record, vouch, ' +
+                         'electronic_signature) against the vocabularies ' +
+                         'discovery publishes; `time` defaults to now. ' +
+                         'Each claim\'s value is taken from the entry as it ' +
+                         'is now, and a claim the entry holds nothing for is ' +
+                         'refused. The console\'s form posts the same thing ' +
+                         'as flat fields.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                verification: { type: 'object',
+                                description: 'The verification element ' +
+                                             '(Identity Assurance section ' +
+                                             '5.1).' },
+                claims: { type: 'array', items: { type: 'string' },
+                          description: 'The claims it covered, from ' +
+                                       'claims_in_verified_claims_supported.' }
+              },
+              required: ['user', 'verification', 'claims'],
+              examples: [{ user: 'alice',
+                           verification: {
+                             trust_framework: 'urn:sts:local',
+                             evidence: [{ type: 'document',
+                               check_details: [{ check_method: 'vpip' }],
+                               document_details: { type: 'passport',
+                                 document_number: 'X1234567' } }] },
+                           claims: ['given_name', 'family_name'] }],
+              additionalProperties: true
+            },
+            responseDescription: 'The verification as recorded.' },
+
+          { action: 'remove-verification',
+            operationId: 'removeUserVerification',
+            summary: 'Remove one of somebody\'s identity verifications',
+            description: 'Takes the verification with this `id` off the ' +
+                         'person\'s entry; nothing is released from it ' +
+                         'afterwards.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                id: { type: 'string',
+                      description: 'The verification\'s id, from GET ' +
+                                   '/admin-api/users/verifications.' }
+              },
+              required: ['user', 'id'],
+              examples: [{ user: 'alice',
+                           id: '00000000-0000-4000-8000-000000000000' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was removed.' },
 
           { action: 'disable', operationId: 'disableUserAccount',
             summary: 'Disable somebody\'s account, and end everything ' +
@@ -3482,10 +4751,16 @@ class AdminApi {
                 username: { type: 'string',
                             description: 'Accepted for `user`.' },
                 reason: { type: 'string',
-                          description: 'Recorded on the audit row.' }
+                          description: 'Recorded on the audit row.' },
+                riscReason: { type: 'string',
+                              enum: ['hijacking', 'bulk-account'],
+                              description: 'RISC account-disabled\'s ' +
+                                '`reason` (section 2.2), sent to ' +
+                                'receivers; omitted when not given (#146).' }
               },
               required: ['user'],
-              examples: [{ user: 'mallory', reason: 'left the company' }],
+              examples: [{ user: 'mallory', reason: 'left the company' },
+                         { user: 'mallory', riscReason: 'hijacking' }],
               additionalProperties: false
             },
             responseDescription: 'Whether anything changed, and in `ended` ' +
@@ -3515,6 +4790,190 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'Whether anything changed.' },
+
+          // #109 (2026-09-22): which partners' subjects sign a person in.
+          { action: 'federation-link', operationId: 'linkUserFederation',
+            summary: 'Link a federation partner\'s subject to a person',
+            description: 'Adds a `federationLink` — `<relationship> ' +
+                         '<issuer> <subject>` — to the person\'s entry, so ' +
+                         'that the partner of that service-provider-side ' +
+                         'relationship signs them in when it asserts that ' +
+                         'subject. The subject is the partner\'s STABLE ' +
+                         'identifier for them (OpenID Connect `sub`, a SAML ' +
+                         'persistent NameID), never a name or an address, ' +
+                         'and the issuer is the relationship\'s `fedPeer` ' +
+                         'when omitted. Refused when another person already ' +
+                         'carries the link (a subject names one person), ' +
+                         'for a relationship that is not service-provider ' +
+                         'side, or for a subject that cannot be written. ' +
+                         'A console administrator is still refused at the ' +
+                         'sign-in unless the relationship sets ' +
+                         '`fedMayAssertAdministrators`. The person\'s ' +
+                         'links are `federationLinks` (paged by ' +
+                         '`federationLinksPage`) on `GET /admin-api/users?' +
+                         'user=`, and a relationship\'s are `links` on `GET ' +
+                         '/admin-api/federation?relationship=`. SCIM sets ' +
+                         'the same values through the ' +
+                         '`urn:ietf:params:scim:schemas:extension:iya-sts:' +
+                         '2.0:User` extension.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                relationship: { type: 'string',
+                                description: 'The service-provider-side ' +
+                                  'relationship the link is through.' },
+                subject: { type: 'string',
+                           description: 'The partner\'s identifier for ' +
+                             'the person.' },
+                issuer: { type: 'string',
+                          description: 'The partner\'s entity ID or ' +
+                            '`iss`; the relationship\'s fedPeer when ' +
+                            'omitted, and refused if it differs from it.' }
+              },
+              required: ['user', 'relationship', 'subject'],
+              examples: [{ user: 'alice', relationship: 'partner-oidc',
+                           subject: '248289761001' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The link, whether it was added, and the ' +
+                                 'person\'s links now.' },
+
+          { action: 'federation-unlink', operationId: 'unlinkUserFederation',
+            summary: 'Remove a federation partner\'s link from a person, ' +
+                     'and end the sessions it made',
+            description: 'Removes one `federationLink` value, named either ' +
+                         'whole as `link` (as `federationLinks` lists it) or ' +
+                         'as `relationship` and `subject` (and `issuer`). ' +
+                         'The next sign-in through that relationship ' +
+                         'no longer finds the person, and **every live ' +
+                         'sign-on session that partner signed them in to ' +
+                         'is ended** — each with its CAEP ' +
+                         '`session-revoked` and back-channel Logout Tokens — ' +
+                         'after the write is answered. Sessions they made ' +
+                         'any other way are untouched. Removing a link ' +
+                         'through SCIM or an `ldapmodify` has the same ' +
+                         'consequence.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                link: { type: 'string',
+                        description: 'The whole value, as ' +
+                          '`federationLinks[].link` shows it.' },
+                relationship: { type: 'string',
+                                description: 'Instead of `link`.' },
+                subject: { type: 'string',
+                           description: 'Instead of `link`.' },
+                issuer: { type: 'string',
+                          description: 'Instead of `link`; the ' +
+                            'relationship\'s fedPeer when omitted.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice',
+                           link: 'partner-oidc https://idp.example ' +
+                                 '248289761001' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The link removed and the person\'s links ' +
+                                 'now; the sessions are ended after the ' +
+                                 'answer.' },
+
+          // -----------------------------------------------------------------
+          // APP PASSWORDS (#101, 2026-09-22), mirroring the App passwords
+          // block on a person's /admin/users page — which is also where the
+          // person's own `/portal/app-passwords` points an administrator.
+          // -----------------------------------------------------------------
+          { action: 'create-app-password',
+            operationId: 'createUserAppPassword',
+            summary: 'Make an app password for somebody, returned once',
+            description: 'Generates an APP PASSWORD for the person — ' +
+                         'twenty-four characters, printed in groups of four ' +
+                         '— names it, scopes it to one or more of the five ' +
+                         'password-only doors (`ldap`, `wstrust`, `scim`, ' +
+                         '`ssf`, `est`), stores a scrypt hash of it on their ' +
+                         'entry and **returns it ONCE** in `appPassword`. ' +
+                         'Nothing can show it again.\n\n**What it is ' +
+                         'for**: in product mode a person who holds a ' +
+                         'second factor, or of whom one is required, is ' +
+                         'refused their own password at those five doors, ' +
+                         'which cannot ask for the second factor; an app ' +
+                         'password scoped to a door is accepted there ' +
+                         'instead. It is ONE factor, it is accepted ONLY at ' +
+                         'the doors it names, and NEVER at the sign-in ' +
+                         'screen or any browser sign-in. A disabled account ' +
+                         'refuses it; a password reset leaves it ' +
+                         'alone.\n\n**Shared Signals**: a CAEP ' +
+                         '`credential-change` (`password`, `create`) with ' +
+                         'its name as `friendly_name`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                name: { type: 'string',
+                        description: 'What it is for — the client it goes ' +
+                                     'in. At most 64 characters, unique ' +
+                                     'among this person\'s.' },
+                doors: { type: 'array',
+                         items: { type: 'string',
+                                  enum: ['ldap', 'wstrust', 'scim', 'ssf',
+                                         'est'] },
+                         description: 'The doors it is accepted at. At ' +
+                                      'least one.' }
+              },
+              required: ['user', 'name', 'doors'],
+              examples: [{ user: 'alice', name: 'Thunderbird address book',
+                           doors: ['ldap'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'The app password ONCE (`appPassword`), ' +
+                                 'its public four-character `id`, name, ' +
+                                 'doors and when it was made.' },
+
+          { action: 'revoke-app-password',
+            operationId: 'revokeUserAppPassword',
+            summary: 'Revoke one of somebody\'s app passwords',
+            description: 'Removes the app password with this `id` — the ' +
+                         'four characters `GET ' +
+                         '/admin-api/users/app-passwords` lists — from the ' +
+                         'person\'s entry. A client still sending it is ' +
+                         'refused at its next authentication.\n\n**Shared ' +
+                         'Signals**: a CAEP `credential-change` ' +
+                         '(`password`, `revoke`) with its name as ' +
+                         '`friendly_name`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                id: { type: 'string',
+                      description: 'The app password\'s public id.' }
+              },
+              required: ['user', 'id'],
+              examples: [{ user: 'alice', id: 'K7QD' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was revoked — its id, name and ' +
+                                 'doors; never its hash.' },
 
           { action: 'clear-key', operationId: 'clearUserSecurityKey',
             summary: 'Remove one of somebody\'s security keys',
@@ -3917,14 +5376,17 @@ class AdminApi {
             responseDescription: 'Whether it had been revoked.' },
           { action: 'restore-kerberos', operationId: 'clearKerberosSignOut',
             summary: 'NON-SPEC: clear the Kerberos sign-out instant',
-            description: 'Removes the instant a logout stamped on the ' +
+            description: 'Clears the instant a logout stamped on the ' +
                          'principal, so a ticket-granting ticket ' +
-                         'authenticated before it is accepted again.\n\n**A ' +
-                         'real KDC has no such operation**, and it does not ' +
-                         'need one: a fresh AS-REQ is the supported way back ' +
-                         'and clears the instant itself. This exists so a ' +
-                         'test can put a signed-out ticket back into service ' +
-                         'without re-running the AS exchange.',
+                         'authenticated before it is accepted again.\n\n' +
+                         '**DEVELOPMENT MODE ONLY**: product mode refuses it ' +
+                         '(HTTP 400). **A real KDC has no such operation.** ' +
+                         'A fresh AS-REQ gets a ticket newer than the ' +
+                         'instant but does NOT clear it — tickets from ' +
+                         'before it stay refused, renewals included, until ' +
+                         'the latest one of them could still be valid. This ' +
+                         'exists so a test can put a signed-out ticket back ' +
+                         'into service without restarting the service.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -4521,7 +5983,9 @@ class AdminApi {
       // THAN LESS. Rule 7 says a console control gets an operation in the same
       // change; here the API half is not merely parity, it is the ONLY door
       // onto the roster that still works when nobody holds a role and
-      // `admin.openWhenEmpty` is off. The console cannot let you fix that — you
+      // `admin.openWhenEmpty` is off — or in product mode, which never opens
+      // the console to whoever signs in (#103). The console cannot let you
+      // fix that — you
       // cannot reach it — so this can. It reaches it with a DIFFERENT
       // credential: an access token carrying `admin:write`, rather than the
       // console session the roster gates.
@@ -4551,12 +6015,21 @@ class AdminApi {
                      'READ.** A member of the write group does not also need ' +
                      'the read group.\n\n**The bootstrap administrator** ' +
                      '(`admin.bootstrapUsername`, reported in `bootstrap`) ' +
-                     'is made a member of both groups at startup. Until it ' +
-                     'first signs in to `/admin` (`bootstrap.claimedAt`), ' +
-                     '`openToAnyone` is true and anybody who signs in holds ' +
-                     'both roles. A process that never seeded it ' +
-                     '(`bootstrap.seeded` false) keeps the older rule: open ' +
-                     'while NEITHER group has a member. ' +
+                     'is made a member of both groups at startup. In ' +
+                     'DEVELOPMENT mode, until it first signs in to `/admin` ' +
+                     '(`bootstrap.claimedAt`), `openToAnyone` is true and ' +
+                     'anybody who signs in holds both roles; a process that ' +
+                     'never seeded it (`bootstrap.seeded` false) keeps the ' +
+                     'older rule: open while NEITHER group has a member. ' +
+                     '**In PRODUCT mode the window never opens** ' +
+                     '(`windowOpens` false, `openToAnyone` false whatever ' +
+                     '`admin.openWhenEmpty` says), and until the bootstrap ' +
+                     'administrator has claimed the console ' +
+                     '(`bootstrapPasswordRequired` true) its roles are ' +
+                     'honoured only from a PASSWORD sign-in through its own ' +
+                     'realm, which is also the only sign-in that claims it — ' +
+                     'a federation partner, a certificate, a wallet or a ' +
+                     'Kerberos ticket naming it holds nothing. ' +
                      '`admin.openWhenEmpty` turns the open window off, and ' +
                      '`closedToEveryone` reports a console no browser can ' +
                      'reach, which is what this resource is the way out ' +
@@ -4701,8 +6174,10 @@ class AdminApi {
                          'group that does not exist.\n\n**Taking away the ' +
                          'LAST grant empties the roster.** Where no ' +
                          'bootstrap administrator was seeded that re-opens ' +
-                         'the console to anybody who signs in (or closes it ' +
-                         'to everybody, if `admin.openWhenEmpty` is off); ' +
+                         'the console to anybody who signs in, in ' +
+                         'development mode (or closes it to everybody, if ' +
+                         '`admin.openWhenEmpty` is off, and always in ' +
+                         'product mode); ' +
                          'once the bootstrap administrator has signed in it ' +
                          'closes the console to everybody. The reply says ' +
                          'which.',
@@ -4883,7 +6358,28 @@ class AdminApi {
               examples: [{ username: 'alice', credentialId: 'q1w2e3r4' }],
               additionalProperties: false
             },
-            responseDescription: 'How many keys are left.' }
+            responseDescription: 'How many keys are left.' },
+
+          { action: 'clear-email-factor', operationId: 'clearEmailFactor',
+            summary: 'Turn off somebody\'s emailed second factor',
+            description: 'The same switch as `POST /admin-api/users/' +
+                         'clear-email-factor` (#64): clears the emailed code ' +
+                         'or link the person opted into. It cannot lock ' +
+                         'anybody out.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                username: { type: 'string',
+                            description: 'The name they sign in as.' },
+                user: { type: 'string',
+                        description: 'Accepted for `username`.' }
+              },
+              required: ['username'],
+              examples: [{ username: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether a factor was turned off.' }
         ] },
 
       { method: 'GET', path: BASE + '/tokens', tag: 'Tokens',
@@ -6681,13 +8177,21 @@ class AdminApi {
                      '`/saml2` and the admin console all read. So a ' +
                      'relationship is created DISABLED, and an assertion is ' +
                      'refused unless it verifies against the certificate ' +
-                     'configured on it.\n\n**The gate is on the SIGNER, not ' +
-                     'on the subject.** Once a relationship is enabled and ' +
-                     'configured, everything downstream is as permissive as ' +
-                     'the rest of this service: any username in the ' +
-                     'assertion is accepted, any attribute is mapped, and a ' +
-                     'directory entry is created for the ' +
-                     'person.\n\n`?relationship=<id>` returns one of them, ' +
+                     'configured on it.\n\n**And the gate is on the ' +
+                     'SUBJECT too (#109).** A partner signs in only the ' +
+                     'person its (issuer, subject) is linked to — a ' +
+                     '`federationLink` on the entry — and what happens to ' +
+                     'a subject nobody linked is the relationship\'s ' +
+                     '`fedSubjectPolicy`: a local sign-in as the person it ' +
+                     'names before linking (`link-at-first-sign-in`, the ' +
+                     'default), a refusal (`pre-linked`), a new namespaced ' +
+                     'entry (`jit-namespaced`), or, in development only, ' +
+                     'the old name match (`any-existing`). ' +
+                     '`fedSubjectGroup`, `fedSubjectDomain` and ' +
+                     '`fedSubjectPattern` narrow it further, and a console ' +
+                     'administrator is refused unless ' +
+                     '`fedMayAssertAdministrators` is on.\n\n' +
+                     '`?relationship=<id>` returns one of them, ' +
                      'with everything it holds and the URLs to configure at ' +
                      'the partner. It answers 200 with `found: false` for an ' +
                      'id that is not registered.\n\nThis resource holds ' +
@@ -6707,7 +8211,12 @@ class AdminApi {
             description: 'Only the relationships in which this service takes ' +
                          'that role. `service-provider` is the direction ' +
                          'that CONSUMES somebody else\'s assertions.' }
-        ].concat(this.pagingParameters()),
+        ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
+          { name: 'links',
+            description: 'With `relationship`: the people whose ' +
+                         'federationLink is through it (#109), each ' +
+                         '`{ username, dn, link, issuer, subject }`.' }
+        ])),
         responseDescription: 'The relationships with the paging that found ' +
                              'them, or one of them with its endpoints, its ' +
                              'fields and what has crossed it.',
@@ -6725,13 +8234,23 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API federation action endpoint.");
           const body = parseBody(req);
-          const result = adminActions.federationAction(self.withAction(req,
-              body));
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0046');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
-          log.debug("Leaving the management API federation action endpoint.");
+          adminActions.federationAction(self.withAction(req, body))
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0046');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API federation action " +
+                        "endpoint.");
+            }, function (e) {
+              log.error(errorCodes.tag('STS-API-0046') + 'the federation ' +
+                        'action threw: ' + ((e && e.stack) || e));
+              errorCodes.mark(res, 'STS-API-0046');
+              self.sendJson(res, 500, { ok: false,
+                errors: ['The federation action failed: ' +
+                         ((e && e.message) || e)] });
+            });
         },
         actions: [
           { action: 'create', operationId: 'createFederationRelationship',
@@ -6955,6 +8474,34 @@ class AdminApi {
             },
             responseDescription: 'The relationship, now disabled.' },
 
+          { action: 'rotate-key', operationId: 'rotateFederationKey',
+            summary: 'Rotate a relationship\'s encryption key',
+            description: 'SAML 2.0, WS-Federation and OpenID Connect ' +
+                         'service-provider-side relationships only (#168). ' +
+                         'A new key of the relationship\'s ' +
+                         '`fedEncryptionKeyType` is issued under this ' +
+                         'realm\'s Intermediate and becomes CURRENT — what ' +
+                         '`/federation/metadata/{id}` and ' +
+                         '`/federation/jwks/{id}` publish. The key it ' +
+                         'replaces still DECRYPTS for ' +
+                         '`federation.encryptionKeyGraceS`, so a partner ' +
+                         'still holding the old certificate is not refused ' +
+                         'mid-change, and then decrypts nothing; the ' +
+                         'scheduler job `federation.encryption-key-retire` ' +
+                         'removes it. A second rotation inside that window ' +
+                         'drops the older key at once. Also the way to issue ' +
+                         'a key for a relationship that has none.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { id: { type: 'string',
+                                  description: 'The relationship.' } },
+              required: ['id'],
+              additionalProperties: false
+            },
+            responseDescription: 'The new key\'s kid, and the relationship ' +
+                                 'as it now stands.' },
+
           { action: 'delete', operationId: 'deleteFederationRelationship',
             summary: 'Delete a relationship',
             description: 'The entry goes and takes its recorded sign-ins ' +
@@ -6985,18 +8532,27 @@ class AdminApi {
                      'SOAP artifact resolution service behind the ' +
                      'third.\n\n**Every service provider gets its own ' +
                      'identity provider metadata** — a distinct entityID and ' +
-                     'its own endpoints — and **a document is minted for any ' +
-                     'entityID asked for**, so nothing has to be provisioned ' +
-                     'before a service provider can be pointed at this ' +
-                     'service. That is why `metadataUrl` is on every row ' +
+                     'its own endpoints — and **in development a document is ' +
+                     'minted for any entityID asked for**, so nothing has to ' +
+                     'be provisioned before a service provider can be ' +
+                     'pointed at this service; in product every ' +
+                     'per-service-provider path is a 404 for an entityID ' +
+                     'that is not registered. That is why `metadataUrl` is ' +
+                     'on every row ' +
                      'rather than being one constant.\n\nThis resource holds ' +
                      'nothing: every row is an entry in `ou=applications`, ' +
                      'the same one `GET /admin-api/applications` ' +
                      'reports.\n\n`?sp=<entityID>` returns one of them, with ' +
                      'what has been recorded about it — and answers 200 with ' +
-                     '`found: false` for an entityID that is not registered, ' +
-                     'whose metadata is still served and whose AuthnRequest ' +
-                     'would still be answered.\n\nThe `?sp=` reply also ' +
+                     '`found: false` for an entityID that is not registered ' +
+                     '— whose metadata is still served and whose ' +
+                     'AuthnRequest would still be answered, in development ' +
+                     'only.\n\nThe list reply carries `mdqRefused`: the ' +
+                     'entityIDs a request asked the Metadata Query responder ' +
+                     'to register and product mode refused (no trust ' +
+                     'anchor, or an answer that did not verify), newest ' +
+                     'first, paged by `mdqRefusedPage`.\n\nThe `?sp=` ' +
+                     'reply also ' +
                      'says what checking its requests\' signatures found ' +
                      '(`lastRequestVerification`), what they are verified ' +
                      'against (`signingCertificates`), the certificate a ' +
@@ -7010,7 +8566,11 @@ class AdminApi {
           { name: 'sp', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'One service provider, by its entityID.' }
-        ].concat(this.pagingParameters()),
+        ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
+          { name: 'mdqRefused',
+            description: 'The Metadata Query lookups refused in product ' +
+                         'mode (#112), newest first.' }
+        ])),
         responseDescription: 'The service providers with the paging that ' +
                              'found them, or one of them with its endpoints ' +
                              'and its record.',
@@ -7306,7 +8866,11 @@ class AdminApi {
                          'consumes the document, held to the realm\'s ' +
                          '`saml2.metadataTrustAnchors`. Refused with no ' +
                          'responder configured; an entry it created is ' +
-                         'removed again if the document is refused.',
+                         'removed again if the document is refused. **In ' +
+                         'product mode with no trust anchor it is refused** ' +
+                         'unless `saml2.mdqImportWithoutAnchors` is on, and ' +
+                         'then the reply carries `warnings`: the document ' +
+                         'was consumed with no signature check.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -8538,9 +10102,10 @@ class AdminApi {
                          'IS THE ONLY OPERATION IN THIS API THAT MAKES AN ' +
                          'OUTBOUND REQUEST, and the second surface in this ' +
                          'service that makes one at all — federation is the ' +
-                         'other. The same refusals apply: https only unless ' +
-                         '`federation.outboundAllowInsecure` is on, a ' +
-                         'timeout of `federation.outboundTimeoutMs`, no ' +
+                         'other. The same refusals apply: https with the ' +
+                         'certificate verified (the three ' +
+                         '`federation.outbound…` transport settings, #171), ' +
+                         'a timeout of `federation.outboundTimeoutMs`, no ' +
                          'redirects followed, and a size cap.\n\nISSUING ' +
                          'NEVER FETCHES. This writes the certificate onto ' +
                          'the entry and an assertion reads the entry, so no ' +
@@ -8594,8 +10159,8 @@ class AdminApi {
                          '`anyUnmatched` otherwise. A mismatch is reported ' +
                          'and is NOT a refusal.\n\n**A FETCH FOLLOWS THE ' +
                          'OUTBOUND POLICY**: `federation.outbound` must be ' +
-                         'on, https unless ' +
-                         '`federation.outboundAllowInsecure`, no redirect ' +
+                         'on, https with the certificate verified (#171), ' +
+                         'no redirect ' +
                          'followed, `federation.maxResponseBytes` and ' +
                          '`federation.outboundTimeoutMs`. In product mode ' +
                          'the host may not resolve to a loopback, private, ' +
@@ -13349,14 +14914,19 @@ class AdminApi {
       // THE STORED KERBEROS KEYS (2026-09-12).
       //
       // Rule 7: `/admin/kerberos/principals` has six controls — the two "Drop
-      // previous versions" buttons joined the four on 2026-09-12 — so this
-      // resource has the same six, through `kerberosPrincipalsAction()` and
+      // previous versions" buttons joined the four on 2026-09-12 — and a
+      // person's page under Directory → Users a seventh (#59, "Reset password
+      // and download keytab", posted to the same page), and the krbtgt block
+      // two more (#169, "Rotate the krbtgt key" and "Rotate and
+      // invalidate"), so this resource has the same nine, through
+      // `kerberosPrincipalsAction()` and
       // `kerberosPrincipalsJson()` in `admin-core/`, which reach
       // `kerberos/krb5_person_keys.ts` by a plain require.
       //
-      // **NO KEY IS IN ANY REPLY BUT TWO**, and those two are the whole reason
+      // **NO KEY IS IN ANY REPLY BUT THREE**, and those are the whole reason
       // a service principal can be created from a machine: `create-service` and
-      // `rotate-service` return the KEYTAB, base64, ONCE. Nothing reads a
+      // `rotate-service` return the KEYTAB, base64, ONCE — and so does
+      // `reset-person-keytab` (#59), derived from the password it sets. Nothing reads a
       // stored key back out afterwards — a lost keytab is replaced by rotating.
       // The GET is built from the public half of each pair of attributes and
       // opens nothing.
@@ -13383,7 +14953,13 @@ class AdminApi {
                      'next verified sign-in derives new ones.\n\n`services` ' +
                      '— the service principals created with a RANDOM key: ' +
                      'the principal, the kvno, the enctypes, when created ' +
-                     'and last rotated.\n\n**NO KEY MATERIAL IS IN THIS ' +
+                     'and last rotated.\n\n`krbtgt` (#169) — the realm\'s ' +
+                     'krbtgt key: where it comes from (`stored`, ' +
+                     '`password` in development, `none`, `unreadable`), ' +
+                     'its kvno and enctypes, when it was made and last ' +
+                     'rotated, the versions kept and until when, and the ' +
+                     'schedule — `scheduled`, `offReason`, `intervalDays`, ' +
+                     '`nextDueAt`.\n\n**NO KEY MATERIAL IS IN THIS ' +
                      'REPLY**, sealed or otherwise — both lists are built ' +
                      'from the public info attributes. A trust realm has a ' +
                      'KDC and a principal database of its own since ' +
@@ -13423,15 +14999,31 @@ class AdminApi {
           log.debug("Entering the management API Kerberos principals action " +
                     "endpoint.");
           const body = parseBody(req);
-          const result = adminActions.kerberosPrincipalsAction(
+          // `reset-person-keytab` (#59) answers a PROMISE — its string-to-key
+          // is asynchronous — so every answer is resolved.
+          Promise.resolve(adminActions.kerberosPrincipalsAction(
               self.withAction(req, body),
-                                                               { via: 'api' });
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0065');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
+              { via: 'api' }))
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0065');
+              }
+              if (result.ok && result.keytab) {
+                // A key is in the body.
+                res.set('Cache-Control', 'no-store');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+            }, function (e) {
+              log.error(errorCodes.tag('STS-API-0065') + 'admin-api: a ' +
+                        'Kerberos principals action threw: ' +
+                        ((e && e.stack) || e));
+              errorCodes.mark(res, 'STS-API-0065');
+              self.sendJson(res, 500, { ok: false, errors: ['The action ' +
+                'failed inside this service; the log says why.'] });
+            });
           log.debug("Leaving the management API Kerberos principals action " +
-                    "endpoint.");
+                    "endpoint. Answering when the action settles.");
         },
         actions: [
           { action: 'create-service',
@@ -13439,7 +15031,8 @@ class AdminApi {
             summary: 'Create a service principal with a random key, and get ' +
                      'its keytab once',
             description: 'Makes a RANDOM key for every enctype in ' +
-                         '`krb5.enctypes`, at kvno `krb5.kvno`, for `spn` in ' +
+                         '`krb5.enctypes` (never rc4-hmac in product mode), ' +
+                         'at kvno `krb5.kvno`, for `spn` in ' +
                          'this KDC\'s realm, stores them SEALED on the ' +
                          'application entry for `<spn>@<realm>` (creating ' +
                          'that entry if it is not there), and answers with ' +
@@ -13568,7 +15161,9 @@ class AdminApi {
                          'operator wants after a keytab is compromised. ' +
                          'Nothing kept answers `dropped: 0` rather than a ' +
                          'refusal. Refused for an SPN with no stored key, ' +
-                         'and for a key this service cannot open.',
+                         'and for a key this service cannot open. Takes ' +
+                         'the realm\'s own `krbtgt/<REALM>` too (#169), ' +
+                         'ending a krbtgt rotation\'s window now.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -13610,7 +15205,137 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'How many previous versions were dropped, ' +
-                                 'their kvnos, and the current kvno.' }
+                                 'their kvnos, and the current kvno.' },
+
+          // #59 (2026-09-22): the console's "Reset password and download
+          // keytab" on a person's page, rule 7's twin.
+          { action: 'reset-person-keytab',
+            operationId: 'resetKerberosPersonKeytab',
+            summary: 'Reset a person\'s password, and get the keytab derived ' +
+                     'from it once',
+            description: 'SETS `username`\'s password — to `password`, or ' +
+                         'with `random: true` to a generated one that is ' +
+                         'NEVER returned — and answers with an MIT keytab ' +
+                         '(format 0x502) in `keytab`, base64, derived from ' +
+                         'it: one entry per enctype in `krb5.enctypes` ' +
+                         '(never rc4-hmac in product mode), at ' +
+                         'the CURRENT kvno only.\n\n**THIS IS A PASSWORD ' +
+                         'RESET.** A stored key is never read back out, so ' +
+                         'a keytab is derived from a password in hand, and ' +
+                         'the only one an administrator can have is one set ' +
+                         'now. The old password stops working in every ' +
+                         'protocol, the kvno moves up by one, an outstanding ' +
+                         'reset link is spent, the person is signed out of ' +
+                         'everything, and a CAEP credential-change is sent. ' +
+                         'They are NOT made to change it at their next ' +
+                         'sign-in (that would end the keytab), and a ' +
+                         'pending forced change is cleared.\n\nThe password ' +
+                         'is held to the realm\'s password policy. The key ' +
+                         'derived from it is checked against the one the ' +
+                         'KDC holds before the keytab is returned. In ' +
+                         'DEVELOPMENT mode the KDC keys every user from ' +
+                         '`krb5.userPassword`, not from their own, so ' +
+                         'the keytab is derived from that — `source` says ' +
+                         'which. **THE KEYTAB IS IN THIS REPLY AND NOWHERE ' +
+                         'ELSE.** Refused, before anything changes, for a ' +
+                         'realm with no KDC, a name with no entry, a ' +
+                         'disabled account, and `krb5.personKeys` off in ' +
+                         'product mode; and for neither or both of ' +
+                         '`password` and `random`. The person makes their ' +
+                         'own, from their own password and with nothing ' +
+                         'reset, at `/portal/kerberos`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                username: { type: 'string',
+                            description: 'The person, as they sign in, in ' +
+                                         'the trust realm of the call.' },
+                password: { type: 'string',
+                            description: 'The new password. Leave out with ' +
+                                         '`random`.' },
+                random: { type: 'boolean',
+                          description: 'A generated password under the ' +
+                                       'password policy, never returned.' }
+              },
+              required: ['username'],
+              examples: [{ username: 'alice',
+                           password: 'A-New-Strong-Passw0rd!' },
+                         { username: 'batch-job', random: true }],
+              additionalProperties: false
+            },
+            responseDescription: 'The principal, kvno, enctypes, `source` ' +
+                                 '(`password` or `development`), whether ' +
+                                 'the password was generated, the sign-out, ' +
+                                 'and the keytab (base64) with a file name ' +
+                                 'for it.' },
+
+          // #169 (2026-09-23): the realm's krbtgt key, rule 7's twins of the
+          // two krbtgt controls on /admin/kerberos/principals. Each QUEUES a
+          // run of `krb5.krbtgt-rotate-now`; neither returns a key.
+          { action: 'rotate-krbtgt',
+            operationId: 'rotateKerberosKrbtgt',
+            summary: 'Rotate the realm\'s krbtgt key, keeping the one it ' +
+                     'replaces for the TGTs already sealed under it',
+            description: 'Queues a run of the scheduler job ' +
+                         '`krb5.krbtgt-rotate-now` for the trust realm of ' +
+                         'the call, which runs once, on the scheduler\'s ' +
+                         'leader, at its next tick: a new RANDOM key for ' +
+                         'every enctype in `krb5.enctypes`, at the next ' +
+                         'kvno, sealed on the directory entry ' +
+                         '`krbtgt/<REALM>@<REALM>`. The key it replaces is ' +
+                         'KEPT — at most `krb5.retainedKeyVersions`, for the ' +
+                         'longer of the ticket and renew lifetimes plus the ' +
+                         'clock skew unless `krb5.retainedKeyTtlS` names a ' +
+                         'number — so every TGT already issued goes on ' +
+                         'working until it expires. In development mode it ' +
+                         'replaces the key derived from ' +
+                         '`krb5.krbtgtPassword`, which is then the version ' +
+                         'kept.\n\n**NO KEY IS IN THE REPLY, OR ANYWHERE.** ' +
+                         'The answer is the run\'s id; ' +
+                         '`GET /admin-api/kerberos/principals` shows the ' +
+                         '`krbtgt` block with its new kvno once the run has ' +
+                         'happened. Refused in a realm with no KDC.',
+            requestBodyRequired: false,
+            requestBody: {
+              type: 'object', properties: {},
+              examples: [{}],
+              additionalProperties: false
+            },
+            responseDescription: '`queued`, the `runId`, and whether an ' +
+                                 'identical run was already queued.' },
+
+          { action: 'rotate-krbtgt-invalidate',
+            operationId: 'rotateKerberosKrbtgtInvalidate',
+            summary: 'Rotate the realm\'s krbtgt key and keep NOTHING, so ' +
+                     'every TGT in the realm is refused',
+            description: 'Active Directory\'s double reset in one act, for a ' +
+                         'krbtgt key presumed compromised: `rotate-krbtgt` ' +
+                         'with no previous version kept, so every TGT the ' +
+                         'realm issued before the run is refused ' +
+                         'KRB_AP_ERR_BADKEYVER at its next TGS-REQ and every ' +
+                         'person runs a fresh AS exchange. A Shared Signals ' +
+                         'event of this service\'s own vocabulary ' +
+                         '(`urn:iya:sts:secevent:event-type:' +
+                         'kerberos-tickets-invalidated`) says so to every ' +
+                         'stream that takes it. It is also the one act that ' +
+                         'replaces a stored krbtgt record this service ' +
+                         'cannot open. Needs `confirm: "invalidate"`; ' +
+                         'refused without it, and in a realm with no KDC.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                confirm: { type: 'string', enum: ['invalidate'],
+                           description: 'The word `invalidate`, because ' +
+                                        'this cannot be undone.' }
+              },
+              required: ['confirm'],
+              examples: [{ confirm: 'invalidate' }],
+              additionalProperties: false
+            },
+            responseDescription: '`queued`, the `runId`, and `invalidate: ' +
+                                 'true`.' }
         ] },
 
       { method: 'GET', path: BASE + '/audit', tag: 'Audit log',
@@ -13885,10 +15610,13 @@ class AdminApi {
                      'refused delegation appears in NO other resource here: ' +
                      'nothing was accepted, so /admin-api/audit and ' +
                      '/admin-api/users have nothing to say about ' +
-                     'it.\n\n**Nothing checks who may delegate except the ' +
-                     'KDC.** WS-Trust and token exchange are unpoliced here, ' +
-                     'and each act says so in the field that names an ' +
-                     'attribute for a Kerberos one.\n\nBesides the paged ' +
+                     'it.\n\n**Every family is policed now (#108).** The ' +
+                     'KDC decides Kerberos; WS-Trust and token exchange are ' +
+                     'decided by the delegation policy (GET ' +
+                     '/admin-api/delegation/policy), enforced in product ' +
+                     'mode, and each act names what allowed it in ' +
+                     '`authorizedBy` — or, in development, what WOULD have ' +
+                     'refused it.\n\nBesides the paged ' +
                      'acts the reply carries `chains` — the distinct ' +
                      '(mechanism, initial, intermediary, target) tuples ' +
                      'among what MATCHED, one per edge of the picture — ' +
@@ -13954,6 +15682,66 @@ class AdminApi {
           log.debug("Leaving the management API delegation endpoint.");
         } },
 
+      // THE WS-TRUST AND TOKEN-EXCHANGE DELEGATION POLICY (#108, 2026-09-23)
+      // — the configured half of those two families, as the Kerberos one is
+      // `policy` on the acts above. READ ONLY here, like the console section
+      // it mirrors: the attributes are EDITED through POST
+      // /admin-api/applications/update and the two person flags through POST
+      // /admin-api/users/set-not-delegated and /set-may-act, which is where
+      // every application and person attribute is edited (rule 7 by
+      // construction). Paged, three lists on three parameters.
+      { method: 'GET', path: BASE + '/delegation/policy', tag: 'Delegation',
+        operationId: 'getDelegationPolicy',
+        summary: 'Who may act for whom at WS-Trust and the token exchange',
+        description: 'The delegation policy `OnBehalfOf` / `ActAs` and the ' +
+                     'RFC 8693 token exchange are decided by — Kerberos\'s ' +
+                     'model on application entries:\n\n* ' +
+                     '`appAllowedToDelegateTo` on the INTERMEDIARY names ' +
+                     'the targets it may reach as somebody else;\n* ' +
+                     '`appAllowedToActOnBehalfOf` on the TARGET names the ' +
+                     'intermediaries it accepts;\n* ' +
+                     '`appDelegationSubjectGroup` on the intermediary names ' +
+                     'the groups of people it may act for (empty: anybody ' +
+                     'unprotected);\n* `appTrustedToImpersonate` TRUE lets ' +
+                     'it IMPERSONATE (OnBehalfOf, an exchange with no ' +
+                     'actor_token) as well as delegate.\n\n`pairs` has one ' +
+                     'row per (intermediary, target, attribute); ' +
+                     '`intermediaries` the applications carrying the flag ' +
+                     'or a subject group; `people` those carrying ' +
+                     '`stsNotDelegated` or `stsMayAct`; `protectedGroups` ' +
+                     'the console rosters, whose members are never ' +
+                     'delegated. `enforced` is true in product mode; in ' +
+                     'development the policy is asked and what it would ' +
+                     'have refused is recorded on the act. Each list is ' +
+                     'paged: `?policyPairsPage=`, `?intermediariesPage=`, ' +
+                     '`?peoplePage=`, and `?per=` for all three.',
+        mirrors: 'GET /admin/delegation',
+        parameters: [
+          { name: 'policyPairsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'The page of `pairs`.' },
+          { name: 'intermediariesPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'The page of `intermediaries`.' },
+          { name: 'peoplePage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'The page of `people`.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Rows per page, for all three lists (default ' +
+                         '10).' }
+        ],
+        responseDescription: 'The three lists, each with its paging, and ' +
+                             'whether the policy is enforced.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation policy " +
+                    "endpoint.");
+          self.sendJson(res, 200,
+                        adminViews.delegationPolicyView(req.query).json);
+          log.debug("Leaving the management API delegation policy " +
+                    "endpoint.");
+        } },
+
       // -----------------------------------------------------------------------
       // DELEGATED PERMISSIONS — the CONFIGURED half of /admin/delegation.
       //
@@ -14011,13 +15799,14 @@ class AdminApi {
                      'https://example.com/write` produces `aud: ' +
                      'https://example.com/` and `scope: openid write`. Each ' +
                      'grant row spells that out, because it is two facts a ' +
-                     'caller would otherwise have to compose.\n\n**It ' +
-                     'refuses nothing by default.** An ungranted permission ' +
-                     'is honoured exactly as a granted one is and marked ' +
-                     'here; only `oauth2.delegatedPermissionsEnforced` turns ' +
-                     'it into `invalid_scope`, at the authorization endpoint ' +
-                     'where the client can still be ' +
-                     'told.\n\n`grants[].dangling` is a grant naming a ' +
+                     'caller would otherwise have to compose.\n\n**In ' +
+                     'product mode an ungranted permission is ' +
+                     '`invalid_scope`**, at the authorization endpoint where ' +
+                     'the client can still be told and at the token ' +
+                     'endpoint. In development it is honoured exactly as a ' +
+                     'granted one is and marked here, unless ' +
+                     '`oauth2.delegatedPermissionsEnforced` is ' +
+                     'on.\n\n`grants[].dangling` is a grant naming a ' +
                      'permission no application defines — a deleted ' +
                      'resource, a permission removed from under it, or an ' +
                      '`ldapmodify`, since both console doors refuse to ' +
@@ -14311,8 +16100,9 @@ class AdminApi {
                          'after their base URI. An application cannot be ' +
                          'granted its own permission: the token would be ' +
                          'addressed to itself, which is what an ID Token ' +
-                         'already is.\n\n**It changes nothing about what is ' +
-                         'issued** unless ' +
+                         'already is.\n\n**In product mode it is what lets ' +
+                         'the request through.** In development it changes ' +
+                         'nothing about what is issued unless ' +
                          '`oauth2.delegatedPermissionsEnforced` is on. With ' +
                          'it off — the default — the request was already ' +
                          'producing the audience and the ' +
@@ -14342,7 +16132,9 @@ class AdminApi {
 
           { action: 'revoke-permission', operationId: 'revokePermission',
             summary: 'Take a permission away from a client application',
-            description: 'The opposite of `grant-permission`, and with the ' +
+            description: 'The opposite of `grant-permission`. In product ' +
+                         'mode the client\'s next request for the ' +
+                         'permission is refused. In development with the ' +
                          'setting off it changes nothing about what is ' +
                          'issued either: the permission still becomes an ' +
                          'audience and a scope, and those requests are ' +
@@ -14724,53 +16516,53 @@ class AdminApi {
         ] },
 
       // -----------------------------------------------------------------------
-      // POLICIES (2026-09-12). Two operations over
-      // `adminViews.passwordPoliciesView()` and
-      // `adminActions.passwordPoliciesAction()` — the same two functions
-      // /admin/policies calls, so the page and this resource cannot disagree.
+      // POLICIES (2026-09-12; every kind since #64). Two operations over
+      // `adminViews.policiesView()` and `adminActions.policiesAction()` — the
+      // same two functions /admin/policies calls, so the page and this
+      // resource cannot disagree.
       //
-      // **THE SAVE'S REQUEST SCHEMA IS BUILT FROM `password_policy.FIELDS`**,
-      // so a rule added there is a property here the same day. Each field takes
-      // its JSON type OR a string, because a form-encoded body copied from the
-      // console carries `"12"` and `"TRUE"`, and `coerceTypes` is off in this
-      // file's ajv for a reason stated beside it; the module parses both
-      // spellings and refuses anything else by name.
+      // **THE ACTIONS ARE BUILT FROM `admin-core/policy_kinds.ts`**, two per
+      // kind, and **EACH SAVE'S REQUEST SCHEMA FROM ITS KIND'S `FIELDS`**, so
+      // a policy registered there is two operations here the same day. Each
+      // field takes its JSON type OR a string, because a form-encoded body
+      // copied from the console carries `"12"` and `"TRUE"`, and
+      // `coerceTypes` is off in this file's ajv for a reason stated beside
+      // it; the module parses both spellings and refuses anything else by
+      // name.
       // -----------------------------------------------------------------------
       { method: 'GET', path: BASE + '/policies', tag: 'Policies',
         operationId: 'getPolicies',
         summary: 'The policies this realm holds a credential to',
-        description: 'Every kind of policy and its profiles — today the ' +
-                     'PASSWORD POLICY and its one profile, ' +
-                     '`default`.\n\n**`password.profile` is the profile IN ' +
-                     'FORCE**, which is the stored ' +
-                     '`cn=default,ou=passwordPolicies` entry where there is ' +
-                     'one (`stored: true`) and the built-in defaults where ' +
-                     'there is not. `sources` says which of the two each ' +
+        description: 'Every kind of policy and its profiles — the PASSWORD ' +
+                     'POLICY and the AUTHENTICATION POLICY (#64), one ' +
+                     'profile each, `default`. Each kind is a member named ' +
+                     'by its id (`password`, `authn`) and a row of ' +
+                     '`kinds`.\n\n**`<kind>.profile` is the profile IN ' +
+                     'FORCE**: the stored entry where there is one ' +
+                     '(`stored: true`) and the built-in defaults where there ' +
+                     'is not — and, for the authentication policy only, the ' +
+                     'DEFAULT REALM\'s entry in a realm with none of its own ' +
+                     '(`from: "default-realm"`). `sources` says where each ' +
                      'value came from, and `problems` names any stored value ' +
-                     'that could not be read — the built-in default is in ' +
-                     'force for that field.\n\n**`enforced` is whether this ' +
-                     'realm checks it**, which is product mode: development ' +
-                     'checks no password at any door, so the rules are ' +
-                     'recorded and not applied there. A GENERATED password ' +
-                     'meets the profile in both modes.\n\n`password.rules` ' +
-                     'is the profile as a person reads it — the same ' +
-                     'sentences the user portal prints — and ' +
-                     '`password.doors` names every door that sets a password ' +
-                     'and the one function each ends ' +
-                     'in.\n\nIt is NOT the XACML ' +
-                     'policy repository, which is `GET ' +
-                     '/admin-api/xacml/policies`.',
+                     'that could not be read.\n\n**`enforced` is whether ' +
+                     'this realm checks the password policy**, which is ' +
+                     'product mode. The authentication policy decides what ' +
+                     'the sign-in screen offers in both modes; ' +
+                     '`authn.mail.usable` says whether its two email ' +
+                     'mechanisms can be on here, and a field with ' +
+                     '`disabled: true` cannot be turned on until it ' +
+                     'can.\n\nIt is NOT the XACML policy repository, which ' +
+                     'is `GET /admin-api/xacml/policies`.',
         mirrors: 'GET /admin/policies',
         parameters: this.pagingParameters(),
-        responseDescription: 'The kinds of policy, the password profile in ' +
-                             'force with its field table ' +
-                             'and schema, where it is ' +
-                             'enforced, the generator, and the paged profiles.',
+        responseDescription: 'The kinds of policy, each kind\'s profile in ' +
+                             'force with its field table and schema, and ' +
+                             'the paged profiles.',
         responseSchema: { type: 'object',
                           description: 'The policies register.' },
         handler: function (req, res) {
           log.debug("Entering the management API policies endpoint.");
-          self.sendJson(res, 200, adminViews.passwordPoliciesView(req.query));
+          self.sendJson(res, 200, adminViews.policiesView(req.query));
           log.debug("Leaving the management API policies endpoint.");
         } },
 
@@ -14780,95 +16572,15 @@ class AdminApi {
           log.debug("Entering the management API policies action endpoint.");
           const body = parseBody(req);
           const result =
-            adminActions.passwordPoliciesAction(self.withAction(req, body),
-                                                             { via: 'api' });
+            adminActions.policiesAction(self.withAction(req, body),
+                                        { via: 'api' });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0060');
           }
           self.sendJson(res, result.ok ? 200 : 400, result);
           log.debug("Leaving the management API policies action endpoint.");
         },
-        actions: [
-          { action: 'save-password-policy', operationId: 'savePasswordPolicy',
-            summary: 'Set the password policy profile',
-            description: 'Writes `cn=default,ou=passwordPolicies` in this ' +
-                         'realm\'s directory, REPLACING what is there. ' +
-                         '**Every field is required** and one left out is ' +
-                         'refused by name rather than reset to a default, ' +
-                         'because a save that quietly loosened a rule nobody ' +
-                         'mentioned is the mistake nobody sees.\n\nTwo rules ' +
-                         'relate fields: `generatedLength` must be at least ' +
-                         '`minLength`, and at least twice `minSymbols` plus ' +
-                         'two. **A change applies to the NEXT password set ' +
-                         'in this realm and to nothing already stored**, ' +
-                         'which is a hash and cannot be re-checked.\n\nThe ' +
-                         'only profile is `default`: nothing assigns a ' +
-                         'profile to a person yet, so another name is ' +
-                         'refused rather than stored.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: (function () {
-                const out = {
-                  profile: { type: 'string',
-                             enum: [passwordPolicy.DEFAULT_PROFILE],
-                             description:
-                               'Which profile. Only `default` exists.' },
-                  description: { type: 'string',
-                                 description: 'What the profile is for, for ' +
-                                              'the next person. Optional.' }
-                };
-                passwordPolicy.FIELDS.forEach(function (field) {
-                  out[field.key] = field.type === 'bool'
-                    ? { oneOf: [{ type: 'boolean' }, { type: 'string' }],
-                        description: field.what +
-                                     ' (`true`/`false`, or `TRUE`/' +
-                                     '`FALSE` from a form.) Default ' +
-                                     field.dflt + '.' }
-                    : { oneOf: [{ type: 'integer', minimum: field.min,
-                                  maximum: field.max },
-                                { type: 'string' }],
-                        description: field.what + ' Between ' + field.min +
-                                     ' and ' +
-                                     field.max + '. Default ' + field.dflt +
-                                     '.' };
-                });
-                return out;
-              })(),
-              required: passwordPolicy.FIELDS.map(function (field) {
-                return field.key;
-              }),
-              examples:
-                [Object.assign({ profile: passwordPolicy.DEFAULT_PROFILE },
-                                       passwordPolicy.DEFAULTS,
-                                       { minLength: 14 })],
-              additionalProperties: false
-            },
-            responseDescription: 'The profile now in force, the rules as a ' +
-                                 'person reads them, and whether this realm ' +
-                                 'enforces them.' },
-
-          { action: 'reset-password-policy', operationId: 'resetPasswordPolicy',
-            summary: 'Put the built-in password policy back',
-            description: 'Deletes the stored profile, after which the ' +
-                         'built-in defaults are in force. `removed: false` ' +
-                         'means nothing was stored, so the ' +
-                         'defaults already were. Nothing ' +
-                         'already stored is touched, as with a save.',
-            requestBody: {
-              type: 'object',
-              properties: {
-                profile: { type: 'string',
-                           enum: [passwordPolicy.DEFAULT_PROFILE],
-                           description:
-                             'Which profile. Only `default` exists.' }
-              },
-              examples: [{ profile: passwordPolicy.DEFAULT_PROFILE }],
-              additionalProperties: false
-            },
-            responseDescription: 'Whether anything was removed, and the ' +
-                                 'profile now in force.' }
-        ] },
+        actions: this.policyKindActions() },
 
       { method: 'GET', path: BASE + '/consent', tag: 'Delegation',
         operationId: 'getConsent',
@@ -14901,7 +16613,8 @@ class AdminApi {
                      '`globals[].granted` whether that client has also been ' +
                      'GRANTED it: the two are independent, and a consented ' +
                      'permission the client does not hold is still refused ' +
-                     'when `oauth2.delegatedPermissionsEnforced` is ' +
+                     'in product mode, and in development when ' +
+                     '`oauth2.delegatedPermissionsEnforced` is ' +
                      'on.\n\n`users[].unreadable` is a value on somebody\'s ' +
                      'entry that is not in the shape this service writes — ' +
                      'an `ldapmodify` put it there. It consents nothing and ' +
@@ -15035,10 +16748,29 @@ class AdminApi {
                          'about the people it covers. Somebody who agreed to ' +
                          'it personally is unaffected — their answer is on ' +
                          'their own entry and `revoke-consent` is what takes ' +
-                         'that away.\n\nNothing already ISSUED is touched. ' +
-                         'An access token minted while the override stood is ' +
-                         'still valid, exactly as revoking a delegated ' +
-                         'permission does not re-judge a grant already made.',
+                         'that away.\n\n**What was issued under it is ' +
+                         'revoked (#172).** Every access and refresh token ' +
+                         'of ' +
+                         'this application carrying the scope, for everybody ' +
+                         'but the people who agreed to it themselves, goes ' +
+                         'on ' +
+                         'the revocation register every node reads — so it ' +
+                         'introspects inactive at once — and the instant is ' +
+                         'written onto the application\'s entry as ' +
+                         '`oauthGlobalConsentWithdrawn`, so a refresh token ' +
+                         'granted before it is refused even if the override ' +
+                         'is added back. `revoked` is how many tokens this ' +
+                         'call revoked. **This is the only way to take a ' +
+                         'global consent away**: the generic ' +
+                         '`applications/remove` of `oauthGlobalConsent` is ' +
+                         'refused (`STS-REG-0191`). On one of this ' +
+                         'service\'s ' +
+                         'own surfaces (`sts-admin-console`, ' +
+                         '`sts-user-portal`, `sts-debugger-ui`) it is not ' +
+                         'refused either: every session of that surface ' +
+                         'standing on the override ends at its next token ' +
+                         'renewal and the person signs in again and is ' +
+                         'asked.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15052,7 +16784,9 @@ class AdminApi {
               examples: [{ client: 'webapp1', scope: 'openid' }],
               additionalProperties: false
             },
-            responseDescription: 'What was removed, and who is asked again.' },
+            responseDescription: 'What was removed, who is asked again, ' +
+                                 'how many tokens were revoked (`revoked`) ' +
+                                 'and when (`withdrawnAt`).' },
 
           { action: 'revoke-consent', operationId: 'revokeConsent',
             summary: 'Take back one answer one person gave',
@@ -15070,8 +16804,16 @@ class AdminApi {
                          'nothing here to remove and this refuses rather ' +
                          'than pretending: `revoke-global-consent` ' +
                          'is the operation for that, and ' +
-                         'the refusal says so. Nothing already issued is ' +
-                         'touched.',
+                         'the refusal says so.\n\n**What was issued under it ' +
+                         'is revoked (#172)**: every access and refresh ' +
+                         'token ' +
+                         'this application holds for this person carrying ' +
+                         'the scope — a refresh token with its whole grant, ' +
+                         'since withdrawing one scope revokes the whole ' +
+                         'refresh token — and the instant goes onto their ' +
+                         'entry as `oauthConsentWithdrawn`, so a refresh ' +
+                         'token granted before it is refused even after they ' +
+                         'consent again.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15094,7 +16836,45 @@ class AdminApi {
                            scope: 'openid' }],
               additionalProperties: false
             },
-            responseDescription: 'What was removed, and what is asked again.' },
+            responseDescription: 'What was removed, what is asked again, ' +
+                                 'how many tokens were revoked (`revoked`) ' +
+                                 'and when (`withdrawnAt`).' },
+
+          { action: 'revoke-application-consent',
+            operationId: 'revokeApplicationConsent',
+            summary: 'Withdraw everything one person agreed to for one ' +
+                     'application',
+            description: 'Every `oauthConsent` value naming this person and ' +
+                         'this application, in one act (#172) — the ' +
+                         'console\'s and the API\'s counterpart of the ' +
+                         'Withdraw button a person has for each application ' +
+                         'on `/portal/consents`. They are asked again the ' +
+                         'next time that application requests anything; ' +
+                         'every access and refresh token it holds for them ' +
+                         'under those scopes is revoked; and the instant ' +
+                         'goes onto their entry, so a refresh token granted ' +
+                         'before it is refused even after they consent ' +
+                         'again. Refused when nothing is recorded for the ' +
+                         'pair — a scope under GLOBAL consent is not on ' +
+                         'anybody\'s entry.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                username: { type: 'string',
+                            description: 'The person, exactly as ' +
+                                         '/admin/users names them.' },
+                client: { type: 'string',
+                          description: 'The application whose every ' +
+                                       'consent is withdrawn.' }
+              },
+              required: ['username', 'client'],
+              examples: [{ username: 'alice', client: 'webapp1' }],
+              additionalProperties: false
+            },
+            responseDescription: 'How many consents were withdrawn ' +
+                                 '(`removed`), how many tokens were revoked ' +
+                                 '(`revoked`) and when (`withdrawnAt`).' },
 
           { action: 'forget-user-consent', operationId: 'forgetUserConsent',
             summary: 'Forget everything one person agreed to',
@@ -15109,8 +16889,11 @@ class AdminApi {
                          'consent, because there is nothing on their entry ' +
                          'to reach — a scope they were never asked about ' +
                          'leaves no record, which is what lets the ' +
-                         'register tell the two apart at all. Nothing ' +
-                         'already issued is touched.',
+                         'register tell the two apart at all.\n\n**What ' +
+                         'was issued under those consents is revoked ' +
+                         '(#172)**, per application, and each withdrawal ' +
+                         'instant is written onto their entry — see ' +
+                         '`revoke-consent`.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15123,7 +16906,8 @@ class AdminApi {
               examples: [{ username: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'How many answers were forgotten.' }
+            responseDescription: 'How many answers were forgotten, and how ' +
+                                 'many tokens were revoked (`revoked`).' }
         ] },
 
       // -----------------------------------------------------------------------
@@ -15152,7 +16936,11 @@ class AdminApi {
                      'you, because neither this API nor GET ' +
                      '/admin/sts-metadata can see a socket, and ' +
                      '`workloadAttestation`: what the Workload API\'s Unix ' +
-                     'socket attests.\n\nThe reply ' +
+                     'socket attests, and under `tcp` whether its TCP port ' +
+                     'is served — in product only where ' +
+                     '`spiffe.workloadTcpSourceAuthenticated` declares the ' +
+                     'network authenticates source addresses, on a named ' +
+                     'address (#166).\n\nThe reply ' +
                      'also carries `authentication`: whether the SPIRE ' +
                      'Server API is enforcing mutual TLS, which identities ' +
                      'are administrators, and the whole per-method ' +
@@ -15161,7 +16949,10 @@ class AdminApi {
                      'caller on the Unix socket is attested by the workload ' +
                      'attestors `spiffe.workloadAttestors` names; one over ' +
                      'TCP is identified only by the transport, the endpoint ' +
-                     'and its address. An agent\'s attestation is verified ' +
+                     'and its address, which is why a product realm refuses ' +
+                     'a registration entry selecting nothing but the ' +
+                     'transport and endpoint. An agent\'s attestation is ' +
+                     'verified ' +
                      'by the attestor its type names or refused (#40, ' +
                      '2026-09-21). Where ' +
                      'the SPIRE Server API authenticates nobody, any caller ' +
@@ -15561,6 +17352,106 @@ class AdminApi {
             responseDescription: 'That it is gone.' }
         ] },
 
+      // THE SPIFFE BROKER API'S BROKERS (#170): /admin/spiffe/brokers, rule 7.
+      { method: 'GET', path: BASE + '/spiffe/brokers', tag: 'SPIFFE',
+        operationId: 'getSpiffeBrokers',
+        summary: 'Who may call the SPIFFE Broker API, filtered and paged',
+        description: 'The brokers of `spiffe.brokers`: each SPIFFE ID ' +
+                     'authorized to call the SPIFFE Broker API (Incubating) ' +
+                     'on this realm\'s mutual-TLS Broker endpoint, and which ' +
+                     'workload references it may use — `pid` ' +
+                     '(WorkloadPIDReference), `k8s` (a ' +
+                     'KubernetesObjectReference to a pod) or `*`. An entry ' +
+                     'that does not parse is listed with its `problem` and ' +
+                     'authorizes nothing. `listeners` is where the endpoint ' +
+                     'is bound in this realm, and `port` its ' +
+                     '`spiffe.brokerPort`.',
+        mirrors: 'GET /admin/spiffe/brokers',
+        parameters: [
+          { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+            description: 'Substring of a broker\'s SPIFFE ID or reference ' +
+                         'types, case-insensitive.' }
+        ].concat(this.pagingParameters()),
+        responseDescription:
+          'The matching brokers with the paging that found them.',
+        responseSchema: { type: 'object',
+                          description: 'Authorized brokers and their paging.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API SPIFFE brokers endpoint.");
+          self.sendJson(res, 200, adminViews.spiffeBrokersJson(req).json);
+          log.debug("Leaving the management API SPIFFE brokers endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/spiffe/brokers/:action',
+        tag: 'SPIFFE', mirrors: 'POST /admin/spiffe/brokers',
+        handler: function (req, res) {
+          log.debug("Entering the management API SPIFFE brokers action " +
+                    "endpoint.");
+          const body = parseBody(req);
+          const result = adminActions.spiffeBrokersAction(self.withAction(req,
+              body));
+          if (!result.ok) {
+            errorCodes.mark(res,
+                            errorCodes.codeOf(result) || 'STS-SPIFFE-0141');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API SPIFFE brokers action " +
+                    "endpoint.");
+        },
+        actions: [
+          { action: 'set', operationId: 'setSpiffeBroker',
+            summary: 'Authorize a broker, or replace what it may reference',
+            description: 'Writes the broker into `spiffe.brokers` in the ' +
+                         'realm the call is made in; it takes effect on the ' +
+                         'broker\'s next call. `referenceTypes` must name at ' +
+                         'least one of `pid`, `k8s` and `*` — SPIRE\'s ' +
+                         '`allowed_reference_types`, and the endpoint is ' +
+                         'TCP, so each allows that type over TCP. **A ' +
+                         'process id ' +
+                         'means something only on the node it was read on**: ' +
+                         'allow `pid` only to a broker on this host. A ' +
+                         'broker from a federated trust domain is verified ' +
+                         'against that domain\'s bundle.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string',
+                      description: 'The broker\'s SPIFFE ID.' },
+                referenceTypes: { type: 'array',
+                                  items: { type: 'string',
+                                           enum: ['pid', 'k8s', '*'] },
+                                  description: 'What it may reference: ' +
+                                               'one or more of pid, k8s ' +
+                                               'and *.' }
+              },
+              required: ['id', 'referenceTypes'],
+              examples: [{ id: 'spiffe://example.org/ns/mesh/sa/node-proxy',
+                           referenceTypes: ['k8s'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'The broker as it now stands.' },
+
+          { action: 'remove', operationId: 'removeSpiffeBroker',
+            summary: 'Take a broker off the list',
+            description: 'Its next call to the SPIFFE Broker API is refused ' +
+                         'PERMISSION_DENIED. SVIDs it already fetched for a ' +
+                         'workload keep working until they expire — SPIFFE ' +
+                         'has no revocation.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string',
+                      description: 'The broker\'s SPIFFE ID.' }
+              },
+              required: ['id'],
+              examples: [{ id: 'spiffe://example.org/ns/mesh/sa/node-proxy' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it was listed.' }
+        ] },
+
       { method: 'GET', path: BASE + '/spiffe/agents', tag: 'SPIFFE',
         operationId: 'getSpiffeAgents',
         summary: 'The agents that have attested here, filtered and paged',
@@ -15685,10 +17576,16 @@ class AdminApi {
       ...loadAcmeApi().ROUTES,
       ...loadEstApi().ROUTES,
       ...loadScepApi().ROUTES,
+      ...loadOidfedApi().ROUTES,
       // THE OAUTH 2.0 / OIDC MONITORING PAGE (2026-09-13), declared beside its
       // family in the same shape: no route registered there, and its view model
       // required lazily inside each handler.
-      ...loadOauth2MonitorApi().ROUTES
+      ...loadOauth2MonitorApi().ROUTES,
+      // GRANT MANAGEMENT (#142): /admin/grants' twin, in the same shape.
+      ...loadGrantManagementApi().ROUTES,
+      // CLAIMS PROVIDERS (#147): /admin/claim-providers' twin, in the same
+      // shape.
+      ...loadClaimsProvidersApi().ROUTES
     ];
     log.debug("Leaving AdminApi.buildRoutes().");
     return ROUTES;
@@ -15981,23 +17878,48 @@ class AdminApi {
     return { path: '/admin' + resource.slice(BASE.length), action: action };
   }
 
-  // The client, and the scope table. Answers null, or `{ code, detail }`.
+  // ---------------------------------------------------------------------------
+  // THE ADMIN SCOPES A TOKEN MAY STILL USE (#110, 2026-09-22): those its
+  // client DECLARES, in the realm that issued it. Answers the scope list with
+  // every `admin:*` value the client no longer declares taken off, and which
+  // were taken.
   //
-  // **ONLY THIS REALM'S `sts-management-api`.** The token endpoint does not
-  // restrict who may ask for `admin:*`, so without this any client registered
-  // in the realm — by an operator, by dynamic registration — could mint itself
-  // Admin Write over the realm. The seeded client is the realm's door.
+  // ONE RULE FOR BOTH REALMS. Until #110 the default realm's token was
+  // accepted from ANY client carrying `admin:read`/`admin:write` — the token
+  // endpoint tied no scope to a client, so any client that could use
+  // client_credentials minted Admin Write here, and in development, where a
+  // client credential is not verified, that was any client_id — while a
+  // realm's token was accepted only from that realm's `sts-management-api`
+  // (STS-API-0111). The token endpoint now issues `admin:*` only to a client
+  // whose `oauthAllowedScope` lists it, and this asks the same question again
+  // on every call, so an allowance removed from a client stops the tokens it
+  // already holds. The seeded `sts-management-api` and `sts-admin-console`
+  // declare both in every realm.
+  // ---------------------------------------------------------------------------
+  declaredAdminScopes(claims, tokenRealm, scopes) {
+    const { log, realms, scopePolicy } = this.deps;
+    log.debug("Entering AdminApi.declaredAdminScopes().");
+    const clientId = String(claims.client_id || '');
+    const undeclared = realms.run(realms.get(tokenRealm), function () {
+      return scopes.filter(function (one) {
+        return scopePolicy.ADMIN_SCOPES.indexOf(one) >= 0 &&
+               !scopePolicy.declares(clientId, one);
+      });
+    });
+    log.debug("Leaving AdminApi.declaredAdminScopes(). " +
+              undeclared.length + " undeclared.");
+    return { kept: scopes.filter(function (one) {
+      return undeclared.indexOf(one) < 0;
+    }), undeclared: undeclared };
+  }
+
+  // The scope table for a realm's own token. Answers null, or
+  // `{ code, detail }`. Which CLIENT it was issued to is
+  // declaredAdminScopes()'s question, asked for both realms (#110); this is
+  // the realm's confinement.
   realmTokenRefusal(claims, req) {
     const { log, parseBody, adminScope, realms } = this.deps;
     log.debug("Entering AdminApi.realmTokenRefusal().");
-    if (String(claims.client_id || '') !== 'sts-management-api') {
-      log.debug("Leaving AdminApi.realmTokenRefusal(). Another client.");
-      return { code: 'STS-API-0111',
-               detail: 'A trust realm\'s own access token is accepted only ' +
-                       'from that realm\'s sts-management-api client, and ' +
-                       'this one was issued to ' +
-                       JSON.stringify(claims.client_id || null) + '.' };
-    }
     const operation = this.consoleOperationOf(req);
     const body = req.method === 'GET' || req.method === 'HEAD'
       ? null : Object.assign({}, parseBody(req));
@@ -16317,8 +18239,29 @@ class AdminApi {
           return self.sendJson(res, 401, { error: required.error,
                                            errors: [required.description] });
         }
-        const scopes = String(claims.scope || '').split(/\s+/).filter(Boolean);
+        const carried = String(claims.scope || '').split(/\s+/)
+          .filter(Boolean);
         const who = String(claims.client_id || claims.sub || '(a client)');
+        // THE CLIENT MUST STILL DECLARE WHAT THE TOKEN CARRIES (#110) — see
+        // declaredAdminScopes(). 403 when the scope this operation needs is
+        // one the client does not declare; an undeclared scope the operation
+        // does not need is dropped and the call goes on.
+        const declared = self.declaredAdminScopes(claims, tokenRealm, carried);
+        const scopes = declared.kept;
+        const neededScope = req.method === 'GET' ? 'admin:read' :
+          'admin:write';
+        if (declared.undeclared.indexOf(neededScope) >= 0) {
+          errorCodes.mark(res, 'STS-API-0123');
+          return self.sendJson(res, 403, { error: 'forbidden', errors: [
+            'This access token carries "' + neededScope + '", and the ' +
+            'client it was issued to, ' +
+            JSON.stringify(claims.client_id || null) + ', does not declare ' +
+            'it: a token is honoured here only while its client\'s ' +
+            'oauthAllowedScope lists the admin scope it uses. The seeded ' +
+            'sts-management-api declares both. Declare it on the ' +
+            'application (POST /admin-api/applications/add) or use that ' +
+            'client.'] });
+        }
         if (tokenRealm !== realms.DEFAULT_ID) {
           const realmRefusal = self.realmTokenRefusal(claims, req);
           if (realmRefusal) {

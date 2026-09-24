@@ -392,6 +392,7 @@ function childMain() {
                    admitted.registration_access_token };
     r = await request(port, 'PUT', clientUri, { headers: auth,
       json: { redirect_uris: ['https://attacker.ss.example/cb'],
+              client_id: admitted.client_id,
               token_endpoint_auth_method: 'client_secret_basic' } });
     note(r.status === 400 && r.json &&
          r.json.error === 'unapproved_software_statement',
@@ -399,6 +400,7 @@ function childMain() {
          'metadata away without one', r.status + ' ' + r.text.slice(0, 200));
     r = await request(port, 'PUT', clientUri, { headers: auth,
       json: { software_statement: realmStatement,
+              client_id: admitted.client_id,
               token_endpoint_auth_method: 'client_secret_basic' } });
     note(r.status === 400 && r.json &&
          r.json.error === 'unapproved_software_statement',
@@ -406,6 +408,7 @@ function childMain() {
          r.status + ' ' + r.text.slice(0, 200));
     r = await request(port, 'PUT', clientUri, { headers: auth,
       json: { software_statement: trusted, client_name: 'Renamed',
+              client_id: admitted.client_id,
               token_endpoint_auth_method: 'client_secret_basic' } });
     note(r.status === 200 && r.json && r.json.client_name === 'Renamed' &&
          JSON.stringify(r.json.redirect_uris) ===
@@ -493,7 +496,8 @@ function childMain() {
 function inAChild(t) {
   log.debug("Entering inAChild().");
   const out = path.join(os.tmpdir(), 'software-statement-' + process.pid +
-                        '-' + Math.random().toString(36).slice(2) + '.json');
+                        '-' + require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|CONFIG_FILE$)/.test(key)) {

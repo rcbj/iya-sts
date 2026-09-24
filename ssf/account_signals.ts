@@ -47,6 +47,10 @@
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+// The certificate's issuer and serial for `x509` changes (#145). A LEAF
+// library, loaded by `helpers.js` long before this file: the require moves
+// nothing and closes no cycle.
+import stsCrypto = require('../common/crypto');
 
 // What a delivery answers. `sent` and `streams` are `ssf.ts`'s own counts
 // when it ran; `why` is set when nothing was sent.
@@ -82,15 +86,23 @@ interface CredentialChange {
   reasonAdmin?: string;
   reasonUser?: string;
   via?: string;
+  // CAEP's three identifying members (#145): the certificate a change is
+  // about, and the security key's AAGUID, where the door knows them.
+  x509Issuer?: string;
+  x509Serial?: string;
+  fido2Aaguid?: string;
 }
 
 class AccountSignals {
-  // A security key, in CAEP's credential-type vocabulary. The record keeps no
-  // authenticator attachment, so a key cannot be told apart as platform or
-  // roaming after the fact; `fido2-roaming` is the reading that is true of
-  // every security key this service's ceremony enrols by default, and the
-  // label goes out as `friendly_name` so a receiver can tell two keys apart.
+  // A security key, in CAEP's credential-type vocabulary. Since #145
+  // (2026-09-22) a key's record keeps the authenticator attachment the
+  // browser reported at enrolment, and keyCredentialType() reads it:
+  // `platform` is `fido2-platform`, anything else `fido2-roaming`. A key
+  // enrolled before that date has no attachment recorded and stays
+  // `fido2-roaming`, the reading that is true of every key this service's
+  // ceremony enrolled by default.
   static readonly KEY_CREDENTIAL_TYPE = 'fido2-roaming';
+  static readonly PLATFORM_KEY_CREDENTIAL_TYPE = 'fido2-platform';
   // An authenticator app, in the same vocabulary: CAEP's `app`.
   static readonly TOTP_CREDENTIAL_TYPE = 'app';
 
@@ -158,13 +170,59 @@ class AccountSignals {
     });
   }
 
+  // THE SAME ACT, TOLD TO THE PERSON BY MAIL (#63, 2026-09-22). Every door
+  // that changes a password, marks a credential compromised or starts
+  // recovery already reports it here, so this is the one place the mail
+  // channel's security notices hear of it — whether or not Shared Signals is
+  // loaded. Lazily required (`common/mail_uses.ts` reaches the credential
+  // store) and never allowed to throw into the act that happened.
+  private mailNotice(act: string, notice: object): void {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.mailNotice(). ' + act);
+    try {
+      require('../common/mail_uses').fromAccountSignal(act, notice || {});
+    } catch (e) {
+      log.warn('account signals: the ' + act + ' mail notice could not be ' +
+               'queued: ' + ((e && e.message) || e));
+    }
+    log.debug('Leaving AccountSignals.mailNotice().');
+  }
+
+  // A key record's CAEP credential type, from its recorded attachment.
+  static keyCredentialType(record?: { attachment?: string } | null): string {
+    helpers.log.debug('Entering AccountSignals.keyCredentialType().');
+    helpers.log.debug('Leaving AccountSignals.keyCredentialType().');
+    return record && record.attachment === 'platform'
+      ? AccountSignals.PLATFORM_KEY_CREDENTIAL_TYPE
+      : AccountSignals.KEY_CREDENTIAL_TYPE;
+  }
+
   // CAEP credential-change.
   credentialChanged(change?: CredentialChange): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.credentialChanged().');
+    this.mailNotice('credentialChanged', change || {});
     log.debug('Leaving AccountSignals.credentialChanged().');
     return this.deliver('a CAEP credential-change', 'emitCredentialChange',
                         change || {});
+  }
+
+  // CAEP credential-change about an X.509 certificate (#145): `pem` is the
+  // certificate, and its issuer and serial go out as `x509_issuer` and
+  // `x509_serial` — a serial names a certificate only beside its issuer.
+  certificateChanged(change?: CredentialChange & { pem?: string }):
+      Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.certificateChanged().');
+    const asked = change || {};
+    const ids = stsCrypto.certificateIdentifiers(asked.pem || '');
+    const notice: CredentialChange = Object.assign({}, asked, {
+      credentialType: 'x509',
+      x509Issuer: asked.x509Issuer || ids.issuer,
+      x509Serial: asked.x509Serial || ids.serial });
+    delete (notice as { pem?: string }).pem;
+    log.debug('Leaving AccountSignals.certificateChanged().');
+    return this.credentialChanged(notice);
   }
 
   // RISC account-credential-change-required: a password was reset for
@@ -177,6 +235,45 @@ class AccountSignals {
                         'emitRiscAccountAct',
                         Object.assign({}, notice || {},
                                       { act: 'credentialChangeRequired' }));
+  }
+
+  // RISC recovery-activated (#146): account recovery was started — an
+  // administrator issued a password-reset link, or (#63) a person asked for
+  // one on the forgot-password form.
+  recoveryActivated(notice?: object): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.recoveryActivated().');
+    this.mailNotice('recoveryActivated', notice || {});
+    log.debug('Leaving AccountSignals.recoveryActivated().');
+    return this.deliver('a RISC recovery-activated', 'emitRiscAccountAct',
+                        Object.assign({}, notice || {},
+                                      { act: 'recoveryActivated' }));
+  }
+
+  // RISC credential-compromise (#146): an administrator said a reset was
+  // BECAUSE the credential was compromised. `credentialType` is section 2.7's
+  // required `credential_type`.
+  credentialCompromised(notice?: Record<string, any>):
+      Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.credentialCompromised().');
+    const asked = notice || {};
+    this.mailNotice('credentialCompromised', asked);
+    log.debug('Leaving AccountSignals.credentialCompromised().');
+    return this.deliver('a RISC credential-compromise', 'emitRiscAccountAct',
+      Object.assign({}, asked, { act: 'credentialCompromise',
+        values: { credential_type: String(asked.credentialType ||
+                                          'password') } }));
+  }
+
+  // One of RISC section 2.8's opt-out moves, made by the account holder on
+  // /portal/signals (#146): optOutInitiated, optOutCancelled or optIn.
+  optOutMoved(notice?: Record<string, any>): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.optOutMoved().');
+    log.debug('Leaving AccountSignals.optOutMoved().');
+    return this.deliver('a RISC opt-out move', 'emitRiscAccountAct',
+                        Object.assign({}, notice || {}));
   }
 
   // RISC recovery-information-changed: somebody's recovery codes were
@@ -214,8 +311,13 @@ export = {
   installInstance: (instance: AccountSignals): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   credentialChanged: slot.forward('credentialChanged'),
+  certificateChanged: slot.forward('certificateChanged'),
   credentialChangeRequired: slot.forward('credentialChangeRequired'),
   recoveryInformationChanged: slot.forward('recoveryInformationChanged'),
+  recoveryActivated: slot.forward('recoveryActivated'),
+  credentialCompromised: slot.forward('credentialCompromised'),
+  optOutMoved: slot.forward('optOutMoved'),
   KEY_CREDENTIAL_TYPE: AccountSignals.KEY_CREDENTIAL_TYPE,
+  keyCredentialType: AccountSignals.keyCredentialType,
   TOTP_CREDENTIAL_TYPE: AccountSignals.TOTP_CREDENTIAL_TYPE
 };

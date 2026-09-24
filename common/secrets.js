@@ -206,6 +206,53 @@ const DATABASE_PASSWORD = {
 };
 
 // ---------------------------------------------------------------------------
+// THE MAIL CHANNEL'S FOUR SECRETS (#63, 2026-09-22), shaped exactly like the
+// database password: a provider, one location row, a field, and the KEY's
+// location, vault, region and token when their own are empty — so one JSON
+// secret holding `smtpPassword`, `dkimKey`, `acsConnectionString` and
+// `gmailServiceAccount` beside the key and the database password is the
+// deployment nobody has to type more than one location for. They are read
+// when `common/mail.ts` builds a transport, not at startup, and they are
+// RUNTIME rows: a changed location is read at the next build. None is ever a
+// setting's value, and none is ever logged or drawn — `/admin/secrets` shows
+// where each is, as it does the other two.
+//
+// `failureCode` is the code a failed read is tagged with (the KEK and the
+// database password keep their own two), and `emptyCode` the code of a read
+// that succeeded and found nothing.
+// ---------------------------------------------------------------------------
+function mailSecret(id, label, prefix, defaultField) {
+  log.debug("Entering mailSecret(). " + id);
+  log.debug("Leaving mailSecret().");
+  return {
+    id: id,
+    label: label,
+    provider: prefix + 'Provider',
+    file: prefix + 'Ref',
+    ref: prefix + 'Ref',
+    field: prefix + 'Field',
+    defaultField: defaultField,
+    fallbackRef: KEK,
+    vault: null,
+    region: null,
+    token: null,
+    failureCode: 'STS-MAIL-0006',
+    emptyCode: 'STS-MAIL-0007'
+  };
+}
+
+const MAIL_SMTP_PASSWORD = mailSecret('mail-smtp-password',
+  'the SMTP relay password', 'mail.smtpPassword', 'smtpPassword');
+const MAIL_DKIM_KEY = mailSecret('mail-dkim-key',
+  'the DKIM private key', 'mail.dkimKey', 'dkimKey');
+const MAIL_ACS_CONNECTION_STRING = mailSecret('mail-acs-connection-string',
+  'the Azure Communication Services connection string',
+  'mail.acsConnectionString', 'acsConnectionString');
+const MAIL_GMAIL_KEY = mailSecret('mail-gmail-key',
+  'the Gmail API service account key', 'mail.gmailKey',
+  'gmailServiceAccount');
+
+// ---------------------------------------------------------------------------
 // HOW A SECRET REACHES ITS STORE: the Vault or Key Vault endpoint, the AWS
 // region and the Vault token (2026-09-12).
 //
@@ -224,6 +271,7 @@ const DATABASE_PASSWORD = {
 function reachOf(spec, which) {
   log.debug("Entering reachOf().");
   const secret = spec || KEK;
+  // A secret with NO ROW for it (the mail secrets have none) reads the KEY's.
   const own = secret[which]
     ? String(config.value(secret[which]) || '').trim() : '';
   if (own || secret === KEK || !secret.fallbackRef) {
@@ -861,7 +909,8 @@ async function read(spec) {
 // and then, where the provider said, why.
 function tagReadFailure(spec, err) {
   log.debug('Entering tagReadFailure(). secret=' + spec.id);
-  const which = spec === KEK ? 'STS-KEYS-0043' : 'STS-KEYS-0044';
+  const which = spec.failureCode ||
+                (spec === KEK ? 'STS-KEYS-0043' : 'STS-KEYS-0044');
   const why = errorCodes.codeOf(err);
   const prefix = errorCodes.tag(which) + (why ? errorCodes.tag(why) : '');
   try {
@@ -918,6 +967,38 @@ async function readDatabasePassword() {
   }
   log.debug('Leaving readDatabasePassword(). ' + text.length +
             ' character(s).');
+  return text;
+}
+
+// ---------------------------------------------------------------------------
+// ONE OF THE MAIL SECRETS AS TEXT (#63): `null` when its provider is `none`,
+// and otherwise what is stored, decoded and trimmed — the database
+// password's rule, and for its reason. A read that finds nothing is refused
+// with the secret's own code rather than handed back as an empty password or
+// key. Only the four mail descriptors are accepted: the key and the database
+// password have their own readers, and the key is never text.
+// ---------------------------------------------------------------------------
+async function readSecretText(spec) {
+  log.debug('Entering readSecretText(). secret=' + (spec && spec.id));
+  if (MAIL_SECRETS.indexOf(spec) < 0) {
+    log.debug('Leaving readSecretText(). Not a mail secret.');
+    throw new Error('readSecretText() reads the mail secrets only');
+  }
+  if (!configuredFor(spec)) {
+    log.debug('Leaving readSecretText(). Not configured.');
+    return null;
+  }
+  const value = await read(spec);
+  const text = (Buffer.isBuffer(value) ? value.toString('utf8')
+                                       : String(value == null ? '' :
+                                                value)).trim();
+  if (!text) {
+    throw errorCodes.mark(new Error(errorCodes.tag(spec.emptyCode) +
+                    spec.provider + ' is "' + config.value(spec.provider) +
+                    '" and what it read for ' + spec.label + ' is empty.'),
+                    spec.emptyCode);
+  }
+  log.debug('Leaving readSecretText(). ' + text.length + ' character(s).');
   return text;
 }
 
@@ -1971,7 +2052,10 @@ PROBES.azure = {
 // Two secrets in one store share a store row; two secrets in two stores get
 // one each.
 // ===========================================================================
-const SECRETS = [KEK, DATABASE_PASSWORD];
+const MAIL_SECRETS = [MAIL_SMTP_PASSWORD, MAIL_DKIM_KEY,
+                      MAIL_ACS_CONNECTION_STRING, MAIL_GMAIL_KEY];
+
+const SECRETS = [KEK, DATABASE_PASSWORD].concat(MAIL_SECRETS);
 
 // Which store a secret lives in, as a key that is equal for two secrets in the
 // same place. The location is part of it for `file` — two mounted files are
@@ -2163,6 +2247,13 @@ module.exports = {
   // rules directly — they are the part of this file with no other way in.
   KEK: KEK,
   DATABASE_PASSWORD: DATABASE_PASSWORD,
+  // The mail channel's four (#63), and the one reader they share.
+  MAIL_SMTP_PASSWORD: MAIL_SMTP_PASSWORD,
+  MAIL_DKIM_KEY: MAIL_DKIM_KEY,
+  MAIL_ACS_CONNECTION_STRING: MAIL_ACS_CONNECTION_STRING,
+  MAIL_GMAIL_KEY: MAIL_GMAIL_KEY,
+  MAIL_SECRETS: MAIL_SECRETS,
+  readSecretText: readSecretText,
   readDatabasePassword: readDatabasePassword,
   describeDatabasePassword: describeDatabasePassword,
   configuredFor: configuredFor,

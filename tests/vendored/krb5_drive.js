@@ -139,7 +139,7 @@ function asReq(realm, username, padata) {
       rtime: kerberosTime(now + 24 * 3600 * 1000),
       // The nonce is the client's own and is echoed back; it is not a
       // challenge and nothing here checks it.
-      nonce: Math.floor(Math.random() * 0x7fffffff),
+      nonce: require('crypto').randomInt(0x7fffffff),
       // `etypes`, plural. The singular is silently ignored by the encoder and
       // produces a request offering no encryption type at all, which the KDC
       // answers with KDC_ERR_ETYPE_NOSUPP — an error about the KDC for a

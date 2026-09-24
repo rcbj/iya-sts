@@ -87,6 +87,17 @@ const errorCodes = require('./error_codes');
 const cacheRegistry = require('./cache_registry');
 const pki = require('./pki');
 const keyMaterial = require('./vendored/key_material');
+// CAEP credential-change when this file changes a person's credential
+// (#145), through `ssf/account_signals.ts` — required LAZILY, when an event
+// is due. This file is loaded from `app.js`'s own chain, before the
+// composition root defers instance building
+// (`common/instance_slot.ts`), and requiring that module here at load time
+// built its default instance too early for the root to install its own.
+function accountSignals() {
+  log.debug('Entering accountSignals().');
+  log.debug('Leaving accountSignals().');
+  return require('../ssf/account_signals');
+}
 
 const USE_CASE = 'tls-client';
 
@@ -430,6 +441,17 @@ async function issue(realmId, spec) {
            '", serial ' +
            made.record.serialHex + ', expires ' + made.record.notAfter +
            '. The private key was handed to the caller and is not kept.');
+  // A person's certificate is one of their credentials (#145); an
+  // application's has no CAEP subject here. A person issues their own.
+  if (kind === 'person') {
+    accountSignals().certificateChanged({ username: username,
+      pem: made.record.certificatePem, changeType: 'create',
+      friendlyName: String(made.record.label || 'TLS client certificate'),
+      initiatingEntity: 'user', via: 'portal',
+      reasonAdmin: 'A TLS client certificate was issued to ' + username +
+                   '.',
+      reasonUser: 'You were issued a TLS client certificate.' });
+  }
   log.debug("Leaving issue().");
   return {
     ok: true,
@@ -570,6 +592,16 @@ function revoke(realmId, username, serialHex, reasonId, kind) {
       ? 'revoked for the application ' + username + ' by an administrator'
       : 'revoked by ' + username + ' on the user portal'
   });
+  if (done.ok && holderKind === 'person') {
+    accountSignals().certificateChanged({ username: username,
+      pem: mine.certificatePem, x509Serial: mine.serialHex,
+      changeType: 'revoke',
+      friendlyName: String(mine.label || 'TLS client certificate'),
+      initiatingEntity: 'user', via: 'portal',
+      reasonAdmin: 'A TLS client certificate of ' + username + ' was ' +
+                   'revoked (' + reason + ').',
+      reasonUser: 'You revoked a TLS client certificate.' });
+  }
   log.debug("Leaving revoke(). ok=" + !!done.ok);
   return Object.assign({ certificate: mine, reason: reason }, done);
 }

@@ -161,9 +161,21 @@ import softwareStatement = require('../oauth-oidc/software_statement');
 // that registers no route.
 import tlsClientCertificates = require('../common/tls_client_certificates');
 import federation = require('../federation/federation');
+// The link between a partner's subject and a person (#109): its format and
+// the one place a requested link is checked, shared with SCIM. A static
+// utility class; it registers nothing.
+import fedLinks = require('../federation/federation_links');
+// A relationship's encryption key (#168): issued at create, rotated on
+// request or when its key type changes. A static utility class; it registers
+// nothing.
+import fedEncryption = require('../federation/federation_encryption');
 import spiffeCa = require('../spiffe/spiffe_ca');
 import spiffeRegistry = require('../spiffe/spiffe_registry');
 import spiffeIdLib = require('../spiffe/spiffe_id');
+// The SPIFFE Broker API's broker list (#170): its parser, so the console,
+// /admin-api and the endpoint read `spiffe.brokers` one way. A library that
+// `admin_views.ts` already loaded, so the require moves nothing.
+import spiffeAuth = require('../spiffe/spiffe_auth');
 import signals = require('../ssf/ssf_receivers');
 // WHAT A CREDENTIAL CHANGE SAYS OVER CAEP AND RISC (2026-09-13). A LIBRARY that
 // requires only the logger and reads `ssf/ssf.ts` out of the require cache when
@@ -173,6 +185,10 @@ import accountSignals = require('../ssf/account_signals');
 // on (2026-09-17, #36 follow-up). Two libraries loaded long before this file,
 // neither of which requires anything back.
 import accountState = require('../common/account_state');
+import identityAssurance = require('../common/identity_assurance');
+import siop = require('../oid4vc/siop');
+import devices = require('../common/devices');
+import ciba = require('../oauth-oidc/ciba');
 import backchannel = require('../oauth-oidc/backchannel_logout');
 import oauth2 = require('../oauth-oidc/oauth2');
 import appPermissions = require('../common/app_permissions');
@@ -182,6 +198,9 @@ import roles = require('../common/roles');
 // requiring it here moves nothing; the rules it holds are what both the action
 // below and `credentials.setPassword()` ask.
 import passwordPolicy = require('../common/password_policy');
+// THE KINDS OF POLICY ON /admin/policies (#64). A library over the policy
+// modules, which are leaves; `policiesAction()` hands each action to its kind.
+import policyKinds = require('./policy_kinds');
 // THE ERROR CODES (common/error_codes.js, a leaf). An action has no response to
 // mark, so a refusal's code goes on the RESULT, under the same non-enumerable
 // Symbol `mark()` writes on a response. JSON.stringify never sees a Symbol key,
@@ -304,13 +323,32 @@ const USER_FIELD_PREFIX = 'field.';
 // one turns the parity check off for that action.
 const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'clear-totp', 'clear-key', 'clear-backup-codes',
+                       // The emailed second factor, and the address
+                       // (#64, 2026-09-23).
+                       'clear-email-factor', 'set-mail',
                        // What an administrator does to somebody's
                        // credentials from their page (2026-09-13).
                        'reset-password', 'issue-password-reset',
                        'disable-primary-keys', 'disable-mfa',
                        'require-mfa', 'stop-requiring-mfa',
                        // A disabled account (2026-09-17).
-                       'disable', 'enable'];
+                       'disable', 'enable',
+                       // A partner's subject linked to, or unlinked from,
+                       // a person (#109, 2026-09-22).
+                       'federation-link', 'federation-unlink',
+                       // App passwords (#101, 2026-09-22).
+                       'create-app-password', 'revoke-app-password',
+                       // Who may act for them (#108, 2026-09-23).
+                       'set-not-delegated', 'set-may-act',
+                       // Identity verifications (#127, 2026-09-23).
+                       'record-verification', 'remove-verification',
+                       // Self-issued subjects (#129, 2026-09-23).
+                       'enrol-self-issued-subject',
+                       'remove-self-issued-subject',
+                       // Devices (#130, 2026-09-23).
+                       'remove-device',
+                       // CIBA's test control (#131, 2026-09-23).
+                       'answer-ciba-request'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -342,8 +380,45 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
 // this decides who asked, what is audited and what is said. Answers null for
 // an action that is not one of the six, so `usersAction()` carries on.
 // ---------------------------------------------------------------------------
+//
+// **AND TWO FOR APP PASSWORDS (#101, 2026-09-22)**: `create-app-password`
+// makes one for the person — named, scoped to one or more of the five
+// password-only doors, generated, and returned ONCE — and
+// `revoke-app-password` takes one away by its id. Each says so with a CAEP
+// credential-change (`password`, with the app password's name as
+// `friendly_name`). `common/credentials.ts` keeps the records.
 const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
-  'disable-primary-keys', 'disable-mfa', 'require-mfa', 'stop-requiring-mfa'];
+  'disable-primary-keys', 'disable-mfa', 'require-mfa', 'stop-requiring-mfa',
+  'create-app-password', 'revoke-app-password',
+  // WHO MAY ACT FOR THEM (#108, 2026-09-23): `set-not-delegated` writes
+  // `stsNotDelegated` (`value` TRUE or FALSE) — Kerberos's NOT_DELEGATED, on
+  // the person — and `set-may-act` writes `stsMayAct` (`delegate`, a DN of a
+  // person or application; empty clears), the one party whose `sub` becomes
+  // the `may_act` claim of their access tokens (RFC 8693 section 4.4).
+  // `common/delegation_policy.ts` decides what both mean.
+  'set-not-delegated', 'set-may-act',
+  // IDENTITY VERIFICATIONS (#127, 2026-09-23): `record-verification` keeps
+  // one — OpenID Connect for Identity Assurance's `verification` element, as
+  // JSON or as the console's flat fields, and the `claims` it covered — and
+  // `remove-verification` takes one away by its `id`.
+  // `common/identity_assurance.ts` checks and keeps them.
+  'record-verification', 'remove-verification',
+  // SELF-ISSUED SUBJECTS (#129, 2026-09-23): `enrol-self-issued-subject`
+  // enrols a DID or JWK thumbprint (`subject`, with an optional `label`)
+  // whose SIOPv2 ID Token then signs the person in, and
+  // `remove-self-issued-subject` takes one away. `oid4vc/siop.ts` keeps
+  // them; a person enrols their own by proving the key on the portal.
+  'enrol-self-issued-subject', 'remove-self-issued-subject',
+  // A DEVICE (#130, 2026-09-23): `remove-device` deletes one of the person's
+  // device entries (`id`), and its Native SSO secret with it — the apps on
+  // it are asked to sign in again. `common/devices.ts` keeps them.
+  'remove-device',
+  // CIBA'S TEST CONTROL (#131, 2026-09-23): `answer-ciba-request` approves
+  // (`approve` true) or denies a backchannel authentication request (`id`,
+  // its auth_req_id) waiting for the person, as they would on /portal/ciba —
+  // DEVELOPMENT ONLY (`mode.opensTestControls()`): in product only the
+  // person answers.
+  'answer-ciba-request'];
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the actions in APPLICATION_ACTIONS below.
@@ -482,7 +557,7 @@ const SAML11_RP_KIND = saml11.RP_KIND;
 // So the repertoire is stated here and the WORK is not duplicated: an action
 // outside these two is refused in this resource's own words, and the two that
 // belong to it are handed to the one switch that performs them.
-const MFA_ACTIONS = ['clear-totp', 'clear-key'];
+const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor'];
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
 // PERMISSION_ACTIONS gives at its own site: this repository's own
@@ -490,7 +565,8 @@ const MFA_ACTIONS = ['clear-totp', 'clear-key'];
 // console action has an /admin-api operation, so a list that is short by one is
 // a list that turns the parity check off for that action.
 const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
-                         'revoke-consent', 'forget-user-consent'];
+                         'revoke-consent', 'revoke-application-consent',
+                         'forget-user-consent'];
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for CONSENT_ACTIONS' reason:
 // this repository's own tests/vendored/admin_api.js READS the refusal sentence
@@ -519,12 +595,15 @@ const ROLE_MEMBER_KINDS = [
 ];
 
 // ---------------------------------------------------------------------------
-// THE PASSWORD POLICY'S TWO WRITES (2026-09-12), behind /admin/policies and
-// POST /admin-api/policies/{action}.
+// THE POLICIES' WRITES (2026-09-12; every kind since #64), behind
+// /admin/policies and POST /admin-api/policies/{action}.
 //
 // Every rule — which profile names may exist, what each field may be, how two
-// fields relate — is in `common/password_policy.ts`, so this reads a body and
-// decides nothing, which is the division `rolesAction()` has with `roles.js`.
+// fields relate — is in the kind's own module (`common/password_policy.ts`,
+// `common/authn_policy.ts`), so this reads a body and decides nothing, which
+// is the division `rolesAction()` has with `roles.js`. Each kind answers two
+// actions, `save-<kind>-policy` and `reset-<kind>-policy`, and the list is
+// `policy_kinds.ts`'s — so the refusal of an unknown one names every kind's.
 //
 // **A SAVE REPLACES THE WHOLE PROFILE AND THE BODY CARRIES EVERY FIELD.** The
 // console's form always does; an API caller that leaves one out is refused by
@@ -532,8 +611,6 @@ const ROLE_MEMBER_KINDS = [
 // loosened a rule nobody mentioned is the one mistake here that nobody sees.
 // `form: 'console'` is what tells the module an absent checkbox means "no".
 // ---------------------------------------------------------------------------
-const PASSWORD_POLICY_ACTIONS = ['save-password-policy',
-                                 'reset-password-policy'];
 
 // The six keys, in the order the page draws them: the three lifetimes, the
 // refresh token's idle limit and its revoke-on-logout switch, then the
@@ -641,6 +718,7 @@ const TRUSTSTORE_ACTIONS = ['add', 'remove'];
 const SPIFFE_ENTRY_ACTIONS = ['create', 'update', 'delete'];
 
 const SPIFFE_AGENT_ACTIONS = ['ban', 'unban', 'delete'];
+const SPIFFE_BROKER_ACTIONS = ['set', 'remove'];
 
 // The console names a field the way the record does and the EDITABLE table
 // names it the way the DIRECTORY does. One map, here, rather than two
@@ -687,10 +765,28 @@ const SPIFFE_ACTIONS = ['rotate', 'federation-set', 'federation-remove'];
 // that to stop now. They drop the previous versions and nothing else: the
 // current key, and so the person's sign-in or the service's current keytab, is
 // untouched.
+//
+// **AND A SEVENTH (#59, 2026-09-22): `reset-person-keytab`**, the one of them
+// that is ASYNCHRONOUS (string-to-key is Web Crypto) and the one that is also
+// a credential act. An administrator SETS the person's password — typed, or
+// generated and never shown — and gets the keytab derived from it, once. It
+// is a password reset in every respect but one: the person is NOT made to
+// change it at their next sign-in, because a forced change would strand the
+// keytab it was set to produce. `resetPersonKeytab()` below argues the order.
+//
+// **AND AN EIGHTH AND NINTH (#169, 2026-09-23): `rotate-krbtgt` and
+// `rotate-krbtgt-invalidate`**, the realm's krbtgt key. Neither rotates in the
+// request: each QUEUES a run of `krb5.krbtgt-rotate-now` on the scheduler
+// (`kerberos/krb5_krbtgt_rotation.ts`), which runs once, on the leader, and
+// answers with the run's id. The second keeps nothing — every TGT in the
+// realm is refused afterwards — and needs `confirm: "invalidate"`.
+// `drop-previous-service-keys` takes the krbtgt's own name as well.
 const KERBEROS_PRINCIPAL_ACTIONS = ['create-service', 'rotate-service',
                                     'delete-service', 'clear-person-keys',
                                     'drop-previous-service-keys',
-                                    'drop-previous-person-keys'];
+                                    'drop-previous-person-keys',
+                                    'reset-person-keytab', 'rotate-krbtgt',
+                                    'rotate-krbtgt-invalidate'];
 
 interface AdminActionsDeps {
   log: typeof helpers.log;
@@ -716,21 +812,34 @@ interface AdminActionsDeps {
   softwareStatement: typeof softwareStatement;
   tlsClientCertificates: typeof tlsClientCertificates;
   federation: typeof federation;
+  fedLinks: typeof fedLinks;
+  fedEncryption: typeof fedEncryption;
   spiffeCa: typeof spiffeCa;
   spiffeRegistry: typeof spiffeRegistry;
   spiffeIdLib: typeof spiffeIdLib;
+  spiffeAuth: typeof spiffeAuth;
   signals: typeof signals;
   accountSignals: typeof accountSignals;
   accountState: typeof accountState;
+  identityAssurance: typeof identityAssurance;
+  siop: typeof siop;
+  devices: typeof devices;
+  ciba: typeof ciba;
   backchannel: typeof backchannel;
   oauth2: typeof oauth2;
   appPermissions: typeof appPermissions;
   consent: typeof consent;
   roles: typeof roles;
   passwordPolicy: typeof passwordPolicy;
+  policyKinds: typeof policyKinds;
   errorCodes: typeof errorCodes;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
+  // THE KRBTGT ROTATION (#169), LAZILY: it is built by the composition root at
+  // 23b-iii, long after this file is required, and requiring it here would
+  // build a default instance in a process that loads the console without the
+  // root.
+  krbtgtRotation: () => any;
 }
 
 class AdminActions {
@@ -767,21 +876,32 @@ class AdminActions {
       softwareStatement: softwareStatement,
       tlsClientCertificates: tlsClientCertificates,
       federation: federation,
+      fedLinks: fedLinks,
+      fedEncryption: fedEncryption,
       spiffeCa: spiffeCa,
       spiffeRegistry: spiffeRegistry,
       spiffeIdLib: spiffeIdLib,
+      spiffeAuth: spiffeAuth,
       signals: signals,
       accountSignals: accountSignals,
       accountState: accountState,
+      identityAssurance: identityAssurance,
+      siop: siop,
+      devices: devices,
+      ciba: ciba,
       backchannel: backchannel,
       oauth2: oauth2,
       appPermissions: appPermissions,
       consent: consent,
       roles: roles,
       passwordPolicy: passwordPolicy,
+      policyKinds: policyKinds,
       errorCodes: errorCodes,
       krb5Principals: krb5Principals,
-      krb5PersonKeys: krb5PersonKeys
+      krb5PersonKeys: krb5PersonKeys,
+      krbtgtRotation: function () {
+        return require('../kerberos/krb5_krbtgt_rotation');
+      }
     };
   }
 
@@ -1294,6 +1414,7 @@ class AdminActions {
     // refusal rather than as a success that did nothing.
     const done = (result.terminated || []).length;
     const unknown = (result.unknown || []).length;
+    this.mailSessionsEnded(key, done, 'an administrator (the sessions page)');
     const said = []
       .concat((result.terminated || []).map(function (
           one) { return one.message; }))
@@ -1319,11 +1440,26 @@ class AdminActions {
   // POST /admin-api/logout/{action}. Four of them, and the two NON-SPEC ones
   // are labelled as such wherever they appear — see the header.
   logoutAction(body) {
-    const { log, stats, krb5Principals } = this.deps;
+    const { log, stats, krb5Principals, mode } = this.deps;
     log.debug("Entering AdminActions.logoutAction(). action=" + (body.action ||
                                                                  '(none)'));
     const action = String(body.action || '');
     const user = String(body.user || body.username || '').trim();
+    // RESTORE-KERBEROS IS A DEVELOPMENT TEST CONTROL (#111, 2026-09-23), and
+    // refused here — the one function the console form and `POST
+    // /admin-api/logout/restore-kerberos` both reach (rule 7) — before the
+    // person is even looked up. It re-admits every ticket-granting ticket
+    // authenticated before a sign-out; a product deployment has no use for
+    // that, and a real KDC has no such operation.
+    if (action === 'restore-kerberos' && !mode.opensTestControls()) {
+      log.debug("Leaving AdminActions.logoutAction(). restore-kerberos is " +
+                "development-only.");
+      return this.refused('STS-ADMIN-0804', { ok: false, errors: [
+        'restore-kerberos is a development-only test control and is refused ' +
+        'in product mode. A sign-out instant stands until its horizon — the ' +
+        'latest a ticket from before it could still be valid; authenticate ' +
+        'again (a fresh AS-REQ) for a ticket newer than it.'] });
+    }
     // RETRY A DEAD BACK-CHANNEL DELIVERY (2026-09-17, #36 follow-up). It names
     // a delivery rather than a person — the list it is pressed from is every
     // delivery in the realm — so it is answered before the person is asked
@@ -1371,6 +1507,8 @@ class AdminActions {
         actor: user, channel: 'console',
         by: 'the admin console at /admin/logout'
       });
+      this.mailSessionsEnded(user, result.terminated.length,
+                             'an administrator (the admin console at /admin/logout)');
       log.debug("Leaving AdminActions.logoutAction(). A global logout ended " +
                 result.terminated.length + ".");
       return { ok: true, result: result, message: result.message +
@@ -1405,6 +1543,8 @@ class AdminActions {
         actor: user, channel: 'console',
         by: 'the admin console at /admin/logout'
       });
+      this.mailSessionsEnded(user, result.terminated.length,
+                             'an administrator (the admin console at /admin/logout)');
       log.debug("Leaving AdminActions.logoutAction(). Ended " +
                 result.terminated.length +
                 ".");
@@ -1442,7 +1582,7 @@ class AdminActions {
     if (action === 'restore-kerberos') {
       // NON-SPEC in the same sense and for the same reason: it is what makes a
       // sign-out something a person can experiment with rather than restart out
-      // of.
+      // of. DEVELOPMENT ONLY — refused at the top of this function in product.
       const was = krb5Principals.clearSignOut([key], krb5Principals.REALM);
       log.debug("Leaving AdminActions.logoutAction().");
       return { ok: true,
@@ -1451,8 +1591,10 @@ class AdminActions {
                (was ? ' (' + was.toISOString() + ') is cleared, so tickets ' +
                       'issued before it are accepted again.'
                     : ' was not set, so nothing changed.') +
-               ' A real KDC has no such operation; a fresh AS-REQ is the ' +
-               'supported way back and clears it too.' };
+               ' A real KDC has no such operation, and this one refuses it ' +
+               'in product mode. A fresh AS-REQ gets a ticket newer than the ' +
+               'instant but does NOT clear it: tickets from before it stay ' +
+               'refused.' };
     }
 
     log.debug("Leaving AdminActions.logoutAction(). Unknown action.");
@@ -1690,6 +1832,54 @@ class AdminActions {
   // `/admin/logout`'s global button calls. A process without the logout module
   // is reported rather than refused: the credential change has happened either
   // way.
+  // AN ADMINISTRATOR'S LINK, MAILED TO THE PERSON (#63) when the request
+  // says `deliver: "mail"` — the reset link, the activation link, the one a
+  // create issues. `null` when mail was not asked for; otherwise
+  // `common/mail_uses.ts`'s answer, `{ ok, mailedTo }` or a refusal whose
+  // reason the administrator is shown beside the link, which is then shown
+  // as it always was.
+  private mailedLink(kind, who, token, body, actor, via) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.mailedLink(). " + kind);
+    if (String((body && body.deliver) || '') !== 'mail') {
+      log.debug("Leaving AdminActions.mailedLink(). Not asked.");
+      return null;
+    }
+    let answer = null;
+    try {
+      answer = require('../common/mail_uses').mailAdministratorLink(kind,
+        who, token, String(actor || ''), String(via || 'the admin console'));
+    } catch (e) {
+      log.debug("Caught in AdminActions.mailedLink(): " +
+                ((e && e.message) || e));
+      answer = { ok: false, errors: ['the mail channel failed: ' +
+                                     ((e && e.message) || e)] };
+    }
+    log.debug("Leaving AdminActions.mailedLink(). " + !!(answer && answer.ok));
+    return answer;
+  }
+
+  // A PERSON WHOSE SESSIONS AN ADMINISTRATOR ENDED IS TOLD BY MAIL (#63): a
+  // security notice they cannot decline. Only here, at the administrator's
+  // two doors — a person's own sign-out tells nobody, and a reset or a
+  // disable sends its own notice. Lazily required; never thrown into the act.
+  private mailSessionsEnded(username, count, by) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.mailSessionsEnded(). " + count);
+    if (!count || !username) {
+      log.debug("Leaving AdminActions.mailSessionsEnded(). Nothing ended.");
+      return;
+    }
+    try {
+      require('../common/mail_uses').sessionsEnded(String(username), count,
+                                                   by);
+    } catch (e) {
+      log.debug("Caught in AdminActions.mailSessionsEnded(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving AdminActions.mailSessionsEnded().");
+  }
+
   private signOutEverywhere(who, ctx, why) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminActions.signOutEverywhere(). who=" + who);
@@ -1758,6 +1948,16 @@ class AdminActions {
                     'changed when you next sign in.' });
       accountSignals.credentialChangeRequired({ username: who,
         reasonAdmin: 'An administrator reset the password of ' + who + '.' });
+      // THE ADMINISTRATOR'S WORD THAT THIS WAS A COMPROMISE (#146), and the
+      // only automatic source of credential-compromise until #62 scores one.
+      if (body.compromised === true || body.compromised === 'true' ||
+          body.compromised === 'on') {
+        accountSignals.credentialCompromised({ username: who,
+          credentialType: 'password',
+          reasonAdmin: 'An administrator reset the password of ' + who +
+                       ' because it was compromised.',
+          reasonUser: 'Your password was compromised and has been reset.' });
+      }
       log.info('admin: the password of "' + who + '" was reset by ' +
                (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + ').');
       log.debug("Leaving AdminActions.credentialAdminAction(). " +
@@ -1813,14 +2013,50 @@ class AdminActions {
         reasonAdmin: 'An administrator issued a password reset link for ' +
                      who +
                      '.' });
+      // MAILED TO THE PERSON when asked (#63) — and then NOT shown here: an
+      // administrator who never sees a person's reset link cannot be the one
+      // who used it.
+      const mailed = this.mailedLink('reset', who, issued.token, body,
+                                     ctx.actor, ctx.via === 'api'
+                                       ? '/admin-api/users' : 'the admin console');
+      // A RESET LINK IS ACCOUNT RECOVERY STARTED (#146), which is RISC's
+      // recovery-activated. A person's own start is `common/mail_uses.ts`'s.
+      accountSignals.recoveryActivated({ username: who,
+        mailed: !!(mailed && mailed.ok),
+        reasonAdmin: 'An administrator started account recovery for ' + who +
+                     ' with a password reset link.' });
+      if (body.compromised === true || body.compromised === 'true' ||
+          body.compromised === 'on') {
+        accountSignals.credentialCompromised({ username: who,
+          credentialType: 'password',
+          reasonAdmin: 'An administrator revoked the password of ' + who +
+                       ' because it was compromised.',
+          reasonUser: 'Your password was compromised and has been revoked.' });
+      }
       log.info('admin: a password reset link was issued for "' + who + '" by ' +
                (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + ').');
       log.debug("Leaving AdminActions.credentialAdminAction(). " +
                 "issue-password-reset.");
+      if (mailed && mailed.ok) {
+        return { ok: true, username: who, mailedTo: mailed.mailedTo,
+                 expiresAt: issued.expiresAt,
+                 passwordRevoked: removed.removed, signedOut: signedOut,
+                 message: 'A password reset link for ' + who + ', valid ' +
+                          'until ' + issued.expiresAt + ', was MAILED to ' +
+                          mailed.mailedTo + ' and is not shown here. ' +
+                          (removed.removed ? 'Their old password was ' +
+                            'removed, so until the link is used they cannot ' +
+                            'sign in with a password. ' : '') +
+                          'They were signed out of everything: ' +
+                          signedOut.message };
+      }
       return { ok: true, username: who,
                resetUrl: (ctx.base || '') + path, expiresAt: issued.expiresAt,
                passwordRevoked: removed.removed, signedOut: signedOut,
-               message: 'A password reset link for ' + who +
+               mailError: mailed ? (mailed.errors || []).join(' ') : undefined,
+               message: (mailed ? 'THE LINK WAS NOT MAILED: ' +
+                          (mailed.errors || []).join(' ') + ' ' : '') +
+                        'A password reset link for ' + who +
                         ' is valid until ' +
                         issued.expiresAt +
                         '. IT IS SHOWN ONCE — this service ' +
@@ -1849,7 +2085,8 @@ class AdminActions {
       }
       result.removed.forEach(function (one) {
         accountSignals.credentialChanged({ username: who,
-          credentialType: accountSignals.KEY_CREDENTIAL_TYPE,
+          credentialType: accountSignals.keyCredentialType(one),
+          fido2Aaguid: String((one && one.aaguid) || ''),
           changeType: 'delete', friendlyName: one.label, via: ctx.via,
           reasonAdmin: 'An administrator disabled passwordless sign-in for ' +
                        who + '.',
@@ -1890,7 +2127,8 @@ class AdminActions {
       }
       removed.keys.forEach(function (one) {
         accountSignals.credentialChanged({ username: who,
-          credentialType: accountSignals.KEY_CREDENTIAL_TYPE,
+          credentialType: accountSignals.keyCredentialType(one),
+          fido2Aaguid: String((one && one.aaguid) || ''),
           changeType: 'delete', friendlyName: one.label, via: ctx.via,
           reasonAdmin: 'An administrator disabled every second factor of ' +
                        who + '.',
@@ -1924,6 +2162,279 @@ class AdminActions {
                           : 'A password alone signs them in now.') };
     }
 
+    if (action === 'create-app-password') {
+      // A JSON `doors` array or comma-separated string, or the console's one
+      // checkbox per door (`door_ldap=on`, ...) — a form parser keeps the
+      // last of a repeated name, so the boxes are named apart.
+      const doors = [].concat(body.doors === undefined ? [] : body.doors)
+        .concat(['ldap', 'wstrust', 'scim', 'ssf', 'est'].filter(function (
+          door) {
+          return ['on', 'true', '1', 'yes'].indexOf(
+            String(body['door_' + door] || '')) >= 0;
+        }));
+      const made = credentials.createAppPassword(who, {
+        name: body.name, doors: doors, createdBy: ctx.actor || ctx.via });
+      audited('admin.app-password.created',
+              (made.ok ? 'made' : 'could not make') + ' an app password for ' +
+              who, { id: made.ok ? made.id : undefined,
+                     name: made.ok ? made.name : String(body.name || ''),
+                     doors: made.ok ? made.doors : undefined,
+                     errors: made.ok ? undefined : (made.errors || []) },
+              made.ok ? 'success' : 'failure');
+      if (!made.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). The app " +
+                  "password was refused.");
+        return this.refusedBy('STS-ADMIN-0800', made);
+      }
+      accountSignals.credentialChanged({ username: who,
+        credentialType: 'password', changeType: 'create',
+        friendlyName: made.name, via: ctx.via,
+        reasonAdmin: 'An administrator made the app password "' + made.name +
+                     '" for ' + who + ', for ' + made.doors.join(', ') + '.',
+        reasonUser: 'An app password called "' + made.name + '" was added ' +
+                    'to your account.' });
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "create-app-password.");
+      // `appPassword` and not `password`: this answer is not a reset, and
+      // the console's one-time page tells the two apart by the member.
+      const answer = Object.assign({}, made);
+      delete answer.password;
+      return Object.assign(answer, {
+        appPassword: made.password,
+        message: 'The app password "' + made.name + '" for ' + who + ' is ' +
+                 'made, for ' + made.doors.join(', ') + '. IT IS SHOWN ONCE ' +
+                 '— this service stores only a hash. Give it to them by a ' +
+                 'channel you trust; it works at those doors only, never at ' +
+                 'the sign-in screen.' });
+    }
+
+    if (action === 'revoke-app-password') {
+      const gone = credentials.revokeAppPassword(who, String(body.id || ''));
+      audited('admin.app-password.revoked',
+              (gone.ok ? 'revoked' : 'could not revoke') + ' an app ' +
+              'password of ' + who, { id: String(body.id || ''),
+                name: gone.ok ? gone.revoked.name : undefined,
+                errors: gone.ok ? undefined : (gone.errors || []) },
+              gone.ok ? 'success' : 'failure');
+      if (!gone.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). The " +
+                  "revocation was refused.");
+        return this.refusedBy('STS-ADMIN-0801', gone);
+      }
+      accountSignals.credentialChanged({ username: who,
+        credentialType: 'password', changeType: 'revoke',
+        friendlyName: gone.revoked.name, via: ctx.via,
+        reasonAdmin: 'An administrator revoked the app password "' +
+                     gone.revoked.name + '" of ' + who + '.',
+        reasonUser: 'The app password called "' + gone.revoked.name +
+                    '" was revoked.' });
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "revoke-app-password.");
+      return { ok: true, username: who, revoked: gone.revoked,
+               message: 'The app password "' + gone.revoked.name + '" of ' +
+                        who + ' is revoked. A client still sending it is ' +
+                        'refused at its next authentication.' };
+    }
+
+    if (action === 'set-not-delegated') {
+      const flag = ['true', 'on', '1', 'yes'].indexOf(
+        String(body.value === undefined ? 'true' : body.value).trim()
+          .toLowerCase()) >= 0;
+      const result = credentials.setNotDelegated(who, flag);
+      audited('admin.delegation.not-delegated',
+              (result.ok ? '' : 'could not ') + (flag ? 'mark ' : 'clear ') +
+              who + (flag ? ' as one who cannot be delegated'
+                          : '\'s stsNotDelegated'),
+              { notDelegated: flag,
+                errors: result.ok ? undefined : (result.errors || []) },
+              result.ok ? 'success' : 'failure');
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "set-not-delegated was refused.");
+        return this.refusedBy('STS-ADMIN-0805', result);
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "set-not-delegated.");
+      return { ok: true, username: who, notDelegated: flag,
+               message: flag
+                 ? who + ' now carries stsNotDelegated: nobody may act for ' +
+                   'them at WS-Trust or the token exchange, whatever any ' +
+                   'application says (enforced in product mode).'
+                 : who + ' no longer carries stsNotDelegated.' };
+    }
+
+    if (action === 'set-may-act') {
+      const named = String(body.delegate || '').trim();
+      const result = credentials.setMayAct(who, named);
+      audited('admin.delegation.may-act',
+              (result.ok ? '' : 'could not ') + (named ? 'name ' + named +
+              ' as the party who may act for ' + who : 'clear the party who ' +
+              'may act for ' + who),
+              { delegate: named,
+                errors: result.ok ? undefined : (result.errors || []) },
+              result.ok ? 'success' : 'failure');
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "set-may-act was refused.");
+        return this.refusedBy('STS-ADMIN-0806', result);
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). set-may-act.");
+      return { ok: true, username: who, mayAct: named,
+               message: named
+                 ? named + ' may now act for ' + who + ': access tokens ' +
+                   'about ' + who + ' carry may_act naming them (RFC 8693 ' +
+                   'section 4.4), and an exchange of one by anybody else is ' +
+                   'refused.'
+                 : 'Nobody is named as acting for ' + who + ' now.' };
+    }
+
+    if (action === 'record-verification') {
+      const { identityAssurance } = this.deps;
+      const kept = identityAssurance.record(who,
+        identityAssurance.fromForm(body), ctx.actor);
+      const verification = kept.ok ? kept.record.verification : null;
+      audited('admin.ida.recorded',
+              (kept.ok ? 'recorded' : 'could not record') + ' an identity ' +
+              'verification for ' + who,
+              kept.ok ? { id: kept.record.id,
+                          trustFramework: verification.trust_framework,
+                          evidence: (verification.evidence || [])
+                            .map(function (one) {
+                              return one.type;
+                            }),
+                          claims: Object.keys(kept.record.claims) }
+                      : { errors: [kept.error] },
+              kept.ok ? 'success' : 'failure');
+      if (!kept.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "record-verification was refused.");
+        return this.refusedBy('STS-ADMIN-0807',
+                              { ok: false, errors: [kept.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "record-verification.");
+      return { ok: true, username: who, verification: kept.record,
+               message: 'An identity verification under ' +
+                        verification.trust_framework + ' is recorded for ' +
+                        who + ', covering ' +
+                        Object.keys(kept.record.claims).join(', ') + '. A ' +
+                        'client asking for verified_claims is answered ' +
+                        'from it while the entry still holds those values.' };
+    }
+
+    if (action === 'remove-verification') {
+      const { identityAssurance } = this.deps;
+      const id = String(body.id || '').trim();
+      const gone = identityAssurance.remove(who, id);
+      audited('admin.ida.removed',
+              (gone.ok ? 'removed' : 'could not remove') + ' identity ' +
+              'verification ' + id + ' of ' + who,
+              { id: id, errors: gone.ok ? undefined : [gone.error] },
+              gone.ok ? 'success' : 'failure');
+      if (!gone.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "remove-verification was refused.");
+        return this.refusedBy('STS-ADMIN-0808',
+                              { ok: false, errors: [gone.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "remove-verification.");
+      return { ok: true, username: who, removed: id,
+               message: 'Identity verification ' + id + ' of ' + who +
+                        ' is removed; nothing is released from it any ' +
+                        'more.' };
+    }
+
+    if (action === 'answer-ciba-request') {
+      const { ciba, mode } = this.deps;
+      if (!mode.opensTestControls()) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). CIBA's " +
+                  "test control is development-only.");
+        return this.refused('STS-ADMIN-0812', { ok: false, errors: [
+          'answer-ciba-request is a development-only test control and is ' +
+          'refused in product mode: only the person answers a sign-in ' +
+          'request, on /portal/ciba.'] });
+      }
+      const approve = body.approve === true || String(body.approve) === 'true';
+      const answered = ciba.answer(String(body.id || ''), who, approve,
+        { acr: String(body.acr || ''), amr: ['user'],
+          authTime: Math.floor(Date.now() / 1000) });
+      audited('admin.ciba.answered', (answered.ok ? '' : 'could not ') +
+              (approve ? 'approve' : 'deny') + ' a CIBA request for ' + who +
+              ' (test control)', { errors: answered.ok ? undefined :
+                                   [answered.why] },
+              answered.ok ? 'success' : 'failure');
+      if (!answered.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "answer-ciba-request was refused.");
+        return this.refusedBy('STS-ADMIN-0813',
+                              { ok: false, errors: [answered.why] });
+      }
+      ciba.notifyAnswered(answered.record).catch(function (e) {
+        log.debug("Caught in AdminActions.credentialAdminAction(): " +
+                  ((e && e.message) || e));
+      });
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "answer-ciba-request.");
+      return { ok: true, username: who, state: answered.record.state,
+               message: 'The request is ' + answered.record.state + '.' };
+    }
+
+    if (action === 'remove-device') {
+      const { devices } = this.deps;
+      const id = String(body.id || '').trim();
+      const gone = devices.remove(id, who);
+      audited('admin.device.removed',
+              (gone.ok ? 'removed' : 'could not remove') + ' device ' + id +
+              ' of ' + who,
+              { id: id, errors: gone.ok ? undefined : [gone.error] },
+              gone.ok ? 'success' : 'failure');
+      if (!gone.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "remove-device was refused.");
+        return this.refusedBy('STS-ADMIN-0811',
+                              { ok: false, errors: [gone.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "remove-device.");
+      return { ok: true, username: who, removed: id,
+               message: 'Device ' + id + ' of ' + who + ' is removed, with ' +
+                        'its Native SSO secret; the apps on it sign in ' +
+                        'again.' };
+    }
+
+    if (action === 'enrol-self-issued-subject' ||
+        action === 'remove-self-issued-subject') {
+      const { siop } = this.deps;
+      const enrolling = action === 'enrol-self-issued-subject';
+      const subject = String(body.subject || '').trim();
+      const done = enrolling
+        ? siop.enrol(who, subject, body.label, ctx.actor)
+        : siop.remove(who, subject);
+      audited(enrolling ? 'admin.siop.enrolled' : 'admin.siop.removed',
+              (done.ok ? '' : 'could not ') +
+              (enrolling ? 'enrol ' : 'remove ') + 'the self-issued ' +
+              'subject ' + subject + (enrolling ? ' for ' : ' of ') + who,
+              { subject: subject,
+                errors: done.ok ? undefined : [done.error] },
+              done.ok ? 'success' : 'failure');
+      if (!done.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  " was refused.");
+        return this.refusedBy(enrolling ? 'STS-ADMIN-0809' : 'STS-ADMIN-0810',
+                              { ok: false, errors: [done.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                ".");
+      return enrolling
+        ? { ok: true, username: who, enrolled: done.enrolled,
+            message: done.enrolled.subject + ' is enrolled for ' + who +
+                     ': a self-issued ID Token (SIOPv2) signed by that key ' +
+                     'now signs them in.' }
+        : { ok: true, username: who, removed: done.removed,
+            message: done.removed + ' no longer signs ' + who + ' in.' };
+    }
+
     // require-mfa and stop-requiring-mfa
     const wanted = action === 'require-mfa';
     const result = credentials.setMfaRequired(who, wanted);
@@ -1952,8 +2463,89 @@ class AdminActions {
                      'security key before it continues.')
                : 'A second factor is no longer required of ' + who + ' on ' +
                  'their account.' + (mech.mfaRequirement.byRealm
-                   ? ' The REALM still requires one (authn.mfaRequired).' : '')
+                   ? ' The REALM still requires one (the authentication ' +
+                     'policy).' : '')
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // LINK OR UNLINK A PARTNER'S SUBJECT AND A PERSON (#109, 2026-09-22) — the
+  // console's person page and `POST /admin-api/users/federation-link` and
+  // `/federation-unlink`. What a link may be is
+  // `federation/federation_links.ts`'s `resolveRequest()`, which SCIM asks
+  // too; the refusal of one person's link on another is the directory's. An
+  // UNLINK ends the sessions that partner signed the person in to — through
+  // the directory, which hands every removal on whichever door made it.
+  //
+  // `relationship`, `subject` and optionally `issuer` (the relationship's
+  // fedPeer when omitted) name a link; an unlink may name the stored value
+  // instead, as `link`, which is how the console's Remove button posts.
+  // ---------------------------------------------------------------------------
+  private federationLinkAction(action, body, ctx) {
+    const { log, federation, fedLinks, auditLog, errorCodes } = this.deps;
+    log.debug("Entering AdminActions.federationLinkAction(). " + action);
+    const add = action === 'federation-link';
+    const who = String(body.user || body.username || '').trim();
+    if (!who) {
+      log.debug("Leaving AdminActions.federationLinkAction(). Nobody.");
+      return this.refused('STS-FED-0104', { ok: false, errors: ['Name the ' +
+        'person in `user`.'] });
+    }
+    let value = '';
+    if (!add && String(body.link || '')) {
+      value = String(body.link);
+    } else {
+      const resolved = fedLinks.resolveRequest({
+        relationship: body.relationship, issuer: body.issuer,
+        subject: body.subject });
+      if (!resolved.ok) {
+        log.debug("Leaving AdminActions.federationLinkAction(). " +
+                  resolved.code);
+        return this.refused(resolved.code, { ok: false,
+                                             errors: [resolved.why] });
+      }
+      value = resolved.value;
+    }
+    const written = federation.writeFederationLink(who, value, add,
+                                                   { via: ctx.via });
+    if (!written.ok) {
+      log.debug("Leaving AdminActions.federationLinkAction(). The " +
+                "directory refused.");
+      return this.refused(errorCodes.codeOf(written) || 'STS-FED-0109',
+                          { ok: false, errors: written.errors ||
+                            ['The directory would not write the link.'] });
+    }
+    const parsed = fedLinks.parse(value) || {};
+    auditLog.record({
+      category: 'admin', action: add ? 'federation.link.add' :
+                                       'federation.link.remove',
+      actor: ctx.actor, target: written.username, outcome: 'success',
+      summary: written.username + ' was ' + (add ? 'linked to' :
+                                             'unlinked from') +
+               ' the subject ' + parsed.subject + ' of ' + parsed.issuer +
+               ' through ' + parsed.relationship + ' (' + ctx.via + ')' +
+               (written.changed ? '' : '; it already was'),
+      detail: { username: written.username, via: ctx.via,
+                relationship: String(parsed.relationship || ''),
+                issuer: String(parsed.issuer || ''),
+                subject: String(parsed.subject || ''),
+                changed: written.changed ? 'yes' : 'no' }
+    });
+    log.debug("Leaving AdminActions.federationLinkAction(). " +
+              (written.changed ? 'Changed.' : 'Unchanged.'));
+    return { ok: true, username: written.username, link: value,
+             changed: !!written.changed, links: written.links || [],
+             message: add
+               ? (written.changed
+                   ? written.username + ' is linked to ' + parsed.subject +
+                     ' at ' + parsed.issuer + ': that partner, through ' +
+                     parsed.relationship + ', now signs them in.'
+                   : written.username + ' already carried that link.')
+               : written.username + ' is no longer linked to ' +
+                 parsed.subject + ' at ' + parsed.issuer + '. The next ' +
+                 'sign-in through ' + parsed.relationship + ' does not ' +
+                 'find them, and every session that partner signed them in ' +
+                 'to is being ended.' };
   }
 
   usersAction(body, context?) {
@@ -1985,9 +2577,20 @@ class AdminActions {
         return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
             'the person in `user`.'] });
       }
+      const riscReason = String(body.riscReason || body.risc_reason || '');
+      if (riscReason && ['hijacking', 'bulk-account'].indexOf(riscReason) < 0) {
+        log.debug("Leaving AdminActions.usersAction(). Not a RISC reason.");
+        return this.refused('STS-ADMIN-0794', { ok: false, errors: ['"' +
+          riscReason + '" is not a reason RISC account-disabled carries; ' +
+          'it is hijacking or bulk-account (RISC 1.0 section 2.2), or ' +
+          'none.'] });
+      }
       const answer = accountState.setDisabled(who, action === 'disable', {
         actor: ctx.actor, via: ctx.via,
-        reason: String(body.reason || '') });
+        reason: String(body.reason || ''),
+        // RISC account-disabled's `reason` (#146): `hijacking` or
+        // `bulk-account`, or nothing — never invented.
+        riscReason: riscReason });
       if (!answer.ok) {
         log.debug("Leaving AdminActions.usersAction(). The " + action +
                   " was refused.");
@@ -2000,6 +2603,12 @@ class AdminActions {
       return { ok: true, username: who, disabled: answer.disabled,
                changed: answer.changed, ended: answer.ended || null,
                message: answer.message };
+    }
+
+    // A FEDERATION LINK, MADE OR REMOVED BY AN ADMINISTRATOR (#109).
+    if (action === 'federation-link' || action === 'federation-unlink') {
+      log.debug("Leaving AdminActions.usersAction(). A federation link.");
+      return this.federationLinkAction(action, body, ctx);
     }
 
     const credentialAnswer = this.credentialAdminAction(action, body, ctx);
@@ -2018,11 +2627,14 @@ class AdminActions {
     // invalidates the previous one, which is also how a link that expired or
     // was never delivered is replaced.
     //
-    // It is an ADMIN act rather than a self-service one, deliberately. There is
-    // no mail channel here, so a self-service "send me a link" form would have
-    // to show the link on screen — handing any visitor an activation link for
-    // any unactivated account, which is an account takeover with a username as
-    // the only input.
+    // It is an ADMIN act rather than a self-service one, deliberately. Before
+    // #63 there was no mail channel, and a self-service "send me a link" form
+    // would have had to show the link on screen — handing any visitor an
+    // activation link for any unactivated account, an account takeover with a
+    // username as the only input. There is a mail channel now, and the
+    // administrator may send the link through it (`deliver: "mail"`); an
+    // unactivated account still has no self-service door, because until it
+    // is activated nobody has proved the address on it is theirs.
     if (action === 'issue-activation') {
       const who = String(body.user || body.username || '').trim();
       if (!who) {
@@ -2042,8 +2654,20 @@ class AdminActions {
         summary: 'an activation link was issued for ' + who,
         detail: { expiresAt: issued.expiresAt }
       });
+      const mailed = this.mailedLink('activation', who, issued.token, body,
+                                     body.actor, 'the users page');
+      if (mailed && mailed.ok) {
+        log.debug("Leaving AdminActions.usersAction(). Mailed.");
+        return { ok: true, username: who, expiresAt: issued.expiresAt,
+                 mailedTo: mailed.mailedTo,
+                 message: 'An activation link for ' + who + ', valid until ' +
+                          issued.expiresAt + ', was MAILED to ' +
+                          mailed.mailedTo + ' and is not shown here. Issuing ' +
+                          'another invalidates it.' };
+      }
       log.debug("Leaving AdminActions.usersAction().");
       return { ok: true, username: who, expiresAt: issued.expiresAt,
+               mailError: mailed ? (mailed.errors || []).join(' ') : undefined,
                // THE ONLY TIME THIS VALUE EXISTS OUTSIDE THE PERSON'S BROWSER.
                activationUrl: '/portal/activate?user=' +
                               encodeURIComponent(who) + '&token=' +
@@ -2181,6 +2805,82 @@ class AdminActions {
       return this.refusedBy('STS-ADMIN-0521', result);
     }
 
+    // ---------------------------------------------------------------------
+    // THE EMAILED SECOND FACTOR, TURNED OFF (#64). The fourth removal, and
+    // like clearing an authenticator app it cannot lock anybody out: an
+    // emailed factor is a second factor, and the account keeps its first.
+    // There is no Turn On beside it: the opt-in is the person's (D8).
+    // ---------------------------------------------------------------------
+    if (action === 'clear-email-factor') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+                                     'the person whose emailed second ' +
+                                     'factor is being turned off.'] });
+      }
+      const result = require('../common/mail_factor').clear(who, ctx.actor,
+        ctx.via, 'turned off by an administrator');
+      log.info('admin: the emailed second factor of "' + who + '" was ' +
+               (result.removed ? 'turned off' : 'already off') + ' by ' +
+               (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + ').');
+      log.debug("Leaving AdminActions.usersAction(). clear-email-factor.");
+      return result.ok
+        ? { ok: true, removed: !!result.removed,
+            message: result.removed
+              ? 'The emailed second factor of ' + who + ' is off. They ' +
+                'turn it on again at /portal/mfa.'
+              : who + ' had no emailed second factor.' }
+        : this.refused('STS-ADMIN-0814', { ok: false, errors: ['The ' +
+            'emailed second factor of ' + who + ' could not be turned ' +
+            'off.'] });
+    }
+
+    // ---------------------------------------------------------------------
+    // A PERSON'S ADDRESS, SET BY AN ADMINISTRATOR (#64). It is VERIFIED — an
+    // administrator is one of the trusted sources the ticket names — and the
+    // directory tells the former address it changed. Checked here for being
+    // an address this service could send to; the directory writes it.
+    // ---------------------------------------------------------------------
+    if (action === 'set-mail') {
+      const who = String(body.user || body.username || '').trim();
+      const address = String(body.mail || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+                                     'the person whose address is being ' +
+                                     'set.'] });
+      }
+      const bad = address
+        ? require('../common/mail_transports').addressProblem(address)
+        : 'is empty';
+      if (bad) {
+        log.debug("Leaving AdminActions.usersAction(). Not an address.");
+        return this.refused('STS-ADMIN-0815', { ok: false, errors: ['"' +
+          address.slice(0, 80) + '" is not an address this service can ' +
+          'send to: it ' + bad + '.'] });
+      }
+      const dir = require('../common/mail').directory();
+      const written = !!(dir && typeof dir.writeAddress === 'function' &&
+                         dir.writeAddress(who, address, 'admin'));
+      auditLog.record({
+        category: 'admin', action: 'admin.mail.set',
+        actor: ctx.actor, target: who, outcome: written ? 'success'
+                                                        : 'failure',
+        summary: (written ? 'set' : 'could not set') + ' the address of ' +
+                 who,
+        detail: { username: who, via: ctx.via } });
+      log.debug("Leaving AdminActions.usersAction(). set-mail " +
+                (written ? "ok." : "refused."));
+      return written
+        ? { ok: true, mail: address, verified: true,
+            message: 'The address of ' + who + ' is ' + address + ', and ' +
+                     'it is verified: an administrator set it.' }
+        : this.refused('STS-ADMIN-0816', { ok: false, errors: ['There is ' +
+            'no person called "' + who + '" in this realm, or the directory ' +
+            'would not write the address.'] });
+    }
+
     if (action === 'clear-key') {
       const who = String(body.user || body.username || '').trim();
       if (!who) {
@@ -2198,7 +2898,8 @@ class AdminActions {
                                                        ''));
       if (result.ok) {
         accountSignals.credentialChanged({ username: who,
-          credentialType: accountSignals.KEY_CREDENTIAL_TYPE,
+          credentialType: accountSignals.keyCredentialType(going),
+          fido2Aaguid: String((going && going.aaguid) || ''),
           changeType: 'delete', via: ctx.via,
           friendlyName: going ? String(going.label || '') : '',
           reasonAdmin: 'An administrator removed a ' +
@@ -2391,6 +3092,13 @@ class AdminActions {
                        ' as they were created',
               detail: { generated: generated }
             });
+            // CAEP credential-change (#145): the person's first password.
+            accountSignals.credentialChanged({ username: result.username,
+              credentialType: 'password', changeType: 'create',
+              initiatingEntity: 'admin', via: ctx.via,
+              reasonAdmin: 'An administrator set a password for ' +
+                           result.username + ' as they were created.',
+              reasonUser: 'A password was set for your new account.' });
             answer.passwordSet = true;
             answer.generated = generated;
             if (generated) {
@@ -2419,15 +3127,30 @@ class AdminActions {
                      ' as they were created',
             detail: { expiresAt: issued.expiresAt }
           });
-          answer.activationUrl = '/portal/activate?user=' +
-                                 encodeURIComponent(result.username) +
-                                 '&token=' +
-                                 encodeURIComponent(issued.token);
           answer.expiresAt = issued.expiresAt;
-          credentialSaid = ' They have NO credential and an activation link ' +
-            'instead, valid until ' + issued.expiresAt + ' and shown once. ' +
-            'They choose a password, a security key or both at it; nothing ' +
-            'about this account is decided until they do.';
+          const mailed = this.mailedLink('activation', result.username,
+                                         issued.token, body, body.actor,
+                                         'the new user screen');
+          if (mailed && mailed.ok) {
+            answer.mailedTo = mailed.mailedTo;
+            credentialSaid = ' They have NO credential and an activation ' +
+              'link instead, valid until ' + issued.expiresAt + ', which was ' +
+              'MAILED to ' + mailed.mailedTo + ' and is not shown here.';
+          } else {
+            answer.activationUrl = '/portal/activate?user=' +
+                                   encodeURIComponent(result.username) +
+                                   '&token=' +
+                                   encodeURIComponent(issued.token);
+            if (mailed) {
+              answer.mailError = (mailed.errors || []).join(' ');
+            }
+            credentialSaid = (mailed ? ' THE LINK WAS NOT MAILED: ' +
+                answer.mailError : '') + ' They have NO credential and an ' +
+              'activation link instead, valid until ' + issued.expiresAt +
+              ' and shown once. They choose a password, a security key or ' +
+              'both at it; nothing about this account is decided until they ' +
+              'do.';
+          }
         }
       } else if (credential !== 'none') {
         answer.credentialError = 'Unknown credential option "' + credential +
@@ -3272,7 +3995,10 @@ class AdminActions {
     }
     if (action === 'mdq-import') {
       log.debug("Leaving AdminActions.saml2Action(). mdq-import.");
-      return spMetadata.mdqImport(identifier, { actor: body.actor || '' })
+      // `origin: 'operator'` (#112): an administrator named this entityID,
+      // which is what a lookup a request starts cannot claim.
+      return spMetadata.mdqImport(identifier, { actor: body.actor || '',
+                                               origin: 'operator' })
         .then(function (result) {
           return self.refusedBy('STS-ADMIN-0532', result);
         });
@@ -3415,10 +4141,10 @@ class AdminActions {
                      { ok: false, errors: ['Unknown action "' + action + '". ' +
           'There are ' +
                                         MFA_ACTIONS.length + ': ' +
-                                   MFA_ACTIONS.join(' and ') + '. The rest ' +
+                                   MFA_ACTIONS.join(', ') + '. The rest ' +
                                         'of what can be done to a person is ' +
                                    'on /admin-api/users, which is also where ' +
-                                        'these two answer.'] });
+                                        'these answer.'] });
     }
     log.debug("Leaving AdminActions.mfaAction(). Handing " + action +
               " to usersAction().");
@@ -3488,6 +4214,15 @@ class AdminActions {
 
     if (action === 'revoke-global-consent') {
       const result = consent.revokeGlobal(client, scope, actor);
+      if (result.ok) {
+        // The `application.update` row is the attribute's; this one is the
+        // withdrawal's, and says what it revoked (#172).
+        auditLog.audit({ action: 'consent.revoke', actor: actor, target: client,
+                      protocol: 'OAuth 2.0 / OIDC', channel: 'http',
+                      detail: 'withdrew the global consent to "' + scope +
+                              '"; ' + (result.revoked || 0) + ' token(s) ' +
+                              'issued under it revoked' });
+      }
       log.debug("Leaving AdminActions.consentAction(). revoke-global-consent " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0540', result);
@@ -3504,9 +4239,30 @@ class AdminActions {
         // consenting.
         auditLog.audit({ action: 'consent.revoke', actor: actor, target: client,
                       protocol: 'OAuth 2.0 / OIDC', channel: 'http',
-                      detail: 'revoked "' + scope + '" for ' + username });
+                      detail: 'revoked "' + scope + '" for ' + username +
+                              '; ' + (result.revoked || 0) + ' token(s) ' +
+                              'issued under it revoked (#172)' });
       }
       log.debug("Leaving AdminActions.consentAction(). revoke-consent " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0540', result);
+    }
+
+    // EVERY SCOPE ONE PERSON AGREED TO FOR ONE APPLICATION (#172) — what a
+    // person does from /portal/consents, offered here so that the console and
+    // /admin-api can do it for them (rule 7).
+    if (action === 'revoke-application-consent') {
+      const result = consent.revokeApplication(username, client, actor);
+      if (result.ok) {
+        auditLog.audit({ action: 'consent.revoke', actor: actor, target: client,
+                      protocol: 'OAuth 2.0 / OIDC', channel: 'http',
+                      detail: 'withdrew every consent (' + result.removed +
+                              ') to "' + client + '" for ' + username +
+                              '; ' + (result.revoked || 0) + ' token(s) ' +
+                              'issued under them revoked' });
+      }
+      log.debug("Leaving AdminActions.consentAction(). " +
+                "revoke-application-consent " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0540', result);
     }
@@ -3518,7 +4274,9 @@ class AdminActions {
                          target: username,
                       protocol: 'OAuth 2.0 / OIDC', channel: 'http',
                       detail: 'forgot every consent (' + result.removed +
-                              ') for ' + username });
+                              ') for ' + username + '; ' +
+                              (result.revoked || 0) + ' token(s) issued ' +
+                              'under them revoked' });
       }
       log.debug("Leaving AdminActions.consentAction(). forget-user-consent " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -3757,94 +4515,95 @@ class AdminActions {
                                       ROLE_ACTIONS.join(', ') + '.'] });
   }
 
-  passwordPoliciesAction(body, context) {
-    const { log, auditLog, passwordPolicy } = this.deps;
-    log.debug("Entering AdminActions.passwordPoliciesAction(). action=" +
+  policiesAction(body, context) {
+    const { log, auditLog, policyKinds, numberWord } = this.deps;
+    log.debug("Entering AdminActions.policiesAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
     const ctx = context || {};
     const actor = String(ctx.actor || body.actor || '');
-    const profileName = String(body.profile ||
-                               passwordPolicy.DEFAULT_PROFILE).trim();
-    const before = passwordPolicy.read(passwordPolicy.DEFAULT_PROFILE);
+    const found = policyKinds.forAction(action);
+    if (!found) {
+      const known = policyKinds.actions();
+      log.debug("Leaving AdminActions.policiesAction(). Unknown action.");
+      return this.refused('STS-ADMIN-0500',
+                     { ok: false, errors: ['Unknown action "' + action +
+                                           '". The ' +
+                                           numberWord(known.length) +
+                                           ' are: ' + known.join(', ') +
+                                           '.'] });
+    }
+    const kind = found.kind;
+    const module = kind.module;
+    const noun = kind.label.toLowerCase() + ' profile';
+    const profileName = String(body.profile || module.DEFAULT_PROFILE).trim();
+    const before = module.read(module.DEFAULT_PROFILE);
     const valuesOf = function (profile) {
       log.debug("Entering valuesOf().");
       const out: Record<string, any> = {};
-      passwordPolicy.FIELDS.forEach(function (field) {
+      module.FIELDS.forEach(function (field) {
         out[field.key] = profile[field.key];
       });
       log.debug("Leaving valuesOf().");
       return out;
     };
 
-    if (action === 'save-password-policy') {
+    if (found.verb === 'save') {
       const given = Object.assign({}, body);
       if (ctx.via === 'console') {
         given.form = 'console';
       }
-      const result = passwordPolicy.save(profileName, given);
+      const result = module.save(profileName, given);
       if (!result.ok) {
-        log.debug("Leaving AdminActions.passwordPoliciesAction(). save " +
-                  "refused.");
+        log.debug("Leaving AdminActions.policiesAction(). save refused.");
         return this.refused(this.innerCode(result) || 'STS-ADMIN-0549',
                             { ok: false, errors: result.errors });
       }
       auditLog.audit({
-        action: 'admin.password-policy.change', actor: actor,
+        action: kind.auditAction, actor: actor,
         target: result.profile.dn, channel: 'http',
-        summary: 'saved the password policy profile "' + result.profile.name +
-                 '"',
-        detail: { via: ctx.via || '', before: valuesOf(before),
-                  after: valuesOf(result.profile) }
+        summary: 'saved the ' + noun + ' "' + result.profile.name + '"',
+        detail: { via: ctx.via || '', kind: kind.id,
+                  before: valuesOf(before), after: valuesOf(result.profile) }
       });
-      log.debug("Leaving AdminActions.passwordPoliciesAction(). saved.");
-      return { ok: true, profile: result.profile,
-               rules: passwordPolicy.describe(result.profile),
+      log.debug("Leaving AdminActions.policiesAction(). saved.");
+      return { ok: true, kind: kind.id, profile: result.profile,
+               rules: module.describe(result.profile),
                enforced: result.profile.enforced,
-               message: 'The password policy profile "' + result.profile.name +
+               message: 'The ' + noun + ' "' + result.profile.name +
                         '" is saved at ' + result.profile.dn + '. It applies ' +
-                        'to the NEXT password set in this realm and to ' +
-                        'nothing already stored' +
+                        'to ' + kind.appliesTo +
                         (result.profile.enforced ? '.'
                           : ' — and it is not enforced here until this realm ' +
                             'is in product mode.') };
     }
 
-    if (action === 'reset-password-policy') {
-      const result = passwordPolicy.reset(profileName);
-      if (!result.ok) {
-        log.debug("Leaving AdminActions.passwordPoliciesAction(). reset " +
-                  "refused.");
-        return this.refused(this.innerCode(result) || 'STS-ADMIN-0550',
-                            { ok: false, errors: result.errors });
-      }
-      if (result.removed) {
-        auditLog.audit({
-          action: 'admin.password-policy.change', actor: actor,
-          target: before.dn, channel: 'http',
-          summary: 'put the password policy profile "' + before.name + '" ' +
-                   'back to the built-in defaults',
-          detail: { via: ctx.via || '', before: valuesOf(before),
-                    after: valuesOf(result.profile) }
-        });
-      }
-      log.debug("Leaving AdminActions.passwordPoliciesAction(). reset.");
-      return { ok: true, removed: result.removed, profile: result.profile,
-               rules: passwordPolicy.describe(result.profile),
-               message: result.removed
-                 ? 'The stored profile is gone and the built-in defaults are ' +
-                   'in ' +
-                   'force: ' +
-                   passwordPolicy.describe(result.profile).join(', ') + '.'
-                 : 'Nothing was stored, so the built-in defaults were ' +
-                   'already in force.' };
+    const result = module.reset(profileName);
+    if (!result.ok) {
+      log.debug("Leaving AdminActions.policiesAction(). reset refused.");
+      return this.refused(this.innerCode(result) || 'STS-ADMIN-0550',
+                          { ok: false, errors: result.errors });
     }
-
-    log.debug("Leaving AdminActions.passwordPoliciesAction(). Unknown action.");
-    return this.refused('STS-ADMIN-0500',
-                   { ok: false, errors: ['Unknown action "' + action + '". ' +
-        'The two are: ' +
-                                 PASSWORD_POLICY_ACTIONS.join(', ') + '.'] });
+    if (result.removed) {
+      auditLog.audit({
+        action: kind.auditAction, actor: actor,
+        target: before.dn, channel: 'http',
+        summary: 'put the ' + noun + ' "' + before.name + '" back to ' +
+                 kind.fallsBackTo,
+        detail: { via: ctx.via || '', kind: kind.id,
+                  before: valuesOf(before), after: valuesOf(result.profile) }
+      });
+    }
+    log.debug("Leaving AdminActions.policiesAction(). reset.");
+    return { ok: true, kind: kind.id, removed: result.removed,
+             profile: result.profile,
+             rules: module.describe(result.profile),
+             message: result.removed
+               ? 'The stored profile is gone, and this realm follows ' +
+                 kind.fallsBackTo + ': ' +
+                 module.describe(result.profile).join(', ') + '.'
+               : 'Nothing was stored in this realm, so it already followed ' +
+                 kind.fallsBackTo + '.' };
   }
 
   // ---------------------------------------------------------------------------
@@ -4352,6 +5111,9 @@ class AdminActions {
       // The console draws it on a page of its own rather than in a redirect,
       // for `/admin/users`' reset-password reason.
       const seeded = rbac.seedBootstrapAdministrator(result.realm.id);
+      // And, in product, a realm left with nobody who may enter its console
+      // is logged at once (#103, STS-ADMIN-0798).
+      rbac.reportClosedConsole(result.realm.id);
       let password = '';
       if (seeded.ran && seeded.created && mode.isProduct()) {
         realms.run(result.realm, function () {
@@ -4389,7 +5151,17 @@ class AdminActions {
                             '/admin' + (seeded.created
                               ? ', and must choose a new password at its ' +
                                 'first sign-in.'
-                              : '.')
+                              : '.') +
+                            // #103: product never opens a realm's console
+                            // to whoever signs in first.
+                            (!realms.run(result.realm, function () {
+                              return mode.opensConsoleToAnyone();
+                            })
+                              ? ' Until it has signed in there with its ' +
+                                'password nobody else may use that console, ' +
+                                'and a sign-in as "' + seeded.username +
+                                '" by any other method does not count.'
+                              : '')
                           : '') };
     }
 
@@ -4527,9 +5299,11 @@ class AdminActions {
       // Checked first, every one of them, and only then written. A section that
       // applied its first three fields and refused the fourth would leave the
       // service in a state nobody asked for and the page showing it.
+      // `checkWrite()` since #171, so a value the realm's mode does not allow
+      // (a TLS-verification skip in product) is refused here, before any.
       const errors = [];
       wanted.forEach(function (key) {
-        const problem = config.checkOverride(key, body[key]);
+        const problem = config.checkWrite(key, body[key]);
         if (problem) errors.push(problem);
       });
       if (errors.length) {
@@ -4667,7 +5441,7 @@ class AdminActions {
       }
       const errors = [];
       wanted.forEach(function (key) {
-        const problem = config.checkOverride(key, body[key]);
+        const problem = config.checkWrite(key, body[key]);
         if (problem) errors.push(problem);
       });
       if (errors.length) {
@@ -4789,7 +5563,7 @@ class AdminActions {
       }
       const errors = [];
       wanted.forEach(function (key) {
-        const problem = config.checkOverride(key, body[key]);
+        const problem = config.checkWrite(key, body[key]);
         if (problem) errors.push(problem);
       });
       if (errors.length) {
@@ -5292,6 +6066,69 @@ class AdminActions {
   }
 
   // ---------------------------------------------------------------------------
+  // THE SPIFFE BROKER API'S BROKERS (#170): `/admin/spiffe/brokers` and
+  // `POST /admin-api/spiffe/brokers/:action` (rule 7). `set` adds a broker
+  // or replaces the reference types of one already listed; `remove` takes it
+  // off. Both write `spiffe.brokers` in the current realm through
+  // `config.setOverride()` — the one store, which the endpoint reads on every
+  // call — and an entry that would not parse is refused before anything is
+  // written (STS-SPIFFE-0141).
+  // ---------------------------------------------------------------------------
+  spiffeBrokersAction(body) {
+    const { log, config, spiffeAuth } = this.deps;
+    log.debug("Entering AdminActions.spiffeBrokersAction(). action=" +
+              (body.action || '(none)'));
+    const action = String(body.action || '');
+    if (SPIFFE_BROKER_ACTIONS.indexOf(action) < 0) {
+      log.debug("Leaving AdminActions.spiffeBrokersAction(). Unknown.");
+      return this.spiffeUnknownAction(action, SPIFFE_BROKER_ACTIONS);
+    }
+    const id = String(body.id || '').trim();
+    const listed = spiffeAuth.brokers().filter(function (one) {
+      return one.id !== id;
+    });
+    if (action === 'remove') {
+      const before = spiffeAuth.brokers().length;
+      const result = config.setOverride('spiffe.brokers',
+                                        spiffeAuth.serializeBrokers(listed));
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.spiffeBrokersAction(). Not written.");
+        return this.refusedBy('STS-SPIFFE-0141', result);
+      }
+      log.debug("Leaving AdminActions.spiffeBrokersAction(). remove.");
+      return { ok: true, id: id,
+               message: listed.length < before
+                 ? id + ' is no longer a broker here: its next call to the ' +
+                   'SPIFFE Broker API is refused PERMISSION_DENIED.'
+                 : id + ' was not listed; nothing changed.' };
+    }
+    const types = (Array.isArray(body.referenceTypes)
+      ? body.referenceTypes : this.spiffeCommaList(body.referenceTypes))
+      .map(function (one) {
+        return String(one).trim().toLowerCase();
+      }).filter(Boolean);
+    const parsed = spiffeAuth.parseBrokers(id + '=' + types.join(','))[0];
+    if (!id || !parsed || parsed.problem) {
+      log.debug("Leaving AdminActions.spiffeBrokersAction(). Invalid.");
+      return this.refused('STS-SPIFFE-0141', { ok: false, errors: [
+        (id || 'The broker') + ' cannot be a broker: ' +
+        (parsed && parsed.problem ? parsed.problem
+                                  : 'send `id`, a SPIFFE ID') + '.'] });
+    }
+    const result = config.setOverride('spiffe.brokers',
+      spiffeAuth.serializeBrokers(listed.concat([parsed])));
+    if (!result.ok) {
+      log.debug("Leaving AdminActions.spiffeBrokersAction(). Not written.");
+      return this.refusedBy('STS-SPIFFE-0141', result);
+    }
+    log.debug("Leaving AdminActions.spiffeBrokersAction(). set.");
+    return { ok: true, id: parsed.id, referenceTypes: parsed.types,
+             message: parsed.id + ' may call the SPIFFE Broker API with ' +
+                      parsed.types.join(', ') + ' references, from its next ' +
+                      'call.' };
+  }
+
+  // ---------------------------------------------------------------------------
   // THE ACTION FUNCTION. `/admin-api/federation/:action` calls exactly this,
   // with `action` off the URL instead of out of a hidden input — rule 7, and it
   // is what makes "every console control has an API operation" a property of
@@ -5303,8 +6140,13 @@ class AdminActions {
   // here would be a second opinion about what a relationship may hold, and the
   // one an `ldapmodify` never saw.
   // ---------------------------------------------------------------------------
-  federationAction(body) {
-    const { log, federation } = this.deps;
+  //
+  // **ASYNCHRONOUS SINCE #168**, for the three branches that issue a key: a
+  // create (the relationship's encryption key is issued with it), `set` of
+  // `fedEncryptionKeyType` (a key of the new type), and `rotate-key`.
+  // Issuing is `pki.js`'s, and it awaits. Both callers take the promise.
+  async federationAction(body) {
+    const { log, federation, fedEncryption } = this.deps;
     log.debug("Entering AdminActions.federationAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
@@ -5325,9 +6167,26 @@ class AdminActions {
         log.debug("Leaving AdminActions.federationAction().");
         return this.refusedBy('STS-ADMIN-0575', result);
       }
+      // THE ENCRYPTION KEY A PARTNER ENCRYPTS TO (#168), for the three
+      // protocols that have one. A key that could not be issued leaves the
+      // relationship registered and says so; `rotate-key` issues one later.
+      let keyNote = '';
+      if (federation.encrypts(result.relationship)) {
+        const keyed = await fedEncryption.rotate(id,
+          'the encryption key was issued with the relationship');
+        keyNote = keyed.ok
+          ? ' Its encryption key, ' + keyed.kid + ', is issued: give the ' +
+            'partner the certificate or JWKS on its page.'
+          : ' ITS ENCRYPTION KEY WAS NOT ISSUED: ' +
+            (keyed.errors || []).join(' ') + ' Use rotate-key once the ' +
+            'cause is fixed.';
+        result.relationship = federation.get(id) || result.relationship;
+        result.readiness = federation.readinessOf(result.relationship);
+      }
       log.debug("Leaving AdminActions.federationAction().");
       return Object.assign({}, result, {
-        message: 'Registered, and DISABLED. Set what it needs — ' +
+        message: 'Registered, and DISABLED.' + keyNote + ' Set what it ' +
+          'needs — ' +
           (result.readiness.missing.length
             ? result.readiness.missing.join(', ')
             : 'nothing is missing') +
@@ -5352,7 +6211,40 @@ class AdminActions {
       });
       log.debug("Leaving AdminActions.federationAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
+      // A NEW KEY TYPE IS A NEW KEY (#168): the one held is of the old type
+      // and decrypts nothing under the new policy, so it is rotated out now
+      // and keeps its grace period like any other.
+      if (result.ok && String(body.field || '') === 'fedEncryptionKeyType' &&
+          federation.encrypts(result.relationship)) {
+        const current = federation.currentEncryptionKeyOf(
+          result.relationship);
+        const policy = federation.encryptionPolicyOf(result.relationship);
+        if (!current || current.keyType !== policy.keyType) {
+          const keyed = await fedEncryption.rotate(id,
+            'a key of the new type ' + policy.keyType + ' was issued');
+          return this.refusedBy('STS-ADMIN-0575', keyed.ok
+            ? Object.assign({}, result, {
+                relationship: federation.get(id),
+                readiness: federation.readinessOf(federation.get(id)),
+                message: result.message + ' ' + keyed.message })
+            : keyed);
+        }
+      }
       return this.refusedBy('STS-ADMIN-0575', result);
+    }
+
+    // ROTATE THE ENCRYPTION KEY (#168) — the console's Rotate button and
+    // `POST /admin-api/federation/rotate-key` (rule 7).
+    if (action === 'rotate-key') {
+      const result = await fedEncryption.rotate(id,
+        'the encryption key was rotated by an administrator');
+      log.debug("Leaving AdminActions.federationAction(). rotate-key " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0575', result.ok
+        ? Object.assign({}, result, {
+            relationship: federation.get(id),
+            readiness: federation.readinessOf(federation.get(id)) })
+        : result);
     }
 
     if (action === 'enable' || action === 'disable') {
@@ -5373,9 +6265,9 @@ class AdminActions {
 
     log.debug("Leaving AdminActions.federationAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500', { ok: false,
-             errors: ['Unknown action "' + action + '". The seven are: ' +
+             errors: ['Unknown action "' + action + '". The eight are: ' +
                            'create, set, add-value, remove-value, enable, ' +
-                           'disable, delete.'] });
+                           'disable, rotate-key, delete.'] });
   }
 
   async spiffeAction(body) {
@@ -5478,7 +6370,113 @@ class AdminActions {
     return this.spiffeUnknownAction(action, SPIFFE_ACTIONS);
   }
 
+  // ---------------------------------------------------------------------------
+  // RESET A PERSON'S PASSWORD AND HAND OVER THE KEYTAB DERIVED FROM IT (#59).
+  //
+  // THE ORDER IS THE ARGUMENT:
+  //
+  //   1. ASK THE REGISTER FIRST whether a keytab can be made for this person
+  //      at all — a KDC in this realm, an entry, an account not disabled —
+  //      so a refusal changes nothing. A password reset followed by "no
+  //      keytab" would have taken somebody's password away for nothing.
+  //   2. SET THE PASSWORD through `credentials.setPassword()`, the door every
+  //      other one uses, so the realm's password policy applies to a typed
+  //      one, the history is kept, and the observer derives the new keys at
+  //      the next kvno. A generated one (`random`) is drawn against the same
+  //      policy and NEVER SHOWN: the keytab is then the only credential that
+  //      opens the account until somebody sets a password again.
+  //   3. What a reset does to the rest of the account, as `reset-password`
+  //      does it: an outstanding reset link is spent (the administrator has
+  //      just decided what the password is), they are signed out of
+  //      everything, the act is audited and said over Shared Signals. **NOT
+  //      a forced change** — `pwdReset` is CLEARED, not set — because the
+  //      person changing the password would kill the keytab this was for.
+  //   4. THE KEYTAB, from the password just set (`personKeytab()`), which
+  //      waits for the derivation and checks it against what the KDC holds.
+  //
+  // A keytab refused AFTER step 2 is reported as exactly that — the password
+  // WAS changed — rather than as a refusal that implies nothing happened.
+  // ---------------------------------------------------------------------------
+  private async resetPersonKeytab(asked, ctx) {
+    const { log, credentials, auditLog, accountSignals, errorCodes,
+            krb5PersonKeys } = this.deps;
+    log.debug("Entering AdminActions.resetPersonKeytab().");
+    const who = String(asked.username || asked.user || '').trim();
+    const random = this.truthy(asked.random);
+    const typed = typeof asked.password === 'string' ? asked.password : '';
+    if (random === !!typed) {
+      log.debug("Leaving AdminActions.resetPersonKeytab(). Neither or both.");
+      return this.refused('STS-ADMIN-0802', { ok: false, errors: [
+        'Either give the new password in `password`, or set `random` for a ' +
+        'generated one that is never shown — one of the two, not both.'] });
+    }
+    const refused = krb5PersonKeys.personKeytabRefusal(who);
+    if (refused) {
+      log.debug("Leaving AdminActions.resetPersonKeytab(). The register " +
+                "refused before anything changed.");
+      return refused;
+    }
+    const password = random ? credentials.generatePassword(who) : typed;
+    // A typed password is screened against Pwned Passwords first (#62 P6).
+    if (!random) {
+      await require('../common/breached_passwords').screen(password);
+    }
+    const set = credentials.setPassword(who, password,
+                                        random ? { generated: true } : {});
+    if (!set.ok) {
+      log.debug("Leaving AdminActions.resetPersonKeytab(). The password was " +
+                "refused.");
+      return this.refusedBy('STS-ADMIN-0802', set);
+    }
+    credentials.setPasswordResetRequired(who, false);
+    credentials.consumePasswordReset(who);
+    const signedOut = this.signOutEverywhere(who, ctx,
+                                             'a password reset for a keytab');
+    auditLog.record({ category: 'admin', action: 'admin.password.reset-keytab',
+      actor: ctx.actor, target: who, outcome: 'success',
+      summary: 'an administrator reset the password of ' + who + ' to make ' +
+               'a Kerberos keytab',
+      detail: { username: who, via: ctx.via, generated: random,
+                sessionsEnded: signedOut.terminated } });
+    accountSignals.credentialChanged({ username: who,
+      credentialType: 'password', changeType: 'update', via: ctx.via,
+      reasonAdmin: 'An administrator reset the password of ' + who +
+                   ' to make a Kerberos keytab.',
+      reasonUser: 'Your password was reset by an administrator.' });
+    const made = await krb5PersonKeys.personKeytab(who, password, ctx);
+    if (!made || !made.ok) {
+      log.error(errorCodes.tag('STS-ADMIN-0803') + 'admin: the password of ' +
+                who + ' was reset for a keytab and the keytab could not be ' +
+                'made: ' + ((made && made.errors) || []).join(' '));
+      log.debug("Leaving AdminActions.resetPersonKeytab(). No keytab.");
+      return this.refused('STS-ADMIN-0803', { ok: false, passwordSet: true,
+        errors: ['The password of ' + who + ' WAS reset' +
+                 (random ? ' (to a generated one nobody was shown)' : '') +
+                 ', and signed them out, but the keytab could not be made: ' +
+                 (((made && made.errors) || []).join(' ') ||
+                  'the register gave no reason') + ' Set a password again ' +
+                 'to let them sign in with one.'] });
+    }
+    log.info('admin: the password of "' + who + '" was reset for a Kerberos ' +
+             'keytab by ' + (ctx.actor || 'an unnamed caller') + ' (' +
+             ctx.via + ').');
+    log.debug("Leaving AdminActions.resetPersonKeytab(). kvno " + made.kvno +
+              ".");
+    return Object.assign({}, made, {
+      passwordSet: true, generated: random, signedOut: signedOut,
+      message: 'The password of ' + who + ' was reset' +
+               (random ? ' to a GENERATED one that was not shown and ' +
+                         'cannot be — the keytab is now the only thing that ' +
+                         'signs them in, until a password is set again'
+                       : ' to the one you typed') +
+               ', they were signed out of everything, and they are not ' +
+               'asked to change it (that would end the keytab). ' +
+               made.message
+    });
+  }
+
   kerberosPrincipalsAction(body, context) {
+    const self = this;
     const { log, numberWord, realms, krb5PersonKeys } = this.deps;
     log.debug("Entering AdminActions.kerberosPrincipalsAction(). action=" +
               String((body || {}).action));
@@ -5499,6 +6497,23 @@ class AdminActions {
       result = krb5PersonKeys.dropPreviousServiceKeys(asked.spn, ctx);
     } else if (action === 'drop-previous-person-keys') {
       result = krb5PersonKeys.dropPreviousPersonKeys(asked.username, ctx);
+    } else if (action === 'rotate-krbtgt' ||
+               action === 'rotate-krbtgt-invalidate') {
+      result = this.deps.krbtgtRotation().requestRotation(realms.currentId(),
+        { invalidate: action === 'rotate-krbtgt-invalidate',
+          confirm: asked.confirm, requestedBy: ctx.actor, via: ctx.via,
+          channel: ctx.via === 'api' ? 'api' : 'console' });
+    } else if (action === 'reset-person-keytab') {
+      // A PROMISE, and the one action here that answers one: both callers
+      // resolve whatever this returns.
+      log.debug("Leaving AdminActions.kerberosPrincipalsAction(). " +
+                "Asynchronous.");
+      return this.resetPersonKeytab(asked, ctx).then(function (answer) {
+        if (answer && answer.ok) {
+          answer.trustRealm = realms.currentId();
+        }
+        return self.refusedBy('STS-ADMIN-0602', answer);
+      });
     } else {
       // THE HOUSE SENTENCE, which `tests/vendored/sts_admin_api_operations.js`
       // and `tests/vendored/admin_api.js` both READ.
@@ -5613,8 +6628,7 @@ export = {
   ROLE_MEMBER_KINDS: ROLE_MEMBER_KINDS,
   roleMemberKindOf: slot.forward('roleMemberKindOf'),
   rolesAction: slot.forward('rolesAction'),
-  passwordPoliciesAction: slot.forward('passwordPoliciesAction'),
-  PASSWORD_POLICY_ACTIONS: PASSWORD_POLICY_ACTIONS,
+  policiesAction: slot.forward('policiesAction'),
   DEFAULT_CREDENTIAL: DEFAULT_CREDENTIAL,
   claimsAction: slot.forward('claimsAction'),
   sweepText: slot.forward('sweepText'),
@@ -5639,6 +6653,7 @@ export = {
   SPIFFE_ENTRY_ACTIONS: SPIFFE_ENTRY_ACTIONS,
   SPIFFE_AGENT_ACTIONS: SPIFFE_AGENT_ACTIONS,
   spiffeUnknownAction: slot.forward('spiffeUnknownAction'),
+  spiffeBrokersAction: slot.forward('spiffeBrokersAction'),
   spiffeEntriesAction: slot.forward('spiffeEntriesAction'),
   SPIFFE_FIELD_ATTRIBUTES: SPIFFE_FIELD_ATTRIBUTES,
   fieldToAttribute: slot.forward('fieldToAttribute'),

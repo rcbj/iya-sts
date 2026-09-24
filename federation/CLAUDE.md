@@ -8,7 +8,10 @@ Federation relationships: this service as either end of one, in five protocols.
 | `federation_map.ts` | What a foreign identity provider SAID, turned into directory attributes. The default mapping table and the username rule. A library. **Not to be confused with `../admin-ui/federation_diagram.ts`**, which draws the picture — the near-collision is why that file is not called `federation_map.ts` too. |
 | `federation_graph.ts` | **This realm's register as a GRAPH**, for `/admin/federation/map`. Three bands, and the bands are a claim about direction. A library: it registers nothing, and nothing here requires it back. |
 | `federation_http.ts` | **The first and strongest of this repository's outbound requests.** A library, and the narrowest one here. Since 2026-09-17 also `deliverForm()` (the back-channel Logout Token's POST), `fetchPublished()` (a trusted issuer's status list) and the product-mode internal-address check every outbound requester shares. |
-| `federation_sp.ts` | The four endpoints. The service-provider half — the one place this service CONSUMES what somebody else issued. |
+| `federation_sp.ts` | The five endpoints. The service-provider half — the one place this service CONSUMES what somebody else issued — and `subjectDecision()`, which says which local person a verified subject may become (#109). |
+| `federation_slo.ts` | **A partner's sign-out, in both directions** (#167): `/federation/slo/{id}`, `/federation/backchannel-logout/{id}` and `/federation/frontchannel-logout/{id}`, and what `logout/logout.ts` draws to tell a partner of a sign-out here. See *A PARTNER'S SIGN-OUT* below. |
+| `federation_links.ts` | **The link between a partner's subject and a person** (#109): the `federationLink` format, the stable subject a verified response carries, the one check a requested link goes through (console, `/admin-api`, SCIM), and what removing one ends. A static utility class. |
+| `federation_encryption.ts` | **What a partner encrypts to** (#168): each relationship's encryption key — issued under the realm's Intermediate, sealed, rotated with a grace period, retired by the scheduler job `federation.encryption-key-retire`, published — and the policy a partner's `EncryptedAssertion`, `EncryptedID`, `EncryptedAttribute`, WS-Federation token and JWE ID Token or Logout Token is decrypted under. A static utility class. See *A PARTNER'S ENCRYPTED ASSERTION* below. |
 
 ---
 
@@ -54,15 +57,26 @@ it configures is a KEY.**
   (now required) and ADDRESSED TO this service** — see *Three checks that could be
   skipped* below. Both used to lapse with a warning.
 
-**Once past that, the gate asks nothing about the person.** Any person the
-partner names is accepted and any attribute is mapped. Whether a directory entry
-is CREATED for somebody nobody provisioned depends on the mode: development
-creates one unless the relationship's `fedAutocreateUsers` is off; product
-creates nothing (`mode.autoCreates()`), so the person must already exist or the
-sign-in is refused `STS-FED-0090`, and the partner's attributes are written onto
-the entry that does.
-**The gate is on the SIGNER, not on the subject**, which is exactly the line
-`spiffe_auth.js` draws and for the same reason.
+**And since #109 (2026-09-22) the gate is on the SUBJECT too.** It said "the
+gate is on the SIGNER, not on the subject" until then, and meant it: any person
+a verified assertion named was signed in, matched onto a local entry by NAME,
+and the partner's attributes were written onto that entry inside
+`authn.startSession()` before any refusal could be reached — so an enabled
+partner could sign in `admin` and overwrite admin's `mail` on the way. See
+*WHICH PEOPLE A PARTNER MAY ASSERT* below: a partner signs in only the person
+its subject is linked to, and nothing is written until that is decided.
+
+**AND SINCE #134 (2026-09-23) THE KEY MAY BE A TRUST ANCHOR'S.** An `oidc`
+relationship with `fedTrustAnchor` names only its OP's Entity Identifier and
+one of the realm's Trust Anchors (`oidfed/oidfed_rp.ts`). The OP's endpoints
+and keys are the `openid_provider` metadata that a chain of signatures,
+ending at that anchor's CONFIGURED key, vouches for. So the rule still holds:
+nothing is trusted that does not verify against a key an administrator put
+here. What has moved is WHICH key — the anchor's, on `/admin/oidfed` — and
+everything below it is believed because it is signed. `fedPeer` is still
+required, and it is still the issuer an ID Token must name. `fedTokenUrl` and
+`fedJwksUri` are still the only attributes dialled. They now carry values the
+verified chain supplied, never values a request supplied.
 
 ---
 
@@ -722,9 +736,9 @@ needs to change it is a separate argument in a separate function, never a fourth
 name quietly added to that array.
 
 Five more things are enforced there and each is a different failure:
-`federation.outbound` turns it all off; **https only** unless
-`federation.outboundAllowInsecure` says otherwise, warned per REQUEST and not
-merely per setting; **no redirects are followed** (a 302 from a token endpoint
+`federation.outbound` turns it all off; **https only, with the partner's
+certificate verified** — see *The transport policy* below — warned per REQUEST
+and not merely per setting wherever it is relaxed; **no redirects are followed** (a 302 from a token endpoint
 would hand the credential in the `Authorization` header to whatever `Location`
 said — the same SSRF arriving through the front door); the body is capped and the
 request is timed out, because a browser is waiting on it; and **nothing that
@@ -762,13 +776,43 @@ that was checked.** That check and that resolution MOVED HERE on the same day
 them made this module — the owner of the outbound policy — the place for one
 copy; `oauth-oidc/protected_resource_metadata.ts` now asks for them and keeps
 its own refusal codes. Everything else above holds for `deliverForm()` too:
-the kill switch, https unless `federation.outboundAllowInsecure`, no redirect,
+the kill switch, the transport policy, no redirect,
 the cap, a timeout (the caller's, `oauth2.backchannelLogoutTimeoutMs`). **Its
 URL comes off a record by an attribute name from its OWN list, `SENDABLE`**
 (`oauthBackchannelLogoutUri`), and it refuses a name from `DIALLABLE` exactly as
 `fetchJson()` refuses one from `SENDABLE`: neither list borrows the other's
 names. It answers a `kind` rather than a code, so the caller names each
 failure in its own subsystem (`STS-OAUTH-0532..0540`).
+
+### The transport policy: three settings where there was one (#171, 2026-09-23)
+
+`federation.outboundAllowInsecure` allowed plain http AND turned certificate
+verification off, and product mode honoured it — on the one family where a
+client secret and an authorization code leave the process. It is three
+settings now, asked through `common/outbound_tls.ts` (shared with GNAP, SSF and
+XACML; its header argues why the policy lives in `common/` and not here):
+
+* `federation.outboundAllowHttp` — plain http, **development only**. Product
+  refuses it whatever the setting says (`STS-FED-0112`): no specification a
+  partner speaks names a loopback exception, and GNAP's is GNAP's.
+* `federation.outboundSkipTlsVerification` — verification off, **development
+  only**, warned on every request. In product it is ignored (`STS-FED-0113`,
+  once per process) and refused on write (`STS-CORE-0103`, `common/config.js`'s
+  `onlyWhile` marker).
+* `federation.outboundCaFile` — a PEM file of CA certificates a partner may
+  chain to, beside node's store. A file that cannot be read refuses the request
+  (`STS-CORE-0104`, and `kind: 'ca-file'` from `deliverForm()`,
+  `fetchPublished()` and `requestConfigured()`).
+
+**Every requester that borrows this policy asks `tlsFor(origin)` here** — the
+SAML SP metadata refresh, the RFC 9728 import, the Logout Token, a status list,
+the SPIFFE node attestors — rather than reading a setting of its own.
+`requestConfigured()` keeps one difference: an `opts.ca` the attestor passes (a
+cluster's CA) REPLACES node's store as it always did, and the CA file is asked
+only when there is none. `opts.skipVerify` (SPIRE's `skip_kubelet_verification`)
+is honoured only while `mode.skipsOutboundTlsVerification()` says so; the
+attestor asks first, and says once when product ignores it (`STS-SPIFFE-0116`).
+The removed key refuses to start (`STS-CORE-0105`).
 
 ### `fetchPublished()`: the third function, and a URL a CALLER supplied (2026-09-17)
 
@@ -788,8 +832,8 @@ credential of ours naming somebody else's list is refused rather than followed.
 What comes back is verified against the same certificate, so nothing that
 arrives is believed on its own say-so (point 5 above).
 
-It keeps every other rule here — the kill switch, https unless
-`federation.outboundAllowInsecure`, the internal-address check with the
+It keeps every other rule here — the kill switch, the transport policy, the
+internal-address check with the
 connection pinned in product mode, the body cap, the timeout — and it follows
 NO REDIRECT, which the status-list draft's section 8.2 says a client SHOULD do
 and its section 11.4 says is where the risk is: a list that has moved is a
@@ -907,11 +951,15 @@ for nothing at all.
 
 ## WHAT A FEDERATED SIGN-IN WRITES, AND THE ONE FUNNEL IT GOES THROUGH
 
-`completeSignIn()` does four things in an order that is not arbitrary: map, then
-the relationship's counters, then the partner's application record, then the
-session — **last**, because it is the thing that has an effect outside this
-process and everything above it is a record of why. The identity funnel runs
-inside that last step, as the next paragraph explains.
+`completeSignIn()` does five things in an order that is not arbitrary: map,
+then **check the subject** (#109 — `subjectDecision()`, which writes nothing and
+may send the person to sign in here first), then the relationship's counters,
+then the partner's application record, then the session — **last**, because it
+is the thing that has an effect outside this process and everything above it is
+a record of why. The identity funnel runs inside that last step, as the next
+paragraph explains, and it is where the LINK and the partner's attributes are
+written — which is why the subject check has to come before it. The last three
+are `finishSignIn()`, which the linking step calls too.
 
 **It calls `authn.startSession()` and NOT `stats.recordAuthentication()`.** It
 was written the other way round first and produced TWO authentication records
@@ -1010,7 +1058,10 @@ because doing it silently would be this repository teaching the mistake.
 
 `app.js` sets `script-src 'none'` for the whole service, and seven pages relax
 it by naming one resource (the root `CLAUDE.md` lists them). **This feature adds
-none.**
+none.** The one policy change it makes is on the front-channel logout page
+(#167), which is loaded in the PARTNER's iframe: `frame-ancestors` names the
+partner's origin there, through `app.framedContentSecurityPolicy()` —
+narrowed, never dropped — and that page carries no script either.
 
 The obvious candidate is the outbound HTTP-POST binding, which everywhere else
 in this service auto-submits. It is a REAL FORM WITH A REAL BUTTON here, and the
@@ -1025,12 +1076,13 @@ provider**, which is exactly the moment a deliberate click is worth having.
 
 | It does not | Why |
 |---|---|
-| Decrypt an `<EncryptedAssertion>` | A partner configured to encrypt produces a Response with no `<Assertion>`, which is refused with that cause NAMED — the failure would otherwise read as "the partner sent nothing". Same gap `/saml2` has in the other direction. |
+| ~~Decrypt an `<EncryptedAssertion>`~~ — **reversed 2026-09-23 (#168)** | See *A PARTNER'S ENCRYPTED ASSERTION*. Product mode now refuses a PLAINTEXT one unless `fedAllowUnencrypted`. |
 | Verify the partner's certificate against a CA, or check its validity dates | `fedSigningCertificate` is trusted because an administrator pasted it there. It is a pinned key, not a chain, and pinning is the stronger of the two for this purpose. **Its REVOCATION is checked since 2026-09-12** — the one question a pin cannot answer — see *The signature check is the line*. |
-| Consume a federated SIGN-OUT | A `wsignout1.0` or a `<LogoutRequest>` arriving at the ACS is refused with that named. This service can END sessions (`/logout`) and can FAN OUT its own sign-outs; being told by a partner that somebody signed out elsewhere is a third thing and is not built. |
+| ~~Consume a federated SIGN-OUT~~ — **reversed 2026-09-23 (#167)** | See *A PARTNER'S SIGN-OUT*. The ACS still refuses a sign-out sent to it (`STS-FED-0024`) and names the path that consumes one. |
 | Refresh anything | The tokens a partner issues are used once, to learn who the person is, and are then discarded. Nothing here holds a refresh token belonging to somebody else's service. |
-| Re-verify a person on a later request | The session is this service's from the moment it is created. A partner that revokes somebody five minutes later is not consulted, and nothing here polls. |
-| Restrict WHICH people a partner may assert | Any person in a verified assertion is accepted — created on first sight in development, required to exist already in product. The gate is on the signer; see the top of this file. |
+| Re-verify a person on a later request | The session is this service's from the moment it is created, and nothing here polls the partner. What reaches it since #167 is what the partner SENDS — its sign-out, which ends the session — and what it SAID at sign-in: a SAML `SessionNotOnOrAfter` bounds the session. |
+| Act as an OpenID Connect Session Management relying party (#167, rcbj's decision 3) | Polling a partner's `check_session_iframe` needs a script in this service's page, the root `CLAUDE.md` admits a script only where a page cannot work without one, and Back-Channel Logout already tells this relying party what that script would find out. |
+| ~~Restrict WHICH people a partner may assert~~ — **reversed 2026-09-22 (#109)** | See *WHICH PEOPLE A PARTNER MAY ASSERT*. |
 | Federate the ADMIN CONSOLE's roles | A federated sign-in produces a session like any other, so a federated identity holding `admin-write` in the directory reaches `/admin`. The partner does not decide that — `ldap_server.js` and `admin_rbac.js` do, from group membership, exactly as for a local sign-in. |
 
 ---
@@ -1170,6 +1222,184 @@ implementation, a shared misunderstanding about, say, which element the
 signature covers would pass and interoperate with nobody — and on this surface
 that misunderstanding is not a fidelity problem, it is the hole.
 
+## A PARTNER'S SIGN-OUT (#167, 2026-09-23)
+
+The partner is the authority on the person's sign-on, and its sign-out message
+is the only signal that reaches this service when it ends a session — a
+sign-out there, an account disabled at the source. Until #167 that message was
+refused at the ACS and dropped, and the partner's SAML `SessionNotOnOrAfter` was
+never read, so a session here — and every token issued from it — outlived the
+partner's by hours. `federation_slo.ts` is the fix, and its header carries the
+five decisions; what follows is what a reader of this directory needs beside
+them.
+
+**WHAT A SIGN-IN KEEPS.** `federation_sp.ts`'s `partnerSessionOf()` builds
+`fedPartnerSession` — the relationship, the protocol, the issuer, the SAML
+NameID whole (format and both qualifiers) and SessionIndex, the OpenID Connect
+`sub` and `sid`, and the ID Token itself only while `fedEndSessionUrl` is set
+(it is the `id_token_hint`, and a signed statement about a person is not held
+for nothing) — and `authn.startSession()` keeps it ON THE SESSION
+(`authn.ts`'s `bindPartnerSession()`). The session store is persisted and
+replicated, so any node can match a partner's sign-out, and no index beside
+the store can disagree with it. `sessionBoundOf()` reads `SessionNotOnOrAfter`
+(a SAML 2.0 token inside WS-Federation too) with the clock-skew allowance an
+assertion's window gets, refuses one that has passed (`STS-FED-0131`), and
+hands the rest to `startSession()` as the session's latest end — the absolute
+expiry `sessionEnded()` already reads, so nothing else had to learn it.
+
+**WHAT IS MATCHED, AND ONLY THAT** (rcbj's decision 4): the federated sessions
+of THIS relationship carrying the NameID (and one of the SessionIndex values,
+where the request lists any — saml-core-2.0-os section 3.7.3.2) or the `sid`
+(and the `sub`, where the token carries one). A local sign-in of the same
+person is untouched, and so is a session another partner started. A verified
+sign-out that matches nothing is recorded (`STS-FED-0122`) — a partner looping
+on a sign-out for a session that already ended looks exactly like one that
+works — and answered `Requester`/`UnknownPrincipal` (SAML) or 200 (the two
+OpenID Connect channels: there is nothing left to end, and a 400 would make
+the partner retry forever).
+
+**HOW IT ENDS: `logout/logout.ts`'s `endPartnerSession()`**, a selective
+`terminate()` of the session and the relying parties riding on it, so the
+cascade is the one every sign-out has — this service's own Back-Channel Logout
+Tokens and CAEP `session-revoked` from `authn.dropSession()`, and, where a
+browser brought the message, the front-channel iframes, cleanup images and
+LogoutRequest links drawn on the page before the answer goes back to the
+partner. The `federation-partner` row is never selected there: it would send
+the partner its own sign-out back. `federation.signout` is the audit row.
+
+**THE REPLAY HISTORY IS THE ASSERTION HISTORY** (rule 3ae): a LogoutRequest's
+`ID` (format `saml-message`) and a Logout Token's `jti` are spent in
+`common/used_assertions.js` under the use `federated-logout`, until the
+message's own expiry or `federation.requestTtlMin` past its issue instant,
+whichever is later — the same span the freshness check allows, so there is no
+gap. Fail closed: a history that cannot be asked refuses (`STS-FED-0121`,
+503, and the partner retries). Its expired rows go by that module's own
+scheduler job; nothing here arms a timer.
+
+**TELLING THE PARTNER.** `/logout` in the person's browser runs the
+`federation-partner` family (`endOrder` 13, before the session it reads), whose
+`partnerLogoutFor()` mints a context in `federation_sp.ts`'s request-context
+store — decision 3 there, and one store: a LogoutRequest in flight is an
+in-flight flow exactly as a sign-in is — and draws a link or a form: a signed
+`<LogoutRequest>` (the Redirect binding's detached signature from
+`common/crypto.js`'s `signQueryString()`, or an enveloped one on a real form),
+RP-Initiated Logout with `id_token_hint`, or `wsignout1.0`. The answer comes back
+to `/federation/slo/{id}` and is matched once — `InResponseTo` and `RelayState`,
+or `state` (`STS-FED-0124`, `STS-FED-0134`). `/admin/logout` and the API have no
+browser of the person's to send there, so the row is listed and not terminable.
+
+**THE RELATIONSHIP'S FIVE FIELDS** — `fedSloUrl`, `fedSloBinding`,
+`fedEndSessionUrl`, `fedAcceptSignout` (on by default; off refuses every
+sign-out, `STS-FED-0123`) and `fedRequireSignedLogout` (on by default; off is
+development only, `mode.acceptsUnsignedFederatedLogout()`, and refused on write
+in product, `STS-FED-0132`) — are schema rows, so the console and
+`/admin-api/federation/set` take them alike (rule 7); the two switches are drawn
+with the others. The relationship view (`endpoints`) names what to register at
+the partner: `singleLogout`, `signOutCleanup`, or `backchannelLogout`,
+`frontchannelLogout` and `postLogoutRedirect`.
+
+**WHAT IS NOT HERE.** SAML 1.1 and OAuth 2.0 define no sign-out
+(`STS-FED-0135`). An `<EncryptedID>` in a LogoutRequest and an encrypted Logout
+Token are DECRYPTED since #168 — with the relationship's own key, after the
+signature over the ciphertext has verified for the first and before the
+signature inside is verified for the second. A Logout Token is verified by
+`verifyForeignJwt()`, so it admits
+exactly the algorithms an ID Token does — RSA and EC, narrowed by
+`federation.jwtAlgorithms`; a post-quantum partner JWT is not verified there yet.
+A SAML logout message is verified by `common/crypto.js`'s section 1a, which does
+cover ML-DSA and SLH-DSA.
+
+`tests/federation_signout.js` holds it in process, in both modes (a genuine
+Logout Token from another realm's OpenID Provider among it);
+`tests/vendored/sts_federation_signout.js` over HTTP.
+
+## A PARTNER'S ENCRYPTED ASSERTION (#168, 2026-09-23)
+
+Until #168 an `<EncryptedAssertion>` was refused as "no assertion", a JWE ID
+Token was read as a JWS and failed on the key, and no key was published — so
+the only way to federate was for the partner to send the person's NameID, mail
+and groups IN CLEAR through their browser. `federation_encryption.ts` is the
+fix; its header carries the argument, and what follows is what a reader of this
+directory needs beside it.
+
+**ONE KEY PER RELATIONSHIP** (decision 2 on the issue): a SAML 2.0,
+WS-Federation or OpenID Connect service-provider-side relationship gets a key
+pair when it is CREATED — the console's and `/admin-api`'s create, which is why
+`admin-core`'s `federationAction()` is asynchronous now — issued by
+`common/pki.js`'s `issueEncryptionKeyPair()` under the realm's Intermediate:
+keyEncipherment for RSA 3072, keyAgreement for EC P-256, never
+digitalSignature. A relationship created by `ldapmodify` has none until it is
+rotated. SAML 1.1 has no encryption construct and a plain OAuth 2.0
+relationship reads no ID Token, so neither has a key or the four fields.
+
+**THE KEY TABLE IS `fedEncryptionKey`**, one JSON row per key: kid, key type,
+`current` or `previous`, the certificate and chain, `retiresAt`, and the
+private key — sealed (`keystore.seal()`, label `federation-encryption-key`)
+wherever keys persist and refused rather than written in clear where they
+persist and nothing can seal. It is not editable, is in `ldap_server.js`'s
+`SECRET_ATTRIBUTES`, is shown on `/admin/ldap/directory` with the private key
+taken out, and is `(set — not returned)` in the API's `fields`; the
+`encryption` member of the relationship view is the public half. **The key
+type is a column** so a hybrid post-quantum row can sit beside a classical one
+when a method is registered — there is none yet for XML Encryption, and JOSE's
+(draft-ietf-jose-pqc-kem) is a draft.
+
+**THE FOUR FIELDS** — `fedEncryptionKeyType` (rsa-3072 for SAML 2.0 and
+WS-Federation, ec-p256 for OpenID Connect), `fedKeyManagementAlgorithm`
+(`rsa-oaep` — XML Encryption 1.1's, SHA-256 and MGF1-SHA-256 — or `ecdh-es`;
+`RSA-OAEP-256`, `RSA-OAEP`, `ECDH-ES`, `ECDH-ES+A128KW`, `ECDH-ES+A256KW`),
+`fedContentEncryptionAlgorithm` (`aes256-gcm`/`aes128-gcm`,
+`A256GCM`/`A128GCM`) and `fedAllowUnencrypted` — are written onto the entry at
+create and are what the relationship ACCEPTS: exactly one of each, the one its
+metadata or JWKS publishes. AES-CBC in either family and `rsa-1_5`/`RSA1_5`
+are refused in every mode, on the write (`STS-FED-0139`) and on a document
+(`STS-FED-0139`, before any key operation); a value the key cannot do is
+`STS-FED-0143`. Setting a new key type issues a key of that type at once, as a
+rotation.
+
+**DECRYPTING** is `common/crypto.js`'s `decryptElement()` and
+`decryptJweCompact()` under the relationship's allow-list. The SAML path opens
+the token first (`openToken()`: one assertion or one encrypted one, never
+both, `STS-FED-0147`), verifies the assertion's signature on its PLAINTEXT and
+the Response's on the ciphertext as it arrived, and only then decrypts an
+`<EncryptedID>` or `<EncryptedAttribute>` in it (`openEncryptedParts()`). The
+OpenID Connect path decrypts and requires a signed JWT inside (Core section
+10.2; `STS-FED-0141`), then verifies it exactly as an unencrypted one; the
+signed token from inside is what is kept as the `id_token_hint`, as
+RP-Initiated Logout 1.0 section 2 asks. **Every decryption failure is `STS-FED-0138` with one
+sentence**, so the ACS is no oracle; which step failed is in the log. A JWE
+access token at a plain OAuth 2.0 relationship is `STS-FED-0141`.
+
+**PLAINTEXT** is refused in product (`STS-FED-0140`,
+`mode.acceptsUnencryptedFederatedAssertions()`) for what crosses the browser —
+a SAML 2.0 Response, a WS-Federation wresult, an id_token by form_post — unless
+`fedAllowUnencrypted`, whose schema row carries the warning. An ID Token
+redeemed at the partner's token endpoint crosses no browser and is not asked
+about (a narrowing of the issue's plan, argued in mode.js). In product a
+relationship that would refuse plaintext and holds no key is NOT READY and says
+`fedEncryptionKey`.
+
+**ROTATION** (`rotate-key` on the console and `/admin-api`) makes a new key
+current and keeps the one it replaced for `federation.encryptionKeyGraceS`
+(one previous key, never two); past it the key decrypts nothing — checked at
+the read — and `federation.encryption-key-retire` (cluster, realm, five
+minutes) removes it. Only the current key is published.
+
+**PUBLICATION**: `KeyDescriptor use="encryption"` with the EncryptionMethods
+accepted, in the SAML 2.0 metadata and in the WS-Federation relationship's own
+metadata document (a `fed:ApplicationServiceType` RoleDescriptor, WS-Federation
+1.2 section 3.1, new with #168); `/federation/jwks/{id}` for OpenID Connect,
+`use: enc`, `no-store`; the certificate PEM, the JWKS URL and the two
+registration members on the relationship's page.
+
+**THIS SERVICE'S OWN IDENTITY PROVIDER ENCRYPTS TO IT**: `rsa-oaep` joined
+`saml2.keyTransportAlgorithm`, and an EC `samlEncryptionCertificate` is
+encrypted to by ECDH-ES rather than failing into plaintext (`STS-SAML-0012`).
+
+`tests/federation_encryption.js` holds it in process, in both modes;
+`tests/vendored/sts_federation_encryption.js` over HTTP, with an XML
+Encryption and JWE implementation of its own.
+
 ## HOME REALM DISCOVERY, and it is NOT in this directory
 
 Nothing here decides who gets sent to a partner. A relationship says how to
@@ -1232,6 +1462,97 @@ which two are disabled works perfectly and draws no page at all. There is no
 banner to put those two problems on, and the flow succeeding is exactly why
 nobody would go looking — so `beginAuthentication()` writes them at INFO.
 
+## WHICH PEOPLE A PARTNER MAY ASSERT (#109, 2026-09-22)
+
+**THE LINK.** A person carries one `federationLink` value per partner subject
+that signs them in, `<relationship> <issuer> <subject>` (`federation_links.ts`).
+The issuer is the partner the relationship names and every protocol branch has
+already verified (`fedPeer`); the subject is its stable identifier for the
+person. OpenID Connect Core section 5.7: "`sub` and `iss`, used together, are
+the only Claims that an RP can rely upon as a stable identifier for the
+End-User", and `email` and `preferred_username` MUST NOT be used as unique
+identifiers — a relationship whose `fedUsernameSource` is `email` folded onto
+whichever local entry had that name. SAML 2.0 Core section 8.3.7 scopes a
+persistent NameID to one identity provider and one service provider and has it
+LINKED to a local account; how and when is the service provider's, and this
+service picks the strictest mapping. A transient NameID (section 8.3.8) is
+refused `STS-FED-0096`: nothing about it outlives the exchange. The relationship
+id is IN the value so that a link is a statement about one relationship —
+deleting it, or pointing its `fedPeer` at somebody else, and its links stop
+matching rather than following the id. `federationSubject`, which recorded
+subjects without saying which partner asserted each, was dropped with no
+migration (rcbj).
+
+**THE DECISION** is `federation_sp.ts`'s `subjectDecision()`, asked right after
+the mapping and before the session:
+
+1. **A link is found first, whatever the policy.** It signs in the person it
+   names even where the partner's name for them has changed — which is 5.7's
+   whole point. A link carried by two entries is refused (`STS-FED-0097`).
+2. **An unlinked subject is `fedSubjectPolicy`'s** — rcbj's four:
+   `link-at-first-sign-in` (the default, and what an empty value means): one
+   naming an existing person sends that person to THIS service's sign-in screen
+   (`beginLinking()`), the name locked on the pending record, a password and a
+   second factor wherever one is held or required — `authn.ts` asks exactly as
+   it asks anybody — and only when that comes back to `/federation/link/{handle}`
+   (`linkEndpoint()`) is the link recorded, the partner's attributes written and
+   the federated session started; one naming nobody gets a namespaced entry.
+   `pre-linked`: refused (`STS-FED-0091`). `jit-namespaced`: a NEW entry
+   `<relationship>~<name>`, never an existing person (a namespaced name already
+   taken without the link is `STS-FED-0098`). `any-existing`: the old name
+   match, development only — `mode.matchesFederatedNames()`; product refuses
+   the value at `update()` (`STS-FED-0095`) and a relationship carrying it
+   anyway at the sign-in (`STS-FED-0094`). An unknown value (only `ldapmodify`
+   can write one) reads as `pre-linked`, the strictest.
+3. **The rules and the administrator refusal apply to every answer, a link
+   included** (`subjectRules()`): `fedSubjectGroup`, `fedSubjectDomain` (the
+   address the partner SENT and the entry's own), `fedSubjectPattern` (the
+   entry's DN, whole; bounded where it is written — `subjectPatternProblem()`
+   — because node has no regex timeout) — all `STS-FED-0092`; and a member of
+   the realm's console roster or a holder of `REMOTE_PEPS` is refused
+   `STS-FED-0093` unless `fedMayAssertAdministrators`, rcbj's decision 2: a
+   partner's signing key must not be a key to the console, link or no link.
+
+A refusal writes an audit row naming the relationship, the subject and the rule,
+draws the refusal page, and **writes nothing on any entry** — the ordering bug
+the plan found was the partner's attributes written inside `startSession()`
+before `STS-FED-0090` or `STS-FED-0044` could be reached.
+
+**WHY THE LINKING STEP IS A RETURN ADDRESS AND NOT A SLOT.** The verified
+response is held in the request-context store under a single-use handle, the
+pending sign-in's `returnTo` is `/federation/link/{handle}`, and the sign-in
+screen does what it always does. The linking step then asks five things
+(`linkEndpoint()`'s header): the handle; **the browser** — a cookie,
+`sts_fed_link`, whose SHA-256 is on the context, set when the partner's
+response arrived (`STS-FED-0111`), because without it the step is
+account-linking CSRF: somebody signs in at the partner under a name they
+chose, hands the victim the sign-in screen's address, and the victim's own
+password links the attacker's partner account to the victim; no `authn_error`
+(Cancel is `STS-FED-0099`); a session whose LATEST authentication event is a local one
+made through that screen (`via` `Federation link`), as that person, after the
+partner answered (`STS-FED-0101`), and the subject decision again. No hook from
+`authn.ts` back into this module (4b forbids the require), and no state a
+cluster node could not read.
+
+**CREATING ANYBODY** is the decision's call as well as the switch's: the
+funnel carries `create` and `autoCreateUser()` makes nobody without it, so a
+sign-in sent to an existing person can never create one because the entry
+went in between. Every entry a sign-in creates is namespaced — rcbj's
+"development's auto-create becomes this shape". Product still creates nobody
+(`mode.autoCreates()`), so in product `jit-namespaced` refuses an unlinked
+subject exactly as `STS-FED-0090` always did.
+
+**UNLINKING** — the console's *Federation links* panel, `POST /admin-api/users/
+federation-unlink`, SCIM, `ldapmodify` — goes through the directory's write
+hook (`noteAccountChange()`), which hands every removed value to
+`federation_links.ts`'s `linksRemoved()`: after the write is answered, every
+live session whose authentication events name that relationship and subject is
+ended through `authn.endSessionById()`. `account_state.ts`'s arrangement for a
+lock, and for its reason: the consequence must not depend on the door.
+
+`tests/federation_subject_policy.js` holds all of it in process, in both modes;
+`tests/vendored/sts_federation_subject_policy.js` over HTTP.
+
 ## DYNAMIC PROVISIONING, PRE-PROVISIONING, AND WHETHER A PARTNER'S ATTRIBUTES WIN (2026-09-14)
 
 rcbj wants both shapes on the service-provider side of every relationship, each a switch
@@ -1239,7 +1560,7 @@ on the relationship's page (the same list of switches every protocol's relations
 
 | Switch | On (default) | Off |
 |---|---|---|
-| `fedAutocreateUsers` | the first sign-in CREATES the person's entry — no SCIM needed | the entry must ALREADY exist (SCIM, `/admin/users/new`, `/admin-api`); a sign-in for somebody who has none is refused 403 *has not been provisioned* (`STS-FED-0090`, with `STS-AUTHN-0180` on the session refusal) |
+| `fedAutocreateUsers` | the first sign-in CREATES the person's entry — `<relationship>~<name>` and linked, since #109 — no SCIM needed | the entry must ALREADY exist (SCIM, `/admin/users/new`, `/admin-api`) and be linked, or be linked at first sign-in; a sign-in for somebody who has none is refused 403 *has not been provisioned* (`STS-FED-0090`, with `STS-AUTHN-0180` on the session refusal) |
 | `fedUpdateUserAttributes` | a returning person's attributes are overwritten from the latest assertion or token — what this service always did | the partner's values are written only when the sign-in CREATES the entry; a pre-provisioned or since-edited person keeps what the directory says |
 
 **Off used to mean "a session and no entry", and a stable subject is why it cannot.** A
@@ -1260,3 +1581,16 @@ that form, so a relationship to one wants `fedUsernameSource` set.
 of one process — the default realm's OpenID Provider and a service-provider realm of its
 own — through dynamic provisioning, a refused unprovisioned person, a person pre-provisioned
 over SCIM, and the refresh switch in both positions.
+
+## THE WS-FEDERATION RELATIONSHIP'S METADATA WAS SCHEMA-INVALID (#188, 2026-09-24)
+
+`wsfedMetadata()` published a `fed:ApplicationServiceType` RoleDescriptor
+holding only `fed:PassiveRequestorEndpoint`. WS-Federation 1.2's schema makes
+`fed:ApplicationServiceEndpoint` REQUIRED (`minOccurs="1"`) and first in that
+type's sequence, so a validating importer refused the document outright. It
+now carries both, naming the relationship's one address, as AD FS's own
+relying-party documents do. `tests/vendored/sts_xml_schema_validation.js`
+found it and validates every document this module emits — the SAML 2.0,
+SAML 1.1 and WS-Federation relationship metadata, the outbound AuthnRequest
+on both bindings and the outbound LogoutRequest — against the published
+OASIS schemas (`tests/CLAUDE.md`, *The published XML Schemas*).

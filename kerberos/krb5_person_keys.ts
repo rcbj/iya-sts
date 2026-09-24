@@ -171,6 +171,11 @@ import kcrypto = require('./krb5_crypto');
 import prim = require('./krb5_primitives');
 import principals = require('./krb5_principals');
 import keytab = require('./krb5_keytab');
+// FAST, OTP PRE-AUTHENTICATION AND AUTHENTICATION INDICATORS (#173). Built
+// here and handed to the KDC INSIDE the key source, so `krb5_kdc.js` reaches
+// it through the slot it already reads and gains no require (see
+// `installSlots()`).
+import Krb5Fast = require('./krb5_fast');
 
 // A stored record, an info value, a directory row: JSON this file wrote.
 type Json = any;
@@ -192,13 +197,21 @@ interface PrincipalDatabase {
   readonly REALM: string;
   readonly KDC_ETYPES: number[];
   readonly seedsDemoPrincipals: boolean;
+  readonly KVNO: number;
+  // Whether this realm's krbtgt is derived from krb5.krbtgtPassword (#169).
+  readonly krbtgtFromPassword: boolean;
   userSalt(realm: string, name: string): string;
   enabledIn(realmId: string): boolean;
   kerberosRealmOf(realmId?: string): Json;
+  find(name: string[], realm?: string): Json;
+  longTermKey(principal: Json, etype: number): Promise<Uint8Array>;
   setKeySource?(source: {
     personKeys(name: string): Json;
     serviceKeys(spn: string): Json;
+    krbtgtKeys?(): Json;
     personDisabled?(name: string): boolean;
+    personSecondFactor?(name: string): Json;
+    fast?: Krb5Fast;
   }): unknown;
 }
 
@@ -206,6 +219,7 @@ interface PrincipalDatabase {
 interface CredentialStore {
   setPasswordObserver?(fn: (name: string, password: string,
                             info?: Json) => void): unknown;
+  secondFactorDemand?(name: string): Json;
 }
 
 // What `openRecord()` answers.
@@ -235,6 +249,12 @@ interface Krb5PersonKeysDeps {
   principals: PrincipalDatabase;
   keytab: typeof keytab;
   nodeCrypto: typeof nodeCrypto;
+  fast: Krb5Fast;
+  // LAZILY, each (#169): the claim a cluster's first krbtgt key is made
+  // under, and the store it is made against. Both load after this module in
+  // the composition root, and neither is wanted by a process with no store.
+  claims: () => Json;
+  persistence: () => Json;
 }
 
 // What `keystore.seal()` counts these under, for `/admin/encryption`.
@@ -263,6 +283,17 @@ const RECORD_VERSION = 1;
 // for one would serialise behind — and be waited on by — another realm's.
 // ---------------------------------------------------------------------------
 const inFlight: Map<string, Promise<unknown>> = new Map();
+
+// THE KRBTGT CREATIONS IN FLIGHT, per trust realm (#169) — see
+// `ensureKrbtgtKey()`. Bounded by the realms, like the queue above.
+const krbtgtInFlight: Map<string, Promise<Json>> = new Map();
+
+// The realms whose unreadable krbtgt record has been reported, so a KDC asking
+// on every request says it ONCE per process (bounded by the realms).
+const krbtgtUnreadableSaid: Set<string> = new Set();
+
+// How long a node holds the right to make a realm's first krbtgt key.
+const KRBTGT_CREATE_CLAIM_MS = 60000;
 
 class Krb5PersonKeys {
   static readonly SEAL_LABEL = SEAL_LABEL;
@@ -299,7 +330,14 @@ class Krb5PersonKeys {
       prim: prim,
       principals: principals as unknown as PrincipalDatabase,
       keytab: keytab,
-      nodeCrypto: nodeCrypto
+      nodeCrypto: nodeCrypto,
+      fast: new Krb5Fast(Krb5Fast.defaultDeps()),
+      claims: function (): Json {
+        return require('../cluster/cluster_claims');
+      },
+      persistence: function (): Json {
+        return require('../persistence/persistence');
+      }
     };
   }
 
@@ -586,8 +624,11 @@ class Krb5PersonKeys {
   }
 
   // When one retired version stops being usable, in epoch milliseconds; 0 for
-  // an entry that says nothing readable about when it was retired.
-  private retainedUntilMs(entry: Json): number {
+  // an entry that says nothing readable about when it was retired. `ttlS` is
+  // the lifetime to apply, where it is not `retainedTtlSeconds()` — the
+  // krbtgt's (#169, `krbtgtTtlSeconds()`) — and is threaded through every
+  // helper below for that one caller.
+  private retainedUntilMs(entry: Json, ttlS?: number): number {
     const { log } = this.deps;
     log.debug("Entering Krb5PersonKeys.retainedUntilMs().");
     const retired = Date.parse(String((entry || {}).retiredAt || ''));
@@ -595,7 +636,8 @@ class Krb5PersonKeys {
       log.debug("Leaving Krb5PersonKeys.retainedUntilMs().");
       return 0;
     }
-    const byNow = retired + this.retainedTtlSeconds() * 1000;
+    const byNow = retired + (ttlS === undefined ? this.retainedTtlSeconds()
+                                                : ttlS) * 1000;
     const stamped = Date.parse(String(entry.expiresAt || ''));
     log.debug("Leaving Krb5PersonKeys.retainedUntilMs().");
     return Number.isFinite(stamped) ? Math.min(stamped, byNow) : byNow;
@@ -604,7 +646,7 @@ class Krb5PersonKeys {
   // The entries of a `previous` list (sealed, with keys) or a `retained` list
   // (public, without) that are inside both bounds at `nowMs`: newest first, at
   // most the limit.
-  private withinBounds(list: unknown, nowMs: number): Json[] {
+  private withinBounds(list: unknown, nowMs: number, ttlS?: number): Json[] {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering Krb5PersonKeys.withinBounds().");
@@ -616,7 +658,7 @@ class Krb5PersonKeys {
     log.debug("Leaving Krb5PersonKeys.withinBounds().");
     return list.filter(function (entry) {
       return entry && Number.isFinite(Number(entry.kvno)) &&
-             self.retainedUntilMs(entry) > nowMs;
+             self.retainedUntilMs(entry, ttlS) > nowMs;
     }).sort(function (a, b) {
       return Number(b.kvno) - Number(a.kvno);
     }).slice(0, limit);
@@ -626,10 +668,11 @@ class Krb5PersonKeys {
   // stops being current at `nowMs`. An outgoing record at the SAME kvno as the
   // one replacing it is not retired (the same password adding enctypes is the
   // same version), so only the pruning happens.
-  private retire(outgoing: Json, newKvno: number, nowMs: number): Json[] {
+  private retire(outgoing: Json, newKvno: number, nowMs: number,
+                 ttlS?: number): Json[] {
     const { log } = this.deps;
     log.debug("Entering Krb5PersonKeys.retire().");
-    const kept = this.withinBounds(outgoing && outgoing.previous, nowMs);
+    const kept = this.withinBounds(outgoing && outgoing.previous, nowMs, ttlS);
     if (!outgoing || Number(outgoing.kvno) === Number(newKvno) ||
         !this.retainedVersionsLimit()) {
       log.debug("Leaving Krb5PersonKeys.retire().");
@@ -640,42 +683,44 @@ class Krb5PersonKeys {
       salt: outgoing.salt || '',
       createdAt: outgoing.derivedAt || outgoing.createdAt || '',
       retiredAt: new Date(nowMs).toISOString(),
-      expiresAt: new Date(nowMs + this.retainedTtlSeconds() * 1000)
-        .toISOString(),
+      expiresAt: new Date(nowMs + (ttlS === undefined
+        ? this.retainedTtlSeconds() : ttlS) * 1000).toISOString(),
       keys: outgoing.keys
     };
     log.debug("Leaving Krb5PersonKeys.retire().");
     return this.withinBounds([entry].concat(kept.filter(function (one) {
       return Number(one.kvno) !== entry.kvno;
-    })), nowMs);
+    })), nowMs, ttlS);
   }
 
   // The public half of a sealed `previous` list, for the info attribute:
   // kvno, enctypes and the two dates, never a key.
-  private retainedInfo(previous: unknown, nowMs: number): Json[] {
+  private retainedInfo(previous: unknown, nowMs: number,
+                       ttlS?: number): Json[] {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering Krb5PersonKeys.retainedInfo().");
     log.debug("Leaving Krb5PersonKeys.retainedInfo().");
-    return this.withinBounds(previous, nowMs).map(function (entry) {
+    return this.withinBounds(previous, nowMs, ttlS).map(function (entry) {
       return {
         kvno: Number(entry.kvno),
         etypes: Object.keys(entry.keys || {}).map(Number)
           .filter(Number.isFinite),
         retiredAt: entry.retiredAt,
-        expiresAt: new Date(self.retainedUntilMs(entry)).toISOString()
+        expiresAt: new Date(self.retainedUntilMs(entry, ttlS)).toISOString()
       };
     });
   }
 
   // The public `retained` list of an info attribute, as a page lists it:
   // inside both bounds NOW, with the expiry the bounds give now.
-  private retainedRows(infoRetained: unknown, nowMs: number): Json[] {
+  private retainedRows(infoRetained: unknown, nowMs: number,
+                       ttlS?: number): Json[] {
     const self = this;
     const { log, kcrypto } = this.deps;
     log.debug("Entering Krb5PersonKeys.retainedRows().");
     log.debug("Leaving Krb5PersonKeys.retainedRows().");
-    return this.withinBounds(infoRetained, nowMs).map(function (entry) {
+    return this.withinBounds(infoRetained, nowMs, ttlS).map(function (entry) {
       return {
         kvno: Number(entry.kvno),
         etypes: (Array.isArray(entry.etypes) ? entry.etypes : []).map(
@@ -684,7 +729,7 @@ class Krb5PersonKeys {
                    name: kcrypto.etypeName(Number(etype)) };
         }),
         retiredAt: String(entry.retiredAt || ''),
-        expiresAt: new Date(self.retainedUntilMs(entry)).toISOString()
+        expiresAt: new Date(self.retainedUntilMs(entry, ttlS)).toISOString()
       };
     });
   }
@@ -704,14 +749,15 @@ class Krb5PersonKeys {
 
   // The retained versions of a record as the KDC's key source hands them
   // over.
-  private retainedForKdc(record: Json, nowMs: number): Json[] {
+  private retainedForKdc(record: Json, nowMs: number, ttlS?: number): Json[] {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering Krb5PersonKeys.retainedForKdc().");
     log.debug("Leaving Krb5PersonKeys.retainedForKdc().");
-    return this.withinBounds(record.previous, nowMs).map(function (entry) {
+    return this.withinBounds(record.previous, nowMs, ttlS).map(
+        function (entry) {
       return { kvno: Number(entry.kvno),
-               expiresAt: self.retainedUntilMs(entry),
+               expiresAt: self.retainedUntilMs(entry, ttlS),
                keys: self.keyPairs(entry.keys) };
     }).filter(function (entry) {
       return entry.keys.length > 0;
@@ -804,6 +850,43 @@ class Krb5PersonKeys {
     return !!(current && current.disabled);
   }
 
+  // -------------------------------------------------------------------------
+  // DOES THIS PERSON HOLD, OR OWE, A SECOND FACTOR? (#173, 2026-09-22). Asked
+  // by the KDC after pre-authentication verified, for a person-shaped name in
+  // its own realm, in BOTH modes — what the answer REFUSES is
+  // `mode.issuesTicketsOnPasswordAlone()`'s, at the KDC. The answer is
+  // `common/credentials.ts`'s `secondFactorDemand()`, the one the five
+  // password-only doors of #101 ask, so the two cannot come to disagree about
+  // who is a two-factor account: `{ person, totp, key, holds, required,
+  // byUser, needed }`. Nobody by that name, or no directory, answers
+  // `needed: false`.
+  // -------------------------------------------------------------------------
+  personSecondFactor(name: string): Json {
+    const { log, credentials } = this.deps;
+    log.debug('Entering Krb5PersonKeys.personSecondFactor(). name=' + name);
+    const none = { person: false, totp: false, key: false, holds: false,
+                   required: false, byUser: false, needed: false };
+    if (!this.directory || this.personNameProblem(name) ||
+        typeof credentials.secondFactorDemand !== 'function') {
+      log.debug('Leaving Krb5PersonKeys.personSecondFactor(). Nothing to ' +
+                'ask.');
+      return none;
+    }
+    const answer = credentials.secondFactorDemand(name) || none;
+    log.debug('Leaving Krb5PersonKeys.personSecondFactor(). needed=' +
+              !!answer.needed);
+    return answer;
+  }
+
+  // What the KDC does about pre-authentication in the AMBIENT realm, for the
+  // console and the management API (rule 7). See `Krb5Fast.policy()`.
+  preauthPolicy(): Json {
+    const { log, fast } = this.deps;
+    log.debug('Entering Krb5PersonKeys.preauthPolicy().');
+    log.debug('Leaving Krb5PersonKeys.preauthPolicy().');
+    return fast.policy();
+  }
+
   serviceKeys(spn: string): Json {
     const { log, principals } = this.deps;
     const directory = this.directory;
@@ -880,7 +963,9 @@ class Krb5PersonKeys {
     const queue = this.inFlightKey(name);
     const previous = inFlight.get(queue) || Promise.resolve();
     const next = previous.then(function () {
-      return self.derive(name, password, event);
+      return self.derive(name, password, event,
+                         (info && typeof info.hash === 'string' &&
+                          info.hash) || null);
     }).catch(function (e) {
       log.error(errorCodes.tag('STS-KRB-0107') + 'krb5-keys: deriving the ' +
                 'Kerberos keys for ' + name + ' failed: ' +
@@ -915,7 +1000,7 @@ class Krb5PersonKeys {
   }
 
   private async derive(name: string, password: string,
-                       event: string): Promise<Json> {
+                       event: string, hash: string | null): Promise<Json> {
     const { log, principals, config, errorCodes, audit,
             kcrypto } = this.deps;
     const directory = this.directory;
@@ -928,16 +1013,42 @@ class Krb5PersonKeys {
       log.debug('Leaving Krb5PersonKeys.derive(). Nothing to key.');
       return { derived: false, why: 'no-password' };
     }
+    // BOUND TO THE HASH THE PASSWORD WAS CHECKED AGAINST, not to the one on
+    // the entry now. This derivation may have waited behind another in the
+    // queue, and a password SET in the meantime — here or, through the change
+    // log, on another node — leaves the entry holding a hash `password` does
+    // not produce. Stamping that hash on these keys wrote the OLD password's
+    // keys as the NEW one's, and the KDC then refused the new password's
+    // keytab (sts_kerberos_keytab on the cluster stack, 2026-09-24). The
+    // superseded check below catches a change DURING the derivation; this
+    // catches one BEFORE it started.
+    if (hash && current.passwordHash !== hash) {
+      log.info('krb5-keys: the password for ' + name + ' changed before its ' +
+               'queued derivation started, so none was made from it; the ' +
+               'newer password\'s derivation writes its own.');
+      log.debug('Leaving Krb5PersonKeys.derive(). Superseded before it ran.');
+      return { derived: false, why: 'superseded' };
+    }
     const stamp = this.stampOf(current.passwordHash);
     const wanted = principals.KDC_ETYPES.slice();
     const opened: Opened = current.keys ? this.openRecord(current.keys)
                                         : { ok: false };
     const record = opened.ok ? opened.record : null;
     const info = this.parseInfo(current.info);
+    // CURRENT means the record holds exactly the enctypes wanted: every one
+    // of them, and none besides. The second half is #182's (2026-09-23): a
+    // realm that became product holds an rc4-hmac key derived while it was
+    // development, which `KDC_ETYPES` no longer lists, and the next verified
+    // sign-in re-derives without it — the same password, so the same kvno —
+    // rather than leave an RC4 key sealed on the entry. (It is never handed
+    // to the KDC meanwhile: `keyPairs()` reads only the enctypes offered.)
     if (event !== 'set' && record && record.name === name &&
         record.stamp === stamp &&
         wanted.every(function (etype) {
           return typeof record.keys[etype] === 'string';
+        }) &&
+        Object.keys(record.keys || {}).every(function (etype) {
+          return wanted.indexOf(Number(etype)) >= 0;
         })) {
       log.debug('Leaving Krb5PersonKeys.derive(). The keys are already ' +
                 'current.');
@@ -1082,8 +1193,9 @@ class Krb5PersonKeys {
     if (components[0].toLowerCase() === 'krbtgt') {
       log.debug('Leaving Krb5PersonKeys.normaliseSpn(). krbtgt.');
       return { ok: false, error: 'krbtgt is the ticket-granting key every ' +
-               'TGT in the realm is sealed under, and it is set by ' +
-               'krb5.krbtgtPassword rather than stored here.' };
+               'TGT in the realm is sealed under: it is not a service ' +
+               'principal an operator creates, and has a rotation of its own ' +
+               '(rotate-krbtgt and rotate-krbtgt-invalidate).' };
     }
     log.debug('Leaving Krb5PersonKeys.normaliseSpn().');
     return { ok: true, components: components, spn: text,
@@ -1490,7 +1602,8 @@ class Krb5PersonKeys {
   private dropPrevious(kind: string, label: string, current: Json,
                        context: ActContext | null | undefined,
                        write: (keysValue: string,
-                               infoValue: string) => boolean): Json {
+                               infoValue: string) => boolean,
+                       ttlS?: number): Json {
     const { log, audit } = this.deps;
     log.debug('Entering Krb5PersonKeys.dropPrevious(). ' + kind + '=' +
               label);
@@ -1512,7 +1625,7 @@ class Krb5PersonKeys {
     const nowMs = Date.now();
     const stored = Array.isArray(opened.record.previous) ?
                    opened.record.previous : [];
-    const live = this.withinBounds(stored, nowMs);
+    const live = this.withinBounds(stored, nowMs, ttlS);
     if (!stored.length) {
       log.debug('Leaving Krb5PersonKeys.dropPrevious(). Nothing kept.');
       return { ok: true, dropped: 0, kvnos: [], principal: label,
@@ -1620,6 +1733,13 @@ class Krb5PersonKeys {
                 'this trust realm.');
       return noKdc;
     }
+    // THIS REALM'S KRBTGT IS ACCEPTED HERE TOO (#169): its previous versions
+    // are dropped exactly as a service's are, which is how an operator ends a
+    // rotation's window early without also invalidating the current key.
+    if (this.isOwnKrbtgt(raw)) {
+      log.debug('Leaving Krb5PersonKeys.dropPreviousServiceKeys(). krbtgt.');
+      return this.dropPreviousKrbtgtKeys(context);
+    }
     const spn = this.normaliseSpn(raw);
     if (!spn.ok) {
       log.debug('Leaving Krb5PersonKeys.dropPreviousServiceKeys(). Not an ' +
@@ -1643,6 +1763,918 @@ class Krb5PersonKeys {
     log.debug('Leaving Krb5PersonKeys.dropPreviousServiceKeys(). ok=' +
               result.ok);
     return result;
+  }
+
+  // =========================================================================
+  // THE KRBTGT KEY (#169, 2026-09-23).
+  //
+  // Until this section a realm's krbtgt key was derived at startup from
+  // `krb5.krbtgtPassword` at the fixed `krb5.kvno`, was never rotated and
+  // kept no previous version — so one leaked krbtgt key let whoever held it
+  // forge ticket-granting tickets (a "golden ticket") for as long as the
+  // service ran with that setting. It is now a STORED key like a service
+  // principal's, on the application entry `krbtgt/<REALM>@<REALM>` under
+  // `ou=applications` (every identity maps to an entry), in the same sealed
+  // `krb5ServiceKeys` / `krb5ServiceKeyInfo` pair, with `previous` inside the
+  // seal. What differs from a service principal is decided here:
+  //
+  //   * **RANDOM, AND IN PRODUCT FROM THE START.** RFC 3961 random-to-key for
+  //     every enctype the KDC offers — no password, which is a weaker key
+  //     than the KDC can make and one Active Directory never lets an
+  //     operator choose. Product makes it at the realm's first KDC use
+  //     (`krbtgtKeys()` below, or `ensureKrbtgtKey()` at startup, which a
+  //     cluster makes under a claim so exactly one node's key wins).
+  //     Development keeps the password-derived key the fixtures publish
+  //     until somebody rotates by hand.
+  //   * **NO KEYTAB, EVER.** Nothing reads the key back out: not a view,
+  //     not the audit log, not an LDAP search (the attribute is withheld),
+  //     and no rotation answers with one — the one party that needs the key
+  //     is this KDC.
+  //   * **ITS WINDOW IS A TGT'S, RENEWALS INCLUDED** (`krbtgtTtlSeconds()`):
+  //     every TGT is sealed under it, so a kept version lives the longer of
+  //     the ticket and renew lifetimes plus the skew — the sign-out
+  //     horizon's bound (#111) — unless `krb5.retainedKeyTtlS` names a
+  //     number.
+  //   * **"ROTATE AND INVALIDATE" KEEPS NOTHING** — Active Directory's double
+  //     reset in one act: every TGT in the realm is refused
+  //     KRB_AP_ERR_BADKEYVER at its next TGS-REQ. It is also the one act
+  //     that may replace a record this process cannot OPEN
+  //     (`STS-KRB-0161`), because it carries nothing of it forward; every
+  //     other path refuses such a record and never rewrites it.
+  //
+  // WHEN a rotation happens is `krb5_krbtgt_rotation.ts`'s; this is what one
+  // IS. Synchronous where the KDC asks (a directory read and a seal opened),
+  // asynchronous only where a development rotation derives the key it
+  // replaces from the password.
+  // =========================================================================
+  krbtgtIdentifier(): string {
+    const { log, principals } = this.deps;
+    log.debug("Entering Krb5PersonKeys.krbtgtIdentifier().");
+    log.debug("Leaving Krb5PersonKeys.krbtgtIdentifier().");
+    return 'krbtgt/' + principals.REALM + '@' + principals.REALM;
+  }
+
+  // Is `raw` this realm's own krbtgt, as an SPN or a full principal name?
+  private isOwnKrbtgt(raw: unknown): boolean {
+    const { log, principals } = this.deps;
+    log.debug("Entering Krb5PersonKeys.isOwnKrbtgt().");
+    const text = String(raw == null ? '' : raw).trim();
+    log.debug("Leaving Krb5PersonKeys.isOwnKrbtgt().");
+    return text === 'krbtgt/' + principals.REALM ||
+           text === this.krbtgtIdentifier();
+  }
+
+  // Seconds a retired krbtgt version is kept: `krb5.retainedKeyTtlS` when it
+  // names a number, and otherwise the longest a TGT sealed under it can
+  // still be presented — its lifetime or, renewed, its renew-till — plus the
+  // clock skew the KDC allows. A renewal re-seals under the CURRENT key, so
+  // the ticket lifetime alone would do for a TGT renewed on time; the renew
+  // bound is the one that cannot be wrong, and is the sign-out horizon's.
+  krbtgtTtlSeconds(): number {
+    const { log, config } = this.deps;
+    log.debug("Entering Krb5PersonKeys.krbtgtTtlSeconds().");
+    const configured = Number(config.value('krb5.retainedKeyTtlS'));
+    if (Number.isFinite(configured) && configured > 0) {
+      log.debug("Leaving Krb5PersonKeys.krbtgtTtlSeconds(). Configured.");
+      return configured;
+    }
+    log.debug("Leaving Krb5PersonKeys.krbtgtTtlSeconds().");
+    return Math.max(Number(config.value('krb5.ticketLifetimeSeconds')) || 0,
+                    Number(config.value('krb5.renewLifetimeSeconds')) || 0) +
+           (Number(config.value('krb5.clockSkew')) || 0);
+  }
+
+  // The entry and what is on it: `{ entry, record, info, unreadable, why }`.
+  // A record is only answered when it opens AND names this realm's krbtgt —
+  // a value copied from another realm's entry is refused like an unreadable
+  // one.
+  private readKrbtgt(): Json {
+    const { log, principals } = this.deps;
+    log.debug("Entering Krb5PersonKeys.readKrbtgt().");
+    const directory = this.directory;
+    const entry = directory ? directory.readService(this.krbtgtIdentifier())
+                            : null;
+    const info = entry ? this.parseInfo(entry.info) : null;
+    if (!entry || !entry.keys) {
+      log.debug("Leaving Krb5PersonKeys.readKrbtgt(). None stored.");
+      return { entry: entry, record: null, info: info, unreadable: false };
+    }
+    const opened = this.openRecord(entry.keys);
+    const spn = 'krbtgt/' + principals.REALM;
+    if (!opened.ok || opened.record.spn !== spn ||
+        opened.record.realm !== principals.REALM) {
+      log.debug("Leaving Krb5PersonKeys.readKrbtgt(). Unreadable.");
+      return { entry: entry, record: null, info: info, unreadable: true,
+               why: opened.ok ? 'it is bound to another principal'
+                              : opened.why };
+    }
+    log.debug("Leaving Krb5PersonKeys.readKrbtgt(). kvno " +
+              opened.record.kvno + ".");
+    return { entry: entry, record: opened.record, info: info,
+             unreadable: false };
+  }
+
+  // Is the persistence store one several processes share (postgres)? Then a
+  // first krbtgt key is made under a claim, never on a KDC's request path.
+  private sharedStore(): boolean {
+    const { log, persistence } = this.deps;
+    log.debug("Entering Krb5PersonKeys.sharedStore().");
+    try {
+      const store = persistence();
+      log.debug("Leaving Krb5PersonKeys.sharedStore().");
+      return !!(store && typeof store.clusterStore === 'function' &&
+                store.clusterStore());
+    } catch (e) {
+      log.debug("Caught in Krb5PersonKeys.sharedStore(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Krb5PersonKeys.sharedStore(). No store.");
+      // No persistence module in this process: nothing is shared.
+      return false;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // THE KDC'S KEY SOURCE FOR THIS REALM'S KRBTGT — `serviceKeys()`'s shape,
+  // `{ kvno, keys, retained }`, or null. Null in development until a
+  // rotation by hand stored a key (the principal database then derives the
+  // krbtgt from its password, as it always did). In product a realm with none
+  // yet is given one HERE when this process is the only writer of its store;
+  // behind a shared store the creation is `ensureKrbtgtKey()`'s, under a
+  // claim, and this answers null until it lands — the KDC refuses in the
+  // meantime rather than make a key another node might be making too.
+  // -------------------------------------------------------------------------
+  krbtgtKeys(): Json {
+    const { log, principals, realms, errorCodes } = this.deps;
+    log.debug("Entering Krb5PersonKeys.krbtgtKeys().");
+    if (!this.directory) {
+      log.debug("Leaving Krb5PersonKeys.krbtgtKeys(). No directory.");
+      return null;
+    }
+    const got = this.readKrbtgt();
+    if (got.record) {
+      const keys = this.keyPairs(got.record.keys);
+      log.debug("Leaving Krb5PersonKeys.krbtgtKeys(). kvno " +
+                got.record.kvno + ".");
+      return keys.length
+        ? { kvno: Number(got.record.kvno), keys: keys,
+            retained: this.retainedForKdc(got.record, Date.now(),
+                                          this.krbtgtTtlSeconds()) }
+        : null;
+    }
+    if (got.unreadable) {
+      const realmId = realms.currentId();
+      if (!krbtgtUnreadableSaid.has(realmId)) {
+        krbtgtUnreadableSaid.add(realmId);
+        log.error(errorCodes.tag('STS-KRB-0161') + 'krb5-keys: the stored ' +
+                  'krbtgt key of ' + principals.REALM + ' cannot be used (' +
+                  got.why + '). It is NOT rewritten; the KDC issues no ' +
+                  'ticket-granting ticket until "Rotate and invalidate" at ' +
+                  '/admin/kerberos/principals replaces it. Said once per ' +
+                  'process.');
+      }
+      log.debug("Leaving Krb5PersonKeys.krbtgtKeys(). Unreadable.");
+      return null;
+    }
+    if (principals.krbtgtFromPassword) {
+      log.debug("Leaving Krb5PersonKeys.krbtgtKeys(). Development: derived " +
+                "from the password.");
+      return null;
+    }
+    if (this.sharedStore()) {
+      // The promise is the claim's business; a failure is logged there.
+      this.ensureKrbtgtKey().catch(function (e: Json): void {
+        log.debug("Caught in a callback in Krb5PersonKeys.krbtgtKeys(): " +
+                  ((e && e.message) || e));
+      });
+      log.debug("Leaving Krb5PersonKeys.krbtgtKeys(). Being made under a " +
+                "claim.");
+      return null;
+    }
+    const made = this.createKrbtgtKey({ via: 'first use' });
+    log.debug("Leaving Krb5PersonKeys.krbtgtKeys(). " +
+              (made.ok ? 'Made.' : 'Not made.'));
+    return made.ok ? this.krbtgtKeys() : null;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE FIRST KEY: at `krb5.kvno`, nothing kept. Refuses (and changes
+  // nothing) where a key, readable or not, is already stored — a creation
+  // never replaces anything.
+  // -------------------------------------------------------------------------
+  createKrbtgtKey(context?: ActContext): Json {
+    const { log, config } = this.deps;
+    log.debug("Entering Krb5PersonKeys.createKrbtgtKey().");
+    const noKdc = this.noKdcHere();
+    if (noKdc) {
+      log.debug("Leaving Krb5PersonKeys.createKrbtgtKey(). No KDC here.");
+      return noKdc;
+    }
+    if (!this.directory) {
+      log.debug("Leaving Krb5PersonKeys.createKrbtgtKey(). No directory.");
+      return this.refusal('STS-ADMIN-0609', 'There is no directory in this ' +
+                          'process, so there is nowhere to keep a krbtgt key.');
+    }
+    const got = this.readKrbtgt();
+    if (got.record || got.unreadable) {
+      log.debug("Leaving Krb5PersonKeys.createKrbtgtKey(). One is there.");
+      return { ok: true, existing: true,
+               kvno: got.record ? Number(got.record.kvno) : null };
+    }
+    const result = this.writeKrbtgt(Number(config.value('krb5.kvno')), [],
+                                    'created', context, got.info, false);
+    log.debug("Leaving Krb5PersonKeys.createKrbtgtKey().");
+    return result;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE FIRST KEY, ONCE FOR THE CLUSTER. The node that wins the claim
+  // catches up with the store, makes the key if it is still absent, and
+  // gives the claim back only once the write has committed — so a node that
+  // loses reads the winner's key rather than making a second one
+  // (`credentials.bootstrapOnce()`'s shape). Without a shared store it is
+  // `createKrbtgtKey()`. One in flight per realm. Never rejects.
+  // -------------------------------------------------------------------------
+  ensureKrbtgtKey(realmId?: string): Promise<Json> {
+    const self = this;
+    const { log, realms, principals, claims, persistence,
+            errorCodes } = this.deps;
+    const id = realmId === undefined ? realms.currentId() : String(realmId);
+    log.debug("Entering Krb5PersonKeys.ensureKrbtgtKey(). realm=" + id);
+    const held = krbtgtInFlight.get(id);
+    if (held) {
+      log.debug("Leaving Krb5PersonKeys.ensureKrbtgtKey(). In flight.");
+      return held;
+    }
+    const realm = realms.get(id);
+    if (!realm) {
+      log.debug("Leaving Krb5PersonKeys.ensureKrbtgtKey(). No such realm.");
+      return Promise.resolve({ ok: false, why: 'no such realm' });
+    }
+    const work = Promise.resolve(realms.run(realm, async function ():
+        Promise<Json> {
+      if (!principals.enabledIn(id) || principals.krbtgtFromPassword ||
+          !self.directory) {
+        return { ok: true, made: false, why: 'not a product KDC with a ' +
+                                             'directory' };
+      }
+      const before = self.readKrbtgt();
+      if (before.record || before.unreadable) {
+        return { ok: true, made: false, existing: true };
+      }
+      if (!self.sharedStore()) {
+        return self.createKrbtgtKey({ via: 'startup' });
+      }
+      const store = persistence();
+      const claimed = await claims().claim({ scope: 'krb5.krbtgt-create',
+        value: principals.REALM, ttlMs: KRBTGT_CREATE_CLAIM_MS, realm: id });
+      if (!claimed.ok && claimed.reason === 'used') {
+        await Promise.resolve(typeof store.syncNow === 'function'
+          ? store.syncNow() : null).catch(function (e: Json): void {
+          log.debug("Caught in a callback in " +
+                    "Krb5PersonKeys.ensureKrbtgtKey(): " +
+                    ((e && e.message) || e));
+        });
+        const after = self.readKrbtgt();
+        if (!after.record) {
+          log.warn(errorCodes.tag('STS-KRB-0162') + 'krb5-keys: another ' +
+                   'node is making the krbtgt key of ' + principals.REALM +
+                   ' and it has not reached this one yet; its KDC refuses ' +
+                   'until it does.');
+        }
+        return { ok: !!after.record, made: false, lost: true };
+      }
+      if (!claimed.ok) {
+        log.error(errorCodes.tag('STS-KRB-0163') + 'krb5-keys: the krbtgt ' +
+                  'key of ' + principals.REALM + ' was NOT made: the store ' +
+                  'could not be asked whether another node is making it (' +
+                  (claimed.why || claimed.reason) + ').');
+        return { ok: false, made: false, why: 'the store could not be asked' };
+      }
+      await Promise.resolve(typeof store.syncNow === 'function'
+        ? store.syncNow() : null).catch(function (e: Json): void {
+        log.debug("Caught in a callback in Krb5PersonKeys.ensureKrbtgtKey(): " +
+                  ((e && e.message) || e));
+      });
+      const made = self.createKrbtgtKey({ via: 'startup' });
+      await Promise.resolve(typeof store.flush === 'function'
+        ? store.flush() : null).catch(function (e: Json): void {
+        log.debug("Caught in a callback in Krb5PersonKeys.ensureKrbtgtKey(): " +
+                  ((e && e.message) || e));
+      });
+      await Promise.resolve(claims().release(claimed.handle))
+        .catch(function (e: Json): void {
+          log.debug("Caught in a callback in " +
+                    "Krb5PersonKeys.ensureKrbtgtKey(): " +
+                    ((e && e.message) || e));
+        });
+      return made;
+    })).catch(function (e: Json): Json {
+      log.error(errorCodes.tag('STS-KRB-0160') + 'krb5-keys: making the ' +
+                'krbtgt key of trust realm "' + id + '" failed: ' +
+                ((e && e.message) || e));
+      return { ok: false, made: false, why: String((e && e.message) || e) };
+    }).then(function (answer: Json): Json {
+      krbtgtInFlight.delete(id);
+      return answer;
+    });
+    krbtgtInFlight.set(id, work);
+    log.debug("Leaving Krb5PersonKeys.ensureKrbtgtKey(). Started.");
+    return work;
+  }
+
+  // -------------------------------------------------------------------------
+  // A ROTATION. `invalidate` keeps nothing — AD's double reset in one act.
+  // Otherwise the key it replaces is kept for `krbtgtTtlSeconds()`: the
+  // stored one, or in development the key derived from the password, so a
+  // TGT sealed under the published key an instant before still opens.
+  // -------------------------------------------------------------------------
+  async rotateKrbtgt(options?: Json): Promise<Json> {
+    const { log, principals } = this.deps;
+    const o = options || {};
+    const invalidate = !!o.invalidate;
+    log.debug("Entering Krb5PersonKeys.rotateKrbtgt(). invalidate=" +
+              invalidate);
+    const noKdc = this.noKdcHere();
+    if (noKdc) {
+      log.debug("Leaving Krb5PersonKeys.rotateKrbtgt(). No KDC here.");
+      return noKdc;
+    }
+    if (!this.directory) {
+      log.debug("Leaving Krb5PersonKeys.rotateKrbtgt(). No directory.");
+      return this.refusal('STS-ADMIN-0609', 'There is no directory in this ' +
+                          'process, so there is nowhere to keep a krbtgt key.');
+    }
+    const got = this.readKrbtgt();
+    if (got.unreadable && !invalidate) {
+      log.debug("Leaving Krb5PersonKeys.rotateKrbtgt(). Unreadable.");
+      return this.refusal('STS-KRB-0161', 'The stored krbtgt key of ' +
+        principals.REALM + ' cannot be opened on this service (' + got.why +
+        '), so it cannot be rotated without dropping a key it cannot read. ' +
+        '"Rotate and invalidate" replaces it and keeps nothing.');
+    }
+    let outgoing: Json = got.record;
+    if (!outgoing && !got.unreadable && !invalidate &&
+        principals.krbtgtFromPassword) {
+      // DEVELOPMENT'S FIRST ROTATION: the key it replaces is the one derived
+      // from the password, at the configured kvno — kept, so the TGTs a
+      // reader was decrypting with the published password still open.
+      const configured = principals.find(['krbtgt', principals.REALM],
+                                         principals.REALM);
+      if (configured && !configured.directoryKeys) {
+        const keys: Record<string, string> = {};
+        const etypes = principals.KDC_ETYPES.slice();
+        for (let i = 0; i < etypes.length; i++) {
+          keys[etypes[i]] = Buffer.from(
+            await principals.longTermKey(configured, etypes[i]))
+            .toString('base64');
+        }
+        outgoing = { kvno: Number(configured.kvno), keys: keys,
+                     createdAt: '' };
+      }
+    }
+    const base = outgoing ? Number(outgoing.kvno)
+      : got.info && Number.isFinite(Number(got.info.kvno))
+        ? Number(got.info.kvno)
+        : principals.krbtgtFromPassword ? Number(principals.KVNO) : null;
+    const kvno = base === null ? Number(this.deps.config.value('krb5.kvno'))
+                               : base + 1;
+    const nowMs = Number(o.nowMs) || Date.now();
+    const kept = invalidate ? []
+      : this.retire(outgoing, kvno, nowMs, this.krbtgtTtlSeconds());
+    const result = this.writeKrbtgt(kvno, kept,
+                                    invalidate ? 'invalidated' : 'rotated',
+                                    o.context, got.info, invalidate,
+                                    outgoing ? Number(outgoing.kvno) : base,
+                                    String(o.reason || 'requested'), nowMs);
+    log.debug("Leaving Krb5PersonKeys.rotateKrbtgt(). ok=" + result.ok);
+    return result;
+  }
+
+  // The one write every krbtgt act makes: random keys for every enctype
+  // offered, `kept` as the previous versions, sealed, on the entry — made if
+  // it is not there. The audit row names kvnos and enctypes, never a key.
+  private writeKrbtgt(kvno: number, kept: Json[], act: string,
+                      context: ActContext | null | undefined, priorInfo: Json,
+                      invalidated: boolean, previousKvno?: number | null,
+                      reason?: string, atMs?: number): Json {
+    const { log, principals, kcrypto, applications, audit,
+            errorCodes } = this.deps;
+    const directory = this.directory;
+    const identifier = this.krbtgtIdentifier();
+    log.debug("Entering Krb5PersonKeys.writeKrbtgt(). " + act + " kvno " +
+              kvno);
+    const ttlS = this.krbtgtTtlSeconds();
+    const now = new Date(atMs || Date.now());
+    const etypes = principals.KDC_ETYPES.slice();
+    const keys: Record<string, string> = {};
+    etypes.forEach(function (etype) {
+      keys[etype] = Buffer.from(kcrypto.randomBytes(
+        kcrypto.etypeById(etype).keyBytes)).toString('base64');
+    });
+    if (!directory.readService(identifier)) {
+      // THE ENTRY, through the registry's own door: `krbtgt/<REALM>@<REALM>`
+      // is the KDC's own principal, a service principal by kind.
+      const created: Json = applications.createApplication({
+        identifier: identifier, kind: 'kerberos-service',
+        protocols: ['krb5'],
+        fields: { krb5ServicePrincipalName: identifier },
+        actor: String((context || {}).actor || '')
+      });
+      if (!created.ok || !directory.readService(identifier)) {
+        log.error(errorCodes.tag('STS-KRB-0160') + 'krb5-keys: no entry ' +
+                  'could be made for ' + identifier + ': ' +
+                  ((created.errors || []).join(' ') || 'the directory did ' +
+                   'not hold it afterwards') + '.');
+        log.debug("Leaving Krb5PersonKeys.writeKrbtgt(). No entry.");
+        return this.refusal('STS-KRB-0160', 'No directory entry could be ' +
+                            'made for ' + identifier + ', so no krbtgt key ' +
+                            'was stored.');
+      }
+    }
+    const sealed = this.sealRecord({ v: RECORD_VERSION,
+                                     spn: 'krbtgt/' + principals.REALM,
+                                     realm: principals.REALM, kvno: kvno,
+                                     createdAt: now.toISOString(),
+                                     keys: keys, previous: kept });
+    const prior = priorInfo || {};
+    const info = {
+      kvno: kvno, etypes: etypes, sealed: !!(sealed && sealed.sealed),
+      krbtgt: true,
+      createdAt: prior.createdAt || now.toISOString(),
+      keyCreatedAt: now.toISOString(),
+      rotatedAt: act === 'created' ? String(prior.rotatedAt || '')
+                                   : now.toISOString(),
+      invalidatedAt: invalidated ? now.toISOString()
+                                 : String(prior.invalidatedAt || ''),
+      retained: this.retainedInfo(kept, now.getTime(), ttlS)
+    };
+    if (!sealed || !directory.writeService(identifier, sealed.value,
+                                           JSON.stringify(info))) {
+      log.error(errorCodes.tag('STS-KRB-0160') + 'krb5-keys: the krbtgt key ' +
+                'of ' + principals.REALM + ' could not be ' +
+                (sealed ? 'written' : 'sealed') + '; nothing changed.');
+      log.debug("Leaving Krb5PersonKeys.writeKrbtgt(). Not stored.");
+      return this.refusal('STS-KRB-0160', 'The new krbtgt key of ' +
+                          principals.REALM + ' could not be ' +
+                          (sealed ? 'written to its directory entry'
+                                  : 'encrypted under the key-encryption key') +
+                          ', so nothing changed.');
+    }
+    krbtgtUnreadableSaid.delete(this.deps.realms.currentId());
+    const retainedKvnos = kept.map(function (one) {
+      return Number(one.kvno);
+    });
+    const via = String((context || {}).via || 'scheduler');
+    const manual = !!(context && context.actor) || /console|api/.test(via);
+    audit.audit({
+      action: (manual ? 'admin.' : '') + 'krb5.krbtgt.' + act,
+      actor: String((context || {}).actor || ''),
+      protocol: 'Kerberos', channel: 'internal', target: identifier,
+      summary: 'The krbtgt key of ' + principals.REALM + ' was ' + act +
+               ' (kvno ' + kvno + (retainedKvnos.length
+                 ? ', keeping kvno ' + retainedKvnos.join(', ') : '') +
+               ') through the ' + via,
+      detail: { kvno: kvno, previousKvno: previousKvno === undefined
+                  ? null : previousKvno,
+                etypes: etypes, retainedKvnos: retainedKvnos,
+                invalidated: invalidated, reason: String(reason || ''),
+                via: via }
+    });
+    log.info('krb5-keys: the krbtgt key of ' + principals.REALM + ' was ' +
+             act + ' at kvno ' + kvno +
+             (retainedKvnos.length
+               ? '; kvno ' + retainedKvnos.join(', ') + ' is kept for the ' +
+                 'TGTs already sealed under it'
+               : invalidated ? '; NOTHING is kept, so every TGT issued ' +
+                 'before now is refused KRB_AP_ERR_BADKEYVER' : '') + '.');
+    const retained = this.retainedRows(info.retained, now.getTime(), ttlS);
+    log.debug("Leaving Krb5PersonKeys.writeKrbtgt().");
+    return {
+      ok: true, act: act, principal: identifier, kvno: kvno,
+      previousKvno: previousKvno === undefined ? null : previousKvno,
+      etypes: etypes, sealed: info.sealed, retained: retained,
+      invalidated: invalidated,
+      message: 'The krbtgt key of ' + principals.REALM + ' was ' + act +
+               ' at kvno ' + kvno + '. ' +
+               (retained.length
+                 ? 'TGTs sealed under kvno ' + retained.map(function (one) {
+                   return one.kvno;
+                 }).join(', ') + ' are still accepted until ' +
+                   retained.map(function (one) {
+                     return one.expiresAt;
+                   }).join(', ') + '.'
+                 : invalidated
+                   ? 'Nothing was kept: every TGT issued before now is ' +
+                     'refused, and everybody runs a fresh AS exchange.'
+                   : '') +
+               ' No key is shown, here or anywhere.'
+    };
+  }
+
+  // The public state of this realm's krbtgt, for the console, the API and
+  // the rotation job: where the key comes from, its kvno, when it was made
+  // and last rotated, and the versions kept. The record is opened only to
+  // tell a readable one from an unreadable one; nothing of it is answered.
+  krbtgtState(): Json {
+    const { log, principals, kcrypto } = this.deps;
+    log.debug("Entering Krb5PersonKeys.krbtgtState().");
+    const kerberos = principals.kerberosRealmOf();
+    const ttlS = this.krbtgtTtlSeconds();
+    const got = this.directory && kerberos.enabled && kerberos.active
+      ? this.readKrbtgt() : { record: null, info: null, unreadable: false };
+    const info = got.info || {};
+    const nowMs = Date.now();
+    const source = got.record ? 'stored'
+      : got.unreadable ? 'unreadable'
+      : principals.krbtgtFromPassword ? 'password' : 'none';
+    const retained = got.record
+      ? this.retainedRows(info.retained, nowMs, ttlS) : [];
+    const etypes = got.record ? (info.etypes || []).map(Number)
+      : source === 'password' ? principals.KDC_ETYPES.slice() : [];
+    const openUntil = retained.reduce(function (most: string, one: Json) {
+      return one.expiresAt > most ? one.expiresAt : most;
+    }, '');
+    log.debug("Leaving Krb5PersonKeys.krbtgtState(). " + source);
+    return {
+      principal: kerberos.enabled && kerberos.active
+        ? this.krbtgtIdentifier() : '',
+      source: source,
+      kvno: got.record ? Number(got.record.kvno)
+        : source === 'password' ? Number(principals.KVNO) : null,
+      etypes: etypes.map(function (etype: number) {
+        return { etype: etype, name: kcrypto.etypeName(etype) };
+      }),
+      sealed: got.record ? !!info.sealed : false,
+      createdAt: got.record ? String(info.createdAt || '') : '',
+      keyCreatedAt: got.record ? String(info.keyCreatedAt ||
+                                        info.createdAt || '') : '',
+      rotatedAt: got.record ? String(info.rotatedAt || '') : '',
+      invalidatedAt: got.record ? String(info.invalidatedAt || '') : '',
+      retained: retained,
+      windowOpenUntil: openUntil,
+      retainedTtlSeconds: ttlS,
+      why: got.unreadable ? String(got.why || '') : ''
+    };
+  }
+
+  // "Drop previous versions" for the krbtgt: the rotation's window ended now,
+  // the current key untouched.
+  dropPreviousKrbtgtKeys(context?: ActContext): Json {
+    const { log } = this.deps;
+    const directory = this.directory;
+    const identifier = this.krbtgtIdentifier();
+    log.debug("Entering Krb5PersonKeys.dropPreviousKrbtgtKeys().");
+    const noKdc = this.noKdcHere();
+    if (noKdc) {
+      log.debug("Leaving Krb5PersonKeys.dropPreviousKrbtgtKeys(). No KDC.");
+      return noKdc;
+    }
+    if (!directory) {
+      log.debug("Leaving Krb5PersonKeys.dropPreviousKrbtgtKeys(). No " +
+                "directory.");
+      return this.refusal('STS-ADMIN-0609', 'There is no directory in this ' +
+                          'process.');
+    }
+    const result = this.dropPrevious('krbtgt', identifier,
+      directory.readService(identifier), context,
+      function (keysValue, infoValue) {
+        return directory.writeService(identifier, keysValue, infoValue);
+      }, this.krbtgtTtlSeconds());
+    if (result.ok) {
+      result.spn = identifier.replace(/@[^@]*$/, '');
+    }
+    log.debug("Leaving Krb5PersonKeys.dropPreviousKrbtgtKeys(). ok=" +
+              result.ok);
+    return result;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHETHER A KEYTAB CAN BE MADE FOR `name` AT ALL, asked before anything is
+  // derived — and by the console's reset BEFORE it changes the person's
+  // password, so an administrator is never left having reset a password for a
+  // keytab that was then refused. A refusal, or null.
+  // -------------------------------------------------------------------------
+  personKeytabRefusal(name: unknown): Json {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Krb5PersonKeys.personKeytabRefusal(). name=' + name);
+    const noKdc = this.noKdcHere();
+    if (noKdc) {
+      log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). No KDC in ' +
+                'this trust realm.');
+      return noKdc;
+    }
+    const who = String(name == null ? '' : name).trim();
+    if (!directory) {
+      log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). No ' +
+                'directory.');
+      return this.refusal('STS-KRB-0130', 'There is no directory in this ' +
+                          'process, so there is nobody to make a keytab for.');
+    }
+    if (!who || this.personNameProblem(who)) {
+      log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). No usable ' +
+                'name.');
+      return this.refusal('STS-KRB-0130', 'Name the person whose keytab to ' +
+                          'make, as `username`: a single-component name, ' +
+                          'which is what a Kerberos user principal is.');
+    }
+    if (!directory.readPerson(who)) {
+      log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). Nobody by ' +
+                'that name.');
+      return this.refusal('STS-KRB-0130', 'There is nobody called "' + who +
+                          '" in this trust realm\'s directory, which is the ' +
+                          'one its KDC reads.');
+    }
+    if (this.personDisabled(who)) {
+      log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). Disabled.');
+      return this.refusal('STS-KRB-0134', who + '\'s account is disabled, ' +
+                          'and the KDC refuses a disabled account ' +
+                          'KDC_ERR_CLIENT_REVOKED whatever key it presents, ' +
+                          'so a keytab for it would be a file that cannot ' +
+                          'sign in. Enable the account first.');
+    }
+    if (this.productKdc() && !this.personKeysEnabled()) {
+      log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). Switched ' +
+                'off.');
+      return this.refusal('STS-KRB-0131', 'krb5.personKeys is off, so this ' +
+                          'KDC authenticates no person with keys of their ' +
+                          'own and a keytab would sign nobody in.');
+    }
+    log.debug('Leaving Krb5PersonKeys.personKeytabRefusal(). None.');
+    return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // A PERSON'S KEYTAB (#59, 2026-09-22) — FROM A PASSWORD IN HAND, AND FROM
+  // NOTHING ELSE.
+  //
+  // A keytab is how a client that cannot type a password — a batch job, a
+  // cron entry, `kinit -k` on a server — authenticates as a person, and it is
+  // exactly as good as that person's password: whoever holds it can get a TGT
+  // as them. So the rule this file has kept since it was written holds here
+  // too: **A STORED KEY IS NEVER READ BACK OUT.** The keytab is DERIVED, at
+  // the moment of asking, from a password the caller has in hand:
+  //
+  //   * the PORTAL: the person's own current password, typed on the form and
+  //     verified by `credentials.verify()` before this is called — which is
+  //     also the re-authentication a password-equivalent export needs (a
+  //     browser left signed in is not enough);
+  //   * the CONSOLE and `/admin-api`: a password an administrator has just SET
+  //     for the person (typed, or generated) — so the act is a password
+  //     reset, the kvno moves up by one, and the person's old password stops
+  //     working. An administrator never learns a password they did not
+  //     choose.
+  //
+  // **THE DERIVED KEY IS COMPARED WITH THE ONE THE KDC HOLDS**, in constant
+  // time, before anything is handed over, and a mismatch is a refusal. The
+  // stored key is opened for that comparison and for nothing else. What it
+  // buys: a keytab that would not work is never handed out — a password
+  // written behind the observer, a stale record, a derivation that failed —
+  // and the kvno and salt in the keytab are the KDC's own, rather than a guess
+  // about them.
+  //
+  // **ONLY THE CURRENT kvno.** A client keytab is read by `kinit -k`, which
+  // needs the key a new AS-REQ is checked against and nothing else; the
+  // previous versions this file keeps exist to open tickets ALREADY issued,
+  // and a keytab carrying them would be more password-equivalent material for
+  // no use.
+  //
+  // **DEVELOPMENT MODE.** A development KDC does not key a person from their
+  // password at all: every user shares `krb5.userPassword` (a service or
+  // computer fixture has a literal one of its own, `krb5_principals.js`,
+  // which no directory person is). A keytab
+  // from the password the caller typed would not open a single AS-REP there,
+  // so a development keytab is derived from the password THAT KDC uses for
+  // the principal — which the service publishes on `/krb5/principals` anyway
+  // — and the answer says so. The typed password is then not what the keytab
+  // is made from, and nothing pretends otherwise.
+  // -------------------------------------------------------------------------
+  async personKeytab(name: unknown, password: unknown,
+                     context?: ActContext): Promise<Json> {
+    const { log, principals, kcrypto, keytab, audit, nodeCrypto,
+            realms } = this.deps;
+    log.debug('Entering Krb5PersonKeys.personKeytab(). name=' + name);
+    const refused = this.personKeytabRefusal(name);
+    if (refused) {
+      log.debug('Leaving Krb5PersonKeys.personKeytab(). Refused before ' +
+                'anything was derived.');
+      return refused;
+    }
+    const who = String(name).trim();
+    const via = String((context || {}).via || 'console');
+    let made: Json;
+    if (this.productKdc()) {
+      made = await this.productPersonKeys(who, password);
+    } else {
+      made = await this.developmentPersonKeys(who);
+    }
+    if (!made.ok) {
+      log.debug('Leaving Krb5PersonKeys.personKeytab(). Refused: ' +
+                (made.errors || []).join(' '));
+      return made;
+    }
+    const now = new Date();
+    const entries = made.keys.map(function (pair: [number, Uint8Array]) {
+      return { realm: principals.REALM, components: [who],
+               nameType: keytab.NAME_TYPE_PRINCIPAL, timestamp: now,
+               kvno: made.kvno, etype: pair[0], key: pair[1] };
+    });
+    const bytes = keytab.writeKeytab(entries);
+    const etypes = made.keys.map(function (pair: [number, Uint8Array]) {
+      return pair[0];
+    });
+    const principal = who + '@' + principals.REALM;
+    audit.audit({
+      action: 'krb5.keytab.person',
+      actor: String((context || {}).actor || who),
+      protocol: 'Kerberos', channel: 'internal', target: principal,
+      summary: 'A keytab for ' + principal + ' (kvno ' + made.kvno + ', ' +
+               etypes.map(kcrypto.etypeName).join(', ') + ') was made from ' +
+               (made.source === 'password'
+                 ? 'a password in hand'
+                 : 'the development KDC\'s password for the principal') +
+               ' through the ' + via,
+      // The kvno, the enctypes and where it came from. Never a key, a salt
+      // beyond what ETYPE-INFO2 publishes, the keytab or the password.
+      detail: { kvno: made.kvno, etypes: etypes, source: made.source,
+                via: via, fingerprint: nodeCrypto.createHash('sha256')
+                  .update(bytes).digest('hex').slice(0, 16) }
+    });
+    log.info('krb5-keys: a keytab for ' + principal + ' at kvno ' +
+             made.kvno + ' was made through the ' + via + ' and handed to ' +
+             'the caller; it is not kept.');
+    log.debug('Leaving Krb5PersonKeys.personKeytab(). kvno ' + made.kvno +
+              '.');
+    return {
+      ok: true, username: who, principal: principal,
+      realm: principals.REALM, trustRealm: realms.currentId(),
+      kvno: made.kvno, etypes: etypes, keytabKvnos: [made.kvno],
+      source: made.source,
+      keytabFilename: who.replace(/[^A-Za-z0-9.-]+/g, '_') + '.kvno' +
+                      made.kvno + '.keytab',
+      keytab: bytes.toString('base64'),
+      message: 'A keytab for ' + principal + ' at kvno ' + made.kvno +
+               ' is in this answer and is not kept: this service cannot ' +
+               'show it again. ' +
+               (made.source === 'password'
+                 ? 'It holds the keys derived from the password, and stops ' +
+                   'working when that password changes.'
+                 : 'This is a DEVELOPMENT KDC, which keys this principal ' +
+                   'from the password on its principal record (krb5.userPassword ' +
+                   'for every user) ' +
+                   'rather than the person\'s, so that is what the keytab ' +
+                   'was derived from.') +
+               ' kinit -k -t ' +
+               who.replace(/[^A-Za-z0-9.-]+/g, '_') + '.kvno' + made.kvno +
+               '.keytab ' + principal + ' uses it.'
+    };
+  }
+
+  // The keys a PRODUCT KDC holds for a person, re-derived from `password` and
+  // checked against them. `{ ok, kvno, keys, source }` or a refusal.
+  private async productPersonKeys(who: string, password: unknown):
+      Promise<Json> {
+    const self = this;
+    const { log, principals, nodeCrypto } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Krb5PersonKeys.productPersonKeys(). name=' + who);
+    if (typeof password !== 'string' || !password) {
+      log.debug('Leaving Krb5PersonKeys.productPersonKeys(). No password.');
+      return this.refusal('STS-KRB-0132', 'A keytab is derived from the ' +
+                          'person\'s password, and none was given.');
+    }
+    // The password was just SET or VERIFIED, and either queued a derivation
+    // (`observePassword()`); settle it so that the record read below is the
+    // one this password produced.
+    await this.idle();
+    const current = directory.readPerson(who);
+    const opened: Opened = current && current.keys
+      ? this.openRecord(current.keys) : { ok: false, why: 'none' };
+    if (!opened.ok || opened.record.name !== who ||
+        opened.record.realm !== principals.REALM || !current.passwordHash ||
+        opened.record.stamp !== this.stampOf(current.passwordHash)) {
+      log.debug('Leaving Krb5PersonKeys.productPersonKeys(). No current ' +
+                'keys (' + (opened.ok ? 'stale or bound elsewhere'
+                                      : opened.why) + ').');
+      return this.refusal('STS-KRB-0131', who + ' holds no Kerberos keys ' +
+                          'for the password on their entry' +
+                          (opened.ok || opened.why === 'none' ? ''
+                            : ' (' + opened.why + ')') +
+                          ', so the KDC would refuse any keytab. Their keys ' +
+                          'are derived when a password is set or verified ' +
+                          'here; a password written behind this service (an ' +
+                          'ldapmodify) derives none until then.');
+    }
+    const record = opened.record;
+    const pairs = this.keyPairs(record.keys);
+    if (!pairs.length) {
+      log.debug('Leaving Krb5PersonKeys.productPersonKeys(). No key for an ' +
+                'enctype this KDC offers.');
+      return this.refusal('STS-KRB-0131', who + '\'s stored keys cover no ' +
+                          'enctype in krb5.enctypes; their next verified ' +
+                          'sign-in derives the ones it lists.');
+    }
+    const keys: Array<[number, Uint8Array]> = [];
+    for (const pair of pairs) {
+      const derived = await self.deriveKey(pair[0], password, record.salt,
+                                           null);
+      const a = Buffer.from(derived);
+      const b = Buffer.from(pair[1]);
+      if (a.length !== b.length || !nodeCrypto.timingSafeEqual(a, b)) {
+        log.debug('Leaving Krb5PersonKeys.productPersonKeys(). The password ' +
+                  'does not give the stored key.');
+        return this.refusal('STS-KRB-0132', 'That password does not give ' +
+                            'the Kerberos key the KDC holds for ' + who +
+                            ', so no keytab was made.');
+      }
+      keys.push([pair[0], Uint8Array.from(a)]);
+    }
+    log.debug('Leaving Krb5PersonKeys.productPersonKeys(). kvno ' +
+              record.kvno + '.');
+    return { ok: true, kvno: Number(record.kvno), keys: keys,
+             source: 'password' };
+  }
+
+  // The keys a DEVELOPMENT KDC uses for a person: the principal it answers
+  // with — created on first sight, as its AS exchange would — and that
+  // principal's own password and salt.
+  private async developmentPersonKeys(who: string): Promise<Json> {
+    const { log, principals } = this.deps;
+    log.debug('Entering Krb5PersonKeys.developmentPersonKeys(). name=' + who);
+    const db = principals as unknown as Json;
+    const found = db.lookupUser([who]);
+    const principal = found && found.principal;
+    if (!principal) {
+      log.debug('Leaving Krb5PersonKeys.developmentPersonKeys(). No ' +
+                'principal.');
+      return this.refusal('STS-KRB-0133', 'The development KDC has no ' +
+                          'principal ' + who + '@' + principals.REALM +
+                          ' and will not make one (' +
+                          'a name krb5.unknownUsers keeps unknown), so a ' +
+                          'keytab would name nobody it knows.');
+    }
+    const keys: Array<[number, Uint8Array]> = [];
+    for (const etype of db.supportedEtypes(principal)) {
+      keys.push([etype, Uint8Array.from(await db.longTermKey(principal,
+                                                             etype))]);
+    }
+    if (!keys.length) {
+      log.debug('Leaving Krb5PersonKeys.developmentPersonKeys(). No ' +
+                'enctype.');
+      return this.refusal('STS-KRB-0133', who + '@' + principals.REALM +
+                          ' supports no enctype this KDC offers.');
+    }
+    log.debug('Leaving Krb5PersonKeys.developmentPersonKeys(). kvno ' +
+              principal.kvno + '.');
+    return { ok: true, kvno: Number(principal.kvno), keys: keys,
+             source: 'development' };
+  }
+
+  // What one person's Kerberos account IS, for their page on the console and
+  // their own in the portal: the principal, whether this realm has a KDC,
+  // which kind, and the PUBLIC half of their keys. Nothing is opened.
+  personKerberosState(name: unknown): Json {
+    const { log, principals, kcrypto } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Krb5PersonKeys.personKerberosState(). name=' + name);
+    const who = String(name == null ? '' : name).trim();
+    const state = principals.kerberosRealmOf();
+    const kdc = !!(state.enabled && state.active);
+    const out: Json = {
+      kdc: kdc, realm: kdc ? principals.REALM : '',
+      trustRealm: state.trustRealm,
+      reason: kdc ? '' : (state.reason || 'krb5.enabled is off for it'),
+      productKdc: kdc ? this.productKdc() : null,
+      personKeys: this.personKeysEnabled(),
+      principal: kdc && who ? who + '@' + principals.REALM : '',
+      nameUsable: !!who && !this.personNameProblem(who),
+      person: false, disabled: false, keys: null
+    };
+    if (!directory || !out.nameUsable) {
+      log.debug('Leaving Krb5PersonKeys.personKerberosState(). No directory ' +
+                'or no usable name.');
+      return out;
+    }
+    const current = directory.readPerson(who);
+    out.person = !!current;
+    out.disabled = !!(current && current.disabled);
+    const info = current ? this.parseInfo(current.info) : null;
+    if (kdc && info) {
+      out.keys = {
+        kvno: info.kvno == null ? null : Number(info.kvno),
+        etypes: (info.etypes || []).map(function (etype) {
+          return { etype: Number(etype),
+                   name: kcrypto.etypeName(Number(etype)) };
+        }),
+        derivedAt: info.derivedAt || '', derivedOn: info.event || '',
+        sealed: !!info.sealed,
+        current: !!current.passwordHash &&
+                 info.stamp === this.stampOf(current.passwordHash),
+        retained: this.retainedRows(info.retained, Date.now())
+      };
+    }
+    log.debug('Leaving Krb5PersonKeys.personKerberosState().');
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -1700,7 +2732,12 @@ class Krb5PersonKeys {
       return [];
     }
     const nowMs = Date.now();
-    const rows = this.directory.serviceKeyInfos().map(function (one) {
+    // THE KRBTGT'S ENTRY IS NOT A SERVICE PRINCIPAL ROW (#169): it has its
+    // own block (`krbtgtState()`) and no control on the service table applies
+    // to it — rotating it there would hand its key out as a keytab.
+    const rows = this.directory.serviceKeyInfos().filter(function (one) {
+      return !/^krbtgt\//i.test(String(one.identifier));
+    }).map(function (one) {
       const info = self.parseInfo(one.info) || {};
       const principal = String(one.identifier);
       return {
@@ -1762,10 +2799,23 @@ class Krb5PersonKeys {
                'not an error.');
     }
     if (typeof principals.setKeySource === 'function') {
+      // THE FAST PROVIDER RIDES IN THE KEY SOURCE (#173). It is not a key,
+      // but it needs the same two things the key source is the KDC's only
+      // door to — the directory's people (their second factors) and the
+      // credential store (their authenticator codes) — and a second slot
+      // would be rule 3e's "a slot by analogy". One object, validated whole
+      // by `setKeySource()` as before; the two new members are optional
+      // there, so a source without them (the parent project's jobs have
+      // none) leaves the KDC exactly as it was.
       principals.setKeySource({ personKeys: this.personKeys.bind(this),
                                 serviceKeys: this.serviceKeys.bind(this),
+                                // #169: this realm's random krbtgt key.
+                                krbtgtKeys: this.krbtgtKeys.bind(this),
                                 personDisabled:
-                                  this.personDisabled.bind(this) });
+                                  this.personDisabled.bind(this),
+                                personSecondFactor:
+                                  this.personSecondFactor.bind(this),
+                                fast: this.deps.fast });
     } else {
       log.warn('krb5-keys: kerberos/krb5_principals.js offers no ' +
                'setKeySource(), so stored Kerberos keys are never read. That ' +
@@ -1813,6 +2863,8 @@ export = {
   deriveKey: slot.forward('deriveKey'),
   personKeys: slot.forward('personKeys'),
   personDisabled: slot.forward('personDisabled'),
+  personSecondFactor: slot.forward('personSecondFactor'),
+  preauthPolicy: slot.forward('preauthPolicy'),
   serviceKeys: slot.forward('serviceKeys'),
   observePassword: slot.forward('observePassword'),
   idle: slot.forward('idle'),
@@ -1823,9 +2875,21 @@ export = {
   clearPersonKeys: slot.forward('clearPersonKeys'),
   dropPreviousPersonKeys: slot.forward('dropPreviousPersonKeys'),
   dropPreviousServiceKeys: slot.forward('dropPreviousServiceKeys'),
+  personKeytabRefusal: slot.forward('personKeytabRefusal'),
+  personKeytab: slot.forward('personKeytab'),
+  personKerberosState: slot.forward('personKerberosState'),
   retainedVersionsLimit: slot.forward('retainedVersionsLimit'),
   retainedTtlSeconds: slot.forward('retainedTtlSeconds'),
   listPeople: slot.forward('listPeople'),
   listServices: slot.forward('listServices'),
-  withheldValues: slot.forward('withheldValues')
+  withheldValues: slot.forward('withheldValues'),
+  // THE KRBTGT KEY (#169).
+  krbtgtIdentifier: slot.forward('krbtgtIdentifier'),
+  krbtgtTtlSeconds: slot.forward('krbtgtTtlSeconds'),
+  krbtgtKeys: slot.forward('krbtgtKeys'),
+  krbtgtState: slot.forward('krbtgtState'),
+  createKrbtgtKey: slot.forward('createKrbtgtKey'),
+  ensureKrbtgtKey: slot.forward('ensureKrbtgtKey'),
+  rotateKrbtgt: slot.forward('rotateKrbtgt'),
+  dropPreviousKrbtgtKeys: slot.forward('dropPreviousKrbtgtKeys')
 };

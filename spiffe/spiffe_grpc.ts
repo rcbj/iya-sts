@@ -9,8 +9,10 @@
 // status.
 //
 // It is a LIBRARY: it registers no HTTP route, and it holds no protocol
-// knowledge — `spiffe_workload.ts` and `spiffe_api.ts` are the two callers and
-// each brings its own handlers. It requires `helpers.js`, `config.js`,
+// knowledge — `spiffe_workload.ts`, `spiffe_api.ts` and, since #170,
+// `spiffe_broker.ts` (the SPIFFE Broker API, the `broker` surface, whose
+// caller check is `prepareBrokerCall()`) are the callers and each brings its
+// own handlers. It requires `helpers.js`, `config.js`,
 // `audit.js` and `admin_stats.js`, none of which requires it back.
 //
 // ---------------------------------------------------------------------------
@@ -37,8 +39,8 @@
 // ---------------------------------------------------------------------------
 // THE `.proto` FILES ARE VENDORED AND ARE LOAD-BEARING
 //
-// `protos/workloadapi.proto` is a verbatim copy of the SPIFFE project's own,
-// and `protos/spire/**` of the `spire-api-sdk`'s. They are read AT REQUIRE
+// `protos/workloadapi.proto` and `protos/brokerapi.proto` are verbatim copies
+// of the SPIFFE project's own, and `protos/spire/**` of the `spire-api-sdk`'s. They are read AT REQUIRE
 // TIME, at module scope, and a missing one is not a degraded feature — this
 // module does not load. That is the same decision `bbs2023.js` makes about
 // `contexts/`, and for a similar reason: a service that advertised the Workload
@@ -67,6 +69,9 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
 import config = require('../common/config');
+// A LEAF (it requires `config` and `error_codes` only), for the one
+// development-only setting this file reads (#181).
+import mode = require('../common/mode');
 // THE REALM REGISTRY, for the one thing an operation has to carry that this
 // file did not know about when the operation seam was written — see
 // `methodRequest()`. A LIBRARY (rule 3), loaded by `app.js` long before this
@@ -130,6 +135,10 @@ const LOAD_OPTIONS = {
 
 const WORKLOAD_PROTO = 'workloadapi.proto';
 
+// THE SPIFFE BROKER API (#170): `spiffe/standards/brokerapi.proto`, verbatim,
+// service `spiffe.broker.API`.
+const BROKER_PROTO = 'brokerapi.proto';
+
 const SERVER_PROTOS = [
   'spire/api/server/entry/v1/entry.proto',
   'spire/api/server/agent/v1/agent.proto',
@@ -149,6 +158,7 @@ interface SpiffeGrpcDeps {
   loader: typeof loader;
   log: typeof log;
   config: typeof config;
+  mode: typeof mode;
   realms: typeof realms;
   audit: typeof audit;
   errorCodes: typeof errorCodes;
@@ -165,14 +175,21 @@ interface SpiffeGrpcDeps {
   // given where each is called.
   loadRequestPool(): typeof import('../common/request_pool');
   loadRequestWorker(): typeof import('../common/request_worker');
+  loadClusterBarrier(): typeof import('../cluster/cluster_barrier');
 }
 
 // The accepting listeners of attested sockets, by the gRPC server they feed.
 const ATTESTED_LISTENERS = new Map<any, any[]>();
 
+// WHETHER EACH SPIRE SERVER API SOCKET WAS MADE 0600, by path (#104): set by
+// restrictSocket() when a socket is bound, read by socketPrivacy() when a
+// connection is accepted. At most one entry per configured socket path, so it
+// is bounded by configuration and is not a cache.
+const RESTRICTED_SOCKETS = new Map<string, boolean>();
+
 // The services `SpiffeGrpc.wire()` names.
 type ServiceName = 'workload' | 'entry' | 'agent' | 'bundle' | 'svid' |
-  'trustdomain' | 'debug';
+  'trustdomain' | 'debug' | 'broker';
 
 class SpiffeGrpc {
   constructor(private readonly deps: SpiffeGrpcDeps) {
@@ -191,6 +208,7 @@ class SpiffeGrpc {
       loader: loader,
       log: log,
       config: config,
+      mode: mode,
       realms: realms,
       audit: audit,
       errorCodes: errorCodes,
@@ -208,6 +226,9 @@ class SpiffeGrpc {
       },
       loadRequestWorker: function () {
         return require('../common/request_worker');
+      },
+      loadClusterBarrier: function () {
+        return require('../cluster/cluster_barrier');
       }
     };
   }
@@ -227,7 +248,8 @@ class SpiffeGrpc {
       svid: DEFINITIONS.server['spire.api.server.svid.v1.SVID'],
       trustdomain:
         DEFINITIONS.server['spire.api.server.trustdomain.v1.TrustDomain'],
-      debug: DEFINITIONS.server['spire.api.server.debug.v1.Debug']
+      debug: DEFINITIONS.server['spire.api.server.debug.v1.Debug'],
+      broker: DEFINITIONS.broker['spiffe.broker.API']
     };
     SERVICES = services;
     Object.keys(services).forEach(function (name) {
@@ -248,8 +270,9 @@ class SpiffeGrpc {
     log.debug('Entering SpiffeGrpc.loadDefinitions().');
     const workload = loader.loadSync(WORKLOAD_PROTO, LOAD_OPTIONS);
     const server = loader.loadSync(SERVER_PROTOS, LOAD_OPTIONS);
+    const broker = loader.loadSync(BROKER_PROTO, LOAD_OPTIONS);
     log.debug('Leaving SpiffeGrpc.loadDefinitions().');
-    return { workload: workload, server: server };
+    return { workload: workload, server: server, broker: broker };
   }
 
   // What each surface publishes, for `/spiffe` and `/admin/sts-metadata` —
@@ -291,6 +314,20 @@ class SpiffeGrpc {
     }
     log.debug("Leaving SpiffeGrpc.securityHeaderPresent().");
     return false;
+  }
+
+  // THE BROKER ENDPOINT'S HEADER (#170): SPIFFE Broker Endpoint section 3 —
+  // `broker.spiffe.io` with the value `true`, case sensitive, and SPIRE's
+  // check (`verifyBrokerSecurityHeader()`) is exactly one value, exactly
+  // that. Stricter than the Workload API's reading above, because the
+  // specification says "case sensitive" here and nothing there.
+  brokerHeaderPresent(call) {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.brokerHeaderPresent().");
+    const values = call && call.metadata
+      ? call.metadata.get(BROKER_SECURITY_HEADER) || [] : [];
+    log.debug("Leaving SpiffeGrpc.brokerHeaderPresent().");
+    return values.length === 1 && String(values[0]) === 'true';
   }
 
   // ---------------------------------------------------------------------------
@@ -376,7 +413,11 @@ class SpiffeGrpc {
     log.debug("Entering SpiffeGrpc.errorToStatus().");
     if (err && typeof err.code === 'number') {
       log.debug("Leaving SpiffeGrpc.errorToStatus().");
-      return { code: err.code, details: err.message };
+      // `metadata` carries a `grpc-status-details-bin` where a refusal has
+      // one — the Broker API's google.rpc.ErrorInfo (#170).
+      return err.metadata
+        ? { code: err.code, details: err.message, metadata: err.metadata }
+        : { code: err.code, details: err.message };
     }
     log.error(errorCodes.tag('STS-SPIFFE-0001') +
               'spiffe: ' + where + ' threw something that was not a status ' +
@@ -419,11 +460,15 @@ class SpiffeGrpc {
     return !!config.value('spiffe.enabled');
   }
 
+  // OFF is honoured in development only (#181): the Workload Endpoint
+  // specification section 3 says a call without the header MUST be refused,
+  // so a product realm with off still stored refuses it and says so once
+  // (`mode.valueInForce()`, STS-CORE-0106).
   requireSecurityHeader() {
-    const { log, config } = this.deps;
+    const { log, mode } = this.deps;
     log.debug("Entering SpiffeGrpc.requireSecurityHeader().");
     log.debug("Leaving SpiffeGrpc.requireSecurityHeader().");
-    return !!config.value('spiffe.requireSecurityHeader');
+    return !!mode.valueInForce('spiffe.requireSecurityHeader');
   }
 
   // A refusal descriptor from `spiffe_auth.ts` — `{ status, message }` where
@@ -645,16 +690,71 @@ class SpiffeGrpc {
     return found ? found[1] : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // AND EVERY CALL WAITS FOR THE CLUSTER'S READ BARRIER FIRST (2026-09-24).
+  //
+  // `cluster_barrier.js`'s first rule — a request is served after its node
+  // has applied everything committed before it arrived — is HTTP middleware,
+  // and a gRPC call never passes through `app.js`. So a change committed on
+  // one node reached a call on the other only at that node's next change
+  // pull: `sts_spiffe_broker` in `cluster` mode removed a broker through the
+  // balancer (node B, 19:25:30.086) and the broker's next call, on node A's
+  // listener, was still answered — "a broker removed is PERMISSION_DENIED on
+  // its next call" is the Broker API's allow-only policy (section 4.1), and
+  // `spiffe.brokers`' own description promises it. The same gap held for the
+  // SPIRE Server API's admin IDs and registration entries.
+  //
+  // `syncShared()` is the barrier the HTTP side uses — one pull shared by
+  // every request that arrived before it started — and it is asked only
+  // where the barrier is active (active-active). A handler that throws after
+  // the wait can no longer reach grpc-js, so it is logged, and a unary call
+  // is answered INTERNAL rather than left open.
+  // ---------------------------------------------------------------------------
+  clusterBarrier() {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.clusterBarrier().");
+    let barrier = null;
+    try {
+      barrier = typeof this.deps.loadClusterBarrier === 'function' ?
+                this.deps.loadClusterBarrier() : null;
+    } catch (e) {
+      log.debug("Caught in SpiffeGrpc.clusterBarrier(): " +
+                ((e && e.message) || e));
+      barrier = null;
+    }
+    const active = !!(barrier && barrier.isActive());
+    log.debug("Leaving SpiffeGrpc.clusterBarrier(). " + active);
+    return active ? barrier : null;
+  }
+
   fromCaller(handler) {
-    const { log, audit } = this.deps;
+    const { log, audit, errorCodes, grpc } = this.deps;
     const self = this;
     log.debug("Entering SpiffeGrpc.fromCaller().");
     log.debug("Leaving SpiffeGrpc.fromCaller().");
     return function (call, callback?) {
-      return audit.withSource({ address: self.callerAddressOf(call) },
-                              function () {
-        return handler(call, callback);
+      const run = function () {
+        log.debug("Entering run().");
+        log.debug("Leaving run().");
+        return audit.withSource({ address: self.callerAddressOf(call) },
+                                function () {
+          return handler(call, callback);
+        });
+      };
+      const barrier = self.clusterBarrier();
+      if (!barrier) {
+        return run();
+      }
+      barrier.syncShared().then(run, run).catch(function (e) {
+        log.error(errorCodes.tag('STS-SPIFFE-0143') + 'spiffe: a gRPC ' +
+                  'handler threw after the cluster read barrier: ' +
+                  ((e && e.message) || e));
+        if (typeof callback === 'function') {
+          callback({ code: grpc.status.INTERNAL,
+                     details: 'The call failed inside the service.' });
+        }
       });
+      return undefined;
     };
   }
 
@@ -673,6 +773,10 @@ class SpiffeGrpc {
                          'will be issued until it is turned back on, which ' +
                          'needs no restart.') };
     }
+    if (surface === 'broker') {
+      log.debug('Leaving SpiffeGrpc.prepareCall(). The broker endpoint.');
+      return this.prepareBrokerCall(call);
+    }
     if (surface === 'workload' && this.requireSecurityHeader() &&
         !this.securityHeaderPresent(call)) {
       log.debug('Leaving SpiffeGrpc.prepareCall(). No security header.');
@@ -689,6 +793,24 @@ class SpiffeGrpc {
                              'else.') };
     }
     const caller = auth.callerOf(call, surface);
+    // THE WORKLOAD API OVER TCP, ASKED PER CALL (#166). `bindAll()` does not
+    // bind the port where the posture refuses it; this is the other half: a
+    // realm switched to product — or whose declaration was withdrawn — after
+    // its port was bound keeps the socket, because the listeners are bound
+    // once, and refuses every call on it here with the reason's own code
+    // (STS-SPIFFE-0120 or STS-SPIFFE-0121). The mode is runtime, so the read
+    // is the guard.
+    if (surface === 'workload' && caller.transport !== 'uds') {
+      const posture = auth.workloadTcpPosture();
+      if (!posture.served) {
+        log.debug('Leaving SpiffeGrpc.prepareCall(). TCP is not served.');
+        return { caller: caller,
+                 errorCode: posture.errorCode || 'STS-SPIFFE-0120',
+                 refusal: this.unavailable('The Workload API is not served ' +
+                                           'over TCP here: ' + posture.why +
+                                           '.') };
+      }
+    }
     // A CONNECTION ACCEPTED ON THE ATTESTED SOCKET (#40 phase four). Its
     // facts were gathered, and its workload attestors run, before gRPC saw
     // it; here, on EVERY call, the process must still be the one attested,
@@ -784,6 +906,59 @@ class SpiffeGrpc {
     return { caller: caller, refusal: null };
   }
 
+  // ---------------------------------------------------------------------------
+  // A SPIFFE BROKER API CALL (#170), in the order the specification's error
+  // table implies and SPIRE's endpoint checks: the header (INVALID_ARGUMENT,
+  // before anything is asked of the caller), then WHO — an X509-SVID over
+  // the mutual-TLS handshake, verified against this trust domain's or a
+  // federated bundle (UNAUTHENTICATED) — then whether that identity is a
+  // broker here (PERMISSION_DENIED). The broker is put on the caller as
+  // `caller.broker`, where `spiffe_broker.ts` reads which reference types it
+  // may use. An accepted broker is an authentication, recorded through the
+  // same funnel as the SPIRE Server API's callers, so it has a directory
+  // entry like every other identity.
+  //
+  // **THE HANDSHAKE ASKS FOR A CERTIFICATE AND THIS REFUSES THE CALL** rather
+  // than the handshake refusing the connection: the specification allows
+  // either (Broker Endpoint section 6 says UNAUTHENTICATED is "unlikely to be
+  // observed" because most implementations refuse at TLS), and refusing here
+  // lets a broker from a FEDERATED trust domain — which OpenSSL could not
+  // verify against this realm's anchors — be verified by `spiffe_auth.ts`
+  // like any other presented SVID, and lets a client see a status that says
+  // why.
+  // ---------------------------------------------------------------------------
+  prepareBrokerCall(call) {
+    const { log, auth, errorCodes } = this.deps;
+    log.debug('Entering SpiffeGrpc.prepareBrokerCall().');
+    if (!this.brokerHeaderPresent(call)) {
+      log.debug('Leaving SpiffeGrpc.prepareBrokerCall(). No header.');
+      return { caller: null, errorCode: 'STS-SPIFFE-0132',
+               refusal: this.invalidArgument('security header missing from ' +
+                 'request: every call to the SPIFFE Broker Endpoint must ' +
+                 'carry the metadata header "' + BROKER_SECURITY_HEADER +
+                 ': true" (SPIFFE Broker Endpoint section 3).') };
+    }
+    const caller = auth.callerOf(call, 'broker');
+    const verdict = auth.brokerOf(caller);
+    if (!verdict.broker) {
+      log.debug('Leaving SpiffeGrpc.prepareBrokerCall(). Refused.');
+      return { caller: caller, errorCode: verdict.errorCode,
+               refusal: this.fromDescriptor(verdict) };
+    }
+    caller.broker = verdict.broker;
+    try {
+      call.spiffeCaller = caller;
+    } catch (e) {
+      // See prepareCall(): a frozen call object would be a grpc-js change.
+      log.error(errorCodes.tag('STS-SPIFFE-0007') +
+                'spiffe: the broker could not be attached to the call (' +
+                e.message + ').');
+    }
+    auth.recordCaller(caller);
+    log.debug('Leaving SpiffeGrpc.prepareBrokerCall(). ' + caller.spiffeId);
+    return { caller: caller, refusal: null };
+  }
+
   // The audit and metrics row for one gRPC call. `channel: 'grpc'` is a new one
   // beside http, ldap, ldaps and internal, and it is a channel rather than a
   // protocol for the same reason those are: it says HOW the call arrived, which
@@ -816,8 +991,8 @@ class SpiffeGrpc {
       // row must not imply an identity nothing established.
       actor: (caller && caller.authenticated) ? caller.spiffeId : '',
       protocol: surface === 'workload' ? 'SPIFFE Workload API' :
-                'SPIRE Server ' +
-          'API',
+                surface === 'broker' ? 'SPIFFE Broker API' :
+                'SPIRE Server API',
       channel: 'grpc',
       target: method,
       errorCode: code,
@@ -920,7 +1095,11 @@ class SpiffeGrpc {
     const { log } = this.deps;
     log.debug("Entering SpiffeGrpc.dispatchUnary().");
     const pool = this.requestPool();
-    if (!pool || typeof pool.runOperation !== 'function') {
+    // A surface whose methods are not in the worker table stays here — the
+    // Broker API (#170), whose references are attested by the process that
+    // holds the pidfds and the attestors' connections.
+    if (!pool || typeof pool.runOperation !== 'function' ||
+        DISPATCHED_SURFACES.indexOf(surface) < 0) {
       log.debug("Leaving SpiffeGrpc.dispatchUnary().");
       return Promise.resolve({ dispatched: false });
     }
@@ -1215,6 +1394,18 @@ class SpiffeGrpc {
             call.write(message);
             log.debug("Leaving push().");
             return true;
+          }, function end(err) {
+            log.debug("Entering end().");
+            // A handler ENDING the stream with a status — the Broker API's
+            // "the workload has stopped" (#170): no later message is sent
+            // for it, and the broker is told why.
+            if (!open) {
+              log.debug("Leaving end(). Already closed.");
+              return;
+            }
+            open = false;
+            call.emit('error', self.errorToStatus(err, method));
+            log.debug("Leaving end().");
           });
         })
         .then(function (first) {
@@ -1400,6 +1591,8 @@ class SpiffeGrpc {
               ' private=' + !!privateSocket);
     const directory = path.dirname(socketPath);
     const existed = fs.existsSync(directory);
+    // A new socket is not private until restrictSocket() says so (#104).
+    RESTRICTED_SOCKETS.delete(String(socketPath));
     try {
       // `mode` applies to every directory `recursive` creates and to none that
       // existed — which is the half this function wants.
@@ -1491,17 +1684,70 @@ class SpiffeGrpc {
     try {
       fs.chmodSync(socketPath, PRIVATE_SOCKET_MODE);
     } catch (e) {
+      RESTRICTED_SOCKETS.set(String(socketPath), false);
       log.error(errorCodes.tag('STS-SPIFFE-0010') +
                 'spiffe: could not make the SPIRE Server API socket ' +
-                socketPath + ' mode 0600 (' + e.message + '). Other users on ' +
-                'this machine may be able to connect to it as the trusted ' +
-                '`local` entity; turn spiffe.trustLocalSocket off or move ' +
-                'the socket until this is fixed.');
+                socketPath + ' mode 0600 (' + e.message + '). In a product ' +
+                'realm no caller on it is trusted as the `local` entity ' +
+                '(STS-SPIFFE-0117); in a development realm other users on ' +
+                'this machine may be able to connect to it as that entity — ' +
+                'turn spiffe.trustLocalSocket off or move the socket until ' +
+                'this is fixed.');
       log.debug('Leaving SpiffeGrpc.restrictSocket(). It failed.');
       return false;
     }
+    RESTRICTED_SOCKETS.set(String(socketPath), true);
     log.debug('Leaving SpiffeGrpc.restrictSocket().');
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // IS THE SPIRE SERVER API SOCKET AT `socketPath` PRIVATE? (#104.) Asked
+  // when a connection is accepted, and what product mode's `local` entity
+  // stands on (`spiffe_auth.ts`'s `localTrust()`): restrictSocket() must have
+  // made it 0600 — a chmod that FAILED (STS-SPIFFE-0010) is refused, and so is
+  // a connection accepted before the chmod ran — and neither the socket nor
+  // its directory may carry a group or other bit. The directory matters
+  // because between the bind and the chmod the socket has the umask's mode,
+  // and only a directory nobody else can enter closes that window. Never
+  // throws; `why` is the sentence a refusal quotes.
+  // ---------------------------------------------------------------------------
+  socketPrivacy(socketPath: string): { private: boolean; why: string } {
+    const { log, fs, path } = this.deps;
+    log.debug('Entering SpiffeGrpc.socketPrivacy(). ' + socketPath);
+    const restricted = RESTRICTED_SOCKETS.get(String(socketPath));
+    if (restricted !== true) {
+      log.debug('Leaving SpiffeGrpc.socketPrivacy(). Not restricted.');
+      return { private: false,
+               why: restricted === false
+                 ? 'the socket could not be made mode 0600 (STS-SPIFFE-0010)'
+                 : 'the socket had not been made mode 0600 when this ' +
+                   'connection was accepted' };
+    }
+    const checks = [{ what: 'the socket ' + socketPath, at: socketPath },
+                    { what: 'its directory ' + path.dirname(socketPath),
+                      at: path.dirname(socketPath) }];
+    for (let i = 0; i < checks.length; i++) {
+      let bits = 0;
+      try {
+        bits = fs.statSync(checks[i].at).mode & 0o777;
+      } catch (e) {
+        log.debug('Caught in SpiffeGrpc.socketPrivacy(): ' +
+                  ((e && e.message) || e));
+        log.debug('Leaving SpiffeGrpc.socketPrivacy(). Unreadable.');
+        return { private: false,
+                 why: checks[i].what + ' could not be read (' +
+                      ((e && e.code) || (e && e.message) || e) + ')' };
+      }
+      if (bits & 0o077) {
+        log.debug('Leaving SpiffeGrpc.socketPrivacy(). Reachable.');
+        return { private: false,
+                 why: checks[i].what + ' is mode ' + bits.toString(8) +
+                      ', which other users can reach' };
+      }
+    }
+    log.debug('Leaving SpiffeGrpc.socketPrivacy(). Private.');
+    return { private: true, why: '' };
   }
 
   // Build a server with a set of services on it. One function for both
@@ -1661,8 +1907,32 @@ class SpiffeGrpc {
   // a reason nobody could see, and `GET /spiffe` says which of the two it got.
   // ---------------------------------------------------------------------------
   async serverApiCredentials() {
-    const { log, ca, spiffeId, config, grpc, errorCodes } = this.deps;
+    const { log } = this.deps;
     log.debug('Entering SpiffeGrpc.serverApiCredentials().');
+    log.debug('Leaving SpiffeGrpc.serverApiCredentials().');
+    return this.svidServerCredentials('SPIRE Server API');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SPIFFE BROKER ENDPOINT'S CREDENTIALS (#170): the same server SVID and
+  // the same request-but-not-require handshake as the SPIRE Server API —
+  // `spiffe://<trust domain>/spire/server`, which is the "expected SPIFFE-ID
+  // of the SPIFFE provider" a broker is told to check (Broker Endpoint
+  // section 5). A call that presented nothing is refused UNAUTHENTICATED by
+  // `prepareBrokerCall()`; see there for why the refusal is not the
+  // handshake's.
+  // ---------------------------------------------------------------------------
+  async brokerCredentials() {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeGrpc.brokerCredentials().');
+    log.debug('Leaving SpiffeGrpc.brokerCredentials().');
+    return this.svidServerCredentials('SPIFFE Broker API');
+  }
+
+  // Both listeners' credentials; `surface` names the listener in the log.
+  async svidServerCredentials(surface: string) {
+    const { log, ca, spiffeId, config, grpc, errorCodes } = this.deps;
+    log.debug('Entering SpiffeGrpc.svidServerCredentials(). ' + surface);
     await ca.ready();
     const identity = spiffeId.serverId(ca.trustDomain());
     // ---------------------------------------------------------------------
@@ -1730,20 +2000,20 @@ class SpiffeGrpc {
       credentials._getConstructorOptions().rejectUnauthorized = false;
     } catch (e) {
       log.error(errorCodes.tag('STS-SPIFFE-0012') +
-                'spiffe: the SPIRE Server API ' +
+                'spiffe: the ' + surface + ' ' +
                 'TLS listener could not be set to ' +
                 'request-but-not-require a client certificate (' + e.message +
-                '). It will REFUSE any client that presents none, which ' +
-                'means AttestAgent cannot be reached over TCP. This is a ' +
-                'grpc-js change rather than anything a caller did.');
+                '). It will REFUSE any client that presents none at the ' +
+                'handshake — on the SPIRE Server API that means AttestAgent ' +
+                'cannot be reached over TCP. This is a grpc-js change ' +
+                'rather than anything a caller did.');
     }
-    log.info('spiffe: the SPIRE Server API TCP listener is mutual TLS as ' +
+    log.info('spiffe: the ' + surface + ' TCP listener is mutual TLS as ' +
              identity + ' (serial ' + svid.serialHex + ', ' + roots.length +
              ' bytes of trust bundle). A client verifies it against the ' +
              'bundle at the bundle endpoint, presents its own X509-SVID, and ' +
-             'is authorized per method against SPIRE\'s own table — see GET ' +
-             '/spiffe.');
-    log.debug('Leaving SpiffeGrpc.serverApiCredentials().');
+             'is authorized — see GET /spiffe.');
+    log.debug('Leaving SpiffeGrpc.svidServerCredentials().');
     return credentials;
   }
 
@@ -1831,6 +2101,9 @@ let SERVICES: Record<ServiceName, any> | null = null;
 // The refusal is `InvalidArgument`, which is what SPIRE answers.
 // ---------------------------------------------------------------------------
 const SECURITY_HEADER = 'workload.spiffe.io';
+
+// The SPIFFE Broker Endpoint's own (#170) — see `brokerHeaderPresent()`.
+const BROKER_SECURITY_HEADER = 'broker.spiffe.io';
 
 // ---------------------------------------------------------------------------
 // THE gRPC SURFACES AS OPERATIONS: WHAT GOES TO A REQUEST WORKER (2026-09-12).
@@ -1959,6 +2232,7 @@ export = {
     return SERVICES;
   },
   SECURITY_HEADER: SECURITY_HEADER,
+  BROKER_SECURITY_HEADER: BROKER_SECURITY_HEADER,
   methodsOf: slot.forward('methodsOf'),
   statusError: slot.forward('statusError'),
   invalidArgument: slot.forward('invalidArgument'),
@@ -1972,9 +2246,12 @@ export = {
   bindAttestedSocket: slot.forward('bindAttestedSocket'),
   closeAttested: slot.forward('closeAttested'),
   restrictSocket: slot.forward('restrictSocket'),
+  socketPrivacy: slot.forward('socketPrivacy'),
   buildServer: slot.forward('buildServer'),
   bindOne: slot.forward('bindOne'),
   serverApiCredentials: slot.forward('serverApiCredentials'),
+  brokerCredentials: slot.forward('brokerCredentials'),
+  brokerHeaderPresent: slot.forward('brokerHeaderPresent'),
   refreshServerApiCredentials: slot.forward('refreshServerApiCredentials'),
   // Exported for `tests/spire_api_access_policy.js`, which drives the two
   // decisions this function makes directly: the claim is about a DECISION and

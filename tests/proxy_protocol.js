@@ -410,11 +410,12 @@ async function checkRoundTrips(t) {
     proxyProtocol.install(secure, { label: 'test https' });
     const securePort = await listen(secure);
 
-    function overTls(source, apart) {
+    function overTls(source, apart, port) {
       log.debug("Entering overTls().");
       log.debug("Leaving overTls().");
       return new Promise(function (resolve) {
-        const rawSocket = net.connect(securePort, '127.0.0.1', function () {
+        const rawSocket = net.connect(port || securePort, '127.0.0.1',
+                                      function () {
           // Corked, so the header and the ClientHello leave as ONE segment
           // — the case where the TLS engine is handed bytes that arrived
           // with the header.
@@ -480,6 +481,40 @@ async function checkRoundTrips(t) {
     seen = await overTls({ address: '2001:db8::7', port: 6001 });
     t.equal(seen.remoteAddress + ' ' + seen.remoteFamily, '2001:db8::7 IPv6',
             '3j. an IPv6 header over TLS');
+
+    // THE MAIN PORT'S ORDER (2026-09-23): tls/client_hello.ts installed
+    // first and this file over it, as server.js does. This file hands the
+    // socket on PAUSED — right for a tls.Server — and the ClientHello
+    // capture only added a `data` listener, which an explicitly paused
+    // socket never delivers to: every connection through the balancer
+    // waited out the capture's 10 s timer before its handshake began, and
+    // the whole `cluster` mode ran at ten seconds a request.
+    const clientHello = require('../tls/client_hello');
+    let fingerprint = null;
+    const fingerprinted = https.createServer({
+      key: material.key, cert: material.cert
+    }, function (req, res) {
+      fingerprint = clientHello.of(req);
+      res.end(JSON.stringify({ remoteAddress: req.socket.remoteAddress }));
+    });
+    servers.push(fingerprinted);
+    clientHello.install(fingerprinted, { label: 'test ja4' });
+    proxyProtocol.install(fingerprinted, { label: 'test ja4' });
+    const fingerprintedPort = await listen(fingerprinted);
+    for (const apart of [false, true]) {
+      fingerprint = null;
+      const started = Date.now();
+      seen = await overTls({ address: '198.51.100.11', port: 6003 }, apart,
+                           fingerprintedPort);
+      const took = Date.now() - started;
+      t.check(seen.remoteAddress === '198.51.100.11' && fingerprint &&
+              /^t1[23]d/.test(fingerprint.ja4 || '') && took < 3000,
+              '3j-ii. with the ClientHello capture beneath it (the main ' +
+              'port), the handshake is fingerprinted and answered at once' +
+              (apart ? ', the header in a segment of its own' : ''),
+              JSON.stringify({ seen: seen, ja4: fingerprint &&
+                               fingerprint.ja4, ms: took }));
+    }
 
     // An ldapjs server: the bind limiter reads the connection's address.
     const ldap = require('ldapjs');

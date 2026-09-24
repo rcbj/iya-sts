@@ -31,6 +31,10 @@
 //   k. PAIRWISE subjects.
 //   l. offline_access, and an online refresh token ending with its session.
 //   m. an essential acr claims request as a requirement.
+//   p. OpenID Connect for Identity Assurance 1.0 (#127): discovery, a
+//      verification recorded through /admin-api, verified_claims chosen by
+//      trust framework and evidence type, omitted when nothing satisfies it,
+//      and section 6's refusal of a request with no verification.
 //
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
@@ -141,6 +145,31 @@ async function ok(url, payload, what) {
 }
 
 // One browser, with a cookie jar.
+// RP-Initiated Logout asks the person to confirm a sign-out that carries no
+// hint for this session (#124): GET the sign-out, and where the answer is that
+// page, submit its own form — what the person would press.
+async function signOut(b, url) {
+  log.debug("Entering signOut().");
+  const first = await b.go("GET", url);
+  if (!/name="confirm_for"/.test(first.text || "")) {
+    log.debug("Leaving signOut(). No confirmation asked.");
+    return first;
+  }
+  const fields = {};
+  (first.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
+    function (tag) {
+      const name = /name="([^"]+)"/.exec(tag);
+      const value = /value="([^"]*)"/.exec(tag);
+      if (name) {
+        fields[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
+      }
+    });
+  fields.confirm = "yes";
+  log.debug("Leaving signOut(). Confirmed.");
+  return b.go("POST", String(url).split("?")[0],
+              new URLSearchParams(fields).toString());
+}
+
 function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
@@ -289,7 +318,9 @@ function token(client, body) {
 
 async function register(metadata) {
   log.debug("Entering register().");
-  const types = ["code", "code id_token", "id_token"].concat(strict ? []
+  // `none` since #125 (Multiple Response Type Encoding Practices section 4),
+  // registered because a registered list is enforced (#120).
+  const types = ["code", "code id_token", "id_token", "none"].concat(strict ? []
     : ["id_token token", "code token", "code id_token token"]);
   const r = await postJson(base + R + "/oauth2/register", Object.assign({
     redirect_uris: [REDIRECT], token_endpoint_auth_method:
@@ -392,9 +423,12 @@ async function test() {
     ["address", "phone"].forEach(function (one) {
       assert.ok(r.body.scopes_supported.indexOf(one) >= 0, one);
     });
-    ["address", "phone_number", "birthdate", "acr"].forEach(function (one) {
-      assert.ok(r.body.claims_supported.indexOf(one) >= 0, one);
-    });
+    // And the Identity Assurance Claims Registration's (#128).
+    ["address", "phone_number", "birthdate", "acr", "nationalities",
+     "place_of_birth", "title", "msisdn", "birth_family_name"]
+      .forEach(function (one) {
+        assert.ok(r.body.claims_supported.indexOf(one) >= 0, one);
+      });
   });
   const issuer = r.body.issuer;
 
@@ -710,7 +744,7 @@ async function test() {
   // RP-Initiated Logout's end_session_endpoint: the session ends. (The
   // global `/logout` would disown every token the person holds, offline ones
   // included, which is a different promise.)
-  const out = await alice.go("GET", R + "/oauth2/logout");
+  const out = await signOut(alice, R + "/oauth2/logout");
   assert.ok(out.status < 500, "sign-out: " + out.status);
   t = await token(plain, { grant_type: "refresh_token",
                            refresh_token: onlineAgain });
@@ -738,7 +772,151 @@ async function test() {
       .indexOf(back.params.get("error")) >= 0, r.status + " " + r.location);
   });
 
-  assert.ok(checks >= 30, "only " + checks + " checks ran; a section has " +
+  log.info("=== n. response_type=none and an explicit query (#125) ===");
+  // Signed in again: section l signed alice out.
+  r = await authorize(alice, { response_type: "none",
+    client_id: plain.client_id, redirect_uri: REDIRECT, scope: "openid",
+    state: "s-none" }, ALICE);
+  back = atClient(r);
+  check("response_type=none issues nothing: state and iss alone, in the " +
+        "query (section 4)", function () {
+    assert.ok(back && back.where === "query", r.status + " " + r.location);
+    assert.strictEqual(back.params.get("state"), "s-none");
+    assert.ok(back.params.get("iss"), r.location);
+    ["code", "access_token", "id_token", "error"].forEach(function (one) {
+      assert.strictEqual(back.params.get(one), null, one + " in " +
+                         r.location);
+    });
+  });
+  r = await authorize(alice, { response_type: "none code",
+    client_id: plain.client_id, redirect_uri: REDIRECT, scope: "openid",
+    state: "s" });
+  back = atClient(r);
+  check("none combined with another type is unsupported_response_type",
+        function () {
+    assert.ok(back, r.status + " " + r.location);
+    assert.strictEqual(back.params.get("error"), "unsupported_response_type");
+  });
+  r = await authorize(alice, { response_type: "id_token",
+    response_mode: "query", client_id: plain.client_id,
+    redirect_uri: REDIRECT, scope: "openid", nonce: "n", state: "s" });
+  back = atClient(r);
+  check("response_mode=query for an ID Token is REFUSED, and the refusal " +
+        "is in the fragment (section 2.1's MUST NOT)", function () {
+    assert.ok(back && back.where === "fragment", r.status + " " + r.location);
+    assert.strictEqual(back.params.get("error"), "invalid_request");
+  });
+
+  log.info("=== o. form_post, a successful code response (#126) ===");
+  const formPost = codeRequest(plain, { response_mode: "form_post" });
+  r = await authorize(alice, formPost.params, ALICE);
+  const hidden = function (name) {
+    const m = new RegExp('name="' + name + '" value="([^"]*)"').exec(r.text);
+    return m ? m[1].replace(/&amp;/g, "&") : null;
+  };
+  check("response_mode=form_post answers a form POSTing code, state and iss " +
+        "to the redirect URI, with a real button (Form Post Response Mode " +
+        "section 2)", function () {
+    assert.strictEqual(r.status, 200, r.status + " " + r.location);
+    assert.ok(new RegExp('<form[^>]+method="post"[^>]+action="' +
+      REDIRECT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + '"').test(r.text),
+      r.text.slice(0, 400));
+    assert.ok(hidden("code"), "no code field");
+    assert.strictEqual(hidden("state"), formPost.params.state);
+    assert.ok(hidden("iss"), "no iss field");
+    assert.ok(/type="submit"/.test(r.text), "no button");
+  });
+
+  log.info("=== p. verified_claims (#127) ===");
+  await ok(realmApi + "/config/set", { key: "oauth2.idaTrustFrameworks",
+                                       value: "urn:example:oidccore,eidas" },
+           "configured the realm's trust frameworks");
+  r = await send(base + R + "/.well-known/openid-configuration");
+  check("discovery publishes Identity Assurance's section 7 members",
+        function () {
+    assert.strictEqual(r.body.verified_claims_supported, true);
+    assert.ok(r.body.trust_frameworks_supported.indexOf("eidas") >= 0,
+              JSON.stringify(r.body.trust_frameworks_supported));
+    assert.deepStrictEqual(r.body.evidence_supported.slice(0).sort(),
+      ["document", "electronic_record", "electronic_signature", "vouch"]);
+    assert.ok(r.body.documents_supported.indexOf("passport") >= 0);
+    assert.ok(r.body.claims_supported.indexOf("verified_claims") >= 0);
+    assert.ok(r.body.claims_in_verified_claims_supported
+      .indexOf("given_name") >= 0);
+  });
+  const refusedRecord = await postJson(realmApi +
+    "/users/record-verification", { user: ALICE,
+      verification: { trust_framework: "eidas", evidence: [
+        { type: "document", document_details: { type: "library" } }] },
+      claims: ["given_name"] });
+  check("a verification with a document type outside the vocabulary is " +
+        "refused", function () {
+    assert.strictEqual(refusedRecord.status, 400, refusedRecord.raw);
+  });
+  const recorded = await ok(realmApi + "/users/record-verification", {
+    user: ALICE,
+    verification: { trust_framework: "eidas", assurance_level: "high",
+      evidence: [{ type: "document",
+        check_details: [{ check_method: "vpip" }],
+        document_details: { type: "passport", document_number: "P1" } }] },
+    claims: ["given_name", "family_name"] }, "recorded a verification");
+  r = await send(realmApi + "/users/verifications?user=" +
+                 encodeURIComponent(ALICE));
+  check("the verification is recorded with the entry's values, and listed",
+        function () {
+    assert.strictEqual(recorded.verification.claims.given_name, "OIDC");
+    assert.strictEqual(r.status, 200, r.raw.slice(0, 300));
+    assert.ok(r.body.verifications.some(function (one) {
+      return one.id === recorded.verification.id;
+    }), r.raw.slice(0, 400));
+  });
+  const dave = browser("dave");
+  const verified = await codeTokens(dave, plain, { claims: JSON.stringify({
+    userinfo: { verified_claims: {
+      verification: { trust_framework: { value: "eidas" },
+        evidence: [{ type: { value: "document" },
+                     document_details: { type: null } }] },
+      claims: { given_name: null, family_name: null,
+                birthdate: { purpose: "To check your age" } } } },
+    id_token: { verified_claims: {
+      verification: { trust_framework: { value: "de_aml" } },
+      claims: { given_name: null } } } }) }, ALICE);
+  r = await send(base + R + "/oauth2/userinfo",
+                 { headers: { Authorization: "Bearer " +
+                              verified.access_token } });
+  check("UserInfo answers verified_claims from the eIDAS passport check, " +
+        "with only the members asked for", function () {
+    assert.strictEqual(r.status, 200, r.raw.slice(0, 300));
+    const vc = r.body.verified_claims;
+    assert.ok(vc && !Array.isArray(vc), r.raw.slice(0, 400));
+    assert.strictEqual(vc.verification.trust_framework, "eidas");
+    assert.strictEqual(vc.verification.assurance_level, undefined);
+    assert.strictEqual(vc.verification.evidence[0].type, "document");
+    assert.strictEqual(vc.verification.evidence[0].document_details.type,
+                       "passport");
+    assert.strictEqual(
+      vc.verification.evidence[0].document_details.document_number,
+      undefined);
+    assert.strictEqual(vc.claims.given_name, "OIDC");
+    assert.strictEqual(vc.claims.family_name, ALICE);
+    assert.strictEqual(vc.claims.birthdate, undefined);
+  });
+  check("an ID Token asking for a framework nothing was verified under " +
+        "carries no verified_claims (section 6)", function () {
+    assert.strictEqual(decode(verified.id_token).claims.verified_claims,
+                       undefined);
+  });
+  r = await authorize(dave, codeRequest(plain, { claims: JSON.stringify({
+    userinfo: { verified_claims: { claims: { given_name: null } } } })
+  }).params);
+  back = atClient(r);
+  check("a verified_claims request with no verification is invalid_request",
+        function () {
+    assert.ok(back, r.status + " " + r.location);
+    assert.strictEqual(back.params.get("error"), "invalid_request");
+  });
+
+  assert.ok(checks >= 34, "only " + checks + " checks ran; a section has " +
                                              "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

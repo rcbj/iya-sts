@@ -164,6 +164,58 @@ const SECRET_NOTES = {
     rotating: 'Rotating it is ordinary: change it in the store and in ' +
               'PostgreSQL, and restart. Nothing this service has written ' +
               'depends on its value.'
+  },
+  // THE MAIL CHANNEL'S FOUR (#63). Each is optional and unconfigured by
+  // default; each is read when `common/mail.ts` builds the transport that
+  // needs it, never at startup except in product mode's check that the
+  // configured transport can be built.
+  'mail-smtp-password': {
+    heading: 'The SMTP relay password',
+    what: 'The SMTP AUTH password (or XOAUTH2 credential) the SMTP mail ' +
+          'transport logs in to its relay with, when ' +
+          '<code>mail.smtpAuth</code> asks for one.',
+    without: 'The SMTP transport cannot log in. In PRODUCT mode a service ' +
+             'configured to send through it does not start ' +
+             '(STS-MAIL-0002); otherwise each message is a failed attempt ' +
+             'and, in the end, a dead letter on Monitoring &rarr; Mail.',
+    rotating: 'Change it in the store and at the relay. It is read again ' +
+              'the next time the transport is built — after any Mail ' +
+              'setting changes, or a restart.'
+  },
+  'mail-dkim-key': {
+    heading: 'The DKIM private key',
+    what: 'The private key of <code>mail.dkimSelector</code>, which ' +
+          '<code>common/crypto.js</code> signs every message the SMTP ' +
+          'transport sends with (RFC 6376 / RFC 8463).',
+    without: 'Nothing, until <code>mail.dkimDomain</code> is set. Then the ' +
+             'SMTP transport cannot be built, because a message that should ' +
+             'carry a signature and does not fails DMARC at the receiver.',
+    rotating: 'Publish the new public key under a NEW selector, point ' +
+              '<code>mail.dkimSelector</code> and this secret at it, and ' +
+              'withdraw the old record only after mail signed with it has ' +
+              'been delivered.'
+  },
+  'mail-acs-connection-string': {
+    heading: 'The Azure Communication Services connection string',
+    what: 'The endpoint and access key the <code>acs</code> mail transport ' +
+          'authenticates with, when <code>mail.acsAuth</code> is ' +
+          '<code>connection-string</code>. A managed identity needs no ' +
+          'secret at all and is the default.',
+    without: 'The <code>acs</code> transport cannot be built with ' +
+             'connection-string authentication.',
+    rotating: 'Regenerate the resource\u2019s secondary key, store the ' +
+              'string built from it, and regenerate the primary once the ' +
+              'transport has been rebuilt.'
+  },
+  'mail-gmail-key': {
+    heading: 'The Gmail API service account key',
+    what: 'The JSON key of the service account the <code>gmail</code> ' +
+          'mail transport signs its token requests with, impersonating ' +
+          '<code>mail.gmailSender</code> by domain-wide delegation of the ' +
+          'gmail.send scope.',
+    without: 'The <code>gmail</code> transport cannot be built.',
+    rotating: 'Create a second key for the service account, store it, and ' +
+              'delete the first once the transport has been rebuilt.'
   }
 };
 

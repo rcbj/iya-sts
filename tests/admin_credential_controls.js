@@ -34,7 +34,7 @@
 //      recovery codes, sends a credential-change per credential and RISC
 //      recovery-information-changed, and refuses somebody holding none.
 //   6. require-mfa / stop-requiring-mfa write the per-account requirement, and
-//      authn.mfaRequired is the realm's.
+//      the authentication policy's requireSecondFactor is the realm's.
 //   7. OVER HTTP, a sign-in for somebody of whom a second factor is required
 //      and who holds none is shown the set-up step with no session; a wrong
 //      code keeps the step; the right one enrols the app and signs them in;
@@ -107,6 +107,17 @@ function childMain() {
     const streams = require(ROOT + '/ssf/ssf_streams');
     const risc = require(ROOT + '/ssf/risc');
     const actions = require(ROOT + '/admin-core/admin_actions');
+    // #64: the realm-wide requirement and the authenticator-app switch are
+    // the authentication policy's rows now (they were authn.mfaRequired and
+    // totp.enabled).
+    const authnPolicy = require(ROOT + '/common/authn_policy');
+    const policyWith = function (fields) {
+      const saved = authnPolicy.save('default',
+        Object.assign({}, authnPolicy.DEFAULTS, fields));
+      if (!saved.ok) {
+        throw new Error('policy not saved: ' + JSON.stringify(saved.errors));
+      }
+    };
 
     const CAEP = 'https://schemas.openid.net/secevent/caep/event-type/';
     const RISC = 'https://schemas.openid.net/secevent/risc/event-type/';
@@ -343,10 +354,11 @@ function childMain() {
                                        user: 'ctl-carol' }, context);
       note(required.ok && !credentials.mfaRequirementFor('ctl-carol').required,
            '6b. stop-requiring-mfa takes it off');
-      config.setOverride('authn.mfaRequired', 'true');
+      policyWith({ requireSecondFactor: 'always' });
       note(credentials.mfaRequirementFor('ctl-carol').byRealm,
-           '6c. authn.mfaRequired is the realm\'s requirement');
-      config.clearOverride('authn.mfaRequired');
+           '6c. the authentication policy\'s requireSecondFactor is the ' +
+           'realm\'s requirement');
+      authnPolicy.reset('default');
       actions.usersAction({ action: 'require-mfa', user: 'ctl-carol' },
                           context);
 
@@ -427,7 +439,7 @@ function childMain() {
            r.status + ' ' + r.text.slice(0, 100));
 
       ldapServer.createUser('ctl-dave', {});
-      config.setOverride('authn.mfaRequired', 'true');
+      policyWith({ requireSecondFactor: 'always' });
       authnId = await startSignIn();
       r = await request(port, 'POST', '/authn/login',
         { authn_id: authnId, username: 'ctl-dave', password: 'anything',
@@ -443,7 +455,7 @@ function childMain() {
       note(r.status === 200 && /\/authn\/webauthn\.js/.test(r.text),
            '7i. choosing a security key draws the ceremony', r.status);
 
-      config.setOverride('totp.enabled', 'false');
+      policyWith({ requireSecondFactor: 'always', totpSecondFactor: false });
       config.setOverride('webauthn.enabled', 'false');
       authnId = await startSignIn();
       r = await request(port, 'POST', '/authn/login',
@@ -453,9 +465,8 @@ function childMain() {
            !cookieOf(r),
            '7j. with both mechanisms off the sign-in is refused, not let ' +
            'through', r.status + ' ' + r.text.slice(0, 100));
-      config.clearOverride('totp.enabled');
       config.clearOverride('webauthn.enabled');
-      config.clearOverride('authn.mfaRequired');
+      authnPolicy.reset('default');
 
       // ====================================================================
       // 8. ENROLMENT IN PRODUCT MODE (2026-09-18)
@@ -533,7 +544,8 @@ function inAChild(t) {
   log.debug("Entering inAChild().");
   const out = path.join(os.tmpdir(), 'admin-credential-controls-' +
                         process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|ADMIN_|CONFIG_FILE$)/

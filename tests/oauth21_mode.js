@@ -446,7 +446,8 @@ function postLogout(t) {
             'but is when the client registered it');
     t.check(bcp.checkPostLogoutRedirectUri({ target: LISTED,
       client: { known: false, post_logout_redirect_uris: [] } }).ok,
-            'and an https address on the list still is, in RFC 9700 mode');
+            'and an unregistered https address still is in development ' +
+            '(#118\'s rule, #124); oauth2.redirectUris is not read');
   });
   inRealm(REALMS.V21_LIST, function () {
     const refused = bcp.checkPostLogoutRedirectUri({ target: LISTED,
@@ -503,8 +504,8 @@ function shared(t) {
             'the report names the draft it follows');
   });
   inRealm(OFF, function () {
-    t.equal(oauth21.sanitizeDescription('a "q"'), 'a "q"',
-            'outside the mode a description is sent as written');
+    t.equal(oauth21.sanitizeDescription('a "q" \u2014 b'), 'a \'q\' - b',
+            'outside the mode too: the set is RFC 6749\'s (#176)');
   });
   log.debug("Leaving shared().");
 }

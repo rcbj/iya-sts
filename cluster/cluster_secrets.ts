@@ -143,7 +143,12 @@ const DECLARED: Record<string, DeclaredSecret> = {
   // restarts, or a client would see one person as several.
   'oidc-pairwise': { bytes: 32, env: 'STS_OIDC_PAIRWISE_SECRET',
     what: 'The key an OpenID Connect pairwise subject identifier is derived ' +
-          'with (oauth-oidc/pairwise_subjects.ts, OIDC Core section 8.1).' }
+          'with (oauth-oidc/pairwise_subjects.ts, OIDC Core section 8.1).' },
+  // #135, #136: a page drawn by one node is continued on another, so the
+  // pointer its `next` carries must verify on every node.
+  'oidfed-page': { bytes: 32, env: 'STS_OIDFED_PAGE_SECRET',
+    what: 'The key an OpenID Federation listing\'s or collection\'s page ' +
+          'pointer is MACed with (oidfed/page_pointer.ts).' }
 };
 
 // name -> { text, source: 'process'|'store'|'environment'|'node' }. The TEXT is

@@ -77,9 +77,10 @@ const log = bunyan.createLogger({ name: 'service',
                                   level: process.env.LOG_LEVEL || 'info' });
 
 // The eight listeners, in the order the offsets are handed out. The NAME is the
-// environment variable this service reads for it — README.md's *Configuration*
-// table is the authority for these spellings, and a misspelt one is SILENT: it
-// is ignored and the listener takes its default port, which is the shared one.
+// environment variable this service reads for it — docs/configuration.md's
+// settings table is the authority for these spellings, and a misspelt one is
+// SILENT: it is ignored and the listener takes its default port, which is the
+// shared one.
 //
 // **THIS LIST IS POSITIONAL AND TWO ENTRIES WERE REMOVED FROM THE MIDDLE OF IT
 // ON 2026-09-16.** `STS_TLS_PORT` and `STS_MTLS_PORT` sat at offsets 1 and 2,
@@ -155,7 +156,7 @@ async function findPortBlock(preferredBase, log) {
   // A spread of candidates well above the service's own defaults (8081, 8082,
   // 88, 8888, 389, 636, 8092, 8181) so a plain local stack is never touched.
   for (let i = 0; i < 40; i++) {
-    bases.push(18100 + Math.floor(Math.random() * 400) * 10);
+    bases.push(18100 + require('crypto').randomInt(400) * 10);
   }
   for (const base of bases) {
     let allFree = true;

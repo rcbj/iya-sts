@@ -484,6 +484,26 @@ function provision(identifier, fields) {
                                      fields) });
 }
 
+// Whether the service this job drives is in product mode, from GET
+// /admin-api/config's global.mode row. Not JSON is treated as development,
+// and the checks that depend on it say what they saw.
+async function serviceIsInProduct() {
+  const modeRow = await request('GET', '/admin-api/config', null, {});
+  let product = false;
+  try {
+    (JSON.parse(modeRow.body).groups || []).forEach(function (g) {
+      (g.settings || []).forEach(function (row) {
+        if (row.key === 'global.mode' && String(row.value) === 'product') {
+          product = true;
+        }
+      });
+    });
+  } catch (e) {
+    log.debug('Caught reading /admin-api/config: ' + ((e && e.message) || e));
+  }
+  return product;
+}
+
 function setField(identifier, attribute, value) {
   return api('/applications/set',
              { application: identifier, attribute: attribute, value: String(value) });
@@ -556,10 +576,20 @@ async function main() {
     saml2EncryptAssertion: 'true',
     samlEncryptionCertificate: certB64
   });
+  // RSA-1_5 IS DEVELOPMENT'S SINCE #181: a product-mode service refuses to
+  // write it onto an application (STS-REG-0193) and never wraps a key with
+  // it, so in product the pair is asserted refused and the round trip is
+  // asserted wrapped with RSA-OAEP instead.
+  const productHere = await serviceIsInProduct();
   for (const algorithm of ['aes256-gcm', 'aes128-gcm', 'aes256-cbc', 'aes128-cbc']) {
     for (const transport of ['rsa-oaep-mgf1p', 'rsa-1_5']) {
       await setField(SP_CBC, 'saml2EncryptionAlgorithm', algorithm);
-      await setField(SP_CBC, 'saml2KeyTransportAlgorithm', transport);
+      const written = await setField(SP_CBC, 'saml2KeyTransportAlgorithm', transport);
+      if (productHere && transport === 'rsa-1_5') {
+        check('product: ' + algorithm + ' + rsa-1_5 is refused on the application ' +
+              '(#181)', written.status === 400, String(written.status));
+        await setField(SP_CBC, 'saml2KeyTransportAlgorithm', 'rsa-oaep-mgf1p');
+      }
       const r = await signInTo(SP_CBC, USER);
       const b = r.error ? null
         : (/<saml:EncryptedAssertion[\s\S]*?<\/saml:EncryptedAssertion>/.exec(r.xml) || [])[0];
@@ -586,20 +616,7 @@ async function main() {
   // Development registers NONE here (it accepts a signed request it holds no
   // certificate to check); product keeps it, and its branch asserts the
   // encryption to it. This job became `local: true` that day to carry this.
-  const modeRow = await request('GET', '/admin-api/config', null, {});
-  let product = false;
-  try {
-    (JSON.parse(modeRow.body).groups || []).forEach(function (g) {
-      (g.settings || []).forEach(function (row) {
-        if (row.key === 'global.mode' && String(row.value) === 'product') {
-          product = true;
-        }
-      });
-    });
-  } catch (e) {
-    // Not JSON: treated as development, and the check below says what it saw.
-    log.debug('Caught reading /admin-api/config: ' + ((e && e.message) || e));
-  }
+  const product = await serviceIsInProduct();
   if (product) {
     await provision(SP_NOKEY, { saml2EncryptAssertion: 'true' });
   } else {

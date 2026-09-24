@@ -7,11 +7,9 @@ nav_order: 18
 
 This repository is a git submodule of the
 [OAuth2/OIDC Debugger](https://idptools.com), where it is checked out as `sts/`.
-That project reaches into this one **by path** in three places, and for five days
-this document described a migration those three paths needed and had not had.
+That project reaches into this one **by path** in three places.
 
-**THE MIGRATION IS DONE, AS OF 2026-08-28, AND THIS DOCUMENT SAID THE OPPOSITE
-UNTIL THEN.** All three edits landed over there, the `sts/` gitlink is at
+**THE MIGRATION IS DONE.** All three edits landed over there, the `sts/` gitlink is at
 `d2345c3` rather than at the pre-reorganisation `cae2066`, and the four
 in-process Kerberos jobs load their modules out of this repository's
 subdirectories without complaint. If a document here still reads as though a
@@ -104,7 +102,7 @@ require the result to be a subset of what is copied.
 
 ---
 
-## What the next bump needs: nothing, as of 2026-08-29
+## What the next bump needs: nothing
 
 The walk is clean. Seeded from the three entry points against the pin the parent
 carries today — `c3b4294` on `feature/201` — the closure is **thirty files and
@@ -121,7 +119,7 @@ a green build, which is exactly why this is easy to get wrong. They stop being
 consistent the moment one moves alone: bump the pin without the COPY line and
 the Kerberos jobs die at load; commit the COPY line without the pin bump and the
 image fails to build with `COPY … not found`. **They land together or not at
-all** — and on 2026-08-28 they did, in the parent's `ab6b9cc`:
+all** — and they did, in the parent's `ab6b9cc`:
 
 ```dockerfile
 COPY sts/common/pq_jose.js ./sts/common/
@@ -148,7 +146,7 @@ bump, and after any commit here that adds a require reachable from `krb5_kdc.js`
 
 ---
 
-## 2026-09-06 — `sts_persistence_postgres.js` asserts a claim this tree reverses
+## `sts_persistence_postgres.js` asserts a claim this tree reverses
 
 **The next bump of the `sts/` gitlink across this change turns that job red, and
 the fix is over there.**

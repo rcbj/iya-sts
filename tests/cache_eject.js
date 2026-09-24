@@ -15,7 +15,7 @@
 //      throws is reported and does not stop the others; `eject` must be a
 //      function.
 //   B. THE LIST. Exactly the stores whose entries expire carry an ejector —
-//      twenty-four — and the two that do not, on purpose, are named.
+//      twenty-five — and the two that do not, on purpose, are named.
 //   C. THE JOB is registered, per-process and quiet.
 //   D. AN EJECTOR DELETES WHAT ITS READER WOULD REFUSE AND NOTHING ELSE:
 //      through two replay stores' own doors (ACME's spent nonces and GNAP's
@@ -102,19 +102,23 @@ function childMain() {
       'acme.nonces', 'dpop.nonces', 'dpop.proof-ids',
       'federation.release-index', 'gnap.signatures',
       'krb5.authenticator-replay', 'oauth2.redeemed-codes',
-      'oauth2.request-uri', 'oauth2.signed-metadata',
+      'oauth2.client-jwks', 'oauth2.request-uri', 'oauth2.signed-metadata',
       'oauth2.used-assertions', 'oid4vci.nonces', 'oid4vci.status-entries',
+      // OpenID Federation's resolved Trust Chains (#132), and the Entity
+      // Collections a process made without fetching (#136).
+      'oidfed.collections', 'oidfed.resolutions',
+      'passwords.breach-ranges', 'passwords.breach-verdicts',
       'oid4vci.status-list-tokens', 'oid4vp.sign-in-register',
       'oid4vp.status-lists-fetched', 'oid4vp.transactions',
       'revocation.ca-certificates', 'revocation.crl', 'revocation.failures',
-      'revocation.ocsp', 'scim.digest-nonce-counts', 'scim.digest-nonces',
-      'scim.hoba-challenges', 'scim.hoba-signatures'
+      'revocation.ocsp', 'risk.standings', 'scim.digest-nonce-counts',
+      'scim.digest-nonces', 'scim.hoba-challenges', 'scim.hoba-signatures'
     ].sort();
     const ejecting = registry.ejecting().filter(function (n) {
       return !/^test\./.test(n);
     });
     note(JSON.stringify(ejecting) === JSON.stringify(expected),
-         'B1. exactly the twenty-four stores whose entries expire eject them',
+         'B1. exactly the thirty stores whose entries expire eject them',
          JSON.stringify({ missing: expected.filter(function (n) {
            return ejecting.indexOf(n) < 0;
          }), extra: ejecting.filter(function (n) {
@@ -172,7 +176,8 @@ function childMain() {
 function inAChild(t) {
   log.debug("Entering inAChild().");
   const out = path.join(os.tmpdir(), 'cache-eject-' + process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|CONFIG_FILE$)/.test(key)) {

@@ -303,14 +303,28 @@ class SpnegoAuthn {
   // flag once it has been through the TGS, so `initial` is reported on the page
   // and used for nothing: it says the credential was minted at the AS exchange,
   // which is interesting to a person and is not an authentication method.
+  //
+  // **AND THE AUTHENTICATION INDICATORS (RFC 8129, #173, 2026-09-22).** A
+  // ticket whose TGT came from FAST with OTP pre-authentication carries the
+  // indicator `otp` — the KDC checked the password AND an authenticator app's
+  // code in one AS exchange (kerberos/krb5_fast.ts) — and the acceptor reads
+  // it only from an AD-CAMMAC whose verifier checks under its own key. That is
+  // `otp` in `amr`, beside `pwd`, and `acr "mfa"`: the same two claims the
+  // sign-in screen makes after `/authn/totp`, from the same verifier. RFC 8129
+  // section 5 says an indicator must be read with the realm that wrote it, so
+  // `ownRealm` is false for a ticket from a foreign realm and its indicators
+  // count for nothing.
   // ---------------------------------------------------------------------------
-  factorsFor(ticketFlags) {
+  factorsFor(ticketFlags, indicators?, ownRealm?) {
     const { log } = this.deps;
     log.debug('Entering SpnegoAuthn.factorsFor(). flags=' +
-              (ticketFlags || []).join(','));
+              (ticketFlags || []).join(',') + ' indicators=' +
+              (indicators || []).join(','));
     const flags = ticketFlags || [];
     const password = flags.indexOf('pre-authent') !== -1;
     const hardware = flags.indexOf('hw-authent') !== -1;
+    const otp = ownRealm !== false &&
+                (indicators || []).indexOf('otp') !== -1;
     const amr = [];
     if (password) {
       amr.push('pwd');
@@ -318,13 +332,20 @@ class SpnegoAuthn {
     if (hardware) {
       amr.push('hwk');
     }
-    // "mfa" only where BOTH are claimed, and for the reason authn.js gives
+    if (otp) {
+      amr.push('otp');
+    }
+    // "mfa" only where TWO are claimed, and for the reason authn.js gives
     // about the passwordless WebAuthn path: one factor does not become two by
     // being phishing-resistant, and a relying party that asked for two must not
     // be told it got them.
-    const acr = (password && hardware) ? 'mfa' : (amr.length ? '1' : '0');
+    const acr = (password && (hardware || otp)) ? 'mfa'
+      : (amr.length ? '1' : '0');
     const method = 'Kerberos ticket over SPNEGO' +
-      (password && hardware
+      (password && otp
+         ? ' (the KDC checked the password and an authenticator app code, ' +
+           'with FAST and OTP pre-authentication)'
+         : password && hardware
          ? ' (the KDC required pre-authentication AND hardware)'
          : password
            ? ' (the KDC required pre-authentication, so a long-term key ' +
@@ -336,7 +357,7 @@ class SpnegoAuthn {
     log.debug('Leaving SpnegoAuthn.factorsFor(). amr=' + amr.join(',') +
               ', acr=' + acr);
     return { amr: amr, acr: acr, method: method, password: password,
-             hardware: hardware };
+             hardware: hardware, otp: otp };
   }
 
   // Is this door open at all? A function rather than a constant, because the
@@ -498,7 +519,11 @@ class SpnegoAuthn {
     // why.
     // ---------------------------------------------------------------------
     const username = this.usernameFor(verdict.client);
-    const factors = this.factorsFor(verdict.ticketFlags);
+    // The indicators count only from a ticket this realm's KDC wrote.
+    const clientRealm = String(verdict.client || '').split('@').pop();
+    const factors = this.factorsFor(verdict.ticketFlags,
+                                    verdict.authIndicators || [],
+                                    clientRealm === principals.REALM);
     const detail = {
       // The PRINCIPAL as presented, not the username the session carries. They
       // differ by the realm and `admin_stats.js`'s identityOf() folds them onto
@@ -521,12 +546,22 @@ class SpnegoAuthn {
                     : ' Nothing was interrupted; this door was used directly.'),
       summary: username + ' was signed in with a Kerberos ticket over SPNEGO'
     };
+    // THE RISK OF THIS SIGN-IN (#62 P3), assessed before the session and
+    // decided in the same question as the roles. This door cannot ask for a
+    // second factor, so a step-up the policy names refuses here like HIGH;
+    // a ticket whose flags already claim two factors (acr `mfa`) meets a
+    // second-factor step-up as it stands.
+    const application = record ? (record.application || '') : '';
+    const assessed = await authn.assessSignIn(req, username, VIA,
+      { application: application, credential: { kind: 'kerberos' } });
     const session = authn.startSession(res, username, factors.amr, factors.acr,
                                        VIA,
                                        Object.assign({
                                          request: req,
-                                         application: record ?
-                                           (record.application || '') : ''
+                                         // Which credential answered (#62).
+                                         credential: { kind: 'kerberos' },
+                                         application: application,
+                                         risk: assessed || undefined
                                        }, detail));
     // THE ISSUANCE POLICY CAN REFUSE THE SESSION (2026-09-06). A null is how
     // `startSession()` says so; it never throws, because two of its callers
@@ -595,6 +630,9 @@ class SpnegoAuthn {
         '</code></td></tr>' +
       '<tr><td>Ticket flags</td><td><code>' +
         xmlEscape((verdict.ticketFlags || []).join(', ') || 'none') +
+        '</code></td></tr>' +
+      '<tr><td>Authentication indicators (RFC 8129)</td><td><code>' +
+        xmlEscape((verdict.authIndicators || []).join(', ') || 'none') +
         '</code></td></tr>' +
       '<tr><td>amr</td><td><code>' +
         xmlEscape(factors.amr.join(', ') || '(none claimed)') + '</code>' +

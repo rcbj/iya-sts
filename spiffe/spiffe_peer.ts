@@ -67,6 +67,9 @@ interface PeerFacts {
   // Why attestation failed, when it did; calls on the connection are refused.
   error: string;
   note: string;
+  // On the SPIRE Server API's socket only (#104): whether the socket was
+  // private when this connection was accepted, and why not.
+  localSocket?: { private: boolean; why: string };
 }
 
 interface SpiffePeerDeps {
@@ -227,6 +230,71 @@ class SpiffePeer {
     return facts;
   }
 
+  // A PROCESS NAMED BY A SPIFFE BROKER API REFERENCE (#170): the same facts
+  // `observe()` records for a connection, taken from a pid rather than a
+  // socket — a pidfd first, so the pid cannot be reused while the facts are
+  // held, then the start time and the executable inode — and NOT kept in the
+  // connection table: the broker's stream holds them and hands them to
+  // `release()` when it ends. `facts.error` is set when attestation cannot
+  // run (no native module, a /proc entry that cannot be read);
+  // `facts.missing` when no such process exists, which the Broker API
+  // answers NOT_FOUND.
+  observePid(pid: number): PeerFacts & { missing?: boolean } {
+    const { log, fs } = this.deps;
+    log.debug("Entering SpiffePeer.observePid(). pid=" + pid);
+    this.counter += 1;
+    const facts: PeerFacts & { missing?: boolean } = {
+      tag: 'broker:pid-' + this.counter, pid: pid, uid: -1, gid: -1,
+      pidfd: -1, pidfdSource: '', procRoot: this.procRoot(), visible: false,
+      starttime: '', exeDev: 0, exeIno: 0, selectors: [], error: '', note: ''
+    };
+    const native = this.native();
+    if (!native) {
+      facts.error = this.addonProblem;
+      log.debug("Leaving SpiffePeer.observePid(). No native module.");
+      return facts;
+    }
+    facts.pidfd = Number(native.pidfdOpen(pid));
+    facts.pidfdSource = facts.pidfd >= 0 ? 'pidfd_open' : '';
+    if (facts.pidfd < 0) {
+      let present = false;
+      try {
+        present = fs.existsSync(facts.procRoot + '/' + pid);
+      } catch (e) {
+        log.debug("Caught in SpiffePeer.observePid(): " +
+                  ((e && e.message) || e));
+      }
+      if (present) {
+        facts.error = 'the process could not be opened (pidfd_open)';
+      } else {
+        facts.missing = true;
+      }
+      log.debug("Leaving SpiffePeer.observePid(). No pidfd.");
+      return facts;
+    }
+    facts.starttime = this.starttimeOf(facts.procRoot, pid);
+    const exe = this.exeOf(facts.procRoot, pid);
+    facts.exeDev = exe.dev;
+    facts.exeIno = exe.ino;
+    facts.visible = !!facts.starttime;
+    if (!facts.visible) {
+      facts.error = 'the process\'s /proc entry could not be read';
+    }
+    log.debug("Leaving SpiffePeer.observePid(). " + facts.tag);
+    return facts;
+  }
+
+  // The pidfd `observePid()` opened, closed.
+  release(facts: PeerFacts): void {
+    const { log } = this.deps;
+    log.debug("Entering SpiffePeer.release().");
+    if (facts && facts.pidfd >= 0 && this.native()) {
+      this.native().closeFd(facts.pidfd);
+      facts.pidfd = -1;
+    }
+    log.debug("Leaving SpiffePeer.release().");
+  }
+
   // ON EVERY CALL: '' when `facts` still describe the process holding the
   // connection, otherwise why not.
   stillValid(facts: PeerFacts): string {
@@ -305,5 +373,7 @@ export = {
   stillValid: (facts: any) => shared.stillValid(facts),
   factsFor: (peer: string) => shared.factsFor(peer),
   forget: (tag: string) => shared.forget(tag),
+  observePid: (pid: number) => shared.observePid(pid),
+  release: (facts: any) => shared.release(facts),
   state: () => shared.state()
 };

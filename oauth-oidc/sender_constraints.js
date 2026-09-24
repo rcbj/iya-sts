@@ -59,6 +59,9 @@ const oauth21 = require('./oauth21');
 // The third source of the rotation requirement since 2026-09-17; see
 // `rotationRequired()`. A leaf beneath `config`, as it is in oauth2_bcp.js.
 const mode = require('../common/mode');
+// The FAPI profiles (#140): FAPI 1.0 implies RFC 9700 mode and so its
+// rotation; FAPI 2.0 forbids rotation. A leaf that requires nothing here.
+const fapi = require('./fapi');
 
 // The two grants that carry a refresh token to a client which authenticated
 // with its certificate rather than a secret. RFC 8705 section 7.1 lets such a
@@ -111,8 +114,16 @@ const MTLS_EXEMPT_CLIENTS = ['sts-admin-console', 'sts-user-portal'];
 // a secret either.
 function rotationRequired() {
   log.debug("Entering rotationRequired().");
+  // FAPI 2.0 section 5.3.2.1 item 9 (#140): no rotation "except in
+  // extraordinary circumstances" — which an operator declares by setting
+  // oauth2.refreshTokenRotation. Asked before every mode that implies it.
+  if (fapi.forbidsRotation()) {
+    const forced = !!config.value('oauth2.refreshTokenRotation');
+    log.debug("Leaving rotationRequired(). FAPI 2.0: " + forced);
+    return forced;
+  }
   const answer = !!config.value('oauth2.rfc9700') || oauth21.enabled() ||
-                 mode.enforcesOauthSecurityBcp() ||
+                 fapi.enabled() || mode.enforcesOauthSecurityBcp() ||
                  !!config.value('oauth2.refreshTokenRotation');
   log.debug("Leaving rotationRequired(). " + answer);
   return answer;
@@ -123,6 +134,12 @@ function rotationRequired() {
 // turned off by the setting and a reader who saw the setting named would try.
 function rotationSource() {
   log.debug("Entering rotationSource().");
+  if (fapi.forbidsRotation()) {
+    log.debug("Leaving rotationSource(). FAPI 2.0.");
+    return config.value('oauth2.refreshTokenRotation')
+      ? 'oauth2.refreshTokenRotation (FAPI 2.0 forbids rotation otherwise)'
+      : null;
+  }
   if (config.value('oauth2.rfc9700')) {
     log.debug("Leaving rotationSource(). RFC 9700 mode.");
     return 'RFC 9700 mode';
@@ -130,6 +147,10 @@ function rotationSource() {
   if (oauth21.enabled()) {
     log.debug("Leaving rotationSource(). OAuth 2.1 mode.");
     return 'OAuth 2.1 mode';
+  }
+  if (fapi.enabled()) {
+    log.debug("Leaving rotationSource(). A FAPI 1.0 profile.");
+    return 'oauth2.fapi=' + fapi.profile() + ' (it implies RFC 9700 mode)';
   }
   // Ahead of the setting for the reason a mode is: product mode cannot be
   // turned off by `oauth2.refreshTokenRotation`, and a reader who saw the

@@ -110,7 +110,8 @@ function childMain() {
       const xml = '<samlp:AuthnRequest ' +
         'xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" ' +
         'xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ' +
-        'ID="_fa' + Date.now() + Math.random().toString(36).slice(2) + '" ' +
+        'ID="_fa' + Date.now() +
+        require('crypto').randomBytes(8).toString('hex') + '" ' +
         'Version="2.0" IssueInstant="' + new Date().toISOString() + '" ' +
         'AssertionConsumerServiceURL="' + base + '/saml2/sp/acs"' +
         (o.force ? ' ForceAuthn="true"' : '') +
@@ -280,7 +281,8 @@ function childMain() {
 function run(t) {
   log.debug("Entering run().");
   const out = path.join(os.tmpdir(), 'saml2-force-authn-' + process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|SAML|CONFIG_FILE$)/

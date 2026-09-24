@@ -202,15 +202,23 @@ function checkMarker(t) {
     // OAuth 2.1 mode (2026-09-13). It implies RFC 9700 mode and moves the
     // socket for the same one reason, argued at its row in config.js.
     'oauth2.oauth21',
+    // #138: the FAPI profile switch, argued beside its row.
+    'oauth2.fapi',
     'spiffe.trustDomain',
     'spiffe.x509KeyType',
     'spiffe.jwtKeyType',
     'spiffe.workloadSocketEnabled',
     'spiffe.workloadSocket',
     'spiffe.workloadPort',
+    // #166: whether that port is bound in product is decided with it, when
+    // the realm's listeners are, so it is restart-only for the process and a
+    // realm's own for the same reason as the port.
+    'spiffe.workloadTcpSourceAuthenticated',
     'spiffe.serverSocketEnabled',
     'spiffe.serverSocket',
     'spiffe.serverPort',
+    // #170: the SPIFFE Broker API's listener, bound with the realm's others.
+    'spiffe.brokerPort',
     'spiffe.grpcHost'
   ];
   const marked = config.SETTINGS.filter(function (s) {

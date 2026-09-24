@@ -22,6 +22,8 @@ somebody came for is below the fold of a page about something else.
 | `/portal/keys` | authenticated | **Security keys** — the list, and a Remove per key |
 | `/portal/mfa` | authenticated | **Authenticator app** — the QR code, the typed secret, and the code that confirms it |
 | `/portal/signals` | authenticated | **Security activity** — what this identity provider has said about the person over CAEP and RISC (2026-09-10) |
+| `/portal/sign-ins` | authenticated | **Recent sign-ins** — the person's own risk assessments of thirty days, each with "this was me" / "this wasn't me" (#62 P6, `portal_sign_ins.ts`; `risk/CLAUDE.md` argues what each answer moves) |
+| `/portal/consents` | authenticated | **Consents** — what the person agreed each application may ask for, and a Withdraw per scope and per application that revokes what was issued under it (#172, `portal_consents.ts`) |
 | `/portal/signing-key` | authenticated | **Signing keys** — RFC 7523 and RFC 7522 key pairs and TLS client certificates (2026-09-12) |
 | `/portal/certificates` | authenticated | **Certificates** — ACME / SCEP enrollment credentials and the certificates issued (2026-09-13) |
 | `/portal/callback` | — | the OIDC redirect URI |
@@ -336,6 +338,19 @@ touching the key already plugged in. That produces a second row for one device �
 a backup that is lost with the original, which is the exact failure the feature
 is against. **This service checks again at the write**, because the list is a
 request to the browser like every other ceremony option.
+
+### The attestation is verified, and each key says what it proved (#105)
+
+`confirmKeyEnrolment()` hands the verified ceremony to
+`authn/webauthn_attestation.ts` before the credential id is claimed, so a
+statement the realm's `webauthn.attestationPolicy` refuses is a refused
+enrolment (400, the sentence on the page, the pending enrolment kept for another
+try) and nothing is written. What an accepted statement proved is on the key
+row — `attestation` — and this page draws it in the person's words
+(`attestationText()`): the model the FIDO metadata names and "verified and
+trusted", "verified" with no trusted root, "no attestation sent", or "not
+verified" where the policy verified nothing. `authn/CLAUDE.md`, *The
+attestation statement*, has the rest.
 
 ### It is the SEVENTH scripted page in this service and the first in this portal
 
@@ -1010,7 +1025,8 @@ NOT.** `pki.personSelfService`, on by default, checked at the DOOR as well as
 on the page — `authn.js`'s rule about the anonymous button, read again: the page
 is markup and the handler is the door, so a form posted by hand while the
 setting is off must issue nothing. **Turning it off takes nobody's key away**,
-which is `totp.enabled`'s contract word for word: a key already on an entry goes
+which is the TOTP row's contract (it was `totp.enabled`) word for word: a key
+already on an entry goes
 on verifying, and what stops is new ones *from the portal* — an operator issuing
 from `/admin/pki` is unaffected, which is the point of having the switch.
 
@@ -1141,6 +1157,164 @@ credential — so its card only lists the labelled addresses.
 the `tls-client` authority, these from `acme`, `est` and `scep` — and this page
 links to that one.
 
+## `/portal/app-passwords`: THE PASSWORDS A PERSON GIVES THE CLIENTS THAT CANNOT DO A SECOND FACTOR (2026-09-22, #101)
+
+`portal_app_passwords.ts`, registered after `/portal/certificates` through the
+same `register(context)` and for its reason. In product the five password-only
+doors refuse a second-factor person's own password (`authn/CLAUDE.md`), and
+this is where they make what those clients send instead.
+
+* **Behind a full sign-in**: the portal's own, so the session already met
+  whatever the account asks for. `manage-own` for both POST actions, CSRF on
+  both, the make rate limited (`portal-app-password`, the shared window).
+* **The identity is the session's.** A revoke names an id; one that is not
+  this person's is a 404 (`STS-PORTAL-0078`), never an oracle.
+* **The password is shown on the 200 and never on a redirect**, `no-store`,
+  `/portal/certificates`' rule; a revoke is a 303 with `done=`.
+* **No script, a real submit button**, and **one checkbox per door with its own
+  name** (`door_ldap`, ...): the portal's form parser keeps the last of a
+  repeated name, so five boxes called `door` would scope a password to one.
+* The page says which doors refuse this person's password
+  (`credentials.passwordOnlyDoors()`), lists each app password with its last
+  use, and each make and revoke is a CAEP `credential-change` with
+  `initiating_entity` `user`. `/portal/mfa` links here while the doors refuse
+  them. The console's twin is on the person's `/admin/users` page, and
+  `/admin-api/users/{create,revoke}-app-password` and `GET
+  /admin-api/users/app-passwords` are the API (rule 7).
+
+## `/portal/kerberos`: A KEYTAB FROM THE PERSON'S OWN PASSWORD (2026-09-22, #59)
+
+`portal_kerberos.ts`, registered after `/portal/app-passwords` through the same
+`register(context)` and for its reason. It draws the person's Kerberos principal
+in this realm and the public half of their keys, and makes them an MIT keytab.
+`kerberos/CLAUDE.md` (*A PERSON'S KEYTAB*) argues the design; four things are
+this page's:
+
+* **The form asks for the CURRENT PASSWORD, and that is the design, not a
+  formality.** The keytab is DERIVED from it — a stored key is never read back
+  out — and asking is also the re-authentication a password-equivalent export
+  needs. It is `credentials.verifyAsync()` with `secondFactor: 'session-held'`
+  (`/portal/password`'s declaration: this session already met the second
+  factor), counted against the SAME `password-change` budget, so the page is no
+  second set of guesses for whoever finds the browser open. A wrong password is
+  `STS-PORTAL-0080` and a register refusal `STS-PORTAL-0081`, both audited.
+* **Nothing on the account changes**: same password, same kvno. The console's
+  twin is a password RESET and says so; this page is not one.
+* **The keytab is shown on the 200 and never on a redirect**, `no-store`, as a
+  `data:` link with a `download` attribute beside the base64 — the console's
+  keytab page's arrangement, and no script.
+* **The register is required LAZILY** (`defaultDeps()`'s `personKeys`): the
+  portal is built at 8a in the require order, and requiring
+  `kerberos/krb5_person_keys` there would load the principal database and the
+  keytab writer ahead of the Kerberos modules for a page nobody has asked for.
+
+In development the keytab holds the development KDC's key
+(`krb5.userPassword`), the password is not checked (nothing is), and the page
+says both.
+
+## `/portal/consents`: WITHDRAWING WHAT YOU AGREED TO (2026-09-23, #172)
+
+`portal_consents.ts`, registered after `/portal/sign-ins` through the same
+`register(context)` and for its reason. Until #172 a person could not read back
+what they had agreed on the consent screen, and only an administrator could
+withdraw it. `common/CLAUDE.md` (3t, *Withdrawn means withdrawn*) argues what a
+withdrawal does; four things are this page's:
+
+* **The same functions as `/admin/consent`**: `consent.revoke()` for one scope,
+  `consent.revokeApplication()` for everything one application holds — so the
+  tokens are revoked, the instant recorded and a later refresh refused exactly
+  as when an administrator does it. The page says so above the buttons.
+* **The identity is the session's.** The form names an application and a
+  scope, which name one of the signed-in person's OWN consents; one that is not
+  on their entry is refused 400 (`STS-PORTAL-0085`), the `/portal/keys`
+  credential id's arrangement. `manage-own`, CSRF on the POST, and the
+  withdrawal audited as `consent.revoke` with the person as actor.
+* **A scope under GLOBAL consent is not listed**: nothing about the person was
+  written, and the override is the operator's configuration of the application.
+  The page says so in a sentence rather than drawing rows with no button.
+* **No script, real forms**, paged by application (twenty per page). The
+  console's and the API's counterpart of *Withdraw everything for this
+  application* is `revoke-application-consent` (rule 7).
+
+## `/portal/delegate`: WHO MAY ACT FOR YOU (2026-09-23, #108)
+
+RFC 8693 section 4.4's `may_act` "makes a statement that one party is
+authorized to become the actor and act on behalf of another party", and the
+owner's decision on #108 is that the statement is the PERSON's: `stsMayAct` on
+their own entry, the DN of one person or application in the realm. Every access
+token issued about them then carries `may_act` naming that party
+(`../common/delegation_policy.ts`, `mayActClaimFor()`), and a token exchange of
+one by anybody else is refused in every mode. `portal_delegate.ts` draws it the
+way `portal_app_passwords.ts` draws its page — a file beside `portal.ts`,
+`register(context)`, a real submit button and no script — in *Your account*.
+
+**The form names the DELEGATE, never whose delegate it is**: the identity is the
+session's, this directory's rule. `credentials.setMayAct()` refuses a DN naming
+nobody and the person themselves (`STS-AUTHN-0227`); the page answers 400 with
+`STS-PORTAL-0086` and the store's sentence. An administrator's
+`stsNotDelegated` on the account is SAID on the page, because it makes whatever
+the person names moot. An administrator sets the same attribute from the
+person's `/admin/users` page and `POST /admin-api/users/set-may-act`.
+
+## `/portal/self-issued`: THE WALLET KEYS THAT SIGN YOU IN (2026-09-23, #129)
+
+The SIOPv2 subjects enrolled on the person's own entry, each with a Remove,
+and — while `oid4vp.signInSelfIssued` is on — **Enrol a wallet**, a link to
+`/authn/wallet?siop=1&enrol=1`. **It enrols only a key the person PROVES**:
+the wallet answers a SIOPv2 request started from the sign-on session this
+browser already holds, and `oid4vc/vc_signin.ts` enrols the verified subject
+for that session's person and sends them back here with `?enrolled=1`.
+Nothing is typed, because a DID pasted into a box could be somebody else's —
+the one person it would then let in. The removal form names the SUBJECT,
+never whose it is (`STS-PORTAL-0087` when it is not theirs).
+`portal_self_issued.ts` draws it the way `portal_delegate.ts` does. An
+administrator enrols by value from `/admin/users` and `/admin-api`
+(`oid4vc/CLAUDE.md`, 3ba).
+
+## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130)
+
+The entries in `ou=devices` the person owns, the applications that used
+each, and whether its Native SSO secret is live; a Remove each
+(`STS-PORTAL-0088` when the device is not theirs). Nothing is added here — a
+device is made by signing in on it. It asks `authn` about sessions directly,
+because the portal is loaded before the authorization server whose
+`sessionIsLive()` says the same. `portal_devices.ts`, drawn the way
+`portal_self_issued.ts` is.
+
+## `/portal/ciba`: SIGN-IN REQUESTS (2026-09-23, #131)
+
+CIBA's authentication device, by rcbj's decision: the backchannel
+authentication requests waiting for the person — the client, the scopes and
+the `binding_message` the client also shows, so the person can tell the
+request is the one they started — with Approve and Deny, and the person's
+CIBA user code, set (4 to 64 characters, hashed as a password is) or
+cleared. A form names a REQUEST, never a person, and one not waiting for the
+person looking is refused (`STS-PORTAL-0089`–`0091`). **An approval is as
+strong as the request asks**: a request whose `acr_values` the session does
+not meet is not approved; the page offers the portal's own sign-in again
+with those `acr_values` and `prompt=login` (`oidc_rp.ts`'s `acrValues`
+option), returning to `?stepup=<id>`, and Approve takes after that.
+`portal_ciba.ts`, registered through `register(context)` as
+`portal_devices.ts` is. `oauth-oidc/CLAUDE.md` (3bc) carries the protocol.
+
+## `/portal/claim-sources`: CONNECTED CLAIM SOURCES (#147, 2026-09-24)
+
+The setup phase of OpenID Connect Claims Aggregation, the person's own. Every
+Claims Provider the realm registered is listed; **Link** sends the person to
+it (an authorization code flow with PKCE), and it sends them back to
+`/portal/claim-sources/callback`, where the tokens are redeemed and sealed on
+their entry; **Unlink** removes them. `portal_claim_sources.ts`, registered
+through `register(context)` as `portal_ciba.ts` is; `oauth-oidc/CLAUDE.md`
+(3bh) carries the protocol.
+
+**ITS REDIRECTS ARE ABSOLUTE, ON `baseUrlOf(req)`**, because a bare
+`/portal/...` Location is answered by the DEFAULT realm: nothing adds the
+realm prefix to a Location on the way out. The job found it — the callback
+sent a person linked in one realm to the default realm's portal. Every other
+portal page's 303 is still a bare path (`portal_devices.ts`, `portal_ciba.ts`,
+the MFA pages), which is the same defect in a non-default realm and is left
+for its own change.
+
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 
 **Send a reset link** on a person's `/admin/users` page stores a hash of a
@@ -1179,3 +1353,32 @@ code, the authenticator step drawn before the link is spent (a 200 that does
 not finish), a dropped connection. So a link behaves exactly as it did on one
 node except that two requests cannot both finish it. A claimed link is the one
 sentence every link failure is, audited under `STS-AUTHN-0183`.
+
+## `portal_mail.ts`: `/portal/email`, `/portal/verify-email` and `/portal/forgot-password` (#63, 2026-09-22)
+
+Three pages over the mail channel (`common/CLAUDE.md`, 3ay), in a file beside
+`portal.ts` that is registered exactly as `portal_app_passwords.ts` is.
+
+- **`/portal/email`** follows this portal's rule: it is signed in, and the
+  identity is the session's. It shows the address on the person's own entry,
+  whether it is verified, a button that mails a verification link to it, the
+  one category of message that may be declined, and what was sent to them —
+  never a body. It is under *Your account* for Security activity's reason: it
+  is what this service SAYS, not a credential.
+- **`/portal/verify-email` and `/portal/forgot-password` are the third and
+  fourth pages nobody is signed in to**, beside `/portal/activate` and
+  `/portal/reset-password`, and they take a username for those pages' reason:
+  nobody is signed in, and what authorises them is the TOKEN, or nothing at
+  all.
+  - The verification GET draws a button and spends nothing, because a mail
+    scanner follows every link.
+  - The forgot-password page answers ONE sentence, before the work is done, so
+    neither the words nor the timing say whether an account exists. It answers
+    404 wherever `mail_uses.resetOffered()` says no.
+  - It carries no CSRF token, because nobody is signed in to forge a request
+    as. A cross-site POST can at most send a person a link they did not ask
+    for. That is bounded by the rate limits and the mail ceiling, and it
+    changes nothing until the link is used.
+- **The reset form's sentence changed with it**: "no password you had before
+  works once it is set" rather than "your old password no longer works",
+  because a self-service link removes nothing until it is used.

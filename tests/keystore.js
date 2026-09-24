@@ -189,6 +189,9 @@ async function run(t) {
 
     const keystore = require('../common/keystore');
     const helpers = require('../common/helpers');
+    // Required HERE with the two above it, and for their reason: the
+    // environment is set a few lines up and these modules read it at load.
+    const bbs2023 = require('../common/vendored/bbs2023.js');
 
     // **THE ENVIRONMENT LAYER AND NOT `setOverride()`**, and the reason is the
     // thing under test: all three of these are RESTART-ONLY, because the keys
@@ -310,6 +313,65 @@ async function run(t) {
     t.equal((firstPq.privateKey || '').length,
             ((warmed[0] || {}).privateKey || '').length,
             'the same number of bytes the generated key had');
+
+    // -------------------------------------------------------------------
+    // **AND THE BBS KEY, WHICH IS THE THIRD OF THIS FAMILY (#161,
+    // 2026-09-22).** The post-quantum half above was written and never read
+    // back; this one was read back WRONGLY. `keystore.js`'s
+    // serialiseBbsKey() stores the public half as a base64 STRING, and
+    // `helpers.js`'s lazyKeySet() read it with `Uint8Array.from(...)` — which
+    // over a string maps each CHARACTER through Number(), NaN for every
+    // base64 character, landing as 0. So a realm whose keys persist got a
+    // public half of ZEROS against a secret half that decodes correctly: a
+    // mismatched pair, silently, and one that GREW on every round trip (96
+    // real bytes, then 128 zeros, then 172) because the zeros were
+    // re-encoded.
+    //
+    // Nothing in the key set looked wrong — the kid is derived from the
+    // public half, so it was consistently wrong — and what failed was every
+    // ldp_vc credential, at the issuer's own self-check, only in the modes
+    // where keys persist. So this asserts the two things a name comparison
+    // cannot see: the LENGTH of the public half, and that the pair actually
+    // SIGNS AND VERIFIES.
+    // -------------------------------------------------------------------
+    const madeBbs = await helpers.bbsKeyPair();
+    t.equal(madeBbs.publicKey.length, 96,
+            'a fresh BLS12-381 G2 public key is 96 bytes');
+
+    keystore.reset();
+    keystore.setStore(store);
+    await keystore.start();
+    helpers.resetStsKeys();
+    // **READ OFF THE KEY SET ITSELF, NOT THROUGH `bbsKeyPair()`.** That
+    // function asks the keystore for the held pair first and REPLACES a
+    // differing one on the set — so it repairs this very corruption on the
+    // way past, and a test written through it passes with the bug in place
+    // (measured: the mutant survived). What every signer actually reads is
+    // the set's own property, which is the stored view.
+    const restoredBbs = helpers.stsKeysFor.of('').bbsKey;
+    t.equal(restoredBbs.publicKey.length, 96,
+            'THE RESTORED PUBLIC HALF IS 96 BYTES — it was the base64 string ' +
+            'read as an array, so it came back as that many ZEROS');
+    t.equal(Buffer.from(restoredBbs.publicKey).toString('base64'),
+            Buffer.from(madeBbs.publicKey).toString('base64'),
+            'and it is the same key that was generated');
+    const signed = await bbs2023.issue(
+      { '@context': ['https://www.w3.org/ns/credentials/v2'],
+        type: ['VerifiableCredential'], issuer: 'did:example:issuer',
+        credentialSubject: { id: 'did:example:subject' } },
+      { verificationMethod: 'did:example:issuer#bbs',
+        created: new Date().toISOString() },
+      restoredBbs.secretKey, restoredBbs.publicKey);
+    const verified = await bbs2023.verifyBase(signed.credential,
+                                              restoredBbs.publicKey);
+    t.check(!!(verified && verified.ok),
+            'AND THE RESTORED PAIR SIGNS AND VERIFIES — the halves come from ' +
+            'two different places (the blob for the public, ' +
+            'privateMaterialFor() for the secret), so only signing shows ' +
+            'they are still a pair',
+            JSON.stringify({ ok: verified && verified.ok,
+                             statements: (verified &&
+                                          verified.statements || []).length }));
 
     // -------------------------------------------------------------------
     // 3. ROTATION, which is destructive and has to be.
@@ -618,6 +680,95 @@ async function run(t) {
     t.equal(offered[1].certB64, born,
             'still under the name the key was born with');
 
+    keystore.reset();
+  }());
+
+  // ---------------------------------------------------------------------------
+  // A CERTIFICATE AUTHORITY FROM BEFORE A REBUILD IS REFUSED ON THE POOL'S
+  // CHANNEL (2026-09-24). The front process saved a new realm's branch from
+  // its copy while a worker rebuilt that branch; the save arrived after the
+  // rebuild, every process adopted it, and the realm published the
+  // Intermediate the Root's CRL had just superseded (single-node,
+  // sts_gnap_mtls). A chain publishing a tier the held rows call superseded
+  // is that old copy.
+  // ---------------------------------------------------------------------------
+  (function () {
+    const keystore = require('../common/keystore');
+    keystore.reset();
+    const published = [];
+    keystore.setPkiPublisher(function (id, chain) {
+      published.push({ id: id, chain: chain });
+    });
+    const rebuilt = {
+      intermediate: { serialHex: 'b1' },
+      issuing: { jose: { serialHex: 'b2' } },
+      revoked: { intermediate: [{ serialHex: 'a2', reason: 'superseded' }] }
+    };
+    keystore.attachPki('r1', rebuilt);
+    keystore.attachPki('*service', {
+      root: { serialHex: 'c1' },
+      revoked: { root: [{ serialHex: '0a1', reason: 'superseded' }] }
+    });
+    published.length = 0;
+    const before = {
+      intermediate: { serialHex: 'a1' },
+      issuing: { jose: { serialHex: 'a2' } },
+      certs: { 'jose:RS256': { serialHex: 'a3' } }
+    };
+    t.check(keystore.adoptPki('r1', before) === false,
+            'a chain publishing tiers the held rows call SUPERSEDED — a copy ' +
+            'from before a rebuild — is refused');
+    t.check(keystore.pkiFor('r1') === rebuilt,
+            'and the rebuilt branch is still the one held');
+    t.check(published.length === 1 && published[0].id === 'r1' &&
+            published[0].chain === rebuilt,
+            'and it is published again, so the process that sent the old ' +
+            'copy adopts the rebuild (' + published.length + ' publish(es))');
+
+    // The Intermediate alone superseded, on the Root's list.
+    published.length = 0;
+    t.check(keystore.adoptPki('r1', {
+      intermediate: { serialHex: 'A1' }, issuing: { jose: { serialHex: 'e2' } }
+    }) === false, 'an Intermediate the Root\'s list supersedes is refused ' +
+                  'too, serials compared normalised');
+
+    // A NEWER branch is adopted as it always was.
+    const newer = {
+      intermediate: { serialHex: 'd1' },
+      issuing: { jose: { serialHex: 'd2' } },
+      revoked: { intermediate: [{ serialHex: 'a2', reason: 'superseded' },
+                                { serialHex: 'b2', reason: 'superseded' }] }
+    };
+    t.check(keystore.adoptPki('r1', newer) === true &&
+            keystore.pkiFor('r1') === newer,
+            'a newer branch, which supersedes nothing it publishes, is ' +
+            'adopted');
+
+    // A HOLD IS NOT A SUPERSESSION: it can be lifted, and a row without it
+    // is newer, not stale.
+    keystore.attachPki('r2', {
+      intermediate: { serialHex: 'f1' }, issuing: { jose: { serialHex: 'f2' } },
+      revoked: { intermediate: [{ serialHex: 'f2',
+                                  reason: 'certificateHold' }] }
+    });
+    const lifted = { intermediate: { serialHex: 'f1' },
+                     issuing: { jose: { serialHex: 'f2' } } };
+    t.check(keystore.adoptPki('r2', lifted) === true,
+            'a tier held here only on HOLD does not make a chain stale');
+
+    // HELD MID-REBUILD — tiers the held row itself supersedes — refuses the
+    // old copy but asserts nothing: the rebuild's last row settles it.
+    keystore.attachPki('r3', {
+      intermediate: { serialHex: '11' }, issuing: { jose: { serialHex: '12' } },
+      revoked: { intermediate: [{ serialHex: '12', reason: 'superseded' }] }
+    });
+    published.length = 0;
+    t.check(keystore.adoptPki('r3', {
+      intermediate: { serialHex: '11' }, issuing: { jose: { serialHex: '12' } }
+    }) === false && published.length === 0,
+            'a process holding a rebuild caught halfway refuses the old copy ' +
+            'and publishes nothing of its own');
+    keystore.setPkiPublisher(null);
     keystore.reset();
   }());
   log.debug("Leaving run().");

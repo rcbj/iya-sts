@@ -231,7 +231,7 @@ async function library(t) {
   const productHttp = new fedHttp.FederationHttp(Object.assign(
     fedHttp.FederationHttp.defaultDeps(),
     { mode: { dialsInternalAddresses: function () { return false; } } }));
-  config.setOverride('federation.outboundAllowInsecure', true);
+  config.setOverride('federation.outboundAllowHttp', true);
   try {
     const http = require('http');
     let hits = 0;
@@ -291,7 +291,7 @@ async function library(t) {
       listener.close();
     }
   } finally {
-    config.clearOverride('federation.outboundAllowInsecure');
+    config.clearOverride('federation.outboundAllowHttp');
   }
   log.debug("Leaving library().");
 }
@@ -322,6 +322,24 @@ function childMain() {
     return new Promise(function (r) { setTimeout(r, ms); });
   };
 
+  // RP-Initiated Logout asks the person to confirm a sign-out that carries
+  // no hint for this session (#124): the page's own form, submitted.
+  const confirmSignOut = async function (first, submit) {
+    const text = String((first && first.text) || '');
+    if (!/name="confirm_for"/.test(text)) {
+      return first;
+    }
+    const form = {};
+    (text.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
+      const name = /name="([^"]+)"/.exec(tag);
+      const value = /value="([^"]*)"/.exec(tag);
+      if (name) {
+        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
+      }
+    });
+    form.confirm = 'yes';
+    return submit(form);
+  };
   function browser(port) {
     const jar = {};
     const go = function (method, urlPath, opts) {
@@ -421,7 +439,7 @@ function childMain() {
     };
 
     config.setOverride('oauth2.consentRequired', false);
-    config.setOverride('federation.outboundAllowInsecure', true);
+    config.setOverride('federation.outboundAllowHttp', true);
     config.setOverride('oauth2.backchannelLogoutBackoffMs', 0);
     config.setOverride('oauth2.backchannelLogoutTimeoutMs', 2000);
 
@@ -531,7 +549,10 @@ function childMain() {
          '2b1. the ID Token issued on the session carries sid',
          r.status + ' ' + JSON.stringify(idToken).slice(0, 200));
     let since = backchannel.mark();
-    r = await alice.go('GET', '/oauth2/logout');
+    r = await confirmSignOut(await alice.go('GET', '/oauth2/logout'),
+      function (form) {
+        return alice.go('POST', '/oauth2/logout', { form: form });
+      });
     note(r.status === 200, '2c0. /oauth2/logout answers at once', r.status);
     let rows = await settled(idToken.sid, since, 1);
     const okPosts = postsTo('/bc/ok');
@@ -685,7 +706,10 @@ function childMain() {
          'because front-channel logout is on and needs it',
          JSON.stringify(erinId).slice(0, 200));
     since = backchannel.mark();
-    await erin.go('GET', '/oauth2/logout');
+    await confirmSignOut(await erin.go('GET', '/oauth2/logout'),
+      function (form) {
+        return erin.go('POST', '/oauth2/logout', { form: form });
+      });
     await sleep(400);
     note(postsTo('/bc/off').length === 0 &&
          backchannel.deliveriesFor([erinId.sid], since).length === 0,
@@ -716,7 +740,8 @@ function inAChild(t) {
   log.debug("Entering inAChild().");
   t.log.info('=== 2. the endpoints, in a child process ===');
   const out = path.join(os.tmpdir(), 'backchannel-' + process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|CONFIG_FILE$)/.test(key)) {

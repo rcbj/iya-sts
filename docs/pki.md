@@ -17,7 +17,7 @@ to move by hand**.
 It is the only surface here that issues an X.509 certificate to something that
 is not this service. TLS issues its own listener certificate and SPIFFE issues
 SVIDs for workloads it also authenticates — **both from Issuing CAs on this
-page since 2026-09-11** — and this hands both halves of a key pair to an
+page** — and this hands both halves of a key pair to an
 application.
 
 ## One Root for the service, and what hangs from it
@@ -58,18 +58,14 @@ answers on — it belongs to no realm, so it is edited from any of them.
 
 ### The Root is shared and the Intermediate is not
 
-**This reversed a documented decision on 2026-09-11.** Until that date the
-whole three-tier hierarchy was per realm, on the argument that a CA shared
-across realms would be *one authority vouching for several identity services*.
-
-That argument was about the ANCHOR, and the anchor is no longer where the realm
-boundary is. **The Intermediate is**: each realm has one of its own, and a path
+A CA shared across realms might look like *one authority vouching for several
+identity services*. That argument is about the ANCHOR, and the anchor is not
+where the realm boundary is. **The Intermediate is**: each realm has one of its own, and a path
 must pass through it.
 
 That matters more than it looks. With one Root, "does this certificate chain to
 our Root" is true of *every certificate this service has ever issued, in any
-realm* — so on the day the Root was shared, that test silently stopped being a
-boundary. A certificate issued in one realm still does not verify in another,
+realm* — so with a shared Root, that test is not a boundary. A certificate issued in one realm still does not verify in another,
 and the refusal says which Intermediate it failed to pass through rather than
 blaming an anchor check that can no longer fail.
 
@@ -82,17 +78,17 @@ surface without touching the rest:
 |---|---|---|
 | **JOSE signing** | realm | The RSA key behind RS256, the four ECDSA curves and both Edwards curves — what a client verifies against `/oauth2/jwks`. |
 | **XML signing** | realm | SAML 2.0 and 1.1 assertions and responses, WS-Federation, WS-Trust, per-service-provider metadata. |
-| **Application assertions** | realm | The signing key pairs issued for RFC 7521 / 7523 — to applications, and since 2026-09-11 to PEOPLE as well (`target=person`, written onto the person's own entry as `stsAssertion*`; see [JWT assertions](jwt-assertions.md)). This is the Issuing CA this page had before the others existed. |
-| **TLS listeners** | **process** | The certificate served on the main port, LDAPS 636 and the embedded debugger's listener. (It served 8443 and 9443 as well until those two listeners were deleted on 2026-09-16.) |
-| **SPIFFE authority** | realm | **Every X509-SVID minted in this realm** (2026-09-11 — it was self-signed and outside this tree before that). The one Issuing CA here with `pathLen: 1` rather than `0`, because `NewDownstreamX509CA` asks it for a CA and not a leaf; the realm Intermediate above it is widened to `2` to match. See [SPIFFE below](#spiffe-takes-its-authority-from-here-now). |
-| **Remote PEP listeners** | realm | The HTTPS listener certificate of a remote XACML PEP **registered in this realm** (2026-09-13) — `serverAuth`, naming the PEP and the hosts its clients dial, issued from `/admin/xacml/peps` or `POST /admin-api/xacml/issue-pep-certificate`. The private key is handed over once and not kept. Realm-scoped because a PEP enforces one realm's policy. See [Remote PEP](remote-pep.md#an-https-listener-certified-by-the-realm-it-registered-to). |
+| **Application assertions** | realm | The signing key pairs issued for RFC 7521 / 7523 — to applications, and to PEOPLE as well (`target=person`, written onto the person's own entry as `stsAssertion*`; see [JWT assertions](jwt-assertions.md)). This is the Issuing CA this page had before the others existed. |
+| **TLS listeners** | **process** | The certificate served on the main port, LDAPS 636 and the embedded debugger's listener. |
+| **SPIFFE authority** | realm | **Every X509-SVID minted in this realm**. The one Issuing CA here with `pathLen: 1` rather than `0`, because `NewDownstreamX509CA` asks it for a CA and not a leaf; the realm Intermediate above it is widened to `2` to match. See [SPIFFE below](#spiffe-takes-its-authority-from-here-now). |
+| **Remote PEP listeners** | realm | The HTTPS listener certificate of a remote XACML PEP **registered in this realm** — `serverAuth`, naming the PEP and the hosts its clients dial, issued from `/admin/xacml/peps` or `POST /admin-api/xacml/issue-pep-certificate`. The private key is handed over once and not kept. Realm-scoped because a PEP enforces one realm's policy. See [Remote PEP](remote-pep.md#an-https-listener-certified-by-the-realm-it-registered-to). |
 
 **A realm branch built before a use case existed gets that Issuing CA added**,
 under the Intermediate it already has, the next time the branch is asked for —
 on a restart in product mode, or the first time something issues from it.
-Nothing already issued is replaced or revoked to do it. (Before 2026-09-13 an
-incomplete branch was rebuilt whole, which on a restart would have superseded
-every certificate in the realm to add one authority.)
+Nothing already issued is replaced or revoked to do it — rebuilding an
+incomplete branch whole would, on a restart, supersede every certificate in the
+realm to add one authority.
 
 **The RSA signing key is certified twice**, by the JOSE CA and by the XML CA. It
 signs JWTs and it signs XML documents, and those are two use cases: a relying
@@ -123,8 +119,7 @@ certificate it was born with.
 
 ### The post-quantum keys are leaves of it too
 
-**Since 2026-09-13, and until then this heading read *One thing is deliberately
-NOT a leaf of this tree*.** A realm's eleven post-quantum signing keys — ML-DSA
+A realm's eleven post-quantum signing keys — ML-DSA
 at three sizes, SLH-DSA at two and the six composite ML-DSA + traditional
 algorithms — are issued from that realm's own **JOSE signing** Issuing CA as
 they are made, one certificate per algorithm, and each is refused in any other
@@ -157,15 +152,10 @@ metadata.
 
 ### SPIFFE takes its authority from here now
 
-**This reversed the page's own second non-goal on 2026-09-11.** It read: *The
-SPIFFE X.509 authority is self-signed on purpose — a trust domain whose root
-was also this service's would conflate two unrelated trust decisions; one
-process, two PKIs. There is a mechanical reason too: an Issuing CA here carries
-`pathLen: 0`, so it may sign leaves and no further authority, and a SPIFFE
-authority signs SVIDs. Its Issuing CA is built and certifying nothing, so
-reversing that is a decision rather than a rebuild.*
-
-Both halves were answered rather than waived:
+Two objections to a SPIFFE authority under this service's Root — that a trust
+domain whose root is also this service's conflates two unrelated trust
+decisions, and that an Issuing CA here carries `pathLen: 0` while a SPIFFE
+authority signs SVIDs — are both answered rather than waived:
 
 * **The trust decision is not conflated.** The SPIFFE authority is a *sibling*
   of the TLS one, not the same certificate — its own Issuing CA, its own key.
@@ -175,7 +165,7 @@ Both halves were answered rather than waived:
   carries `pathLen: 1` and the realm Intermediate above it `2`, both derived
   from one table so they cannot come apart.
 
-**The shortest description is that this service's PKI is now SPIRE's
+**The shortest description is that this service's PKI is SPIRE's
 [UpstreamAuthority](https://spiffe.io/docs/latest/deploying/spire_server/).**
 The SPIFFE bundle publishes the **Root** — which is what SPIRE publishes with
 an upstream plugin configured — and an X509-SVID carries its Issuing CA and the
@@ -237,7 +227,7 @@ Intermediate above it is a two-tier chain wearing a three-tier name, and a
 half-built hierarchy is exactly the state in which somebody issues a certificate
 that verifies here and nowhere else. A failure at any tier stores nothing.
 
-Since 2026-09-11 that rule is about a **branch** — an Intermediate and every
+That rule is about a **branch** — an Intermediate and every
 Issuing CA under it — rather than about three tiers: a branch with two of its
 three Issuing CAs is the state in which one use case silently has no authority
 and its keys come out uncertified.
@@ -338,7 +328,7 @@ eleven months rather than an error about arithmetic.
 
 ## An application's credentials, on its own page
 
-Since 2026-09-13, `/admin/applications?application=<id>` has a **Credentials**
+`/admin/applications?application=<id>` has a **Credentials**
 section: the application's client secret, and for each assertion profile — RFC
 7523 (JWT) and RFC 7522 (SAML) — the key pair this service manages for it, beside
 the keys the application registered itself (`oauthJwks`,
@@ -390,7 +380,7 @@ shares one Root, so such a chain is consistent and is still not this realm's.
 The key must be one the profile's verifier can use: RSA of at least 2048 bits,
 or ECDSA on P-256, P-384 or P-521, for both profiles; for RFC 7523 also
 secp256k1 (ES256K) or Ed25519 (EdDSA); and for RFC 7522 — whose XML Signature
-verifier takes every family since 2026-09-17 — also Ed25519, Ed448, DSA, ML-DSA
+verifier takes every family — also Ed25519, Ed448, DSA, ML-DSA
 or SLH-DSA.
 
 As with an issued key pair, **a key pair is not a trust decision**: to present
@@ -429,11 +419,10 @@ curl -sk -X POST https://localhost:8081/admin-api/applications/regenerate-secret
 
 ## A person's credentials, on their own page
 
-Since 2026-09-13, `/admin/users?user=<name>` has a **Credentials** section too:
+`/admin/users?user=<name>` has a **Credentials** section too:
 the person's own assertion key pairs, one per profile — RFC 7523 (JWT, on
 `stsAssertion*`) and RFC 7522 (SAML 2.0, on `stsSamlAssertion*`). **A person may
-hold an RFC 7522 key pair now**, and the SAML 2.0 bearer grant reads it; until
-that date only an application could.
+hold an RFC 7522 key pair**, and the SAML 2.0 bearer grant reads it.
 
 It shows what the application's section shows — the certificate, its issuer, the
 chain, the key handle (`kid` for JWT, the certificate thumbprint for SAML),
@@ -490,7 +479,7 @@ curl -sk -X POST https://localhost:8081/admin-api/pki/revoke \
 ```
 
 `/portal/signing-key`, where a person issues themselves a key pair, offers both
-profiles since 2026-09-13: a card each, with its own Generate and its own Take
+profiles: a card each, with its own Generate and its own Take
 off, and the one-time page describing the grant the new key is for.
 
 ## A TLS client certificate for your browser
@@ -515,9 +504,7 @@ certificate when the browser asks signs you in, **in the realm whose portal
 issued it**. Your other applications on this service then sign you in without
 asking.
 
-That address was `https://<host>:9443/` (or `:8443`) until 2026-09-16, when both
-of those listeners were deleted. Presenting a certificate is now the client's
-own decision rather than the port's demand: the browser sends it because you
+Presenting a certificate is the client's own decision rather than the port's demand: the browser sends it because you
 chose it, and `GET /tls/sign-in` answers what arrived, whether it verified, its
 thumbprint, the revocation verdict and whether a session was started.
 
@@ -540,12 +527,6 @@ curl --cert alice-laptop-tls-client-chain.pem \
 
 ## Revocation is published, and consulted
 
-**This section said *nothing is ever revoked* until 2026-09-11.** It read *this
-service publishes no CRL and answers no OCSP; a certificate it issued is good
-until it expires.*
-
-Now:
-
 | | |
 |---|---|
 | **A CRL per authority** | RFC 5280 section 5, DER, at `GET /pki/crl/{scope}/{ca}` — and as `certificateRevocationList;binary` under `ou=crl` in the embedded directory, which is what the `ldap://` address inside every certificate resolves to, readable anonymously by a base search in every mode. Built and signed ON DEMAND, so `thisUpdate` is always now and every signing gets a new CRL number; the directory copy is republished whenever the branch changes and at half of `pki.crlLifetimeMinutes`, so it is never past its `nextUpdate`. |
@@ -558,14 +539,12 @@ Now:
 | **A pane on `/admin/pki`** | Pick an authority, see what it has issued, revoke with any of the nine RFC 5280 reasons, release a `certificateHold`. |
 | **Rotation revokes automatically** | Reissuing a use case's Issuing CA puts every leaf it had signed on its own list and the replaced CA on the Intermediate's, as `superseded`. |
 
-**AND SINCE 2026-09-12 IT CONSULTS THEM.** This paragraph read *what it does
-NOT do is CONSULT a revocation list — its own included … so a certificate
-revoked here still authenticates here*. A certificate PRESENTED to this service
-is now checked under `pki.revocationCheck`:
+**AND IT CONSULTS THEM.** A certificate PRESENTED to this service is checked
+under `pki.revocationCheck`:
 
 | Where a certificate is presented | What is checked |
 |---|---|
-| **`GET /tls/sign-in`** (a verified client certificate) | the whole chain. A refused one starts no session and is not recorded as an authentication, and the answer says *refused on revocation*. (This was the 8443 and 9443 listeners until both were deleted on 2026-09-16; 9443 answered 403 and 8443 answered 200.) |
+| **`GET /tls/sign-in`** (a verified client certificate) | the whole chain. A refused one starts no session and is not recorded as an authentication, and the answer says *refused on revocation*. |
 | **The main port** — the remote XACML PEP and XACML user chains, SCIM's client-certificate scheme, RFC 8705 `tls_client_auth` / `self_signed_tls_client_auth` | the whole chain, computed once per request before any route; each of those doors refuses a certificate the policy refuses |
 | **An RFC 7523 assertion's `x5c`** | the register only — the path is this realm's own by construction |
 | **The SPIRE Server API** (an X509-SVID) | the register only, whatever the policy — a federated SVID has no revocation mechanism but its bundle |
@@ -584,8 +563,9 @@ USED** — the same sources and the same policy, refused as `STS-PKI-0129`:
 A registered certificate usually arrives with nothing above it, so its issuer is
 **fetched from its own caIssuers address**, hop by hop, each certificate
 believed only because its key verifies the one below. One naming no such address
-is refused only under `pki.revocationRequireDistributionPoint`; one naming an
-address that did not answer is refused under hard-fail.
+is refused where `pki.revocationRequireDistributionPoint` says — `auto`, in
+product mode; one naming an address that did not answer is refused under
+hard-fail.
 
 **Where the answer comes from depends on who signed the certificate.** One of
 this service's own authorities is answered from the REGISTER — the list this
@@ -605,6 +585,34 @@ issuer** is looked up in the directory `pki.revocationLdapDirectory` names, when
 every RDN of the whole name is single-valued. **A URL is dialled only for a chain that VERIFIED
 against this service's truststore** — an unverified certificate can name
 anything.
+
+**An address this service will not dial is not the same as no address
+(#174).** A plain `ldap:` list under the default `pki.revocationLdap=ldaps`,
+any LDAP address with it `off`, a relative name without
+`pki.revocationLdapDirectory` (or with a multi-valued RDN), a scheme that is
+never dialled, an OCSP responder that is not http(s), and any responder with
+`pki.revocationOcsp=off` are **not dialled** — and when that is all a
+certificate names, the issuer published a list that this service's own policy
+kept it from reading. Its status could not be established: hard-fail refuses it
+as `STS-PKI-0188`, with the reason naming the setting that would dial it, and
+soft-fail accepts it and reports it. The verdict lists every such address
+(`notDialled`), and the policy report on this page lists them apart from what
+names none.
+
+**A certificate that names NOTHING — no CRL, no OCSP responder — can never be
+revoked (#174).** `pki.revocationRequireDistributionPoint` decides it: `auto`
+(the default) is `mode.refusesUnrevocableCertificates()`, which refuses one
+issued by a CA this service does not hold in **product** mode
+(`STS-PKI-0190`) and accepts it in development; `on` refuses it in both. **`off`
+accepts certificates nobody can ever revoke** — a stolen key under such an
+authority is good until it expires — and is there for a private CA you know
+publishes nothing; giving that CA a distribution point is better. A self-signed
+certificate is untouched (the walk stops at it as an anchor). A certificate
+carrying **RFC 9608 `noRevAvail`** is not checked in either mode — section 4
+skips the check, its issuer having declared that no revocation information
+exists — and one carrying it beside `cA` TRUE, `cRLDistributionPoints`,
+`freshestCRL` or an OCSP responder is **invalid** (section 3) and refused under
+every policy but `off` (`STS-PKI-0189`).
 
 **Whose signature is believed:**
 
@@ -629,17 +637,16 @@ anything.
 |---|---|
 | `off` | nothing |
 | `soft-fail` | a certificate that is revoked |
-| `hard-fail` | that, and one whose status could not be fetched, did not verify, was stale, or that its issuer's responder does not know. A certificate naming **no** CRL and **no** responder is still accepted unless `pki.revocationRequireDistributionPoint` is on — there is nothing an attacker could block |
+| `hard-fail` | that, and one whose status could not be fetched, did not verify, was stale, or that its issuer's responder does not know — and one whose only list or responder is at an address this service is configured not to dial (`STS-PKI-0188`). A certificate naming **no** CRL and **no** responder is refused where `pki.revocationRequireDistributionPoint` says: `auto` refuses it in product mode (`STS-PKI-0190`) |
 | `auto` (default) | `hard-fail` in product mode, `soft-fail` in development |
 
 **What remains are limits, and `common/mode.js` carries them**: a bare registered
 key names no list, so only taking it off stops it verifying; plain `ldap:` is
-dialled only when allowed; a relative distribution point needs
-`pki.revocationLdapDirectory` and single-valued RDNs; LDAPS 636 asks for no client
-certificate. The verdict for a
-certificate you present is in `GET /tls/sign-in`'s answer — it was on
-`GET /tls/whoami` until the two TLS listeners were deleted on 2026-09-16, and
-that page went with them; the policy is on `GET /tls` and
+dialled only when allowed, and a relative distribution point needs
+`pki.revocationLdapDirectory` and single-valued RDNs — refused under hard-fail
+when nothing else answers; a certificate naming nothing is accepted in
+development; LDAPS 636 asks for no client certificate. The verdict for a
+certificate you present is in `GET /tls/sign-in`'s answer; the policy is on `GET /tls` and
 `/admin/crypto-metadata`.
 
 **AND THERE IS A THIRD ACT WITH THE SAME WORD IN IT.** The console has a
@@ -746,8 +753,7 @@ the setting says. It can be set per realm.
 ## Signing key generations, and the crypto metadata document
 
 Every signer of a realm is a UNIT — a use case and an algorithm: `jose:RS256`
-(tokens), `xml:RS256` (SAML, WS-Federation and WS-Trust, a key of its own
-since 2026-09-22), one per elliptic curve and one per post-quantum algorithm.
+(tokens), `xml:RS256` (SAML, WS-Federation and WS-Trust, a key of its own), one per elliptic curve and one per post-quantum algorithm.
 A unit holds a **current** key, and may hold a **next** key and **retired**
 keys:
 
@@ -1169,9 +1175,9 @@ never a certificate that exists.
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `pki.autoBuild` | `PKI_AUTO_BUILD` | `true` | no (restart) | Build the hierarchy at startup and certify every key this service generates under it. **Restart-only**: a key can only be issued by an authority that exists when the key is made, and the keys are made at startup. Off is how this service behaved before 2026-09-11. |
+| `pki.autoBuild` | `PKI_AUTO_BUILD` | `true` | no (restart) | Build the hierarchy at startup and certify every key this service generates under it. **Restart-only**: a key can only be issued by an authority that exists when the key is made, and the keys are made at startup. Off leaves every generated key uncertified. |
 | `pki.keyAlgorithm` | `STS_PKI_KEY_ALGORITHM` | `rsa-2048` | yes | The key algorithm a build uses when the form names none. RSA 2048 because the leaf signs a client assertion somebody else's OAuth library has to verify. |
-| `pki.signatureAlgorithm` | `STS_PKI_SIGNATURE_ALGORITHM` | *(empty)* | yes | Empty means "the right one for the key algorithm" — see [above](#the-encoder-is-the-debuggers-own-vendored-byte-identical). |
+| `pki.signatureAlgorithm` | `STS_PKI_SIGNATURE_ALGORITHM` | *(empty)* | yes | Empty means "the right one for the key algorithm" — see [above](#the-encoder-is-the-debuggers-own-vendored-byte-identical). `sha1-rsa` and `sha1-ecdsa` are development mode only: product uses the key's default instead and refuses setting either, or a build naming one (#181). |
 | `pki.organisation` | `STS_PKI_ORGANISATION` | `sts` | yes | The `O=` every tier and leaf carries, and what the tiers are named after when no common name is given. |
 | `pki.leafLifetimeDays` | `STS_PKI_LEAF_LIFETIME_DAYS` | `365` | yes | How long an issued signing certificate is good for, clamped to the Issuing CA's expiry. |
 | `pki.rootLifetimeYears` | `STS_PKI_ROOT_LIFETIME_YEARS` | `0` | yes | A new Root CA's lifetime when the build names none; `0` is the profile's twenty years. |
@@ -1203,7 +1209,7 @@ is checked — see
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `pki.revocationCheck` | `STS_PKI_REVOCATION_CHECK` | `auto` | yes | `off`, `soft-fail` (refuse only a revoked certificate) or `hard-fail` (also refuse one whose status could not be established); `auto` is hard-fail in product mode and soft-fail in development. |
-| `pki.revocationRequireDistributionPoint` | `STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT` | `false` | yes | Under hard-fail, also refuse a foreign certificate that names no http or https CRL distribution point. |
+| `pki.revocationRequireDistributionPoint` | `STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT` | `auto` | yes | Under hard-fail, whether a CA-issued foreign certificate that names no CRL and no OCSP responder (and no RFC 9608 `noRevAvail`) is refused. `auto` refuses it in product mode; `on` in both; **`off` accepts certificates nobody can ever revoke**. |
 | `pki.revocationFetchTimeoutMs` | `STS_PKI_REVOCATION_FETCH_TIMEOUT_MS` | `3000` | yes | How long a fetch of a foreign CRL may take. |
 | `pki.revocationMaxCrlBytes` | `STS_PKI_REVOCATION_MAX_CRL_BYTES` | `1048576` | yes | A distribution point answering more than this is treated as unreachable rather than read into memory. |
 | `pki.revocationCrlCacheEntries` | `STS_PKI_REVOCATION_CRL_CACHE_ENTRIES` | `256` | yes | How many verified foreign CRLs, and remembered failures, are cached; the oldest goes first. |
@@ -1214,7 +1220,7 @@ is checked — see
 | `pki.revocationOcspRequireNonce` | `STS_PKI_REVOCATION_OCSP_REQUIRE_NONCE` | `false` | yes | Refuse an OCSP response that echoes no nonce; off by default because pre-produced responses cannot carry one. |
 | `pki.revocationClockSkewS` | `STS_PKI_REVOCATION_CLOCK_SKEW_S` | `300` | yes | How far a CRL's or OCSP response's `nextUpdate` may be past, or an OCSP `thisUpdate` in the future, before it is refused. |
 | `pki.revocationCrlIssuersFile` | `STS_PKI_REVOCATION_CRL_ISSUERS_FILE` | *(empty)* | yes | A PEM file of indirect CRL issuers a distribution point may name in `cRLIssuer`; read again when it changes. |
-| `pki.revocationLdap` | `STS_PKI_REVOCATION_LDAP` | `ldaps` | yes | Whether `ldaps:` (verified), also plain `ldap:` (`ldaps-and-ldap`), or no directory address (`off`) is dialled for a CRL or issuer. |
+| `pki.revocationLdap` | `STS_PKI_REVOCATION_LDAP` | `ldaps` | yes | Whether `ldaps:` (verified), also plain `ldap:` (`ldaps-and-ldap`), or no directory address (`off`) is dialled for a CRL or issuer. An address not dialled is not "no address": under hard-fail a certificate whose only list is there is refused (`STS-PKI-0188`). |
 | `pki.revocationLdapCaFile` | `STS_PKI_REVOCATION_LDAP_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates an `ldaps` directory's certificate may chain to, beside node's own CA store. |
 | `pki.revocationLdapDirectory` | `STS_PKI_REVOCATION_LDAP_DIRECTORY` | *(empty)* | yes | The directory (scheme, host, port) a distribution point named relative to its CRL issuer is looked up in; without it such a name is not dialled. |
 

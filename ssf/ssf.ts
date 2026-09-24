@@ -206,6 +206,9 @@ import ssfCluster = require('./ssf_cluster');
 // (the call-log funnel records it); a refusal with no response of its own — a
 // transmission, a console action, an automatic emission — is an audit row.
 import errorCodes = require('../common/error_codes');
+// For `refusesUnverifiedSignals()` at /ssf/receive (#117). A leaf that
+// requires only config.
+import mode = require('../common/mode');
 
 // A loose JSON-shaped object: the reports, stream records and results this
 // file builds and passes on. Their shapes are the libraries' own, and those
@@ -274,6 +277,10 @@ const SWEEP_JOB = 'ssf.dead-letter-sweep';
 // The inactivity timeout and transmitter-initiated verification (#144). See
 // scheduleMaintenance().
 const MAINTENANCE_JOB = 'ssf.stream-maintenance';
+
+// An account holder's RISC opt-out becoming effective after the delay (#146).
+// See scheduleOptOuts().
+const OPT_OUT_JOB = 'risc.opt-out-effective';
 
 class SharedSignals {
   // The well-known suffix RFC 8414's registry carries for this document. It
@@ -1423,6 +1430,65 @@ class SharedSignals {
   }
 
   // -------------------------------------------------------------------------
+  // RISC SECTION 2.8's DELAY, AS A SCHEDULER JOB (#146). An account holder who
+  // opts out on /portal/signals is in opt-out-initiated until
+  // risc.optOutDelayHours has passed; this job sends opt-out-effective for
+  // each such account, which moves the register to opt-out. A cluster job, per
+  // realm: the register is a store every node shares, and one node sending the
+  // event is the point. Every five minutes, so the delay is honoured to within
+  // that.
+  // -------------------------------------------------------------------------
+  scheduleOptOuts(): void {
+    const { log, config } = this.deps;
+    log.debug('Entering SharedSignals.scheduleOptOuts().');
+    const scheduler = require('../cluster/scheduler');
+    if (scheduler.job(OPT_OUT_JOB)) {
+      log.debug('Leaving SharedSignals.scheduleOptOuts(). Registered.');
+      return;
+    }
+    scheduler.register({
+      id: OPT_OUT_JOB,
+      title: 'RISC opt-outs becoming effective',
+      describe: 'Sends RISC opt-out-effective for every account whose ' +
+                'holder opted out on /portal/signals at least ' +
+                'risc.optOutDelayHours ago and did not cancel (RISC 1.0 ' +
+                'section 2.8), which moves the account to the opt-out ' +
+                'state.',
+      owner: 'ssf/ssf.ts',
+      kind: 'cluster',
+      scope: 'realm',
+      everyMs: function () {
+        return 5 * 60 * 1000;
+      },
+      off: function () {
+        return config.value('risc.enabled') === false ? 'risc.enabled is off'
+                                                      : '';
+      },
+      run: () => {
+        return this.makeOptOutsEffective();
+      }
+    });
+    log.debug('Leaving SharedSignals.scheduleOptOuts(). On the scheduler.');
+  }
+
+  // The job's body: one opt-out-effective per account that is due.
+  makeOptOutsEffective(): Promise<Json> {
+    const { log, risc } = this.deps;
+    log.debug('Entering SharedSignals.makeOptOutsEffective().');
+    const due = risc.optOutsDue();
+    log.debug('Leaving SharedSignals.makeOptOutsEffective(). ' + due.length +
+              ' due.');
+    return Promise.all(due.map((username) => {
+      return this.emitRiscAccountAct({ username: username,
+        act: 'optOutEffective',
+        reasonAdmin: 'The opt-out ' + username + ' asked for took effect ' +
+                     'after risc.optOutDelayHours.' });
+    })).then((results) => {
+      return { effective: due.length, results: results };
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // `ssf.delivery` (#46 section 6), AT REQUIRE TIME like every capability —
   // the code being loaded is the capability (cluster/CLAUDE.md). What it
   // stands for, and where each half is: an acknowledged SET is not delivered
@@ -1712,12 +1778,14 @@ class SharedSignals {
       // never be dialled is refused when it is created rather than accepted
       // and then silently delivering nothing.
       if (body.delivery && body.delivery.method === streams.DELIVERY_PUSH) {
-        const problem = transport.urlProblem(body.delivery.endpoint_url);
-        if (problem) {
-          errorCodes.mark(res, 'STS-SSF-0012');
+        // `urlVerdict()` since #171: plain http refused because this realm
+        // is in product mode carries its own code (STS-SSF-0108).
+        const problem = transport.urlVerdict(body.delivery.endpoint_url);
+        if (problem.why) {
+          errorCodes.mark(res, problem.errorCode || 'STS-SSF-0012');
           this.fail(res, 400, 'invalid_request',
             'delivery.endpoint_url cannot be dialled by this transmitter: ' +
-            problem + '. It is refused now rather than at delivery time, ' +
+            problem.why + '. It is refused now rather than at delivery time, ' +
             'because a stream that is accepted and then silently delivers ' +
             'nothing is the worst outcome available here.');
           log.debug('Leaving POST /ssf/stream. Undiallable endpoint.');
@@ -2213,7 +2281,9 @@ class SharedSignals {
     // event could not show anybody WHAT arrived or WHY it did not verify,
     // which is the question being asked. `ssf.receiveRequireSignature` turns
     // the 400 on, which is what a real receiver does and is the negative a
-    // transmitter needs to be able to reach.
+    // transmitter needs to be able to reach. **PRODUCT MODE ALWAYS REFUSES
+    // (#117, 2026-09-23)**: there it was an unauthenticated write into a
+    // stored inbox (`mode.refusesUnverifiedSignals()`).
     //
     // The verification is against THIS SERVICE'S OWN key, because that is the
     // only key it has. A SET signed by somebody else is reported as "not
@@ -2267,7 +2337,8 @@ class SharedSignals {
       const verdict: Json = events.verifySet(token, read.header);
       const verified = verdict.verified;
       const verificationNote = verdict.note;
-      if (!verified && config.value('ssf.receiveRequireSignature')) {
+      // Refused in product mode whatever the setting says (#117).
+      if (!verified && mode.refusesUnverifiedSignals()) {
         errorCodes.mark(res, 'STS-SSF-0024');
         this.fail(res, 400, 'invalid_key', verificationNote);
         log.debug('Leaving POST /ssf/receive. Signature required.');
@@ -2548,7 +2619,9 @@ class SharedSignals {
       }),
       push: {
         allowed: transport.pushAllowed(),
-        allowInsecure: transport.allowInsecure(),
+        // #171: plain http, the certificate check, and the CA file, as they
+        // are IN FORCE here — a skip stored in a product realm reads false.
+        transport: transport.transportSettings(),
         allowedHosts: transport.allowedHosts(),
         retries: config.value('ssf.pushRetries'),
         maxResponseBytes: transport.maxBodyBytes(),
@@ -2652,12 +2725,13 @@ class SharedSignals {
           answer: '403 access_denied naming the scope' },
         { what: 'Set ssf.verificationRateLimit and verify twice',
           answer: '429 with Retry-After' },
-        { what: 'Set ssf.breakSetSignature',
+        { what: 'Set ssf.breakSetSignature (development mode only)',
           answer: 'Every SET is signed and then broken by one character, so ' +
-                  'a ' +
-                  'receiver that does not verify accepts an unsigned event' },
-        { what: 'Set ssf.legacySubClaim',
-          answer: 'A deprecated `sub` claim appears beside `sub_id`' }
+                  'a receiver that does not verify accepts an unsigned ' +
+                  'event. A product realm ignores it and refuses setting it' },
+        { what: 'Set ssf.legacySubClaim (development mode only)',
+          answer: 'A deprecated `sub` claim appears beside `sub_id`. A ' +
+                  'product realm ignores it and refuses setting it' }
       ],
       doesNotDo: [
         'It does not retry a failed push unless ssf.pushRetries says to, ' +
@@ -3197,6 +3271,57 @@ class SharedSignals {
   }
 
   // ---------------------------------------------------------------------------
+  // A REALM'S KERBEROS TICKETS WERE INVALIDATED (#169, rcbj's decision 4) —
+  // this service's own event, from `kerberos/krb5_krbtgt_rotation.ts` after a
+  // "rotate and invalidate" of the krbtgt key: every TGT in the realm is
+  // refused from now on. No subject, so every stream that asked for the type
+  // gets it. Never throws, for `signingKeyRotated()`'s reason.
+  // ---------------------------------------------------------------------------
+  kerberosTicketsInvalidated(notice?: Json): Promise<EmitResult> {
+    const { log, events, streams, errorCodes } = this.deps;
+    log.debug('Entering SharedSignals.kerberosTicketsInvalidated().');
+    if (!this.enabled()) {
+      log.debug('Leaving SharedSignals.kerberosTicketsInvalidated(). SSF is ' +
+                'off.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    const n = notice || {};
+    const uri = events.KERBEROS_TICKETS_INVALIDATED;
+    const payload = events.EVENT_BY_URI[uri].generate({
+      realm: n.realm, kerberos_realm: n.kerberos_realm, kvno: n.kvno });
+    const candidates = streams.listStreams().filter((record: Json) => {
+      return streams.deliversEvent(record, uri);
+    });
+    if (!candidates.length) {
+      log.debug('Leaving SharedSignals.kerberosTicketsInvalidated(). No ' +
+                'stream takes it.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    log.debug('Leaving SharedSignals.kerberosTicketsInvalidated().');
+    // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
+    const txn = this.newTxn();
+    return Promise.all(candidates.map((record: Json) => {
+      return this.transmit(record, { txn: txn, uri: uri, payload: payload,
+        toe: payload.event_timestamp });
+    })).then((reports) => {
+      const sent = reports.filter((one) => {
+        return one.ok;
+      }).length;
+      log.info('ssf: kerberos-tickets-invalidated for the "' + payload.realm +
+               '" realm went to ' + sent + ' of ' + candidates.length +
+               ' stream(s).');
+      return { sent: sent, streams: candidates.length, reports: reports };
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.kerberosTicketsInvalidated(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-SSF-0112') + 'ssf: the ' +
+                'kerberos-tickets-invalidated event could not be sent: ' +
+                e.message);
+      return { sent: 0, streams: candidates.length, why: e.message };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // A CAEP EVENT A PROTOCOL FAMILY OBSERVED ABOUT SOMETHING THAT IS NOT A
   // SIGN-ON SESSION.
   //
@@ -3723,6 +3848,153 @@ class SharedSignals {
   // an `ldapmodify` that blocked on a receiver's TCP timeout would be a
   // directory whose writes depend on a third party being up.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // WHAT THE DIRECTORY'S ACCOUNT OBSERVER IS HANDED, AND WHO READS IT (#145).
+  // A person's own write goes to RISC, which reads it for its account events,
+  // as it always did; a MEMBERSHIP change (`ldap_server.js`'s
+  // noteMembershipChange()) has no RISC reading and does not go there. Both go
+  // to claimsAutoEmit(), which decides whether CAEP's token-claims-change is
+  // due. Nothing here is awaited — the rule riscAutoEmit()'s header gives.
+  // ---------------------------------------------------------------------------
+  directoryChanged(notice?: Json): void {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.directoryChanged().');
+    const asked = notice || {};
+    if (asked.kind !== 'membership') {
+      this.riscAutoEmit(asked);
+    }
+    this.claimsAutoEmit(asked);
+    log.debug('Leaving SharedSignals.directoryChanged().');
+  }
+
+  // ---------------------------------------------------------------------------
+  // CAEP token-claims-change FROM A DIRECTORY WRITE (#145, 2026-09-22).
+  //
+  // The claims in tokens already issued are stale when an attribute that
+  // feeds one, or a group, changes. This sends the event to every stream that
+  // takes it and covers the person, naming the claims that moved and their
+  // new values — and only when the person HOLDS something live that carries
+  // them (`admin_stats.holdsLiveIssuance()`): an event about tokens that do
+  // not exist is noise every receiver has to discard.
+  //
+  // **CHEAPEST QUESTION FIRST**, because this is called for every person a
+  // bulk group write touches: SSF on, the act chosen in caep.autoEmitTypes, a
+  // stream that delivers the type at all — each answered without reading the
+  // directory — and only then which claims moved and whether anything live
+  // carries them. The work after those checks runs on a promise, so a write
+  // that affected a thousand members returns before any of it.
+  // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // A PERSON'S RISK LEVEL CHANGED (#62 P4, 2026-09-22) — CAEP
+  // risk-level-change, sent when `risk/risk_engine.ts` saw the change and the
+  // `risk-response` policy permitted announcing it. `notice`: `username`,
+  // `sub`, `previous` and `current` (LOW, MEDIUM, HIGH — CAEP's three; a
+  // first assessment has no previous, and UNSCORED is not a level CAEP
+  // knows, so it is sent as none), and `reason` — the signals, which is what
+  // lets a receiver tell "impossible travel" from "a password being
+  // guessed". The subject names the PERSON (`principal` USER): the standing
+  // moved, not one session. `claimsAutoEmit()`'s shape, and never rejects.
+  // ---------------------------------------------------------------------------
+  riskAutoEmit(notice?: Json): Promise<EmitResult> {
+    const { log, caep, subjects } = this.deps;
+    log.debug('Entering SharedSignals.riskAutoEmit().');
+    const asked = notice || {};
+    const levels = ['LOW', 'MEDIUM', 'HIGH'];
+    const current = String(asked.current || '');
+    if (!this.enabled() || !asked.sub || levels.indexOf(current) < 0) {
+      log.debug('Leaving SharedSignals.riskAutoEmit(). SSF is off, nobody ' +
+                'is named, or the level is not one CAEP knows.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    if (caep.autoEmitActs().indexOf('risk') < 0) {
+      log.debug('Leaving SharedSignals.riskAutoEmit(). Not an emitted act.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+    }
+    const values: Json = { principal: 'USER', current_level: current };
+    if (levels.indexOf(String(asked.previous || '')) >= 0) {
+      values.previous_level = String(asked.previous);
+    }
+    if (asked.reason) {
+      values.risk_reason = String(asked.reason);
+    }
+    log.debug('Leaving SharedSignals.riskAutoEmit().');
+    return this.emitProtocolEvent({
+      req: null, protocol: 'Risk scoring', type: 'risk-level-change',
+      subject: subjects.complexSubject({ user: { format: 'iss_sub',
+        iss: this.issuerFor(null), sub: String(asked.sub) } }),
+      values: values, initiatingEntity: 'system',
+      reasonAdmin: String(asked.username || 'A person') + '\'s risk level ' +
+                   'went from ' + (values.previous_level || 'none') + ' to ' +
+                   current + (asked.reason ? ' (' + asked.reason + ')' : '') +
+                   '.',
+      reasonUser: current === 'HIGH'
+        ? 'Sign-ins to your account looked unusually risky, and your ' +
+          'sessions have been ended as a precaution.'
+        : 'The risk this service sees in your sign-ins changed.' });
+  }
+
+  claimsAutoEmit(notice?: Json): Promise<EmitResult> {
+    const { log, caep, events, streams, stats, subjects } = this.deps;
+    const { subjectForName } = this.deps.helpers;
+    log.debug('Entering SharedSignals.claimsAutoEmit().');
+    const asked = notice || {};
+    const username = String(asked.username || '');
+    if (!this.enabled() || !username ||
+        String(asked.kind || '').indexOf('deleted') === 0) {
+      log.debug('Leaving SharedSignals.claimsAutoEmit(). SSF is off, ' +
+                'nobody is named, or the person is gone.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    if (caep.autoEmitActs().indexOf('claims') < 0) {
+      log.debug('Leaving SharedSignals.claimsAutoEmit(). Not an emitted act.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+    }
+    const uri = events.CAEP_PREFIX + 'token-claims-change';
+    if (!streams.listStreams().some(function (record) {
+      return streams.deliversEvent(record, uri);
+    })) {
+      log.debug('Leaving SharedSignals.claimsAutoEmit(). No stream takes ' +
+                'token-claims-change.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'no stream' });
+    }
+    log.debug('Leaving SharedSignals.claimsAutoEmit(). Deciding.');
+    return Promise.resolve().then(() => {
+      // THE REGISTER BEFORE THE DIRECTORY: whether anything live carries the
+      // person's claims is a scan of what was issued, while which claims
+      // moved can need their groups — and the group index this very write
+      // invalidated. A bulk load's people hold nothing, so asking in this
+      // order keeps a group write at the cost it had before (#145, measured
+      // over 5,000 SCIM memberships: 11.6 ms each without this feature,
+      // 21.8 ms with the order reversed, 10.5 ms in this one).
+      const sub = subjectForName(username) || username;
+      if (!stats.holdsLiveIssuance(username, sub)) {
+        log.debug('caep: ' + username + ' holds nothing live, so no ' +
+                  'token-claims-change is considered.');
+        return { sent: 0, streams: 0, why: 'nothing live' };
+      }
+      const change: Json = caep.claimsChangeFor(asked);
+      if (!change) {
+        return { sent: 0, streams: 0, why: 'no claim moved' };
+      }
+      const which = Object.keys(change.claims).join(', ');
+      return this.emitProtocolEvent({
+        req: null, protocol: 'Directory', type: 'token-claims-change',
+        subject: subjects.complexSubject({ user: { format: 'iss_sub',
+          iss: this.issuerFor(null), sub: sub } }),
+        values: change, initiatingEntity: 'admin',
+        reasonAdmin: 'The directory entry of ' + username + ' changed ' +
+                     which + ', which tokens already issued carry.',
+        reasonUser: 'Information about you in tokens already issued ' +
+                    'changed.' });
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.claimsAutoEmit(): ' +
+                ((e && e.message) || e));
+      log.warn('caep: a token-claims-change for ' + username + ' could not ' +
+               'be decided: ' + ((e && e.message) || e));
+      return { sent: 0, streams: 0, why: String((e && e.message) || e) };
+    });
+  }
+
   riscAutoEmit(notice?: Json): Promise<EmitResult> {
     const { log, risc, errorCodes } = this.deps;
     log.debug('Entering SharedSignals.riscAutoEmit().');
@@ -3917,7 +4189,12 @@ class SharedSignals {
       payload = caep.buildPayload(uri, {
         credential_type: String(options.credentialType || 'password'),
         change_type: String(options.changeType || 'update'),
-        friendly_name: String(options.friendlyName || '')
+        friendly_name: String(options.friendlyName || ''),
+        // #145: the certificate, or the security key's model, where the door
+        // that changed it knows — empty is left out by the builder.
+        x509_issuer: String(options.x509Issuer || ''),
+        x509_serial: String(options.x509Serial || ''),
+        fido2_aaguid: String(options.fido2Aaguid || '')
       }, {
         initiatingEntity: String(options.initiatingEntity || 'admin'),
         reasonAdmin: String(options.reasonAdmin || ''),
@@ -4480,7 +4757,7 @@ class SharedSignals {
     // in the require order and this module is 23b, so the require above goes
     // the ordinary way and only the FUNCTION travels back — see
     // setAccountObserver() over there.
-    directory.setAccountObserver(this.riscAutoEmit.bind(this));
+    directory.setAccountObserver(this.directoryChanged.bind(this));
 
     adminConsole.setRiscReporter({
       report: this.riscReport.bind(this),
@@ -4570,6 +4847,7 @@ class SharedSignals {
     helpers.log.debug('Entering SharedSignals.wire().');
     instance.scheduleSweep();
     instance.scheduleMaintenance();
+    instance.scheduleOptOuts();
     instance.provideCapability();
     instance.installHooks();
     instance.seedOwnReceivers();
@@ -4619,6 +4897,7 @@ export = {
   CONSOLE_ACTIONS: SharedSignals.CONSOLE_ACTIONS,
   caepAutoEmit: slot.forward('caepAutoEmit'),
   signingKeyRotated: slot.forward('signingKeyRotated'),
+  kerberosTicketsInvalidated: slot.forward('kerberosTicketsInvalidated'),
   emitProtocolEvent: slot.forward('emitProtocolEvent'),
   caepReport: slot.forward('caepReport'),
   caepAction: slot.forward('caepAction'),
@@ -4628,6 +4907,8 @@ export = {
   // through `ssf/account_signals.ts`.
   emitRiscAccountAct: slot.forward('emitRiscAccountAct'),
   emitCredentialChange: slot.forward('emitCredentialChange'),
+  // A person's risk level changed (#62 P4): `risk/risk_engine.ts` sends it.
+  riskAutoEmit: slot.forward('riskAutoEmit'),
   riscReport: slot.forward('riscReport'),
   riscAction: slot.forward('riscAction'),
   RISC_CONSOLE_ACTIONS: SharedSignals.RISC_CONSOLE_ACTIONS,

@@ -3695,15 +3695,24 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
     "ways, and an un-revoke that only reached introspection would leave this " +
     "page unable to offer the thing it had just been told about.");
 
-  await ok("/logout/restore-kerberos", { user: username },
-    "cleared the Kerberos sign-out instant");
+  // RESTORE-KERBEROS IS DEVELOPMENT-ONLY (#111): product refuses it on this
+  // door as on the console, and the instant stands.
+  const productMode = await facts.isProduct(rootApi);
+  if (productMode) {
+    await refused("/logout/restore-kerberos", { user: username },
+      /development-only test control/,
+      "refused restore-kerberos in product mode");
+  } else {
+    await ok("/logout/restore-kerberos", { user: username },
+      "cleared the Kerberos sign-out instant");
+  }
   const krb5Row = (await get("/logout?user=" + encodeURIComponent(username)))
       .body.rows.filter(function (one) { return one.family === "krb5"; })[0];
   assert.ok(krb5Row,
     "the sign-out view should always carry a Kerberos row, even when there " +
     "is no principal — the absence is the answer, and omitting it would read " +
     "as a global logout having skipped the KDC.");
-  assert.ok(!krb5Row.startedAt,
+  assert.ok(productMode || !krb5Row.startedAt,
     "AND NO SIGN-OUT INSTANT MAY STAND AFTER `restore-kerberos`. The row's " +
     "`startedAt` IS that instant — it is 0 when there is none — so this is " +
     "the one reading of that action a caller can make; its own reply says " +
@@ -4127,7 +4136,36 @@ async function theKerberosPrincipalsRoundTrip() {
     assert.strictEqual(cleared.cleared, false,
       keyPerson + "'s keys were cleared above, so a second clear finds " +
       "nothing: " + JSON.stringify(cleared));
-    await kerberosPrincipalsHeld(true);
+
+    // A PERSON'S KEYTAB (#59, 2026-09-22): a password RESET that answers the
+    // keytab derived from it. Refused whole for neither a password nor
+    // `random`; with `random` the generated password is never in the reply.
+    // Last, because it re-derives the keys the two clears above emptied.
+    // `sts_kerberos_keytab.js` signs in with such a keytab through MIT kinit.
+    await refused("/kerberos/principals/reset-person-keytab",
+      { username: keyPerson }, /Either give the new password/,
+      "a keytab reset with neither a password nor random", true);
+    const keytabbed = await ok("/kerberos/principals/reset-person-keytab",
+      { username: keyPerson, random: true },
+      "reset the person's password and answered their keytab", true);
+    const keytabBytes = Buffer.from(String(keytabbed.keytab || ""), "base64");
+    assert.ok(keytabBytes[0] === 0x05 && keytabBytes[1] === 0x02 &&
+              keytabbed.generated === true &&
+              !Object.prototype.hasOwnProperty.call(keytabbed, "password") &&
+              JSON.stringify(keytabbed.keytabKvnos) ===
+                JSON.stringify([keytabbed.kvno]),
+      "reset-person-keytab must answer an MIT 0x0502 keytab at one kvno and " +
+      "no generated password: " + JSON.stringify(Object.assign({}, keytabbed,
+        { keytab: "(" + keytabBytes.length + " bytes)" })));
+    const afterKeytab = await kerberosPrincipalsHeld(true);
+    const keytabRow = afterKeytab.body.people.filter(function (one) {
+      return one.username === keyPerson;
+    })[0];
+    assert.ok(afterKeytab.raw.indexOf(keytabbed.keytab.slice(0, 48)) < 0 &&
+              (!product || (keytabRow && keytabRow.kvno === keytabbed.kvno)),
+      "READ BACK AFTER THE KEYTAB, the person is listed at the keytab's kvno " +
+      "in product mode, and the read carries no part of the keytab: " +
+      JSON.stringify(keytabRow || null));
   } finally {
     if (created) {
       await post("/kerberos/principals/delete-service", { spn: spn }, true);
@@ -4140,7 +4178,8 @@ async function theKerberosPrincipalsRoundTrip() {
            "the previous version kept in the keytab and the list, that " +
            "version dropped and read back gone, deleted and read back " +
            "absent; krbtgt, a one-component name and two drops with nothing " +
-           "stored were refused, and a person's clear answered.");
+           "stored were refused, a person's clear answered, and a person's " +
+           "password reset for a keytab read back at its kvno.");
   log.debug("Leaving theKerberosPrincipalsRoundTrip().");
 }
 
@@ -4972,7 +5011,23 @@ const NOT_DRIVEN_HERE = {
   "POST /keys/rotate": "sts_key_rotation.js drives it, and checks what it " +
     "did",
   "POST /keys/emergency": "sts_key_rotation.js drives it in a throwaway " +
-    "realm; an emergency ends every session of the realm it runs in"
+    "realm; an emergency ends every session of the realm it runs in",
+  // A FEDERATION RELATIONSHIP'S ENCRYPTION KEY (#168). Driven by
+  // `sts_federation_encryption.js`, which checks what a rotation did: the
+  // metadata publishes the new key, the replaced one decrypts through its
+  // grace period and not after it, and the retirement job removes it.
+  "POST /federation/rotate-key": "sts_federation_encryption.js drives it, " +
+    "and checks the grace period and the retirement",
+  // THE KRBTGT KEY (#169). Driven by `sts_kerberos_krbtgt_rotation.js`, in a
+  // throwaway realm with a KDC of its own: a rotation is checked by a TGT
+  // from before it still buying a service ticket, which a walk asking for a
+  // 2xx cannot do — and an invalidation ends every TGT of the realm it runs
+  // in, which in the default realm is every other Kerberos job's.
+  "POST /kerberos/principals/rotate-krbtgt": "sts_kerberos_krbtgt_rotation" +
+    ".js drives it in a throwaway realm, with a TGT across it",
+  "POST /kerberos/principals/rotate-krbtgt-invalidate":
+    "sts_kerberos_krbtgt_rotation.js drives it in a throwaway realm; it ends " +
+    "every TGT of the realm it runs in"
 };
 
 function everyDocumentedOperationWasDriven(doc) {

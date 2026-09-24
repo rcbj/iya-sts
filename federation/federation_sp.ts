@@ -16,9 +16,22 @@
 //                                    the WS-Federation wreply and the OAuth 2.0
 //                                    redirect_uri, all on one path — see
 //                                    decision 2.
+//   GET  /federation/link/{handle}   Where link-at-first-sign-in's LOCAL
+//                                    sign-in returns (#109): the partner named
+//                                    an existing person whose account is not
+//                                    linked to its subject, the person signed
+//                                    in here as themselves, and this records
+//                                    the link and finishes the sign-in.
 //   GET  /federation/metadata/{id}   THIS SERVICE'S OWN SAML metadata for that
 //                                    partner, so the partner can be configured
 //                                    without anybody typing five URLs.
+//
+// A PARTNER'S SIGN-OUT (#167) is `federation_slo.ts`'s: /federation/slo/{id},
+// /federation/backchannel-logout/{id} and /federation/frontchannel-logout/
+// {id}. What THIS module keeps for it is what a sign-in learns about the
+// partner's session — partnerSessionOf(), sessionBoundOf() — and the ACS's
+// refusal of a sign-out sent to it (STS-FED-0024), which now names the path
+// that consumes one.
 //
 // ---------------------------------------------------------------------------
 // THIS IS THE MODULE WHERE THE SERVICE'S USUAL POSTURE IS INVERTED, AND EVERY
@@ -172,8 +185,22 @@ import realms = require('./../common/realms');
 import documentSettings = require('./../saml/document_settings');
 import helpers = require('./../common/helpers');
 import InstanceSlot = require('./../common/instance_slot');
+// WHICH PEOPLE A PARTNER MAY ASSERT (#109). `mode.js` answers whether a name
+// match is allowed at all; `federation_links.ts` is the link's format, a
+// static utility class; the console roster (`admin_rbac.ts`, built by the
+// composition root before this module) and `roles.js` say who is an
+// administrator a partner may not sign in. All four are libraries that
+// register nothing and require nothing here back.
+import mode = require('./../common/mode');
+import links = require('./federation_links');
+import rbac = require('./../admin-ui/admin_rbac');
+import roles = require('./../common/roles');
+// A PARTNER'S ENCRYPTED ASSERTION OR ID TOKEN (#168): the key it is encrypted
+// to and the policy it is decrypted under. A static utility class that
+// registers no route and requires nothing here back.
+import fedEncryption = require('./federation_encryption');
 
-const { DOMParser } = xmldom;
+const { DOMParser, XMLSerializer } = xmldom;
 
 type Helpers = typeof helpers;
 
@@ -205,6 +232,14 @@ interface FederationSpDeps {
   parseBody: Helpers['parseBody'];
   subjectForName: Helpers['subjectForName'];
   hasSubjectResolver: Helpers['hasSubjectResolver'];
+  mode: typeof mode;
+  links: typeof links;
+  rbac: typeof rbac;
+  roles: typeof roles;
+  fedEncryption: typeof fedEncryption;
+  // An OP discovered through an OpenID Federation (#134), LAZILY: `oidfed/`
+  // is loaded after this module (14b) and reads it back for its RP metadata.
+  oidfedRp: () => any;
 }
 
 // The express app's registration methods, as `registerRoutes()` uses them.
@@ -221,6 +256,25 @@ const BASE_PATH = federation.PATHS.base;
 const LOGIN_PATH = federation.PATHS.login;
 const ACS_PATH = federation.PATHS.acs;
 const METADATA_PATH = federation.PATHS.metadata;
+const LINK_PATH = federation.PATHS.link;
+// A partner's sign-out (#167), served by `federation_slo.ts`; named here too
+// because the ACS points at it and the metadata publishes it.
+const SLO_PATH = federation.PATHS.slo;
+
+// The `via` of the local sign-in link-at-first-sign-in asks for (#109): the
+// pending record's `protocol`, which `authn.ts` writes onto the session's
+// authentication event. The linking step reads it back to know the sign-in it
+// is shown was made through ITS screen, as the person, just now.
+const LINK_VIA = 'Federation link';
+
+// THE BROWSER THAT STARTED A LINKING SIGN-IN (#109). A cookie carrying a
+// random value whose SHA-256 is on the context, so the linking step is
+// completed only in the browser the partner's response arrived in. Without
+// it the step would be account-linking CSRF: somebody signs in at the partner
+// as themselves under a name they chose, hands the victim the sign-in screen's
+// URL, and the victim's own password links the attacker's partner account to
+// the victim's.
+const LINK_COOKIE = 'sts_fed_link';
 
 const NS_SAMLP = 'urn:oasis:names:tc:SAML:2.0:protocol';
 const NS_SAML = 'urn:oasis:names:tc:SAML:2.0:assertion';
@@ -313,6 +367,8 @@ class FederationSp {
   static readonly LOGIN_PATH = LOGIN_PATH;
   static readonly ACS_PATH = ACS_PATH;
   static readonly METADATA_PATH = METADATA_PATH;
+  static readonly LINK_PATH = LINK_PATH;
+  static readonly LINK_VIA = LINK_VIA;
 
   constructor(private readonly deps: FederationSpDeps) {
     deps.log.debug("Entering FederationSp.constructor().");
@@ -349,7 +405,15 @@ class FederationSp {
       randomId: helpers.randomId,
       parseBody: helpers.parseBody,
       subjectForName: helpers.subjectForName,
-      hasSubjectResolver: helpers.hasSubjectResolver
+      hasSubjectResolver: helpers.hasSubjectResolver,
+      mode: mode,
+      links: links,
+      rbac: rbac,
+      roles: roles,
+      fedEncryption: fedEncryption,
+      oidfedRp: function (): any {
+        return require('../oidfed/oidfed_rp');
+      }
     };
   }
 
@@ -370,9 +434,19 @@ class FederationSp {
     app.post(ACS_PATH + '/:id', (req, res) => {
       return this.consume(req, res);
     });
+    // GET /federation/link/{handle} — where link-at-first-sign-in's local
+    // sign-in returns (#109).
+    app.get(LINK_PATH + '/:handle', (req, res) => {
+      return this.linkEndpoint(req, res);
+    });
     // GET /federation/metadata/{id}
     app.get(METADATA_PATH + '/:id', (req, res) => {
       return this.metadataEndpoint(req, res);
+    });
+    // GET /federation/jwks/{id} — an OpenID Connect relationship's
+    // encryption key (#168).
+    app.get(federation.PATHS.jwks + '/:id', (req, res) => {
+      return this.jwksEndpoint(req, res);
     });
     // GET /federation
     app.get(BASE_PATH, (req, res) => {
@@ -412,7 +486,7 @@ class FederationSp {
     return config.value('federation.requestTtlMin') * 60 * 1000;
   }
 
-  private putContext(record) {
+  putContext(record) {
     const { log, randomId } = this.deps;
     log.debug("Entering FederationSp.putContext().");
     const handle = 'fed-' + randomId(18);
@@ -486,7 +560,7 @@ class FederationSp {
   // window has not closed. The SAML 1.1 case is the one that has no context at
   // all — see `fedAllowUnsolicited` — and it is handled by the caller rather
   // than by pretending there was one.
-  private takeContext(handle) {
+  takeContext(handle) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.takeContext(). handle=" +
               (handle || '(none)'));
@@ -603,6 +677,16 @@ class FederationSp {
     log.debug("Entering FederationSp.acsUrl().");
     log.debug("Leaving FederationSp.acsUrl().");
     return base + ACS_PATH + '/' + encodeURIComponent(record.fedId);
+  }
+
+  // Where a partner's browser-borne sign-out arrives (#167): the SAML
+  // SingleLogoutService, the WS-Federation cleanup URL and the OpenID Connect
+  // post_logout_redirect_uri, one path for the ACS's reason (decision 2).
+  sloUrl(base, record) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.sloUrl().");
+    log.debug("Leaving FederationSp.sloUrl().");
+    return base + SLO_PATH + '/' + encodeURIComponent(record.fedId);
   }
 
   // ---------------------------------------------------------------------------
@@ -735,9 +819,9 @@ class FederationSp {
       // here rather than moving into the shared verifier: `common/crypto.js`
       // answers "does this signature verify against this key", and "there is no
       // key configured, so nothing is accepted" is a FEDERATION policy about a
-      // relationship. See `federation/CLAUDE.md` — the gate is on the SIGNER,
-      // and a permissive answer here would be an authentication bypass for
-      // every protocol in the process.
+      // relationship. See `federation/CLAUDE.md` — the gate is on the SIGNER
+      // (and, since #109, on the subject too), and a permissive answer here
+      // would be an authentication bypass for every protocol in the process.
       log.debug("Leaving FederationSp.verifyXmlSignature(). No certificate " +
                 'is configured.');
       return { ok: false, present: false,
@@ -785,13 +869,19 @@ class FederationSp {
     const { log, firstByLocal, textByLocal } = this.deps;
     log.debug("Entering FederationSp.assertionContents().");
     const out = { subject: '', nameFormat: '', bag: {}, authnInstant: '',
-                  context: '' };
+                  context: '', nameQualifier: '', spNameQualifier: '',
+                  sessionIndex: '', sessionNotOnOrAfter: '' };
     const nameEl = firstByLocal(assertion, 'NameID') ||
                    firstByLocal(assertion, 'NameIdentifier');
     if (nameEl) {
       out.subject = (nameEl.textContent || '').trim();
       out.nameFormat = nameEl.getAttribute('Format') ||
                        nameEl.getAttribute('Format') || '';
+      // The two qualifiers a LogoutRequest names the principal with again
+      // (saml-core-2.0-os section 3.7.3.2 matches on the NameID WHOLE), kept
+      // so a partner's sign-out can be matched and ours can be built (#167).
+      out.nameQualifier = nameEl.getAttribute('NameQualifier') || '';
+      out.spNameQualifier = nameEl.getAttribute('SPNameQualifier') || '';
     }
     const authn = firstByLocal(assertion, 'AuthnStatement') ||
       firstByLocal(assertion, 'AuthenticationStatement');
@@ -800,6 +890,13 @@ class FederationSp {
         authn.getAttribute('AuthenticationInstant') || '';
       out.context = textByLocal(authn, 'AuthnContextClassRef') ||
         authn.getAttribute('AuthenticationMethod') || '';
+      // THE PARTNER'S SESSION (#167): the SessionIndex its LogoutRequest will
+      // name, and the instant it says its session ends (saml-core-2.0-os
+      // section 2.7.2). SAML 2.0 only; a SAML 1.1 AuthenticationStatement
+      // carries neither, and that profile defines no logout.
+      out.sessionIndex = authn.getAttribute('SessionIndex') || '';
+      out.sessionNotOnOrAfter = authn.getAttribute('SessionNotOnOrAfter') ||
+                                '';
     }
     const attributes = assertion.getElementsByTagName('*');
     for (let i = 0; i < attributes.length; i++) {
@@ -1011,28 +1108,40 @@ class FederationSp {
   // THE END OF EVERY SUCCESSFUL FLOW, whichever protocol got here.
   //
   // ONE function, and that is the whole reason the five protocol branches above
-  // it are as thin as they are: the mapping, the directory entry, the counters,
-  // the audit trail and the session are the same five acts in every protocol,
-  // and five copies of them would be five subtly different federated sign-ins.
+  // it are as thin as they are: the mapping, the subject, the directory entry,
+  // the counters, the audit trail and the session are the same acts in every
+  // protocol, and five copies of them would be five subtly different federated
+  // sign-ins.
   //
   // THE ORDER MATTERS AND IS NOT ARBITRARY:
   //
   //   1. map, so the username exists before anything is filed under it;
-  //   2. the relationship's counters;
-  //   3. the application record for the partner, so `/admin/applications` knows
+  //   2. **CHECK THE SUBJECT (#109, 2026-09-22)** — subjectDecision(): which
+  //      local person the partner's subject may become under the
+  //      relationship's `fedSubjectPolicy`, its three rules and the
+  //      console-administrator refusal. A refusal here writes NOTHING: not the
+  //      partner's attributes, not a link, not a counter. It must come before
+  //      the session because the session is where the identity funnel WRITES
+  //      the partner's attributes onto the entry — until this step existed a
+  //      partner naming `admin` had overwritten admin's `mail` before any
+  //      refusal could be reached. An unlinked subject naming an existing
+  //      person is not refused and not signed in either: it is sent to sign in
+  //      HERE as that person first (beginLinking()), and the rest of this
+  //      list runs when that comes back to `/federation/link/{handle}`;
+  //   3. the relationship's counters;
+  //   4. the application record for the partner, so `/admin/applications` knows
   //      the foreign identity provider exists;
-  //   4. the session, LAST, because it is the thing that has an effect outside
+  //   5. the session, LAST, because it is the thing that has an effect outside
   //      this process and everything above it is a record of why. It goes
   //      through `authn.startSession()`, which is also where the identity
   //      funnel (`recordAuthentication()`) runs — the funnel that seeds the
-  //      directory entry AND carries the mapped attributes to it; see WHAT THE
-  //      FUNNEL IS TOLD below for why it is not called separately.
+  //      directory entry AND carries the mapped attributes and the link to it;
+  //      see WHAT THE FUNNEL IS TOLD below for why it is not called separately.
+  //
+  // Steps 3 to 5 are finishSignIn(), which the linking step calls too.
   // ---------------------------------------------------------------------------
   private completeSignIn(req, res, record, result) {
-    const {
-      applications, authn, federation, fedMap, errorCodes, log, subjectForName,
-      hasSubjectResolver
-    } = this.deps;
+    const { fedMap, errorCodes, log } = this.deps;
     log.debug("Entering FederationSp.completeSignIn(). id=" + record.fedId);
     const mapped = fedMap.mapIncoming(record, result.bag, result.subject);
     if (!mapped.username) {
@@ -1050,6 +1159,579 @@ class FederationSp {
                         'configured to take one from an attribute instead'),
                     this.bagTable(result.bag));
     }
+    const decision = this.subjectDecision(record, result, mapped);
+    if (!decision.ok) {
+      log.debug("Leaving FederationSp.completeSignIn(). The subject was " +
+                "refused: " + decision.code);
+      return this.refuseSubject(res, record, result, mapped, decision);
+    }
+    if (decision.confirm) {
+      log.debug("Leaving FederationSp.completeSignIn(). A local sign-in " +
+                "first, to link " + decision.username + ".");
+      return this.beginLinking(req, res, record, result, decision);
+    }
+    log.debug("Leaving FederationSp.completeSignIn(). " + decision.how + ".");
+    return this.finishSignIn(req, res, record, result, mapped, decision);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHICH LOCAL PERSON THE PARTNER'S SUBJECT MAY BECOME (#109, 2026-09-22).
+  //
+  // Answers `{ ok: false, code, status, what, why, rule }` — a refusal — or
+  // `{ ok: true, username, link, create, how, confirm }`, where `how` is one
+  // of:
+  //
+  //   linked     an entry already carries this subject's federationLink;
+  //   confirm    link-at-first-sign-in, and an unlinked subject whose mapped
+  //              name is an existing person: that person signs in HERE first;
+  //   created    nobody is named, and a new entry may be made — namespaced
+  //              `<relationship>~<name>` except under any-existing — linked at
+  //              creation (`create` false where provisioning is off, and the
+  //              session is then refused STS-FED-0090 as it always was);
+  //   matched    any-existing's name match, development only.
+  //
+  // THE LINK IS FOUND FIRST, WHATEVER THE POLICY. A subject an administrator,
+  // SCIM or an earlier first sign-in linked is the strongest statement this
+  // service has about who it is, and it signs in the person it names even
+  // where their NAME has since changed at the partner — which is OpenID
+  // Connect Core section 5.7's whole point. The policy decides only what
+  // happens to a subject nobody linked.
+  //
+  // THE RULES AND THE ADMINISTRATOR REFUSAL COME LAST AND APPLY TO EVERY
+  // ANSWER, a link included: a link says the subject is this person, and the
+  // rules say whether this partner may sign this person in at all.
+  // ---------------------------------------------------------------------------
+  subjectDecision(record, result, mapped): any {
+    const { federation, links, mode, log } = this.deps;
+    log.debug("Entering FederationSp.subjectDecision(). id=" + record.fedId);
+    const policy = federation.subjectPolicyOf(record);
+    if (policy === 'any-existing' && !mode.matchesFederatedNames()) {
+      log.debug("Leaving FederationSp.subjectDecision(). any-existing in " +
+                "product.");
+      return this.subjectRefusal('STS-FED-0094', 'policy',
+        'This relationship matches names, which product mode refuses',
+        'Its fedSubjectPolicy is any-existing: it would sign in whichever ' +
+        'local person has the name the partner sent. Product mode refuses ' +
+        'that — OpenID Connect Core section 5.7 makes the issuer and the ' +
+        'subject, not a name, the identifier a relying party may rely on. ' +
+        'Set the relationship to link-at-first-sign-in, pre-linked or ' +
+        'jit-namespaced.');
+    }
+    const stable = links.stableSubjectOf(record, result);
+    const provisioning = federation.boolOf(record.fedAutocreateUsers, true);
+    let target = '';
+    let how = '';
+    let create = false;
+    if (stable.ok) {
+      const holders = federation.peopleLinkedBy(stable.value);
+      if (holders.length > 1) {
+        log.debug("Leaving FederationSp.subjectDecision(). Ambiguous.");
+        return this.subjectRefusal('STS-FED-0097', 'link',
+          'The partner\'s subject is linked to more than one person',
+          'The link ' + stable.value + ' is carried by ' +
+          holders.map(function (one) { return one.username; }).join(', ') +
+          '. A link names one person; remove it from all but one of them ' +
+          '(the console\'s person page, POST /admin-api/users/' +
+          'federation-unlink or SCIM).');
+      }
+      if (holders.length === 1) {
+        target = holders[0].username;
+        how = 'linked';
+      }
+    }
+    if (!target) {
+      if (!stable.ok && policy !== 'any-existing') {
+        log.debug("Leaving FederationSp.subjectDecision(). Not linkable.");
+        return this.subjectRefusal('STS-FED-0096', 'subject',
+          'The partner sent no identifier this service can link', 'The ' +
+          'assertion verified, but ' + stable.why + '.');
+      }
+      if (policy === 'pre-linked') {
+        log.debug("Leaving FederationSp.subjectDecision(). Not linked.");
+        return this.subjectRefusal('STS-FED-0091', 'pre-linked',
+          'This person is not linked to the partner',
+          'This relationship signs in only people linked to the partner ' +
+          'beforehand (fedSubjectPolicy pre-linked), and nobody here carries ' +
+          'a link for ' + stable.subject + ' from ' + stable.issuer + '. An ' +
+          'administrator links them on their /admin/users page, through ' +
+          'POST /admin-api/users/federation-link, or through SCIM.');
+      }
+      const named = federation.federatedPerson(mapped.username);
+      if (policy === 'any-existing') {
+        target = mapped.username;
+        how = named ? 'matched' : 'created';
+        create = !named && provisioning;
+      } else if (policy === 'link-at-first-sign-in' && named) {
+        target = named.username;
+        how = 'confirm';
+      } else {
+        const namespaced = links.namespacedName(record.fedId, mapped.username);
+        if (federation.federatedPerson(namespaced)) {
+          log.debug("Leaving FederationSp.subjectDecision(). The namespaced " +
+                    "name is taken.");
+          return this.subjectRefusal('STS-FED-0098', 'namespace',
+            'The name for this person is already taken',
+            'A new entry for this subject would be called ' + namespaced +
+            ', and an entry of that name already exists without a link to ' +
+            'it. Link that entry to the subject, or remove it.');
+        }
+        target = namespaced;
+        how = 'created';
+        create = provisioning;
+      }
+    }
+    const person = federation.federatedPerson(target);
+    const rules = this.subjectRules(record, mapped, target, person);
+    if (!rules.ok) {
+      log.debug("Leaving FederationSp.subjectDecision(). A rule refused.");
+      return rules;
+    }
+    log.debug("Leaving FederationSp.subjectDecision(). " + how + " " +
+              target + ".");
+    return { ok: true, policy: policy, how: how,
+             username: person ? person.username : target,
+             link: stable.ok ? stable.value : '',
+             subject: stable.subject, issuer: stable.issuer,
+             create: !person && create, confirm: how === 'confirm' };
+  }
+
+  // A refusal in subjectDecision()'s shape. `rule` names what refused, for the
+  // audit row.
+  // error-code: none — the helper's own shape; every caller passes its code
+  private subjectRefusal(code, rule, what, why): any {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.subjectRefusal(). " + code);
+    log.debug("Leaving FederationSp.subjectRefusal().");
+    return { ok: false, code: code, status: 403, rule: rule, what: what,
+             why: why };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE RULES ON TOP OF EVERY POLICY, and the refusal of an administrator.
+  //
+  // `person` is the entry the sign-in would land on, or null for one it would
+  // create — which is in no group, has no mail of its own yet and is nobody's
+  // administrator, so each rule reads that case for itself.
+  // ---------------------------------------------------------------------------
+  private subjectRules(record, mapped, target, person): any {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.subjectRules(). target=" + target);
+    if (person && !federation.boolOf(record.fedMayAssertAdministrators,
+                                     false)) {
+      const administrator = this.administratorRole(person.username);
+      if (administrator) {
+        log.debug("Leaving FederationSp.subjectRules(). An administrator.");
+        return this.subjectRefusal('STS-FED-0093', 'administrator',
+          'A partner may not sign in an administrator',
+          person.username + ' holds ' + administrator + ', and this ' +
+          'relationship does not allow its partner to sign in a console ' +
+          'administrator (fedMayAssertAdministrators is off, the default). ' +
+          'That holds whatever else is true, a valid link included: a ' +
+          'partner\'s signing key must not be a key to this console. ' +
+          'Sign in here instead.');
+      }
+    }
+    const groups = (record.fedSubjectGroup || []).map(function (one) {
+      return String(one || '').trim();
+    }).filter(Boolean);
+    if (groups.length) {
+      const member = !!person && person.groups.some((group) => {
+        return groups.some((wanted) => {
+          return wanted.toLowerCase() === String(group.cn || '')
+                   .toLowerCase() ||
+                 this.dnKey(wanted) === this.dnKey(group.dn);
+        });
+      });
+      if (!member) {
+        log.debug("Leaving FederationSp.subjectRules(). Not in the group.");
+        return this.subjectRefusal('STS-FED-0092', 'group',
+          'This person is outside what the partner may assert',
+          (person ? person.username + ' is in none of' :
+                    'A new entry would be in none of') + ' the groups this ' +
+          'relationship requires (fedSubjectGroup: ' + groups.join(', ') +
+          ')' + (person ? '.' : ', so this relationship creates nobody.'));
+      }
+    }
+    const domains = (record.fedSubjectDomain || []).map(function (one) {
+      return String(one || '').trim().replace(/^@+/, '').toLowerCase();
+    }).filter(Boolean);
+    if (domains.length) {
+      const sent = this.sentMail(mapped);
+      const local = person && person.mail.length ? String(person.mail[0]) : '';
+      const sentOk = !!sent && domains.indexOf(this.domainOf(sent)) >= 0;
+      const localOk = !local || domains.indexOf(this.domainOf(local)) >= 0;
+      if (!sentOk || !localOk) {
+        log.debug("Leaving FederationSp.subjectRules(). Outside the domain.");
+        return this.subjectRefusal('STS-FED-0092', 'domain',
+          'This person is outside what the partner may assert',
+          (!sentOk
+            ? 'The partner sent ' + (sent ? 'the address ' + sent
+                                          : 'no mail address') + ', and'
+            : 'The local entry\'s address is ' + local + ', and') +
+          ' this relationship admits only ' + domains.join(', ') +
+          ' (fedSubjectDomain).');
+      }
+    }
+    const pattern = String(record.fedSubjectPattern || '');
+    if (pattern) {
+      const dn = person ? person.dn : federation.plannedPersonDn(target);
+      if (!federation.subjectPatternMatches(pattern, dn)) {
+        log.debug("Leaving FederationSp.subjectRules(). Outside the " +
+                  "pattern.");
+        return this.subjectRefusal('STS-FED-0092', 'pattern',
+          'This person is outside what the partner may assert',
+          'The entry ' + (person ? '' : 'this sign-in would create ') + 'is ' +
+          (dn || '(nowhere)') + ', which does not match this ' +
+          'relationship\'s fedSubjectPattern as a whole.');
+      }
+    }
+    log.debug("Leaving FederationSp.subjectRules(). Allowed.");
+    return { ok: true };
+  }
+
+  // What makes somebody an administrator a partner may not assert: a place
+  // on the realm's console roster (Admin Read or Admin Write) or REMOTE_PEPS,
+  // which hands out the policies this service enforces its own access with.
+  // '' for nobody. The roster is the one of the realm the sign-in is in.
+  private administratorRole(username) {
+    const { rbac, roles, realms, log } = this.deps;
+    log.debug("Entering FederationSp.administratorRole().");
+    const roster = rbac.rolesOf(username, realms.currentId());
+    if (roster && roster.groups && roster.groups.length) {
+      log.debug("Leaving FederationSp.administratorRole(). The roster.");
+      return 'a place on the console roster (' +
+             roster.groups.map(function (one) { return one.role; })
+               .join(', ') + ')';
+    }
+    const held = roles.rolesOf({ kind: 'user', name: username,
+                                 authenticated: true }) || [];
+    if (held.indexOf('REMOTE_PEPS') >= 0) {
+      log.debug("Leaving FederationSp.administratorRole(). REMOTE_PEPS.");
+      return 'the REMOTE_PEPS role';
+    }
+    log.debug("Leaving FederationSp.administratorRole(). Nobody.");
+    return '';
+  }
+
+  // A DN compared the way this directory compares one, near enough for a
+  // rule an administrator typed: case and the spaces around `,` and `=`.
+  private dnKey(dn) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.dnKey().");
+    log.debug("Leaving FederationSp.dnKey().");
+    return String(dn || '').trim().toLowerCase()
+      .replace(/\s*([,=])\s*/g, '$1');
+  }
+
+  // The address the partner SENT: the mapped `mail`, or the mapped username
+  // where it is one.
+  private sentMail(mapped) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.sentMail().");
+    const attributes = mapped.attributes || {};
+    let mail = '';
+    Object.keys(attributes).forEach(function (name) {
+      if (!mail && name.toLowerCase() === 'mail') {
+        const values = [].concat(attributes[name] || []);
+        mail = String(values[0] || '');
+      }
+    });
+    if (!mail && String(mapped.username || '').indexOf('@') > 0) {
+      mail = String(mapped.username);
+    }
+    log.debug("Leaving FederationSp.sentMail().");
+    return mail;
+  }
+
+  private domainOf(address) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.domainOf().");
+    const text = String(address || '');
+    log.debug("Leaving FederationSp.domainOf().");
+    return text.slice(text.lastIndexOf('@') + 1).trim().toLowerCase();
+  }
+
+  // ---------------------------------------------------------------------------
+  // A REFUSED SUBJECT: the refusal page, 403, the code, and an audit row
+  // naming the relationship, the subject and the rule — and NOTHING written
+  // on any entry, which is the point of refusing here rather than after the
+  // session.
+  // ---------------------------------------------------------------------------
+  private refuseSubject(res, record, result, mapped, decision) {
+    const { audit, errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.refuseSubject(). " + decision.code);
+    audit.failure(decision.code, {
+      protocol: 'Federation', channel: 'http', target: record.fedId,
+      summary: 'a federated sign-in through ' + record.fedId + ' for the ' +
+               'subject ' + String(result.subject || '') + ' (' +
+               String(mapped.username || '') + ') was refused by the ' +
+               decision.rule + ' rule: ' + decision.what,
+      // error-code: none — decision.code, named where subjectDecision() refused
+      outcome: 'refused',
+      detail: { relationship: record.fedId, rule: decision.rule,
+                subject: String(result.subject || ''),
+                issuer: String(result.issuer || record.fedPeer || ''),
+                username: String(mapped.username || '') }
+    });
+    log.info('federation: ' + record.fedId + ' asserted ' +
+             String(mapped.username || '') + ' and the ' + decision.rule +
+             ' rule refused it (' + decision.code + ').');
+    errorCodes.mark(res, decision.code);
+    log.debug("Leaving FederationSp.refuseSubject().");
+    // error-code: none — marked on the line above, from subjectDecision()
+    return this.refuse(res, record, decision.status || 403, decision.what,
+                       decision.why);
+  }
+
+  // ---------------------------------------------------------------------------
+  // LINK AT FIRST SIGN-IN: THE LOCAL SIGN-IN FIRST (#109).
+  //
+  // The partner named an existing person and nothing links its subject to
+  // them. A name is not an identifier (OpenID Connect Core section 5.7), so
+  // the person proves they ARE that local person the way anybody does here —
+  // the sign-in screen, with the username fixed to theirs: a password, and a
+  // second factor wherever one is held or required, exactly as a local
+  // sign-in asks (`authn.ts`'s `finishPasswordSignIn()`). Nothing is written
+  // until that comes back: the verified response is held in the request
+  // context store under a single-use handle, and `/federation/link/{handle}`
+  // is where the local sign-in returns — through `beginAuthentication()`'s
+  // pending record, so the return address is server-side (decision 3).
+  // ---------------------------------------------------------------------------
+  private beginLinking(req, res, record, result, decision) {
+    const { authn, errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.beginLinking(). " + decision.username);
+    const { config, randomId } = this.deps;
+    const binding = randomId(24);
+    const handle = this.putContext({
+      kind: 'link', id: record.fedId, username: decision.username,
+      link: decision.link, linkStartedAt: Date.now(),
+      bindingHash: this.bindingHashOf(binding),
+      // The verified response, whole enough to finish the sign-in with:
+      // what completeSignIn() was handed, and nothing a partner can change.
+      result: {
+        subject: result.subject, issuer: result.issuer || '',
+        nameFormat: result.nameFormat || '', bag: result.bag || {},
+        amr: result.amr || [], acr: result.acr || '',
+        returnTo: result.returnTo || '', application: result.application || '',
+        // THE PARTNER'S SESSION (#167), carried across the linking sign-in so
+        // the federated session it starts can be ended by the partner too.
+        nameQualifier: result.nameQualifier || '',
+        spNameQualifier: result.spNameQualifier || '',
+        sessionIndex: result.sessionIndex || '',
+        sessionNotOnOrAfter: Number(result.sessionNotOnOrAfter) || 0,
+        sid: result.sid || '', idToken: result.idToken || ''
+      }
+    });
+    let target = '';
+    try {
+      target = authn.beginAuthentication({
+        returnTo: LINK_PATH + '/' + encodeURIComponent(handle),
+        protocol: LINK_VIA,
+        lockedUsername: decision.username,
+        application: '',
+        details: [
+          { label: 'Linking', value: (record.fedName || record.fedId) + ' (' +
+                                     (record.fedPeer || record.fedId) + ')',
+            note: 'sign in as ' + decision.username + ' to link the ' +
+                  'partner\'s account to it' }
+        ]
+      });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-FED-0042') + 'federation: the local ' +
+                'sign-in to link ' + decision.username + ' through ' +
+                record.fedId + ' could not be started: ' + e.message);
+      errorCodes.mark(res, 'STS-FED-0042');
+      log.debug("Leaving FederationSp.beginLinking(). Threw.");
+      return this.refuse(res, record, 500, 'This service failed while ' +
+                                           'starting the linking sign-in',
+                         e.message);
+    }
+    log.info('federation: ' + record.fedId + ' asserted ' + decision.username +
+             ', whose account is not linked to the partner; they are asked ' +
+             'to sign in here first (link-at-first-sign-in).');
+    res.append('Set-Cookie', LINK_COOKIE + '=' + binding + '; Path=/; ' +
+               'HttpOnly; SameSite=Lax; Max-Age=' +
+               Math.max(60, Math.floor(this.contextTtlMs() / 1000)) +
+               (config.value('global.https') ? '; Secure' : ''));
+    res.set('Cache-Control', 'no-store');
+    res.redirect(303, target);
+    log.debug("Leaving FederationSp.beginLinking(). Sent to " + target + ".");
+  }
+
+  // ---------------------------------------------------------------------------
+  // GET /federation/link/{handle} — WHERE THE LINKING SIGN-IN RETURNS.
+  //
+  // Five things must be true, in this order, before anything is written:
+  //   1. the handle is one this service minted for a link, unspent and
+  //      unexpired — it is spent now, whatever happens next;
+  //   1a. this is the BROWSER the partner's response arrived in: LINK_COOKIE,
+  //      whose hash is on the context (STS-FED-0111) — see its header;
+  //   2. the sign-in screen did not answer with an error: a Cancel, or a
+  //      refusal it could not recover from (STS-FED-0099);
+  //   3. the browser holds a session whose MOST RECENT authentication is a
+  //      LOCAL one, made through the linking screen (`LINK_VIA`), as the
+  //      person being linked, after the partner's response arrived — not
+  //      whatever session the browser happened to be on (STS-FED-0101);
+  //   4. the subject decision, asked AGAIN, still names that person: the
+  //      policy, a link made meanwhile, the rules and the administrator
+  //      refusal can all have changed while the person was typing.
+  // Then finishSignIn(), which records the link, writes the partner's
+  // attributes and starts the federated session — in that funnel, in that
+  // order.
+  // ---------------------------------------------------------------------------
+  private linkEndpoint(req, res) {
+    const { federation, fedMap, authn, errorCodes, audit, log, xmlEscape } =
+      this.deps;
+    log.debug("Entering the federation linking endpoint.");
+    if (!this.enabled()) {
+      errorCodes.mark(res, 'STS-FED-0001');
+      res.status(404).type('html').send(this.page('Not here',
+        '<h1>Federation is off</h1><p><code>federation.enabled</code> is ' +
+        'off.</p>'));
+      log.debug("Leaving the federation linking endpoint. Federation is off.");
+      return;
+    }
+    const handle = String(req.params.handle || '');
+    const context = /^fed-[A-Za-z0-9_-]{1,64}$/.test(handle)
+      ? this.takeContext(handle) : null;
+    if (!context || context.kind !== 'link') {
+      errorCodes.mark(res, 'STS-FED-0100');
+      log.debug("Leaving the federation linking endpoint. No such link.");
+      return this.refuse(res, null, 400, 'There is no link waiting',
+        'The linking step "' + handle + '" is not one this service started, ' +
+        'it has already been used, or it expired (federation.requestTtlMin). ' +
+        'Start the federated sign-in again.');
+    }
+    const record = federation.get(context.id);
+    if (!record || record.fedRole !== 'service-provider' ||
+        !federation.isUsable(record)) {
+      errorCodes.mark(res, record && federation.isEnabled(record)
+        ? 'STS-FED-0006' : 'STS-FED-0005');
+      log.debug("Leaving the federation linking endpoint. The relationship " +
+                "is not usable now.");
+      return this.refuse(res, record || null, 403, 'That relationship is ' +
+                                                   'not usable',
+        'The relationship "' + xmlEscape(context.id) + '" is disabled, ' +
+        'half-configured or gone since the partner answered.');
+    }
+    // THE BROWSER THAT STARTED IT (see LINK_COOKIE), asked before anything
+    // else about the person, and the cookie is spent whatever follows.
+    const presented = String(authn.cookiesOf(req)[LINK_COOKIE] || '');
+    res.append('Set-Cookie', LINK_COOKIE + '=; Path=/; HttpOnly; ' +
+               'SameSite=Lax; Max-Age=0');
+    if (!presented || !this.sameBinding(this.bindingHashOf(presented),
+                                        String(context.bindingHash || ''))) {
+      errorCodes.mark(res, 'STS-FED-0111');
+      log.debug("Leaving the federation linking endpoint. Another browser.");
+      return this.refuse(res, record, 403, 'The account was not linked',
+        'This linking step was started in a different browser, or the ' +
+        'cookie that ties it to the one it began in is gone. Nothing was ' +
+        'linked. Start the federated sign-in again, in one browser.');
+    }
+    const asked = String((req.query || {}).authn_error || '');
+    if (asked) {
+      audit.failure('STS-FED-0099', {
+        protocol: 'Federation', channel: 'http', target: record.fedId,
+        summary: 'linking ' + context.username + ' to the partner of ' +
+                 record.fedId + ' ended without a local sign-in (' + asked +
+                 '); nothing was linked or written',
+        outcome: 'refused',
+        detail: { relationship: record.fedId, username: context.username,
+                  subject: String(context.result.subject || ''),
+                  rule: 'link-at-first-sign-in', error: asked }
+      });
+      errorCodes.mark(res, 'STS-FED-0099');
+      log.debug("Leaving the federation linking endpoint. The local sign-in " +
+                "did not happen.");
+      return this.refuse(res, record, 403, 'The account was not linked',
+        'Linking your account at the partner to ' + context.username + ' ' +
+        'needs you to sign in here as ' + context.username + ' first, and ' +
+        'that sign-in ended without one (' + asked + '). Nothing was linked ' +
+        'and nothing was written.');
+    }
+    const session = authn.sessionOf(req);
+    const events = session && Array.isArray(session.events)
+      ? session.events : [];
+    const latest = events.length ? events[events.length - 1] : null;
+    const fresh = !!session && !!latest &&
+      String((session.user && session.user.username) || '').toLowerCase() ===
+        String(context.username).toLowerCase() &&
+      latest.via === LINK_VIA && latest.authenticated !== false &&
+      ((latest.authority || {}).kind || 'local') === 'local' &&
+      Number(latest.at || 0) * 1000 >= Number(context.linkStartedAt || 0) -
+                                       1000;
+    if (!fresh) {
+      errorCodes.mark(res, 'STS-FED-0101');
+      log.debug("Leaving the federation linking endpoint. No fresh local " +
+                "sign-in as " + context.username + ".");
+      return this.refuse(res, record, 403, 'The account was not linked',
+        'This step needs a sign-in here as ' + context.username + ', made ' +
+        'through the linking screen just now, and this browser holds ' +
+        (session ? 'a different one' : 'none') + '. Nothing was linked. ' +
+        'Start the federated sign-in again.');
+    }
+    const mapped = fedMap.mapIncoming(record, context.result.bag,
+                                      context.result.subject);
+    const decision = this.subjectDecision(record, context.result, mapped);
+    if (!decision.ok) {
+      log.debug("Leaving the federation linking endpoint. The subject is " +
+                "refused now.");
+      return this.refuseSubject(res, record, context.result, mapped, decision);
+    }
+    if (String(decision.username).toLowerCase() !==
+        String(context.username).toLowerCase() ||
+        (decision.how !== 'confirm' && decision.how !== 'linked')) {
+      errorCodes.mark(res, 'STS-FED-0101');
+      log.debug("Leaving the federation linking endpoint. The subject now " +
+                "names somebody else.");
+      return this.refuse(res, record, 403, 'The account was not linked',
+        'While you were signing in, the partner\'s subject came to name ' +
+        (decision.username || 'somebody else') + ' rather than ' +
+        context.username + '. Nothing was linked. Start the federated ' +
+        'sign-in again.');
+    }
+    log.debug("Leaving the federation linking endpoint. Linking " +
+              context.username + ".");
+    return this.finishSignIn(req, res, record, context.result, mapped,
+                             Object.assign({}, decision, {
+                               how: 'confirmed', create: false,
+                               link: context.link || decision.link }));
+  }
+
+  // The SHA-256 of a linking cookie's value, which is what the context holds.
+  private bindingHashOf(value) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.bindingHashOf().");
+    log.debug("Leaving FederationSp.bindingHashOf().");
+    return crypto.createHash('sha256').update(String(value), 'utf8')
+      .digest('base64url');
+  }
+
+  // Two binding hashes compared in constant time.
+  private sameBinding(a, b) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.sameBinding().");
+    const left = Buffer.from(String(a || ''), 'utf8');
+    const right = Buffer.from(String(b || ''), 'utf8');
+    const same = left.length > 0 && left.length === right.length &&
+                 crypto.timingSafeEqual(left, right);
+    log.debug("Leaving FederationSp.sameBinding(). " + same);
+    return same;
+  }
+
+  // ---------------------------------------------------------------------------
+  // STEPS 3 TO 5 of completeSignIn()'s list, for a subject the decision has
+  // already admitted: the counters, the partner's application record, and the
+  // session — which carries the LINK, and the partner's attributes, to the
+  // directory through the identity funnel.
+  // ---------------------------------------------------------------------------
+  private finishSignIn(req, res, record, result, mapped, decision) {
+    const {
+      applications, authn, federation, errorCodes, log, subjectForName,
+      hasSubjectResolver
+    } = this.deps;
+    log.debug("Entering FederationSp.finishSignIn(). " + decision.username);
+    const username = decision.username;
     const protocolLabel = (federation.protocolRow(record.fedProtocol) ||
                            {}).label ||
       record.fedProtocol;
@@ -1085,11 +1767,12 @@ class FederationSp {
       // this service, which is precisely backwards. The partner is recorded
       // below, once, through `applications.seen()`, under a kind that says what
       // it is.
-      summary: mapped.username + ' was signed in through the federation ' +
-                                 'relationship "' +
-               record.fedId + '"; this service checked no credential of ' +
-                              'theirs ' +
-                              'and verified ' +
+      summary: username + ' was signed in through the federation ' +
+                          'relationship "' +
+               record.fedId + '"' + (decision.how === 'confirmed'
+                 ? ', linked to the partner after signing in here'
+                 : '') + '; this service checked no credential of theirs ' +
+                 'and verified ' +
                (record.fedPeer || 'the partner') + '\'s signature',
       note: 'No credential was checked HERE — the partner authenticated this ' +
             'person and this service verified the partner\'s signature. That ' +
@@ -1104,15 +1787,31 @@ class FederationSp {
         protocol: record.fedProtocol,
         protocolLabel: protocolLabel,
         subject: result.subject,
-        autocreate: federation.boolOf(record.fedAutocreateUsers, true),
+        // THE LINK AND WHETHER THIS SIGN-IN MAY CREATE ANYBODY (#109), as
+        // subjectDecision() answered — the directory writes the first and
+        // obeys the second, and decides neither.
+        link: decision.link || '',
+        create: decision.create === true,
+        policy: decision.policy || '',
+        how: decision.how || '',
         // Whether the partner's attributes overwrite the entry's on a sign-in
         // that did not create it (2026-09-14). See `fedUpdateUserAttributes`.
         updateAttributes: federation.boolOf(record.fedUpdateUserAttributes,
                                             true),
         attributes: mapped.attributes,
+        // WHETHER THE ADDRESS THE PARTNER SENT COUNTS AS VERIFIED (#64): it
+        // does — a federation partner is a trusted source, rcbj's ticket says
+        // so — unless the partner itself says it is not, which an OpenID
+        // provider does with `email_verified: false`. That one is honoured.
+        mailVerified: !this.partnerDisownsMail(result.bag),
         mapped: mapped.mapped.length,
         unmapped: mapped.unmapped.map((one) => { return one.incoming; })
-      }
+      },
+      // THE PARTNER'S SESSION, AND ITS BOUND (#167): kept on the session by
+      // `authn.startSession()` so the partner's sign-out can name it, and
+      // the partner's SessionNotOnOrAfter as the session's latest end.
+      fedPartnerSession: this.partnerSessionOf(record, result),
+      sessionNotOnOrAfter: Number(result.sessionNotOnOrAfter) || 0
     };
 
     // The relationship's own counts, and — where this sign-in began at an
@@ -1120,7 +1819,7 @@ class FederationSp {
     // beside them. `result.application` is the hint the login endpoint put on
     // the request context; recordUse() decides whether it means anything.
     federation.recordUse(record.fedId,
-                         { user: mapped.username,
+                         { user: username,
                            application: result.application || '' });
 
     // The foreign identity provider as an APPLICATION, so that the one question
@@ -1149,17 +1848,55 @@ class FederationSp {
     // LAST, because it is the thing that has an effect outside this process and
     // everything above it is a record of why. It carries `detail`, so the one
     // authentication this sign-in produces is recorded with the partner's own
-    // facts on it — including the mapped attributes, which reach the directory
-    // through the identity funnel and by no other route.
+    // facts on it — including the mapped attributes and the link, which reach
+    // the directory through the identity funnel and by no other route.
     // `request` so a federated sign-in REPLACES whatever session this browser
     // was on rather than leaving the previous one alive beside it.
-    const session = authn.startSession(res, mapped.username, amr,
-                                       result.acr || '', via,
-                                       Object.assign({
-                                         request: req,
-                                         application:
-                                           record.fedApplication || ''
-                                       }, detail));
+    // THE RISK OF THIS SIGN-IN (#62 P3), assessed before the session and
+    // decided with the roles. This door cannot ask for a second factor — the
+    // person authenticated at the partner — so a step-up the policy names
+    // refuses here like HIGH, unless the partner's assertion already claims
+    // two (acr `mfa`). The session is started once the assessment answers;
+    // an assessment that cannot be made decides nothing.
+    const self = this;
+    const assessing = authn.assessSignIn(req, username, via,
+      { application: record.fedApplication || '',
+        credential: { kind: 'federation' } });
+    log.debug("Leaving FederationSp.finishSignIn(). Assessing.");
+    return assessing.then(function (assessed: any): any {
+      return self.startFederatedSession(req, res, record, result, mapped,
+                                        decision, amr, via, detail,
+                                        protocolLabel, assessed);
+    }, function (e: any): any {
+      log.debug("Caught in FederationSp.finishSignIn(): " +
+                ((e && e.message) || e));
+      // assessSignIn() never rejects; this is its belt and braces, and a
+      // sign-in with no assessment is decided on roles.
+      return self.startFederatedSession(req, res, record, result, mapped,
+                                        decision, amr, via, detail,
+                                        protocolLabel, null);
+    });
+  }
+
+  // The session, once the sign-in has been assessed — the end of
+  // finishSignIn(), moved here so it can wait for the assessment (#62 P3).
+  private startFederatedSession(req, res, record, result, mapped, decision,
+                                amr, via, detail, protocolLabel, assessed) {
+    const {
+      authn, federation, errorCodes, log, subjectForName, hasSubjectResolver
+    } = this.deps;
+    log.debug("Entering FederationSp.startFederatedSession().");
+    const username = decision.username;
+    // Held, because a refusal says why on it (`refusedWith`, #62 P0).
+    const said: any = Object.assign({
+      request: req,
+      // Which credential answered (#62): a partner's assertion.
+      credential: { kind: 'federation' },
+      application: record.fedApplication || '',
+      risk: assessed || undefined
+    }, detail);
+    const session = authn.startSession(res, username, amr,
+                                       result.acr || '', via, said);
     // -------------------------------------------------------------------------
     // THE ISSUANCE POLICY CAN REFUSE THE SESSION (2026-09-06), and a null is
     // how `startSession()` says so — it never throws, because two of its
@@ -1180,8 +1917,8 @@ class FederationSp {
     // policy refusal because they are two different things to fix: one is a
     // person nobody provisioned, the other a role they do not hold.
     if (!session && hasSubjectResolver() &&
-        !subjectForName(mapped.username)) {
-      log.info('federation: no session for ' + mapped.username + ' arriving ' +
+        !subjectForName(username)) {
+      log.info('federation: no session for ' + username + ' arriving ' +
                'through ' +
                '' + record.fedId + ': the directory holds no entry for ' +
                'them and dynamic provisioning is ' +
@@ -1189,38 +1926,50 @@ class FederationSp {
                  ? 'on but the directory declined to create one.'
                  : 'off on this relationship.'));
       errorCodes.mark(res, 'STS-FED-0090');
-      log.debug("Leaving FederationSp.completeSignIn().");
+      log.debug("Leaving FederationSp.startFederatedSession().");
       return this.refuse(res, record, 403, 'This person has not been ' +
                                            'provisioned',
         'The assertion verified and the partner is configured, but this ' +
-        'service holds no directory entry for ' + mapped.username + ', and ' +
+        'service holds no directory entry for ' + username + ', and ' +
         (federation.boolOf(record.fedAutocreateUsers, true)
-          ? 'the directory would not create one (ldap.autocreateUsers is ' +
-            'off, or it is full).'
+          ? 'the directory would not create one (product mode creates ' +
+            'nobody, ldap.autocreateUsers is off, or it is full).'
           : 'dynamic provisioning (fedAutocreateUsers) is off on this ' +
             'relationship, so the person has to be created here first — ' +
-            'through SCIM, /admin/users/new or the management API — under ' +
-            'the username this relationship maps them to.'));
+            'through SCIM, /admin/users/new or the management API — and ' +
+            'linked to the partner\'s subject.'));
+    }
+    if (!session && String(said.refusedWith || '').indexOf('STS-RISK-') ===
+        0) {
+      log.info('federation: a session for ' + username + ' arriving ' +
+               'through ' + record.fedId + ' was refused on risk.');
+      errorCodes.mark(res, said.refusedWith === 'STS-RISK-0017'
+        ? 'STS-RISK-0017' : 'STS-RISK-0016');
+      log.debug("Leaving FederationSp.startFederatedSession(). Risk.");
+      return this.refuse(res, record, 403, 'Authentication failed',
+        'The assertion verified, and this service will not start a session ' +
+        'from it.');
     }
     if (!session) {
       log.info('federation: the issuance policy refused a session for ' +
-               mapped.username + ' arriving through ' + record.fedId + '.');
+               username + ' arriving through ' + record.fedId + '.');
       errorCodes.mark(res, 'STS-FED-0044');
-      log.debug("Leaving FederationSp.completeSignIn().");
+      log.debug("Leaving FederationSp.startFederatedSession().");
       return this.refuse(res, record, 403, 'The issuance policy refused the ' +
                                            'session',
         'The assertion verified and the partner is configured — this service ' +
-        'will not start a session for ' + mapped.username + ' because the ' +
+        'will not start a session for ' + username + ' because the ' +
         'issuance policy said no. That is a POLICY decision rather than a ' +
         'problem with the assertion or with the partner, so retrying will ' +
         'not change it. The role an application requires is on /admin/roles ' +
         'and the document that decides is on /admin/xacml.');
     }
-    log.info('federation: ' + mapped.username + ' signed in through ' +
+    log.info('federation: ' + username + ' signed in through ' +
              record.fedId +
              ' (' + protocolLabel + ' from ' + (record.fedPeer || 'an ' +
                  'unnamed partner') +
-             '). ' + mapped.mapped.length + ' attribute(s) mapped, ' +
+             ', ' + decision.how + '). ' + mapped.mapped.length +
+             ' attribute(s) mapped, ' +
              mapped.unmapped.length + ' unmapped. Session ' + session.id + '.');
 
     const returnTo = result.returnTo || '';
@@ -1229,14 +1978,78 @@ class FederationSp {
       // may follow a POST carrying an assertion, and 302's behaviour after a
       // POST is historically ambiguous where 303's is defined.
       res.redirect(303, returnTo);
-      log.debug("Leaving FederationSp.completeSignIn(). Sent them on to " +
+      log.debug("Leaving FederationSp.startFederatedSession(). Sent them on to " +
                 returnTo + '.');
       return;
     }
     res.type('html').set('Cache-Control', 'no-store').send(
       this.page('Signed in',
-                this.signedInPage(record, mapped, result, session)));
-    log.debug("Leaving FederationSp.completeSignIn(). Drew the result page.");
+                this.signedInPage(record,
+                                  Object.assign({}, mapped,
+                                                { username: username }),
+                                  result, session)));
+    log.debug("Leaving FederationSp.startFederatedSession(). Drew the result page.");
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT THIS SERVICE KNOWS ABOUT THE PARTNER'S SESSION (#167), kept on the
+  // session here as `fedPartnerSession`. Everything a partner's sign-out is
+  // matched against, and everything this service's own sign-out to the
+  // partner is built from, and nothing else:
+  //
+  //   relationship, protocol, issuer    which partner, through which door
+  //   nameId, nameIdFormat, nameQualifier, spNameQualifier
+  //                                     SAML: the principal, WHOLE, as
+  //                                     section 3.7.3.2 matches it
+  //   sessionIndex                      SAML: the partner's session
+  //   sub, sid                          OpenID Connect: the End-User and the
+  //                                     partner's session (Back-Channel and
+  //                                     Front-Channel Logout 1.0)
+  //   idToken                           OpenID Connect: id_token_hint for
+  //                                     RP-Initiated Logout, only while
+  //                                     fedEndSessionUrl is set
+  //   at                                when the partner signed them in here
+  // ---------------------------------------------------------------------------
+  // `email_verified: false` from the partner (#64), in the claim bag of an
+  // OpenID Connect partner — a boolean there, a string where a SAML or
+  // WS-Federation partner happens to send the same name.
+  partnerDisownsMail(bag) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.partnerDisownsMail().");
+    const raw = bag ? bag.email_verified : undefined;
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    log.debug("Leaving FederationSp.partnerDisownsMail().");
+    return value === false || String(value).toLowerCase() === 'false';
+  }
+
+  partnerSessionOf(record, result) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.partnerSessionOf().");
+    const saml = record.fedProtocol === 'saml2' ||
+                 record.fedProtocol === 'wsfed';
+    const oidc = record.fedProtocol === 'oidc';
+    const out: any = {
+      relationship: String(record.fedId || ''),
+      protocol: String(record.fedProtocol || ''),
+      issuer: String(result.issuer || record.fedPeer || ''),
+      at: Date.now()
+    };
+    if (saml) {
+      out.nameId = String(result.subject || '');
+      out.nameIdFormat = String(result.nameFormat || '');
+      out.nameQualifier = String(result.nameQualifier || '');
+      out.spNameQualifier = String(result.spNameQualifier || '');
+      out.sessionIndex = String(result.sessionIndex || '');
+    }
+    if (oidc) {
+      out.sub = String(result.subject || '');
+      out.sid = String(result.sid || '');
+      if (result.idToken) {
+        out.idToken = String(result.idToken);
+      }
+    }
+    log.debug("Leaving FederationSp.partnerSessionOf(). " + out.protocol);
+    return out;
   }
 
   private samlFieldsFor(record) {
@@ -1483,6 +2296,18 @@ class FederationSp {
   private authorizationRequestUrl(base, record, context) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.authorizationRequestUrl().");
+    const params = this.authorizationParams(base, record, context);
+    const joiner = String(record.fedSsoUrl).indexOf('?') === -1 ? '?' : '&';
+    const url = String(record.fedSsoUrl) + joiner + params.toString();
+    log.debug("Leaving FederationSp.authorizationRequestUrl().");
+    return url;
+  }
+
+  // The authorization request's parameters, for the query or — for an OP
+  // discovered through a federation (#134) — for a signed request object.
+  private authorizationParams(base, record, context) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.authorizationParams().");
     const responseType = String(record.fedResponseType || 'code');
     const params = new URLSearchParams();
     params.set('response_type', responseType);
@@ -1505,11 +2330,9 @@ class FederationSp {
       params.set('code_challenge', context.pkceChallenge);
       params.set('code_challenge_method', 'S256');
     }
-    const joiner = String(record.fedSsoUrl).indexOf('?') === -1 ? '?' : '&';
-    const url = String(record.fedSsoUrl) + joiner + params.toString();
-    log.debug("Leaving FederationSp.authorizationRequestUrl(). " +
+    log.debug("Leaving FederationSp.authorizationParams(). " +
               'response_type=' + responseType);
-    return url;
+    return params;
   }
 
   private pkcePair() {
@@ -1718,6 +2541,40 @@ class FederationSp {
       return;
     }
 
+    // An OP DISCOVERED THROUGH AN OPENID FEDERATION (#134): resolved to the
+    // relationship's Trust Anchor, and asked with a signed request object
+    // under this realm's own Entity Identifier — automatic registration.
+    const rp = this.deps.oidfedRp();
+    if (rp.isFederated(record)) {
+      rp.effectiveRecord(req, record).then((got) => {
+        if (!got.ok) {
+          // error-code: none — the resolution's own code, in got.code
+          errorCodes.mark(res, String(got.code || 'STS-FED-0148'));
+          log.debug("Leaving the federation login endpoint. Not resolved.");
+          return this.refuse(res, record, 502, 'The OpenID Provider could ' +
+                             'not be trusted', xmlEscape(String(got.why)));
+        }
+        const handle = this.putContext(contextRecord);
+        const params = this.authorizationParams(base, got.record,
+                                                contexts.get(handle));
+        return rp.authorizationRequestUrl(got.record, params)
+          .then(function (url) {
+            res.redirect(302, url);
+            log.debug("Leaving the federation login endpoint. A signed " +
+                      "request to an OP in the federation.");
+          });
+      }).catch((e) => {
+        log.error(errorCodes.tag('STS-FED-0042') + 'federation: ' + id +
+                  ' threw while starting a federated sign-in: ' +
+                  (e && e.stack ? e.stack : e));
+        errorCodes.mark(res, 'STS-FED-0042');
+        this.refuse(res, record, 500, 'This service failed while starting ' +
+                    'the sign-in', xmlEscape(String((e && e.message) || e)));
+      });
+      log.debug("Leaving the federation login endpoint. Resolving the OP.");
+      return;
+    }
+
     // OIDC and OAuth 2.0.
     const handle = this.putContext(contextRecord);
     const stored = contexts.get(handle);
@@ -1741,6 +2598,211 @@ class FederationSp {
   }
 
   // ---------------------------------------------------------------------------
+  // A PARTNER'S ENCRYPTED ASSERTION (#168): the token a SAML Response or a
+  // WS-Federation RequestedSecurityToken carries, opened.
+  //
+  // `container` is the element whose CHILDREN are the token — the Response,
+  // or the RequestedSecurityToken — and what may be there is ONE of a plain
+  // `<Assertion>`, a `<saml:EncryptedAssertion>` (SAML 2.0 core section
+  // 2.3.4) or, inside an RSTR, a bare `<xenc:EncryptedData>`. Two of them is
+  // refused (STS-FED-0147): which one the signature was over and which one
+  // was read would otherwise be a choice, and that choice is how a wrapping
+  // attack begins.
+  //
+  // Answers `{ assertion, assertionXml, encrypted }` — `assertionXml` is the
+  // document the ASSERTION's signature is verified in, which for an encrypted
+  // one is its own plaintext: signed first, then encrypted, so the signature
+  // is inside the ciphertext and is checked on what was decrypted. A
+  // Response's own signature is checked on the document as it arrived, and
+  // covers the ciphertext. Or `{ refused: true }` once a page is drawn.
+  // ---------------------------------------------------------------------------
+  private openToken(res, record, container, whole, what) {
+    const { federation, errorCodes, fedEncryption, log } = this.deps;
+    log.debug("Entering FederationSp.openToken(). " + what);
+    const children = [];
+    const kids = container ? container.childNodes : [];
+    for (let i = 0; kids && i < kids.length; i++) {
+      const name = kids[i].nodeType === 1 ? kids[i].localName : '';
+      if (name === 'Assertion' || name === 'EncryptedAssertion' ||
+          name === 'EncryptedData') {
+        children.push(kids[i]);
+      }
+    }
+    const plain = children.filter(function (el) {
+      return el.localName === 'Assertion';
+    });
+    const sealed = children.filter(function (el) {
+      return el.localName !== 'Assertion';
+    });
+    if (!children.length) {
+      errorCodes.mark(res, 'STS-FED-0011');
+      log.debug("Leaving FederationSp.openToken(). No assertion.");
+      this.refuse(res, record, 400, 'There is no assertion in it',
+        'The ' + what + ' carried no <Assertion> and no ' +
+        '<EncryptedAssertion>. That is a partner answering success with ' +
+        'nothing in it.');
+      return { refused: true };
+    }
+    if (sealed.length && (children.length > 1)) {
+      errorCodes.mark(res, 'STS-FED-0147');
+      log.debug("Leaving FederationSp.openToken(). More than one token.");
+      this.refuse(res, record, 400, 'It carries more than one assertion',
+        'The ' + what + ' carries ' + children.length + ' assertions, at ' +
+        'least one of them encrypted. Which one a signature covered and ' +
+        'which one was read must not be a choice, so a response carrying ' +
+        'an encrypted assertion must carry exactly one.');
+      return { refused: true };
+    }
+    if (!sealed.length) {
+      // PLAINTEXT, which product refuses unless the relationship says
+      // otherwise (`mode.acceptsUnencryptedFederatedAssertions()`).
+      if (federation.encryptionRequired(record)) {
+        errorCodes.mark(res, 'STS-FED-0140');
+        log.debug("Leaving FederationSp.openToken(). Plaintext, refused.");
+        this.refuse(res, record, 401, 'The assertion is not encrypted',
+          'This relationship requires the partner to ENCRYPT the assertion ' +
+          'to its key, and this one arrived in clear — so the person\'s ' +
+          'identifier and attributes crossed their browser readable. ' +
+          'Configure the partner with the encryption certificate in this ' +
+          'relationship\'s metadata. (Product mode requires encryption; ' +
+          'fedAllowUnencrypted on the relationship accepts plaintext, and ' +
+          'its warning says what that costs.)');
+        return { refused: true };
+      }
+      log.debug("Leaving FederationSp.openToken(). A plaintext assertion.");
+      return { assertion: plain[0], assertionXml: whole, encrypted: false };
+    }
+    if (!federation.encrypts(record)) {
+      errorCodes.mark(res, 'STS-FED-0011');
+      log.debug("Leaving FederationSp.openToken(). Encrypted, SAML 1.1.");
+      this.refuse(res, record, 400, 'There is no assertion in it',
+        'The ' + what + ' carries an encrypted assertion, and a SAML 1.1 ' +
+        'relationship has no encryption construct to decrypt one with — ' +
+        'SAML 1.1 defines none.');
+      return { refused: true };
+    }
+    const opened = fedEncryption.decryptXml(record,
+      new XMLSerializer().serializeToString(sealed[0]));
+    if (!opened.ok) {
+      errorCodes.mark(res, opened.code);
+      log.debug("Leaving FederationSp.openToken(). " + opened.code);
+      this.refuse(res, record, opened.code === 'STS-FED-0137' ? 500 : 401,
+        opened.code === 'STS-FED-0139'
+          ? 'It is encrypted with an algorithm this relationship refuses'
+          : (opened.code === 'STS-FED-0137'
+              ? 'There is no key to decrypt it with'
+              : 'The assertion could not be decrypted'),
+        opened.why);
+      return { refused: true };
+    }
+    let doc = null;
+    try {
+      doc = new DOMParser().parseFromString(opened.xml, 'text/xml');
+    } catch (e) {
+      log.debug("Caught in FederationSp.openToken(): " +
+                ((e && e.message) || e));
+      doc = null;
+    }
+    const assertion = doc && doc.documentElement;
+    if (!assertion || assertion.localName !== 'Assertion') {
+      errorCodes.mark(res, 'STS-FED-0011');
+      log.debug("Leaving FederationSp.openToken(). No assertion inside.");
+      this.refuse(res, record, 400, 'There is no assertion in it',
+        'The encrypted element decrypted, and what was inside it is not a ' +
+        'self-contained <Assertion>.');
+      return { refused: true };
+    }
+    log.info('federation: ' + record.fedId + ': the ' + what + '\'s ' +
+             'assertion was decrypted (' + opened.algorithm + ', key ' +
+             opened.kid + ').');
+    log.debug("Leaving FederationSp.openToken(). Decrypted.");
+    return { assertion: assertion, assertionXml: opened.xml, encrypted: true };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ENCRYPTED PARTS OF AN ASSERTION (#168): an `<EncryptedID>` where the
+  // NameID would be (SAML 2.0 core section 2.2.4) and an
+  // `<EncryptedAttribute>` beside the attributes (section 2.7.3.2), each
+  // decrypted and put in the place of the element that carried it — ONLY
+  // AFTER the signature has verified, because the signature is over the
+  // ciphertext and replacing it first would verify nothing. Answers true, or
+  // false once a page is drawn.
+  // ---------------------------------------------------------------------------
+  private openEncryptedParts(res, record, assertion) {
+    const { errorCodes, fedEncryption, log } = this.deps;
+    log.debug("Entering FederationSp.openEncryptedParts().");
+    const found = [];
+    const all = assertion.getElementsByTagName('*');
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].localName === 'EncryptedID' ||
+          all[i].localName === 'EncryptedAttribute') {
+        found.push(all[i]);
+      }
+    }
+    for (let i = 0; i < found.length; i++) {
+      const el = found[i];
+      const wanted = el.localName === 'EncryptedID' ? ['NameID', 'BaseID']
+                                                    : ['Attribute'];
+      const opened = fedEncryption.decryptXml(record,
+        new XMLSerializer().serializeToString(el));
+      let inner = null;
+      if (opened.ok) {
+        inner = this.fragmentOf(opened.xml);
+      }
+      if (!opened.ok || !inner || wanted.indexOf(inner.localName) < 0) {
+        const code = opened.ok ? 'STS-FED-0138' : opened.code;
+        errorCodes.mark(res, code);
+        log.debug("Leaving FederationSp.openEncryptedParts(). " + code);
+        this.refuse(res, record, code === 'STS-FED-0137' ? 500 : 401,
+          'An encrypted ' + (el.localName === 'EncryptedID'
+            ? 'identifier' : 'attribute') + ' could not be read',
+          opened.ok ? 'It decrypted to something that is not a ' +
+                      wanted.join(' or ') + '.'
+                    : opened.why);
+        return false;
+      }
+      const imported = assertion.ownerDocument.importNode(inner, true);
+      el.parentNode.replaceChild(imported, el);
+    }
+    log.debug("Leaving FederationSp.openEncryptedParts(). " + found.length +
+              " opened.");
+    return true;
+  }
+
+  // A decrypted fragment as an element: parsed as it stands, and otherwise
+  // inside a container declaring the prefixes a SAML fragment may inherit —
+  // `common/crypto.js`'s parsesAsFragment() makes the same allowance, for the
+  // same NamespaceError.
+  private fragmentOf(xml) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.fragmentOf().");
+    const attempts = [xml, '<x xmlns:saml="' + NS_SAML + '" xmlns:samlp="' +
+                            NS_SAMLP + '">' + xml + '</x>'];
+    for (let i = 0; i < attempts.length; i++) {
+      try {
+        const doc = new DOMParser().parseFromString(attempts[i], 'text/xml');
+        const root = doc && doc.documentElement;
+        if (root && i === 0) {
+          log.debug("Leaving FederationSp.fragmentOf(). As it stands.");
+          return root;
+        }
+        const kids = root ? root.childNodes : [];
+        for (let k = 0; kids && k < kids.length; k++) {
+          if (kids[k].nodeType === 1) {
+            log.debug("Leaving FederationSp.fragmentOf(). Wrapped.");
+            return kids[k];
+          }
+        }
+      } catch (e) {
+        log.debug("Caught in FederationSp.fragmentOf(): " +
+                  ((e && e.message) || e));
+      }
+    }
+    log.debug("Leaving FederationSp.fragmentOf(). Not XML.");
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
   // A SAML RESPONSE, 2.0 or 1.1, verified check by check.
   //
   // Every check is made and the FIRST failure refuses. That is deliberately not
@@ -1759,6 +2821,21 @@ class FederationSp {
     log.debug("Entering FederationSp.consumeSamlResponse(). version=" +
               version);
     const encoded = String(params.SAMLResponse || '');
+    // A <LogoutRequest> SENT TO THE ASSERTION CONSUMER SERVICE (#167): a
+    // partner whose single logout service was configured as the ACS. Refused
+    // here, as a wsignout1.0 is, and pointed at the path that consumes it.
+    if (!encoded && params.SAMLRequest) {
+      errorCodes.mark(res, 'STS-FED-0024');
+      log.debug("Leaving FederationSp.consumeSamlResponse(). A SAMLRequest " +
+                "at the ACS.");
+      return this.refuse(res, record, 400, 'That is a sign-out, and this is ' +
+                                           'the sign-in endpoint',
+        'A SAMLRequest arrived at the assertion consumer service for "' +
+        record.fedId + '". A partner\'s <LogoutRequest> is consumed at ' +
+        this.sloUrl(baseUrlOf(req), record) + ' — this relationship\'s ' +
+        'SingleLogoutService, published in its metadata. Configure that ' +
+        'address at the partner.');
+    }
     if (!encoded) {
       log.debug("Leaving FederationSp.consumeSamlResponse(). No SAMLResponse.");
       errorCodes.mark(res, 'STS-FED-0007');
@@ -1822,23 +2899,23 @@ class FederationSp {
         'was asked to accept or refuse anything.');
     }
 
-    const assertion = firstByLocal(root, 'Assertion');
-    if (!assertion) {
-      errorCodes.mark(res, 'STS-FED-0011');
-      log.debug("Leaving FederationSp.consumeSamlResponse().");
-      return this.refuse(res, record, 400, 'There is no assertion in it',
-        'The Response reported success and carried no <Assertion>. If the ' +
-        'partner is configured to ENCRYPT the assertion, that is the cause: ' +
-        'this service does not decrypt one — see federation/CLAUDE.md, where ' +
-        'that is listed as a deliberate gap rather than left to be ' +
-        'discovered here.');
+    // THE ASSERTION, decrypted where the partner encrypted it (#168) — and
+    // refused in clear where this relationship requires encryption.
+    const token: any = this.openToken(res, record, root, xml, 'Response');
+    if (token.refused) {
+      log.debug("Leaving FederationSp.consumeSamlResponse(). The token.");
+      return undefined;
     }
+    const assertion = token.assertion;
 
     // THE SIGNATURE. Either the Response or the Assertion may carry it and
     // either is enough — which is what every real service provider accepts,
     // because AD FS signs the assertion, Keycloak signs both and Shibboleth
-    // signs the response. What is NOT enough is neither.
-    const assertionSig = this.verifyXmlSignature(xml, record, 'Assertion');
+    // signs the response. What is NOT enough is neither. An ENCRYPTED
+    // assertion's own signature is inside the ciphertext and is verified on
+    // the plaintext; the Response's covers the ciphertext as it arrived.
+    const assertionSig = this.verifyXmlSignature(token.assertionXml, record,
+                                                 'Assertion');
     const responseSig = this.verifyXmlSignature(xml, record, 'Response');
     if (!assertionSig.ok && !responseSig.ok) {
       log.debug("Leaving FederationSp.consumeSamlResponse(). The signature " +
@@ -1881,6 +2958,7 @@ class FederationSp {
     // usable and never reaches here — and this refuses anyway rather than
     // relying on that, because the two checks are in two files.
     const issuer = textByLocal(root, 'Issuer') ||
+                   textByLocal(assertion, 'Issuer') ||
                    (assertion.getAttribute('Issuer') || '');
     const expectedIssuer = String(record.fedPeer || '').trim();
     if (!expectedIssuer || issuer !== expectedIssuer) {
@@ -1925,6 +3003,13 @@ class FederationSp {
                     audience.why);
     }
 
+    // THE ENCRYPTED IDENTIFIER AND ATTRIBUTES (#168), now that the signature
+    // over their ciphertext has verified.
+    if (!this.openEncryptedParts(res, record, assertion)) {
+      log.debug("Leaving FederationSp.consumeSamlResponse(). An encrypted " +
+                "part.");
+      return undefined;
+    }
     const contents = this.assertionContents(assertion);
 
     // InResponseTo. SAML 2.0 only — 1.1 has no request for anything to be in
@@ -1975,9 +3060,28 @@ class FederationSp {
     log.debug("Leaving FederationSp.consumeSamlResponse(). Verified; " +
               'completing the sign-in once the signing certificate is known ' +
               'not to be revoked.');
+    // THE PARTNER'S SESSION BOUND (#167), refused here when it has already
+    // passed rather than started and ended in one breath.
+    const bound = this.sessionBoundOf(contents);
+    if (bound.refused) {
+      errorCodes.mark(res, 'STS-FED-0131');
+      log.debug("Leaving FederationSp.consumeSamlResponse(). The partner's " +
+                "session has already ended.");
+      return this.refuse(res, record, 401, 'The partner\'s session has ' +
+                                           'already ended', bound.why);
+    }
     return this.signerStillAccepted(req, res, record, () => {
       return this.completeSignIn(req, res, record, {
         subject: contents.subject,
+        // THE PARTNER'S STABLE SUBJECT (#109) is the NameID qualified by the
+        // issuer this branch has just verified, and a transient NameID is
+        // none — see federation_links.ts's stableSubjectOf().
+        issuer: issuer,
+        nameFormat: contents.nameFormat,
+        nameQualifier: contents.nameQualifier,
+        spNameQualifier: contents.spNameQualifier,
+        sessionIndex: contents.sessionIndex,
+        sessionNotOnOrAfter: bound.at,
         bag: contents.bag,
         amr: this.federatedAmr([]),
         acr: contents.context || '',
@@ -1985,6 +3089,51 @@ class FederationSp {
         application: this.fromContext(context).application
       });
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PARTNER'S SessionNotOnOrAfter, AS A BOUND ON THE SESSION HERE (#167).
+  //
+  // `{ at, refused, why }`: `at` is the epoch ms the session here must end by
+  // (0 for none), which `authn.startSession()` makes the session's absolute
+  // expiry where it is the earlier. The same clock-skew allowance an
+  // assertion's own NotOnOrAfter gets (conditionsCheck()), because the two
+  // are instants the same partner wrote with the same clock. An instant that
+  // has passed even with the allowance is refused: a session that is over
+  // before it starts is not one to start. A value that does not parse is
+  // refused too — a bound nobody can read is not a bound to ignore.
+  // ---------------------------------------------------------------------------
+  sessionBoundOf(contents) {
+    const { config, log } = this.deps;
+    log.debug("Entering FederationSp.sessionBoundOf().");
+    const text = String((contents && contents.sessionNotOnOrAfter) || '');
+    if (!text) {
+      log.debug("Leaving FederationSp.sessionBoundOf(). None.");
+      return { at: 0, refused: false, why: '' };
+    }
+    const parsed = Date.parse(text);
+    if (!isFinite(parsed)) {
+      log.debug("Leaving FederationSp.sessionBoundOf(). Unreadable.");
+      return { at: 0, refused: true,
+               why: 'The assertion\'s SessionNotOnOrAfter, "' + text + '", ' +
+                    'is not an instant this service can read, so how long ' +
+                    'the partner says the session may last is unknown.' };
+    }
+    const skewMs = config.value('oauth2.clockSkewS') * 1000;
+    const at = parsed + skewMs;
+    if (at <= Date.now()) {
+      log.debug("Leaving FederationSp.sessionBoundOf(). Passed.");
+      return { at: at, refused: true,
+               why: 'The assertion says the partner\'s session ended at ' +
+                    text + ' (SessionNotOnOrAfter, saml-core-2.0-os section ' +
+                    '2.7.2), which has passed even allowing ' +
+                    config.value('oauth2.clockSkewS') + 's of clock skew. A ' +
+                    'session here may not outlive the partner\'s, and one ' +
+                    'that is over before it starts is not started.' };
+    }
+    log.debug("Leaving FederationSp.sessionBoundOf(). " +
+              new Date(at).toISOString());
+    return { at: at, refused: false, why: '' };
   }
 
   // ---------------------------------------------------------------------------
@@ -2010,11 +3159,12 @@ class FederationSp {
       errorCodes.mark(res, 'STS-FED-0024');
       log.debug("Leaving FederationSp.consumeWsFedResponse().");
       return this.refuse(res, record, 400, 'That is not a sign-in response',
-        'wa=' + wa + '. This endpoint consumes wa=wsignin1.0. A wsignout1.0 ' +
-        'arriving here is a partner configured to send its sign-out where ' +
-        'its sign-in goes — this service does not consume a federated ' +
-        'sign-out, which is listed as a gap in federation/CLAUDE.md rather ' +
-        'than left to be discovered.');
+        'wa=' + wa + '. This endpoint consumes wa=wsignin1.0. A ' +
+        'wsignout1.0 or wsignoutcleanup1.0 arriving here is a partner ' +
+        'configured to send its sign-out where its sign-in goes: a ' +
+        'partner\'s sign-out is consumed at ' +
+        this.sloUrl(baseUrlOf(req), record) + ' (#167). Configure that ' +
+        'address at the partner as this relying party\'s sign-out URL.');
     }
     const wresult = String(params.wresult || '');
     if (!wresult) {
@@ -2034,21 +3184,26 @@ class FederationSp {
       return this.refuse(res, record, 400, 'The wresult is not XML', e.message);
     }
     const root = doc && doc.documentElement;
-    const assertion = root ? firstByLocal(root, 'Assertion') : null;
-    if (!assertion) {
-      errorCodes.mark(res, 'STS-FED-0011');
-      log.debug("Leaving FederationSp.consumeWsFedResponse().");
-      return this.refuse(res, record, 400, 'There is no assertion in the ' +
-                                           'wresult',
-        'The RequestSecurityTokenResponse carried no <Assertion>. An ' +
-        'ENCRYPTED token looks exactly like this from here; this service ' +
-        'does not decrypt one.');
+    // THE TOKEN, in the RequestedSecurityToken — an assertion, or one
+    // ENCRYPTED to this relationship's key (#168): WS-Federation 1.2 carries
+    // whatever token the RSTR holds, and XML Encryption is how that token is
+    // sealed. A wresult with no RequestedSecurityToken is read where its
+    // assertion is, as it always was.
+    const container = root ? (firstByLocal(root, 'RequestedSecurityToken') ||
+      ((firstByLocal(root, 'Assertion') || {}).parentNode) || root) : null;
+    const token: any = this.openToken(res, record, container, wresult,
+                                      'wresult');
+    if (token.refused) {
+      log.debug("Leaving FederationSp.consumeWsFedResponse(). The token.");
+      return undefined;
     }
+    const assertion = token.assertion;
     const version = assertion.namespaceURI === NS_SAML ? '2.0' : '1.1';
     log.debug('consumeWsFedResponse(): the token is a SAML ' + version + ' ' +
-        'assertion.');
+        'assertion' + (token.encrypted ? ', decrypted.' : '.'));
 
-    const sig = this.verifyXmlSignature(wresult, record, 'Assertion');
+    const sig = this.verifyXmlSignature(token.assertionXml, record,
+                                        'Assertion');
     if (!sig.ok) {
       log.debug("Leaving FederationSp.consumeWsFedResponse(). The signature " +
                 'did not verify.');
@@ -2099,6 +3254,11 @@ class FederationSp {
       return this.refuse(res, record, 401, 'It was issued for somebody else',
                     audience.why);
     }
+    if (!this.openEncryptedParts(res, record, assertion)) {
+      log.debug("Leaving FederationSp.consumeWsFedResponse(). An encrypted " +
+                "part.");
+      return undefined;
+    }
     const contents = this.assertionContents(assertion);
     const context = this.takeContext(String(params.wctx || ''));
     if (!context && !federation.boolOf(record.fedAllowUnsolicited, false)) {
@@ -2116,12 +3276,27 @@ class FederationSp {
             'anyway, and note that doing so removes this check for every ' +
             'response.');
     }
+    // A SAML 2.0 TOKEN INSIDE THE RSTR CARRIES A SESSION BOUND TOO (#167),
+    // and it binds the session here exactly as it does on the SAML path.
+    const bound = this.sessionBoundOf(contents);
+    if (bound.refused) {
+      errorCodes.mark(res, 'STS-FED-0131');
+      log.debug("Leaving FederationSp.consumeWsFedResponse(). The partner's " +
+                "session has already ended.");
+      return this.refuse(res, record, 401, 'The partner\'s session has ' +
+                                           'already ended', bound.why);
+    }
     log.debug("Leaving FederationSp.consumeWsFedResponse(). Verified; " +
               'completing the sign-in once the signing certificate is known ' +
               'not to be revoked.');
     return this.signerStillAccepted(req, res, record, () => {
       return this.completeSignIn(req, res, record, {
         subject: contents.subject, bag: contents.bag,
+        issuer: issuer, nameFormat: contents.nameFormat,
+        nameQualifier: contents.nameQualifier,
+        spNameQualifier: contents.spNameQualifier,
+        sessionIndex: contents.sessionIndex,
+        sessionNotOnOrAfter: bound.at,
         amr: this.federatedAmr([]), acr: contents.context || '',
         returnTo: this.fromContext(context).returnTo,
         application: this.fromContext(context).application
@@ -2143,7 +3318,7 @@ class FederationSp {
   // and trying them all turns a rotation into a silent success against a key
   // the partner has retired.
   // ---------------------------------------------------------------------------
-  private keysFor(record) {
+  keysFor(record) {
     const { fedHttp, log } = this.deps;
     log.debug("Entering FederationSp.keysFor(). id=" + record.fedId);
     const pasted = String(record.fedJwks || '').trim();
@@ -2204,7 +3379,7 @@ class FederationSp {
     return family.filter((alg) => { return wanted.indexOf(alg) >= 0; });
   }
 
-  private verifyForeignJwt(token, record, keys, options) {
+  verifyForeignJwt(token, record, keys, options) {
     const { config, stsCrypto, log, jsonFromB64u } = this.deps;
     log.debug("Entering FederationSp.verifyForeignJwt().");
     let header = null;
@@ -2378,7 +3553,19 @@ class FederationSp {
       code_verifier: context.pkceVerifier
     };
     const options: any = { method: 'POST', form: form };
-    if (record.fedClientSecret) {
+    let authenticated: Promise<any> = Promise.resolve(null);
+    if (record.fedTokenAuth === 'private_key_jwt') {
+      // An OP discovered through a federation (#134): this realm registered
+      // automatically, with nothing provisioned, and authenticates with the
+      // key its Entity Configuration publishes (RFC 7523, Connect 1.1 12.1).
+      form.client_id = String(record.fedClientId || '');
+      form.client_assertion_type =
+        'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
+      authenticated = this.deps.oidfedRp().clientAssertion(record)
+        .then(function (assertion) {
+          form.client_assertion = assertion;
+        });
+    } else if (record.fedClientSecret) {
       options.basic = { user: record.fedClientId,
                         pass: record.fedClientSecret };
     } else {
@@ -2388,8 +3575,9 @@ class FederationSp {
     }
     log.debug('consumeOauthResponse(): redeeming the code at the partner.');
     log.debug("Leaving FederationSp.consumeOauthResponse().");
-    return fedHttp.fetchJson(record, 'fedTokenUrl', options)
-                  .then((answer) => {
+    return authenticated.then(function () {
+      return fedHttp.fetchJson(record, 'fedTokenUrl', options);
+    }).then((answer) => {
       if (!answer.ok || !answer.json) {
         log.debug("Leaving FederationSp.consumeOauthResponse(). The token " +
                   'request failed.');
@@ -2444,9 +3632,78 @@ class FederationSp {
     });
   }
 
-  private finishOidc(req, res, record, context, idToken, accessToken) {
+  // ---------------------------------------------------------------------------
+  // AN ENCRYPTED ID TOKEN (#168), OpenID Connect Core section 10.2: "signed
+  // and then encrypted", a Nested JWT. A five-part JWE is decrypted with the
+  // relationship's key under exactly the alg and enc it published, and what
+  // is inside must be the signed ID Token, which is then verified exactly as
+  // an unencrypted one is — a JWE alone, with nothing signed inside, is not
+  // an ID Token (Core section 2: "ID Tokens MUST be signed"). A three-part
+  // token on a front-channel relationship that requires encryption is
+  // refused as plaintext. Answers `{ token }` or `{ refused: true }`.
+  // ---------------------------------------------------------------------------
+  private openIdToken(res, record, idToken) {
+    const { federation, errorCodes, fedEncryption, log } = this.deps;
+    log.debug("Entering FederationSp.openIdToken().");
+    const parts = String(idToken).split('.').length;
+    if (parts !== 5) {
+      if (federation.encryptionRequired(record)) {
+        errorCodes.mark(res, 'STS-FED-0140');
+        log.debug("Leaving FederationSp.openIdToken(). Plaintext, refused.");
+        this.refuse(res, record, 401, 'The ID Token is not encrypted',
+          'This relationship requires the partner to ENCRYPT the ID Token ' +
+          'it sends through the browser (response_type=id_token) to the key ' +
+          'in this relationship\'s JWKS, and this one arrived signed only. ' +
+          'Register id_token_encrypted_response_alg and _enc at the partner ' +
+          '— the values are on the relationship\'s page. (Product mode ' +
+          'requires encryption; fedAllowUnencrypted accepts plaintext, and ' +
+          'its warning says what that costs.)');
+        return { refused: true };
+      }
+      log.debug("Leaving FederationSp.openIdToken(). Signed only.");
+      return { token: idToken, encrypted: false };
+    }
+    const opened = fedEncryption.decryptJwe(record, idToken);
+    if (!opened.ok) {
+      errorCodes.mark(res, opened.code);
+      log.debug("Leaving FederationSp.openIdToken(). " + opened.code);
+      this.refuse(res, record, opened.code === 'STS-FED-0137' ? 500 : 401,
+        opened.code === 'STS-FED-0139'
+          ? 'The ID Token is encrypted with an algorithm this relationship ' +
+            'refuses'
+          : (opened.code === 'STS-FED-0137'
+              ? 'There is no key to decrypt the ID Token with'
+              : 'The ID Token could not be decrypted'),
+        opened.why);
+      return { refused: true };
+    }
+    const inner = String(opened.plaintext || '').trim();
+    if (inner.split('.').length !== 3) {
+      errorCodes.mark(res, 'STS-FED-0141');
+      log.debug("Leaving FederationSp.openIdToken(). Nothing signed inside.");
+      this.refuse(res, record, 401, 'The encrypted ID Token is not signed',
+        'It decrypted, and what was inside is not a signed JWT. OpenID ' +
+        'Connect Core section 10.2 makes an encrypted ID Token a NESTED ' +
+        'JWT — signed, then encrypted — and an ID Token that is only ' +
+        'encrypted proves nothing about who made it: anybody holding this ' +
+        'relationship\'s PUBLIC key can make one.');
+      return { refused: true };
+    }
+    log.info('federation: ' + record.fedId + ': the ID Token was decrypted (' +
+             opened.algorithm + ', key ' + opened.kid + ').');
+    log.debug("Leaving FederationSp.openIdToken(). Decrypted.");
+    return { token: inner, encrypted: true };
+  }
+
+  private finishOidc(req, res, record, context, sentToken, accessToken) {
     const { fedHttp, errorCodes, audit, log, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.finishOidc().");
+    const opened: any = this.openIdToken(res, record, sentToken);
+    if (opened.refused) {
+      log.debug("Leaving FederationSp.finishOidc(). The ID Token.");
+      return undefined;
+    }
+    const idToken = opened.token;
     log.debug("Leaving FederationSp.finishOidc().");
     return this.keysFor(record).then((keySet) => {
       if (!keySet.ok) {
@@ -2510,7 +3767,7 @@ class FederationSp {
         // not become directory attributes. `sub` is handled separately as the
         // subject; the rest are about the token.
         if (['iss', 'aud', 'exp', 'iat', 'nbf', 'jti', 'nonce', 'at_hash',
-             'c_hash',
+             'c_hash', 's_hash',
              'azp', 'auth_time', 'sid', 'sub', 'acr', 'amr'].indexOf(
                  name) !== -1) return;
         bag[name] = payload[name];
@@ -2520,15 +3777,58 @@ class FederationSp {
       const amr = this.federatedAmr(payload.amr);
       const finish = (extra) => {
         log.debug("Entering finish().");
+        // AGGREGATED AND DISTRIBUTED CLAIMS (#147, OIDC Core 5.6.2) from the
+        // ID Token and UserInfo together: gathered, taken out of the bag —
+        // they are references, never attributes about the person — and
+        // resolved by `claims_providers.ts`, which honours a source only
+        // when it names a Claims Provider THIS realm registered and its keys
+        // verify it. A resolved value fills a claim the partner did not send
+        // itself; a source that cannot be honoured is logged and skipped.
+        const names = Object.assign({}, bag['_claim_names'] || {},
+                                    (extra && extra._claim_names) || {});
+        const sources = Object.assign({}, bag['_claim_sources'] || {},
+                                      (extra && extra._claim_sources) || {});
+        delete bag['_claim_names'];
+        delete bag['_claim_sources'];
         Object.keys(extra || {}).forEach((name) => {
+          if (name === '_claim_names' || name === '_claim_sources') return;
           if (bag[name] === undefined) bag[name] = extra[name];
         });
+        if (Object.keys(sources).length) {
+          log.debug("Leaving finish(). Resolving " +
+                    Object.keys(sources).length + " claim source(s).");
+          return Promise.resolve().then(() => {
+            return require('../oauth-oidc/claims_providers').resolve({
+              _claim_names: names, _claim_sources: sources });
+          }).then((resolved) => {
+            Object.keys(resolved.claims || {}).forEach((name) => {
+              if (bag[name] === undefined) bag[name] = resolved.claims[name];
+            });
+            return finish(null);
+          }, (e) => {
+            log.warn(errorCodes.tag('STS-OAUTH-0683') + 'federation: the ' +
+                     'claim sources ' + record.fedId + ' sent could not be ' +
+                     'resolved: ' + ((e && e.message) || e));
+            return finish(null);
+          });
+        }
         log.debug("Leaving finish().");
         // The key that verified the ID Token is checked for revocation here,
         // on the one path into the sign-in, whether or not UserInfo was asked.
         return this.signerStillAccepted(req, res, record, () => {
           return this.completeSignIn(req, res, record, {
             subject: String(payload.sub || ''), bag: bag, amr: amr,
+            // `iss` + `sub` — OpenID Connect Core section 5.7's stable
+            // identifier (#109). `iss` has been checked against fedPeer.
+            issuer: String(payload.iss || record.fedPeer || ''),
+            // THE PARTNER'S SESSION (#167): the `sid` its Back-Channel and
+            // Front-Channel logouts will name, and the ID Token itself where
+            // this relationship will send it back as id_token_hint — kept
+            // only while fedEndSessionUrl is set, because a signed statement
+            // about the person is not something to hold for no reason.
+            sid: String(payload.sid || ''),
+            idToken: String(record.fedEndSessionUrl || '').trim()
+              ? String(idToken) : '',
             acr: String(payload.acr || ''),
             returnTo: this.fromContext(context).returnTo,
             application: this.fromContext(context).application
@@ -2623,6 +3923,19 @@ class FederationSp {
              'authorized, not that this person signed in just now — see ' +
              'federation/CLAUDE.md. It is supported because real deployments ' +
              'do it.');
+    // A JWE ACCESS TOKEN (#168) is refused by name rather than taken for an
+    // opaque one: a plain OAuth 2.0 relationship holds no decryption key, and
+    // sending an encrypted token to the userinfo endpoint instead would hide
+    // that the partner is configured for something this relationship is not.
+    if (accessToken.split('.').length === 5) {
+      errorCodes.mark(res, 'STS-FED-0141');
+      log.debug("Leaving FederationSp.finishOauth2(). A JWE access token.");
+      return this.refuse(res, record, 401, 'The access token is encrypted',
+        'The partner returned a JWE where a plain OAuth 2.0 relationship ' +
+        'reads a signed JWT or an opaque token. This relationship holds no ' +
+        'decryption key — an OpenID Connect relationship does, for its ' +
+        'ID Token.');
+    }
     const looksLikeJwt = accessToken.split('.').length === 3;
     const useUserinfo = !looksLikeJwt ||
       !String(record.fedJwks || record.fedJwksUri || '').trim();
@@ -2659,6 +3972,7 @@ class FederationSp {
         return this.signerStillAccepted(req, res, record, () => {
           return this.completeSignIn(req, res, record, {
             subject: String(payload.sub || ''), bag: bag,
+            issuer: String(payload.iss || record.fedPeer || ''),
             amr: this.federatedAmr([]),
             acr: '',
             returnTo: this.fromContext(context).returnTo,
@@ -2707,6 +4021,9 @@ class FederationSp {
                 'The profile endpoint answered.');
       return this.completeSignIn(req, res, record, {
         subject: String(profile.sub || profile.id || profile.user_id || ''),
+        // No token names an issuer here: the relationship's partner is the
+        // one whose profile endpoint answered.
+        issuer: String(record.fedPeer || ''),
         bag: bag, amr: this.federatedAmr([]), acr: '',
         returnTo: this.fromContext(context).returnTo,
         application: this.fromContext(context).application
@@ -2771,6 +4088,30 @@ class FederationSp {
         log.debug("Leaving FederationSp.consume().");
         return this.consumeWsFedResponse(req, res, record, params);
       }
+      // An OP discovered through a federation (#134) is resolved again —
+      // from the resolution cache, as a rule — so the code is redeemed at,
+      // and the ID Token verified against, what its chain vouches for NOW.
+      const rp = this.deps.oidfedRp();
+      if (rp.isFederated(record)) {
+        log.debug("Leaving FederationSp.consume(). Resolving the OP.");
+        return rp.effectiveRecord(req, record).then((got) => {
+          if (!got.ok) {
+            // error-code: none — the resolution's own code, in got.code
+            errorCodes.mark(res, String(got.code || 'STS-FED-0148'));
+            return this.refuse(res, record, 502, 'The OpenID Provider could ' +
+                               'not be trusted', xmlEscape(String(got.why)));
+          }
+          return this.consumeOauthResponse(req, res, got.record, params);
+        }).catch((e) => {
+          log.error(errorCodes.tag('STS-FED-0042') + 'federation: ' + id +
+                    ' threw while resolving its OP: ' +
+                    (e && e.stack ? e.stack : e));
+          errorCodes.mark(res, 'STS-FED-0042');
+          return this.refuse(res, record, 500, 'This service failed while ' +
+                             'reading the response', xmlEscape(String(
+                               (e && e.message) || e)));
+        });
+      }
       log.debug("Leaving FederationSp.consume().");
       return this.consumeOauthResponse(req, res, record, params);
     } catch (e) {
@@ -2814,20 +4155,31 @@ class FederationSp {
     const id = String(req.params.id || '');
     const record = federation.get(id);
     if (!record || record.fedRole !== 'service-provider' ||
-        (record.fedProtocol !== 'saml2' && record.fedProtocol !== 'saml11')) {
+        (record.fedProtocol !== 'saml2' && record.fedProtocol !== 'saml11' &&
+         record.fedProtocol !== 'wsfed')) {
       errorCodes.mark(res, 'STS-FED-0003');
       res.status(404).type('html').send(this.page('No such metadata',
-        '<h1>No metadata here</h1><p>There is no SAML service-provider-side ' +
-        'relationship called ' +
-        '<code>' + xmlEscape(id) + '</code>. Metadata is a SAML thing, ' +
-        'so an OIDC, OAuth 2.0 or WS-Federation relationship has none — what ' +
-        'a partner needs for those is on <a ' +
+        '<h1>No metadata here</h1><p>There is no SAML or WS-Federation ' +
+        'service-provider-side relationship called ' +
+        '<code>' + xmlEscape(id) + '</code>. An OpenID Connect ' +
+        'relationship publishes its encryption key at ' +
+        federation.PATHS.jwks + '/{id} instead, and a plain OAuth 2.0 one ' +
+        'publishes nothing — what a partner needs for those is on <a ' +
         'href="' + BASE_PATH + '">' + BASE_PATH + '</a>.</p>'));
       log.debug("Leaving the federation metadata endpoint. Not a SAML " +
-                'relationship.');
+                'or WS-Federation relationship.');
       return;
     }
     const base = baseUrlOf(req);
+    // THE KEY A PARTNER ENCRYPTS TO (#168): saml-metadata-2.0-os section
+    // 2.4.1.1's KeyDescriptor use="encryption", with the EncryptionMethods
+    // this relationship accepts and nothing else. SAML 1.1 has no encryption
+    // construct and publishes none.
+    const encryption = record.fedProtocol === 'saml11' ? ''
+      : this.deps.fedEncryption.keyDescriptorOf(record);
+    if (record.fedProtocol === 'wsfed') {
+      return this.wsfedMetadata(req, res, record, base, encryption);
+    }
     // The XML signing key (#42, D2): what this service signs its outbound
     // AuthnRequests with.
     const der = STS.xml.certPem.replace(/-----[^-]+-----/g, '')
@@ -2845,8 +4197,19 @@ class FederationSp {
       'use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>' +
         der +
       '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>' +
+      encryption +
       // `federation.spNameIdFormat` since 2026-09-12; the literal before it is
-      // the setting's default.
+      // the setting's default. THE SINGLE LOGOUT SERVICE (#167), on the
+      // two bindings a partner's LogoutRequest and LogoutResponse are
+      // accepted on — SAML 2.0 only:
+      // SAML 1.1 defines no logout, so its SPSSODescriptor names none.
+      // saml-metadata-2.0-os section 2.4.2 puts it before NameIDFormat.
+      (record.fedProtocol === 'saml2'
+        ? '<md:SingleLogoutService Binding="' + BINDING_REDIRECT + '" ' +
+          'Location="' + xmlEscape(this.sloUrl(base, record)) + '"/>' +
+          '<md:SingleLogoutService Binding="' + BINDING_POST + '" ' +
+          'Location="' + xmlEscape(this.sloUrl(base, record)) + '"/>'
+        : '') +
       '<md:NameIDFormat>' +
       xmlEscape(String(config.value('federation.spNameIdFormat') || '')) +
         '</md:NameIDFormat>' +
@@ -2861,6 +4224,85 @@ class FederationSp {
        .set('Cache-Control', 'no-store')
        .send(xml);
     log.debug("Leaving the federation metadata endpoint.");
+  }
+
+  // ---------------------------------------------------------------------------
+  // A WS-FEDERATION RELYING PARTY'S METADATA (#168): WS-Federation 1.2
+  // section 3.1's document — an EntityDescriptor holding a RoleDescriptor of
+  // type fed:ApplicationServiceType, with the PassiveRequestorEndpoint the
+  // partner sends a wresult to and, since #168, the key it encrypts the
+  // token to. It is what AD FS imports a relying party from. Unsigned, for
+  // the SAML document's reason above.
+  //
+  // **fed:ApplicationServiceEndpoint IS REQUIRED, AND WAS MISSING UNTIL
+  // #188 (2026-09-24).** WS-Federation 1.2's schema gives
+  // ApplicationServiceType a sequence of ApplicationServiceEndpoint
+  // (minOccurs 1), SingleSignOutNotificationEndpoint and
+  // PassiveRequestorEndpoint, so a document holding only the last is invalid
+  // against the published schema and a validating importer refuses it — which
+  // tests/vendored/sts_xml_schema_validation.js found. Both name the one
+  // address this relationship has, as AD FS's own relying-party documents do.
+  // ---------------------------------------------------------------------------
+  private wsfedMetadata(req, res, record, base, encryption) {
+    const { log, logArtifact, xmlEscape } = this.deps;
+    log.debug("Entering FederationSp.wsfedMetadata().");
+    const fed = 'http://docs.oasis-open.org/wsfed/federation/200706';
+    const endpoint = '<wsa:EndpointReference ' +
+      'xmlns:wsa="http://www.w3.org/2005/08/addressing"><wsa:Address>' +
+      xmlEscape(this.acsUrl(base, record)) +
+      '</wsa:Address></wsa:EndpointReference>';
+    const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<md:EntityDescriptor xmlns:md="' + NS_MD + '" ' +
+        'xmlns:ds="http://www.w3.org/2000/09/xmldsig#" ' +
+        'entityID="' + xmlEscape(this.ourEntityId(base, record)) + '">' +
+      '<md:RoleDescriptor ' +
+        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' +
+        'xmlns:fed="' + fed + '" xsi:type="fed:ApplicationServiceType" ' +
+        'protocolSupportEnumeration="' + fed + '">' + encryption +
+      '<fed:ApplicationServiceEndpoint>' + endpoint +
+        '</fed:ApplicationServiceEndpoint>' +
+      '<fed:PassiveRequestorEndpoint>' + endpoint +
+        '</fed:PassiveRequestorEndpoint>' +
+      '</md:RoleDescriptor></md:EntityDescriptor>';
+    logArtifact('federation WS-Federation relying party metadata', 'as served',
+                xml);
+    res.type('application/samlmetadata+xml')
+       .set('Cache-Control', 'no-store')
+       .send(xml);
+    log.debug("Leaving FederationSp.wsfedMetadata().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // GET /federation/jwks/{id} — AN OPENID CONNECT RELATIONSHIP'S KEY (#168),
+  // `use: enc`, what the partner registers as this relying party's `jwks` or
+  // `jwks_uri` to encrypt its ID Token to (OpenID Connect Registration section
+  // 2). The current key only: a rotated-out key still decrypts through its
+  // grace period, and a partner is never TOLD to encrypt to it. `no-store`,
+  // as every document carrying a key is.
+  // ---------------------------------------------------------------------------
+  private jwksEndpoint(req, res) {
+    const { federation, errorCodes, fedEncryption, log, xmlEscape } =
+      this.deps;
+    log.debug("Entering the federation JWKS endpoint. id=" + req.params.id);
+    const id = String(req.params.id || '');
+    const record = federation.get(id);
+    if (!record || record.fedRole !== 'service-provider' ||
+        record.fedProtocol !== 'oidc') {
+      errorCodes.mark(res, 'STS-FED-0146');
+      res.status(404).type('html').send(this.page('No such key set',
+        '<h1>No key set here</h1><p>There is no OpenID Connect ' +
+        'service-provider-side relationship called <code>' + xmlEscape(id) +
+        '</code>. A SAML 2.0 or WS-Federation relationship publishes its ' +
+        'encryption key in its metadata at ' + METADATA_PATH + '/{id}.</p>'));
+      log.debug("Leaving the federation JWKS endpoint. Not OIDC.");
+      return;
+    }
+    const jwk = fedEncryption.publicJwkOf(record);
+    res.status(200).type('application/jwk-set+json')
+       .set('Cache-Control', 'no-store')
+       .send(JSON.stringify({ keys: jwk ? [jwk] : [] }));
+    log.debug("Leaving the federation JWKS endpoint. " + (jwk ? jwk.kid :
+                                                          'No key.'));
   }
 
   // ---------------------------------------------------------------------------
@@ -2964,7 +4406,20 @@ class FederationSp {
         'partner.</strong></td></tr><tr><td><code>' + METADATA_PATH +
       '/{id}</code></td><td>This ' +
         'service\'s own SAML metadata for that partner. Unsigned, ' +
-        'deliberately.</td></tr></table><p class="note">The base URL this ' +
+        'deliberately.</td></tr>' +
+      // A PARTNER'S SIGN-OUT (#167), served by federation_slo.ts.
+      '<tr><td><code>' + SLO_PATH + '/{id}</code></td><td>Where a ' +
+        'partner\'s sign-out arrives in a browser: the SAML ' +
+        'SingleLogoutService, the WS-Federation cleanup URL and the OpenID ' +
+        'Connect post_logout_redirect_uri. It ends only the session the ' +
+        'partner names, after the same signature check a sign-in gets.' +
+        '</td></tr><tr><td><code>' + federation.PATHS.backchannelLogout +
+        '/{id}</code></td><td>The OpenID Connect backchannel_logout_uri to ' +
+        'register at the partner.</td></tr><tr><td><code>' +
+        federation.PATHS.frontchannelLogout + '/{id}</code></td><td>The ' +
+        'OpenID Connect frontchannel_logout_uri to register at the partner, ' +
+        'with frontchannel_logout_session_required.</td></tr></table>' +
+        '<p class="note">The base URL this ' +
         'service sees itself at is <code>' + xmlEscape(base) +
       '</code>, so the URLs above are absolute from there.</p>' +
       // **`/portal` AND NOT `/authn/login`, WHICH IS NOT A PAGE ANYBODY CAN BE
@@ -3028,9 +4483,29 @@ export = {
   LOGIN_PATH: FederationSp.LOGIN_PATH,
   ACS_PATH: FederationSp.ACS_PATH,
   METADATA_PATH: FederationSp.METADATA_PATH,
+  LINK_PATH: FederationSp.LINK_PATH,
+  LINK_VIA: FederationSp.LINK_VIA,
+  // For tests/federation_subject_policy.js: which local person a verified
+  // subject may become (#109), asked without a partner.
+  subjectDecision: slot.forward('subjectDecision'),
   ourEntityId: slot.forward('ourEntityId'),
   acsUrl: slot.forward('acsUrl'),
   certPemOf: slot.forward('certPemOf'),
+  // For `federation_slo.ts` (#167): the one request-context store (decision
+  // 3) — a LogoutRequest this service sent, an end_session round trip and a
+  // WS-Federation cleanup confirmation are in-flight flows exactly as a
+  // sign-in is — and the SLO address; and, for tests/federation_signout.js,
+  // how a partner's SessionNotOnOrAfter becomes the session's bound.
+  putContext: slot.forward('putContext'),
+  takeContext: slot.forward('takeContext'),
+  sessionBoundOf: slot.forward('sessionBoundOf'),
+  sloUrl: slot.forward('sloUrl'),
+  // THE ONE PLACE A JWT FROM SOMEBODY ELSE IS VERIFIED, now for a Logout
+  // Token as well as an ID Token (#167): the same keys, the same
+  // key-decides-the-family rule, the same refusals.
+  keysFor: slot.forward('keysFor'),
+  verifyForeignJwt: slot.forward('verifyForeignJwt'),
+  SLO_PATH: SLO_PATH,
   // For tests/revocation_status.js: the check a configured signing certificate
   // or partner key gets once it has verified a response.
   signerStillAccepted: slot.forward('signerStillAccepted')

@@ -141,7 +141,13 @@ config.registerLogger(log);
 // rows can say anything is one a page cannot draw a column for.
 const FORMATS = {
   jwt: 'RFC 7523 JWT',
-  saml: 'RFC 7522 SAML 2.0 assertion'
+  saml: 'RFC 7522 SAML 2.0 assertion',
+  // A SAML protocol MESSAGE rather than an assertion (#167): a federation
+  // partner's <LogoutRequest>, keyed by its `ID`. Its own format because an
+  // assertion's ID and a request's ID are two namespaces a partner has no
+  // reason to keep disjoint — the argument this table makes for `saml`
+  // beside `jwt`.
+  'saml-message': 'SAML 2.0 protocol message'
 };
 const USES = {
   'client-authentication': 'client authentication (RFC 7521 section 4.2)',
@@ -151,7 +157,18 @@ const USES = {
   // client as issuer, and its `jti` — and the two share one namespace, which
   // is what RFC 7519 section 4.1.7 asks of a `jti` in the first place: one
   // identifier, one document. `oauth-oidc/request_object.ts` argues the rest.
-  'request-object': 'request object (RFC 9101)'
+  'request-object': 'request object (RFC 9101)',
+  // CIBA (#131): a signed authentication request (CIBA Core section
+  // 7.1.1), keyed like a request object — its client as issuer, its `jti` —
+  // because it is one, sent to another endpoint.
+  'ciba-request': 'signed CIBA authentication request (CIBA Core 7.1.1)',
+  // A FEDERATION PARTNER'S SIGN-OUT (#167): an OpenID Connect Logout Token
+  // (keyed by `jti`, Back-Channel Logout 1.0 section 2.6 step 8) or a SAML
+  // <LogoutRequest> (by `ID`). A captured one replayed later would end a
+  // session the partner never asked about; `federation/federation_slo.ts`
+  // spends it the moment it is accepted, whatever it then matched.
+  'federated-logout': 'a federation partner\'s sign-out (Back-Channel ' +
+                      'Logout 1.0 Logout Token, SAML 2.0 LogoutRequest)'
 };
 
 // What a row is, spelt once. Every store hands rows back in this shape.

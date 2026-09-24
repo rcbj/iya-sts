@@ -618,6 +618,13 @@ services:
       # WHERE THE ldif MODE WRITES. Mounted in postgres mode too, so that
       # switching between them is one environment variable — see the header.
       - sts-data:/usr/src/sts/data
+      # WHERE AN UPLOADED RISK DATASET IS WRITTEN WHILE IT IS IMPORTED (#215):
+      # `risk.uploadDirectory`'s default, under the data directory, on a
+      # volume of its own so its size is the deployment's to give. It must
+      # hold the largest file uploaded, compressed — nothing expanded is ever
+      # written — and an upload it cannot hold is refused (STS-RISK-0029).
+      # Every file in it is deleted when its import ends.
+      - sts-risk-uploads:/usr/src/sts/data/risk-uploads
       # ---------------------------------------------------------------------
       # THE KEY-ENCRYPTION KEY, which product mode cannot start without.
       #
@@ -1070,13 +1077,14 @@ services:
       - PEP_TLS_INSECURE=true
       # THE MOCK REFUSES TO DIAL THIS BY DEFAULT and that is the design
       # demonstrating itself rather than a misconfiguration: it is plain
-      # http, and xacml.pepNotifyAllowInsecure is off. So on a plain
+      # http, and xacml.pepNotifyAllowHttp is off. So on a plain
       # `--profile xacml up` no nudge is ever delivered, the PDP says why on
       # the PEP's row at /admin/xacml/peps, and the PEP converges on its
       # fifteen-second poll anyway — which is the whole claim the nudge is
-      # affordable under. Set STS_XACML_PEP_NOTIFY_ALLOW_INSECURE=true on the
+      # affordable under. Set STS_XACML_PEP_NOTIFY_ALLOW_HTTP=true on the
       # sts service to watch a change reach this container in under a second
-      # instead.
+      # instead — in development mode only: product refuses a plain-http
+      # nudge whatever that says (#171).
       - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-http://xacml-pep:9090/notify}
       - PEP_RESOURCE=${XACML_PEP_RESOURCE:-https://xacml-pep/protected}
       - PEP_BIAS=${XACML_PEP_BIAS:-deny-biased}
@@ -1172,6 +1180,9 @@ volumes:
   # mode, and mounted anyway so that switching modes is one environment
   # variable.
   sts-data:
+  # /usr/src/sts/data/risk-uploads inside the STS container: an uploaded risk
+  # dataset, for as long as its import runs (#215). Empty between uploads.
+  sts-risk-uploads:
   # /run/secrets inside the STS container: the key-encryption key product mode
   # seals its signing keys with, generated on the first start that finds none
   # and kept until `down -v`. See the `command` on the sts service.

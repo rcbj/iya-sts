@@ -244,6 +244,11 @@ function childMain() {
     note(xsd.status === 200 &&
          /targetNamespace="urn:iya:sts:crypto-metadata:1"/.test(xsd.text),
          'C9. the schema is served');
+    // #188: the one element of the namespace that lives in ANOTHER document
+    // — the SAML 2.0 metadata's md:Extensions (C11) — is declared by it too.
+    note(/<xs:element name="CryptoMetadataLocation" type="xs:anyURI"\/>/
+           .test(xsd.text),
+         'C9b. the schema declares cm:CryptoMetadataLocation (#188)');
     const discovery = await get(port, '/.well-known/openid-configuration');
     note(discovery.json && /\/crypto\/metadata\.json$/.test(
            discovery.json.crypto_metadata_uri || ''),
@@ -341,7 +346,8 @@ function childMain() {
 function inAChild(t) {
   log.debug("Entering inAChild().");
   const out = path.join(os.tmpdir(), 'key-generations-' + process.pid + '-' +
-                        Math.random().toString(36).slice(2) + '.json');
+                        require('crypto').randomBytes(8).toString('hex') +
+                        '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|CONFIG_FILE$)/.test(key)) {

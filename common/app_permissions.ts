@@ -45,12 +45,15 @@
 //     server wants: check `aud` once, then read bare permission names.
 //     `oauth2.js`'s `audienceScopes()` is where that happens and it is the ONE
 //     place it happens.
-//   * **The grant is a QUESTION and not a gate, by default.** An ungranted
-//     permission still produces the audience and the scope; it is recorded,
-//     drawn as ungranted on the console, and logged. Only
+//   * **The grant is a QUESTION and not a gate — IN DEVELOPMENT ONLY.** There
+//     an ungranted permission still produces the audience and the scope; it is
+//     recorded, drawn as ungranted on the console, and logged, and only
 //     `oauth2.delegatedPermissionsEnforced` — off by default — turns that into
-//     `invalid_scope`. This service exists to exercise clients, and a refusal
-//     that cannot be turned off removes a test case rather than adding one.
+//     `invalid_scope`, because a client under test is exercised by both
+//     answers. **PRODUCT MODE ALWAYS ENFORCES (#110, 2026-09-22)**
+//     (`mode.honoursUngrantedPermissions()`): an ungranted permission is
+//     `invalid_scope` whatever the setting says, because a grant that refuses
+//     nothing in a deployment is decorative.
 //
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3) AND IT HOLDS NO STORE.
@@ -531,11 +534,10 @@ class AppPermissions {
         'access token audienced to ' +
         (defines ? defines.baseUri : 'the permission\'s base URI') + ' with `' +
         (defines ? defines.name : id) + '` on its scope claim. ' +
-        '<strong>It was already producing one</strong> — the grant is ' +
-        'recorded and reported and refuses nothing unless ' +
-        '`oauth2.delegatedPermissionsEnforced` is on, which is off by ' +
-        'default because a refusal that cannot be turned off removes a test ' +
-        'case rather than adding one.'
+        'In product mode an ungranted permission is refused, so this grant ' +
+        'is what lets it through; in development it was already producing ' +
+        'one — the grant is recorded and reported and refuses nothing ' +
+        'unless `oauth2.delegatedPermissionsEnforced` is on.'
     });
   }
 
@@ -553,9 +555,11 @@ class AppPermissions {
     }
     log.debug("Leaving AppPermissions.revoke(). ok.");
     return Object.assign({}, result, {
-      message: '"' + client + '" no longer holds `' + id + '`. With ' +
-               '`oauth2.delegatedPermissionsEnforced` OFF this changes ' +
-               'nothing about what it is issued — the permission still ' +
+      message: '"' + client + '" no longer holds `' + id + '`. In product ' +
+               'mode its next request for it is refused invalid_scope. In ' +
+               'development with `oauth2.delegatedPermissionsEnforced` OFF ' +
+               'this changes nothing about what it is issued — the ' +
+               'permission still ' +
                'becomes an audience and a scope, and /admin/delegation now ' +
                'shows those requests as UNGRANTED, which is the state the ' +
                'setting turns into a refusal.'
