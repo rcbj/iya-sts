@@ -1229,3 +1229,19 @@ stubbed, because product refuses the loopback responder before any
 connection) and `tests/vendored/sts_saml_unregistered.js` over HTTP, in a
 product realm and a development realm of one service, with an MDQ responder
 the job serves itself.
+
+## EVERY DOCUMENT HERE IS VALIDATED AGAINST THE PUBLISHED SCHEMAS (#188, 2026-09-24)
+
+`tests/vendored/sts_xml_schema_validation.js` makes both profiles emit
+everything they emit — the metadata, the Response on each binding with and
+without an EncryptedAssertion, the ArtifactResponse, the error Responses,
+logout in both directions (with an EncryptedID), the mock service provider's
+AuthnRequests, the SAML 1.1 Browser/POST Response and every answer of the
+responder — in a development and a product realm, and validates each with
+`xmllint` against the OASIS SAML 2.0 / 1.1 and W3C XML Signature and
+Encryption schemas (`tests/CLAUDE.md`, *The published XML Schemas*). The
+first run found nothing wrong in this directory. The one thing it found in a
+SAML document was a schema's, not the document's: `cm:CryptoMetadataLocation`
+in the metadata's `md:Extensions` (#42) was declared by no schema, and
+`/crypto/metadata.xsd` declares it now. **A new SAML document owes a
+scenario in that job.**

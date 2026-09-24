@@ -44,6 +44,13 @@ namespace works:
 | `Validate` | an RSTR carrying `wst:Status` — `valid` when the `ValidateTarget` holds a token, `invalid` when it holds none |
 | `Cancel` | an RSTR carrying `wst:RequestedTokenCancelled` |
 
+**Each version is answered in its own schema's elements.** The 2004/04
+namespace has no collection of one response, no `RequestedAttachedReference`
+and no Cancel, so there an `Issue` is answered with the RSTR itself, the
+reference is `wst:RequestedTokenReference`, and a `Cancel` is refused with a
+`wst:InvalidRequest` fault. Every answer, in every version, validates against
+its version's published OASIS schema.
+
 **Every operation authenticates the requester first**, above the choice of
 operation, so a credential refused for an Issue is refused for a Validate or a
 Cancel too.

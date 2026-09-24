@@ -1297,6 +1297,24 @@ option), returning to `?stepup=<id>`, and Approve takes after that.
 `portal_ciba.ts`, registered through `register(context)` as
 `portal_devices.ts` is. `oauth-oidc/CLAUDE.md` (3bc) carries the protocol.
 
+## `/portal/claim-sources`: CONNECTED CLAIM SOURCES (#147, 2026-09-24)
+
+The setup phase of OpenID Connect Claims Aggregation, the person's own. Every
+Claims Provider the realm registered is listed; **Link** sends the person to
+it (an authorization code flow with PKCE), and it sends them back to
+`/portal/claim-sources/callback`, where the tokens are redeemed and sealed on
+their entry; **Unlink** removes them. `portal_claim_sources.ts`, registered
+through `register(context)` as `portal_ciba.ts` is; `oauth-oidc/CLAUDE.md`
+(3bh) carries the protocol.
+
+**ITS REDIRECTS ARE ABSOLUTE, ON `baseUrlOf(req)`**, because a bare
+`/portal/...` Location is answered by the DEFAULT realm: nothing adds the
+realm prefix to a Location on the way out. The job found it — the callback
+sent a person linked in one realm to the default realm's portal. Every other
+portal page's 303 is still a bare path (`portal_devices.ts`, `portal_ciba.ts`,
+the MFA pages), which is the same defect in a non-default realm and is left
+for its own change.
+
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 
 **Send a reset link** on a person's `/admin/users` page stores a hash of a

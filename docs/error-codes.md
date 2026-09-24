@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3443** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3456** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -63,9 +63,9 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 248
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 557
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 567
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 133
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 66
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 195
 * [Management API (`STS-API`)](#sts-api) — 73
-* [User portal (`STS-PORTAL`)](#sts-portal) — 70
+* [User portal (`STS-PORTAL`)](#sts-portal) — 72
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 131
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -1718,6 +1718,16 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0675` | A token request carried a client_assertion that names no client: no client_id in the body and no sub in the assertion, so there is no registered client to verify it against (RFC 7523 section 3 item B, #176). | invalid_client (HTTP 401), RFC 6749 section 5.2 |
 | `STS-OAUTH-0676` | A request object carried `request` or `request_uri` as a claim, which RFC 9101 section 4 forbids; refused at the authorization endpoint and at PAR (#176). | invalid_request_object, RFC 9101 sections 4 and 6.2 |
 | `STS-OAUTH-0677` | A token request's JWT client_assertion named more than one client: its iss, its sub and the request's client_id did not all agree, and for client authentication each must be the client_id (RFC 7523 section 3, OpenID Connect Core section 9, #176). | invalid_client (HTTP 401), RFC 6749 section 5.2 |
+| `STS-OAUTH-0678` | A Claims Provider link was asked for a provider this realm has not registered, or its callback carried no code (#147). | portal refusal (HTTP 400) |
+| `STS-OAUTH-0679` | A Claims Provider link callback named a state that is unknown, expired or another person's (#147). | portal refusal (HTTP 400) |
+| `STS-OAUTH-0680` | A Claims Provider refused the link: an error at its authorization endpoint, or its token endpoint refused the code (#147). | portal refusal (HTTP 400) |
+| `STS-OAUTH-0681` | A Claims Provider's claims endpoint gave no signed claims its keys verify when a person linked it (#147). | portal refusal (HTTP 400) |
+| `STS-OAUTH-0682` | A Claims Provider gave nothing for a person at ID Token or UserInfo time — the fetch failed or did not verify — so its claims were left out (#147). | none (logged; the response omits the claims, OIDC Core 5.5.1) |
+| `STS-OAUTH-0683` | A `_claim_sources` entry from an upstream OP could not be honoured: an issuer or endpoint this realm has not registered as a Claims Provider, or a JWT its keys did not verify (#147). | none (logged; the claims are not taken) |
+| `STS-OAUTH-0684` | A person's token at a Claims Provider could not be refreshed and was marked stale (#147). | none (logged) |
+| `STS-OAUTH-0685` | A person's Claims Provider tokens could not be read or sealed (#147). | portal refusal (HTTP 500), or logged |
+| `STS-OAUTH-0686` | An administrator's Claims Provider act was refused: an invalid or duplicate provider, an unknown action, or a link that does not exist (#147). | console / /admin-api refusal (HTTP 400) |
+| `STS-OAUTH-0687` | Registering a Claims Provider by discovery failed: its discovery document could not be fetched or does not name its issuer (#147). | console / /admin-api refusal (HTTP 400) |
 
 ## STS-SAML
 
@@ -1840,6 +1850,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0018` | An OnBehalfOf or ActAs request was refused by the delegation policy (#108): the subject may not be delegated, the requester is not trusted to impersonate or may not act for this subject, or no attribute allows the AppliesTo. Product mode only; development records what would have been refused. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0019` | An OnBehalfOf or ActAs request was refused because its requester authenticated as a PERSON (or as a name with no application entry): in product mode only an application entry may delegate (#108). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0020` | An OnBehalfOf or ActAs request the delegation attributes allowed was refused because the issuance policy answered Deny for action-id `delegate` (#108). Product mode only. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0021` | A Cancel request in the WS-Trust 2004/04 namespace, which defines no Cancel binding (no CancelTarget, no RequestedTokenCancelled); it was added in 2005/02 (#188). | SOAP Fault wst:InvalidRequest (HTTP 500), in the request's trust namespace |
 
 ## STS-WSFED
 
@@ -3696,6 +3707,8 @@ Raised from: portal/.
 | `STS-PORTAL-0090` | A CIBA user code set on /portal/ciba was refused — the wrong length, or not stored (#131). | HTTP 400 page |
 | `STS-PORTAL-0091` | An approval on /portal/ciba asked for more (acr_values) than the sign-on session proved; the person is offered a stronger sign-in (#131). | HTTP 403 page |
 | `STS-PORTAL-0092` | Turning an emailed second factor on or off on /portal/mfa was refused; the page names why (#64). | HTTP 400 page |
+| `STS-PORTAL-0093` | Linking a Claims Provider on /portal/claim-sources failed at its callback in a way no STS-OAUTH-0678 to 0685 code names (#147). | none (a portal page, HTTP 500) |
+| `STS-PORTAL-0094` | An unlink on /portal/claim-sources named a Claims Provider the person has no link to (#147). | none (a portal page, HTTP 400) |
 
 ## STS-LOGOUT
 

@@ -6967,6 +6967,51 @@ const CODES = [
       'agree, and for client authentication each must be the client_id ' +
       '(RFC 7523 section 3, OpenID Connect Core section 9, #176).',
     spec: 'invalid_client (HTTP 401), RFC 6749 section 5.2' },
+  { code: 'STS-OAUTH-0678',
+    summary: 'A Claims Provider link was asked for a provider this realm ' +
+      'has not registered, or its callback carried no code (#147).',
+    spec: 'portal refusal (HTTP 400)' },
+  { code: 'STS-OAUTH-0679',
+    summary: 'A Claims Provider link callback named a state that is ' +
+      'unknown, expired or another person\'s (#147).',
+    spec: 'portal refusal (HTTP 400)' },
+  { code: 'STS-OAUTH-0680',
+    summary: 'A Claims Provider refused the link: an error at its ' +
+      'authorization endpoint, or its token endpoint refused the code ' +
+      '(#147).',
+    spec: 'portal refusal (HTTP 400)' },
+  { code: 'STS-OAUTH-0681',
+    summary: 'A Claims Provider\'s claims endpoint gave no signed claims ' +
+      'its keys verify when a person linked it (#147).',
+    spec: 'portal refusal (HTTP 400)' },
+  { code: 'STS-OAUTH-0682',
+    summary: 'A Claims Provider gave nothing for a person at ID Token or ' +
+      'UserInfo time — the fetch failed or did not verify — so its claims ' +
+      'were left out (#147).',
+    spec: 'none (logged; the response omits the claims, OIDC Core 5.5.1)' },
+  { code: 'STS-OAUTH-0683',
+    summary: 'A `_claim_sources` entry from an upstream OP could not be ' +
+      'honoured: an issuer or endpoint this realm has not registered as a ' +
+      'Claims Provider, or a JWT its keys did not verify (#147).',
+    spec: 'none (logged; the claims are not taken)' },
+  { code: 'STS-OAUTH-0684',
+    summary: 'A person\'s token at a Claims Provider could not be ' +
+      'refreshed and was marked stale (#147).',
+    spec: 'none (logged)' },
+  { code: 'STS-OAUTH-0685',
+    summary: 'A person\'s Claims Provider tokens could not be read or ' +
+      'sealed (#147).',
+    spec: 'portal refusal (HTTP 500), or logged' },
+  { code: 'STS-OAUTH-0686',
+    summary: 'An administrator\'s Claims Provider act was refused: an ' +
+      'invalid or duplicate provider, an unknown action, or a link that ' +
+      'does not exist (#147).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-OAUTH-0687',
+    summary: 'Registering a Claims Provider by discovery failed: its ' +
+      'discovery document could not be fetched or does not name its issuer ' +
+      '(#147).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -7467,6 +7512,12 @@ const CODES = [
       'allowed was refused because the issuance policy answered Deny for ' +
       'action-id `delegate` (#108). Product mode only.',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
+  { code: 'STS-WSTRUST-0021',
+    summary: 'A Cancel request in the WS-Trust 2004/04 namespace, which ' +
+      'defines no Cancel binding (no CancelTarget, no ' +
+      'RequestedTokenCancelled); it was added in 2005/02 (#188).',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), in the request\'s ' +
+      'trust namespace' },
   // ===== WSFED =============================================================
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
@@ -15014,6 +15065,14 @@ const CODES = [
     summary: 'Turning an emailed second factor on or off on /portal/mfa was ' +
       'refused; the page names why (#64).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0093',
+    summary: 'Linking a Claims Provider on /portal/claim-sources failed at ' +
+      'its callback in a way no STS-OAUTH-0678 to 0685 code names (#147).',
+    spec: 'none (a portal page, HTTP 500)' },
+  { code: 'STS-PORTAL-0094',
+    summary: 'An unlink on /portal/claim-sources named a Claims Provider ' +
+      'the person has no link to (#147).',
+    spec: 'none (a portal page, HTTP 400)' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
