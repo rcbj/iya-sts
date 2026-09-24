@@ -51,6 +51,7 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import cryptoLib = require('../common/crypto');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
@@ -86,6 +87,17 @@ const PATHS = Object.freeze({
 // and it expires with them (10.4) — so it is per process, unpersisted, and
 // described to `/admin/caches`.
 const resolutions = realms.map();
+// THE REGISTER'S GENERATION, per realm — a STORE, persisted and replicated,
+// where the cache above is per process. Every act that changes what a chain
+// would resolve to replaces the row, and a cached resolution is answered
+// only while the generation it was made under is still the current one. A
+// `forgetResolutions()` alone clears the process that ran the act, and with
+// request workers the resolve lands on another one, which went on answering
+// the chain from before a Trust Mark was issued (`sts_oidfed`, single-node,
+// 2026-09-24). One key; the row is replaced whole, never edited in place, so
+// the journal sees each change.
+const registerGeneration = realms.map({ persist: 'oidfed.registerGeneration' });
+const GENERATION_KEY = 'current';
 const resolutionCount = cacheRegistry.register({
   name: 'oidfed.resolutions',
   title: 'OpenID Federation resolutions',
@@ -873,9 +885,12 @@ class Oidfed {
     }
     const map = resolutions;
     const at = now();
+    // Read BEFORE the walk, so an act landing while it runs leaves this
+    // resolution cached under a generation that is already out of date.
+    const generation = this.generation();
     for (let i = 0; i < wanted.length; i++) {
       const hit = map.get(sub + ' ' + wanted[i].entityId);
-      if (hit && Number(hit.expMs) > at) {
+      if (hit && Number(hit.expMs) > at && hit.generation === generation) {
         resolutionCount.hit();
         log.debug("Leaving Oidfed.resolve(). From the cache.");
         return { ok: true, resolved: hit.resolved, marks: hit.marks,
@@ -912,7 +927,8 @@ class Oidfed {
                                          return Number(v && v.expMs) <= at;
                                        } });
       map.set(sub + ' ' + resolved.anchor, { resolved: resolved,
-        marks: marks, anchor: anchor, expMs: expMs });
+        marks: marks, anchor: anchor, expMs: expMs,
+        generation: generation });
     }
     log.debug("Leaving Oidfed.resolve(). " + resolved.chain.length +
               " statements.");
@@ -1763,8 +1779,29 @@ class Oidfed {
 
   // Drop the cached resolutions of the realm — its register changed, so a
   // chain resolved before may no longer be the one it would resolve now.
+  // The realm's register generation — see `registerGeneration`, above.
+  private generation(): string {
+    this.deps.log.debug("Entering Oidfed.generation().");
+    const row: Json = registerGeneration.get(GENERATION_KEY);
+    this.deps.log.debug("Leaving Oidfed.generation().");
+    return String((row && row.id) || '');
+  }
+
+  // A new generation: every process's cached resolutions of the realm stop
+  // being answered, wherever the act that called this ran.
+  private nextGeneration(): void {
+    const { log, now } = this.deps;
+    log.debug("Entering Oidfed.nextGeneration().");
+    registerGeneration.set(GENERATION_KEY, {
+      id: String(cryptoLib.randomToken(128)),
+      at: new Date(now()).toISOString()
+    });
+    log.debug("Leaving Oidfed.nextGeneration().");
+  }
+
   private forgetResolutions(): void {
     this.deps.log.debug("Entering Oidfed.forgetResolutions().");
+    this.nextGeneration();
     const keysNow: string[] = [];
     resolutions.forEach(function (v: Json, k: string): void {
       keysNow.push(k);
@@ -1777,6 +1814,8 @@ class Oidfed {
 
   private forgetResolution(sub: string): void {
     this.deps.log.debug("Entering Oidfed.forgetResolution().");
+    // The other processes cannot be told which subject; they drop the lot.
+    this.nextGeneration();
     const keysNow: string[] = [];
     resolutions.forEach(function (v: Json, k: string): void {
       if (k.indexOf(sub + ' ') === 0) {
