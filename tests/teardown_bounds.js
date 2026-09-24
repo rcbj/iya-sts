@@ -322,7 +322,12 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   const singleNodeBound = Number(
     (/single-node\)\s*echo "\$\{STS_SINGLE_NODE_MODE_TIMEOUT:-(\d+)\}"/
       .exec(modes) || [])[1]) || 0;
-  const modeBound = Math.max(sharedBound, singleNodeBound);
+  // A mode that runs the OpenID conformance suite (#176, `memory` by
+  // default) has STS_CONFORMANCE_TIMEOUT added to its bound by the launcher.
+  const conformanceBound = Number(
+    (/STS_CONFORMANCE_TIMEOUT="\$\{STS_CONFORMANCE_TIMEOUT:-(\d+)\}"/
+      .exec(launcher) || [])[1]) || 0;
+  const modeBound = Math.max(sharedBound + conformanceBound, singleNodeBound);
   const teardownBound = Number(
     /STS_TEARDOWN_TIMEOUT="\$\{STS_TEARDOWN_TIMEOUT:-(\d+)\}"/
       .exec(launcher)[1]);

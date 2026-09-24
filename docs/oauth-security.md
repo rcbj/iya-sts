@@ -256,7 +256,28 @@ this service signed something takes two things a deployment has to keep:
 HTTP message signatures on resource requests and responses (RFC 9421) are not
 part of the final Message Signing specification. They are tracked in #178.
 
-The OpenID Foundation's conformance suite against this service is #176.
+### The OpenID Foundation's conformance suite
+
+The FAPI profiles are checked against the OpenID Foundation's own
+conformance suite as part of `./run-tests.sh` (#176). Each plan runs in a
+realm of its own under the profile it tests, and a module that fails fails the
+run. The plans, and where they stood on 2026-09-24 with suite
+`release-v5.3.1`:
+
+| Plan | Variant | Result |
+|---|---|---|
+| FAPI 2.0 Security Profile (final) | `private_key_jwt`, DPoP, Grant Management | no failures |
+| FAPI 2.0 Message Signing (final) | signed request at PAR, JARM | no failures |
+| FAPI 1.0 Advanced (final) | `private_key_jwt`, mutual TLS, request by value | no failures |
+| FAPI-CIBA (ID1) | poll, `private_key_jwt`, mutual TLS | no failures |
+
+Every module ends with a WARNING, because this service's key set carries
+post-quantum keys the suite cannot read. The suite has no FAPI 1.0 Baseline
+plan any more. Baseline is covered by this repository's own tests only.
+
+A resource this service serves (UserInfo, `/oauth2/grants/{id}` and the
+step-up resource) returns `x-fapi-interaction-id`: the client's value when it
+sent a UUID, and a new UUID when it did not (FAPI 1.0 Baseline section 6.2.1).
 
 ### FAPI-CIBA
 
@@ -285,8 +306,11 @@ It has no setting of its own.
   including the four that are easiest to leave out: `typ`, `htm`/`htu`, `ath`
   and the comparison against `cnf.jkt`.
 * `cnf.jkt` on **access and refresh tokens**. A proof at the token endpoint
-  binds both, and a token exchange made with a proof mints a bound refresh
-  token.
+  binds the access token. It binds the refresh token only for a client that
+  did not authenticate: section 5 says a confidential client's refresh token
+  is constrained by its authentication instead, so that client may prove a
+  new key at each refresh. `oauth2.refreshTokenRequireDpop` binds every
+  refresh token.
 * **`dpop_jkt`** at the authorization request and at `/oauth2/par`, binding the
   code to a key before it is issued.
 * **Replay detection**: a proof's `jti` is reserved on arrival and kept only

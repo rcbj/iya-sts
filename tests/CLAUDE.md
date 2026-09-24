@@ -1272,6 +1272,7 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/vendored/sts_fapi_advanced.js` **(ours)** | **FAPI 1.0 ADVANCED AND JARM OVER THE WIRE** (#139, #143, 2026-09-22), in a throwaway realm on `1-advanced`: the report and PS256 access tokens; discovery narrowed (types, PS256/ES256, no RSA1_5, JARM, a signed request object, mtls_endpoint_aliases); registration refusing client_secret_jwt, a public client, a token-bearing type and an RS256 ID Token; request objects refused for no nbf, a foreign aud and too long a life, and a push without PKCE; a pushed signed request answered with a JARM response verified against the JWKS; an unbound token refused and a DPoP-bound one issued PS256; the hybrid flow's c_hash and s_hash; `oauth2.fapiRequireMtls` refusing DPoP alone; the portal signing in under Advanced with mTLS required (PAR, JARM and the loopback client certificate); and JARM outside FAPI on a named server, query.jwt answered and refused with an id_token in clear. 23 checks |
 | `tests/vendored/sts_fapi2.js` **(ours)** | **THE FAPI 2.0 SECURITY PROFILE OVER THE WIRE** (#140, 2026-09-22), in a throwaway realm on `2-security`: the report; discovery (code alone, PAR required, PS256/ES256/EdDSA, no public or secret method); registration refusing a public client, client_secret_jwt, code id_token and RS256; an unpushed request, an unauthenticated push, a push without PKCE or redirect_uri, an array aud and an assertion two minutes ahead refused; the pushed flow with the global consent counting, an unbound token refused and a DPoP-bound PS256 one issued; the refresh token redeemed twice (no rotation); the portal signing in under 2.0; and the BCP 195 handshakes — TLS 1.3 preferred, a TLS 1.2 GCM suite accepted, a CBC suite refused. 22 checks |
 | `tests/vendored/sts_fapi2_message_signing.js` **(ours)** | **FAPI 2.0 MESSAGE SIGNING OVER THE WIRE** (#141, 2026-09-22), in a throwaway realm on `2-message-signing`: the report's rows; discovery with JARM's modes only and a signed request object and PAR required; a plain push, a signed push asking for no JARM mode, and one with no nbf refused; a signed push answered with a PS256 JARM response verified here and redeemed for a DPoP-bound token; an RFC 9701 introspection response signed PS256 and verified; the portal signing in under the profile. 10 checks |
+| `tests/vendored/sts_fapi_conformance.js` **(ours)** | **THE OPENID FOUNDATION'S CONFORMANCE SUITE** (#176, 2026-09-24) — the independent check the four rows above are not. FAPI 2.0 Security Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced and FAPI-CIBA, one plan each in a throwaway realm under the profile it tests, every module run through the suite's API; a FAILED or timed-out module fails the job unless `EXPECTED` names it with its reason (empty). `conformance: true`: SKIPPED with the reason where the launcher brought no suite up. See *The OpenID conformance suite*, below |
 | `tests/vendored/sts_frontchannel_logout.js` **(ours)** | **OPENID CONNECT FRONT-CHANNEL LOGOUT OVER THE WIRE** (#122, 2026-09-22), in a throwaway realm with registration opened: discovery's `frontchannel_logout_session_supported` (and not the registration member it used to publish) and `sid` in claims_supported; section 2's origin rule refusing another host and another port at registration and at `/admin-api`; a person signed in through a NAMED authorization server and signed out at the realm's own `/oauth2/logout`, whose iframe carries the named server's `iss` and the session's `sid`, with `frame-src` naming the relying party and `frame-ancestors` kept; section 4's return as a `<meta>` refresh after `oauth2.frontchannelLogoutWaitS`, and no refresh at 0; a stored URI whose redirect URI was removed skipped and reported rather than framed |
 | `tests/vendored/sts_caep_credential_changes.js` **(ours)** | **CAEP FROM EVERY DOOR OVER THE WIRE** (#145, 2026-09-22), in a throwaway realm with a poll stream covering everybody: `credential-change` (`password`, `create`, `admin`) for a person created with a password; `session-established` whose `fp_ua` is the base64url SHA-256 of the sign-in's `User-Agent`; `token-claims-change` carrying `family_name` after a SCIM `PATCH`, and the groups claim as the whole list after a group join, about the person; none for a person holding nothing live; `credential-change` `x509` with `x509_issuer` and `x509_serial` for a signing key pair issued on `/admin-api/pki` |
 | `tests/vendored/sts_risc_acts.js` **(ours)** | **RISC ON ITS OWN OVER THE WIRE** (#146, 2026-09-22), in a throwaway realm with a poll stream covering everybody: an administrator's reset link marked compromised sends `account-credential-change-required`, `recovery-activated` and `credential-compromise` (`password`), each `iss_sub`; a disable with a RISC `reason` carries it, one without carries none, and an invented reason is refused; an address a SCIM-deleted account held, given to a new account, sends `identifier-recycled` about the address; the account holder's opt-out on `/portal/signals` — initiated, a refused out-of-diagram move (409), cancelled, initiated again, made effective by running `risc.opt-out-effective` with the delay at 0, and opted back in |
@@ -1585,6 +1586,60 @@ Nothing is committed: the CA is made at run time, and a CRL is a public signed
 document. **A new job that presents a CA-issued chain to a product-mode
 service owes the same**, or it is refused for a reason that has nothing to do
 with what it tests.
+
+## THE OPENID CONFORMANCE SUITE (#176, 2026-09-24)
+
+rcbj's decision on #142: **a job in `./run-tests.sh` that fails when a module
+fails.** The job is `tests/vendored/sts_fapi_conformance.js`; the suite is the
+OpenID Foundation's own published images — its server (a JVM), a MongoDB and
+its nginx — in `docker-compose-run-tests.yml` behind the `conformance` compose
+profile, pinned by tag (`CONFORMANCE_SUITE_TAG`, `release-v5.3.1`).
+
+* **Which modes.** `STS_TEST_CONFORMANCE_MODES` (default `memory`) names the
+  modes whose runner `up` activates the profile and hands the job
+  `CONFORMANCE_SUITE_URL`; such a mode's bound grows by
+  `STS_CONFORMANCE_TIMEOUT` (1800 s). Everywhere else the runner reports the
+  job SKIPPED with the reason (`run-report.js`, the `conformance` flag — a
+  deliberate exclusion, as `docker: true` is). `memory` because FAPI-CIBA
+  approves through a development-mode test control, and each plan runs in a
+  realm of its own under its FAPI profile, so a persisting mode would check the
+  same rules again.
+* **The names are the suite's.** Its nginx proxies to `server:8080` and answers
+  as `localhost.emobix.co.uk`, the name its server builds every URL on and its
+  scripted browser follows back — network aliases on this network, nothing
+  published. The three are PINNED at `.40`–`.42`: the service adds `.11`–`.13`
+  to its own interface, which docker's allocator cannot see.
+* **What the job does per plan**: a throwaway realm with `oauth2.fapi` set, a
+  person with a password, two clients registered with EC keys made at run time
+  (no key material in git), certificates from the realm's CA for the mTLS
+  plans, the protected Grant Management scopes declared by an administrator
+  (#110), and the plan's configuration: the discovery URL, the `browser`
+  commands that sign in on `/authn/login` and allow the consent screen, and
+  per-module `override`s — Cancel for user-rejects-authentication, and a first
+  visit that only loads the sign-in page for the reused-request_uri module.
+  FAPI-CIBA's `automated_ciba_approval_url` is an HTTP listener in the job
+  that answers through `/admin-api/users/answer-ciba-request` with the `acr`
+  the request asked for.
+* **A module has five minutes** (`CONFORMANCE_MODULE_SECONDS`); one still
+  running is stopped through the suite's API and fails. Measured on
+  2026-09-24: FAPI 1.0 Advanced 106 s, FAPI-CIBA 180 s, the whole four about
+  twelve minutes.
+* **No FAPI 1.0 Baseline plan**: the suite (v5.3.1) publishes none any more —
+  Advanced is 1.0's only plan — so `sts_fapi_baseline.js` is Baseline's only
+  check.
+* **WARNING is not a failure, and every module has one**: the realm's JWKS
+  carries post-quantum keys the suite cannot parse. `oauth-oidc/CLAUDE.md` 3bg
+  lists what the first runs found in the service and the warnings that stay.
+
+**By hand, beside a service of your own**: start the three images on one
+docker network with the aliases above (`mongodb`, `server`,
+`localhost.emobix.co.uk`; the server wants the placeholder
+`OIDC_GOOGLE_*`/`OIDC_GITLAB_*` values the compose file passes), then run the
+job from the tests image on that network with `CONFORMANCE_SUITE_URL`,
+`CONFORMANCE_CALLBACK_HOST` (its own name there, for the CIBA approver) and
+`CONFORMANCE_PLANS=fapi2sp,fapi2ms,fapi1adv,fapiciba` to choose. The suite's
+own pages at `https://localhost.emobix.co.uk:8443/plan-detail.html?plan=<id>`
+(the job logs the id) show every module's log.
 
 ## THREE CI-ONLY FAILURES, AND WHAT EACH ONE TEACHES (2026-08-30, 2026-09-10)
 

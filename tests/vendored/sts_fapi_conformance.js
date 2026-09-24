@@ -74,6 +74,9 @@ const SELF_HOST = process.env.CONFORMANCE_CALLBACK_HOST || os.hostname();
 const STAMP = names.runStamp();
 const TAG = STAMP.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12);
 const PASSWORD = "Conf-Passw0rd!-" + String(Date.now()).slice(-6);
+// How long one module may run. The slowest module on 2026-09-24 took well
+// under a minute; the refresh and expiry modules wait on purpose, for less.
+const MODULE_SECONDS = Number(process.env.CONFORMANCE_MODULE_SECONDS) || 300;
 
 // ---------------------------------------------------------------------------
 // THE PLANS, one representative variant each: a whole plan is 67 to 90
@@ -477,9 +480,19 @@ async function runModule(planId, module) {
             "creating " + module.testModule + ": " + created.raw.slice(0, 300));
   const id = created.body.id;
   let info = null;
-  for (let i = 0; i < 360; i++) {
+  // A module waits on nothing longer than MODULE_SECONDS: one left WAITING
+  // (a browser task that never matched, a callback that never came) is
+  // stopped through the suite's API and counted as the failure it is,
+  // rather than holding the plan until the job's watchdog kills it.
+  const deadline = Date.now() + MODULE_SECONDS * 1000;
+  while (true) {
     info = (await suite("GET", "api/info/" + id)).body || {};
     if (info.status === "FINISHED" || info.status === "INTERRUPTED") {
+      break;
+    }
+    if (Date.now() > deadline) {
+      await suite("DELETE", "api/runner/" + id);
+      info = Object.assign({}, info, { status: "TIMED OUT" });
       break;
     }
     await waitMs(2000);

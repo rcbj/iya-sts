@@ -405,6 +405,9 @@ function vendoredJobs(options) {
     jobs.push({ suite: 'protocol', name: entry.file.replace(/\.js$/, ''),
                 file: entry.file, dir: VENDORED_DIR, browser: !!entry.browser,
                 docker: !!entry.docker,
+                // Needs the OpenID conformance suite (#176); see the skip in
+                // main().
+                conformance: !!entry.conformance,
                 // A job may raise its own watchdog and may not lower it; see
                 // runJob(), where that rule is enforced rather than trusted.
                 timeoutMs: Number(entry.timeoutMs) || 0,
@@ -1679,6 +1682,27 @@ async function main() {
                   'that container\'s modules in a child process and makes no ' +
                   'HTTP request, and sts_xacml_endpoints.js, where the TEST ' +
                   'impersonates a PEP and nothing evaluates what it pulled.';
+      log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
+               why);
+      results.push(Object.assign({}, job, {
+        status: 'skipped', ms: 0, code: null, assertions: [],
+        failures: [], why: why
+      }));
+      continue;
+    }
+    if (job.conformance && !process.env.CONFORMANCE_SUITE_URL) {
+      // A DELIBERATE EXCLUSION, as the docker one above is (#176): the
+      // OpenID conformance suite is three containers and a JVM, and
+      // ./run-tests.sh starts them only in the modes STS_TEST_CONFORMANCE_MODES
+      // names, handing this job their address. The reason says what is
+      // therefore unchecked in this run.
+      const why = 'no CONFORMANCE_SUITE_URL: this run brought up no OpenID ' +
+                  'conformance suite. ./run-tests.sh does in the modes ' +
+                  'STS_TEST_CONFORMANCE_MODES names (`memory` by ' +
+                  'default); in this one the FAPI plans are unchecked by ' +
+                  'the suite, and what stands is the local FAPI jobs ' +
+                  '(sts_fapi_baseline, sts_fapi_advanced, sts_fapi2, ' +
+                  'sts_fapi2_message_signing, sts_fapi_ciba).';
       log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
                why);
       results.push(Object.assign({}, job, {
