@@ -380,7 +380,23 @@ async function prepare(plan) {
   const configuration = {
     alias: alias,
     description: "iya-sts " + plan.name + " " + STAMP,
-    server: { discoveryUrl: base + "/.well-known/openid-configuration" },
+    server: { discoveryUrl: base + "/.well-known/openid-configuration",
+              // Members the suite's RFC 8414 schema does not know, named as
+              // the warning asks: `verified_claims_supported` (Identity
+              // Assurance) and `native_sso_supported` (Native SSO) are from
+              // specifications the schema has not caught up with;
+              // `crypto_metadata_uri` (#42) and the five RFC 7521/7522
+              // assertion members are this service's own extensions.
+              allow_unexpected_metadata_fields: [
+                "crypto_metadata_uri", "verified_claims_supported",
+                "native_sso_supported",
+                "urn:ietf:params:oauth:client-assertion-type:" +
+                  "jwt-bearer_supported",
+                "urn:ietf:params:oauth:client-assertion-type:" +
+                  "saml2-bearer_supported",
+                "assertion_signing_alg_values_supported",
+                "assertion_encryption_alg_values_supported",
+                "assertion_encryption_enc_values_supported"] },
     client: clients[0],
     client2: clients[1],
     resource: { resourceUrl: discovery.userinfo_endpoint },

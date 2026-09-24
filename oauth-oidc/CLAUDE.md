@@ -3917,10 +3917,26 @@ specification, and each fix is in EVERY mode, because none is FAPI's own rule:
   does not exist) rather than 401; any other revoked token, or any other
   grant, is refused as before.
 
-What the suite still reports as WARNING, and why it stays: this realm's JWKS
-carries post-quantum keys the suite cannot parse (every module), the
-discovery document has members its list does not know, and a claims request
-for identity claims the test person does not hold returns without them.
+What the suite still reports as WARNING, and why it stays:
+* **This realm's JWKS carries post-quantum keys** (`kty: AKP`, ML-DSA) the
+  suite cannot parse — every module. The suite's gap, not ours; rcbj
+  (2026-09-24): PQC support matters more than a clean run.
+* **`claims_supported` names claims no directory attribute answers** —
+  `middle_name`, `profile`, `picture`, `gender`, `zoneinfo`, `updated_at`,
+  `phone_number_verified` (the `profile` scope's list) — so a claims request
+  for them comes back without them. OPEN: map them or stop listing them.
+* **`sid` and `address.country_code`** are claims the suite's list lacks;
+  both come from specifications (Front/Back-Channel Logout, Identity
+  Assurance).
+* The error-page REVIEW entries, where this service shows a page rather than
+  redirecting an error, which each profile allows.
+
+The discovery document's extension members are named to the suite in
+`server.allow_unexpected_metadata_fields`. Five of them — the two
+`urn:ietf:params:oauth:client-assertion-type:*_supported` members and the
+three `assertion_*_values_supported` — are this service's own inventions,
+though the comments in `oauth2.ts` credit RFC 7521 and RFC 7522, which define
+no metadata; whether they stay is rcbj's call.
 None is a failure; the suite says so itself.
 
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
