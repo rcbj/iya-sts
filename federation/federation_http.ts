@@ -670,17 +670,7 @@ class FederationHttp {
           // TLS server name still come from the URL, so a certificate is
           // checked against the name that was registered.
           requestOptions.servername = target.hostname;
-          requestOptions.lookup = function (hostname, lookupOptions,
-                                            callback) {
-            log.debug("Entering lookup().");
-            log.debug("Leaving lookup().");
-            if (lookupOptions && lookupOptions.all) {
-              callback(null, [{ address: vetted.address,
-                                family: vetted.family }]);
-              return;
-            }
-            callback(null, vetted.address, vetted.family);
-          };
+          requestOptions.lookup = self.pinnedLookup(vetted);
         }
         let request = null;
         try {
@@ -859,17 +849,7 @@ class FederationHttp {
         }
         if (vetted.address) {
           requestOptions.servername = target.hostname;
-          requestOptions.lookup = function (hostname, lookupOptions,
-                                            callback) {
-            log.debug("Entering lookup().");
-            log.debug("Leaving lookup().");
-            if (lookupOptions && lookupOptions.all) {
-              callback(null, [{ address: vetted.address,
-                                family: vetted.family }]);
-              return;
-            }
-            callback(null, vetted.address, vetted.family);
-          };
+          requestOptions.lookup = self.pinnedLookup(vetted);
         }
         let request = null;
         try {
@@ -1259,20 +1239,43 @@ class FederationHttp {
         headers: { 'User-Agent': self.deps.userAgent, 'Accept': '*/*' }
       };
       if (vetted.address) {
-        requestOptions.lookup = function (name, lookupOptions, callback) {
-          log.debug("Entering lookup().");
-          log.debug("Leaving lookup().");
-          if (lookupOptions && lookupOptions.all) {
-            callback(null, [{ address: vetted.address,
-                              family: vetted.family }]);
-            return;
-          }
-          callback(null, vetted.address, vetted.family);
-        };
+        requestOptions.lookup = self.pinnedLookup(vetted);
       }
       return self.exchange(self.deps.http, requestOptions, null, 64, 10000,
                            where);
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // THE LOOKUP THAT PINS A REQUEST TO THE ADDRESS THAT WAS VETTED, and it
+  // answers ASYNCHRONOUSLY (2026-09-24). Answered in the same tick, node
+  // connected inside `transport.request()` itself, before the ClientRequest
+  // had attached its socket listeners (they arrive on a nextTick queued
+  // after the socket's own); an address that fails at once — ENETUNREACH on
+  // an IPv6 route a container does not have — then emitted 'error' on a
+  // TLSSocket nobody was listening to, and the PROCESS exited. The
+  // request's own 'error' handler never saw it (`tests/admin_bootstrap.js`,
+  // single-node, the Pwned Passwords screen resolving to an IPv6 address).
+  // node's own dns.lookup is never synchronous; this now behaves like it.
+  // -------------------------------------------------------------------------
+  pinnedLookup(vetted: any): (hostname: string, lookupOptions: any,
+                               callback: Function) => void {
+    const { log } = this.deps;
+    log.debug("Entering FederationHttp.pinnedLookup().");
+    log.debug("Leaving FederationHttp.pinnedLookup().");
+    return function (hostname: string, lookupOptions: any,
+                     callback: Function): void {
+      log.debug("Entering lookup().");
+      setImmediate(function () {
+        if (lookupOptions && lookupOptions.all) {
+          callback(null, [{ address: vetted.address,
+                            family: vetted.family }]);
+          return;
+        }
+        callback(null, vetted.address, vetted.family);
+      });
+      log.debug("Leaving lookup().");
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -1550,6 +1553,7 @@ export = {
   SENDABLE: FederationHttp.SENDABLE,
   internalAddressProblem: slot.forward('internalAddressProblem'),
   vetHost: slot.forward('vetHost'),
+  pinnedLookup: slot.forward('pinnedLookup'),
   deliverForm: slot.forward('deliverForm'),
   deliverJson: slot.forward('deliverJson'),
   fetchPublished: slot.forward('fetchPublished'),

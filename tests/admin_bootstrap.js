@@ -489,7 +489,12 @@ function inAChild(t, part, extra) {
     ['-e', '(' + childMain.toString() + ')()'], {
       env: Object.assign(clean,
                          { LOG_LEVEL: 'fatal', AB_ROOT: ROOT, AB_OUT: out,
-                           AB_PART: part },
+                           AB_PART: part,
+                           // tests/run.js turns the Pwned Passwords screen
+                           // off for the whole run, and the strip above took
+                           // that away: a product-mode child setting a
+                           // password dialled api.pwnedpasswords.com.
+                           STS_RISK_BREACH_CHECK: 'off' },
                          // The `clean` copy above strips every STS_ and
                          // ADMIN_ variable, which is what keeps one part's
                          // settings out of the next; a part that needs one

@@ -95,6 +95,31 @@ async function run(t) {
   const fedHttp = require('../federation/federation_http');
   const pepHttp = require('../xacml/xacml_pep_http');
 
+  // THE PINNED LOOKUP ANSWERS ON A LATER TURN (2026-09-24). Answered in the
+  // same tick, node connected inside transport.request() before the
+  // ClientRequest listened to its socket, and an address that failed at once
+  // (ENETUNREACH) was an unhandled 'error' that ended the process.
+  await (async function () {
+    let answered = null;
+    let single = null;
+    const lookup = fedHttp.pinnedLookup({ address: '192.0.2.1', family: 4 });
+    lookup('pinned.example', { all: true }, function (e, list) {
+      answered = list;
+    });
+    lookup('pinned.example', {}, function (e, address, family) {
+      single = { address: address, family: family };
+    });
+    t.check(answered === null && single === null,
+            'the pinned lookup does not answer in the tick it was asked');
+    await new Promise(function (resolve) { setImmediate(resolve); });
+    t.check(!!answered && answered.length === 1 &&
+            answered[0].address === '192.0.2.1' && answered[0].family === 4,
+            'and answers the vetted address on a later turn, as a list when ' +
+            'asked for all (' + JSON.stringify(answered) + ')');
+    t.check(!!single && single.address === '192.0.2.1' && single.family === 4,
+            'and as one address otherwise (' + JSON.stringify(single) + ')');
+  })();
+
   // The certificates, made now: a CA and a leaf it issued, and a self-signed
   // leaf. The CA certificate goes to a temp directory, the only file.
   const ca = await testCa.makeCa();
