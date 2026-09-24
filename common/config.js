@@ -3890,7 +3890,11 @@ const SETTINGS = [
                  'presented refresh token is bound (`cnf.jkt`) to the key ' +
                  'that proves this request (RFC 9449 section 5). An UNBOUND ' +
                  'refresh token is refused rather than bound on first use, ' +
-                 'which is what this service does with the setting off. The ' +
+                 'which is what this service does with the setting off. With ' +
+                 'it on, a CONFIDENTIAL client\'s refresh token is bound ' +
+                 'too; with it off, RFC 9449 section 5 leaves one unbound — ' +
+                 'its client authentication constrains it — and the client ' +
+                 'may prove a new key at each refresh (#176). The ' +
                  'whole token request is refused, so a client never receives ' +
                  'an access token it can use and a refresh token it cannot. ' +
                  '/admin and /portal carry proofs of their own since ' +

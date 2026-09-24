@@ -6898,6 +6898,23 @@ const CODES = [
   { code: 'STS-OAUTH-0674',
     summary: 'The grant management endpoint failed unexpectedly (#142).',
     spec: 'server_error (HTTP 500)' },
+  { code: 'STS-OAUTH-0675',
+    summary: 'A token request carried a client_assertion that names no ' +
+      'client: no client_id in the body and no sub in the assertion, so ' +
+      'there is no registered client to verify it against (RFC 7523 ' +
+      'section 3 item B, #176).',
+    spec: 'invalid_client (HTTP 401), RFC 6749 section 5.2' },
+  { code: 'STS-OAUTH-0676',
+    summary: 'A request object carried `request` or `request_uri` as a ' +
+      'claim, which RFC 9101 section 4 forbids; refused at the ' +
+      'authorization endpoint and at PAR (#176).',
+    spec: 'invalid_request_object, RFC 9101 sections 4 and 6.2' },
+  { code: 'STS-OAUTH-0677',
+    summary: 'A token request\'s JWT client_assertion named more than one ' +
+      'client: its iss, its sub and the request\'s client_id did not all ' +
+      'agree, and for client authentication each must be the client_id ' +
+      '(RFC 7523 section 3, OpenID Connect Core section 9, #176).',
+    spec: 'invalid_client (HTTP 401), RFC 6749 section 5.2' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -10365,6 +10382,11 @@ const CODES = [
       'attestor because spiffe.dockerUseRootlessPodman is off, ' +
       'SPIRE\'s rule; logged once per process (#170).',
     spec: 'no docker selectors for that workload' },
+  { code: 'STS-SPIFFE-0143',
+    summary: 'A gRPC handler threw after the call waited for the cluster ' +
+      'read barrier, so the exception could not reach grpc-js; a unary ' +
+      'call is answered INTERNAL.',
+    spec: 'INTERNAL for a unary call' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +

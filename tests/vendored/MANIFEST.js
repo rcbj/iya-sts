@@ -740,6 +740,18 @@ const JOBS = [
   // CIBA under a FAPI profile.
   { file: 'sts_grant_management.js',     browser: false, local: true },
   { file: 'sts_fapi_ciba.js',            browser: false, local: true },
+  // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
+  // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
+  // each plan a throwaway realm, every module run, and a FAILED module a
+  // failure. `conformance: true` — like `docker: true`, a DELIBERATE
+  // exclusion the runner reports as SKIPPED with its reason: the suite is
+  // three containers and a JVM, which ./run-tests.sh brings up only in the
+  // modes named by STS_TEST_CONFORMANCE_MODES (`memory` by default) and
+  // hands the job as CONFORMANCE_SUITE_URL. An hour's watchdog: the plans
+  // took about sixteen minutes together on 2026-09-24. `local: true`: this
+  // repository's authorization server.
+  { file: 'sts_fapi_conformance.js',     browser: false, local: true,
+    conformance: true, timeoutMs: 3600000 },
   // OPENID FEDERATION 1.1 (#132, 2026-09-23): the default realm a Trust
   // Anchor and a throwaway realm its subordinate — Entity Configurations,
   // fetch, list, resolve, Trust Marks, a registered subordinate and the

@@ -760,6 +760,28 @@ class GrantManagement {
     }
     const scheme = String(presented.scheme || 'bearer');
     const claims = presented.claims || {};
+    // A token revoked BY THE REVOCATION OF THE GRANT IN THE PATH, asking
+    // about that grant, is told the grant is gone (section 6.6's 404) rather
+    // than that it is unauthorised. Section 6.6 says the AS SHOULD revoke the
+    // access tokens under a grant, and the token a client revoked with is one
+    // of them — so the query a client makes next, to see the revocation
+    // took, would otherwise meet a 401 that says nothing about the grant.
+    // The OpenID conformance suite's query-and-revoke asks exactly that
+    // (#176). It answers nothing but "not found" about the one grant the
+    // token was minted under, and only once that grant no longer exists; a
+    // token revoked for any other reason, or asking about any other grant,
+    // is refused as before.
+    const grantInPath = String((req.params || {}).grantId || '');
+    const mintedUnder = claims.jti ? issued.get(String(claims.jti)) : null;
+    if (presented.verified && claims.typ === 'Bearer' &&
+        stats.isRevoked(claims.jti) && mintedUnder &&
+        mintedUnder.grant === grantInPath && !grants.get(grantInPath)) {
+      errorCodes.mark(res, 'STS-OAUTH-0673');
+      this.apiError(res, scheme, 404, 'not_found', 'no grant has that ' +
+                    'grant_id.');
+      log.debug("Leaving GrantManagement.handle(). Revoked with its grant.");
+      return;
+    }
     if (!presented.verified || claims.typ !== 'Bearer' ||
         stats.isRevoked(claims.jti)) {
       errorCodes.mark(res, 'STS-OAUTH-0671');

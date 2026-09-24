@@ -95,6 +95,11 @@
 #   STS_TEARDOWN_TIMEOUT=600 ./run-tests.sh
 #                                             # the same for every `down` and
 #                                             # `logs` (default 300)
+#   STS_TEST_CONFORMANCE_MODES=memory,single-node ./run-tests.sh
+#                                             # the modes that run the OpenID
+#                                             # conformance suite's FAPI plans
+#                                             # (#176; default `memory`, empty
+#                                             # for none); see below
 #
 # ---------------------------------------------------------------------------
 # WHAT THIS RUN LEAVES BEHIND TO BE READ AFTERWARDS.
@@ -168,6 +173,10 @@ STS_TESTS_CONTAINER_NAME="${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}"
 # same reason.
 STS2_CONTAINER_NAME="${STS2_CONTAINER_NAME:-sts-docker-tests-node-b}"
 STS_LB_CONTAINER_NAME="${STS_LB_CONTAINER_NAME:-sts-docker-tests-lb}"
+# The OpenID conformance suite's three (#176), named for the same reason.
+STS_CONFORMANCE_MONGO_CONTAINER_NAME="${STS_CONFORMANCE_MONGO_CONTAINER_NAME:-sts-docker-tests-conformance-mongo}"
+STS_CONFORMANCE_SERVER_CONTAINER_NAME="${STS_CONFORMANCE_SERVER_CONTAINER_NAME:-sts-docker-tests-conformance-server}"
+STS_CONFORMANCE_NGINX_CONTAINER_NAME="${STS_CONFORMANCE_NGINX_CONTAINER_NAME:-sts-docker-tests-conformance-nginx}"
 # ---------------------------------------------------------------------------
 # AND THE IMAGE TAGS, WHEN A PROJECT IS NAMED (2026-09-14). A tag is
 # machine-wide like a container name: this launcher builds once and then
@@ -229,6 +238,32 @@ STS_MODE_TIMEOUT="${STS_MODE_TIMEOUT:-3000}"
 # set at the top of the loop below.
 STS_BASE_MODE_TIMEOUT="${STS_MODE_TIMEOUT}"
 STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
+
+# ---------------------------------------------------------------------------
+# THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24).
+#
+# rcbj's decision on #142: "a job in ./run-tests.sh that fails when a module
+# fails". The job is tests/vendored/sts_fapi_conformance.js; the suite is
+# three containers in docker-compose-run-tests.yml behind the `conformance`
+# compose profile — its server (a JVM), its MongoDB and its nginx — started
+# only in the modes named here, and the job is SKIPPED, with the reason, in
+# every other one.
+#
+#   STS_TEST_CONFORMANCE_MODES   a comma list of modes, in modes.sh's
+#                                spelling (default `memory`); empty runs the
+#                                suite in none. `memory` because the FAPI-CIBA
+#                                plan approves through a development-mode test
+#                                control, and every plan runs in a realm of
+#                                its own under the FAPI profile it tests, so a
+#                                persisting mode would check the same rules
+#                                over again for sixteen more minutes.
+#   STS_CONFORMANCE_TIMEOUT      seconds ADDED to such a mode's bound (default
+#                                1800). The four plans took about sixteen
+#                                minutes together on 2026-09-24, and the JVM a
+#                                minute to start.
+# ---------------------------------------------------------------------------
+STS_TEST_CONFORMANCE_MODES="${STS_TEST_CONFORMANCE_MODES-memory}"
+STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-1800}"
 
 BUILD=1
 KEEP_STACK=0
@@ -710,6 +745,14 @@ COMPOSE_ENV=(
   "STS_TESTS_CONTAINER_NAME=${STS_TESTS_CONTAINER_NAME}"
   "STS2_CONTAINER_NAME=${STS2_CONTAINER_NAME}"
   "STS_LB_CONTAINER_NAME=${STS_LB_CONTAINER_NAME}"
+  "STS_CONFORMANCE_MONGO_CONTAINER_NAME=${STS_CONFORMANCE_MONGO_CONTAINER_NAME}"
+  "STS_CONFORMANCE_SERVER_CONTAINER_NAME=${STS_CONFORMANCE_SERVER_CONTAINER_NAME}"
+  "STS_CONFORMANCE_NGINX_CONTAINER_NAME=${STS_CONFORMANCE_NGINX_CONTAINER_NAME}"
+  # The conformance suite's three, pinned above the service's extra
+  # addresses (`.11` to `.13`), which docker's allocator cannot see.
+  "CONFORMANCE_MONGO_ADDRESS=${STS_NETWORK_PREFIX}.40"
+  "CONFORMANCE_SERVER_ADDRESS=${STS_NETWORK_PREFIX}.41"
+  "CONFORMANCE_NGINX_ADDRESS=${STS_NETWORK_PREFIX}.42"
   "CONFIG_FILE=${CONFIG_FILE}"
   "STS_TEST_ARGS=${STS_TEST_ARGS}"
   # ---------------------------------------------------------------------
@@ -1484,6 +1527,28 @@ do
     )
   fi
 
+  # ---- THE CONFORMANCE SUITE, IN THE MODES THAT RUN IT (#176) -----------
+  #
+  # The profile starts its three containers with the runner's `up`, the URL
+  # is what tells the job they are there, and the mode's bound grows by what
+  # the plans take. Not attached: the JVM's log is thousands of lines, and
+  # the job reports every module itself.
+  UP_NO_ATTACH=(--no-attach openbao-tls --no-attach openbao-seed
+                --no-attach mailpit-tls --no-attach mailpit)
+  if printf ',%s,' "${STS_TEST_CONFORMANCE_MODES}" | grep -q ",${MODE},";
+  then
+    MODE_ENV+=(
+      "COMPOSE_PROFILES=conformance"
+      "CONFORMANCE_SUITE_URL=https://localhost.emobix.co.uk:8443/"
+    )
+    UP_NO_ATTACH+=(--no-attach conformance-mongo
+                   --no-attach conformance-server
+                   --no-attach conformance-nginx)
+    STS_MODE_TIMEOUT=$(( STS_MODE_TIMEOUT + STS_CONFORMANCE_TIMEOUT ))
+    echo " The OpenID conformance suite runs in this mode (#176); its bound" \
+         "is ${STS_MODE_TIMEOUT}s."
+  fi
+
   COMPOSE_ENV=(
     ${BASE_COMPOSE_ENV[@]+"${BASE_COMPOSE_ENV[@]}"}
     ${MODE_ENV[@]+"${MODE_ENV[@]}"}
@@ -1589,8 +1654,7 @@ do
     if [ "${DETACHED_MODE}" = "0" ];
     then
       docker_compose_bounded "${STS_MODE_TIMEOUT}" "${COMPOSE_FILE_ARGS[@]}" up \
-        --no-attach openbao-tls --no-attach openbao-seed \
-        --no-attach mailpit-tls --no-attach mailpit \
+        "${UP_NO_ATTACH[@]}" \
         --abort-on-container-exit --exit-code-from tests
       MODE_RC=$?
     else

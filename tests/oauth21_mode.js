@@ -504,8 +504,8 @@ function shared(t) {
             'the report names the draft it follows');
   });
   inRealm(OFF, function () {
-    t.equal(oauth21.sanitizeDescription('a "q"'), 'a "q"',
-            'outside the mode a description is sent as written');
+    t.equal(oauth21.sanitizeDescription('a "q" \u2014 b'), 'a \'q\' - b',
+            'outside the mode too: the set is RFC 6749\'s (#176)');
   });
   log.debug("Leaving shared().");
 }

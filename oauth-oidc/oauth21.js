@@ -842,6 +842,14 @@ function repeatedNames(query, rawBody) {
 // Section 3.2.4 / 4.1.2.1's character set, applied to an error_description on
 // the way out. The replacements for the punctuation this service actually
 // writes keep a sentence readable; anything else outside the set becomes `?`.
+//
+// **IN EVERY MODE SINCE 2026-09-24 (#176)**: the set is RFC 6749's own (4.1.2.1,
+// 5.2 — "MUST NOT include characters outside the set"), not something OAuth
+// 2.1 added, so sending an em dash or a double quote outside the mode was a
+// violation of the specification this service claims in development too. The
+// OpenID conformance suite's FAPI plans fail a token error that carries one.
+// The function stays here, beside the draft's other rules, because every
+// caller already reaches it through this module.
 const DESCRIPTION_REPLACEMENTS = {
   '—': '-', '–': '-', '‘': '\'', '’': '\'',
   '“': '\'', '”': '\'', '…': '...', '"': '\'', '\\': '/',
@@ -850,7 +858,7 @@ const DESCRIPTION_REPLACEMENTS = {
 
 function sanitizeDescription(text) {
   log.debug("Entering sanitizeDescription().");
-  if (!enabled() || typeof text !== 'string') {
+  if (typeof text !== 'string') {
     log.debug("Leaving sanitizeDescription(). As written.");
     return text;
   }

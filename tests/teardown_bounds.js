@@ -189,8 +189,14 @@ function checkTheLauncherIsBounded(t) {
   const runnerUp = (launcher.match(new RegExp(
     'docker_compose_bounded "\\$\\{STS_MODE_TIMEOUT\\}" ' + FILES +
     ' up[\\s\\S]*?--exit-code-from tests')) || [''])[0];
+  // The list is the `UP_NO_ATTACH` array since #176, which the conformance
+  // suite's modes add their three to; the `up` must expand it, and the
+  // array's first assignment — every mode's — must name each one-shot.
+  const noAttach = runnerUp.indexOf('"${UP_NO_ATTACH[@]}"') >= 0
+    ? ((launcher.match(/\n\s*UP_NO_ATTACH=\(([^)]*)\)/) || ['', ''])[1])
+    : runnerUp;
   t.check(oneShots.length >= 2 && oneShots.every(function (name) {
-    return runnerUp.indexOf('--no-attach ' + name) >= 0;
+    return noAttach.indexOf('--no-attach ' + name) >= 0;
   }),
           'the mode\'s `up` does not attach the one-shot services (' +
           oneShots.join(', ') + ')',
@@ -322,7 +328,12 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   const singleNodeBound = Number(
     (/single-node\)\s*echo "\$\{STS_SINGLE_NODE_MODE_TIMEOUT:-(\d+)\}"/
       .exec(modes) || [])[1]) || 0;
-  const modeBound = Math.max(sharedBound, singleNodeBound);
+  // A mode that runs the OpenID conformance suite (#176, `memory` by
+  // default) has STS_CONFORMANCE_TIMEOUT added to its bound by the launcher.
+  const conformanceBound = Number(
+    (/STS_CONFORMANCE_TIMEOUT="\$\{STS_CONFORMANCE_TIMEOUT:-(\d+)\}"/
+      .exec(launcher) || [])[1]) || 0;
+  const modeBound = Math.max(sharedBound + conformanceBound, singleNodeBound);
   const teardownBound = Number(
     /STS_TEARDOWN_TIMEOUT="\$\{STS_TEARDOWN_TIMEOUT:-(\d+)\}"/
       .exec(launcher)[1]);

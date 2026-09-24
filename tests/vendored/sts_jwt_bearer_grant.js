@@ -1120,7 +1120,7 @@ async function test() {
         "used twice", function () {
           const said = refused(thenGrant, "invalid_grant",
                                "a client assertion re-presented as a grant");
-          assert.ok(/used already — as a client assertion/.test(said),
+          assert.ok(/used already (?:—|-) as a client assertion/.test(said),
             "the refusal should say what it was spent as; it said " +
             said.slice(0, 250));
         });
@@ -1145,7 +1145,7 @@ async function test() {
             assert.strictEqual(thenClient.status, 401,
               JSON.stringify(thenClient.body).slice(0, 300));
             assert.strictEqual(thenClient.body.error, "invalid_client");
-            assert.ok(/used already — as an authorization grant/
+            assert.ok(/used already (?:—|-) as an authorization grant/
                         .test(String(thenClient.body.error_description)),
               String(thenClient.body.error_description).slice(0, 300));
           });

@@ -26,6 +26,10 @@
 //      its access token inactive at introspection.
 //   8. THE CONSOLE'S TWIN: /admin-api/grants lists a grant, revoke-grant
 //      revokes it, and a second time is refused.
+//   9. (#176) A client revoking with a token minted under the grant, then
+//      asking again with it: 404 for that grant, 401 for any other; a
+//      client_assertion naming no client, or two, is invalid_client; and
+//      the grants endpoint echoes or mints x-fapi-interaction-id.
 //
 // OWNED HERE (local: true): this repository's authorization server and its
 // management API.
@@ -387,7 +391,77 @@ async function test() {
     assert.strictEqual(again.status, 400);
   });
 
-  assert.ok(checks >= 8, "only " + checks + " checks ran");
+  log.info("=== 9. what the OpenID conformance suite found (#176) ===");
+  // The OpenID conformance suite's query-and-revoke: the client revokes with
+  // a token minted UNDER the grant, then asks about it with the same token.
+  const own = await tokens(A, "openid grant_management_query " +
+    "grant_management_revoke", { grant_management_action: "create" });
+  const ownDeleted = await grantCall("DELETE", own.grant_id,
+                                     own.access_token);
+  const ownGone = await grantCall("GET", own.grant_id, own.access_token);
+  const ownElsewhere = await grantCall("GET", grantId, own.access_token);
+  // RFC 7523 section 3 item B: an assertion with no sub, and no client_id
+  // beside it, names no client to authenticate.
+  const nameless = [{ alg: "ES256", typ: "JWT" },
+    { iss: "nobody", aud: realmBase, exp: Math.floor(Date.now() / 1000) + 60,
+      jti: "nameless-" + STAMP }].map(function (part) {
+    return Buffer.from(JSON.stringify(part)).toString("base64url");
+  }).join(".") + ".c2ln";
+  const namelessAnswer = await send(realmBase + "/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "client_credentials",
+      client_assertion_type:
+        "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+      client_assertion: nameless }).toString() });
+  // RFC 7523 section 3 item B and OpenID Connect Core section 9: iss and sub
+  // are both the client_id, so an assertion naming two clients is refused
+  // before any grant is looked at (the suite's FAPI 1.0 wrong-sub module).
+  const twoNamed = [{ alg: "ES256", typ: "JWT" },
+    { iss: A.client_id, sub: "wrong-sub-" + STAMP, aud: realmBase,
+      exp: Math.floor(Date.now() / 1000) + 60,
+      jti: "two-named-" + STAMP }].map(function (part) {
+    return Buffer.from(JSON.stringify(part)).toString("base64url");
+  }).join(".") + ".c2ln";
+  const twoNamedAnswer = await send(realmBase + "/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "client_credentials",
+      client_assertion_type:
+        "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+      client_assertion: twoNamed }).toString() });
+  // FAPI 1.0 Baseline section 6.2.1 item 13: a protected resource echoes
+  // the client's x-fapi-interaction-id, and mints a UUID when none came.
+  // The header is set before the route answers, so a refused call shows it
+  // as well as a served one.
+  const interaction = "3b2f6a5e-1c4d-4e8f-9a0b-" +
+    String(Date.now()).slice(-12).padStart(12, "0");
+  const echoed = await send(realmBase + "/oauth2/grants/" + grantId, {
+    headers: { "x-fapi-interaction-id": interaction } });
+  const minted = await send(realmBase + "/oauth2/grants/" + grantId);
+  check("an assertion whose iss and sub differ is invalid_client; a " +
+        "resource echoes x-fapi-interaction-id or mints one", function () {
+    assert.strictEqual(twoNamedAnswer.status, 401,
+                       twoNamedAnswer.raw.slice(0, 300));
+    assert.strictEqual(twoNamedAnswer.body.error, "invalid_client");
+    assert.strictEqual(echoed.headers.get("x-fapi-interaction-id"),
+                       interaction);
+    assert.match(String(minted.headers.get("x-fapi-interaction-id") || ""),
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+  check("a token revoked with its grant is told that grant is gone (404) " +
+        "and refused elsewhere (401); a nameless assertion is " +
+        "invalid_client", function () {
+    assert.strictEqual(ownDeleted.status, 204, ownDeleted.raw.slice(0, 300));
+    assert.strictEqual(ownGone.status, 404, ownGone.raw.slice(0, 300));
+    assert.strictEqual(ownElsewhere.status, 401,
+                       ownElsewhere.raw.slice(0, 300));
+    assert.strictEqual(namelessAnswer.status, 401,
+                       namelessAnswer.raw.slice(0, 300));
+    assert.strictEqual(namelessAnswer.body.error, "invalid_client");
+  });
+
+  assert.ok(checks >= 10, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
