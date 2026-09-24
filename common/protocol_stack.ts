@@ -1016,6 +1016,17 @@ class ProtocolStack {
                'GrantManagementAdmin');
     this.register(app, require('../oauth-oidc/grant_management_admin'),
                   'oauth-oidc/grant_management_admin');
+    // 18n. CLAIMS PROVIDERS (#147): /admin/claim-providers, beside
+    // Federation. 18a's placement and 18a's reason: the console's shell and
+    // the register (built with `oauth2`'s libraries) already loaded, and
+    // `mgmt-api/admin_api` reads the API's routes out of
+    // `claims_providers_api`, built below.
+    require('../oauth-oidc/claims_providers_admin');
+    this.build('oauth-oidc/claims_providers_admin',
+               require('../oauth-oidc/claims_providers_admin'),
+               'ClaimsProvidersAdmin');
+    this.register(app, require('../oauth-oidc/claims_providers_admin'),
+                  'oauth-oidc/claims_providers_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module
@@ -1040,6 +1051,9 @@ class ProtocolStack {
     this.build('oauth-oidc/grant_management_api',
                require('../oauth-oidc/grant_management_api'),
                'GrantManagementApi');
+    this.build('oauth-oidc/claims_providers_api',
+               require('../oauth-oidc/claims_providers_api'),
+               'ClaimsProvidersApi');
     this.build('mgmt-api/admin_api', require('../mgmt-api/admin_api'),
                'AdminApi');
     this.register(app, require('../mgmt-api/admin_api'), 'mgmt-api/admin_api');

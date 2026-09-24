@@ -1019,16 +1019,18 @@ class ClaimsProviders {
   }
 
   // One act from the console or `/admin-api`. Resolves { ok, message } or
-  // { ok: false, code, error }.
+  // { ok: false, errors } with its code marked.
   async act(body: Json, context: Json): Promise<Json> {
     const { log, audit } = this.deps;
     log.debug("Entering ClaimsProviders.act(). " + body.action);
     const action = String(body.action || '');
     const via = String((context && context.via) || 'console');
     const actor = String((context && context.actor) || '');
+    // The console's and the API's shape: `errors`, with the code marked on
+    // the result (never sent).
     const refuse = function (code: string, error: string): Json {
       log.debug("Leaving ClaimsProviders.act(). " + error);
-      return { ok: false, code: code, error: error };
+      return errorCodes.mark({ ok: false, errors: [error] }, code);
     };
     let message = '';
     if (action === 'add-provider' || action === 'update-provider') {
