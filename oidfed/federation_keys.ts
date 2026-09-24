@@ -101,6 +101,8 @@ interface FederationKeysDeps {
   mode: () => Json;
   audit: () => Json;
   claims: () => Json;
+  // The subordinate event log (#137), told when the published set changes.
+  events: () => Json;
   now: () => number;
 }
 
@@ -135,6 +137,9 @@ class FederationKeys {
       },
       claims: function (): Json {
         return require('../cluster/cluster_claims');
+      },
+      events: function (): Json {
+        return require('./subordinate_events');
       },
       now: function (): number {
         return Date.now();
@@ -407,6 +412,10 @@ class FederationKeys {
     this.record(o.emergency ? 'oidfed.key-revoked' : 'oidfed.key-rotated',
                 { from: current ? current.kid : '', to: promoted.kid,
                   next: fresh.kid, reason: o.reason || '' });
+    this.keysChanged((o.emergency ? 'An emergency rotation revoked the ' +
+                                    'current and next keys; '
+                                  : 'The Federation Entity Key rotated; ') +
+                     promoted.kid + ' signs, ' + fresh.kid + ' is next.');
     log.debug("Leaving FederationKeys.rotate(). " + promoted.kid +
               " is current.");
     return { ok: true, from: current ? current.kid : '', to: promoted.kid,
@@ -446,6 +455,8 @@ class FederationKeys {
     row.publishedUntil = Math.min(Number(row.publishedUntil) || at, at);
     store.writeKeyRows(rows);
     this.record('oidfed.key-revoked', { kid: kid, reason: why });
+    this.keysChanged('The retired key ' + kid + ' was revoked (' + why +
+                     ').');
     log.debug("Leaving FederationKeys.revoke().");
     return { ok: true, kid: kid, reason: why };
   }
@@ -470,6 +481,27 @@ class FederationKeys {
     });
     log.debug("Leaving FederationKeys.view(). " + out.length);
     return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE PUBLISHED KEYS CHANGED (#137): a realm beneath the default realm is
+  // its subordinate, whose statement about it carries these keys live, so
+  // the default realm's history of it gains a `jwks_update`. The first key a
+  // realm mints is not one — it is part of the realm's registration.
+  // Recording never fails the key change it records.
+  // -------------------------------------------------------------------------
+  private keysChanged(what: string): void {
+    const { log, realms } = this.deps;
+    log.debug("Entering FederationKeys.keysChanged().");
+    try {
+      this.deps.events().realmKeysChanged(String(realms.current().id || ''),
+                                          what);
+    } catch (e: any) {
+      log.warn(errorCodes.tag('STS-OIDFED-0065') + 'oidfed: the key change ' +
+               'could not be recorded as a subordinate event: ' +
+               ((e && e.message) || e));
+    }
+    log.debug("Leaving FederationKeys.keysChanged().");
   }
 
   private record(event: string, detail: Json): void {
@@ -513,6 +545,8 @@ class FederationKeys {
       const made = await this.mint('next');
       rows = rows.concat([made]);
       store.writeKeyRows(rows);
+      this.keysChanged('The key ' + made.kid + ' was published as the next ' +
+                       'Federation Entity Key.');
       log.debug("Leaving FederationKeys.scheduledStep(). A next key.");
       return { minted: made.kid };
     }

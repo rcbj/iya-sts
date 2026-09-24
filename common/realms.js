@@ -1526,7 +1526,10 @@ function remove(id) {
   // AFTER the purges, and that ordering is the whole of what makes a removal
   // persist correctly: a watcher fired before them would walk stores that
   // still held the realm's entries and write them all back down.
-  changed(realm.id, 'remove');
+  // `createdAt` names WHICH realm of that id went (#137): an id may be used
+  // again, and a watcher that records the removal on every node needs
+  // something the nodes agree on to make the copies one record.
+  changed(realm.id, 'remove', { createdAt: realm.createdAt });
   log.debug("Leaving remove(). " + purges.length + " store(s) purged.");
   return { ok: true, errors: [], realm: realm };
 }

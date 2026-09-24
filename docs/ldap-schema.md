@@ -317,7 +317,7 @@ One person holds at most `oauth2.maxDevicesPerPerson` devices; at that limit
 the least recently used device whose session has ended is replaced (or, if
 none has ended, the least recently used one).
 
-## OpenID Federation: `ou=oidfed` (#132)
+## OpenID Federation: `ou=oidfed` (#132, #136, #137)
 
 The realm's register as an OpenID Federation entity
 ([OpenID Federation](oidfed.md)). Every entry is of class `stsOidfedEntry`
@@ -328,9 +328,10 @@ entry means.
 | Attribute | Meaning |
 |---|---|
 | `objectClass` | `top`, `stsOidfedEntry` |
-| `stsOidfedKind` | `keys`, `subordinate` (`sub-`), `anchor` (`ta-`), `mark-type` (`mt-`), `issued-mark` (`im-`), `held-mark` (`hm-`) or `mark-policy` (`mp-`) |
+| `stsOidfedKind` | `keys`, `subordinate` (`sub-`), `anchor` (`ta-`), `mark-type` (`mt-`), `issued-mark` (`im-`), `held-mark` (`hm-`), `mark-policy` (`mp-`), `events` (`ev-`, #137), `suspension` (`su-`, #137) or `collection` (the one `cn=collection` entry, #136) |
 | `stsOidfedEntityId` | the Entity Identifier the entry is about |
-| `stsOidfedData` | the record, as one JSON value: a subordinate's keys, metadata, metadata policy and constraints; an anchor's pinned keys; a mark and its status |
+| `stsOidfedData` | the record, as one JSON value: a subordinate's keys, metadata, metadata policy and constraints; an anchor's pinned keys; a mark and its status; a suspension's time, reason and page; the last Entity Collection crawl. An `events` or `suspension` entry about a realm of this service is keyed `realm:<id>` rather than by identifier |
+| `stsOidfedEvent` | on an `events` entry: one subordinate's history, one JSON event per value (`iat`, `event`, and `event_description` and `information_uri` where given). Appended and never rewritten, and merged by value when two nodes write at once. The entry outlives the subordinate |
 | `stsOidfedKeys` | on the one `cn=keys` entry: the realm's Federation Entity Key table, one JSON row per value, each private key **sealed** where keys persist. **Withheld from every read**, and each row's private key is replaced by a placeholder in searches and in the directory dump |
 
 ## Trust anchors and CRLs

@@ -104,8 +104,9 @@ function childMain() {
       'krb5.authenticator-replay', 'oauth2.redeemed-codes',
       'oauth2.client-jwks', 'oauth2.request-uri', 'oauth2.signed-metadata',
       'oauth2.used-assertions', 'oid4vci.nonces', 'oid4vci.status-entries',
-      // OpenID Federation's resolved Trust Chains (#132).
-      'oidfed.resolutions',
+      // OpenID Federation's resolved Trust Chains (#132), and the Entity
+      // Collections a process made without fetching (#136).
+      'oidfed.collections', 'oidfed.resolutions',
       'passwords.breach-ranges', 'passwords.breach-verdicts',
       'oid4vci.status-list-tokens', 'oid4vp.sign-in-register',
       'oid4vp.status-lists-fetched', 'oid4vp.transactions',
@@ -117,7 +118,7 @@ function childMain() {
       return !/^test\./.test(n);
     });
     note(JSON.stringify(ejecting) === JSON.stringify(expected),
-         'B1. exactly the twenty-nine stores whose entries expire eject them',
+         'B1. exactly the thirty stores whose entries expire eject them',
          JSON.stringify({ missing: expected.filter(function (n) {
            return ejecting.indexOf(n) < 0;
          }), extra: ejecting.filter(function (n) {

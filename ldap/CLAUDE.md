@@ -746,6 +746,16 @@ through `credentials.oidfedStore()`; `oidfed/oidfed_store.ts` decides what
 an entry means. Written over the socket only by an Admin Write holder in
 product mode, like every other container here.
 
+**Three more kinds since 2026-09-24 (#136, #137)**: `events` (`ev-`), one
+subordinate's history as one JSON event per value of **`stsOidfedEvent`** —
+the one attribute here that is MERGED BY VALUE (`directory_merge.js`'s MULTI),
+because events are appended by whichever node records one and two appends at
+once must both survive; `suspension` (`su-`); and the one `collection` entry,
+the last Entity Collection crawl. An `events` or `suspension` entry about a
+realm of this service is keyed `realm:<id>`, not by its identifier
+(`oidfed/subordinate_events.ts` argues why), and an `events` entry is never
+deleted — it outlives the subordinate it is about.
+
 ## `stsCibaUserCode`: THE PERSON'S CIBA USER CODE (2026-09-23, #131)
 
 The secret a CIBA client that registered `backchannel_user_code_parameter`

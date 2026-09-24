@@ -740,6 +740,10 @@ const JOBS = [
   // fetch, list, resolve, Trust Marks, a registered subordinate and the
   // keys. `local: true`: this repository's own endpoints.
   { file: 'sts_oidfed.js',               browser: false, local: true },
+  // THE THREE OPENID FEDERATION EXTENSIONS (#135, #136, #137, 2026-09-24):
+  // the Extended Subordinate Listing, suspension and each subordinate's
+  // history, and the Entity Collection with a crawl through /admin-api.
+  { file: 'sts_oidfed_extensions.js',    browser: false, local: true },
   // A STATUS REFERENCE ON EVERY PRESENTED CREDENTIAL (#165, 2026-09-23): a
   // foreign credential naming none refused unless its issuer is exempted by
   // certificate thumbprint or the rule is own-only, the ldp_vc query asking

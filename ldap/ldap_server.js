@@ -2107,7 +2107,13 @@ const OWN_NAMES = [
   // keys, sealed where keys persist (withheld, SECRET_ATTRIBUTES).
   // `oidfed/oidfed_store.ts` and `oidfed/federation_keys.ts` keep them.
   'stsOidfedEntry', 'stsOidfedKind', 'stsOidfedEntityId', 'stsOidfedData',
-  'stsOidfedKeys'
+  'stsOidfedKeys',
+
+  // AND A SUBORDINATE'S EVENT HISTORY (#137, 2026-09-24): one JSON event per
+  // value of an `events` entry, appended and never rewritten, merged by
+  // value when two nodes append at once (persistence/directory_merge.js).
+  // `oidfed/subordinate_events.ts` writes them.
+  'stsOidfedEvent'
 ];
 
 // The table itself, built from the two lists. `learnName()` is the ONE way in,

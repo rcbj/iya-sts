@@ -56,7 +56,9 @@ const TYP = Object.freeze({
   RESOLVE_RESPONSE: 'resolve-response+jwt',
   TRUST_MARK_STATUS: 'trust-mark-status-response+jwt',
   JWK_SET: 'jwk-set+jwt',
-  EXPLICIT_REGISTRATION_RESPONSE: 'explicit-registration-response+jwt'
+  EXPLICIT_REGISTRATION_RESPONSE: 'explicit-registration-response+jwt',
+  // The Subordinate Events Endpoint's response (#137, draft 01).
+  ENTITY_EVENTS_STATEMENT: 'entity-events-statement+jwt'
 });
 
 // The claims 3.1 defines for Entity Statements. `crit` may not name any of

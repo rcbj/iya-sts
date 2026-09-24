@@ -706,7 +706,13 @@ var config = {
     fetchMaxBytes: 262144,                         // Largest fetched statement (bytes)
     resolveCacheS: 3600,                           // Resolution cache lifetime (s)
     resolveCacheMax: 1000,                         // Resolutions kept
-    clockSkewS: 60                                 // Clock skew allowed (s)
+    clockSkewS: 60,                                // Clock skew allowed (s)
+    listPageMax: 50,                               // Longest listing page
+    collectionCrawlS: 3600,                        // Entity Collection crawl (s)
+    collectionMaxEntities: 500,                    // Entities collected
+    collectionMaxFetches: 100,                     // Lists fetched per crawl
+    collectionMaxAgeS: 86400,                      // Crawl kept for (s)
+    collectionCacheS: 300                          // In-process collection kept for (s)
   },
 
   // --- Kerberos --------------------------------------------------------

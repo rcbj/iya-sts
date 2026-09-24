@@ -351,7 +351,8 @@ class ProtocolEndpoints {
         '/.well-known/openid-federation', '/oidfed/fetch', '/oidfed/list',
         '/oidfed/resolve', '/oidfed/trust-mark', '/oidfed/trust-mark-status',
         '/oidfed/trust-mark-list', '/oidfed/historical-keys',
-        '/oidfed/register'
+        '/oidfed/register', '/oidfed/extended-list', '/oidfed/collection',
+        '/oidfed/subordinate-events'
       ].map(route),
       // ===== SCEP endpoints row =====
       '/admin/scep': [

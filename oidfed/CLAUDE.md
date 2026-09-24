@@ -8,8 +8,14 @@ of sections 8 and 9. `federation/` is a DIFFERENT family: bilateral
 relationships, each with one pinned key. This one is trust through a chain of
 signed statements.
 
+**And three extensions (#135–#137, 2026-09-24)**, each against the editors'
+draft rcbj named: the Extended Subordinate Listing (draft 03), the Entity
+Collection Endpoint (draft 01) and the Subordinate Events Endpoint (draft
+01).
+
 rcbj's eight answers are on #132–#137 and in the memory file
-`openid-federation-decisions.md`. Four of them shaped this directory:
+`openid-federation-decisions.md`, with branch 3's three more on #135–#137.
+Four of the eight shaped this directory:
 
 - **Every role, per realm.** By default the default realm is a Trust Anchor and
   every other realm is its Subordinate (`oidfed.realmsAreSubordinates`).
@@ -30,12 +36,20 @@ rcbj's eight answers are on #132–#137 and in the memory file
 | `oidfed_admin.ts` | Protocols → OpenID Federation (`/admin/oidfed`). |
 | `oidfed_api.ts` | `GET /admin-api/oidfed` and `POST /admin-api/oidfed/:action`. |
 | `oidfed_registration.ts` | #134, the OP side of Connect 1.1 section 12: AUTOMATIC registration, called from `oauth2.ts`'s authorization and PAR endpoints before anything reads the client, and EXPLICIT registration at `POST /oidfed/register`. Both verify the RP's chain to one of the realm's anchors and hold its resolved metadata to `oauth2.registerFederatedClient()`, the same checks as RFC 7591. A registration expires with its chain (12.3): `clientConfigOf()` answers "unknown" past it, and the `oidfed.registrations-expire` job removes it. **It is not a mode exception** (rcbj's answer 5): product mode refuses a client NOBODY registered, and this one was registered, through a Trust Anchor the administrator configured, by a request proving the RP's key. The header argues it. |
+| `page_pointer.ts` | #135, #136. The opaque `from` / `next` pointer both paged endpoints share: the Entity Identifier of the next page's first entity, MACed under the `oidfed-page` cluster secret over the realm and the endpoint, so "unknown" (`page_not_found`) means exactly "not one this service made here". The MAC is `crypto.js`'s. |
+| `subordinate_events.ts` | #137. A subordinate's history, KEPT FOR GOOD: an `events` entry per subordinate, one JSON event per `stsOidfedEvent` value, merged by value across a cluster. The draft's six event types and four of this service's own (`reinstatement`, `constraints_update`, `trust_mark_issuance`, `trust_mark_revocation`). A realm of this service is keyed `realm:<id>` — see below. |
+| `extended_listing.ts` | #135. `/oidfed/extended-list`: every list filter, paging, `updated_after` / `updated_before` / `audit_timestamps` from the history, and `claims`. **An entry is its `id` alone unless `claims` asks for more**, because `subordinate_statement` is a signature on an anonymous endpoint. |
+| `entity_collection.ts` | #136. `/oidfed/collection`, the crawl behind it, the `oidfed.collection-crawl` job and the `oidfed.collections` cache. Its header argues the fetches. |
 | `oidfed_rp.ts` | #134, this service as a federated RP. An `oidc` relationship with `fedTrustAnchor` set has its OP resolved through its chain. It registers automatically under the realm's Entity Identifier, with a request object and `private_key_jwt` signed by the realm's ES256 protocol key, which the Entity Configuration's `openid_relying_party` metadata publishes by value. |
 
 **Where it loads** (`common/protocol_stack.ts`):
 
 - `federation_keys` and `oidfed` at **14b**, after `vc_signin`. `oauth2` and
   `vc_verifier` are reached lazily, when a document is built.
+- `extended_listing` and `entity_collection` (#135, #136) at **14b** too,
+  built after `oidfed`, which serves their routes and reaches both lazily;
+  the collection's wire step registers `oidfed.collection-crawl`.
+  `subordinate_events` and `page_pointer` are plain libraries.
 - `oidfed_admin` at **23g-ii**, after the console, whose shell it draws with.
 - `oidfed_api` beside the other `_api` modules, before `mgmt-api/admin_api`.
 
@@ -137,6 +151,51 @@ the second thing.
   keys when the issuer is the anchor. A mark this realm issued is also checked
   against the issued register, so a revoked one is dropped.
 
+## The three extensions (#135–#137)
+
+**SUSPENSION IS A STATE, REVOCATION IS REMOVAL** (rcbj, 2026-09-24). A
+`suspension` entry beside a subordinate makes `subordinateStatementClaims()`
+answer `not_found` (STS-OIDFED-0057), so no chain passes through it, and
+`activeSubordinates()` — what both listings and the collection read — leaves
+it out. `subordinates()` still returns it, marked, for the console and the
+events endpoint. Removing a subordinate records its `revocation` and deletes
+its suspension.
+
+**THE HISTORY OUTLIVES THE SUBORDINATE** and nothing deletes it. A
+registration is recorded ALONE (the draft forbids update events beside it);
+a later `add-subordinate` records one update event per part of the statement
+that changed (`updatesBetween()`). The endpoint prepends a `registration` at
+the register's own creation time for a subordinate registered before #137.
+
+**A REALM OF THIS SERVICE IS KEYED `realm:<id>`.** Its creation, its own key
+rotation and its deletion happen with no request, and a realm's identifier
+depends on the host a request arrived on. So `oidfed.ts`'s `watchRealms()`
+records creation and deletion (from `realms.onChange()`; `realms.remove()`
+passes the realm's `createdAt` since #137 so every node derives the same
+event id), and `federation_keys.ts` records a published or revoked key — all
+in the DEFAULT realm's register. `eventKeyOf()` maps an identifier back: a
+live realm by asking each which identifier it has, a deleted one by its
+prefix on this request's base (assuming it pinned no `oauth2.issuer`).
+
+**THE COLLECTION CRAWL NEEDS A STABLE IDENTIFIER.** A crawl is kept in the
+realm's register (the `collection` entry) so every node and every request
+worker answers from the same one, and it is used only while the identifier
+it was crawled for is the realm's. The scheduled job therefore runs only
+where `global.publicBaseUrl` pins the base; Crawl now uses the
+administrator's request. **A kept crawl is never the whole answer**: the
+endpoint collects in process (no fetch) every time — cached per process under
+a fingerprint of the realms and the active subordinates — and adds from the
+crawl only what it reached through a subordinate that is still active. The
+first version answered from the crawl alone, and a realm made a minute after
+a Crawl now went unlisted for `oidfed.collectionMaxAgeS`.
+**`trust_anchor` may be only the realm itself** (rcbj's answer): the
+collection is of the realm's own subtree.
+
+**THE THREE ENDPOINTS ARE PUBLISHED BY A SUPERIOR**: the listing and the
+collection wherever the fetch and list endpoints are, and the events endpoint
+also while any history is kept — a superior whose last subordinate was
+revoked still answers for it.
+
 ## What is not here
 
 - **Client authentication at federation endpoints** (8.8). "none" is the
@@ -148,9 +207,10 @@ the second thing.
   explicit registration is refused by name (STS-FED-0149).
 - **OID4VP trusting a credential issuer through the federation** (#134's
   optional follow-on) is not built.
-- **Extended listing, entity collection and subordinate events**: #135–#137.
-  `oidfed_store.ts` keeps created and updated times on every subordinate,
-  which #135's `updated_after` needs.
+- **An Entity Collection anchored elsewhere**: `trust_anchor` other than the
+  realm is `invalid_trust_anchor` by decision, not by omission.
+- **The Subordinate Events endpoint's POST form**, which exists for client
+  authentication (8.8).
 
 ## Tests
 
@@ -163,6 +223,13 @@ the second thing.
 - `tests/vendored/sts_oidfed.js` (local): the same over HTTP, with Trust Marks
   and key rotation through `/admin-api`.
 - `tests/siop.js` 7f: the verifier's `openid_federation:` client identifier.
+- `tests/oidfed_extensions.js`: the page pointer; a subordinate's history
+  through registration, updates, suspension, reinstatement and revocation;
+  a realm's creation, rotation and deletion; the Extended Listing's paging,
+  claims and filters; the Entity Collection in process and by a CRAWL through
+  a foreign Intermediate over a stub requester, with the fetch budget.
+- `tests/vendored/sts_oidfed_extensions.js` (local): the three endpoints over
+  HTTP, and the acts through `/admin-api`.
 
 **Still untested:**
 

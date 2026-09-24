@@ -34,6 +34,12 @@ interface OidfedApiDeps {
 const ENTITY = { type: 'string', maxLength: 2048,
                  description: 'An Entity Identifier: an https URL with no ' +
                               'query or fragment.' };
+const EVENT_DESCRIPTION = { type: 'string', maxLength: 1000,
+  description: 'Recorded as the event_description of the event this act ' +
+               'adds to the subordinate\'s history.' };
+const INFORMATION_URI = { type: 'string', maxLength: 2048,
+  description: 'An http or https URL of a page about the event, recorded ' +
+               'as its information_uri.' };
 const JSON_TEXT = function (what: string): Json {
   log.debug("Entering JSON_TEXT().");
   log.debug("Leaving JSON_TEXT().");
@@ -115,8 +121,12 @@ class OidfedApi {
                      'issues, the marks it has issued and carries, the mark ' +
                      'policies it publishes as a Trust Anchor, the ' +
                      'resolutions it holds, and the claims of its current ' +
-                     'Entity Configuration. The oidfed.* settings are ' +
-                     'written through POST /admin-api/config/set-many.',
+                     'Entity Configuration — and, for each subordinate, ' +
+                     'whether it is suspended and its event history, the ' +
+                     'subordinates it has revoked with theirs (#137), and ' +
+                     'the Entity Collection crawl it keeps (#136). The ' +
+                     'oidfed.* settings are written through ' +
+                     'POST /admin-api/config/set-many.',
         mirrors: 'GET /admin/oidfed',
         parameters: [],
         responseDescription: 'The realm as a federation entity.',
@@ -188,14 +198,45 @@ class OidfedApi {
                              'listing filter; read from its configuration ' +
                              'when fetched.' },
               intermediate: { type: 'boolean',
-                              description: 'Whether it is an Intermediate.' } },
+                              description: 'Whether it is an Intermediate.' },
+              eventDescription: EVENT_DESCRIPTION,
+              informationUri: INFORMATION_URI },
             ['entityId'],
             { entityId: 'https://rp.example.org', fetchJwks: true }),
           this.action('remove-subordinate', 'removeOidfedSubordinate',
-            'Stop vouching for a subordinate',
-            'The fetch endpoint no longer answers for it.',
-            { entityId: ENTITY }, ['entityId'],
+            'Revoke a subordinate',
+            'The fetch endpoint no longer answers for it, and its history ' +
+            'records the revocation — with the reason and the page given — ' +
+            'and is kept (#137).',
+            { entityId: ENTITY, reason: EVENT_DESCRIPTION,
+              informationUri: INFORMATION_URI }, ['entityId'],
+            { entityId: 'https://rp.example.org',
+              reason: 'no longer operated' }),
+          this.action('suspend-subordinate', 'suspendOidfedSubordinate',
+            'Suspend a subordinate',
+            'The realm issues no Subordinate Statement about it and lists ' +
+            'it nowhere until it is reinstated, so no Trust Chain passes ' +
+            'through it; its history records the suspension (#137). A realm ' +
+            'of this service beneath the default realm may be suspended too.',
+            { entityId: ENTITY, reason: EVENT_DESCRIPTION,
+              informationUri: INFORMATION_URI }, ['entityId'],
+            { entityId: 'https://rp.example.org',
+              reason: 'under investigation' }),
+          this.action('reinstate-subordinate', 'reinstateOidfedSubordinate',
+            'Reinstate a suspended subordinate',
+            'Statements are issued about it again; its history records the ' +
+            'reinstatement (#137).',
+            { entityId: ENTITY, reason: EVENT_DESCRIPTION,
+              informationUri: INFORMATION_URI }, ['entityId'],
             { entityId: 'https://rp.example.org' }),
+          this.action('crawl-collection', 'crawlOidfedCollection',
+            'Crawl the Entity Collection now',
+            'Walks every entity beneath the realm — each resolved to the ' +
+            'realm before its own subordinates are listed, fetching from ' +
+            'Intermediates outside this service through the outbound ' +
+            'policy — and keeps what it finds for the collection endpoint ' +
+            '(#136). The entity identifier is taken from this request.',
+            {}, [], {}),
           this.action('add-trust-anchor', 'addOidfedTrustAnchor',
             'Trust a Trust Anchor',
             'A Trust Chain may end at it, verified by the keys configured ' +
