@@ -21,8 +21,8 @@
 //
 //   * THIS SERVICE'S OWN PROTECTED SCOPES — `admin:read` and `admin:write`
 //     (/admin-api), the SCIM pair (`scim.scopeRead`, `scim.scopeWrite`), the
-//     Shared Signals pair (`ssf.authScopeRead`, `ssf.authScopeWrite`) and the
-//     embedded debugger's permission. Issued ONLY to a client whose
+//     Shared Signals pair (`ssf.authScopeRead`, `ssf.authScopeWrite`), the
+//     embedded debugger's permission and Grant Management's two (#142). Issued ONLY to a client whose
 //     `oauthAllowedScope` lists them, IN BOTH MODES: the resource servers
 //     behind them are this service's own, development already gates them, and
 //     a gate any client can mint a key for is not one. Each of those resource
@@ -80,6 +80,14 @@ const OIDC_SCOPES = Object.freeze(['openid', 'profile', 'email', 'address',
 // `/admin-api`'s two, as `common/roles.js` maps them to ADMIN_READ and
 // ADMIN_WRITE. Not settings: the management API's vocabulary is fixed.
 const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write']);
+
+// Grant Management for OAuth 2.0's two (#142): the grant management API is
+// this service's own resource server, so its scopes are protected like the
+// rest — a client must declare them, and the API asks again on every call.
+// Written out rather than required from `oauth-oidc/grant_management.ts`,
+// for the debugger permission's reason below.
+const GRANT_MANAGEMENT_SCOPES = Object.freeze(['grant_management_query',
+                                               'grant_management_revoke']);
 
 // `debugger/debugger_access.ts`'s PERMISSION_ID. See the header.
 const DEBUGGER_PERMISSION = 'urn:sts:debugger-api:debugger';
@@ -167,7 +175,8 @@ class ScopePolicy {
      String(config.value('scim.scopeWrite') || 'scim:write'),
      String(config.value('ssf.authScopeRead') || 'ssf:read'),
      String(config.value('ssf.authScopeWrite') || 'ssf:write'),
-     DEBUGGER_PERMISSION].forEach(function (one) {
+     DEBUGGER_PERMISSION].concat(GRANT_MANAGEMENT_SCOPES)
+      .forEach(function (one) {
       if (names.indexOf(one) < 0) {
         names.push(one);
       }

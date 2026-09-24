@@ -256,8 +256,28 @@ this service signed something takes two things a deployment has to keep:
 HTTP message signatures on resource requests and responses (RFC 9421) are not
 part of the final Message Signing specification. They are tracked in #178.
 
-Not covered yet: running the OpenID Foundation's conformance suite against
-this service (#176).
+The OpenID Foundation's conformance suite against this service is #176.
+
+### FAPI-CIBA
+
+Wherever a FAPI profile (`oauth2.fapi`) and CIBA (`oauth2.ciba`) are both on,
+the backchannel authentication endpoint applies the
+[FAPI CIBA profile](https://github.com/openid/fapi/blob/main/fapi-ciba.md).
+It has no setting of its own.
+
+* **Confidential clients only**, authenticated with a method the profile
+  allows, a client assertion signed with its algorithms (and, under FAPI 2.0,
+  dated no more than a minute ahead).
+* **A `binding_message` in every request.** It is what the person compares on
+  the two devices.
+* **Poll and ping, never push.** `backchannel_token_delivery_modes_supported`
+  lists the two; a push client is refused at registration and at the endpoint.
+* **Signed and unsigned requests.** A signed one lasts at most 60 minutes and
+  is signed with the profile's algorithms.
+* **`request_context`**, a JSON object about the consumption device, is
+  accepted and shown to the person on `/portal/ciba`.
+* **Sender-constrained tokens.** The token endpoint's profile checks apply to
+  the CIBA grant as to every other.
 
 ### DPoP (RFC 9449)
 
@@ -382,8 +402,6 @@ default**:
 
 ### Not implemented
 
-* `mtls_endpoint_aliases` (RFC 8705 section 5): the endpoints already ask for a
-  certificate where they are.
 * A client certificate forwarded in a header by a TLS-terminating proxy.
 * `acr_values` on the device and token-exchange grants; GNAP's interaction does
   not read a step-up requirement.

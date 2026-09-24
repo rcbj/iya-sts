@@ -153,7 +153,10 @@ const SIGNING_ALG_LISTS = ['id_token_signing_alg_values_supported',
   'authorization_signing_alg_values_supported',
   'introspection_signing_alg_values_supported',
   'revocation_endpoint_auth_signing_alg_values_supported',
-  'introspection_endpoint_auth_signing_alg_values_supported'];
+  'introspection_endpoint_auth_signing_alg_values_supported',
+  // FAPI-CIBA (#142): a signed authentication request is a JWS like any
+  // other here, and its algorithms are the profile's.
+  'backchannel_authentication_request_signing_alg_values_supported'];
 const ENCRYPTION_ALG_LISTS = ['id_token_encryption_alg_values_supported',
   'userinfo_encryption_alg_values_supported',
   'request_object_encryption_alg_values_supported',
@@ -447,7 +450,38 @@ const MESSAGE_SIGNING_REQUIREMENTS = [
     title: 'Non-repudiation: keys and records kept',
     note: 'Retired signing keys stay published for their grace period and ' +
           'every issuance is audited; docs/oauth-security.md says what a ' +
-          'deployment keeps and for how long.' }
+          'deployment keeps and for how long.' },
+  // FAPI-CIBA (#142): the profile of CIBA the FAPI profiles bring with them
+  // wherever `oauth2.ciba` is on — rcbj's answer, no setting of its own.
+  { id: 'ciba-confidential', section: 'FAPI-CIBA 5.2.2 item 1',
+    level: 'SHALL', enforced: 'yes',
+    title: 'CIBA for confidential clients only, authenticated as FAPI ' +
+           'allows',
+    note: 'The backchannel authentication endpoint refuses a method the ' +
+          'profile does not allow, and a client assertion signed outside ' +
+          'its algorithms (STS-OAUTH-0580, STS-OAUTH-0586).' },
+  { id: 'ciba-binding-message', section: 'FAPI-CIBA 5.2.2 item 2',
+    level: 'SHALL', enforced: 'yes',
+    title: 'A binding_message in every authentication request',
+    note: 'Nothing else in a request here makes its authorization context ' +
+          'unique, so a request without one is refused (STS-OAUTH-0663).' },
+  { id: 'ciba-no-push', section: 'FAPI-CIBA 5.2.2 items 3-5',
+    level: 'SHALL', enforced: 'yes',
+    title: 'Poll and ping, never push',
+    note: 'backchannel_token_delivery_modes_supported drops push; a push ' +
+          'client is refused at registration (STS-REG-0198) and at the ' +
+          'endpoint (STS-OAUTH-0662).' },
+  { id: 'ciba-signed-request', section: 'FAPI-CIBA 5.2.2 (FAPI 1.0)',
+    level: 'SHALL', enforced: 'yes',
+    title: 'Signed and unsigned requests; a signed one lives at most 60 ' +
+           'minutes, signed with the profile\'s algorithms',
+    note: 'nbf and exp at most an hour apart in every mode (CIBA 7.1.1); ' +
+          'the algorithm is the profile\'s (STS-OAUTH-0586).' },
+  { id: 'ciba-request-context', section: 'FAPI-CIBA 5.2.2 item 8, 5.3',
+    level: 'MAY', enforced: 'yes',
+    title: 'request_context accepted',
+    note: 'A JSON object, kept on the request for the person\'s approval ' +
+          'page to show (STS-OAUTH-0664 when it is not one).' }
 ];
 
 // The ambient profile of the request being answered: the named
@@ -809,6 +843,14 @@ function registrationRefusal(metadata) {
                      ? 'Part 2 section 5.2.2 items 14 and 16'
                      : 'section 5.2.2 item 4') + ')');
   }
+  // FAPI-CIBA (#142): push is not a delivery mode this profile allows.
+  if (String(meta.backchannel_token_delivery_mode || '') === 'push') {
+    log.debug("Leaving registrationRefusal(). CIBA push.");
+    return refusal('STS-REG-0198', 'invalid_client_metadata', 'ciba-no-push',
+                   'backchannel_token_delivery_mode "push" is not allowed ' +
+                   'under this profile; register poll or ping (FAPI-CIBA ' +
+                   'section 5.2.2 item 3)');
+  }
   if (advanced() || fapi2()) {
     const problem = advancedRegistrationProblem(meta);
     if (problem) {
@@ -903,6 +945,39 @@ function advancedRegistrationProblem(meta) {
 // signs when the client registered none ('' leaves the caller's own default),
 // and whether an algorithm — the client's or this server's — may be used.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// FAPI-CIBA (#142), at the backchannel authentication endpoint: what a request
+// needs beyond CIBA Core under any FAPI profile. `opts.mode` is the client's
+// registered delivery mode and `opts.bindingMessage` the request's. Client
+// authentication and the algorithms are the ordinary checks, asked by the
+// endpoint through `clientAuthenticationRefusal()` and `signingAlgRefusal()`.
+// ---------------------------------------------------------------------------
+function cibaRefusal(opts) {
+  log.debug("Entering cibaRefusal().");
+  if (!enabled()) {
+    log.debug("Leaving cibaRefusal(). Off.");
+    return null;
+  }
+  const o = opts || {};
+  if (String(o.mode || '') === 'push') {
+    log.debug("Leaving cibaRefusal(). Push.");
+    return refusal('STS-OAUTH-0662', 'unauthorized_client', 'ciba-no-push',
+                   'this client registered the push delivery mode, which ' +
+                   'this profile does not allow; it must register poll or ' +
+                   'ping (FAPI-CIBA section 5.2.2 item 3)');
+  }
+  if (!String(o.bindingMessage || '')) {
+    log.debug("Leaving cibaRefusal(). No binding message.");
+    return refusal('STS-OAUTH-0663', 'invalid_request',
+                   'ciba-binding-message',
+                   'a binding_message is required: it is what binds the ' +
+                   'consumption device to the approval (FAPI-CIBA section ' +
+                   '5.2.2 item 2)');
+  }
+  log.debug("Leaving cibaRefusal(). Nothing refused.");
+  return null;
+}
+
 function defaultSigningAlg() {
   log.debug("Entering defaultSigningAlg().");
   log.debug("Leaving defaultSigningAlg().");
@@ -1216,6 +1291,14 @@ function applyToMetadata(metadata) {
       metadata.require_pushed_authorization_requests = true;
     }
   }
+  // FAPI-CIBA (#142), under every profile: poll and ping only.
+  if (Array.isArray(metadata.backchannel_token_delivery_modes_supported)) {
+    metadata.backchannel_token_delivery_modes_supported =
+      metadata.backchannel_token_delivery_modes_supported
+        .filter(function (one) {
+          return one !== 'push';
+        });
+  }
   log.debug("Leaving applyToMetadata().");
   return metadata;
 }
@@ -1328,6 +1411,7 @@ module.exports = {
   senderConstraintRefusal: senderConstraintRefusal,
   authorizationRefusal: authorizationRefusal,
   clientAuthenticationRefusal: clientAuthenticationRefusal,
+  cibaRefusal: cibaRefusal,
   clientIdentifierRefusal: clientIdentifierRefusal,
   keyBits: keyBits,
   registrationRefusal: registrationRefusal,

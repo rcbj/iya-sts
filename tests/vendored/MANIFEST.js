@@ -735,6 +735,11 @@ const JOBS = [
   // with an approval on /portal/ciba, deny, the user code, and ping and
   // push in development. `local: true`: this repository's own endpoint.
   { file: 'sts_ciba.js',                 browser: false, local: true },
+  // GRANT MANAGEMENT FOR OAUTH 2.0 AND FAPI-CIBA (#142, 2026-09-24): create,
+  // merge, replace, the grant management API and the console's twin; and
+  // CIBA under a FAPI profile.
+  { file: 'sts_grant_management.js',     browser: false, local: true },
+  { file: 'sts_fapi_ciba.js',            browser: false, local: true },
   // OPENID FEDERATION 1.1 (#132, 2026-09-23): the default realm a Trust
   // Anchor and a throwaway realm its subordinate — Entity Configurations,
   // fetch, list, resolve, Trust Marks, a registered subordinate and the

@@ -3800,6 +3800,66 @@ both modes, with an `/admin-api` test control that product closes.
 
 `tests/ciba.js` and `tests/vendored/sts_ciba.js` (local) hold it.
 
+
+## 3bf. GRANT MANAGEMENT FOR OAUTH 2.0, AND FAPI-CIBA (2026-09-24, #142)
+
+rcbj's answers on #142: Grant Management IN FULL with a register of its own,
+every action, the API gated by two scopes tied to the client, a DELETE
+revoking the grant's tokens, consent records staying the source of "the
+person agreed", a console page and `/admin-api`, on in every mode;
+FAPI-CIBA FOLLOWS `oauth2.fapi` with no setting of its own; lodging intent
+DOCUMENTED as RAR through PAR (`docs/oauth-oidc.md`); the conformance suite
+a job — which is #176's, where it lives.
+
+* **`grant_management.ts` is the register and every rule** (its header
+  argues each): `requestRefusal()` at `vetAuthorizationRequest()` and the
+  CIBA endpoint; `planFor()` once the person is known, in
+  `issueAuthorizationResponse()` and at `bc-authorize`; `redemptionRefusal()`
+  and `apply()` at the token endpoint and the CIBA poll and push. **A grant
+  is written only when its tokens are claimed** — a code (or a CIBA row)
+  carries the PLAN, so an authorization nobody redeems leaves nothing and
+  there is no timeout to run.
+* **Two stores, both persisted**: `oauth2.grants` (grant_id → grant) and
+  `oauth2.grantIssued` (jti → grant, generation, kind, exp — ONE ROW PER
+  TOKEN, for `oauth2_bcp`'s reason: two nodes writing two keys lose
+  nothing). `refreshToken()` and `tokenSet()` note each token minted under a
+  grant; `apply()` reads the rows back for the grant's `expires_at`.
+* **Revocation reaches refresh tokens by the register and access tokens by
+  the rows.** A refresh token carries `grant_id` and `grant_gen` inside its
+  JWE; the refresh grant asks `refreshRefusal()` before the consent check, so
+  a grant revoked — or merged or replaced since, which moves the generation
+  — refuses it on every node (STS-OAUTH-0670). A DELETE (or the console's
+  revoke-grant) revokes every recorded jti through `admin_stats.revoke()`.
+* **A merge carries earlier scopes forward only while consent covers them**
+  (`consent.outstanding()`, the `stillConsented` callback), so a withdrawn
+  scope is never re-issued unasked.
+* **`/oauth2/grants/{grant_id}`** is the realm's (not a named server's):
+  `dpop.presentedAccessToken()`, a `typ: Bearer` unrevoked token, the scope,
+  `scopePolicy.declares()` asked again (the two scopes are protected, #110),
+  and the grant's own client. `last_updated`, not the example's
+  `last_updated_at`.
+* **Confidential clients only**: known, and declaring a method other than
+  `none`. A response type returning an access token from the authorization
+  endpoint is refused (a grant_id travels only in a token response).
+* **FAPI-CIBA** is `fapi.js`'s `cibaRefusal()` (push, a binding message),
+  the profile's client-authentication, assertion-algorithm and timestamp
+  checks asked at `bc-authorize` (the shared `authenticateEndpointCaller()`
+  does not apply them), `signingAlgRefusal()` and `futureTimestampRefusal()`
+  on a signed request, `registrationRefusal()` refusing push
+  (STS-REG-0198), and `applyToMetadata()` dropping push and narrowing
+  `backchannel_authentication_request_signing_alg_values_supported` — which
+  is why the CIBA members are now added in `oidcMetadata()` BEFORE the
+  profile is re-applied. **The current FAPI-CIBA text has the server accept
+  unsigned requests too** (the ticket said signed ones were mandatory; that
+  was an older draft). `request_context` is kept on the row and shown on
+  `/portal/ciba`.
+
+`tests/grant_management.js` and `tests/vendored/sts_grant_management.js`,
+`sts_fapi_ciba.js` (local) hold it. **Not built**: Grant Management through
+the device flow (there is none here), `grant_management_action_required`,
+sharing a grant between client ids, and FAPI-CIBA's two OPTIONAL
+`login_hint_token` type members.
+
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 
 The review on #45 found Core bugs that no test had asked about. What changed, and

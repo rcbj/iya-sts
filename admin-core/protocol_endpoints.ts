@@ -204,7 +204,7 @@ class ProtocolEndpoints {
         '/oauth2/revoke', '/oauth2/register', '/oauth2/register/:client_id',
         '/oauth2/logout', '/oauth2/consent', '/oauth2/rfc9700',
         '/oauth2/oauth21',
-        '/oauth2/fapi',
+        '/oauth2/fapi', '/oauth2/grants/:grantId',
         '/dpop/nonce-mode'
       ].map(route),
       '/admin/authorization-servers': namedServerRoutes,
