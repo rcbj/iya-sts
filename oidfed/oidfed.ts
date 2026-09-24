@@ -1747,8 +1747,18 @@ class Oidfed {
                answer.reason + ').' };
     }
     log.debug("Leaving Oidfed.act(). Unknown action.");
-    return this.refused('STS-OIDFED-0046', '"' + action + '" is not an ' +
-                        'OpenID Federation action.');
+    // THE SENTENCE NAMES EVERY ACTION, in the form every other console door
+    // writes: `sts_admin_api_operations` reads it and compares it with the
+    // OpenAPI document, and `tests/admin_api.js` reads it for the parity
+    // check — a refusal that names none turns both off.
+    return this.refused('STS-OIDFED-0046', 'Unknown action "' + action +
+                        '". The fifteen are: add-subordinate, ' +
+                        'remove-subordinate, add-trust-anchor, ' +
+                        'remove-trust-anchor, add-mark-type, ' +
+                        'remove-mark-type, set-mark-policy, ' +
+                        'remove-mark-policy, issue-trust-mark, ' +
+                        'revoke-trust-mark, add-held-mark, remove-held-mark, ' +
+                        'resolve, rotate-key, revoke-key.');
   }
 
   // Drop the cached resolutions of the realm — its register changed, so a
