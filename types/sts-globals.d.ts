@@ -20,5 +20,8 @@ declare module 'http' {
     // are stripped.
     stsPoolTicket?: number;
     stsProtocolWorker?: number;
+    // `oauth-oidc/oauth2.ts`'s token endpoint: whether the client's
+    // credential verified on this Token Request (RFC 9449 section 5, #176).
+    stsClientAuthenticated?: boolean;
   }
 }

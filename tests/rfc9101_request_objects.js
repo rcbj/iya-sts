@@ -540,6 +540,14 @@ function childMain() {
     note(refusedWith(r, 'invalid_request_object', /MUST be identical/),
          '3q. section 6.3: a client_id claim differing from the query is ' +
          'refused', r.text.slice(0, 160));
+    r = await sent(good('r91', { request_uri:
+      'urn:ietf:params:oauth:request_uri:nested' }));
+    note(refusedWith(r, 'invalid_request_object', /MUST NOT be included/),
+         '3q-ii. section 4: a request_uri claim is refused, not dropped ' +
+         '(#176)', r.text.slice(0, 160));
+    r = await sent(good('r91', { request: 'eyJ.nested.' }));
+    note(refusedWith(r, 'invalid_request_object', /MUST NOT be included/),
+         '3q-iii. and so is a request claim', r.text.slice(0, 160));
     r = await sent(good('r91', { exp: Math.floor(Date.now() / 1000) - 3600 }));
     note(refusedWith(r, 'invalid_request_object', /expired/),
          '3r. an expired request object is refused', r.text.slice(0, 160));

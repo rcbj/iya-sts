@@ -1037,7 +1037,7 @@ async function test() {
         "the section it was spent under", function () {
           const said = refused(thenGrant, "invalid_grant",
                                "a client assertion re-presented as a grant");
-          assert.ok(/used already — under RFC 7522 section 2\.2/.test(said),
+          assert.ok(/used already (?:—|-) under RFC 7522 section 2\.2/.test(said),
             said.slice(0, 250));
         });
 
@@ -1060,7 +1060,7 @@ async function test() {
           "assertion, invalid_client, naming section 2.1", function () {
             assert.strictEqual(thenClient.status, 401,
               JSON.stringify(thenClient.body).slice(0, 300));
-            assert.ok(/used already — under RFC 7522 section 2\.1/
+            assert.ok(/used already (?:—|-) under RFC 7522 section 2\.1/
                         .test(String(thenClient.body.error_description)),
               String(thenClient.body.error_description).slice(0, 300));
           });

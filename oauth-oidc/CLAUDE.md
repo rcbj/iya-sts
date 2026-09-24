@@ -2680,8 +2680,10 @@ Three things about how it is done are the parts worth keeping:
   than by six properties having been remembered separately — the `typ`, the jti
   in the one revocation set, `oauth2.refreshTokenTtlS`, the RFC 9700 family
   bookkeeping and rotation, and the DPoP and certificate confirmations. An
-  exchange made with a proof mints a BOUND refresh token, which is the whole of
-  RFC 9449 section 5 on the long-lived half of a grant. `resources` is passed
+  exchange made with a proof by a client that did not authenticate mints a
+  BOUND refresh token, and one by a client that did mints an unbound one,
+  which is the whole of RFC 9449 section 5 on the long-lived half of a grant
+  (3bg). `resources` is passed
   because it is what the refresh grant compares a renewal against: an exchange
   addressed to one audience must not be renewable into a token carrying this
   service's default, since a grant cannot widen itself by being renewed and an
@@ -3859,6 +3861,83 @@ a job — which is #176's, where it lives.
 the device flow (there is none here), `grant_management_action_required`,
 sharing a grant between client ids, and FAPI-CIBA's two OPTIONAL
 `login_hint_token` type members.
+
+## 3bg. WHAT THE OPENID CONFORMANCE SUITE FOUND (2026-09-24, #176)
+
+The OpenID Foundation's suite runs as a job (`tests/vendored/sts_fapi_conformance.js`,
+`tests/CLAUDE.md` has the harness) against four plans: FAPI 2.0 Security
+Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced and FAPI-CIBA — the
+suite has no FAPI 1.0 Baseline plan any more, so `sts_fapi_baseline.js` is
+Baseline's only check. Its first
+runs failed on six things in this service. Each was a real departure from a
+specification, and each fix is in EVERY mode, because none is FAPI's own rule:
+
+* **RFC 9449 section 5 has two halves, and a confidential client's refresh
+  token was bound anyway.** "Refresh tokens issued to confidential clients are
+  not bound to the DPoP proof public key because they are already
+  sender-constrained with a different existing mechanism." `refreshToken()`
+  now leaves `cnf.jkt` off when the client AUTHENTICATED on the Token Request
+  that minted it — `req.stsClientAuthenticated`, set from
+  `observeClientAuthentication()`, true only when a credential verified — so
+  a client that declared a method and proved nothing keeps the binding.
+  `oauth2.refreshTokenRequireDpop` still binds every refresh token, since its
+  redemption check reads the binding (#34). The first attempt skipped the
+  COMPARISON at redemption instead, for a client that authenticated there;
+  it broke `sts_dpop.js`, whose request helper authenticates every call, and
+  was reverted. Deciding at issuance is the section's own wording.
+* **RFC 6749's error_description character set was applied only in OAuth 2.1
+  mode.** Sections 4.1.2.1 and 5.2 say the value "MUST NOT include
+  characters outside the set", which is RFC 6749's and not 2.1's, so
+  `oauth21.sanitizeDescription()` now runs in every mode. The prose on the
+  wire loses its em dashes and double quotes; a test matching one on the wire
+  matches `(?:—|-)` now.
+* **RFC 9101 section 4: a request object carrying `request` or
+  `request_uri`** was answered by dropping them. `verifyObject()` refuses it,
+  `invalid_request_object` (`STS-OAUTH-0676`), which is what RFC 9126 section
+  2.1 needs at PAR and what the authorization endpoint now does too.
+* **A client assertion naming no client, or two** (`STS-OAUTH-0675`,
+  `STS-OAUTH-0677`): RFC 7523 section 3 item B makes `sub` the client_id and
+  OpenID Connect Core section 9 makes `iss` it too. An assertion with no
+  `sub` and no `client_id`, or whose `iss`, `sub` and `client_id` disagree,
+  is `invalid_client` before any grant is read. It went on as a client-less
+  or a wrongly named request and was refused later by whatever the grant
+  checked first — `invalid_grant` about an authorization code. Read
+  UNVERIFIED, which is safe for a refusal; development mode still only
+  OBSERVES an assertion that fails its signature.
+* **`x-fapi-interaction-id`** (FAPI 1.0 Baseline section 6.2.1 items 11 and
+  13) on UserInfo, `/oauth2/grants/{id}` and the step-up stand-in: echoed
+  when the client sent a UUID, minted otherwise. Every mode, as a middleware
+  before the routes — a named server's profile is not entered yet there, and
+  the header carries nothing. A value that is not a UUID is replaced rather
+  than reflected into a header.
+* **Grant Management section 6.6's query after revoke.** The AS SHOULD
+  revoke the tokens under a revoked grant, and the client's next question is
+  asked with the token it revoked with. That token, asking about the one
+  grant it was minted under once that grant is gone, is told 404 (the grant
+  does not exist) rather than 401; any other revoked token, or any other
+  grant, is refused as before.
+
+What the suite still reports as WARNING, and why it stays:
+* **This realm's JWKS carries post-quantum keys** (`kty: AKP`, ML-DSA) the
+  suite cannot parse — every module. The suite's gap, not ours; rcbj
+  (2026-09-24): PQC support matters more than a clean run.
+* **`claims_supported` names claims no directory attribute answers** —
+  `middle_name`, `profile`, `picture`, `gender`, `zoneinfo`, `updated_at`,
+  `phone_number_verified` (the `profile` scope's list) — so a claims request
+  for them comes back without them. OPEN: map them or stop listing them.
+* **`sid` and `address.country_code`** are claims the suite's list lacks;
+  both come from specifications (Front/Back-Channel Logout, Identity
+  Assurance).
+* The error-page REVIEW entries, where this service shows a page rather than
+  redirecting an error, which each profile allows.
+
+The discovery document's extension members are named to the suite in
+`server.allow_unexpected_metadata_fields`. Five of them — the two
+`urn:ietf:params:oauth:client-assertion-type:*_supported` members and the
+three `assertion_*_values_supported` — are this service's own inventions,
+though the comments in `oauth2.ts` credit RFC 7521 and RFC 7522, which define
+no metadata; whether they stay is rcbj's call.
+None is a failure; the suite says so itself.
 
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 
