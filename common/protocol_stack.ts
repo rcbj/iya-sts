@@ -359,6 +359,14 @@ class ProtocolStack {
     // #131: /portal/ciba, where a person answers a backchannel sign-in.
     this.build('portal/portal_ciba', require('../portal/portal_ciba'),
                'PortalCiba');
+    // #147: /portal/claim-sources, where a person links a Claims Provider.
+    // Its require loads `oauth-oidc/claims_providers` early, which declares a
+    // map and nothing else at load; the library is BUILT below with `oauth2`'s
+    // other libraries, and the page reaches it only through its forwarders,
+    // at request time.
+    this.build('portal/portal_claim_sources',
+               require('../portal/portal_claim_sources'),
+               'PortalClaimSources');
     // THE MAIL CHANNEL (#63, 2026-09-22): two LIBRARIES (rule 3) that
     // register no route — the channel and its uses — built here, before the
     // portal whose `/portal/email`, `/portal/verify-email` and
@@ -424,6 +432,13 @@ class ProtocolStack {
     // routes (/oauth2/grants/{id}) are registered just after `oauth2`'s.
     this.build('oauth-oidc/grant_management',
                require('../oauth-oidc/grant_management'), 'GrantManagement');
+    // Claims Aggregation (#147): the Claims Provider register, a person's
+    // links and the aggregated and distributed claims `oauth2` reads when it
+    // builds an ID Token or UserInfo — a library whose wire step registers
+    // the `oauth2.claim-sources-refresh` job. Its portal page and console
+    // page register with the portal and the console.
+    this.build('oauth-oidc/claims_providers',
+               require('../oauth-oidc/claims_providers'), 'ClaimsProviders');
     this.build('oauth-oidc/refresh_token_crypto',
                require('../oauth-oidc/refresh_token_crypto'),
                'RefreshTokenCrypto');

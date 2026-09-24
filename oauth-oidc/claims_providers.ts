@@ -423,7 +423,7 @@ class ClaimsProviders {
       try {
         map = JSON.parse(this.open(stored, 'claim-source-tokens')) || {};
       } catch (e: any) {
-        log.warn(errorCodes.tag('STS-OAUTH-0687') + 'claims: the Claims ' +
+        log.warn(errorCodes.tag('STS-OAUTH-0685') + 'claims: the Claims ' +
                  'Provider tokens on "' + username + '" could not be read: ' +
                  ((e && e.message) || e));
         map = {};
@@ -439,7 +439,7 @@ class ClaimsProviders {
     const plain = Object.keys(map).length ? JSON.stringify(map) : '';
     const sealed = plain ? this.seal(plain, 'claim-source-tokens') : '';
     if (sealed === null) {
-      log.warn(errorCodes.tag('STS-OAUTH-0687') + 'claims: no key to seal ' +
+      log.warn(errorCodes.tag('STS-OAUTH-0685') + 'claims: no key to seal ' +
                'the Claims Provider tokens of "' + username + '" with.');
       log.debug("Leaving ClaimsProviders.writeLinks(). No key.");
       return false;
@@ -505,7 +505,7 @@ class ClaimsProviders {
     const provider = this.get(id);
     if (!provider) {
       log.debug("Leaving ClaimsProviders.beginLink(). No such provider.");
-      return { ok: false, code: 'STS-OAUTH-0680',
+      return { ok: false, code: 'STS-OAUTH-0678',
                why: 'this realm has no Claims Provider "' + id + '"' };
     }
     const state = nodeCrypto.randomBytes(24).toString('base64url');
@@ -541,13 +541,13 @@ class ClaimsProviders {
     if (!flow || now() - Number(flow.at || 0) > FLOW_TTL_MS ||
         flow.username !== String(username)) {
       log.debug("Leaving ClaimsProviders.finishLink(). No such flow.");
-      return { ok: false, code: 'STS-OAUTH-0681',
+      return { ok: false, code: 'STS-OAUTH-0679',
                why: 'this link request is unknown, expired or another ' +
                     'person\'s — start it again from this page' };
     }
     if (query.error) {
       log.debug("Leaving ClaimsProviders.finishLink(). The provider refused.");
-      return { ok: false, code: 'STS-OAUTH-0682',
+      return { ok: false, code: 'STS-OAUTH-0680',
                why: 'the provider answered ' + String(query.error) +
                     (query.error_description ? ': ' +
                      String(query.error_description) : '') };
@@ -555,7 +555,7 @@ class ClaimsProviders {
     const provider = this.get(flow.provider);
     if (!provider || !query.code) {
       log.debug("Leaving ClaimsProviders.finishLink(). No provider or code.");
-      return { ok: false, code: 'STS-OAUTH-0680',
+      return { ok: false, code: 'STS-OAUTH-0678',
                why: 'the provider is gone, or sent no code' };
     }
     const tokens = await this.tokenRequest(provider, {
@@ -563,7 +563,7 @@ class ClaimsProviders {
       redirect_uri: flow.redirectUri, code_verifier: flow.verifier });
     if (!tokens.ok) {
       log.debug("Leaving ClaimsProviders.finishLink(). " + tokens.why);
-      return { ok: false, code: 'STS-OAUTH-0682', why: tokens.why };
+      return { ok: false, code: 'STS-OAUTH-0680', why: tokens.why };
     }
     // Who the person is AT THE PROVIDER, from a signed claims response the
     // provider's keys verify: every aggregated source is later held to it.
@@ -571,13 +571,13 @@ class ClaimsProviders {
                                            '');
     if (!fetched.ok) {
       log.debug("Leaving ClaimsProviders.finishLink(). " + fetched.why);
-      return { ok: false, code: 'STS-OAUTH-0683', why: fetched.why };
+      return { ok: false, code: 'STS-OAUTH-0681', why: fetched.why };
     }
     const map = this.linksRaw(username);
     map[provider.id] = this.linkFrom(tokens.json, fetched.claims.sub, now());
     if (!this.writeLinks(username, map)) {
       log.debug("Leaving ClaimsProviders.finishLink(). Not written.");
-      return { ok: false, code: 'STS-OAUTH-0687',
+      return { ok: false, code: 'STS-OAUTH-0685',
                why: 'the link could not be recorded on your entry' };
     }
     log.debug("Leaving ClaimsProviders.finishLink(). Linked.");
@@ -758,7 +758,7 @@ class ClaimsProviders {
     const got = await this.tokenRequest(provider, {
       grant_type: 'refresh_token', refresh_token: link.refresh_token });
     if (!got.ok) {
-      log.warn(errorCodes.tag('STS-OAUTH-0686') + 'claims: the token of "' +
+      log.warn(errorCodes.tag('STS-OAUTH-0684') + 'claims: the token of "' +
                username + '" at Claims Provider "' + provider.id + '" could ' +
                'not be refreshed, and is marked stale: ' + got.why);
       link.stale = true;
@@ -826,7 +826,7 @@ class ClaimsProviders {
                         : fetched;
       }
       if (!fetched.ok) {
-        log.warn(errorCodes.tag('STS-OAUTH-0684') + 'claims: Claims Provider ' +
+        log.warn(errorCodes.tag('STS-OAUTH-0682') + 'claims: Claims Provider ' +
                  '"' + provider.id + '" gave nothing for "' + username +
                  '": ' + fetched.why + '. Its claims are left out.');
         continue;
@@ -929,7 +929,7 @@ class ClaimsProviders {
       });
     }
     if (notes.length) {
-      log.warn(errorCodes.tag('STS-OAUTH-0685') + 'claims: ' +
+      log.warn(errorCodes.tag('STS-OAUTH-0683') + 'claims: ' +
                notes.join('; ') + '.');
     }
     log.debug("Leaving ClaimsProviders.resolve(). " +
@@ -1034,11 +1034,11 @@ class ClaimsProviders {
     if (action === 'add-provider' || action === 'update-provider') {
       const exists = !!this.get(String(body.id || ''));
       if (action === 'add-provider' && exists) {
-        return refuse('STS-OAUTH-0688', 'a Claims Provider "' + body.id +
+        return refuse('STS-OAUTH-0686', 'a Claims Provider "' + body.id +
                       '" is already registered');
       }
       if (action === 'update-provider' && !exists) {
-        return refuse('STS-OAUTH-0688', 'there is no Claims Provider "' +
+        return refuse('STS-OAUTH-0686', 'there is no Claims Provider "' +
                       body.id + '"');
       }
       const record = Object.assign({}, action === 'update-provider'
@@ -1046,7 +1046,7 @@ class ClaimsProviders {
       if (String(body.discover || '') === 'true' || body.discover === true) {
         const found = await this.discover(String(record.issuer || ''));
         if (!found.ok) {
-          return refuse('STS-OAUTH-0689', 'discovery at ' + record.issuer +
+          return refuse('STS-OAUTH-0687', 'discovery at ' + record.issuer +
                         ' failed: ' + found.why);
         }
         record.authorizationEndpoint = record.authorizationEndpoint ||
@@ -1061,13 +1061,13 @@ class ClaimsProviders {
                                 body.clientSecret === '' ? undefined :
                                 String(body.clientSecret));
       if (problem) {
-        return refuse('STS-OAUTH-0688', problem);
+        return refuse('STS-OAUTH-0686', problem);
       }
       message = 'Claims Provider "' + body.id + '" ' +
                 (action === 'add-provider' ? 'registered' : 'updated') + '.';
     } else if (action === 'remove-provider') {
       if (!this.remove(String(body.id || ''))) {
-        return refuse('STS-OAUTH-0688', 'there is no Claims Provider "' +
+        return refuse('STS-OAUTH-0686', 'there is no Claims Provider "' +
                       body.id + '"');
       }
       message = 'Claims Provider "' + body.id + '" removed. Links to it ' +
@@ -1075,13 +1075,13 @@ class ClaimsProviders {
     } else if (action === 'revoke-link') {
       if (!this.unlink(String(body.username || ''),
                        String(body.provider || ''))) {
-        return refuse('STS-OAUTH-0688', '"' + body.username + '" has no ' +
+        return refuse('STS-OAUTH-0686', '"' + body.username + '" has no ' +
                       'link to "' + body.provider + '"');
       }
       message = 'The link of "' + body.username + '" to "' + body.provider +
                 '" was revoked.';
     } else {
-      return refuse('STS-OAUTH-0688', 'unknown action "' + action + '": ' +
+      return refuse('STS-OAUTH-0686', 'unknown action "' + action + '": ' +
                     'add-provider, update-provider, remove-provider, ' +
                     'revoke-link');
     }
