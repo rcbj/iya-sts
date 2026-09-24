@@ -387,7 +387,8 @@ octets, and no compact serialization can carry them. `aesKeyWrap()` and
    deliberately NOT PKCS#7: the other padding octets are arbitrary there
    (Santuario writes random ones), so Wycheproof's PKCS#5 vectors that differ
    only in those octets are, correctly, opened — the harness decides that
-   case independently.
+   case independently. `openXmlContent()` is exported so that verdict can be
+   held to the vectors: `decryptElement()` no longer tells anyone (below).
 4. **`<xenc:OAEPparams>` was ignored**: a key wrapped under an OAEP label
    failed and was reported as a key for another certificate. It is now the
    label, for `rsa-oaep` and `rsa-oaep-mgf1p`.
@@ -409,21 +410,55 @@ octets, and no compact serialization can carry them. `aesKeyWrap()` and
    (`mode.usesBrokenAlgorithms()`, REQUIREMENTS `jose-key-sizes`),
    accepted in development so a client holding one can be exercised. XMLDSig
    and the raw proofs have no floor and get none.
-9. **An empty HMAC key verified.** Refused in both modes.
+9. **An empty HMAC key verified, and so did one shorter than the hash
+   output.** Empty is refused in both modes; shorter than the hash output
+   (RFC 7518 section 3.2, MUST) in PRODUCT, by the same predicate and row as
+   8. The key is a `client_secret_jwt` client's secret as UTF-8, so
+   `oauth2.registeredSecretBytes` now mints 48 random bytes (64 base64url
+   characters, enough for HS512) by default, and the parent project's
+   `sts_jws_verification.js` registers 64-octet-plus secrets.
 10. **A JWK whose `use` is `enc`, or whose `key_ops` lack `verify`, verified
     a signature.** `jwkUseProblem()` refuses it (RFC 7517 sections 4.2, 4.3).
 
-**ONE RECORDED EXCEPTION:** an HMAC key SHORTER than its hash output (RFC
-7518 section 3.2, MUST) is still accepted in both modes, because the parent
-project's vendored `tests/vendored/sts_jws_verification.js` registers
-~30-octet `client_secret_jwt` secrets and runs in product; that job's
-secrets have to grow in the parent project first. The harness holds the
-exception by name, so lifting it fails `wycheproof.js` until the
-expectation moves too.
+11. **An XML ECDSA signature verified on any curve node could load** —
+    secp160, secp192, secp224 among them; XMLDSig names no curve and nothing
+    asked. `xmlEcdsaCurveProblem()` refuses, in PRODUCT, every curve not on
+    an allow-list of the 256-bit-and-larger ones (P-256/384/521, secp256k1,
+    brainpoolP256r1 and up): `verifyXmlSignatureValue()` answers false and
+    logs `STS-KEYS-0077`, and `xmlSignatureKeyProblem()` refuses to register
+    such a certificate. Development keeps every curve (same predicate,
+    REQUIREMENTS `xml-ecdsa-curves`).
+12. **THE AES-CBC PADDING ORACLE.** `decryptElement()` answered a bad CBC
+    padding (STS-KEYS-0022), a plaintext that was not UTF-8 (0025) and one
+    that was not XML (0023) with three codes, three sentences and an early
+    return — Jager and Somorovsky's attack on XML Encryption (XML Encryption
+    1.1 section 6.1.3) needs nothing more than that difference. Now all three
+    are ONE refusal, `STS-KEYS-0078` with one sentence, and the padding,
+    decoding and parse all RUN before the answer is chosen
+    (`cbcPlaintextUsable()`): a bad count strips nothing and is carried as a
+    flag. What still varies with the plaintext is the XML parser's own time,
+    which no refusal can hide; AES-GCM (the default, and what a relationship
+    can be held to with `allowedCiphers`) is the real answer, and CBC stays
+    because service providers that require it exist. A GCM tag failure keeps
+    STS-KEYS-0022 and GCM's non-XML plaintext 0023: authenticated, so saying
+    which reveals nothing. **One oracle is left, in development only**: an
+    `rsa-1_5` key transport whose unwrap lands on the wrong length is 0021,
+    before the content — Bleichenbacher's, which is why product never
+    unwraps `rsa-1_5` at all (STS-KEYS-0070).
 
-**No ACVP vector failed**, and the ML-DSA and SLH-DSA JWS signers turned out
-to be FIPS 204/205's DETERMINISTIC variants byte for byte — noble signs with
-no randomness when none is passed, which `pq_jose.js` never does.
+**No ACVP vector failed**, and it showed the ML-DSA and SLH-DSA JWS signers
+were FIPS 204/205's DETERMINISTIC variants byte for byte — noble signs with
+no randomness when none is passed, and `pq_jose.js` passed none. **They are
+HEDGED now** (FIPS 204 section 3.4 and FIPS 205 section 9.2 recommend it):
+`pq_jose.sign()` hands noble 32 fresh octets for ML-DSA (and a composite's
+ML-DSA half) and n for SLH-DSA. The deterministic variant is reachable only
+through `jwsSignatureOver(alg, key, input, { deterministic: true })`, an
+internal parameter `tests/acvp_pqc.js` passes to compare with NIST's
+vectors — not a setting, and nothing in the service passes it. **The one
+exception is the vendored engine** (`vendored/pqc.js`, which `pki.js`
+signs post-quantum CERTIFICATES and CRLs with through `pqc_x509.sign()`): it
+still signs deterministically and may not be edited here; the parent project
+owns that change.
 
 ### Random values: node's generator, drawn uniformly (#65, 2026-09-23)
 

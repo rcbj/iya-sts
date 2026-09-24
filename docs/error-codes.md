@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3449** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3451** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -56,7 +56,7 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 76
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 78
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 180
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
@@ -414,8 +414,8 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0019` | An XML-encrypted element wraps its key with a key transport this service does not unwrap. | refusal by the calling protocol |
 | `STS-KEYS-0020` | An XML-encrypted element is missing one of its two xenc:CipherValue elements. | refusal by the calling protocol |
 | `STS-KEYS-0021` | An XML-encrypted element's wrapped key unwrapped to the wrong length: it was encrypted to a different certificate. | refusal by the calling protocol |
-| `STS-KEYS-0022` | An XML-encrypted element failed its AES-GCM authentication tag or AES-CBC padding check. | refusal by the calling protocol |
-| `STS-KEYS-0023` | An XML-encrypted element decrypted to something that is not well-formed XML. | refusal by the calling protocol |
+| `STS-KEYS-0022` | An XML-encrypted element failed its AES-GCM authentication tag. (An AES-CBC failure is STS-KEYS-0078 since #202.) | refusal by the calling protocol |
+| `STS-KEYS-0023` | An XML-encrypted element decrypted with AES-GCM to something that is not well-formed XML. (AES-CBC: STS-KEYS-0078 since #202.) | refusal by the calling protocol |
 | `STS-KEYS-0024` | An XML-encrypted element's key could not be unwrapped with this service's private key. | refusal by the calling protocol |
 | `STS-KEYS-0025` | An XML-encrypted element could not be read for a reason other than the key. | refusal by the calling protocol |
 | `STS-KEYS-0026` | The keystore was handed a store without both loadKeys and saveKeys, and refused it whole. | — |
@@ -469,6 +469,8 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0074` | An XML element encrypted by ECDH-ES key agreement was handed to a recipient whose private key is not an EC key. | the caller's refusal |
 | `STS-KEYS-0075` | A certificate authority another process in this service sent publishes a tier this process holds as superseded — a copy from before a rebuild — so it was refused, and the hierarchy held here was asserted again where it is itself consistent. | none — logged. A supersession is permanent; adopting the copy put a replaced Intermediate back in every process |
 | `STS-KEYS-0076` | A certificate authority merged with a copy another process had written publishes certificates its own Issuing CAs did not sign — keys certified from the branch a rebuild replaced — and each is certified again from the live Issuing CA. | none — logged. The evidence of a certification that crossed a rebuild; the row would otherwise publish a certificate no published authority signed |
+| `STS-KEYS-0077` | An XML signature was checked with an ECDSA key on a curve weaker than P-256 (secp160, secp192, secp224 and the like), and the realm is in product mode, where such a key verifies nothing (#202). | the caller's refusal: the signature does not verify, and each protocol answers that as it answers a wrong signature |
+| `STS-KEYS-0078` | An AES-CBC XML-encrypted element did not decrypt to a well-formed element: its padding, its UTF-8 or its XML was wrong, and which is deliberately one answer — the padding oracle of XML Encryption 1.1 section 6.1.3, closed (#202). | refusal by the calling protocol |
 
 ## STS-PKI
 

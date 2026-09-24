@@ -117,6 +117,18 @@ function nodeVerifies(alg, pk, msg, sig) {
     { key: spki, format: 'der', type: 'spki' }), sig);
 }
 
+// hedgedDiffersAndVerifies() is a hot path: once per deterministic case.
+// What the service ACTUALLY signs with (#203): with no internal parameter
+// the signature is FIPS 204/205's hedged variant, so it is not NIST's
+// deterministic one, and it still verifies under NIST's public key.
+function hedgedDiffersAndVerifies(tl, alg, priv, pk, msg, deterministic,
+                                  what) {
+  const hedged = crypto.jwsSignatureOver(alg, priv, msg);
+  record(tl, !hedged.equals(deterministic) && nodeVerifies(alg, pk, msg,
+                                                           hedged),
+         what + ' the default signature is hedged and verifies');
+}
+
 // Every verify door this service has for `alg`, over one signature: which
 // accepted. JWS for the JOSE algorithms, COSE for ML-DSA, XML (node) and the
 // raw proof (vendored engine) for every ML-DSA and SLH-DSA set.
@@ -224,8 +236,14 @@ async function mlDsaSigGen(t, set) {
       if (g.deterministic && v.seed && g.keyFormat === 'seed') {
         // crypto.js signs deterministically from the seed: the bytes must be
         // NIST's.
-        const sig = crypto.jwsSignatureOver(alg, hex(v.seed), hex(v.message));
+        // The DETERMINISTIC variant, asked for through the internal
+        // parameter that exists for this comparison; what the service
+        // signs with is the hedged one, held just below.
+        const sig = crypto.jwsSignatureOver(alg, hex(v.seed), hex(v.message),
+                                            { deterministic: true });
         record(tl, sig.equals(hex(v.signature)), what + ' JWS signer bytes');
+        hedgedDiffersAndVerifies(tl, alg, hex(v.seed), hex(v.pk),
+                                 hex(v.message), sig, what);
       } else {
         notApplicable(tl, (g.deterministic ? 'expanded-key' : 'hedged') +
           ' signing (checked below as verification instead)', 1);
@@ -301,8 +319,11 @@ async function slhDsaSigGen(t) {
       }
       const what = alg + ' tg' + g.tgId + ' tc' + v.tcId;
       if (g.deterministic && crypto.JWS_SIGNING_ALGS.indexOf(alg) >= 0) {
-        const sig = crypto.jwsSignatureOver(alg, hex(v.sk), hex(v.message));
+        const sig = crypto.jwsSignatureOver(alg, hex(v.sk), hex(v.message),
+                                            { deterministic: true });
         record(tl, sig.equals(hex(v.signature)), what + ' JWS signer bytes');
+        hedgedDiffersAndVerifies(tl, alg, hex(v.sk), hex(v.pk),
+                                 hex(v.message), sig, what);
       } else {
         notApplicable(tl, g.deterministic ? 'signing with a set no JWS ' +
           'algorithm names (checked below as verification)' : 'hedged ' +

@@ -212,6 +212,14 @@ const XMLDSIG_RSA_PSS = 'http://www.w3.org/2007/05/xmldsig-more#rsa-pss';
 // applicable. `expect(ctx, t)` may override the corpus's answer with the
 // door's profile: { expect: 'reject' | 'skip', why }.
 // ---------------------------------------------------------------------------
+// Wycheproof's curve names under 256 bits, independently of crypto.js's
+// allow-list.
+function WEAK_XML_CURVE(curve) {
+  // WEAK_XML_CURVE() is a hot path: once per XML ECDSA vector.
+  return /^(secp(160|192|224)[rk]1|brainpoolP(160|192|224)r1)$/
+    .test(String(curve));
+}
+
 const JWS_EC = { secp256r1: ['ES256', 'sha256'], secp384r1: ['ES384', 'sha384'],
                  secp521r1: ['ES512', 'sha512'],
                  secp256k1: ['ES256K', 'sha256'] };
@@ -277,6 +285,12 @@ const APPLICATIONS = [
       c.uri = XML_HASHES.indexOf(c.hash) >= 0 ? xmlMethod('ecdsa', c.hash)
                                                : null;
       return c.uri ? c : 'no XML ECDSA method with ' + g.sha;
+    },
+    expect: function (c) {
+      return WEAK_XML_CURVE(c.curve) &&
+        !require('../common/mode').usesBrokenAlgorithms()
+        ? { expect: 'reject', why: 'product refuses an XML ECDSA key on a ' +
+            'curve weaker than P-256 (STS-KEYS-0077)' } : null;
     },
     run: function (c, t) {
       return refusesOnThrow(function () {
@@ -498,9 +512,17 @@ const APPLICATIONS = [
       const bits = Number(/hmac_sha(\d+)/.exec(file)[1]);
       return { alg: 'HS' + bits, full: Number(g.tagSize) === bits };
     },
-    expect: function (c) {
-      return c.full ? null : { expect: 'reject', why: 'a JWS HS* MAC is the ' +
-        'whole HMAC output (RFC 7518 3.2); a truncated tag is refused' };
+    expect: function (c, t) {
+      if (!c.full) {
+        return { expect: 'reject', why: 'a JWS HS* MAC is the whole HMAC ' +
+          'output (RFC 7518 3.2); a truncated tag is refused' };
+      }
+      if (hex(t.key).length * 8 < Number(c.alg.slice(2)) &&
+          !require('../common/mode').usesBrokenAlgorithms()) {
+        return { expect: 'reject', why: 'product refuses an HMAC key ' +
+          'shorter than the hash output (RFC 7518 3.2)' };
+      }
+      return null;
     },
     run: function (c, t) {
       return refusesOnThrow(function () {
@@ -574,7 +596,11 @@ const APPLICATIONS = [
     },
     run: function (c, t) {
       return refusesOnThrow(function () {
-        const sig = crypto.jwsSignatureOver(c.alg, c.seed, hex(t.msg));
+        const randomized = (t.flags || []).indexOf('Randomized') >= 0;
+        // Deterministic (the internal parameter, #203) where the vector is;
+        // a Randomized vector is held to verification of our hedged one.
+        const sig = crypto.jwsSignatureOver(c.alg, c.seed, hex(t.msg),
+                                            { deterministic: !randomized });
         if ((t.flags || []).indexOf('Randomized') >= 0) {
           // A hedged vector: its bytes cannot be reproduced, so ours is held
           // to the vector's public key by the vendored engine instead.
@@ -632,8 +658,34 @@ const APPLICATIONS = [
       return cipher ? { cipher: cipher, gcm: false }
                     : 'XML Encryption here has no aes192-cbc';
     },
+    // NOT A PADDING CHECK ANY MORE, AND THAT IS THE FIX (#202): every CBC
+    // failure through decryptElement() is one answer, so a bad padding may
+    // not be told apart from a plaintext that is not XML. A vector is
+    // answered CORRECTLY when it opened to exactly its plaintext (a valid
+    // padding and a plaintext that happens to be an XML fragment — the
+    // empty one, plain text) or was refused with STS-KEYS-0078 and exactly
+    // the sentence every other refusal carried. The padding verdict itself
+    // is the next door's.
+    expect: function () {
+      return { expect: 'accept', why: 'the padding oracle closed: one ' +
+        'refusal for padding, encoding and XML' };
+    },
+    run: xmlCbcUniformRun },
+  { door: 'XML aes*-cbc padding (openXmlContent)', files: /^aes_cbc_pkcs5_test/,
+    group: function (g) {
+      const cipher = { 128: 'aes128-cbc', 256: 'aes256-cbc' }[
+        Number(g.keySize)];
+      return cipher ? { cipher: cipher } : 'XML Encryption here has no ' +
+        'aes192-cbc';
+    },
     expect: xmlCbcPadding,
-    run: xmlContentRun },
+    run: function (c, t) {
+      return refusesOnThrow(function () {
+        const opened = crypto.openXmlContent({ name: c.cipher, ivBytes: 16,
+          tagBytes: 0 }, hex(t.key), Buffer.concat([hex(t.iv), hex(t.ct)]));
+        return !!opened && opened.padOk && opened.plain.equals(hex(t.msg));
+      });
+    } },
   // ----- AES key wrap ----------------------------------------------------
   { door: 'AES-KW (JWE A*KW, ECDH-ES+A*KW, XML kw-aes*)',
     files: /^aes_wrap_test/,
@@ -868,10 +920,36 @@ function sealedDocument(key, gcm) {
                            : [iv, body]);
 }
 
+// xmlCbcUniformRun() is a hot path: once per vector. True when the door
+// answered correctly (see the application above).
+let cbcSentence = null;
+async function xmlCbcUniformRun(c, t) {
+  const wrapped = nodeCrypto.publicEncrypt({ key: transportKey.publicKey,
+    padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha1' },
+    hex(t.key));
+  const xml = encryptedData(XENC + c.cipher, encryptedKey('',
+    XENC + 'rsa-oaep-mgf1p', wrapped), Buffer.concat([hex(t.iv),
+                                                      hex(t.ct)]));
+  const res = crypto.decryptElement(xml, transportKey.privateKey, {});
+  if (res && res.ok) {
+    const padding = xmlCbcPadding(c, t);
+    const padValid = t.result === 'valid' ||
+      !!(padding && padding.expect === 'accept');
+    return padValid && Buffer.from(res.xml, 'utf8').equals(hex(t.msg));
+  }
+  if (outcome(res) !== 'STS-KEYS-0078') {
+    return false;
+  }
+  if (cbcSentence === null) {
+    cbcSentence = res.why;
+  }
+  return res.why === cbcSentence;
+}
+
 // xmlContentRun() is a hot path: once per vector. Accepted when the CIPHER
 // accepted: the decryption is refused afterwards only because Wycheproof's
 // plaintext is not XML (STS-KEYS-0023) or not UTF-8 (STS-KEYS-0025).
-// STS-KEYS-0022 is the cipher's own refusal (the tag, or the padding).
+// STS-KEYS-0022 is the GCM tag's own refusal. Used for GCM only.
 async function xmlContentRun(c, t) {
   const wrapped = nodeCrypto.publicEncrypt({ key: transportKey.publicKey,
     padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha1' },
@@ -1125,14 +1203,7 @@ function joseSigProfile(c, t) {
       'that drops it gives one token many spellings — the strict reading ' +
       'is kept, as tc361 and tc366 (invalid) require of the same bytes' };
   }
-  if (comment === 'key_too_short') {
-    return { expect: 'accept', why: 'RECORDED EXCEPTION on #202: an HMAC ' +
-      'key shorter than its hash output is accepted in both modes, because ' +
-      'the parent project\'s vendored sts_jws_verification.js registers ' +
-      '~30-octet client secrets and runs in product (common/crypto.js, ' +
-      'hmacKeyProblem())' };
-  }
-  if (comment === 'rejects1024bitRsaKey' &&
+  if (/^(key_too_short|rejects1024bitRsaKey)$/.test(comment) &&
       require('../common/mode').usesBrokenAlgorithms()) {
     return { expect: 'accept', why: 'development accepts a key under RFC ' +
       '7518\'s sizes so a client holding one can be exercised; the product ' +
@@ -1291,21 +1362,24 @@ async function runFile(t, file, apps, totals) {
       (count.acceptable ? ', ' + count.acceptable + ' acceptable decided'
                         : ''),
       failures.slice(0, 40).join('; ') +
-        (failures.length > 8 ? '; … ' + (failures.length - 8) + ' more' : '') ||
-        'no vector reached this door');
+        (failures.length > 40 ? '; … ' + (failures.length - 40) + ' more'
+                              : ''));
   }
   log.debug('Leaving runFile().');
 }
 
 // ---------------------------------------------------------------------------
-// THE PRODUCT-MODE CHILD. Two refusals differ by mode — an RSA JWS key
-// under 2048 bits, and rsa-1_5 key transport — and the mode is read when a
-// setting is, so the files that reach them run again in a process started
-// in product mode.
+// THE PRODUCT-MODE CHILD. Four refusals differ by mode — an RSA JWS key
+// under 2048 bits, an HMAC key shorter than its hash output, an XML ECDSA
+// key on a curve under 256 bits, and rsa-1_5 key transport — and the mode
+// is read when a setting is, so the files that reach them run again in a
+// process started in product mode (P-256's file among them, to show the
+// allowed curve still verifies).
 // ---------------------------------------------------------------------------
 const CHILD_FLAG = 'STS_WYCHEPROOF_PRODUCT_CHILD';
 const PRODUCT_FILES = '^json_web_(key|signature|crypto)_test|' +
-                      '^rsa_pkcs1_\\d+_test';
+                      '^rsa_pkcs1_\\d+_test|^hmac_sha(256|384|512)_test|' +
+                      '^ecdsa_(secp224|brainpoolP224|secp256r1_sha256_)';
 
 function inAProductChild(t) {
   log.debug('Entering inAProductChild().');
@@ -1331,8 +1405,8 @@ function inAProductChild(t) {
   }
   t.check(!!report && report.product === true && report.passed > 0 &&
           report.failures.length === 0,
-    'product mode: a JWS RSA key under 2048 bits and rsa-1_5 are ' +
-    'refused (' +
+    'product mode: short RSA and HMAC JWS keys, weak XML ECDSA curves ' +
+    'and rsa-1_5 are refused (' +
     (report ? report.passed : 0) + ' file checks)',
     report ? report.failures.slice(0, 10).join('; ')
            : 'exit ' + run.status + ' ' + String(run.stderr).slice(0, 800));

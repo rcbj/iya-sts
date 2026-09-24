@@ -1524,12 +1524,12 @@ const CODES = [
       'length: it was encrypted to a different certificate.',
     spec: 'refusal by the calling protocol' },
   { code: 'STS-KEYS-0022',
-    summary: 'An XML-encrypted element failed its AES-GCM authentication tag ' +
-      'or AES-CBC padding check.',
+    summary: 'An XML-encrypted element failed its AES-GCM authentication ' +
+      'tag. (An AES-CBC failure is STS-KEYS-0078 since #202.)',
     spec: 'refusal by the calling protocol' },
   { code: 'STS-KEYS-0023',
-    summary: 'An XML-encrypted element decrypted to something that is not ' +
-      'well-formed XML.',
+    summary: 'An XML-encrypted element decrypted with AES-GCM to something ' +
+      'that is not well-formed XML. (AES-CBC: STS-KEYS-0078 since #202.)',
     spec: 'refusal by the calling protocol' },
   { code: 'STS-KEYS-0024',
     summary: 'An XML-encrypted element\'s key could not be unwrapped with ' +
@@ -1779,6 +1779,18 @@ const CODES = [
     spec: 'none — logged. The evidence of a certification that crossed a ' +
       'rebuild; the row would otherwise publish a certificate no published ' +
       'authority signed' },
+  { code: 'STS-KEYS-0077',
+    summary: 'An XML signature was checked with an ECDSA key on a curve ' +
+      'weaker than P-256 (secp160, secp192, secp224 and the like), and the ' +
+      'realm is in product mode, where such a key verifies nothing (#202).',
+    spec: 'the caller\'s refusal: the signature does not verify, and each ' +
+      'protocol answers that as it answers a wrong signature' },
+  { code: 'STS-KEYS-0078',
+    summary: 'An AES-CBC XML-encrypted element did not decrypt to a ' +
+      'well-formed element: its padding, its UTF-8 or its XML was wrong, ' +
+      'and which is deliberately one answer — the padding oracle of XML ' +
+      'Encryption 1.1 section 6.1.3, closed (#202).',
+    spec: 'refusal by the calling protocol' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
