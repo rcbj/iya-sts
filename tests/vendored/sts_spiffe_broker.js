@@ -408,13 +408,34 @@ async function oneRealm(o) {
       selectors: "k8s:pod-uid:" + POD }, "created the pod entry");
 
   // ---- the endpoint ---------------------------------------------------------
+  // THE ADDRESS THE LISTENER REPORTS FIRST, THEN THE SERVICE'S HOST
+  // (2026-09-24). A realm's SPIFFE sockets bind `spiffe.grpcHost`, a literal
+  // address on ONE node, and the `cluster` stack's balancer carries no
+  // SPIFFE port (tests/docker-compose-run-tests-cluster.yml, *node B adds no
+  // SPIFFE addresses*), so dialling the service's host skipped both sections
+  // there on every run. A wildcard or unreachable report falls back to the
+  // host the service is reached at, which is what every other mode dials.
   const url = new URL(base);
-  const target = url.hostname + ":" + o.port;
-  if (!(await reachable(url.hostname, o.port))) {
+  const candidates = [];
+  const reported = listening ? String(listening.address) : "";
+  const reportedHost = reported.replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
+  if (reportedHost && reportedHost !== "0.0.0.0" && reportedHost !== "::") {
+    candidates.push(reportedHost);
+  }
+  if (candidates.indexOf(url.hostname) < 0) {
+    candidates.push(url.hostname);
+  }
+  let target = "";
+  for (let i = 0; i < candidates.length && !target; i++) {
+    if (await reachable(candidates[i], o.port)) {
+      target = candidates[i] + ":" + o.port;
+    }
+  }
+  if (!target) {
     declineToRun(log, "the " + o.mode + " realm's Broker endpoint is bound " +
-                 "on port " + o.port + " and this runner cannot reach " +
-                 target + " (a balancer forwarding only published ports, or " +
-                 "a remote target)");
+                 "on port " + o.port + " and this runner cannot reach it at " +
+                 candidates.join(" or ") + " (a balancer forwarding only " +
+                 "published ports, or a remote target)");
     skipped += 1;
     log.debug("Leaving oneRealm(). Unreachable.");
     return;
