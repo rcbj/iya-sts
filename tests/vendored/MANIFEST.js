@@ -752,6 +752,19 @@ const JOBS = [
   // repository's authorization server.
   { file: 'sts_fapi_conformance.js',     browser: false, local: true,
     conformance: true, timeoutMs: 3600000 },
+  // THE SAME SUITE, EVERY OTHER PLAN THAT APPLIES (#187, 2026-09-24): the
+  // OpenID Provider certification profiles, oidcc-test-plan's client
+  // authentication and response-mode variants, and the four logout plans.
+  // `conformance: true` for the FAPI job's reason; the plans share
+  // `conformance_suite.js` (LOCAL_HELPERS) and fail on an unexplained
+  // WARNING as well as a FAILED module. `local: true`: this repository's
+  // OpenID Provider.
+  { file: 'sts_oidcc_conformance.js',    browser: false, local: true,
+    conformance: true, timeoutMs: 7200000 },
+  // Shared Signals (#187): the transmitter and CAEP interop plans, push and
+  // poll, the CAEP events emitted by the job as the module asks for them.
+  { file: 'sts_ssf_oidf_conformance.js', browser: false, local: true,
+    conformance: true, timeoutMs: 3600000 },
   // OPENID FEDERATION 1.1 (#132, 2026-09-23): the default realm a Trust
   // Anchor and a throwaway realm its subordinate — Entity Configurations,
   // fetch, list, resolve, Trust Marks, a registered subordinate and the
@@ -917,6 +930,10 @@ const HELPERS = [
 // a silent gap. A local helper that nothing lists gets that guarantee from
 // nothing.
 const LOCAL_HELPERS = [
+  // What the OpenID conformance suite's drivers share (#187): the suite's
+  // API, a plan run module by module, and the ledger of argued failures and
+  // known warnings. `sts_fapi_conformance.js` keeps its own copy (#176).
+  'conformance_suite.js',
   // A Kerberos client over raw TCP 88 and MS-KKDCP — AS, TGS, the GSS-wrapped
   // AP-REQ and SPNEGO — for `sts_kerberos_spnego.js` (2026-09-18). It reuses
   // the service's codec for the encodings and works out key usages and

@@ -1,0 +1,387 @@
+"use strict";
+//
+// File: sts_oidcc_conformance.js
+//
+// ---------------------------------------------------------------------------
+// THE OPENID FOUNDATION'S CONFORMANCE SUITE: OPENID CONNECT (#187,
+// 2026-09-24). The OpenID Provider certification plans, `oidcc-test-plan`
+// across its client-authentication methods and response modes, and the four
+// logout plans (RP-Initiated, Front-Channel, Back-Channel, Session
+// Management) — the plans #176's `sts_fapi_conformance.js` did not run, on
+// the same three containers (`tests/CLAUDE.md`, *The OpenID conformance
+// suite*).
+//
+//   1. For each plan below, a throwaway trust realm (left behind) with open
+//      registration and whatever the plan tests switched on, and a person the
+//      suite signs in as. Most plans register their OWN clients through
+//      `/oauth2/register` (`client_registration: dynamic_client`), which is
+//      how the suite's own CI runs these plans against a provider and is the
+//      one way to give the suite the redirect, logout and front- and
+//      back-channel URIs it builds per module. The static variants register
+//      two clients here and hand the suite their credentials; the mutual TLS
+//      one gets certificates from the realm's CA.
+//   2. The plan is created with the discovery URL, the clients and the
+//      `browser` commands, and every module runs, one at a time. One browser
+//      list serves every module because every task in it is optional: sign
+//      in, consent, an error page photographed into the module's
+//      placeholder, the callback; and on the end-session endpoint the page
+//      photographed, the confirmation pressed, and the return followed.
+//   3. A FAILED module fails the job unless EXPECTED names it with its
+//      reason; a WARNING from a condition KNOWN_WARNINGS does not name fails
+//      it too (#187: every warning is fixed or recorded with its reason, and
+//      `oauth-oidc/CLAUDE.md` 3bg carries the same sentences).
+//
+// OWNED HERE (local: true): this repository's OpenID Provider.
+// ---------------------------------------------------------------------------
+
+const assert = require("assert");
+const { Command, Option } = require("commander");
+const names = require("./random_username.js");
+const registry = require("./sts_applications.js");
+const oidf = require("./conformance_suite.js");
+
+var appconfig;
+let appconfigProblem = null;
+try {
+  appconfig = require(process.env.CONFIG_FILE);
+} catch (e) {
+  // The launchers always set CONFIG_FILE; a hand run without one still loads.
+  appconfigProblem = e;
+  appconfig = {};
+}
+var bunyan = require("bunyan");
+var log = bunyan.createLogger({ name: "sts_oidcc_conformance",
+                                level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug("CONFIG_FILE could not be read, so the configuration is empty: " +
+            appconfigProblem.message);
+}
+
+var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
+var root = String(process.env.OID4VCI_ISSUER_URL ||
+                  stsUrl.replace(/\/sts\/?$/, "")).replace(/\/+$/, "");
+const STAMP = names.runStamp();
+const TAG = STAMP.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 10);
+const PASSWORD = "Conf-Passw0rd!-" + String(Date.now()).slice(-6);
+// The directory the service reads CA files from, shared with this job
+// (#171's OUTBOUND_TEST_CA_DIR): the suite's own certificate is written there
+// so a back-channel Logout Token reaches the suite with verification ON.
+const SHARED_DIR = process.env.OUTBOUND_TEST_CA_DIR || "/run/sts-test";
+
+const DYNAMIC = { server_metadata: "discovery",
+                  client_registration: "dynamic_client" };
+
+// ---------------------------------------------------------------------------
+// THE PLANS. `key` is what CONFORMANCE_PLANS names (a trailing `*` is a
+// prefix). `settings` are realm settings the plan needs; `static` registers
+// the clients here with that authentication method.
+// ---------------------------------------------------------------------------
+const PLANS = [
+  // --- OpenID Provider certification profiles ---------------------------
+  { key: "basic", name: "oidcc-basic-certification-test-plan",
+    variant: DYNAMIC },
+  { key: "basic-static", name: "oidcc-basic-certification-test-plan",
+    variant: { server_metadata: "discovery",
+               client_registration: "static_client" },
+    static: "client_secret_basic", responseTypes: ["code"] },
+  { key: "implicit", name: "oidcc-implicit-certification-test-plan",
+    variant: DYNAMIC },
+  { key: "hybrid", name: "oidcc-hybrid-certification-test-plan",
+    variant: DYNAMIC },
+  { key: "config", name: "oidcc-config-certification-test-plan",
+    variant: null },
+  { key: "dynamic", name: "oidcc-dynamic-certification-test-plan",
+    variant: { response_type: "code id_token" } },
+  { key: "formpost-basic", name: "oidcc-formpost-basic-certification-test-plan",
+    variant: DYNAMIC },
+  { key: "formpost-implicit",
+    name: "oidcc-formpost-implicit-certification-test-plan",
+    variant: DYNAMIC },
+  { key: "formpost-hybrid",
+    name: "oidcc-formpost-hybrid-certification-test-plan",
+    variant: DYNAMIC },
+  { key: "3rdparty", name: "oidcc-3rdparty-init-login-certification-test-plan",
+    variant: { response_type: "code" } },
+  // --- oidcc-test-plan: every client authentication, every response mode.
+  // Query (`code`), fragment (the hybrid and implicit types) and form_post
+  // are each exercised, and each method in its own plan.
+  { key: "t-basic", name: "oidcc-test-plan",
+    variant: { client_auth_type: "client_secret_basic", response_type: "code",
+               response_mode: "default",
+               client_registration: "dynamic_client" } },
+  { key: "t-post", name: "oidcc-test-plan",
+    variant: { client_auth_type: "client_secret_post",
+               response_type: "code id_token", response_mode: "default",
+               client_registration: "dynamic_client" } },
+  { key: "t-jwt", name: "oidcc-test-plan",
+    variant: { client_auth_type: "client_secret_jwt",
+               response_type: "code token", response_mode: "form_post",
+               client_registration: "dynamic_client" } },
+  { key: "t-pkjwt", name: "oidcc-test-plan",
+    variant: { client_auth_type: "private_key_jwt", response_type: "code",
+               response_mode: "form_post",
+               client_registration: "dynamic_client" } },
+  { key: "t-mtls", name: "oidcc-test-plan",
+    variant: { client_auth_type: "mtls",
+               response_type: "code id_token token", response_mode: "default",
+               client_registration: "static_client" },
+    static: "tls_client_auth",
+    responseTypes: ["code id_token token"] },
+  // --- Logout --------------------------------------------------------------
+  { key: "logout-rp", name: "oidcc-rp-initiated-logout-certification-test-plan",
+    variant: { response_type: "code",
+               client_registration: "dynamic_client" } },
+  { key: "logout-front",
+    name: "oidcc-frontchannel-rp-initiated-logout-certification-test-plan",
+    variant: { response_type: "code",
+               client_registration: "dynamic_client" } },
+  { key: "logout-back",
+    name: "oidcc-backchannel-rp-initiated-logout-certification-test-plan",
+    variant: { response_type: "code",
+               client_registration: "dynamic_client" },
+    backchannel: true },
+  { key: "session", name: "oidcc-session-management-certification-test-plan",
+    variant: { response_type: "code",
+               client_registration: "dynamic_client" },
+    settings: [["oauth2.sessionManagement", true]] }
+];
+
+// ---------------------------------------------------------------------------
+// KNOWN AND ARGUED DIFFERENCES. `<plan key>/<module>` (or `*/<module>`) ->
+// why a FAILED module is not a defect here.
+// ---------------------------------------------------------------------------
+const EXPECTED = {};
+
+// Conditions whose WARNING this service keeps, and why — the same sentences
+// as `oauth-oidc/CLAUDE.md` 3bg.
+const KNOWN_WARNINGS = {};
+
+let checks = 0;
+function check(what, fn) {
+  log.debug("Entering check().");
+  fn();
+  checks += 1;
+  log.info("  [ok] " + what);
+  log.debug("Leaving check().");
+}
+
+// ---------------------------------------------------------------------------
+// THE SCRIPTED BROWSER (see the header).
+// ---------------------------------------------------------------------------
+function browserFor(base, person) {
+  log.debug("Entering browserFor().");
+  log.debug("Leaving browserFor().");
+  return [{
+    match: base + "/oauth2/authorize*",
+    tasks: [
+      { task: "Sign in", optional: true, match: base + "/authn/login*",
+        commands: [
+          // prompt=login and max_age modules photograph the sign-in page.
+          ["wait", "id", "username", 10, ".*",
+           "update-image-placeholder-optional"],
+          ["text", "id", "username", person, "optional"],
+          ["text", "id", "password", PASSWORD, "optional"],
+          ["click", "id", "kc-login"]] },
+      { task: "Consent", optional: true, match: base + "/oauth2/consent*",
+        commands: [["click", "id", "consent-allow"]] },
+      // A refused authorization request shows this service's error page
+      // (an unregistered redirect_uri must not be redirected to): photographed
+      // into the placeholder, a REVIEW outcome.
+      { task: "Error page", optional: true,
+        match: base + "/oauth2/authorize*",
+        commands: [["wait", "xpath", "//body", 10, ".*",
+                    "update-image-placeholder-optional"]] },
+      { task: "Verify complete", optional: true,
+        match: oidf.SUITE + "test/*/callback*",
+        commands: [["wait", "id", "submission_complete", 10]] }
+    ]
+  }, {
+    match: base + "/oauth2/logout*",
+    tasks: [
+      // The confirmation page, or a refusal — photographed either way, then
+      // the confirmation pressed where there is one.
+      { task: "End-session page", optional: true,
+        match: base + "/oauth2/logout*",
+        commands: [
+          ["wait", "xpath", "//body", 10, ".*",
+           "update-image-placeholder-optional"],
+          ["click", "xpath", "//button[@value='yes']", "optional"]] },
+      // Front-channel: the notification page returns by a refresh.
+      { task: "Return to the client", optional: true,
+        match: base + "/oauth2/logout*",
+        commands: [["wait", "contains", "/post_logout_redirect", 20]] },
+      { task: "Verify complete", optional: true,
+        match: oidf.SUITE + "test/*/post_logout_redirect*" }
+    ]
+  }];
+}
+
+// Two clients registered here, for the static variants.
+async function staticClients(plan, base, api, alias) {
+  log.debug("Entering staticClients(). " + plan.key);
+  const redirect = oidf.SUITE + "test/a/" + alias + "/callback";
+  const clients = [];
+  // The certification plans run one module with client_secret_post, from a
+  // third client the configuration names `client_secret_post`.
+  const methods = [plan.static, plan.static].concat(
+    plan.static === "client_secret_basic" ? ["client_secret_post"] : []);
+  for (let n = 1; n <= methods.length; n++) {
+    const metadata = {
+      redirect_uris: [redirect],
+      token_endpoint_auth_method: methods[n - 1],
+      // RFC 7591 section 2.1: implicit only beside a response type that
+      // uses it.
+      grant_types: ["authorization_code", "refresh_token"].concat(
+        plan.responseTypes.some(function (t) {
+          return /token/.test(t);
+        }) ? ["implicit"] : []),
+      response_types: plan.responseTypes,
+      scope: "openid profile email address phone offline_access",
+      client_name: "conformance " + plan.key + " " + n
+    };
+    const registered = await oidf.send(base + "/oauth2/register", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(metadata) });
+    assert.strictEqual(registered.status, 201, plan.key + " client " + n +
+                       ": " + registered.raw.slice(0, 400));
+    const client = { client_id: registered.body.client_id };
+    if (registered.body.client_secret) {
+      client.client_secret = registered.body.client_secret;
+    }
+    if (plan.static === "tls_client_auth") {
+      client.mtls = await oidf.clientCertificate(api,
+                                                 registered.body.client_id);
+    }
+    clients.push(client);
+  }
+  log.debug("Leaving staticClients().");
+  return clients;
+}
+
+async function prepare(plan) {
+  log.debug("Entering prepare(). " + plan.key);
+  const realm = ("oidcc-" + plan.key + "-" + TAG).slice(0, 31)
+    .replace(/-+$/, "");
+  const base = root + "/realm/" + realm;
+  const api = base + "/admin-api";
+  const alias = "iya-" + plan.key + "-" + TAG;
+  const person = names.usernameFor("conf-" + plan.key);
+  await oidf.ok(root + "/admin-api/realms/create", { id: realm,
+    domain: realm + ".example.net", name: "Conformance " + plan.name },
+    "created the realm");
+  // The OpenID plans test the default: the test stack's appconfig turns the
+  // code-replay courtesy on for a parent job (env/docker-tests.js), so each
+  // realm here turns it back off.
+  const settings = [["oauth2.openRegistration", true],
+                    ["oauth2.codeReplayIdempotent", false]]
+    .concat(plan.settings || []);
+  // What the service fetches from the suite (a registered request_uri, a
+  // client's jwks_uri, a sector_identifier_uri) and what it sends there (a
+  // Logout Token) goes through the federation outbound policy, verified
+  // against the suite's own certificate (#171).
+  settings.push(["federation.outboundCaFile",
+                 await oidf.suiteCertificateFile(SHARED_DIR, TAG)]);
+  for (let i = 0; i < settings.length; i++) {
+    await oidf.ok(api + "/config/set", { key: settings[i][0],
+                                         value: settings[i][1] },
+                  "set " + settings[i][0]);
+  }
+  await oidf.ok(api + "/users/create", { username: person, invent: false,
+    credential: "password", password: PASSWORD,
+    attributes: { cn: "Conformance " + person, givenName: "Conformance",
+                  sn: person, mail: person + "@conformance.test" } },
+    "created " + person);
+  const configuration = {
+    alias: alias,
+    description: "iya-sts " + plan.name + " " + STAMP,
+    server: { discoveryUrl: base + "/.well-known/openid-configuration",
+              allow_unexpected_metadata_fields: oidf.EXTENSION_METADATA },
+    browser: browserFor(base, person)
+  };
+  const keys1 = oidf.keyPair("conf-" + plan.key + "-1");
+  const keys2 = oidf.keyPair("conf-" + plan.key + "-2");
+  if (plan.static) {
+    const clients = await staticClients(plan, base, api, alias);
+    configuration.client = { client_id: clients[0].client_id,
+                             client_secret: clients[0].client_secret,
+                             scope: "openid profile email" };
+    configuration.client2 = { client_id: clients[1].client_id,
+                              client_secret: clients[1].client_secret,
+                              scope: "openid profile email" };
+    if (clients[2]) {
+      configuration.client_secret_post = {
+        client_id: clients[2].client_id,
+        client_secret: clients[2].client_secret,
+        scope: "openid profile email" };
+    }
+    if (clients[0].mtls) {
+      configuration.mtls = clients[0].mtls;
+      configuration.mtls2 = clients[1].mtls;
+    }
+  } else {
+    configuration.client = { client_name: "conformance " + plan.key + " 1",
+                             jwks: keys1.privateJwks };
+    configuration.client2 = { client_name: "conformance " + plan.key + " 2",
+                              jwks: keys2.privateJwks };
+  }
+  log.debug("Leaving prepare().");
+  return configuration;
+}
+
+async function test() {
+  log.debug("Entering test().");
+  await registry.isProduct(root);
+  await oidf.waitForSuite();
+  const unexpected = [];
+  for (const plan of PLANS) {
+    if (!oidf.selected(plan.key)) {
+      continue;
+    }
+    log.info("=== " + plan.name + " " + JSON.stringify(plan.variant) +
+             " (" + plan.key + ") ===");
+    let ran = null;
+    try {
+      const configuration = await prepare(plan);
+      ran = await oidf.runPlan(plan.name, plan.variant, configuration,
+                               plan.key);
+    } catch (e) {
+      // One plan that cannot be set up or created is reported with the rest
+      // rather than ending the run.
+      log.error("Caught in test(): " + plan.key + ": " +
+                ((e && e.message) || e));
+      unexpected.push(plan.key + " could not run: " +
+                      ((e && e.message) || e));
+      continue;
+    }
+    const judged = oidf.judge(plan.key, ran, EXPECTED, KNOWN_WARNINGS);
+    log.info("  " + plan.key + ": " + JSON.stringify(judged.counts) +
+             ", plan " + oidf.SUITE + "plan-detail.html?plan=" + ran.planId);
+    judged.unexplained.forEach(function (line) {
+      unexpected.push(line);
+    });
+  }
+  // Every plan runs before the verdict, so one run reports all of them.
+  if (unexpected.length) {
+    log.error("Unexplained:\n  " + unexpected.join("\n  "));
+  }
+  check("every module passed or is argued, and every warning is known",
+        function () {
+          assert.strictEqual(unexpected.length, 0, unexpected.join("\n"));
+        });
+  log.info(checks + " check(s) passed.");
+  log.info("Test completed successfully.");
+  log.debug("Leaving test().");
+}
+
+new Command()
+  .description("The OpenID Foundation conformance suite's OpenID Connect " +
+    "plans (#187): the OP certification profiles, oidcc-test-plan's " +
+    "variants, and the four logout plans, against this service.")
+  .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
+                                           "needs no browser)"))
+  .parse(process.argv);
+
+test().catch(function (e) {
+  log.error(e.stack || e.message);
+  process.exit(1);
+});

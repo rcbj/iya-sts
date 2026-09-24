@@ -1295,9 +1295,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0138` | In RFC 9700 mode, an already-redeemed refresh token was presented again; its whole family was revoked (section 2.2.2). | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0139` | In RFC 9700 mode, a refresh token's grant had been idle longer than oauth2.refreshIdleSeconds. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0140` | In RFC 9700 mode, a refresh request carried no client_id. | invalid_request (HTTP 400) |
-| `STS-OAUTH-0141` | In RFC 9700 mode, a refresh token was presented by a client other than the one it was issued to. | invalid_grant (HTTP 400) |
-| `STS-OAUTH-0142` | In RFC 9700 mode, a refresh request asked for scope the original grant did not carry. | invalid_scope (HTTP 400) |
-| `STS-OAUTH-0143` | In RFC 9700 mode, an authorization code was presented a second time; the tokens it bought were revoked (section 4.5). | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0141` | A refresh token was presented by a client other than the one it was issued to (RFC 6749 section 6; every mode since #187). | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0142` | A refresh request asked for scope the original grant did not carry (RFC 6749 section 6; every mode since #187). | invalid_scope (HTTP 400) |
+| `STS-OAUTH-0143` | An authorization code was presented a second time; the tokens it bought were revoked (RFC 6749 section 4.1.2, RFC 9700 section 4.5; every mode since #187 unless oauth2.codeReplayIdempotent). | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0144` | In RFC 9700 mode, an authorization request named no client_id; it is answered rather than redirected (section 4.11.2). | invalid_request (HTTP 400, not redirected) |
 | `STS-OAUTH-0145` | In RFC 9700 mode, a code_verifier arrived for an authorization code issued without a code_challenge (PKCE downgrade, section 4.8.2). | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0146` | In RFC 9700 mode, an authorization code was redeemed by a client other than the one it was issued to. | invalid_grant (HTTP 400) |

@@ -626,7 +626,14 @@ const authzCodes = realms.map({ persist: 'oauth2.authzCodes', retain: 'age',
 // about which one happened, which is the wrong trade for a service whose whole
 // job is to show what occurred.
 //
-// So redemption here is IDEMPOTENT for as long as the code would have been
+// **SINCE #187 (2026-09-24) THE COURTESY BELOW IS AN OPT-IN,
+// `oauth2.codeReplayIdempotent`, OFF BY DEFAULT.** The OpenID conformance
+// suite's oidcc-codereuse named it for what it is — section 4.1.2's MUST
+// broken — so a repeat is now refused and what the code bought revoked in
+// every mode (`bcp.checkCodeReplay()`), and the record below is kept for the
+// refusal's sentences. With the setting on, outside RFC 9700 mode:
+//
+// Redemption here is IDEMPOTENT for as long as the code would have been
 // valid anyway: the token set a code was redeemed for is kept for the rest of
 // that code's own five-minute lifetime, and a repeat of the SAME request —
 // same client, same redirect_uri, same PKCE verifier, same DPoP key — is
@@ -3946,6 +3953,25 @@ class OAuth2Server {
                   'directory threw while being read for ' + user.username +
                   '\'s scope claims and they are omitted: ' + e.message);
       }
+    }
+    // Two claims no catalogue row holds, because each is a fact rather than
+    // an attribute (#187; the conformance suite's oidcc-scope-profile and
+    // oidcc-scope-phone reported both missing):
+    //   * `updated_at`, the entry's own modifyTimestamp;
+    //   * `phone_number_verified` beside a `phone_number` — false, because
+    //     nothing here verifies a telephone number, and Core 5.1 says the
+    //     claim is false "otherwise" rather than absent.
+    if (wanted.indexOf('updated_at') >= 0 && out.updated_at === undefined &&
+        user && user.username) {
+      const at = this.deps.vcClaims.updatedAtOf(user.username);
+      if (typeof at === 'number') {
+        out.updated_at = at;
+      }
+    }
+    if (wanted.indexOf('phone_number_verified') >= 0 &&
+        out.phone_number !== undefined &&
+        out.phone_number_verified === undefined) {
+      out.phone_number_verified = false;
     }
     log.debug("Leaving OAuth2Server.scopeClaimsOf(). " +
               Object.keys(out).length + " claim(s).");
@@ -9998,13 +10024,14 @@ class OAuth2Server {
         'bought are no longer replayed here. Start a new authorization ' +
         'request; the refresh token from the first redemption is still good.');
     }
-    // RFC 9700 mode: no relaxation. The repeat is refused and everything the
-    // code bought is revoked (section 4.5, and RFC 6749 section 10.5 for the
-    // revocation). Checked HERE rather than above the two refusals before it,
-    // because those two are more specific — a request that DIFFERS from the one
+    // No relaxation unless `oauth2.codeReplayIdempotent` is on outside RFC
+    // 9700 mode (#187): the repeat is refused and everything the code bought
+    // is revoked (RFC 6749 sections 4.1.2 and 10.5, RFC 9700 section 4.5).
+    // Checked HERE rather than above the two refusals before it, because
+    // those two are more specific — a request that DIFFERS from the one
     // the code was redeemed with, and a code whose own lifetime has run out,
     // are both worth their own sentence, and both are already refusals in
-    // either mode. This is the one case the two modes answer differently.
+    // either mode. This is the one case the setting changes.
     //
     // The jtis come off the token set that was issued: `jwt.decode` rather than
     // `jwt.verify`, because these are this service's own tokens read back out

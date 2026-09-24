@@ -197,11 +197,14 @@ and puts the bare permission name in `scope`. **A token for an API is for that
 API alone.** The OpenID Connect scopes are left off it, so a client that wants
 UserInfo asks for a separate token.
 
-**A redeemed code is replayed, not refused, outside the compliance modes.** An
-identical repeat of the token request, made while the code would still have been
-valid, gets the same token set back. A different request is refused, and the
-refusal names the field that differs. RFC 9700 mode refuses the repeat and
-revokes what the code bought.
+**A redeemed code is refused if it is presented again, in every mode**, and
+what it bought is revoked (RFC 6749 sections 4.1.2 and 10.5). The refusal says
+when the code was redeemed and by which client, or names the field that differs.
+The old development courtesy — an identical repeat answered with the same token
+set — is still there as `oauth2.codeReplayIdempotent`, off by default and
+ignored in RFC 9700, OAuth 2.1 and FAPI mode. **It is weaker than the
+specification**; turn it on only for a client under test that cannot yet cope
+with the refusal.
 
 RFC 6749 makes a code single use and section 10.5 says a second presentation
 SHOULD invalidate what the first issued. A bare *already-used* refusal is
@@ -211,12 +214,13 @@ client retrying after a bad `code_verifier`, and names none of them. So:
 * **Nothing before redemption consumes the code.** A wrong `redirect_uri`, PKCE
   verifier or `dpop_jkt` binding is refused and the code stays redeemable, so
   the corrected request gets tokens rather than a complaint about reuse.
-* **A redeemed code is idempotent for the rest of its own lifetime**
-  (`oauth2.authorizationCodeTtlS`, five minutes). An identical repeat — same
-  client, `redirect_uri`, PKCE verifier and DPoP key — gets the **same** token
-  set, down to the `jti`. Nothing is minted twice, and a warning is logged
-  each time saying a real authorization server would refuse. This is the one
-  departure from the RFC.
+* **With `oauth2.codeReplayIdempotent` on, a redeemed code is idempotent for
+  the rest of its own lifetime** (`oauth2.authorizationCodeTtlS`, five
+  minutes). An identical repeat — same client, `redirect_uri`, PKCE verifier
+  and DPoP key — gets the **same** token set, down to the `jti`. Nothing is
+  minted twice, and a warning is logged each time saying a real authorization
+  server would refuse. It departs from the RFC, which is why it is off by
+  default.
 * **The refusals say what happened.** A code presented with anything different
   is refused naming the field that differed, when the code was redeemed and by
   which client. A code this service has no record of gets its own message:

@@ -4133,6 +4133,21 @@ const SETTINGS = [
                  'was removed when it was redeemed, so a replay of a ' +
                  'forgotten one is still refused as an unknown code.' },
 
+  { key: 'oauth2.codeReplayIdempotent', group: 'OAuth 2.0 / OIDC',
+    label: 'Answer a repeated code redemption with the same tokens',
+    env: 'STS_OAUTH2_CODE_REPLAY_IDEMPOTENT', type: 'bool', dflt: false,
+    runtime: true,
+    description: '**WEAKER THAN THE SPECIFICATION — leave it off.** With it ' +
+                 'on, an IDENTICAL repeat of a Token Request for a code ' +
+                 'already redeemed is answered with the tokens it already ' +
+                 'got, for the rest of the code\'s own lifetime. RFC 6749 ' +
+                 'section 4.1.2 says a code used twice MUST be refused, and ' +
+                 'off (the default) it is — and everything the first ' +
+                 'redemption bought is revoked (section 10.5). RFC 9700, ' +
+                 'OAuth 2.1 and FAPI mode ignore it. It exists for the ' +
+                 'parent project\'s development-mode job that still ' +
+                 'asserts the old courtesy (#187).' },
+
   { key: 'oauth2.maxPendingTransactions', group: 'OAuth 2.0 / OIDC',
     label: 'RFC 9700: remembered transactions (per realm)',
     env: 'STS_OAUTH2_MAX_PENDING_TRANSACTIONS', type: 'int', dflt: 500,

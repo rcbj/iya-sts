@@ -297,11 +297,16 @@ so must `admin-ui/admin.ts`.
    That is Microsoft Entra ID's arrangement, which this feature already copies,
    and the same now holds for RFC 8707's `resource`, which never had the append.
 
-   **THE REPLAY RELAXATION IS THE ONE THING THE TWO MODES ANSWER DIFFERENTLY
-   ABOUT A CODE.** `redeemedCodes` in `oauth2.ts` answers an IDENTICAL repeat
-   with the tokens it already bought, for the reason written where it is
-   declared. RFC 9700 section 4.5 says a real server refuses that, so
-   `checkCodeReplay()` does — and revokes the access, refresh and ID Tokens that
+   **THE REPLAY RELAXATION IS AN OPT-IN SINCE #187 (2026-09-24), AND THE
+   MODE IGNORES IT.** `redeemedCodes` in `oauth2.ts` answered an IDENTICAL
+   repeat with the tokens it already bought outside the mode, for the reason
+   written where it is declared; the OpenID conformance suite's
+   oidcc-codereuse called that what it is — RFC 6749 section 4.1.2's MUST
+   broken — so `checkCodeReplay()` now refuses in every mode unless
+   `oauth2.codeReplayIdempotent` is on (off by default, a documented weaker
+   option, on in `env/docker-tests.js` only for the parent's vendored
+   `oauth2_sts_endpoints.js`), and RFC 9700 mode refuses whatever it says.
+   It revokes the access, refresh and ID Tokens that
    code bought (RFC 6749 section 10.5), through `stats.revoke()` called by
    `oauth2.ts`, never by this module. It sits BELOW the two refusals that are
    more specific — a repeat that differs, and a code whose lifetime ran out —
@@ -3603,7 +3608,7 @@ otherwise. The capability rows `oauth.codes-once`, `oauth.refresh-rotation` and
 
 | Value | Scope | Where it is spent | The loser |
 |---|---|---|---|
-| authorization code | `oauth.code` | `tokenGrant()`, below every check and above the mint; bound to the response | waits (≤5s, catching up through `cluster_barrier.syncShared()`) for the winner's `redeemedCodes` record, then goes down `replayOrRefuseRedemption()` — the same token set outside RFC 9700 mode, refusal and revocation inside it; no record in time is `STS-OAUTH-0512` |
+| authorization code | `oauth.code` | `tokenGrant()`, below every check and above the mint; bound to the response | waits (≤5s, catching up through `cluster_barrier.syncShared()`) for the winner's `redeemedCodes` record, then goes down `replayOrRefuseRedemption()` — refusal and revocation (the same token set only with `oauth2.codeReplayIdempotent` on outside RFC 9700 mode, #187); no record in time is `STS-OAUTH-0512` |
 | PAR `request_uri` | `oauth.par` | `issueAuthorizationResponse()`, where `par.spend()` was; bound to the response | `invalid_request_uri` 400, `STS-OAUTH-0514` |
 | rotated refresh token (RFC 9700 / 2.1 mode) | `oauth.refresh` | `bcp.spendRefreshToken()`, just before the mint; bound to the response | a replay: family revoked by id and by the members known, `STS-OAUTH-0516` |
 | a revoked family | `oauth.refresh-family-revoked` | `bcp.revokeFamily()`, on every replay (local or claimed) | any member presented later, including one no node listed, `STS-OAUTH-0517` |

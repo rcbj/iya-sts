@@ -321,6 +321,7 @@ var config = {
     registeredSecretBytes: 24,                   // Dynamically registered secret random bytes
     authorizationCodeTtlS: 300,                  // Authorization code lifetime (s)
     redeemedCodeCacheSize: 10000,                // Redeemed authorization codes remembered (per realm)
+    codeReplayIdempotent: false,                 // Answer a repeated code redemption with the same tokens
     maxPendingTransactions: 500,                 // RFC 9700: remembered transactions (per realm)
     maxRefreshTokenFamilies: 2000,               // RFC 9700: remembered refresh tokens (per realm)
     signedMetadataAlgorithm: "RS256",            // Algorithm signed_metadata is signed with

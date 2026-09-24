@@ -4965,16 +4965,18 @@ const CODES = [
     summary: 'In RFC 9700 mode, a refresh request carried no client_id.',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-OAUTH-0141',
-    summary: 'In RFC 9700 mode, a refresh token was presented by a client ' +
-      'other than the one it was issued to.',
+    summary: 'A refresh token was presented by a client other than the one ' +
+      'it was issued to (RFC 6749 section 6; every mode since #187).',
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0142',
-    summary: 'In RFC 9700 mode, a refresh request asked for scope the ' +
-      'original grant did not carry.',
+    summary: 'A refresh request asked for scope the original grant did ' +
+      'not carry (RFC 6749 section 6; every mode since #187).',
     spec: 'invalid_scope (HTTP 400)' },
   { code: 'STS-OAUTH-0143',
-    summary: 'In RFC 9700 mode, an authorization code was presented a second ' +
-      'time; the tokens it bought were revoked (section 4.5).',
+    summary: 'An authorization code was presented a second time; the ' +
+      'tokens it bought were revoked (RFC 6749 section 4.1.2, RFC 9700 ' +
+      'section 4.5; every mode since #187 unless ' +
+      'oauth2.codeReplayIdempotent).',
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0144',
     summary: 'In RFC 9700 mode, an authorization request named no client_id; ' +
