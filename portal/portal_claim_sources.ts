@@ -44,6 +44,7 @@ interface PortalContext {
         body: string): string;
   send(res: Res, status: number, body: string): unknown;
   requireSignIn(req: Req, res: Res, path: string, action: unknown): Json;
+  // error-code: none — a declaration of the portal's helper, not a call
   refuseShape(res: Res, result: Json): unknown;
   innerCode(result: Json): string;
   baseUrlOf(req: Req): string;
@@ -207,7 +208,7 @@ class PortalClaimSourcesPage {
                                             'link to that provider.'));
       }
       log.debug('Leaving POST ' + PATH + '. Unlinked.');
-      res.status(303).set('Location', PATH + '?done=' +
+      res.status(303).set('Location', ctx.baseUrlOf(req) + PATH + '?done=' +
                           encodeURIComponent('Unlinked.')).end();
       return undefined;
     }
@@ -255,8 +256,10 @@ class PortalClaimSourcesPage {
       outcome: 'success', summary: '"' + session.user.username +
       '" linked Claims Provider "' + finished.provider + '" (#147).' });
     log.debug('Leaving GET ' + this.CALLBACK + '. Linked.');
-    res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
-      'Linked "' + finished.provider + '".')).end();
+    // ABSOLUTE, ON THE REALM'S OWN BASE: a bare `/portal/...` Location is
+    // answered by the default realm, which is not where this person linked.
+    res.status(303).set('Location', ctx.baseUrlOf(req) + PATH + '?done=' +
+      encodeURIComponent('Linked "' + finished.provider + '".')).end();
     return undefined;
   }
 

@@ -143,6 +143,9 @@ interface ClaimsProvidersDeps {
   scheduler: () => Json;
   audit: () => Json;
   now: () => number;
+  // The directory: `credentials.claimsAggregationStore()`, one function by
+  // operation name, answering empty where no directory is loaded.
+  store: (operation: string, args: any[]) => Json;
 }
 
 class ClaimsProviders {
@@ -175,12 +178,15 @@ class ClaimsProviders {
       },
       now: function (): number {
         return Date.now();
+      },
+      store: function (operation: string, args: any[]): Json {
+        return credentials.claimsAggregationStore(operation, args);
       }
     };
   }
 
   private store(operation: string, args: any[]): Json {
-    return credentials.claimsAggregationStore(operation, args);
+    return this.deps.store(operation, args);
   }
 
   // ===========================================================================
