@@ -256,9 +256,9 @@ STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 #                                control, and every plan runs in a realm of
 #                                its own under the FAPI profile it tests, so a
 #                                persisting mode would check the same rules
-#                                over again for twelve more minutes.
+#                                over again for sixteen more minutes.
 #   STS_CONFORMANCE_TIMEOUT      seconds ADDED to such a mode's bound (default
-#                                1800). The four plans took about twelve
+#                                1800). The four plans took about sixteen
 #                                minutes together on 2026-09-24, and the JVM a
 #                                minute to start.
 # ---------------------------------------------------------------------------

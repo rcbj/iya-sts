@@ -748,7 +748,7 @@ const JOBS = [
   // three containers and a JVM, which ./run-tests.sh brings up only in the
   // modes named by STS_TEST_CONFORMANCE_MODES (`memory` by default) and
   // hands the job as CONFORMANCE_SUITE_URL. An hour's watchdog: the plans
-  // took about twelve minutes together on 2026-09-24. `local: true`: this
+  // took about sixteen minutes together on 2026-09-24. `local: true`: this
   // repository's authorization server.
   { file: 'sts_fapi_conformance.js',     browser: false, local: true,
     conformance: true, timeoutMs: 3600000 },
