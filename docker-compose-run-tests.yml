@@ -752,6 +752,79 @@ services:
   # own discovery are the two answers, and the number that used to be on
   # this line was wrong within a fortnight of being written.
   # ---------------------------------------------------------------------------
+  # -------------------------------------------------------------------------
+  # THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): its server,
+  # its MongoDB and its nginx, from the images the suite publishes, pinned by
+  # tag. tests/vendored/sts_fapi_conformance.js drives it through its API and
+  # fails on a FAILED module — rcbj's decision on #142: "a job in
+  # ./run-tests.sh that fails when a module fails".
+  #
+  # BEHIND A COMPOSE PROFILE, so no mode starts three more containers (and a
+  # JVM) unless the launcher asks: ./run-tests.sh sets COMPOSE_PROFILES and
+  # CONFORMANCE_SUITE_URL for the modes in STS_TEST_CONFORMANCE_MODES
+  # (`memory` by default), and in every other mode the job reports itself
+  # SKIPPED with that reason.
+  #
+  # THE NAMES ARE THE SUITE'S OWN. Its nginx proxies to `server:8080`, its
+  # server builds every URL it hands out on BASE_URL, and the scripted
+  # browser inside the server follows those URLs back — so the nginx answers
+  # to `localhost.emobix.co.uk`, the name the suite's own compose file uses,
+  # on this network alone. Nothing is published.
+  #
+  # PINNED ADDRESSES, `.40` to `.42` of the run's subnet: the `sts` service
+  # adds `.11` to `.13` to its own interface for the realm SPIFFE listeners,
+  # which docker's allocator cannot see, and three more dynamically addressed
+  # containers are enough to reach them.
+  # -------------------------------------------------------------------------
+  conformance-mongo:
+    container_name: ${STS_CONFORMANCE_MONGO_CONTAINER_NAME:-sts-docker-tests-conformance-mongo}
+    image: mongo:${CONFORMANCE_MONGO_TAG:-6.0.13}
+    profiles: ["conformance"]
+    networks:
+      default:
+        ipv4_address: ${CONFORMANCE_MONGO_ADDRESS:-172.30.0.40}
+        aliases:
+          - mongodb
+
+  conformance-server:
+    container_name: ${STS_CONFORMANCE_SERVER_CONTAINER_NAME:-sts-docker-tests-conformance-server}
+    image: registry.gitlab.com/openid/conformance-suite:${CONFORMANCE_SUITE_TAG:-release-v5.3.1}
+    profiles: ["conformance"]
+    depends_on:
+      conformance-mongo:
+        condition: service_started
+    environment:
+      - BASE_URL=https://localhost.emobix.co.uk:8443
+      - BASE_MTLS_URL=https://localhost.emobix.co.uk:8444
+      - MONGODB_HOST=mongodb
+      # The suite's development profile: no sign-in to its own API. Its
+      # server still wants client ids for the two sign-in providers it offers
+      # in production, and refuses to start without them; these are the
+      # placeholders its own compose file passes.
+      - SPRING_PROFILES_ACTIVE=dev
+      - OIDC_GOOGLE_CLIENTID=google-client
+      - OIDC_GOOGLE_SECRET=google-secret
+      - OIDC_GITLAB_CLIENTID=gitlab-client
+      - OIDC_GITLAB_SECRET=gitlab-secret
+    networks:
+      default:
+        ipv4_address: ${CONFORMANCE_SERVER_ADDRESS:-172.30.0.41}
+        aliases:
+          - server
+
+  conformance-nginx:
+    container_name: ${STS_CONFORMANCE_NGINX_CONTAINER_NAME:-sts-docker-tests-conformance-nginx}
+    image: registry.gitlab.com/openid/conformance-suite/nginx:${CONFORMANCE_SUITE_TAG:-release-v5.3.1}
+    profiles: ["conformance"]
+    depends_on:
+      conformance-server:
+        condition: service_started
+    networks:
+      default:
+        ipv4_address: ${CONFORMANCE_NGINX_ADDRESS:-172.30.0.42}
+        aliases:
+          - localhost.emobix.co.uk
+
   tests:
     container_name: ${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}
     image: ${STS_TESTS_IMAGE:-rcbj/mock-sts-tests}
@@ -900,6 +973,11 @@ services:
       # bare: an empty value is what a hand-run of this file has, and that must
       # go on behaving as it did.
       - ADMIN_API_CLIENT_SECRET
+      # The conformance suite, when the mode brought it up (#176). Empty
+      # otherwise, which the job reads as "skipped, and why".
+      - CONFORMANCE_SUITE_URL=${CONFORMANCE_SUITE_URL:-}
+      - CONFORMANCE_CALLBACK_HOST=${CONFORMANCE_CALLBACK_HOST:-tests}
+      - CONFORMANCE_PLANS=${CONFORMANCE_PLANS:-}
     # Chrome crashes tabs on heavy pages when limited to Docker's default 64MB
     # /dev/shm. The console job also passes --disable-dev-shm-usage; this raises
     # the cap as well, because the two mitigations fail differently and the

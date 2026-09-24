@@ -338,7 +338,8 @@ async function prepare(plan) {
     };
     if (plan.ciba) {
       metadata.backchannel_token_delivery_mode = "poll";
-      metadata.backchannel_authentication_request_signing_alg = "PS256";
+      // The algorithm of the keys made above: FAPI allows PS256 and ES256.
+      metadata.backchannel_authentication_request_signing_alg = "ES256";
     }
     if (plan.variant.fapi_response_mode === "jarm") {
       metadata.authorization_signed_response_alg = "PS256";
@@ -364,6 +365,11 @@ async function prepare(plan) {
     if (plan.ciba) {
       client.hint_type = "login_hint";
       client.hint_value = person;
+      // The FAPI-CIBA plan sends acr_values, and wants one the realm
+      // publishes: level 1 (a password) where there is one, which the test
+      // control that answers for the person satisfies.
+      const acrs = discovery.acr_values_supported || [];
+      client.acr_value = acrs.indexOf("1") >= 0 ? "1" : String(acrs[0] || "");
     }
     clients.push(client);
   }
@@ -385,6 +391,7 @@ async function prepare(plan) {
     configuration.automated_ciba_approval_url = "http://" + SELF_HOST +
       ":" + cibaPort + "/approve?realm=" + encodeURIComponent(realm) +
       "&user=" + encodeURIComponent(person) +
+      "&acr=" + encodeURIComponent(clients[0].acr_value || "") +
       "&token={auth_req_id}&type={action}";
   }
   log.debug("Leaving prepare().");
@@ -404,7 +411,10 @@ function startCibaApprover() {
     ok(root + "/realm/" + realm + "/admin-api/users/answer-ciba-request", {
       user: url.searchParams.get("user") || "",
       id: url.searchParams.get("token") || "",
-      approve: url.searchParams.get("type") === "allow"
+      approve: url.searchParams.get("type") === "allow",
+      // What the person proved at approval, as /portal/ciba records it — the
+      // level the request asked for, which the ID Token then carries.
+      acr: url.searchParams.get("acr") || undefined
     }, "answered the CIBA request").then(function () {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end("{}");
