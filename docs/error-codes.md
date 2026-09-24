@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3449** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3459** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -76,7 +76,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 94
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 27
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 37
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
@@ -2872,6 +2872,16 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0025` | Monitoring → Risk Scoring, or GET /admin-api/risk/metrics, could not be answered: the risk store failed to count the window's assessments. | — |
 | `STS-RISK-0026` | An entry of risk.signalFactors was ignored: it names no known signal, or its factor is not a positive number. The signal keeps its built-in factor; logged once for each value the setting is given. | — |
 | `STS-RISK-0027` | The risk.mds-refresh job could not download the FIDO MDS3 BLOB from risk.mdsUrl: outbound is off, the address is refused, the server did not answer 200, or the BLOB is larger than risk.mdsMaxBytes (#105). The active BLOB stays in force. | FIDO Metadata Service section 3.2 |
+| `STS-RISK-0028` | A risk dataset upload was refused for its size: it declared, or sent, more than risk.uploadMaxBytes. Nothing of it is kept. | — |
+| `STS-RISK-0029` | A risk dataset upload was refused because risk.uploadDirectory has no room for it: its free space (statfs) could not hold the declared length — or, with none declared, risk.uploadMaxBytes — or the disk filled while it was written. | — |
+| `STS-RISK-0030` | risk.uploadDirectory could not be created or written, or an upload could not be written to it for a reason other than space. Nothing of the upload is kept. | — |
+| `STS-RISK-0031` | A risk dataset upload was malformed: not multipart/form-data (the console) or not one of the three body types (the API), no file, a second file, a field after the file, no dataset or format, an unknown or repeated query parameter, an empty file, a body that ended early — or a body a body parser had already read, which is a defect in common/app.js's exemption. | — |
+| `STS-RISK-0032` | A compressed risk dataset file expanded past what it may: risk.expandedMaxBytes, or risk.expansionMaxRatio times its stored size above 16 MiB — a decompression bomb. The version is refused and nothing of it is kept. | — |
+| `STS-RISK-0033` | A zip risk dataset file holds no data entry or more than one (directories and __MACOSX/ aside), or its entry is encrypted or compressed with a method other than stored or deflate. Refused as ambiguous or unreadable. | — |
+| `STS-RISK-0034` | A compressed risk dataset file could not be expanded: a truncated or corrupt gzip stream, or a zip whose directory or entry does not read. The version is refused. | — |
+| `STS-RISK-0035` | A risk dataset version was left loading with no progress for risk.importStallMinutes — the process importing it stopped — and the risk.stalled-imports job refused it; or an import found its version already refused that way and stopped. | — |
+| `STS-RISK-0036` | The risk.upload-cleanup job removed a leftover upload file that no live process had touched for risk.importStallMinutes, or an upload file could not be deleted after its import. | — |
+| `STS-RISK-0037` | A risk dataset upload failed unexpectedly: its fields could not be checked, or its import threw rather than answering. The upload's file is deleted. | — |
 
 ## STS-MAIL
 

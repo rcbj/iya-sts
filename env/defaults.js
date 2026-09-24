@@ -865,6 +865,12 @@ var config = {
   risk: {
     datasetsDirectory: "",                                 // Dataset directory
     datasetsDirectoryScanS: 300,                           // Dataset directory scan interval (seconds)
+    uploadDirectory: "./data/risk-uploads",                // Dataset upload directory
+    uploadMaxBytes: 2147483648,                            // Largest dataset upload (bytes)
+    expandedMaxBytes: 8589934592,                          // Largest expanded dataset (bytes)
+    expansionMaxRatio: 100,                                // Largest expansion ratio
+    importStallMinutes: 15,                                // An import with no progress is abandoned after (minutes)
+    uploadSweepS: 60,                                      // Upload clean-up interval (seconds)
     datasetShrinkLimitPercent: 50,                         // Largest shrink accepted (percent)
     supersededRetentionDays: 30,                           // Keep a superseded version (days)
     geoStaleAfterDays: 45,                                 // Geolocation and ASN data is stale after (days)

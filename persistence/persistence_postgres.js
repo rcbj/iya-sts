@@ -4056,6 +4056,46 @@ function create(options) {
       });
     },
 
+    // An import's progress (#215): the version's `progressAt` and rows so
+    // far, only while it is still `loading` — false otherwise, which tells
+    // the importer the stalled-import job refused it and it must stop.
+    riskTouchVersion: function (realm, dataset, version, at, rows) {
+      log.debug("Entering riskTouchVersion(). " + dataset + " " + version);
+      log.debug("Leaving riskTouchVersion().");
+      return pool.query(
+        'UPDATE sts_risk_dataset_versions SET parameters = parameters || ' +
+        '$4::jsonb WHERE realm = $1 AND dataset = $2 AND version = $3 ' +
+        'AND state = \'loading\'',
+        [realm || '', dataset, version,
+         JSON.stringify({ progressAt: Number(at) || 0,
+                          progressRows: Number(rows) || 0 })]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // The versions a stopped process left `loading` (#215): neither started
+    // nor stamped since `before`. One conditional UPDATE, so two nodes
+    // asking at once refuse each version once; answers what it refused.
+    riskAbandonStalled: function (before, at, why, code) {
+      log.debug("Entering riskAbandonStalled().");
+      log.debug("Leaving riskAbandonStalled().");
+      return pool.query(
+        'UPDATE sts_risk_dataset_versions SET state = \'refused\', ' +
+        'loaded_at = $2, refusal = $3, error_code = $4 ' +
+        'WHERE state = \'loading\' AND GREATEST(fetched_at, ' +
+        'COALESCE((parameters->>\'progressAt\')::bigint, 0)) < $1 ' +
+        'RETURNING realm, dataset, version',
+        [Number(before) || 0, Number(at) || 0, String(why || ''),
+         String(code || '')]
+      ).then(function (r) {
+        return r.rows.map(function (row) {
+          return { realm: row.realm, dataset: row.dataset,
+                   version: row.version };
+        });
+      });
+    },
+
     // -------------------------------------------------------------------------
     // ACTIVATION, IN ONE TRANSACTION WITH ITS CHANGE ROW. The dataset's row
     // names the new version and remembers the one it replaces, the new

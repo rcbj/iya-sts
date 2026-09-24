@@ -80,6 +80,12 @@ services:
       - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-sts-lb,localhost,sts,sts2,sts-mock,sts.example.com}
       - STS_SPIFFE_GRPC_HOST=${STS2_ADDRESS:-172.30.0.20}
       - STS_EXTRA_IPS=
+    volumes:
+      # NODE B'S OWN UPLOAD DIRECTORY (#215). `extends` would hand it node
+      # A's volume, and a node's uploads are that node's: the balancer sends
+      # an upload to one node, which stores and imports it. Merged by the
+      # mount path, so this replaces the inherited one and nothing else.
+      - sts-risk-uploads-b:/usr/src/sts/data/risk-uploads
 
   sts-lb:
     container_name: ${STS_LB_CONTAINER_NAME:-sts-docker-tests-lb}
@@ -125,3 +131,7 @@ services:
     depends_on:
       sts-lb:
         condition: service_started
+
+volumes:
+  # Node B's upload directory (#215); node A's is the base file's.
+  sts-risk-uploads-b:

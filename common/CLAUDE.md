@@ -1266,6 +1266,28 @@ own — the LDAP connection needed a mirror and an ask, and everything the front
 process MINTS needed the barrier to know it had. Neither was found by reasoning
 about the design; both were found by one job in one mode.
 
+### A BODY THE PARSERS DO NOT TAKE, AND A PROXY THAT MUST NOT HOLD IT (#215, 2026-09-24)
+
+`app.js`'s two body parsers drain every body into memory at 5 MB. **The two
+risk dataset upload paths are their one exception** (`isStreamedUpload()`,
+exported on the app for the console gate, which leaves those uploads' CSRF
+token to `risk/risk_upload.ts` — `risk/CLAUDE.md` argues the upload). The
+pool needed nothing to STREAM them — `proxy()` already pipes — and two things
+to REFUSE them well:
+
+* **a large body's headers are flushed to the worker at once** (declared over
+  5 MB, or chunked): node sends a client request's headers with its first
+  write, so an upload declaring more than `risk.uploadMaxBytes` reached the
+  worker only with its first chunk, and one whose client waited to be told
+  reached it never — a 408 at the request timeout, found by
+  `sts_admin_risk_upload.js` in `single-node`;
+* **an answer that comes before the body has all arrived closes the
+  client's connection** (`Connection: close`, set here because the worker's
+  own is hop-by-hop and dropped) and drains the rest, rather than writing
+  into a worker that stopped reading and resetting the client mid-upload.
+
+Every ordinary request is proxied exactly as before.
+
 ### A SECOND POOL FOR THE CONSOLE AND THE PORTAL (2026-09-13)
 
 `workers.surfaceCount` workers kept for this service's OWN two hosted
