@@ -4103,12 +4103,18 @@ const SETTINGS = [
 
   { key: 'oauth2.registeredSecretBytes', group: 'OAuth 2.0 / OIDC',
     label: 'Dynamically registered secret random bytes',
-    env: 'STS_OAUTH2_REGISTERED_SECRET_BYTES', type: 'int', dflt: 24,
+    env: 'STS_OAUTH2_REGISTERED_SECRET_BYTES', type: 'int', dflt: 48,
     min: 16, max: 128, runtime: true,
     description: 'How many random bytes make a registered client\'s ' +
                  '`client_secret` and its RFC 7592 ' +
                  '`registration_access_token`. Both ARE secrets, which is ' +
-                 'why the floor is 16 bytes (128 bits).' },
+                 'why the floor is 16 bytes (128 bits). **48 by default ' +
+                 '(#202)**: a `client_secret_jwt` client signs with the ' +
+                 'UTF-8 octets of its base64url secret, and RFC 7518 ' +
+                 'section 3.2 says the key MUST be at least the hash ' +
+                 'output — 48 bytes are 64 characters, enough for HS512. ' +
+                 'WARNING: below 24 even HS256 is refused in product ' +
+                 'mode, and below 48 HS512 is.' },
 
   { key: 'oauth2.authorizationCodeTtlS', group: 'OAuth 2.0 / OIDC',
     label: 'Authorization code lifetime (s)',

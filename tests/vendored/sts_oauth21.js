@@ -72,7 +72,10 @@ var DECLARES_NOTHING = "o21-declares-nothing";
 var LOCKED = "o21-locked";
 var ASSERTING = "o21-asserting";
 var SAML_CLIENT = "o21-saml";
-var SECRET = "o21-secret-" + String(Date.now()).slice(-8);
+// Long enough for HS256 (RFC 7518 section 3.2: at least the hash output,
+// 32 octets), which product mode enforces since #202.
+var SECRET = "o21-secret-" + String(Date.now()).slice(-8) +
+  "-0123456789abcdef0123456789abcdef";
 var PERSON = usernameFor("o21person");
 var PASSWORD = "o21-Passw0rd!-" + String(Date.now()).slice(-8);
 
