@@ -178,3 +178,11 @@ an altered `wctx`, `wfresh` read as seconds rather than minutes, a SAML 1.1
 signature whose reference does not resolve because `AssertionID` was not
 named, A passive requestor that issues a good token to a
 working relying party looks finished and proves almost nothing.
+
+## Schema validation (#188, 2026-09-24)
+
+The federation metadata and the sign-in response's `wresult` — SAML 1.1 and
+SAML 2.0 tokens in the 2005/02 and 1.3 wrappers — are validated against the
+published WS-Federation 1.2, WS-Trust and SAML schemas by
+`tests/vendored/sts_xml_schema_validation.js`, in a development and a product
+realm. Both were valid on the first run.

@@ -4233,11 +4233,24 @@ class FederationSp {
   // partner sends a wresult to and, since #168, the key it encrypts the
   // token to. It is what AD FS imports a relying party from. Unsigned, for
   // the SAML document's reason above.
+  //
+  // **fed:ApplicationServiceEndpoint IS REQUIRED, AND WAS MISSING UNTIL
+  // #188 (2026-09-24).** WS-Federation 1.2's schema gives
+  // ApplicationServiceType a sequence of ApplicationServiceEndpoint
+  // (minOccurs 1), SingleSignOutNotificationEndpoint and
+  // PassiveRequestorEndpoint, so a document holding only the last is invalid
+  // against the published schema and a validating importer refuses it — which
+  // tests/vendored/sts_xml_schema_validation.js found. Both name the one
+  // address this relationship has, as AD FS's own relying-party documents do.
   // ---------------------------------------------------------------------------
   private wsfedMetadata(req, res, record, base, encryption) {
     const { log, logArtifact, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.wsfedMetadata().");
     const fed = 'http://docs.oasis-open.org/wsfed/federation/200706';
+    const endpoint = '<wsa:EndpointReference ' +
+      'xmlns:wsa="http://www.w3.org/2005/08/addressing"><wsa:Address>' +
+      xmlEscape(this.acsUrl(base, record)) +
+      '</wsa:Address></wsa:EndpointReference>';
     const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' +
       '<md:EntityDescriptor xmlns:md="' + NS_MD + '" ' +
         'xmlns:ds="http://www.w3.org/2000/09/xmldsig#" ' +
@@ -4246,10 +4259,10 @@ class FederationSp {
         'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' +
         'xmlns:fed="' + fed + '" xsi:type="fed:ApplicationServiceType" ' +
         'protocolSupportEnumeration="' + fed + '">' + encryption +
-      '<fed:PassiveRequestorEndpoint><wsa:EndpointReference ' +
-        'xmlns:wsa="http://www.w3.org/2005/08/addressing"><wsa:Address>' +
-        xmlEscape(this.acsUrl(base, record)) +
-      '</wsa:Address></wsa:EndpointReference></fed:PassiveRequestorEndpoint>' +
+      '<fed:ApplicationServiceEndpoint>' + endpoint +
+        '</fed:ApplicationServiceEndpoint>' +
+      '<fed:PassiveRequestorEndpoint>' + endpoint +
+        '</fed:PassiveRequestorEndpoint>' +
       '</md:RoleDescriptor></md:EntityDescriptor>';
     logArtifact('federation WS-Federation relying party metadata', 'as served',
                 xml);
