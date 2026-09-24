@@ -24,17 +24,36 @@ default follows `oauth2.rfc9700` / `oauth2.oauth21`, and every appconfig file
 this repository ships turns it on — so the port is HTTPS unless
 `STS_HTTPS=false`. It is one listener in one scheme, never both.
 
-With HTTPS on there is no plain listener left except `/pki/` on `pki.httpPort`,
-so the first fetch of the certificate is made with verification off:
+The main port presents the same certificate as LDAPS 636 and the embedded
+debugger's listener, so trusting this service is one decision for every socket
+rather than three, and a caller who has trusted it for the other sockets does
+not meet an unencrypted one on the port every protocol family answers on.
+
+It costs one unverified call, necessarily. With HTTPS on there is no plain
+listener left except `/pki/` on `pki.httpPort`, and in development the key does
+not exist until the process starts, so nothing can hold an anchor for it in
+advance. The first fetch of the certificate is made with verification off, and
+everything after it is verified:
 
 ```bash
 curl -k https://localhost:8081/tls/server-certificate > /tmp/sts.pem
-curl --cacert /tmp/sts.pem https://localhost:8081/healthcheck
+curl --cacert /tmp/sts.pem https://localhost:8081/healthcheck    # verified from here on
+export NODE_EXTRA_CA_CERTS=/tmp/sts.pem                          # for a node client
 ```
 
+`GET /tls/server-certificate` exists so that a caller can put the certificate in
+its own truststore rather than switching verification off, which is the habit
+this workflow exists to break. It is on the main port because that is the port
+reachable before anything is trusted.
+
+`STS_HTTPS=false` restores the plain port, and it is a supported configuration
+rather than an escape hatch: a client that cannot be taught to trust a
+per-start certificate is exactly the thing this service exists to exercise.
+
 `tls.minVersion` (TLS 1.2 by default) and `tls.ciphers` apply to the main
-port, LDAPS and the debugger's listener alike. A cipher list that matches
-nothing stops the service at startup, naming the setting.
+port, LDAPS and the debugger's listener alike, and each binds `global.host`. A
+cipher list that matches nothing stops the service at startup, naming the
+setting.
 
 **The cipher list is BCP 195 by default.** TLS 1.3's three suites come
 first, and TLS 1.2 is limited to the four ECDHE AES-GCM suites RFC 9325
@@ -58,10 +77,21 @@ FAPI realm: a cipher suite belongs to the socket, not to a realm.
 * **One anchor covers the main port, LDAPS 636, the debugger listener and every
   token this service signs.** In development mode the hierarchy is rebuilt at
   every start; where the keystore persists, it survives a restart.
+  It is not a file in the image or the repository, because a certificate
+  committed to a repository is a private key committed to a repository.
 * **`GET /tls/server-certificate`** publishes the leaf (first), the chain and
   the Root — everything a client needs to build a truststore, and never a
-  private key. If the Root is rebuilt (`build-root` on `/admin/pki`), every
+  private key. It is served `Cache-Control: no-store`, since a cached copy
+  outlives the key it describes. A truststore holding only the leaf builds no
+  path, and fails with `unable to get local issuer certificate` about a Root it
+  was never given. If the Root is rebuilt (`build-root` on `/admin/pki`), every
   socket is re-keyed onto the new hierarchy for the next handshake.
+* **LDAPS presents the same certificate and key**, not a second pair, so one
+  fetch is one anchor for `https://` *and* `ldaps://`; two key pairs would make
+  an `ldapsearch` fail against a truststore built for the HTTPS port with the
+  same `unable to get local issuer certificate`, which names nothing. The
+  private key is held in memory by the process and nothing writes it to a
+  response.
 * **Names and addresses**: `tls.hostnames` (`localhost`, `sts`, `sts-mock`,
   `sts.example.com`) and `tls.ips` (`127.0.0.1`) go into the subjectAltName;
   the CN is the first host name.
@@ -94,7 +124,23 @@ also a leaf of the TLS Issuing CA.
 ### Client certificates on the main port
 
 The port is bound asking for a certificate and accepting a connection without
-one. What happens to a certificate that is presented:
+one (`requestCert: true, rejectUnauthorized: false`), so presenting one is the
+client's decision and mutual TLS happens where every other protocol already
+arrives. What a certificate is worth is decided where it is used:
+
+| Where | What it takes |
+|---|---|
+| `GET /tls/sign-in` | a certificate that verified starts a sign-on session (below) |
+| the token endpoint | RFC 8705: `tls_client_auth` and `self_signed_tls_client_auth` authenticate a client, and a token is bound to whatever certificate the connection carried |
+| `/xacml/*` and `POST /xacml/pip` | a verified chain whose subject DN resolves to an entry holding `REMOTE_PEPS` or `XACML_USER` |
+| `/scim/v2` | RFC 7644 section 2's client-certificate scheme |
+
+Presenting a certificate anywhere else signs nobody in, and does nothing at all
+at a route that reads no certificate. `GET /tls` describes all of it — what this
+service presents, what it trusts, the protocol floor, the revocation policy —
+and takes `?format=json`.
+
+What happens to a certificate that is presented:
 
 * **The handshake always completes.** A certificate that verifies against the
   truststore is *known*; one that chains to nothing still completes the
@@ -106,9 +152,57 @@ one. What happens to a certificate that is presented:
   out whole.
 * **A verified certificate is recorded as an authentication** when the
   connection is established — once per connection, not per request — under
-  protocol `TLS` on `/admin/users`.
+  protocol `TLS` on `/admin/users` (see *Recording a verified certificate*
+  below).
 * A certificate is **never** read from a forwarded header (`X-Client-Cert` and
   its relatives) in any mode. Behind a balancer, TLS has to be passed through.
+* **A handshake that fails is logged**, with OpenSSL's own reason
+  (`tlsClientError`), and recorded as a refusal on the audit log. Such a
+  handshake never reaches a handler, so without that it is invisible from both
+  ends: the caller sees a closed socket and the server says nothing. On this
+  port a client certificate is never required, so what lands there is a broken
+  handshake rather than a refused credential.
+
+### Recording a verified certificate
+
+`/admin/users` answers "who has this service seen, in an interaction that
+succeeded", and a mutual-TLS client whose certificate verified is exactly that.
+So when a handshake completes with a certificate that verified, its subject is
+filed through the same authentication record every other family uses, under
+protocol `TLS`, and the embedded directory seeds an entry for it. It is a
+**record** of what happened, not a credential: nothing consults the record or
+the entry to decide anything (`/tls/sign-in` is what signs somebody in), and
+`GET /tls` says so.
+
+* It is recorded **at the handshake**, not per request. The handshake is where
+  the credential was accepted, so a connection carrying six requests is one
+  authentication, and a client that opens six connections presented its
+  certificate six times.
+* It is recorded **only when the certificate verified**; nothing is written for
+  a certificate that failed or was never sent.
+* The identity is the subject in **RFC 4514 form** — leaf first, no spaces after
+  the commas, values escaped. That is a *different string* from the display DN
+  shown beside it and from the one `openssl x509 -subject` prints.
+
+**Where the directory entry goes.** A certificate subject is already a DN, but
+it usually names an object in somebody *else's* directory:
+`CN=alice,O=Example Corp,C=US` is not under `dc=example,dc=com`. So a subject
+that already lies under this directory's base DN (with its parent present) is
+created **at it, unchanged**; anything else is named by the subject's `CN` — or
+its leaf RDN where there is none — under `ou=users`, with every other RDN kept
+as an attribute and the full subject, issuer, serial, validity and fingerprint
+written on as `x509*` attributes. Those names are this service's own: there is
+no standard attribute for "the DN inside the certificate", and the standard one
+for the certificate itself, `userCertificate`, is binary and transferred as
+`userCertificate;binary`, so base64 under that name would be a value no client
+could parse. The CN is preferred over the leaf RDN because openssl puts
+`emailAddress` **last** in a subject, so the leaf RDN of a typical client
+certificate is the address. What that costs is a collapse — two certificates
+whose CNs match, from two different CAs, land on one entry — and it is made
+visible: both subjects are listed under `x509subject`, and the console still
+files them as two identities because it keys on the whole DN. A renewed
+certificate for the same subject makes no second entry; its serial, validity
+and fingerprint are **appended**, so the entry shows the history.
 
 ### The client truststore
 
@@ -125,7 +219,23 @@ is filled from four places:
 The gated doors are strict: a bundle with one block that cannot be read is
 refused whole. There is **no bulk clear** on them — removing is one row at a
 time — and removing an anchor from the file lasts only until the next start.
-An anchor added in one process reaches the others through the directory.
+The console page needs Admin Write to change anything, and the API needs an
+`admin:write` token (`admin:read` to list). An anchor added in one process
+reaches the others through the directory; with request workers, both doors are
+answered by the front process, which is the one that holds the listener.
+
+**Why it starts empty.** The certificate authority whose clients it verifies is
+often generated in somebody's *browser* minutes before the connection, and
+exists nowhere else, so no configuration file could hold it and no image could
+bake it in. `POST /tls/trust` takes one or more PEM certificates (raw, or as the
+`certificates` field of a form or JSON body) and applies them to the listener;
+existing connections keep the truststore they were made under, and the next
+handshake is judged against the new one. `POST /tls/trust/clear` empties it.
+"Empty" is meant literally: node's bundled public root store is **not** used,
+since a public root has no business verifying a client certificate from a
+private CA, so the starting state is "nothing verifies". With HTTPS on, the
+first POST of an anchor is made with verification off, as the first fetch of
+the server certificate is.
 
 **The service Root in the truststore** lets a person present the TLS client
 certificate they issued themselves on `/portal/signing-key`. Every key pair this
@@ -155,7 +265,16 @@ presented and verified, the `x5t#S256` thumbprint the token endpoint would bind
 a token to, and the revocation verdict. A caller that presents no certificate is
 simply not signed in, and the answer says so. The session carries
 `amr ["swk"]` (a software key) and `acr "1"`. A browser that already holds a
-session starts no second one.
+session keeps it and starts no second one.
+
+**Why a client needs this answer.** A client knows what it sent. What it cannot
+see is which chain the server built out of it, which anchor it verified against,
+or whether the certificate was accepted at all. Under **TLS 1.3** it has not
+even been told: the client sends its Certificate and Finished *last*, so its
+handshake is complete before the server has said anything, and the verdict
+arrives afterwards — as a post-handshake alert, or as a bare hang-up, which is
+what node's own TLS server does. `GET /tls/sign-in` answers the one question of
+that family this service answers: *did my certificate arrive, and as what.*
 
 ### Revocation is consulted
 
@@ -183,17 +302,29 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
   636, the KDC's TCP 88, the debugger and the revocation listener), so the
   client's address is known and mutual TLS still terminates on the node. A
   connection from outside `global.trustedProxies` is closed, except one from
-  this host. The README's *Behind an L4 load balancer* section has the AWS NLB
-  recipe.
+  this host. [Behind an L4 load balancer](configuration.md#behind-an-l4-load-balancer--the-proxy-protocol)
+  has the AWS NLB recipe.
 
 ### Not implemented
 
-* **Refusing an unverified client certificate at the handshake.** The main port
-  carries every protocol, most of whose callers present no certificate; the
-  refusal happens where the certificate is used. The two listeners that did
-  this (8443 asking, 9443 requiring) were deleted on 2026-09-16.
-* **A connection report.** `/tls/whoami`, which described what the server saw
-  of a connection, went with those listeners and has no successor here.
+* **Refusing an unverified client certificate at the handshake.** Refusing
+  there is a property of a socket, and the main port carries every protocol:
+  `rejectUnauthorized: true` would refuse every caller that presents no
+  certificate, which is almost all of them. A certificate that does not verify
+  is refused at the doors that use it — the same answer, one layer up. What is
+  lost is the proof that a certificate was acceptable before any handler ran,
+  and with it the chance to exercise a client's own mutual-authentication
+  verdicts against a server that insists: `required`, and
+  `required-and-rejected` (the case an operator hits most). Only
+  `not-required`, the main port's posture, is reachable here.
+* **A connection report.** No endpoint reports what the server made of a
+  handshake (the request as it arrived, what TLS negotiated, the client
+  certificate exactly as presented). It is a debugging surface rather than a
+  protocol, and is being taken up in a separate project; nothing here should be
+  read as pointing at a replacement.
+* **Separate TLS ports.** There is no `tls.port` or `tls.mutualPort`; a
+  deployment that sets `STS_TLS_PORT` or `STS_MTLS_PORT` gets an "unknown
+  setting" warning at startup rather than a silent no-op.
 * **Client certificates on LDAPS.** Port 636 asks for none.
 
 ## Development and product mode
@@ -234,8 +365,8 @@ refusal of an application's certificate — is the same in both modes. See
 | `pki.revocationFetchTimeoutMs` | `STS_PKI_REVOCATION_FETCH_TIMEOUT_MS` | `3000` | yes | How long a fetch of a foreign CRL may take; a request waits on it the first time. |
 
 The remaining `pki.revocation*` settings tune OCSP, CRL caching and LDAP
-distribution points; they are on `/admin/pki` and in the README's settings
-table. This table is a copy of rows in `common/config.js`; the live source is
+distribution points; they are on `/admin/pki` and in
+[*Every setting*](configuration.md#every-setting). This table is a copy of rows in `common/config.js`; the live source is
 `/admin/tls` and `GET /admin-api/config`.
 
 See [Configuration](configuration.md) for how a value is resolved and where it

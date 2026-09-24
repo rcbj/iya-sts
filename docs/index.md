@@ -40,8 +40,13 @@ each.
 [Token samples](token-samples.md) ·
 [Error codes](error-codes.md)
 
-**Administration** — [Management API](management-api.md): `/admin-api`, every
-console control reachable by a machine with an OAuth 2.0 access token.
+**Administration** —
+[Admin console](admin-console.md): `/admin`, who may use it and what its pages
+do ·
+[Applications](applications.md): the registry of every client, relying party
+and service provider ·
+[Management API](management-api.md): `/admin-api`, every console control
+reachable by a machine with an OAuth 2.0 access token.
 
 **Sessions and signals** —
 [Sessions](sessions.md) ·
@@ -201,6 +206,7 @@ anybody who signs in holds both roles; product mode never opens it that way, and
 `admin` claims it only by signing in with its password. The console can revoke tokens, add claims to every
 future token and assertion, and create people in the directory. Do not put a
 development-mode instance on a public address.
+[Admin console](admin-console.md) has the rest.
 
 **`/admin-api` requires an OAuth 2.0 access token** since 2026-09-09 —
 audienced to this API, carrying `admin:read` to read and `admin:write` to

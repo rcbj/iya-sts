@@ -31,7 +31,8 @@ Every assessment is shown in the admin console at **Monitoring → Risk**
   started without authenticating.
 - **A published statistical model.** The score is Freeman et al.'s model
   ("Who Are You? A Statistical Approach to Measuring User Authenticity",
-  NDSS 2016), ported from das-group's reference implementation. It weighs how
+  NDSS 2016), ported from das-group's reference implementation
+  (`rba-algorithm`, MIT). It weighs how
   unusual a sign-in's features are for this person against how common they
   are in the realm.
 - **Evaluators** add what the model can't see. Each one multiplies the score
@@ -318,7 +319,8 @@ Development mode checks no password.
 ## Datasets
 
 **iya-sts distributes no third-party dataset.** None is in the repository,
-the container images or the tests. Each deployment obtains its datasets under
+the container images or the tests: the test fixtures are synthetic, and
+`tests/no_third_party_datasets.js` fails if a provider's file is added. Each deployment obtains its datasets under
 the provider's terms and imports them into its own database. There are three
 ways in:
 
@@ -427,8 +429,8 @@ service from starting.
 ### Providers and their terms
 
 **No provider's data is imported until somebody has accepted that provider's
-current terms.** The acceptance is recorded in the database and on the audit
-log, with:
+current terms.** The acceptance is recorded in the database
+(`sts_risk_terms_acceptances`) and on the audit log, with:
 
 - who accepted,
 - through which door (the loader, the console or the API),
@@ -468,11 +470,11 @@ acceptance.
 Risk scoring builds a profile of how each person signs in. That profile is
 personal data:
 
-| What | Kept for |
-|---|---|
-| **Each assessment.** The address is sealed under the key-encryption key and also kept as its /24 (IPv4) or /48 (IPv6) network. It also holds the country, city and ASN; the browser family, OS and device type; a fingerprint of the User-Agent; the TLS client fingerprint; which kind of credential answered; the score, the level and the signals. | `risk.assessmentRetentionDays` (90 days) |
-| **How often each person has used each network, address and device.** The address is kept only as a keyed digest. | `risk.historyRetentionDays` (180 days since last use) |
-| **Each refused password.** It names the person, or holds a keyed digest of a name that matched nobody (never the name as typed), with the network and the error code. | `risk.failureRetentionDays` (30 days) |
+| What | Table | Kept for |
+|---|---|---|
+| **Each assessment.** The address is sealed under the key-encryption key and also kept as its /24 (IPv4) or /48 (IPv6) network. It also holds the country, city and ASN; the browser family, OS and device type; a fingerprint of the User-Agent (never the header itself); the TLS client fingerprint; which kind of credential answered; the score, the level and the signals. | `sts_risk_assessments` | `risk.assessmentRetentionDays` (90 days) |
+| **How often each person has used each network, address and device.** The address is kept only as a keyed digest. | `sts_risk_feature_counts` | `risk.historyRetentionDays` (180 days since last use) |
+| **Each refused password.** It names the person, or holds a keyed digest of a name that matched nobody (never the name as typed), with the network and the error code. | `sts_risk_failures` | `risk.failureRetentionDays` (30 days) |
 
 This data is written to the database **only where the key-encryption key can
 seal it**, and product mode requires a key-encryption key. Without one it is

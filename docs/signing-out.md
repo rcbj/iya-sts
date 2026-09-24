@@ -33,7 +33,9 @@ GET /logout?format=json           the same thing, for a test
 ```
 
 Signing out may mean signing in first. This service has no other way to know who
-is asking, and the session that creates is listed with everything else.
+is asking, and the session that creates is listed with everything else. **No
+console role is needed, and that is not an oversight**: signing yourself out
+must not require a role that signing in did not.
 
 **`?username=` naming somebody else works in development mode only.** In product
 mode a password is verified at every door, so an anonymous request naming a
@@ -96,23 +98,39 @@ So those rows appear on the page with a dash instead of a checkbox and a sentenc
 saying why. Hiding them would make a global logout look complete when it is not,
 which is the most misleading thing this endpoint could do.
 
-Two more things it does not reach, and both are honest rather than missing:
+Three more limits, all honest rather than missing:
 
 * **A Kerberos service ticket keeps working against the service that accepts
   it.** The sign-out instant is checked at the *KDC*, and accepting a service
   ticket never contacts the KDC. A fresh `AS-REQ` also succeeds — signing out
-  is not being locked out — but does not lift the instant: its new ticket is
-  accepted, and every ticket-granting ticket from before the sign-out, renewed
-  or not, stays refused until the latest one could still be valid.
+  is not being locked out — but does not lift the instant (#111): its new
+  ticket is accepted, and every ticket-granting ticket from before the
+  sign-out, renewed or not, stays refused until the latest one could still be
+  valid — the sign-out plus the longer of the ticket and renew lifetimes, plus
+  the clock skew — on every node.
 
   Worth being plain about: **Kerberos itself has no logout, no session and no
   revocation.** There is no CRL, no status query and no list of issued tickets —
-  a ticket is valid because it decrypts and hasn't expired, and short lifetimes
-  are the entire revocation model. `KDC_ERR_TGT_REVOKED` (20) is a registered
-  error code whose text says what is meant, but no specification defines a
-  mechanism that emits it. What this service does is an invention using the one
-  lever a real KDC has — the `TGS-REQ`, which is the only moment the KDC is back
-  in the loop. Do not read it as conformance.
+  a KDC deliberately keeps no state about what it has issued, which is what
+  lets one be replicated read-only. A ticket is valid because it decrypts and
+  hasn't expired, a service accepts one with its own key without contacting
+  the KDC, and short lifetimes are the entire revocation model.
+  `KDC_ERR_TGT_REVOKED` (20) is a registered error code whose text says what is
+  meant (RFC 4120 §7.5.9), but no specification defines a mechanism that emits
+  it. What this service does is an invention using the one lever a real KDC
+  has — the `TGS-REQ`, which is the only moment the KDC is back in the loop,
+  and the same lever that makes disabling an Active Directory account bite
+  within the service-ticket lifetime rather than the TGT's. Do not read it as
+  conformance.
+
+  The check is on the ticket's `authtime`, not its issue time, because a
+  renewed ticket deliberately preserves `authtime`; checking anything else
+  would let a renewal launder a signed-out ticket back into a live one.
+* **An LDAP client sees its connection end mid-conversation.** The connection
+  is the session, so the sign-out is the socket closing, which is what a
+  directory revoking a session looks like from the other end. An *Unsolicited
+  Notice of Disconnection* (RFC 4511 section 4.4.1) would be the polite form,
+  and node-ldapjs has no way to send one.
 * **SPIFFE is not in the list at all.** A SPIFFE identity is a workload, attested
   per call, holding no session. The registry can end an identity's ability to
   obtain *another* SVID, which is a ban rather than a logout; that lives at

@@ -24,7 +24,9 @@ and there is a root DSE. Result codes 0, 2, 4, 11, 16, 32, 49, 66 and 68 can all
 be produced, along with the product-mode refusals below.
 
 A modify is **atomic**. The changes are applied to a copy, and the copy replaces
-the stored entry only once every change has been accepted. `deleteOldRdn` on a
+the stored entry only once every change has been accepted — applying them in
+place and rolling back on failure is the same thing written so that a bug leaves
+half a change behind. `deleteOldRdn` on a
 modifyDN is honoured, as RFC 4511 section 4.9 requires.
 
 There is no StartTLS, no SASL and no extended operation. The directory is built
@@ -47,15 +49,32 @@ LDAPTLS_CACERT=/tmp/sts.pem ldapsearch -H ldaps://localhost:636 -x \
 
 The certificate is regenerated on every start, unless `tls.certificateFile`
 supplies one, so fetch it again after a restart rather than switching
-verification off. **No client certificate is asked for on 636.** The certificate
-is re-keyed on 636 whenever the listener certificate is re-issued, for example
-after a new Root is built on `/admin/pki`.
+verification off — `LDAPTLS_REQCERT=never` is the habit that endpoint exists to
+avoid, and here it would also hide the one thing on this listener worth
+checking. The certificate is re-keyed on 636 whenever the listener certificate
+is re-issued, for example after a new Root is built on `/admin/pki`.
+
+**No client certificate is asked for on 636.** This listener proves the
+*server* to the client and nothing more; a certificate offered to it is not
+requested and would not be a login if it were. Signing in with a client
+certificate is the main HTTPS port's business (`GET /tls/sign-in`, see
+[TLS](tls.md)). `/admin/ldap/service` says this, so nobody has to work out why
+the certificate they configured was never sent.
+
+**TLS does not make a bind checked.** What 636 adds is that the password is not
+on the wire in the clear. In development mode it is still not verified — "it is
+over TLS" is exactly the sentence people substitute for "it is authenticated".
 
 The two listeners bind separately. "389 is up and 636 is not" is an ordinary
 outcome, for example on a host run that is not root. A listener that fails to
-bind does not stop the service. The failure is recorded and shown on
-`/admin/ldap/service`, which is the only way to tell a running listener from one
-whose port another process holds. Both sockets bind `global.host`, and LDAPS
+bind does not stop the service. The failure is recorded and published on
+`GET /admin/ldap/service` — `listening` and `listenError` for 389, and a `tls`
+object carrying `ldaps`, `port`, `listening` and `error` for 636 — because that
+page is HTTP and answers 200 whichever of them is up; it is the only way to tell
+a running listener from one whose port another process (the host's own `slapd`,
+say) holds. The console's user page reads the same fields and warns in three
+cases rather than two, because telling somebody no client can connect while
+LDAPS is answering costs them an afternoon. Both sockets bind `global.host`, and LDAPS
 takes `tls.minVersion` and `tls.ciphers`. With `global.proxyProtocol` set to
 `v2`, both sockets read a PROXY protocol header first, so the audit log and the
 bind rate limit see the client's real address.
@@ -136,6 +155,10 @@ learned about them. The names are this service's own, not schema:
 In development mode an auto-created person is also given an invented `cn`, `sn`,
 `givenName`, `displayName` and `mail`. Product mode invents nothing.
 
+How each kind of identity — a name, a certificate, a DID, a SPIFFE ID — is
+placed, and what the `authnMethod` attributes mean exactly, is under
+[How an identity becomes an entry](#how-an-identity-becomes-an-entry) below.
+
 ### `entryUUID`: the stable identifier
 
 Every entry carries an operational `entryUUID`
@@ -153,16 +176,29 @@ The directory is **schemaless on purpose**. No object class is enforced, no
 attribute syntax is checked, and no `must`/`may` is consulted.
 `/admin/ldap/service` says so. Five rules are enforced anyway:
 
-* an add whose parent does not exist is `noSuchObject` (32);
+* an add whose parent does not exist is `noSuchObject` (32) — a directory is a
+  tree, and a client that has never seen this refusal will write its first
+  entry into a real directory and not understand the error;
 * a delete of an entry with children is `notAllowedOnNonLeaf` (66);
 * a modify `delete` of an absent attribute is `noSuchAttribute` (16);
-* deleting an attribute's last value deletes the attribute;
+* deleting an attribute's last value deletes the attribute, since an LDAP
+  attribute always has at least one value (RFC 4511 section 4.1.7) — which is
+  why a second delete of the same attribute is a 16 rather than a no-op;
 * an add under `ou=users` whose username is already taken is
   `entryAlreadyExists` (68). This rule is the service's own, not the protocol's.
 
+A real directory would refuse most of what this one accepts; where that matters
+it is a difference a client developer should be told about, rather than one
+hidden by an invented schema.
+
 **Referential integrity is deliberately not enforced.** Deleting a person leaves
-their DN in every group that lists them. `/admin/groups` reports those dangling
-members separately.
+their DN in every group that lists them. It is a feature of some directories and
+not of the protocol — OpenLDAP needs an overlay for it and Active Directory does
+it in the DSA — so the dangling member is the honest result, and it is what a
+`member`-based group search then shows. `/admin/groups` reports those dangling
+members separately from the ones that resolve, rather than one number that
+would make a group of seven whose members are five look untouched, and the
+audit row of the delete records how many memberships it left dangling.
 
 ### Search size limit
 
@@ -317,7 +353,9 @@ changes one, and a runtime setting can be set per trust realm. See
 * **Every bind succeeds in development, except `invalid`.** A mock that checked
   passwords could not be pointed at by a client that has none. The reserved
   value keeps `invalidCredentials` (49) reachable, and 49 is the code an LDAP
-  client's error handling is built around.
+  client's error handling is built around: a directory that could not produce
+  one would make "the bind failed" untestable. It is the same convention the
+  password grant, WS-Trust and the WS-Federation sign-in screen follow.
 * **Schemaless, with the rules whose absence would teach something false.** A
   directory is still a tree, a leaf is still a leaf, and one person is still one
   entry. Inventing a schema would hide the difference from a real directory
@@ -325,8 +363,23 @@ changes one, and a runtime setting can be set per trust realm. See
 * **No referential integrity.** It is a feature of some directories, not of the
   protocol. A dangling group member is the honest result, and the console
   reports it.
-* **Two ports rather than StartTLS.** StartTLS is an extended operation, ldapjs
-  implements none, and LDAPS on 636 is what most clients speak.
+* **Two ports rather than StartTLS.** StartTLS is an extended operation
+  (RFC 4511 section 4.14) that upgrades a connection already in progress,
+  ldapjs implements none, and LDAPS on 636 is what most clients speak. Which of
+  the two is the standardised one is the opposite of what the port numbers
+  suggest: RFC 4513 specifies StartTLS, and left `ldaps://` as the de-facto
+  scheme it already was.
+* **Two server objects, one set of handlers.** ldapjs chooses between a plain
+  and a TLS server at construction, so LDAPS is a second server object and every
+  handler is registered on both. The failure this prevents is a handler that
+  lands on one listener and not the other — a search that works on 389 and fails
+  on 636, read as a TLS fault when it is not. Each socket keeps its own port,
+  its own bind failure and its own answer to "are you up".
+* **One certificate for every TLS socket.** LDAPS presents the main port's
+  certificate rather than a second one, so one anchor, fetched once, verifies
+  every socket. Two keypairs would mean an `ldapsearch` that fails with
+  `unable to get local issuer certificate` against a truststore built for the
+  HTTPS port — an error that names nothing and reads as a broken directory.
 * **Write authorization reuses Admin Write.** The console, the management API
   and SCIM already decide who may change what this service holds. A second
   roster for the socket would drift from the first.
@@ -352,6 +405,253 @@ changes one, and a runtime setting can be set per trust realm. See
 * **Listeners start after the service loads, and a failure is recorded.** A port
   already held by the host's own `slapd` must not stop the rest of the service.
 
+## How an identity becomes an entry
+
+With `ldap.autocreateUsers` on, an entry is grown at `uid=<name>,ou=users,<base>`
+the first time anybody authenticates through **any** family here — the sign-in
+screen, WS-Trust, WS-Federation, a Kerberos AS-REQ, a passwordless WebAuthn
+assertion. Every one of those reaches the directory through the single point at
+which a credential is ACCEPTED, so it is one rule and not one per protocol. A
+failure to write the entry is caught and logged: **a directory must never be
+able to fail an authentication.**
+
+Two identities are skipped on purpose:
+
+* **An LDAP bind** seeds nothing, because the identity a bind presents is a DN
+  that already names an object in this very directory —
+  `uid=cn=admin\,dc=example…` would be nonsense, and this service's own binds
+  would grow the directory without bound.
+* **An OAuth client** seeds nothing: a client is not a person, and `ou=users` is
+  for people.
+
+### One entry per person, however they get in
+
+`rcbj` at the sign-in screen, `urn:uuid:<entryUUID>` in a token, `rcbj@STS.MOCK`
+in a Kerberos AS-REQ and `rcbj` on a WS-Security `UsernameToken` are one entry.
+The subject is resolved through the directory, and the realm (and the legacy
+`urn:sts:user:` prefix an older token may carry) is stripped first, so every
+name-shaped family — OAuth 2.0, OpenID Connect, both SAML profiles,
+WS-Federation, WS-Trust, Kerberos, SPNEGO — lands on `uid=rcbj,ou=users` and
+simply adds a line to its `description`.
+
+Before any entry is named, the directory asks whether this person already has
+one, matching on the two things that can carry a username under `ou=users`: the
+entry's own **naming RDN value**, whatever attribute type names it, and any
+**`uid`** it carries. Case-insensitively, and only among entries directly under
+`ou=users`, because the directory is schemaless and placement is the only rule
+that cannot be lied to. So a client certificate saying `CN=rcbj` folds onto
+`uid=rcbj` rather than building `cn=rcbj` beside it, in either order.
+
+**The same check answers at every other door.** An `ldapadd` under `ou=users`
+whose username is already here is `entryAlreadyExists` (68) naming the entry
+that holds it — so `uid=rcbj` and `cn=rcbj` cannot both exist, and neither can
+`sn=someone` carrying `uid: rcbj`. The console's create form on `/admin/users`,
+`POST /admin-api/users/create` and SCIM get the same refusal. Without that the
+fold could be undone from the other side in a single operation.
+
+### How they authenticated
+
+Most families say nothing about *how*: `amr` is an OIDC vocabulary, and a
+Kerberos AS-REQ, a WS-Trust UsernameToken and an LDAP bind have nothing to put
+in it, so nothing is written for them. An absent attribute means "this service
+was never told", which is a different claim from "this service checked and it
+was one factor". What the sign-in screen does say lands in three attributes,
+kept separate because merging them loses one of the three:
+
+* `authnMethod` — every RFC 8176 method this person has *ever* used here,
+  accumulated;
+* `mfaAuthenticated` — `TRUE` or `FALSE` for the **most recent**
+  authentication, overwritten rather than appended;
+* `mfaLastAuthTime` — when multi-factor last happened, never cleared.
+
+So a person who used a key yesterday and a password today reads `FALSE` with the
+timestamp still there, the honest answer to both questions. A WebAuthn second
+factor writes `mfaAuthenticated: TRUE` on the entry the password step already
+named, not a second entry. A **passwordless** WebAuthn sign-in is recorded as
+`authnMethod: hwk` with no `pwd` beside it — the only place a reader can tell it
+from a password sign-in afterwards — and `["hwk"]` alone is one factor, so
+`FALSE`. These names are this service's own and not schema (there is no
+standard attribute for "this account used more than one factor"; Active
+Directory's `msDS-*` attributes name something else). Like a group they **grant
+nothing** — nothing decides anything on them — and, unlike a group, no token
+carries them.
+
+### A client certificate
+
+A verified TLS client certificate's subject is already a DN, so it is not placed
+as `uid=<name>`. It goes at the subject itself where that lies under this
+directory's base, and otherwise under `ou=users` named by the CN — or, where
+that CN is somebody this directory already holds, **onto their existing
+entry**. The subject's other RDNs are kept as attributes, and the certificate's
+own facts (the whole subject, the issuer, the serial, the validity) are written
+as `x509*` attributes, which are this service's names rather than schema. The
+console finds such an entry again by the `x509subject` it recorded rather than
+by a name, which is exact and stays right if the naming rule ever changes.
+[TLS](tls.md) carries the reasoning, including why `userCertificate` is not one
+of those attributes.
+
+### A decentralized identifier
+
+Three places hand over a DID: the subject of an issued `ldp_vc` (a `did:jwk`
+built from the holder key the wallet proved possession of), whatever DID
+presents a credential to the OID4VP Verifier, and the `did:jwk` that
+`/did/generate` mints on request. Each gets an entry, which matters most at the
+Credential Issuer: OID4VCI lets the authorization server be somebody else, so a
+**foreign** access token whose subject this service has never seen is the
+ordinary case, and without an entry the credential would describe somebody with
+no directory entry to read from.
+
+A DID is neither a DN nor a name but one long opaque string. Writing it out as
+`uid=<the did>` is correct and unusable — a `did:jwk` carries a base64url JWK,
+so the DN runs to several hundred characters of key material — and a container
+of its own would put it outside `ou=users`, where credential attributes are
+filled in and group membership is reported. So the entry goes under `ou=users`,
+**named by a short digest** — `uid=did-<12 hex of the SHA-256 of the DID>` —
+with the identifier kept whole as `didSubject` and its method as `didMethod`
+(this service's names; nobody has registered LDAP attributes for DID Core).
+**On those entries the `uid` is not the identity; `didSubject` is.** The console
+finds the entry by it, and in development the persona that fills a credential's
+claims is invented from the DID rather than from the digest.
+
+A DID generally names nobody by itself, but at the Credential Endpoint this
+service *does* know who it belongs to: it decides who a credential is about from
+the access token and derives the holder's DID from the proved key in one call,
+so the DID goes onto **that person's** entry as a `didSubject` value beside
+their name. `didSubject` is multi-valued, so a wallet holding several keys for
+one person puts several DIDs on one entry. When that DID is later presented to
+the Verifier, the entry that records it is found and nothing new is created. A
+DID with no link still gets its own digest-named entry, because inventing a
+person to attach it to would be worse.
+
+**None of the three is a sign-on**, and each record says so. A presentation to
+the Verifier at `/oid4vp/verifier` starts no session and issues no token; it is
+*recorded*. (A presentation to `/authn/wallet` is a sign-on, of the entry the
+credential was issued for rather than of its DID — see
+[OpenID4VP and wallet sign-in](oid4vp.md).) A credential request records that an access token was
+presented, not that anybody authenticated; in development mode this service does
+not verify one it did not issue, and product mode refuses one it cannot verify.
+`/did/generate` records an identity this service *created*, with nothing
+presented. The `did:web` that endpoint returns for `?method=web` gets no entry:
+it is this service's OWN identity, published at `/.well-known/did.json`, and an
+entry for it would file the issuer among the people.
+
+### A SPIFFE identity
+
+Filed exactly like a DID and for the same reasons: `uid=spiffe-<12 hex>,ou=users`,
+with the identifier kept whole as a multi-valued `spiffeSubject` and
+`spiffeTrustDomain` and `spiffePath` beside it. The entry is found by that
+attribute, so one workload arriving three ways (an X509-SVID at the SPIRE Server
+API, an agent attesting, a JWT-SVID validated) is **one** entry with one
+description line per route. Two differences are deliberate:
+
+* It **never folds onto a person** of a similar name: the last segment of a
+  SPIFFE path is exactly the kind of short word (`db`, `web`, `api`) that
+  collides with a username, and a workload called `db` is not the DBA.
+* It goes under `ou=users`, not `ou=applications`: that container holds what
+  this service is *asked about* — the audience of a token — and a SPIFFE
+  identity is the **subject** of one, like a machine's TLS client certificate.
+
+**Issuing an X509-SVID also writes the entry.** Every SVID this trust domain
+mints writes the certificate onto the holder's entry using the **same six
+`x509*` attributes**, in the same strings, that a verified TLS client
+certificate writes — two spellings of one DN would be two people on
+`/admin/users`. These six are **assigned** rather than appended, because an SVID
+is re-minted every half-lifetime; `x509svidsIssued`, `x509firstIssued` and
+`x509lastIssued` keep the history. [SPIFFE](spiffe.md) has the rest, including
+why `spiffeCredentialStatus` is not a revocation.
+
+### What the entry holds (development mode)
+
+The attributes that make an entry a person — `objectClass`, `uid`, `cn`, `sn`,
+`givenName`, `displayName` and `mail` — are written when it is created, and in
+development the name in them is an **invented** one rather than the login name
+repeated: those are attributes an issued credential asserts, so deriving them
+from the login name would make every credential say the login name back. The
+`uid` and the DN stay the login name, because those two *are* the identity. On
+top of that, every attribute the credential claim set on `/admin/vc` selects and
+the entry does not already carry is filled in — a birthdate, a nationality, the
+five components of an address — invented from the same username seed, so an
+LDAP client and a wallet describe one person. **Nothing already on the entry is
+ever overwritten**, which is why seeded people keep their own names and an
+operator's `ldapmodify` survives every later sweep. Product mode invents
+nothing.
+
+## Every operation is audited
+
+Every operation on the directory is an audit event:
+`/admin/audit?category=directory` lists an entry created, deleted, updated,
+renamed, searched, compared or bound to, over 389 and 636 alike, with the bound
+DN as the actor and the socket as the channel. In product mode a named simple
+bind's row says it was verified.
+
+* **No value is ever recorded.** A modify names the attributes it changed,
+  because a modify is where a `userPassword` gets set; a compare says whether it
+  matched and not what was tried, because comparing against `userPassword` is
+  how a client checks a password without binding.
+* **What counts as a user is placement**, the same rule `/admin/groups` reports
+  by: an add under `ou=users` is a `user.create`, and the identical add one level
+  over is a `group.create`. Believing the `objectClass` the client sent would
+  file both wrongly in a directory with no schema.
+* **A delete records how many memberships it left dangling.** Referential
+  integrity is not enforced, so this is the only record of *when* a dangling
+  member arrived; `/admin/groups` can show the state but not the moment.
+
+## How an attribute name is spelt
+
+The store lower-cases every attribute name, because `@ldapjs/attribute`
+lower-cases a type on the way in — an entry added as `objectClass` comes back
+as `objectclass`. That is harmless for matching, since attribute descriptions
+are case-insensitive (RFC 4512 section 2.5), and not harmless for *reading*: a
+page showing `givenname` where every schema document says `givenName` reads as a
+bug. So the directory keeps a table of conventional spellings and puts them back
+on the way out.
+
+The table covers about a hundred and fifty names, far more than this service
+writes, and that is the point: a client can `add` any attribute it likes, and a
+verified client certificate's subject becomes attributes RDN by RDN, so which
+types arrive is decided by whoever issued the certificate. The reader who most
+needs the conventional spelling is the one looking at an attribute this service
+did not write (`seeAlso`, an ordinary RFC 4519 type, is the example that made
+the case).
+
+It is two lists split by who defined the name — the standard types, with the
+specification named per group (RFC 4519, RFC 4524's COSINE, RFC 2798's
+inetOrgPerson, RFC 2307's NIS, RFC 4512's operational and root-DSE attributes,
+RFC 4530, RFC 5020, RFC 3045, PKCS#9), and this service's own inventions, each
+saying why nothing standard was used. `memberOf` sits in neither: it is
+ubiquitous and was never registered by anybody, and its conventional spelling
+must not be read as the attribute being maintained — nothing here maintains it.
+
+Each name is written once, as the canonical spelling, and the lower-cased key is
+derived from it, so a typo cannot hide in a key. Four sets of spellings reach
+the table — the two lists, the credential claim catalogue and the applications
+schema — through one function, and a **second spelling of a name already known
+is logged as a warning** naming both, first spelling winning. It is a warning
+and not a failure, because a table of capitalisations must never stop the
+service starting.
+
+## Two ldapjs defects this service routes around
+
+Both are in ldapjs's `SearchResponse.prototype.send()`, and both would hit a
+real client built on ldapjs too.
+
+* **A second, case-sensitive attribute filter.** After the handler has chosen
+  what to send, `send()` compares each attribute name *lower-cased* against the
+  requested list held *exactly as the client sent it*, so a client asking for
+  `telephoneNumber` gets back everything it asked for except `telephoneNumber`.
+  Every attribute whose conventional spelling has a capital in it is silently
+  dropped from a *selective* search, and a search asking for everything looks
+  perfect. `send()`'s `nofiltering` argument does **not** turn this off, though
+  its documentation reads as if it does.
+* **`messageId` defaults to 1.** Passing a `SearchResultEntry` instance avoids
+  the filter, but then `send()`'s `if (!entry.messageId)` never fires and the
+  next line throws `SearchEntry messageId mismatch` for every search after the
+  first on a connection — a search that returns zero entries and ends
+  successfully, which reads as an empty directory.
+
+This service builds each result as a `SearchResultEntry` carrying the request's
+own `messageId`, which sidesteps both.
+
 ## In the running service
 
 * **Protocols → LDAP / LDAPS** (`/admin/ldap`): what the sockets are set to (the
@@ -362,8 +662,9 @@ changes one, and a runtime setting can be set per trust realm. See
   policy, and the structural rules.
 * **Directory → Every entry** (`/admin/ldap/directory`): the whole store, DN by
   DN, with where each entry came from (seeded, added over LDAP, or created
-  because somebody authenticated) and every attribute. The filter searches whole
-  entries, not only DNs.
+  because somebody authenticated) and every attribute — which is what lets a
+  reader tell an empty directory from a search filter that matched nothing. The
+  filter searches whole entries, not only DNs.
 * **Application entries**, **Federation entries**, **Role entries**, **Policy
   entries**, **PEP entries** and **SPIFFE entries** (`/admin/ldap/applications`,
   `/federations`, `/roles`, `/policies`, `/peps`, `/spiffe`): each container as

@@ -39,9 +39,14 @@ curl -k -X POST https://localhost:8081/admin-api/realms/create \
 Or on **`/admin/realms`** in the console, which is also where a realm's settings,
 its four discovery URLs and the identifier of its signing key are.
 
-Realms live in memory like everything else in this service and die with the
-process, so whatever starts your stack should create them — which is why the API
-call above exists rather than a config-file section.
+**A realm survives a restart when `persistence.realms` has a store under it**:
+its name, its description, its per-realm settings and its own directory all come
+back. In the default `persistence.mode=memory` it does not, so whatever starts
+your stack should create its realms — which is why the API call above exists
+rather than a config-file section. A realm's **signing keys** follow the mode,
+exactly like the default realm's: in development mode they are regenerated on
+every start, so a token minted in a realm today verifies against nothing
+tomorrow; in product mode they are kept, sealed, in the store.
 
 The id becomes a path segment: lower-case letters, digits and hyphens, starting
 with a letter or a digit, at most 31 characters. It may not be `default`, and it
@@ -390,6 +395,11 @@ select that navigates on change, because the console runs no script at all
 forbids. It submits to `GET /admin/realm-switch`, which builds the target from
 the realm registry and a path it has checked is rooted and single-slashed —
 never from the query string as given.
+
+Every root-relative link in an HTML response is rewritten on the way out to
+carry the current realm's prefix, which is what makes the console work inside a
+realm without a link being edited. The chooser is the one control whose job is
+to leave the realm, so the links it builds are absolute and are left alone.
 
 `/admin-api` is realm-scoped by the same prefix, so `/realm/acme/admin-api/config`
 is that realm's configuration and every one of its operations works per realm.

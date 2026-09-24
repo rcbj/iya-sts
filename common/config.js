@@ -1512,9 +1512,9 @@ const SETTINGS = [
                  '`sts-user-portal` may carry before a sign-in at a new ' +
                  'address stops ADDING that address\'s callback to the ' +
                  'entry. Learning happens only where global.publicBaseUrl is ' +
-                 'empty and only in development mode — see README.md — and ' +
-                 'this is what keeps even that from growing an entry without ' +
-                 'bound when the service is reached under many names. A ' +
+                 'empty and only in development mode, and this is what ' +
+                 'keeps even that from growing an entry without bound when ' +
+                 'the service is reached under many names. A ' +
                  'sign-in at an address past the cap still works unless ' +
                  'oauth2.rfc9700 is on, where redirect URIs are matched by ' +
                  'exact string.' },
@@ -7453,7 +7453,7 @@ const SETTINGS = [
   // section 5.2.2 asks exactly this of a server, and it is the default for
   // every listener rather than a FAPI switch, because a cipher suite is a
   // property of the SOCKET and a profile is a property of a realm. A weaker
-  // list stays settable; README.md and docs/tls.md say what that costs.
+  // list stays settable; docs/tls.md says what that costs.
   { key: 'tls.ciphers', group: 'TLS', label: 'TLS cipher list',
     env: 'STS_TLS_CIPHERS', type: 'string',
     dflt: 'TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:' +

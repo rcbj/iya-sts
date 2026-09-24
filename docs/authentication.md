@@ -26,6 +26,44 @@ parameters. Cancel sends the calling protocol `access_denied`, which it turns
 into its own kind of refusal. `/authn/login` is not a page to visit directly:
 it needs a pending request.
 
+For OAuth, the authorization endpoint is entered twice:
+
+```
+GET  /oauth2/authorize?response_type=code&client_id=…      no session
+  -> /authn/login?authn=8mQ2…                              the screen
+POST /authn/login   username=alice                         Set-Cookie: sts_session=…
+  303 -> /oauth2/authorize?response_type=code&client_id=…  the ORIGINAL request
+  -> http://localhost:3000/callback?code=…                 answered per spec
+```
+
+* **The return URL is the interrupted request, whole, minus `prompt`.**
+  `prompt` has been honoured by then and would otherwise prompt for ever.
+  Everything else goes back untouched, because the second pass is where the
+  PKCE challenge, the nonce, `authorization_details` and the rest are read.
+  That is also why the authorization endpoint keeps no state across the two
+  entries: it is the same query string both times.
+* **The return URL must be a path on this service**, and is checked to be one.
+  An authentication service that will redirect a browser anywhere after signing
+  somebody in is a credential phishing tool with a login screen in front of it.
+* **The rows the screen shows about the interrupted request** — client, scope,
+  redirect URI, the Credential Offer an `issuer_state` came from — are supplied
+  by the caller, because only the caller knows what its own parameters mean.
+* **Cancelling comes back too.** The browser returns to the caller with
+  `authn_error=access_denied`, and the caller turns that into its own
+  protocol's refusal: for OAuth, a redirect to the client's `redirect_uri`, or
+  in `response_mode=form_post` a self-submitting form — which is not a redirect
+  at all, and is exactly why the sign-in service does not try to answer for the
+  protocol.
+
+**It is not always the screen.** The same redirect goes to
+`/federation/login/{id}` when the application's entry names one usable
+federation relationship, and to **`/authn/select-idp`** when it names several —
+a page with one button per partner and no password field. The calling protocol
+cannot tell the three apart and must not: what it asked for is "get this person
+authenticated and bring them back", and which identity provider does it, or
+whether the person was asked which, is not its business. See
+[Federation](federation.md) for home realm discovery.
+
 What a successful sign-in produces is a **session**, an internal record that
 belongs to no protocol:
 
@@ -117,13 +155,31 @@ CTAP2. A key is enrolled in one of two **roles**:
   value this service could honestly assert for "the authenticator verified the
   user".
 
-The ceremony is `/authn/webauthn`. It is one of the few pages here with a
+A password alone records `amr ["pwd"]`, `acr "1"`. These RFC 8176 values go
+into the ID Token whenever the session recorded them, so their *absence* means
+something too, which is why they are not emitted unconditionally.
+
+The ceremony is `POST /authn/webauthn` in both roles: the first use for a
+username **enrols** a credential (section 7.1) where enrolment is allowed (see
+*Where a key is enrolled* below, and product mode's rule), and every later sign-in
+**asserts** with it (section 7.2), against a challenge minted on the server and
+held for five minutes with the interrupted request. The person is then returned
+to that request exactly as the password-only path returns them. The two roles
+perform the same ceremony; what differs is what the session then says, and
+that is decided from the role chosen on the screen and carried on the pending
+record — never re-read from the ceremony's own POST, which is the browser's
+result and says nothing about what somebody chose a screen earlier.
+
+It is one of the few pages here with a
 script (`/authn/webauthn.js`), because a WebAuthn ceremony is a browser API
 call. **Registration and every assertion are verified in both modes**: the
-challenge, the origin, the RP ID hash, the flags, the signature over
+challenge, the origin, the RP ID hash, the user-presence and user-verification
+flags, the signature over
 `authenticatorData ‖ SHA-256(clientDataJSON)` against the registered COSE key
 (ES256, ES384, ES512, EdDSA, RS256, RS384, RS512, PS256, PS384, PS512, and
-ML-DSA-44/65/87 from RFC 9964), and a signature counter that must go up. A
+ML-DSA-44/65/87 from RFC 9964), and a signature counter that must strictly go
+up — with the one exemption the specification asks for, an authenticator that
+reports zero and always will. A
 registration is also held to section 7.1's remaining checks: the credential's
 algorithm must be one that was offered, its id at most 1023 bytes, and the
 backup state flag set only where the credential is backup eligible. Across a cluster, each assertion's challenge is claimed once and
@@ -142,15 +198,26 @@ refused. `none` and self attestation are accepted and recorded as untrusted —
 synced passkeys send `none` — unless the realm is `require-trusted` or names an
 AAGUID allow-list, a certification level or FIPS, each of which demands a
 trusted statement. What each key's statement proved is shown beside it on
-`/portal/keys`, on its `/admin/users` row and in `GET /admin-api/users`.
+`/portal/keys`, on its `/admin/users` row and in `GET /admin-api/users`. A key
+whose statement nothing verified is shown as *claimed*: a client that believed
+this service's word on an unverified statement would have learned something
+false about a real device.
 **`webauthn.userVerification` is the one ceremony option
 that is enforced**, because the UV flag sits inside the bytes the authenticator
 signed. The others are requests to the browser, and what came back is recorded
 (the attachment, and whether the credential is discoverable, from `credProps`).
 
 The RP ID is the host the service was reached on, unless `webauthn.rpId` widens
-it to a registrable domain suffix. The accepted origins are derived from the
+it to a registrable domain suffix of that host — never anything else, because
+WebAuthn binds a ceremony to the calling origin and that is the whole of its
+phishing resistance. The accepted origins are derived from the
 same address unless `webauthn.allowedOrigins` lists them.
+
+**Both roles reach the directory, differently.** A passwordless sign-in is an
+authentication in its own right, so it is recorded against the person's
+directory entry as a password sign-in is. A second factor authenticates nobody
+new — the person is the one the password step named — so it creates nothing,
+and writes a flag on the entry that already exists (see [LDAP](ldap.md)).
 
 **Where a key is enrolled:**
 
@@ -173,28 +240,55 @@ so it works from a phone, a script or a test job, and the code page
 
 * **Enrolment** happens on `/portal/mfa`, on an activation link, or at
   `/authn/mfa-setup` when a second factor is required. It is two steps. The
-  page shows a QR code (a server-drawn SVG) and the base32 secret written out.
+  page shows a QR code (a server-drawn SVG, arriving as a `data:` URI, since
+  every portal page is `script-src 'none'`) and the same base32 secret in
+  groups of four, with the algorithm, digits and period written out. The
+  typed form is not a fallback nobody sees: scanning is impossible when the
+  phone *is* the browser showing the page, when a desktop authenticator has no
+  camera, and when a `localhost` QR code photographed off a screen points at a
+  host the phone cannot reach. Any app that implements the specification works
+  — Google Authenticator, Microsoft Authenticator, Authy, 1Password,
+  Bitwarden, Aegis, FreeOTP, KeePassXC — and nothing here is tied to one.
   Nothing is written to the entry until a code proves the app has the secret,
   and an unconfirmed secret expires after `totp.enrolmentTtlMinutes`.
+* **Once enrolled, a password alone stops working**, which is what a person
+  means by having turned this on: the sign-in screen asks for a code without
+  anybody ticking anything.
 * **The code is verified for real, in both modes**, against the secret and the
   clock with `totp.window` steps of skew either side. A code is accepted
   **once** (RFC 6238 section 5.2): the code that confirmed the enrolment cannot
   also sign anybody in, and a replay is refused as a replay, not as a wrong
-  code. Wrong codes are rate-limited, and a wrong code keeps the step so the
-  person can try again.
-* The session says `amr ["pwd","otp"]`, `acr "mfa"`.
+  code — signing in twice inside one window asks for the next code rather than
+  saying the first was wrong. Wrong codes are rate-limited, and a wrong code
+  keeps the step so the person can try again. What stays permissive in
+  development is everything around the code: the password in front of it is
+  not checked, and any name may enrol.
+* The session says `amr ["pwd","otp"]`, `acr "mfa"`. `otp` is RFC 8176's
+  registered value, whose registry entry names RFC 4226 and RFC 6238, and
+  `acr "mfa"` is honest here in a way it is not for a passwordless key: two
+  factors really were presented.
 * **It can never be a first factor.** This service holds the same secret the
   app does, which proves somebody still has the app but is not something to
   hang an account on.
-* **One secret per person**; enrolling again replaces it. In product mode the
-  secret is sealed under the key-encryption key. In development it is stored as
-  base32, because that mode's key does not survive a restart.
+* **One secret per person**; enrolling again replaces it. It is stored on the
+  person's own entry as `stsTotpCredential`, and it is **the one attribute in
+  the directory that can be read back and used**: verifying a code means
+  computing it, so it cannot be hashed the way `userPassword` is. In product
+  mode the secret is sealed under the key-encryption key that protects the
+  signing keys, so a directory dump shows ciphertext. In development it is
+  stored as base32, because that mode's key is generated per run and sealing
+  would mean an authenticator that silently stopped working at the next
+  restart.
 * All three digests are implemented, but **leave `totp.algorithm` at `SHA1`**:
   several popular apps ignore the parameter and always compute SHA-1. The
   digest, the digits, the period and the secret length apply to **new**
   enrolments only. `totp.window` applies to everybody.
 * A person removes their own app on `/portal/mfa`; an operator clears it on the
-  person's `/admin/users` page (`POST /admin-api/users/clear-totp`).
+  person's `/admin/users` page (`POST /admin-api/users/clear-totp`). **There is
+  no self-service reset** for a lost phone: the shared secret lives on a device
+  this service cannot reach, and a second factor anybody can remove is no
+  second factor, so an operator clearing the enrolment is the only way back.
+  Clearing drops an account to one factor, never to none.
 
 ### Recovery codes
 
@@ -242,8 +336,12 @@ meet (`mfa`, `hwk`, `phr`, `phrh`) ticks the second-factor box and refuses the
 passwordless path server-side. A demand for a hardware key (RFC 8176 `hwk`, or
 a WS-Federation `wauth` for a hardware token) allows only a security key, alone
 or after a password, and refuses the code and recovery-code steps
-(`STS-AUTHN-0204`). See [OAuth security profiles](oauth-security.md) for
-RFC 9470 step-up.
+(`STS-AUTHN-0204`). A WS-Federation `wauth` for **multi-factor** is met only by
+a session that really had two factors, so a passwordless key does not meet it.
+A session that does not meet a demand is sent through the sign-in screen again
+with what was asked for required, rather than answered. See
+[OAuth security profiles](oauth-security.md) for RFC 9470 step-up and
+[WS-Federation](ws-federation.md) for `wauth`.
 
 ### The authentication policy
 
@@ -468,7 +566,29 @@ be changed with `POST /admin-api/config/set`.
   sign-in screen enrols a security key only for somebody holding no second
   factor at all.
 * **A passwordless key is one factor.** `acr "mfa"` would claim more than
-  anybody checked.
+  anybody checked. Calling it `mfa` because it is phishing-resistant would be
+  exactly the fake that WS-Federation's `wauth` handling refuses to write.
+* **A demand for two factors is enforced on the server.** A relying party's
+  `acr_values` is how it demands a second factor, and a service that ignored it
+  would let a client's step-up request appear to work while proving nothing.
+  The sign-in screen disables the opt-outs, but `disabled` is a property of a
+  browser and not of an HTTP request, so the passwordless path is refused on
+  the server as well.
+* **Enrolling an authenticator app is two steps, and the first writes
+  nothing.** An unconfirmed secret on somebody's entry would be a second factor
+  they cannot produce: open the page, be interrupted, come back tomorrow, and a
+  one-step enrolment has locked somebody out of their own account with a form
+  they abandoned.
+* **The WebAuthn verifier is independent of the parent project's.** It shares
+  no code with the debugger's decoder — not the CBOR reader, the COSE mapping
+  or the signature check — so the cross-implementation test there compares two
+  implementations rather than one agreeing with itself. (This side verifies
+  ECDSA in its native DER form; the browser side converts DER to raw `r‖s`
+  because Web Crypto will not take DER.)
+* **The ceremony script is a separate resource** (`/authn/webauthn.js`), not
+  an inline `<script>`: every response here carries `script-src 'none'` and
+  that page relaxes it only to `'self'`, so an inline script would simply not
+  run, with the button doing nothing and no error anywhere.
 * **Settings that turn a mechanism off do not remove what people already
   hold.** Otherwise a switch would silently downgrade accounts to one factor,
   or lock out someone whose only credential is a primary key.

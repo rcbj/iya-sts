@@ -81,6 +81,36 @@ unless `oauth2.issuer` pins it, so one process answers correctly as
 the member that advertises it is removed. A document never lists a grant,
 response type or endpoint that would be refused.
 
+An OAuth client looks for `oauth-authorization-server`; an OpenID Connect
+client looks for `openid-configuration` and nowhere else, so both are needed
+for this service to be configurable from either. **The OpenID Connect document
+is the RFC 8414 document extended**, not a second copy. It adds only what
+Discovery defines on top: `subject_types_supported`,
+`id_token_signing_alg_values_supported`, `claims_supported`,
+`claim_types_supported`, `prompt_values_supported`, the request and
+claims-parameter booleans, `end_session_endpoint` and the logout-notification
+booleans. RFC 8414 was written from Discovery and shares its member registry,
+so the overlap is real.
+
+* **`check_session_iframe` is absent** unless `oauth2.sessionManagement` is on.
+  An invented value would be worse than the member's absence.
+* **`acr_values_supported`** is published because the authorization endpoint
+  honours `acr_values` (see [OAuth security](oauth-security.md#step-up-authentication-rfc-9470)).
+* **`end_session_endpoint`** is advertised because `/oauth2/logout` is the
+  whole of RP-Initiated Logout 1.0 (see [Logout](#logout)).
+* **`response_types_supported`** includes `id_token token`, and
+  **`authorization_response_iss_parameter_supported`** (RFC 9207) is `true`:
+  `iss` is on every authorization response, errors included, and a client may
+  only *require* it — and so refuse a mix-up attacker's response without it —
+  if the metadata says the server sends it.
+* The encryption members for ID Tokens, UserInfo and request objects are
+  published because each is implemented.
+
+**The appended form rebuilds the issuer from the path it was reached at.** A
+document fetched under `/tenant1` that claims to be issued by the bare origin
+is one a conforming client must reject. The inserted form behaves like its
+`oauth-authorization-server` twin.
+
 ### Flows and response types
 
 * **Authorization code**, with **PKCE**
@@ -173,6 +203,30 @@ valid, gets the same token set back. A different request is refused, and the
 refusal names the field that differs. RFC 9700 mode refuses the repeat and
 revokes what the code bought.
 
+RFC 6749 makes a code single use and section 10.5 says a second presentation
+SHOULD invalidate what the first issued. A bare *already-used* refusal is
+equally true of a stolen code, a reloaded page, a double-submitted form and a
+client retrying after a bad `code_verifier`, and names none of them. So:
+
+* **Nothing before redemption consumes the code.** A wrong `redirect_uri`, PKCE
+  verifier or `dpop_jkt` binding is refused and the code stays redeemable, so
+  the corrected request gets tokens rather than a complaint about reuse.
+* **A redeemed code is idempotent for the rest of its own lifetime**
+  (`oauth2.authorizationCodeTtlS`, five minutes). An identical repeat — same
+  client, `redirect_uri`, PKCE verifier and DPoP key — gets the **same** token
+  set, down to the `jti`. Nothing is minted twice, and a warning is logged
+  each time saying a real authorization server would refuse. This is the one
+  departure from the RFC.
+* **The refusals say what happened.** A code presented with anything different
+  is refused naming the field that differed, when the code was redeemed and by
+  which client. A code this service has no record of gets its own message:
+  codes are held in memory only, so one issued before the last restart (or by
+  a different authorization server) is *gone* rather than *used*, and the
+  message says how long the process has been up.
+* The OpenID4VCI **pre-authorized code** is not relaxed: its single use is a
+  property of the Credential Offer under test.
+* **RFC 9700 mode** turns the relaxation off, as its section 4.5 asks.
+
 ### Client authentication
 
 Every method in `token_endpoint_auth_methods_supported` is verified when there
@@ -204,6 +258,52 @@ described in [OAuth security](oauth-security.md#mutual-tls-rfc-8705).
 beside the new one, and **Regenerate secret** ends it at once. A daily scheduler
 job warns about secrets that are close to expiry.
 
+#### Mutual TLS clients (RFC 8705)
+
+The methods, certificate binding and the settings that require a binding are
+on [OAuth security](oauth-security.md#mutual-tls-rfc-8705). What a client
+operator also needs to know:
+
+* **`client_id` is required** in a request that authenticates by certificate.
+  An explicit `tls_client_auth_subject_dn` is compared as a name: attribute
+  types, OIDs, escapes, case and a multi-valued RDN's order do not matter.
+  `_san_uri` is compared exactly, `_san_ip` by value and `_san_email` with the
+  domain case-insensitive. The implicit mapping needs a certificate carrying
+  `clientAuth`, the application's identifier as CN and
+  `urn:sts:application:<identifier>` as a subjectAltName.
+* **A declared certificate method is held to in every mode.** Without a
+  certificate that authenticates the client, `/oauth2/token` and `/oauth2/par`
+  answer `invalid_client` even in development, where client authentication is
+  otherwise only observed.
+* **Issuing a certificate**: `POST /admin-api/applications/issue-tls-client-certificate`
+  takes `application`, `password` and optionally `keyAlg`, `label` and `days`.
+  The reply carries the only copy of the private key — a PKCS#12, an encrypted
+  PEM key and the PEM chain, all under `password`.
+  `revoke-tls-client-certificate` revokes one of the application's own, and
+  `pki.applicationTlsClientCertificateMax` caps how many valid ones it holds.
+  An application's certificate presented at `GET /tls/sign-in` signs nobody
+  in: it is a client credential.
+* **The subject parameters are ordinary attributes**
+  (`oauthTlsClientAuthSubjectDn`, `oauthTlsClientAuthSanDns`, `…SanUri`,
+  `…SanIp`, `…SanEmail`), set with the attribute editor or through RFC 7591
+  registration. A second one is refused.
+* **Bound tokens at the resources.** UserInfo, the credential endpoints, SCIM,
+  Shared Signals, `/admin-api` and the embedded debugger refuse a
+  certificate-bound token on a connection without that certificate (401
+  `invalid_token`), and `/oauth2/introspect` reports the `cnf`. A registration
+  asking for `tls_client_certificate_bound_access_tokens` while the main port
+  is not TLS is refused. A **public** client's refresh token is bound to its
+  certificate (section 4).
+* **Not done**: binding at the authorization endpoint's implicit flow, which
+  the RFC puts out of scope (section 6.4). A setting that requires a
+  certificate binding while the main port is not HTTPS refuses every affected
+  request (`STS-OAUTH-0527`) rather than letting it through.
+* The error codes are `STS-OAUTH-0480..0488`, `STS-REG-0130..0136`,
+  `STS-PKI-0180..0181`, `STS-ADMIN-0720..0724`, `STS-API-0110` and
+  `STS-DBG-0030`; the settings that require a sender constraint add
+  `STS-OAUTH-0521..0531`, `STS-API-0120..0121` and `STS-DBG-0031..0032`. See
+  [Error codes](error-codes.md).
+
 ### Consent
 
 `GET /oauth2/consent` is drawn the first time a person signs in to an
@@ -231,8 +331,64 @@ tokens. Withdraw `offline_access` from an application's global consent on
 ends at its next token renewal, and the person is asked at their next sign-in.
 
 Consent is **on by default** (`oauth2.consentRequired`). Turning it off means
-nothing is asked and nothing is recorded; it does not mean everybody consented.
-`/admin/consent` is the register.
+nothing is asked and nothing is recorded; it does not mean everybody consented,
+so turning it back on asks again. `/admin/consent` is the register. The
+settings are listed under [Configuration](#consent-permissions-and-claims) and
+on the [Configuration](configuration.md) page.
+
+#### How an answer is recorded
+
+Each `oauthConsent` value is three fields separated by a space — when it was
+agreed (a GeneralizedTime), the scope, and the `client_id`:
+
+```
+oauthConsent: 20260901143000Z openid webapp1
+oauthConsent: 20260901143000Z https://example.com/write webapp1
+```
+
+* **The `client_id` is last** because it is the only field that may contain
+  anything, spaces included; it takes the rest of the value. A scope never
+  contains a space. The timestamp is checked against its own shape, so a
+  sentence left on the entry by an `ldapmodify` is not read as a consent.
+* **One value per (person, application, scope)**, never one per request.
+  `openid profile` and `profile openid` are the same agreement, and adding a
+  scope to a request does not throw away the agreement to the others. A
+  second visit asks only about the **new** scopes, with the ones already
+  agreed to under a fold.
+* **A delegated permission is recorded by its whole identifier**
+  (`https://example.com/write`, never `write`), because two resources may each
+  expose a permission of the same name.
+
+**`oauthGlobalConsent`**, on the client application's entry, is an
+**override** rather than a record: a scope named there is never asked about,
+for anybody, and nothing is written about anybody. Two things follow:
+
+* **Removing one asks everybody again**, including people who would have said
+  yes, because nothing was ever written about them. Removing a person's own
+  `oauthConsent` asks only that person.
+* **It is keyed on (application, scope)**, never on the scope alone. Consenting
+  `read` for one application does not consent it for another that spells the
+  same word.
+
+Both are ordinary attributes on directory entries, so an `ldapmodify` changes
+them like any other configuration, and they persist wherever the directory
+does.
+
+#### The consent screen
+
+* `prompt=consent` asks again whatever is recorded, and **takes nothing away**:
+  somebody who cancels keeps what they had. `prompt=none` with something
+  outstanding is **`consent_required`** (OpenID Connect Core section 3.1.2.6)
+  rather than the general `interaction_required`, so a client can tell a
+  missing consent from a missing session.
+* **The pending consent is server-side.** The only thing in the URL is an
+  unguessable id, so there is no return address to rewrite. The answer is a
+  **POST** (a GET that recorded consent could be given by anything that
+  prefetches a link), the id is spent when it is answered, and the session
+  presenting the answer must be the person who was asked.
+* **The screen carries no script** — two buttons in a form.
+* Consent is a question asked of somebody already signed in. It is not a
+  password check.
 
 #### Withdrawing consent
 
@@ -263,7 +419,13 @@ agreed each application may ask for. Whichever door is used:
 Withdrawing a global consent revokes the tokens of everybody it covered, except
 people who agreed to the scope themselves. It is the only way to take a global
 consent away: removing `oauthGlobalConsent` through the generic application
-edit is refused.
+edit is refused, because that door would do half a withdrawal.
+
+`/admin/consent` shows both halves under headings that say which is which, with
+five controls: consent a scope for everybody, stop consenting it, take back one
+person's answer, withdraw everything one person agreed to for one application,
+and forget everything one person agreed to. `GET /admin-api/consent` and
+`POST /admin-api/consent/{action}` are the same five.
 
 ### Scopes a client may be issued
 
@@ -321,7 +483,7 @@ Connect Core section 12.2). An ID Token issued on a browser session carries
   algorithm in this service's table is offered, the post-quantum ones included.
 * **Encryption** (OpenID Connect Core section 10.2): a client that registers
   `id_token_encrypted_response_alg` gets a signed-then-encrypted token,
-  encrypted to a key in its **inline** `jwks`. Only asymmetric key management
+  encrypted to a key in its `jwks` or registered `jwks_uri`. Only asymmetric key management
   is offered. A registration with no key to encrypt to is refused, and so is
   an issuance that cannot be encrypted. It is never sent in the clear.
 * **Subject**: `sub` is `urn:uuid:<entryUUID>` of the person's directory entry,
@@ -506,13 +668,107 @@ form-encoded `POST`, as an `access_token` body parameter (RFC 6750 section
 2.2). Sending both is refused.
 
 As a debugging aid that no specification defines, UserInfo also accepts
-`?claims={json}` and repeated `?claim=name` on the request itself. These are a
-**union** with what the token carries and can never remove a claim from it.
+`?claims={json}` and repeated `?claim=name` on the request itself, on `GET` and
+on a form-encoded `POST`. These are a **union** with what the token carries and
+can never remove a claim from it. They exist so that comparing what the
+endpoint does with `address`, `address.locality` and a name nothing can produce
+is three requests rather than three authorization flows. A malformed one is
+refused `invalid_request` rather than ignored, because an ignored mistyped
+parameter looks exactly like one never sent.
 
-A client may register `userinfo_signed_response_alg` and
-`userinfo_encrypted_response_alg` for a signed or encrypted response. UserInfo
-verifies the token it is given (signature, type, revocation and the `openid`
-scope) and refuses a token that another issuer signed.
+### UserInfo: the token, and a protected response
+
+**UserInfo verifies the token it is given**, and refuses one another issuer
+signed. The OpenID4VCI endpoints may accept a token they cannot verify in
+development, because OID4VCI lets the authorization server be somebody else;
+UserInfo answers *who did you authenticate*, and about the subject of a
+signature it cannot check this server knows nothing. It is also what gives
+`cnf.jkt` meaning here, since a DPoP binding is real only on a token whose
+signature was checked. Each check has its own answer, because a bare
+`invalid_token` sends people looking in the wrong place:
+
+* the signature and expiry (401, saying which);
+* the `typ`, which is what tells an access token from a refresh token or an ID
+  Token;
+* revocation, so `/oauth2/revoke` is honoured here as everywhere;
+* the `openid` scope — 403 `insufficient_scope` otherwise, which is what a
+  `client_credentials` or token-exchange token gets: it has no end-user and so
+  no profile. A missing `openid` is the usual reason a working token exchange
+  looks broken.
+
+**A scope changes the answer.** `openid` alone returns only `sub`; `profile`,
+`email`, `address` and `phone` ask for their claim sets here (section 5.4).
+
+**Layer 3 beats layer 2** (see [UserInfo and the claims request](#userinfo-and-the-claims-request)):
+a scope asks for a *category* and a claims request names a *claim*, so
+answering `{"email":null}` with an invented address while the entry holds a
+real `mail` would defeat the point. A claims request can never reach a
+structural claim: every name it resolves comes from the attribute catalogue or
+the persona's claims. A nested claim may be asked for by its flat name
+(`address.locality`) or its top-level name (`address`, the whole Address Claim
+of Core 5.1.1), and a language tag is part of the name (`family_name#ja-Kana-JP`
+comes back under exactly that name, with the one value this service holds). An
+essential claim this service cannot produce is left out and logged at warn
+level, as section 5.5.1 requires; a `value`/`values` mismatch is reported in the
+log and the response's artifact. `claims_supported` deliberately does not list
+what `/admin/userinfo-claims` adds or the whole catalogue a request can reach,
+because discovery is cached by clients and both change at runtime.
+`GET /admin-api/userinfo-claims` is the live answer.
+
+**The response can be signed, encrypted, or both**, decided entirely by what
+the client registered (RFC 7591, OpenID Connect Core section 5.3.2):
+
+* `userinfo_signed_response_alg` gives a JWS (`application/jwt`) carrying `iss`
+  and `aud` — without them a signed profile issued for one client is one any
+  other client would also believe. Every signing algorithm in this service's
+  table is offered: the fourteen of the JWS registry (RS, PS and ES at 256, 384
+  and 512, ES256K, EdDSA, and HS256/384/512 keyed by the client's own secret)
+  and the eleven post-quantum ones.
+* `userinfo_encrypted_response_alg` gives a JWE: RSA-OAEP, RSA-OAEP-256,
+  ECDH-ES and its three key-wrapping variants, over any of the three AES-GCM
+  and three AES-CBC-HMAC content encryptions. **`enc` defaults to
+  `A128CBC-HS256`** when only an `alg` is registered, as the registration
+  specification says. The recipient key comes from the client's inline `jwks`
+  or its registered `jwks_uri`, fetched and cached (see
+  [Client authentication](#client-authentication)).
+* Both give a **Nested JWT**, signed then encrypted, with `cty: "JWT"`.
+
+The three lists are advertised as `userinfo_signing_alg_values_supported`,
+`userinfo_encryption_alg_values_supported` and
+`userinfo_encryption_enc_values_supported`. **An algorithm this service cannot
+perform is refused, never downgraded to JSON**: a client that registered
+protection and got an unprotected 200 would go on believing it had verified
+something.
+
+The RFC 6750 `WWW-Authenticate` challenge carries the same
+`error_description` as the JSON body, folded to ASCII, because an HTTP field
+value is ASCII; the body keeps the original text.
+
+### Signing algorithms and keys
+
+The keys and algorithm table belong to the whole service, and every JOSE
+surface reads them: ID Tokens and UserInfo offer every signing algorithm, and
+DPoP proofs, OpenID4VCI proofs of possession, Key Binding JWTs and client
+assertions accept every asymmetric one. The advertised metadata lists are
+derived from the same table, so what is advertised is what is accepted.
+
+* **The traditional keys**: RSA, P-256, P-384, P-521, secp256k1, Ed25519 and
+  Ed448, all published in `/oauth2/jwks` (RSA first, since the default
+  signature is RS256). ES256K's signature is the R‖S concatenation RFC 7518
+  section 3.4 requires, not OpenSSL's DER.
+* **Eleven post-quantum algorithms**: ML-DSA at three parameter sets (FIPS 204,
+  RFC 9964), SLH-DSA at two (FIPS 205), and the six composite ML-DSA +
+  traditional algorithms of draft-ietf-jose-pq-composite-sigs, published as
+  `kty: "AKP"` JWKs. The JOSE framing is written independently of the parent
+  debugger's, so a misunderstanding cannot be shared by both ends; the
+  traditional half of a composite runs on node's OpenSSL.
+* **The post-quantum keys are generated lazily.** All eleven take about two
+  seconds, almost all of it one SLH-DSA key, so the first thing that needs one
+  (in practice the first JWKS fetch on a realm) pays once.
+* **`oauth2.eddsaCurve`** chooses Ed25519 or Ed448 for `EdDSA`, since RFC 8037
+  registers one `alg` for both curves. Both keys are published under different
+  `kid`s whatever it says, so a verifier follows the `kid` and a cached JWKS
+  never changes shape.
 
 ### Custom claims — `/admin/claims`
 
@@ -600,13 +856,48 @@ together. A refresh token comes back when the client asks with
 `oauth2.tokenExchangeRefreshToken` says; `issued_token_type` is always
 `access_token`.
 
-**Who may act for whom** is decided by the delegation policy (#108): the client
-must be allowed to reach every `audience` and `resource` — by
+**Which tokens are verified.** In product mode the `subject_token` and
+`actor_token` must both verify against this realm's key. In development a
+token this server signed is verified, and one it did not is **read without
+any signature check**, and the log says so. The interesting exchange is the
+federated one, where the subject token came from a real identity provider this
+service has no key for; refusing it would make the grant untestable. It is
+also exactly what would be a critical vulnerability in a real authorization
+server, which is why it is development only.
+
+**The refresh token.** RFC 8693 section 2.2.1 says one is worth issuing where
+the client "needs the ability to access a resource even when the original
+credential is no longer valid" — the user-not-present case, where there is no
+session by design. `oauth2.tokenExchangeRefreshToken` has three values,
+because real authorization servers differ and a client meets all of them:
+
+| Value | Behaviour |
+|---|---|
+| `when-requested` (default) | a refresh token only when `requested_token_type` asks for one |
+| `never` | the ask is ignored: the exchange succeeds without one, and the log names the setting (`requested_token_type` is a request, not an instruction) |
+| `always` | every exchange gets one, asked or not — which tests whether a client leaks a credential it never asked for |
+
+`oauthTokenExchangeRefreshToken` on the **client's** entry overrides it for that
+client. What comes back is an ordinary refresh token of this service: the same
+lifetime (`oauth2.refreshTokenTtlS`), redeemable at the refresh grant, revocable
+at `/oauth2/revoke`, listed at `/admin/tokens`, rotated wherever rotation is
+required, bound to the DPoP key or client certificate the exchange was made
+with, and holding the RFC 8707 resources the exchange named so a renewal cannot
+widen the audience. It is in `refresh_token`; `issued_token_type` describes the
+`access_token` member. Any other `requested_token_type` is accepted and answered
+as an access token.
+
+An exchanged token is issued with the scope asked for, so without `openid` it
+gets 403 `insufficient_scope` at UserInfo: there is no end-user behind it.
+
+**Who may act for whom** is decided by the delegation policy (#108): the client,
+and the actor it names, must be allowed to reach every `audience` and `resource` — by
 `appAllowedToDelegateTo` on its own entry or `appAllowedToActOnBehalfOf` on the
 target's — an exchange with no `actor_token` needs `appTrustedToImpersonate`,
 the subject must be in one of the client's `appDelegationSubjectGroup` groups
 where it names any, and a person carrying `stsNotDelegated` or on the console
-roster is never delegated. In **product** mode a refusal is `invalid_request`,
+roster is never delegated. The issuance policy may then Deny the action-id
+`delegate` ([XACML](xacml.md)). In **product** mode a refusal is `invalid_request`,
 or `invalid_target` for a target (RFC 8693 section 2.2.2), and a requested
 `scope` wider than the subject_token's is `invalid_scope`; in **development**
 the exchange is issued and `/admin/delegation` says what would have been
@@ -636,6 +927,52 @@ after sign-in count as one use. PAR can be required for the whole realm, by a
 client's `require_pushed_authorization_requests`, or by a named authorization
 server.
 
+```
+POST /oauth2/par                 Authorization: Basic …   (as at the token endpoint)
+response_type=code&redirect_uri=…&scope=openid&state=…&code_challenge=…
+
+201 {"request_uri":"urn:ietf:params:oauth:request_uri:<256 bits>","expires_in":60}
+
+GET /oauth2/authorize?client_id=app1&request_uri=urn:ietf:params:oauth:request_uri:…
+```
+
+Every named authorization server has its own at `/{id}/oauth2/par`.
+
+* **Client authentication** (section 2) is refused when it fails in RFC 9700
+  mode, OAuth 2.1 mode and product mode, and observed in development. A client
+  assertion may name the issuer, the token endpoint or the PAR endpoint as its
+  audience.
+* **The push is validated as an authorization request** — the authorization
+  endpoint's own checks plus the `resource`, `claims`, `authorization_details`,
+  permission and RFC 9068 audience parsers — and refused as JSON, before any
+  person is involved. `request_uri` in a push is refused (section 2.1), and so
+  is a repeated parameter other than `resource`. 405 for any method but POST,
+  413 past `oauth2.parMaxBodyBytes`, 429 past `oauth2.parRequestsPerMinute`,
+  503 when the realm already holds `oauth2.parMaxRequests`.
+* **A `request` object may carry the parameters** (section 3), verified as
+  RFC 9101 requires. The authenticated client must be its `client_id` claim,
+  and nothing else may sit in the form beside it. Where a signed object is
+  required, a plain push is refused.
+* **A DPoP proof sent with the push binds the authorization code** to its key
+  (RFC 9449 section 10.1); a `dpop_jkt` naming another key is refused.
+* **The `request_uri`** lives `oauth2.parRequestUriLifetimeS` (60 seconds by
+  default, 5–600) and only the pushed parameters are used; the query's own are
+  ignored. An unknown, expired, spent, other client's or other server's
+  `request_uri` is refused `invalid_request_uri` as a 400 on this server, never
+  redirected. A client's policy is checked again when its `request_uri` is
+  used, so a plain push is refused once a signed object becomes required.
+* **Section 2.4**: with `oauth2.parAllowUnregisteredRedirectUris` on (off by
+  default), a client that **authenticated** at the push may name a redirect URI
+  it never registered. A public client never may, and the setting is asked
+  again at the authorization endpoint.
+
+Both discovery documents carry `pushed_authorization_request_endpoint` and
+`require_pushed_authorization_requests`. With
+`oauth2.pushedAuthorizationRequests` off the endpoint answers 404 and the
+member is removed; a `request_uri` already issued still works.
+`/admin/oauth2/monitor` counts pushes, reads, spends, expiries and refusals per
+client and lists the `request_uri`s still held.
+
 ### JWT-secured authorization requests (RFC 9101)
 
 An authorization request may arrive as a signed and optionally encrypted
@@ -648,6 +985,53 @@ parameters. Each realm publishes an RSA and an EC key with `use: enc` for
 encrypting to it, and the symmetric algorithms are keyed from the client
 secret. A request object's `jti` is accepted once.
 
+The query's `client_id` must be present and identical to the object's;
+anything else in the query is ignored, and the redirect URI, PKCE and RFC 9700
+checks all run on what was signed.
+
+* **Signed** with any JWS algorithm this service verifies, by a key the client
+  registered (`jwks`, `jwks_uri`, or an issued assertion key pair) or, for
+  HS256/384/512, its client secret. A `kid` must name one of those keys, and a
+  certificate on the key has its chain and revocation checked. A client may
+  register `request_object_signing_alg` to pin one.
+* **Unsigned** (`alg: none`, OpenID Connect Core section 6.1) is accepted in
+  development and refused in product, and refused anywhere a signed object is
+  required: `oauth2.requireSignedRequestObject`, the client's
+  `require_signed_request_object`, or a named authorization server publishing
+  it.
+* **Encrypted** as a Nested JWT to the realm's own RSA or EC key (published in
+  `/oauth2/jwks` with `use: "enc"`) or, for the symmetric algorithms, to a key
+  derived from the client secret (OpenID Connect Core section 10.2). A client
+  that registers `request_object_encryption_alg` / `_enc` is then refused a
+  plain object.
+* **`iss`, `aud`, `exp` and `nbf`** are checked where present. `typ` is refused
+  only when it names another kind of JWT, unless
+  `oauth2.requireRequestObjectType` is on.
+* **`request_uri`**: the client registers it in `request_uris`. In product mode
+  it must be `https` and answer `application/oauth-authz-req+jwt` (or
+  `application/jwt`). A fragment of 43 base64url characters must be the
+  SHA-256 of the content (OpenID Connect Core section 6.2), and
+  `oauth2.requestUriCacheS` caches by URI. A pushed request's URN goes to the
+  PAR store instead and is never fetched.
+* **The `jti`** is checked on every pass through the authorization endpoint
+  and spent only when an authorization response is issued on the object, or
+  when `POST /oauth2/par` keeps a pushed one, so the passes before and after
+  the sign-in screen are one request; a replay afterwards is refused
+  `invalid_request_object`. It is kept in the used-assertion history
+  (`/admin/used-assertions`) beside RFC 7523 JWTs, until `exp` plus the clock
+  skew, or for `oauth2.requestObjectJtiRetentionS` when there is no `exp`.
+  `oauth2.requestObjectJtiOnce=false` accepts a replay; an object with no
+  `jti` is accepted either way.
+
+Errors are RFC 9101's own — `invalid_request_object`, `invalid_request_uri`,
+`request_not_supported`, `request_uri_not_supported` — answered as a 400 on this
+server. Both discovery documents carry `request_parameter_supported`,
+`request_uri_parameter_supported`, `require_request_uri_registration`,
+`require_signed_request_object` and the three
+`request_object_*_values_supported` lists, and a named authorization server's
+profile narrows each at its endpoint. The sign-in and consent screens say when
+the request was a verified request object.
+
 ### Rich authorization requests (RFC 9396)
 
 `authorization_details` is accepted at the authorization, token and PAR
@@ -658,6 +1042,73 @@ non-conforming detail is refused `invalid_authorization_details` in every mode.
 The token is addressed to the type's resource. Consent draws each detail and is
 asked **every time**. The refresh token keeps the whole grant, and a token
 request may narrow it under section 6's subset rule.
+
+```json
+[{"type": "payment_initiation",
+  "locations": ["https://pay.bank.example/"],
+  "actions": ["initiate"],
+  "instructedAmount": {"currency": "EUR", "amount": "12.50"}}]
+```
+
+**A type is declared by the resource that understands it.** An application
+acting as a resource server lists its types in `oauthAuthorizationDetailsType`,
+one per value: a bare name, or a JSON definition such as
+
+```json
+{"type": "payment_initiation", "description": "Initiate a payment",
+ "locations": ["https://pay.bank.example/"],
+ "schema": {"type": "object", "required": ["instructedAmount"]}}
+```
+
+written on the console, through `/admin-api`, or proposed by the RFC 9728
+import from a resource's `authorization_details_types_supported`.
+`authorization_details_types_supported` in both discovery documents is
+`openid_credential` plus every declared type in the realm. A named
+authorization server may publish a narrower list, and a client may register
+`authorization_details_types` (section 10) to limit itself. `authorization_details`
+is also accepted inside a request object.
+
+* **Refused in every mode** with `invalid_authorization_details`: unreadable
+  JSON, an entry with no `type`, a malformed common field (`locations`,
+  `actions`, `datatypes`, `identifier`, `privileges`), a type nobody declares
+  (section 5), a type outside the client's or the authorization server's list,
+  a detail failing its type's schema, and a location the resource does not
+  answer to.
+* **One token is for one resource**: the detail's `locations`, or the
+  resource's permission base URI, `oauthAudience` or client_id. Details of two
+  resources, or a `resource` or scope naming a different API beside them, are
+  refused (`invalid_authorization_details`, `invalid_target`, `invalid_scope`).
+* **Consent draws every detail, member by member.** A detail is about one
+  transaction, so Allow holds for exactly that array, that person and that
+  client, once; it is not remembered like a scope. `prompt=none` answers
+  `consent_required`. `openid_credential` follows the scope rules.
+* **What was granted travels with the token**: the access token's
+  `authorization_details` claim, the token response and `/oauth2/introspect`.
+  A subset (section 6) is fewer actions or locations with the same values
+  otherwise, on an authorization code or a refresh token. A direct grant
+  (`client_credentials`, `password`, the assertion grants, token exchange) is
+  granted the details it asks for. `oauth2.authorizationDetailsMaxEntries` caps
+  the array.
+
+**`openid_credential` and a subset of the claims.** OpenID4VCI 1.0 puts a
+wallet's claim selection in the `claims` member of an `openid_credential`
+detail (section 5.1.1), not in the Credential Request, so it is made when the
+issuance is authorized and travels inside the signed access token; a wallet
+cannot widen it. Each entry is a claims description object (Appendix A.1)
+whose `path` is a claims path pointer (Appendix B) — an array, since a claim
+may be nested (`["address","locality"]`) or address array elements with
+integers or `null`. The paths are exactly those the issuer metadata publishes
+for the configuration's format: top-level for `dc+sd-jwt`, under
+`credentialSubject` for `jwt_vc_json`, the flat context terms for `ldp_vc`.
+Refused with `invalid_authorization_details`: a `claims` that is not a
+non-empty array, a `path` that is not a non-empty array of strings, nulls and
+integers, a claim described twice (A.3), and a path this issuer does not
+advertise. **Absent is not empty**: no `claims` member means the whole
+configured set. The token request may carry `authorization_details` too
+(section 6.1.1), which is the only route the pre-authorized code flow has; a
+detail naming a configuration the Credential Offer did not is refused, and the
+refresh grant carries the granted details forward. See
+[OpenID4VCI](oid4vci.md).
 
 ### Introspection and revocation
 
@@ -670,6 +1121,67 @@ authenticate in every mode, because its `aud` has to name the caller. An
 authenticated caller learns only about tokens meant for it; any other token is
 reported as `{"active": false}`. The answer includes `cnf`, `acr`, `auth_time`
 and `authorization_details`.
+
+#### Introspection as a JWT (RFC 9701)
+
+The JWT is chosen when `Accept` **names** `application/token-introspection+jwt`
+with a quality at least as high as `application/json`'s, at
+`/oauth2/introspect` and `/{as}/oauth2/introspect`:
+
+```
+header  {"typ": "token-introspection+jwt", "alg": "RS256", "kid": "..."}
+claims  {"iss": "<this authorization server>",
+         "aud": "<the resource server's client_id>",
+         "iat": 1789000000,
+         "token_introspection": {"active": true, "scope": "...", "sub": "...", ...}}
+```
+
+An inactive token's claim is `{"active": false}` and nothing else. The JWT
+carries no `sub` and no `exp`, so it cannot be mistaken for an access token,
+and it is not recorded in `/admin/tokens`: it is a response, not a credential.
+
+* **The caller authenticates in every mode.** No credential, an unknown or
+  public client, a client with nothing on file to verify, or a credential that
+  does not verify is **400 `invalid_client`** (section 5). Every token-endpoint
+  method works, through the same check and the same secret rate limit. A JSON
+  request in product mode is refused **401 `invalid_client`** without one
+  (RFC 7662 section 2.3).
+* **What the resource server registers decides the protection** (section 6):
+
+  | Member | Attribute on the application | Default |
+  |---|---|---|
+  | `introspection_signed_response_alg` | `oauthIntrospectionSignedResponseAlg` | `RS256` — any JWS algorithm in `introspection_signing_alg_values_supported`, HMAC keyed by the client secret; never `none` |
+  | `introspection_encrypted_response_alg` | `oauthIntrospectionEncryptedResponseAlg` | not encrypted — RSA-OAEP, RSA-OAEP-256 or ECDH-ES(+A*KW), to a key in the client's `jwks` or registered `jwks_uri` |
+  | `introspection_encrypted_response_enc` | `oauthIntrospectionEncryptedResponseEnc` | `A128CBC-HS256` once an `alg` is set; refused without one |
+
+  Set them in an RFC 7591 registration (an RFC 7592 update clears a member it
+  omits), on the application's console page, or with
+  `POST /admin-api/applications/set`. A value this service cannot honour is
+  refused where it is written (`invalid_client_metadata`); one written by
+  `ldapmodify` makes the JWT response fail **500 `server_error`** with the
+  reason, rather than go out with different protection. An encrypted response
+  is a Nested JWT with `cty: "JWT"` and the same `typ`.
+* The discovery documents publish `introspection_signing_alg_values_supported`,
+  `introspection_encryption_alg_values_supported` and
+  `introspection_encryption_enc_values_supported`;
+  `oauth2.introspectionCertificateHeader` decides whether the signature names
+  its certificate chain.
+* **Tokens meant for the caller.** Wherever the caller authenticated, a token
+  is active only if it is the caller's own (`client_id`), if its `aud` is this
+  service's default resource indicator (`<base>/resource`, or a named
+  authorization server's), or if its `aud` names the caller's application by
+  `oauthClientId`, `oauthAudience` or `oauthPermissionBaseUri`. A refresh token
+  is reported only to its own client. An anonymous development JSON caller is
+  not restricted.
+* **A named authorization server's profile can narrow it**:
+  `introspection_endpoint_auth_methods_supported` refuses a client whose
+  method is not listed, and the three `introspection_*_values_supported` lists
+  refuse a resource server whose algorithm (or the RS256 default) is not
+  listed, both `invalid_client`. Removing a member turns its check off.
+* **OAuth 2.1 mode** refuses a request carrying two client authentication
+  methods (section 2.4).
+* **Not done**: RFC 9701 section 9's legal basis for releasing a token's data
+  is the deployment's to establish.
 
 `POST /oauth2/revoke` ([RFC 7009](https://www.rfc-editor.org/rfc/rfc7009))
 writes to the same revocation set as the console's **Revoke** buttons, and
@@ -789,6 +1301,93 @@ from a script.
   mode, a sign-out revokes the refresh tokens issued on that session without
   `offline_access`. Tokens granted `offline_access` are kept.
 
+#### Front-Channel Logout in detail
+
+```
+POST /oauth2/register
+  { "frontchannel_logout_uri": "https://rp.example/logout",
+    "frontchannel_logout_session_required": true }
+
+GET /.well-known/openid-configuration
+  "frontchannel_logout_supported": true
+  "frontchannel_logout_session_required": true
+
+id_token: { …, "sid": "EO-iqvyoBaXVAwJMzzHQuEcBlw4dcI36" }
+
+any sign-out ->  <iframe src="https://rp.example/logout?iss=…&sid=EO-iqvy…">
+```
+
+* **`sid` is in the ID Token because the specification needs it** (section 3).
+  `oauth2.frontchannelLogout` off removes the members; `sid` goes too only
+  when `oauth2.backchannelLogout` is off as well.
+* **`iss` and `sid` go only to a client that registered
+  `frontchannel_logout_session_required`** (section 2). An omitted boolean is
+  false (RFC 7591 section 2), and an RP that did not ask may be validating the
+  query string it gets.
+* **Every URL is printed as a link beside its iframe.** The provider cannot
+  know whether a notification succeeded (section 5): a dead relying party, a
+  certificate the browser refuses and a mistyped URI all look like success.
+  The link is something a person can click to see.
+* **A redirect becomes a page when there is a fan-out.** A 302 to
+  `post_logout_redirect_uri` would abandon the document before any iframe
+  loads, so `/oauth2/logout` renders the iframes and offers the return as a
+  link. Where there is nothing to notify, the redirect is unchanged.
+
+#### Back-Channel Logout in detail
+
+```
+POST /oauth2/register
+  { "backchannel_logout_uri": "https://rp.example/bc-logout",
+    "backchannel_logout_session_required": true }
+
+GET /.well-known/openid-configuration
+  "backchannel_logout_supported": true
+  "backchannel_logout_session_supported": true
+
+any sign-out ->  POST https://rp.example/bc-logout
+                 Content-Type: application/x-www-form-urlencoded
+                 logout_token=eyJ0eXAiOiJsb2dvdXQrand0Ii…
+```
+
+Any sign-out sends it: `/oauth2/logout`, `/logout`, `wsignout1.0`, SAML Single
+Logout, the console and `/admin-api`.
+
+* **The token** is typed `logout+jwt` and carries `iss` (the issuer the
+  client's ID Token came from), `aud`, `iat`, `exp` (`oauth2.backchannelLogoutTokenTtlS`
+  on), `jti`, the `http://schemas.openid.net/event/backchannel-logout` event,
+  `sub` and `sid`, and no `nonce`. It is signed like the client's ID Token, and
+  encrypted as a Nested JWT where the client registered
+  `id_token_encrypted_response_alg`.
+* **Sent after the sign-out has answered, and written down.** 200 and 204 are
+  success; **400 is final** (section 2.8); a timeout, a connection failure,
+  5xx, 408 and 429 are retried `oauth2.backchannelLogoutAttempts` times with a
+  doubling backoff, by any node and across a restart, because the row carries
+  the state and the token. A sign-out's result lists each delivery as
+  `pending`, and `/admin/logout` (and `GET /admin-api/logout`) lists where each
+  got to, from every node. Every final outcome is one `logout.backchannel`
+  audit row (a failure with its `STS-OAUTH-05xx` code), and the log gets a
+  periodic summary rather than a line per failure.
+* **A delivery that never succeeds is a dead letter** — refused with 400,
+  refused by the outbound policy, or out of attempts — kept with its reason and
+  sent again only by **Retry** on `/admin/logout`
+  (`POST /admin-api/logout/retry-backchannel`), which mints a new token and
+  uses the client's current address.
+* **The outbound policy applies**: nothing at all with `federation.outbound`
+  off, https with the certificate verified, no redirect followed, and in
+  product mode no loopback, private or link-local address — the name is
+  resolved once and the connection pinned to the address that was checked.
+* **Expiry and disabling send too.** `oauth2.backchannelLogoutOnExpiry` (on)
+  sends when a session expires, since a relying party never told keeps a
+  session this service no longer vouches for. An account disabled from
+  `/admin/users` ends every session and sends them as well.
+* **Several processes send it once.** The process that reports the session's
+  end sends, and each attempt is claimed with a lease, so an attempt by a
+  process that dies is taken over once the lease lapses, and the stalled
+  process cannot overwrite the outcome when it wakes.
+
+`oauth2.backchannelLogout` off removes the members, the fan-out and this
+feature's half of `sid` together.
+
 ### Session Management
 
 [OpenID Connect Session Management 1.0](https://openid.net/specs/openid-connect-session-1_0.html)
@@ -820,6 +1419,52 @@ changes at every sign-in and is cleared at every sign-out.
 
 [Signing out](signing-out.md) describes the protocol-independent `/logout` and
 what it reaches.
+
+### DPoP and step-up at these endpoints
+
+The proof checks, the nonce handshake and the settings that require a binding
+are on [OAuth security](oauth-security.md#dpop-rfc-9449). As they meet the
+endpoints on this page:
+
+* **DPoP** binds the access **and** refresh tokens (`cnf.jkt`). A wallet or
+  other public client's unbound refresh token would be a bearer credential that
+  mints bound access tokens for whoever holds it. The metadata advertises
+  `dpop_signing_alg_values_supported` (section 5.1), the only signal that DPoP
+  is on offer; `dpop_jkt` binds a code before it is issued (section 10);
+  introspection reports `token_type` `DPoP`.
+* **Where DPoP applies.** OpenID4VCI recommends it and lets the Credential
+  Issuer send a `DPoP-Nonce`, so it covers the token endpoint and the
+  Credential, Deferred Credential and Notification endpoints. OpenID4VP has no
+  access token to bind — its proof of possession is the Key Binding JWT — so it
+  does not apply there. DPoP binds an OAuth token, not a credential, so it
+  works unchanged for every credential format.
+* **The nonce request has two shapes**: the authorization server asks with a
+  400 JSON body, a resource server with a 401 `WWW-Authenticate` challenge.
+  `POST /dpop/nonce-mode`, a non-spec switch listed as such on
+  `/admin/sts-metadata`, writes `oauth2.dpopNonceRequired` for the realm it is
+  reached in; product mode refuses it.
+* **A foreign token's `cnf.jkt` is only a claim.** For a token this service
+  did not issue (accepted by the OpenID4VCI endpoints in development), anyone
+  could have written it; the binding is real only for tokens issued here,
+  which is why UserInfo refuses foreign tokens.
+* **Step-up** (RFC 9470): the authorization endpoint honours `acr_values` and
+  `max_age` with or without `openid`, and an elapsed `max_age` re-authenticates,
+  which OpenID Connect Core requires anyway. An `mfa` session asked for
+  `acr_values=1` is issued `acr: "1"` — the most preferred requested value that
+  was met.
+  ```
+  GET /oauth2/step-up/resource/api1          Authorization: Bearer <acr "1">
+  401 WWW-Authenticate: Bearer error="insufficient_user_authentication",
+        error_description="…", acr_values="mfa", max_age="600"
+
+  GET /oauth2/authorize?client_id=app1&…&acr_values=mfa&max_age=600
+  ```
+  At `/oauth2/step-up/resource/{application}` the token must verify, be this
+  service's `at+jwt` and name the application in its `aud`; then the answer is
+  the challenge or a 200 describing the authentication it met. A token with no
+  `auth_time` does not meet a `max_age`. `/admin/oauth2/monitor` counts
+  requirements met by the session or by a sign-in, people sent to sign in
+  again, both refusals and resource-server challenges, per client.
 
 ### Not implemented
 
@@ -1068,6 +1713,16 @@ be set per [trust realm](trust-realms.md).
 * **Claims requests are honoured and never echoed.** `value`/`values` could be
   satisfied by repeating what the client asked for. A UserInfo response that
   agreed with whatever it was asked would be useless for testing.
+* **UserInfo refuses a token it did not issue.** Unlike the OpenID4VCI
+  endpoints in development, it answers *who did you authenticate*, and a
+  profile made up for an unverifiable token would teach a client the wrong
+  lesson.
+* **A front-channel fan-out turns a redirect into a page.** An iframe cannot
+  load in a document that has already been redirected away, and a visible link
+  per notification is the only way a person can see one that silently failed.
+* **The token-exchange refresh setting has three values, not two.** A boolean
+  could not express `always`, which is where a client that leaks a credential
+  it never asked for is caught.
 * **An encrypted response is refused rather than downgraded.** A client that
   registered ID Token, UserInfo or introspection encryption never gets a
   plaintext answer.

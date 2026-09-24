@@ -41,9 +41,9 @@ an `ldapmodify`.
 | Path | What it is |
 |---|---|
 | `GET /federation` | what federation is here, every relationship in both directions, and the URL to give each partner |
-| `GET /federation/login/{id}` | **start**: sends the browser to the partner — an `<AuthnRequest>`, a SAML 1.1 inter-site transfer URL, `wa=wsignin1.0`, or an OAuth 2.0 authorization request. Takes `?returnTo=` (a path on this service) and `?application=` (a hint naming what the person is signing in to) |
+| `GET /federation/login/{id}` | **start**: sends the browser to the partner — an `<AuthnRequest>`, a SAML 1.1 inter-site transfer URL, `wa=wsignin1.0`, or an OAuth 2.0 authorization request. Takes `?returnTo=` (a path on this service) and `?application=` (a hint naming what the person is signing in to, so the relationship can count that pair — checked against the live register before anything is written down) |
 | `GET\|POST /federation/acs/{id}` | **finish**: the assertion consumer service, the WS-Federation `wreply` and the OAuth 2.0 `redirect_uri`, all one path. **This is the URL to configure at the partner** |
-| `GET /federation/link/{handle}` | where the linking sign-in of `link-at-first-sign-in` returns: after the person has signed in here as the account the partner named, this records the link and finishes the federated sign-in (#109) |
+| `GET /federation/link/{handle}` | where the linking sign-in of `link-at-first-sign-in` returns: after the person has signed in here as the account the partner named, this records the link and finishes the federated sign-in (#109). Single-use, and it records the link only for a fresh local sign-in as that person |
 | `GET /federation/metadata/{id}` | this service's own SAML metadata (an `SPSSODescriptor`) for one SAML partner, unsigned — with its `SingleLogoutService` on the Redirect and POST bindings and, for SAML 2.0, its encryption key (`KeyDescriptor use="encryption"`, #168). For a WS-Federation partner, an `EntityDescriptor` with a `fed:ApplicationServiceType` role, its passive requestor endpoint and its encryption key |
 | `GET /federation/jwks/{id}` | an OpenID Connect relationship's encryption key as a JWKS (`use: enc`), what the partner registers to encrypt its ID Token to (#168) |
 | `GET\|POST /federation/slo/{id}` | **a partner's sign-out, in a browser** (#167): a SAML 2.0 `<LogoutRequest>` or `<LogoutResponse>`, a WS-Federation `wsignoutcleanup1.0` or `wsignout1.0`, and the browser coming back from an OpenID Provider's `end_session_endpoint`. The SAML `SingleLogoutService`, the WS-Federation sign-out URL and the OpenID Connect `post_logout_redirect_uri` to configure at the partner |
@@ -97,10 +97,17 @@ What is checked on the way in, in every mode:
   (`fedJwks`, or `fedJwksUri`), with `alg: none` refused by name and the
   algorithm family taken from the key, so HS256 cannot be verified with a
   public key;
-* the **issuer** against `fedPeer`, which is required;
-* the **audience**: every `AudienceRestriction` must name this service. A
-  SAML 2.0 assertion with no restriction is refused; SAML 1.1 and WS-Federation,
-  whose profiles make it optional, are accepted with a warning;
+* the **issuer** against `fedPeer`, which is required — a relationship with no
+  peer is missing a field and not usable, and a WS-Federation assertion
+  carrying no issuer is refused;
+* the **audience**: every `AudienceRestriction` must name this service (several
+  audiences in one restriction are an OR, several restrictions an AND). A
+  SAML 2.0 assertion with no restriction is refused, because the Web Browser SSO
+  profile requires one; SAML 1.1 and WS-Federation, whose profiles make it
+  optional, are accepted with a warning. An assertion a partner minted for any
+  other of its relying parties verifies against the same key, names the same
+  issuer and is inside its window, so this is what stops anybody holding one
+  from signing in here;
 * the validity window, and that the response answers a request this service
   sent (`InResponseTo`, or the handle in `RelayState` / `wctx` / `state`),
   unless `fedAllowUnsolicited` is on;
@@ -110,6 +117,14 @@ What is checked on the way in, in every mode:
 The request context — the request id, `nonce`, PKCE verifier and where the
 person was going — is kept on the server, per trust realm; the partner carries
 only an opaque handle. A handle minted in one realm cannot be spent in another.
+
+**What this service is called to a partner** is derived from the base URL a
+browser reached it at (`<base>/federation/acs/<id>`, which
+`global.publicBaseUrl` pins). `fedLocalEntityId` on the relationship sets it
+outright: it is the Issuer of the AuthnRequest, the `wtrealm`, the SAML 1.1
+`providerId` (sent when `fedSsoUrl` names none) and the audience an inbound
+assertion must name. A partner configured with another name for this service
+needs it set.
 
 ### What a federated sign-in writes
 
@@ -128,15 +143,46 @@ federation exists.
   covering the ordinary OIDC claims, SAML `urn:oid:` names and AD FS claim URIs,
   then **nothing** — an unrecognised name is listed as unmapped on the result
   page, on `/admin/federation` and in the log, not written under its own name.
-* A partner's value **overwrites** an invented one; an attribute the partner
-  stopped sending is **left alone**; `uid` is never written from an assertion.
-  `federationAttribute` on the entry says which attributes came from the
+* A partner's value **overwrites** an invented one and never the other way
+  round; an attribute the partner stopped sending is **left alone** — a partner
+  that dropped `title` from its release policy has not said the person has no
+  title; `uid` is never written from an assertion, because that is what the DN
+  is built from.
+* `federationAttribute` on the entry says which attributes came from the
   partner, beside `federationRelationship`, `federationIssuer`,
-  `federationLink` and `federationLastSeen`.
+  `federationLink` and `federationLastSeen`. It exists because this service
+  **invents** a persona for everybody it has never met, so a federated `mail`
+  and an invented `mail` are otherwise indistinguishable on the entry.
 * Nothing is written onto an entry until the subject has been admitted — see
   *Which people a partner may assert* below.
 * The session's `amr` starts with `federated`, followed by what the partner
-  said; a SAML partner's authentication context travels on `acr`.
+  said; a SAML partner's authentication context travels on `acr` — so a SAML
+  assertion this service then issues states the partner's class rather than
+  calling every federated sign-in a password.
+
+A federated sign-in leaves an entry like this:
+
+```
+uid=fedalice,ou=users,dc=example,dc=com
+  cn: Alice Anderson              <- from the partner
+  mail: alice@partner.example     <- from the partner
+  federationRelationship: partner-a
+  federationIssuer: https://idp.partner.example/saml
+  federationLink: partner-a https://idp.partner.example/saml alice@partner.example
+  federationAttribute: cn | mail | givenName | sn
+  federationLastSeen: 20260824T235014Z
+```
+
+**It works in every protocol without any of them being told.** The federated
+sign-in ends by calling the same session start the sign-in screen calls; there
+is no federation session store, and no protocol module contains the word. That
+is why `/authn/login` grows a button per usable partner: a person arriving at
+that screen is in the middle of something — an authorization request, a
+`wsignin1.0`, an `AuthnRequest`, the console — and the button hands that whole
+request to the federated flow and brings them back to it. Only relationships
+that would actually work are offered; a button leading to a refusal is worse
+than no button, because the person has already left the screen by the time
+they find out.
 
 ### Which people a partner may assert
 
@@ -225,9 +271,26 @@ application's people sign in through, and holds a list:
 | several, `appFederationAutoRedirect` FALSE | the sign-in screen, with those partners as its only buttons |
 | only unusable values | the sign-in screen, with a banner naming what is wrong with each |
 
-A relationship that is disabled, half-configured or on the wrong side is
-**printed, not dropped** — a list of three with one disabled would otherwise
-look exactly like a correct list of two.
+The values need not share a protocol — a SAML 2.0 partner and an OpenID
+Connect one are the ordinary pair, and they arrive at the same
+`/federation/acs/{id}`. **Configuration decides the set; the person decides
+within it.** The generic buttons ask "which of the identity services this
+service has heard of are you?"; this asks "which of your employer's two".
+`appFederationAutoRedirect` means *without the sign-in screen*, never *without a
+page*: with one partner that is a redirect, with several it is the chooser — no
+boolean can say which identity provider somebody's employer is.
+
+A relationship that is disabled, half-configured, identity-provider-side or
+absent from this realm is **printed, not dropped** — a list of three with one
+disabled would otherwise look exactly like a correct list of two. The one case
+that shows nobody anything is one usable value with the auto-redirect on: it
+works and draws no page, so the other values' problems go to the log at INFO.
+
+The checks are made **when the attribute is read**, never when it is written:
+it is a string on a directory entry that `ldapmodify` reaches, and the
+relationship it names can be disabled by somebody who never looked at this
+application. The chooser re-reads them when it is drawn, because the pending
+record lives ten minutes.
 
 ### This service as identity provider
 
@@ -237,11 +300,17 @@ answered. It names the partner's application entry (`fedApplication` — its
 entityID, endpoints and certificate stay there) and adds two things:
 
 * **A release policy.** `fedRelease` lists the claims or attributes released
-  to this partner. It filters what the claim and SAML attribute configuration
-  and the groups claim would add, and can never remove `sub`, `iss`, `exp`, a
-  NameID or anything else a protocol puts in an artifact itself. **An empty list
-  is no policy, not "release nothing"**, so registering a partner never stops it
-  receiving what it received the day before.
+  to this partner. It can only **remove**, and only from what `/admin/claims`,
+  `/admin/userinfo-claims`, `/admin/saml-attributes`, the groups claim and a
+  client's own OpenID Connect Core section 5.5 claims request would add — the
+  last because the list is about what an audience may *see*, not which
+  mechanism produced the value, so a partner released `email` alone cannot ask
+  for `birthdate` and be given it. It can never remove `sub`, `iss`, `exp`, a
+  NameID or anything else a protocol puts in an artifact itself — those make
+  the artifact verifiable, and a release list that could drop `iss` would
+  produce tokens that fail to verify with nothing pointing back at the page.
+  **An empty list is no policy, not "release nothing"**, so registering a
+  partner never stops it receiving what it received the day before.
 * **How this service authenticates for the partner** (`fedAuthnMechanism`):
 
 | Value | What the person meets |
@@ -265,7 +334,15 @@ mechanism because a relationship preferred one.
 Federation is where this service first made an **outbound** request, and it
 dials only URLs an administrator wrote on a relationship: the partner's token
 endpoint (`fedTokenUrl`), UserInfo (`fedUserinfoUrl`) and JWKS (`fedJwksUri`).
-The rules:
+The distinction is not "this feature needs it", which is the argument every
+server-side request forgery ever shipped was made with: a URL a **caller**
+supplies (WS-Federation's `wreqptr`) is refused, while these are supplied by an
+**administrator** — a relationship is created through the gated console or
+`/admin-api`, and anybody who can set `fedTokenUrl` can already do worse than
+make this process issue a GET. The API keeps that honest rather than the
+intention: the outbound client **will not take a URL**; it takes a
+relationship and the *name* of the attribute holding one, and refuses any name
+outside its list of three. The rules:
 
 * `federation.outbound` turns every one of them off;
 * **https only, with the partner's certificate verified.** In development,
@@ -375,7 +452,49 @@ so a hybrid key can be added beside the classical one when one is registered.
   `SessionNotOnOrAfter`, above.
 * Validating the partner's certificate against a CA or its validity dates — it
   is a pinned key; only its revocation is checked.
-* Restricting **which** people a partner may assert.
+
+### The federation map
+
+`/admin/federation/map`, reached from a link on the relationship table, draws
+the same register as a diagram generated on the server. It is **three bands,
+and the bands are a claim about direction**: everything on the left arrives
+wanting somebody signed in — an application registered here, or a foreign
+service provider — the hexagon in the middle is the trust realm the picture is
+of, and everything on the right is a party this service asks to do the signing
+in. So **an arrow is a request, not an assertion**, which is the one thing
+that looks backwards: an identity-provider-side relationship points *inward*
+even though this service asserts outward, and that is what turns an **identity
+broker** — one relationship authenticating through another — into a single
+straight line through the middle. A **hexagon** is an identity service, a
+**rectangle** a party that consumes what one issues, and a **dashed** outline
+means foreign.
+
+Lines are coloured by the relationship's state, the list page's own four:
+green is ready; grey is disabled, how every relationship starts; red is
+**enabled and not configured**, which will refuse the moment somebody uses it
+and looks finished from every other angle; amber is a broker whose onward
+partner is unusable — the only failure here that still produces a working
+sign-in, at the password screen.
+
+The map adds three things a table of relationships has nowhere to put, each a
+fact about two registers at once: how many applications are configured to use
+each partner, how many people have signed in through each *application and
+relationship* pair, and what the identity-provider side does about
+authenticating somebody. One filter — role, protocol and free text — narrows
+the picture and the tables under it. `?format=svg` is the document alone and
+`?format=json` the graph. It carries no script, so it does not pan or zoom, and
+the page says so.
+
+**The per-application counts do not have to add up**, and the page names the
+difference. A relationship's own total counts every credential that crossed
+it; the rows count only the ones that named an application this service is
+configured for. Three ordinary things make the gap: the partner buttons on the
+sign-in screen belong to no application, `/federation/login/{id}` needs no
+configuration to reach, and a sign-in naming an application that does not
+point at that relationship is refused a row and logged. That last is a refusal
+rather than a convenience: `?application=` is a string anybody who can reach
+the port chose, and the attribute it would grow is on the one entry whose
+contents decide whether an assertion is verified.
 
 ## Development and product mode
 
@@ -469,10 +588,16 @@ one is named on the page and the relationship refuses until it is filled.
 ## Design decisions
 
 * **A relationship must be configured, and what it configures is a key.**
-  `/federation/acs/{id}` receives an unauthenticated request claiming to be a
-  person, and the session it produces is the one every protocol and the console
-  read. "Accept any SAML Response" would be an authentication bypass for the
-  whole process, so there is no permissive version to offer.
+  The other authenticated surfaces here — SCIM, the SPIRE Server API, the
+  console — are **turnstiles**: they refuse a caller so that a client can
+  exercise a refusal. This one is different. `/federation/acs/{id}` receives an
+  unauthenticated request claiming to be a person; the only thing between
+  "alice signed in at the partner" and "somebody POSTed some XML" is the
+  signature check, and the session it produces is the one `/oauth2/authorize`,
+  `/wsfed`, `/saml2/sso`, `/saml11/sso` and `/admin` all read. "Accept any SAML
+  Response" would be an authentication bypass for the whole process, reachable
+  with `curl`, and the tokens minted afterwards would be indistinguishable from
+  real ones — so there is no permissive version to offer.
 * **Created disabled; enabled as a second act; half-configured refuses.** A
   partner that half-worked would look finished from every angle except the one
   where it accepts something it should not.
@@ -507,8 +632,12 @@ one is named on the page and the relationship refuses until it is filled.
   what it receives.
 * **Only administrator-configured URLs are dialled.** A partner's token
   endpoint was written down by somebody configuring the partnership; a
-  `jwks_uri` sent to dynamic registration or a WS-Federation `wreqptr` was
-  chosen by a caller and is still never followed.
+  WS-Federation `wreqptr` was chosen by a caller and is never followed.
+* **A happy path proves close to nothing here.** This is the surface whose bugs
+  are security bugs rather than fidelity bugs, so what matters is the
+  negatives; `tests/vendored/sts_federation_realms.js`,
+  `sts_federation_subject_policy.js` and `sts_federation_signout.js` drive most
+  of them over HTTP, and `federation/CLAUDE.md` lists the ones still open.
 * **The outbound HTTP-POST binding is a real form with a real button.** A
   person leaving this service for a foreign identity provider is the moment a
   deliberate click is worth having, so federation adds no script to any page.
@@ -523,13 +652,8 @@ one is named on the page and the relationship refuses until it is filled.
   directions with its state and readiness, the URL to give each partner, the
   unmapped attributes a partner sent, create and edit forms, and the
   `federation.*` settings.
-* **`/admin/federation/map`**: the register drawn as a picture — applications
-  and foreign service providers on the left, the trust realm in the middle,
-  identity providers on the right; an arrow is a request. Lines are coloured
-  green (ready), grey (disabled), red (enabled and not configured) and amber (a
-  broker whose onward partner is unusable). It also shows per-application
-  sign-in counts and names the remainder that belongs to no application.
-  `?format=svg` and `?format=json` return the picture and the graph.
+* **`/admin/federation/map`**: the register drawn as a picture — see
+  [The federation map](#the-federation-map).
 * **`GET /federation`**: the public description, with the URL to configure at
   each partner.
 * **Management API**: `GET /admin-api/federation` and

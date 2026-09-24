@@ -28,7 +28,8 @@
 // changing the table, which is the one place that also carries the reasoning
 // for what the default is; a value edited only here would disagree with what
 // /admin/config reports as the default, with the OpenAPI document's `default`
-// property, and with README.md's table, all three of which read the table.
+// property, and with docs/configuration.md's table, all three of which read
+// the table.
 //
 // FOUR SETTINGS ARE DELIBERATELY ABSENT: global.https, oid4vp.walletUrl,
 // krb5.serviceDomains and adminApi.audience are DERIVED from a neighbour (from
@@ -38,8 +39,8 @@
 // this file was written, so they resolve through their neighbour instead and
 // are exempt from the startup refusal for that reason.
 //
-// See common/CLAUDE.md, and README.md's *Configuration*, which lists every
-// setting, its environment variable and its default in one table.
+// See common/CLAUDE.md, and docs/configuration.md's *Every setting*, which
+// lists every setting, its environment variable and its default in one table.
 // ---------------------------------------------------------------------------
 var config = {
   // --- The log level ---------------------------------------------------

@@ -77,6 +77,8 @@
 
 - section: Administration
   items:
+    - { title: Admin console, url: /admin-console.html }
+    - { title: Applications, url: /applications.html }
     - { title: Management API, url: /management-api.html }
 
 - section: Operating it

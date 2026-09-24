@@ -13,9 +13,11 @@ realm has its own identity provider, with its own providerID, signing key,
 relying parties and metadata.
 
 It is **not** the SAML 2.0 identity provider with the version turned down.
-**SAML 1.1 has no request message**: there is no `<AuthnRequest>`, a flow begins
-when a browser arrives carrying a `TARGET`, and almost everything that reads
-oddly on this page follows from that. The SAML 2.0 profile is
+**SAML 1.1 has no request message**: there is no `<AuthnRequest>`, the
+browser profiles are identity-provider-initiated, a flow begins when a browser
+arrives at the inter-site transfer service carrying a `TARGET` (the URL at the
+relying party it wants to end up at), and almost everything that reads oddly on
+this page follows from that. The SAML 2.0 profile is
 [SAML 2.0 Web Browser SSO](saml2-sso.md).
 
 ## Features
@@ -25,9 +27,10 @@ oddly on this page follows from that. The SAML 2.0 profile is
 | Path | What it is |
 |---|---|
 | `GET\|POST /saml11/sso[/{rp}]` | the **inter-site transfer service** — SAML 1.1's name for the single sign-on service |
-| `POST /saml11/responder[/{rp}]` | the **SAML responder**, SOAP over HTTP (bindings section 3.1) |
+| `POST /saml11/responder[/{rp}]` | the **SAML responder**, SOAP over HTTP (bindings section 3.1): resolves artifacts, returns assertions by `AssertionID`, and answers `AttributeQuery` and `AuthenticationQuery` |
 | `GET /saml11/metadata[/{rp}]` | signed metadata, one document per relying party |
 | `GET\|POST /saml11/rp` | a **mock relying party** (not part of any specification) |
+| `GET /saml11/autopost.js` | the one script the Browser/POST profile runs |
 | `GET /saml11` | a page describing all of the above and every parameter this realm reads |
 
 In a trust realm every path is under `/realm/{id}`. The full, current list is
@@ -49,7 +52,8 @@ A browser arrives at `/saml11/sso` with:
 **Shibboleth's request profile** (`shire`, `target`, `providerId`, `time`,
 identified as `urn:mace:shibboleth:1.0:profiles:AuthnRequest`) is supported and
 advertised in the metadata, although it is not a standard — it is what every
-real SAML 1.1 service provider sends.
+real SAML 1.1 service provider sends, and a mock that could not be told where to
+send the assertion would be a mock nobody could point at anything.
 
 **The relying party cannot name itself in the protocol**, so the audience comes
 from `providerId`, from the `{rp}` path segment of a scoped endpoint, or —
@@ -66,9 +70,11 @@ screen.
 
 ### Browser/POST and Browser/Artifact
 
-Nothing in SAML 1.1 lets a relying party choose, so `saml11.defaultProfile`
-decides, and the non-spec `profile` parameter (or an arriving `SAMLart`)
-overrides it.
+**The two profiles are chosen here, not asked for.** Nothing in SAML 1.1 lets
+a relying party choose, so `saml11.defaultProfile` decides, and the non-spec
+`profile` parameter (or an arriving `SAMLart`) overrides it — the same kind of
+device as WS-Trust's `/sts?encrypt=1`, and marked as non-spec wherever it
+appears.
 
 * **Browser/POST** (profiles section 4.2) puts the whole signed Response in a
   self-submitting form. The assertion is confirmed
@@ -80,9 +86,13 @@ overrides it.
   assertion never passes through the browser**. It is confirmed
   `urn:oasis:names:tc:SAML:1.0:cm:artifact`.
 
-**The confirmation method is the profile.** It is the assertion's own statement
-of how it reached the relying party, so the two are not interchangeable, and
-the mock relying party checks it.
+**The confirmation method is the profile.** Section 4.1.1.4 requires
+`...:cm:artifact` for Browser/Artifact and section 4.2.1.4 requires
+`...:cm:bearer` for Browser/POST. It is the assertion's own statement of how it
+reached the relying party, so the two are not interchangeable: an
+artifact-profile assertion confirmed as `bearer` claims to have travelled
+through the browser when it did not. A relying party that checks refuses it;
+one that does not works with either. The mock relying party checks.
 
 An artifact here stands for an **assertion**, not a message: the
 `<samlp:Response>` around it is built at resolution time, so its `InResponseTo`
@@ -94,13 +104,24 @@ names the SOAP request and its `Recipient` names whoever asked.
 
 | Request | Answer |
 |---|---|
-| `AssertionArtifact` | the assertion — **exactly once**, across every node of a cluster; a second attempt is refused with a status naming the reason. `saml11.artifactTtlS` only bounds how long an unresolved one lives |
+| `AssertionArtifact` | the assertion — **exactly once**, across every node of a cluster: resolving destroys it (bindings section 3.2.3), and a second attempt is refused with a status naming the reason. `saml11.artifactTtlS` only bounds how long an unresolved one lives |
 | `AssertionIDReference` | an assertion this realm issued, from a cache of `saml11.assertionCacheMax`; not one-shot, since holding the reference means already holding the assertion |
 | `AttributeQuery` | an assertion carrying the person's attributes and **no** `AuthenticationStatement` — **development mode only** |
 | `AuthenticationQuery` | answered from a live, authenticated session for that name, with its real method and instant; with no such session, Success and no assertion — **development mode only** |
 
 The fifth type, `AuthorizationDecisionQuery`, is refused by name: this service
-makes no authorization decisions.
+makes no authorization decisions. `AttributeQuery` and `AuthenticationQuery`
+are SAML 1.1's **attribute authority**, the half Shibboleth deployments leaned
+on hardest; once the endpoint exists for the artifact profile, an
+`<AttributeQuery>` is the same assertion builder behind the same envelope.
+
+**Nothing authenticates a query in development mode.** An artifact is
+protected by its twenty random bytes and the one-shot rule; an
+`AttributeQuery` is protected by nothing — anybody who can reach the port can
+ask for an assertion about anybody, by name, with no credential and no
+attribute release policy. A real attribute authority uses mutual TLS and a
+policy. Every query is logged saying so, and **product mode refuses both query
+types** (see [the mode table](#development-and-product-mode)).
 
 **Resolving an artifact asks who is calling.** The caller must be the relying
 party the artifact was issued to (named by the responder path segment), and
@@ -110,11 +131,18 @@ refused caller does not spend the artifact.
 
 ### The assertion
 
-The assertion's `Issuer` is an **attribute**, its id is `AssertionID` (the
-Response's is `ResponseID`), its status codes are QNames (`samlp:Success`), and
-`ds:Signature` goes **last** in an assertion and **first** in a response. It
-carries an `AuthenticationStatement` whose `AuthenticationMethod` says how the
-session really authenticated — `am:password` for a password, `multipleauthn` for
+SAML 1.1 is a different specification, not a dialect of 2.0, and several
+spellings differ in ways that break a parser: the assertion's `Issuer` is an
+**attribute** rather than an element, its id is `AssertionID` (the Response's
+is `ResponseID`) rather than `ID`, the version is two attributes, the Subject
+sits inside **each** statement, an attribute is `AttributeName` +
+`AttributeNamespace` rather than one `Name`, the condition is
+`AudienceRestrictionCondition`, status codes are QNames (`samlp:Success`) rather
+than URIs, and `ds:Signature` goes **last** in an assertion and **first** in a
+response.
+
+The assertion carries an `AuthenticationStatement` whose
+`AuthenticationMethod` says how the session really authenticated — `am:password` for a password, `multipleauthn` for
 two factors, `am:HardwareToken` for a security key alone, `urn:ietf:rfc:2246`
 for a TLS client certificate, `urn:ietf:rfc:1510` for Kerberos, a federation
 partner's own method where it gave one, and `am:unspecified` otherwise — an
@@ -175,8 +203,8 @@ subject and the attributes.
   assertion nothing here can recall.
 * `ForceAuthn`, `IsPassive` and `RequestedAuthnContext` — no spelling exists in
   the protocol.
-* **An error response** — with no request there is nothing to answer, so a
-  failure is a page.
+* **An error response** — with no request there is nothing to answer and no
+  `InResponseTo` to name, so a failure is a page.
 * `AuthorizationDecisionQuery`, and assertion encryption (there is no request
   to carry a recipient certificate).
 
@@ -260,8 +288,8 @@ changed on `/admin/saml11` or `/admin/saml-assertions`, or with
 * **SAML assertions** (`/admin/saml-assertions`) and **Custom SAML attributes**
   (`/admin/saml-attributes`) in the same group — see
   [SAML 2.0 Web Browser SSO](saml2-sso.md#the-assertion-settings-every-application-inherits).
-* `GET /admin-api/saml11` and `POST /admin-api/saml11/register` (register a
-  relying party by identifier); the full shape is in `/admin-api/openapi.json`.
+* `GET /admin-api/saml11` (the console page as JSON) and
+  `POST /admin-api/saml11/register` (register a relying party by identifier); the full shape is in `/admin-api/openapi.json`.
 * `GET /saml11` describes the profiles and every parameter as this realm treats
   them. Failures are recorded under `STS-SAML-NNNN` codes — see
   [Error codes](error-codes.md).

@@ -190,16 +190,22 @@ it on is refused until it has a `krb5.realm` no other realm answers to
 * **A person's keys are derived from their own password** when it is set or a
   sign-in verifies it, and stored sealed on their directory entry. Somebody
   whose keys have not been derived yet is told to sign in once.
-  `krb5.personKeys` turns this off.
-* **Service principals** created at `/admin/kerberos/principals` get a random
-  key, handed over **once** as an MIT keytab. A keytab minted for
-  `krb5.servicePrincipal` keys the acceptor instead of `krb5.servicePassword`.
+  `krb5.personKeys` turns this off. The details are under
+  [How a person's keys are derived](#how-a-persons-keys-are-derived) below.
+* **Service principals** created at `/admin/kerberos/principals` (or
+  `POST /admin-api/kerberos/principals/create-service`) get a random key per
+  enctype, stored sealed on the application entry for `<spn>@<realm>`, and
+  handed over **once** as an MIT keytab. Rotate replaces the key at the next
+  kvno; Delete removes it. The KDC issues tickets for that SPN under the stored
+  key in both modes, and the acceptor prefers a stored key for its own SPN over
+  `krb5.servicePassword` — which is how the acceptor in product mode gets a key
+  without a password printed anywhere.
 * **A password change or a Rotate keeps the previous key version** —
   `krb5.retainedKeyVersions` of them, each for `krb5.retainedKeyTtlS` — so a
   ticket issued under it is still accepted, while pre-authentication and
   issuance use the current key only: an old password never signs in. A
   rotation's keytab carries every kept version. **Drop previous versions** ends
-  the window early.
+  the window early. See [Previous key versions](#previous-key-versions) below.
 * **A person's keytab** (#59) is always derived from a password in hand, never
   read out of storage, and holds the current kvno only:
   * **on `/portal/kerberos`** the person types their current password and gets
@@ -213,10 +219,81 @@ it on is refused until it has a `krb5.realm` no other realm answers to
     end the keytab. The same act over the API is
     `POST /admin-api/kerberos/principals/reset-person-keytab`.
 
-  Use it with `kinit -k -t <file> <user>@<REALM>`. In development mode every
-  user is keyed from `krb5.userPassword`, so the keytab holds that key.
+  On the portal the typed password is verified first — it is also the
+  re-authentication a password-equivalent export needs. Either way the key is
+  derived again and compared with the one the KDC holds before the keytab is
+  handed over. Use it with `kinit -k -t <file> <user>@<REALM>`. In development
+  mode every user is keyed from `krb5.userPassword`, so the keytab holds that
+  key (`source: "development"`).
 * No page, API reply, directory search or audit row ever shows a key — except
-  the keytab a create, rotate or keytab download hands over, once.
+  the keytab a create, rotate or keytab download hands over, once. An LDAP
+  search and the directory dump withhold both key attributes, ciphertext
+  included.
+
+#### How a person's keys are derived
+
+A person's password is stored as a scrypt hash, and no Kerberos key can be
+derived from a hash. So the keys are derived at the two moments a plaintext
+password is in hand:
+
+* when it is **set** — the console, `/admin-api`, the portal's form, an
+  activation link, the bootstrap;
+* when a sign-in **verifies** it — the sign-in screen, an LDAP bind, SCIM
+  Basic, a WS-Trust UsernameToken, SSF Basic, the password grant.
+
+RFC 3961/3962/8009 string-to-key runs for every enctype in `krb5.enctypes`
+(never 23 in product) with the default salt `<REALM><name>`
+(`EXAMPLE.COMalice`), and the keys are stored on the person's own entry as ONE
+sealed value (`stsKrb5Keys`, with the public `stsKrb5KeyInfo` beside it). So:
+
+* **Somebody who had a password before keys were stored gets them at their
+  first sign-in anywhere.** Until then the KDC refuses them
+  `KDC_ERR_C_PRINCIPAL_UNKNOWN` with the e-text *this principal has no Kerberos
+  keys yet - sign in once with the password, or reset it*.
+* **A password change adds one to the kvno and replaces the keys**, so an
+  AS-REQ with the old password fails pre-authentication. The previous version
+  is kept only to open tickets already sealed under it. A TGT already issued is
+  sealed under the krbtgt key and is not recalled by a password change —
+  Kerberos has no such mechanism.
+* **The keys carry a stamp of the password hash they were derived beside**, and
+  the KDC refuses keys whose stamp is not the entry's current hash — so a
+  password changed by any door, an `ldapmodify` included, is never answered
+  with a key from the old one.
+* **The derivation is asynchronous and lags the password by a few tens of
+  milliseconds**; in that window the person is refused rather than keyed from
+  anything older.
+* **The trust realm is the one the password was set in.** A trust realm whose
+  `krb5.enabled` is on has a Kerberos realm and a principal database of its
+  own, so the people it keys are the people in its own directory subtree, and
+  their keys go onto their own entries there. A password set in a realm with no
+  KDC derives nothing.
+* `krb5.personKeys` turns it off — the setting for a deployment whose Kerberos
+  is a real KDC elsewhere and which uses this service only as an acceptor.
+
+#### Previous key versions
+
+A rotation or a password change keeps the version it replaced, sealed in the
+same value as the current keys, as a real KDC keeps the previous kvno in its
+database and a service keeps it in its keytab — so a ticket issued under the old
+key an instant before the change is still accepted until it could have expired,
+and is refused `KRB_AP_ERR_BADKEYVER` after that.
+
+* At most `krb5.retainedKeyVersions` previous versions (default 1; 0 keeps
+  none), each for `krb5.retainedKeyTtlS` (default 0, meaning
+  `krb5.ticketLifetimeSeconds` plus `krb5.clockSkew` — no ticket here outlives
+  its lifetime, a renewal needs an unexpired ticket and re-seals under the
+  current key, and an acceptor tolerates the skew). Both bounds are applied at
+  every read, so lowering either takes effect on the next request.
+* **A kept version only OPENS a ticket already sealed under it** — at the KDC
+  (the ticket in a TGS-REQ, or an S4U2Proxy evidence ticket) and at the
+  acceptor. The KDC always issues under the current kvno.
+* A rotation's keytab carries every kept version beside the new one, as MIT's
+  `ktadd` without `-k` leaves a keytab.
+* `/admin/kerberos/principals` and `GET /admin-api/kerberos/principals` list
+  each kept version (kvno, enctypes, expiry) and never its key; **Drop previous
+  versions** (`drop-previous-service-keys`, `drop-previous-person-keys`) ends
+  the window at once — after a compromise, say — leaving the current key
+  untouched.
 
 ### A second factor over Kerberos: FAST and OTP
 
@@ -258,6 +335,9 @@ kinit -T FILE:/tmp/armor alice@EXAMPLE.COM
 # Enter OTP Token Value: <the six digits>
 # OTP Token PIN: <alice's password>
 ```
+
+The KRB-FX-CF2 and the Kerberos PRF FAST needs are section 9 of
+`common/crypto.js`, held to RFC 3961's and MIT's test vectors.
 
 `/admin/kerberos` and `GET /admin-api/kerberos` (`status`) say what the KDC
 does in the realm. A person whose only second factor is a security key cannot
@@ -320,8 +400,12 @@ ticket"). Since #169:
 PKINIT (#179), FAST in the TGS exchange (a TGS-REQ carrying implicit armor is
 answered unarmored, which MIT's client accepts), anonymous PKINIT armor, the
 FAST hide-client-names option (refused as an unknown critical option), OTP
-PIN change and hashed OTP values, kpasswd, user-to-user, SID filtering, and
-rotation of an inter-realm trust key.
+PIN change and hashed OTP values, kpasswd, user-to-user, request signatures,
+SID filtering (see [the PAC](#the-pac) below), claims and device info in the
+PAC, and rotation of an inter-realm trust key. DES is decoded and never
+produced: Windows Server 2025 removed it and it is not coming back. The **AP
+exchange** is not missing from the KDC — it belongs to a service rather than to
+a KDC, and it lives in the [protected service](#the-protected-service).
 `GET /krb5/principals` carries the current list. The UDP socket cannot carry a
 PROXY protocol header, so behind a load balancer Kerberos clients use TCP.
 
@@ -338,6 +422,11 @@ PROXY protocol header, so behind a load balancer Kerberos clients use TCP.
 | The PAC | invents `passwordLastSet` and `logonCount` | the zero FILETIME and 0 |
 | Delegation | fixture rules make every refusal and success reachable | no rule until an operator writes one |
 | A password alone, for a person who holds or must hold a second factor | a ticket | `KDC_ERR_POLICY`, after the password verified; FAST with OTP gets one |
+
+In product mode every Kerberos listener binds `global.host`. The only principals a product realm starts with are
+`krbtgt/<realm>` and the account `krb5.servicePrincipal` names — the latter
+only where `krb5.servicePassword` is set to something other than its published
+default.
 
 What stays a refusal in development: a service-shaped name for a host this
 service is not willing to be (`KDC_ERR_S_PRINCIPAL_UNKNOWN`), the names in
@@ -415,7 +504,7 @@ appconfig file.
   table, so an on-demand service is one the acceptor can decrypt; any other
   host stays unknown.
 * **The published passwords are refused in product mode.** A service key from
-  the README's password is a silver ticket, so that account is not built until
+  the published password is a silver ticket, so that account is not built until
   a real secret is set. A krbtgt from it would be a golden one, and since #169
   product does not derive the krbtgt from a password at all: it is random.
 * **The krbtgt rotates without stranding a ticket.** The version it replaces
@@ -450,6 +539,219 @@ appconfig file.
   old password sign in.
 * **Only Kerberos is offered in SPNEGO.** Advertising NTLM, which this service
   cannot perform, would be a lie a client would act on.
+* **The listeners are raw sockets.** Everything else here answers a request over
+  HTTP; Kerberos speaks DER over TCP and UDP port 88. That is why `/KdcProxy`
+  exists — for a client, such as a browser, that cannot open a socket at all —
+  and why `/admin/sts-metadata`, which reads the HTTP router, has to list the
+  KDC's sockets by hand.
+
+## The protocol, as a client debugger needs to see it
+
+This service exists to exercise Kerberos *clients*, so the KDC and the acceptor
+reproduce the details real deployments get wrong, and make each failure
+drivable on purpose rather than by breaking something. What follows is
+development mode's principal database unless it says otherwise.
+
+### Two messages, and the salt
+
+**The two-message dance is the interesting part, not the ticket.** A client's
+first AS-REQ usually carries no pre-authentication, and a real KDC does not
+treat that as an error to be logged and forgotten: it answers
+`KDC_ERR_PREAUTH_REQUIRED` **carrying PA-ETYPE-INFO2**, which is where the
+client learns the **salt** and iteration count it needs to turn a password into
+a key. A client that treats that error as a failure cannot authenticate to
+Active Directory at all. Both halves are implemented, and a principal
+(`noreauth`) is configured the other way so the one-message case can be seen
+too.
+
+The salt is why this matters and why it is a database rather than a formula.
+AD's salt for a **user** is the realm followed by the sAMAccountName with no
+separator — `EXAMPLE.COMalice` — and for a **computer account** it is a
+different shape entirely: `EXAMPLE.COMhostws01.example.com`. An implementation
+that derives the salt from the principal name works right up to the first
+machine account, which is exactly the point at which somebody is debugging a
+service rather than a user.
+
+### Any username, one password
+
+Everything else in development mode checks no password at all: the name typed
+at `/authn/login` becomes the identity. Kerberos cannot work that way, and the
+reason is structural rather than a decision — the password *is* the key.
+Pre-authentication is a timestamp encrypted under it and the AS-REP's enc-part
+is encrypted under it too, so a KDC that accepted any password would still have
+to choose one to encrypt the reply with, and a client that used a different one
+could not read the ticket it was sent. So the nearest thing the protocol allows
+is what happens here: **one password, `password!` (`krb5.userPassword`), shared
+by every user account, and an account for every username that turns up.** A
+name nobody configured is created on first sight with AD's user-shaped salt
+(`EXAMPLE.COMzaphod`) and a PAC identity of its own, with RIDs from 5000 up so a
+runtime account can be told from a configured one by its SID alone. This
+applies to the second realm too, with *its* realm in the salt.
+
+Three things are deliberately *not* included in that, and each is a failure
+worth keeping:
+
+* **A service principal is created only for a host this service will answer
+  for.** `krb5.serviceDomains` (default: the realm's own domain, plus
+  `localhost`, `sts` and `127.0.0.1`) is the list; an entry matches a host that
+  *is* it or ends with a dot and it, and anything else is still
+  `KDC_ERR_S_PRINCIPAL_UNKNOWN` — the most common Kerberos failure there is,
+  and one worth keeping producible (`HTTP/app.elsewhere.invalid` is what the
+  parent project's tests use). A KDC must not invent services in general
+  because it would hand back a ticket sealed with a key the service does not
+  hold, which surfaces at the AP exchange as *decrypt integrity check failed* —
+  the same message a genuinely wrong key gives, pointing nowhere near the real
+  cause. That does not apply here: **this process is both the KDC and the
+  acceptor**, and the acceptor looks the presented SPN up in the same table, so
+  a ticket for a name created on demand opens with the key that sealed it. A
+  client derives its SPN from the URL's host (`HTTP/<host>` — RFC 4559, and
+  what every browser does), so without this every way of reaching the service
+  would ask for a name nobody had configured. The acceptor answers for its
+  canonical `krb5.servicePrincipal` and for names created this way — and for
+  **no other configured account**, because `HTTP/frontend.example.com` and
+  `HTTP/backend.example.com` exist to be separate identities, and accepting
+  their tickets would make this service every service in the realm.
+* **The reserved names stay unknown** (`nosuchuser`, `nobody`, or whatever
+  `krb5.unknownUsers` says), so `KDC_ERR_C_PRINCIPAL_UNKNOWN` is still
+  reachable. A client that renders it as "wrong password" sends a person off to
+  reset a password that was never the problem, which is exactly the misreading
+  a debugger exists to correct.
+* **A wrong password still fails**, with `KDC_ERR_PREAUTH_FAILED` and a re-sent
+  PA-ETYPE-INFO2, because the client may simply have used the wrong salt.
+
+Service, computer and `krbtgt` accounts keep their own distinct passwords.
+Nobody types those, and `krbtgt/EXAMPLE.COM`, `krbtgt/PARTNER.COM` and the
+trust have to hold three *different* secrets, or every assertion about which
+key sealed which ticket would pass for the wrong reason.
+
+### The misconfigured principals are the point
+
+`GET /krb5/principals` lists the whole database — names, salts, offered
+etypes, kvno, the pre-auth/revoked/expired/ok-as-delegate flags, which entries
+were created at runtime, and a sentence on what each account is *for*. It
+publishes no keys and no *service* passwords; the one user password it does
+publish, in `accountPolicy`, is a policy of this mock rather than a secret —
+every account holds it, and a debugger whose accounts cannot be used without
+reading the source is worse than one that says so on the page.
+
+Among the configured accounts: `locked` (a disabled account), `expired` (a
+stale password), `aesonly` and `rc4only` (whose etype sets are chosen so that a
+negotiation can be made to fail on purpose, which is what RC4 being switched
+off looks like), `sensitive` (NOT_DELEGATED, the one control that stops
+unconstrained delegation), a computer account, and a set of service accounts
+wired for the delegation cases below. A debugger is judged on how it renders
+failure, and these are the failures a real deployment produces. So is the
+clock: `krb5.clockOffset` makes the KDC lie about its own time, because
+`KRB_AP_ERR_SKEW` is one of the most common Kerberos failures in the field, and
+the error carries the KDC's time so a client can *measure* the difference
+rather than guess it.
+
+### The PAC
+
+**Every ticket carries a signed PAC** ([MS-PAC]), the half of Kerberos that
+Windows added and RFC 4120 knows nothing about. A ticket proves *who* you are
+and says nothing about your groups; a Windows service authorizes on the groups.
+So "authentication succeeded but access was denied" is nearly always a question
+about this structure, and a debugger that decodes a ticket and stops at `cname`
+has shown the less interesting half.
+
+Two things about it are silent when wrong, and are why `krb5_ndr.js` is its
+own module. The PAC's logon information arrives in **NDR**, Windows' RPC
+marshalling, which is little-endian in a protocol whose every other integer is
+big-endian, and aligned from the start of the stream — miss one pad byte and
+every field after it reads in range and false. And it sits three layers deep,
+inside `AD-IF-RELEVANT`, so a reader that looks for ad-type 128 at the top
+level finds nothing. A TGT gets two signatures and a service ticket four
+(sections 2.8.2 and 2.8.3).
+
+Claims and device info are not produced, and **SID filtering across a trust is
+not implemented** — a re-signed PAC keeps every SID it arrived with, which is
+the one place this KDC is more permissive than a real one in a way that
+matters.
+
+### Two realms, one shared key, and a referral that looks like success
+
+In development this KDC answers for both `EXAMPLE.COM` and `PARTNER.COM`, which
+a real one never does — the simplification hides finding the other realm's KDC
+(DNS and SRV records) and none of the protocol. A trust is not a setting: it is
+one principal, `krbtgt/PARTNER.COM@EXAMPLE.COM`, whose key both realms hold. Ask
+for a service in the other realm and this KDC does not refuse; it issues a
+ticket-granting ticket for that realm sealed with the trust key and expects the
+client to notice. The trap is on the client side, which is why it is worth
+being able to produce: the reply is a perfectly ordinary, successful TGS-REP,
+and the *only* signal that it is a referral is that its `sname` is not what was
+asked for.
+
+### Delegation, with the distinctions drawn on purpose
+
+The asymmetry between the two S4U2Proxy routes is the entire security story of
+resource-based constrained delegation, so both kinds of account exist here
+rather than one. Classic delegation is authorized by `msDS-AllowedToDelegateTo`
+on the **front-end** account, which only a domain admin can set; RBCD is
+authorized by `msDS-AllowedToActOnBehalfOfOtherIdentity` on the **back-end**
+account (`HTTP/rbcd.example.com`, naming `HTTP/frontend.example.com` as
+permitted to act on its behalf) — so whoever controls that object can turn "I
+can write to this computer account" into "I can reach this service as anybody".
+Same messages, same KDC options, opposite direction of trust.
+
+Classic delegation additionally requires the evidence ticket to be forwardable,
+which S4U2Self grants only to an account holding
+TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION. So `HTTP/frontend.example.com` and
+`HTTP/notrusted.example.com` differ in exactly that one attribute and nothing
+else, because the flag's absence is invisible where it is set: S4U2Self still
+succeeds and returns a ticket that simply is not forwardable, and classic
+S4U2Proxy then fails a step later complaining about the evidence. RBCD needs
+neither, but does need `PA-PAC-OPTIONS` with the RBCD bit, without which
+[MS-SFU] says a KDC MUST answer `KDC_ERR_BADOPTION` — an error mentioning
+nothing about padata, so it is refused here with an explanation.
+
+### A service that will not talk to you without a ticket
+
+Until something decrypts a ticket and proves its own identity back, "the ticket
+looks right" is the strongest claim available. `krb5_service.js` is a raw TCP
+acceptor — deliberately, because that is the shape of the Windows services
+people actually debug — and `GET /krb5/service` describes it and the ordered
+checks it applies:
+
+1. the GSS wrapper;
+2. the ticket decrypting under *its own* key at the kvno named;
+3. the ticket being for *it* (a ticket for another service that happens to
+   decrypt because two accounts share a password must still be refused);
+4. the Authenticator under the ticket's session key;
+5. the Authenticator's `cname` matching the ticket's;
+6. the clock;
+7. **the replay cache** — the check a mock is most tempted to skip, and the
+   only thing between a captured AP-REQ and a free impersonation;
+8. the 0x8003 checksum.
+
+If mutual authentication was asked for, the AP-REP echoes the Authenticator's
+`ctime` under the session key, and that echo *is* the proof — only something
+holding the service's long-term key could have learned the session key to
+produce it.
+
+### The 0x8003 checksum is not a checksum
+
+It is the single most commonly botched field in Kerberos: a structure carrying
+channel bindings and the GSS flags, which `krb5_gss.js` writes out explicitly
+because it fails in the least helpful way available — a service answers
+`KRB_AP_ERR_INAPP_CKSUM` and nothing anywhere says "your flags word is in the
+wrong byte order". Its fields are **little-endian**, alone in a protocol whose
+every other integer is not, so a mistake produces `0x02000000` where
+`0x00000002` was meant — a request for delegation where mutual authentication
+was intended. The `Bnd` field is sixteen **zero** bytes when there are no
+channel bindings, not absent. And per-message tokens are keyed by who is
+speaking: an initiator signs with key usage 25 and seals with 24, an acceptor 23
+and 22, and the wrong pair produces a token the far end cannot verify with an
+error naming the checksum rather than the direction.
+
+### Encryption types
+
+The RFC 3961 framework covers the etypes Kerberos actually meets:
+aes128/256-cts-hmac-sha1-96 (17, 18 — the AD workhorses),
+aes128/256-cts-hmac-sha256/384 (19, 20 — RFC 8009) and, in development mode,
+arcfour-hmac-md5 (23), which is there because a debugger whose only story
+about RC4 is "that is deprecated" cannot help anybody still running it. DES is
+decoded and never produced.
 
 ## In the running service
 

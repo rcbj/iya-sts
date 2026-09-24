@@ -18,8 +18,8 @@ memory. **A setting with a row in `SETTINGS` and no row in `defaults.js` stops
 the service from starting and names itself** — there is no sixth level, no
 constant in a module underneath the table. `common/CLAUDE.md` argues the whole
 layering and is the one place it is written down; this file lists the files.
-README.md's *Configuration* lists every setting, its environment variable and
-its default.
+`docs/configuration.md`'s *Every setting* lists every setting, its environment
+variable and its default.
 
 **`common/config_file.js` makes `CONFIG_FILE` absolute before anything reads
 it**, because a relative path resolves against the directory of the module doing

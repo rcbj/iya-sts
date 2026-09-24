@@ -2119,7 +2119,8 @@ which had to be true at once:
 env/generate_defaults.js` writes it from the `dflt` column. Two copies of a
 default is one copy that will be wrong, and wrong in the quietest way — the
 service running on one value while the console, the OpenAPI document's
-`default` property and README.md's table all report the other. That generator
+`default` property and `docs/configuration.md`'s table all report the other.
+That generator
 neutralises `process.exit` for the length of its own `require` of this module,
 because regenerating the file is the one moment when an incomplete
 `env/defaults.js` is EXPECTED; the bypass is in the build tool and deliberately
