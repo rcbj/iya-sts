@@ -10365,6 +10365,11 @@ const CODES = [
       'attestor because spiffe.dockerUseRootlessPodman is off, ' +
       'SPIRE\'s rule; logged once per process (#170).',
     spec: 'no docker selectors for that workload' },
+  { code: 'STS-SPIFFE-0143',
+    summary: 'A gRPC handler threw after the call waited for the cluster ' +
+      'read barrier, so the exception could not reach grpc-js; a unary ' +
+      'call is answered INTERNAL.',
+    spec: 'INTERNAL for a unary call' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
