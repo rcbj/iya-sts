@@ -168,8 +168,23 @@ class OidfedAdmin {
     const { log, admin } = this.deps;
     const self = this;
     log.debug("Entering OidfedAdmin.sectionSubordinates().");
+    const reasonField = '<input name="reason" placeholder="reason" ' +
+                        'size="18"> <input name="informationUri" ' +
+                        'placeholder="https://… (information)" size="18">';
     const rows = json.subordinates.length
       ? json.subordinates.map(function (s: Json) {
+        const who = self.hidden('entityId', s.entityId);
+        const status = s.suspended
+          ? '<strong>suspended</strong> ' + esc(String(s.suspended.at || '')) +
+            (s.suspended.reason ? ' — ' + esc(s.suspended.reason) : '')
+          : 'active';
+        const acts = (s.suspended
+          ? self.form('reinstate-subordinate', who + ' ' + reasonField,
+                      'Reinstate')
+          : self.form('suspend-subordinate', who + ' ' + reasonField,
+                      'Suspend', true)) +
+          (s.implicit ? '' : ' ' + self.form('remove-subordinate',
+            who + ' ' + reasonField, 'Revoke', true));
         return '<tr><td>' + self.code(s.entityId) + '</td><td>' +
           (s.localRealm ? 'realm ' + self.code(s.localRealm) +
                           (s.implicit ? ' (every realm)' : '')
@@ -177,21 +192,25 @@ class OidfedAdmin {
           esc((s.entityTypes || []).join(', ')) + '</td><td>' +
           (s.metadataPolicy ? 'yes' : '') + (s.constraints ? ' constraints'
                                                            : '') +
-          '</td><td>' + (s.implicit ? '' : self.form('remove-subordinate',
-            self.hidden('entityId', s.entityId), 'Remove', true)) +
-          '</td></tr>';
+          '</td><td>' + status + self.history(s.events) + '</td><td>' +
+          acts + '</td></tr>';
       }).join('')
-      : '<tr><td colspan="5" class="sub">This realm vouches for nobody; it ' +
+      : '<tr><td colspan="6" class="sub">This realm vouches for nobody; it ' +
         'publishes no fetch or list endpoint.</td></tr>';
     log.debug("Leaving OidfedAdmin.sectionSubordinates().");
     return '<h2>Subordinates</h2>' +
       admin.note('The entities this realm issues Subordinate Statements ' +
         'about (8.1): their keys, and the metadata, policy and constraints ' +
         'the statement carries. Registering an entity VOUCHES for it — give ' +
-        'its JWK Set, or read it from its own Entity Configuration.') +
+        'its JWK Set, or read it from its own Entity Configuration. A ' +
+        'SUSPENDED subordinate is issued no statement and listed nowhere ' +
+        'until it is reinstated, so no chain passes through it; REVOKING ' +
+        'one removes it. Every one of those acts, and every change to what ' +
+        'its statement carries, is kept in its history for good and ' +
+        'served by the subordinate events endpoint.') +
       '<table><thead><tr><th>Entity</th><th>Keys</th><th>Types</th>' +
-      '<th>Policy</th><th></th></tr></thead><tbody>' + rows +
-      '</tbody></table>' +
+      '<th>Policy</th><th>Status</th><th></th></tr></thead><tbody>' + rows +
+      '</tbody></table>' + this.sectionFormer(json) +
       '<form method="post" action="/admin/oidfed">' +
       this.hidden('action', 'add-subordinate') +
       '<p><input name="entityId" placeholder="https://entity.example" ' +
@@ -203,7 +222,89 @@ class OidfedAdmin {
       'rows="3" cols="80" placeholder="metadata_policy (JSON)"></textarea>' +
       '</p><p><textarea name="constraints" rows="2" cols="80" ' +
       'placeholder="constraints (JSON)"></textarea></p>' +
+      '<p><input name="eventDescription" placeholder="what the history ' +
+      'records about it" size="40"> <input name="informationUri" ' +
+      'placeholder="https://… (information)" size="30"></p>' +
       '<p><button type="submit">Register the subordinate</button></p></form>';
+  }
+
+  // One subordinate's history (#137), folded: a <details> needs no script.
+  history(events: Json): string {
+    this.deps.log.debug("Entering OidfedAdmin.history().");
+    const list: Json[] = Array.isArray(events) ? events : [];
+    if (!list.length) {
+      this.deps.log.debug("Leaving OidfedAdmin.history(). None.");
+      return '';
+    }
+    const rows = list.map(function (e: Json): string {
+      return '<tr><td>' + esc(new Date(Number(e.iat) * 1000).toISOString()) +
+        '</td><td><code>' + esc(e.event) + '</code></td><td>' +
+        esc(e.event_description || '') +
+        (e.information_uri ? ' <a href="' + esc(e.information_uri) +
+                             '">information</a>' : '') + '</td></tr>';
+    }).join('');
+    this.deps.log.debug("Leaving OidfedAdmin.history(). " + list.length);
+    return '<details><summary>History (' + list.length + ')</summary>' +
+           '<table><tbody>' + rows + '</tbody></table></details>';
+  }
+
+  // The subordinates this realm revoked, whose histories it keeps (#137).
+  sectionFormer(json: Json): string {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering OidfedAdmin.sectionFormer().");
+    const former: Json[] = json.formerSubordinates || [];
+    if (!former.length) {
+      log.debug("Leaving OidfedAdmin.sectionFormer(). None.");
+      return '';
+    }
+    const rows = former.map(function (f: Json): string {
+      return '<tr><td>' + self.code(f.entityId) + '</td><td>' +
+        (f.localRealm ? 'realm ' + self.code(f.localRealm) + ', deleted'
+                      : 'revoked') + self.history(f.events) + '</td></tr>';
+    }).join('');
+    log.debug("Leaving OidfedAdmin.sectionFormer(). " + former.length);
+    return '<h3>Former subordinates</h3><table><thead><tr><th>Entity</th>' +
+           '<th>History</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  // The Entity Collection (#136): the crawl kept, and Crawl now.
+  sectionCollection(json: Json): string {
+    const { log, admin } = this.deps;
+    log.debug("Entering OidfedAdmin.sectionCollection().");
+    const c = json.collection || {};
+    const crawl = c.crawl;
+    const kept = crawl
+      ? '<table><tbody><tr><th>Crawled</th><td>' + esc(crawl.crawledAt) +
+        '</td></tr><tr><th>For</th><td>' + this.code(crawl.entityId) +
+        (crawl.forThisIdentifier ? '' : ' <strong>— not the identifier ' +
+                                        'this page was reached by, so the ' +
+                                        'endpoint does not answer from ' +
+                                        'it</strong>') +
+        '</td></tr><tr><th>Entities</th><td>' + esc(String(crawl.entities)) +
+        (crawl.truncated ? ' (stopped at a bound)' : '') + '</td></tr>' +
+        (crawl.problems.length
+          ? '<tr><th>Left out</th><td><details><summary>' +
+            esc(String(crawl.problems.length)) + '</summary><ul>' +
+            crawl.problems.map(function (p: string): string {
+              return '<li>' + esc(p) + '</li>';
+            }).join('') + '</ul></details></td></tr>' : '') +
+        '</tbody></table>'
+      : '<p class="sub">No crawl is kept; the collection endpoint answers ' +
+        'with what this service collects without fetching — its own ' +
+        'realms, and subordinates already resolved.</p>';
+    log.debug("Leaving OidfedAdmin.sectionCollection().");
+    return '<h2>Entity Collection</h2>' +
+      admin.note('Every entity beneath this realm, for the collection ' +
+        'endpoint: each resolved to this realm before it is kept, and each ' +
+        'Intermediate outside this service asked for its list only once it ' +
+        'has — through the outbound policy, bounded by ' +
+        '<code>oidfed.collectionMaxEntities</code> and ' +
+        '<code>oidfed.collectionMaxFetches</code>. ' +
+        (c.jobOff ? 'The scheduled crawl is off: ' + esc(c.jobOff) + '.'
+                  : 'The scheduled crawl runs every ' +
+                    esc(String(c.crawlEveryS)) + ' s.')) +
+      kept + this.form('crawl-collection', '', 'Crawl now');
   }
 
   sectionAnchors(json: Json): string {
@@ -347,7 +448,8 @@ class OidfedAdmin {
         'each other, through a chain of signed statements ending at a ' +
         'Trust Anchor. This realm is a ' + esc(json.role) + '.') +
       this.sectionEntity(json) + this.sectionKeys(json) +
-      this.sectionSubordinates(json) + this.sectionAnchors(json) +
+      this.sectionSubordinates(json) + this.sectionCollection(json) +
+      this.sectionAnchors(json) +
       this.sectionMarks(json) + this.sectionResolve(json, resolution) +
       admin.configFormsFor('/admin/oidfed') +
       '<p class="links"><a href="/admin/oidfed?format=json">JSON</a> · ' +

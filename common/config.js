@@ -8088,6 +8088,61 @@ const SETTINGS = [
     description: 'The leeway on iat and exp when a federation statement is ' +
                  'read (3.2).' },
 
+  // The Extended Subordinate Listing and the Entity Collection (#135, #136).
+  { key: 'oidfed.listPageMax', group: 'OpenID Federation',
+    label: 'Longest listing page',
+    env: 'STS_OIDFED_LIST_PAGE_MAX', type: 'int', dflt: 50,
+    min: 1, max: 1000, runtime: true,
+    description: 'The most entities one page of the Extended Subordinate ' +
+                 'Listing or the Entity Collection holds, whatever limit ' +
+                 'asks — the drafts\' practical upper limit. A page of the ' +
+                 'listing that asks for subordinate_statement signs one ' +
+                 'statement per entity on it.' },
+
+  { key: 'oidfed.collectionCrawlS', group: 'OpenID Federation',
+    label: 'Entity Collection crawl (s)',
+    env: 'STS_OIDFED_COLLECTION_CRAWL_S', type: 'int', dflt: 3600,
+    min: 0, max: 604800, runtime: true,
+    description: 'How often the oidfed.collection-crawl job walks every ' +
+                 'entity beneath the realm for the collection endpoint. 0 ' +
+                 'is off. The job runs only where global.publicBaseUrl ' +
+                 'pins the realm\'s Entity Identifier; Crawl now on the ' +
+                 'OpenID Federation page runs one either way.' },
+
+  { key: 'oidfed.collectionMaxEntities', group: 'OpenID Federation',
+    label: 'Entities collected',
+    env: 'STS_OIDFED_COLLECTION_MAX_ENTITIES', type: 'int', dflt: 500,
+    min: 1, max: 10000, runtime: true,
+    description: 'The most entities one crawl collects; a crawl that finds ' +
+                 'more stops and says so.' },
+
+  { key: 'oidfed.collectionMaxFetches', group: 'OpenID Federation',
+    label: 'Lists fetched per crawl',
+    env: 'STS_OIDFED_COLLECTION_MAX_FETCHES', type: 'int', dflt: 100,
+    min: 0, max: 10000, runtime: true,
+    description: 'The most subordinate lists one crawl fetches from ' +
+                 'Intermediates outside this service — each entity on them ' +
+                 'is still resolved within oidfed.maxFetchesPerResolution. ' +
+                 '0 collects this service\'s own realms only.' },
+
+  { key: 'oidfed.collectionMaxAgeS', group: 'OpenID Federation',
+    label: 'Crawl kept for (s)',
+    env: 'STS_OIDFED_COLLECTION_MAX_AGE_S', type: 'int', dflt: 86400,
+    min: 60, max: 2592000, runtime: true,
+    description: 'How long the entities a crawl found beyond this service ' +
+                 'are served by the collection endpoint. What the service ' +
+                 'collects without fetching is always served fresh.' },
+
+  { key: 'oidfed.collectionCacheS', group: 'OpenID Federation',
+    label: 'In-process collection kept for (s)',
+    env: 'STS_OIDFED_COLLECTION_CACHE_S', type: 'int', dflt: 300,
+    min: 0, max: 86400, runtime: true,
+    description: 'How long a process keeps what it collects without ' +
+                 'fetching, so anonymous requests do not sign statements ' +
+                 'for every realm each. A change to the realms or to the ' +
+                 'active subordinates makes it again at once. 0 makes one ' +
+                 'per request.' },
+
   { key: 'oid4vp.claims', group: 'OID4VP', label: 'Requested claims',
     env: 'OID4VP_CLAIMS', type: 'csv', dflt: 'given_name,family_name',
     runtime: true,

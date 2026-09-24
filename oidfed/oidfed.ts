@@ -29,6 +29,15 @@
 //      administrator's act or, in branch 2, by an automatic registration.
 //   8. THE 1.1 TEXT, with 1.0's wire formats where 1.1 did not change them.
 //
+// And three extensions (branch 3, #135–#137, 2026-09-24), each against the
+// editors' draft rcbj named: the EXTENDED SUBORDINATE LISTING (draft 03,
+// `extended_listing.ts`), the ENTITY COLLECTION ENDPOINT (draft 01,
+// `entity_collection.ts`) and the SUBORDINATE EVENTS ENDPOINT (draft 01,
+// whose history `subordinate_events.ts` keeps and this file serves). #137
+// added a SUSPENDED state: a suspended subordinate is issued no Subordinate
+// Statement and listed nowhere until it is reinstated, so no chain passes
+// through it — and removing one is its REVOCATION, recorded with a reason.
+//
 // ---------------------------------------------------------------------------
 // THE ENTITY IDENTIFIER IS THE REALM'S ISSUER.
 //
@@ -61,6 +70,7 @@ import EntityStatement = require('./entity_statement');
 import MetadataPolicy = require('./metadata_policy');
 import TrustChain = require('./trust_chain');
 import OidfedStore = require('./oidfed_store');
+import SubordinateEvents = require('./subordinate_events');
 import federationKeys = require('./federation_keys');
 
 type Json = any;
@@ -68,6 +78,10 @@ type Req = any;
 type Res = any;
 
 const KINDS = OidfedStore.KINDS;
+
+// Whether this process's realm registry is watched for the realms' own
+// registrations and revocations (#137) — once, whatever builds an instance.
+let realmsWatched = false;
 const TYP = EntityStatement.TYP;
 const PATHS = Object.freeze({
   configuration: '/.well-known/openid-federation',
@@ -79,8 +93,23 @@ const PATHS = Object.freeze({
   trustMarkList: '/oidfed/trust-mark-list',
   historicalKeys: '/oidfed/historical-keys',
   // Connect 1.1's federation_registration_endpoint (#134).
-  register: '/oidfed/register'
+  register: '/oidfed/register',
+  // The three extensions (#135, #136, #137).
+  extendedList: '/oidfed/extended-list',
+  collection: '/oidfed/collection',
+  subordinateEvents: '/oidfed/subordinate-events'
 });
+
+// The events whose instant an Extended Listing reports as `updated` (draft
+// 03, table 4: "the Federation Entity Keys or metadata policies or
+// constraints about this Entity was updated") — what changes the statement.
+const STATEMENT_EVENTS = [
+  SubordinateEvents.EVENTS.REGISTRATION,
+  SubordinateEvents.EVENTS.JWKS_UPDATE,
+  SubordinateEvents.EVENTS.METADATA_UPDATE,
+  SubordinateEvents.EVENTS.METADATA_POLICY_UPDATE,
+  SubordinateEvents.EVENTS.CONSTRAINTS_UPDATE
+];
 
 // Resolutions this process has made, per realm, keyed `<sub> <anchor>`. A
 // CACHE and not a register — a chain is re-derivable from its statements,
@@ -149,6 +178,11 @@ interface OidfedDeps {
   // module back.
   registration: () => Json;
   relyingParty: () => Json;
+  // The Extended Subordinate Listing (#135) and the Entity Collection
+  // (#136), which read this module back through the instance they are
+  // handed.
+  extendedListing: () => Json;
+  collection: () => Json;
   now: () => number;
 }
 
@@ -197,6 +231,12 @@ class Oidfed {
       relyingParty: function (): Json {
         return require('./oidfed_rp');
       },
+      extendedListing: function (): Json {
+        return require('./extended_listing');
+      },
+      collection: function (): Json {
+        return require('./entity_collection');
+      },
       now: function (): number {
         return Date.now();
       }
@@ -244,7 +284,9 @@ class Oidfed {
   }
 
   // Run `fn` inside the realm `realm`, with the request re-read there.
-  private inRealm<T>(realm: Json, req: Req, fn: (r: Req) => T): T {
+  // Public for the listing and the collection (#135, #136), which walk the
+  // realms beneath this one.
+  inRealm<T>(realm: Json, req: Req, fn: (r: Req) => T): T {
     const { log, realms } = this.deps;
     log.debug("Entering Oidfed.inRealm(). " + realm.id);
     const self = this;
@@ -329,7 +371,11 @@ class Oidfed {
   // the default topology, for the default realm — every other realm, whose
   // keys are read live from that realm rather than pinned, since they are
   // this service's to rotate. Each carries what its Subordinate Statement
-  // says about it.
+  // says about it, the KEY its events and suspension are recorded under
+  // (`subordinate_events.ts`), and `suspended` — the suspension's record, or
+  // null (#137). A SUSPENDED ONE IS STILL LISTED HERE, for the console and
+  // the events endpoint; `activeSubordinates()` is what every federation
+  // endpoint reads.
   // -------------------------------------------------------------------------
   subordinates(req: Req): Json[] {
     const { log, store, realms } = this.deps;
@@ -337,7 +383,8 @@ class Oidfed {
     const self = this;
     const out: Json[] = store.entries(KINDS.SUBORDINATE).map(function (e) {
       return Object.assign({}, e.data || {}, { entityId: e.entityId,
-        localRealm: '', createdAt: e.createdAt, updatedAt: e.updatedAt });
+        localRealm: '', createdAt: e.createdAt, updatedAt: e.updatedAt,
+        key: e.entityId });
     });
     if (this.implicitTopology() && this.isDefaultRealm()) {
       realms.list().filter(function (realm: Json): boolean {
@@ -352,11 +399,79 @@ class Oidfed {
           return;
         }
         out.push({ entityId: id, localRealm: String(realm.id),
-                   createdAt: Date.parse(String(realm.createdAt || '')) || 0,
-                   updatedAt: 0, implicit: true });
+                   createdAt: self.realmCreatedMs(realm),
+                   updatedAt: 0, implicit: true,
+                   key: SubordinateEvents.realmKey(String(realm.id)) });
       });
     }
+    const suspensions: Record<string, Json> = {};
+    store.entries(KINDS.SUSPENSION).forEach(function (e): void {
+      const d = e.data || {};
+      suspensions[String(d.key || '')] = d;
+    });
+    out.forEach(function (s: Json): void {
+      s.suspended = suspensions[s.key] || null;
+    });
     log.debug("Leaving Oidfed.subordinates(). " + out.length);
+    return out;
+  }
+
+  // The subordinates this realm issues statements about: every one but the
+  // suspended (#137).
+  activeSubordinates(req: Req): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering Oidfed.activeSubordinates().");
+    const out = this.subordinates(req).filter(function (s: Json): boolean {
+      return !s.suspended;
+    });
+    log.debug("Leaving Oidfed.activeSubordinates(). " + out.length);
+    return out;
+  }
+
+  // When a realm was created, in ms — `realms.js` keeps a number, and a
+  // realm restored from an older store may carry a date string.
+  realmCreatedMs(realm: Json): number {
+    this.deps.log.debug("Entering Oidfed.realmCreatedMs().");
+    const raw = realm && realm.createdAt;
+    const out = typeof raw === 'number' ? raw
+                                        : (Date.parse(String(raw || '')) || 0);
+    this.deps.log.debug("Leaving Oidfed.realmCreatedMs().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT THE LISTINGS FILTER ON, for each subordinate that is not suspended
+  // (8.2.1, and the Extended Listing, #135): its entity types — the
+  // register's for a registered one, read off its configuration for a realm
+  // of this service — and whether it is an Intermediate.
+  // -------------------------------------------------------------------------
+  async subordinateFacts(req: Req): Promise<Json[]> {
+    const { log } = this.deps;
+    log.debug("Entering Oidfed.subordinateFacts().");
+    const self = this;
+    const subs = this.activeSubordinates(req);
+    const out: Json[] = [];
+    for (let i = 0; i < subs.length; i++) {
+      const s = subs[i];
+      let held: string[] = Array.isArray(s.entityTypes) ? s.entityTypes : [];
+      let isIntermediate = !!s.intermediate;
+      let configuration: Json = null;
+      if (s.localRealm) {
+        const realm = this.deps.realms.get(s.localRealm);
+        const ec: Outcome = realm ? await this.inRealm(realm, req,
+          function (r: Req) {
+            return self.configuration(r);
+          }) : { ok: false };
+        held = ec.ok ? Object.keys(ec.claims.metadata || {}) : [];
+        isIntermediate = !!(ec.ok && ec.claims.metadata.federation_entity &&
+          ec.claims.metadata.federation_entity.federation_fetch_endpoint);
+        configuration = ec.ok ? ec.claims : null;
+      }
+      out.push(Object.assign({}, s, { heldTypes: held,
+                                      isIntermediate: isIntermediate,
+                                      configuration: configuration }));
+    }
+    log.debug("Leaving Oidfed.subordinateFacts(). " + out.length);
     return out;
   }
 
@@ -470,6 +585,17 @@ class Oidfed {
     if (this.subordinates(req).length) {
       fe.federation_fetch_endpoint = base + PATHS.fetch;
       fe.federation_list_endpoint = base + PATHS.list;
+      // The three extensions, which a superior serves (#135, #136, #137).
+      fe.federation_extended_list_endpoint = base + PATHS.extendedList;
+      fe.federation_collection_endpoint = base + PATHS.collection;
+    }
+    // The events endpoint answers for a subordinate this realm has ever had,
+    // so it is published while any history is kept — a realm whose last
+    // subordinate was revoked still answers for it.
+    if (this.subordinates(req).length ||
+        this.deps.store.entries(KINDS.EVENTS).length) {
+      fe.federation_subordinate_events_endpoint = base +
+                                                  PATHS.subordinateEvents;
     }
     if (this.markTypes().length) {
       fe.federation_trust_mark_status_endpoint = base + PATHS.trustMarkStatus;
@@ -663,16 +789,44 @@ class Oidfed {
   // metadata, policy and constraints the register holds for it.
   // -------------------------------------------------------------------------
   async subordinateStatement(req: Req, subId: string): Promise<Outcome> {
-    const { log, config, keys, baseUrlOf } = this.deps;
+    const { log, keys } = this.deps;
     log.debug("Entering Oidfed.subordinateStatement(). " + subId);
+    const built = this.subordinateStatementClaims(req, subId);
+    if (!built.ok) {
+      log.debug("Leaving Oidfed.subordinateStatement(). Refused.");
+      return built;
+    }
+    const signer = await keys.signer();
+    if (!signer) {
+      log.debug("Leaving Oidfed.subordinateStatement(). No key.");
+      return this.refuse('STS-OIDFED-0043', 'this realm holds no ' +
+                         'Federation Entity Key it can sign with yet.',
+                         'temporarily_unavailable', 503);
+    }
+    const jwt = EntityStatement.sign(built.claims, TYP.ENTITY_STATEMENT,
+                                     signer);
+    log.debug("Leaving Oidfed.subordinateStatement().");
+    return { ok: true, jwt: jwt, claims: built.claims };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE CLAIMS of that statement, unsigned — the Extended Listing (#135)
+  // returns them one by one, and signs only when `subordinate_statement` is
+  // asked for. A SUSPENDED subordinate has none (#137): it is answered as
+  // no subordinate at all, 8.1.2's not_found, so a chain through it cannot
+  // be built.
+  // -------------------------------------------------------------------------
+  subordinateStatementClaims(req: Req, subId: string): Outcome {
+    const { log, config, baseUrlOf } = this.deps;
+    log.debug("Entering Oidfed.subordinateStatementClaims(). " + subId);
     const id = this.entityId(req);
     if (!subId) {
-      log.debug("Leaving Oidfed.subordinateStatement(). No sub.");
+      log.debug("Leaving Oidfed.subordinateStatementClaims(). No sub.");
       return this.refuse('STS-OIDFED-0032', 'the sub parameter is ' +
                          'required (8.1.1).', 'invalid_request', 400);
     }
     if (subId === id) {
-      log.debug("Leaving Oidfed.subordinateStatement(). Itself.");
+      log.debug("Leaving Oidfed.subordinateStatementClaims(). Itself.");
       return this.refuse('STS-OIDFED-0032', 'sub names this entity ' +
                          'itself, which is no subordinate of its own ' +
                          '(8.1.2).', 'invalid_request', 400);
@@ -681,16 +835,15 @@ class Oidfed {
       return s.entityId === subId;
     })[0];
     if (!sub) {
-      log.debug("Leaving Oidfed.subordinateStatement(). Not ours.");
+      log.debug("Leaving Oidfed.subordinateStatementClaims(). Not ours.");
       return this.refuse('STS-OIDFED-0033', subId + ' is not a subordinate ' +
                          'of this entity.', 'not_found', 404);
     }
-    const signer = await keys.signer();
-    if (!signer) {
-      log.debug("Leaving Oidfed.subordinateStatement(). No key.");
-      return this.refuse('STS-OIDFED-0043', 'this realm holds no ' +
-                         'Federation Entity Key it can sign with yet.',
-                         'temporarily_unavailable', 503);
+    if (sub.suspended) {
+      log.debug("Leaving Oidfed.subordinateStatementClaims(). Suspended.");
+      return this.refuse('STS-OIDFED-0057', subId + ' is suspended by this ' +
+                         'entity, which issues no statement about it until ' +
+                         'it is reinstated.', 'not_found', 404);
     }
     const now = this.nowSec();
     const lifetime = Math.max(60, Number(config.value(
@@ -708,9 +861,8 @@ class Oidfed {
         claims[name] = held;
       }
     });
-    const jwt = EntityStatement.sign(claims, TYP.ENTITY_STATEMENT, signer);
-    log.debug("Leaving Oidfed.subordinateStatement().");
-    return { ok: true, jwt: jwt, claims: claims };
+    log.debug("Leaving Oidfed.subordinateStatementClaims().");
+    return { ok: true, claims: claims };
   }
 
   // ===========================================================================
@@ -805,8 +957,10 @@ class Oidfed {
   // (7.3, 8.3.2): each issuer established through its own chain to the SAME
   // anchor first, then the mark validated against its keys — and, where this
   // realm issued it, its revocation read from the register.
-  private async verifiedMarks(resolved: Json, tc: TrustChain,
-                              anchor: Json, req: Req): Promise<Json[]> {
+  // Public for the Entity Collection (#136), which verifies the marks of
+  // every entity it collects the same way.
+  async verifiedMarks(resolved: Json, tc: TrustChain,
+                      anchor: Json, req: Req): Promise<Json[]> {
     const { log } = this.deps;
     log.debug("Entering Oidfed.verifiedMarks().");
     const subject = resolved.chain[0];
@@ -1070,6 +1224,145 @@ class Oidfed {
     return { ok: true, jwt: out };
   }
 
+  // ===========================================================================
+  // THE SUBORDINATE EVENTS (#137): the history `subordinate_events.ts` keeps,
+  // served signed.
+  // ===========================================================================
+
+  // -------------------------------------------------------------------------
+  // THE KEY `sub`'s history is recorded under, or '' when this realm never
+  // had it as a subordinate: a subordinate's own (registered ones by
+  // identifier, this service's realms as `realm:<id>`); then a registered
+  // one's history kept after its revocation; then a realm of this service
+  // that is gone, whose identifier is the one it WOULD have under this
+  // request — its prefix on this realm's base, which assumes it pinned no
+  // `oauth2.issuer` of its own (a deleted realm's settings went with it).
+  // -------------------------------------------------------------------------
+  eventKeyOf(req: Req, sub: string): string {
+    const { log, realms, baseUrlOf } = this.deps;
+    log.debug("Entering Oidfed.eventKeyOf().");
+    const current = this.subordinates(req).filter(function (s: Json) {
+      return s.entityId === sub;
+    })[0];
+    if (current) {
+      log.debug("Leaving Oidfed.eventKeyOf(). A subordinate.");
+      return String(current.key);
+    }
+    if (SubordinateEvents.known(sub)) {
+      log.debug("Leaving Oidfed.eventKeyOf(). A former subordinate.");
+      return sub;
+    }
+    const self = this;
+    const base = baseUrlOf(req);
+    const hit = SubordinateEvents.realmKeys().filter(function (key: string) {
+      const realmId = SubordinateEvents.realmOfKey(key);
+      const live = realms.get(realmId);
+      if (live) {
+        return self.inRealm(live, req, function (r: Req): string {
+          return self.entityId(r);
+        }) === sub;
+      }
+      return base + realms.prefixOf({ id: realmId }) === sub;
+    })[0] || '';
+    log.debug("Leaving Oidfed.eventKeyOf(). " + (hit || 'unknown'));
+    return hit;
+  }
+
+  // The history of the subordinate under `key` as the endpoint serves it:
+  // the draft's Event Objects (never this service's merge `id`), led by a
+  // `registration` at the subordinate's creation where none was recorded —
+  // a subordinate registered before #137 kept no history.
+  eventsOf(key: string, subordinate: Json): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering Oidfed.eventsOf().");
+    const history: Json[] = SubordinateEvents.history(key);
+    const registered = history.some(function (e: Json): boolean {
+      return e.event === SubordinateEvents.EVENTS.REGISTRATION;
+    });
+    if (!registered && subordinate && Number(subordinate.createdAt) > 0) {
+      history.unshift({ iat: Math.floor(Number(subordinate.createdAt) / 1000),
+                        event: SubordinateEvents.EVENTS.REGISTRATION });
+    }
+    const out = history.map(function (e: Json): Json {
+      const one: Json = { iat: Number(e.iat), event: String(e.event) };
+      if (e.event_description) {
+        one.event_description = String(e.event_description);
+      }
+      if (e.information_uri) {
+        one.information_uri = String(e.information_uri);
+      }
+      return one;
+    });
+    log.debug("Leaving Oidfed.eventsOf(). " + out.length);
+    return out;
+  }
+
+  // The events response (draft 01 section "Subordinate Historical Events
+  // Response"), signed with the Federation Entity Key.
+  async eventsResponse(req: Req, sub: string): Promise<Outcome> {
+    const { log, config, keys } = this.deps;
+    log.debug("Entering Oidfed.eventsResponse().");
+    if (!sub) {
+      log.debug("Leaving Oidfed.eventsResponse(). No sub.");
+      return this.refuse('STS-OIDFED-0063', 'the sub parameter is required.',
+                         'invalid_request', 400);
+    }
+    const key = this.eventKeyOf(req, sub);
+    if (!key) {
+      log.debug("Leaving Oidfed.eventsResponse(). Never a subordinate.");
+      return this.refuse('STS-OIDFED-0064', sub + ' is not, and never was, ' +
+                         'a subordinate of this entity.', 'not_found', 404);
+    }
+    const signer = await keys.signer();
+    if (!signer) {
+      log.debug("Leaving Oidfed.eventsResponse(). No key.");
+      return this.refuse('STS-OIDFED-0043', 'this realm holds no ' +
+                         'Federation Entity Key it can sign with yet.',
+                         'temporarily_unavailable', 503);
+    }
+    const subordinate = this.subordinates(req).filter(function (s: Json) {
+      return s.key === key;
+    })[0] || null;
+    const now = this.nowSec();
+    const claims = {
+      iss: this.entityId(req), sub: sub, iat: now,
+      exp: now + Math.max(60,
+                          Number(config.value('oidfed.statementLifetimeS'))),
+      federation_registration_events: this.eventsOf(key, subordinate)
+    };
+    const jwt = EntityStatement.sign(claims, TYP.ENTITY_EVENTS_STATEMENT,
+                                     signer);
+    log.debug("Leaving Oidfed.eventsResponse(). " +
+              claims.federation_registration_events.length + " events.");
+    return { ok: true, jwt: jwt, claims: claims };
+  }
+
+  // The instants the Extended Listing reports for a subordinate (#135):
+  // `registered`, its latest registration, and `updated`, the latest event
+  // that changed its statement — each falling back to the register's own
+  // times.
+  auditTimesOf(subordinate: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering Oidfed.auditTimesOf().");
+    const events = this.eventsOf(String(subordinate.key), subordinate);
+    let registered = 0;
+    let updated = 0;
+    events.forEach(function (e: Json): void {
+      if (e.event === SubordinateEvents.EVENTS.REGISTRATION) {
+        registered = Math.max(registered, Number(e.iat));
+      }
+      if (STATEMENT_EVENTS.indexOf(e.event) >= 0) {
+        updated = Math.max(updated, Number(e.iat));
+      }
+    });
+    registered = registered ||
+                 Math.floor(Number(subordinate.createdAt || 0) / 1000);
+    updated = Math.max(updated, registered,
+                       Math.floor(Number(subordinate.updatedAt || 0) / 1000));
+    log.debug("Leaving Oidfed.auditTimesOf().");
+    return { registered: registered, updated: updated };
+  }
+
   // -------------------------------------------------------------------------
   // THE SUBORDINATE LISTING (8.2): the Immediate Subordinates, filtered by
   // entity type (every one named must be held), by a still-valid mark this
@@ -1100,23 +1393,12 @@ class Oidfed {
       .map(String).filter(Boolean);
     const markType = query.trust_mark_type ? String(query.trust_mark_type)
                                            : '';
-    const self = this;
-    const subs = this.subordinates(req);
+    const subs = await this.subordinateFacts(req);
     const out: string[] = [];
     for (let i = 0; i < subs.length; i++) {
       const s = subs[i];
-      let held: string[] = Array.isArray(s.entityTypes) ? s.entityTypes : [];
-      let isIntermediate = !!s.intermediate;
-      if (s.localRealm) {
-        const realm = this.deps.realms.get(s.localRealm);
-        const ec: Outcome = realm ? await this.inRealm(realm, req,
-          function (r: Req) {
-            return self.configuration(r);
-          }) : { ok: false };
-        held = ec.ok ? Object.keys(ec.claims.metadata || {}) : [];
-        isIntermediate = !!(ec.ok && ec.claims.metadata.federation_entity &&
-          ec.claims.metadata.federation_entity.federation_fetch_endpoint);
-      }
+      const held: string[] = s.heldTypes;
+      const isIntermediate = s.isIntermediate;
       if (types.length && !types.every(function (t: string): boolean {
         return held.indexOf(t) >= 0;
       })) {
@@ -1293,6 +1575,51 @@ class Oidfed {
         }
         self.sendJwt(res, 'jwk-set+jwt', String(out.jwt));
       }));
+    // The Extended Subordinate Listing (#135, draft 03): the list
+    // endpoint's rules for authentication and method, so GET, and JSON.
+    app.get(PATHS.extendedList, this.endpoint('extended listing',
+      async function (req: Req, res: Res): Promise<void> {
+        const out = await self.deps.extendedListing().answer(self, req,
+                                                             req.query || {});
+        if (!out.ok) {
+          self.sendError(res, out);
+          return;
+        }
+        res.status(200).type('application/json')
+           .set('Cache-Control', 'no-store').send(JSON.stringify(out.body));
+      }));
+    // The Entity Collection (#136, draft 01): GET or POST, the parameters
+    // form-encoded either way — read from the raw body for a POST, since a
+    // parameter may repeat.
+    const collection = async function (req: Req, res: Res): Promise<void> {
+      log.debug("Entering the OpenID Federation collection handler.");
+      const params = req.method === 'POST'
+        ? self.formParams(req) : (req.query || {});
+      const out = await self.deps.collection().answer(self, req, params);
+      if (!out.ok) {
+        self.sendError(res, out);
+        log.debug("Leaving the OpenID Federation collection handler. " +
+                  "Refused.");
+        return;
+      }
+      res.status(200).type('application/json')
+         .set('Cache-Control', 'no-store').send(JSON.stringify(out.body));
+      log.debug("Leaving the OpenID Federation collection handler.");
+    };
+    app.get(PATHS.collection, this.endpoint('collection', collection));
+    app.post(PATHS.collection, this.endpoint('collection', collection));
+    // The Subordinate Events (#137, draft 01): GET — the POST form is for
+    // client authentication, which no federation endpoint here takes.
+    app.get(PATHS.subordinateEvents, this.endpoint('subordinate events',
+      async function (req: Req, res: Res): Promise<void> {
+        const out = await self.eventsResponse(req,
+          String((req.query || {}).sub || ''));
+        if (!out.ok) {
+          self.sendError(res, out);
+          return;
+        }
+        self.sendJwt(res, 'entity-events-statement+jwt', String(out.jwt));
+      }));
     // Explicit Registration (OpenID Federation for OpenID Connect 1.1,
     // 12.2, #134): the body is the RP's Entity Configuration or a Trust
     // Chain, which app.js's text parser hands over as the string sent.
@@ -1311,6 +1638,31 @@ class Oidfed {
                      String(out.jwt));
       }));
     log.debug("Leaving Oidfed.registerRoutes().");
+  }
+
+  // An `application/x-www-form-urlencoded` body as a query object: a name
+  // given once is a string, a name repeated is an array — as Express reads a
+  // query string. Anything else is no parameters.
+  private formParams(req: Req): Json {
+    const { log } = this.deps;
+    log.debug("Entering Oidfed.formParams().");
+    const out: Json = {};
+    const type = String(req.get('content-type') || '');
+    if (!/^application\/x-www-form-urlencoded/i.test(type) ||
+        typeof req.body !== 'string') {
+      log.debug("Leaving Oidfed.formParams(). Not a form.");
+      return out;
+    }
+    new URLSearchParams(req.body).forEach(function (value: string,
+                                                    name: string): void {
+      if (out[name] === undefined) {
+        out[name] = value;
+      } else {
+        out[name] = [].concat(out[name], value);
+      }
+    });
+    log.debug("Leaving Oidfed.formParams().");
+    return out;
   }
 
   // ===========================================================================
@@ -1390,6 +1742,23 @@ class Oidfed {
     log.debug("Leaving Oidfed.jwksFor(). Fetched: " + ec.ok);
     return ec.ok ? { ok: true, jwks: ec.claims.jwks, claims: ec.claims }
                  : { ok: false, why: String(ec.why) };
+  }
+
+  // A Trust Mark issued to, or revoked from, one of this realm's
+  // subordinates is an event in its history (#137); to anybody else it is
+  // not — the history is of subordinates.
+  private subordinateMarkEvent(req: Req, sub: string, event: string,
+                               description: string): void {
+    const { log } = this.deps;
+    log.debug("Entering Oidfed.subordinateMarkEvent(). " + event);
+    const hit = this.subordinates(req).filter(function (s: Json): boolean {
+      return s.entityId === sub;
+    })[0];
+    if (hit) {
+      SubordinateEvents.record(hit.key, hit.localRealm ? '' : sub, event,
+                               { description: description });
+    }
+    log.debug("Leaving Oidfed.subordinateMarkEvent(). " + !!hit);
   }
 
   // -------------------------------------------------------------------------
@@ -1494,8 +1863,28 @@ class Oidfed {
       }
       record.intermediate = b.intermediate === true ||
         b.intermediate === 'true' || b.intermediate === 'on';
+      if (SubordinateEvents.informationUriOf(b.informationUri) === null) {
+        return bad('informationUri is an http or https URL.');
+      }
+      const before = store.get(KINDS.SUBORDINATE, entityId);
       store.put(KINDS.SUBORDINATE, entityId, entityId, record);
       this.forgetResolutions();
+      // THE HISTORY (#137): a registration alone — the draft forbids update
+      // events beside it — or one update event per part of the statement
+      // that changed.
+      if (!before) {
+        SubordinateEvents.record(entityId, entityId,
+          SubordinateEvents.EVENTS.REGISTRATION,
+          { description: String(b.eventDescription || ''),
+            informationUri: b.informationUri });
+      } else {
+        SubordinateEvents.updatesBetween(before.data, record)
+          .forEach(function (event: string): void {
+            SubordinateEvents.record(entityId, entityId, event,
+              { description: String(b.eventDescription || ''),
+                informationUri: b.informationUri });
+          });
+      }
       this.audited(ctx, 'oidfed.subordinate-set', entityId,
                    entityId + ' registered as a subordinate');
       log.debug("Leaving Oidfed.act(). A subordinate.");
@@ -1506,6 +1895,10 @@ class Oidfed {
     if (action === 'remove-subordinate' || action === 'remove-trust-anchor') {
       const kind = action === 'remove-subordinate' ? KINDS.SUBORDINATE
                                                    : KINDS.ANCHOR;
+      if (kind === KINDS.SUBORDINATE &&
+          SubordinateEvents.informationUriOf(b.informationUri) === null) {
+        return bad('informationUri is an http or https URL.');
+      }
       if (!store.remove(kind, entityId)) {
         log.debug("Leaving Oidfed.act(). Nothing to remove.");
         return this.refused('STS-OIDFED-0046', 'this realm has no ' +
@@ -1514,11 +1907,87 @@ class Oidfed {
                             entityId + '.');
       }
       this.forgetResolutions();
+      if (kind === KINDS.SUBORDINATE) {
+        // Removing a subordinate IS revoking its registration (#137): the
+        // history keeps it, with the reason given.
+        store.remove(KINDS.SUSPENSION, entityId);
+        SubordinateEvents.record(entityId, entityId,
+          SubordinateEvents.EVENTS.REVOCATION,
+          { description: String(b.reason || ''),
+            informationUri: b.informationUri });
+      }
       this.audited(ctx, kind === KINDS.ANCHOR ? 'oidfed.anchor-removed'
                                               : 'oidfed.subordinate-removed',
                    entityId, entityId + ' removed');
       log.debug("Leaving Oidfed.act(). Removed.");
       return { ok: true, message: entityId + ' was removed.' };
+    }
+    if (action === 'suspend-subordinate' ||
+        action === 'reinstate-subordinate') {
+      const suspend = action === 'suspend-subordinate';
+      const sub = this.subordinates(req).filter(function (s: Json): boolean {
+        return s.entityId === entityId;
+      })[0];
+      if (!sub) {
+        log.debug("Leaving Oidfed.act(). Not a subordinate.");
+        this.audited(ctx, 'oidfed.act-refused', entityId, 'not a ' +
+                     'subordinate', 'STS-OIDFED-0058');
+        return this.refused('STS-OIDFED-0058', 'this realm has no ' +
+                            'subordinate ' + entityId + '.');
+      }
+      if (suspend === !!sub.suspended) {
+        log.debug("Leaving Oidfed.act(). Already so.");
+        this.audited(ctx, 'oidfed.act-refused', entityId, suspend
+          ? 'already suspended' : 'not suspended', 'STS-OIDFED-0058');
+        return this.refused('STS-OIDFED-0058', entityId + ' is ' +
+                            (suspend ? 'already' : 'not') + ' suspended.');
+      }
+      const uri = SubordinateEvents.informationUriOf(b.informationUri);
+      if (uri === null) {
+        return bad('informationUri is an http or https URL.');
+      }
+      const reason = String(b.reason || '').trim().slice(0, 1000);
+      if (suspend) {
+        store.put(KINDS.SUSPENSION, sub.key, sub.localRealm ? '' : entityId,
+                  { key: sub.key, at: this.deps.now(), reason: reason,
+                    informationUri: uri });
+      } else {
+        store.remove(KINDS.SUSPENSION, sub.key);
+      }
+      SubordinateEvents.record(sub.key, sub.localRealm ? '' : entityId,
+        suspend ? SubordinateEvents.EVENTS.SUSPENSION
+                : SubordinateEvents.EVENTS.REINSTATEMENT,
+        { description: reason, informationUri: uri });
+      this.forgetResolutions();
+      this.audited(ctx, suspend ? 'oidfed.subordinate-suspended'
+                                : 'oidfed.subordinate-reinstated',
+                   entityId, entityId + (suspend ? ' suspended'
+                                                 : ' reinstated'));
+      log.debug("Leaving Oidfed.act(). " + (suspend ? 'Suspended.'
+                                                    : 'Reinstated.'));
+      return { ok: true, message: suspend
+        ? entityId + ' is suspended: this realm issues no statement about ' +
+          'it, and lists it nowhere, until it is reinstated.'
+        : entityId + ' is reinstated.' };
+    }
+    if (action === 'crawl-collection') {
+      const got: Json = await this.deps.collection().crawlNow(this, req);
+      this.audited(ctx, 'oidfed.collection-crawled', this.entityId(req),
+                   got.ok ? 'the Entity Collection was crawled: ' +
+                            got.entities + ' entities'
+                          : 'the Entity Collection could not be crawled: ' +
+                            got.why, got.ok ? '' : String(got.code));
+      if (!got.ok) {
+        log.debug("Leaving Oidfed.act(). Not crawled.");
+        return this.refused(String(got.code || 'STS-OIDFED-0066'),
+                            String(got.why));
+      }
+      log.debug("Leaving Oidfed.act(). Crawled.");
+      return { ok: true, message: 'The Entity Collection holds ' +
+               got.entities + ' entities' + (got.problems
+                 ? '; ' + got.problems + ' could not be verified and are ' +
+                   'left out.' : '.'),
+               collection: got.view };
     }
     if (action === 'add-mark-type') {
       const type = String(b.type || '').trim();
@@ -1639,6 +2108,9 @@ class Oidfed {
         });
       }
       this.forgetResolutions();
+      this.subordinateMarkEvent(req, entityId,
+        SubordinateEvents.EVENTS.TRUST_MARK_ISSUANCE,
+        'A Trust Mark of ' + type + ' was issued.');
       this.audited(ctx, 'oidfed.mark-issued', entityId,
                    'Trust Mark ' + type + ' issued to ' + entityId);
       log.debug("Leaving Oidfed.act(). A mark issued.");
@@ -1661,6 +2133,10 @@ class Oidfed {
         type: held.type, sub: held.sub, iat: held.iat, exp: held.exp,
         revokedAt: held.revokedAt, revokedReason: held.revokedReason });
       this.forgetResolutions();
+      this.subordinateMarkEvent(req, held.sub,
+        SubordinateEvents.EVENTS.TRUST_MARK_REVOCATION,
+        'The Trust Mark of ' + held.type + ' was revoked (' +
+        held.revokedReason + ').');
       this.audited(ctx, 'oidfed.mark-revoked', held.sub, 'Trust Mark ' +
                    held.type + ' of ' + held.sub + ' revoked');
       log.debug("Leaving Oidfed.act(). A mark revoked.");
@@ -1768,8 +2244,10 @@ class Oidfed {
     // OpenAPI document, and `tests/admin_api.js` reads it for the parity
     // check — a refusal that names none turns both off.
     return this.refused('STS-OIDFED-0046', 'Unknown action "' + action +
-                        '". The fifteen are: add-subordinate, ' +
-                        'remove-subordinate, add-trust-anchor, ' +
+                        '". The eighteen are: add-subordinate, ' +
+                        'remove-subordinate, suspend-subordinate, ' +
+                        'reinstate-subordinate, crawl-collection, ' +
+                        'add-trust-anchor, ' +
                         'remove-trust-anchor, add-mark-type, ' +
                         'remove-mark-type, set-mark-policy, ' +
                         'remove-mark-policy, issue-trust-mark, ' +
@@ -1780,7 +2258,9 @@ class Oidfed {
   // Drop the cached resolutions of the realm — its register changed, so a
   // chain resolved before may no longer be the one it would resolve now.
   // The realm's register generation — see `registerGeneration`, above.
-  private generation(): string {
+  // Public for the Entity Collection (#136), whose in-process cache is kept
+  // under it for the same reason.
+  generation(): string {
     this.deps.log.debug("Entering Oidfed.generation().");
     const row: Json = registerGeneration.get(GENERATION_KEY);
     this.deps.log.debug("Leaving Oidfed.generation().");
@@ -1846,6 +2326,65 @@ class Oidfed {
     };
   }
 
+  // The subordinates this realm HAD — revoked, their history kept (#137) —
+  // for the console and the API. A realm of this service that was deleted
+  // is shown by the identifier it would have under this request.
+  formerSubordinates(req: Req): Json[] {
+    const { log, store, realms, baseUrlOf } = this.deps;
+    log.debug("Entering Oidfed.formerSubordinates().");
+    const self = this;
+    const current: Record<string, boolean> = {};
+    this.subordinates(req).forEach(function (s: Json): void {
+      current[String(s.key)] = true;
+    });
+    const out: Json[] = [];
+    store.entries(KINDS.EVENTS).forEach(function (e): void {
+      const key = String((e.data || {}).key || '');
+      if (!key || current[key]) {
+        return;
+      }
+      const realmId = SubordinateEvents.realmOfKey(key);
+      if (realmId && realms.get(realmId)) {
+        return;
+      }
+      out.push({ entityId: realmId ? baseUrlOf(req) +
+                                     realms.prefixOf({ id: realmId })
+                                   : key,
+                 localRealm: realmId || null,
+                 events: self.eventsOf(key, null) });
+    });
+    log.debug("Leaving Oidfed.formerSubordinates(). " + out.length);
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // A REALM'S CREATION AND DELETION ARE ITS REGISTRATION AND REVOCATION as a
+  // subordinate of the default realm (#137, `subordinate_events.ts`). Once
+  // per process: `realms.onChange()` keeps every watcher it is given, and a
+  // second instance (a test's) must not record everything twice. A realm
+  // RESTORED from the store at start, or replayed from another node's
+  // creation, was registered where it was created.
+  // -------------------------------------------------------------------------
+  watchRealms(): void {
+    const { log, realms } = this.deps;
+    log.debug("Entering Oidfed.watchRealms().");
+    if (realmsWatched) {
+      log.debug("Leaving Oidfed.watchRealms(). Watched already.");
+      return;
+    }
+    realmsWatched = true;
+    realms.onChange(function (id: string, what: string, info: Json): void {
+      if (what === 'create' && !(info && info.restored)) {
+        const realm = realms.get(id);
+        SubordinateEvents.realmCreated(String(id),
+          realm ? realm.createdAt : Date.now());
+      } else if (what === 'remove') {
+        SubordinateEvents.realmRemoved(String(id), info && info.createdAt);
+      }
+    });
+    log.debug("Leaving Oidfed.watchRealms().");
+  }
+
   // -------------------------------------------------------------------------
   // THE VIEW: everything the console page draws and GET /admin-api/oidfed
   // answers, from one call (rule 7). Never a private key.
@@ -1889,8 +2428,16 @@ class Oidfed {
                  createdAt: iso(s.createdAt), updatedAt: iso(s.updatedAt),
                  kids: ((s.jwks && s.jwks.keys) || []).map(function (k: Json) {
                    return k.kid;
-                 }) };
+                 }),
+                 suspended: s.suspended ? {
+                   at: iso(s.suspended.at),
+                   reason: s.suspended.reason || null,
+                   informationUri: s.suspended.informationUri || null
+                 } : null,
+                 events: self.eventsOf(String(s.key), s) };
       }),
+      formerSubordinates: this.formerSubordinates(req),
+      collection: this.deps.collection().view(this, req),
       trustAnchors: this.anchors(req).map(function (a: Json): Json {
         return { entityId: a.entityId, localRealm: a.localRealm || null,
                  kids: ((a.jwks && a.jwks.keys) || []).map(function (k: Json) {
@@ -1931,7 +2478,9 @@ class Oidfed {
 const slot = new InstanceSlot<Oidfed>(
   'oidfed/oidfed',
   () => new Oidfed(Oidfed.defaultDeps()),
-  null,
+  function (instance: Oidfed): void {
+    instance.watchRealms();
+  },
   helpers.log);
 
 slot.buildNowUnlessDeferred();
@@ -1940,6 +2489,9 @@ export = {
   Oidfed: Oidfed,
   installInstance: (instance: Oidfed): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
+  // The instance itself, for the collection's scheduled crawl (#136), which
+  // walks through methods the facade does not forward.
+  instance: (): Oidfed => slot.get(),
   PATHS: PATHS,
   registerRoutes: slot.forward('registerRoutes'),
   entityId: slot.forward('entityId'),
@@ -1957,6 +2509,7 @@ export = {
   markStatusResponse: slot.forward('markStatusResponse'),
   historicalKeysResponse: slot.forward('historicalKeysResponse'),
   listing: slot.forward('listing'),
+  eventsResponse: slot.forward('eventsResponse'),
   view: slot.forward('view'),
   act: slot.forward('act')
 };

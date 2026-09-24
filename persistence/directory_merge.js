@@ -79,7 +79,11 @@ const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',
                'description', 'oauthconsent', 'stswebauthncredential',
                'x509subject', 'didsubject', 'spiffesubject', 'authnmethod',
                'federationattribute', 'federationissuer',
-               'federationrelationship', 'federationlink'];
+               'federationrelationship', 'federationlink',
+               // A subordinate's OpenID Federation event history (#137):
+               // appended by whichever node records an event, so two
+               // appends at once must both survive.
+               'stsoidfedevent'];
 
 // A HOT PATH, AND EVERY FUNCTION IN THIS FILE IS ON IT: `same()`, `uuidOf()`,
 // `countOf()`, `listOf()`, `mergeValues()`, `mergeAttributes()`,

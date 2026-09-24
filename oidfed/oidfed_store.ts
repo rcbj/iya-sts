@@ -28,6 +28,23 @@
 //   mark-policy    mp-<digest>       as a Trust Anchor: who may issue marks of
 //                                    a type, and who owns it (3.1.2's
 //                                    trust_mark_issuers, trust_mark_owners)
+//   events         ev-<digest>       a subordinate's event history (#137),
+//                                    one JSON event per `stsOidfedEvent`
+//                                    value — kept after the subordinate is
+//                                    gone (subordinate_events.ts)
+//   suspension     su-<digest>       a subordinate suspended (#137): no
+//                                    Subordinate Statement is issued about
+//                                    it until it is reinstated
+//   collection     collection        the realm's Entity Collection (#136),
+//                                    as its last crawl found it
+//                                    (entity_collection.ts)
+//
+// An `events` or `suspension` entry is keyed by the subordinate's KEY rather
+// than always its Entity Identifier: a registered subordinate's key IS its
+// Entity Identifier, but a realm of this service beneath the default realm
+// is keyed `realm:<id>`, because its identifier depends on the host a
+// request arrived on and a background job has no request
+// (`subordinate_events.ts`).
 //
 // **WHY THE DIRECTORY AND NOT A STORE OF ITS OWN.** It is the one store every
 // backend persists and every node of a cluster shares (the change log), and
@@ -62,12 +79,16 @@ const KINDS = Object.freeze({
   MARK_TYPE: 'mark-type',
   ISSUED_MARK: 'issued-mark',
   HELD_MARK: 'held-mark',
-  MARK_POLICY: 'mark-policy'
+  MARK_POLICY: 'mark-policy',
+  EVENTS: 'events',
+  SUSPENSION: 'suspension',
+  COLLECTION: 'collection'
 });
 
 const PREFIX: Record<string, string> = {
   'subordinate': 'sub-', 'anchor': 'ta-', 'mark-type': 'mt-',
-  'issued-mark': 'im-', 'held-mark': 'hm-', 'mark-policy': 'mp-'
+  'issued-mark': 'im-', 'held-mark': 'hm-', 'mark-policy': 'mp-',
+  'events': 'ev-', 'suspension': 'su-'
 };
 
 interface Entry {
@@ -95,9 +116,10 @@ class OidfedStore {
   static cnOf(kind: string, key: string): string {
     log.debug("Entering OidfedStore.cnOf(). " + kind);
     log.debug("Leaving OidfedStore.cnOf().");
-    return kind === KINDS.KEYS ? 'keys'
-                               : (PREFIX[kind] || 'x-') +
-                                 OidfedStore.digest(key);
+    if (kind === KINDS.KEYS || kind === KINDS.COLLECTION) {
+      return kind;
+    }
+    return (PREFIX[kind] || 'x-') + OidfedStore.digest(key);
   }
 
   // A generalized time ("20260923120000Z" or with a fraction) as epoch ms;
@@ -215,6 +237,55 @@ class OidfedStore {
     });
     log.debug("Leaving OidfedStore.keyRows(). " + rows.length);
     return rows;
+  }
+
+  // -------------------------------------------------------------------------
+  // AN EVENT LOG (#137): the values of the `events` entry about `key`, each
+  // one JSON event as `subordinate_events.ts` wrote it. A value is appended
+  // and never replaced, and `stsOidfedEvent` is merged BY VALUE when two
+  // nodes write one entry (`persistence/directory_merge.js`, MULTI), so two
+  // events recorded at once on two nodes are both kept.
+  // -------------------------------------------------------------------------
+  private static rawEntry(cn: string): Json {
+    log.debug("Entering OidfedStore.rawEntry(). " + cn);
+    const all = credentials.oidfedStore('listOidfedEntries', []) || [];
+    const hit = all.filter(function (stored: Json): boolean {
+      const got = (/^cn=([^,]+),/i.exec(String(stored.dn)) || [])[1] || '';
+      return got.toLowerCase() === cn.toLowerCase();
+    })[0] || null;
+    log.debug("Leaving OidfedStore.rawEntry(). " + !!hit);
+    return hit;
+  }
+
+  static eventValues(key: string): string[] {
+    log.debug("Entering OidfedStore.eventValues().");
+    const stored = OidfedStore.rawEntry(OidfedStore.cnOf(KINDS.EVENTS, key));
+    const out = ((stored && stored.attributes.stsoidfedevent) || [])
+      .map(String);
+    log.debug("Leaving OidfedStore.eventValues(). " + out.length);
+    return out;
+  }
+
+  static appendEvent(key: string, entityId: string, value: string): boolean {
+    log.debug("Entering OidfedStore.appendEvent().");
+    const values = OidfedStore.eventValues(key);
+    if (values.indexOf(value) < 0) {
+      values.push(value);
+    }
+    const cn = OidfedStore.cnOf(KINDS.EVENTS, key);
+    const attributes: Json = {
+      objectClass: ['top', 'stsOidfedEntry'],
+      cn: cn,
+      stsOidfedKind: KINDS.EVENTS,
+      stsOidfedData: JSON.stringify({ key: key }),
+      stsOidfedEvent: values
+    };
+    if (entityId) {
+      attributes.stsOidfedEntityId = entityId;
+    }
+    const ok = !!credentials.oidfedStore('writeOidfedEntry', [cn, attributes]);
+    log.debug("Leaving OidfedStore.appendEvent(). " + ok);
+    return ok;
   }
 
   static writeKeyRows(rows: Json[]): boolean {

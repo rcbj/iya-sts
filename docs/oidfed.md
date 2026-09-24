@@ -76,10 +76,14 @@ Every endpoint is per realm, under the realm's prefix, and answers with
 | `POST /oidfed/trust-mark-status` | 8.4 | Whether a mark this realm issued is `active`, `expired` or `revoked`. |
 | `GET /oidfed/trust-mark-list?trust_mark_type=` | 8.5 | The entities holding a valid mark of the type. |
 | `GET /oidfed/historical-keys` | 8.7 | Every Federation Entity Key the realm has retired or revoked, signed. |
+| `GET /oidfed/extended-list` | Extended Listing, draft 03 | The Immediate Subordinates, paged, with what you ask for about each. Published by a realm that vouches for somebody. See [below](#the-extended-subordinate-listing). |
+| `GET` or `POST /oidfed/collection` | Entity Collection, draft 01 | Every entity beneath the realm, with display information and Trust Marks. See [below](#the-entity-collection). |
+| `GET /oidfed/subordinate-events?sub=` | Subordinate Events, draft 01 | A subordinate's history, signed. See [below](#subordinate-history-suspension-and-revocation). |
 
 Errors are section 8.9's JSON: `invalid_request`, `not_found`,
 `invalid_trust_anchor`, `invalid_trust_chain`, `invalid_metadata`,
-`temporarily_unavailable` and `server_error`.
+`temporarily_unavailable` and `server_error` — and, from the extensions,
+`page_not_found` and `unsupported_claim`.
 
 **The resolve endpoint never walks the federation for an anonymous caller**
 (section 18.1). It answers only in two cases:
@@ -153,6 +157,17 @@ issues a statement about it carrying:
 A policy that combines operators the specification forbids is refused when you
 save it.
 
+**Suspending a subordinate** (**Suspend** on the console, or
+`POST /admin-api/oidfed/suspend-subordinate`) stops the realm vouching for it
+without forgetting it. The fetch endpoint answers `not_found` about it, and
+neither listing includes it, so no Trust Chain passes through it until it is
+reinstated (`reinstate-subordinate`). A realm beneath the default realm can be
+suspended too.
+
+**Revoking a subordinate** (**Revoke**, or `remove-subordinate`) removes it.
+Both acts take an optional `reason` and `informationUri`, which go into the
+subordinate's history.
+
 **A Trust Anchor** is registered with its entity identifier and its keys.
 A Trust Chain may end only at a configured anchor, and the chain is checked
 against the keys configured for that anchor.
@@ -211,6 +226,117 @@ else once you paste it on the console or send it with `add-held-mark`.
 - Every type the realm issues itself names the realm as its issuer, unless a
   policy says otherwise.
 
+## Subordinate history, suspension and revocation
+
+A superior keeps the history of each of its subordinates **for good**, and
+serves it at `/oidfed/subordinate-events?sub=` as a signed
+`application/entity-events-statement+jwt`
+([Subordinate Events Endpoint 1.0, draft 01](https://openid.net/specs/openid-federation-subordinate-events-1_0.html)).
+The history outlives the subordinate: revoking one records the revocation and
+deletes nothing, so the endpoint still answers for it.
+
+| Event | Recorded when |
+|---|---|
+| `registration` | the subordinate is registered — alone, as the draft requires; the update events below follow only later changes |
+| `jwks_update` | its keys change; for a realm beneath the default realm, whenever that realm's own Federation Entity Key rotates or is revoked |
+| `metadata_update`, `metadata_policy_update` | the `metadata` or `metadata_policy` its statement carries changes |
+| `suspension`, `revocation` | it is suspended, or revoked (a deleted realm is revoked) |
+| `reinstatement` * | a suspended subordinate is reinstated |
+| `constraints_update` * | the `constraints` its statement carries change |
+| `trust_mark_issuance`, `trust_mark_revocation` * | this realm issues it a Trust Mark, or revokes one |
+
+\* This service's own event types. The draft lets a federation operator
+define more, and these four cover what its six do not.
+
+Each event carries `iat`, and `event_description` and `information_uri` where
+the administrator gave a reason or a page. A realm of this service beneath the
+default realm is registered when it is created and revoked when it is
+deleted, and after deletion it is answered under the identifier it had.
+
+The console lists each subordinate's history under **History**, and the
+revoked ones under **Former subordinates**. `GET /admin-api/oidfed` returns
+both.
+
+## The Extended Subordinate Listing
+
+`/oidfed/extended-list`
+([Extended Subordinate Listing 1.0, draft 03](https://openid.net/specs/openid-federation-extended-listing-1_0.html))
+lists the same subordinates as `/oidfed/list`, but paged and with more about
+each:
+
+- **Every list filter**: `entity_type`, `trust_marked`, `trust_mark_type`
+  (repeat it to match any of several types) and `intermediate`.
+- **`limit` and `from`.** A page is at most `oidfed.listPageMax` entities. A
+  response with more to come carries `next`; pass it back as `from`. A `from`
+  this realm did not hand out is `404 page_not_found`.
+- **`updated_after` and `updated_before`** (seconds since the epoch), and
+  **`audit_timestamps=true`** to return each entry's `registered` and
+  `updated` times. Both come from the subordinate's history.
+- **`claims`**, comma-separated or repeated: `subordinate_statement` (the
+  signed statement), `trust_marks`, or any claim of the Subordinate Statement
+  (`jwks`, `metadata`, `metadata_policy`, `constraints`, …).
+
+**With no `claims`, each entry is its `id` alone.** The endpoint is anonymous
+and a statement is a signature, so statements are returned only when asked
+for, one page at a time.
+
+## The Entity Collection
+
+`/oidfed/collection`
+([Entity Collection Endpoint 1.0, draft 01](https://openid.github.io/federation-entity-collection/main.html))
+lists **every entity beneath the realm** — its subordinates, theirs, and so on
+— for a login picker or a catalogue. Each entry has:
+
+- `entity_id` and `entity_types`;
+- `ui_infos`: per entity type, the informational metadata of section 5.2.2
+  (`display_name`, `description`, `keywords`, `logo_uri`, `policy_uri`,
+  `information_uri`), with language-tagged forms such as `display_name#de`.
+  Where a relying party has no `display_name`, its `client_name` is used;
+- `trust_marks`, verified.
+
+**Only entities whose Trust Chain to the realm validates are listed**, with
+their metadata as resolved through every policy above them. The response
+itself is not signed and is informational: anyone relying on an entity it
+names must still validate that entity's Trust Chain.
+
+Parameters: `entity_type` (repeat for any of several), `trust_mark_type`
+(repeat to require all), `query` (matched against the identifier, names,
+descriptions and keywords), `entity_claims`, `ui_claims`, `limit` and `from`.
+`trust_anchor` may only be the realm itself; any other value is
+`404 invalid_trust_anchor`. A claim this service does not return is
+`400 unsupported_claim`. The response carries `last_updated`.
+
+**Where the collection comes from.** Collecting below an Intermediate outside
+this service means fetching its list, and then each listed entity's
+configuration. That is a **crawl**, and nothing an anonymous request asks for
+starts one:
+
+- **Crawl now** on `/admin/oidfed`, or
+  `POST /admin-api/oidfed/crawl-collection`, crawls with your request's
+  address as the realm's Entity Identifier.
+- **The `oidfed.collection-crawl` job** crawls every
+  `oidfed.collectionCrawlS`, but only where `global.publicBaseUrl` pins the
+  Entity Identifier. A job has no request of its own to take it from, and
+  `/admin/scheduler` says so.
+
+A crawl fetches a list only from an entity whose chain has already validated,
+through the outbound policy (https, a verified certificate, no redirect, a
+size cap and, in product mode, no internal address). It collects at most
+`oidfed.collectionMaxEntities` entities and fetches at most
+`oidfed.collectionMaxFetches` lists. The realm keeps the crawl in its
+directory, so every node answers from the same one, for up to
+`oidfed.collectionMaxAgeS`.
+
+**The crawl is added to, never answered alone.** What the service can
+collect without fetching — its own realms, and subordinates an earlier
+resolution already holds — is always collected fresh. The crawl adds the
+entities it reached through a subordinate that is still active. So a realm
+created after a crawl appears at once, and suspending or revoking a
+subordinate removes everything beneath it at once. Only a new foreign
+subordinate's own subtree waits for the next crawl. Each process keeps its
+fresh part for `oidfed.collectionCacheS`, and makes it again whenever the
+realms or the active subordinates change.
+
 ## Settings
 
 All are per realm and changeable while running. They are listed in
@@ -230,6 +356,11 @@ All are per realm and changeable while running. They are listed in
 | `oidfed.fetchTimeoutMs`, `fetchMaxBytes` | 5000, 262144 | The bounds on one fetch. |
 | `oidfed.resolveCacheS`, `resolveCacheMax` | 3600, 1000 | How long and how many resolutions are kept for the resolve endpoint. |
 | `oidfed.clockSkewS` | 60 | The leeway on `iat` and `exp`. |
+| `oidfed.listPageMax` | 50 | The longest page of the Extended Subordinate Listing and the Entity Collection. |
+| `oidfed.collectionCrawlS` | 3600 | How often the collection crawl runs; 0 is off. Needs `global.publicBaseUrl`. |
+| `oidfed.collectionMaxEntities`, `collectionMaxFetches` | 500, 100 | The bounds on one crawl. |
+| `oidfed.collectionMaxAgeS` | 86400 | How long the entities a crawl found beyond this service are served. |
+| `oidfed.collectionCacheS` | 300 | How long a process keeps what it collects without fetching; changed realms or subordinates make it again at once. |
 
 `oid4vp.federationAuthorityHints` was replaced by `oidfed.authorityHints`.
 
@@ -264,5 +395,6 @@ carrying its signing key.
 
 - As an RP, this service registers only automatically.
 - Trusting a credential issuer through the federation (OpenID4VP).
-- **Extended Subordinate Listing, Entity Collection and Subordinate Events**
-  (#135–#137).
+- An Entity Collection anchored at a Trust Anchor other than the realm itself.
+- Client authentication at any federation endpoint (section 8.8), including
+  the POST form of the Subordinate Events endpoint.

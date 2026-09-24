@@ -2587,6 +2587,63 @@ const SPECS: Spec[] = [
               'MISSING: the RP side registers only automatically (never ' +
               'explicitly) and sends no trust_chain header; OID4VP\'s ' +
               'trust of a credential issuer through the federation.' },
+  { id: 'openid-federation-extended-listing',
+    name: 'OpenID Federation Extended Subordinate Listing 1.0 (draft 03)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-federation-extended-listing-1_0.html',
+    coverage: 'full (#135, 2026-09-24), against the editors\' draft 03: ' +
+              'federation_extended_list_endpoint on every superior; every ' +
+              'list parameter, trust_mark_type repeatable (any of them); ' +
+              'from and limit with an opaque pointer MACed per realm and ' +
+              'endpoint, an unknown one page_not_found, the page capped at ' +
+              'oidfed.listPageMax; updated_after, updated_before and ' +
+              'audit_timestamps from each subordinate\'s history; claims — ' +
+              'subordinate_statement, trust_marks and any top-level claim of ' +
+              'the Subordinate Statement. With no claims an entry is its id ' +
+              'alone: a statement is a signature, and the endpoint is ' +
+              'anonymous. A suspended subordinate is not listed. MISSING: ' +
+              'client authentication (as at the list endpoint, 8.8).' },
+  { id: 'openid-federation-entity-collection',
+    name: 'OpenID Federation Entity Collection Endpoint 1.0 (draft 01)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.github.io/federation-entity-collection/main.html',
+    coverage: 'partial (#136, 2026-09-24), against the editors\' draft 01: ' +
+              'federation_collection_endpoint on every superior, GET and ' +
+              'POST; every entity beneath the realm whose Trust Chain to it ' +
+              'validates, with its resolved entity types, ui_infos (5.2.2\'s ' +
+              'informational claims per type, language-tagged forms, ' +
+              'client_name and resource_name as display names) and verified ' +
+              'Trust Marks; entity_type (any), trust_mark_type (all), query ' +
+              '(identifier, names, descriptions, keywords), entity_claims ' +
+              'and ui_claims (unsupported_claim otherwise), from and limit, ' +
+              'last_updated. A crawl — the oidfed.collection-crawl job ' +
+              'where global.publicBaseUrl pins the identifier, or Crawl ' +
+              'now — walks ' +
+              'down through Intermediates outside this service, bounded; ' +
+              'without one only what the service holds in process is ' +
+              'collected. MISSING: a trust_anchor other than the realm ' +
+              'itself (invalid_trust_anchor, by rcbj\'s decision: the ' +
+              'collection is of the realm\'s own subtree); client ' +
+              'authentication.' },
+  { id: 'openid-federation-subordinate-events',
+    name: 'OpenID Federation Subordinate Events Endpoint 1.0 (draft 01)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-federation-subordinate-events-1_0.html',
+    coverage: 'full (#137, 2026-09-24), against the editors\' draft 01: ' +
+              'federation_subordinate_events_endpoint while the realm has or ' +
+              'had a subordinate; a signed entity-events-statement+jwt of ' +
+              'the subordinate\'s federation_registration_events — ' +
+              'registration, metadata_update, metadata_policy_update, ' +
+              'jwks_update, suspension and revocation (a registration ' +
+              'recorded alone), with this service\'s own reinstatement, ' +
+              'constraints_update, trust_mark_issuance and ' +
+              'trust_mark_revocation, and event_description and ' +
+              'information_uri where an administrator gave them. The ' +
+              'history is kept for good and outlives the subordinate; a ' +
+              'realm of this service is registered, rekeyed and revoked by ' +
+              'its own creation, key rotation and deletion. Subordinates ' +
+              'may be suspended and reinstated. MISSING: client ' +
+              'authentication (the POST form).' },
   { id: 'sd-jwt', name: 'RFC 9901 — Selective Disclosure for JWTs (SD-JWT)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9901',
     coverage: 'full for issuance and verification: _sd digests with a decoy, ' +
@@ -10337,6 +10394,29 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'The Trust Mark endpoint', specs: ['openid-federation'],
     what: 'GET ?trust_mark_type=&sub= (8.6): a still-valid Trust Mark this ' +
           'realm issued to the entity, as application/trust-mark+jwt.' },
+  { path: '/oidfed/extended-list', group: 'OpenID Federation',
+    name: 'Extended Subordinate Listing',
+    specs: ['openid-federation-extended-listing'],
+    what: 'GET (#135): the Immediate Subordinates paged — from and limit, ' +
+          'with an opaque next — filtered by every list parameter and by ' +
+          'updated_after and updated_before, each entry its id and, asked ' +
+          'for, its registered and updated times, its signed ' +
+          'subordinate_statement, its Trust Marks and any claim of that ' +
+          'statement. JSON.' },
+  { path: '/oidfed/collection', group: 'OpenID Federation',
+    name: 'Entity Collection', specs: ['openid-federation-entity-collection'],
+    what: 'GET or POST (#136): every entity beneath this realm whose Trust ' +
+          'Chain to it validates — entity_types, ui_infos and verified ' +
+          'trust_marks — filtered by entity_type, trust_mark_type and query, ' +
+          'paged, with last_updated. Answered from the last crawl; nothing ' +
+          'an anonymous request asks for fetches anything.' },
+  { path: '/oidfed/subordinate-events', group: 'OpenID Federation',
+    name: 'Subordinate Events', specs: ['openid-federation-subordinate-events'],
+    what: 'GET ?sub= (#137): a signed entity-events-statement+jwt of ' +
+          'everything this realm recorded about a subordinate it has or ' +
+          'had — registration, key, metadata, policy and constraint ' +
+          'updates, suspensions, reinstatements, Trust Marks and its ' +
+          'revocation. not_found for an entity that never was one.' },
   { path: '/oidfed/trust-mark-status', group: 'OpenID Federation',
     name: 'Trust Mark Status', specs: ['openid-federation'],
     what: 'POST trust_mark= (8.4): a signed ' +
@@ -10367,9 +10447,12 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Protocols > OpenID Federation: the realm\'s role, Entity ' +
           'Configuration and endpoints; its Federation Entity Keys ' +
           '(Rotate, Emergency rotation, Revoke); the subordinates it ' +
-          'vouches for and the Trust Anchors it trusts (Register, Remove); ' +
-          'the Trust Mark types it issues, the marks issued and carried, ' +
-          'and its mark policies; Resolve; and the oidfed.* settings.' },
+          'vouches for and the Trust Anchors it trusts (Register, Remove), ' +
+          'each subordinate\'s status and history (Suspend, Reinstate, ' +
+          'Revoke) and the ones revoked; the Entity Collection crawl kept ' +
+          '(Crawl now); the Trust Mark types it issues, the marks issued ' +
+          'and carried, and its mark policies; Resolve; and the oidfed.* ' +
+          'settings.' },
   { path: '/admin-api/oidfed', group: 'OpenID Federation',
     name: 'The OpenID Federation console page over JSON',
     specs: ['openid-federation'],
@@ -10378,7 +10461,8 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Subordinates, anchors, Trust Marks, resolution and keys',
     specs: ['openid-federation'],
     what: 'The controls on /admin/oidfed as one action resource: ' +
-          'add-subordinate, remove-subordinate, add-trust-anchor, ' +
+          'add-subordinate, remove-subordinate, suspend-subordinate, ' +
+          'reinstate-subordinate, crawl-collection, add-trust-anchor, ' +
           'remove-trust-anchor, add-mark-type, remove-mark-type, ' +
           'set-mark-policy, remove-mark-policy, issue-trust-mark, ' +
           'revoke-trust-mark, add-held-mark, remove-held-mark, resolve, ' +
@@ -10583,14 +10667,19 @@ const PROTOCOLS: Protocol[] = [
           'with a grace period; product mode requires the partner to use ' +
           'it.' },
   { name: 'OpenID Federation', groups: ['OpenID Federation'],
-    specs: ['openid-federation', 'openid-federation-connect'],
+    specs: ['openid-federation', 'openid-federation-connect',
+            'openid-federation-extended-listing',
+            'openid-federation-entity-collection',
+            'openid-federation-subordinate-events'],
     what: 'Trust between entities that were never configured with each ' +
           'other, through a chain of signed statements ending at a Trust ' +
           'Anchor: every realm is a federation entity — a Trust Anchor, an ' +
           'Intermediate or a Leaf — with an Entity Configuration, keys of ' +
           'its own, subordinates it vouches for and Trust Anchors it ' +
           'trusts, metadata policy and constraints, Trust Marks it issues ' +
-          'and carries, and the federation endpoints. By default the ' +
+          'and carries, and the federation endpoints — with the three ' +
+          'extensions: the Extended Subordinate Listing, the Entity ' +
+          'Collection and each subordinate\'s event history. By default the ' +
           'default realm vouches for every other, so one service is a whole ' +
           'federation.' },
   { name: 'Shared Signals', groups: ['Shared Signals'],

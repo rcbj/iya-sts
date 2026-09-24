@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3406** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3416** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 133
-* [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 56
+* [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 66
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 74
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
@@ -2048,6 +2048,16 @@ Raised from: oidfed/.
 | `STS-OIDFED-0054` | An automatic registration carried no proof, or its request object or client assertion did not verify with the relying party's keys or failed its aud, iss, sub, jti or exp checks (#134). | invalid_request (HTTP 400, never redirected) |
 | `STS-OIDFED-0055` | An automatic registration asked for a secret-based token endpoint authentication method, which nothing provisioned (#134). | invalid_client_metadata |
 | `STS-OIDFED-0056` | An Explicit Registration request was refused: the realm does not offer it, the media type was wrong, or the body was not the relying party's Entity Configuration with authority_hints and openid_relying_party metadata (#134). | invalid_request |
+| `STS-OIDFED-0057` | A Subordinate Statement was asked for about a subordinate this realm has suspended, which it issues none about until it is reinstated (#137). | not_found (HTTP 404) |
+| `STS-OIDFED-0058` | A subordinate could not be suspended or reinstated: the realm has no such subordinate, or it was already suspended, or it was not (#137). | — |
+| `STS-OIDFED-0059` | A listing or collection page was asked for from a pointer this realm did not return as next — for this realm and endpoint (#135, #136). | page_not_found (HTTP 404) |
+| `STS-OIDFED-0060` | An Extended Subordinate Listing or Entity Collection request carried a limit that is not a positive integer, a time that is not a NumericDate, a boolean that is neither, or a single-valued parameter twice (#135, #136). | invalid_request (HTTP 400) |
+| `STS-OIDFED-0061` | An Entity Collection request asked for an entity_claims or ui_claims claim this realm does not return (#136). | unsupported_claim (HTTP 400) |
+| `STS-OIDFED-0062` | An Entity Collection request named a Trust Anchor other than the realm itself; the collection is of the realm's own subtree (#136). | invalid_trust_anchor (HTTP 404) |
+| `STS-OIDFED-0063` | A Subordinate Events request carried no sub (#137). | invalid_request (HTTP 400) |
+| `STS-OIDFED-0064` | A Subordinate Events request named an entity that is not, and never was, a subordinate of this realm (#137). | not_found (HTTP 404) |
+| `STS-OIDFED-0065` | A subordinate's event could not be written to the realm's register; the act that caused it stands (#137). | — |
+| `STS-OIDFED-0066` | An Entity Collection crawl failed, or its result could not be kept in the realm's register (#136). | — |
 
 ## STS-KRB
 

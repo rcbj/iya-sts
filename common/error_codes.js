@@ -8275,6 +8275,51 @@ const CODES = [
       'relying party\'s Entity Configuration with authority_hints and ' +
       'openid_relying_party metadata (#134).',
     spec: 'invalid_request' },
+  { code: 'STS-OIDFED-0057',
+    summary: 'A Subordinate Statement was asked for about a subordinate ' +
+      'this realm has suspended, which it issues none about until it is ' +
+      'reinstated (#137).',
+    spec: 'not_found (HTTP 404)' },
+  { code: 'STS-OIDFED-0058',
+    summary: 'A subordinate could not be suspended or reinstated: the realm ' +
+      'has no such subordinate, or it was already suspended, or it was not ' +
+      '(#137).',
+    spec: '' },
+  { code: 'STS-OIDFED-0059',
+    summary: 'A listing or collection page was asked for from a pointer ' +
+      'this realm did not return as next — for this realm and endpoint ' +
+      '(#135, #136).',
+    spec: 'page_not_found (HTTP 404)' },
+  { code: 'STS-OIDFED-0060',
+    summary: 'An Extended Subordinate Listing or Entity Collection request ' +
+      'carried a limit that is not a positive integer, a time that is not a ' +
+      'NumericDate, a boolean that is neither, or a single-valued ' +
+      'parameter twice (#135, #136).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OIDFED-0061',
+    summary: 'An Entity Collection request asked for an entity_claims or ' +
+      'ui_claims claim this realm does not return (#136).',
+    spec: 'unsupported_claim (HTTP 400)' },
+  { code: 'STS-OIDFED-0062',
+    summary: 'An Entity Collection request named a Trust Anchor other than ' +
+      'the realm itself; the collection is of the realm\'s own subtree ' +
+      '(#136).',
+    spec: 'invalid_trust_anchor (HTTP 404)' },
+  { code: 'STS-OIDFED-0063',
+    summary: 'A Subordinate Events request carried no sub (#137).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OIDFED-0064',
+    summary: 'A Subordinate Events request named an entity that is not, and ' +
+      'never was, a subordinate of this realm (#137).',
+    spec: 'not_found (HTTP 404)' },
+  { code: 'STS-OIDFED-0065',
+    summary: 'A subordinate\'s event could not be written to the realm\'s ' +
+      'register; the act that caused it stands (#137).',
+    spec: '' },
+  { code: 'STS-OIDFED-0066',
+    summary: 'An Entity Collection crawl failed, or its result could not be ' +
+      'kept in the realm\'s register (#136).',
+    spec: '' },
 
   // ===== KRB ===============================================================
   { code: 'STS-KRB-0001',
