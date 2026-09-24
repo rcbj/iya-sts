@@ -927,6 +927,16 @@ schedulerTakeover()
 {
   local mode="$1" out leader container rc
   local dest="${CURRENT_DIR}/tests/report/${mode}-99-scheduler-takeover.log"
+  # A FRESH TOKEN, NOT THE MODE'S (2026-09-24). The one minted when the mode
+  # started is over an hour old by now — the cluster mode took 3702s on the
+  # 8d6ce58 run, past an access token's lifetime, across jobs that rotate the
+  # default realm's signing keys — and was refused `invalid_token`, so the
+  # takeover never named a leader. Minted here, against the stack as it is.
+  if ! mintAdminApiToken;
+  then
+    echo "  The scheduler's crash takeover needs an /admin-api token." >&2
+    return 1
+  fi
   local tool=(docker run --rm --network "${COMPOSE_PROJECT}_default"
               -v "${CURRENT_DIR}:/repo:ro"
               -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}"
