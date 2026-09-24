@@ -16,9 +16,10 @@
 //   * every binding: the AuthnRequest on HTTP-Redirect and on HTTP-POST, the
 //     Response on HTTP-POST and on HTTP-Artifact (resolved by pysaml2 over
 //     SOAP, with a signed ArtifactResolve);
-//   * signed and UNSIGNED AuthnRequests against
-//     `saml2.requireSignedAuthnRequests` — accepted in development, refused
-//     in product;
+//   * signed and UNSIGNED AuthnRequests: refused in both modes while the
+//     SP's metadata says AuthnRequestsSigned="true", and — with that
+//     metadata consumed saying "false" — decided by
+//     `saml2.requireSignedAuthnRequests` off, on and auto;
 //   * ForceAuthn, IsPassive (with and without a session), NameIDPolicy in
 //     four formats, and identity-provider-initiated SSO;
 //   * Single Logout both ways;
@@ -91,6 +92,7 @@ async function makeWorld(realmMode) {
   kit.must(md.status === 200 && w.sp, "the pysaml2 SP's metadata answered " +
            md.status);
   await kit.createApplication(realm, w.sp, ["saml2"], {});
+  w.spMetadata = md.text;
   await kit.consumeMetadata(realm, w.sp, md.text);
   const m2 = await fetch(rb + "/saml2/metadata/" + encodeURIComponent(w.sp));
   const idpXml = await m2.text();
@@ -226,6 +228,36 @@ async function signing(w) {
       expectRefused(s);
     });
   });
+
+  // AND AGAINST THE SETTING ITSELF: the same SP's metadata consumed with
+  // AuthnRequestsSigned="false" — an operator's upload of what it says of
+  // itself — so `saml2.requireSignedAuthnRequests` alone decides. `auto` is
+  // on in product and off in development.
+  const unsignedMetadata = w.spMetadata.replace(
+    /AuthnRequestsSigned="true"/, 'AuthnRequestsSigned="false"');
+  await kit.consumeMetadata(w.realm, w.sp, unsignedMetadata);
+  for (const [value, refused] of [
+    ["off", false], ["on", true],
+    ["auto", w.mode === "product"]]) {
+    await scenario(w, "saml2.requireSignedAuthnRequests=" + value + ": an " +
+                   "unsigned AuthnRequest is " +
+                   (refused ? "refused" : "accepted"), async function () {
+      await kit.setting(w.realm, "saml2.requireSignedAuthnRequests", value);
+      const s = await signIn(w, kit.browser(),
+                             "binding=redirect&response=post&unsigned=1");
+      await kit.check(w.mode + ": saml2.requireSignedAuthnRequests=" + value +
+                      " — an unsigned AuthnRequest is " +
+                      (refused ? "refused" : "accepted"), async function () {
+        if (refused) {
+          expectRefused(s);
+        } else {
+          expectAccepted(w, s);
+        }
+      });
+    });
+  }
+  await kit.setting(w.realm, "saml2.requireSignedAuthnRequests", "auto");
+  await kit.consumeMetadata(w.realm, w.sp, w.spMetadata);
   log.debug("Leaving signing().");
 }
 
