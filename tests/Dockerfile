@@ -201,6 +201,18 @@ RUN npm install --omit=dev && npm cache clean --force
 COPY tests/package*.json ./tests/
 RUN npm install --prefix ./tests && npm cache clean --force
 
+# ---------------------------------------------------------------------------
+# C2SP x509-LIMBO FOR tests/x509_limbo.js (#201), FETCHED HERE AND NEVER
+# COMMITTED: about two hundred of its cases carry a leaf's private key, and
+# this repository commits no key material. The script pins a commit and the
+# SHA-256 of what it fetches, and fails the build on anything else. Its own
+# layer above the source copy, so editing a test does not download forty
+# megabytes again; outside /usr/src/sts, so neither copy of the tree holds it.
+# ---------------------------------------------------------------------------
+COPY tests/tools/fetch-x509-limbo.sh /usr/src/corpora/fetch-x509-limbo.sh
+RUN /usr/src/corpora/fetch-x509-limbo.sh /usr/src/corpora/x509-limbo
+ENV STS_X509_LIMBO_DIR=/usr/src/corpora/x509-limbo
+
 # The repository. The root .dockerignore decides what is in it — see the header
 # — and the guard is what a context missing the suite says instead of failing
 # eighty lines later inside node with a message about a module.

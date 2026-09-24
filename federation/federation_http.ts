@@ -369,6 +369,11 @@ class FederationHttp {
     if (policy.ca) {
       requestOptions.ca = policy.ca;
     }
+    // The host check, and the verified chain held to the path rules (#201,
+    // `OutboundTls.checkServerIdentity()`); only when present.
+    if (policy.checkServerIdentity) {
+      requestOptions.checkServerIdentity = policy.checkServerIdentity;
+    }
     log.debug("Leaving FederationHttp.applyTls().");
   }
 

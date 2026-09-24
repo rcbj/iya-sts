@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3436** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3442** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 76
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 180
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 185
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
@@ -72,7 +72,7 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 74
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 143
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 94
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
@@ -658,6 +658,11 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0191` | A certificate authority build, or a key pair issued under one, named a SHA-1 signature algorithm (sha1-rsa or sha1-ecdsa) in a realm that is in product mode, where SHA-1 is never used (#181). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-PKI-0192` | An encryption key pair was asked for in a key type this service does not issue one of (rsa-3072 and ec-p256, #168). | the caller's refusal |
 | `STS-PKI-0193` | A certificate a merged certificate authority published from an Issuing CA it no longer holds could not be certified again from the live one. | none — logged. The key still signs; its certificate chains to an authority nothing publishes until the slot is certified again |
+| `STS-PKI-0194` | A certificate path a signer's key or an upload depends on breaks a NAME CONSTRAINT: a name of a certificate below a CA is outside what that CA permits or inside what it excludes, is malformed where it is constrained, is in a form constrained in a way this service does not evaluate, or the names and constraints are too many to compare (RFC 5280 section 4.2.1.10; pki.pathRuleProblem, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
+| `STS-PKI-0195` | A certificate on a signer's or an uploaded path carries a CRITICAL extension this service does not implement, which RFC 5280 section 4.2 says must be refused (pki.pathRuleProblem, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
+| `STS-PKI-0196` | A certificate on a signer's or an uploaded path breaks a rule of RFC 5280 section 4 a relying party holds it to: an extension twice, an unreadable basicConstraints, keyUsage, extKeyUsage, subjectAltName or nameConstraints, an empty subject without a critical subjectAltName, a CA with an empty subject, keyCertSign or nameConstraints on a certificate that is not a CA, or an ML-DSA key with a keyUsage RFC 9881 does not permit (pki.pathRuleProblem, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
+| `STS-PKI-0197` | A certificate on a path below its anchor is signed with a broken hash — MD2 or MD5 on every path, SHA-1 on every path but this service's own hierarchy in a development realm (#181) — and the path is refused (pki.pathRuleProblem, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
+| `STS-PKI-0198` | A certificate chain OpenSSL verified in a TLS handshake breaks the path rules every other path here is held to (pki.peerChainProblem, #201): on the main port the client certificate is treated as unverified (authorized false); on an outbound request the request fails as a TLS error. Also logged when the rules could not be asked. | none on the wire: an unverified client certificate, or the family's own failure for an outbound request |
 
 ## STS-ENROLL
 
@@ -2567,6 +2572,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0141` | An entry of spiffe.brokers was refused at the console or /admin-api: not a SPIFFE ID, or no reference type from pid, k8s and * (#170). | a refused console or management API action |
 | `STS-SPIFFE-0142` | A rootless Podman workload was not attested by the docker attestor because spiffe.dockerUseRootlessPodman is off, SPIRE's rule; logged once per process (#170). | no docker selectors for that workload |
 | `STS-SPIFFE-0143` | A gRPC handler threw after the call waited for the cluster read barrier, so the exception could not reach grpc-js; a unary call is answered INTERNAL. | INTERNAL for a unary call |
+| `STS-SPIFFE-0144` | A certificate presented to the SPIRE Server or Broker API was signed by an authority this trust domain trusts and is refused: the two-certificate path breaks RFC 5280 (pki.verifyIssuedDirectly — a critical extension nothing here implements, a name constraint, a malformed certificate) or it is not a leaf X509-SVID (cA set, or a keyUsage without digitalSignature or with keyCertSign or cRLSign; X509-SVID section 4.3). #201. | UNAUTHENTICATED / PERMISSION_DENIED, as for any unverified caller |
 
 ## STS-TLS
 

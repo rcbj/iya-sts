@@ -662,6 +662,40 @@ The reply says exactly that, in those words. It is the same distinction the
 sign-out page draws about an assertion already issued: nothing consults this
 service when one is presented, and nothing can be made to.
 
+## How a certificate path is checked
+
+Every certificate path this service checks — a WebAuthn attestation, a SPIFFE
+node attestor's certificate, the certificate behind a key that signed an RFC
+7523 or 7522 assertion, a presented `x5c`, an uploaded chain, an X509-SVID at
+the SPIRE Server API, an OpenID4VCI key attestation, a client certificate on the
+main port and the server certificate of an outbound request — is held to ONE set
+of RFC 5280 rules (since #201):
+
+* the path is BUILT by trying every issuer whose name matches and whose key
+  verifies, backtracking past one that breaks a rule or has expired, within 12
+  certificates and 256 signature checks;
+* every certificate above the leaf is a CA, may sign certificates, and has a
+  pathLenConstraint the non-self-issued certificates below it respect;
+* NAME CONSTRAINTS are evaluated — DNS names, e-mail addresses, URIs, IP
+  addresses and directory names — including a leaf's host-like common name when
+  it has no subjectAltName, and a wildcard is refused where it reaches into an
+  excluded subtree;
+* a critical extension nothing here implements, an extension twice, a
+  certificate signed with MD5 or SHA-1 (SHA-1 is allowed on this service's own
+  hierarchy in a development realm only), an EC key not on a named curve, and a
+  malformed name or constraint are refused;
+* a client certificate OpenSSL verified on the main port that breaks these rules
+  is treated as unverified, and an outbound request whose server's chain breaks
+  them fails. An outbound request matches the host against the certificate's
+  subjectAltName only (RFC 9525), never its common name.
+
+What is deliberately NOT checked — the CA/Browser Forum's Web PKI rules, the
+rules RFC 5280 places on what a CA issues that a relying party is not asked to
+check (key identifiers, serial number length), extended key usage as a path
+rule, and certificate policies — is listed with the reason in the test that
+holds all of this to [C2SP x509-limbo](https://github.com/C2SP/x509-limbo),
+`tests/x509_limbo.js`.
+
 ## A signed token names its certificate chain
 
 Every JWT this service signs with a certified key can carry the chain of that

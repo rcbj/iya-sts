@@ -79,11 +79,15 @@
 // ===========================================================================
 
 import fs = require('fs');
+import net = require('net');
 import tls = require('tls');
 import helpers = require('./helpers');
 import config = require('./config');
 import mode = require('./mode');
 import errorCodes = require('./error_codes');
+// THE PATH RULES (#201): what OpenSSL verified is asked them too, in the host
+// check below. A leaf library that requires nothing of this one.
+import pki = require('./pki');
 
 // What a family hands in: its three settings, what it calls the request in a
 // sentence, whether product admits plain http to loopback, and its two codes.
@@ -115,6 +119,7 @@ interface TlsVerdict {
   rejectUnauthorized: boolean;
   ca?: string[];
   skipped: boolean;
+  checkServerIdentity?: (host: string, cert: any) => Error | undefined;
 }
 
 // The code a refused write of a development-only setting carries; it is
@@ -224,7 +229,8 @@ class OutboundTls {
     if (!file) {
       log.debug("Leaving OutboundTls.tlsVerdict(). Node's store.");
       return { ok: true, why: '', errorCode: '', rejectUnauthorized: true,
-               skipped: false };
+               skipped: false,
+               checkServerIdentity: OutboundTls.checkServerIdentity };
     }
     const pems = OutboundTls.caFilePems(file);
     if (typeof pems === 'string') {
@@ -238,7 +244,109 @@ class OutboundTls {
     log.debug("Leaving OutboundTls.tlsVerdict(). " + pems.length +
               " CA certificate(s) beside node's store.");
     return { ok: true, why: '', errorCode: '', rejectUnauthorized: true,
-             ca: tls.rootCertificates.concat(pems), skipped: false };
+             ca: tls.rootCertificates.concat(pems), skipped: false,
+             checkServerIdentity: OutboundTls.checkServerIdentity };
+  }
+
+  // -------------------------------------------------------------------------
+  // IS `host` A NAME THE CERTIFICATE HOLDS, AS RFC 9525 READS IT (#201)?
+  // '' when it is, a sentence when it is not. Node's own
+  // `tls.checkServerIdentity()` implements RFC 6125, and x509-limbo found the
+  // two places it is more permissive than RFC 9525, which obsoleted it:
+  //
+  //   * it falls back to the subject's COMMON NAME when the certificate has
+  //     no DNS-ID — RFC 9525 section 6.3: a client "MUST NOT seek a match
+  //     for a reference identifier of CN-ID";
+  //   * it accepts a wildcard that is PART of the left-most label (`f*.`,
+  //     `*oo.`) — section 6.3: the wildcard is the complete left-most label
+  //     or nothing, and it matches exactly one label.
+  //
+  // So the match is the subjectAltName's DNS-IDs and IP-IDs only, a wildcard
+  // DNS-ID only as `*.` in front of at least two labels, and an IP address
+  // compared as an address, not as a spelling.
+  // -------------------------------------------------------------------------
+  static hostNameProblem(host: string, cert: any): string {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.hostNameProblem(). " + host);
+    const wanted = String(host || '').replace(/^\[|\]$/g, '')
+      .replace(/\.$/, '').toLowerCase();
+    const entries = String((cert && cert.subjectaltname) || '')
+      .split(/,\s*/).filter(Boolean);
+    const ipOf = function (text: string): string {
+      log.debug("Entering ipOf().");
+      const bare = String(text).trim().replace(/^\[|\]$/g, '');
+      let out = '';
+      if (net.isIPv4(bare)) {
+        out = bare;
+      } else if (net.isIPv6(bare)) {
+        // The URL parser writes an IPv6 address in RFC 5952's one form.
+        out = new URL('http://[' + bare + ']/').hostname;
+      }
+      log.debug("Leaving ipOf().");
+      return out;
+    };
+    const isIp = !!ipOf(wanted);
+    const matched = entries.some(function (entry) {
+      const at = entry.indexOf(':');
+      const kind = entry.slice(0, at);
+      const value = entry.slice(at + 1).trim();
+      if (isIp) {
+        return kind === 'IP Address' && ipOf(value) === ipOf(wanted);
+      }
+      if (kind !== 'DNS') {
+        return false;
+      }
+      const name = value.replace(/\.$/, '').toLowerCase();
+      if (name === wanted) {
+        return true;
+      }
+      const rest = name.slice(1);
+      if (name.indexOf('*.') !== 0 || rest.indexOf('*') >= 0 ||
+          rest.split('.').length < 3) {
+        return false;
+      }
+      const dot = wanted.indexOf('.');
+      return dot > 0 && wanted.slice(dot) === rest;
+    });
+    log.debug("Leaving OutboundTls.hostNameProblem(). " + matched);
+    return matched ? ''
+      : (isIp ? 'IP: ' : 'Host: ') + wanted + ' is not in the ' +
+        'certificate\'s subjectAltName (' + (entries.join(', ') || 'none') +
+        '); the common name is not consulted (RFC 9525 section 6.3)';
+  }
+
+  // -------------------------------------------------------------------------
+  // THE HOST CHECK EVERY VERIFIED OUTBOUND REQUEST MAKES (#201): the host
+  // against the certificate's names (`hostNameProblem()`, RFC 9525), and
+  // then the chain OpenSSL verified held to `pki.pathRuleProblem()` —
+  // the rules every other path in this service is held to, which x509-limbo
+  // found OpenSSL does not apply in full (`pki.peerChainProblem()`). Handed
+  // to node as `checkServerIdentity` by every caller of `tlsVerdict()` that
+  // verifies, so a refusal is a TLS error on the request like any other.
+  // -------------------------------------------------------------------------
+  static checkServerIdentity(host: string, cert: any): Error | undefined {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.checkServerIdentity(). " + host);
+    const unnamed = OutboundTls.hostNameProblem(host, cert);
+    if (unnamed) {
+      log.debug("Leaving OutboundTls.checkServerIdentity(). Not its name.");
+      return Object.assign(new Error('Hostname/IP does not match ' +
+                                     'certificate\'s altnames: ' + unnamed),
+                           { code: 'ERR_TLS_CERT_ALTNAME_INVALID',
+                             reason: unnamed, host: host, cert: cert });
+    }
+    const problem = pki.peerChainProblem(cert);
+    if (problem) {
+      log.warn(errorCodes.tag('STS-PKI-0198') + 'outbound: the certificate ' +
+               'chain ' + host + ' presented verified and is refused: ' +
+               problem.why + '.');
+      log.debug("Leaving OutboundTls.checkServerIdentity(). The rules.");
+      return Object.assign(new Error('the certificate chain of ' + host +
+                                     ' breaks RFC 5280: ' + problem.why),
+                           { code: 'ERR_STS_PATH_RULES' });
+    }
+    log.debug("Leaving OutboundTls.checkServerIdentity().");
+    return undefined;
   }
 
   // The certificates in a PEM file, or a sentence saying why there are none.

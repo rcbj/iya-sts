@@ -2672,7 +2672,49 @@ const CODES = [
       'the live one.',
     spec: 'none — logged. The key still signs; its certificate chains to ' +
       'an authority nothing publishes until the slot is certified again' },
+  { code: 'STS-PKI-0194',
+    summary: 'A certificate path a signer\'s key or an upload depends on ' +
+      'breaks a NAME CONSTRAINT: a name of a certificate below a CA is ' +
+      'outside what that CA permits or inside what it excludes, is ' +
+      'malformed where it is constrained, is in a form constrained in a way ' +
+      'this service does not evaluate, or the names and constraints are ' +
+      'too many to compare (RFC 5280 section 4.2.1.10; pki.pathRuleProblem, ' +
+      '#201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
+  { code: 'STS-PKI-0195',
+    summary: 'A certificate on a signer\'s or an uploaded path carries a ' +
+      'CRITICAL extension this service does not implement, which RFC 5280 ' +
+      'section 4.2 says must be refused (pki.pathRuleProblem, #201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
+  { code: 'STS-PKI-0196',
+    summary: 'A certificate on a signer\'s or an uploaded path breaks a rule ' +
+      'of RFC 5280 section 4 a relying party holds it to: an extension ' +
+      'twice, an unreadable basicConstraints, keyUsage, extKeyUsage, ' +
+      'subjectAltName or nameConstraints, an empty subject without a ' +
+      'critical subjectAltName, a CA with an empty subject, keyCertSign or ' +
+      'nameConstraints on a certificate that is not a CA, or an ML-DSA key ' +
+      'with a keyUsage RFC 9881 does not permit (pki.pathRuleProblem, #201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
   // ===== ENROLL ============================================================
+  { code: 'STS-PKI-0197',
+    summary: 'A certificate on a path below its anchor is signed with a ' +
+      'broken hash — MD2 or MD5 on every path, SHA-1 on every path but this ' +
+      'service\'s own hierarchy in a development realm (#181) — and the ' +
+      'path is refused (pki.pathRuleProblem, #201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
+  { code: 'STS-PKI-0198',
+    summary: 'A certificate chain OpenSSL verified in a TLS handshake breaks ' +
+      'the path rules every other path here is held to ' +
+      '(pki.peerChainProblem, #201): on the main port the client ' +
+      'certificate is treated as unverified (authorized false); on an ' +
+      'outbound request the request fails as a TLS error. Also logged when ' +
+      'the rules could not be asked.',
+    spec: 'none on the wire: an unverified client certificate, or the ' +
+      'family\'s own failure for an outbound request' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -10387,6 +10429,15 @@ const CODES = [
       'read barrier, so the exception could not reach grpc-js; a unary ' +
       'call is answered INTERNAL.',
     spec: 'INTERNAL for a unary call' },
+  { code: 'STS-SPIFFE-0144',
+    summary: 'A certificate presented to the SPIRE Server or Broker API was ' +
+      'signed by an authority this trust domain trusts and is refused: the ' +
+      'two-certificate path breaks RFC 5280 (pki.verifyIssuedDirectly — a ' +
+      'critical extension nothing here implements, a name constraint, a ' +
+      'malformed certificate) or it is not a leaf X509-SVID (cA set, or a ' +
+      'keyUsage without digitalSignature or with keyCertSign or cRLSign; ' +
+      'X509-SVID section 4.3). #201.',
+    spec: 'UNAUTHENTICATED / PERMISSION_DENIED, as for any unverified caller' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +

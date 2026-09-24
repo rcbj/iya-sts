@@ -266,6 +266,12 @@ class GnapHttp {
       if (transport && transport.ca) {
         requestOptions.ca = transport.ca;
       }
+      // The host check, and the verified chain held to the path rules
+      // (#201, `OutboundTls.checkServerIdentity()`). Set only when present:
+      // node refuses an explicit `undefined` (see ssf_http.ts).
+      if (transport && transport.checkServerIdentity) {
+        requestOptions.checkServerIdentity = transport.checkServerIdentity;
+      }
       try {
         request = (secure ? https : http).request(requestOptions,
                                                   function (response) {

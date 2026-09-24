@@ -2116,6 +2116,16 @@ function entriesOf(crl, crlIssuerKey, indirect) {
     }
     const serial = normalSerial(Buffer.from(entry.userCertificate.valueBlock
       .valueHexView).toString('hex'));
+    // THE SAME CERTIFICATE TWICE (#201) makes the list ambiguous — which
+    // entry's reason and date is the answer? — so the list is unusable
+    // rather than answered by whichever entry was read last (x509-limbo
+    // `crl::structure::crl-duplicate-revoked-serial`; CA/Browser Forum
+    // servercert issue 589).
+    if (entries.has(attributed + '|' + serial)) {
+      problem = 'it lists the same certificate (serial ' + serial + ') ' +
+                'twice, so what it says about that certificate is ambiguous';
+      return;
+    }
     const reason = reasonOfEntry(entry);
     entries.set(attributed + '|' + serial, {
       revokedAt: entry.revocationDate && entry.revocationDate.value
@@ -2137,7 +2147,22 @@ async function readCrl(der, context) {
   }
   let crl;
   try {
-    crl = pkijs.CertificateRevocationList.fromBER(arrayBufferOf(bytes));
+    // **ASN1JS STOPS AT TEN THOUSAND NODES BY DEFAULT (#201)**, and a CRL
+    // is about five nodes an entry: every list with more than two thousand
+    // or so revocations "did not parse", so this service could not read the
+    // CRL of any CA that had revoked much at all (x509-limbo
+    // `crl::structure::crl-very-large`, ten thousand entries). The bound is
+    // the input itself — a DER node is at least two bytes, so a list can
+    // hold no more nodes than it has bytes — and the input is already
+    // bounded by `pki.revocationMaxCrlBytes` at the fetch.
+    const asn = asn1js.fromBER(arrayBufferOf(bytes),
+                               { maxNodes: Math.max(10000, bytes.length),
+                                 maxContentLength: Math.max(16 * 1024 * 1024,
+                                                            bytes.length) });
+    if (asn.offset === -1) {
+      throw new Error(asn.result.error || 'not DER');
+    }
+    crl = new pkijs.CertificateRevocationList({ schema: asn.result });
   } catch (e) {
     log.debug('Leaving readCrl(). It did not parse.');
     return { ok: false, why: 'what it answered is not a CRL: ' + e.message };
@@ -2204,6 +2229,22 @@ async function readCrl(der, context) {
       return ext.extnID === oid;
     })[0] || null;
   };
+  // THE cRLNumber (#201): RFC 5280 section 5.2.3 — "conforming CRL issuers
+  // MUST include this extension in all CRLs" and "MUST mark this extension
+  // as non-critical". A list without one cannot be ordered against another
+  // list from the same issuer, which is what a delta and a cache rely on,
+  // and x509-limbo holds a relying party to both halves
+  // (`crl::crlnumber-missing`, `crl::crlnumber-critical`).
+  const crlNumber = find(OID.CRL_NUMBER);
+  if (!crlNumber || crlNumber.critical) {
+    log.debug('Leaving readCrl(). The cRLNumber is missing or critical.');
+    return { ok: false,
+             why: crlNumber
+               ? 'its cRLNumber is marked critical, which RFC 5280 section ' +
+                 '5.2.3 forbids'
+               : 'it carries no cRLNumber, which RFC 5280 section 5.2.3 ' +
+                 'requires in every CRL' };
+  }
   let facts;
   try {
     facts = {
@@ -3842,6 +3883,78 @@ function summarise(links, checked) {
 }
 
 // ---------------------------------------------------------------------------
+// A LIST IN HAND (#201): what `crlRoute()` concludes about one certificate
+// from CRLs it already holds, for lists that did not come from a fetch —
+// C2SP x509-limbo's CRL cases carry the list beside the chain and name no
+// distribution point, and `tests/x509_limbo.js` drives them through here.
+//
+// **IT IS THE SAME READER, NOT A SECOND ONE.** `readCrl()` verifies the
+// list's signature against the certificate's issuer, its cRLSign, its
+// critical extensions, its freshness and every entry, exactly as for a
+// fetched list; `scopeProblem()` asks whether it covers the certificate, as
+// for a distribution point naming no CRL issuer and no reasons (a complete
+// list for every reason, RFC 5280 section 6.3.3); an entry is looked up
+// under the issuer's name and the serial as `crlRoute()` looks it up.
+// Nothing is dialled: a list the issuer's certificate does not verify is not
+// retried against a caIssuers address it names, because a list in hand has
+// no fetch to borrow the authorisation of.
+//
+// `input.certificate` and `input.issuer` in any spelling `x509Of()` reads;
+// `input.crls` DER or PEM buffers. Resolves `{ status, why }`, `status`
+// one of `good`, `revoked` and `unknown`. Never rejects.
+// ---------------------------------------------------------------------------
+async function crlInHandVerdict(input) {
+  log.debug('Entering crlInHandVerdict().');
+  const cert = x509Of(input && input.certificate);
+  const issuer = x509Of(input && input.issuer);
+  const target = cert && issuer
+    ? targetOf({ cert: cert, issuerCert: issuer, depth: 0,
+                 serialHex: cert.serialNumber, offered: [],
+                 subject: String(cert.subject || '') })
+    : null;
+  if (!target) {
+    log.debug('Leaving crlInHandVerdict(). Unreadable.');
+    return { status: 'unknown',
+             why: 'the certificate or its issuer could not be read' };
+  }
+  const point = { crlIssuerNamed: false, keys: [], reasons: ALL_REASONS };
+  const context = Object.assign({}, crlContextFor(target, point),
+                                { target: null, purpose: 'base' });
+  const key = target.issuerKey + '|' + target.serial;
+  const problems = [];
+  let covered = 0;
+  const lists = (input && input.crls) || [];
+  for (let i = 0; i < lists.length; i++) {
+    const read = await readCrl(Buffer.from(lists[i]), context);
+    if (!read.ok) {
+      problems.push('list ' + i + ': ' + read.why);
+      continue;
+    }
+    const outOfScope = scopeProblem(read, target, point);
+    if (outOfScope) {
+      problems.push('list ' + i + ': ' + outOfScope);
+      continue;
+    }
+    const entry = read.entries.get(key) || null;
+    if (entry && entry.reasonCode !== REASON_REMOVE_FROM_CRL) {
+      log.debug('Leaving crlInHandVerdict(). Revoked.');
+      return { status: 'revoked',
+               why: 'list ' + i + ' lists it as revoked since ' +
+                    entry.revokedAt + ' (' + entry.reason + ')' };
+    }
+    covered |= (point.reasons & read.idp.reasons);
+  }
+  if ((covered & ALL_REASONS) === ALL_REASONS) {
+    log.debug('Leaving crlInHandVerdict(). Good.');
+    return { status: 'good', why: 'no list names it' };
+  }
+  log.debug('Leaving crlInHandVerdict(). Unknown.');
+  return { status: 'unknown',
+           why: problems.length ? problems.join('; ')
+                                : 'the lists cover only some reasons' };
+}
+
+// ---------------------------------------------------------------------------
 // THE ONE FUNCTION. Asynchronous because a foreign list may have to be
 // fetched; never rejects.
 // ---------------------------------------------------------------------------
@@ -4757,6 +4870,7 @@ module.exports = {
   CODE_UNKNOWN: CODE_UNKNOWN,
   policy: policy,
   verdictFor: verdictFor,
+  crlInHandVerdict: crlInHandVerdict,
   localVerdictFor: localVerdictFor,
   registeredVerdictFor: registeredVerdictFor,
   registeredKeyVerdictFor: registeredKeyVerdictFor,

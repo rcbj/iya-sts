@@ -515,7 +515,11 @@ The response endpoint marks the refusal with `verified.statusErrorCode`
 `oid4vp.statusOptionalIssuers` (empty) — group OID4VP; and
 `oid4vci.statusListTtlS` (300), `oid4vci.statusListLifetimeS` (86400),
 `oid4vci.keyAttestationRequired` (off) and
-`oid4vci.keyAttestationTrustedCertificates` (empty) — group OID4VCI. So
+`oid4vci.keyAttestationTrustedCertificates` (empty) — group OID4VCI. (A key
+attestation's `x5c` leaf is trusted only through `pki.verifyIssuedDirectly()`
+since #201 — issued directly by a trusted attester AND the two-certificate path
+holding RFC 5280, where it was `checkIssued()` and a signature: an expired leaf,
+a CA as the leaf or an unimplemented critical extension vouched for the key.) So
 `/admin/oid4vp`, `/admin/oid4vci` and `/admin-api/config` carry them, and
 `/admin/vc-status` is where the lists themselves are read and changed. **On by default in both modes**: the screen
 offers every mechanism the service supports, and this one signs in only an
