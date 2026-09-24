@@ -3599,8 +3599,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'every certificate this service issues resolves to. Ungated, and ' +
           'it has to be: a relying party fetches this before it has decided ' +
           'to trust anything. EVERY CERTIFICATE NAMES IT OVER PLAIN HTTP, on ' +
-          '`pki.httpPort`, a second listener that answers /pki/ and nothing ' +
-          'else — RFC 5280 section 8 says a CA SHOULD NOT write an https or ' +
+          '`pki.httpPort`, a second listener that answers /pki/ (and ' +
+          'SCEP, since #210) and nothing else — RFC 5280 section 8 says a CA SHOULD NOT write an https or ' +
           'ldaps URI into an extension, and RFC 5019 section 5 says an OCSP ' +
           'responder MUST answer plain HTTP. The main port answers these ' +
           'paths too.' },
@@ -10606,7 +10606,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'requester and encrypted to the RA; the reply is a CertRep signed ' +
           'by the RA. Refusals after the message is read are CertRep FAILURE ' +
           'with a failInfo; not refused over plain HTTP in either mode, ' +
-          'because the security is the CMS envelope (RFC 8894 section 2.1).' },
+          'because the security is the CMS envelope (RFC 8894 section 2.1) ' +
+          '— and served on the plain-HTTP listener (`pki.httpPort`) as well ' +
+          'as the main port, since sscep and most device firmware speak no ' +
+          'TLS (#210). A POST is application/x-pki-message, or ' +
+          'application/octet-stream as micromdm\'s client sends it (#211).' },
   { path: '/enroll/scep/pkiclient.exe', group: 'SCEP',
     name: 'The SCEP server (CGI name)', specs: ['rfc8894'],
     effect: 'as /enroll/scep',

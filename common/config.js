@@ -4399,8 +4399,11 @@ const SETTINGS = [
     env: 'PKI_HTTP_PORT', type: 'port', dflt: 8082, runtime: false,
     restartReason: 'the listener is bound when the process starts',
     description: 'A second HTTP listener, PLAIN rather than TLS, that ' +
-                 'answers the revocation endpoints under `/pki/` and refuses ' +
-                 'every other path. Every certificate this service issues ' +
+                 'answers the revocation endpoints under `/pki/` and SCEP ' +
+                 'under `/enroll/scep` (RFC 8894 is HTTP and secures its ' +
+                 'own messages; sscep and most device firmware speak no ' +
+                 'TLS), and refuses every other path. Every certificate ' +
+                 'this service issues ' +
                  'names it for its CRL, its OCSP responder and its issuer\'s ' +
                  'certificate.\n\n**WHY PLAIN.** RFC 5280 section 8 says a ' +
                  'CA SHOULD NOT put an https URI in an extension — a client ' +
