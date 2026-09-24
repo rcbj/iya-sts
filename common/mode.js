@@ -317,6 +317,11 @@ function spoilsOnPurpose() {
 // write (STS-CORE-0103); the stronger values of each setting stay allowed.
 // JOSE's `RSA1_5` is refused in both modes already (`common/crypto.js`).
 //
+// AND ONE MORE SINCE #202 (2026-09-24), which no setting governs: a JWS
+// verified with an RSA key under 2048 bits — RFC 7518 section 3.3 says
+// MUST — is refused in product and accepted in development (`crypto.js`'s
+// rsaKeyProblem(); REQUIREMENTS `jose-key-sizes`).
+//
 // TWO MORE SINCE #182 (2026-09-23):
 //
 //   * `scim.digestMd5` on — MD5 in SCIM's HTTP Digest. RFC 7616 section 3.3
@@ -1697,6 +1702,21 @@ const REQUIREMENTS = [
              'refused in both modes.',
     where: 'saml/document_settings.ts, saml/saml2_sso.ts, common/crypto.js, ' +
            'common/pki.js, common/applications.js, scim/scim_auth.ts' },
+  // #202 (2026-09-24), found by C2SP Wycheproof's json_web_key vectors.
+  { id: 'jose-key-sizes',
+    what: 'A JWS is verified only with an RSA key of the size RFC 7518 ' +
+          'requires',
+    development: 'An RSA key under 2048 bits (RFC 7518 section 3.3, RFC ' +
+                 '8230 section 5 for COSE) still verifies, so a client ' +
+                 'holding one can be exercised.',
+    product: 'It is refused at the signature check, in the shared ' +
+             'verifier and for a WebAuthn RS*/PS* key. In ' +
+             'BOTH modes an empty HMAC key, an RSA exponent below 3 or even ' +
+             '(a forgery, not a weak key), an RSA modulus with the ROCA ' +
+             'fingerprint (CVE-2017-15361), a JWK whose use is not "sig" ' +
+             'or whose key_ops lack "verify", and a segment that is not ' +
+             'canonical base64url are refused.',
+    where: 'common/crypto.js' },
   // #182 (2026-09-23).
   { id: 'kerberos-deprecated-enctypes',
     what: 'No Kerberos key, ticket or exchange uses an enctype RFC 8429 ' +
