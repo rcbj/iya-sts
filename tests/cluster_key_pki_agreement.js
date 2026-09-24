@@ -824,6 +824,74 @@ async function unadoptedMergeSection(t, kek) {
   log.debug("Leaving unadoptedMergeSection().");
 }
 
+// ---------------------------------------------------------------------------
+// 6d. A CERTIFICATE FROM THE BRANCH A REBUILD REPLACED IS REPORTED, NOT KEPT
+// QUIETLY (2026-09-24).
+//
+// `sts_pki_distribution_points` in cluster mode: *CN=XML signing (RS256) …
+// with no authority found*. One process certified a new realm's XML key from
+// its first branch and committed; another process's `POST …/pki/build`,
+// whose copy never recorded that slot, rebuilt the branch and wrote after it.
+// A tier and a certificate are different members, so each side won the one it
+// changed — the rebuilt Issuing CA and the slot signed by the one it replaced
+// — and the row published a certificate from an authority nothing publishes.
+// `pki_merge.js`'s orphanedSlots() names such a slot; the keystore hands the
+// list to `pki.js` in the process whose write made the row.
+// ---------------------------------------------------------------------------
+async function orphanedSlotSection(t, kek) {
+  log.debug("Entering orphanedSlotSection().");
+  t.log.info('=== 6d. a slot from a replaced Issuing CA is reported ===');
+  const store = sharedStore(20);
+  const seed = {
+    version: 2, scope: 'acme',
+    intermediate: { serialHex: '01', certificatePem: 'I1' },
+    issuing: { xml: { serialHex: '02', certificatePem: 'X1' } },
+    revoked: {},
+    crlNumbers: {},
+    issuedKeyPairs: []
+  };
+  store.rows.set('pki:acme', crypto.encryptWithKek(kek, JSON.stringify(seed),
+                                                   'pki-hierarchy'));
+  const a = await startNode(store, { adopted: [], published: [] });
+  const b = await startNode(store, { adopted: [], published: [] });
+  const told = [];
+  a.onOrphanedCertificates(function (scopeId, slots) {
+    told.push({ scope: scopeId, slots: slots });
+  });
+
+  // B CERTIFIES the XML key from the first branch, and commits first.
+  const future = new Date(Date.now() + 86400000).toISOString();
+  const certified = JSON.parse(JSON.stringify(b.pkiFor('acme')));
+  certified.certs = { 'xml:RS256': { serialHex: '71', useCase: 'xml',
+                                     chainPem: ['X1', 'I1'],
+                                     notAfter: future } };
+  b.attachPki('acme', certified);
+  await b.settleAll();
+
+  // A REBUILDS from its copy, which never recorded that slot.
+  const rebuilt = JSON.parse(JSON.stringify(a.pkiFor('acme')));
+  rebuilt.intermediate = { serialHex: '0b', certificatePem: 'I2' };
+  rebuilt.issuing = { xml: { serialHex: '0c', certificatePem: 'X2' } };
+  a.attachPki('acme', rebuilt);
+  const outcome = await a.pkiSettled('acme');
+
+  const row = opened(kek, store.rows.get('pki:acme'));
+  t.equal(row.issuing.xml.certificatePem, 'X2',
+          'the rebuilt Issuing CA is the row\'s', outcome);
+  t.check(told.length === 1 && told[0].scope === 'acme' &&
+          told[0].slots.length === 1 && told[0].slots[0] === 'xml:RS256',
+          'THE SLOT SIGNED BY THE REPLACED ISSUING CA IS REPORTED to the ' +
+          'process whose write merged the row, which is what lets pki.js ' +
+          'certify it again from the live one', told);
+  t.check(!pkiMerge.orphanedSlots({
+    issuing: { xml: { certificatePem: 'X2' } },
+    certs: { 'xml:RS256': { useCase: 'xml', chainPem: ['X2', 'I2'] },
+             'jose:RS256': { useCase: 'jose', chainPem: ['J1', 'I1'] } }
+  }).length, 'and a slot signed by the live Issuing CA, or under a use case ' +
+             'the row holds no Issuing CA for, is not');
+  log.debug("Leaving orphanedSlotSection().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-cluster-keys-'));
@@ -852,6 +920,7 @@ async function run(t) {
     await mergeSection(t, kek);
     await publishedNotRevokedSection(t, kek);
     await unadoptedMergeSection(t, kek);
+    await orphanedSlotSection(t, kek);
     await buildSection(t);
     await crlSection(t);
     await spiffeSection(t);

@@ -5839,6 +5839,97 @@ async function recertifyUseCase(scopeId, useCaseId) {
   return { ok: true, recertified: done, failed: failed };
 }
 
+// ---------------------------------------------------------------------------
+// A SLOT A MERGE LEFT UNDER AN ISSUING CA THE ROW NO LONGER HOLDS, CERTIFIED
+// AGAIN FROM THE ONE IT DOES (2026-09-24). `keystore.js` calls this, through
+// `onOrphanedCertificates()`, in the one process whose write merged the row;
+// `pki_merge.js`'s orphanedSlots() argues how such a slot arises and why it is
+// reported rather than dropped.
+//
+// **A RENEWAL IN `recertifyUseCase()`'S SENSE, ONE SLOT AT A TIME**: the same
+// key, read from the record, and the same key usage, read from the certificate
+// being replaced — `certifyKeySet()` gives the RSA key `keyEncipherment`, and
+// a re-issue that dropped it would be refused by a strict validator for the
+// decryption the key actually does. The kid and a key generation's own slot
+// are kept, so the certificate lands where it was. **NOTHING IS REVOKED**: the
+// certificate replaced was signed by an Issuing CA the rebuild already
+// superseded, whose own list is where it belongs, and `certify()` keeps its
+// serial in the issued register (#185).
+//
+// Asked again per slot before signing, because the slot may have been
+// certified from the live CA since the merge — by the rebuild's own re-mint,
+// or by a second report of the same merge.
+// ---------------------------------------------------------------------------
+async function recertifyOrphanedSlots(scopeId, slots) {
+  log.debug('Entering recertifyOrphanedSlots(). scope=' + scopeId);
+  const id = String(scopeId);
+  let done = 0;
+  const failed = [];
+  for (let i = 0; i < (slots || []).length; i++) {
+    const name = String(slots[i]);
+    const row = rawRowFor(id) || {};
+    const was = (row.certs || {})[name];
+    const ca = was ? (row.issuing || {})[was.useCase] : null;
+    if (!was || !ca || (was.chainPem || [])[0] === ca.certificatePem) {
+      continue;
+    }
+    let publicPem = was.subjectPublicKeyPem || '';
+    if (!publicPem) {
+      try {
+        publicPem = new nodeCrypto.X509Certificate(was.certificatePem)
+          .publicKey.export({ type: 'spki', format: 'pem' });
+      } catch (e) {
+        failed.push(name + ': ' + e.message);
+        continue;
+      }
+    }
+    let usages = null;
+    try {
+      usages = await keyUsageOf({ pem: was.certificatePem });
+    } catch (e) {
+      log.debug("Caught in recertifyOrphanedSlots(): " +
+                ((e && e.message) || e));
+      usages = null;
+    }
+    const made = await certify(id, was.useCase, {
+      slot: was.slot, alg: was.alg, keyAlg: was.keyAlg,
+      kid: was.kid || '',
+      generationSlot: name !== slotKey(was.useCase, was.slot),
+      label: was.label, commonName: subjectCnOf(was.subject) || was.slot,
+      publicKeyPem: publicPem,
+      keyUsage: usages && usages.length ? usages : undefined,
+      pinned: was.pinned, privateKeyPem: was.privateKeyPem,
+      publicKeyPemStored: was.publicKeyPem
+    });
+    if (made.ok) {
+      done += 1;
+    } else {
+      failed.push(name + ': ' + made.errors.join(' '));
+    }
+  }
+  if (failed.length) {
+    log.warn(errorCodes.tag('STS-PKI-0193') + 'pki: ' + failed.length +
+             ' certificate(s) of "' + (id || 'default') + '" left under an ' +
+             'Issuing CA it no longer holds could not be certified again: ' +
+             failed.join('; '));
+  } else if (done) {
+    log.info('pki: ' + done + ' certificate(s) of "' + (id || 'default') +
+             '" that a merge left under an Issuing CA it no longer holds ' +
+             'were certified again from the live one.');
+  }
+  log.debug('Leaving recertifyOrphanedSlots(). ' + done + ' re-minted.');
+  return { ok: !failed.length, recertified: done, failed: failed };
+}
+
+keystore.onOrphanedCertificates(function (scopeId, slots) {
+  Promise.resolve(recertifyOrphanedSlots(scopeId, slots)).catch(function (e) {
+    log.error(errorCodes.tag('STS-PKI-0193') + 'pki: the certificates of "' +
+              (scopeId || 'default') + '" left under an Issuing CA it no ' +
+              'longer holds could not be certified again: ' +
+              ((e && e.message) || e));
+  });
+});
+
 // Two serials that are not the same certificate. Written out because a renewal
 // that produced an identical serial — which cannot happen, but a future
 // caller-supplied serial could — would otherwise revoke the certificate it had
@@ -8107,6 +8198,7 @@ module.exports = {
   // same one, and the two doors for material an operator supplied.
   reissueUseCase: reissueUseCase,
   recertifyUseCase: recertifyUseCase,
+  recertifyOrphanedSlots: recertifyOrphanedSlots,
   importCa: importCa,
   pinKeyPair: pinKeyPair,
   certificatesFor: certificatesFor,

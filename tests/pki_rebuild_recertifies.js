@@ -27,6 +27,14 @@
 //      again from the authority the row holds when it records it. Driven
 //      deterministically: the encoder is wrapped so that the authority is
 //      replaced between the signature and the record.
+//   C. **A SLOT ANOTHER PROCESS CERTIFIED FROM THE OLD BRANCH (2026-09-24).**
+//      A rebuild's re-mint (A) re-issues what ITS process's copy recorded,
+//      and a slot another worker certified from the first branch reaches the
+//      row through the cluster's merge, still signed by an Issuing CA the row
+//      no longer holds. `pki_merge.js` reports it and `keystore.js` hands it
+//      to `recertifyOrphanedSlots()`; driven here by rebuilding WITHOUT the
+//      re-mint, which leaves exactly that row. The certificate must come back
+//      over the same key, the same kid and the same key usage.
 //
 // Mutation-checked by hand on the day: removing the re-mint in A, and the
 // signing-again branch in B, each turns its section red.
@@ -49,6 +57,8 @@ const log = require('bunyan').createLogger({ name: 'pki_rebuild_recertifies',
 const REALM_BUILD = 'rebuild-remint-' + nodeCrypto.randomBytes(3)
   .toString('hex');
 const REALM_FLIGHT = 'rebuild-flight-' + nodeCrypto.randomBytes(3)
+  .toString('hex');
+const REALM_ORPHAN = 'rebuild-orphan-' + nodeCrypto.randomBytes(3)
   .toString('hex');
 
 function issuedBy(certificatePem, caPem) {
@@ -187,10 +197,60 @@ async function sectionInFlight(t) {
   log.debug("Leaving sectionInFlight().");
 }
 
+async function sectionOrphaned(t) {
+  log.debug("Entering sectionOrphaned().");
+  t.log.info('=== C. a slot left under a replaced Issuing CA is certified ' +
+             'again from the live one ===');
+  const built = await pki.ensureScope(REALM_ORPHAN);
+  t.check(built.ok, 'the realm has a branch', JSON.stringify(built.errors));
+  const keys = helpers.stsKeysFor.of(REALM_ORPHAN);
+  const first = await pki.certifyKeySet(REALM_ORPHAN, keys);
+  t.check(first.ok, 'its keys are certified from the first branch',
+          JSON.stringify(first.failed || []));
+  const before = pki.certificateFor(REALM_ORPHAN, 'xml', 'RS256');
+  // THE BRANCH ONLY — no re-mint — which is the row a merge leaves when the
+  // slot was certified by a process whose copy the rebuild never saw.
+  const rebuilt = await pki.buildChain(REALM_ORPHAN,
+                                       { organisation: 'Rebuild Orphan' });
+  t.check(rebuilt.ok, 'the branch is rebuilt',
+          (rebuilt.errors || []).join(' '));
+  t.equal(staleSlots(REALM_ORPHAN, 'xml').join(', '), 'xml:RS256',
+          'the XML slot is left under the Issuing CA the rebuild replaced');
+  const again = await pki.recertifyOrphanedSlots(REALM_ORPHAN,
+                                                 ['xml:RS256']);
+  t.check(again.ok && again.recertified === 1,
+          'recertifyOrphanedSlots() answers one re-minted',
+          JSON.stringify(again));
+  t.equal(staleSlots(REALM_ORPHAN, 'xml').join(', '), '',
+          'THE XML SLOT IS NOW SIGNED BY THE LIVE XML ISSUING CA');
+  const after = pki.certificateFor(REALM_ORPHAN, 'xml', 'RS256');
+  t.equal(after.subjectKeyFingerprint, before.subjectKeyFingerprint,
+          'over the same key');
+  t.equal(after.kid, before.kid, 'with the same kid');
+  const usages = await pki.keyUsageOf({ pem: after.certificatePem });
+  t.check((usages || []).indexOf('keyEncipherment') >= 0,
+          'and the same key usage — keyEncipherment kept, because this key ' +
+          'also decrypts', JSON.stringify(usages));
+  const published = pki.publishedCertificateFor(REALM_ORPHAN, 'xml', 'RS256',
+                                                after.kid);
+  t.check(!!published &&
+          published.certificatePem === after.certificatePem &&
+          issuedBy(published.certificatePem,
+                   keystore.pkiFor(REALM_ORPHAN).issuing.xml.certificatePem),
+          'and it is the certificate the XML key publishes — what the SAML ' +
+          'metadata carries');
+  const quiet = await pki.recertifyOrphanedSlots(REALM_ORPHAN,
+                                                 ['xml:RS256']);
+  t.equal(quiet.recertified, 0,
+          'a slot already signed by the live CA is left alone — a second ' +
+          'report of the same merge issues nothing');
+  log.debug("Leaving sectionOrphaned().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const hadRoot = !!keystore.pkiFor(pki.SERVICE_SCOPE);
-  [REALM_BUILD, REALM_FLIGHT].forEach(function (id) {
+  [REALM_BUILD, REALM_FLIGHT, REALM_ORPHAN].forEach(function (id) {
     if (!realms.get(id)) {
       realms.create({ id: id, name: id });
     }
@@ -198,10 +258,11 @@ async function run(t) {
   try {
     await sectionBuildAction(t);
     await sectionInFlight(t);
+    await sectionOrphaned(t);
   } finally {
     // Whatever this file made, it removes: `run.js` runs every file in one
     // process, and a Root left behind is the Root `tests/pki.js` meets.
-    [REALM_BUILD, REALM_FLIGHT].forEach(function (id) {
+    [REALM_BUILD, REALM_FLIGHT, REALM_ORPHAN].forEach(function (id) {
       keystore.attachPki(id, null);
       if (realms.get(id)) {
         realms.remove(id);

@@ -1771,6 +1771,14 @@ const CODES = [
       'was asserted again where it is itself consistent.',
     spec: 'none — logged. A supersession is permanent; adopting the copy ' +
       'put a replaced Intermediate back in every process' },
+  { code: 'STS-KEYS-0076',
+    summary: 'A certificate authority merged with a copy another process ' +
+      'had written publishes certificates its own Issuing CAs did not sign ' +
+      '— keys certified from the branch a rebuild replaced — and each is ' +
+      'certified again from the live Issuing CA.',
+    spec: 'none — logged. The evidence of a certification that crossed a ' +
+      'rebuild; the row would otherwise publish a certificate no published ' +
+      'authority signed' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -2658,6 +2666,12 @@ const CODES = [
     summary: 'An encryption key pair was asked for in a key type this ' +
       'service does not issue one of (rsa-3072 and ec-p256, #168).',
     spec: 'the caller\'s refusal' },
+  { code: 'STS-PKI-0193',
+    summary: 'A certificate a merged certificate authority published from ' +
+      'an Issuing CA it no longer holds could not be certified again from ' +
+      'the live one.',
+    spec: 'none — logged. The key still signs; its certificate chains to ' +
+      'an authority nothing publishes until the slot is certified again' },
   // ===== ENROLL ============================================================
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
