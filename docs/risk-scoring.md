@@ -361,6 +361,98 @@ certificate chain presented to it.
 | `iplist.operator-deny`, `iplist.operator-allow` | your own lists, one per realm | the same |
 | `fido.mds3` | every FIDO-certified authenticator model and its status reports, by AAGUID | the MDS3 BLOB exactly as FIDO publishes it: one signed JWT |
 
+### Loading datasets on a new deployment
+
+A new instance or cluster starts with no datasets at all. Scoring still runs,
+but with no location, network, Tor or authenticator signals, and Monitoring →
+Risk shows every dataset as missing. Nothing is loaded for you. Loading the
+data is a step of the installation, like setting the database password.
+
+**1. Decide which providers you will use, and accept their terms.** Read the
+table in [Providers and their terms](#providers-and-their-terms) first. DB-IP
+Lite is the recommended default for geolocation and ASN data. Accepting is
+recorded under your name, so do it as the person responsible for the
+deployment. Pass the provider names to the loader's `--accept-terms`, or
+accept on Monitoring → Risk or with `POST /admin-api/risk/accept-terms`. The
+provider names are `dbip-lite`, `ipinfo-lite`, `tor-project`, `firehol` and
+`fido-mds3`. Your own allow and deny lists need no acceptance.
+
+**2. Write a manifest.** This one loads DB-IP Lite's city and ASN data, the Tor
+exit list, FireHOL's level 1 reputation list and the FIDO metadata:
+
+```json
+{ "datasets": [
+  { "dataset": "geo.city", "format": "dbip-city-csv",
+    "url": "https://download.db-ip.com/free/dbip-city-lite-2026-09.csv.gz" },
+  { "dataset": "asn", "format": "dbip-asn-csv",
+    "url": "https://download.db-ip.com/free/dbip-asn-lite-2026-09.csv.gz" },
+  { "dataset": "iplist.tor-exit", "format": "ip-list",
+    "url": "https://check.torproject.org/torbulkexitlist" },
+  { "dataset": "iplist.reputation", "format": "ip-list",
+    "url": "https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level1.netset" },
+  { "dataset": "fido.mds3", "format": "fido-mds3-jwt",
+    "url": "https://mds3.fidoalliance.org/" }
+] }
+```
+
+DB-IP publishes a new release each month, and the year and month are in the
+file name. Use the current month's, from
+[db-ip.com/db/lite.php](https://db-ip.com/db/lite.php). `geo.country` is only
+needed if you load no city data. Add `"sha256"` to an entry to have the file
+checked before it is imported.
+
+**3. Run the loader where it can reach the database.** The loader is in the
+service image, so run it in a container of that image:
+
+```bash
+docker cp datasets.json sts:/tmp/datasets.json
+docker exec sts node risk/risk_install.js \
+  --manifest /tmp/datasets.json \
+  --accept-terms dbip-lite,tor-project,firehol,fido-mds3 \
+  --operator "Jo Operator" --check-terms
+```
+
+The loader needs the machine it runs on to reach the providers over HTTPS.
+The service itself dials none of them. On AWS, run the same command as a
+one-off task of the service's task definition, which is on the database's
+network.
+
+> **The database password.** The loader connects with `STS_DATABASE_URL`
+> only. It does not yet read the password from OpenBao or AWS Secrets Manager
+> the way the service does
+> ([#213](https://github.com/rcbj/iya-sts/issues/213)), so on the stacks this
+> repository ships it cannot sign in to the database by itself. Until that is
+> fixed, read the password from your secret store and pass it as
+> `docker exec -e PGPASSWORD=… sts node risk/risk_install.js …`. The
+> container's `STS_DATABASE_URL` carries no password, so the database client
+> uses `PGPASSWORD` instead. Or use the watched directory below, which runs
+> inside the service and uses its connection.
+
+The loader prints one line per dataset, and exits non-zero if any failed.
+Running it again is safe: a version already loaded is skipped.
+
+**4. Keep the data fresh.** Loading once is not enough. A dataset past its age
+limit counts for nothing (see
+[Each version is checked before it becomes active](#each-version-is-checked-before-it-becomes-active)):
+
+| Dataset | Stale after | How to keep it current |
+|---|---|---|
+| Tor exits, reputation list | `risk.ipListStaleAfterHours` (24 hours) | Re-run the loader, or feed the watched directory, at least daily. |
+| Geolocation and ASN | `risk.geoStaleAfterDays` (45 days) | Load each monthly release. |
+| FIDO metadata | its own `nextUpdate`, plus `risk.mdsStaleGraceDays` | Set `risk.mdsUrl` to `https://mds3.fidoalliance.org/`, and the `risk.mds-refresh` job downloads it daily. |
+
+For the lists, the watched directory is usually easier than re-running the
+loader. Set `risk.datasetsDirectory` to a directory the service can read, and
+have a scheduled job of your own (cron, a sidecar, a pipeline) write each new
+file there beside its manifest. In a cluster, make it a volume every node
+mounts, because the import job runs on whichever node leads.
+
+**5. Check the result.** Monitoring → Risk lists each dataset with its active
+version and whether it is fresh, stale or empty. It also lists every version
+recorded, with its row count, and gives the reason for any version that was
+refused. To see what the datasets now say about an address, look it up on the
+same page.
+
 ### The FIDO metadata
 
 The FIDO Alliance's Metadata Service (MDS3) lists every certified
