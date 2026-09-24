@@ -715,6 +715,20 @@ function oidfedDn() {
   return 'ou=oidfed,' + baseDn();
 }
 
+// ou=claimproviders IS THE REGISTER OF OPENID CONNECT CLAIMS PROVIDERS
+// (#147, 2026-09-24): the other OpenID Providers this realm fetches claims
+// from for a person who linked one, and hands on as aggregated or
+// distributed claims (OIDC Core 5.6.2). One entry of this service's own
+// class, `stsClaimProvider`, per provider; `oauth-oidc/claims_providers.ts`
+// owns what an entry means. Its own container for `ou=oidfed`'s reason: a
+// Claims Provider is another party's OpenID Provider, not an application of
+// this realm.
+function claimProvidersDn() {
+  log.debug("Entering claimProvidersDn().");
+  log.debug("Leaving claimProvidersDn().");
+  return 'ou=claimproviders,' + baseDn();
+}
+
 // ou=policies IS the XACML policy repository — not a copy of one kept
 // elsewhere. `xacml/xacml_store.ts` argues why the store is the directory
 // rather than a table of its own, and owns the schema for what an entry here
@@ -2109,6 +2123,15 @@ const OWN_NAMES = [
   'stsOidfedEntry', 'stsOidfedKind', 'stsOidfedEntityId', 'stsOidfedData',
   'stsOidfedKeys',
 
+  // AND THE CLAIMS PROVIDER REGISTER'S (#147, 2026-09-24): the class of an
+  // `ou=claimproviders` entry, its record as one JSON value, and its client
+  // secret at that provider (sealed where keys persist, and withheld,
+  // SECRET_ATTRIBUTES); and on a PERSON, the tokens each provider they
+  // linked issued them, one JSON value, sealed and withheld the same way.
+  // `oauth-oidc/claims_providers.ts` keeps them.
+  'stsClaimProvider', 'stsClaimProviderData', 'stsClaimProviderSecret',
+  'stsClaimSourceTokens',
+
   // AND A SUBORDINATE'S EVENT HISTORY (#137, 2026-09-24): one JSON event per
   // value of an `events` entry, appended and never rewritten, merged by
   // value when two nodes append at once (persistence/directory_merge.js).
@@ -3015,6 +3038,15 @@ function seed() {
       'and the Trust Marks it issues and holds (oidfed/oidfed_store.ts). A ' +
       'Subordinate here is published at the fetch endpoint as signed; an ' +
       'ldapmodify of one changes what this realm vouches for.'
+  }, { origin: 'seed' });
+  putEntry(claimProvidersDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'claimproviders',
+    description: 'OpenID Connect Claims Providers (#147): the OpenID ' +
+      'Providers this realm fetches claims from for a person who linked ' +
+      'one, delivered as aggregated or distributed claims ' +
+      '(oauth-oidc/claims_providers.ts). A person\'s own tokens for each ' +
+      'provider are on their entry, sealed (stsClaimSourceTokens).'
   }, { origin: 'seed' });
   putEntry(policiesDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -7968,6 +8000,9 @@ const SECRET_ATTRIBUTES = [
   'stsdevicesecrethash',
   // A person's CIBA user code, hashed (#131).
   'stscibausercode',
+  // A Claims Provider's client secret, and a person's tokens at the Claims
+  // Providers they linked (#147): credentials, sealed where keys persist.
+  'stsclaimprovidersecret', 'stsclaimsourcetokens',
   // A password reset link's hash (2026-09-13), for the activation token's
   // reason beside it.
   'stspasswordresettoken',
@@ -8708,6 +8743,120 @@ function writeIdaVerifications(key, value) {
   return true;
 }
 
+// A PERSON'S CLAIMS PROVIDER TOKENS (#147), one JSON value on their entry,
+// sealed by the caller where keys persist; `oauth-oidc/claims_providers.ts`
+// owns the shape. Not created here, for `writeTotp()`'s reason.
+function readClaimSourceTokens(key) {
+  log.debug('Entering readClaimSourceTokens(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readClaimSourceTokens(). No entry.');
+    return '';
+  }
+  const value = (stored.attributes.stsclaimsourcetokens || [])[0];
+  log.debug('Leaving readClaimSourceTokens(). ' +
+            (value ? 'Held.' : 'None.'));
+  return value ? String(value) : '';
+}
+
+function writeClaimSourceTokens(key, value) {
+  log.debug('Entering writeClaimSourceTokens(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no Claims ' +
+             'Provider token was recorded.');
+    log.debug('Leaving writeClaimSourceTokens(). No entry.');
+    return false;
+  }
+  if (value === null || value === undefined || value === '') {
+    delete stored.attributes.stsclaimsourcetokens;
+  } else {
+    stored.attributes.stsclaimsourcetokens = [String(value)];
+  }
+  touchDirectory();
+  log.debug('Leaving writeClaimSourceTokens(). ' +
+            (value ? 'Written to ' : 'Removed from ') + stored.dn + '.');
+  return true;
+}
+
+// Every person entry holding Claims Provider tokens, by username — for the
+// refresh job and the console's list of links (#147).
+function claimSourceTokenHolders() {
+  log.debug('Entering claimSourceTokenHolders().');
+  const out = [];
+  eachEntryInRealm(function (stored) {
+    const value = (stored.attributes.stsclaimsourcetokens || [])[0];
+    const uid = (stored.attributes.uid || [])[0];
+    if (value && uid && isPersonEntry(stored)) {
+      out.push({ username: String(uid), value: String(value) });
+    }
+  });
+  log.debug('Leaving claimSourceTokenHolders(). ' + out.length + '.');
+  return out;
+}
+
+// THE CLAIMS PROVIDER REGISTER (#147): every entry under ou=claimproviders,
+// whole; one written (created or replaced) by its `cn`; one deleted.
+function claimProviderEntryDn(cn) {
+  log.debug('Entering claimProviderEntryDn().');
+  log.debug('Leaving claimProviderEntryDn().');
+  return 'cn=' + escapeDnValue(String(cn)) + ',' + claimProvidersDn();
+}
+
+function listClaimProviderEntries() {
+  log.debug('Entering listClaimProviderEntries().');
+  const out = entriesUnder(claimProvidersDn()).filter(function (stored) {
+    return normalizeDn(stored.dn) !== normalizeDn(claimProvidersDn());
+  }).map(function (stored) {
+    const attributes = {};
+    Object.keys(stored.attributes).forEach(function (name) {
+      attributes[name] = stored.attributes[name].slice(0);
+    });
+    return { dn: stored.dn, attributes: attributes };
+  });
+  log.debug('Leaving listClaimProviderEntries(). ' + out.length + '.');
+  return out;
+}
+
+function writeClaimProviderEntry(cn, attributes) {
+  log.debug('Entering writeClaimProviderEntry(). cn=' + cn);
+  const dn = claimProviderEntryDn(cn);
+  const existing = getEntry(dn);
+  if (!existing && totalEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writeClaimProviderEntry(). The directory is full.');
+    return false;
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, attributes,
+                          { origin: existing ? existing.origin :
+                                                'claimproviders' });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  log.debug('Leaving writeClaimProviderEntry(). ' +
+            (existing ? 'Replaced.' : 'Created.'));
+  return true;
+}
+
+function deleteClaimProviderEntry(cn) {
+  log.debug('Entering deleteClaimProviderEntry(). cn=' + cn);
+  const stored = getEntry(claimProviderEntryDn(cn));
+  if (!stored) {
+    log.debug('Leaving deleteClaimProviderEntry(). Not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory();
+  log.debug('Leaving deleteClaimProviderEntry().');
+  return true;
+}
+
 // A PERSON'S ENROLLED SELF-ISSUED SUBJECTS (#129): every value, as stored.
 // `oid4vc/siop.ts` reads and writes the JSON; this only carries it.
 function readSelfIssuedSubjects(key) {
@@ -9035,6 +9184,14 @@ if (typeof credentials.setDirectory === 'function') {
     listOidfedEntries: listOidfedEntries,
     writeOidfedEntry: writeOidfedEntry,
     deleteOidfedEntry: deleteOidfedEntry,
+    // The Claims Provider register and a person's tokens (#147), checked
+    // where they are used.
+    listClaimProviderEntries: listClaimProviderEntries,
+    writeClaimProviderEntry: writeClaimProviderEntry,
+    deleteClaimProviderEntry: deleteClaimProviderEntry,
+    readClaimSourceTokens: readClaimSourceTokens,
+    writeClaimSourceTokens: writeClaimSourceTokens,
+    claimSourceTokenHolders: claimSourceTokenHolders,
     personDnOf: personDnOf,
     applicationDnOf: applicationDnOf,
     writeSelfIssuedSubjects: writeSelfIssuedSubjects,

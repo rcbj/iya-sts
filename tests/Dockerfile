@@ -186,6 +186,25 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
         krb5-user \
     && rm -rf /var/lib/apt/lists/*
+# THE PUBLISHED XML SCHEMAS AND A VALIDATOR FOR THEM (#188, 2026-09-24):
+# libxml2's `xmllint`, and every OASIS and W3C schema
+# tests/vendored/sts_xml_schema_validation.js validates this service's SAML,
+# WS-Trust and WS-Federation documents against — FETCHED here, each checked
+# against the sha256 in tests/xml-schemas/SCHEMAS (the build fails on a
+# single differing byte), with the catalogue that lets the job run
+# `xmllint --nonet` so nothing is fetched while the suite runs. Nothing is
+# vendored: the list, the catalogue and the driver schema are this
+# repository's, the schemas are their publishers'. Its own layers below the
+# compiler's, and above the source copy so that editing a test re-fetches
+# nothing; only the two paths the fetch reads are copied first.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        libxml2-utils \
+    && rm -rf /var/lib/apt/lists/*
+COPY tests/xml-schemas ./tests/xml-schemas
+COPY tests/tools/fetch-xml-schemas.sh ./tests/tools/fetch-xml-schemas.sh
+RUN ./tests/tools/fetch-xml-schemas.sh /opt/xml-schemas
+ENV STS_XML_SCHEMA_DIR=/opt/xml-schemas
 COPY package*.json ./
 COPY .npmrc ./
 COPY node-ldapjs ./node-ldapjs

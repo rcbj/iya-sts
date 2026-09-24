@@ -1,0 +1,70 @@
+# tests/xml-schemas/SCHEMAS — the published XML Schemas the SAML 1.1 / 2.0,
+# WS-Trust and WS-Federation documents this service emits are validated
+# against (#188). One line per file:
+#
+#   <local file name>  <sha256 of its bytes>  <the URL it is published at>
+#
+# NOTHING HERE IS VENDORED. tests/tools/fetch-xml-schemas.sh downloads every
+# file when the tests image is BUILT, refuses the build if a single byte
+# differs from the digest, and writes catalog.xml and all.xsd beside them so
+# that validation never dials the network at test time (xmllint --nonet).
+# The digest is the authority, not the host — which is also why the W3C
+# files are fetched over plain http: www.w3.org answers a scripted https
+# request with a Cloudflare challenge (HTTP 429, 2026-09-24) and serves the
+# same bytes over http. When a publisher's address refuses anyway, the
+# script asks the Internet Archive for the same URL
+# (https://web.archive.org/web/2024id_/<url>, the raw capture) and accepts
+# its answer only if it hashes to the same digest.
+#
+# The local name is the published base name where that is unique, and a
+# version-qualified name where two publications share one ("ws-trust.xsd").
+# ws-authorization.xsd keeps the name ws-federation.xsd imports it by.
+
+# --- W3C: XML, XML Signature, XML Encryption, SOAP 1.2, WS-Addressing 1.0 ----
+xml.xsd                                    61960fb3131e38022caad5360e2f33a3382578ab3c80cd58bd74320ede61b20c  http://www.w3.org/2001/xml.xsd
+XMLSchema.dtd                              2032ead9fd47a61b22fe56aa02be1840bd9bb9015b0c0d3f1e8aac75dd91c3b9  http://www.w3.org/2001/XMLSchema.dtd
+datatypes.dtd                              6946432ca7af2e9584f91b48564111fd2c73c8debbbcd9a0e3f5ddd382eeb51c  http://www.w3.org/2001/datatypes.dtd
+xmldsig-core-schema.xsd                    35cf8197da812c85e40d57891b35c94187569ed474a2dac813ce5090dafcd35c  http://www.w3.org/TR/2002/REC-xmldsig-core-20020212/xmldsig-core-schema.xsd
+xmldsig11-schema.xsd                       5e01d78590a7d362a14b743be118dc0d1a4b184a26dd4ca56d6db1536a342de2  http://www.w3.org/TR/2013/REC-xmldsig-core1-20130411/xmldsig11-schema.xsd
+xenc-schema.xsd                            5dd57f074870e1d91f7eb814aa92967cefcce9011a86adf5e12a769fcf2a237e  http://www.w3.org/TR/2002/REC-xmlenc-core-20021210/xenc-schema.xsd
+xenc-schema-11.xsd                         2b48432f036262345638536601d4ea3224897e2d41901163c04eebf350477958  http://www.w3.org/TR/2013/REC-xmlenc-core1-20130411/xenc-schema-11.xsd
+soap-envelope-1.2.xsd                      3ae8caa9a74e83528cc0e1a59fc12784435e8e0086e890d0e1b04d881c079bec  http://www.w3.org/2003/05/soap-envelope/
+ws-addr.xsd                                eacfd086db8e98692f0326b2605c6ac5954682c628fae2b62dc2bbcbdcdd3165  http://www.w3.org/2006/03/addressing/ws-addr.xsd
+
+# --- OASIS SAML 2.0 ------------------------------------------------------------
+saml-schema-assertion-2.0.xsd              006eb7553843cb7baa9b08da2a9d444346c0e982fb9d9293babe08ede680924b  https://docs.oasis-open.org/security/saml/v2.0/saml-schema-assertion-2.0.xsd
+saml-schema-protocol-2.0.xsd               554250583cd5eacc6ce5f094f6ff50fc2547972c436dc96e2e7eb41abf2c817e  https://docs.oasis-open.org/security/saml/v2.0/saml-schema-protocol-2.0.xsd
+saml-schema-metadata-2.0.xsd               204bc7991055dbb889307abbd2ff58022753897dd7064a4d1ca13eb737d2617a  https://docs.oasis-open.org/security/saml/v2.0/saml-schema-metadata-2.0.xsd
+
+# --- OASIS SAML 1.1 (published by document number; the name in the URL is
+#     ignored by the server, which is why 3408 is the ASSERTION schema) -------
+oasis-sstc-saml-schema-assertion-1.1.xsd   4107996933de0001be5613d60e31384f276642dd26e734fc1d16dfd705893156  https://www.oasis-open.org/committees/download.php/3408/oasis-sstc-saml-schema-protocol-1.1.xsd
+oasis-sstc-saml-schema-protocol-1.1.xsd    4de834200c0f2c7a442e1e5183cb2bc2fbb4239204ba8adca565a27addbe8397  https://www.oasis-open.org/committees/download.php/3407/oasis-sstc-saml-schema-assertion-1.1.xsd
+
+# --- SOAP 1.1, WS-Addressing (member submissions), WS-Policy -------------------
+soap-envelope-1.1.xsd                      9c66f88b79ad60d6d5b63839bbb709b0cdfd591898c35ac187c3c272c47b52ae  https://schemas.xmlsoap.org/soap/envelope/
+addressing-2004-08.xsd                     9aa41269bee2e1c3c46d29930c4fdc7bafbd9c1e3154998d455444c6a02a3041  https://schemas.xmlsoap.org/ws/2004/08/addressing/
+addressing-2004-03.xsd                     b053127bcd65d1f8b34fb4d4923d9ec56944071093eec4aa4205217a2aa6ec42  https://schemas.xmlsoap.org/ws/2004/03/addressing
+ws-policy-2004-09.xsd                      3f9f3a326cf305458894edd8b9e369ec921624e3e48d8eb72647770ca1232115  https://schemas.xmlsoap.org/ws/2004/09/policy/ws-policy.xsd
+ws-policy-2002-12.xsd                      6beadbc8322e335c851798a6e37de48186ba05344410e4c85fb2d12879d433b3  https://schemas.xmlsoap.org/ws/2002/12/policy
+utility-2002-07.xsd                        e0f0f7cc7b4b45e4643a10e0a8865c5ea81ecf421b80c64d08ca243f87e314cd  https://schemas.xmlsoap.org/ws/2002/07/utility
+MetadataExchange.xsd                       6572cb8da13bb4404036deb848bbd7b5e6f8e56d95129648da0778106e6342d5  https://schemas.xmlsoap.org/ws/2004/09/mex/MetadataExchange.xsd
+
+# --- OASIS WS-Security 1.0 / 1.1 --------------------------------------------------
+oasis-200401-wss-wssecurity-secext-1.0.xsd be84cf776c1637be0ce684d0f98ff4c1ac90150538b194730a2089df7b716b44  https://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd
+oasis-200401-wss-wssecurity-utility-1.0.xsd 565e0065222a73c99f3d53240d8215b42257745d6a8ca834e6c12b15a7275672  https://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd
+oasis-wss-wssecurity-secext-1.1.xsd        1cce2a1702263cc6ec367042720f30fc5ff29c2f23854a7e70ff1f6114ad23b8  https://docs.oasis-open.org/wss/oasis-wss-wssecurity-secext-1.1.xsd
+
+# --- WS-Trust: May 2004, February 2005, OASIS 1.3 and 1.4 ----------------------
+# ws-trust-1.4.xsd is the file the OASIS Standard's RDDL links
+# (ws-trust-1.4-rddl-200802-os.html -> v1.4/cd/ws-trust.xsd). v1.4/ws-trust-1.4.xsd
+# beside it has no ActAs, which is the one element 1.4 is used for here.
+ws-trust-2004-04.xsd                       57280be6f6575fdee4bffe342304fa872e317ba53a50081a2bda846d01b2ee62  https://schemas.xmlsoap.org/ws/2004/04/trust/ws-trust.xsd
+ws-trust-2005-02.xsd                       364ccce7627d85c16826d3fc020b8b4777a1580511b2ab351d4eae6153554ef8  https://schemas.xmlsoap.org/ws/2005/02/trust/ws-trust.xsd
+ws-trust-1.3.xsd                           df63c2b592f0e13549b61c166a20d5bbbb3545426f85ef9d33e08e44ee208572  https://docs.oasis-open.org/ws-sx/ws-trust/200512/ws-trust-1.3.xsd
+ws-trust-1.4.xsd                           0b65fa824e05f3cb44ba1911c6f10cbd498ce4280e5a0c47be80519338499633  https://docs.oasis-open.org/ws-sx/ws-trust/v1.4/cd/ws-trust.xsd
+ws-securitypolicy-1.2.xsd                  096b354c729f95027778de8b9c72b02043dadb8a4f531659d5287cf152e9dcd5  https://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702/ws-securitypolicy-1.2.xsd
+
+# --- OASIS WS-Federation 1.2 ----------------------------------------------------
+ws-federation.xsd                          04e2fb3a2807f887e4ab5ab4e1c48b3831b16bf0de6fd97b13e9ff390d1a27a2  https://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation.xsd
+ws-authorization.xsd                       90ccf81de1b2aa5d5f30b5afac91320fd98b180e5c93c125fe9546c65566cb7f  https://docs.oasis-open.org/wsfed/authorization/v1.2/os/ws-authorization.xsd

@@ -1581,3 +1581,16 @@ that form, so a relationship to one wants `fedUsernameSource` set.
 of one process — the default realm's OpenID Provider and a service-provider realm of its
 own — through dynamic provisioning, a refused unprovisioned person, a person pre-provisioned
 over SCIM, and the refresh switch in both positions.
+
+## THE WS-FEDERATION RELATIONSHIP'S METADATA WAS SCHEMA-INVALID (#188, 2026-09-24)
+
+`wsfedMetadata()` published a `fed:ApplicationServiceType` RoleDescriptor
+holding only `fed:PassiveRequestorEndpoint`. WS-Federation 1.2's schema makes
+`fed:ApplicationServiceEndpoint` REQUIRED (`minOccurs="1"`) and first in that
+type's sequence, so a validating importer refused the document outright. It
+now carries both, naming the relationship's one address, as AD FS's own
+relying-party documents do. `tests/vendored/sts_xml_schema_validation.js`
+found it and validates every document this module emits — the SAML 2.0,
+SAML 1.1 and WS-Federation relationship metadata, the outbound AuthnRequest
+on both bindings and the outbound LogoutRequest — against the published
+OASIS schemas (`tests/CLAUDE.md`, *The published XML Schemas*).
